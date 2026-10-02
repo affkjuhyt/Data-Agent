@@ -157,12 +157,23 @@ async def get_extraction_policy(postgres: Any, tenant_id: str | None) -> dict[st
 
 async def update_extraction_policy(
         postgres: Any, custom: str, tenant_id: str, created_by: str,
-        expected_version: uuid.UUID,
+        expected_version: uuid.UUID | None,
 ) -> dict[str, Any]:
+    """Edit the tenant's extraction policy, or create it on the first save.
+
+    If-Match is required only to edit: a tenant without a row has no version
+    to state (GET returns row_version ""), and requiring one made the first
+    save a 428 the UI could never get past.
+    """
     resp = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id, joins_table=["KBExtractionPolicy"], limit=1,
     ))
     if resp.code == 200 and resp.data:
+        if expected_version is None:
+            raise HTTPException(
+                status_code=428,
+                detail="If-Match header is required — GET the resource and resend its row_version",
+            )
         pid = resp.data[0].get("policy_id")
         pid_uuid = uuid.UUID(pid) if isinstance(pid, str) else pid
         tenant_uuid = uuid.UUID(tenant_id) if isinstance(tenant_id, str) else tenant_id
@@ -176,13 +187,17 @@ async def update_extraction_policy(
             not_found_detail="Policy not found",
         )
         return {"status": "ok", "row_version": str(new_version)}
-    else:
-        from libs.basemodel.services_databaseconnector.postgres_model import PolicyExtractionType
-        await postgres.insert(KBExtractionPolicyInsert(
-            tenant_id=tenant_id,
-            policy_name="Default Extraction Policy",
-            policy_type=PolicyExtractionType.ENTITY_NODE,
-            custom_override=custom,
-            created_by=created_by,
-        ))
-    return {"status": "ok"}
+    from libs.basemodel.services_databaseconnector.postgres_model import PolicyExtractionType
+    ins = await postgres.insert(KBExtractionPolicyInsert(
+        tenant_id=tenant_id,
+        policy_name="Default Extraction Policy",
+        policy_type=PolicyExtractionType.ENTITY_NODE,
+        custom_override=custom,
+        created_by=created_by,
+    ))
+    if ins.code != 200:
+        log.error("update_extraction_policy: insert failed: %s", ins.error)
+        raise HTTPException(status_code=500, detail="Failed to save extraction policy")
+    # The caller's next save is an edit and needs this version as its If-Match.
+    created = await get_extraction_policy(postgres, tenant_id)
+    return {"status": "ok", "row_version": created["row_version"]}

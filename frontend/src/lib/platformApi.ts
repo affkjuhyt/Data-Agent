@@ -42,7 +42,7 @@ export interface AgentDetail extends AgentSummary {
   active_workflow_id: string | null;
   active_workflow_name: string | null;
   workflows?: AgentWorkflow[];
-  responder_model_id: string | null;
+  responder_model: string | null;
   system_prompt_id: string | null;
   memory_enabled: boolean;
 }

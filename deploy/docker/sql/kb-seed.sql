@@ -141,11 +141,16 @@ ON CONFLICT (knowledge_base_id) DO NOTHING;
 
 -- ── KBFilterPolicy ───────────────────────────────────────────────────────────
 
+-- config is {"rules": [...]}, the shape silver/filtering.py reads and the Policy
+-- screen writes: one sentence for natural_language, the words for exact_word.
+-- (These rows used {"keywords": [...]}, which nothing reads, so they filtered nothing.)
 INSERT INTO "KBFilterPolicy" (policy_id, tenant_id, policy_name, configformat, config, is_active, language) VALUES
     ('00000000-0000-0004-0000-000000000001', 'a0000000-0000-0000-0000-000000000001',
-     'PII Filter', 'natural_language', '{"keywords":["SSN","passport","credit card"]}', true, 'english'),
+     'PII Filter', 'natural_language',
+     '{"rules":["Block chunks that contain a social security number, a passport number or a credit card number."]}',
+     true, 'english'),
     ('00000000-0000-0004-0000-000000000002', 'a0000000-0000-0000-0000-000000000001',
-     'Legal Stopwords', 'exact_word', '{"keywords":["confidential","restricted","draft"]}', false, 'english')
+     'Legal Stopwords', 'exact_word', '{"rules":["confidential","restricted","draft"]}', false, 'english')
 ON CONFLICT (policy_id) DO NOTHING;
 
 -- ── KBExtractionPolicy ───────────────────────────────────────────────────────

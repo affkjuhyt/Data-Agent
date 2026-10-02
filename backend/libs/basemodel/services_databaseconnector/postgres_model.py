@@ -665,16 +665,6 @@ Auth Insert Models
 
 
 @register("insert")
-class LLMProvidersInsert(InsertModel):
-    name: str
-    model_id: str
-    endpoint_url: str
-    type: str
-    is_default: bool = False
-    max_tokens: Optional[int] = None
-
-
-@register("insert")
 class KBConnectionsInsert(TenantInsertModel):
     name: str
     endpoint_url: str
@@ -699,7 +689,7 @@ class GuardrailsInsert(InsertModel):
     conditions: dict[str, Any] = {}
     action: str
     priority: int = 0
-    guardrail_model_id: Optional[str] = None
+    guardrail_model: Optional[str] = None
     created_by: Optional[str] = None
 
 
@@ -746,7 +736,7 @@ class AgentVersionsInsert(InsertModel):
     version: int
     status: str = "draft"
     workflow_version_id: Optional[str] = None
-    responder_model_id: Optional[str] = None
+    responder_model: Optional[str] = None
     llm_config: Optional[dict[str, Any]] = None
     system_prompt_id: Optional[str] = None
     guardrail_id: Optional[str] = None
@@ -811,11 +801,6 @@ class AgentTracesInsert(InsertModel):
 """
 Auth Delete Models
 """
-
-
-@register("delete")
-class LLMProvidersDelete(BaseModel):
-    id: str
 
 
 @register("delete")

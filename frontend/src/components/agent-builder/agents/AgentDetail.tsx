@@ -45,7 +45,7 @@ export const AgentDetailView: React.FC<AgentDetailProps> = ({ agentId, onOpenCon
   if (agent.error || !agent.data) return <div className="p-5"><ErrorState message={agent.error ?? 'Không tìm thấy agent'} onRetry={() => void agent.refetch()} /></div>;
 
   const a = agent.data;
-  const provider = (providers.data ?? []).find(p => p.id === a.responder_model_id);
+  const provider = (providers.data ?? []).find(p => p.model_id === a.responder_model);
   const prompt = (prompts.data ?? []).find(p => p.id === a.system_prompt_id);
   const isPublished = !!a.published_version_id;
 
@@ -75,7 +75,7 @@ export const AgentDetailView: React.FC<AgentDetailProps> = ({ agentId, onOpenCon
       </div>
 
       <Card title="Cấu hình hiện tại" subtitle="Đọc từ draft version của agent" padding="sm">
-        <FieldRow icon={Cpu} label="Model" value={provider ? <span className="font-mono text-[12px]">{provider.name} ({provider.model_id})</span> : <span className="text-[#5F5F5F]">Chưa chọn</span>} />
+        <FieldRow icon={Cpu} label="Model" value={a.responder_model ? <span className="font-mono text-[12px]">{provider?.name ?? a.responder_model}</span> : <span className="text-[#5F5F5F]">Chưa chọn</span>} />
         <FieldRow icon={FileText} label="System prompt" value={prompt?.name ?? <span className="text-[#5F5F5F]">Chưa chọn</span>} />
         <FieldRow icon={MemoryStick} label="Memory" value={a.memory_enabled ? 'Bật' : 'Tắt'} />
         <FieldRow icon={GitBranch} label="Workflow đang chạy" value={a.active_workflow_name ?? <span className="text-[#5F5F5F]">Chưa publish workflow nào</span>} />

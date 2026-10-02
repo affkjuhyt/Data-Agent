@@ -9,8 +9,8 @@ from sqlalchemy import select
 from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
     AgentsORM,
     GuardrailsORM,
-    LLMProvidersORM,
 )
+from services.workflow_runtime.domain.llm_models import sdk_model_name
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +53,8 @@ async def fetch_guardrail_config(tenant_id: str | None = None) -> dict[str, Any]
                     select(
                         GuardrailsORM.id,
                         GuardrailsORM.conditions,
-                        LLMProvidersORM.model_id.label("guardrail_model"),
+                        GuardrailsORM.guardrail_model,
                     )
-                    .outerjoin(LLMProvidersORM, LLMProvidersORM.id == GuardrailsORM.guardrail_model_id)
                     .order_by(GuardrailsORM.priority.desc())
                     .limit(1)
                 )
@@ -68,7 +67,7 @@ async def fetch_guardrail_config(tenant_id: str | None = None) -> dict[str, Any]
                 "guardrail_input_patterns": cond.get("input_patterns", []),
                 "guardrail_llm_enabled":    cond.get("llm_enabled", True),
                 "guardrail_allowed_topics": cond.get("allowed_topics", []),
-                "guardrail_model":          row.guardrail_model or "openai/guardrail",
+                "guardrail_model":          sdk_model_name(row.guardrail_model, "openai/guardrail"),
                 "guardrail_max_tokens":     cond.get("max_tokens", 64),
                 "guardrail_timeout":        cond.get("timeout", 15),
                 "guardrail_num_retries":    cond.get("num_retries", 1),

@@ -27,34 +27,6 @@ from libs.basemodel.services_databaseconnector.postgres_orm.base import Base
 # ─── Agent Platform ───────────────────────────────────────────────────────────
 
 @register("orm")
-class LLMProvidersORM(Base):
-    __tablename__ = "LLMProviders"
-    __table_args__ = (
-        Index("idx_llmproviders_type_is_default", "type", "is_default",
-              postgresql_where=text("is_default = true")),
-        Index("idx_llmproviders_inserted_at_desc", text("inserted_at DESC")),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    model_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    endpoint_url: Mapped[str] = mapped_column(Text, nullable=False)
-    type: Mapped[str] = mapped_column(String(50), nullable=False)
-    is_default: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
-    max_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    guardrails: Mapped[list["GuardrailsORM"]] = relationship(back_populates="guardrail_model")
-    agent_versions: Mapped[list["AgentVersionsORM"]] = relationship(
-        back_populates="responder_model",
-        foreign_keys="AgentVersionsORM.responder_model_id",
-    )
-
-
-@register("orm")
 class KBConnectionsORM(Base):
     __tablename__ = "KBConnections"
     __table_args__ = (
@@ -113,12 +85,11 @@ class GuardrailsORM(Base):
     conditions: Mapped[dict] = mapped_column(JSONB, nullable=False)
     action: Mapped[str] = mapped_column(String(20), nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    guardrail_model_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("LLMProviders.id"), nullable=True)
+    guardrail_model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="LiteLLM model alias the guardrail LLM check calls; NULL = guardrail.")
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    guardrail_model: Mapped[Optional["LLMProvidersORM"]] = relationship(back_populates="guardrails")
     agent_versions: Mapped[list["AgentVersionsORM"]] = relationship(back_populates="guardrail")
 
 
@@ -258,7 +229,7 @@ class AgentVersionsORM(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     workflow_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("WorkflowVersions.id"), nullable=True)
-    responder_model_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("LLMProviders.id"), nullable=True)
+    responder_model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="LiteLLM model alias (as GET /api/llm-providers lists it, e.g. responder) the agent answers with; NULL = the deployment default.")
     llm_config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     system_prompt_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("SystemPrompts.id"), nullable=True)
     guardrail_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Guardrails.id"), nullable=True)
@@ -272,10 +243,6 @@ class AgentVersionsORM(Base):
 
     agent: Mapped["AgentsORM"] = relationship(back_populates="versions", foreign_keys=[agent_id])
     workflow_version: Mapped[Optional["WorkflowVersionsORM"]] = relationship(back_populates="agent_versions")
-    responder_model: Mapped[Optional["LLMProvidersORM"]] = relationship(
-        back_populates="agent_versions",
-        foreign_keys=[responder_model_id],
-    )
     system_prompt: Mapped[Optional["SystemPromptsORM"]] = relationship(back_populates="agent_versions")
     guardrail: Mapped[Optional["GuardrailsORM"]] = relationship(back_populates="agent_versions")
     agent_kb: Mapped[list["AgentKBORM"]] = relationship(back_populates="version", cascade="all, delete-orphan")

@@ -6,6 +6,8 @@ from typing import Any
 
 from dotenv import find_dotenv, load_dotenv
 
+from services.workflow_runtime.domain.llm_models import sdk_model_name
+
 load_dotenv(find_dotenv())
 
 from sqlalchemy import select
@@ -16,7 +18,6 @@ from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import 
     AgentVersionsORM,
     AgentsORM,
     KBConnectionsORM,
-    LLMProvidersORM,
     MCPORM,
     SystemPromptsORM,
 )
@@ -90,7 +91,7 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
                         AgentVersionsORM.memory_enabled,
                         AgentVersionsORM.llm_config,
                         AgentVersionsORM.retrieval_config,
-                        LLMProvidersORM.model_id.label("responder_model"),
+                        AgentVersionsORM.responder_model,
                         SystemPromptsORM.content.label("system_prompt"),
                     )
                     # The first selected column is AgentVersions, so without an explicit
@@ -98,7 +99,6 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
                     # swallowed below into DEV_CONFIG for every agent).
                     .select_from(AgentsORM)
                     .join(AgentVersionsORM, AgentVersionsORM.id == AgentsORM.published_version_id)
-                    .join(LLMProvidersORM, LLMProvidersORM.id == AgentVersionsORM.responder_model_id)
                     .outerjoin(SystemPromptsORM, SystemPromptsORM.id == AgentVersionsORM.system_prompt_id)
                     .where(AgentsORM.id == agent_id, AgentsORM.deleted_at.is_(None))
                 )
@@ -174,7 +174,7 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
             # gets a new id, so the runner rebuilds the graph automatically.
             "workflow_version_id": wv_id,
             # responder
-            "responder_model":      row.responder_model or DEV_CONFIG["responder_model"],
+            "responder_model":      sdk_model_name(row.responder_model, DEV_CONFIG["responder_model"]),
             "responder_temperature": llm_config.get("temperature", DEV_CONFIG["responder_temperature"]),
             "responder_max_tokens":  llm_config.get("max_tokens",  DEV_CONFIG["responder_max_tokens"]),
             "responder_stream":      llm_config.get("stream",      True),

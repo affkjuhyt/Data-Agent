@@ -9,7 +9,7 @@ from services.kb_backend.schemas import (
 from libs.shared.auth import require_tenant
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
-from services.kb_backend.operations.locking import require_if_match, etag
+from services.kb_backend.operations.locking import parse_if_match, require_if_match, etag
 from services.kb_backend.operations.policy_ops import (
     list_filter_policies, create_filter_policy, update_filter_policy,
     delete_filter_policy, get_extraction_policy, update_extraction_policy,
@@ -109,6 +109,6 @@ async def update_extraction_policy_route(
         custom=body.custom,
         tenant_id=require_tenant(ctx),
         created_by=ctx["user_name"],
-        expected_version=require_if_match(if_match),
+        expected_version=parse_if_match(if_match),
     )
     return ResponseModel(code=200, data=result)

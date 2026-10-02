@@ -28,7 +28,7 @@ interface ApiAgent {
   active_workflow_id: string | null;
   active_workflow_name: string | null;
   workflows?: ApiWorkflow[];
-  responder_model_id: string | null;
+  responder_model: string | null;
   system_prompt_id: string | null;
   memory_enabled: boolean;
 }
@@ -104,7 +104,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
   const [settingsEdit, setSettingsEdit]   = useState(false);
   const [settingsForm, setSettingsForm]   = useState({
     name: '', description: '',
-    responder_model_id: '', system_prompt_id: '', memory_enabled: false,
+    responder_model: '', system_prompt_id: '', memory_enabled: false,
   });
   const [savingSettings, setSavingSettings] = useState(false);
   const [unpublishing, setUnpublishing]     = useState(false);
@@ -149,7 +149,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
       ...f,
       name:                data.name,
       description:         data.description || '',
-      responder_model_id:  data.responder_model_id  ?? '',
+      responder_model:     data.responder_model     ?? '',
       system_prompt_id:    data.system_prompt_id    ?? '',
       memory_enabled:      data.memory_enabled      ?? false,
     }));
@@ -587,18 +587,18 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
               <label className="text-[10px] font-bold text-[#5F5F5F] uppercase tracking-widest mb-1.5 block">Responder Model</label>
               {settingsEdit ? (
                 <select
-                  value={settingsForm.responder_model_id}
-                  onChange={e => setSettingsForm(f => ({ ...f, responder_model_id: e.target.value }))}
+                  value={settingsForm.responder_model}
+                  onChange={e => setSettingsForm(f => ({ ...f, responder_model: e.target.value }))}
                   className="ui-input w-full py-2 px-3 text-sm"
                 >
                   <option value="">— Select model —</option>
                   {llmProviders.filter(p => p.type === 'chat').map(p => (
-                    <option key={p.id} value={p.id}>{p.name} ({p.model_id})</option>
+                    <option key={p.id} value={p.model_id}>{p.name}</option>
                   ))}
                 </select>
               ) : (
                 <div className="text-sm text-[#2A2A2A] py-2 px-3 bg-[#FAFAF5] rounded-xl border border-[#BFA66A]">
-                  {llmProviders.find(p => p.id === settingsForm.responder_model_id)?.name || '—'}
+                  {llmProviders.find(p => p.model_id === settingsForm.responder_model)?.name || settingsForm.responder_model || '—'}
                 </div>
               )}
             </div>

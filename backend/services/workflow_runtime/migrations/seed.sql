@@ -4,17 +4,6 @@ INSERT INTO "Tenants" (id, name, slug, data_residency, is_active)
 VALUES ('a0000000-0000-0000-0000-000000000001', 'Dev Tenant', 'dev', 'Asia-SE1', true)
 ON CONFLICT (id) DO NOTHING;
 
--- model_id cần tiền tố provider ("openai/") vì litellm SDK gọi trực tiếp
--- (litellm.acompletion) bắt buộc phải biết provider để định dạng request,
--- dù vẫn đi qua chung 1 cổng api_base (LiteLLM gateway) — khác responder
--- trước đây dùng ChatOpenAI (LangChain), không cần tiền tố này.
-INSERT INTO "LLMProviders" (id, name, model_id, endpoint_url, type, is_default, is_active)
-VALUES
-  ('00000000-0000-0000-0000-000000000010', 'Dev LLM (Planner)',   'openai/planner',   'http://litellm:4000', 'chat', false, true),
-  ('00000000-0000-0000-0000-000000000011', 'Dev LLM (Responder)', 'openai/responder', 'http://litellm:4000', 'chat', true,  true),
-  ('00000000-0000-0000-0000-000000000012', 'Dev LLM (Guardrail)', 'openai/guardrail', 'http://litellm:4000', 'chat', false, true)
-ON CONFLICT (id) DO NOTHING;
-
 INSERT INTO "SystemPrompts" (id, tenant_id, name, content, version)
 VALUES (
   '00000000-0000-0000-0000-000000000020',
@@ -52,14 +41,14 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO "AgentVersions" (id, agent_id, version, status, workflow_version_id, responder_model_id, system_prompt_id)
+INSERT INTO "AgentVersions" (id, agent_id, version, status, workflow_version_id, responder_model, system_prompt_id)
 VALUES (
   '00000000-0000-0000-0000-000000000040',
   '00000000-0000-0000-0000-000000000030',
   1,
   'published',
   '00000000-0000-0000-0000-000000000060',
-  '00000000-0000-0000-0000-000000000011',
+  'responder',
   '00000000-0000-0000-0000-000000000020'
 )
 ON CONFLICT (id) DO NOTHING;

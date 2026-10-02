@@ -70,8 +70,6 @@ erDiagram
   Tenants ||--o{ SystemPrompts : tenant_id
   Tenants ||--o{ MCP : tenant_id
   Tenants ||--o{ Agents : tenant_id
-  LLMProviders ||--o{ Guardrails : guardrail_model_id
-  LLMProviders ||--o{ AgentVersions : responder_model_id
   Agents ||--o{ AgentVersions : agent_id
   AgentVersions ||--o{ Agents : published_version_id
   AgentVersions ||--o{ Agents : draft_version_id

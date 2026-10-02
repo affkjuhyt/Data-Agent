@@ -15,12 +15,6 @@
 
 BEGIN;
 
--- ── LLM provider: "openai/responder" → litellm wildcard → host ollama ─────────
-INSERT INTO "LLMProviders"(id, name, model_id, endpoint_url, type, is_default, is_active)
-VALUES ('00000000-0000-0000-0000-0000000000a1', 'local-ollama', 'openai/responder',
-        'http://litellm:4000', 'openai', true, true)
-ON CONFLICT (id) DO NOTHING;
-
 -- workflow_runtime connects as runtime_writer; a fresh DB gives it no SELECT.
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO runtime_writer;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO runtime_writer;
@@ -40,10 +34,11 @@ VALUES ('0000000e-2e00-4000-8000-000000000004', '0000000e-2e00-4000-8000-0000000
         1, 'published', 'e2e seed')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO "AgentVersions"(id, agent_id, version, status, responder_model_id,
+-- responder_model is the LiteLLM alias (litellm wildcard → host ollama).
+INSERT INTO "AgentVersions"(id, agent_id, version, status, responder_model,
                             workflow_version_id, llm_config, retrieval_config, memory_enabled)
 VALUES ('0000000e-2e00-4000-8000-000000000002', '0000000e-2e00-4000-8000-000000000001',
-        1, 'published', '00000000-0000-0000-0000-0000000000a1',
+        1, 'published', 'responder',
         '0000000e-2e00-4000-8000-000000000004', '{}'::jsonb, '{}'::jsonb, false)
 ON CONFLICT (id) DO NOTHING;
 
