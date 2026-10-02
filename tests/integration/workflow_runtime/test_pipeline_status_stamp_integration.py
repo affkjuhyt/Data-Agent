@@ -13,27 +13,11 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from collections.abc import Iterator
 
 import psycopg2
 import pytest
 
-from tests.integration._db import reset_database, run_alembic
-
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture
-def fresh_db(postgres_container) -> Iterator[dict[str, str]]:
-    reset_database(postgres_container["dsn"])
-    yield postgres_container
-
-
-@pytest.fixture
-def migrated_db(fresh_db) -> dict[str, str]:
-    result = run_alembic(fresh_db["dsn"], "upgrade", "head")
-    assert result.returncode == 0, f"alembic upgrade failed:\n{result.stdout}\n{result.stderr}"
-    return fresh_db
 
 
 def _seed_kbdata(dsn: str, initial_metadata: dict) -> tuple[str, str]:

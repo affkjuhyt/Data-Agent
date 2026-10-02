@@ -8,37 +8,13 @@ overwriting the earlier.
 from __future__ import annotations
 
 import asyncio
-import os
-import pathlib
-import subprocess
-import sys
 import uuid
-from collections.abc import Iterator
 from typing import Any
 
 import psycopg2
 import pytest
 
-from tests.integration._db import reset_database
-
 pytestmark = pytest.mark.integration
-
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-ALEMBIC_INI = REPO_ROOT / "backend" / "alembic" / "alembic.ini"
-
-
-@pytest.fixture
-def migrated_db(postgres_container) -> Iterator[dict[str, str]]:
-    reset_database(postgres_container["dsn"])
-    dsn = postgres_container["dsn"]
-    env = {**os.environ, "DATABASE_URL": "postgresql+asyncpg://" + dsn[len("postgresql://"):],
-           "PYTHONPATH": str(REPO_ROOT)}
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", str(ALEMBIC_INI), "upgrade", "head"],
-        capture_output=True, text=True, env=env, cwd=str(REPO_ROOT), timeout=120,
-    )
-    assert result.returncode == 0, f"alembic upgrade failed:\n{result.stdout}\n{result.stderr}"
-    yield postgres_container
 
 
 def _seed_source(dsn: str, title: str = "EIA Brent") -> tuple[str, str, str]:

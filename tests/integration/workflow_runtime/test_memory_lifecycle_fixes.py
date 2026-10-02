@@ -17,50 +17,19 @@ from __future__ import annotations
 
 import math
 import pathlib
-import subprocess
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Iterator
 
 import psycopg2
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from tests.integration._db import reset_database
 
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-ALEMBIC_INI = REPO_ROOT / "backend" / "alembic" / "alembic.ini"
-
-
-def _async_dsn(libpq_dsn: str) -> str:
-    assert libpq_dsn.startswith("postgresql://")
-    return "postgresql+asyncpg://" + libpq_dsn[len("postgresql://"):]
-
-
-def _run_alembic_upgrade(dsn: str) -> subprocess.CompletedProcess:
-    import os
-    env = {**os.environ, "DATABASE_URL": _async_dsn(dsn), "PYTHONPATH": str(REPO_ROOT)}
-    return subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", str(ALEMBIC_INI), "upgrade", "head"],
-        capture_output=True, text=True, env=env, cwd=str(REPO_ROOT), timeout=60,
-    )
-
-
-@pytest.fixture
-def fresh_db(postgres_container) -> Iterator[dict[str, str]]:
-    reset_database(postgres_container["dsn"])
-    yield postgres_container
-
-
-@pytest.fixture
-def migrated_db(fresh_db) -> dict[str, str]:
-    result = _run_alembic_upgrade(fresh_db["dsn"])
-    assert result.returncode == 0, f"alembic upgrade failed:\n{result.stdout}\n{result.stderr}"
-    return fresh_db
 
 
 def _seed_tenant_and_agent(dsn: str) -> tuple[str, str]:

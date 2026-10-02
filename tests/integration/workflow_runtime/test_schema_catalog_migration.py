@@ -9,13 +9,11 @@ import pathlib
 import subprocess
 import sys
 import uuid
-from typing import Iterator
 
 import psycopg2
 import psycopg2.errors
 import pytest
 
-from tests.integration._db import reset_database
 
 pytestmark = pytest.mark.integration
 
@@ -34,19 +32,6 @@ def _run_alembic(dsn: str, *args: str) -> subprocess.CompletedProcess:
         [sys.executable, "-m", "alembic", "-c", str(ALEMBIC_INI), *args],
         capture_output=True, text=True, env=env, cwd=str(REPO_ROOT), timeout=60,
     )
-
-
-@pytest.fixture
-def fresh_db(postgres_container) -> Iterator[dict[str, str]]:
-    reset_database(postgres_container["dsn"])
-    yield postgres_container
-
-
-@pytest.fixture
-def migrated_db(fresh_db) -> dict[str, str]:
-    result = _run_alembic(fresh_db["dsn"], "upgrade", "head")
-    assert result.returncode == 0, f"alembic upgrade failed:\n{result.stdout}\n{result.stderr}"
-    return fresh_db
 
 
 def _seed_tenant_and_warehouse(dsn: str) -> tuple[str, str]:

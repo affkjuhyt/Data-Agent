@@ -14,12 +14,7 @@ they could not have caught this; only a real Postgres insert could.
 """
 from __future__ import annotations
 
-import os
-import pathlib
-import subprocess
-import sys
 import uuid
-from collections.abc import Iterator
 from unittest.mock import patch
 
 import psycopg2
@@ -27,16 +22,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from tests.integration._db import reset_database
-
 pytestmark = pytest.mark.integration
-
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-ALEMBIC_INI = REPO_ROOT / "backend" / "alembic" / "alembic.ini"
-
-
-def _async_dsn(libpq_dsn: str) -> str:
-    return "postgresql+asyncpg://" + libpq_dsn[len("postgresql://"):]
 
 
 def _session_factory(libpq_dsn: str) -> sessionmaker[Session]:
@@ -45,27 +31,6 @@ def _session_factory(libpq_dsn: str) -> sessionmaker[Session]:
         expire_on_commit=False,
         future=True,
     )
-
-
-def _run_alembic(dsn: str, *args: str) -> subprocess.CompletedProcess:
-    env = {**os.environ, "DATABASE_URL": _async_dsn(dsn), "PYTHONPATH": str(REPO_ROOT)}
-    return subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", str(ALEMBIC_INI), *args],
-        capture_output=True, text=True, env=env, cwd=str(REPO_ROOT), timeout=60,
-    )
-
-
-@pytest.fixture
-def fresh_db(postgres_container) -> Iterator[dict[str, str]]:
-    reset_database(postgres_container["dsn"])
-    yield postgres_container
-
-
-@pytest.fixture
-def migrated_db(fresh_db) -> dict[str, str]:
-    result = _run_alembic(fresh_db["dsn"], "upgrade", "head")
-    assert result.returncode == 0, f"alembic upgrade failed:\n{result.stdout}\n{result.stderr}"
-    return fresh_db
 
 
 def _seed_tenant_and_source(
