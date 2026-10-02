@@ -136,7 +136,10 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
                 {
                     "name":          r.name,
                     "url":           r.endpoint_url,
-                    "auth_token":    r.api_key_ref or "",
+                    # api_key_ref is a secrets_vault id; _resolve_mcp_tokens
+                    # swaps it for the token from OpenBao below.
+                    "secret_id":     str(r.api_key_ref or ""),
+                    "auth_token":    "",
                     "allowed_tools": list(r.capabilities or []),
                 }
                 for r in mcp_rows
@@ -148,10 +151,11 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
         else:
             flow_nodes, flow_edges = [], []
         node_cfg   = _extract_node_config(flow_nodes)
-        # Each resolves a different part of node_cfg (execute_sql vs db_connections).
+        # Each resolves a different part of the config (execute_sql, db_connections, MCP).
         await asyncio.gather(
             _resolve_warehouse_secret(node_cfg, tenant_id),
             _resolve_db_connector_secrets(node_cfg, tenant_id),
+            _resolve_mcp_tokens(mcp_endpoints, tenant_id),
         )
 
         # A connected KB makes kb_search available to the planner even when the
@@ -248,6 +252,30 @@ async def _resolve_db_connector_secrets(node_cfg: dict[str, Any], tenant_id: str
 
     # One secrets_vault lookup + one vault read per connection, independent of each other.
     await asyncio.gather(*(_resolve(name, connection) for name, connection in db_connections.items()))
+
+
+async def _resolve_mcp_tokens(mcp_endpoints: list[dict[str, Any]], tenant_id: str | None) -> None:
+    """Mutates each endpoint in place: resolves its `secret_id` ("MCP".api_key_ref,
+    an MCP_TOKEN secret) into `auth_token` via OpenBao, and always strips
+    `secret_id`. api_key_ref used to be sent as the token itself, so the bearer
+    token sat in Postgres in plaintext. An unresolved token leaves auth_token ""
+    and the MCP server refuses the call, same as an unconfigured one."""
+    if not mcp_endpoints:
+        return
+
+    from services.workflow_runtime.infrastructure.warehouse_secrets import resolve_mcp_token
+
+    async def _resolve(endpoint: dict[str, Any]) -> None:
+        secret_id = endpoint.pop("secret_id", "")
+        if not secret_id or not tenant_id:
+            return
+        token = await resolve_mcp_token(tenant_id, secret_id)
+        if token:
+            endpoint["auth_token"] = token
+        else:
+            logger.warning("could not resolve MCP token secret_id=%s for endpoint=%s tenant=%s — calls will be unauthenticated", secret_id, endpoint.get("name"), tenant_id)
+
+    await asyncio.gather(*(_resolve(endpoint) for endpoint in mcp_endpoints))
 
 
 def _extract_node_config(flow_nodes: list[dict[str, Any]]) -> dict[str, Any]:

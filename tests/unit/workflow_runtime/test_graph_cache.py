@@ -44,7 +44,7 @@ with warnings.catch_warnings():
             "memory_middleware": {
                 "_DEV_AGENT_ID": "dev-agent",
                 "_DEV_TENANT_ID": "dev-tenant",
-                "apply_memory_policy": lambda *a, **k: None,
+                "request_memory_extraction": lambda *a, **k: None,
                 "retrieve_episodic_past": lambda *a, **k: [],
                 "retrieve_memories": lambda *a, **k: [],
                 "retrieve_pending_reminders": lambda *a, **k: [],

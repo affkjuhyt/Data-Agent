@@ -6,7 +6,9 @@ docs/Sandbox_SchemaCrawler_Implementation.md §9). `resolve_snowflake_password`
 (DB_CONNECTOR_PASSWORD, DB Connector node's Postgres connections) share the
 same `_resolve_vault_password` lookup, differing only by expected `key_type` —
 each key_type is only ever readable as itself, so a DB Connector secret_id can
-never resolve as a Snowflake password or vice versa.
+never resolve as a Snowflake password or vice versa. `resolve_mcp_token`
+(MCP_TOKEN) does the same for the bearer token of a registered MCP server,
+whose "MCP".api_key_ref holds the secret_id.
 
 Reads `secrets_vault` directly (a second reader of backend/services/auth_api's
 existing metadata table, same pattern as schema-crawler-worker reading
@@ -36,6 +38,7 @@ OPENBAO_SECRET_ID = os.environ.get("OPENBAO_SECRET_ID", "")
 _VAULT_MOUNT = "secret"
 _WAREHOUSE_KEY_TYPE = "WAREHOUSE_PASSWORD"
 _DB_CONNECTOR_KEY_TYPE = "DB_CONNECTOR_PASSWORD"
+_MCP_TOKEN_KEY_TYPE = "MCP_TOKEN"
 
 _vault_client: "hvac.Client | None" = None
 
@@ -120,3 +123,7 @@ async def resolve_snowflake_password(tenant_id: str, secret_id: str) -> "str | N
 
 async def resolve_db_connector_password(tenant_id: str, secret_id: str) -> "str | None":
     return await _resolve_vault_password(tenant_id, secret_id, _DB_CONNECTOR_KEY_TYPE)
+
+
+async def resolve_mcp_token(tenant_id: str, secret_id: str) -> "str | None":
+    return await _resolve_vault_password(tenant_id, secret_id, _MCP_TOKEN_KEY_TYPE)

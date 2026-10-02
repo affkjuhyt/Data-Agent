@@ -1,7 +1,7 @@
 """Memory extraction worker (ex memory-consumer).
 
 Reads memory.extraction.requested (emitted by workflow_runtime after each turn
-— see backend/services/workflow_runtime/infrastructure/memory_middleware.py:apply_memory_policy),
+— see backend/services/workflow_runtime/infrastructure/memory_middleware.py:request_memory_extraction),
 re-reads the turn text from Postgres "Messages", calls the extraction LLM, and
 writes Semantic LTM (AgentMemories + Qdrant), Episodic Past, and Episodic
 Future memories. Implements the doc's 4-decision lifecycle

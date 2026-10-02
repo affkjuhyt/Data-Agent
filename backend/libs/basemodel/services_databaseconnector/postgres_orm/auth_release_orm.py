@@ -3,7 +3,7 @@ import uuid
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, Index, SmallInteger,
+    Boolean, DateTime, ForeignKey, Index,
     String, Text, UniqueConstraint, func, text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
@@ -40,7 +40,6 @@ class TenantsORM(Base):
     kb_conflict_batches: Mapped[list["KBConflictBatchORM"]] = relationship(back_populates="tenant")
     kb_conflicts: Mapped[list["KBConflictORM"]] = relationship(back_populates="tenant")
     kb_qdrant_connections: Mapped[list["KBQdrantConnectionORM"]] = relationship(back_populates="tenant")
-    members: Mapped[list["MembersORM"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
     # workflow_orm
     kb_connections: Mapped[list["KBConnectionsORM"]] = relationship(back_populates="tenant")
     system_prompts: Mapped[list["SystemPromptsORM"]] = relationship(back_populates="tenant")
@@ -104,25 +103,3 @@ class AuditLogsORM(Base):
     tenant: Mapped["TenantsORM"] = relationship(back_populates="audit_logs")
 
 # AuditLogsORM.event_metadata -> column "metadata"
-
-
-@register("orm")
-class MembersORM(Base):
-    __tablename__ = "Members"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "user_id", name="uq_members_tenant_user"),
-        Index("idx_members_tenant", "tenant_id"),
-        Index("idx_members_inserted_at_desc", text("inserted_at DESC")),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
-    user_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    role_id: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True, comment="Never written or read; the role is tenant_role.")
-    tenant_role: Mapped[str] = mapped_column(String(50), default="viewer", nullable=False, comment="admin, editor or viewer. workflow_runtime checks it before creating a conversation.")
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
-    joined_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    deleted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    tenant: Mapped["TenantsORM"] = relationship(back_populates="members")

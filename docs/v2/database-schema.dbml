@@ -2,7 +2,7 @@
 // Mở https://dbdiagram.io/d → dán toàn bộ file này vào ô bên trái.
 //
 // Sinh tự động từ catalog Postgres sau `alembic upgrade head` trên DB trống
-// (head = 4e8a1c6d2b9f), không vẽ tay: bảng, cột, kiểu, default, PK/unique,
+// (head = 8e5b1d3f7a9c), không vẽ tay: bảng, cột, kiểu, default, PK/unique,
 // FK (Ref) và index là đúng như DB. Không sửa tay — sinh lại khi có migration mới.
 // Note của bảng/cột gồm COMMENT trong DB (nghĩa của cột) và những gì DBML không
 // biểu diễn được (CHECK, partial index, GIN, RLS, tham chiếu không có FK).
@@ -10,9 +10,9 @@
 Project data_agent {
   database_type: 'PostgreSQL'
   Note: '''
-**Data Agent — Postgres `dataagent`, schema `public`** (alembic head `4e8a1c6d2b9f`)
+**Data Agent — Postgres `dataagent`, schema `public`** (alembic head `8e5b1d3f7a9c`)
 
-- 63 bảng, 76 FK, 37 bảng bật RLS (theo `tenant_id` + `app.tenant_id`).
+- 61 bảng, 74 FK, 36 bảng bật RLS (theo `tenant_id` + `app.tenant_id`).
 - Schema V2 `registry`, `ingest`, `knowledge`, `governance`, `alert` đã tạo (migration `5b7d9f1a3c6e`) nhưng **chưa có bảng** — xem `docs/v2/10-database-design.md`, `docs/v2/14-input-data-db.md`.
 - Không có trong sơ đồ: `kb_structured` (bảng tạo lúc chạy khi import dữ liệu có cấu trúc), `langgraph` (checkpointer tự tạo), `keycloak`, `kong`.
 - Ngoài Postgres: MinIO (raw), Qdrant/Neo4j (bản chiếu dựng lại được), MongoDB, Redis, ClickHouse.
@@ -882,7 +882,7 @@ Table "MCP" {
   "tenant_id" uuid [not null]
   "name" varchar(255) [not null]
   "endpoint_url" text [not null]
-  "api_key_ref" varchar(255) [note: 'Despite the name, the bearer token itself: config_loader sends it as auth_token.']
+  "api_key_ref" varchar(255) [note: 'secrets_vault.id of an MCP_TOKEN secret; config_loader reads the bearer token from OpenBao. Never the token itself.']
   "status" varchar(20) [not null]
   "capabilities" jsonb
   "created_by" varchar(255)
@@ -895,42 +895,6 @@ Table "MCP" {
   }
 
   Note: 'RLS bật (tenant_id = app.tenant_id)'
-}
-
-Table "Members" {
-  "id" uuid [pk]
-  "tenant_id" uuid [not null]
-  "user_id" varchar(255) [not null]
-  "role_id" smallint [note: 'Never written or read; the role is tenant_role.']
-  "tenant_role" varchar(50) [not null, note: 'admin, editor or viewer. workflow_runtime checks it before creating a conversation.']
-  "is_active" bool [not null, default: true]
-  "joined_at" timestamptz [not null, default: `now()`]
-  "deleted_at" timestamptz
-  "inserted_at" timestamptz [not null, default: `now()`]
-
-  indexes {
-    ("tenant_id", "user_id") [unique, name: 'uq_members_tenant_user']
-    "inserted_at" [name: 'idx_members_inserted_at_desc', note: 'inserted_at DESC']
-    "tenant_id" [name: 'idx_members_tenant']
-  }
-
-  Note: 'RLS bật (tenant_id = app.tenant_id)'
-}
-
-Table "MemoryPolicy" {
-  "id" uuid [pk]
-  "agent_id" uuid [not null]
-  "action_type" varchar(20) [not null]
-  "condition" jsonb
-  "enabled" bool [not null, default: true]
-  "created_by" varchar(255)
-  "created_at" timestamptz [not null, default: `now()`]
-  "inserted_at" timestamptz [not null, default: `now()`]
-
-  indexes {
-    "agent_id" [name: 'idx_memorypolicy_agent']
-    "inserted_at" [name: 'idx_memorypolicy_inserted_at_desc', note: 'inserted_at DESC']
-  }
 }
 
 Table "MemoryRetentionConfig" {
@@ -1260,6 +1224,7 @@ Table "ip_allowlists" {
 
   indexes {
     "tenant_id" [name: 'ix_ip_allowlists_tenant']
+    ("tenant_id", "cidr") [unique, name: 'uq_ip_allowlists_tenant_cidr']
   }
 
   Note: 'RLS bật (tenant_id = app.tenant_id)'
@@ -1389,8 +1354,6 @@ Ref "KBTextTable_version_id_fkey": "KBTextTable"."version_id" > "KBTextBlockVers
 Ref "fk_kbwarehouse_tenant": "KBWarehouse"."tenant_id" > "Tenants"."id"
 Ref "KBWarehouseConfig_warehouse_id_fkey": "KBWarehouseConfig"."warehouse_id" > "KBWarehouse"."warehouse_id"
 Ref "MCP_tenant_id_fkey": "MCP"."tenant_id" > "Tenants"."id"
-Ref "Members_tenant_id_fkey": "Members"."tenant_id" > "Tenants"."id"
-Ref "MemoryPolicy_agent_id_fkey": "MemoryPolicy"."agent_id" > "Agents"."id"
 Ref "MemoryRetentionConfig_tenant_id_fkey": "MemoryRetentionConfig"."tenant_id" > "Tenants"."id"
 Ref "Messages_conversation_id_fkey": "Messages"."conversation_id" > "Conversations"."id"
 Ref "PlatformSettings_tenant_id_fkey": "PlatformSettings"."tenant_id" > "Tenants"."id"
@@ -1414,7 +1377,6 @@ Ref "secrets_vault_tenant_id_fkey": "secrets_vault"."tenant_id" > "Tenants"."id"
 // ---------- Nhóm theo domain ----------
 TableGroup tenant_iam [color: #3b82f6] {
   "Tenants"
-  "Members"
   "RolePermissions"
   "microsoft_sso_approvals"
   "api_keys"
@@ -1502,7 +1464,6 @@ TableGroup conversation_memory [color: #ec4899] {
   "EpisodicMemory"
   "FutureMemory"
   "WorkflowMemory"
-  "MemoryPolicy"
   "MemoryRetentionConfig"
   Note: 'Hội thoại, message, trace và các tầng memory của agent'
 }

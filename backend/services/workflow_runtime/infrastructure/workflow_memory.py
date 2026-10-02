@@ -96,7 +96,7 @@ async def record_workflow_outcome(
     duration_ms: Optional[int] = None,
 ) -> None:
     """Fire-and-forget — called from the request's `finally` block, same
-    pattern as apply_memory_policy(), so a slow embed call never delays the
+    pattern as request_memory_extraction(), so a slow embed call never delays the
     response already streamed to the user."""
     if not client.is_connected() or not task_description.strip():
         return

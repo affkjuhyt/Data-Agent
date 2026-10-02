@@ -22,7 +22,6 @@ Source of truth for this view: SQLAlchemy ORM metadata under
 
 ```mermaid
 erDiagram
-  Tenants ||--o{ Members : tenant_id
   Tenants ||--o{ AuditLogs : tenant_id
   Tenants ||--o{ DataAccessLog : tenant_id
   Tenants ||--o{ PlatformSettings : tenant_id
@@ -93,7 +92,6 @@ erDiagram
   Tenants ||--o{ FutureMemory : tenant_id
   Agents ||--o{ FutureMemory : agent_id
   Tenants ||--o{ MemoryRetentionConfig : tenant_id
-  Agents ||--o{ MemoryPolicy : agent_id
   Tenants ||--o{ WorkflowMemory : tenant_id
   Agents ||--o{ WorkflowMemory : agent_id
 

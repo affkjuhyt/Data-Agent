@@ -134,7 +134,7 @@ class MCPORM(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     endpoint_url: Mapped[str] = mapped_column(Text, nullable=False)
-    api_key_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="Despite the name, the bearer token itself: config_loader sends it as auth_token.")
+    api_key_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="secrets_vault.id of an MCP_TOKEN secret; config_loader reads the bearer token from OpenBao. Never the token itself.")
     status: Mapped[str] = mapped_column(String(20), default="disconnected", nullable=False)
     capabilities: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -195,7 +195,6 @@ class AgentsORM(Base):
     memories: Mapped[list["AgentMemoriesORM"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
     episodic_memories: Mapped[list["EpisodicMemoryORM"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
     future_memories: Mapped[list["FutureMemoryORM"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
-    memory_policies: Mapped[list["MemoryPolicyORM"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
     workflow_memories: Mapped[list["WorkflowMemoryORM"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
 
 
@@ -410,26 +409,6 @@ class MemoryRetentionConfigORM(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     tenant: Mapped["TenantsORM"] = relationship(back_populates="memory_retention_configs")
-
-
-@register("orm")
-class MemoryPolicyORM(Base):
-    __tablename__ = "MemoryPolicy"
-    __table_args__ = (
-        Index("idx_memorypolicy_agent", "agent_id"),
-        Index("idx_memorypolicy_inserted_at_desc", text("inserted_at DESC")),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False)
-    action_type: Mapped[str] = mapped_column(String(20), nullable=False)
-    condition: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
-    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    agent: Mapped["AgentsORM"] = relationship(back_populates="memory_policies")
 
 
 @register("orm")

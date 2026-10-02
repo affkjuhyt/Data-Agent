@@ -33,7 +33,7 @@ from services.workflow_runtime.infrastructure.db import (
 )
 from services.workflow_runtime.infrastructure.memory_middleware import (
     _DEV_AGENT_ID,
-    apply_memory_policy,
+    request_memory_extraction,
     retrieve_episodic_past,
     retrieve_memories,
     retrieve_pending_reminders,
@@ -578,9 +578,8 @@ async def run_conversation_stream(
 
             # orchestrated=True: orchestrator sẽ ghi memory sau synthesize, agent không ghi
             if not req.orchestrated and cfg.get("memory_enabled") and conv_id:
-                final_state = {**state, "response": assistant_text}
-                await apply_memory_policy(
-                    final_state, agent_id, tenant_id, user_ref,
+                await request_memory_extraction(
+                    agent_id, tenant_id, user_ref,
                     conversation_id=conv_id, message_id=assistant_msg_id,
                 )
         except Exception:

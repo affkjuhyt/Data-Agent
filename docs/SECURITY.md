@@ -95,6 +95,10 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
 - `.env` is **git-ignored**; `.env.example` is the committed template with placeholder
   values only. Verified: no `.env` is tracked.
 - Kafka SASL, Keycloak, and provider API keys come from the environment — never hardcoded.
+- Credentials an agent uses at run time live in OpenBao, not in Postgres: a canvas
+  node's warehouse / DB connector password and a registered MCP server's bearer token
+  (`"MCP".api_key_ref` = the `secrets_vault` id of an `MCP_TOKEN` secret) are read by
+  workflow_runtime through a read-only AppRole when the agent loads.
 - CI runs a **secret scan** (trivy `secret` scanner) over the tree.
 - **Action for prod:** rotate any credential that ever appeared in a template default;
   the prod overlay must drop all defaults.

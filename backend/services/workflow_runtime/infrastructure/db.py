@@ -11,7 +11,6 @@ from libs.basemodel.services_databaseconnector.postgres_model import (
     ConversationsInsert,
     MessagesInsert,
 )
-from libs.basemodel.services_databaseconnector.postgres_orm.auth_release_orm import MembersORM
 from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
     AgentsORM,
     ConversationsORM,
@@ -64,8 +63,6 @@ logger = logging.getLogger(__name__)
 _DEV_TENANT_ID    = os.getenv("DEV_TENANT_ID",    "00000000-0000-0000-0000-000000000001")
 _DEV_AGENT_VER_ID = os.getenv("DEV_AGENT_VER_ID", "00000000-0000-0000-0000-000000000040")
 
-_ROLE_WEIGHTS = {"admin": 3, "editor": 2, "viewer": 1}
-
 
 async def init_db() -> None:
     url = os.environ.get("RUNTIME_DB_URL") or os.environ.get("DATABASE_URL")
@@ -102,21 +99,6 @@ async def validate_agent_tenant(agent_id: str, tenant_id: str) -> bool:
         return result.first() is not None
 
 
-async def _has_role(tenant_id: str, user_ref: str, min_role: str) -> bool:
-    """Return True if user_ref is an active member of tenant_id with at least min_role."""
-    if user_ref == "anonymous":
-        return True  # dev bypass
-    async with client.get_client(tenant_id=tenant_id) as session:
-        result = await session.execute(
-            select(MembersORM.tenant_role)
-            .where(MembersORM.tenant_id == UUID(tenant_id))
-            .where(MembersORM.user_id == user_ref)
-            .where(MembersORM.is_active.is_(True))
-        )
-        row = result.first()
-    return bool(row) and _ROLE_WEIGHTS.get(row[0], 0) >= _ROLE_WEIGHTS.get(min_role, 0)
-
-
 async def conversation_owned_by(conversation_id: str, tenant_id: str, user_ref: str) -> bool:
     """True when this conversation exists in tenant_id and was started by user_ref.
 
@@ -145,10 +127,11 @@ async def create_conversation(
     channel: str = "web",
     tenant_id: str = _DEV_TENANT_ID,
 ) -> Optional[str]:
+    # No membership lookup: tenant_id is the caller's verified tenant claim
+    # (require_tenant), which Keycloak only issues to an approved member. This
+    # used to also require a "Members" row, which nothing ever wrote, so every
+    # real user's conversation went unsaved.
     if not client.is_connected():
-        return None
-    if not await _has_role(tenant_id, user_ref, "viewer"):
-        logger.warning("RBAC deny create_conversation: user=%s tenant=%s", user_ref, tenant_id)
         return None
     result = await client.insert(ConversationsInsert(
         tenant_id=tenant_id,

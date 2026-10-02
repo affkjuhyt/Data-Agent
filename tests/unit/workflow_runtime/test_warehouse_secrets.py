@@ -194,6 +194,32 @@ async def test_resolve_db_connector_password_rejects_warehouse_key_type(monkeypa
 
 
 @pytest.mark.unit
+async def test_resolve_mcp_token_reads_an_mcp_token_secret(monkeypatch):
+    import warehouse_secrets as ws
+
+    monkeypatch.setattr(ws, "OPENBAO_ROLE_ID", "role-1")
+    monkeypatch.setattr(ws, "OPENBAO_SECRET_ID", "secret-id-1")
+    row = SimpleNamespace(key_name="mcp-crm", key_type="MCP_TOKEN", is_active=True)
+    _patch_pg_client(monkeypatch, _fake_pg_client(row=row))
+
+    fake_vault = MagicMock()
+    fake_vault.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {"value": "mcp-tok"}}}
+    monkeypatch.setattr(ws, "_get_vault", lambda: fake_vault)
+
+    assert await ws.resolve_mcp_token(TENANT_ID, SECRET_ID) == "mcp-tok"
+
+
+@pytest.mark.unit
+async def test_resolve_mcp_token_rejects_other_key_types(monkeypatch):
+    import warehouse_secrets as ws
+
+    row = SimpleNamespace(key_name="db-connector-sales", key_type="DB_CONNECTOR_PASSWORD", is_active=True)
+    _patch_pg_client(monkeypatch, _fake_pg_client(row=row))
+
+    assert await ws.resolve_mcp_token(TENANT_ID, SECRET_ID) is None
+
+
+@pytest.mark.unit
 async def test_resolve_snowflake_password_rejects_db_connector_key_type(monkeypatch):
     import warehouse_secrets as ws
 

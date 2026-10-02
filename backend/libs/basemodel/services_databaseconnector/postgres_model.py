@@ -781,15 +781,6 @@ class AgentMemoriesInsert(TenantInsertModel):
 
 
 @register("insert")
-class MemoryPolicyInsert(InsertModel):
-    agent_id: str
-    action_type: str
-    condition: Optional[dict[str, Any]] = None
-    enabled: bool = True
-    created_by: Optional[str] = None
-
-
-@register("insert")
 class ConversationsInsert(TenantInsertModel):
     user_ref: Optional[str] = None
     channel: str = "web"
@@ -886,11 +877,6 @@ class AgentMCPDelete(BaseModel):
 
 @register("delete")
 class AgentMemoriesDelete(BaseModel):
-    id: str
-
-
-@register("delete")
-class MemoryPolicyDelete(BaseModel):
     id: str
 
 

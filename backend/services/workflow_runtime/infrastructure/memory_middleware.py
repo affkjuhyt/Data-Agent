@@ -15,7 +15,6 @@ from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import 
     AgentMemoriesORM,
     EpisodicMemoryORM,
     FutureMemoryORM,
-    MemoryPolicyORM,
 )
 from libs.database_connector.postgres_connector import client
 from libs.shared import outbox
@@ -307,8 +306,7 @@ async def retrieve_pending_reminders(tenant_id: str, agent_id: str, user_ref: st
         return []
 
 
-async def apply_memory_policy(
-    state: dict[str, Any],
+async def request_memory_extraction(
     agent_id: str,
     tenant_id: str,
     user_ref: str,
@@ -318,20 +316,13 @@ async def apply_memory_policy(
     """Emits memory.extraction.requested for the async consumer (doc §II) instead
     of extracting/writing inline. Payload stays minimal — the consumer re-reads the
     turn text from Messages by message_id, so Postgres remains the single source of
-    truth and retries are naturally idempotent."""
+    truth and retries are naturally idempotent.
+
+    The caller only gets here when the agent version has memory_enabled, the
+    Memory toggle in the agent screen. That is the one switch: a second gate on
+    a "MemoryPolicy" row with action 'add' used to sit here, nothing ever wrote
+    that table, so no turn was ever extracted."""
     if not client.is_connected() or not conversation_id or not message_id:
-        return
-    try:
-        async with client.get_client(tenant_id=tenant_id) as session:
-            policies = (await session.execute(
-                select(MemoryPolicyORM.action_type)
-                .where(MemoryPolicyORM.agent_id == UUID(agent_id))
-                .where(MemoryPolicyORM.enabled.is_(True))
-            )).fetchall()
-        if not any(action == "add" for (action,) in policies):
-            return
-    except Exception as e:
-        logger.warning("memory | apply_policy policy lookup failed: %s", e)
         return
 
     event = {
