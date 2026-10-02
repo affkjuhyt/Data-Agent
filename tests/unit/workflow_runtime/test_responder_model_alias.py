@@ -38,12 +38,17 @@ def test_sdk_model_name(alias: str | None, expected: str) -> None:
     assert sdk_model_name(alias, "openai/default") == expected
 
 
+class _Result:
+    rowcount = 1  # the agent has a draft version
+
+
 class _Session:
     def __init__(self) -> None:
         self.statements: list[Any] = []
 
-    async def execute(self, statement: Any) -> None:
+    async def execute(self, statement: Any) -> _Result:
         self.statements.append(statement)
+        return _Result()
 
     async def commit(self) -> None:
         return None
