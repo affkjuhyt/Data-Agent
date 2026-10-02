@@ -44,13 +44,13 @@ overridden by the inventory's `group_vars/all/`.
 | 4b | **Build** (`k8s_build`): `build_parallelism` images at a time (default 6), one log per image in `build_log_dir`; a failure prints the tail of that image's log. Tagged `dataagent/<name>:latest`, re-tagged for `image_registry` and pushed **only if the registry does not already serve that digest** | something to build |
 | 5 | **Secrets**: render `secrets.env` from the vault (every run), then reapply every Secret and `kafka-jaas` | reapply only when a path in `secret_paths` changed |
 | 6 | **Base manifests**: namespaces, RBAC, NetworkPolicies, `configmap.yaml` (every run); rerun `create-configmaps.sh` | file-backed ConfigMaps only when a path in `config_paths` changed |
-| 7 | **Database tier**: apply `database/`, wait for every store and pgbouncer | `apply_databases` |
+| 7 | **Database tier**: apply `database/`, wait for every store and pgbouncer | `apply_databases` **and** a file under `database/` or `deploy/ansible/` changed (or `deploy_full`) |
 | 8 | **OpenBao** (`k8s_openbao`): unseal, KV v2 + transit, read policy, demo warehouse password (if `seed_demo`), AppRole. A secret-id is minted only on the first run or with `openbao_rotate_approle` | `apply_databases` |
-| 9 | **Service tier**: apply `service/`, wait for Keycloak and Kong | `apply_services` |
+| 9 | **Service tier**: apply `service/`, wait for Keycloak and Kong | `apply_services` **and** a file under `service/` or `deploy/ansible/` changed (or `deploy_full`); a new image is restarted by digest in step 11 either way |
 | 10 | **Jobs**: delete and rerun, migrations (`kong-migration`, `migrate`) first, then the init Jobs (`db-init`, `minio-init`, `kafka-topics`, `seed`) — **only the ones whose inputs changed**: the Job's own manifest or an entry in `job_inputs` (e.g. `migrate` ← `backend/alembic`, `seed` ← the seed files, `kong-migration` ← the kong image, `db-init` ← its SQL and a `migrate` rerun). Each wait ends at `Complete` **or** `Failed` (polled every `job_poll` s), so a failing Job shows its logs within seconds instead of after `wait_job` | `apply_jobs` **and** (a Job's inputs changed, a full deploy, or `jobs_force`) |
 | 11 | **Restart** every Deployment/StatefulSet running a rebuilt image **whose running pods are on a different digest** — a rebuild that came out identical restarts nothing | an image was built |
 | 12 | **Restart for config**: the service tier's Secrets and ConfigMaps are hashed before step 5 and after step 9; only the Deployments that read one whose content changed (`envFrom`, `env.valueFrom`, volumes) are restarted | `apply_services` and some content changed |
-| 12b | **Wait** for the service tier and every restarted workload, all at once (each up to `wait_rollout`); reports, never fails | `apply_services` or something restarted |
+| 12b | **Wait** for every restarted workload (and the whole service tier when step 9 ran), all at once (each up to `wait_rollout`); reports, never fails | something restarted, or step 9 ran |
 | 13 | **Gateway setup** (`k8s_setup`): rerun the `setup` Job — Kong services/routes/plugins/CORS, the JWT issuer, Keycloak audience mappers, dev user passwords — and apply the backup CronJob | `apply_setup` |
 | 14 | **Verify** (`k8s_verify`), then write the checkpoint | always; the checkpoint only advances if every step above succeeded |
 
