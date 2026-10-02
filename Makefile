@@ -139,6 +139,8 @@ E2E_FORWARD = $(foreach v,$(E2E_FORWARD_VARS),$(if $($(v)),-e $(v)))
 
 export $(E2E_FORWARD_VARS)
 
+# --no-showlocals: a failing e2e test would otherwise print the passwords and tokens
+# in its frames (pyproject sets --showlocals for every suite).
 # The turn test writes its frames to tests/e2e/out/ as root; hand them back.
 e2e:  ## pytest -m e2e against the deployed dev cluster (LAN NodePorts; URLs overridable, credentials from env)
 	@docker build -q --build-arg BASE=$(IMAGE_REGISTRY)/dataagent/workflow_runtime:latest --build-arg SUITE=workflow_runtime \
@@ -146,7 +148,7 @@ e2e:  ## pytest -m e2e against the deployed dev cluster (LAN NodePorts; URLs ove
 	@$(DOCKER_RUN_SUITE) --network host -e LIVE_STACK=1 -e LIVE_KONG_URL=$(E2E_KONG_URL) \
 	  -e LIVE_KEYCLOAK_URL=$(E2E_KEYCLOAK_URL) -e WORKFLOW_RUNTIME_URL=$(E2E_RUNTIME_URL) $(E2E_FORWARD) \
 	  dataagent-test/workflow_runtime:latest sh -c \
-	  "python -m pytest -q -p no:cacheprovider -m e2e $(PYTEST_ARGS) $(E2E_TESTS); \
+	  "python -m pytest -q -p no:cacheprovider --no-showlocals -m e2e $(PYTEST_ARGS) $(E2E_TESTS); \
 	   rc=\$$?; chown -R $$(id -u):$$(id -g) tests/e2e/out 2>/dev/null; exit \$$rc"
 
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)

@@ -239,6 +239,8 @@ LIVE_ACCOUNTS = {
 
 def live_credentials(account: str) -> tuple[str, str]:
     """(username, password) of a demo account; fails naming the unset variable."""
+    # pyproject's --showlocals would print the password in a failure's traceback.
+    __tracebackhide__ = True
     user_env, default_user, pass_env = LIVE_ACCOUNTS[account]
     password = os.environ.get(pass_env)
     if not password:
@@ -248,6 +250,7 @@ def live_credentials(account: str) -> tuple[str, str]:
 
 def live_token(keycloak_url: str, account: str) -> str:
     """A Keycloak access token for a demo account (password grant)."""
+    __tracebackhide__ = True  # its locals hold the password; see live_credentials
     import httpx
 
     username, password = live_credentials(account)
