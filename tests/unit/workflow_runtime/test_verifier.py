@@ -63,6 +63,15 @@ def test_citation_markers_are_not_treated_as_figures():
     assert check.passed
 
 
+def test_list_markers_are_not_treated_as_figures():
+    answer = "Các cách:\n\n1. **Website SJC**: 34,7% [1].\n  2) Báo tài chính.\n3. Ứng dụng 41,2 lần."
+
+    check = numbers_grounded(answer, [DEBT_RATIO])
+
+    # The markers go; a figure on a numbered line is still checked.
+    assert check.offending == ("41,2",)
+
+
 def test_the_wrong_year_is_an_ungrounded_figure():
     """A correct value stated about the wrong period. None of the other three
     checks would notice, because the value itself is right."""

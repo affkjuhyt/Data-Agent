@@ -32,6 +32,16 @@ from libs.indicator.numeric import (
 )
 
 _CITATION_RE = re.compile(r"\[(\d+)\]")
+# A Markdown ordered-list marker ("1. ", "2) ") at the start of a line numbers
+# the answer's points; it states no figure. Counted as one, every numbered
+# answer failed numbers_grounded, so the judge sent it back to the responder and
+# the reader watched the answer stream, vanish and stream again.
+_LIST_MARKER_RE = re.compile(r"^([ \t]*)\d{1,3}[.)](?=[ \t])", re.MULTILINE)
+
+
+def _figures_text(answer: str) -> str:
+    """The answer with the numbers that are not figures (citations, list markers) removed."""
+    return _LIST_MARKER_RE.sub(r"\1", _CITATION_RE.sub(" ", answer))
 
 
 @dataclass(frozen=True)
@@ -134,7 +144,7 @@ def numbers_grounded(
     pool = _groundable(evidence)
     stray = [
         token
-        for token, candidates in readings(_CITATION_RE.sub(" ", answer))
+        for token, candidates in readings(_figures_text(answer))
         if not matches(candidates, pool, tolerance)
     ]
     return Check(
@@ -157,7 +167,7 @@ def precision_supported(answer: str, evidence: Sequence[EvidenceItem]) -> Check:
     """
     pool = _groundable(evidence)
     overstated = []
-    for token, candidates in readings(_CITATION_RE.sub(" ", answer)):
+    for token, candidates in readings(_figures_text(answer)):
         supporting = [reading for reading in pool if matches(candidates, [reading])]
         if not supporting:
             continue  # numbers_grounded owns this failure; do not report it twice
