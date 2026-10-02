@@ -355,7 +355,7 @@ class TestPlannerKnowsTheDate:
         assert '["2026-08-01"' in line
         assert "relative_period" in line
 
-    def test_prompt_includes_the_date_line(self, monkeypatch):
+    async def test_prompt_includes_the_date_line(self, monkeypatch):
         import nodes.model_harness.planner as planner
 
         captured = {}
@@ -366,8 +366,7 @@ class TestPlannerKnowsTheDate:
 
         monkeypatch.setattr(planner.litellm, "acompletion", fake)
         _stub_check(monkeypatch, [])
-        import asyncio
-        asyncio.get_event_loop().run_until_complete(
-            planner.planner_node({"query": "doanh thu tháng này", "config": {"tenant_id": "t-1"}})
-        )
+        # Awaited, not get_event_loop().run_until_complete(): that found no loop
+        # once an earlier test's asyncio.run() had cleared it (test_ask_exports).
+        await planner.planner_node({"query": "doanh thu tháng này", "config": {"tenant_id": "t-1"}})
         assert "Hôm nay là" in captured["system"]

@@ -641,6 +641,7 @@ async def run_conversation_stream(
 
         kb_speculation: dict[str, Any] = {"enabled": kb_in_graph}
         lg_config = {"callbacks": callbacks, "configurable": {"thread_id": conv_id, "kb_speculation": kb_speculation}}
+        abandoned = False
 
         try:
             async for event in graph.astream_events(state, version="v2", config=lg_config):
@@ -818,6 +819,12 @@ async def run_conversation_stream(
         except Exception:
             logger.exception("event_stream error")
             yield "data: [ERROR] Đã xảy ra lỗi, vui lòng thử lại.\n\n"
+        except (GeneratorExit, asyncio.CancelledError):
+            # The consumer closed the stream before the turn finished: the
+            # orchestrator dropping a speculative run that input_refine
+            # superseded, or the user pressing Stop.
+            abandoned = True
+            raise
         finally:
             if guardrail_task and not guardrail_task.done():
                 guardrail_task.cancel()
@@ -829,19 +836,25 @@ async def run_conversation_stream(
             # orchestrator) only reaches this finally when it closes the stream,
             # so awaiting the writes here held its next step — suggestions, the
             # next plan task — on DB round trips and a network flush.
-            _fire_and_forget(_persist_turn(
-                assistant_text=assistant_text,
-                latency=latency,
-                responder_options=responder_options,
-                pending_citations=pending_citations,
-                detected_language=detected_language,
-                detected_intent=detected_intent,
-                detected_analysis=detected_analysis,
-                detected_slots=detected_slots,
-                detected_clarify=detected_clarify,
-                detected_clarified=detected_clarified,
-                node_traces=node_traces,
-            ))
+            if abandoned and not assistant_text:
+                # Saving it left a question with an empty reply in the history,
+                # beside the turn that superseded it (dev, 02/10/2026). No
+                # return here: it would swallow the cancellation being raised.
+                logger.info("conversation_runner | stream closed before an answer, turn not saved conv=%s", conv_id)
+            else:
+                _fire_and_forget(_persist_turn(
+                    assistant_text=assistant_text,
+                    latency=latency,
+                    responder_options=responder_options,
+                    pending_citations=pending_citations,
+                    detected_language=detected_language,
+                    detected_intent=detected_intent,
+                    detected_analysis=detected_analysis,
+                    detected_slots=detected_slots,
+                    detected_clarify=detected_clarify,
+                    detected_clarified=detected_clarified,
+                    node_traces=node_traces,
+                ))
 
     response = StreamingResponse(event_stream(), media_type="text/event-stream")
     response.headers["X-Conversation-Id"] = conv_id or ""
