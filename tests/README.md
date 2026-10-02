@@ -139,7 +139,11 @@ another cluster. Credentials come from the environment, never from a file
 (`tests/conftest.py` `LIVE_ACCOUNTS`): each account's password variable is required
 — a test fails naming the one that is unset — and its username defaults to the demo
 account (`E2E_USER` helios-engineer, `E2E_ADMIN_USER` platform-admin,
-`E2E_T2_ADMIN_USER` helios-admin). The load test goes through Kong as `E2E_USER`. `E2E_STRICT=1` turns the model-dependent behaviour checks
+`E2E_T2_ADMIN_USER` helios-admin). The load test goes through Kong as `E2E_USER`. The demo
+accounts' passwords are the vault's `vault_demo_password_*`
+(`deploy/ansible/inventories/<env>/group_vars/all/vault.yml.example`), which the
+setup Job writes into Keycloak on a deploy with `-e apply_setup=true`; an unset
+one leaves that account's password as it is. `E2E_STRICT=1` turns the model-dependent behaviour checks
 from xfail into failures; each turn's frames land in `tests/e2e/out/`.
 
 **These tests write data.** The agent-answer test runs real turns (new

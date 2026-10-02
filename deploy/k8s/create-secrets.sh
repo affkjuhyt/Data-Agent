@@ -212,6 +212,12 @@ kubectl -n dataagent-service create secret generic setup-secrets \
   --from-literal=KEYCLOAK_PUBLIC_URL="${KEYCLOAK_PUBLIC_URL}" \
   --from-literal=SMOKE_PASSWORD="${SMOKE_PASSWORD}" \
   --from-literal=GATEWAY_KEY="${GATEWAY_KEY}" \
+  --from-literal=DEMO_PASSWORD_PLATFORM_ADMIN="${DEMO_PASSWORD_PLATFORM_ADMIN:-}" \
+  --from-literal=DEMO_PASSWORD_HELIOS_ADMIN="${DEMO_PASSWORD_HELIOS_ADMIN:-}" \
+  --from-literal=DEMO_PASSWORD_HELIOS_ENGINEER="${DEMO_PASSWORD_HELIOS_ENGINEER:-}" \
+  --from-literal=DEMO_PASSWORD_HELIOS_VIEWER="${DEMO_PASSWORD_HELIOS_VIEWER:-}" \
+  --from-literal=DEMO_PASSWORD_AI_ENGINEER="${DEMO_PASSWORD_AI_ENGINEER:-}" \
+  --from-literal=DEMO_PASSWORD_EXECUTIVE_VIEWER="${DEMO_PASSWORD_EXECUTIVE_VIEWER:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic eval-secrets \
