@@ -125,7 +125,9 @@ carry `@pytest.mark.xdist_group("<resource>")` so it never runs beside its twin.
 ### Python — e2e (deployed dev cluster)
 
 ```bash
-export E2E_USER=helios-engineer; read -rsp 'password: ' E2E_PASS; export E2E_PASS
+read -rsp 'helios-engineer password: ' E2E_PASS; export E2E_PASS          # agent turns, load
+read -rsp 'platform-admin password: ' E2E_ADMIN_PASS; export E2E_ADMIN_PASS # tenant 1, JWT audience
+read -rsp 'helios-admin password: ' E2E_T2_ADMIN_PASS; export E2E_T2_ADMIN_PASS # tenant 2
 make e2e                                                    # every tests/integration/test_*.py
 make e2e E2E_TESTS=tests/integration/test_agent_answer_e2e.py PYTEST_ARGS="-v -s"
 ```
@@ -133,8 +135,11 @@ make e2e E2E_TESTS=tests/integration/test_agent_answer_e2e.py PYTEST_ARGS="-v -s
 `make e2e` runs `pytest -m e2e` in the `workflow_runtime` image against the dev
 cluster's LAN NodePorts (Kong 30100, Keycloak 30110, workflow-runtime 30240);
 override `E2E_KONG_URL` / `E2E_KEYCLOAK_URL` / `E2E_RUNTIME_URL` to target
-another cluster. Credentials come from the environment (`E2E_USER`, `E2E_PASS`),
-never from a file. `E2E_STRICT=1` turns the model-dependent behaviour checks
+another cluster. Credentials come from the environment, never from a file
+(`tests/conftest.py` `LIVE_ACCOUNTS`): each account's password variable is required
+— a test fails naming the one that is unset — and its username defaults to the demo
+account (`E2E_USER` helios-engineer, `E2E_ADMIN_USER` platform-admin,
+`E2E_T2_ADMIN_USER` helios-admin). The load test goes through Kong as `E2E_USER`. `E2E_STRICT=1` turns the model-dependent behaviour checks
 from xfail into failures; each turn's frames land in `tests/e2e/out/`.
 
 **These tests write data.** The agent-answer test runs real turns (new

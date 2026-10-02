@@ -224,6 +224,49 @@ def patched_env(monkeypatch: pytest.MonkeyPatch) -> "_EnvPatcher":
     return _EnvPatcher()
 
 
+# ─── Live-stack credentials ────────────────────────────────────────────────
+# The e2e tests log in to the dev cluster's Keycloak. Passwords come only from
+# the environment (CLAUDE.md §6): the literals these tests used to carry were
+# out of date (one user even had two different ones) and every login 401'd.
+# Usernames are not secret, so each account keeps its demo default.
+LIVE_ACCOUNTS = {
+    # account: (username env, default username, password env)
+    "engineer": ("E2E_USER", "helios-engineer", "E2E_PASS"),
+    "admin": ("E2E_ADMIN_USER", "platform-admin", "E2E_ADMIN_PASS"),
+    "tenant2_admin": ("E2E_T2_ADMIN_USER", "helios-admin", "E2E_T2_ADMIN_PASS"),
+}
+
+
+def live_credentials(account: str) -> tuple[str, str]:
+    """(username, password) of a demo account; fails naming the unset variable."""
+    user_env, default_user, pass_env = LIVE_ACCOUNTS[account]
+    password = os.environ.get(pass_env)
+    if not password:
+        pytest.fail(f"{pass_env} is not set — export the {account} password (see tests/README.md, e2e)")
+    return os.environ.get(user_env, default_user), password
+
+
+def live_token(keycloak_url: str, account: str) -> str:
+    """A Keycloak access token for a demo account (password grant)."""
+    import httpx
+
+    username, password = live_credentials(account)
+    r = httpx.post(
+        f"{keycloak_url}/realms/aeroflow/protocol/openid-connect/token",
+        data={
+            "grant_type": "password",
+            "client_id": "aeroflow-frontend",
+            "username": username,
+            "password": password,
+        },
+        timeout=20,
+    )
+    body = r.json()
+    if "access_token" not in body:
+        pytest.fail(f"Login failed for {username}: {body}")
+    return str(body["access_token"])
+
+
 # ─── Live-stack opt-in for promoted scripts ────────────────────────────────
 # Some tests (e.g. tenant isolation) drive a fully-running stack rather than
 # spinning containers. Gate them behind LIVE_STACK_URL so CI doesn't run them

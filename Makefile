@@ -127,12 +127,14 @@ bench-e2e:  ## per-stage latency of one real question against a deployed agent (
 # so it needs the cluster up and seeded with seed_demo, not testcontainers. It
 # logs in and runs real agent turns: every run writes conversations, so point it
 # only at a cluster where that is acceptable. Override a URL to target another
-# cluster. E2E_USER / E2E_PASS are forwarded by name, like bench-e2e's secrets.
+# cluster. The account credentials (E2E_USER/E2E_PASS, E2E_ADMIN_*, E2E_T2_ADMIN_*,
+# tests/README.md) are forwarded by name, like bench-e2e's secrets.
 E2E_KONG_URL ?= http://10.10.55.101:30100
 E2E_KEYCLOAK_URL ?= http://10.10.55.101:30110
 E2E_RUNTIME_URL ?= http://10.10.55.101:30240
 E2E_TESTS ?= $(wildcard tests/integration/test_*.py)
-E2E_FORWARD_VARS = E2E_USER E2E_PASS E2E_AGENT_ID E2E_STRICT E2E_TURN_TIMEOUT
+E2E_FORWARD_VARS = E2E_USER E2E_PASS E2E_ADMIN_USER E2E_ADMIN_PASS E2E_T2_ADMIN_USER E2E_T2_ADMIN_PASS \
+                   E2E_AGENT_ID E2E_STRICT E2E_TURN_TIMEOUT
 E2E_FORWARD = $(foreach v,$(E2E_FORWARD_VARS),$(if $($(v)),-e $(v)))
 
 export $(E2E_FORWARD_VARS)

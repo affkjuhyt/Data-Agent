@@ -13,27 +13,12 @@ from __future__ import annotations
 import pytest
 import requests
 
+from tests.conftest import live_token
+
 pytestmark = pytest.mark.e2e
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────
-def _get_token(keycloak_url: str, username: str, password: str) -> str:
-    r = requests.post(
-        f"{keycloak_url}/realms/aeroflow/protocol/openid-connect/token",
-        data={
-            "grant_type": "password",
-            "client_id": "aeroflow-frontend",
-            "username": username,
-            "password": password,
-        },
-        timeout=10,
-    )
-    d = r.json()
-    if "access_token" not in d:
-        raise RuntimeError(f"Login failed for {username}: {d}")
-    return d["access_token"]
-
-
 def _api(kong_url: str, token: str, method: str, path: str, **kw):
     h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     return getattr(requests, method)(f"{kong_url}/api/auth{path}", headers=h, **kw)
@@ -42,12 +27,12 @@ def _api(kong_url: str, token: str, method: str, path: str, **kw):
 # ─── Fixtures (session-scoped — login once per run) ────────────────────────
 @pytest.fixture(scope="module")
 def t1_token(live_stack):
-    return _get_token(live_stack["keycloak"], "platform-admin", "Admin123456!")
+    return live_token(live_stack["keycloak"], "admin")
 
 
 @pytest.fixture(scope="module")
 def t2_token(live_stack):
-    return _get_token(live_stack["keycloak"], "helios-admin", "H3lios@Admin01!")
+    return live_token(live_stack["keycloak"], "tenant2_admin")
 
 
 @pytest.fixture(scope="module")

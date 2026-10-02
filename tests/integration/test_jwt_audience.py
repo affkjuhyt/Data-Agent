@@ -27,24 +27,9 @@ import json
 import pytest
 import requests
 
+from tests.conftest import live_token
+
 pytestmark = pytest.mark.e2e
-
-
-def _get_token(keycloak_url: str, username: str = "platform-admin", password: str = "Admin@123456") -> str:
-    r = requests.post(
-        f"{keycloak_url}/realms/aeroflow/protocol/openid-connect/token",
-        data={
-            "grant_type": "password",
-            "client_id": "aeroflow-frontend",
-            "username": username,
-            "password": password,
-        },
-        timeout=10,
-    )
-    d = r.json()
-    if "access_token" not in d:
-        raise RuntimeError(f"Login failed: {d}")
-    return d["access_token"]
 
 
 def _decode_jwt_payload(token: str) -> dict:
@@ -57,7 +42,7 @@ def _decode_jwt_payload(token: str) -> dict:
 def test_keycloak_issues_token_with_expected_audiences(live_stack):
     """The audience-mapper setup must make Keycloak put all three target
     audiences into the issued token's `aud` claim."""
-    token = _get_token(live_stack["keycloak"])
+    token = live_token(live_stack["keycloak"], "admin")
     payload = _decode_jwt_payload(token)
     aud = payload.get("aud")
 
@@ -76,7 +61,7 @@ def test_keycloak_issues_token_with_expected_audiences(live_stack):
 def test_kong_accepts_token_on_matching_audience_route(live_stack):
     """auth_api route has audience=auth_api in its plugin config. A token
     that includes auth_api in its aud claim should be accepted."""
-    token = _get_token(live_stack["keycloak"])
+    token = live_token(live_stack["keycloak"], "admin")
 
     r = requests.get(
         f"{live_stack['kong']}/api/auth/health",
