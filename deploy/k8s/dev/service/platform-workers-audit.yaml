@@ -21,6 +21,8 @@ data:
   OTEL_SERVICE_NAME: platform-workers-audit
   DB_HOST: postgres.dataagent-database.svc.cluster.local
   DB_PORT: '8300'
+  # NOBYPASSRLS: the worker scopes each write with app.tenant_id (common/db.set_tenant).
+  DB_USER: app_user
   KAFKA_SASL_USERNAME: audit-consumer
   KAFKA_DATA_ACCESS_TOPIC: audit.data.access
   KAFKA_GROUP_ID: audit-consumer-group

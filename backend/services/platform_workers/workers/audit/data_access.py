@@ -19,6 +19,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from libs.basemodel.services_databaseconnector.postgres_orm.audit_access_orm import DataAccessLogORM
+from services.platform_workers.common.db import set_tenant
 
 log = logging.getLogger("platform-workers.audit.data_access")
 
@@ -79,6 +80,7 @@ def insert_data_access(session: Session, event: dict[str, Any]) -> bool:
         )
         .on_conflict_do_nothing(index_elements=[DataAccessLogORM.event_id])
     )
+    set_tenant(session, event["tenant_id"])
     result = session.execute(stmt)
     # rowcount 0 means ON CONFLICT skipped it — a redelivery, not a failure.
     return bool(result.rowcount)

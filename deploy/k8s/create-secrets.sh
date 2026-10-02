@@ -68,14 +68,14 @@ kubectl -n dataagent-service create secret generic sandbox-executor-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic platform-workers-audit-secrets \
-  --from-literal=DB_PASSWORD="${POSTGRES_PASSWORD}" \
+  --from-literal=DB_PASSWORD="${APP_USER_PASSWORD}" \
   --from-literal=KAFKA_SASL_PASSWORD="${AUDIT_CONSUMER_KAFKA_PASSWORD}" \
   --from-literal=KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN}" \
   --from-literal=KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic platform-workers-memory-secrets \
-  --from-literal=DB_PASSWORD="${POSTGRES_PASSWORD}" \
+  --from-literal=DB_PASSWORD="${APP_USER_PASSWORD}" \
   --from-literal=KAFKA_SASL_PASSWORD="${MEMORY_CONSUMER_KAFKA_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 

@@ -8,8 +8,9 @@ first query and only recovers through the pod's restart backoff.
 from __future__ import annotations
 
 import logging
+import uuid
 
-from sqlalchemy import URL, Engine, create_engine
+from sqlalchemy import URL, Engine, create_engine, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 from tenacity import (
@@ -24,6 +25,8 @@ from tenacity import (
 from services.platform_workers.common.settings import PostgresSettings
 
 log = logging.getLogger("platform-workers.db")
+
+_SET_TENANT = text("SELECT set_config('app.tenant_id', :tenant_id, true)")
 
 DEFAULT_ATTEMPTS = 20
 DEFAULT_WAIT_SECONDS = 5
@@ -67,3 +70,18 @@ def make_session_factory(
     engine = create_engine(url, pool_pre_ping=True, future=True)
     wait_until_ready(engine, attempts=attempts, wait_seconds=wait_seconds)
     return sessionmaker(bind=engine, expire_on_commit=False, future=True)
+
+
+def set_tenant(session: Session, tenant_id: str | uuid.UUID) -> None:
+    """Scope the session's current transaction to one tenant.
+
+    The workers connect as app_user (NOBYPASSRLS), and every tenant table's
+    row-level policy compares tenant_id with app.tenant_id: before this call a
+    read sees no rows and an insert is rejected. The setting is transaction-
+    local, so it ends at commit/rollback, and calling it again switches tenant.
+    Pending rows are flushed first, while the tenant they were added under is
+    still the one in force — otherwise the policy checks them against the next.
+    Raises ValueError for a tenant that is not a UUID.
+    """
+    session.flush()
+    session.execute(_SET_TENANT, {"tenant_id": str(uuid.UUID(str(tenant_id)))})

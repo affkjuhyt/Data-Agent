@@ -28,6 +28,14 @@ class _Session:
         self.existing = existing or set()
         self.added: list[Any] = []
         self.commits = 0
+        # Tenants set with set_config, in order (common.db.set_tenant).
+        self.tenants: list[str] = []
+
+    def flush(self) -> None:
+        pass
+
+    def execute(self, _stmt: Any, params: dict[str, Any]) -> None:
+        self.tenants.append(params["tenant_id"])
 
     def scalar(self, _stmt: Any) -> Any:
         # The unit test only needs the duplicate branch.
@@ -122,3 +130,11 @@ class TestTenantFromKeycloak:
         assert written == 2
         assert admin.lookups == [USER]
         assert session.commits == 1
+        # Row-level security: each written event runs under its own tenant.
+        assert session.tenants == [TENANT, TENANT]
+
+    def test_a_tenant_that_is_not_a_uuid_is_skipped_not_raised(self):
+        session = _Session()
+
+        assert auth_events.insert_event(session, _event(), "not-a-uuid") is False
+        assert session.added == [] and session.tenants == []

@@ -557,6 +557,7 @@ def handle_event(session: Session, qdrant: QdrantClient, event: dict[str, Any]) 
     user_ref = event.get("user_ref") or "anonymous"
     conversation_id = event["conversation_id"]
     message_id = event["message_id"]
+    worker_db.set_tenant(session, tenant_id)
 
     query, response = fetch_turn(session, conversation_id, message_id)
     if response is None:

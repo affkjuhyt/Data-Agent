@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from libs.basemodel.services_databaseconnector.postgres_orm.auth_release_orm import AuditLogsORM
+from services.platform_workers.common.db import set_tenant
 
 log = logging.getLogger("platform-workers.audit.auth-events")
 
@@ -40,6 +41,16 @@ def insert_event(session: Session, event: dict[str, Any], tenant_id: str | None)
         log.warning(
             "auth event %s type=%s user=%s has no tenant — not written",
             source_event_id or "?", event_type, user_id,
+        )
+        return False
+    try:
+        set_tenant(session, tenant_id)
+    except ValueError:
+        # A malformed attribute is no tenant at all; raising would stall the
+        # bridge's cursor behind this event (see above).
+        log.warning(
+            "auth event %s type=%s user=%s has tenant %r, not a UUID — not written",
+            source_event_id or "?", event_type, user_id, tenant_id,
         )
         return False
 
