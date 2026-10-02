@@ -58,7 +58,6 @@ class RolePermissionsORM(Base):
     __tablename__ = "RolePermissions"
     __table_args__ = (
         UniqueConstraint("role_id", "resource", "action", name="uq_role_permissions"),
-        Index("idx_role_permissions_role", "role_id"),
         Index("idx_role_permissions_inserted_at_desc", text("inserted_at DESC")),
         {"comment": "Permission grants per role (action is a name from kb_backend's permission CATALOG), plus one anchor row per role with resource '_role_anchor': KBData.role_id and KBSource.role_id point at those anchors."},
     )

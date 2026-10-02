@@ -50,7 +50,6 @@ class SecretVaultORM(Base):
 class IPAllowlistORM(Base):
     __tablename__ = "ip_allowlists"
     __table_args__ = (
-        Index("ix_ip_allowlists_tenant", "tenant_id"),
         Index("uq_ip_allowlists_tenant_cidr", "tenant_id", "cidr", unique=True),
     )
 

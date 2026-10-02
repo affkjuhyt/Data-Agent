@@ -2,7 +2,7 @@
 // Mở https://dbdiagram.io/d → dán toàn bộ file này vào ô bên trái.
 //
 // Sinh tự động từ catalog Postgres sau `alembic upgrade head` trên DB trống
-// (head = 2e9a4c6b8d0f), không vẽ tay: bảng, cột, kiểu, default, PK/unique,
+// (head = 3f1b5d7a9c2e), không vẽ tay: bảng, cột, kiểu, default, PK/unique,
 // FK (Ref) và index là đúng như DB. Không sửa tay — sinh lại khi có migration mới.
 // Note của bảng/cột gồm COMMENT trong DB (nghĩa của cột) và những gì DBML không
 // biểu diễn được (CHECK, partial index, GIN, RLS, tham chiếu không có FK).
@@ -10,7 +10,7 @@
 Project data_agent {
   database_type: 'PostgreSQL'
   Note: '''
-**Data Agent — Postgres `dataagent`, schema `public`** (alembic head `2e9a4c6b8d0f`)
+**Data Agent — Postgres `dataagent`, schema `public`** (alembic head `3f1b5d7a9c2e`)
 
 - 59 bảng, 69 FK, 36 bảng bật RLS (theo `tenant_id` + `app.tenant_id`).
 - Schema V2 `registry`, `ingest`, `knowledge`, `governance`, `alert` đã tạo (migration `5b7d9f1a3c6e`) nhưng **chưa có bảng** — xem `docs/v2/10-database-design.md`, `docs/v2/14-input-data-db.md`.
@@ -63,9 +63,7 @@ Table "AgentMemories" {
     ("agent_id", "user_ref") [name: 'idx_agentmemories_agent_user_ref']
     "deleted_at" [name: 'idx_agentmemories_deleted_at', note: 'WHERE (deleted_at IS NULL)']
     "inserted_at" [name: 'idx_agentmemories_inserted_at_desc', note: 'inserted_at DESC']
-    "tenant_id" [name: 'idx_agentmemories_tenant']
     ("tenant_id", "agent_id", "user_ref", "domain") [name: 'idx_agentmemories_user_domain']
-    "agent_id" [name: 'ix_AgentMemories_agent_id']
   }
 
   Note: '''
@@ -89,7 +87,6 @@ Table "AgentTraces" {
   indexes {
     ("message_id", "trace_index") [unique, name: 'uq_agent_traces_message_index']
     "inserted_at" [name: 'idx_agenttraces_inserted_at_desc', note: 'inserted_at DESC']
-    "message_id" [name: 'ix_AgentTraces_message_id']
   }
 }
 
@@ -113,7 +110,6 @@ Table "AgentVersions" {
     ("agent_id", "version") [unique, name: 'uq_agent_versions_agent_version']
     ("agent_id", "status") [name: 'idx_agentversions_agent_status']
     "inserted_at" [name: 'idx_agentversions_inserted_at_desc', note: 'inserted_at DESC']
-    "agent_id" [name: 'ix_AgentVersions_agent_id']
   }
 }
 
@@ -174,7 +170,6 @@ Table "Conversations" {
 
   indexes {
     "inserted_at" [name: 'idx_conversations_inserted_at_desc', note: 'inserted_at DESC']
-    "tenant_id" [name: 'idx_conversations_tenant']
     ("tenant_id", "user_ref") [name: 'idx_conversations_tenant_user_ref']
   }
 
@@ -301,7 +296,6 @@ Table "KBConflict" {
     ("tenant_id", "status", "severity") [name: 'idx_kbconflict_tenant_status_severity']
     "batch_id" [name: 'ix_KBConflict_batch_id']
     "created_at" [name: 'ix_KBConflict_created_at']
-    "tenant_id" [name: 'ix_KBConflict_tenant_id']
   }
 
   Note: 'RLS bật (tenant_id = app.tenant_id)'
@@ -383,7 +377,6 @@ Table "KBData" {
     ("tenant_id", "source_type") [name: 'idx_kbdata_tenant_source']
     ("tenant_id", "current_tier") [name: 'idx_kbdata_tenant_tier']
     "created_at" [name: 'ix_KBData_created_at']
-    "tenant_id" [name: 'ix_KBData_tenant_id']
   }
 
   Note: 'RLS bật (tenant_id = app.tenant_id)'
@@ -404,7 +397,6 @@ Table "KBEntityLookup" {
     ("tenant_id", "alias_name") [name: 'idx_kbentitylookup_tenant_alias']
     "canonical_name" [name: 'ix_KBEntityLookup_canonical_name']
     "created_at" [name: 'ix_KBEntityLookup_created_at']
-    "tenant_id" [name: 'ix_KBEntityLookup_tenant_id']
   }
 }
 
@@ -426,7 +418,6 @@ Table "KBExtractionPolicy" {
     "inserted_at" [name: 'idx_kbextractionpolicy_inserted_at_desc', note: 'inserted_at DESC']
     ("tenant_id", "language") [name: 'idx_kbextractionpolicy_tenant_lang']
     "created_at" [name: 'ix_KBExtractionPolicy_created_at']
-    "tenant_id" [name: 'ix_KBExtractionPolicy_tenant_id']
   }
 
   Note: 'RLS bật (tenant_id = app.tenant_id)'
@@ -451,7 +442,6 @@ Table "KBFilterPolicy" {
     "inserted_at" [name: 'idx_kbfilterpolicy_inserted_at_desc', note: 'inserted_at DESC']
     ("tenant_id", "language") [name: 'idx_kbfilterpolicy_tenant_lang']
     "created_at" [name: 'ix_KBFilterPolicy_created_at']
-    "tenant_id" [name: 'ix_KBFilterPolicy_tenant_id']
   }
 
   Note: 'RLS bật (tenant_id = app.tenant_id)'
@@ -472,7 +462,6 @@ Table "KBKnowledgeBase" {
     "inserted_at" [name: 'idx_kbknowledgebase_inserted_at_desc', note: 'inserted_at DESC']
     ("tenant_id", "name") [unique, name: 'idx_kbknowledgebase_tenant_name']
     "created_at" [name: 'ix_KBKnowledgeBase_created_at']
-    "tenant_id" [name: 'ix_KBKnowledgeBase_tenant_id']
   }
 }
 
@@ -652,7 +641,6 @@ Table "KBSourceCrawlQueue" {
 
   indexes {
     "inserted_at" [name: 'idx_kbsourcecrawlqueue_inserted_at_desc', note: 'inserted_at DESC']
-    "source_id" [name: 'idx_kbsourcecrawlqueue_source_id']
     ("source_id", "url") [unique, name: 'idx_kbsourcecrawlqueue_source_url']
     ("tenant_id", "status") [name: 'idx_kbsourcecrawlqueue_tenant_status']
   }
@@ -697,7 +685,6 @@ Table "KBStructuredImportJob" {
 
   indexes {
     ("owner_id", "created_at") [name: 'idx_kbstructuredimportjob_owner_created', note: 'created_at DESC']
-    "owner_id" [name: 'ix_KBStructuredImportJob_owner_id']
   }
 }
 
@@ -734,7 +721,6 @@ Table "KBTextBlock" {
     "inserted_at" [name: 'idx_kbtextblock_inserted_at_desc', note: 'inserted_at DESC']
     ("owner_id", "block_id") [name: 'idx_kbtextblock_owner_block']
     "created_at" [name: 'ix_KBTextBlock_created_at']
-    "owner_id" [name: 'ix_KBTextBlock_owner_id']
   }
 
   Note: 'RLS bật (tenant_id = app.tenant_id)'
@@ -819,7 +805,6 @@ Table "KBWarehouseConfig" {
     "warehouse_id" [unique, name: 'idx_kbwarehouseconfig_wh_active', note: 'WHERE (is_active = true)']
     ("warehouse_id", "version_number") [name: 'idx_kbwarehouseconfig_wh_version']
     "created_at" [name: 'ix_KBWarehouseConfig_created_at']
-    "warehouse_id" [name: 'ix_KBWarehouseConfig_warehouse_id']
   }
 
   Note: 'RLS bật (tenant_id = app.tenant_id)'
@@ -873,7 +858,6 @@ Table "Messages" {
   indexes {
     ("conversation_id", "created_at") [name: 'idx_messages_conversation_created']
     "inserted_at" [name: 'idx_messages_inserted_at_desc', note: 'inserted_at DESC']
-    "conversation_id" [name: 'ix_Messages_conversation_id']
     "created_at" [name: 'ix_Messages_created_at']
   }
 }
@@ -905,7 +889,6 @@ Table "PlatformSettings" {
 
   indexes {
     ("tenant_id", "key") [unique, name: 'uq_platform_settings_tenant_key']
-    "tenant_id" [name: 'idx_platformsettings_tenant']
   }
 
   Note: '''
@@ -924,7 +907,6 @@ Table "RolePermissions" {
   indexes {
     ("role_id", "resource", "action") [unique, name: 'uq_role_permissions']
     "inserted_at" [name: 'idx_role_permissions_inserted_at_desc', note: 'inserted_at DESC']
-    "role_id" [name: 'idx_role_permissions_role']
   }
 
   Note: 'Permission grants per role (action is a name from kb_backend\'s permission CATALOG), plus one anchor row per role with resource \'_role_anchor\': KBData.role_id and KBSource.role_id point at those anchors.'
@@ -974,7 +956,6 @@ Table "SemanticMetric" {
 
   indexes {
     ("tenant_id", "metric_key") [unique, name: 'uq_semantic_metric_key']
-    "tenant_id" [name: 'idx_semantic_metric_tenant']
   }
 
   Note: 'RLS bật (tenant_id = app.tenant_id)'
@@ -1082,7 +1063,6 @@ Table "WorkflowMemory" {
   indexes {
     "created_at" [name: 'idx_workflowmemory_created_at_desc', note: 'created_at DESC']
     ("tenant_id", "agent_id", "task_type") [name: 'idx_workflowmemory_task_type']
-    "tenant_id" [name: 'idx_workflowmemory_tenant']
   }
 
   Note: 'RLS bật (tenant_id = app.tenant_id)'
@@ -1103,7 +1083,6 @@ Table "WorkflowVersions" {
     ("workflow_id", "version") [unique, name: 'uq_workflow_versions_workflow_version']
     "inserted_at" [name: 'idx_workflowversions_inserted_at_desc', note: 'inserted_at DESC']
     ("workflow_id", "status") [name: 'idx_workflowversions_workflow_status']
-    "workflow_id" [name: 'ix_WorkflowVersions_workflow_id']
     "workflow_id" [unique, name: 'uq_workflowversions_one_draft', note: 'WHERE ((status)::text = \'draft\'::text)']
     "workflow_id" [unique, name: 'uq_workflowversions_one_published', note: 'WHERE ((status)::text = \'published\'::text)']
   }
@@ -1171,7 +1150,6 @@ Table "ip_allowlists" {
   "created_at" timestamptz [not null, default: `now()`]
 
   indexes {
-    "tenant_id" [name: 'ix_ip_allowlists_tenant']
     ("tenant_id", "cidr") [unique, name: 'uq_ip_allowlists_tenant_cidr']
   }
 

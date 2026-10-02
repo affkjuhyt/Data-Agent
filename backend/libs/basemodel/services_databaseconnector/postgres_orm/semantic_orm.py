@@ -47,7 +47,6 @@ class SemanticMetricORM(Base):
     __tablename__ = "SemanticMetric"
     __table_args__ = (
         UniqueConstraint("tenant_id", "metric_key", name="uq_semantic_metric_key"),
-        Index("idx_semantic_metric_tenant", "tenant_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

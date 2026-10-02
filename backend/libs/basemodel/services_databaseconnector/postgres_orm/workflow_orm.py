@@ -200,7 +200,7 @@ class WorkflowVersionsORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    workflow_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Workflows.id"), nullable=False, index=True)
+    workflow_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Workflows.id"), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     changelog: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
@@ -223,7 +223,7 @@ class AgentVersionsORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False, index=True)
+    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     workflow_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("WorkflowVersions.id"), nullable=True)
@@ -276,7 +276,6 @@ class AgentMCPORM(Base):
 class AgentMemoriesORM(Base):
     __tablename__ = "AgentMemories"
     __table_args__ = (
-        Index("idx_agentmemories_tenant", "tenant_id"),
         Index("idx_agentmemories_agent_scope", "agent_id", "scope"),
         Index("idx_agentmemories_agent_user_ref", "agent_id", "user_ref"),
         Index("idx_agentmemories_user_domain", "tenant_id", "agent_id", "user_ref", "domain"),
@@ -290,7 +289,7 @@ class AgentMemoriesORM(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
-    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False, index=True)
+    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False)
     scope: Mapped[str] = mapped_column(String(20), nullable=False)
     user_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     memory_type: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -380,7 +379,6 @@ class WorkflowMemoryORM(Base):
     of re-planning from scratch."""
     __tablename__ = "WorkflowMemory"
     __table_args__ = (
-        Index("idx_workflowmemory_tenant", "tenant_id"),
         Index("idx_workflowmemory_task_type", "tenant_id", "agent_id", "task_type"),
         Index("idx_workflowmemory_created_at_desc", text("created_at DESC")),
     )
@@ -469,7 +467,6 @@ class SchemaCatalogORM(Base):
 class ConversationsORM(Base):
     __tablename__ = "Conversations"
     __table_args__ = (
-        Index("idx_conversations_tenant", "tenant_id"),
         Index("idx_conversations_tenant_user_ref", "tenant_id", "user_ref"),
         Index("idx_conversations_inserted_at_desc", text("inserted_at DESC")),
     )
@@ -494,7 +491,7 @@ class MessagesORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    conversation_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Conversations.id"), nullable=False, index=True)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Conversations.id"), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True, comment="{\"text\": <message text>}.")
     msg_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, nullable=True, comment="Assistant turn context: agent_version_id, language, intent, analysis_type, slots, clarifications, responder_model, pending_options, pending_approval, citations.")
@@ -517,7 +514,7 @@ class AgentTracesORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    message_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Messages.id"), nullable=False, index=True)
+    message_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Messages.id"), nullable=False)
     trace_index: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     tool_name: Mapped[str] = mapped_column(String(255), nullable=False, comment="LangGraph node name, tool/<name> for a tool call, or responder.")
     input: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
@@ -543,7 +540,6 @@ class PlatformSettingsORM(Base):
     __tablename__ = "PlatformSettings"
     __table_args__ = (
         UniqueConstraint("tenant_id", "key", name="uq_platform_settings_tenant_key"),
-        Index("idx_platformsettings_tenant", "tenant_id"),
         {"comment": "Per-tenant settings, key -> jsonb (org_profile, schedules, delivery_channels, delivery_outbox, agent_templates). The platform-wide flags are in platform_settings."},
     )
 
