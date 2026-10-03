@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: indicator-api
+  namespace: dataagent-service
+  labels:
+    app: indicator-api
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: indicator-api-env
+  namespace: dataagent-service
+  labels:
+    app: indicator-api
+    app.kubernetes.io/part-of: dataagent
+data:
+  OTEL_SERVICE_NAME: indicator-api
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: indicator-api
+  namespace: dataagent-service
+  labels:
+    app: indicator-api
+    app.kubernetes.io/part-of: dataagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: indicator-api
+  template:
+    metadata:
+      labels:
+        app: indicator-api
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: indicator-api
+        image: dataagent/indicator-api:latest
+        ports:
+        - containerPort: 8250
+          name: http
+        envFrom:
+        - configMapRef:
+            name: dataagent-config
+        - configMapRef:
+            name: indicator-api-env
+        - secretRef:
+            name: indicator-api-secrets
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 512Mi
+        # /ready pings every configured store with a 2 s timeout each.
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8250
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8250
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          failureThreshold: 6
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        command:
+        - uvicorn
+        - services.indicator_api.app:app
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8250'
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      enableServiceLinks: false
+      serviceAccountName: indicator-api
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: indicator-api
+  namespace: dataagent-service
+  labels:
+    app: indicator-api
+    app.kubernetes.io/part-of: dataagent
+spec:
+  selector:
+    app: indicator-api
+  ports:
+  - port: 8250
+    targetPort: 8250
+    name: http
+  type: ClusterIP

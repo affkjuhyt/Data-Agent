@@ -852,7 +852,7 @@ class TestConfigComesFromConfigMapsAndSecrets:
                 for m in script.split("kubectl -n ")[1:] if key in m
             }
             expected = {"auth-api", "kb-backend",
-                        "workflow-runtime"}
+                        "workflow-runtime", "indicator-api"}
             if key == "GATEWAY_KEY":
                 expected |= {"setup"}   # kong-setup.sh writes it into the plugin
                 # The eval Job is a caller, not a verifier: model/eval's

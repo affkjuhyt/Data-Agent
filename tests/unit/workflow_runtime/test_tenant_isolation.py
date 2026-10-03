@@ -105,6 +105,9 @@ _UNSCOPED_BUDGET = {
     "workflow_runtime": 6,
     "sandbox_executor": 1,
     "platform_workers": 1,
+    # clickhouse_connect.get_client() in the /ready ping (adapters/clickhouse.py):
+    # a connection check on ClickHouse, not the tenant-scoped Postgres client.
+    "indicator_api": 1,
 }
 
 
