@@ -245,7 +245,10 @@ GRANT SELECT ON
   -- Silver, Gold and kb-structured-data read the document's source config
   -- (storage_boundary.is_v2_structured_document) to keep V2 structured sources
   -- off the legacy paths; without it every promotion fails at "permission denied".
-  "KBSourceConfig"
+  "KBSourceConfig",
+  -- Not read directly: KBSourceConfig's RLS policy (tenant_isolation_child)
+  -- does EXISTS (SELECT ... FROM "KBSource"), as KBQdrantConnection above.
+  "KBSource"
 TO kb_ingestion_worker;
 
 -- Gold registers entity aliases (entity_registry.py _register_aliases inserts

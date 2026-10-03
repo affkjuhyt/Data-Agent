@@ -88,8 +88,9 @@ _AMBIENT_TENANT_SERVICES = {"kb_backend"}
 _UNSCOPED_BUDGET = {
     # kb_ingestion_worker's 49 split across the four processes and libs/ingestion.
     # 32: the Silver tier update/rollback, the auto-Gold hand-off read and the
-    # trash-flush graph lookup now pass the tenant they already had.
-    "ingestion": 32,
+    # trash-flush graph lookup now pass the tenant they already had. 31: the Gold
+    # PII-policy read too (compliance_settings has RLS since 5b9e3d7a2c4f).
+    "ingestion": 31,
     "kb_worker_conflict_resolution": 16,
     "kb_worker_promote_gold": 2,
     "kb_worker_structured_data": 2,

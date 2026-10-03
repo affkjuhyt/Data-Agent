@@ -491,7 +491,7 @@ async def _record_gold_lifecycle(
 
 async def _load_pii_policy(postgres: PostgresClient, tenant_id: str) -> list[str]:
     try:
-        async with postgres.get_client() as session:
+        async with postgres.get_client(tenant_id=tenant_id) as session:
             row = await session.scalar(
                 sa_select(ComplianceSettingORM)
                 .where(ComplianceSettingORM.tenant_id == tenant_id)

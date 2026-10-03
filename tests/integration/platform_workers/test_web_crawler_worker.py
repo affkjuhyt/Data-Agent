@@ -37,8 +37,13 @@ def _session_factory(libpq_dsn: str) -> sessionmaker[Session]:
 
 def _seed_tenant_and_source(
     dsn: str, title: str, connector_type: str = "web_crawl", extra_config: dict | None = None,
+    role_row_id: str | None = None,
 ) -> tuple[str, str, str]:
-    tenant_id, role_row_id, source_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    """A tenant and one source. Pass the role_row_id a previous call returned to
+    seed a second tenant: the role anchor row is unique."""
+    new_role = role_row_id is None
+    tenant_id, source_id = str(uuid.uuid4()), str(uuid.uuid4())
+    role_row_id = role_row_id or str(uuid.uuid4())
     conn = psycopg2.connect(dsn)
     conn.autocommit = True
     try:
@@ -47,11 +52,12 @@ def _seed_tenant_and_source(
                 """INSERT INTO "Tenants" (id, name, slug) VALUES (%s, %s, %s)""",
                 (tenant_id, "Crawler Test Tenant", f"crawler-test-{tenant_id[:8]}"),
             )
-            cur.execute(
-                """INSERT INTO "RolePermissions" (id, role_id, resource, action)
-                   VALUES (%s, 'PLATFORM_ADMIN', '_role_anchor', 'label')""",
-                (role_row_id,),
-            )
+            if new_role:
+                cur.execute(
+                    """INSERT INTO "RolePermissions" (id, role_id, resource, action)
+                       VALUES (%s, 'PLATFORM_ADMIN', '_role_anchor', 'label')""",
+                    (role_row_id,),
+                )
             cur.execute(
                 """INSERT INTO "KBSource" (source_id, tenant_id, role_id, connector_type, title, created_by)
                    VALUES (%s, %s, %s, %s, %s, 'tester')""",
@@ -200,6 +206,66 @@ def test_a_failed_run_is_retried_before_its_next_cron_tick(migrated_db, app_user
             rows = cur.fetchall()
             assert [r[0] for r in rows] == ["failed", "success"]
             assert rows[1][1] == 1, "the retry attempt must carry retry_count=1"
+    finally:
+        conn.close()
+
+
+def test_run_bookkeeping_reaches_every_tenant(migrated_db, app_user_dsn, worker_module):
+    """KBSourceRun has row-level security through its source's tenant. With two
+    tenants, a scan that is not walked tenant by tenant sees at most the one the
+    session happened to be left on: a stale run, a due retry and a queued run of
+    the other tenant would be stranded."""
+    yearly = {"cron": "0 3 1 1 *"}  # never due here: only retries and Run Now run
+    first = _seed_tenant_and_source(migrated_db["dsn"], "Two-tenant Source 1", extra_config=yearly)
+    seeded = [
+        first,
+        _seed_tenant_and_source(
+            migrated_db["dsn"], "Two-tenant Source 2", extra_config=yearly, role_row_id=first[1]
+        ),
+    ]
+    sources = [source_id for _tenant, _role, source_id in seeded]
+    SessionLocal = _session_factory(app_user_dsn)
+    fetch = "services.platform_workers.workers.web_crawler.worker.connector_fetch"
+    conn = psycopg2.connect(migrated_db["dsn"])
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            for source_id in sources:
+                cur.execute(
+                    'INSERT INTO "KBSourceRun" (run_id, source_id, status, trigger, retry_count, started_at)'
+                    " VALUES (%s, %s, 'running', 'manual', 0, now() - interval '1 day')",
+                    (str(uuid.uuid4()), source_id),
+                )
+
+        # A worker that died left both tenants' runs 'running'.
+        worker_module.reset_stale_runs(SessionLocal)
+        with conn.cursor() as cur:
+            cur.execute('SELECT status FROM "KBSourceRun" ORDER BY source_id')
+            assert [r[0] for r in cur.fetchall()] == ["failed", "failed"]
+
+        # Both failed runs are due for a retry (next_retry_at unset).
+        with patch(fetch, side_effect=lambda connector_type, config: _fake_artifact(config["url"])):
+            worker_module.crawl_due_sources(SessionLocal)
+        with conn.cursor() as cur:
+            cur.execute(
+                'SELECT source_id::text FROM "KBSourceRun" WHERE status = %s AND retry_count = 1', ("success",)
+            )
+            assert sorted(r[0] for r in cur.fetchall()) == sorted(sources)
+
+            # Run Now on both: queued runs are claimed and run, each under its tenant.
+            for source_id in sources:
+                cur.execute(
+                    'INSERT INTO "KBSourceRun" (run_id, source_id, status, trigger, retry_count, started_at)'
+                    " VALUES (%s, %s, 'queued', 'manual', 0, now())",
+                    (str(uuid.uuid4()), source_id),
+                )
+        pool = worker_module.RunPool(SessionLocal, max_workers=2)
+        with patch(fetch, side_effect=lambda connector_type, config: _fake_artifact(config["url"])):
+            worker_module.dispatch_queued_runs(SessionLocal, pool)
+            pool._executor.shutdown(wait=True)
+        with conn.cursor() as cur:
+            cur.execute('SELECT count(*) FROM "KBSourceRun" WHERE status = %s', ("queued",))
+            assert cur.fetchone()[0] == 0
     finally:
         conn.close()
 

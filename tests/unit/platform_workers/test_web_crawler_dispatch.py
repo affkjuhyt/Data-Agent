@@ -16,6 +16,15 @@ pytestmark = pytest.mark.unit
 
 RUN_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
 SOURCE_ID = uuid.UUID("22222222-2222-2222-2222-222222222222")
+TENANT = "a0000000-0000-0000-0000-000000000001"
+
+
+@pytest.fixture(autouse=True)
+def _one_tenant(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The scans walk the tenants under row-level security (common/db); the fake
+    session has one, and scoping it is the integration tests' business."""
+    monkeypatch.setattr(wc.worker_db, "tenant_ids", lambda _session: [TENANT])
+    monkeypatch.setattr(wc.worker_db, "set_tenant", lambda _session, _tenant: None)
 
 
 class _Result:
@@ -147,7 +156,7 @@ def test_a_crash_outside_run_source_fails_the_claimed_run_and_frees_the_slot() -
 
     with patch.object(wc, "run_source", _boom):
         pool = wc.RunPool(_SessionFactory(session), max_workers=1)  # type: ignore[arg-type]
-        assert pool.submit({"source_id": "a"}, "manual", run_id=str(RUN_ID))
+        assert pool.submit({"source_id": "a", "tenant_id": TENANT}, "manual", run_id=str(RUN_ID))
         pool._executor.shutdown(wait=True)
     assert session.run.status == "failed"
     assert pool.free_slots() == 1

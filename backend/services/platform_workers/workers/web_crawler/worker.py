@@ -221,7 +221,7 @@ def _latest_run_by_source(session: Session) -> dict[str, _RunInfo]:
     query, not N+1, same idea as schema_crawler's _last_crawled_by_warehouse."""
     # DISTINCT ON keeps it one row per source in Postgres; selecting whole ORM rows and
     # de-duplicating here loaded every run (JSONB included) on each 5s tick.
-    rows = session.execute(
+    query = (
         select(
             KBSourceRunORM.source_id,
             KBSourceRunORM.started_at,
@@ -232,15 +232,18 @@ def _latest_run_by_source(session: Session) -> dict[str, _RunInfo]:
         .distinct(KBSourceRunORM.source_id)
         .order_by(KBSourceRunORM.source_id, KBSourceRunORM.started_at.desc())
     )
-    return {
-        str(row.source_id): {
-            "started_at": row.started_at,
-            "status": row.status,
-            "retry_count": row.retry_count,
-            "next_retry_at": row.next_retry_at,
-        }
-        for row in rows
-    }
+    latest: dict[str, _RunInfo] = {}
+    # KBSourceRun's row-level policy goes through its source's tenant.
+    for tenant_id in worker_db.tenant_ids(session):
+        worker_db.set_tenant(session, tenant_id)
+        for row in session.execute(query):
+            latest[str(row.source_id)] = {
+                "started_at": row.started_at,
+                "status": row.status,
+                "retry_count": row.retry_count,
+                "next_retry_at": row.next_retry_at,
+            }
+    return latest
 
 
 def _is_due(cron_expr: str, last_run: datetime | None, now: datetime) -> bool:
@@ -567,14 +570,16 @@ class RunPool:
             log.exception("RunPool | source=%s crashed outside run_source", source_id)
             if run_id is not None:
                 with contextlib.suppress(Exception):
-                    _finish_run(self._SessionLocal, run_id, "failed", f"worker error: {exc}"[:2000])
+                    _finish_run(
+                        self._SessionLocal, source["tenant_id"], run_id, "failed", f"worker error: {exc}"[:2000]
+                    )
         finally:
             with self._lock:
                 self._in_flight.discard(source_id)
 
 
-def _finish_run(SessionLocal: SessionFactory, run_id: Any, status: str, error: str) -> None:
-    with SessionLocal() as session:
+def _finish_run(SessionLocal: SessionFactory, tenant_id: Any, run_id: Any, status: str, error: str) -> None:
+    with worker_db.tenant_session(SessionLocal, tenant_id) as session:
         run_row = session.get(KBSourceRunORM, uuid.UUID(str(run_id)))
         if run_row is not None:
             run_row.status = status
@@ -588,24 +593,31 @@ def dispatch_queued_runs(SessionLocal: SessionFactory, pool: RunPool) -> None:
     source is busy simply stays queued until that source finishes."""
     if pool.free_slots() <= 0:
         return
+    queued: list[tuple[Any, Any, int, str]] = []
     with SessionLocal() as session:
-        queued = session.execute(
-            select(KBSourceRunORM.run_id, KBSourceRunORM.source_id, KBSourceRunORM.retry_count)
-            .where(KBSourceRunORM.status == "queued")
-            .order_by(KBSourceRunORM.started_at)
-            .limit(50)
-        ).all()
+        # One tenant at a time (row-level security), oldest first within each.
+        for tenant_id in worker_db.tenant_ids(session):
+            worker_db.set_tenant(session, tenant_id)
+            queued += [
+                (run_id, source_id, retry_count, tenant_id)
+                for run_id, source_id, retry_count in session.execute(
+                    select(KBSourceRunORM.run_id, KBSourceRunORM.source_id, KBSourceRunORM.retry_count)
+                    .where(KBSourceRunORM.status == "queued")
+                    .order_by(KBSourceRunORM.started_at)
+                    .limit(50)
+                ).all()
+            ]
         sources = {str(s["source_id"]): s for s in get_active_sources(session)} if queued else {}
-    for run_id, source_id, retry_count in queued:
+    for run_id, source_id, retry_count, tenant_id in queued:
         if pool.free_slots() <= 0:
             break
         source = sources.get(str(source_id))
         if source is None:
-            _finish_run(SessionLocal, run_id, "failed", "source not found or inactive")
+            _finish_run(SessionLocal, tenant_id, run_id, "failed", "source not found or inactive")
             continue
         if pool.is_running(str(source_id)):
             continue
-        with SessionLocal() as session:
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
             result = session.execute(
                 update(KBSourceRunORM)
                 .where(KBSourceRunORM.run_id == run_id, KBSourceRunORM.status == "queued")
@@ -614,7 +626,8 @@ def dispatch_queued_runs(SessionLocal: SessionFactory, pool: RunPool) -> None:
             claimed = result.rowcount == 1
             session.commit()
         if claimed and not pool.submit(source, "manual", retry_count, str(run_id)):
-            with SessionLocal() as session:  # the slot went away between the check and the submit
+            # the slot went away between the check and the submit
+            with worker_db.tenant_session(SessionLocal, tenant_id) as session:
                 session.execute(
                     update(KBSourceRunORM)
                     .where(KBSourceRunORM.run_id == run_id)
@@ -627,32 +640,40 @@ def reset_stale_runs(SessionLocal: SessionFactory, minutes: int = STALE_RUN_MINU
     """A queued/running row this old belongs to a worker that died; without
     this the UI would keep the source locked forever."""
     cutoff = datetime.now(UTC) - timedelta(minutes=minutes)
-    with SessionLocal() as session:
-        session.execute(
-            update(KBSourceRunORM)
-            .where(KBSourceRunORM.status.in_(("queued", "running")), KBSourceRunORM.started_at < cutoff)
-            .values(
-                status="failed",
-                error="timed out without finishing (worker lost?)",
-                finished_at=datetime.now(UTC),
-            )
-        )
-        session.commit()
+    _update_every_tenant(
+        SessionLocal,
+        update(KBSourceRunORM)
+        .where(KBSourceRunORM.status.in_(("queued", "running")), KBSourceRunORM.started_at < cutoff)
+        .values(
+            status="failed",
+            error="timed out without finishing (worker lost?)",
+            finished_at=datetime.now(UTC),
+        ),
+    )
 
 
 def abandon_running_runs(SessionLocal: SessionFactory) -> None:
     """At start-up nothing of this process is running, so a 'running' row was
     left by the previous process."""
+    _update_every_tenant(
+        SessionLocal,
+        update(KBSourceRunORM)
+        .where(KBSourceRunORM.status == "running")
+        .values(
+            status="failed",
+            error="interrupted by a worker restart",
+            finished_at=datetime.now(UTC),
+        ),
+    )
+
+
+def _update_every_tenant(SessionLocal: SessionFactory, stmt: Any) -> None:
+    """Run one UPDATE under each tenant in turn: row-level security lets it see
+    one tenant's rows at a time. One transaction, committed at the end."""
     with SessionLocal() as session:
-        session.execute(
-            update(KBSourceRunORM)
-            .where(KBSourceRunORM.status == "running")
-            .values(
-                status="failed",
-                error="interrupted by a worker restart",
-                finished_at=datetime.now(UTC),
-            )
-        )
+        for tenant_id in worker_db.tenant_ids(session):
+            worker_db.set_tenant(session, tenant_id)
+            session.execute(stmt)
         session.commit()
 
 
