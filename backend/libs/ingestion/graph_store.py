@@ -107,7 +107,7 @@ class GraphStore:
         )
 
         neo4j_committed = False
-        async with self._postgres.get_client() as session:
+        async with self._postgres.get_client(tenant_id=tenant_id) as session:
             try:
                 await self._stage_postgres(
                     session, tenant_id, knowledge_base, data_id, block_id,
@@ -304,7 +304,7 @@ class GraphStore:
         pair's count from Postgres (now without this chunk) and reconcile Neo4j —
         delete bridges that fell to zero, fix the rest, prune nodes left edgeless."""
         try:
-            async with self._postgres.get_client() as session:
+            async with self._postgres.get_client(tenant_id=tenant_id) as session:
                 counts_by_pair = await self._count_pairs(session, tenant_id, knowledge_base, entity_pairs)
             async with self._neo4j.session() as session:
                 transaction = await session.begin_transaction()
@@ -334,7 +334,7 @@ class GraphStore:
         target = _as_uuid(value)
         if target is None:
             return
-        async with self._postgres.get_client() as session:
+        async with self._postgres.get_client(tenant_id=tenant_id) as session:
             try:
                 affected_node_pairs = (await session.execute(
                     sa_select(KBNeo4jRelationshipORM.from_node, KBNeo4jRelationshipORM.to_node)
@@ -349,7 +349,7 @@ class GraphStore:
                 raise
 
         node_id_pairs = [(from_node_id, to_node_id) for from_node_id, to_node_id in affected_node_pairs]
-        async with self._postgres.get_client() as session:
+        async with self._postgres.get_client(tenant_id=tenant_id) as session:
             affected_node_ids = {node_id for pair in node_id_pairs for node_id in pair}
             name_by_node_id = dict((await session.execute(
                 sa_select(KBNeo4jNodeORM.node_id, KBNeo4jNodeORM.node_name)
@@ -403,7 +403,7 @@ class GraphStore:
 
     async def _prune_postgres_orphans(self, tenant_id: str, knowledge_base: str) -> None:
         """Delete nodes no relationship references any more."""
-        async with self._postgres.get_client() as session:
+        async with self._postgres.get_client(tenant_id=tenant_id) as session:
             try:
                 await session.execute(
                     sa_delete(KBNeo4jNodeORM)
