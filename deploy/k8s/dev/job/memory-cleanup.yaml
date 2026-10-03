@@ -19,13 +19,14 @@ metadata:
 data:
   MEMORY_RETENTION_DAYS: '90'
   MEMORY_CLEANUP_BATCH_SIZE: '1000'
+  STRICT_TENANT_ISOLATION: '1'
 ---
 # Daily retention for agent memory: hard-deletes AgentMemories tombstones and
 # expired rows, expires EpisodicMemory and archives the lowest-importance rows
 # over each (tenant, domain)'s MemoryRetentionConfig cap. The tables use FORCE
-# ROW LEVEL SECURITY per tenant, so DATABASE_URL must be a role that bypasses
-# RLS (the same admin role workflow-runtime uses); with an RLS-bound role every
-# DELETE matches nothing and the job "succeeds" without cleaning anything.
+# ROW LEVEL SECURITY per tenant: DATABASE_URL is app_user and the job cleans one
+# tenant at a time with app.tenant_id set. STRICT_TENANT_ISOLATION makes it fail
+# instead of running unenforced if DATABASE_URL is ever a role that bypasses RLS.
 apiVersion: batch/v1
 kind: CronJob
 metadata:

@@ -8,18 +8,20 @@ and read at ingestion time by the KB worker to gate PII redaction — so togglin
 """
 
 from typing import Any
-import psycopg2.extras
 from fastapi import APIRouter, Depends, Header, HTTPException
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import ComplianceSettingORM
 from libs.shared.auth import require_role
 from libs.shared.pii_detector import PII_TYPES, scan as pii_scan
 try:
     from services.auth_api.infrastructure.config import log
-    from services.auth_api.infrastructure.db import get_db
+    from services.auth_api.infrastructure.db import get_session, orm_to_dict
     from services.auth_api.schemas import ComplianceSettingsInput, PiiScanInput
 except ModuleNotFoundError:
     from auth_api.infrastructure.config import log
-    from auth_api.infrastructure.db import get_db
+    from auth_api.infrastructure.db import get_session, orm_to_dict
     from auth_api.schemas import ComplianceSettingsInput, PiiScanInput
 
 router = APIRouter()
@@ -55,9 +57,11 @@ def _row_to_settings(row: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def _fetch(cur: Any, tenant_id: str) -> dict[str, Any]:
-    cur.execute("SELECT * FROM compliance_settings WHERE tenant_id = %s", (tenant_id,))
-    return _row_to_settings(cur.fetchone())
+def _fetch(session: Any, tenant_id: str) -> dict[str, Any]:
+    row = session.scalar(
+        select(ComplianceSettingORM).where(ComplianceSettingORM.tenant_id == tenant_id)
+    )
+    return _row_to_settings(orm_to_dict(row) if row is not None else None)
 
 
 def _compute_score(s: dict[str, Any]) -> dict[str, Any]:
@@ -101,12 +105,8 @@ def get_settings(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            return _fetch(cur, x_tenant_id)
-    finally:
-        conn.close()
+    with get_session(x_tenant_id) as session:
+        return _fetch(session, x_tenant_id)
 
 
 @router.put("/api/auth/compliance/settings")
@@ -115,56 +115,49 @@ def put_settings(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            current = _fetch(cur, x_tenant_id)
-            merged = {**current}
-            data = body.model_dump(exclude_none=True)
-            for key in _DEFAULTS:
-                if key in data:
-                    merged[key] = data[key]
+    with get_session(x_tenant_id) as session:
+        current = _fetch(session, x_tenant_id)
+        merged = {**current}
+        data = body.model_dump(exclude_none=True)
+        for key in _DEFAULTS:
+            if key in data:
+                merged[key] = data[key]
 
-            # Validate + normalize PII types against the known set.
-            valid = [t for t in PII_TYPES]
-            types = [t.strip().upper() for t in merged["pii_types"] if t and t.strip()]
-            merged["pii_types"] = [t for t in types if t in valid] or list(PII_TYPES)
-            if int(merged["retention_days"]) < 0:
-                raise HTTPException(status_code=422, detail="retention_days must be >= 0")
+        # Validate + normalize PII types against the known set.
+        valid = [t for t in PII_TYPES]
+        types = [t.strip().upper() for t in merged["pii_types"] if t and t.strip()]
+        merged["pii_types"] = [t for t in types if t in valid] or list(PII_TYPES)
+        if int(merged["retention_days"]) < 0:
+            raise HTTPException(status_code=422, detail="retention_days must be >= 0")
 
-            cur.execute(
-                """
-                INSERT INTO compliance_settings
-                    (tenant_id, pii_masking, pii_types, residency_region, residency_standards,
-                     retention_days, retention_lock, zero_trust, audit_residency, updated_at, updated_by)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), %s)
-                ON CONFLICT (tenant_id) DO UPDATE SET
-                    pii_masking         = EXCLUDED.pii_masking,
-                    pii_types           = EXCLUDED.pii_types,
-                    residency_region    = EXCLUDED.residency_region,
-                    residency_standards = EXCLUDED.residency_standards,
-                    retention_days      = EXCLUDED.retention_days,
-                    retention_lock      = EXCLUDED.retention_lock,
-                    zero_trust          = EXCLUDED.zero_trust,
-                    audit_residency     = EXCLUDED.audit_residency,
-                    updated_at          = now(),
-                    updated_by          = EXCLUDED.updated_by
-                """,
-                (
-                    x_tenant_id, merged["pii_masking"], ",".join(merged["pii_types"]),
-                    merged["residency_region"], merged["residency_standards"],
-                    int(merged["retention_days"]), merged["retention_lock"],
-                    merged["zero_trust"], merged["audit_residency"], user["user_id"],
-                ),
+        values = {
+            "tenant_id": x_tenant_id,
+            "pii_masking": merged["pii_masking"],
+            "pii_types": ",".join(merged["pii_types"]),
+            "residency_region": merged["residency_region"],
+            "residency_standards": merged["residency_standards"],
+            "retention_days": int(merged["retention_days"]),
+            "retention_lock": merged["retention_lock"],
+            "zero_trust": merged["zero_trust"],
+            "audit_residency": merged["audit_residency"],
+            "updated_by": user["user_id"],
+        }
+        stmt = (
+            pg_insert(ComplianceSettingORM)
+            .values(**values)
+            .on_conflict_do_update(
+                index_elements=[ComplianceSettingORM.tenant_id],
+                set_={**values, "updated_at": func.now()},
             )
-        conn.commit()
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            result = _fetch(cur, x_tenant_id)
+            .returning(ComplianceSettingORM)
+        )
+        # populate_existing: _fetch above already put this row in the identity map, and
+        # a Core upsert does not refresh it — without this the response is the old row.
+        row = session.scalar(stmt, execution_options={"populate_existing": True})
+        result = _row_to_settings(orm_to_dict(row))
         log.info("compliance_settings_updated", tenant=x_tenant_id, actor=user["user_id"],
                  pii_masking=result["pii_masking"])
         return result
-    finally:
-        conn.close()
 
 
 @router.get("/api/auth/compliance/score")
@@ -172,13 +165,8 @@ def get_score(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            settings = _fetch(cur, x_tenant_id)
-        return _compute_score(settings)
-    finally:
-        conn.close()
+    with get_session(x_tenant_id) as session:
+        return _compute_score(_fetch(session, x_tenant_id))
 
 
 @router.post("/api/auth/compliance/pii-scan")

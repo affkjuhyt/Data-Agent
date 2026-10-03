@@ -19,6 +19,5 @@ PRIVATE_FALLBACK_CIDRS = [
     "192.168.0.0/16",
 ]
 
-POOL_MIN = int(os.environ.get("DB_POOL_MIN", "2"))
 POOL_MAX = int(os.environ.get("DB_POOL_MAX", "20"))
 OWNER_POOL_MAX = POOL_MAX + 2

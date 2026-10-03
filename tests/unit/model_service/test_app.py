@@ -30,11 +30,12 @@ from .._loader import SERVICES
 
 pytestmark = [
     pytest.mark.unit,
-    # The image ships Starlette 1.x, whose TestClient wants `httpx2` and warns
-    # when it falls back to the `httpx` that requirements-test.txt installs. The
-    # suite runs with filterwarnings=error, and this warning is not a
-    # DeprecationWarning subclass, so the global ignore does not cover it.
-    pytest.mark.filterwarnings("ignore::starlette.exceptions.StarletteDeprecationWarning"),
+    # Starlette 1.x (what the unpinned image installs) warns when its TestClient
+    # falls back to the `httpx` from requirements-test.txt instead of `httpx2`; the
+    # suite runs with filterwarnings=error. Matched by message, not by
+    # StarletteDeprecationWarning, because older Starlette has no such class and the
+    # filter would then fail to resolve.
+    pytest.mark.filterwarnings("ignore:Using `httpx` with `starlette.testclient` is deprecated"),
 ]
 
 MODEL_SERVICE_DIR = SERVICES / "model_service"

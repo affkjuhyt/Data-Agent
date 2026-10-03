@@ -18,6 +18,8 @@ from ._paths import RUNTIME_LAYER_DIRS
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
+TENANT_ID = "11111111-1111-1111-1111-111111111111"
+SECRET_ID = "22222222-2222-2222-2222-222222222222"
 
 
 @pytest.fixture(autouse=True)
@@ -47,9 +49,7 @@ def _fake_pg_client(*, connected=True, row=None):
     client = MagicMock()
     client.is_connected.return_value = connected
     session = MagicMock()
-    result = MagicMock()
-    result.fetchone.return_value = row
-    session.execute = AsyncMock(return_value=result)
+    session.scalar = AsyncMock(return_value=row)
     client.get_client.return_value = _FakeAsyncSessionCtx(session)
     return client
 
@@ -65,7 +65,7 @@ async def test_returns_none_when_postgres_not_connected(monkeypatch):
 
     _patch_pg_client(monkeypatch, _fake_pg_client(connected=False))
 
-    result = await ws.resolve_snowflake_password("tenant-1", "secret-1")
+    result = await ws.resolve_snowflake_password(TENANT_ID, SECRET_ID)
 
     assert result is None
 
@@ -76,7 +76,7 @@ async def test_returns_none_when_secret_not_found(monkeypatch):
 
     _patch_pg_client(monkeypatch, _fake_pg_client(row=None))
 
-    result = await ws.resolve_snowflake_password("tenant-1", "secret-1")
+    result = await ws.resolve_snowflake_password(TENANT_ID, SECRET_ID)
 
     assert result is None
 
@@ -88,7 +88,7 @@ async def test_returns_none_when_secret_inactive(monkeypatch):
     row = SimpleNamespace(key_name="snowflake-acme", key_type="WAREHOUSE_PASSWORD", is_active=False)
     _patch_pg_client(monkeypatch, _fake_pg_client(row=row))
 
-    result = await ws.resolve_snowflake_password("tenant-1", "secret-1")
+    result = await ws.resolve_snowflake_password(TENANT_ID, SECRET_ID)
 
     assert result is None
 
@@ -100,7 +100,7 @@ async def test_returns_none_when_secret_wrong_key_type(monkeypatch):
     row = SimpleNamespace(key_name="some-other-key", key_type="BEARER_TOKEN", is_active=True)
     _patch_pg_client(monkeypatch, _fake_pg_client(row=row))
 
-    result = await ws.resolve_snowflake_password("tenant-1", "secret-1")
+    result = await ws.resolve_snowflake_password(TENANT_ID, SECRET_ID)
 
     assert result is None
 
@@ -114,7 +114,7 @@ async def test_returns_none_when_vault_not_configured(monkeypatch):
     row = SimpleNamespace(key_name="snowflake-acme", key_type="WAREHOUSE_PASSWORD", is_active=True)
     _patch_pg_client(monkeypatch, _fake_pg_client(row=row))
 
-    result = await ws.resolve_snowflake_password("tenant-1", "secret-1")
+    result = await ws.resolve_snowflake_password(TENANT_ID, SECRET_ID)
 
     assert result is None
 
@@ -132,11 +132,11 @@ async def test_resolves_password_from_vault(monkeypatch):
     fake_vault.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {"value": "s3cr3t-pw"}}}
     monkeypatch.setattr(ws, "_get_vault", lambda: fake_vault)
 
-    result = await ws.resolve_snowflake_password("tenant-1", "secret-1")
+    result = await ws.resolve_snowflake_password(TENANT_ID, SECRET_ID)
 
     assert result == "s3cr3t-pw"
     fake_vault.secrets.kv.v2.read_secret_version.assert_called_once_with(
-        mount_point="secret", path="tenants/tenant-1/snowflake-acme", raise_on_deleted_version=True,
+        mount_point="secret", path=f"tenants/{TENANT_ID}/snowflake-acme", raise_on_deleted_version=True,
     )
 
 
@@ -153,7 +153,7 @@ async def test_returns_none_when_vault_read_raises(monkeypatch):
     fake_vault.secrets.kv.v2.read_secret_version.side_effect = RuntimeError("vault unreachable")
     monkeypatch.setattr(ws, "_get_vault", lambda: fake_vault)
 
-    result = await ws.resolve_snowflake_password("tenant-1", "secret-1")
+    result = await ws.resolve_snowflake_password(TENANT_ID, SECRET_ID)
 
     assert result is None
 
@@ -174,7 +174,7 @@ async def test_resolve_db_connector_password_uses_its_own_key_type(monkeypatch):
     fake_vault.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {"value": "db-pw"}}}
     monkeypatch.setattr(ws, "_get_vault", lambda: fake_vault)
 
-    result = await ws.resolve_db_connector_password("tenant-1", "secret-1")
+    result = await ws.resolve_db_connector_password(TENANT_ID, SECRET_ID)
 
     assert result == "db-pw"
 
@@ -188,9 +188,35 @@ async def test_resolve_db_connector_password_rejects_warehouse_key_type(monkeypa
     row = SimpleNamespace(key_name="snowflake-acme", key_type="WAREHOUSE_PASSWORD", is_active=True)
     _patch_pg_client(monkeypatch, _fake_pg_client(row=row))
 
-    result = await ws.resolve_db_connector_password("tenant-1", "secret-1")
+    result = await ws.resolve_db_connector_password(TENANT_ID, SECRET_ID)
 
     assert result is None
+
+
+@pytest.mark.unit
+async def test_resolve_mcp_token_reads_an_mcp_token_secret(monkeypatch):
+    import warehouse_secrets as ws
+
+    monkeypatch.setattr(ws, "OPENBAO_ROLE_ID", "role-1")
+    monkeypatch.setattr(ws, "OPENBAO_SECRET_ID", "secret-id-1")
+    row = SimpleNamespace(key_name="mcp-crm", key_type="MCP_TOKEN", is_active=True)
+    _patch_pg_client(monkeypatch, _fake_pg_client(row=row))
+
+    fake_vault = MagicMock()
+    fake_vault.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {"value": "mcp-tok"}}}
+    monkeypatch.setattr(ws, "_get_vault", lambda: fake_vault)
+
+    assert await ws.resolve_mcp_token(TENANT_ID, SECRET_ID) == "mcp-tok"
+
+
+@pytest.mark.unit
+async def test_resolve_mcp_token_rejects_other_key_types(monkeypatch):
+    import warehouse_secrets as ws
+
+    row = SimpleNamespace(key_name="db-connector-sales", key_type="DB_CONNECTOR_PASSWORD", is_active=True)
+    _patch_pg_client(monkeypatch, _fake_pg_client(row=row))
+
+    assert await ws.resolve_mcp_token(TENANT_ID, SECRET_ID) is None
 
 
 @pytest.mark.unit
@@ -200,7 +226,7 @@ async def test_resolve_snowflake_password_rejects_db_connector_key_type(monkeypa
     row = SimpleNamespace(key_name="db-connector-sales", key_type="DB_CONNECTOR_PASSWORD", is_active=True)
     _patch_pg_client(monkeypatch, _fake_pg_client(row=row))
 
-    result = await ws.resolve_snowflake_password("tenant-1", "secret-1")
+    result = await ws.resolve_snowflake_password(TENANT_ID, SECRET_ID)
 
     assert result is None
 

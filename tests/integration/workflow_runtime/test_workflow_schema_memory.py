@@ -1,10 +1,10 @@
-"""Integration tests for Workflow Memory + Schema Memory (doc §3.7,
-docs/STM_LTM_Memory_Architecture.docx — the two LTM layers a data task
-platform needs on top of generic conversational memory).
+"""Integration tests for Workflow Memory (doc §3.7,
+docs/STM_LTM_Memory_Architecture.docx — the LTM layer a data task platform
+needs on top of generic conversational memory).
 
 Covers:
-  1. Migration c3d4e5f6a7b8 — shape (columns/constraint), RLS policy, clean
-     downgrade/re-upgrade. Same asyncpg-subprocess pattern as
+  1. Migration c3d4e5f6a7b8 — tables, RLS policy, clean downgrade/re-upgrade.
+     Its other table, SchemaMemory, was never used and 9d4f2b7c1e3a drops it. Same asyncpg-subprocess pattern as
      test_alembic_migrations.py, because that's the driver production
      actually runs migrations through.
   2. backend/services/workflow_runtime/infrastructure/workflow_memory.py — record/retrieve against
@@ -24,13 +24,10 @@ import pathlib
 import subprocess
 import sys
 import uuid
-from typing import Iterator
 
 import psycopg2
-import psycopg2.errors
 import pytest
 
-from tests.integration._db import reset_database
 
 pytestmark = pytest.mark.integration
 
@@ -51,22 +48,6 @@ def _run_alembic(dsn: str, *args: str) -> subprocess.CompletedProcess:
     )
 
 
-@pytest.fixture
-def fresh_db(postgres_container) -> Iterator[dict[str, str]]:
-    """Mirrors test_alembic_migrations.py's fixture of the same name —
-    wipe public schema so each test gets a deterministic fresh DB without
-    paying for a new container."""
-    reset_database(postgres_container["dsn"])
-    yield postgres_container
-
-
-@pytest.fixture
-def migrated_db(fresh_db) -> dict[str, str]:
-    result = _run_alembic(fresh_db["dsn"], "upgrade", "head")
-    assert result.returncode == 0, f"alembic upgrade failed:\n{result.stdout}\n{result.stderr}"
-    return fresh_db
-
-
 def _seed_tenant_and_agent(dsn: str) -> tuple[str, str]:
     tenant_id, agent_id = str(uuid.uuid4()), str(uuid.uuid4())
     conn = psycopg2.connect(dsn)
@@ -74,8 +55,8 @@ def _seed_tenant_and_agent(dsn: str) -> tuple[str, str]:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO "Tenants" (id, name, slug, data_residency) VALUES (%s, %s, %s, %s)""",
-                (tenant_id, "WM Test Tenant", f"wm-test-{tenant_id[:8]}", "Asia-SE1"),
+                """INSERT INTO "Tenants" (id, name, slug) VALUES (%s, %s, %s)""",
+                (tenant_id, "WM Test Tenant", f"wm-test-{tenant_id[:8]}"),
             )
             cur.execute(
                 """INSERT INTO "Agents" (id, tenant_id, name) VALUES (%s, %s, %s)""",
@@ -88,7 +69,7 @@ def _seed_tenant_and_agent(dsn: str) -> tuple[str, str]:
 
 # ─── 1. Migration shape ─────────────────────────────────────────────────
 
-def test_workflow_and_schema_memory_tables_created(migrated_db):
+def test_workflow_memory_created_and_schema_memory_dropped_at_head(migrated_db):
     conn = psycopg2.connect(migrated_db["dsn"])
     try:
         with conn.cursor() as cur:
@@ -100,46 +81,22 @@ def test_workflow_and_schema_memory_tables_created(migrated_db):
             tables = [r[0] for r in cur.fetchall()]
     finally:
         conn.close()
-    assert tables == ["SchemaMemory", "WorkflowMemory"]
+    assert tables == ["WorkflowMemory"]
 
 
-def test_schema_memory_unique_constraint_blocks_duplicate_table(migrated_db):
-    tenant_id, _ = _seed_tenant_and_agent(migrated_db["dsn"])
-    conn = psycopg2.connect(migrated_db["dsn"])
-    conn.autocommit = True
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """INSERT INTO "SchemaMemory"
-                       (id, tenant_id, data_source, table_name, column_metadata, business_description)
-                   VALUES (%s, %s, 'postgresql', 'orders', '[]'::jsonb, 'orders table')""",
-                (str(uuid.uuid4()), tenant_id),
-            )
-            with pytest.raises(psycopg2.errors.UniqueViolation):
-                cur.execute(
-                    """INSERT INTO "SchemaMemory"
-                           (id, tenant_id, data_source, table_name, column_metadata, business_description)
-                       VALUES (%s, %s, 'postgresql', 'orders', '[]'::jsonb, 'dup')""",
-                    (str(uuid.uuid4()), tenant_id),
-                )
-    finally:
-        conn.close()
-
-
-def test_rls_tenant_isolation_policy_exists_on_new_tables(migrated_db):
+def test_rls_tenant_isolation_policy_exists_on_workflow_memory(migrated_db):
     conn = psycopg2.connect(migrated_db["dsn"])
     try:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT c.relname, p.polname
                 FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid
-                WHERE c.relname IN ('WorkflowMemory', 'SchemaMemory') AND p.polname = 'tenant_isolation'
-                ORDER BY c.relname
+                WHERE c.relname = 'WorkflowMemory' AND p.polname = 'tenant_isolation'
             """)
             rows = cur.fetchall()
     finally:
         conn.close()
-    assert rows == [("SchemaMemory", "tenant_isolation"), ("WorkflowMemory", "tenant_isolation")]
+    assert rows == [("WorkflowMemory", "tenant_isolation")]
 
 
 def test_downgrade_drops_new_tables_then_reupgrade_is_clean(migrated_db):

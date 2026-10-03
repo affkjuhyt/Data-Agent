@@ -156,9 +156,20 @@ def _evidence(chunks: list[dict[str, Any]]) -> list[EvidenceItem]:
             ),
             doc_id=chunk.get("doc_id") or "",
             page=chunk.get("page"),
+            source_ref=_source_ref(chunk),
         )
         for chunk in chunks
     ]
+
+
+def _source_ref(chunk: dict[str, Any]) -> str | None:
+    """What a citation of a non-KB chunk (warehouse result, web page, tool
+    output) opens, the way responder.py's citation shows it. A KB chunk is
+    cited by its doc_id alone: one without it really does resolve to nothing."""
+    # Same category responder._citation_type starts from; a chunk without one is KB.
+    if (chunk.get("rrf_sources") or ["kb"])[0] == "kb":
+        return None
+    return chunk.get("url") or chunk.get("id") or None
 
 
 def _report(verdict: Verdict) -> dict[str, Any]:

@@ -18,7 +18,7 @@ import psycopg2
 import psycopg2.errors
 import pytest
 
-from tests.integration._db import reset_database, run_alembic
+from tests.integration._db import migrated_database, run_alembic
 
 pytestmark = pytest.mark.integration
 
@@ -44,8 +44,7 @@ def _upgrade(dsn: str, target: str = "head") -> None:
 
 @pytest.fixture
 def migrated_db(postgres_container: dict[str, str]) -> Iterator[str]:
-    reset_database(postgres_container["dsn"])
-    _upgrade(postgres_container["dsn"])
+    migrated_database(postgres_container["dsn"])
     yield postgres_container["dsn"]
 
 

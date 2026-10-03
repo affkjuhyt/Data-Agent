@@ -33,10 +33,9 @@ log = logging.getLogger(__name__)
 # Owner tag of the OutboxEvents rows this service publishes (its relay drains only these).
 OUTBOX_PRODUCER = "kb-backend"
 
-# KB_BACKEND_URL_ASYNC is the table-scoped, NOBYPASSRLS role. Falling back to
-# POSTGRES_URL keeps an un-migrated deployment working; setting it is what
-# makes row-level security actually apply to this service.
-_POSTGRES_URL = os.environ.get("KB_BACKEND_URL_ASYNC", "") or os.environ.get("POSTGRES_URL", "")
+# KB_BACKEND_URL_ASYNC is the table-scoped, NOBYPASSRLS role. There is no
+# POSTGRES_URL fallback any more: that was the owner role, which bypasses RLS.
+_POSTGRES_URL = os.environ.get("KB_BACKEND_URL_ASYNC", "")
 _MONGO_URL = os.environ.get("MONGO_URL", "mongodb://mongo:27017/dataagent")
 _MINIO_URL = os.environ.get("MINIO_URL", "http://minioadmin:minioadmin@minio:9000")
 _KAFKA_URL = os.environ.get("KAFKA_URL", "kafka:9092")
@@ -81,7 +80,7 @@ def _supervise(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if not _POSTGRES_URL:
-        raise RuntimeError("POSTGRES_URL is not set (see deploy/k8s/secrets.env.example)")
+        raise RuntimeError("KB_BACKEND_URL_ASYNC is not set (see deploy/k8s/secrets.env.example)")
 
     retry = RetryConfig()
 

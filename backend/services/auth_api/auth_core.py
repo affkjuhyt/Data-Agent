@@ -19,10 +19,7 @@ from typing import Any, Optional
 import bcrypt
 import httpx
 import hvac
-import psycopg2
-import psycopg2.extras
 from fastapi import Depends, Header, HTTPException, Path, Query
-from psycopg2 import pool as pg_pool
 
 from libs.shared.auth import get_current_user, require_role
 try:
@@ -51,17 +48,11 @@ try:
         OWNER_POOL_MAX as _OWNER_POOL_MAX,
         PG_DSN,
         POOL_MAX,
-        POOL_MIN,
         PRIVATE_FALLBACK_CIDRS as _PRIVATE_FALLBACK,
         log,
     )
     from services.auth_api.infrastructure.db import (
-        PooledConnection as _PooledConn,
         ensure_settings_table as _ensure_settings_table,
-        get_db,
-        get_owner_pool as _get_owner_pool,
-        owner_pool as _owner_pool,
-        owner_pool_lock as _owner_pool_lock,
     )
     from services.auth_api.infrastructure.vault import (
         OPENBAO_TOKEN,
@@ -113,17 +104,11 @@ except ModuleNotFoundError:
         OWNER_POOL_MAX as _OWNER_POOL_MAX,
         PG_DSN,
         POOL_MAX,
-        POOL_MIN,
         PRIVATE_FALLBACK_CIDRS as _PRIVATE_FALLBACK,
         log,
     )
     from auth_api.infrastructure.db import (
-        PooledConnection as _PooledConn,
         ensure_settings_table as _ensure_settings_table,
-        get_db,
-        get_owner_pool as _get_owner_pool,
-        owner_pool as _owner_pool,
-        owner_pool_lock as _owner_pool_lock,
     )
     from auth_api.infrastructure.vault import (
         OPENBAO_TOKEN,
@@ -171,7 +156,6 @@ __all__ = [
     "bcrypt",
     "datetime",
     "get_current_user",
-    "get_db",
     "get_vault",
     "httpx",
     "hvac",
@@ -183,9 +167,6 @@ __all__ = [
     "os",
     "PG_DSN",
     "POOL_MAX",
-    "POOL_MIN",
-    "psycopg2",
-    "pg_pool",
     "require_role",
     "secrets",
     "string",
@@ -206,16 +187,12 @@ __all__ = [
     "_get_active_cidrs",
     "_get_gov_setting",
     "_get_ip_mode",
-    "_get_owner_pool",
     "_GOV_KEYS",
     "_hash_key",
     "_IP_PROTECTED_ROUTES",
     "_IP_PROTECTED_SERVICES",
     "_load_openbao_token",
     "_OWNER_POOL_MAX",
-    "_owner_pool",
-    "_owner_pool_lock",
-    "_PooledConn",
     "_PRIVATE_FALLBACK",
     "_run_auto_rotation",
     "_sync_kong",

@@ -9,48 +9,20 @@ test_workflow_schema_memory.py's `wm` fixture.
 from __future__ import annotations
 
 import importlib
-import os
 import pathlib
-import subprocess
 import sys
 import uuid
-from typing import Iterator
 
 import psycopg2
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-from tests.integration._db import reset_database
 
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-ALEMBIC_INI = REPO_ROOT / "backend" / "alembic" / "alembic.ini"
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform_workers")
-
-
-def _async_dsn(libpq_dsn: str) -> str:
-    return "postgresql+asyncpg://" + libpq_dsn[len("postgresql://"):]
-
-
-def _run_alembic(dsn: str, *args: str) -> subprocess.CompletedProcess:
-    env = {**os.environ, "DATABASE_URL": _async_dsn(dsn), "PYTHONPATH": str(REPO_ROOT)}
-    return subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", str(ALEMBIC_INI), *args],
-        capture_output=True, text=True, env=env, cwd=str(REPO_ROOT), timeout=60,
-    )
-
-
-@pytest.fixture
-def fresh_db(postgres_container) -> Iterator[dict[str, str]]:
-    reset_database(postgres_container["dsn"])
-    yield postgres_container
-
-
-@pytest.fixture
-def migrated_db(fresh_db) -> dict[str, str]:
-    result = _run_alembic(fresh_db["dsn"], "upgrade", "head")
-    assert result.returncode == 0, f"alembic upgrade failed:\n{result.stdout}\n{result.stderr}"
-    return fresh_db
 
 
 def _seed_tenant_and_warehouse(dsn: str, selected_tables: list[str] | None = None) -> tuple[str, str]:
@@ -60,8 +32,8 @@ def _seed_tenant_and_warehouse(dsn: str, selected_tables: list[str] | None = Non
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO "Tenants" (id, name, slug, data_residency) VALUES (%s, %s, %s, %s)""",
-                (tenant_id, "Crawler Test Tenant", f"crawler-test-{tenant_id[:8]}", "Asia-SE1"),
+                """INSERT INTO "Tenants" (id, name, slug) VALUES (%s, %s, %s)""",
+                (tenant_id, "Crawler Test Tenant", f"crawler-test-{tenant_id[:8]}"),
             )
             cur.execute(
                 """INSERT INTO "KBWarehouse" (warehouse_id, tenant_id, service, description)
@@ -101,7 +73,7 @@ _FAKE_METADATA = {
 
 
 @pytest.fixture
-def worker(migrated_db, qdrant_container, monkeypatch):
+def worker(migrated_db, app_user_dsn, qdrant_container, monkeypatch):
     """Imports platform_workers/workers/schema_crawler/worker.py the way the
     container does (service dir on sys.path), pointed at the
     migrated test DB + test Qdrant, with Snowflake discovery and the LLM
@@ -137,31 +109,45 @@ def worker(migrated_db, qdrant_container, monkeypatch):
         qdrant = QdrantClient(url=qdrant_container["url"])
         worker_mod.ensure_qdrant_collection(qdrant)
 
-        conn = psycopg2.connect(migrated_db["dsn"])
-        conn.autocommit = False
+        # crawl_all/handle_ddl_event take a session factory (they took a psycopg2
+        # connection): each read/write unit opens and closes its own session.
+        # As app_user, so row-level security applies as on the cluster; the
+        # yielded superuser DSN is for seeding and assertions.
+        engine = create_engine(
+            "postgresql+psycopg2://" + app_user_dsn[len("postgresql://"):]
+        )
 
-        yield worker_mod, conn, qdrant, migrated_db["dsn"]
+        yield worker_mod, sessionmaker(engine), qdrant, migrated_db["dsn"]
 
-        conn.close()
+        engine.dispose()
     finally:
         for p in added:
             if p in sys.path:
                 sys.path.remove(p)
 
 
+def _fetchall(dsn: str, sql: str, params: tuple = ()) -> list[tuple]:
+    conn = psycopg2.connect(dsn)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
 def test_crawl_all_creates_postgres_row_and_qdrant_point(worker):
-    worker_mod, conn, qdrant, dsn = worker
+    worker_mod, SessionLocal, qdrant, dsn = worker
     tenant_id, warehouse_id = _seed_tenant_and_warehouse(dsn, ["fact_stock_price"])
 
-    worker_mod.crawl_all(conn, qdrant)
+    worker_mod.crawl_all(SessionLocal, qdrant)
 
-    with conn.cursor() as cur:
-        cur.execute(
-            """SELECT table_name, schema_hash, qdrant_point_id, text_description FROM "SchemaCatalog"
-               WHERE tenant_id=%s AND warehouse_id=%s""",
-            (tenant_id, warehouse_id),
-        )
-        rows = cur.fetchall()
+    rows = _fetchall(
+        dsn,
+        """SELECT table_name, schema_hash, qdrant_point_id, text_description FROM "SchemaCatalog"
+           WHERE tenant_id=%s AND warehouse_id=%s""",
+        (tenant_id, warehouse_id),
+    )
 
     assert len(rows) == 1
     table_name, schema_hash, point_id, text_description = rows[0]
@@ -176,62 +162,60 @@ def test_crawl_all_creates_postgres_row_and_qdrant_point(worker):
 
 
 def test_crawl_all_skips_unchanged_table_on_second_run(worker, monkeypatch):
-    worker_mod, conn, qdrant, dsn = worker
+    worker_mod, SessionLocal, qdrant, dsn = worker
     _seed_tenant_and_warehouse(dsn, ["fact_stock_price"])
 
-    worker_mod.crawl_all(conn, qdrant)
+    worker_mod.crawl_all(SessionLocal, qdrant)
 
     describe_calls = []
     monkeypatch.setattr(worker_mod, "describe_table", lambda *a, **k: describe_calls.append(1) or {
         "keywords": [], "categories": {}, "use_cases": [], "join_hints": [],
     })
 
-    worker_mod.crawl_all(conn, qdrant)
+    worker_mod.crawl_all(SessionLocal, qdrant)
 
     assert describe_calls == [], "unchanged schema_hash must skip re-describe (diff detection)"
 
 
 def test_crawl_all_isolates_tenants(worker):
-    worker_mod, conn, qdrant, dsn = worker
+    worker_mod, SessionLocal, qdrant, dsn = worker
     tenant_a, warehouse_a = _seed_tenant_and_warehouse(dsn, ["fact_stock_price"])
     tenant_b, warehouse_b = _seed_tenant_and_warehouse(dsn, ["fact_stock_price"])
 
-    worker_mod.crawl_all(conn, qdrant)
+    worker_mod.crawl_all(SessionLocal, qdrant)
 
-    with conn.cursor() as cur:
-        cur.execute("""SELECT tenant_id, warehouse_id FROM "SchemaCatalog" ORDER BY tenant_id""")
-        rows = {(str(r[0]), str(r[1])) for r in cur.fetchall()}
+    rows = {
+        (str(r[0]), str(r[1]))
+        for r in _fetchall(dsn, """SELECT tenant_id, warehouse_id FROM "SchemaCatalog" ORDER BY tenant_id""")
+    }
 
     assert rows == {(tenant_a, warehouse_a), (tenant_b, warehouse_b)}
 
 
 def test_crawl_all_skips_warehouse_with_no_password_configured(worker, monkeypatch):
-    worker_mod, conn, qdrant, dsn = worker
+    worker_mod, SessionLocal, qdrant, dsn = worker
     _seed_tenant_and_warehouse(dsn, ["fact_stock_price"])
     monkeypatch.delenv("SNOWFLAKE_CRAWLER_PASSWORD", raising=False)
     # connection_params() must return None and crawl_all must not blow up.
 
-    worker_mod.crawl_all(conn, qdrant)
+    worker_mod.crawl_all(SessionLocal, qdrant)
 
-    with conn.cursor() as cur:
-        cur.execute('SELECT COUNT(*) FROM "SchemaCatalog"')
-        count = cur.fetchone()[0]
+    count = _fetchall(dsn, 'SELECT COUNT(*) FROM "SchemaCatalog"')[0][0]
     assert count == 0
 
 
 def test_handle_ddl_event_crawls_single_table(worker, monkeypatch):
-    worker_mod, conn, qdrant, dsn = worker
+    worker_mod, SessionLocal, qdrant, dsn = worker
     monkeypatch.setenv("SNOWFLAKE_CRAWLER_PASSWORD", "test-pw")
     tenant_id, warehouse_id = _seed_tenant_and_warehouse(dsn, [])  # no selected_tables — DDL event targets one directly
 
-    worker_mod.handle_ddl_event(conn, qdrant, {
+    worker_mod.handle_ddl_event(SessionLocal, qdrant, {
         "tenant_id": tenant_id, "warehouse_id": warehouse_id, "table_name": "fact_stock_price",
     })
 
-    with conn.cursor() as cur:
-        cur.execute(
-            """SELECT table_name FROM "SchemaCatalog" WHERE tenant_id=%s AND warehouse_id=%s""",
-            (tenant_id, warehouse_id),
-        )
-        rows = cur.fetchall()
+    rows = _fetchall(
+        dsn,
+        """SELECT table_name FROM "SchemaCatalog" WHERE tenant_id=%s AND warehouse_id=%s""",
+        (tenant_id, warehouse_id),
+    )
     assert rows == [("fact_stock_price",)]

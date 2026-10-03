@@ -4,8 +4,10 @@
 #   set -a; . ./secrets.env; set +a; bash deploy/k8s/create-secrets.sh
 set -euo pipefail
 
+# app_user: tenant routes set app.tenant_id, cross-tenant reads go through the
+# SECURITY DEFINER functions of migration 4a7c2e9f1b3d.
 kubectl -n dataagent-service create secret generic auth-api-secrets \
-  --from-literal=DATABASE_URL="${DATABASE_URL}" \
+  --from-literal=DATABASE_URL="${APP_DATABASE_URL}" \
   --from-literal=APP_DATABASE_URL="${APP_DATABASE_URL}" \
   --from-literal=OPENBAO_TOKEN="${OPENBAO_TOKEN}" \
   --from-literal=KC_ADMIN_USER="${KEYCLOAK_ADMIN}" \
@@ -15,7 +17,6 @@ kubectl -n dataagent-service create secret generic auth-api-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic kb-backend-secrets \
-  --from-literal=POSTGRES_URL="${POSTGRES_URL_ASYNC}" \
   --from-literal=KB_BACKEND_URL_ASYNC="${KB_BACKEND_URL_ASYNC}" \
   --from-literal=MINIO_URL="${MINIO_URL}" \
   --from-literal=GATEWAY_KEY="${GATEWAY_KEY}" \
@@ -23,7 +24,6 @@ kubectl -n dataagent-service create secret generic kb-backend-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic workflow-runtime-secrets \
-  --from-literal=DATABASE_URL="${DATABASE_URL}" \
   --from-literal=RUNTIME_DB_URL="${RUNTIME_DB_URL}" \
   --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \
   --from-literal=LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY}" \
@@ -38,7 +38,7 @@ kubectl -n dataagent-service create secret generic workflow-runtime-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic model-service-secrets \
-  --from-literal=POSTGRES_DSN="${POSTGRES_DSN}" \
+  --from-literal=POSTGRES_DSN="${APP_DATABASE_URL}" \
   --from-literal=REMOTE_API_KEY="${REMOTE_API_KEY}" \
   --from-literal=REMOTE_LLM_KEY="${REMOTE_LLM_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
@@ -68,19 +68,19 @@ kubectl -n dataagent-service create secret generic sandbox-executor-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic platform-workers-audit-secrets \
-  --from-literal=DB_PASSWORD="${POSTGRES_PASSWORD}" \
+  --from-literal=DB_PASSWORD="${APP_USER_PASSWORD}" \
   --from-literal=KAFKA_SASL_PASSWORD="${AUDIT_CONSUMER_KAFKA_PASSWORD}" \
   --from-literal=KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN}" \
   --from-literal=KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic platform-workers-memory-secrets \
-  --from-literal=DB_PASSWORD="${POSTGRES_PASSWORD}" \
+  --from-literal=DB_PASSWORD="${APP_USER_PASSWORD}" \
   --from-literal=KAFKA_SASL_PASSWORD="${MEMORY_CONSUMER_KAFKA_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic platform-workers-schema-crawler-secrets \
-  --from-literal=DB_PASSWORD="${POSTGRES_PASSWORD}" \
+  --from-literal=DB_PASSWORD="${APP_USER_PASSWORD}" \
   --from-literal=KAFKA_SASL_PASSWORD="${SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD}" \
   --from-literal=SNOWFLAKE_CRAWLER_PASSWORD="${SNOWFLAKE_CRAWLER_PASSWORD}" \
   --from-literal=POSTGRES_CRAWLER_PASSWORD="${POSTGRES_CRAWLER_PASSWORD}" \
@@ -88,7 +88,8 @@ kubectl -n dataagent-service create secret generic platform-workers-schema-crawl
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic platform-workers-web-crawler-secrets \
-  --from-literal=DB_PASSWORD="${POSTGRES_PASSWORD}" \
+  --from-literal=DB_PASSWORD="${APP_USER_PASSWORD}" \
+  --from-literal=INGEST_DB_PASSWORD="${CRAWLER_SVC_PASSWORD}" \
   --from-literal=MINIO_URL="${MINIO_URL}" \
   --from-literal=KAFKA_SASL_PASSWORD="${WEB_CRAWLER_WORKER_KAFKA_PASSWORD}" \
   --from-literal=OPENBAO_ROLE_ID="${OPENBAO_ROLE_ID}" \
@@ -194,6 +195,7 @@ kubectl -n dataagent-service create secret generic db-init-secrets \
   --from-literal=KB_BACKEND_PASSWORD="${KB_BACKEND_PASSWORD}" \
   --from-literal=PGBOUNCER_AUTH_PASSWORD="${PGBOUNCER_AUTH_PASSWORD}" \
   --from-literal=KB_INGESTION_WORKER_PASSWORD="${KB_INGESTION_WORKER_PASSWORD}" \
+  --from-literal=CRAWLER_SVC_PASSWORD="${CRAWLER_SVC_PASSWORD}" \
   --from-literal=POSTGRES_CRAWLER_PASSWORD="${POSTGRES_CRAWLER_PASSWORD:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
@@ -212,6 +214,12 @@ kubectl -n dataagent-service create secret generic setup-secrets \
   --from-literal=KEYCLOAK_PUBLIC_URL="${KEYCLOAK_PUBLIC_URL}" \
   --from-literal=SMOKE_PASSWORD="${SMOKE_PASSWORD}" \
   --from-literal=GATEWAY_KEY="${GATEWAY_KEY}" \
+  --from-literal=DEMO_PASSWORD_PLATFORM_ADMIN="${DEMO_PASSWORD_PLATFORM_ADMIN:-}" \
+  --from-literal=DEMO_PASSWORD_HELIOS_ADMIN="${DEMO_PASSWORD_HELIOS_ADMIN:-}" \
+  --from-literal=DEMO_PASSWORD_HELIOS_ENGINEER="${DEMO_PASSWORD_HELIOS_ENGINEER:-}" \
+  --from-literal=DEMO_PASSWORD_HELIOS_VIEWER="${DEMO_PASSWORD_HELIOS_VIEWER:-}" \
+  --from-literal=DEMO_PASSWORD_AI_ENGINEER="${DEMO_PASSWORD_AI_ENGINEER:-}" \
+  --from-literal=DEMO_PASSWORD_EXECUTIVE_VIEWER="${DEMO_PASSWORD_EXECUTIVE_VIEWER:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic eval-secrets \
@@ -224,10 +232,9 @@ kubectl -n dataagent-service create secret generic postgres-backup-secrets \
   --from-literal=PGPASSWORD="${POSTGRES_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# Admin role on purpose: the memory tables FORCE row-level security per tenant
-# and this job cleans every tenant (see job/memory-cleanup.yaml).
+# app_user: the job cleans one tenant at a time (see job/memory-cleanup.yaml).
 kubectl -n dataagent-service create secret generic memory-cleanup-secrets \
-  --from-literal=DATABASE_URL="${DATABASE_URL}" \
+  --from-literal=DATABASE_URL="${APP_DATABASE_URL}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-database create secret generic postgres-restore-secrets \

@@ -1,6 +1,0 @@
-# Model weights download at runtime into the mounted volume (see Dockerfile) —
-# never send the ~1.3GB HF cache (with its broken snapshot symlinks) into the
-# build context, or the build fails with "invalid file request".
-models/
-__pycache__/
-*.pyc

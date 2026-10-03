@@ -64,14 +64,28 @@ requirement. Which issue needs which level, and the V2 rules behind the tags:
 ### Python — unit (no Docker inside the tests)
 
 ```bash
-make test-unit                                   # every suite, each in its service image
+make test-changed                                # only the suites your changes since main can affect
+make test-unit                                   # every suite, each in its service image, in parallel
 make test-unit UNIT_SUITES=kb_backend:kb-backend # one suite
 make test-unit PYTEST_ARGS="-k lock -x"          # extra pytest args
+make test TEST_JOBS=1                            # unit + integration, one suite at a time
 ```
 
-Each suite runs as `pytest -m unit tests/unit/<suite>` inside
-`localhost:5000/dataagent/<image>:latest` with `requirements-test.txt`
-installed on top. Outside Docker, the equivalent is a virtualenv holding that
+`tests/run_suites.py` drives all of these. Each suite runs as
+`pytest -m unit tests/unit/<suite>` inside `dataagent-test/<suite>:latest`:
+`localhost:5000/dataagent/<image>:latest` with the test tooling baked in by
+`tests/test-image.Dockerfile`. That image is rebuilt only when the service image or
+a requirements file changes, so a run no longer pays a `pip install` per suite.
+The suites run at the same time and each prints its output whole when it ends,
+followed by a summary with the time each took.
+
+`make test-changed` maps the files changed since `CHANGED_BASE` (default `main`;
+committed, staged, unstaged and untracked) to suites: a service's own suites plus
+every suite that imports it (`SERVICE_SUITES` in `run_suites.py`). Anything under
+`backend/libs`, `backend/alembic` or the shared test fixtures runs everything.
+Before a merge, run `make test` anyway.
+
+Outside Docker, the equivalent is a virtualenv holding that
 service's `requirements.txt` plus `requirements-test.txt` — which is what CI's
 `python-test` matrix does, one job per suite. The host interpreter (3.10) is
 too old for the code (3.11+).
@@ -91,9 +105,19 @@ workflow_runtime handler-wiring test runs sandbox_executor's app) lists it in
 sandbox-runner containers from `SANDBOX_RUNNER_IMAGE`
 (default `dataagent/sandbox-runner:latest`, the deploy build).
 
-Every suite shares one session-scoped Postgres container. A test that needs a
-clean database calls `tests.integration._db.reset_database`, which drops every
+Every suite shares one session-scoped Postgres container. A test that needs an
+empty database at alembic head takes the `migrated_db` fixture
+(`tests/integration/conftest.py`): the chain runs once per container, and every
+later test gets a truncate-and-reload of the rows the migrations inserted
+(`tests.integration._db.migrated_database`) — about 0.2 s instead of ~3 s. A
+fingerprint of the schema guards it: after a test that changed the schema (a
+downgrade, its own DDL), the next one migrates from scratch again. A test that
+exercises the migrations themselves starts from `reset_database`, which drops every
 schema and role the migrations created; never hand-roll a `DROP SCHEMA public`.
+
+`sandbox_executor`'s integration suite runs on 4 xdist workers (a real container
+per test). A test that needs a fixed Docker resource (a network name, a port) must
+carry `@pytest.mark.xdist_group("<resource>")` so it never runs beside its twin.
 
 `make test` runs both. We do NOT roll every service's deps into
 `pyproject.toml [test]` — no single environment can hold them all.
@@ -101,7 +125,9 @@ schema and role the migrations created; never hand-roll a `DROP SCHEMA public`.
 ### Python — e2e (deployed dev cluster)
 
 ```bash
-export E2E_USER=helios-engineer; read -rsp 'password: ' E2E_PASS; export E2E_PASS
+read -rsp 'helios-engineer password: ' E2E_PASS; export E2E_PASS          # agent turns, load
+read -rsp 'platform-admin password: ' E2E_ADMIN_PASS; export E2E_ADMIN_PASS # tenant 1, JWT audience
+read -rsp 'helios-admin password: ' E2E_T2_ADMIN_PASS; export E2E_T2_ADMIN_PASS # tenant 2
 make e2e                                                    # every tests/integration/test_*.py
 make e2e E2E_TESTS=tests/integration/test_agent_answer_e2e.py PYTEST_ARGS="-v -s"
 ```
@@ -109,8 +135,15 @@ make e2e E2E_TESTS=tests/integration/test_agent_answer_e2e.py PYTEST_ARGS="-v -s
 `make e2e` runs `pytest -m e2e` in the `workflow_runtime` image against the dev
 cluster's LAN NodePorts (Kong 30100, Keycloak 30110, workflow-runtime 30240);
 override `E2E_KONG_URL` / `E2E_KEYCLOAK_URL` / `E2E_RUNTIME_URL` to target
-another cluster. Credentials come from the environment (`E2E_USER`, `E2E_PASS`),
-never from a file. `E2E_STRICT=1` turns the model-dependent behaviour checks
+another cluster. Credentials come from the environment, never from a file
+(`tests/conftest.py` `LIVE_ACCOUNTS`): each account's password variable is required
+— a test fails naming the one that is unset — and its username defaults to the demo
+account (`E2E_USER` helios-engineer, `E2E_ADMIN_USER` platform-admin,
+`E2E_T2_ADMIN_USER` helios-admin). The load test goes through Kong as `E2E_USER`. The demo
+accounts' passwords are the vault's `vault_demo_password_*`
+(`deploy/ansible/inventories/<env>/group_vars/all/vault.yml.example`), which the
+setup Job writes into Keycloak on a deploy with `-e apply_setup=true`; an unset
+one leaves that account's password as it is. `E2E_STRICT=1` turns the model-dependent behaviour checks
 from xfail into failures; each turn's frames land in `tests/e2e/out/`.
 
 **These tests write data.** The agent-answer test runs real turns (new

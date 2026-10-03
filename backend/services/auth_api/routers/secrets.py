@@ -1,10 +1,14 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-import psycopg2
-import psycopg2.extras
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
+from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import (
+    KeyRotationORM,
+    SecretVaultORM,
+)
 from libs.shared.auth import get_current_user, require_role
 
 try:
@@ -20,7 +24,7 @@ try:
         format_secret,
     )
     from services.auth_api.infrastructure.config import log
-    from services.auth_api.infrastructure.db import get_db
+    from services.auth_api.infrastructure.db import get_session, orm_to_dict
     from services.auth_api.infrastructure.vault import get_vault
     from services.auth_api.schemas import SecretCreateInput
     from services.auth_api.services.governance import (
@@ -40,7 +44,7 @@ except ModuleNotFoundError:
         format_secret,
     )
     from auth_api.infrastructure.config import log
-    from auth_api.infrastructure.db import get_db
+    from auth_api.infrastructure.db import get_session, orm_to_dict
     from auth_api.infrastructure.vault import get_vault
     from auth_api.schemas import SecretCreateInput
     from auth_api.services.governance import (
@@ -73,26 +77,12 @@ def list_secrets(
     if not is_platform_admin and not _is_tenant_admin_for(user, x_tenant_id):
         raise HTTPException(status_code=403, detail="Required role: platform-admin or tenant-admin")
 
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            if is_platform_admin:
-                cur.execute(
-                    "SELECT id, key_name, key_type, algorithm, realm, version, is_active, "
-                    "rotation_due_at, last_rotated_at, created_by, created_at "
-                    "FROM secrets_vault WHERE tenant_id = %s ORDER BY created_at DESC",
-                    (x_tenant_id,),
-                )
-            else:
-                cur.execute(
-                    "SELECT id, key_name, key_type, algorithm, realm, version, is_active, "
-                    "rotation_due_at, last_rotated_at, created_by, created_at "
-                    "FROM secrets_vault WHERE tenant_id = %s AND key_type = ANY(%s) ORDER BY created_at DESC",
-                    (x_tenant_id, list(TENANT_MANAGEABLE_KEY_TYPES)),
-                )
-            return [format_secret(r) for r in cur.fetchall()]
-    finally:
-        conn.close()
+    with get_session(x_tenant_id) as session:
+        stmt = select(SecretVaultORM).where(SecretVaultORM.tenant_id == x_tenant_id)
+        if not is_platform_admin:
+            stmt = stmt.where(SecretVaultORM.key_type.in_(TENANT_MANAGEABLE_KEY_TYPES))
+        rows = session.scalars(stmt.order_by(SecretVaultORM.created_at.desc())).all()
+        return [format_secret(orm_to_dict(r)) for r in rows]
 
 
 @router.post("/api/auth/secrets", status_code=201)
@@ -136,7 +126,6 @@ def create_secret(
         except Exception as e:
             log.warning("openbao_write_failed", error=str(e))
             raise HTTPException(status_code=502, detail="Failed to store secret metadata in vault")
-        openbao_path = f"transit/keys/{t_key}"
     else:
         try:
             vault.secrets.kv.v2.create_or_update_secret(
@@ -146,30 +135,27 @@ def create_secret(
         except Exception as e:
             log.warning("openbao_write_failed", error=str(e))
             raise HTTPException(status_code=502, detail="Failed to store secret in vault")
-        openbao_path = f"{VAULT_MOUNT}/data/{path}"
 
     rotation_due = datetime.now(timezone.utc) + timedelta(days=body.rotation_days)
 
-    conn = get_db()
     try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "INSERT INTO secrets_vault (tenant_id, key_name, key_type, algorithm, realm, "
-                "openbao_path, version, rotation_due_at, created_by) "
-                "VALUES (%s,%s,%s,%s,%s,%s,1,%s,%s) "
-                "RETURNING id, key_name, key_type, algorithm, realm, version, is_active, "
-                "rotation_due_at, last_rotated_at, created_by, created_at",
-                (x_tenant_id, body.key_name, body.key_type, body.algorithm,
-                 body.realm, openbao_path, rotation_due, user["user_id"]),
+        with get_session(x_tenant_id) as session:
+            row = SecretVaultORM(
+                tenant_id=x_tenant_id,
+                key_name=body.key_name,
+                key_type=body.key_type,
+                algorithm=body.algorithm,
+                realm=body.realm,
+                version=1,
+                rotation_due_at=rotation_due,
+                created_by=user["user_id"],
             )
-            row = cur.fetchone()
-        conn.commit()
-        return format_secret(row)
-    except psycopg2.errors.UniqueViolation:
-        conn.rollback()
+            session.add(row)
+            session.flush()
+            session.refresh(row)
+            return format_secret(orm_to_dict(row))
+    except IntegrityError:
         raise HTTPException(status_code=409, detail="Secret with this name already exists")
-    finally:
-        conn.close()
 
 
 @router.delete("/api/auth/secrets/{secret_id}", status_code=204)
@@ -183,45 +169,34 @@ def delete_secret(
     if not is_platform_admin and not _is_tenant_admin_for(user, x_tenant_id):
         raise HTTPException(status_code=403, detail="Required role: platform-admin or tenant-admin")
 
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            if not is_platform_admin:
-                cur.execute(
-                    "SELECT key_type FROM secrets_vault WHERE id = %s AND tenant_id = %s",
-                    (secret_id, x_tenant_id),
-                )
-                existing = cur.fetchone()
-                if not existing:
-                    raise HTTPException(status_code=404, detail="Secret not found")
-                if existing["key_type"] not in TENANT_MANAGEABLE_KEY_TYPES:
-                    raise HTTPException(status_code=403, detail="tenant-admin cannot delete this key_type")
-
-            cur.execute(
-                "UPDATE secrets_vault SET is_active = false WHERE id = %s AND tenant_id = %s "
-                "RETURNING key_name, key_type, version",
-                (secret_id, x_tenant_id),
+    with get_session(x_tenant_id) as session:
+        row = session.scalar(
+            select(SecretVaultORM).where(
+                SecretVaultORM.id == secret_id,
+                SecretVaultORM.tenant_id == x_tenant_id,
             )
-            row = cur.fetchone()
-        if not row:
-            conn.rollback()
+        )
+        if row is None:
             raise HTTPException(status_code=404, detail="Secret not found")
-        conn.commit()
-    finally:
-        conn.close()
+        if not is_platform_admin and row.key_type not in TENANT_MANAGEABLE_KEY_TYPES:
+            raise HTTPException(status_code=403, detail="tenant-admin cannot delete this key_type")
+        row.is_active = False
+        key_name = row.key_name
+        key_type = row.key_type
+        version = row.version
 
     vault = get_vault()
-    if row["key_type"] in TRANSIT_KEY_TYPES:
+    if key_type in TRANSIT_KEY_TYPES:
         try:
-            t_key = build_transit_key_name(x_tenant_id, row["key_name"])
+            t_key = build_transit_key_name(x_tenant_id, key_name)
             vault.secrets.transit.delete_key(name=t_key, mount_point=TRANSIT_MOUNT)
         except Exception as e:
             log.warning("transit_delete_failed", error=str(e))
     else:
         try:
-            path = build_vault_path(x_tenant_id, row["key_name"])
+            path = build_vault_path(x_tenant_id, key_name)
             vault.secrets.kv.v2.destroy_secret_versions(
-                mount_point=VAULT_MOUNT, path=path, versions=[row["version"]],
+                mount_point=VAULT_MOUNT, path=path, versions=[version],
             )
         except Exception as e:
             log.warning("openbao_destroy_failed", error=str(e))
@@ -237,67 +212,70 @@ def rotate_secret(
 ) -> dict[str, Any]:
     new_value = (body or {}).get("value", "")
 
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT id, key_name, key_type, algorithm, realm, version, rotation_due_at "
-                "FROM secrets_vault WHERE id = %s AND tenant_id = %s AND is_active = true "
-                "FOR UPDATE",
-                (secret_id, x_tenant_id),
+    with get_session(x_tenant_id) as session:
+        old = session.scalar(
+            select(SecretVaultORM)
+            .where(
+                SecretVaultORM.id == secret_id,
+                SecretVaultORM.tenant_id == x_tenant_id,
+                SecretVaultORM.is_active.is_(True),
             )
-            old = cur.fetchone()
-            if not old:
-                raise HTTPException(status_code=404, detail="Secret not found or already inactive")
+            .with_for_update()
+        )
+        if old is None:
+            raise HTTPException(status_code=404, detail="Secret not found or already inactive")
 
-            new_version = old["version"] + 1
-            vault = get_vault()
+        new_version = old.version + 1
+        vault = get_vault()
 
-            if old["key_type"] in TRANSIT_KEY_TYPES:
-                t_key = build_transit_key_name(x_tenant_id, old["key_name"])
-                try:
-                    vault.secrets.transit.rotate_key(name=t_key, mount_point=TRANSIT_MOUNT)
-                except Exception as e:
-                    log.warning("transit_rotate_failed", error=str(e))
-                    raise HTTPException(status_code=502, detail="Failed to rotate Transit key")
-                openbao_path = f"transit/keys/{t_key}"
-            else:
-                if not new_value:
-                    raise HTTPException(status_code=422, detail="New secret value required for rotation")
-                path = build_vault_path(x_tenant_id, old["key_name"])
-                try:
-                    vault.secrets.kv.v2.create_or_update_secret(
-                        mount_point=VAULT_MOUNT, path=path,
-                        secret={"value": new_value, "key_type": old["key_type"], "algorithm": old["algorithm"] or ""},
-                    )
-                except Exception as e:
-                    log.warning("openbao_rotate_failed", error=str(e))
-                    raise HTTPException(status_code=502, detail="Failed to write rotated secret to vault")
-                openbao_path = f"{VAULT_MOUNT}/data/{path}"
+        if old.key_type in TRANSIT_KEY_TYPES:
+            t_key = build_transit_key_name(x_tenant_id, old.key_name)
+            try:
+                vault.secrets.transit.rotate_key(name=t_key, mount_point=TRANSIT_MOUNT)
+            except Exception as e:
+                log.warning("transit_rotate_failed", error=str(e))
+                raise HTTPException(status_code=502, detail="Failed to rotate Transit key")
+        else:
+            if not new_value:
+                raise HTTPException(status_code=422, detail="New secret value required for rotation")
+            path = build_vault_path(x_tenant_id, old.key_name)
+            try:
+                vault.secrets.kv.v2.create_or_update_secret(
+                    mount_point=VAULT_MOUNT, path=path,
+                    secret={"value": new_value, "key_type": old.key_type, "algorithm": old.algorithm or ""},
+                )
+            except Exception as e:
+                log.warning("openbao_rotate_failed", error=str(e))
+                raise HTTPException(status_code=502, detail="Failed to write rotated secret to vault")
 
-            rotation_due = datetime.now(timezone.utc) + timedelta(days=90)
+        rotation_due = datetime.now(timezone.utc) + timedelta(days=90)
 
-            cur.execute("UPDATE secrets_vault SET is_active = false WHERE id = %s", (old["id"],))
-            cur.execute(
-                "INSERT INTO secrets_vault (tenant_id, key_name, key_type, algorithm, realm, "
-                "openbao_path, version, rotation_due_at, last_rotated_at, created_by) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,now(),%s) "
-                "RETURNING id, key_name, key_type, algorithm, realm, version, is_active, "
-                "rotation_due_at, last_rotated_at, created_by, created_at",
-                (x_tenant_id, old["key_name"], old["key_type"], old["algorithm"],
-                 old["realm"], openbao_path, new_version, rotation_due, user["user_id"]),
+        old.is_active = False
+        new_row = SecretVaultORM(
+            tenant_id=x_tenant_id,
+            key_name=old.key_name,
+            key_type=old.key_type,
+            algorithm=old.algorithm,
+            realm=old.realm,
+            version=new_version,
+            rotation_due_at=rotation_due,
+            last_rotated_at=datetime.now(timezone.utc),
+            created_by=user["user_id"],
+        )
+        session.add(new_row)
+        session.flush()
+        session.refresh(new_row)
+        session.add(
+            KeyRotationORM(
+                secret_id=new_row.id,
+                triggered_by="MANUAL",
+                actor_id=user["user_id"],
+                old_version=old.version,
+                new_version=new_version,
+                status="SUCCESS",
             )
-            new_row = cur.fetchone()
-
-            cur.execute(
-                "INSERT INTO key_rotations (secret_id, triggered_by, actor_id, old_version, new_version, status) "
-                "VALUES (%s,'MANUAL',%s,%s,%s,'SUCCESS')",
-                (new_row["id"], user["user_id"], old["version"], new_version),
-            )
-        conn.commit()
-        return format_secret(new_row)
-    finally:
-        conn.close()
+        )
+        return format_secret(orm_to_dict(new_row))
 
 
 @router.get("/api/auth/secrets/{secret_id}/reveal")
@@ -308,40 +286,40 @@ def reveal_secret(
     user: dict[str, Any] = Depends(require_role("platform-admin")),
     _panic: None = Depends(enforce_vault_not_in_panic_mode),
 ) -> dict[str, Any]:
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT key_name, key_type, version, is_active FROM secrets_vault "
-                "WHERE id = %s AND tenant_id = %s",
-                (secret_id, x_tenant_id),
+    with get_session(x_tenant_id) as session:
+        row = session.scalar(
+            select(SecretVaultORM).where(
+                SecretVaultORM.id == secret_id,
+                SecretVaultORM.tenant_id == x_tenant_id,
             )
-            row = cur.fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Secret not found")
-
-            pii_log = get_governance_setting(cur, "vault_pii_access_log")
-
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="Secret not found")
+        pii_log = get_governance_setting(session, "vault_pii_access_log")
         if pii_log:
             if not access_reason or not access_reason.strip():
                 raise HTTPException(
                     status_code=422,
                     detail="access_reason is required when PII Access Log is enabled",
                 )
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO key_rotations "
-                    "(secret_id, triggered_by, actor_id, old_version, new_version, status, access_reason) "
-                    "VALUES (%s,'REVEAL',%s,%s,%s,'SUCCESS',%s)",
-                    (secret_id, user["user_id"], row["version"], row["version"], access_reason.strip()),
+            session.add(
+                KeyRotationORM(
+                    secret_id=row.id,
+                    triggered_by="REVEAL",
+                    actor_id=user["user_id"],
+                    old_version=row.version,
+                    new_version=row.version,
+                    status="SUCCESS",
+                    access_reason=access_reason.strip(),
                 )
-            conn.commit()
-    finally:
-        conn.close()
+            )
+        key_name = row.key_name
+        key_type = row.key_type
+        is_active = row.is_active
 
     vault = get_vault()
-    if row["key_type"] in TRANSIT_KEY_TYPES:
-        t_key = build_transit_key_name(x_tenant_id, row["key_name"])
+    if key_type in TRANSIT_KEY_TYPES:
+        t_key = build_transit_key_name(x_tenant_id, key_name)
         try:
             key_info = vault.secrets.transit.read_key(name=t_key, mount_point=TRANSIT_MOUNT)
             keys_data = key_info["data"]["keys"]
@@ -350,21 +328,21 @@ def reveal_secret(
             value = pub_key if pub_key else "(symmetric key — private key never exported from vault)"
         except Exception as e:
             log.warning("transit_read_failed", error=str(e))
-            if not row["is_active"]:
+            if not is_active:
                 raise HTTPException(status_code=410, detail="Transit key was deleted — not recoverable")
             raise HTTPException(status_code=502, detail="Failed to read Transit key info")
     else:
         try:
-            path = build_vault_path(x_tenant_id, row["key_name"])
+            path = build_vault_path(x_tenant_id, key_name)
             resp = vault.secrets.kv.v2.read_secret_version(mount_point=VAULT_MOUNT, path=path, raise_on_deleted_version=True)
             value = resp["data"]["data"].get("value", "")
         except Exception as e:
             log.warning("openbao_read_failed", error=str(e))
-            if not row["is_active"]:
+            if not is_active:
                 raise HTTPException(status_code=410, detail="Secret was permanently deleted — value is not recoverable")
             raise HTTPException(status_code=502, detail="Failed to read secret from vault")
 
-    return {"id": secret_id, "key_name": row["key_name"], "value": value, "is_active": row["is_active"]}
+    return {"id": secret_id, "key_name": key_name, "value": value, "is_active": is_active}
 
 
 # ── Governance ────────────────────────────────────────────────────────────────

@@ -27,6 +27,22 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
   `GATEWAY_KEY` unset keeps the old, weaker behaviour and logs a warning on every
   request — set it everywhere except a laptop. (`KB_GATEWAY_KEY` is still read as a
   deprecated alias.)
+- **API keys (`sk-…`).** Issued by a `platform-admin` in Settings → API keys and sent as
+  `X-API-Key: sk-…` or `Authorization: Bearer sk-…`. `aeroflow-jwks` sends the key to
+  auth_api's `/internal/api-keys/verify` (no Kong route reaches it; the caller must present
+  the gateway key), which finds it by `key_prefix`, checks the bcrypt hash and refuses a
+  revoked or expired key. The key then acts as its tenant with one role per scope
+  (`full_access` → `ai-engineer`, `read_only` → `executive-viewer`, `admin_platform` →
+  `platform-admin`), `X-User-Id: api-key:<id>`. Kong caches a verified key for
+  `api_key_cache_ttl` (60 s), which is also how long a revoked key can keep working.
+  Enabled exactly when `GATEWAY_KEY` is set (`kong-setup.sh`).
+- **IP allowlist.** Rules are kept per tenant (`ip_allowlists`), but Kong's `ip-restriction`
+  plugin is one per service/route, so auth_api pushes the **union** of every tenant's active
+  CIDRs (`kong_sync.get_active_cidrs`). It narrows who can reach the gateway; which tenant a
+  caller acts for is still decided by its token.
+- **Vault panic mode** is per tenant (`compliance_settings.vault_panic_mode`): it revokes that
+  tenant's secrets and answers 503 on that tenant's secret routes only, until a
+  platform-admin turns it off in Settings → Secrets.
 - **Service-to-service identity.** `workflow-runtime` calls `kb-backend` directly
   (`kb_search` → LightRAG retrieve), so it cannot present a user's Keycloak token. It signs
   an **HMAC assertion** (`backend/libs/shared/service_identity.py`) carrying the real caller's
@@ -86,6 +102,10 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
 - `.env` is **git-ignored**; `.env.example` is the committed template with placeholder
   values only. Verified: no `.env` is tracked.
 - Kafka SASL, Keycloak, and provider API keys come from the environment — never hardcoded.
+- Credentials an agent uses at run time live in OpenBao, not in Postgres: a canvas
+  node's warehouse / DB connector password and a registered MCP server's bearer token
+  (`"MCP".api_key_ref` = the `secrets_vault` id of an `MCP_TOKEN` secret) are read by
+  workflow_runtime through a read-only AppRole when the agent loads.
 - CI runs a **secret scan** (trivy `secret` scanner) over the tree.
 - **Action for prod:** rotate any credential that ever appeared in a template default;
   the prod overlay must drop all defaults.

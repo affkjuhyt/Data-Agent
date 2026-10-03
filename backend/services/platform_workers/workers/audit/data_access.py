@@ -10,27 +10,39 @@ collide on `event_id` and be skipped rather than double-count in a report —
 `ON CONFLICT DO NOTHING` makes that the database's job instead of the
 consumer's.
 """
-import json
 import logging
+from datetime import datetime, timezone
 from typing import Any
+from uuid import UUID
+
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import Session
+
+from libs.basemodel.services_databaseconnector.postgres_orm.audit_access_orm import DataAccessLogORM
+from services.platform_workers.common.db import set_tenant
 
 log = logging.getLogger("platform-workers.audit.data_access")
 
 TOPIC = "audit.data.access"
 
-_INSERT = """
-INSERT INTO "DataAccessLog"
-  (event_id, tenant_id, user_id, user_roles, auth_source, action, decision,
-   target, target_objects, statement_redacted, statement_sha256, metric_ref,
-   row_count, latency_ms, reason, session_id, agent_id, metadata, occurred_at)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, to_timestamp(%s))
-ON CONFLICT (event_id) DO NOTHING
-"""
-
 _REQUIRED = ("event_id", "tenant_id", "user_id", "action", "decision")
 
 
-def insert_data_access(cur: Any, event: dict[str, Any]) -> bool:
+def _uuid(value: Any, field: str) -> UUID:
+    try:
+        return value if isinstance(value, UUID) else UUID(str(value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be a UUID") from exc
+
+
+def _occurred_at(value: Any) -> datetime:
+    ts = float(value or 0)
+    if ts <= 0:
+        return datetime.now(timezone.utc)
+    return datetime.fromtimestamp(ts, tz=timezone.utc)
+
+
+def insert_data_access(session: Session, event: dict[str, Any]) -> bool:
     """Write one event. Returns False when it was a duplicate or unusable.
 
     A malformed event is dropped with a warning rather than raising: one bad
@@ -43,29 +55,32 @@ def insert_data_access(cur: Any, event: dict[str, Any]) -> bool:
         log.warning("data.access | dropping event missing %s", ",".join(missing))
         return False
 
-    cur.execute(
-        _INSERT,
-        (
-            event["event_id"],
-            event["tenant_id"],
-            event["user_id"],
-            list(event.get("user_roles") or []),
-            event.get("auth_source", "") or "",
-            event["action"],
-            event["decision"],
-            event.get("target", "") or "",
-            list(event.get("target_objects") or []),
-            event.get("statement_redacted", "") or "",
-            event.get("statement_sha256", "") or "",
-            event.get("metric_ref", "") or "",
-            event.get("row_count"),
-            event.get("latency_ms"),
-            event.get("reason", "") or "",
-            event.get("session_id", "") or "",
-            event.get("agent_id", "") or "",
-            json.dumps(event.get("metadata") or {}),
-            float(event.get("occurred_at") or 0) or None,
-        ),
+    stmt = (
+        pg_insert(DataAccessLogORM)
+        .values(
+            event_id=_uuid(event["event_id"], "event_id"),
+            tenant_id=_uuid(event["tenant_id"], "tenant_id"),
+            user_id=event["user_id"],
+            user_roles=list(event.get("user_roles") or []),
+            auth_source=event.get("auth_source", "") or "",
+            action=event["action"],
+            decision=event["decision"],
+            target=event.get("target", "") or "",
+            target_objects=list(event.get("target_objects") or []),
+            statement_redacted=event.get("statement_redacted", "") or "",
+            statement_sha256=event.get("statement_sha256", "") or "",
+            metric_ref=event.get("metric_ref", "") or "",
+            row_count=event.get("row_count"),
+            latency_ms=event.get("latency_ms"),
+            reason=event.get("reason", "") or "",
+            session_id=event.get("session_id", "") or "",
+            agent_id=event.get("agent_id", "") or "",
+            event_metadata=event.get("metadata") or {},
+            occurred_at=_occurred_at(event.get("occurred_at")),
+        )
+        .on_conflict_do_nothing(index_elements=[DataAccessLogORM.event_id])
     )
+    set_tenant(session, event["tenant_id"])
+    result = session.execute(stmt)
     # rowcount 0 means ON CONFLICT skipped it — a redelivery, not a failure.
-    return bool(cur.rowcount)
+    return bool(result.rowcount)

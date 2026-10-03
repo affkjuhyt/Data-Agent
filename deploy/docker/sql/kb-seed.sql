@@ -21,8 +21,8 @@
 
 -- ── Tenants ──────────────────────────────────────────────────────────────────
 
-INSERT INTO "Tenants" (id, name, slug, data_residency, is_active) VALUES
-    ('a0000000-0000-0000-0000-000000000001', 'Dev Tenant', 'dev', 'Asia-SE1', true)
+INSERT INTO "Tenants" (id, name, slug, is_active) VALUES
+    ('a0000000-0000-0000-0000-000000000001', 'Dev Tenant', 'dev', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- ── RolePermissions ──────────────────────────────────────────────────────────
@@ -141,11 +141,16 @@ ON CONFLICT (knowledge_base_id) DO NOTHING;
 
 -- ── KBFilterPolicy ───────────────────────────────────────────────────────────
 
+-- config is {"rules": [...]}, the shape silver/filtering.py reads and the Policy
+-- screen writes: one sentence for natural_language, the words for exact_word.
+-- (These rows used {"keywords": [...]}, which nothing reads, so they filtered nothing.)
 INSERT INTO "KBFilterPolicy" (policy_id, tenant_id, policy_name, configformat, config, is_active, language) VALUES
     ('00000000-0000-0004-0000-000000000001', 'a0000000-0000-0000-0000-000000000001',
-     'PII Filter', 'natural_language', '{"keywords":["SSN","passport","credit card"]}', true, 'english'),
+     'PII Filter', 'natural_language',
+     '{"rules":["Block chunks that contain a social security number, a passport number or a credit card number."]}',
+     true, 'english'),
     ('00000000-0000-0004-0000-000000000002', 'a0000000-0000-0000-0000-000000000001',
-     'Legal Stopwords', 'exact_word', '{"keywords":["confidential","restricted","draft"]}', false, 'english')
+     'Legal Stopwords', 'exact_word', '{"rules":["confidential","restricted","draft"]}', false, 'english')
 ON CONFLICT (policy_id) DO NOTHING;
 
 -- ── KBExtractionPolicy ───────────────────────────────────────────────────────
@@ -157,16 +162,16 @@ ON CONFLICT (policy_id) DO NOTHING;
 
 -- ── KBQdrantConnection + Collections ─────────────────────────────────────────
 
-INSERT INTO "KBQdrantConnection" (connection_id, tenant_id, is_active, total_collection) VALUES
-    ('00000000-0000-0001-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', true, 2)
+INSERT INTO "KBQdrantConnection" (connection_id, tenant_id, is_active) VALUES
+    ('00000000-0000-0001-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', true)
 ON CONFLICT (connection_id) DO NOTHING;
 
 INSERT INTO "KBQdrantCollection"
-    (collection_id, connection_id, collection_name, is_active, similarity_metric, points_count, vector_dimension, embedding_model_id) VALUES
+    (collection_id, connection_id, collection_name, is_active, embedding_model_id) VALUES
     ('00000000-0000-0001-0000-000000000002', '00000000-0000-0001-0000-000000000001',
-     'aeroflow_kb_prod',    true,  'cosine', 0, 1024, '00000000-0000-0000-0000-000000000001'),
+     'aeroflow_kb_prod',    true,  '00000000-0000-0000-0000-000000000001'),
     ('00000000-0000-0001-0000-000000000003', '00000000-0000-0001-0000-000000000001',
-     'aeroflow_kb_archive', false, 'cosine', 0, 1024, '00000000-0000-0000-0000-000000000001')
+     'aeroflow_kb_archive', false, '00000000-0000-0000-0000-000000000001')
 ON CONFLICT (collection_id) DO NOTHING;
 
 -- ── KBWarehouse ───────────────────────────────────────────────────────────────

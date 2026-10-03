@@ -285,3 +285,98 @@ class TestResolveWarehouseSecret:
         resolve_spy.assert_not_called()
         connection = node_cfg["tool_config"]["execute_sql"]["connection"]
         assert "secret_id" not in connection
+
+
+class TestLoadAgentConfigQuery:
+    """The published-version query must compile. When it did not (no explicit FROM
+    for the AgentsORM -> AgentVersionsORM join), the broad except in
+    load_agent_config turned the InvalidRequestError into DEV_CONFIG for every
+    agent, with only a warning in the log."""
+
+    async def test_query_compiles_and_a_missing_agent_is_none_not_dev_config(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from contextlib import asynccontextmanager
+
+        from sqlalchemy.dialects import postgresql
+
+        compiled: list[str] = []
+
+        class _Result:
+            def fetchone(self) -> None:
+                return None
+
+        class _Session:
+            async def execute(self, stmt):
+                compiled.append(str(stmt.compile(dialect=postgresql.dialect())))
+                return _Result()
+
+        class _Client:
+            def is_connected(self) -> bool:
+                return True
+
+            @asynccontextmanager
+            async def get_client(self, tenant_id=None):
+                yield _Session()
+
+        connector = types.ModuleType("libs.database_connector.postgres_connector")
+        connector.client = _Client()
+        mongo = types.ModuleType("services.workflow_runtime.infrastructure.mongo_client")
+        mongo.load_flow_nodes = AsyncMock(return_value=[])
+        mongo.load_flow_edges = AsyncMock(return_value=[])
+        monkeypatch.setitem(sys.modules, connector.__name__, connector)
+        monkeypatch.setitem(sys.modules, mongo.__name__, mongo)
+
+        result = await config_loader.load_agent_config("agent-1", tenant_id="tenant-1")
+
+        assert result is None
+        assert len(compiled) == 1 and 'FROM "Agents"' in compiled[0].replace("\n", " ")
+
+
+class TestResolveMcpTokens:
+    """_resolve_mcp_tokens — "MCP".api_key_ref is the secrets_vault id of an
+    MCP_TOKEN secret, resolved through OpenBao. It used to be sent as the bearer
+    token itself, i.e. the token sat in Postgres in plaintext."""
+
+    def _stub_warehouse_secrets(self, monkeypatch, resolve_mock) -> None:
+        fake_module = types.ModuleType("services.workflow_runtime.infrastructure.warehouse_secrets")
+        fake_module.resolve_mcp_token = resolve_mock
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.infrastructure.warehouse_secrets", fake_module)
+
+    async def test_noop_without_endpoints(self) -> None:
+        endpoints: list = []
+        await config_loader._resolve_mcp_tokens(endpoints, "tenant-1")
+        assert endpoints == []
+
+    async def test_each_endpoint_gets_its_token_from_the_vault(self, monkeypatch) -> None:
+        async def fake_resolve(tenant_id, secret_id):
+            return {"sec-a": "tok-a", "sec-b": "tok-b"}.get(secret_id)
+        self._stub_warehouse_secrets(monkeypatch, fake_resolve)
+        endpoints = [
+            {"name": "a", "url": "http://a", "secret_id": "sec-a", "auth_token": ""},
+            {"name": "b", "url": "http://b", "secret_id": "sec-b", "auth_token": ""},
+        ]
+
+        await config_loader._resolve_mcp_tokens(endpoints, "tenant-1")
+
+        assert [e["auth_token"] for e in endpoints] == ["tok-a", "tok-b"]
+        assert all("secret_id" not in e for e in endpoints)
+
+    async def test_an_unresolved_token_is_left_empty_not_the_reference(self, monkeypatch) -> None:
+        self._stub_warehouse_secrets(monkeypatch, AsyncMock(return_value=None))
+        endpoints = [{"name": "a", "url": "http://a", "secret_id": "sec-a", "auth_token": ""}]
+
+        await config_loader._resolve_mcp_tokens(endpoints, "tenant-1")
+
+        assert endpoints[0]["auth_token"] == ""
+        assert "secret_id" not in endpoints[0]
+
+    async def test_secret_id_stripped_even_without_tenant_id(self, monkeypatch) -> None:
+        resolve_spy = AsyncMock(return_value="tok")
+        self._stub_warehouse_secrets(monkeypatch, resolve_spy)
+        endpoints = [{"name": "a", "url": "http://a", "secret_id": "sec-a", "auth_token": ""}]
+
+        await config_loader._resolve_mcp_tokens(endpoints, None)
+
+        resolve_spy.assert_not_called()
+        assert endpoints[0] == {"name": "a", "url": "http://a", "auth_token": ""}

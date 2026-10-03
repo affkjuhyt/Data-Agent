@@ -3,10 +3,12 @@
 Keyed on (tenant_id, name) so a re-upload cannot destroy a document while a
 promotion is still writing to it.
 """
+
 import hashlib
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
+from typing import Any
 
 from sqlalchemy import text
 

@@ -9,13 +9,11 @@ import pathlib
 import subprocess
 import sys
 import uuid
-from typing import Iterator
 
 import psycopg2
 import psycopg2.errors
 import pytest
 
-from tests.integration._db import reset_database
 
 pytestmark = pytest.mark.integration
 
@@ -36,19 +34,6 @@ def _run_alembic(dsn: str, *args: str) -> subprocess.CompletedProcess:
     )
 
 
-@pytest.fixture
-def fresh_db(postgres_container) -> Iterator[dict[str, str]]:
-    reset_database(postgres_container["dsn"])
-    yield postgres_container
-
-
-@pytest.fixture
-def migrated_db(fresh_db) -> dict[str, str]:
-    result = _run_alembic(fresh_db["dsn"], "upgrade", "head")
-    assert result.returncode == 0, f"alembic upgrade failed:\n{result.stdout}\n{result.stderr}"
-    return fresh_db
-
-
 def _seed_tenant_and_warehouse(dsn: str) -> tuple[str, str]:
     tenant_id, warehouse_id = str(uuid.uuid4()), str(uuid.uuid4())
     conn = psycopg2.connect(dsn)
@@ -56,8 +41,8 @@ def _seed_tenant_and_warehouse(dsn: str) -> tuple[str, str]:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO "Tenants" (id, name, slug, data_residency) VALUES (%s, %s, %s, %s)""",
-                (tenant_id, "Schema Catalog Test Tenant", f"sc-test-{tenant_id[:8]}", "Asia-SE1"),
+                """INSERT INTO "Tenants" (id, name, slug) VALUES (%s, %s, %s)""",
+                (tenant_id, "Schema Catalog Test Tenant", f"sc-test-{tenant_id[:8]}"),
             )
             cur.execute(
                 """INSERT INTO "KBWarehouse" (warehouse_id, tenant_id, service, description)

@@ -378,6 +378,8 @@ def egress_pool():
         sys.modules.pop("pool", None)
 
 
+# One xdist worker for both: they share the fixed "sandbox-egress-test" network.
+@pytest.mark.xdist_group("sandbox-egress-test")
 def test_egress_network_is_created_with_expected_spec(egress_pool):
     """docs/1.md mục a: dedicated bridge network, never the default
     Docker bridge, with inter-container communication disabled
@@ -392,6 +394,8 @@ def test_egress_network_is_created_with_expected_spec(egress_pool):
     assert net.attrs["Options"].get("com.docker.network.bridge.enable_icc") == "false"
 
 
+# One xdist worker for both: they share the fixed "sandbox-egress-test" network.
+@pytest.mark.xdist_group("sandbox-egress-test")
 def test_egress_probe_falls_back_when_iptables_not_applied(egress_pool):
     """No DOCKER-USER rules exist for the test network in this test run
     (this repo's tests never modify host iptables — see

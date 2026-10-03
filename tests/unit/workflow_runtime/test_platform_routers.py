@@ -139,7 +139,7 @@ class TestListConversations:
         conv_id, agent_id = uuid.uuid4(), uuid.uuid4()
         row = _Row(
             id=conv_id, user_ref="alice", channel="web", status="active",
-            started_at=None, ended_at=None, inserted_at=now,
+            inserted_at=now,
             message_count=4, last_message_at=now, tokens=1234, avg_latency_ms=512.25,
             agent_id=agent_id, agent_name="Sales Agent",
         )
@@ -167,7 +167,7 @@ class TestListConversations:
         import uuid
         row = _Row(
             id=uuid.uuid4(), user_ref=None, channel=None, status="active",
-            started_at=None, ended_at=None, inserted_at=dt.datetime.now(dt.UTC),
+            inserted_at=dt.datetime.now(dt.UTC),
             message_count=None, last_message_at=None, tokens=None, avg_latency_ms=None,
             agent_id=None, agent_name=None,
         )

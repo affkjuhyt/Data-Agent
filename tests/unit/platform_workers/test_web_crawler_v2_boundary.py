@@ -6,6 +6,7 @@ A document source keeps auto-promoting exactly as before.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -14,6 +15,8 @@ import pytest
 from services.platform_workers.workers.web_crawler import worker as wc
 
 pytestmark = pytest.mark.unit
+
+TENANT = "a0000000-0000-0000-0000-000000000001"
 
 PROFILE = {
     "kind": "csv",
@@ -35,23 +38,18 @@ def test_a_profiled_source_never_auto_promotes(config: dict[str, Any], expected:
     assert wc._promotion_mode("s1", config) == expected
 
 
-class _Conn:
-    def cursor(self) -> MagicMock:
-        cur = MagicMock()
-        cur.__enter__.return_value = cur
-        return cur
-
-    def commit(self) -> None:
-        pass
-
-    def rollback(self) -> None:
-        pass
+def _session_factory() -> MagicMock:
+    """run_source opens a session per step (`with SessionLocal() as session`);
+    the run-row bookkeeping it does there is not what these tests are about."""
+    session = MagicMock()
+    session.__enter__.return_value = session
+    return session
 
 
 def _run(config: dict[str, Any]) -> tuple[MagicMock, MagicMock]:
     source = {
         "source_id": "s1",
-        "tenant_id": "t1",
+        "tenant_id": TENANT,
         "role_id": "r1",
         "connector_type": "http_file",
         "title": "EIA Brent",
@@ -63,7 +61,7 @@ def _run(config: dict[str, Any]) -> tuple[MagicMock, MagicMock]:
         patch.object(wc.bronze, "register_http_file_bronze", return_value="d1") as register,
         patch.object(wc, "queue_auto_promote_silver") as publish,
     ):
-        wc.run_source(_Conn(), source, trigger="scheduled", run_id="run-1")
+        wc.run_source(_session_factory, source, trigger="scheduled", run_id=str(uuid.uuid4()))
     return register, publish
 
 
@@ -82,4 +80,4 @@ def test_a_document_source_still_auto_promotes() -> None:
 
     assert register.call_args.kwargs["promotion_mode"] == "auto"
     publish.assert_called_once()
-    assert publish.call_args.args[1:] == ("d1", "t1")
+    assert publish.call_args.args[1:] == ("d1", TENANT)

@@ -31,7 +31,7 @@ class PublishVersionRequest(BaseModel):
 class UpdateDraftRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    responder_model_id: Optional[str] = None
+    # LiteLLM alias, as GET /api/llm-providers lists it in model_id.
+    responder_model: Optional[str] = None
     system_prompt_id: Optional[str] = None
-    guardrail_id: Optional[str] = None
     memory_enabled: Optional[bool] = None

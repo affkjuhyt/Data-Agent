@@ -1,26 +1,22 @@
 """Land a fetched artifact in the same Bronze tier a manual upload does.
 
-platform_workers is a sync psycopg2/Kafka loop (see schema_crawler) — it has
-never used kb_backend's async `PostgresClient`/`MinIOClient` (SQLAlchemy
-async engine + aioboto3), and importing kb_backend's application code from
-here would cross a service boundary nothing else in this repo crosses
-(workers only import `libs.*` and their own package — schema_crawler reads
-"KBWarehouse"/"KBWarehouseConfig" the exact same way, via raw SQL against the
-shared schema, never by importing kb_backend's Python).
+platform_workers is a sync SQLAlchemy/Kafka loop (see schema_crawler). It
+still avoids importing kb_backend's application code from here; workers only
+import `libs.*` and their own package.
 
 So this module writes the identical row shape
 `kb_backend/pipeline/ingestion/bronze.py`'s `upload_to_bronze()` /
-`register_web_bronze()` produce, just via raw SQL + a sync MinIO client
-instead of the async ORM/MinIO wrappers.
+`register_web_bronze()` produce, using the shared SQLAlchemy ORM plus a sync
+MinIO client.
 """
 from __future__ import annotations
 
 import hashlib
 import io
-import json
 import logging
 import os
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -29,7 +25,18 @@ from neo4j import GraphDatabase
 from pymongo import MongoClient
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
+from sqlalchemy import delete, exists, select
+from sqlalchemy.orm import Session
 
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+    KBConflictBatchORM,
+    KBConflictORM,
+    KBDataORM,
+    KBLifecycleHistoryORM,
+    KBTextBlockORM,
+    KBTextBlockVersionORM,
+    KBTextTableORM,
+)
 from libs.ingestion import config as cfg
 from libs.ingestion.connectors.base import FetchedArtifact
 
@@ -51,7 +58,11 @@ def _minio_client() -> Minio:
     )
 
 
-def _purge_promoted_traces(cur: Any, data_id: str) -> None:
+def _as_uuid(value: Any) -> uuid.UUID:
+    return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+
+
+def _purge_promoted_traces(session: Session, data_id: str) -> None:
     """A document already promoted past Bronze has traces in Postgres child
     tables plus Qdrant/Neo4j/Mongo; deleting only its `KBData` row leaves them
     all orphaned, and once it had reached Gold the `KBTextBlock` foreign key
@@ -65,35 +76,27 @@ def _purge_promoted_traces(cur: Any, data_id: str) -> None:
     surviving Qdrant point or Neo4j edge for a data_id whose KBData row is
     already gone is inert (never returned by a tenant-scoped, joined query),
     just wasted space, same tradeoff `trash_ops.py`'s blob purge already makes."""
-    cur.execute(
-        """DELETE FROM "KBTextTable" WHERE version_id IN (
-               SELECT v.version_id FROM "KBTextBlockVersion" v
-               JOIN "KBTextBlock" b ON b.block_id = v.block_id
-               WHERE b.owner_id = %s)""",
-        (data_id,),
-    )
-    cur.execute(
-        """DELETE FROM "KBTextBlockVersion" WHERE block_id IN (
-               SELECT block_id FROM "KBTextBlock" WHERE owner_id = %s)""",
-        (data_id,),
-    )
-    cur.execute('DELETE FROM "KBTextBlock" WHERE owner_id = %s', (data_id,))
-    cur.execute(
-        """SELECT DISTINCT batch_id FROM "KBConflict" WHERE data_id = %s AND batch_id IS NOT NULL""",
-        (data_id,),
-    )
-    batch_ids = [row[0] for row in cur.fetchall()]
-    cur.execute('DELETE FROM "KBConflict" WHERE data_id = %s', (data_id,))
+    data_uuid = _as_uuid(data_id)
+    block_ids = select(KBTextBlockORM.block_id).where(KBTextBlockORM.owner_id == data_uuid)
+    version_ids = select(KBTextBlockVersionORM.version_id).where(KBTextBlockVersionORM.block_id.in_(block_ids))
+    session.execute(delete(KBTextTableORM).where(KBTextTableORM.version_id.in_(version_ids)))
+    session.execute(delete(KBTextBlockVersionORM).where(KBTextBlockVersionORM.block_id.in_(block_ids)))
+    session.execute(delete(KBTextBlockORM).where(KBTextBlockORM.owner_id == data_uuid))
+
+    batch_ids = session.scalars(
+        select(KBConflictORM.batch_id)
+        .where(KBConflictORM.data_id == data_uuid, KBConflictORM.batch_id.is_not(None))
+        .distinct()
+    ).all()
+    session.execute(delete(KBConflictORM).where(KBConflictORM.data_id == data_uuid))
     if batch_ids:
-        # psycopg2 adapts a plain Python list to a `text[]` literal, which
-        # Postgres refuses to compare against the `uuid` column ("operator
-        # does not exist: uuid = text") — hit for real on every re-crawl of
-        # a document with recorded conflicts (RSS Kinh tế, FRED, ... failed
-        # every single scheduled run until this cast was added).
-        cur.execute(
-            """DELETE FROM "KBConflictBatch" WHERE batch_id = ANY(%s::uuid[])
-                   AND NOT EXISTS (SELECT 1 FROM "KBConflict" c WHERE c.batch_id = "KBConflictBatch".batch_id)""",
-            ([str(b) for b in batch_ids],),
+        has_conflicts = exists(
+            select(KBConflictORM.conflict_id).where(KBConflictORM.batch_id == KBConflictBatchORM.batch_id)
+        )
+        session.execute(
+            delete(KBConflictBatchORM)
+            .where(KBConflictBatchORM.batch_id.in_(batch_ids))
+            .where(~has_conflicts)
         )
 
     try:
@@ -117,30 +120,22 @@ def _purge_promoted_traces(cur: Any, data_id: str) -> None:
         log.warning("_purge_promoted_traces | mongo staging cleanup failed for data_id=%s", data_id, exc_info=True)
 
 
-def _replace_existing_by_name(cur: Any, tenant_id: str, name: str) -> None:
+def _replace_existing_by_name(session: Session, tenant_id: str, name: str) -> None:
     """A re-crawl of the same source reuses its title as the KBData name, so
     without this the second run of ANY source hard-crashes on the
-    (tenant_id, name) unique index idx_kbdata_tenant_name (found by actually running two crawls back to back —
-    not caught by unit tests mocking the DB away). Mirrors kb_backend's
-    `_replace_existing_document_if_any` (ingestion.py) — hard-delete, not
-    soft-delete, to free the unique constraint. Unlike a fresh Bronze-only
-    document, one already promoted past Bronze needs `_purge_promoted_traces`
-    first (see its docstring) — without it, a document that had reached Gold
-    makes this delete fail on the `KBTextBlock` foreign key, and one at
-    Silver silently leaves orphaned chunks/vectors behind.
-    """
-    cur.execute(
-        'SELECT data_id, path, current_tier FROM "KBData" WHERE tenant_id = %s AND name = %s',
-        (tenant_id, name),
+    (tenant_id, name) unique index idx_kbdata_tenant_name. Mirrors kb_backend's
+    replace path."""
+    existing = session.scalar(
+        select(KBDataORM).where(KBDataORM.tenant_id == tenant_id, KBDataORM.name == name)
     )
-    existing = cur.fetchone()
     if existing is None:
         return
-    old_data_id, old_path, old_tier = existing
-    if old_tier != _TIER_BRONZE:
-        _purge_promoted_traces(cur, old_data_id)
-    cur.execute('DELETE FROM "KBLifecycleHistory" WHERE data_id = %s', (old_data_id,))
-    cur.execute('DELETE FROM "KBData" WHERE data_id = %s', (old_data_id,))
+    old_data_id = str(existing.data_id)
+    old_path = existing.path
+    if existing.current_tier != _TIER_BRONZE:
+        _purge_promoted_traces(session, old_data_id)
+    session.execute(delete(KBLifecycleHistoryORM).where(KBLifecycleHistoryORM.data_id == existing.data_id))
+    session.execute(delete(KBDataORM).where(KBDataORM.data_id == existing.data_id))
     if old_path:
         try:
             _minio_client().remove_object(cfg.MINIO_BUCKET, old_path)
@@ -155,7 +150,7 @@ _PIPELINE_STAMP_KEYS = ("last_pipeline_stage", "last_pipeline_status", "last_pip
 
 
 def _update_existing_in_place(
-    cur: Any, *, data_id: str, tier: str, added_by: str, name: str, extension: str | None,
+    session: Session, *, data_id: str, tier: str, added_by: str, name: str, extension: str | None,
     path: str | None, content_hash: str | None, purpose: str, doc_metadata: dict[str, Any],
 ) -> None:
     """New content for an existing document: keep its row and `data_id`.
@@ -169,62 +164,83 @@ def _update_existing_in_place(
     swaps it for the new version. Extension/path/hash are only rewritten for
     documents that carry bytes (`extension is None` for a web source); the hash is
     written whenever there is one, web sources included."""
-    stripped = "metadata"
-    for key in _PIPELINE_STAMP_KEYS:
-        stripped = f"({stripped} - '{key}')"
-    sets = [f"metadata = coalesce({stripped}, '{{}}'::jsonb) || %s::jsonb", "purpose = %s",
-            "row_version = gen_random_uuid()", "updated_at = now()"]
-    params: list[Any] = [json.dumps(doc_metadata), purpose]
+    # FOR UPDATE: the metadata merge below is read-modify-write in Python, and the KB
+    # promote workers stamp this row concurrently — without the lock their stamp can be
+    # overwritten by the copy read here.
+    row = session.get(KBDataORM, _as_uuid(data_id), with_for_update=True)
+    if row is None:
+        raise ValueError(f"KBData row {data_id} no longer exists")
+    base_metadata = {
+        key: value
+        for key, value in (row.doc_metadata or {}).items()
+        if key not in _PIPELINE_STAMP_KEYS
+    }
+    row.doc_metadata = {**base_metadata, **doc_metadata}
+    row.purpose = purpose
+    row.row_version = uuid.uuid4()
+    row.updated_at = datetime.now(UTC)
     if extension is not None:
-        sets += ["extension = %s", "path = %s"]
-        params += [extension, path]
+        row.extension = extension
+        row.path = path
     if content_hash is not None:
-        sets.append("content_hash = %s")
-        params.append(content_hash)
-    params.append(data_id)
-    cur.execute(f'UPDATE "KBData" SET {", ".join(sets)} WHERE data_id = %s', tuple(params))
-    cur.execute(
-        """INSERT INTO "KBLifecycleHistory"
-               (history_id, data_id, to_tier, from_tier, approved_by, notes, pipeline_metadata)
-           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-        (
-            str(uuid.uuid4()), data_id, tier, tier, added_by,
-            f"Content updated in place by scheduled source worker: {name}",
-            json.dumps({"stage": "bronze", "update": "in_place"}),
-        ),
+        row.content_hash = content_hash
+        # The same bytes raw.RawStore kept: ties the search copy to its raw.
+        row.artifact_sha256 = content_hash
+    session.add(
+        KBLifecycleHistoryORM(
+            history_id=uuid.uuid4(),
+            data_id=_as_uuid(data_id),
+            to_tier=tier,
+            from_tier=tier,
+            approved_by=added_by,
+            notes=f"Content updated in place by scheduled source worker: {name}",
+            pipeline_metadata={"stage": "bronze", "update": "in_place"},
+        )
     )
 
 
 def _insert_kbdata(
-    cur: Any, *, data_id: str, tenant_id: str, role_id: str, name: str, extension: str,
+    session: Session, *, data_id: str, tenant_id: str, role_id: str, name: str, extension: str,
     source_type: str, added_by: str, abstract: str, doc_metadata: dict[str, Any], path: str | None,
     content_hash: str | None = None, purpose: str = "production",
 ) -> None:
-    _replace_existing_by_name(cur, tenant_id, name)
-    cur.execute(
-        """INSERT INTO "KBData"
-               (data_id, tenant_id, role_id, name, extension, language, source_type,
-                added_by, abstract, metadata, current_tier, ingestion_mode, purpose, path, content_hash)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-        (
-            data_id, tenant_id, role_id, name, extension, "english", source_type,
-            added_by, abstract, json.dumps(doc_metadata), _TIER_BRONZE, "document", purpose, path, content_hash,
-        ),
+    _replace_existing_by_name(session, tenant_id, name)
+    data_uuid = _as_uuid(data_id)
+    session.add(
+        KBDataORM(
+            data_id=data_uuid,
+            tenant_id=_as_uuid(tenant_id),
+            role_id=_as_uuid(role_id),
+            name=name,
+            extension=extension,
+            language="english",
+            source_type=source_type,
+            added_by=added_by,
+            abstract=abstract,
+            doc_metadata=doc_metadata,
+            current_tier=_TIER_BRONZE,
+            ingestion_mode="document",
+            purpose=purpose,
+            path=path,
+            content_hash=content_hash,
+            artifact_sha256=content_hash,
+        )
     )
-    cur.execute(
-        """INSERT INTO "KBLifecycleHistory"
-               (history_id, data_id, to_tier, from_tier, approved_by, notes, pipeline_metadata)
-           VALUES (%s, %s, %s, NULL, %s, %s, %s)""",
-        (
-            str(uuid.uuid4()), data_id, _TIER_BRONZE, added_by,
-            f"Ingested by scheduled source worker: {name}",
-            json.dumps({"stage": "bronze", "source_type": source_type}),
-        ),
+    session.add(
+        KBLifecycleHistoryORM(
+            history_id=uuid.uuid4(),
+            data_id=data_uuid,
+            to_tier=_TIER_BRONZE,
+            from_tier=None,
+            approved_by=added_by,
+            notes=f"Ingested by scheduled source worker: {name}",
+            pipeline_metadata={"stage": "bronze", "source_type": source_type},
+        )
     )
 
 
 def register_http_file_bronze(
-    conn: Any, *, tenant_id: str, role_id: str, title: str, added_by: str, artifact: FetchedArtifact,
+    session: Session, *, tenant_id: str, role_id: str, title: str, added_by: str, artifact: FetchedArtifact,
     outcome: dict[str, Any] | None = None, source_id: str | None = None, promotion_mode: str = "manual",
     purpose: str = "production",
 ) -> str:
@@ -246,27 +262,26 @@ def register_http_file_bronze(
         raise ValueError(f"artifact for {title!r} exceeds MAX_FILE_SIZE_BYTES")
 
     content_hash = hashlib.sha256(artifact.content_bytes).hexdigest()
-    with conn.cursor() as cur:
-        cur.execute(
-            'SELECT data_id, content_hash, current_tier, is_deleted, path FROM "KBData" WHERE tenant_id = %s AND name = %s',
-            (tenant_id, title),
-        )
-        existing = cur.fetchone()
+    existing = session.scalar(
+        select(KBDataORM).where(KBDataORM.tenant_id == _as_uuid(tenant_id), KBDataORM.name == title)
+    )
     # A soft-deleted row still occupies the name but is not "still there" —
     # short-circuiting here would hand back a Trashed, invisible data_id and
     # report a successful run for nothing (same bug fixed on the manual
     # upload path in kb_backend's ingest_bronze). Fall through to the normal
     # replace-and-insert path below instead.
-    if existing is not None and not existing[3] and existing[1] == content_hash:
+    if existing is not None and not existing.is_deleted and existing.content_hash == content_hash:
         log.info("register_http_file_bronze | %r unchanged (content_hash match) — skipping re-ingest", title)
         if outcome is not None:
-            outcome.update(unchanged=True, existing_tier=existing[2])
-        return str(existing[0])
+            outcome.update(unchanged=True, existing_tier=existing.current_tier)
+        return str(existing.data_id)
 
-    in_place = existing is not None and not existing[3]
+    live = existing if existing is not None and not existing.is_deleted else None
+    in_place = live is not None
+    old_path = live.path if live is not None else None
     # New content for a live document keeps its data_id; a soft-deleted one
     # still occupies the name, so that case takes the delete-and-insert path.
-    data_id = str(existing[0]) if in_place else str(uuid.uuid4())
+    data_id = str(live.data_id) if live is not None else str(uuid.uuid4())
     filename = f"{title}.{artifact.extension}"
     # The content hash in the key keeps the old object addressable until the row
     # points at the new one; it is only removed after that commit.
@@ -289,25 +304,24 @@ def register_http_file_bronze(
         "source_id": source_id, "promotion_mode": promotion_mode,
     }
     try:
-        with conn.cursor() as cur:
-            if in_place:
-                _update_existing_in_place(
-                    cur, data_id=data_id, tier=existing[2], added_by=added_by, name=title,
-                    extension=artifact.extension, path=object_key, content_hash=content_hash,
-                    purpose=purpose, doc_metadata=doc_metadata,
-                )
-            else:
-                _insert_kbdata(
-                    cur, data_id=data_id, tenant_id=tenant_id, role_id=role_id, name=title,
-                    extension=artifact.extension, source_type="doc", added_by=added_by, abstract="",
-                    doc_metadata=doc_metadata,
-                    path=object_key,
-                    content_hash=content_hash,
-                    purpose=purpose,
-                )
-        conn.commit()
+        if live is not None:
+            _update_existing_in_place(
+                session, data_id=data_id, tier=live.current_tier, added_by=added_by, name=title,
+                extension=artifact.extension, path=object_key, content_hash=content_hash,
+                purpose=purpose, doc_metadata=doc_metadata,
+            )
+        else:
+            _insert_kbdata(
+                session, data_id=data_id, tenant_id=tenant_id, role_id=role_id, name=title,
+                extension=artifact.extension, source_type="doc", added_by=added_by, abstract="",
+                doc_metadata=doc_metadata,
+                path=object_key,
+                content_hash=content_hash,
+                purpose=purpose,
+            )
+        session.commit()
     except Exception:
-        conn.rollback()
+        session.rollback()
         # Best-effort cleanup, same compensating pattern as upload_to_bronze:
         # MinIO write happened first, so a DB failure shouldn't leave an
         # orphaned object with no KBData row pointing at it.
@@ -316,7 +330,6 @@ def register_http_file_bronze(
         except Exception:
             log.exception("register_http_file_bronze | failed to clean up orphaned object %s", object_key)
         raise
-    old_path = existing[4] if in_place else None
     if old_path and old_path != object_key:
         try:
             minio.remove_object(cfg.MINIO_BUCKET, old_path)
@@ -326,7 +339,7 @@ def register_http_file_bronze(
 
 
 def register_web_bronze(
-    conn: Any, *, tenant_id: str, role_id: str, title: str, url: str, added_by: str,
+    session: Session, *, tenant_id: str, role_id: str, title: str, url: str, added_by: str,
     source_id: str | None = None, promotion_mode: str = "manual", purpose: str = "production",
     artifact: FetchedArtifact | None = None, outcome: dict[str, Any] | None = None,
 ) -> str:
@@ -347,29 +360,27 @@ def register_web_bronze(
         "source_id": source_id, "promotion_mode": promotion_mode,
     }
     content_hash = hashlib.sha256(artifact.content_bytes).hexdigest() if artifact is not None else None
-    with conn.cursor() as cur:
-        cur.execute(
-            'SELECT data_id, current_tier, content_hash FROM "KBData" WHERE tenant_id = %s AND name = %s AND NOT is_deleted',
-            (tenant_id, title),
+    existing = session.scalar(
+        select(KBDataORM)
+        .where(KBDataORM.tenant_id == _as_uuid(tenant_id), KBDataORM.name == title, KBDataORM.is_deleted.is_(False))
+    )
+    if existing is not None:
+        data_id = str(existing.data_id)
+        if content_hash is not None and existing.content_hash == content_hash:
+            log.info("register_web_bronze | %r unchanged (content_hash match) — skipping re-ingest", title)
+            if outcome is not None:
+                outcome.update(unchanged=True, existing_tier=existing.current_tier)
+            return data_id
+        _update_existing_in_place(
+            session, data_id=data_id, tier=existing.current_tier, added_by=added_by, name=title, extension=None,
+            path=None, content_hash=content_hash, purpose=purpose, doc_metadata=doc_metadata,
         )
-        existing = cur.fetchone()
-        if existing is not None:
-            data_id = str(existing[0])
-            if content_hash is not None and existing[2] == content_hash:
-                log.info("register_web_bronze | %r unchanged (content_hash match) — skipping re-ingest", title)
-                if outcome is not None:
-                    outcome.update(unchanged=True, existing_tier=existing[1])
-                return data_id
-            _update_existing_in_place(
-                cur, data_id=data_id, tier=existing[1], added_by=added_by, name=title, extension=None,
-                path=None, content_hash=content_hash, purpose=purpose, doc_metadata=doc_metadata,
-            )
-        else:
-            data_id = str(uuid.uuid4())
-            _insert_kbdata(
-                cur, data_id=data_id, tenant_id=tenant_id, role_id=role_id, name=title, extension="html",
-                source_type="web", added_by=added_by, abstract="", doc_metadata=doc_metadata,
-                path=None, content_hash=content_hash, purpose=purpose,
-            )
-    conn.commit()
+    else:
+        data_id = str(uuid.uuid4())
+        _insert_kbdata(
+            session, data_id=data_id, tenant_id=tenant_id, role_id=role_id, name=title, extension="html",
+            source_type="web", added_by=added_by, abstract="", doc_metadata=doc_metadata,
+            path=None, content_hash=content_hash, purpose=purpose,
+        )
+    session.commit()
     return data_id

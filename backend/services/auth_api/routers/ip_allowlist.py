@@ -1,21 +1,28 @@
 from typing import Any
 import ipaddress
 
-import psycopg2
-import psycopg2.extras
 from fastapi import APIRouter, Depends, Header, HTTPException, Path
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 
+from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import (
+    AuthPlatformSettingORM,
+    IPAllowlistORM,
+)
 from libs.shared.auth import require_role
 try:
     from services.auth_api.domain.ip_allowlists import format_ip_allowlist
-    from services.auth_api.infrastructure.db import get_db
+    from services.auth_api.infrastructure.db import get_session, orm_to_dict
     from services.auth_api.schemas import IPAllowlistCreateInput
     from services.auth_api.services.kong_sync import get_ip_allowlist_mode, sync_kong_ip_restrictions
 except ModuleNotFoundError:
     from auth_api.domain.ip_allowlists import format_ip_allowlist
-    from auth_api.infrastructure.db import get_db
+    from auth_api.infrastructure.db import get_session, orm_to_dict
     from auth_api.schemas import IPAllowlistCreateInput
     from auth_api.services.kong_sync import get_ip_allowlist_mode, sync_kong_ip_restrictions
+
+_UNIQUE_VIOLATION = "23505"
 
 router = APIRouter()
 
@@ -37,17 +44,16 @@ def set_ip_config(
     if mode not in ("allowlist", "allow_all"):
         raise HTTPException(status_code=422, detail="mode must be 'allowlist' or 'allow_all'")
 
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO platform_settings (key, value, updated_at)
-                VALUES ('ip_allowlist_mode', %s, now())
-                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
-            """, (mode,))
-        conn.commit()
-    finally:
-        conn.close()
+    with get_session() as session:
+        stmt = (
+            pg_insert(AuthPlatformSettingORM)
+            .values(key="ip_allowlist_mode", value=mode)
+            .on_conflict_do_update(
+                index_elements=[AuthPlatformSettingORM.key],
+                set_={"value": mode},
+            )
+        )
+        session.execute(stmt)
 
     sync_kong_ip_restrictions(x_tenant_id)
     return {"mode": mode}
@@ -62,17 +68,13 @@ def list_ip_allowlists(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> list[dict[str, Any]]:
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT id, cidr, label, is_active, created_by, created_at FROM ip_allowlists WHERE tenant_id = %s ORDER BY created_at DESC",
-                (x_tenant_id,),
-            )
-            rows = cur.fetchall()
-        return [format_ip_allowlist(r) for r in rows]
-    finally:
-        conn.close()
+    with get_session(x_tenant_id) as session:
+        rows = session.scalars(
+            select(IPAllowlistORM)
+            .where(IPAllowlistORM.tenant_id == x_tenant_id)
+            .order_by(IPAllowlistORM.created_at.desc())
+        ).all()
+        return [format_ip_allowlist(orm_to_dict(r)) for r in rows]
 
 
 @router.post("/api/auth/ip-allowlists", status_code=201)
@@ -86,23 +88,28 @@ def create_ip_rule(
     except ValueError:
         raise HTTPException(status_code=422, detail=f"Invalid CIDR: {body.cidr}")
 
-    conn = get_db()
     try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "INSERT INTO ip_allowlists (tenant_id, cidr, label, is_active, created_by) VALUES (%s,%s,%s,%s,%s) RETURNING id, cidr, label, is_active, created_by, created_at",
-                (x_tenant_id, body.cidr, body.label, body.is_active, user["user_id"]),
+        with get_session(x_tenant_id) as session:
+            row = IPAllowlistORM(
+                tenant_id=x_tenant_id,
+                cidr=body.cidr,
+                label=body.label,
+                is_active=body.is_active,
+                created_by=user["user_id"],
             )
-            row = cur.fetchone()
-        conn.commit()
-    except psycopg2.errors.UniqueViolation:
-        conn.rollback()
+            session.add(row)
+            session.flush()
+            session.refresh(row)
+            result = format_ip_allowlist(orm_to_dict(row))
+    except IntegrityError as exc:
+        # Only a unique violation is "already exists"; a foreign-key failure (unknown
+        # tenant) must not be reported as a duplicate CIDR.
+        if getattr(exc.orig, "pgcode", None) != _UNIQUE_VIOLATION:
+            raise
         raise HTTPException(status_code=409, detail="CIDR already exists for this tenant")
-    finally:
-        conn.close()
 
     sync_kong_ip_restrictions(x_tenant_id)
-    return format_ip_allowlist(row)
+    return result
 
 
 @router.patch("/api/auth/ip-allowlists/{rule_id}/toggle")
@@ -111,23 +118,21 @@ def toggle_ip_rule(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "UPDATE ip_allowlists SET is_active = NOT is_active WHERE id = %s AND tenant_id = %s RETURNING id, cidr, label, is_active, created_by, created_at",
-                (rule_id, x_tenant_id),
+    with get_session(x_tenant_id) as session:
+        row = session.scalar(
+            select(IPAllowlistORM).where(
+                IPAllowlistORM.id == rule_id,
+                IPAllowlistORM.tenant_id == x_tenant_id,
             )
-            row = cur.fetchone()
-        if not row:
-            conn.rollback()
+        )
+        if row is None:
             raise HTTPException(status_code=404, detail="Rule not found")
-        conn.commit()
-    finally:
-        conn.close()
+        row.is_active = not row.is_active
+        session.flush()
+        result = format_ip_allowlist(orm_to_dict(row))
 
     sync_kong_ip_restrictions(x_tenant_id)
-    return format_ip_allowlist(row)
+    return result
 
 
 @router.delete("/api/auth/ip-allowlists/{rule_id}", status_code=204)
@@ -136,15 +141,15 @@ def delete_ip_rule(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> None:
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM ip_allowlists WHERE id = %s AND tenant_id = %s", (rule_id, x_tenant_id))
-            if cur.rowcount == 0:
-                conn.rollback()
-                raise HTTPException(status_code=404, detail="Rule not found")
-        conn.commit()
-    finally:
-        conn.close()
+    with get_session(x_tenant_id) as session:
+        row = session.scalar(
+            select(IPAllowlistORM).where(
+                IPAllowlistORM.id == rule_id,
+                IPAllowlistORM.tenant_id == x_tenant_id,
+            )
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="Rule not found")
+        session.delete(row)
 
     sync_kong_ip_restrictions(x_tenant_id)

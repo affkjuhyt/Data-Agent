@@ -52,7 +52,7 @@ def _python_guard(case: dict[str, Any]) -> None:
 def _path_guard(case: dict[str, Any]) -> None:
     utils = _paths.load_module(
         "_eval_tool_executor_utils",
-        _paths.WORKFLOW_RUNTIME / "nodes" / "sandbox" / "tool_executor" / "_utils.py",
+        _paths.WORKFLOW_RUNTIME / "application" / "nodes" / "sandbox" / "tool_executor" / "_utils.py",
     )
 
     _, error = utils._safe_path(case["input"], case.get("allowed_dir", ""))

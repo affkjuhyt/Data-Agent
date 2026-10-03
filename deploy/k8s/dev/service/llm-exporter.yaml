@@ -60,9 +60,9 @@ spec:
           httpGet:
             path: /metrics
             port: 8270
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          failureThreshold: 3
+          initialDelaySeconds: 1
+          periodSeconds: 2
+          failureThreshold: 5
         livenessProbe:
           httpGet:
             path: /metrics

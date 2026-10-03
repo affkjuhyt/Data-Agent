@@ -21,6 +21,9 @@ RUN mkdir -p /app/logs && chown -R app:app /app/logs
 # itself as `services.workflow_runtime.xxx` throughout (same convention as
 # kb_backend's Dockerfile), so this can't be flattened into /app directly.
 COPY --chown=app:app backend/libs/ ./libs/
-COPY --chown=app:app backend/services/ ./services/
+# Only this service's tree, not all of backend/services: no service imports another,
+# and copying them all rebuilt (and restarted) this image for every other service's edit.
+COPY --chown=app:app backend/services/__init__.py ./services/__init__.py
+COPY --chown=app:app backend/services/workflow_runtime/ ./services/workflow_runtime/
 
 USER app

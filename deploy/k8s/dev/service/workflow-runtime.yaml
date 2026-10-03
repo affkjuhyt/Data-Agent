@@ -67,9 +67,9 @@ spec:
           httpGet:
             path: /health
             port: 8240
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          failureThreshold: 3
+          initialDelaySeconds: 1
+          periodSeconds: 2
+          failureThreshold: 5
         livenessProbe:
           httpGet:
             path: /health
@@ -95,7 +95,7 @@ spec:
         command:
         - sh
         - -c
-        - until alembic -c alembic/alembic.ini current 2>/dev/null | grep -q '(head)'; do echo waiting for schema; sleep 5; done
+        - until alembic -c alembic/alembic.ini current 2>/dev/null | grep -q '(head)'; do echo waiting for schema; sleep 2; done
         envFrom:
         - secretRef:
             name: workflow-runtime-secrets

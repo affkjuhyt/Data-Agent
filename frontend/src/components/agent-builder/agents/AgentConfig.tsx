@@ -2,7 +2,7 @@
  * Config Registry — the real per-agent configuration, side by side.
  *
  *   GET /api/agents            → list
- *   GET /api/agents/{id}       → responder_model_id / system_prompt_id / memory_enabled / active workflow
+ *   GET /api/agents/{id}       → responder_model / system_prompt_id / memory_enabled / active workflow
  *   GET /api/llm-providers     → model names
  *   GET /api/system-prompts    → prompt names
  *
@@ -25,7 +25,7 @@ interface ConfigRegistryProps {
   onQuickView: (agentId: string) => void;
 }
 
-type Row = AgentSummary & Partial<Pick<AgentDetail, 'responder_model_id' | 'system_prompt_id' | 'memory_enabled' | 'active_workflow_name' | 'active_workflow_id'>>;
+type Row = AgentSummary & Partial<Pick<AgentDetail, 'responder_model' | 'system_prompt_id' | 'memory_enabled' | 'active_workflow_name' | 'active_workflow_id'>>;
 
 export const ConfigRegistry: React.FC<ConfigRegistryProps> = ({ onSelect, onQuickView }) => {
   const [rows, setRows] = useState<Row[]>([]);
@@ -61,10 +61,10 @@ export const ConfigRegistry: React.FC<ConfigRegistryProps> = ({ onSelect, onQuic
 
   useEffect(() => { void load(); }, [load]);
 
-  const providerName = (id: string | null | undefined) => {
-    if (!id) return null;
-    const p = providers.find(x => x.id === id);
-    return p ? `${p.name} (${p.model_id})` : id;
+  // responder_model is the LiteLLM alias, which /api/llm-providers lists as model_id.
+  const providerName = (alias: string | null | undefined) => {
+    if (!alias) return null;
+    return providers.find(x => x.model_id === alias)?.name ?? alias;
   };
   const promptName = (id: string | null | undefined) => {
     if (!id) return null;
@@ -84,7 +84,7 @@ export const ConfigRegistry: React.FC<ConfigRegistryProps> = ({ onSelect, onQuic
         </div>
       ),
     },
-    { header: 'Model', cell: r => <span className="font-mono text-[11px] text-[#111111]">{providerName(r.responder_model_id) ?? <span className="text-[#5F5F5F]">Chưa chọn</span>}</span> },
+    { header: 'Model', cell: r => <span className="font-mono text-[11px] text-[#111111]">{providerName(r.responder_model) ?? <span className="text-[#5F5F5F]">Chưa chọn</span>}</span> },
     { header: 'System prompt', cell: r => <span className="text-[#3F3F3F]">{promptName(r.system_prompt_id) ?? <span className="text-[#5F5F5F]">Chưa chọn</span>}</span> },
     { header: 'Memory', cell: r => <Badge tone={r.memory_enabled ? 'healthy' : 'draft'}>{r.memory_enabled ? 'Bật' : 'Tắt'}</Badge> },
     { header: 'Workflow đang chạy', cell: r => <span className="text-[#3F3F3F]">{r.active_workflow_name ?? '—'}</span> },

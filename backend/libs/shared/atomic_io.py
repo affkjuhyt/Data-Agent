@@ -10,10 +10,12 @@ then ``os.replace`` — an atomic rename on POSIX and Windows (same filesystem).
 A kill at any point leaves either the old complete file or the new one, never a
 truncated one.
 """
+
 from __future__ import annotations
 
 import os
 import tempfile
+from contextlib import suppress
 
 
 def atomic_write_text(path: str, text: str, encoding: str = "utf-8") -> None:
@@ -28,8 +30,6 @@ def atomic_write_text(path: str, text: str, encoding: str = "utf-8") -> None:
             os.fsync(f.fileno())  # ensure bytes hit disk before the rename
         os.replace(tmp, path)  # atomic swap
     except BaseException:
-        try:
+        with suppress(OSError):
             os.unlink(tmp)
-        except OSError:
-            pass
         raise

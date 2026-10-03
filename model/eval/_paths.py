@@ -38,7 +38,7 @@ def ensure(*directories: Path) -> None:
 def load_module(name: str, path: Path) -> ModuleType:
     """Load one module from its file, WITHOUT executing its package __init__.
 
-    `nodes/sandbox/tool_executor/_utils.py` holds a pure path check inside a
+    `application/nodes/sandbox/tool_executor/_utils.py` holds a pure path check inside a
     package whose __init__ imports the whole node graph, and through it litellm.
     Importing it normally would make an offline evaluation of a stdlib-only
     function depend on a model client being installed — so the file is loaded

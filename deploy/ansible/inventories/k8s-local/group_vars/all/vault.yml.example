@@ -51,6 +51,14 @@ vault_keycloak_admin_password: ""
 vault_gateway_key: ""
 vault_service_auth_secret: ""
 vault_smoke_password: ""
+# Demo users' Keycloak passwords (kong-setup.sh sets them; empty = leave as is).
+# The e2e suite logs in with these: tests/README.md, e2e.
+vault_demo_password_platform_admin: ""
+vault_demo_password_helios_admin: ""
+vault_demo_password_helios_engineer: ""
+vault_demo_password_helios_viewer: ""
+vault_demo_password_ai_engineer: ""
+vault_demo_password_executive_viewer: ""
 
 # ── LLM tier ──────────────────────────────────────────────────────────
 vault_litellm_api_key: ""

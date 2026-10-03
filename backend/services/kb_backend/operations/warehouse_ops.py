@@ -131,6 +131,20 @@ async def _assert_tenant(postgres: Any, doc_id: str, tenant_id: str, role_id: st
     raise HTTPException(status_code=404, detail="Document not found")
 
 
+def _table_key(table: Any) -> str:
+    """Stable id of one selected_tables entry: the `id` _to_wconfig hands the UI
+    and the one delete_config_table matches. Entries come in three shapes — a
+    bare name (seed), a connect-wizard row {name, schema, …} and a Knowledge Hub
+    row {id, tableName, schema, …} — so the id cannot be any single field."""
+    if isinstance(table, str):
+        return table
+    if table.get("id"):
+        return str(table["id"])
+    name = table.get("name") or table.get("tableName") or ""
+    schema = table.get("schema") or ""
+    return f"{schema}.{name}" if schema else str(name)
+
+
 def _to_wconfig(row: dict[str, Any]) -> dict[str, Any]:
     cfg = row.get("config") or {}
     tables_raw = cfg.get("selected_tables") or []
@@ -151,8 +165,8 @@ def _to_wconfig(row: dict[str, Any]) -> dict[str, Any]:
         "created_at": to_string(row.get("created_at", "")),
         "connection": connection,
         "tables": [
-            {"name": t, "schema": "", "rowCount": "—", "description": ""}
-            if isinstance(t, str) else t
+            {"id": t, "name": t, "schema": "", "rowCount": "—", "description": ""}
+            if isinstance(t, str) else {**t, "id": _table_key(t)}
             for t in tables_raw
         ],
     }
@@ -287,7 +301,13 @@ async def delete_config_table(
 
     def mutate(locked: Any) -> dict[str, Any]:
         cfg = dict(locked.config or {})
-        cfg["selected_tables"] = [t for t in (cfg.get("selected_tables") or []) if t != table_id]
+        tables = cfg.get("selected_tables") or []
+        # Entries are dicts; comparing them to the id string matched nothing, so
+        # every delete answered ok, bumped the version and removed no table.
+        kept = [t for t in tables if _table_key(t) != table_id]
+        if len(kept) == len(tables):
+            raise HTTPException(status_code=404, detail="Table not in this config")
+        cfg["selected_tables"] = kept
         return {"config": cfg}
 
     new_version = await update_locked(

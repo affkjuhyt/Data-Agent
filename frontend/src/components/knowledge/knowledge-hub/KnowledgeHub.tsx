@@ -309,7 +309,7 @@ export const KnowledgeHubView = () => {
     try {
       const res = await apiMutate<{ row_version?: string }>(
         'DELETE',
-        `/api/knowledge/warehouses/${selectedDoc.id}/configs/${selectedConfig.id}/tables/${tableId}`,
+        `/api/knowledge/warehouses/${selectedDoc.id}/configs/${selectedConfig.id}/tables/${encodeURIComponent(tableId)}`,
         undefined,
         selectedConfig.row_version,
       );

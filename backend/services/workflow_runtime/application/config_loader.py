@@ -6,9 +6,21 @@ from typing import Any
 
 from dotenv import find_dotenv, load_dotenv
 
+from services.workflow_runtime.domain.llm_models import sdk_model_name
+
 load_dotenv(find_dotenv())
 
-from sqlalchemy import text
+from sqlalchemy import select
+
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
+    AgentKBORM,
+    AgentMCPORM,
+    AgentVersionsORM,
+    AgentsORM,
+    KBConnectionsORM,
+    MCPORM,
+    SystemPromptsORM,
+)
 
 from services.workflow_runtime.prompts import PROMPTS_DIR
 
@@ -71,22 +83,25 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
     try:
         async with client.get_client(tenant_id=tenant_id) as session:
             # 1. Load published agent_version với responder model + system prompt
-            row = (await session.execute(text("""
-                SELECT
-                    av.id                          AS agent_version_id,
-                    av.workflow_version_id,
-                    av.memory_enabled,
-                    av.llm_config,
-                    av.retrieval_config,
-                    lp.model_id                    AS responder_model,
-                    sp.content                     AS system_prompt
-                FROM "Agents" a
-                JOIN "AgentVersions" av  ON av.id = a.published_version_id
-                JOIN "LLMProviders"  lp  ON lp.id = av.responder_model_id
-                LEFT JOIN "SystemPrompts" sp ON sp.id = av.system_prompt_id
-                WHERE a.id = :agent_id
-                  AND a.deleted_at IS NULL
-            """), {"agent_id": agent_id})).fetchone()
+            row = (
+                await session.execute(
+                    select(
+                        AgentVersionsORM.id.label("agent_version_id"),
+                        AgentVersionsORM.workflow_version_id,
+                        AgentVersionsORM.memory_enabled,
+                        AgentVersionsORM.llm_config,
+                        AgentVersionsORM.responder_model,
+                        SystemPromptsORM.content.label("system_prompt"),
+                    )
+                    # The first selected column is AgentVersions, so without an explicit
+                    # left side SQLAlchemy cannot tell where the join starts (InvalidRequestError,
+                    # swallowed below into DEV_CONFIG for every agent).
+                    .select_from(AgentsORM)
+                    .join(AgentVersionsORM, AgentVersionsORM.id == AgentsORM.published_version_id)
+                    .outerjoin(SystemPromptsORM, SystemPromptsORM.id == AgentVersionsORM.system_prompt_id)
+                    .where(AgentsORM.id == agent_id, AgentsORM.deleted_at.is_(None))
+                )
+            ).fetchone()
 
             if not row:
                 logger.info("no published version for agent=%s", agent_id)
@@ -96,29 +111,34 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
             wv_id            = str(row.workflow_version_id) if row.workflow_version_id else None
 
             # 2. KB connections
-            kb_rows = (await session.execute(text("""
-                SELECT kc.endpoint_url, kc.api_key_ref
-                FROM "AgentKB" ak
-                JOIN "KBConnections" kc ON kc.id = ak.kb_connection_id
-                WHERE ak.version_id = :av_id
-                LIMIT 1
-            """), {"av_id": str(row.agent_version_id)})).fetchall()
+            kb_rows = (
+                await session.execute(
+                    select(KBConnectionsORM.endpoint_url, KBConnectionsORM.api_key_ref)
+                    .join(AgentKBORM, AgentKBORM.kb_connection_id == KBConnectionsORM.id)
+                    .where(AgentKBORM.version_id == row.agent_version_id)
+                    .limit(1)
+                )
+            ).fetchall()
 
             kb_endpoint = kb_rows[0].endpoint_url if kb_rows else DEV_CONFIG["kb_endpoint"]
 
             # 3. MCP endpoints
-            mcp_rows = (await session.execute(text("""
-                SELECT m.name, m.endpoint_url, m.api_key_ref, m.capabilities
-                FROM "AgentMCP" am
-                JOIN "MCP" m ON m.id = am.mcp_id
-                WHERE am.version_id = :av_id
-            """), {"av_id": str(row.agent_version_id)})).fetchall()
+            mcp_rows = (
+                await session.execute(
+                    select(MCPORM.name, MCPORM.endpoint_url, MCPORM.api_key_ref, MCPORM.capabilities)
+                    .join(AgentMCPORM, AgentMCPORM.mcp_id == MCPORM.id)
+                    .where(AgentMCPORM.version_id == row.agent_version_id)
+                )
+            ).fetchall()
 
             mcp_endpoints = [
                 {
                     "name":          r.name,
                     "url":           r.endpoint_url,
-                    "auth_token":    r.api_key_ref or "",
+                    # api_key_ref is a secrets_vault id; _resolve_mcp_tokens
+                    # swaps it for the token from OpenBao below.
+                    "secret_id":     str(r.api_key_ref or ""),
+                    "auth_token":    "",
                     "allowed_tools": list(r.capabilities or []),
                 }
                 for r in mcp_rows
@@ -130,10 +150,11 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
         else:
             flow_nodes, flow_edges = [], []
         node_cfg   = _extract_node_config(flow_nodes)
-        # Each resolves a different part of node_cfg (execute_sql vs db_connections).
+        # Each resolves a different part of the config (execute_sql, db_connections, MCP).
         await asyncio.gather(
             _resolve_warehouse_secret(node_cfg, tenant_id),
             _resolve_db_connector_secrets(node_cfg, tenant_id),
+            _resolve_mcp_tokens(mcp_endpoints, tenant_id),
         )
 
         # A connected KB makes kb_search available to the planner even when the
@@ -152,7 +173,7 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
             # gets a new id, so the runner rebuilds the graph automatically.
             "workflow_version_id": wv_id,
             # responder
-            "responder_model":      row.responder_model or DEV_CONFIG["responder_model"],
+            "responder_model":      sdk_model_name(row.responder_model, DEV_CONFIG["responder_model"]),
             "responder_temperature": llm_config.get("temperature", DEV_CONFIG["responder_temperature"]),
             "responder_max_tokens":  llm_config.get("max_tokens",  DEV_CONFIG["responder_max_tokens"]),
             "responder_stream":      llm_config.get("stream",      True),
@@ -230,6 +251,30 @@ async def _resolve_db_connector_secrets(node_cfg: dict[str, Any], tenant_id: str
 
     # One secrets_vault lookup + one vault read per connection, independent of each other.
     await asyncio.gather(*(_resolve(name, connection) for name, connection in db_connections.items()))
+
+
+async def _resolve_mcp_tokens(mcp_endpoints: list[dict[str, Any]], tenant_id: str | None) -> None:
+    """Mutates each endpoint in place: resolves its `secret_id` ("MCP".api_key_ref,
+    an MCP_TOKEN secret) into `auth_token` via OpenBao, and always strips
+    `secret_id`. api_key_ref used to be sent as the token itself, so the bearer
+    token sat in Postgres in plaintext. An unresolved token leaves auth_token ""
+    and the MCP server refuses the call, same as an unconfigured one."""
+    if not mcp_endpoints:
+        return
+
+    from services.workflow_runtime.infrastructure.warehouse_secrets import resolve_mcp_token
+
+    async def _resolve(endpoint: dict[str, Any]) -> None:
+        secret_id = endpoint.pop("secret_id", "")
+        if not secret_id or not tenant_id:
+            return
+        token = await resolve_mcp_token(tenant_id, secret_id)
+        if token:
+            endpoint["auth_token"] = token
+        else:
+            logger.warning("could not resolve MCP token secret_id=%s for endpoint=%s tenant=%s — calls will be unauthenticated", secret_id, endpoint.get("name"), tenant_id)
+
+    await asyncio.gather(*(_resolve(endpoint) for endpoint in mcp_endpoints))
 
 
 def _extract_node_config(flow_nodes: list[dict[str, Any]]) -> dict[str, Any]:

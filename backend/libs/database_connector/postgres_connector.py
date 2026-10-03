@@ -1,24 +1,43 @@
 import asyncio
+import logging
 import os
 import uuid
+from contextlib import asynccontextmanager, suppress
 from contextvars import ContextVar
 from typing import Any, cast
 
-from sqlalchemy import select, update as sa_update, delete as sa_delete, text, tuple_, func
-from sqlalchemy.engine import CursorResult
-from sqlalchemy import inspect as sa_inspect
-from sqlalchemy.orm import selectinload, attributes as sa_attributes
-from sqlalchemy.exc import IntegrityError, OperationalError
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-
-import logging
-from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig, PoolConfig, ResponseModel
 from pydantic import BaseModel
-from libs.basemodel.services_databaseconnector.postgres_model import (
-    REGISTRY, MODEL_TO_TABLE, ReadJoinRequest, SelectInLoadRequest, DMLPreparation, DQLPreparation,
-    FilterOperator,
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import func, select, text, tuple_
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import update as sa_update
+from sqlalchemy.engine import CursorResult
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
 )
+from sqlalchemy.orm import attributes as sa_attributes
+from sqlalchemy.orm import selectinload
+
 import libs.basemodel.services_databaseconnector.postgres_orm  # noqa: F401 — registers ORM classes into REGISTRY
+from libs.basemodel.services_databaseconnector.postgres_model import (
+    MODEL_TO_TABLE,
+    REGISTRY,
+    DMLPreparation,
+    DQLPreparation,
+    FilterOperator,
+    ReadJoinRequest,
+    SelectInLoadRequest,
+)
+from libs.basemodel.services_databaseconnector.shared_model import (
+    HealthCheckLoopConfig,
+    PoolConfig,
+    ResponseModel,
+    RetryConfig,
+)
 
 log = logging.getLogger(__name__)
 
@@ -27,10 +46,10 @@ def _engine_kwargs(pool: PoolConfig) -> dict[str, Any]:
     """pool_size kept open + max_overflow burst; requests wait pool_timeout for a free one."""
     kwargs: dict[str, Any] = {
         "pool_pre_ping": True,
-        "pool_size":     pool.max_connections,
-        "max_overflow":  pool.max_overflow,
-        "pool_timeout":  pool.pool_timeout,
-        "pool_recycle":  pool.pool_recycle,
+        "pool_size": pool.max_connections,
+        "max_overflow": pool.max_overflow,
+        "pool_timeout": pool.pool_timeout,
+        "pool_recycle": pool.pool_recycle,
     }
     connect_args: dict[str, Any] = {}
     if pool.statement_timeout:
@@ -95,6 +114,15 @@ def _resolve(data: BaseModel) -> tuple[str, Any]:
     return table_name, REGISTRY[table_name].orm
 
 
+def _required_column(orm_cls: Any, column_name: str, action: str) -> Any:
+    column = getattr(orm_cls, column_name, None)
+    if column is None:
+        raise AttributeError(
+            f"{orm_cls.__tablename__} does not support {action} — missing {column_name} column"
+        )
+    return column
+
+
 # Query Compilers
 
 _OP_MAP = {
@@ -104,15 +132,18 @@ _OP_MAP = {
     FilterOperator.LT: lambda col, val: col < val,
     FilterOperator.GTE: lambda col, val: col >= val,
     FilterOperator.LTE: lambda col, val: col <= val,
-    FilterOperator.IN: lambda col, val: col.in_(val if isinstance(val, (list, tuple, set)) else [val]),
+    FilterOperator.IN: lambda col, val: col.in_(
+        val if isinstance(val, (list, tuple, set)) else [val]
+    ),
 }
 
 
 def _apply_op(col: Any, f: Any) -> Any:
     value = f.value
-    is_uuid_col = hasattr(col.type, 'python_type') and col.type.python_type == uuid.UUID
+    is_uuid_col = hasattr(col.type, "python_type") and col.type.python_type == uuid.UUID
     # Convert string→UUID for UUID columns. For IN, coerce each element of the list.
     if is_uuid_col:
+
         def _coerce(v: Any) -> Any:
             if isinstance(v, str):
                 try:
@@ -120,6 +151,7 @@ def _apply_op(col: Any, f: Any) -> Any:
                 except (ValueError, TypeError):
                     return v
             return v
+
         if f.operator == FilterOperator.IN and isinstance(value, (list, tuple, set)):
             value = [_coerce(v) for v in value]
         else:
@@ -141,6 +173,12 @@ def _validate_order_by(order_by: Any, allowed_tables: set[str]) -> None:
             f"order_by column '{order_by.column}' does not exist on '{order_by.table_name}'"
         )
 
+
+def _order_by_attr(order_by: Any) -> Any:
+    schema = REGISTRY[order_by.table_name]
+    return getattr(schema.orm, order_by.column)
+
+
 def _apply_keyset(stmt: Any, root_cls: Any, cursor: Any, order_by: Any) -> Any:
     """Keyset pagination with a stable tiebreaker.
 
@@ -151,7 +189,7 @@ def _apply_keyset(stmt: Any, root_cls: Any, cursor: Any, order_by: Any) -> Any:
     the boundary — that was the page-2-empty bug. The pk ordering is applied on
     page 1 too, so the order the cursor is derived from matches the continuation.
     """
-    pk_col  = sa_inspect(root_cls).primary_key[0]
+    pk_col = sa_inspect(root_cls).primary_key[0]
     pk_name = pk_col.name
     pk_attr = getattr(root_cls, pk_name)
     ks_attr = root_cls.inserted_at  # the column advance() records into the cursor
@@ -169,16 +207,35 @@ def _apply_keyset(stmt: Any, root_cls: Any, cursor: Any, order_by: Any) -> Any:
             stmt = stmt.where(ks_attr > cur_ts if asc else ks_attr < cur_ts)
 
     if order_by is not None:
-        primary = text(f'"{order_by.table_name}".{order_by.column} {order_by.order.value}')
+        order_attr = _order_by_attr(order_by)
+        primary = order_attr.asc() if asc else order_attr.desc()
     else:
         primary = ks_attr.asc()
     return stmt.order_by(primary, pk_attr.asc() if asc else pk_attr.desc())
 
 
+_SERVER_MANAGED_INSERT_COLUMNS = frozenset({"inserted_at"})
+
+
+def _insert_payload(data: BaseModel, orm_cls: Any) -> dict[str, Any]:
+    payload = data.model_dump(mode="python")
+    mapped_columns = {attr.key for attr in sa_inspect(orm_cls).column_attrs}
+
+    for column in _SERVER_MANAGED_INSERT_COLUMNS:
+        payload.pop(column, None)
+
+    unknown = sorted(set(payload) - mapped_columns)
+    if unknown:
+        raise AttributeError(
+            f"{orm_cls.__tablename__} insert payload contains unmapped field(s): {unknown}"
+        )
+    return payload
+
+
 def _prepare_insert(data: BaseModel) -> DMLPreparation:
     table_name, orm_cls = _resolve(data)
     return DMLPreparation(
-        instance=orm_cls(**data.model_dump(mode="json")),
+        instance=orm_cls(**_insert_payload(data, orm_cls)),
         orm_cls=orm_cls,
         table_name=table_name,
     )
@@ -197,7 +254,9 @@ def _prepare_deep_search(data: SelectInLoadRequest) -> DQLPreparation:
     stmt = select(orm_cls).options(*load_options)
 
     if data.tenant_id is not None:
-        tenant_uuid = uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
+        tenant_uuid = (
+            uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
+        )
         stmt = stmt.where(orm_cls.tenant_id == tenant_uuid)
     for f in data.filters:
         stmt = stmt.where(_apply_op(getattr(orm_cls, f.column_name), f))
@@ -207,18 +266,18 @@ def _prepare_deep_search(data: SelectInLoadRequest) -> DQLPreparation:
 
 def _prepare_soft_delete(data: BaseModel) -> DMLPreparation:
     table_name, orm_cls = _resolve(data)
-    try:
-        orm_cls.is_deleted
-    except AttributeError:
-        raise AttributeError(f"{orm_cls.__tablename__} does not support soft delete — missing is_deleted column")
+    is_deleted = _required_column(orm_cls, "is_deleted", "soft delete")
     fields = data.model_dump()
     pk_fields = {k: v for k, v in fields.items() if v is not None}
 
     conditions = [
-        orm_cls.is_deleted == False,
+        is_deleted.is_(False),
         *[getattr(orm_cls, k) == v for k, v in pk_fields.items()],
     ]
-    return DMLPreparation(table_name=table_name, compiled_query=sa_update(orm_cls).where(*conditions).values(is_deleted=True))
+    return DMLPreparation(
+        table_name=table_name,
+        compiled_query=sa_update(orm_cls).where(*conditions).values(is_deleted=True),
+    )
 
 
 def _prepare_delete(data: BaseModel) -> DMLPreparation:
@@ -227,7 +286,9 @@ def _prepare_delete(data: BaseModel) -> DMLPreparation:
     conditions = [getattr(orm_cls, k) == v for k, v in fields.items() if v is not None]
     if not conditions:
         raise AttributeError("delete requires at least one field to identify the record")
-    return DMLPreparation(table_name=table_name, compiled_query=sa_delete(orm_cls).where(*conditions))
+    return DMLPreparation(
+        table_name=table_name, compiled_query=sa_delete(orm_cls).where(*conditions)
+    )
 
 
 def _prepare_flush(table_name: str) -> DMLPreparation:
@@ -235,11 +296,8 @@ def _prepare_flush(table_name: str) -> DMLPreparation:
     if schema is None:
         raise AttributeError(f"Unknown table: {table_name}")
     orm_cls = schema.orm
-    try:
-        orm_cls.is_deleted
-    except AttributeError:
-        raise AttributeError(f"{orm_cls.__tablename__} does not support flush — missing is_deleted column")
-    return DMLPreparation(compiled_query=sa_delete(orm_cls).where(orm_cls.is_deleted == True))
+    is_deleted = _required_column(orm_cls, "is_deleted", "flush")
+    return DMLPreparation(compiled_query=sa_delete(orm_cls).where(is_deleted.is_(True)))
 
 
 def _prepare_read(data: ReadJoinRequest) -> DQLPreparation:
@@ -270,15 +328,15 @@ def _prepare_read(data: ReadJoinRequest) -> DQLPreparation:
         stmt = stmt.join(join_cls)
 
     if data.tenant_id is not None:
-        tenant_uuid = uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
+        tenant_uuid = (
+            uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
+        )
         stmt = stmt.where(from_cls.tenant_id == tenant_uuid)
     for f in data.filters:
         stmt = stmt.where(_apply_op(getattr(orm_map[f.table_name], f.column_name), f))
     # exclude soft-deleted rows if the root table supports it
-    try:
-        stmt = stmt.where(from_cls.is_deleted == False)
-    except AttributeError:
-        pass
+    with suppress(AttributeError):
+        stmt = stmt.where(from_cls.is_deleted.is_(False))
 
     stmt = _apply_keyset(stmt, from_cls, data.cursor, data.order_by)
     return DQLPreparation(compiled_query=stmt.limit(data.limit))
@@ -299,18 +357,16 @@ def _prepare_count(data: ReadJoinRequest) -> DQLPreparation:
         stmt = stmt.join(orm_map[data.joins_table[i]])
 
     if data.tenant_id is not None:
-        tenant_uuid = uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
+        tenant_uuid = (
+            uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
+        )
         stmt = stmt.where(from_cls.tenant_id == tenant_uuid)
     for f in data.filters:
         stmt = stmt.where(_apply_op(getattr(orm_map[f.table_name], f.column_name), f))
-    try:
-        stmt = stmt.where(from_cls.is_deleted == False)
-    except AttributeError:
-        pass
+    with suppress(AttributeError):
+        stmt = stmt.where(from_cls.is_deleted.is_(False))
     return DQLPreparation(compiled_query=stmt)
 
-
-from contextlib import asynccontextmanager
 
 # Set once per request; get_client() scopes every session to it.
 # None = no request context (workers, startup).
@@ -331,7 +387,9 @@ async def _tenant_session(factory: Any, tenant_id: str) -> Any:
     # Avoids releasing the connection back to the pool between set_config and the actual
     # operation, which would lose the session-level setting on a different connection.
     async with factory() as session:
-        await session.execute(text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": str(tenant_id)})
+        await session.execute(
+            text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": str(tenant_id)}
+        )
         try:
             yield session
         finally:
@@ -339,10 +397,8 @@ async def _tenant_session(factory: Any, tenant_id: str) -> Any:
             # after this block (the unscoped path allows it) raised
             # DetachedInstanceError. Detaching first leaves loaded values intact.
             session.expunge_all()
-            try:
+            with suppress(Exception):
                 await session.rollback()
-            except Exception:
-                pass
 
 
 # Latched so a warning that applies to every call in the process is emitted once.
@@ -350,8 +406,17 @@ _WARNED_SCOPED_WITHOUT_RLS = False
 
 
 class PostgresClient:
-    __slots__ = ("_engine", "_session_factory", "_connection_wait", "_healthy", "_connected",
-                 "_timeout", "_url", "_bypasses_rls", "_pool",)
+    __slots__ = (
+        "_bypasses_rls",
+        "_connected",
+        "_connection_wait",
+        "_engine",
+        "_healthy",
+        "_pool",
+        "_session_factory",
+        "_timeout",
+        "_url",
+    )
 
     def __init__(self, pool: PoolConfig | None = None) -> None:
         self._pool: PoolConfig = pool or PoolConfig.from_env("POSTGRES")
@@ -407,12 +472,14 @@ class PostgresClient:
         SELECT 1 is free.
         """
         try:
-            result = await conn.execute(text(
-                "SELECT current_user, rolsuper OR rolbypassrls AS exempt "
-                "FROM pg_roles WHERE rolname = current_user"
-            ))
+            result = await conn.execute(
+                text(
+                    "SELECT current_user, rolsuper OR rolbypassrls AS exempt "
+                    "FROM pg_roles WHERE rolname = current_user"
+                )
+            )
             row = result.first()
-        except Exception as e:
+        except SQLAlchemyError as e:
             # Never fail a connection over diagnostics.
             log.debug(f"Could not determine RLS exposure: {e}")
             self._bypasses_rls = None
@@ -435,12 +502,11 @@ class PostgresClient:
         else:
             log.info("Postgres role %r is subject to row-level security", row.current_user)
 
-
     async def close(self) -> None:
         if self._engine:
             try:
                 await self._engine.dispose()
-            except Exception as e:
+            except SQLAlchemyError as e:
                 log.info(f"Postgres engine dispose error (ignored): {e}")
             finally:
                 self._engine = None
@@ -448,13 +514,15 @@ class PostgresClient:
         self._connected = False
         self._healthy = False
 
-    async def health_check_loop(self, config: HealthCheckLoopConfig = HealthCheckLoopConfig()) -> None:
+    async def health_check_loop(
+        self, config: HealthCheckLoopConfig = HealthCheckLoopConfig()
+    ) -> None:
         log.info("Postgres health check loop started")
         while True:
             try:
                 await self._check_health(config)
                 self._healthy = True
-            except Exception as e:
+            except (ConnectionError, SQLAlchemyError, TimeoutError) as e:
                 self._healthy = False
                 log.warning(f"Postgres unhealthy: {e} — attempting reconnect")
                 await self._reconnect()
@@ -533,22 +601,25 @@ class PostgresClient:
         except ConnectionError as e:
             log.warning(f"Postgres reconnect failed: {e}")
 
-
     @staticmethod
     def _integrity_response(error: IntegrityError, table_name: str) -> ResponseModel[Any]:
         sqlstate = getattr(getattr(error, "orig", None), "sqlstate", None)
-        if sqlstate == "23505":      # unique_violation
+        if sqlstate == "23505":  # unique_violation
             return ResponseModel(code=409, error=f"Record already exists in {table_name}")
-        if sqlstate == "23503":      # foreign_key_violation
-            return ResponseModel(code=409, error=f"{table_name}: references a record that does not exist")
-        if sqlstate == "23502":      # not_null_violation
+        if sqlstate == "23503":  # foreign_key_violation
+            return ResponseModel(
+                code=409, error=f"{table_name}: references a record that does not exist"
+            )
+        if sqlstate == "23502":  # not_null_violation
             return ResponseModel(code=400, error=f"{table_name}: a required field is missing")
-        if sqlstate == "23514":      # check_violation
+        if sqlstate == "23514":  # check_violation
             return ResponseModel(code=400, error=f"{table_name}: a value failed a constraint check")
         log.warning("insert integrity error in %s (sqlstate=%s): %s", table_name, sqlstate, error)
         return ResponseModel(code=409, error=f"Integrity error in {table_name}")
 
-    async def insert(self, data: BaseModel, session: AsyncSession | None = None) -> ResponseModel[Any]:
+    async def insert(
+        self, data: BaseModel, session: AsyncSession | None = None
+    ) -> ResponseModel[Any]:
         """Insert one row. Pass `session` to join a caller's transaction, uncommitted."""
         try:
             prep = _prepare_insert(data)

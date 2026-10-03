@@ -22,7 +22,12 @@ const { chromium } = require('playwright');
 const APP = process.env.E2E_APP ?? 'http://localhost:3000';
 const KONG = process.env.E2E_KONG ?? 'http://10.10.55.101:30100';
 const USER = process.env.E2E_USER ?? 'helios-engineer';
-const PASS = process.env.E2E_PASS ?? 'H3lios@Eng001!';
+const PASS = process.env.E2E_PASS;
+if (!PASS) {
+  // Passwords come from the environment only (CLAUDE.md §6; tests/README.md, e2e).
+  console.error('E2E_PASS is not set — export the helios-engineer password');
+  process.exit(2);
+}
 const STRICT = process.env.E2E_STRICT === '1';
 const HEADED = process.env.E2E_HEADED === '1';
 const QUESTION = process.env.E2E_QUESTION ?? 'Doanh thu thuần tháng này theo vùng';

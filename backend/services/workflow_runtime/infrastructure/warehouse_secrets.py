@@ -6,7 +6,9 @@ docs/Sandbox_SchemaCrawler_Implementation.md §9). `resolve_snowflake_password`
 (DB_CONNECTOR_PASSWORD, DB Connector node's Postgres connections) share the
 same `_resolve_vault_password` lookup, differing only by expected `key_type` —
 each key_type is only ever readable as itself, so a DB Connector secret_id can
-never resolve as a Snowflake password or vice versa.
+never resolve as a Snowflake password or vice versa. `resolve_mcp_token`
+(MCP_TOKEN) does the same for the bearer token of a registered MCP server,
+whose "MCP".api_key_ref holds the secret_id.
 
 Reads `secrets_vault` directly (a second reader of backend/services/auth_api's
 existing metadata table, same pattern as schema-crawler-worker reading
@@ -19,10 +21,13 @@ delete them. The AppRole is minted by deploy/ansible/roles/k8s_openbao.
 import asyncio
 import logging
 import os
+import uuid
 from typing import cast
 
 import hvac
-from sqlalchemy import text
+from sqlalchemy import select
+
+from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import SecretVaultORM
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +38,7 @@ OPENBAO_SECRET_ID = os.environ.get("OPENBAO_SECRET_ID", "")
 _VAULT_MOUNT = "secret"
 _WAREHOUSE_KEY_TYPE = "WAREHOUSE_PASSWORD"
 _DB_CONNECTOR_KEY_TYPE = "DB_CONNECTOR_PASSWORD"
+_MCP_TOKEN_KEY_TYPE = "MCP_TOKEN"
 
 _vault_client: "hvac.Client | None" = None
 
@@ -71,14 +77,18 @@ async def _resolve_vault_password(tenant_id: str, secret_id: str, key_type: str)
         return None
 
     try:
+        secret_uuid = uuid.UUID(str(secret_id))
+    except (TypeError, ValueError):
+        logger.warning("invalid secret_id %s for tenant=%s", secret_id, tenant_id)
+        return None
+
+    try:
         async with pg_client.get_client(tenant_id=tenant_id) as session:
-            row = (await session.execute(
-                text(
-                    """SELECT key_name, key_type, is_active FROM secrets_vault
-                       WHERE id = :id AND tenant_id = :tenant_id"""
-                ),
-                {"id": secret_id, "tenant_id": tenant_id},
-            )).fetchone()
+            row = await session.scalar(
+                select(SecretVaultORM)
+                .where(SecretVaultORM.id == secret_uuid, SecretVaultORM.tenant_id == uuid.UUID(str(tenant_id)))
+                .limit(1)
+            )
     except Exception as e:
         logger.warning("secrets_vault lookup failed for %s: %s", secret_id, e)
         return None
@@ -113,3 +123,7 @@ async def resolve_snowflake_password(tenant_id: str, secret_id: str) -> "str | N
 
 async def resolve_db_connector_password(tenant_id: str, secret_id: str) -> "str | None":
     return await _resolve_vault_password(tenant_id, secret_id, _DB_CONNECTOR_KEY_TYPE)
+
+
+async def resolve_mcp_token(tenant_id: str, secret_id: str) -> "str | None":
+    return await _resolve_vault_password(tenant_id, secret_id, _MCP_TOKEN_KEY_TYPE)

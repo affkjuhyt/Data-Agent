@@ -32,6 +32,16 @@ from libs.indicator.numeric import (
 )
 
 _CITATION_RE = re.compile(r"\[(\d+)\]")
+# A Markdown ordered-list marker ("1. ", "2) ") at the start of a line numbers
+# the answer's points; it states no figure. Counted as one, every numbered
+# answer failed numbers_grounded, so the judge sent it back to the responder and
+# the reader watched the answer stream, vanish and stream again.
+_LIST_MARKER_RE = re.compile(r"^([ \t]*)\d{1,3}[.)](?=[ \t])", re.MULTILINE)
+
+
+def _figures_text(answer: str) -> str:
+    """The answer with the numbers that are not figures (citations, list markers) removed."""
+    return _LIST_MARKER_RE.sub(r"\1", _CITATION_RE.sub(" ", answer))
 
 
 @dataclass(frozen=True)
@@ -49,10 +59,13 @@ class EvidenceItem:
     release_id: str | None = None
     doc_id: str | None = None
     page: int | None = None
+    # What a citation of a source that is not a document opens: the query run
+    # the Evidence panel shows for a warehouse result, or a web page's URL.
+    source_ref: str | None = None
 
     @property
     def is_citable(self) -> bool:
-        """Whether a `[n]` pointing here names a real document.
+        """Whether a `[n]` pointing here names a real document or source.
 
         The page is NOT required for this. Fault has to land on whoever can fix
         it: an answer that cites a marker pointing at nothing is the answer's
@@ -60,8 +73,11 @@ class EvidenceItem:
         — those documents were ingested before coordinates were recorded, and
         failing the answer for it would make the check something to switch off
         rather than something to fix. `has_page` reports that separately.
+
+        A warehouse result or a web page is cited too; requiring a doc_id of
+        them failed every answer that cited the data it was computed from.
         """
-        return bool(self.doc_id)
+        return bool(self.doc_id or self.source_ref)
 
     @property
     def has_page(self) -> bool:
@@ -134,7 +150,7 @@ def numbers_grounded(
     pool = _groundable(evidence)
     stray = [
         token
-        for token, candidates in readings(_CITATION_RE.sub(" ", answer))
+        for token, candidates in readings(_figures_text(answer))
         if not matches(candidates, pool, tolerance)
     ]
     return Check(
@@ -157,7 +173,7 @@ def precision_supported(answer: str, evidence: Sequence[EvidenceItem]) -> Check:
     """
     pool = _groundable(evidence)
     overstated = []
-    for token, candidates in readings(_CITATION_RE.sub(" ", answer)):
+    for token, candidates in readings(_figures_text(answer)):
         supporting = [reading for reading in pool if matches(candidates, [reading])]
         if not supporting:
             continue  # numbers_grounded owns this failure; do not report it twice
@@ -197,7 +213,7 @@ def vintage_consistent(evidence: Sequence[EvidenceItem]) -> Check:
 
 
 def citations_resolved(answer: str, evidence: Sequence[EvidenceItem]) -> Check:
-    """Every `[n]` points at an evidence item that names a real document.
+    """Every `[n]` points at an evidence item that names a real document or source.
 
     Markers are 1-based, as the responder prompt emits them, and they index the
     same slice of evidence the responder was shown — an off-by-one would make
@@ -217,7 +233,10 @@ def citations_resolved(answer: str, evidence: Sequence[EvidenceItem]) -> Check:
         else:
             cited.add(index)
 
-    pageless = sum(1 for index in cited if not evidence[index - 1].has_page)
+    # Only a document has pages; a query result or a URL has none to record.
+    pageless = sum(
+        1 for index in cited if evidence[index - 1].doc_id and not evidence[index - 1].has_page
+    )
     if unresolved:
         detail = "citation(s) resolve to no document"
     elif pageless:

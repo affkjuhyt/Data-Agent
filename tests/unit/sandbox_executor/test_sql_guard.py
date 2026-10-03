@@ -51,7 +51,7 @@ def test_select_and_cte_pass(sql):
     "   ",
 ])
 def test_non_select_statements_are_rejected(sql):
-    from sql_guard import validate_select_only, SQLGuardError
+    from sql_guard import SQLGuardError, validate_select_only
     with pytest.raises(SQLGuardError):
         validate_select_only(sql)
 
@@ -68,6 +68,6 @@ def test_non_select_statements_are_rejected(sql):
     "WITH cte AS (SELECT 1 AS x) -- comment\nSELECT * FROM cte",
 ])
 def test_comments_are_rejected(sql):
-    from sql_guard import validate_select_only, SQLGuardError
+    from sql_guard import SQLGuardError, validate_select_only
     with pytest.raises(SQLGuardError):
         validate_select_only(sql)

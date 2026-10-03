@@ -80,9 +80,9 @@ spec:
           httpGet:
             path: /api/public/health
             port: 8420
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          failureThreshold: 3
+          initialDelaySeconds: 1
+          periodSeconds: 2
+          failureThreshold: 5
         livenessProbe:
           httpGet:
             path: /api/public/health

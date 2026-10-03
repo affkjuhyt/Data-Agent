@@ -1,7 +1,9 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-import psycopg2.extras
+from sqlalchemy import select, text
+
+from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import KeyRotationORM, SecretVaultORM
 
 try:
     from services.auth_api.domain.secrets import (
@@ -10,85 +12,84 @@ try:
         build_transit_key_name,
     )
     from services.auth_api.infrastructure.config import log
-    from services.auth_api.infrastructure.db import get_db
+    from services.auth_api.infrastructure.db import get_session
     from services.auth_api.infrastructure.vault import get_vault
     from services.auth_api.services.governance import get_governance_setting
 except ModuleNotFoundError:
     from auth_api.domain.secrets import TRANSIT_KEY_TYPES, TRANSIT_MOUNT, build_transit_key_name
     from auth_api.infrastructure.config import log
-    from auth_api.infrastructure.db import get_db
+    from auth_api.infrastructure.db import get_session
     from auth_api.infrastructure.vault import get_vault
     from auth_api.services.governance import get_governance_setting
 
 
 def run_auto_rotation() -> None:
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            if not get_governance_setting(cur, "vault_auto_rotation"):
-                return
-            cur.execute(
-                "SELECT id, tenant_id, key_name, key_type, version "
-                "FROM secrets_vault WHERE is_active = true AND rotation_due_at < now()"
-            )
-            overdue = cur.fetchall()
-    finally:
-        conn.close()
+    with get_session() as session:
+        if not get_governance_setting(session, "vault_auto_rotation"):
+            return
+        # Every tenant's overdue secrets: auth_secrets_due_for_rotation is the
+        # SECURITY DEFINER read across tenants. Each is then rotated under its own.
+        overdue = session.execute(text("SELECT * FROM auth_secrets_due_for_rotation()")).all()
 
     if not overdue:
         return
 
     vault = get_vault()
-    for row in overdue:
-        conn = get_db()
+    for secret_id, tenant_id in overdue:
+        row: SecretVaultORM | None = None
         try:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT id FROM secrets_vault WHERE id=%s AND is_active = true "
-                    "AND rotation_due_at < now() FOR UPDATE SKIP LOCKED",
-                    (row["id"],),
+            with get_session(str(tenant_id)) as session:
+                row = session.scalar(
+                    select(SecretVaultORM)
+                    .where(
+                        SecretVaultORM.id == secret_id,
+                        SecretVaultORM.is_active.is_(True),
+                        SecretVaultORM.rotation_due_at < datetime.now(timezone.utc),
+                    )
+                    .with_for_update(skip_locked=True)
                 )
-                if cur.fetchone() is None:
-                    conn.rollback()
+                if row is None:
                     continue
-                if row["key_type"] in TRANSIT_KEY_TYPES:
-                    transit_key_name = build_transit_key_name(row["tenant_id"], row["key_name"])
+                old_version = row.version
+                if row.key_type in TRANSIT_KEY_TYPES:
+                    transit_key_name = build_transit_key_name(str(row.tenant_id), row.key_name)
                     try:
                         vault.secrets.transit.rotate_key(name=transit_key_name, mount_point=TRANSIT_MOUNT)
                         status, error = "SUCCESS", None
                     except Exception as exc:
                         status, error = "FAILED", str(exc)
-                    new_version = row["version"] + 1 if status == "SUCCESS" else row["version"]
+                    new_version = old_version + 1 if status == "SUCCESS" else old_version
                     if status == "SUCCESS":
-                        rotation_due = datetime.now(timezone.utc) + timedelta(days=90)
-                        cur.execute(
-                            "UPDATE secrets_vault SET version=%s, rotation_due_at=%s, last_rotated_at=now() WHERE id=%s",
-                            (new_version, rotation_due, row["id"]),
+                        row.version = new_version
+                        row.rotation_due_at = datetime.now(timezone.utc) + timedelta(days=90)
+                        row.last_rotated_at = datetime.now(timezone.utc)
+                    session.add(
+                        KeyRotationORM(
+                            secret_id=row.id,
+                            triggered_by="SCHEDULED",
+                            actor_id="system",
+                            old_version=old_version,
+                            new_version=new_version,
+                            status=status,
+                            error=error,
                         )
-                    cur.execute(
-                        "INSERT INTO key_rotations (secret_id, triggered_by, actor_id, old_version, new_version, status, error) "
-                        "VALUES (%s,'SCHEDULED','system',%s,%s,%s,%s)",
-                        (row["id"], row["version"], new_version, status, error),
                     )
-                    log.info("auto_rotation", key=row["key_name"], status=status)
+                    log.info("auto_rotation", key=row.key_name, status=status)
                 else:
-                    cur.execute(
-                        "INSERT INTO key_rotations (secret_id, triggered_by, actor_id, old_version, new_version, status, error) "
-                        "VALUES (%s,'SCHEDULED','system',%s,%s,'FAILED',%s)",
-                        (
-                            row["id"],
-                            row["version"],
-                            row["version"],
-                            "Manual rotation required — KV secrets need a new value",
-                        ),
+                    session.add(
+                        KeyRotationORM(
+                            secret_id=row.id,
+                            triggered_by="SCHEDULED",
+                            actor_id="system",
+                            old_version=row.version,
+                            new_version=row.version,
+                            status="FAILED",
+                            error="Manual rotation required — KV secrets need a new value",
+                        )
                     )
-                    log.warning("auto_rotation_skipped_kv", key=row["key_name"])
-            conn.commit()
+                    log.warning("auto_rotation_skipped_kv", key=row.key_name)
         except Exception as exc:
-            conn.rollback()
-            log.error("auto_rotation_error", key=row["key_name"], error=str(exc))
-        finally:
-            conn.close()
+            log.error("auto_rotation_error", key=getattr(row, "key_name", str(secret_id)), error=str(exc))
 
 
 async def auto_rotation_loop() -> None:

@@ -11,7 +11,6 @@ from libs.basemodel.services_databaseconnector.postgres_model import (
     ConversationsInsert,
     MessagesInsert,
 )
-from libs.basemodel.services_databaseconnector.postgres_orm.auth_release_orm import MembersORM
 from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
     AgentsORM,
     ConversationsORM,
@@ -38,25 +37,30 @@ def _sanitize_trace(data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(data, dict):
         return data
 
-    result: dict[str, Any] = {}
-    for k, v in list(data.items())[:_MAX_DICT_KEYS]:
-        if k.lower() in _SENSITIVE_KEYS:
-            result[k] = "[REDACTED]"
-        elif isinstance(v, dict):
-            result[k] = _sanitize_trace(v)
-        elif isinstance(v, list):
-            truncated = v[:_MAX_LIST_LEN]
-            result[k] = [
-                _sanitize_trace(i) if isinstance(i, dict) else i
-                for i in truncated
-            ]
-            if len(v) > _MAX_LIST_LEN:
-                result[k].append(f"... (+{len(v) - _MAX_LIST_LEN} items truncated)")
-        elif isinstance(v, str) and len(v) > _MAX_STR_LEN:
-            result[k] = v[:_MAX_STR_LEN] + f"... ({len(v) - _MAX_STR_LEN} chars truncated)"
-        else:
-            result[k] = v
-    return result
+    return {
+        k: "[REDACTED]" if k.lower() in _SENSITIVE_KEYS else _sanitize_value(v)
+        for k, v in list(data.items())[:_MAX_DICT_KEYS]
+    }
+
+
+def _sanitize_value(v: Any) -> Any:
+    if isinstance(v, dict):
+        return _sanitize_trace(v)
+    if isinstance(v, list | tuple):
+        items = [_sanitize_value(i) for i in v[:_MAX_LIST_LEN]]
+        if len(v) > _MAX_LIST_LEN:
+            items.append(f"... (+{len(v) - _MAX_LIST_LEN} items truncated)")
+        return items
+    if isinstance(v, str):
+        if len(v) > _MAX_STR_LEN:
+            return v[:_MAX_STR_LEN] + f"... ({len(v) - _MAX_STR_LEN} chars truncated)"
+        return v
+    if v is None or isinstance(v, bool | int | float):
+        return v
+    # The column is JSONB: a UUID (a retrieved memory's id in the reranker's
+    # output), datetime or Decimal made json.dumps raise, and the exception
+    # aborted the rest of the turn's persistence, memory extraction included.
+    return str(v)
 
 
 logger = logging.getLogger(__name__)
@@ -64,13 +68,13 @@ logger = logging.getLogger(__name__)
 _DEV_TENANT_ID    = os.getenv("DEV_TENANT_ID",    "00000000-0000-0000-0000-000000000001")
 _DEV_AGENT_VER_ID = os.getenv("DEV_AGENT_VER_ID", "00000000-0000-0000-0000-000000000040")
 
-_ROLE_WEIGHTS = {"admin": 3, "editor": 2, "viewer": 1}
-
 
 async def init_db() -> None:
-    url = os.environ.get("RUNTIME_DB_URL") or os.environ.get("DATABASE_URL")
+    # runtime_writer (NOBYPASSRLS). No DATABASE_URL fallback: that is the owner
+    # role, and falling back to it silently turned row-level security off.
+    url = os.environ.get("RUNTIME_DB_URL")
     if not url:
-        logger.warning("RUNTIME_DB_URL/DATABASE_URL not set — DB persistence disabled")
+        logger.warning("RUNTIME_DB_URL not set — DB persistence disabled")
         return
     client.set_url(url)
     await client.open()
@@ -102,21 +106,6 @@ async def validate_agent_tenant(agent_id: str, tenant_id: str) -> bool:
         return result.first() is not None
 
 
-async def _has_role(tenant_id: str, user_ref: str, min_role: str) -> bool:
-    """Return True if user_ref is an active member of tenant_id with at least min_role."""
-    if user_ref == "anonymous":
-        return True  # dev bypass
-    async with client.get_client(tenant_id=tenant_id) as session:
-        result = await session.execute(
-            select(MembersORM.tenant_role)
-            .where(MembersORM.tenant_id == UUID(tenant_id))
-            .where(MembersORM.user_id == user_ref)
-            .where(MembersORM.is_active.is_(True))
-        )
-        row = result.first()
-    return bool(row) and _ROLE_WEIGHTS.get(row[0], 0) >= _ROLE_WEIGHTS.get(min_role, 0)
-
-
 async def conversation_owned_by(conversation_id: str, tenant_id: str, user_ref: str) -> bool:
     """True when this conversation exists in tenant_id and was started by user_ref.
 
@@ -145,10 +134,11 @@ async def create_conversation(
     channel: str = "web",
     tenant_id: str = _DEV_TENANT_ID,
 ) -> Optional[str]:
+    # No membership lookup: tenant_id is the caller's verified tenant claim
+    # (require_tenant), which Keycloak only issues to an approved member. This
+    # used to also require a "Members" row, which nothing ever wrote, so every
+    # real user's conversation went unsaved.
     if not client.is_connected():
-        return None
-    if not await _has_role(tenant_id, user_ref, "viewer"):
-        logger.warning("RBAC deny create_conversation: user=%s tenant=%s", user_ref, tenant_id)
         return None
     result = await client.insert(ConversationsInsert(
         tenant_id=tenant_id,
@@ -230,17 +220,24 @@ async def save_message(
     tokens: int = 0,
     latency_ms: int = 0,
     metadata: Optional[dict[str, Any]] = None,
+    *,
+    tenant_id: str,
 ) -> Optional[str]:
+    """Messages has no tenant_id; its row-level policy goes through the
+    conversation's, so the insert runs in a session scoped to `tenant_id`."""
     if not client.is_connected():
         return None
-    result = await client.insert(MessagesInsert(
-        conversation_id=conversation_id,
-        role=role,
-        content={"text": content},
-        msg_metadata=metadata or {},
-        tokens_used=tokens,
-        latency_ms=latency_ms,
-    ))
+    async with client.get_client(tenant_id=tenant_id) as session:
+        result = await client.insert(MessagesInsert(
+            conversation_id=conversation_id,
+            role=role,
+            content={"text": content},
+            msg_metadata=metadata or {},
+            tokens_used=tokens,
+            latency_ms=latency_ms,
+        ), session=session)
+        if result.code == 200:
+            await session.commit()
     if result.code != 200:
         logger.error("save_message failed: %s", result.error)
         return None
@@ -257,18 +254,25 @@ async def save_trace(
     output: dict[str, Any],
     status: str = "success",
     latency_ms: int = 0,
+    *,
+    tenant_id: str,
 ) -> None:
+    """Scoped like save_message: AgentTraces' policy goes through the message's
+    conversation."""
     if not client.is_connected():
         return
-    result = await client.insert(AgentTracesInsert(
-        message_id=message_id,
-        trace_index=trace_index,
-        tool_name=tool_name,
-        input=_sanitize_trace(input),
-        output=_sanitize_trace(output),
-        status=status,
-        latency_ms=latency_ms,
-    ))
+    async with client.get_client(tenant_id=tenant_id) as session:
+        result = await client.insert(AgentTracesInsert(
+            message_id=message_id,
+            trace_index=trace_index,
+            tool_name=tool_name,
+            input=_sanitize_trace(input),
+            output=_sanitize_trace(output),
+            status=status,
+            latency_ms=latency_ms,
+        ), session=session)
+        if result.code == 200:
+            await session.commit()
     if result.code == 409:
         pass  # duplicate (message_id, trace_index) — silently ignore
     elif result.code != 200:

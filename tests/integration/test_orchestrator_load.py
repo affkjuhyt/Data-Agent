@@ -5,8 +5,7 @@ Sweeps concurrency levels against a running workflow_runtime (which serves
 latency / error-rate per level, so we can find where the system stops
 scaling (LLM backend, connection pool, or the process itself).
 
-As a pytest e2e test (skipped unless LIVE_STACK=1 + workflow_runtime is up):
-    LIVE_STACK=1 pytest tests/integration/test_orchestrator_load.py -m e2e -s
+As a pytest e2e test (`make e2e`): through Kong, logged in as E2E_USER.
 
 As a standalone CLI for ad-hoc sweeps:
     python3 tests/integration/test_orchestrator_load.py --levels 1,5,10,20,40
@@ -18,7 +17,6 @@ import argparse
 import asyncio
 import csv
 import json
-import os
 import statistics
 import time
 import uuid
@@ -26,13 +24,18 @@ import uuid
 import httpx
 import pytest
 
+from tests.conftest import live_token
+
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8001
 DEFAULT_QUERY = "Explain what machine learning is in 5 sentences."
 DEFAULT_LEVELS = [1, 5, 10, 20]
 
 
-async def run_one(client: httpx.AsyncClient, base_url: str, query: str, timeout: float) -> dict:
+async def run_one(
+    client: httpx.AsyncClient, base_url: str, query: str, timeout: float,
+    headers: dict | None = None,
+) -> dict:
     t0 = time.time()
     result = {
         "ok": False,
@@ -51,7 +54,8 @@ async def run_one(client: httpx.AsyncClient, base_url: str, query: str, timeout:
     payload = {"query": f"{query} [{nonce}]", "user_id": f"loadtest-{nonce}"}
     try:
         async with client.stream(
-            "POST", f"{base_url}/api/orchestrate/stream", json=payload, timeout=timeout
+            "POST", f"{base_url}/api/orchestrate/stream", json=payload, timeout=timeout,
+            headers=headers,
         ) as resp:
             if resp.status_code != 200:
                 result["error"] = f"HTTP {resp.status_code}"
@@ -85,10 +89,12 @@ async def run_one(client: httpx.AsyncClient, base_url: str, query: str, timeout:
     return result
 
 
-async def run_level(base_url: str, query: str, concurrency: int, timeout: float) -> list:
+async def run_level(
+    base_url: str, query: str, concurrency: int, timeout: float, headers: dict | None = None,
+) -> list:
     limits = httpx.Limits(max_connections=concurrency + 10, max_keepalive_connections=concurrency)
     async with httpx.AsyncClient(limits=limits) as client:
-        tasks = [run_one(client, base_url, query, timeout) for _ in range(concurrency)]
+        tasks = [run_one(client, base_url, query, timeout, headers) for _ in range(concurrency)]
         return await asyncio.gather(*tasks)
 
 
@@ -119,7 +125,7 @@ def summarize(level: int, results: list) -> dict:
 
 
 async def sweep(base_url: str, query: str, levels: list, timeout: float,
-                 stop_on_error_rate: float = 0.5) -> list:
+                 stop_on_error_rate: float = 0.5, headers: dict | None = None) -> list:
     print(f"\nTarget : {base_url}/api/orchestrate/stream")
     print(f"Query  : {query!r}")
     print(f"Levels : {levels}")
@@ -130,7 +136,7 @@ async def sweep(base_url: str, query: str, levels: list, timeout: float,
 
     rows = []
     for level in levels:
-        results = await run_level(base_url, query, level, timeout)
+        results = await run_level(base_url, query, level, timeout, headers)
         s = summarize(level, results)
         print(
             f"{s['level']:>5} {s['success']:>4} {s['errors']:>4} "
@@ -149,7 +155,7 @@ async def sweep(base_url: str, query: str, levels: list, timeout: float,
 
 # ─── pytest e2e entrypoint ──────────────────────────────────────────────────
 @pytest.mark.e2e
-def test_orchestrator_handles_baseline_concurrency():
+def test_orchestrator_handles_baseline_concurrency(live_stack):
     """Sanity check: the orchestrator (inside workflow_runtime) survives a small concurrency burst.
 
     Skipped unless LIVE_STACK=1 and workflow_runtime is reachable — this is
@@ -157,13 +163,13 @@ def test_orchestrator_handles_baseline_concurrency():
     docstring) for the full concurrency-vs-latency report used to size
     scheduling/priority work.
     """
-    if os.environ.get("LIVE_STACK") != "1":
-        pytest.skip(
-            "Live stack not requested — set LIVE_STACK=1 and start the "
-            "workflow_runtime (backend/services/workflow_runtime, serves /api/orchestrate) before running."
-        )
-    base_url = os.environ.get("WORKFLOW_RUNTIME_URL", f"http://{DEFAULT_HOST}:{DEFAULT_PORT}")
-    rows = asyncio.run(sweep(base_url, DEFAULT_QUERY, [1, 5], timeout=120.0))
+    # Through Kong with a real token: workflow_runtime only answers gateway-
+    # verified callers, so the direct NodePort this used to hit returned 401.
+    token = live_token(live_stack["keycloak"], "engineer")
+    rows = asyncio.run(sweep(
+        live_stack["kong"], DEFAULT_QUERY, [1, 5], timeout=120.0,
+        headers={"Authorization": f"Bearer {token}"},
+    ))
     for row in rows:
         assert row["errors"] == 0, f"level={row['level']} had errors: {row['error_types']}"
 

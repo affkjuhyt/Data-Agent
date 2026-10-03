@@ -37,7 +37,7 @@ def serialize(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 _DEV_TENANT_ID          = os.environ.get("DEV_TENANT_ID",          "00000000-0000-0000-0000-000000000001")
-_DEV_RESPONDER_MODEL_ID = os.environ.get("DEV_RESPONDER_MODEL_ID", "00000000-0000-0000-0000-000000000011")
+_DEFAULT_RESPONDER_MODEL = os.environ.get("DEFAULT_CHAT_MODEL_ALIAS", "responder")
 
 
 class ConflictError(Exception):
@@ -108,7 +108,7 @@ async def create_agent(name: str, description: str, tenant_id: str) -> dict[str,
                 version=1,
                 status="draft",
                 workflow_version_id=wv.id,
-                responder_model_id=UUID(_DEV_RESPONDER_MODEL_ID),
+                responder_model=_DEFAULT_RESPONDER_MODEL,
             )
             session.add(av)
             await session.flush()
@@ -182,7 +182,7 @@ async def get_agent(agent_id: str, tenant_id: str | None = None) -> Optional[dic
             "active_workflow_id": active_workflow,
             "active_workflow_name": active_workflow_name,
             # draft config fields — used by Settings tab
-            "responder_model_id": str(dv.responder_model_id) if dv and dv.responder_model_id else None,
+            "responder_model":    dv.responder_model if dv else None,
             "system_prompt_id":   str(dv.system_prompt_id)   if dv and dv.system_prompt_id   else None,
             "memory_enabled":     bool(dv.memory_enabled)     if dv else False,
         }
@@ -241,7 +241,7 @@ async def list_workflows(agent_id: str, *, tenant_id: str) -> list[dict[str, Any
 async def update_agent_draft(agent_id: str, fields: dict[str, Any], tenant_id: str | None = None) -> dict[str, Any]:
     agent_fields = {k: v for k, v in fields.items() if k in ("name", "description")}
     av_fields = {k: v for k, v in fields.items()
-                 if k in ("responder_model_id", "system_prompt_id", "guardrail_id", "memory_enabled")}
+                 if k in ("responder_model", "system_prompt_id", "memory_enabled")}
 
     async with client.get_client(tenant_id=tenant_id) as session:
         async with _txn(session):
@@ -253,19 +253,58 @@ async def update_agent_draft(agent_id: str, fields: dict[str, Any], tenant_id: s
                 )
             if av_fields:
                 # Cast UUID string fields to UUID
-                uuid_keys = {"responder_model_id", "system_prompt_id", "guardrail_id"}
+                uuid_keys = {"system_prompt_id"}
                 av_values = {
                     k: (UUID(v) if v else None) if k in uuid_keys else v
                     for k, v in av_fields.items()
                 }
-                await session.execute(
+                result = await session.execute(
                     sa_update(AgentVersionsORM)
                     .where(AgentVersionsORM.agent_id == UUID(agent_id))
                     .where(AgentVersionsORM.status == "draft")
                     .values(**av_values)
                 )
+                if result.rowcount == 0:
+                    # An agent seeded straight into the DB (tests/e2e/seed.sql) has a
+                    # published version and no draft. The UPDATE matched nothing and
+                    # the Settings toggles were dropped while the API answered 200.
+                    draft = await _create_agent_draft(session, UUID(agent_id))
+                    for key, value in av_values.items():
+                        setattr(draft, key, value)
 
     return {"agent_id": agent_id, "updated": list(fields.keys())}
+
+
+async def _create_agent_draft(session: AsyncSession, agent_id: UUID) -> AgentVersionsORM:
+    """A draft agent version carrying the published version's settings, so a
+    change to one setting does not reset the others to their defaults."""
+    await _lock_agent(session, agent_id)
+    agent = await session.get(AgentsORM, agent_id)
+    if not agent:
+        raise ValueError("Agent not found")
+    published = (
+        await session.get(AgentVersionsORM, agent.published_version_id)
+        if agent.published_version_id else None
+    )
+    max_ver = (await session.execute(
+        select(func.max(AgentVersionsORM.version))
+        .where(AgentVersionsORM.agent_id == agent_id)
+    )).scalar() or 0
+
+    draft = AgentVersionsORM(
+        agent_id=agent_id,
+        version=max_ver + 1,
+        status="draft",
+        workflow_version_id=published.workflow_version_id if published else None,
+        responder_model=published.responder_model if published else _DEFAULT_RESPONDER_MODEL,
+        system_prompt_id=published.system_prompt_id if published else None,
+        memory_enabled=published.memory_enabled if published else False,
+        llm_config=published.llm_config if published else {},
+    )
+    session.add(draft)
+    await session.flush()
+    agent.draft_version_id = draft.id
+    return draft
 
 
 async def unpublish_agent(agent_id: str, tenant_id: str | None = None) -> dict[str, Any]:
@@ -544,12 +583,10 @@ async def publish_agent(agent_id: str, workflow_id: str, kb_connection_id: str |
                 version=max_ver + 1,
                 status="published",
                 workflow_version_id=wv.id,
-                responder_model_id=av_draft.responder_model_id if av_draft else UUID(_DEV_RESPONDER_MODEL_ID),
+                responder_model=av_draft.responder_model if av_draft else _DEFAULT_RESPONDER_MODEL,
                 system_prompt_id=av_draft.system_prompt_id if av_draft else None,
-                guardrail_id=av_draft.guardrail_id if av_draft else None,
                 memory_enabled=av_draft.memory_enabled if av_draft else False,
                 llm_config=av_draft.llm_config if av_draft else {},
-                retrieval_config=av_draft.retrieval_config if av_draft else {},
                 published_at=func.now(),
             )
             session.add(new_av)

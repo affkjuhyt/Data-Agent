@@ -70,7 +70,7 @@ spec:
           done
           for f in /sql/*.sql; do echo applying $f; psql -v ON_ERROR_STOP=1 -f "$f"; done
           echo setting role passwords
-          psql -v ON_ERROR_STOP=1             -v app_user_password="$APP_USER_PASSWORD"             -v runtime_writer_password="$RUNTIME_WRITER_PASSWORD"             -v sandbox_reader_password="$SANDBOX_READER_PASSWORD"             -v kb_backend_password="$KB_BACKEND_PASSWORD"             -v pgbouncer_auth_password="$PGBOUNCER_AUTH_PASSWORD"             -v kb_ingestion_worker_password="$KB_INGESTION_WORKER_PASSWORD"             -v crawler_ro_password="$POSTGRES_CRAWLER_PASSWORD" <<'SQL'
+          psql -v ON_ERROR_STOP=1             -v app_user_password="$APP_USER_PASSWORD"             -v runtime_writer_password="$RUNTIME_WRITER_PASSWORD"             -v sandbox_reader_password="$SANDBOX_READER_PASSWORD"             -v kb_backend_password="$KB_BACKEND_PASSWORD"             -v pgbouncer_auth_password="$PGBOUNCER_AUTH_PASSWORD"             -v kb_ingestion_worker_password="$KB_INGESTION_WORKER_PASSWORD"             -v crawler_ro_password="$POSTGRES_CRAWLER_PASSWORD"             -v crawler_svc_password="$CRAWLER_SVC_PASSWORD" <<'SQL'
           ALTER ROLE app_user       WITH LOGIN PASSWORD :'app_user_password';
           ALTER ROLE runtime_writer WITH LOGIN PASSWORD :'runtime_writer_password';
           ALTER ROLE sandbox_reader WITH LOGIN PASSWORD :'sandbox_reader_password';
@@ -78,6 +78,7 @@ spec:
           ALTER ROLE pgbouncer_auth WITH LOGIN PASSWORD :'pgbouncer_auth_password';
           ALTER ROLE kb_ingestion_worker WITH LOGIN PASSWORD :'kb_ingestion_worker_password';
           ALTER ROLE crawler_ro WITH LOGIN PASSWORD :'crawler_ro_password';
+          ALTER ROLE crawler_svc WITH LOGIN PASSWORD :'crawler_svc_password';
           SQL
         resources:
           requests:

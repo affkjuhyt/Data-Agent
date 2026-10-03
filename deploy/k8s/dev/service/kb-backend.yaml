@@ -75,9 +75,9 @@ spec:
           httpGet:
             path: /health
             port: 8220
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          failureThreshold: 3
+          initialDelaySeconds: 1
+          periodSeconds: 2
+          failureThreshold: 5
         livenessProbe:
           httpGet:
             path: /health

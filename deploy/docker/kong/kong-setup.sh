@@ -55,11 +55,13 @@ for i in $(seq 1 30); do
 done
 echo "✅ Keycloak ready"
 
-# ── 0. Set dev user passwords via Keycloak admin API ──────────────────
+# ── 0. Set demo user passwords via Keycloak admin API ─────────────────
 # The realm export ships WITHOUT credential hashes (they can't be portably
-# serialised across Keycloak versions). This block sets well-known dev
-# passwords on every first boot. Safe to re-run — PUT is idempotent.
-echo "🔑 Setting dev user passwords in Keycloak realm '$REALM'..."
+# serialised across Keycloak versions). Each demo user's password comes from
+# DEMO_PASSWORD_<USER> (setup-secrets <- ansible-vault vault_demo_password_*),
+# never from this file; an unset one leaves that user's password alone, so a
+# deploy never overwrites a password someone changed in Keycloak.
+echo "🔑 Setting demo user passwords in Keycloak realm '$REALM'..."
 KC_ADMIN_TOKEN=$(curl -sf -X POST "$KC_BASE/realms/master/protocol/openid-connect/token" \
   --data-urlencode "grant_type=password" \
   --data-urlencode "client_id=admin-cli" \
@@ -93,18 +95,35 @@ else
     if [ "$status" = "204" ] || [ "$status" = "200" ]; then
       echo "  ✅ $USERNAME password set"
     elif printf '%s' "$resp" | grep -q "invalidPasswordHistoryMessage"; then
-      echo "  ℹ️  $USERNAME password already set (unchanged) — ok"
+      # Password history rejects ANY recent password, not only the current
+      # one: if someone changed it since, this value is old and was not set.
+      # Logging in is the only way to tell the two apart.
+      if curl -sf -X POST "$KC_BASE/realms/$REALM/protocol/openid-connect/token" \
+          --data-urlencode "grant_type=password" --data-urlencode "client_id=aeroflow-frontend" \
+          --data-urlencode "username=$USERNAME" --data-urlencode "password=$PASSWORD" >/dev/null; then
+        echo "  ℹ️  $USERNAME password already set (unchanged) — ok"
+      else
+        echo "  ⚠️  $USERNAME: configured password is in Keycloak's password history but is not the current one — not changed"
+      fi
     else
       echo "  ⚠️  $USERNAME password set failed (HTTP $status)"
     fi
   }
 
-  set_password "helios-admin"    "H3lios@Admin01!"
-  set_password "helios-engineer" "H3lios@Eng001!"
-  set_password "helios-viewer"   "H3lios@View001!"
-  set_password "platform-admin"  "Platform@Admin01!"
-  set_password "ai-engineer"     "AiEng@001!dev"
-  set_password "executive-viewer" "Exec@View001!"
+  for pair in \
+      "platform-admin:DEMO_PASSWORD_PLATFORM_ADMIN" \
+      "helios-admin:DEMO_PASSWORD_HELIOS_ADMIN" \
+      "helios-engineer:DEMO_PASSWORD_HELIOS_ENGINEER" \
+      "helios-viewer:DEMO_PASSWORD_HELIOS_VIEWER" \
+      "ai-engineer:DEMO_PASSWORD_AI_ENGINEER" \
+      "executive-viewer:DEMO_PASSWORD_EXECUTIVE_VIEWER"; do
+    username="${pair%%:*}"; var="${pair#*:}"
+    if [ -n "${!var:-}" ]; then
+      set_password "$username" "${!var}"
+    else
+      echo "  ℹ️  $var not set — leaving $username's password as it is"
+    fi
+  done
 fi
 
 # ── 1. Python runner (used for JSON-encoding TLS cert material below) ──
@@ -325,6 +344,9 @@ fi
 GATEWAY_KEY_JSON_FIELD=""
 if [ -n "$KONG_GATEWAY_KEY" ]; then
   GATEWAY_KEY_JSON_FIELD=",\"gateway_key\":\"$KONG_GATEWAY_KEY\""
+  # API keys (sk-...) are verified by auth_api, which only answers a caller
+  # holding the gateway key — so they are enabled exactly when that key is set.
+  GATEWAY_KEY_JSON_FIELD="$GATEWAY_KEY_JSON_FIELD,\"api_key_verify_url\":\"http://$AUTH_API_HOST:8200/internal/api-keys/verify\""
 fi
 
 if [ "$SKIP_JWT" = "1" ]; then

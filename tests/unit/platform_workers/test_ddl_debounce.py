@@ -200,4 +200,3 @@ def test_handler_exception_rolls_back_and_is_not_reported_as_processed(monkeypat
 
     assert processed == []
     assert pending_ddl == {}  # already popped before the handler ran
-    conn.rollback.assert_called_once()

@@ -5,7 +5,6 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { X, Activity, CheckCircle, AlertCircle, ChevronUp } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { apiStream } from '../../lib/apiClient';
@@ -162,10 +161,7 @@ const IngestionProgressOverlay: React.FC<IngestionProgressOverlayProps> = ({
       onMouseLeave={() => setIsHovering(false)}
     >
       {/* Trigger Button (Always Visible) */}
-      <motion.button
-        initial={{ scale: 0 }}
-        animate={{ scale: 1 }}
-        exit={{ scale: 0 }}
+      <button
         className={cn(
           'flex items-center gap-2 px-4 py-2 rounded-full font-semibold shadow-lg',
           'transition-all duration-300',
@@ -176,9 +172,7 @@ const IngestionProgressOverlay: React.FC<IngestionProgressOverlayProps> = ({
       >
         {activeCount > 0 ? (
           <>
-            <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity }}>
-              <Activity className="w-5 h-5" />
-            </motion.div>
+            <Activity className="w-5 h-5 animate-spin" />
             <span className="text-sm">{activeCount} Processing</span>
           </>
         ) : (
@@ -193,38 +187,32 @@ const IngestionProgressOverlay: React.FC<IngestionProgressOverlayProps> = ({
             isHovering ? 'rotate-180' : ''
           )}
         />
-      </motion.button>
+      </button>
 
       {/* Expanded Panel (Shows on Hover) */}
-      <AnimatePresence>
-        {isHovering && (
-          <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
-            className={cn(
-              'absolute bottom-16 right-0 w-96 max-h-96 rounded-xl shadow-2xl',
-              'bg-white border border-[#BFA66A] overflow-hidden flex flex-col'
-            )}
-          >
-            {/* Header */}
-            <div className="bg-gradient-to-r from-[#B88719] to-[#8A5A00] text-white px-4 py-3 flex items-center justify-between">
-              <h3 className="font-bold text-sm">Ingestion Progress</h3>
-              <span className="text-xs opacity-75">
-                {ingestions.size} {ingestions.size === 1 ? 'item' : 'items'}
-              </span>
-            </div>
+      {isHovering && (
+        <div
+          className={cn(
+            'absolute bottom-16 right-0 w-96 max-h-96 rounded-xl shadow-2xl',
+            'bg-white border border-[#BFA66A] overflow-hidden flex flex-col'
+          )}
+        >
+          {/* Header */}
+          <div className="bg-gradient-to-r from-[#B88719] to-[#8A5A00] text-white px-4 py-3 flex items-center justify-between">
+            <h3 className="font-bold text-sm">Ingestion Progress</h3>
+            <span className="text-xs opacity-75">
+              {ingestions.size} {ingestions.size === 1 ? 'item' : 'items'}
+            </span>
+          </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto space-y-2 p-3">
-              {Array.from(ingestions.values()).map(item => (
-                <ProgressItem key={item.dataId} item={item} />
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto space-y-2 p-3">
+            {Array.from(ingestions.values()).map(item => (
+              <ProgressItem key={item.dataId} item={item} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -245,9 +233,7 @@ const ProgressItem: React.FC<{ item: IngestionProgress }> = ({ item }) => {
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {isActive ? (
-            <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity }}>
-              <Activity className="w-4 h-4 text-[#B88719] flex-shrink-0" />
-            </motion.div>
+            <Activity className="w-4 h-4 text-[#B88719] flex-shrink-0 animate-spin" />
           ) : isComplete ? (
             <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
           ) : (
@@ -272,14 +258,12 @@ const ProgressItem: React.FC<{ item: IngestionProgress }> = ({ item }) => {
             <p className="text-xs text-[#5A5A5A]">Processing...</p>
             <p className="text-xs font-semibold text-[#1E1B15]">{Math.round(item.progress)}%</p>
           </div>
-          <motion.div className="h-2 bg-[#E8DCC8] rounded-full overflow-hidden">
-            <motion.div
+          <div className="h-2 bg-[#E8DCC8] rounded-full overflow-hidden">
+            <div
               className="h-full bg-gradient-to-r from-[#B88719] to-[#8A5A00]"
-              initial={{ width: '0%' }}
-              animate={{ width: `${item.progress}%` }}
-              transition={{ duration: 0.5 }}
+              style={{ width: `${item.progress}%`, transition: 'width 0.5s ease' }}
             />
-          </motion.div>
+          </div>
         </div>
       )}
 

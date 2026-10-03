@@ -186,6 +186,21 @@
           {{ (full_deploy | bool) or (git_diff.stdout_lines | default([])
              | select('match', '^(' ~ (config_paths | map('regex_escape') | join('|')) ~ ')')
              | list | length) > 0 }}
+        # A tier's manifests are reapplied (and its rollout waited on) only when they, or
+        # the playbook that renders them, changed: re-running `kubectl apply` on ~25
+        # unchanged manifests and waiting on every store took ~14 s of a no-op deploy. A
+        # new image is restarted by digest further down either way; -e deploy_full=true
+        # reapplies everything (e.g. to undo a hand edit in the cluster).
+        databases_changed: >-
+          {{ (full_deploy | bool) or (git_diff.stdout_lines | default([])
+             | select('match', '^(' ~ ((k8s_manifests | relpath(project_dir)) ~ '/database/') | regex_escape
+                               ~ '|deploy/ansible/)')
+             | list | length) > 0 }}
+        services_changed: >-
+          {{ (full_deploy | bool) or (git_diff.stdout_lines | default([])
+             | select('match', '^(' ~ ((k8s_manifests | relpath(project_dir)) ~ '/service/') | regex_escape
+                               ~ '|deploy/ansible/)')
+             | list | length) > 0 }}
 
     - name: Report what changed
       ansible.builtin.debug:
@@ -194,6 +209,7 @@
           - "to:      {{ to_sha }}"
           - "changed: {{ 'everything' if (full_deploy | bool) else (changed_paths | length | string) ~ ' file(s)' }}"
           - "secrets: {{ secrets_changed }}   configmaps: {{ config_changed }}"
+          - "reapply: database tier {{ databases_changed }}   service tier {{ services_changed }}"
 
     - name: Plan the images and Jobs
       ansible.builtin.import_role:
@@ -331,7 +347,7 @@
         executable: /bin/bash
       register: db_apply
       changed_when: "'created' in db_apply.stdout or 'configured' in db_apply.stdout"
-      when: apply_databases | bool
+      when: (apply_databases | bool) and (databases_changed | bool)
 
     - name: Wait for the stores
       ansible.builtin.command:
@@ -340,7 +356,7 @@
           --timeout={{ wait_statefulset }}s
       loop: "{{ ['postgres'] + database_workloads }}"
       changed_when: false
-      when: apply_databases | bool
+      when: (apply_databases | bool) and (databases_changed | bool)
 
     - name: Wait for pgbouncer
       ansible.builtin.command:
@@ -348,7 +364,7 @@
           {{ kubectl }} -n {{ ns_database }} rollout status deployment/pgbouncer
           --timeout={{ wait_rollout }}s
       changed_when: false
-      when: apply_databases | bool
+      when: (apply_databases | bool) and (databases_changed | bool)
 
     - name: Initialise OpenBao and mint the AppRole
       ansible.builtin.import_role:
@@ -385,7 +401,7 @@
         executable: /bin/bash
       register: svc_apply
       changed_when: "'created' in svc_apply.stdout or 'configured' in svc_apply.stdout"
-      when: apply_services | bool
+      when: (apply_services | bool) and (services_changed | bool)
 
     # After the service tier, whose manifests carry per-workload env ConfigMaps
     # of their own, so a change there is seen too.
@@ -419,7 +435,7 @@
         executable: /bin/bash
       register: gateway_rollout
       changed_when: false
-      when: apply_services | bool
+      when: (apply_services | bool) and (services_changed | bool)
 
     - name: Report the gateway
       ansible.builtin.debug:
@@ -606,7 +622,7 @@
       vars:
         wait_list: >-
           {{ (((service_workloads | map('regex_replace', '^', 'Deployment/')
-                 | map('regex_replace', '$', ' ' ~ ns_service) | list) if (apply_services | bool) else [])
+                 | map('regex_replace', '$', ' ' ~ ns_service) | list) if ((apply_services | bool) and (services_changed | bool)) else [])
               + (restart_for_images | default([])) + (restart_for_config | default([]))) | unique }}
       register: svc_rollout
       changed_when: false

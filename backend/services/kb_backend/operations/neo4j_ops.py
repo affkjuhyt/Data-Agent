@@ -63,7 +63,8 @@ async def _graph_from_postgres(postgres: Any, tenant_id: str | None) -> tuple[li
         if f not in node_ids or t not in node_ids or (f, t) in seen:
             continue
         seen.add((f, t))
-        edges.append({"from": f, "to": t, "description": r.get("description"), "score": r.get("score")})
+        # The mirror keeps no edge description or score; only Neo4j does.
+        edges.append({"from": f, "to": t, "description": None, "score": None})
     return nodes, edges
 
 

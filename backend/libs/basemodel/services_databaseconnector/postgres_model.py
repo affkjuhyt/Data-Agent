@@ -233,8 +233,8 @@ class SourceConfigPayload(BaseModel):
     `web_crawl`/`web_crawl_headless` (Playwright vs static httpx); ignored by
     `http_file`/`rest_api`/`sdmx`/`rss`. `openbao_path`, when set, is a vault
     path (KV v2, e.g. `tenants/<tenant_id>/<key>`) resolved at run time by the
-    web-crawler worker — never a raw secret, per the vault convention
-    (`secrets_vault.openbao_path`). `query_params`/`auth_style`/
+    web-crawler worker — never a raw secret, the same `tenants/<tenant>/<key>`
+    layout auth_api's Secrets Vault writes. `query_params`/`auth_style`/
     `auth_param_name` only apply to `rest_api`/`sdmx`. `recursive`/
     `max_depth`/`same_domain_only` only apply to `web_crawl`/
     `web_crawl_headless` — link-discovery crawl, see `KBSourceCrawlQueue`."""
@@ -277,12 +277,6 @@ class SourceRunTrigger(str, Enum):
     RECURSIVE = "recursive"
 
 
-class ModelConfig(BaseModel):
-    vector_size: Optional[int] = None
-    max_tokens: Optional[int] = None
-    extra: Optional[dict[str, Any]] = None
-
-
 """
 Base Models
 """
@@ -311,15 +305,6 @@ class KBModelInsert(BaseModel):
     model_name: str
     task_type: TaskType
     model_config = ConfigDict(use_enum_values=True)
-
-
-@register("insert")
-class KBModelVersionInsert(BaseModel):
-    model_id: str
-    version_number: int
-    added_by: Optional[str] = None
-    config: Optional[ModelConfig] = None
-    is_active: bool = False
 
 
 @register("insert")
@@ -490,7 +475,6 @@ class KBTextBlockVersionInsert(BaseModel):
     content: Optional[str] = None
     created_by: Optional[str] = None
     table_involved: Optional[bool] = None
-    embedding_model_id: Optional[str] = None
     payload: Optional[dict[str, Any]] = None
     is_active: bool = False
 
@@ -506,7 +490,6 @@ class KBTextTableInsert(BaseModel):
 @register("insert")
 class KBQdrantConnectionInsert(TenantModel):
     is_active: bool = False
-    total_collection: int = 0
 
 
 @register("insert")
@@ -514,9 +497,6 @@ class KBQdrantCollectionInsert(BaseModel):
     connection_id: str
     collection_name: str
     is_active: bool = False
-    similarity_metric: SimilarityMetric = SimilarityMetric.COSINE
-    points_count: int = 0
-    vector_dimension: Optional[int] = None
     embedding_model_id: Optional[str] = None
     model_config = ConfigDict(use_enum_values=True)
 
@@ -551,11 +531,6 @@ Delete Models — PK fields only
 @register("delete")
 class KBModelDelete(BaseModel):
     model_id: str
-
-
-@register("delete")
-class KBModelVersionDelete(BaseModel):
-    version_id: int
 
 
 @register("delete")
@@ -665,16 +640,6 @@ Auth Insert Models
 
 
 @register("insert")
-class LLMProvidersInsert(InsertModel):
-    name: str
-    model_id: str
-    endpoint_url: str
-    type: str
-    is_default: bool = False
-    max_tokens: Optional[int] = None
-
-
-@register("insert")
 class KBConnectionsInsert(TenantInsertModel):
     name: str
     endpoint_url: str
@@ -699,16 +664,7 @@ class GuardrailsInsert(InsertModel):
     conditions: dict[str, Any] = {}
     action: str
     priority: int = 0
-    guardrail_model_id: Optional[str] = None
-    created_by: Optional[str] = None
-
-
-@register("insert")
-class ToolsInsert(InsertModel):
-    name: str
-    description: Optional[str] = None
-    type: str
-    status: str = "active"
+    guardrail_model: Optional[str] = None
     created_by: Optional[str] = None
 
 
@@ -726,7 +682,6 @@ class MCPInsert(TenantInsertModel):
 class AgentsInsert(TenantInsertModel):
     name: str
     description: Optional[str] = None
-    language: str = "vi"
     is_active: bool = True
     created_by: Optional[str] = None
 
@@ -755,12 +710,10 @@ class AgentVersionsInsert(InsertModel):
     version: int
     status: str = "draft"
     workflow_version_id: Optional[str] = None
-    responder_model_id: Optional[str] = None
+    responder_model: Optional[str] = None
     llm_config: Optional[dict[str, Any]] = None
     system_prompt_id: Optional[str] = None
-    guardrail_id: Optional[str] = None
     memory_enabled: bool = False
-    retrieval_config: Optional[dict[str, Any]] = None
     changelog: Optional[str] = None
     created_by: Optional[str] = None
 
@@ -769,12 +722,6 @@ class AgentVersionsInsert(InsertModel):
 class AgentKBInsert(InsertModel):
     version_id: str
     kb_connection_id: str
-
-
-@register("insert")
-class AgentToolsInsert(InsertModel):
-    version_id: str
-    tool_id: str
 
 
 @register("insert")
@@ -793,15 +740,6 @@ class AgentMemoriesInsert(TenantInsertModel):
     embedding_ref: Optional[str] = None
     importance: Optional[float] = 0.5
     expires_at: Optional[datetime.datetime] = None
-
-
-@register("insert")
-class MemoryPolicyInsert(InsertModel):
-    agent_id: str
-    action_type: str
-    condition: Optional[dict[str, Any]] = None
-    enabled: bool = True
-    created_by: Optional[str] = None
 
 
 @register("insert")
@@ -838,11 +776,6 @@ Auth Delete Models
 
 
 @register("delete")
-class LLMProvidersDelete(BaseModel):
-    id: str
-
-
-@register("delete")
 class KBConnectionsDelete(TenantModel):
     id: str
 
@@ -854,11 +787,6 @@ class SystemPromptsDelete(TenantModel):
 
 @register("delete")
 class GuardrailsDelete(BaseModel):
-    id: str
-
-
-@register("delete")
-class ToolsDelete(BaseModel):
     id: str
 
 
@@ -899,12 +827,6 @@ class AgentKBDelete(BaseModel):
 
 
 @register("delete")
-class AgentToolsDelete(BaseModel):
-    version_id: str
-    tool_id: str
-
-
-@register("delete")
 class AgentMCPDelete(BaseModel):
     version_id: str
     mcp_id: str
@@ -912,11 +834,6 @@ class AgentMCPDelete(BaseModel):
 
 @register("delete")
 class AgentMemoriesDelete(BaseModel):
-    id: str
-
-
-@register("delete")
-class MemoryPolicyDelete(BaseModel):
     id: str
 
 

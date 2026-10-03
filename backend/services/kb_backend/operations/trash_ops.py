@@ -7,6 +7,7 @@ import uuid
 from fastapi import HTTPException
 from qdrant_client import models as qmodels
 from sqlalchemy import select as sa_select, update as sa_update, delete as sa_delete
+from sqlalchemy import text as sa_text
 
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBDataORM,
@@ -18,6 +19,7 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
     KBConflictORM,
     KBConflictBatchORM,
 )
+from libs.shared.sql_identifiers import UnsafeIdentifier, quote_identifier, safe_identifier
 from services.kb_backend.pipeline.light_rag import config as lr_cfg
 from services.kb_backend.pipeline.ingestion.config import MINIO_BUCKET
 from services.kb_backend.schemas import DocResponse
@@ -293,6 +295,25 @@ async def _delete_blocks(session: Any, block_ids: list[uuid.UUID]) -> None:
     await session.execute(sa_delete(KBTextBlockORM).where(KBTextBlockORM.block_id.in_(block_ids)))
 
 
+_STRUCTURED_SCHEMA = "kb_structured"
+
+
+async def _drop_structured_tables(session: Any, data_id: uuid.UUID) -> None:
+    names = (await session.execute(
+        sa_select(KBTableORM.table_name).where(KBTableORM.owner_id == data_id)
+    )).scalars().all()
+    for qualified in names:
+        schema, _, table = (qualified or "").partition(".")
+        try:
+            if schema != _STRUCTURED_SCHEMA:
+                raise UnsafeIdentifier(f"schema {schema!r}")
+            safe_identifier(table, "table")
+        except UnsafeIdentifier:
+            log.warning("purge | not dropping %r of document %s: not a kb_structured table", qualified, data_id)
+            continue
+        await session.execute(sa_text(f"DROP TABLE IF EXISTS {_STRUCTURED_SCHEMA}.{quote_identifier(table)}"))
+
+
 async def _delete_document(session: Any, data_id: uuid.UUID) -> None:
     block_ids = (await session.execute(
         sa_select(KBTextBlockORM.block_id).where(KBTextBlockORM.owner_id == data_id)
@@ -316,6 +337,7 @@ async def _delete_document(session: Any, data_id: uuid.UUID) -> None:
             )
         )
 
+    await _drop_structured_tables(session, data_id)
     await session.execute(sa_delete(KBTableORM).where(KBTableORM.owner_id == data_id))
     await session.execute(sa_delete(KBLifecycleHistoryORM).where(KBLifecycleHistoryORM.data_id == data_id))
     await session.execute(sa_delete(KBDataORM).where(KBDataORM.data_id == data_id))

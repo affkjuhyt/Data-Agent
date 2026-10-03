@@ -23,7 +23,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /install /usr/local
 
 COPY backend/libs/ ./libs/
-COPY backend/services/  ./services/
+# Only this service's tree, not all of backend/services: no service imports another,
+# and copying them all rebuilt (and restarted) this image for every other service's edit.
+COPY backend/services/__init__.py ./services/__init__.py
+COPY backend/services/kb_backend/ ./services/kb_backend/
 ENV PYTHONPATH=/app \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1

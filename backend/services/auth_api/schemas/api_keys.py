@@ -7,3 +7,7 @@ class APIKeyCreateInput(BaseModel):
     name: str
     scope: str = "read_only"
     expires_at: Optional[str] = None
+
+
+class APIKeyVerifyInput(BaseModel):
+    key: str

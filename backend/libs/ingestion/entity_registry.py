@@ -68,7 +68,8 @@ async def _alias_lookup(
     except (ValueError, AttributeError):
         tenant_uuid = None
 
-    async with postgres.get_client() as session:
+    # Row-level security shows this tenant's aliases and the global ones.
+    async with postgres.get_client(tenant_id=str(tenant_uuid) if tenant_uuid else None) as session:
         rows = (await session.execute(
             sa_select(
                 KBEntityLookupORM.alias_name,
@@ -118,7 +119,7 @@ async def _register_aliases(
     except (ValueError, AttributeError):
         tenant_uuid = None
     try:
-        async with postgres.get_client() as session:
+        async with postgres.get_client(tenant_id=str(tenant_uuid) if tenant_uuid else None) as session:
             # Both guards read the same table, so they share one query:
             #  - a key already mapped to a DIFFERENT canonical is a collision — never
             #    overwrite or shadow it (first registration wins; LLM association

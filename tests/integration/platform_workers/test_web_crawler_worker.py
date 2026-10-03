@@ -14,67 +14,50 @@ they could not have caught this; only a real Postgres insert could.
 """
 from __future__ import annotations
 
-import os
-import pathlib
-import subprocess
-import sys
 import uuid
-from collections.abc import Iterator
 from unittest.mock import patch
 
 import psycopg2
 import pytest
-
-from tests.integration._db import reset_database
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 pytestmark = pytest.mark.integration
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-ALEMBIC_INI = REPO_ROOT / "backend" / "alembic" / "alembic.ini"
 
-
-def _async_dsn(libpq_dsn: str) -> str:
-    return "postgresql+asyncpg://" + libpq_dsn[len("postgresql://"):]
-
-
-def _run_alembic(dsn: str, *args: str) -> subprocess.CompletedProcess:
-    env = {**os.environ, "DATABASE_URL": _async_dsn(dsn), "PYTHONPATH": str(REPO_ROOT)}
-    return subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", str(ALEMBIC_INI), *args],
-        capture_output=True, text=True, env=env, cwd=str(REPO_ROOT), timeout=60,
+def _session_factory(libpq_dsn: str) -> sessionmaker[Session]:
+    """The worker's sessions, as app_user (conftest.app_user_dsn): row-level security
+    applies, as on the cluster. Seeding and assertions use the superuser DSN."""
+    return sessionmaker(
+        bind=create_engine(libpq_dsn.replace("postgresql://", "postgresql+psycopg2://", 1), future=True),
+        expire_on_commit=False,
+        future=True,
     )
-
-
-@pytest.fixture
-def fresh_db(postgres_container) -> Iterator[dict[str, str]]:
-    reset_database(postgres_container["dsn"])
-    yield postgres_container
-
-
-@pytest.fixture
-def migrated_db(fresh_db) -> dict[str, str]:
-    result = _run_alembic(fresh_db["dsn"], "upgrade", "head")
-    assert result.returncode == 0, f"alembic upgrade failed:\n{result.stdout}\n{result.stderr}"
-    return fresh_db
 
 
 def _seed_tenant_and_source(
     dsn: str, title: str, connector_type: str = "web_crawl", extra_config: dict | None = None,
+    role_row_id: str | None = None,
 ) -> tuple[str, str, str]:
-    tenant_id, role_row_id, source_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    """A tenant and one source. Pass the role_row_id a previous call returned to
+    seed a second tenant: the role anchor row is unique."""
+    new_role = role_row_id is None
+    tenant_id, source_id = str(uuid.uuid4()), str(uuid.uuid4())
+    role_row_id = role_row_id or str(uuid.uuid4())
     conn = psycopg2.connect(dsn)
     conn.autocommit = True
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO "Tenants" (id, name, slug, data_residency) VALUES (%s, %s, %s, %s)""",
-                (tenant_id, "Crawler Test Tenant", f"crawler-test-{tenant_id[:8]}", "Asia-SE1"),
+                """INSERT INTO "Tenants" (id, name, slug) VALUES (%s, %s, %s)""",
+                (tenant_id, "Crawler Test Tenant", f"crawler-test-{tenant_id[:8]}"),
             )
-            cur.execute(
-                """INSERT INTO "RolePermissions" (id, role_id, resource, action)
-                   VALUES (%s, 'PLATFORM_ADMIN', '_role_anchor', 'label')""",
-                (role_row_id,),
-            )
+            if new_role:
+                cur.execute(
+                    """INSERT INTO "RolePermissions" (id, role_id, resource, action)
+                       VALUES (%s, 'PLATFORM_ADMIN', '_role_anchor', 'label')""",
+                    (role_row_id,),
+                )
             cur.execute(
                 """INSERT INTO "KBSource" (source_id, tenant_id, role_id, connector_type, title, created_by)
                    VALUES (%s, %s, %s, %s, %s, 'tester')""",
@@ -108,18 +91,19 @@ def _fake_artifact(url: str):
     )
 
 
-def test_run_source_lands_a_bronze_document(migrated_db, worker_module):
+def test_run_source_lands_a_bronze_document(migrated_db, app_user_dsn, worker_module):
     tenant_id, _role_id, source_id = _seed_tenant_and_source(migrated_db["dsn"], "Regression Test Source")
+    SessionLocal = _session_factory(app_user_dsn)
     conn = psycopg2.connect(migrated_db["dsn"])
     try:
         with patch(
             "services.platform_workers.workers.web_crawler.worker.connector_fetch",
             side_effect=lambda connector_type, config: _fake_artifact(config["url"]),
         ):
-            with conn.cursor() as cur:
-                sources = worker_module.get_active_sources(cur)
+            with SessionLocal() as session:
+                sources = worker_module.get_active_sources(session)
             assert len(sources) == 1
-            worker_module.run_source(conn, sources[0], trigger="scheduled")
+            worker_module.run_source(SessionLocal, sources[0], trigger="scheduled")
 
         with conn.cursor() as cur:
             cur.execute('SELECT status, data_ids, quality_metrics FROM "KBSourceRun" WHERE source_id = %s', (source_id,))
@@ -137,22 +121,23 @@ def test_run_source_lands_a_bronze_document(migrated_db, worker_module):
         conn.close()
 
 
-def test_recrawling_the_same_source_replaces_instead_of_crashing(migrated_db, worker_module):
+def test_recrawling_the_same_source_replaces_instead_of_crashing(migrated_db, app_user_dsn, worker_module):
     """The actual bug: running the same source twice used to crash on
     "KBData_name_key" because the prior document with the same name was
     never removed before the new insert."""
     tenant_id, _role_id, source_id = _seed_tenant_and_source(migrated_db["dsn"], "Recrawled Source")
+    SessionLocal = _session_factory(app_user_dsn)
     conn = psycopg2.connect(migrated_db["dsn"])
     try:
         with patch(
             "services.platform_workers.workers.web_crawler.worker.connector_fetch",
             side_effect=lambda connector_type, config: _fake_artifact(config["url"]),
         ):
-            with conn.cursor() as cur:
-                source = worker_module.get_active_sources(cur)[0]
+            with SessionLocal() as session:
+                source = worker_module.get_active_sources(session)[0]
 
-            worker_module.run_source(conn, source, trigger="scheduled")
-            worker_module.run_source(conn, source, trigger="manual")  # must NOT raise
+            worker_module.run_source(SessionLocal, source, trigger="scheduled")
+            worker_module.run_source(SessionLocal, source, trigger="manual")  # must NOT raise
 
         with conn.cursor() as cur:
             cur.execute('SELECT status FROM "KBSourceRun" WHERE source_id = %s ORDER BY started_at', (source_id,))
@@ -165,25 +150,26 @@ def test_recrawling_the_same_source_replaces_instead_of_crashing(migrated_db, wo
         conn.close()
 
 
-def test_a_failed_run_is_retried_before_its_next_cron_tick(migrated_db, worker_module):
+def test_a_failed_run_is_retried_before_its_next_cron_tick(migrated_db, app_user_dsn, worker_module):
     """V2: crawl_due_sources must pick a failed source back up once
     next_retry_at has passed, even though its cron isn't due yet — the whole
     point of retry/backoff being separate from the normal schedule."""
     tenant_id, _role_id, source_id = _seed_tenant_and_source(
         migrated_db["dsn"], "Retry Test Source", extra_config={"cron": "0 3 1 1 *"},  # once a year — never "due" here
     )
+    SessionLocal = _session_factory(app_user_dsn)
     conn = psycopg2.connect(migrated_db["dsn"])
     try:
         # A schedule starts with the first run, not at creation (a bulk import
         # must not fire every source at once), so the first attempt is a Run
         # Now; it fails.
-        with conn.cursor() as cur:
-            source = worker_module.get_active_sources(cur)[0]
+        with SessionLocal() as session:
+            source = worker_module.get_active_sources(session)[0]
         with patch(
             "services.platform_workers.workers.web_crawler.worker.connector_fetch",
             side_effect=RuntimeError("simulated fetch failure"),
         ):
-            worker_module.run_source(conn, source, trigger="manual")
+            worker_module.run_source(SessionLocal, source, trigger="manual")
 
         with conn.cursor() as cur:
             cur.execute(
@@ -198,7 +184,7 @@ def test_a_failed_run_is_retried_before_its_next_cron_tick(migrated_db, worker_m
                 "services.platform_workers.workers.web_crawler.worker.connector_fetch",
                 side_effect=AssertionError("must not be called before next_retry_at"),
             ):
-                worker_module.crawl_due_sources(conn)
+                worker_module.crawl_due_sources(SessionLocal)
             cur.execute('SELECT COUNT(*) FROM "KBSourceRun" WHERE source_id = %s', (source_id,))
             assert cur.fetchone()[0] == 1
 
@@ -211,7 +197,7 @@ def test_a_failed_run_is_retried_before_its_next_cron_tick(migrated_db, worker_m
             "services.platform_workers.workers.web_crawler.worker.connector_fetch",
             side_effect=lambda connector_type, config: _fake_artifact(config["url"]),
         ):
-            worker_module.crawl_due_sources(conn)
+            worker_module.crawl_due_sources(SessionLocal)
 
         with conn.cursor() as cur:
             cur.execute(
@@ -224,7 +210,67 @@ def test_a_failed_run_is_retried_before_its_next_cron_tick(migrated_db, worker_m
         conn.close()
 
 
-def test_recursive_source_enqueues_and_drains_discovered_links(migrated_db, worker_module):
+def test_run_bookkeeping_reaches_every_tenant(migrated_db, app_user_dsn, worker_module):
+    """KBSourceRun has row-level security through its source's tenant. With two
+    tenants, a scan that is not walked tenant by tenant sees at most the one the
+    session happened to be left on: a stale run, a due retry and a queued run of
+    the other tenant would be stranded."""
+    yearly = {"cron": "0 3 1 1 *"}  # never due here: only retries and Run Now run
+    first = _seed_tenant_and_source(migrated_db["dsn"], "Two-tenant Source 1", extra_config=yearly)
+    seeded = [
+        first,
+        _seed_tenant_and_source(
+            migrated_db["dsn"], "Two-tenant Source 2", extra_config=yearly, role_row_id=first[1]
+        ),
+    ]
+    sources = [source_id for _tenant, _role, source_id in seeded]
+    SessionLocal = _session_factory(app_user_dsn)
+    fetch = "services.platform_workers.workers.web_crawler.worker.connector_fetch"
+    conn = psycopg2.connect(migrated_db["dsn"])
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            for source_id in sources:
+                cur.execute(
+                    'INSERT INTO "KBSourceRun" (run_id, source_id, status, trigger, retry_count, started_at)'
+                    " VALUES (%s, %s, 'running', 'manual', 0, now() - interval '1 day')",
+                    (str(uuid.uuid4()), source_id),
+                )
+
+        # A worker that died left both tenants' runs 'running'.
+        worker_module.reset_stale_runs(SessionLocal)
+        with conn.cursor() as cur:
+            cur.execute('SELECT status FROM "KBSourceRun" ORDER BY source_id')
+            assert [r[0] for r in cur.fetchall()] == ["failed", "failed"]
+
+        # Both failed runs are due for a retry (next_retry_at unset).
+        with patch(fetch, side_effect=lambda connector_type, config: _fake_artifact(config["url"])):
+            worker_module.crawl_due_sources(SessionLocal)
+        with conn.cursor() as cur:
+            cur.execute(
+                'SELECT source_id::text FROM "KBSourceRun" WHERE status = %s AND retry_count = 1', ("success",)
+            )
+            assert sorted(r[0] for r in cur.fetchall()) == sorted(sources)
+
+            # Run Now on both: queued runs are claimed and run, each under its tenant.
+            for source_id in sources:
+                cur.execute(
+                    'INSERT INTO "KBSourceRun" (run_id, source_id, status, trigger, retry_count, started_at)'
+                    " VALUES (%s, %s, 'queued', 'manual', 0, now())",
+                    (str(uuid.uuid4()), source_id),
+                )
+        pool = worker_module.RunPool(SessionLocal, max_workers=2)
+        with patch(fetch, side_effect=lambda connector_type, config: _fake_artifact(config["url"])):
+            worker_module.dispatch_queued_runs(SessionLocal, pool)
+            pool._executor.shutdown(wait=True)
+        with conn.cursor() as cur:
+            cur.execute('SELECT count(*) FROM "KBSourceRun" WHERE status = %s', ("queued",))
+            assert cur.fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_recursive_source_enqueues_and_drains_discovered_links(migrated_db, app_user_dsn, worker_module):
     """V2: a `recursive` web_crawl source's own run enqueues its page's
     discovered links, and drain_crawl_queue works through them as their own
     KBSourceRun('recursive') attempts."""
@@ -232,6 +278,7 @@ def test_recursive_source_enqueues_and_drains_discovered_links(migrated_db, work
         migrated_db["dsn"], "Recursive Test Source",
         extra_config={"recursive": True, "max_depth": 1, "same_domain_only": True},
     )
+    SessionLocal = _session_factory(app_user_dsn)
     conn = psycopg2.connect(migrated_db["dsn"])
 
     def _fake_with_links(connector_type, config):
@@ -247,16 +294,16 @@ def test_recursive_source_enqueues_and_drains_discovered_links(migrated_db, work
         with patch(
             "services.platform_workers.workers.web_crawler.worker.connector_fetch", side_effect=_fake_with_links,
         ):
-            with conn.cursor() as cur:
-                source = worker_module.get_active_sources(cur)[0]
-            worker_module.run_source(conn, source, trigger="scheduled")
+            with SessionLocal() as session:
+                source = worker_module.get_active_sources(session)[0]
+            worker_module.run_source(SessionLocal, source, trigger="scheduled")
 
             with conn.cursor() as cur:
                 cur.execute('SELECT url, depth, status FROM "KBSourceCrawlQueue" WHERE source_id = %s', (source_id,))
                 queued = cur.fetchall()
             assert queued == [("https://example.invalid/page-2", 1, "pending")]
 
-            worker_module.drain_crawl_queue(conn)
+            worker_module.drain_crawl_queue(SessionLocal)
 
         with conn.cursor() as cur:
             cur.execute('SELECT status FROM "KBSourceCrawlQueue" WHERE source_id = %s', (source_id,))
@@ -290,7 +337,7 @@ class _NoopMinio:
         self.removed.append(key)
 
 
-def test_changed_content_updates_a_promoted_document_in_place(migrated_db, worker_module):
+def test_changed_content_updates_a_promoted_document_in_place(migrated_db, app_user_dsn, worker_module):
     """Real Postgres: the UPDATE builds `metadata` with jsonb `-` and `||`
     (a class of statement mocked cursors cannot vouch for). A re-crawl with new
     bytes must keep the row's data_id and tier, strip the previous run's
@@ -302,6 +349,7 @@ def test_changed_content_updates_a_promoted_document_in_place(migrated_db, worke
     tenant_id, _role, source_id = _seed_tenant_and_source(
         migrated_db["dsn"], "Rates", connector_type="http_file", extra_config={"url": "https://example.invalid/rates.xml"},
     )
+    SessionLocal = _session_factory(app_user_dsn)
     versions = iter([b"<rates>1</rates>", b"<rates>2</rates>"])
 
     def fetch(_connector_type, config):
@@ -314,9 +362,9 @@ def test_changed_content_updates_a_promoted_document_in_place(migrated_db, worke
     try:
         with patch("services.platform_workers.workers.web_crawler.worker.connector_fetch", side_effect=fetch), \
              patch("services.platform_workers.workers.web_crawler.bronze._minio_client", return_value=minio):
-            with conn.cursor() as cur:
-                source = worker_module.get_active_sources(cur)[0]
-            worker_module.run_source(conn, source, trigger="scheduled")
+            with SessionLocal() as session:
+                source = worker_module.get_active_sources(session)[0]
+            worker_module.run_source(SessionLocal, source, trigger="scheduled")
 
             with conn.cursor() as cur:
                 cur.execute('SELECT data_id, path, row_version FROM "KBData" WHERE tenant_id = %s', (tenant_id,))
@@ -328,7 +376,7 @@ def test_changed_content_updates_a_promoted_document_in_place(migrated_db, worke
                 )
             conn.commit()
 
-            worker_module.run_source(conn, source, trigger="manual")
+            worker_module.run_source(SessionLocal, source, trigger="manual")
 
         with conn.cursor() as cur:
             cur.execute(
@@ -354,7 +402,7 @@ def test_changed_content_updates_a_promoted_document_in_place(migrated_db, worke
         conn.close()
 
 
-def test_a_v2_structured_source_stays_in_bronze_and_off_the_legacy_paths(migrated_db, worker_module):
+def test_a_v2_structured_source_stays_in_bronze_and_off_the_legacy_paths(migrated_db, app_user_dsn, worker_module):
     """NOP-163 on a real Postgres: an http_file source with an
     `extraction_profile` (the Pink Sheet shape from docs/v2/03 §5) and
     promotion_mode=auto lands its raw file in Bronze, linked to its source, and
@@ -371,6 +419,7 @@ def test_a_v2_structured_source_stays_in_bronze_and_off_the_legacy_paths(migrate
         migrated_db["dsn"], "Pink Sheet", connector_type="http_file",
         extra_config={"url": "https://example.invalid/pink.xlsx", "promotion_mode": "auto", "extraction_profile": profile},
     )
+    SessionLocal = _session_factory(app_user_dsn)
     # A plain document source in the same tenant (the seed helper creates a
     # tenant + role per call, and the role anchor row is unique).
     doc_source = str(uuid.uuid4())
@@ -406,10 +455,10 @@ def test_a_v2_structured_source_stays_in_bronze_and_off_the_legacy_paths(migrate
         with patch("services.platform_workers.workers.web_crawler.worker.connector_fetch", side_effect=fetch), \
              patch("services.platform_workers.workers.web_crawler.bronze._minio_client", return_value=_NoopMinio()), \
              patch("services.platform_workers.workers.web_crawler.worker.queue_auto_promote_silver") as publish:
-            with conn.cursor() as cur:
-                sources = {str(s["source_id"]): s for s in worker_module.get_active_sources(cur)}
-            worker_module.run_source(conn, sources[v2_source], trigger="scheduled")
-            worker_module.run_source(conn, sources[doc_source], trigger="scheduled")
+            with SessionLocal() as session:
+                sources = {str(s["source_id"]): s for s in worker_module.get_active_sources(session)}
+            worker_module.run_source(SessionLocal, sources[v2_source], trigger="scheduled")
+            worker_module.run_source(SessionLocal, sources[doc_source], trigger="scheduled")
 
         with conn.cursor() as cur:
             cur.execute(

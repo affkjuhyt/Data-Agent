@@ -22,6 +22,7 @@ DB_INITS = {
     manifest_set: REPO_ROOT / "deploy" / "k8s" / manifest_set / "job" / "db-init.yaml"
     for manifest_set in ("production", "dev")
 }
+SECRETS = REPO_ROOT / "deploy" / "k8s" / "create-secrets.sh"
 
 
 @pytest.fixture(params=sorted(DB_INITS))
@@ -72,6 +73,13 @@ def _tables_used_by_service() -> set[str]:
     for quoted in re.findall(r'(?:joins_table=\[|table_name=)"?\[?"([A-Za-z0-9_]+)"', source):
         used.add(quoted)
     return used
+
+
+def _db_init_job(db_init: pathlib.Path) -> dict:
+    import yaml
+
+    documents = yaml.safe_load_all(db_init.read_text(encoding="utf-8"))
+    return next(d for d in documents if d and d["kind"] == "Job")
 
 
 class TestTheGrantListCoversWhatTheServiceUses:
@@ -128,11 +136,6 @@ class TestTheInitJobActuallyAppliesTheGrants:
     create-configmaps.sh -> ConfigMap -> Job volume -> mount -> psql loop, and a
     break anywhere leaves kb_backend with a role that has no privileges."""
 
-    def _job(self, db_init: pathlib.Path) -> dict:
-        import yaml
-        documents = yaml.safe_load_all(db_init.read_text(encoding="utf-8"))
-        return next(d for d in documents if d and d["kind"] == "Job")
-
     def test_the_sql_file_is_packaged_into_a_configmap(self):
         script = (REPO_ROOT / "deploy" / "k8s" / "create-configmaps.sh").read_text(encoding="utf-8")
 
@@ -151,19 +154,25 @@ class TestTheInitJobActuallyAppliesTheGrants:
         assert re.match(r'cm\s+"?\$?\w+"?\s+db-init-sql\b', packaging[0]), packaging[0]
 
     def test_the_job_mounts_that_configmap(self, db_init):
-        spec = self._job(db_init)["spec"]["template"]["spec"]
+        spec = _db_init_job(db_init)["spec"]["template"]["spec"]
         volume = next(v for v in spec["volumes"] if v.get("configMap", {}).get("name") == "db-init-sql")
         mount = next(m for m in spec["containers"][0]["volumeMounts"] if m["name"] == volume["name"])
         assert mount["mountPath"] == "/sql"
 
     def test_the_job_executes_every_sql_file_it_mounts(self, db_init):
-        command = self._job(db_init)["spec"]["template"]["spec"]["containers"][0]["command"][-1]
+        command = _db_init_job(db_init)["spec"]["template"]["spec"]["containers"][0]["command"][-1]
         assert "/sql/*.sql" in command
         assert "psql" in command and "ON_ERROR_STOP=1" in command
 
+    def test_the_job_waits_for_migrations_first(self, db_init):
+        """grant-roles.sql grants on named tables, so it cannot run before the
+        migration that creates them."""
+        command = _db_init_job(db_init)["spec"]["template"]["spec"]["containers"][0]["command"][-1]
+        assert "information_schema.tables" in command and "until" in command
+
     def test_grants_run_before_the_role_passwords_are_set(self, db_init):
         """ALTER ROLE would fail on a role grant-roles.sql has not created yet."""
-        command = self._job(db_init)["spec"]["template"]["spec"]["containers"][0]["command"][-1]
+        command = _db_init_job(db_init)["spec"]["template"]["spec"]["containers"][0]["command"][-1]
         assert command.index("/sql/*.sql") < command.index("ALTER ROLE")
 
 
@@ -178,3 +187,10 @@ class TestRolesTheInitJobExpects:
         created = set(re.findall(r"CREATE ROLE (\w+)", sql))
         assert altered, "no ALTER ROLE lines found - did db-init.yaml move?"
         assert not sorted(altered - created)
+
+    def test_every_password_variable_is_supplied_by_the_secret(self, db_init):
+        command = _db_init_job(db_init)["spec"]["template"]["spec"]["containers"][0]["command"][-1]
+        used = set(re.findall(r'\$([A-Z_]+_PASSWORD)', command))
+        supplied = set(re.findall(r"--from-literal=([A-Z_]+_PASSWORD)=", SECRETS.read_text(encoding="utf-8")))
+        missing = sorted(used - supplied)
+        assert not missing, f"the Job reads {missing}, which create-secrets.sh never sets"

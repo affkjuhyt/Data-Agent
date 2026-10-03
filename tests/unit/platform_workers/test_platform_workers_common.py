@@ -257,3 +257,39 @@ class TestBridgeSupervisor:
         sup.check(now=1.0)
 
         sup.start.assert_not_called()
+
+
+class TestPostgresStartupWait:
+    """A worker that starts before Postgres must wait for it, not crash on its first query."""
+
+    @staticmethod
+    def _engine(failures: int) -> MagicMock:
+        from sqlalchemy.exc import OperationalError
+
+        remaining = [failures]
+
+        def connect():
+            if remaining[0] > 0:
+                remaining[0] -= 1
+                raise OperationalError("SELECT 1", {}, Exception("connection refused"))
+            return MagicMock()
+
+        engine = MagicMock()
+        engine.connect.side_effect = connect
+        return engine
+
+    def test_waits_through_refused_connections(self):
+        from services.platform_workers.common import db
+
+        engine = self._engine(failures=2)
+        db.wait_until_ready(engine, attempts=5, wait_seconds=0)
+
+        assert engine.connect.call_count == 3
+
+    def test_gives_up_after_the_budget(self):
+        from services.platform_workers.common import db
+
+        engine = self._engine(failures=10)
+        with pytest.raises(RuntimeError, match="unavailable"):
+            db.wait_until_ready(engine, attempts=3, wait_seconds=0)
+        assert engine.connect.call_count == 3

@@ -24,6 +24,14 @@ return {
         -- KB_GATEWAY_KEY on the upstream. Marked encrypted so it is not echoed
         -- back in plaintext by the Kong Admin API.
         { gateway_key           = { type = "string",  required = false, encrypted = true } },
+        -- auth_api's /internal/api-keys/verify. When set (and gateway_key is
+        -- too, which proves the call to auth_api), a request carrying an
+        -- `sk-` API key instead of a JWT is verified there. Unset = API keys
+        -- are rejected like any other non-JWT credential.
+        { api_key_verify_url    = typedefs.url({ required = false })           },
+        -- How long a verified key is trusted without asking auth_api again.
+        -- Also the longest a revoked key keeps working, so keep it short.
+        { api_key_cache_ttl     = { type = "number",  default = 60   }        },
       },
     }},
   },

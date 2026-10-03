@@ -1,7 +1,7 @@
 """Schema Crawler Worker (sandbox_schema_docs.docx §II) — ex schema-crawler-worker.
 
 Background job, structurally the same kind of always-on loop as the memory
-worker (sync psycopg2 + sync Kafka, no asyncio) — but instead of reacting to
+worker (sync SQLAlchemy + sync Kafka, no asyncio) — but instead of reacting to
 one Kafka topic, it has two trigger paths: a cron-style interval
 (CRAWL_INTERVAL_SECONDS) and an optional Kafka DDL-change topic with a
 debounce window (doc §2.8). Kafka is best-effort here, not required: cron
@@ -15,16 +15,14 @@ this worker is a second reader of that data, not a new connection registry.
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import psycopg2
 from services.platform_workers.common import kafka as kafka_factory
-from services.platform_workers.common import pg
+from services.platform_workers.common import db as worker_db
 from services.platform_workers.common import qdrant as qdrant_factory
 from services.platform_workers.common.settings import KafkaSettings, PostgresSettings, QdrantSettings
 from kafka import KafkaConsumer
@@ -32,6 +30,16 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import Session, sessionmaker
+
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+    KBSourceCrawlQueueORM,
+    KBWarehouseConfigORM,
+    KBWarehouseORM,
+)
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaCatalogORM
 
 from services.platform_workers.workers.schema_crawler import governance
 from services.platform_workers.workers.schema_crawler import metadata as metadata_dispatch
@@ -97,7 +105,7 @@ def ensure_qdrant_collection(qdrant: QdrantClient) -> None:
 
 # ─── Tenant warehouse registry (KBWarehouse / KBWarehouseConfig) ───────────
 
-def get_active_warehouses(cur: Any) -> list[dict[str, Any]]:
+def get_active_warehouses(session: Session) -> list[dict[str, Any]]:
     """Every registered warehouse this worker can crawl, tagged with its engine.
 
     Reads the existing per-tenant warehouse-connection registry — see
@@ -111,14 +119,25 @@ def get_active_warehouses(cur: Any) -> list[dict[str, Any]]:
     value is skipped with a warning, because crawling a warehouse with the
     wrong driver puts confident nonsense in the catalog.
     """
-    cur.execute(
-        """SELECT w.warehouse_id, w.tenant_id, w.service, c.config
-           FROM "KBWarehouse" w
-           JOIN "KBWarehouseConfig" c ON c.warehouse_id = w.warehouse_id
-           WHERE w.is_deleted = false
-             AND c.is_active = true AND c.is_deleted = false"""
+    query = (
+        select(
+            KBWarehouseORM.warehouse_id,
+            KBWarehouseORM.tenant_id,
+            KBWarehouseORM.service,
+            KBWarehouseConfigORM.config,
+        )
+        .join(KBWarehouseConfigORM, KBWarehouseConfigORM.warehouse_id == KBWarehouseORM.warehouse_id)
+        .where(
+            KBWarehouseORM.is_deleted.is_(False),
+            KBWarehouseConfigORM.is_active.is_(True),
+            KBWarehouseConfigORM.is_deleted.is_(False),
+        )
     )
-    rows = pg.dict_rows(cur)
+    # Row-level security shows one tenant's warehouses at a time.
+    rows: list[Any] = []
+    for tenant_id in worker_db.tenant_ids(session):
+        worker_db.set_tenant(session, tenant_id)
+        rows += session.execute(query).mappings().all()
 
     supported: list[dict[str, Any]] = []
     for row in rows:
@@ -200,24 +219,24 @@ def resolve_freshness_column(declared: str, columns: list[dict[str, Any]], table
     return actual
 
 
-def _governance_values(policy: dict[str, Any], watermark: Any, checked_at: Any) -> tuple[Any, ...]:
+def _governance_values(policy: dict[str, Any], watermark: Any, checked_at: Any) -> dict[str, Any]:
     """Row values for the seven governance columns, in a fixed order shared by
     both write paths below."""
-    return (
-        policy.get("owner") or None,
-        policy.get("classification") or None,
-        json.dumps(policy.get("upstream") or []),
-        policy.get("freshness_column") or None,
-        watermark,
+    return {
+        "owner": policy.get("owner") or None,
+        "classification": policy.get("classification") or None,
+        "upstream": policy.get("upstream") or [],
+        "freshness_column": policy.get("freshness_column") or None,
+        "data_as_of": watermark,
         # Only stamped when a watermark was actually attempted and returned;
         # a checked_at without a value would read as "measured, and it's null".
-        checked_at if watermark is not None else None,
-        policy.get("freshness_sla_seconds"),
-    )
+        "freshness_checked_at": checked_at if watermark is not None else None,
+        "freshness_sla_seconds": policy.get("freshness_sla_seconds"),
+    }
 
 
 def process_table(
-    cur: Any, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, meta: dict[str, Any],
+    session: Session, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, meta: dict[str, Any],
     policy: dict[str, Any] | None = None, watermark: Any = None, checked_at: Any = None,
 ) -> bool:
     """Returns True if the table was (re)described+embedded, False if
@@ -235,24 +254,21 @@ def process_table(
     policy = policy or {}
     gov = _governance_values(policy, watermark, checked_at)
 
-    cur.execute(
-        """SELECT id, schema_hash, qdrant_point_id FROM "SchemaCatalog"
-           WHERE tenant_id=%s AND warehouse_id=%s AND schema_name=%s AND table_name=%s""",
-        (tenant_id, warehouse_id, schema_name, table_name),
-    )
-    existing = cur.fetchone()
-
-    existing_point_id = existing[2] if existing and len(existing) > 2 else None
-
-    if existing and existing[1] == new_hash:
-        cur.execute(
-            """UPDATE "SchemaCatalog"
-               SET last_crawled_at = now(),
-                   owner = %s, classification = %s, upstream = %s, freshness_column = %s,
-                   data_as_of = %s, freshness_checked_at = %s, freshness_sla_seconds = %s
-               WHERE id = %s""",
-            (*gov, existing[0]),
+    existing = session.scalar(
+        select(SchemaCatalogORM).where(
+            SchemaCatalogORM.tenant_id == tenant_id,
+            SchemaCatalogORM.warehouse_id == warehouse_id,
+            SchemaCatalogORM.schema_name == schema_name,
+            SchemaCatalogORM.table_name == table_name,
         )
+    )
+
+    existing_point_id = existing.qdrant_point_id if existing else None
+
+    if existing and existing.schema_hash == new_hash:
+        for field, value in gov.items():
+            setattr(existing, field, value)
+        existing.last_crawled_at = datetime.now(UTC)
         # Payload-only update — no re-embedding, because nothing the vector is
         # built from has changed. Keeps the catalog the agent reads in step with
         # the row the answer's provenance is read from.
@@ -272,30 +288,43 @@ def process_table(
     vector = embed(text_description)
     point_id = _point_id(tenant_id, warehouse_id, schema_name, table_name)
 
-    cur.execute(
-        """INSERT INTO "SchemaCatalog"
-             (id, tenant_id, warehouse_id, schema_name, table_name, columns, row_count,
-              last_altered, text_description, join_hints, schema_hash, qdrant_point_id,
-              owner, classification, upstream, freshness_column,
-              data_as_of, freshness_checked_at, freshness_sla_seconds, last_crawled_at)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
-           ON CONFLICT (tenant_id, warehouse_id, schema_name, table_name)
-           DO UPDATE SET columns = EXCLUDED.columns, row_count = EXCLUDED.row_count,
-                         last_altered = EXCLUDED.last_altered, text_description = EXCLUDED.text_description,
-                         join_hints = EXCLUDED.join_hints, schema_hash = EXCLUDED.schema_hash,
-                         qdrant_point_id = EXCLUDED.qdrant_point_id,
-                         owner = EXCLUDED.owner, classification = EXCLUDED.classification,
-                         upstream = EXCLUDED.upstream, freshness_column = EXCLUDED.freshness_column,
-                         data_as_of = EXCLUDED.data_as_of,
-                         freshness_checked_at = EXCLUDED.freshness_checked_at,
-                         freshness_sla_seconds = EXCLUDED.freshness_sla_seconds,
-                         last_crawled_at = now()""",
-        (
-            str(uuid.uuid4()), tenant_id, warehouse_id, schema_name, table_name,
-            json.dumps(meta["columns"]), meta.get("row_count"), meta.get("last_altered"),
-            text_description, json.dumps(description["join_hints"]), new_hash, point_id,
-            *gov,
-        ),
+    stmt = pg_insert(SchemaCatalogORM).values(
+        id=uuid.uuid4(),
+        tenant_id=tenant_id,
+        warehouse_id=warehouse_id,
+        schema_name=schema_name,
+        table_name=table_name,
+        columns=meta["columns"],
+        row_count=meta.get("row_count"),
+        last_altered=meta.get("last_altered"),
+        text_description=text_description,
+        join_hints=description["join_hints"],
+        schema_hash=new_hash,
+        qdrant_point_id=point_id,
+        last_crawled_at=datetime.now(UTC),
+        **gov,
+    )
+    session.execute(
+        stmt.on_conflict_do_update(
+            constraint="uq_schemacatalog_table",
+            set_={
+                "columns": stmt.excluded.columns,
+                "row_count": stmt.excluded.row_count,
+                "last_altered": stmt.excluded.last_altered,
+                "text_description": stmt.excluded.text_description,
+                "join_hints": stmt.excluded.join_hints,
+                "schema_hash": stmt.excluded.schema_hash,
+                "qdrant_point_id": stmt.excluded.qdrant_point_id,
+                "owner": stmt.excluded.owner,
+                "classification": stmt.excluded.classification,
+                "upstream": stmt.excluded.upstream,
+                "freshness_column": stmt.excluded.freshness_column,
+                "data_as_of": stmt.excluded.data_as_of,
+                "freshness_checked_at": stmt.excluded.freshness_checked_at,
+                "freshness_sla_seconds": stmt.excluded.freshness_sla_seconds,
+                "last_crawled_at": func.now(),
+            },
+        )
     )
 
     qdrant.upsert(QDRANT_COLLECTION, points=[PointStruct(
@@ -318,7 +347,7 @@ def process_table(
 
 
 def _cleanup_missing_tables(
-    cur: Any, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, schema_name: str,
+    session: Session, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, schema_name: str,
     discovered_table_names: set[str], cutoff: datetime,
 ) -> int:
     """Only called for a full-warehouse crawl — removes SchemaCatalog rows
@@ -332,16 +361,20 @@ def _cleanup_missing_tables(
     consecutive full crawls, not just this one — so a one-off warehouse-side
     blip (timeout, a table transiently reporting zero columns) doesn't get
     mistaken for a real DROP TABLE and delete a still-valid catalog entry."""
-    cur.execute(
-        """SELECT id, table_name, qdrant_point_id FROM "SchemaCatalog"
-           WHERE tenant_id=%s AND warehouse_id=%s AND schema_name=%s AND last_crawled_at < %s""",
-        (tenant_id, warehouse_id, schema_name, cutoff),
-    )
-    stale = [(r[0], r[1], r[2]) for r in cur.fetchall() if r[1] not in discovered_table_names]
+    rows = session.execute(
+        select(SchemaCatalogORM.id, SchemaCatalogORM.table_name, SchemaCatalogORM.qdrant_point_id)
+        .where(
+            SchemaCatalogORM.tenant_id == tenant_id,
+            SchemaCatalogORM.warehouse_id == warehouse_id,
+            SchemaCatalogORM.schema_name == schema_name,
+            SchemaCatalogORM.last_crawled_at < cutoff,
+        )
+    ).all()
+    stale = [(r.id, r.table_name, r.qdrant_point_id) for r in rows if r.table_name not in discovered_table_names]
     if not stale:
         return 0
 
-    cur.execute("""DELETE FROM "SchemaCatalog" WHERE id = ANY(%s)""", ([s[0] for s in stale],))
+    session.execute(delete(SchemaCatalogORM).where(SchemaCatalogORM.id.in_([s[0] for s in stale])))
     point_ids = [s[2] for s in stale if s[2]]
     if point_ids:
         qdrant.delete(QDRANT_COLLECTION, points_selector=point_ids)
@@ -354,7 +387,7 @@ def _cleanup_missing_tables(
 
 
 def crawl_warehouse(
-    conn: Any, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, conn_params: dict[str, Any],
+    SessionLocal: sessionmaker[Session], qdrant: QdrantClient, tenant_id: str, warehouse_id: str, conn_params: dict[str, Any],
     table_names: list[str] | None, full_crawl: bool = False, engine: str = metadata_dispatch.SNOWFLAKE,
     config: dict[str, Any] | None = None,
 ) -> None:
@@ -401,36 +434,43 @@ def crawl_warehouse(
                 )
                 checked_at = datetime.now(UTC)
 
-            with conn.cursor() as cur:
-                if process_table(cur, qdrant, tenant_id, warehouse_id, meta, policy, watermark, checked_at):
+            with worker_db.tenant_session(SessionLocal, tenant_id) as session:
+                if process_table(session, qdrant, tenant_id, warehouse_id, meta, policy, watermark, checked_at):
                     changed += 1
-            conn.commit()
+                session.commit()
         except Exception:
-            conn.rollback()
             log.exception("crawl_warehouse | failed table=%s warehouse=%s", table_name, warehouse_id)
     log.info("crawl_warehouse | warehouse=%s: %d/%d table(s) changed", warehouse_id, changed, len(metadata))
 
     if full_crawl:
         try:
-            with conn.cursor() as cur:
+            with worker_db.tenant_session(SessionLocal, tenant_id) as session:
                 _cleanup_missing_tables(
-                    cur, qdrant, tenant_id, warehouse_id, conn_params.get("schema", ""),
+                    session, qdrant, tenant_id, warehouse_id, conn_params.get("schema", ""),
                     set(metadata.keys()), cutoff,
                 )
-            conn.commit()
+                session.commit()
         except Exception:
-            conn.rollback()
             log.exception("crawl_warehouse | cleanup of missing tables failed warehouse=%s", warehouse_id)
 
 
-def _last_crawled_by_warehouse(cur: Any) -> dict[tuple[str, str], datetime]:
+def _last_crawled_by_warehouse(session: Session) -> dict[tuple[str, str], datetime]:
     """One aggregate query for every (tenant, warehouse)'s most recent
     last_crawled_at, instead of one query per warehouse — crawl_all() now
     runs every POLL_INTERVAL_SECONDS tick (see run()), so an N+1 pattern
     here would mean N extra Postgres round-trips every few seconds for
     every registered warehouse, most of which aren't due yet."""
-    cur.execute("""SELECT tenant_id, warehouse_id, MAX(last_crawled_at) FROM "SchemaCatalog" GROUP BY tenant_id, warehouse_id""")
-    return {(str(t), str(w)): last for t, w, last in cur.fetchall()}
+    query = select(
+        SchemaCatalogORM.tenant_id,
+        SchemaCatalogORM.warehouse_id,
+        func.max(SchemaCatalogORM.last_crawled_at),
+    ).group_by(SchemaCatalogORM.tenant_id, SchemaCatalogORM.warehouse_id)
+    # One query per tenant: row-level security shows one tenant's catalog at a time.
+    last: dict[tuple[str, str], datetime] = {}
+    for tenant_id in worker_db.tenant_ids(session):
+        worker_db.set_tenant(session, tenant_id)
+        last.update({(str(t), str(w)): at for t, w, at in session.execute(query).all()})
+    return last
 
 
 def _is_due(last_crawled_at: datetime | None) -> bool:
@@ -446,46 +486,71 @@ def _is_due(last_crawled_at: datetime | None) -> bool:
     return (datetime.now(UTC) - last_crawled_at).total_seconds() >= CRAWL_INTERVAL_SECONDS
 
 
-def crawl_all(conn: Any, qdrant: QdrantClient, pending_ddl: dict[tuple[Any, ...], dict[str, Any]] | None = None) -> None:
+# A warehouse that has never been crawled successfully has no SchemaCatalog rows, so
+# _is_due() says "due" on every POLL_INTERVAL_SECONDS tick: a wrong password or an
+# incomplete config was retried (and logged) every 5s forever. Failures back off
+# exponentially instead, capped at the normal crawl interval. Process-local on purpose:
+# a restart retrying at once is what an operator who just fixed the config wants.
+_FIRST_RETRY_SECONDS = 60
+_failure_backoff: dict[tuple[str, str], tuple[int, datetime]] = {}
+
+
+def _in_backoff(key: tuple[str, str], now: datetime) -> bool:
+    entry = _failure_backoff.get(key)
+    return entry is not None and now < entry[1]
+
+
+def _record_failure(key: tuple[str, str], now: datetime) -> None:
+    failures = _failure_backoff.get(key, (0, now))[0] + 1
+    delay = min(_FIRST_RETRY_SECONDS * 2 ** (failures - 1), CRAWL_INTERVAL_SECONDS)
+    _failure_backoff[key] = (failures, now + timedelta(seconds=delay))
+    log.info("crawl_all | warehouse=%s failed %d time(s), next attempt in %ds", key[1], failures, delay)
+
+
+def crawl_all(SessionLocal: sessionmaker[Session], qdrant: QdrantClient, pending_ddl: dict[tuple[Any, ...], dict[str, Any]] | None = None) -> None:
     """pending_ddl, if given, lets already-due DDL events get processed
     between each warehouse of this cron batch instead of only after the
     whole batch finishes — a warehouse list with many tenants/tables can
     otherwise take long enough to starve the DDL-trigger path of its main
     selling point (fast turnaround) for the whole duration of one cron pass."""
-    with conn.cursor() as cur:
-        warehouses = get_active_warehouses(cur)
-        last_crawled = _last_crawled_by_warehouse(cur)
-    conn.rollback()
-    log.info(
+    with SessionLocal() as session:
+        warehouses = get_active_warehouses(session)
+        last_crawled = _last_crawled_by_warehouse(session)
+    # debug, not info: this runs every POLL_INTERVAL_SECONDS tick.
+    log.debug(
         "crawl_all | %d active warehouse(s) registered across %s",
         len(warehouses), sorted({w["engine"] for w in warehouses}) or "-",
     )
 
     for w in warehouses:
         tenant_id, warehouse_id = str(w["tenant_id"]), str(w["warehouse_id"])
+        key = (tenant_id, warehouse_id)
 
-        if not _is_due(last_crawled.get((tenant_id, warehouse_id))):
+        if not _is_due(last_crawled.get(key)) or _in_backoff(key, datetime.now(UTC)):
             continue
 
         engine = w["engine"]
         conn_params = metadata_dispatch.connection_params(engine, w["config"], warehouse_id)
         if not conn_params:
+            _record_failure(key, datetime.now(UTC))
             continue
         table_names = selected_table_names(w["config"])
         try:
             crawl_warehouse(
-                conn, qdrant, tenant_id, warehouse_id, conn_params, table_names,
+                SessionLocal, qdrant, tenant_id, warehouse_id, conn_params, table_names,
                 full_crawl=True, engine=engine, config=w["config"],
             )
         except Exception:
-            log.exception("crawl_all | warehouse=%s failed, rolling back", w["warehouse_id"])
-            conn.rollback()
+            log.exception("crawl_all | warehouse=%s failed", w["warehouse_id"])
+            _record_failure(key, datetime.now(UTC))
+        else:
+            _failure_backoff.pop(key, None)
 
         if pending_ddl is not None:
-            process_due_ddl_events(conn, qdrant, pending_ddl)
+            process_due_ddl_events(SessionLocal, qdrant, pending_ddl)
 
 
-def handle_ddl_event(conn: Any, qdrant: QdrantClient, event: dict[str, Any]) -> None:
+def handle_ddl_event(SessionLocal: sessionmaker[Session], qdrant: QdrantClient, event: dict[str, Any]) -> None:
     """doc §2.8 — targeted single-table crawl, called after the debounce
     window in run()'s loop elapses.
 
@@ -497,20 +562,30 @@ def handle_ddl_event(conn: Any, qdrant: QdrantClient, event: dict[str, Any]) -> 
     warehouse_id = event["warehouse_id"]
     table_name = event["table_name"]
 
-    with conn.cursor() as cur:
-        cur.execute(
-            """SELECT w.tenant_id, c.config, w.service FROM "KBWarehouse" w
-               JOIN "KBWarehouseConfig" c ON c.warehouse_id = w.warehouse_id
-               WHERE w.warehouse_id = %s AND w.is_deleted = false
-                 AND c.is_active = true AND c.is_deleted = false""",
-            (warehouse_id,),
+    query = (
+        select(KBWarehouseORM.tenant_id, KBWarehouseConfigORM.config, KBWarehouseORM.service)
+        .join(KBWarehouseConfigORM, KBWarehouseConfigORM.warehouse_id == KBWarehouseORM.warehouse_id)
+        .where(
+            KBWarehouseORM.warehouse_id == warehouse_id,
+            KBWarehouseORM.is_deleted.is_(False),
+            KBWarehouseConfigORM.is_active.is_(True),
+            KBWarehouseConfigORM.is_deleted.is_(False),
         )
-        row = cur.fetchone()
+    )
+    row = None
+    with SessionLocal() as session:
+        # Row-level security: the owner is found by asking each tenant in turn,
+        # still never by believing the event's tenant_id.
+        for candidate in worker_db.tenant_ids(session):
+            worker_db.set_tenant(session, candidate)
+            row = session.execute(query).one_or_none()
+            if row is not None:
+                break
     if not row:
         log.warning("handle_ddl_event | no active warehouse/config for warehouse=%s, skipping", warehouse_id)
         return
 
-    tenant_id = str(row[0])
+    tenant_id = str(row.tenant_id)
     if event.get("tenant_id") and event["tenant_id"] != tenant_id:
         log.warning(
             "handle_ddl_event | event tenant_id=%s does not match warehouse=%s owner tenant_id=%s — "
@@ -518,19 +593,19 @@ def handle_ddl_event(conn: Any, qdrant: QdrantClient, event: dict[str, Any]) -> 
         )
         return
 
-    engine = metadata_dispatch.normalize_engine(row[2])
+    engine = metadata_dispatch.normalize_engine(row.service)
     if engine is None:
         log.warning(
             "handle_ddl_event | warehouse=%s has unsupported service=%r, skipping",
-            warehouse_id, row[2],
+            warehouse_id, row.service,
         )
         return
 
-    conn_params = metadata_dispatch.connection_params(engine, row[1], warehouse_id)
+    conn_params = metadata_dispatch.connection_params(engine, row.config, warehouse_id)
     if not conn_params:
         return
 
-    crawl_warehouse(conn, qdrant, tenant_id, warehouse_id, conn_params, [table_name], engine=engine, config=row[1])
+    crawl_warehouse(SessionLocal, qdrant, tenant_id, warehouse_id, conn_params, [table_name], engine=engine, config=row.config)
 
 
 def _valid_ddl_event(event: Any) -> bool:
@@ -568,7 +643,7 @@ def poll_ddl_events(consumer: KafkaConsumer, pending_ddl: dict[tuple[Any, ...], 
             log.info("ddl event received, debouncing %ds: %s", DDL_DEBOUNCE_SECONDS, event)
 
 
-def process_due_ddl_events(conn: Any, qdrant: QdrantClient, pending_ddl: dict[tuple[Any, ...], dict[str, Any]]) -> list[dict[str, Any]]:
+def process_due_ddl_events(SessionLocal: sessionmaker[Session], qdrant: QdrantClient, pending_ddl: dict[tuple[Any, ...], dict[str, Any]]) -> list[dict[str, Any]]:
     """Pops and crawls every entry whose debounce window has elapsed.
     Returns the events actually processed (for logging/tests)."""
     now = time.time()
@@ -576,11 +651,10 @@ def process_due_ddl_events(conn: Any, qdrant: QdrantClient, pending_ddl: dict[tu
     for key in [k for k, v in pending_ddl.items() if v["due"] <= now]:
         event = pending_ddl.pop(key)["event"]
         try:
-            handle_ddl_event(conn, qdrant, event)
+            handle_ddl_event(SessionLocal, qdrant, event)
             processed.append(event)
         except Exception:
             log.exception("ddl event handling failed: %s", event)
-            conn.rollback()
     return processed
 
 
@@ -604,8 +678,7 @@ def run() -> None:
 
     setup_observability("platform-workers-schema-crawler")
 
-    pg_settings = PostgresSettings()
-    conn = pg.connect(pg_settings)
+    SessionLocal = worker_db.make_session_factory(PostgresSettings())
     qdrant = QdrantClient(url=QDRANT_URL)
     ensure_qdrant_collection(qdrant)
     consumer = try_kafka_consumer()
@@ -628,7 +701,7 @@ def run() -> None:
                     consumer = None
                     last_kafka_attempt = time.time()
 
-            process_due_ddl_events(conn, qdrant, pending_ddl)
+            process_due_ddl_events(SessionLocal, qdrant, pending_ddl)
 
             # No global CRAWL_INTERVAL_SECONDS gate here — each warehouse
             # tracks its own next-due time off SchemaCatalog.last_crawled_at
@@ -638,7 +711,7 @@ def run() -> None:
             # 24h boundary at once. pending_ddl is threaded through so
             # already-due DDL events get serviced between warehouses instead
             # of only after the whole batch.
-            crawl_all(conn, qdrant, pending_ddl)
+            crawl_all(SessionLocal, qdrant, pending_ddl)
 
             # Only advance the committed Kafka offset once every event
             # polled so far has actually been crawled (pending_ddl fully
@@ -652,9 +725,6 @@ def run() -> None:
                     log.exception("Kafka offset commit failed")
 
             time.sleep(POLL_INTERVAL_SECONDS)
-        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
-            log.error("main loop | postgres connection lost, reconnecting: %s", e)
-            conn = pg.reconnect(conn, pg_settings)
         except Exception as e:  # noqa: BLE001 — the loop must outlive any single failure
             log.error("main loop error: %s", e)
             time.sleep(5)

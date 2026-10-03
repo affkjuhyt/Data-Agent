@@ -89,7 +89,7 @@ def _shape_chunks(rows: list[dict[str, Any]]) -> list[ChunkResponse]:
             version_number=to_string(r["version_number"]),
             create_at=to_string(r.get("created_at", "")),
             status="active" if r.get("is_active") else "inactive",
-            embedding_models=to_string(r.get("embedding_model_id", "")),
+            embedding_models=to_string(payload.get("embedding_model_id", "")),
             entities=payload.get("entities", []),
             intent="",
             text=r.get("content") or "",

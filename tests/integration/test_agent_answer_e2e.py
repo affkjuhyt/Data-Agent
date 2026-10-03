@@ -31,6 +31,8 @@ from typing import Any
 import httpx
 import pytest
 
+from tests.conftest import live_token
+
 pytestmark = pytest.mark.e2e
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -43,16 +45,7 @@ TURN_TIMEOUT = float(os.environ.get("E2E_TURN_TIMEOUT", "240"))
 # ── helpers ────────────────────────────────────────────────────────────────
 
 def _token(keycloak: str) -> str:
-    r = httpx.post(
-        f"{keycloak}/realms/aeroflow/protocol/openid-connect/token",
-        data={
-            "grant_type": "password", "client_id": "aeroflow-frontend",
-            "username": os.environ.get("E2E_USER", "helios-engineer"),
-            "password": os.environ.get("E2E_PASS", "H3lios@Eng001!"),
-        }, timeout=20,
-    )
-    r.raise_for_status()
-    return r.json()["access_token"]
+    return live_token(keycloak, "engineer")
 
 
 class Turn:

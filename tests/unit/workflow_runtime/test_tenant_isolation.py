@@ -88,8 +88,8 @@ _AMBIENT_TENANT_SERVICES = {"kb_backend"}
 _UNSCOPED_BUDGET = {
     # kb_ingestion_worker's 49 split across the four processes and libs/ingestion.
     # 32: the Silver tier update/rollback, the auto-Gold hand-off read and the
-    # trash-flush graph lookup now pass the tenant they already had.
-    "ingestion": 32,
+    # trash-flush graph lookup now pass the tenant they already had. 31: the Gold
+    "ingestion": 24,
     "kb_worker_conflict_resolution": 16,
     "kb_worker_promote_gold": 2,
     "kb_worker_structured_data": 2,
@@ -97,14 +97,12 @@ _UNSCOPED_BUDGET = {
     # libs/shared is at 0: the document advisory lock moved to
     # get_platform_client(), the deliberate unscoped form.
     "database_connector": 15,
-    # 5 + jobs/memory_cleanup.py's 3: a retention sweeper that has to see every
-    # tenant's expired memories, run as a role that bypasses RLS (see
-    # deploy/k8s/production/job/memory-cleanup.yaml). Scoping it would make it
-    # clean one tenant, or none.
-    # + mongo_client's save_canvas/load_canvas (ex flow_builder): Mongo has no
+    # 5 + mongo_client's save_canvas/load_canvas (ex flow_builder): Mongo has no
     # tenant scoping to pass, the canvas routes gate them on
-    # workflow_version_belongs_to instead.
-    "workflow_runtime": 10,
+    # workflow_version_belongs_to instead. jobs/memory_cleanup.py's 3 are gone:
+    # it runs as app_user and cleans one tenant at a time. 6: the ROI scheduler
+    # walks "Tenants" instead of scanning PlatformSettings unscoped.
+    "workflow_runtime": 6,
     "sandbox_executor": 1,
     "platform_workers": 1,
 }

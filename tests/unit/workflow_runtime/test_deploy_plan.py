@@ -90,15 +90,23 @@ class TestDockerfileInputs:
 class TestRealImages:
     """The gaps the old per-directory detection had, pinned on the real files."""
 
-    def test_services_that_copy_all_of_backend_services_see_every_service(self):
-        for image_dir in (
-            "backend/services/auth_api",
-            "backend/services/kb_backend",
-            "backend/services/workflow_runtime",
-        ):
-            assert plan.paths_touching(
-                ["backend/services/workflow_runtime/main.py"], _inputs(image_dir)
-            )
+    def test_a_service_image_sees_its_own_tree_and_not_the_others(self):
+        # They used to copy all of backend/services, so an edit to one service rebuilt
+        # and restarted all three (and the migrate image).
+        services = ("auth_api", "kb_backend", "workflow_runtime")
+        for service in services:
+            inputs = _inputs(f"backend/services/{service}")
+            assert plan.paths_touching([f"backend/services/{service}/main.py"], inputs), service
+            for other in set(services) - {service}:
+                assert not plan.paths_touching([f"backend/services/{other}/main.py"], inputs), service
+
+    def test_the_migrate_image_sees_migrations_and_the_orm_only(self):
+        inputs = _inputs("backend/alembic")
+        assert plan.paths_touching(["backend/alembic/versions/x.py"], inputs)
+        assert plan.paths_touching(["backend/libs/basemodel/services_databaseconnector/postgres_model.py"], inputs)
+        assert not plan.paths_touching(
+            ["backend/services/workflow_runtime/main.py", "backend/libs/shared/outbox.py"], inputs
+        )
 
     def test_images_that_never_copy_libs_ignore_a_libs_change(self):
         for image_dir, dockerfile in (

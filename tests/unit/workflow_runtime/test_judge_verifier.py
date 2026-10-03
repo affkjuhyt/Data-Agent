@@ -176,3 +176,24 @@ async def test_a_document_without_a_page_still_lets_the_answer_pass(monkeypatch)
                      if c["name"] == "citations_resolved")
     assert citations["passed"] is True
     assert "no page recorded" in citations["detail"]
+
+
+async def test_a_cited_warehouse_result_resolves(monkeypatch):
+    """The SQL result has no doc_id; the citation opens its query run in the
+    Evidence panel. Failing it sent every data answer back to the responder."""
+    import nodes.model_harness.judge as judge_mod
+
+    monkeypatch.setattr(judge_mod.llm_call, "acompletion", AsyncMock(
+        return_value=MagicMock(choices=[MagicMock(
+            message=MagicMock(content='{"verdict": "PASS"}'))])))
+    sql_result = {"id": "sql_249e2f20", "source": "tool/sql", "rrf_sources": ["db"],
+                  "content": '[{"region": "Miền Bắc", "net_amount": 34.7}]'}
+
+    result = await judge_mod.judge_node(
+        _state("Doanh thu thuần Miền Bắc là 34,7 [1].", [sql_result]))
+
+    assert result["judge_verdict"] == "PASS"
+    citations = next(c for c in result["verifier"]["checks"]
+                     if c["name"] == "citations_resolved")
+    assert citations == {"name": "citations_resolved", "passed": True, "detail": "",
+                         "offending": []}

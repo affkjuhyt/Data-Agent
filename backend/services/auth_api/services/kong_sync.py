@@ -1,40 +1,46 @@
 from typing import Any
 
 import httpx
+from sqlalchemy import select, text
 
+from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import (
+    AuthPlatformSettingORM,
+)
 try:
     from services.auth_api.infrastructure.config import KONG_ADMIN, PRIVATE_FALLBACK_CIDRS, log
-    from services.auth_api.infrastructure.db import get_db
+    from services.auth_api.infrastructure.db import get_session
 except ModuleNotFoundError:
     from auth_api.infrastructure.config import KONG_ADMIN, PRIVATE_FALLBACK_CIDRS, log
-    from auth_api.infrastructure.db import get_db
+    from auth_api.infrastructure.db import get_session
 
 IP_PROTECTED_SERVICES = ["aeroflow-backend"]
 IP_PROTECTED_ROUTES = ["auth_api-keys-route", "auth_api-secrets-route"]
 
 
 def get_ip_allowlist_mode() -> str:
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT value FROM platform_settings WHERE key = 'ip_allowlist_mode'")
-            row = cur.fetchone()
-            return row[0] if row else "allow_all"
-    finally:
-        conn.close()
-
-
-def get_active_cidrs(tenant_id: str) -> list[str]:
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT cidr FROM ip_allowlists WHERE tenant_id = %s AND is_active = true",
-                (tenant_id,),
+    with get_session() as session:
+        return (
+            session.scalar(
+                select(AuthPlatformSettingORM.value).where(
+                    AuthPlatformSettingORM.key == "ip_allowlist_mode"
+                )
             )
-            return [row[0] for row in cur.fetchall()]
-    finally:
-        conn.close()
+            or "allow_all"
+        )
+
+
+def get_active_cidrs() -> list[str]:
+    """Every tenant's active CIDRs, de-duplicated.
+
+    Kong's ip-restriction is one plugin per service/route, shared by all
+    tenants. Syncing one tenant's list into it replaced every other tenant's,
+    and the startup sync (no tenant) replaced all of them with the private
+    fallback. The gateway admits the union; which tenant a caller acts for is
+    still decided by its token.
+    """
+    with get_session() as session:
+        # Across tenants by design: auth_active_cidrs is the SECURITY DEFINER read.
+        return list(session.scalars(text("SELECT * FROM auth_active_cidrs()")))
 
 
 def upsert_ip_restriction_plugin(scope_url: str, payload: dict[str, Any]) -> None:
@@ -47,11 +53,13 @@ def upsert_ip_restriction_plugin(scope_url: str, payload: dict[str, Any]) -> Non
 
 
 def sync_kong_ip_restrictions(tenant_id: str) -> None:
+    """Push the allowlist to Kong. `tenant_id` is the tenant whose change
+    triggered the sync ("" at startup), for the log only — see get_active_cidrs."""
     mode = get_ip_allowlist_mode()
     if mode == "allow_all":
         allow = ["0.0.0.0/0", "::/0"]
     else:
-        user_cidrs = get_active_cidrs(tenant_id)
+        user_cidrs = get_active_cidrs()
         allow = user_cidrs if user_cidrs else PRIVATE_FALLBACK_CIDRS
 
     payload = {"name": "ip-restriction", "config": {"allow": allow}}
@@ -64,4 +72,4 @@ def sync_kong_ip_restrictions(tenant_id: str) -> None:
         log.warning("kong_sync_failed", error=str(exc))
         return
 
-    log.info("kong_sync", mode=mode, cidr_count=len(allow))
+    log.info("kong_sync", mode=mode, cidr_count=len(allow), triggered_by_tenant=tenant_id)

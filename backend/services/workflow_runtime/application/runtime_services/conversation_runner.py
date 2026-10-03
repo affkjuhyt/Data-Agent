@@ -33,7 +33,7 @@ from services.workflow_runtime.infrastructure.db import (
 )
 from services.workflow_runtime.infrastructure.memory_middleware import (
     _DEV_AGENT_ID,
-    apply_memory_policy,
+    request_memory_extraction,
     retrieve_episodic_past,
     retrieve_memories,
     retrieve_pending_reminders,
@@ -509,11 +509,12 @@ async def run_conversation_stream(
             if conv_id:
                 # Sequential on purpose: history is ordered by created_at, so the
                 # user message has to land before the assistant one.
-                await save_message(conv_id, "user", req.query)
+                await save_message(conv_id, "user", req.query, tenant_id=tenant_id)
                 assistant_msg_id = await save_message(
                     conv_id,
                     "assistant",
                     assistant_text,
+                    tenant_id=tenant_id,
                     latency_ms=latency,
                     metadata={
                         "agent_version_id": cfg.get("agent_version_id"),
@@ -563,6 +564,7 @@ async def run_conversation_stream(
                                 output=nt["output"],
                                 latency_ms=nt["latency_ms"],
                                 status=nt.get("status", "success"),
+                                tenant_id=tenant_id,
                             )
                             for idx, nt in enumerate(node_traces)
                         ))
@@ -574,13 +576,13 @@ async def run_conversation_stream(
                             input={"query": req.query},
                             output={"response": assistant_text},
                             latency_ms=latency,
+                            tenant_id=tenant_id,
                         )
 
             # orchestrated=True: orchestrator sẽ ghi memory sau synthesize, agent không ghi
             if not req.orchestrated and cfg.get("memory_enabled") and conv_id:
-                final_state = {**state, "response": assistant_text}
-                await apply_memory_policy(
-                    final_state, agent_id, tenant_id, user_ref,
+                await request_memory_extraction(
+                    agent_id, tenant_id, user_ref,
                     conversation_id=conv_id, message_id=assistant_msg_id,
                 )
         except Exception:
@@ -642,6 +644,7 @@ async def run_conversation_stream(
 
         kb_speculation: dict[str, Any] = {"enabled": kb_in_graph}
         lg_config = {"callbacks": callbacks, "configurable": {"thread_id": conv_id, "kb_speculation": kb_speculation}}
+        abandoned = False
 
         try:
             async for event in graph.astream_events(state, version="v2", config=lg_config):
@@ -737,6 +740,8 @@ async def run_conversation_stream(
                             interrupt_payload = intr.value
                             break
                     _pending_reviews[cast(str, conv_id)] = {
+                        # Only the same tenant may see or resume it (reviews router).
+                        "tenant_id":  tenant_id,
                         "agent_id":   req.agent_id,
                         "query":      req.query,
                         "payload":    interrupt_payload,
@@ -819,6 +824,12 @@ async def run_conversation_stream(
         except Exception:
             logger.exception("event_stream error")
             yield "data: [ERROR] Đã xảy ra lỗi, vui lòng thử lại.\n\n"
+        except (GeneratorExit, asyncio.CancelledError):
+            # The consumer closed the stream before the turn finished: the
+            # orchestrator dropping a speculative run that input_refine
+            # superseded, or the user pressing Stop.
+            abandoned = True
+            raise
         finally:
             if guardrail_task and not guardrail_task.done():
                 guardrail_task.cancel()
@@ -830,19 +841,25 @@ async def run_conversation_stream(
             # orchestrator) only reaches this finally when it closes the stream,
             # so awaiting the writes here held its next step — suggestions, the
             # next plan task — on DB round trips and a network flush.
-            _fire_and_forget(_persist_turn(
-                assistant_text=assistant_text,
-                latency=latency,
-                responder_options=responder_options,
-                pending_citations=pending_citations,
-                detected_language=detected_language,
-                detected_intent=detected_intent,
-                detected_analysis=detected_analysis,
-                detected_slots=detected_slots,
-                detected_clarify=detected_clarify,
-                detected_clarified=detected_clarified,
-                node_traces=node_traces,
-            ))
+            if abandoned and not assistant_text:
+                # Saving it left a question with an empty reply in the history,
+                # beside the turn that superseded it (dev, 02/10/2026). No
+                # return here: it would swallow the cancellation being raised.
+                logger.info("conversation_runner | stream closed before an answer, turn not saved conv=%s", conv_id)
+            else:
+                _fire_and_forget(_persist_turn(
+                    assistant_text=assistant_text,
+                    latency=latency,
+                    responder_options=responder_options,
+                    pending_citations=pending_citations,
+                    detected_language=detected_language,
+                    detected_intent=detected_intent,
+                    detected_analysis=detected_analysis,
+                    detected_slots=detected_slots,
+                    detected_clarify=detected_clarify,
+                    detected_clarified=detected_clarified,
+                    node_traces=node_traces,
+                ))
 
     response = StreamingResponse(event_stream(), media_type="text/event-stream")
     response.headers["X-Conversation-Id"] = conv_id or ""

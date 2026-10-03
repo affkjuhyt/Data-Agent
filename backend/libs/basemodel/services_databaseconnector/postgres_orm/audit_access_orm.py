@@ -17,7 +17,7 @@ import datetime
 import uuid
 from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -33,8 +33,8 @@ class DataAccessLogORM(Base):
         # The three questions an investigation actually asks, in order:
         # "everything this tenant did", "everything this user did",
         # "everything that touched this table".
-        Index("idx_data_access_tenant_time", "tenant_id", "occurred_at"),
-        Index("idx_data_access_user_time", "tenant_id", "user_id", "occurred_at"),
+        Index("idx_data_access_tenant_time", "tenant_id", text("occurred_at DESC")),
+        Index("idx_data_access_user_time", "tenant_id", "user_id", text("occurred_at DESC")),
         Index("idx_data_access_objects", "target_objects", postgresql_using="gin"),
         Index("idx_data_access_statement", "statement_sha256"),
     )
@@ -43,7 +43,7 @@ class DataAccessLogORM(Base):
     # Producer-generated, carried through Kafka so an at-least-once redelivery
     # is deduplicated rather than double-counted in a report.
     event_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), nullable=False, unique=True)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
 
     # ── who ────────────────────────────────────────────────────────────────
     user_id: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -63,7 +63,7 @@ class DataAccessLogORM(Base):
     # SHA-256 of the original, so identical runs correlate and a specific
     # statement can be proven to have run without keeping its arguments.
     statement_sha256: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
-    metric_ref: Mapped[str] = mapped_column(String(160), nullable=False, server_default="")
+    metric_ref: Mapped[str] = mapped_column(String(160), nullable=False, server_default="", comment="Semantic metric the query used, as metric_key@version (e.g. revenue_net@3); empty when none.")
 
     # ── outcome ────────────────────────────────────────────────────────────
     row_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -78,5 +78,5 @@ class DataAccessLogORM(Base):
     # When the access happened (producer clock) vs when the row landed
     # (consumer clock). Kept separate so a broker backlog is visible rather
     # than silently rewriting history.
-    occurred_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    occurred_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

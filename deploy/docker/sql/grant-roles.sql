@@ -102,7 +102,7 @@ $$;
 -- Table-scoped role for the kb-backend service. Unlike app_user it is NOT
 -- granted ALL TABLES and gets no ALTER DEFAULT PRIVILEGES in public: a new
 -- table reaches this service only by being added to a list below. That is the
--- point — kb-backend cannot read secrets_vault, api_keys or Members at all.
+-- point — kb-backend cannot read secrets_vault or api_keys at all.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'kb_backend') THEN
@@ -245,7 +245,10 @@ GRANT SELECT ON
   -- Silver, Gold and kb-structured-data read the document's source config
   -- (storage_boundary.is_v2_structured_document) to keep V2 structured sources
   -- off the legacy paths; without it every promotion fails at "permission denied".
-  "KBSourceConfig"
+  "KBSourceConfig",
+  -- Not read directly: KBSourceConfig's RLS policy (tenant_isolation_child)
+  -- does EXISTS (SELECT ... FROM "KBSource"), as KBQdrantConnection above.
+  "KBSource"
 TO kb_ingestion_worker;
 
 -- Gold registers entity aliases (entity_registry.py _register_aliases inserts
@@ -256,3 +259,15 @@ GRANT INSERT ON "KBEntityLookup" TO kb_ingestion_worker;
 -- hand-off; their relay marks them sent (libs/shared/outbox.py).
 GRANT SELECT, INSERT, UPDATE ON "OutboxEvents" TO kb_ingestion_worker;
 GRANT USAGE, SELECT ON SEQUENCE "OutboxEvents_id_seq" TO kb_ingestion_worker;
+
+-- ── crawler_svc ──────────────────────────────────────────────────────────────
+-- The V2 crawler role (ADR-V2-46). Migration 5b7d9f1a3c6e creates it with its
+-- grants (INSERT/SELECT on ingest.artifact and ingest.fetch, 9f3c7a1e5d2b); this
+-- block only guarantees it exists before db-init sets its password.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'crawler_svc') THEN
+    CREATE ROLE crawler_svc WITH LOGIN NOSUPERUSER NOBYPASSRLS;
+  END IF;
+END
+$$;

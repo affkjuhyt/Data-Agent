@@ -3,7 +3,7 @@
 same Bronze tier a manual Document Hub / Web Portal upload lands in.
 
 Structurally the same kind of always-on loop as `schema_crawler`: sync
-psycopg2, no asyncio in the loop itself. Three trigger paths per tick:
+SQLAlchemy ORM, no asyncio in the loop itself. Three trigger paths per tick:
 - a per-source cron schedule (no single global interval —
   `libs.shared.cron.cron_due` decides per source, off `KBSourceRun.started_at`);
 - the UI's "Run Now": kb_backend inserts a `queued` KBSourceRun row and this
@@ -22,28 +22,36 @@ exactly like schema_crawler is a second reader of `KBWarehouse`.
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
+import os
 import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict
 
-import psycopg2
 from kafka import KafkaProducer
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import Session, sessionmaker
 
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+    KBSourceConfigORM,
+    KBSourceCrawlQueueORM,
+    KBSourceORM,
+    KBSourceRunORM,
+)
 from libs.ingestion.connectors.registry import fetch as connector_fetch
 from libs.shared import outbox
 from libs.shared.cron import cron_due
 from libs.shared.storage_ownership import is_v2_structured_source
+from services.platform_workers.common import db as worker_db
 from services.platform_workers.common import kafka as kafka_factory
-from services.platform_workers.common import pg
 from services.platform_workers.common.settings import KafkaSettings, PostgresSettings
-from services.platform_workers.workers.web_crawler import bronze, secrets
+from services.platform_workers.workers.web_crawler import bronze, raw, secrets
 
 log = logging.getLogger("platform-workers.web-crawler")
 
@@ -69,6 +77,7 @@ class Settings(BaseSettings):
 
 
 _settings = Settings()
+SessionFactory = sessionmaker[Session]
 
 POLL_INTERVAL_SECONDS = _settings.poll_interval_seconds
 MAX_PARALLEL_RUNS = max(1, _settings.max_parallel_runs)
@@ -102,19 +111,24 @@ def _get_promote_producer() -> KafkaProducer | None:
     return _promote_producer
 
 
+# Where every fetch's bytes are kept immutably (raw.py). Set by run(); a caller
+# driving run_source directly (tests) sets it or runs without the raw layer.
+RAW: raw.RawStore | None = None
+
+
 # Owner tag of this worker's OutboxEvents rows (its relay drains only these).
 _OUTBOX_PRODUCER = "web-crawler"
 
 
-def queue_auto_promote_silver(cur: Any, data_id: str, tenant_id: str) -> None:
+def queue_auto_promote_silver(session: Session, data_id: str, tenant_id: str) -> None:
     """Record "queue Silver for this document" in the SAME transaction that registers its
     Bronze copy and marks the run successful (the caller commits). The publish used to
     happen after the commit and was best-effort: a Kafka outage or a crash in between
     left the document at Bronze, and the "unchanged" dedupe then never re-sent it
     (hit for real on 2026-09-25). Now the event commits with the state it describes and
     `relay_outbox` delivers it, retrying until the broker accepts it."""
-    outbox.enqueue_sync(
-        cur,
+    outbox.enqueue_sync_orm(
+        session,
         producer=_OUTBOX_PRODUCER,
         topic=_PROMOTE_SILVER_TOPIC,
         value={
@@ -151,9 +165,9 @@ def _publish_outbox_event(topic: str, value: dict[str, Any], key: str | None) ->
         raise
 
 
-def relay_outbox(conn: Any) -> int:
+def relay_outbox(SessionLocal: SessionFactory) -> int:
     """Publish this worker's pending outbox events. Called every tick of the main loop."""
-    return outbox.drain_sync(conn, _publish_outbox_event, producer=_OUTBOX_PRODUCER)
+    return outbox.drain_sync_orm(SessionLocal, _publish_outbox_event, producer=_OUTBOX_PRODUCER)
 
 
 def _promotion_mode(source_id: str, config: dict[str, Any]) -> str:
@@ -172,19 +186,33 @@ def _promotion_mode(source_id: str, config: dict[str, Any]) -> str:
 
 # ─── Source registry (KBSource / KBSourceConfig) ───────────────────────────
 
-def get_active_sources(cur: Any) -> list[dict[str, Any]]:
+def get_active_sources(session: Session) -> list[dict[str, Any]]:
     """Every registered, active-config source this worker can crawl — reads
     the registry kb_backend's `/api/knowledge/sources` API owns, the same
     "second reader" relationship schema_crawler has with KBWarehouse."""
-    cur.execute(
-        """SELECT s.source_id, s.tenant_id, s.role_id, s.connector_type, s.title,
-                  s.created_by, c.config
-           FROM "KBSource" s
-           JOIN "KBSourceConfig" c ON c.source_id = s.source_id
-           WHERE s.is_deleted = false
-             AND c.is_active = true AND c.is_deleted = false"""
+    query = (
+        select(
+            KBSourceORM.source_id,
+            KBSourceORM.tenant_id,
+            KBSourceORM.role_id,
+            KBSourceORM.connector_type,
+            KBSourceORM.title,
+            KBSourceORM.created_by,
+            KBSourceConfigORM.config,
+        )
+        .join(KBSourceConfigORM, KBSourceConfigORM.source_id == KBSourceORM.source_id)
+        .where(
+            KBSourceORM.is_deleted.is_(False),
+            KBSourceConfigORM.is_active.is_(True),
+            KBSourceConfigORM.is_deleted.is_(False),
+        )
     )
-    return pg.dict_rows(cur)
+    # Row-level security shows one tenant's sources at a time.
+    sources: list[dict[str, Any]] = []
+    for tenant_id in worker_db.tenant_ids(session):
+        worker_db.set_tenant(session, tenant_id)
+        sources += [dict(row) for row in session.execute(query).mappings()]
+    return sources
 
 
 class _RunInfo(TypedDict):
@@ -194,17 +222,34 @@ class _RunInfo(TypedDict):
     next_retry_at: datetime | None
 
 
-def _latest_run_by_source(cur: Any) -> dict[str, _RunInfo]:
+def _latest_run_by_source(session: Session) -> dict[str, _RunInfo]:
     """Latest KBSourceRun per source (started_at + retry bookkeeping) — one
     query, not N+1, same idea as schema_crawler's _last_crawled_by_warehouse."""
-    cur.execute(
-        """SELECT DISTINCT ON (source_id) source_id, started_at, status, retry_count, next_retry_at
-           FROM "KBSourceRun" ORDER BY source_id, started_at DESC"""
+    # DISTINCT ON keeps it one row per source in Postgres; selecting whole ORM rows and
+    # de-duplicating here loaded every run (JSONB included) on each 5s tick.
+    query = (
+        select(
+            KBSourceRunORM.source_id,
+            KBSourceRunORM.started_at,
+            KBSourceRunORM.status,
+            KBSourceRunORM.retry_count,
+            KBSourceRunORM.next_retry_at,
+        )
+        .distinct(KBSourceRunORM.source_id)
+        .order_by(KBSourceRunORM.source_id, KBSourceRunORM.started_at.desc())
     )
-    return {
-        str(row[0]): {"started_at": row[1], "status": row[2], "retry_count": row[3], "next_retry_at": row[4]}
-        for row in cur.fetchall()
-    }
+    latest: dict[str, _RunInfo] = {}
+    # KBSourceRun's row-level policy goes through its source's tenant.
+    for tenant_id in worker_db.tenant_ids(session):
+        worker_db.set_tenant(session, tenant_id)
+        for row in session.execute(query):
+            latest[str(row.source_id)] = {
+                "started_at": row.started_at,
+                "status": row.status,
+                "retry_count": row.retry_count,
+                "next_retry_at": row.next_retry_at,
+            }
+    return latest
 
 
 def _is_due(cron_expr: str, last_run: datetime | None, now: datetime) -> bool:
@@ -233,7 +278,7 @@ def _is_retry_due(latest: _RunInfo | None, now: datetime) -> bool:
 
 
 def _enqueue_discovered_links(
-    cur: Any, source_id: str, tenant_id: str, links: list[str], depth: int, max_depth: int, discovered_from: str,
+    session: Session, source_id: str, tenant_id: str, links: list[str], depth: int, max_depth: int, discovered_from: str,
 ) -> None:
     """Feeds a `recursive` web_crawl source's next depth — `ON CONFLICT DO
     NOTHING` on (source_id, url) means a link already seen (at any status) is
@@ -242,16 +287,24 @@ def _enqueue_discovered_links(
     if depth > max_depth or not links:
         return
     for link in links:
-        cur.execute(
-            """INSERT INTO "KBSourceCrawlQueue" (queue_id, source_id, tenant_id, url, depth, discovered_from, status)
-                   VALUES (%s, %s, %s, %s, %s, %s, 'pending')
-                   ON CONFLICT (source_id, url) DO NOTHING""",
-            (str(uuid.uuid4()), source_id, tenant_id, link, depth, discovered_from),
+        stmt = (
+            pg_insert(KBSourceCrawlQueueORM)
+            .values(
+                queue_id=uuid.uuid4(),
+                source_id=uuid.UUID(str(source_id)),
+                tenant_id=uuid.UUID(str(tenant_id)),
+                url=link,
+                depth=depth,
+                discovered_from=discovered_from,
+                status="pending",
+            )
+            .on_conflict_do_nothing(index_elements=["source_id", "url"])
         )
+        session.execute(stmt)
 
 
 def run_source(
-    conn: Any, source: dict[str, Any], trigger: str, retry_count: int = 0, run_id: str | None = None,
+    SessionLocal: SessionFactory, source: dict[str, Any], trigger: str, retry_count: int = 0, run_id: str | None = None,
 ) -> None:
     """`retry_count` is how many prior retries led to THIS attempt (0 for a
     normal cron/manual dispatch) — each attempt is its own KBSourceRun row
@@ -268,13 +321,18 @@ def run_source(
 
     if run_id is None:
         run_id = str(uuid.uuid4())
-        with conn.cursor() as cur:
-            cur.execute(
-                """INSERT INTO "KBSourceRun" (run_id, source_id, status, trigger, retry_count, started_at)
-                   VALUES (%s, %s, %s, %s, %s, now())""",
-                (run_id, source_id, "running", trigger, retry_count),
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
+            session.add(
+                KBSourceRunORM(
+                    run_id=uuid.UUID(run_id),
+                    source_id=uuid.UUID(source_id),
+                    status="running",
+                    trigger=trigger,
+                    retry_count=retry_count,
+                    started_at=datetime.now(UTC),
+                )
             )
-        conn.commit()
+            session.commit()
 
     fetch_config = config
     if connector_type in ("rest_api", "sdmx") and config.get("openbao_path"):
@@ -286,59 +344,61 @@ def run_source(
     purpose = config.get("purpose", "production")
     try:
         artifact = connector_fetch(connector_type, fetch_config)
+        if RAW is not None:
+            RAW.keep(artifact, tenant_id=tenant_id, source_id=source_id, run_id=run_id)
         outcome: dict[str, Any] = {}
-        if connector_type in _RAW_BYTES_CONNECTOR_TYPES:
-            data_id = bronze.register_http_file_bronze(
-                conn, tenant_id=tenant_id, role_id=role_id, title=title, added_by=added_by, artifact=artifact,
-                outcome=outcome, source_id=source_id, promotion_mode=promotion_mode, purpose=purpose,
-            )
-        else:
-            data_id = bronze.register_web_bronze(
-                conn, tenant_id=tenant_id, role_id=role_id, title=title, url=config["url"], added_by=added_by,
-                source_id=source_id, promotion_mode=promotion_mode, purpose=purpose,
-                artifact=artifact, outcome=outcome,
-            )
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
+            if connector_type in _RAW_BYTES_CONNECTOR_TYPES:
+                data_id = bronze.register_http_file_bronze(
+                    session, tenant_id=tenant_id, role_id=role_id, title=title, added_by=added_by, artifact=artifact,
+                    outcome=outcome, source_id=source_id, promotion_mode=promotion_mode, purpose=purpose,
+                )
+            else:
+                data_id = bronze.register_web_bronze(
+                    session, tenant_id=tenant_id, role_id=role_id, title=title, url=config["url"], added_by=added_by,
+                    source_id=source_id, promotion_mode=promotion_mode, purpose=purpose,
+                    artifact=artifact, outcome=outcome,
+                )
         quality_metrics = {**(artifact.extra or {}), **outcome} or None
 
-        with conn.cursor() as cur:
-            cur.execute(
-                """UPDATE "KBSourceRun"
-                       SET status = %s, data_ids = %s, quality_metrics = %s, finished_at = now()
-                     WHERE run_id = %s""",
-                ("success", json.dumps([data_id]), json.dumps(quality_metrics) if quality_metrics else None, run_id),
-            )
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
+            run_row = session.get(KBSourceRunORM, uuid.UUID(run_id))
+            if run_row is not None:
+                run_row.status = "success"
+                run_row.data_ids = [data_id]
+                run_row.quality_metrics = quality_metrics
+                run_row.finished_at = datetime.now(UTC)
             if connector_type in ("web_crawl", "web_crawl_headless") and config.get("recursive"):
                 _enqueue_discovered_links(
-                    cur, source_id, tenant_id, (artifact.extra or {}).get("discovered_links", []),
+                    session, source_id, tenant_id, (artifact.extra or {}).get("discovered_links", []),
                     depth=1, max_depth=int(config.get("max_depth", 1)), discovered_from=config["url"],
                 )
             # A worker can't click "Process to Silver" — for an auto-promote source
             # with a real change (not the dedup short-circuit), queue it ourselves,
             # atomically with the state it follows.
             if promotion_mode == "auto" and not outcome.get("unchanged"):
-                queue_auto_promote_silver(cur, data_id, tenant_id)
-        conn.commit()
+                queue_auto_promote_silver(session, data_id, tenant_id)
+            session.commit()
         log.info("run_source | source=%s (%r) connector=%s -> data_id=%s", source_id, title, connector_type, data_id)
     except Exception as e:
-        conn.rollback()
         log.exception("run_source | source=%s (%r) connector=%s failed", source_id, title, connector_type)
-        with conn.cursor() as cur:
-            cur.execute(
-                """UPDATE "KBSourceRun"
-                       SET status = %s, error = %s, finished_at = now(),
-                           next_retry_at = now() + (%s || ' seconds')::interval
-                     WHERE run_id = %s""",
-                ("failed", str(e)[:2000], _retry_backoff_seconds(retry_count), run_id),
-            )
-        conn.commit()
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
+            run_row = session.get(KBSourceRunORM, uuid.UUID(run_id))
+            if run_row is not None:
+                now = datetime.now(UTC)
+                run_row.status = "failed"
+                run_row.error = str(e)[:2000]
+                run_row.finished_at = now
+                run_row.next_retry_at = now + timedelta(seconds=_retry_backoff_seconds(retry_count))
+            session.commit()
 
 
-def crawl_due_sources(conn: Any, pool: "RunPool | None" = None) -> None:
+def crawl_due_sources(SessionLocal: SessionFactory, pool: "RunPool | None" = None) -> None:
     """Without a `pool` each due source runs inline (the original behaviour,
     kept for callers/tests that drive one step at a time)."""
-    with conn.cursor() as cur:
-        sources = get_active_sources(cur)
-        latest = _latest_run_by_source(cur)
+    with SessionLocal() as session:
+        sources = get_active_sources(session)
+        latest = _latest_run_by_source(session)
 
     now = datetime.now(UTC)
     due: list[tuple[dict[str, Any], int]] = []
@@ -360,36 +420,56 @@ def crawl_due_sources(conn: Any, pool: "RunPool | None" = None) -> None:
         log.info("crawl_due_sources | %d/%d source(s) due", len(due), len(sources))
     for source, retry_count in due:
         if pool is None:
-            run_source(conn, source, trigger="scheduled", retry_count=retry_count)
+            run_source(SessionLocal, source, trigger="scheduled", retry_count=retry_count)
         elif not pool.submit(source, "scheduled", retry_count):
             log.info("crawl_due_sources | no free slot for source=%s, next tick", source["source_id"])
 
 
-def drain_crawl_queue(conn: Any, batch_size: int = 10) -> None:
+def drain_crawl_queue(SessionLocal: SessionFactory, batch_size: int = 10) -> None:
     """One tick's worth of a `recursive` web_crawl source's discovered-link
     backlog — same loop slot as crawl_due_sources, see
     run()."""
-    with conn.cursor() as cur:
-        cur.execute(
-            """SELECT q.queue_id, q.source_id, q.tenant_id, q.url, q.depth,
-                      s.role_id, s.title, s.created_by, c.config
-                 FROM "KBSourceCrawlQueue" q
-                 JOIN "KBSource" s ON s.source_id = q.source_id AND s.is_deleted = false
-                 JOIN "KBSourceConfig" c ON c.source_id = s.source_id
-                                        AND c.is_active = true AND c.is_deleted = false
-                WHERE q.status = 'pending'
-                ORDER BY q.inserted_at
-                LIMIT %s""",
-            (batch_size,),
-        )
-        rows = pg.dict_rows(cur)
+    rows: list[dict[str, Any]] = []
+    with SessionLocal() as session:
+        # Row-level security shows one tenant's queue at a time; the batch is
+        # filled tenant by tenant, oldest link first within each.
+        for tenant_id in worker_db.tenant_ids(session):
+            if len(rows) >= batch_size:
+                break
+            worker_db.set_tenant(session, tenant_id)
+            rows += [
+                dict(row)
+                for row in session.execute(
+                    select(
+                        KBSourceCrawlQueueORM.queue_id,
+                        KBSourceCrawlQueueORM.source_id,
+                        KBSourceCrawlQueueORM.tenant_id,
+                        KBSourceCrawlQueueORM.url,
+                        KBSourceCrawlQueueORM.depth,
+                        KBSourceORM.role_id,
+                        KBSourceORM.title,
+                        KBSourceORM.created_by,
+                        KBSourceConfigORM.config,
+                    )
+                    .join(KBSourceORM, KBSourceORM.source_id == KBSourceCrawlQueueORM.source_id)
+                    .join(KBSourceConfigORM, KBSourceConfigORM.source_id == KBSourceORM.source_id)
+                    .where(
+                        KBSourceCrawlQueueORM.status == "pending",
+                        KBSourceORM.is_deleted.is_(False),
+                        KBSourceConfigORM.is_active.is_(True),
+                        KBSourceConfigORM.is_deleted.is_(False),
+                    )
+                    .order_by(KBSourceCrawlQueueORM.inserted_at)
+                    .limit(batch_size - len(rows))
+                ).mappings()
+            ]
     if rows:
         log.info("drain_crawl_queue | %d pending link(s)", len(rows))
     for row in rows:
-        _run_queue_item(conn, row)
+        _run_queue_item(SessionLocal, row)
 
 
-def _run_queue_item(conn: Any, row: dict[str, Any]) -> None:
+def _run_queue_item(SessionLocal: SessionFactory, row: dict[str, Any]) -> None:
     queue_id = str(row["queue_id"])
     source_id = str(row["source_id"])
     tenant_id = str(row["tenant_id"])
@@ -401,61 +481,75 @@ def _run_queue_item(conn: Any, row: dict[str, Any]) -> None:
     title = f"{row['title']} — {url}"
 
     run_id = str(uuid.uuid4())
-    with conn.cursor() as cur:
-        cur.execute(
-            """INSERT INTO "KBSourceRun" (run_id, source_id, status, trigger, started_at)
-               VALUES (%s, %s, 'running', 'recursive', now())""",
-            (run_id, source_id),
+    with worker_db.tenant_session(SessionLocal, tenant_id) as session:
+        session.add(
+            KBSourceRunORM(
+                run_id=uuid.UUID(run_id),
+                source_id=uuid.UUID(source_id),
+                status="running",
+                trigger="recursive",
+                started_at=datetime.now(UTC),
+            )
         )
-        cur.execute("""UPDATE "KBSourceCrawlQueue" SET status = 'running' WHERE queue_id = %s""", (queue_id,))
-    conn.commit()
+        queue_row = session.get(KBSourceCrawlQueueORM, uuid.UUID(queue_id))
+        if queue_row is not None:
+            queue_row.status = "running"
+        session.commit()
 
     promotion_mode = _promotion_mode(source_id, config)
     purpose = config.get("purpose", "production")
     try:
         artifact = connector_fetch("web_crawl", config)
+        if RAW is not None:
+            RAW.keep(artifact, tenant_id=tenant_id, source_id=source_id, run_id=run_id)
         outcome: dict[str, Any] = {}
-        data_id = bronze.register_web_bronze(
-            conn, tenant_id=tenant_id, role_id=row["role_id"], title=title, url=url, added_by=added_by,
-            source_id=source_id, promotion_mode=promotion_mode, purpose=purpose,
-            artifact=artifact, outcome=outcome,
-        )
-        queue_metrics = {**(artifact.extra or {}), **outcome} or None
-        with conn.cursor() as cur:
-            cur.execute(
-                """UPDATE "KBSourceRun" SET status='success', data_ids=%s, quality_metrics=%s, finished_at=now()
-                     WHERE run_id=%s""",
-                (json.dumps([data_id]), json.dumps(queue_metrics) if queue_metrics else None, run_id),
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
+            data_id = bronze.register_web_bronze(
+                session, tenant_id=tenant_id, role_id=str(row["role_id"]), title=title, url=url, added_by=added_by,
+                source_id=source_id, promotion_mode=promotion_mode, purpose=purpose,
+                artifact=artifact, outcome=outcome,
             )
-            cur.execute("""UPDATE "KBSourceCrawlQueue" SET status = 'done' WHERE queue_id = %s""", (queue_id,))
+        queue_metrics = {**(artifact.extra or {}), **outcome} or None
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
+            run_row = session.get(KBSourceRunORM, uuid.UUID(run_id))
+            if run_row is not None:
+                run_row.status = "success"
+                run_row.data_ids = [data_id]
+                run_row.quality_metrics = queue_metrics
+                run_row.finished_at = datetime.now(UTC)
+            queue_row = session.get(KBSourceCrawlQueueORM, uuid.UUID(queue_id))
+            if queue_row is not None:
+                queue_row.status = "done"
             if depth < max_depth:
                 _enqueue_discovered_links(
-                    cur, source_id, tenant_id, (artifact.extra or {}).get("discovered_links", []),
+                    session, source_id, tenant_id, (artifact.extra or {}).get("discovered_links", []),
                     depth=depth + 1, max_depth=max_depth, discovered_from=url,
                 )
             if promotion_mode == "auto" and not outcome.get("unchanged"):
-                queue_auto_promote_silver(cur, data_id, tenant_id)
-        conn.commit()
+                queue_auto_promote_silver(session, data_id, tenant_id)
+            session.commit()
         log.info("_run_queue_item | source=%s url=%s depth=%d -> data_id=%s", source_id, url, depth, data_id)
     except Exception as e:
-        conn.rollback()
         log.exception("_run_queue_item | source=%s url=%s failed", source_id, url)
-        with conn.cursor() as cur:
-            cur.execute(
-                """UPDATE "KBSourceRun" SET status='failed', error=%s, finished_at=now() WHERE run_id=%s""",
-                (str(e)[:2000], run_id),
-            )
-            cur.execute("""UPDATE "KBSourceCrawlQueue" SET status = 'failed' WHERE queue_id = %s""", (queue_id,))
-        conn.commit()
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
+            run_row = session.get(KBSourceRunORM, uuid.UUID(run_id))
+            if run_row is not None:
+                run_row.status = "failed"
+                run_row.error = str(e)[:2000]
+                run_row.finished_at = datetime.now(UTC)
+            queue_row = session.get(KBSourceCrawlQueueORM, uuid.UUID(queue_id))
+            if queue_row is not None:
+                queue_row.status = "failed"
+            session.commit()
 
 
 class RunPool:
-    """Runs sources concurrently, one DB connection per run (a psycopg2
-    connection is not safe to share across threads). A source that is already
-    running is refused, so the same source never runs twice at once."""
+    """Runs sources concurrently, with each thread opening its own ORM session.
+    A source that is already running is refused, so the same source never runs
+    twice at once."""
 
-    def __init__(self, pg_settings: Any, max_workers: int) -> None:
-        self._pg_settings = pg_settings
+    def __init__(self, SessionLocal: SessionFactory, max_workers: int) -> None:
+        self._SessionLocal = SessionLocal
         self._max = max_workers
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="crawl")
         self._lock = threading.Lock()
@@ -480,90 +574,117 @@ class RunPool:
 
     def _task(self, source: dict[str, Any], trigger: str, retry_count: int, run_id: str | None) -> None:
         source_id = str(source["source_id"])
-        conn = None
         try:
-            conn = pg.connect(self._pg_settings)
-            run_source(conn, source, trigger, retry_count, run_id)
+            run_source(self._SessionLocal, source, trigger, retry_count, run_id)
         except Exception as exc:  # noqa: BLE001 — a crash in one run must not take the pool down
             log.exception("RunPool | source=%s crashed outside run_source", source_id)
-            if conn is not None and run_id is not None:
+            if run_id is not None:
                 with contextlib.suppress(Exception):
-                    _finish_run(conn, run_id, "failed", f"worker error: {exc}"[:2000])
+                    _finish_run(
+                        self._SessionLocal, source["tenant_id"], run_id, "failed", f"worker error: {exc}"[:2000]
+                    )
         finally:
-            if conn is not None:
-                with contextlib.suppress(Exception):
-                    conn.close()
             with self._lock:
                 self._in_flight.discard(source_id)
 
 
-def _finish_run(conn: Any, run_id: Any, status: str, error: str) -> None:
-    with conn.cursor() as cur:
-        cur.execute(
-            """UPDATE "KBSourceRun" SET status = %s, error = %s, finished_at = now() WHERE run_id = %s""",
-            (status, error, str(run_id)),
-        )
-    conn.commit()
+def _finish_run(SessionLocal: SessionFactory, tenant_id: Any, run_id: Any, status: str, error: str) -> None:
+    with worker_db.tenant_session(SessionLocal, tenant_id) as session:
+        run_row = session.get(KBSourceRunORM, uuid.UUID(str(run_id)))
+        if run_row is not None:
+            run_row.status = status
+            run_row.error = error
+            run_row.finished_at = datetime.now(UTC)
+        session.commit()
 
 
-def dispatch_queued_runs(conn: Any, pool: RunPool) -> None:
+def dispatch_queued_runs(SessionLocal: SessionFactory, pool: RunPool) -> None:
     """Claims queued runs (oldest first) into free pool slots. A run whose
     source is busy simply stays queued until that source finishes."""
     if pool.free_slots() <= 0:
         return
-    with conn.cursor() as cur:
-        cur.execute(
-            """SELECT run_id, source_id, retry_count FROM "KBSourceRun"
-                WHERE status = 'queued' ORDER BY started_at LIMIT 50"""
-        )
-        queued = cur.fetchall()
-        sources = {str(s["source_id"]): s for s in get_active_sources(cur)} if queued else {}
-    for run_id, source_id, retry_count in queued:
+    queued: list[tuple[Any, Any, int, str]] = []
+    with SessionLocal() as session:
+        # One tenant at a time (row-level security), oldest first within each.
+        for tenant_id in worker_db.tenant_ids(session):
+            worker_db.set_tenant(session, tenant_id)
+            queued += [
+                (run_id, source_id, retry_count, tenant_id)
+                for run_id, source_id, retry_count in session.execute(
+                    select(KBSourceRunORM.run_id, KBSourceRunORM.source_id, KBSourceRunORM.retry_count)
+                    .where(KBSourceRunORM.status == "queued")
+                    .order_by(KBSourceRunORM.started_at)
+                    .limit(50)
+                ).all()
+            ]
+        sources = {str(s["source_id"]): s for s in get_active_sources(session)} if queued else {}
+    for run_id, source_id, retry_count, tenant_id in queued:
         if pool.free_slots() <= 0:
             break
         source = sources.get(str(source_id))
         if source is None:
-            _finish_run(conn, run_id, "failed", "source not found or inactive")
+            _finish_run(SessionLocal, tenant_id, run_id, "failed", "source not found or inactive")
             continue
         if pool.is_running(str(source_id)):
             continue
-        with conn.cursor() as cur:
-            cur.execute(
-                """UPDATE "KBSourceRun" SET status = 'running', started_at = now()
-                    WHERE run_id = %s AND status = 'queued'""",
-                (str(run_id),),
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
+            result = session.execute(
+                update(KBSourceRunORM)
+                .where(KBSourceRunORM.run_id == run_id, KBSourceRunORM.status == "queued")
+                .values(status="running", started_at=datetime.now(UTC))
             )
-            claimed = cur.rowcount == 1
-        conn.commit()
+            claimed = result.rowcount == 1
+            session.commit()
         if claimed and not pool.submit(source, "manual", retry_count, str(run_id)):
-            with conn.cursor() as cur:  # the slot went away between the check and the submit
-                cur.execute("""UPDATE "KBSourceRun" SET status = 'queued' WHERE run_id = %s""", (str(run_id),))
-            conn.commit()
+            # the slot went away between the check and the submit
+            with worker_db.tenant_session(SessionLocal, tenant_id) as session:
+                session.execute(
+                    update(KBSourceRunORM)
+                    .where(KBSourceRunORM.run_id == run_id)
+                    .values(status="queued")
+                )
+                session.commit()
 
 
-def reset_stale_runs(conn: Any, minutes: int = STALE_RUN_MINUTES) -> None:
+def reset_stale_runs(SessionLocal: SessionFactory, minutes: int = STALE_RUN_MINUTES) -> None:
     """A queued/running row this old belongs to a worker that died; without
     this the UI would keep the source locked forever."""
-    with conn.cursor() as cur:
-        cur.execute(
-            """UPDATE "KBSourceRun"
-                  SET status = 'failed', error = 'timed out without finishing (worker lost?)', finished_at = now()
-                WHERE status IN ('queued', 'running') AND started_at < now() - (%s || ' minutes')::interval""",
-            (str(minutes),),
-        )
-    conn.commit()
+    cutoff = datetime.now(UTC) - timedelta(minutes=minutes)
+    _update_every_tenant(
+        SessionLocal,
+        update(KBSourceRunORM)
+        .where(KBSourceRunORM.status.in_(("queued", "running")), KBSourceRunORM.started_at < cutoff)
+        .values(
+            status="failed",
+            error="timed out without finishing (worker lost?)",
+            finished_at=datetime.now(UTC),
+        ),
+    )
 
 
-def abandon_running_runs(conn: Any) -> None:
+def abandon_running_runs(SessionLocal: SessionFactory) -> None:
     """At start-up nothing of this process is running, so a 'running' row was
     left by the previous process."""
-    with conn.cursor() as cur:
-        cur.execute(
-            """UPDATE "KBSourceRun"
-                  SET status = 'failed', error = 'interrupted by a worker restart', finished_at = now()
-                WHERE status = 'running'"""
-        )
-    conn.commit()
+    _update_every_tenant(
+        SessionLocal,
+        update(KBSourceRunORM)
+        .where(KBSourceRunORM.status == "running")
+        .values(
+            status="failed",
+            error="interrupted by a worker restart",
+            finished_at=datetime.now(UTC),
+        ),
+    )
+
+
+def _update_every_tenant(SessionLocal: SessionFactory, stmt: Any) -> None:
+    """Run one UPDATE under each tenant in turn: row-level security lets it see
+    one tenant's rows at a time. One transaction, committed at the end."""
+    with SessionLocal() as session:
+        for tenant_id in worker_db.tenant_ids(session):
+            worker_db.set_tenant(session, tenant_id)
+            session.execute(stmt)
+        session.commit()
 
 
 def run() -> None:
@@ -571,27 +692,31 @@ def run() -> None:
 
     setup_observability("platform-workers-web-crawler")
 
-    pg_settings = PostgresSettings()
-    conn = pg.connect(pg_settings)
-    abandon_running_runs(conn)
-    pool = RunPool(pg_settings, MAX_PARALLEL_RUNS)
+    SessionLocal = worker_db.make_session_factory(PostgresSettings())
+    global RAW
+    RAW = raw.RawStore(
+        objects=bronze._minio_client(),
+        # crawler_svc (ADR-V2-46): INSERT/SELECT on ingest.artifact and ingest.fetch only.
+        ingest_sessions=worker_db.make_session_factory(
+            PostgresSettings(user=os.environ["INGEST_DB_USER"], password=os.environ["INGEST_DB_PASSWORD"])
+        ),
+    )
+    abandon_running_runs(SessionLocal)
+    pool = RunPool(SessionLocal, MAX_PARALLEL_RUNS)
 
     log.info("web-crawler started. parallel=%d", MAX_PARALLEL_RUNS)
     while True:
         try:
-            reset_stale_runs(conn)
-            dispatch_queued_runs(conn, pool)
+            reset_stale_runs(SessionLocal)
+            dispatch_queued_runs(SessionLocal, pool)
             # No global interval gate — each source tracks its own next-due
             # time off KBSourceRun.started_at (_is_due()), so calling this
             # every tick is cheap and naturally staggers load across sources.
-            crawl_due_sources(conn, pool)
-            drain_crawl_queue(conn)
-            relay_outbox(conn)
+            crawl_due_sources(SessionLocal, pool)
+            drain_crawl_queue(SessionLocal)
+            relay_outbox(SessionLocal)
 
             time.sleep(POLL_INTERVAL_SECONDS)
-        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
-            log.error("main loop | postgres connection lost, reconnecting: %s", e)
-            conn = pg.reconnect(conn, pg_settings)
         except Exception as e:  # noqa: BLE001 — the loop must outlive any single failure
             log.error("main loop error: %s", e)
             time.sleep(5)

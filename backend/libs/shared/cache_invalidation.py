@@ -12,11 +12,13 @@ the matching cache entry. Both sides are best-effort: Redis being down must neve
 break a publish or a request — it only means invalidation falls back to the
 version-keyed behavior (correct on the next version bump).
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 
 log = logging.getLogger(__name__)
 
@@ -88,9 +90,9 @@ async def run_graph_invalidation_listener(
             await client.aclose()
             raise
         except Exception as e:  # noqa: BLE001 — reconnect on any transport error
-            log.warning("graph invalidation listener error (reconnecting in %ss): %s", reconnect_delay, e)
-            try:
+            log.warning(
+                "graph invalidation listener error (reconnecting in %ss): %s", reconnect_delay, e
+            )
+            with suppress(Exception):
                 await client.aclose()
-            except Exception:  # noqa: BLE001
-                pass
             await asyncio.sleep(reconnect_delay)
