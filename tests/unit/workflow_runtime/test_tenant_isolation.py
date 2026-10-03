@@ -97,14 +97,11 @@ _UNSCOPED_BUDGET = {
     # libs/shared is at 0: the document advisory lock moved to
     # get_platform_client(), the deliberate unscoped form.
     "database_connector": 15,
-    # 5 + jobs/memory_cleanup.py's 3: a retention sweeper that has to see every
-    # tenant's expired memories, run as a role that bypasses RLS (see
-    # deploy/k8s/production/job/memory-cleanup.yaml). Scoping it would make it
-    # clean one tenant, or none.
-    # + mongo_client's save_canvas/load_canvas (ex flow_builder): Mongo has no
+    # 5 + mongo_client's save_canvas/load_canvas (ex flow_builder): Mongo has no
     # tenant scoping to pass, the canvas routes gate them on
-    # workflow_version_belongs_to instead.
-    "workflow_runtime": 10,
+    # workflow_version_belongs_to instead. jobs/memory_cleanup.py's 3 are gone:
+    # it runs as app_user and cleans one tenant at a time.
+    "workflow_runtime": 7,
     "sandbox_executor": 1,
     "platform_workers": 1,
 }
