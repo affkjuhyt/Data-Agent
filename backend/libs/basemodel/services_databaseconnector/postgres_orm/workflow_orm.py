@@ -131,13 +131,13 @@ class AgentsORM(Base):
         PGUUID(as_uuid=True),
         ForeignKey("AgentVersions.id", use_alter=True, name="fk_agents_published_version"),
         nullable=True,
-        comment="AgentVersions.id currently served. The ORM declares this FK but no migration created it.",
+        comment="AgentVersions.id currently served.",
     )
     draft_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("AgentVersions.id", use_alter=True, name="fk_agents_draft_version"),
         nullable=True,
-        comment="AgentVersions.id of the editable draft; draft updates find it by AgentVersions.status instead. The ORM declares this FK but no migration created it.",
+        comment="AgentVersions.id of the editable draft.",
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     deleted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -319,8 +319,8 @@ class EpisodicMemoryORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
-    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
+    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False)
     user_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     domain: Mapped[str] = mapped_column(String(64), default="general", server_default="general", nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -343,11 +343,11 @@ class FutureMemoryORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
-    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
+    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False)
     user_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    execution_time: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    execution_time: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     recurrence: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending", nullable=False)
     executed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -384,8 +384,8 @@ class WorkflowMemoryORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
-    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
+    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False)
     task_type: Mapped[str] = mapped_column(String(64), nullable=False)
     task_description: Mapped[str] = mapped_column(Text, nullable=False)
     param_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
@@ -414,13 +414,17 @@ class SchemaCatalogORM(Base):
     """
     __tablename__ = "SchemaCatalog"
     __table_args__ = (
+        Index(
+            "idx_schemacatalog_freshness", "tenant_id", "data_as_of",
+            postgresql_where=text("freshness_sla_seconds IS NOT NULL"),
+        ),
         Index("idx_schemacatalog_lookup", "tenant_id", "warehouse_id"),
         UniqueConstraint("tenant_id", "warehouse_id", "schema_name", "table_name", name="uq_schemacatalog_table"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
-    warehouse_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBWarehouse.warehouse_id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
+    warehouse_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBWarehouse.warehouse_id"), nullable=False)
     schema_name: Mapped[str] = mapped_column(String(128), nullable=False)
     table_name: Mapped[str] = mapped_column(String(128), nullable=False)
     columns: Mapped[list] = mapped_column(JSONB, nullable=False)
@@ -544,7 +548,7 @@ class PlatformSettingsORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     key: Mapped[str] = mapped_column(String(100), nullable=False)
     value: Mapped[dict] = mapped_column(JSONB, nullable=False)
     updated_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

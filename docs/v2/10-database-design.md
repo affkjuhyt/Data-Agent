@@ -64,9 +64,13 @@ Số đo trên cụm dev: 76 bảng tên PascalCase có ngoặc kép, 8 bảng s
   status là chuỗi tự do, không CHECK, không enum.
 - ORM và migration lệch: 6 migration chỉ để vá bảng ORM đã khai báo; DDL lúc chạy (auth_api tự tạo
   `platform_settings`, `compliance_settings`, `key_rotations`; `release_worker` từng tạo partition cho
-  bảng `release_history` không tồn tại, nay đã gỡ cùng các bảng release); CI không có `alembic check`.
+  bảng `release_history` không tồn tại, nay đã gỡ cùng các bảng release). **Đã sửa 03/10**: 41 chỗ lệch
+  (index, 2 FK `Agents`→`AgentVersions`, `KBWarehouse.tenant_id` NOT NULL) đóng bằng ORM + migration
+  `8e4b6d1f3a7c`; `alembic check` chạy trong `test_alembic_migrations.py` (CI `python-integration`).
+- Status là chuỗi tự do: **đã có** `CHECK ck_<bảng>_status` cho 13 bảng theo giá trị code ghi
+  (`8e4b6d1f3a7c`); `KBConnections`, `MCP` chưa có vì không code nào ghi.
 - Xoá cạnh Neo4j theo `data_id` không xoá gì (cạnh `RELATES` không có thuộc tính `data_id`), để lại node
-  và cạnh mồ côi; `KBTextBlockVersion` không unique `(block_id, version_number)`.
+  và cạnh mồ côi; `KBTextBlockVersion` không unique `(block_id, version_number)` (**đã thêm**, `8e4b6d1f3a7c`).
 
 ## 3. Quy ước bắt buộc cho mọi bảng V2
 

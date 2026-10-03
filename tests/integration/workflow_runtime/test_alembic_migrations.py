@@ -37,7 +37,7 @@ import psycopg2
 import psycopg2.extras
 import pytest
 
-from tests.integration._db import alembic_head, reset_database
+from tests.integration._db import alembic_head, reset_database, run_alembic
 
 pytestmark = pytest.mark.integration
 
@@ -119,6 +119,19 @@ def test_alembic_upgrade_head_on_fresh_db(fresh_db):
     # new migration).
     rev = _current_revision(fresh_db["dsn"])
     assert rev == alembic_head(), f"expected head rev {alembic_head()}, got {rev}"
+
+
+def test_the_orm_matches_the_migrated_schema(fresh_db):
+    """`alembic check`: the ORM declares what the migration chain builds.
+
+    Nothing compared them, and 41 differences had built up (indexes the ORM
+    declared and no migration created or one dropped, indexes only the database
+    had, two FKs and a NOT NULL only the ORM had). A mapped index or constraint
+    that does not exist is a performance or integrity assumption that is false.
+    """
+    assert _run_alembic_upgrade(fresh_db["dsn"]).returncode == 0
+    result = run_alembic(fresh_db["dsn"], "check")
+    assert result.returncode == 0, f"ORM and migrations differ:\n{result.stdout}\n{result.stderr}"
 
 
 # ─── 2. RLS migration was actually applied (regression net for issue #3) ───

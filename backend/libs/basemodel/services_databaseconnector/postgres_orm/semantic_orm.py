@@ -30,6 +30,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -50,7 +51,7 @@ class SemanticMetricORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     # Slug the agent and the API refer to, e.g. "revenue_net".
     metric_key: Mapped[str] = mapped_column(String(128), nullable=False)
     name: Mapped[str] = mapped_column(String(256), nullable=False)
@@ -69,12 +70,16 @@ class SemanticMetricVersionORM(Base):
 
     __tablename__ = "SemanticMetricVersion"
     __table_args__ = (
+        Index(
+            "uq_semantic_one_approved_version", "metric_id", unique=True,
+            postgresql_where=text("status = 'approved'"),
+        ),
         UniqueConstraint("metric_id", "version", name="uq_semantic_metric_version"),
         Index("idx_semantic_version_lookup", "tenant_id", "metric_id", "status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     metric_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("SemanticMetric.id", ondelete="CASCADE"), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     # draft | approved | deprecated — see libs.semantic.models.MetricStatus.
@@ -120,7 +125,7 @@ class SemanticSynonymORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     metric_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("SemanticMetric.id", ondelete="CASCADE"), nullable=False)
     # As typed, for display.
     term: Mapped[str] = mapped_column(String(256), nullable=False)

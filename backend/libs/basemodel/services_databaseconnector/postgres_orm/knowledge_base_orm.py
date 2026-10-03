@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -75,6 +76,7 @@ class KBKnowledgeBaseORM(Base):
 class KBDataORM(Base):
     __tablename__ = "KBData"
     __table_args__ = (
+        Index("idx_kbdata_knowledge_base_id", "knowledge_base_id"),
         Index("idx_kbdata_tenant_source", "tenant_id", "source_type"),
         Index("idx_kbdata_tenant_role", "tenant_id", "role_id"),
         Index("idx_kbdata_tenant_tier", "tenant_id", "current_tier"),
@@ -105,7 +107,7 @@ class KBDataORM(Base):
     # The knowledge base (kind of knowledge) this document belongs to. Nullable so
     # documents ingested before knowledge bases existed remain valid.
     knowledge_base_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("KBKnowledgeBase.knowledge_base_id"), nullable=True, index=True,
+        PGUUID(as_uuid=True), ForeignKey("KBKnowledgeBase.knowledge_base_id"), nullable=True,
     )
     name: Mapped[str] = mapped_column(String(512), nullable=False)
     extension: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -240,7 +242,7 @@ class KBConflictBatchORM(Base):
     batch_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=True, index=True)
     # The one text block this batch is anchored on; every conflict in it targets this block.
-    existing_block_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
+    existing_block_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     batch_title: Mapped[str] = mapped_column(String(512), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default=ConflictStatus.PENDING.value, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
@@ -255,6 +257,7 @@ class KBConflictBatchORM(Base):
 class KBConflictORM(Base):
     __tablename__ = "KBConflict"
     __table_args__ = (
+        Index("idx_kbconflict_data_id", "data_id"),
         Index("idx_kbconflict_tenant_status_severity", "tenant_id", "status", "severity"),
         Index("idx_kbconflict_inserted_at_desc", text("inserted_at DESC")),
     )
@@ -262,7 +265,7 @@ class KBConflictORM(Base):
     conflict_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=True)
     # The document whose chunk raised this conflict; scopes re-promotion cleanup.
-    data_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBData.data_id"), nullable=True, index=True)
+    data_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBData.data_id"), nullable=True)
     conflict_type: Mapped[str] = mapped_column(String(64), nullable=False)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
     batch_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBConflictBatch.batch_id"), nullable=True, index=True)
@@ -295,7 +298,7 @@ class KBWarehouseORM(Base):
     warehouse_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     # Warehouses are tenant-scoped like every other asset (a tenant only sees and
     # manages its own warehouse connections).
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     service: Mapped[str] = mapped_column(String(255), nullable=False, comment="Warehouse engine as entered (Snowflake, Databricks, Postgres; case varies). The schema crawler normalises it.")
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
@@ -344,7 +347,7 @@ class KBSourceORM(Base):
     )
 
     source_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     # The steward's role_id at registration time — reused by the worker for every
     # scheduled run of this source, since a cron tick has no human request context
     # to pull a role_id from (KBData.role_id is NOT NULL).
@@ -353,7 +356,7 @@ class KBSourceORM(Base):
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     publisher: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
@@ -370,12 +373,12 @@ class KBSourceConfigORM(Base):
     )
 
     config_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    source_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBSource.source_id"), nullable=False, index=True)
+    source_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBSource.source_id"), nullable=False)
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     row_version: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), server_default=text("gen_random_uuid()"), default=uuid.uuid4, nullable=False)
@@ -395,7 +398,7 @@ class KBSourceRunORM(Base):
     )
 
     run_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    source_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBSource.source_id"), nullable=False, index=True)
+    source_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBSource.source_id"), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     trigger: Mapped[str] = mapped_column(String(16), nullable=False)
     data_ids: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True, comment="JSON array of the KBData.data_id values this run produced; no FK.")
@@ -438,7 +441,7 @@ class KBSourceCrawlQueueORM(Base):
     depth: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     discovered_from: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", server_default="pending")
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     source: Mapped["KBSourceORM"] = relationship()
@@ -494,7 +497,7 @@ class KBStructuredImportJobORM(Base):
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     reviewed_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     reviewed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
@@ -522,7 +525,14 @@ class KBTextBlockORM(Base):
 class KBTextBlockVersionORM(Base):
     __tablename__ = "KBTextBlockVersion"
     __table_args__ = (
+        Index(
+            "idx_kbtextblockversion_content_fts",
+            text("to_tsvector('simple'::regconfig, content)"),
+            postgresql_using="gin",
+        ),
         Index("idx_kbtextblockversion_block_version", "block_id", "version_number", postgresql_where=text("is_active = true")),
+        # One row per version number of a block (10-database-design §2.3).
+        UniqueConstraint("block_id", "version_number", name="uq_kbtextblockversion_block_version"),
         Index("idx_kbtextblockversion_inserted_at_desc", text("inserted_at DESC")),
     )
 
@@ -610,12 +620,13 @@ class KBNeo4jNodeORM(Base):
     __tablename__ = "KBNeo4jNode"
 
     __table_args__ = (
+        Index("idx_kbneo4jnode_tenant_kb", "tenant_id", "knowledge_base"),
         Index("idx_kbneo4jnode_inserted_at_desc", text("inserted_at DESC")),
         {"comment": "Postgres mirror of the Neo4j entity nodes, written by GraphStore alongside Neo4j; used for provenance and as the UI fallback when Neo4j is down."},
     )
 
     node_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     knowledge_base: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, comment="str(KBData.knowledge_base_id), or the literal 'General Knowledge Base' when the document has none. Part of the node id hash; no FK.")
     node_name: Mapped[str] = mapped_column(String(512), nullable=False)
     node_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -640,6 +651,7 @@ class KBNeo4jRelationshipORM(Base):
     __tablename__ = "KBNeo4jRelationship"
 
     __table_args__ = (
+        Index("idx_kbneo4jrelationship_tenkb", "tenant_id", "knowledge_base"),
         Index("idx_kbneo4jrelationship_inserted_at_desc", text("inserted_at DESC")),
         Index("idx_kbneo4jrelationship_pair", "from_node", "to_node"),
         Index("idx_kbneo4jrelationship_block", "block_id"),
