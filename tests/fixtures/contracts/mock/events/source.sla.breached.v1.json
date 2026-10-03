@@ -1,0 +1,16 @@
+{
+  "envelope_version": 1,
+  "event_id": "0f1e2d3c-4b5a-4968-8776-655443322a0a",
+  "event_type": "source.sla.breached",
+  "schema_version": 1,
+  "tenant_id": "a0000000-0000-0000-0000-000000000001",
+  "occurred_at": "2026-10-01T12:00:00Z",
+  "producer": "web_crawler",
+  "trace_id": null,
+  "idempotency_key": "0f1e2d3c-4b5a-4968-8776-655443322a0a",
+  "partition_key": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e02",
+  "payload": {
+    "source_id": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e02",
+    "overdue_since": "2026-10-01T09:00:00+07:00"
+  }
+}

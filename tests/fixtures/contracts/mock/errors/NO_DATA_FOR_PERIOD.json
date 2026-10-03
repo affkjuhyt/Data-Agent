@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "NO_DATA_FOR_PERIOD",
+    "message": "EIA:RBRTE:D has no observation in 2026-W40",
+    "current_version": null,
+    "details": {
+      "series_key": "EIA:RBRTE:D",
+      "period": "2026-W40"
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "FREQUENCY_NOT_AVAILABLE",
+    "message": "EIA:RBRTE:D is published daily, not hourly",
+    "current_version": null,
+    "details": {
+      "series_key": "EIA:RBRTE:D",
+      "requested": "H"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "ACCESS_DENIED",
+    "message": "role ANALYST may not decide review cases",
+    "current_version": null,
+    "details": {}
+  }
+}

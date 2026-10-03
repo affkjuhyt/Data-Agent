@@ -1,0 +1,18 @@
+[
+  {
+    "capability_id": "FETCH_SERIES",
+    "version": 1
+  },
+  {
+    "capability_id": "COMPARE_PERIOD",
+    "version": 1
+  },
+  {
+    "capability_id": "DETECT_DROP_EPISODES",
+    "version": 1
+  },
+  {
+    "capability_id": "EXPLAIN_PRICE_MOVEMENT",
+    "version": 1
+  }
+]

@@ -188,12 +188,21 @@ jobs:
             sandbox: true
             # A real container per test; same split as SUITE_PYTEST_ARGS in tests/run_suites.py.
             pytest_args: -n 4 --dist loadgroup
+          # The Contract v1 mock (NOP-151) started as a real server, in the same
+          # environment as the contracts unit suite.
+          - suite: contracts
+            python: "3.13"
+            install: -r backend/services/kb_backend/requirements.txt
+            apt: libpq-dev
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
           cache: pip
+      - name: System packages
+        if: matrix.apt
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ${{ matrix.apt }}
       - name: Build the sandbox-runner image the sandbox tests start
         if: matrix.sandbox
         run: docker build -t sandbox-runner:latest backend/services/sandbox_executor/sandbox_runner

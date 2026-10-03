@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "UNRESOLVED_ENTITY",
+    "message": "no entity or series matches 'BRENT_FUTURES'",
+    "current_version": null,
+    "details": {
+      "id": "BRENT_FUTURES"
+    }
+  }
+}

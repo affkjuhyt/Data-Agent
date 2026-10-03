@@ -20,7 +20,9 @@ tests/
 │   ├── kb_worker/         #   boto3), so the suites are never run together.
 │   ├── model_service/
 │   └── contracts/           # libs/contracts (NOP-150), run in the kb-backend image (PyYAML, pinned pydantic)
-├── fixtures/contracts/      # invalid DTO cases + compat/ pairs for the contract gate (NOP-152)
+├── fixtures/contracts/      # invalid DTO cases + compat/ pairs for the contract gate (NOP-152);
+│                            #   mock/ = the Contract v1 mock's answers (NOP-151)
+├── contract_mock/           # Contract v1 mock API for FE/Data/Agent (NOP-151, `make mock-api`; README.md)
 ├── integration/             # testcontainers; same per-service split as unit/
 │   ├── _db.py               # reset_database / run_alembic / alembic_head for the shared container
 │   ├── _sandbox.py          # sandbox-runner image gate (SANDBOX_RUNNER_IMAGE)
@@ -29,6 +31,7 @@ tests/
 │   ├── auth_api/            # conftest.py: the auth_api app + minimal schema; smoke + RLS
 │   ├── platform_workers/    # schema crawler, web crawler
 │   ├── sandbox_executor/    # real sandbox-runner containers, read-only Postgres backend
+│   ├── contracts/           # the Contract v1 mock as a real server (kb-backend image)
 │   └── test_*.py            # e2e only (LIVE_STACK=1): agent answer, JWT audience, load, tenant isolation
 ├── e2e/                     # seed data for the demo agent + non-pytest harnesses
 │   ├── seed.sql             # demo agent, metrics, fact_sales warehouse
