@@ -9,4 +9,5 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install sqlalchemy[asyncio] a
 COPY backend/alembic/ ./alembic/
 COPY backend/libs/__init__.py ./libs/__init__.py
 COPY backend/libs/basemodel/ ./libs/basemodel/
+COPY backend/libs/shared/__init__.py backend/libs/shared/tenant_rls.py backend/libs/shared/sql_identifiers.py ./libs/shared/
 
