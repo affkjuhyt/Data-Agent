@@ -2,7 +2,7 @@
 // Mở https://dbdiagram.io/d → dán toàn bộ file này vào ô bên trái.
 //
 // Sinh tự động từ catalog Postgres sau `alembic upgrade head` trên DB trống
-// (head = 9f3c7a1e5d2b), không vẽ tay: bảng, cột, kiểu, default, PK/unique,
+// (head = a2c4e6f8b0d1), không vẽ tay: bảng, cột, kiểu, default, PK/unique,
 // FK (Ref) và index là đúng như DB. Không sửa tay — sinh lại khi có migration mới.
 // Note của bảng/cột gồm COMMENT trong DB (nghĩa của cột) và những gì DBML không
 // biểu diễn được (CHECK, partial index, GIN, RLS, tham chiếu không có FK).
@@ -10,7 +10,7 @@
 Project data_agent {
   database_type: 'PostgreSQL'
   Note: '''
-**Data Agent — Postgres `dataagent`, schema `public`** (alembic head `9f3c7a1e5d2b`)
+**Data Agent — Postgres `dataagent`, schema `public`** (alembic head `a2c4e6f8b0d1`)
 
 - 59 bảng, 69 FK, 36 bảng bật RLS (theo `tenant_id` + `app.tenant_id`).
 - Schema V2 `registry`, `ingest`, `knowledge`, `governance`, `alert` đã tạo (migration `5b7d9f1a3c6e`) nhưng **chưa có bảng** — xem `docs/v2/10-database-design.md`, `docs/v2/14-input-data-db.md`.
