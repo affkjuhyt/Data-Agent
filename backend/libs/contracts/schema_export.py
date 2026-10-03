@@ -22,7 +22,13 @@ from pydantic import BaseModel
 from pydantic.json_schema import models_json_schema
 
 from libs.contracts import CONTRACT_VERSION
-from libs.contracts.v1 import PAYLOAD_MODELS, PUBLIC_MODELS, EventEnvelope
+from libs.contracts.v1 import (
+    OPEN_ENUMS,
+    PARTITION_KEY_FIELD,
+    PAYLOAD_MODELS,
+    PUBLIC_MODELS,
+    EventEnvelope,
+)
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 GENERATED_DIR = PACKAGE_DIR / "generated"
@@ -32,6 +38,15 @@ OPENAPI_NAME = "contracts.openapi.json"
 
 def load_example(model: type[BaseModel]) -> Any:
     return json.loads((EXAMPLES_DIR / f"{model.__name__}.json").read_text(encoding="utf-8"))
+
+
+def _mark_open_enums(definitions: dict[str, Any]) -> None:
+    # The compatibility gate (libs.contracts.compat) compares two schema files
+    # without importing either side's code, so which enums may grow without a
+    # bump has to travel in the schema, like x-schema-version.
+    for enum in OPEN_ENUMS:
+        if enum.__name__ in definitions:
+            definitions[enum.__name__]["x-open-enum"] = True
 
 
 def _dump(document: dict[str, Any]) -> str:
@@ -44,6 +59,7 @@ def render_openapi() -> str:
         ref_template="#/components/schemas/{model}",
     )
     schemas: dict[str, Any] = top["$defs"]
+    _mark_open_enums(schemas)
     for model in PUBLIC_MODELS:
         schemas[model.__name__]["examples"] = [load_example(model)]
     return _dump(
@@ -61,11 +77,16 @@ def render_openapi() -> str:
     )
 
 
-def _event_schema(model: type[BaseModel], title: str) -> str:
+def _event_schema(model: type[BaseModel], title: str, partition_key: str | None = None) -> str:
     schema = model.model_json_schema(mode="validation")
     schema["title"] = title
+    _mark_open_enums(schema.get("$defs", {}))
     if model is not EventEnvelope:
         schema["examples"] = [load_example(model)]
+    if partition_key is not None:
+        # Changing a topic's key reorders its events (COMPATIBILITY.md), so the
+        # key is part of the published payload contract.
+        schema["x-partition-key"] = partition_key
     return _dump(schema)
 
 
@@ -77,7 +98,7 @@ def render_all() -> dict[Path, str]:
     for (event_type, version), model in PAYLOAD_MODELS.items():
         name = f"{event_type.value}.v{version}.schema.json"
         files[GENERATED_DIR / "events" / name] = _event_schema(
-            model, f"{event_type.value} payload v{version}"
+            model, f"{event_type.value} payload v{version}", PARTITION_KEY_FIELD[event_type]
         )
     return files
 

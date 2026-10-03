@@ -24,5 +24,6 @@
   ],
   "title": "extraction.completed payload v1",
   "type": "object",
+  "x-partition-key": "release_id",
   "x-schema-version": 1
 }

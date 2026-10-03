@@ -633,7 +633,8 @@
           "VERSION_CONFLICT"
         ],
         "title": "ErrorCode",
-        "type": "string"
+        "type": "string",
+        "x-open-enum": true
       },
       "ErrorDetail": {
         "additionalProperties": false,
@@ -795,7 +796,8 @@
           "alert.raised"
         ],
         "title": "EventType",
-        "type": "string"
+        "type": "string",
+        "x-open-enum": true
       },
       "EvidenceRef": {
         "additionalProperties": false,
@@ -1891,7 +1893,8 @@
           "UNIT_MISMATCH"
         ],
         "title": "ParseErrorCode",
-        "type": "string"
+        "type": "string",
+        "x-open-enum": true
       },
       "ProfileSummary": {
         "additionalProperties": false,
@@ -2160,7 +2163,8 @@
           "EXTRACTION_LOW_CONF"
         ],
         "title": "ReviewCaseKind",
-        "type": "string"
+        "type": "string",
+        "x-open-enum": true
       },
       "ReviewCaseRef": {
         "additionalProperties": false,

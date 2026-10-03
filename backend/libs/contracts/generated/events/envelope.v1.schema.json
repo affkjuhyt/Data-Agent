@@ -17,7 +17,8 @@
         "alert.raised"
       ],
       "title": "EventType",
-      "type": "string"
+      "type": "string",
+      "x-open-enum": true
     }
   },
   "additionalProperties": false,

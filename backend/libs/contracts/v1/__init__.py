@@ -6,6 +6,8 @@ service. The internal domain model and its logic stay in the owning service.
 
 from __future__ import annotations
 
+from enum import StrEnum
+
 from libs.contracts.v1.base import ContractModel, TimeAxes
 from libs.contracts.v1.concurrency import VersionedWrite
 from libs.contracts.v1.errors import HTTP_STATUS, ErrorBody, ErrorCode, ErrorDetail
@@ -94,8 +96,14 @@ PUBLIC_MODELS: tuple[type[ContractModel], ...] = (
     SourceSlaBreached,
 )
 
+# Enums a producer may extend without a version bump (COMPATIBILITY.md): consumers
+# must tolerate a value they do not know yet. Every other enum is closed. Published
+# as x-open-enum so the compatibility gate reads it from the schema alone.
+OPEN_ENUMS: tuple[type[StrEnum], ...] = (ErrorCode, ParseErrorCode, EventType, ReviewCaseKind)
+
 __all__ = [
     "HTTP_STATUS",
+    "OPEN_ENUMS",
     "PARTITION_KEY_FIELD",
     "PAYLOAD_MODELS",
     "PUBLIC_MODELS",
