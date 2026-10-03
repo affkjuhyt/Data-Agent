@@ -3,6 +3,7 @@ import uuid
 from typing import Optional
 
 from sqlalchemy import (
+    CHAR,
     Boolean,
     DateTime,
     ForeignKey,
@@ -138,6 +139,12 @@ class KBDataORM(Base):
     # changed — see `_replace_existing_by_name` in the web-crawler worker's
     # bronze.py. Nullable: not every ingestion path back-fills it.
     content_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    artifact_sha256: Mapped[Optional[str]] = mapped_column(
+        CHAR(64),
+        nullable=True,
+        comment="SHA-256 of the raw this search copy was made from: ingest.artifact (source_id, sha256). "
+        "NULL for documents not fetched by a source.",
+    )
     added_on: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

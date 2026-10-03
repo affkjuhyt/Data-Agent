@@ -184,6 +184,8 @@ def _update_existing_in_place(
         row.path = path
     if content_hash is not None:
         row.content_hash = content_hash
+        # The same bytes raw.RawStore kept: ties the search copy to its raw.
+        row.artifact_sha256 = content_hash
     session.add(
         KBLifecycleHistoryORM(
             history_id=uuid.uuid4(),
@@ -221,6 +223,7 @@ def _insert_kbdata(
             purpose=purpose,
             path=path,
             content_hash=content_hash,
+            artifact_sha256=content_hash,
         )
     )
     session.add(

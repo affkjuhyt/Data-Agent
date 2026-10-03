@@ -89,6 +89,7 @@ kubectl -n dataagent-service create secret generic platform-workers-schema-crawl
 
 kubectl -n dataagent-service create secret generic platform-workers-web-crawler-secrets \
   --from-literal=DB_PASSWORD="${APP_USER_PASSWORD}" \
+  --from-literal=INGEST_DB_PASSWORD="${CRAWLER_SVC_PASSWORD}" \
   --from-literal=MINIO_URL="${MINIO_URL}" \
   --from-literal=KAFKA_SASL_PASSWORD="${WEB_CRAWLER_WORKER_KAFKA_PASSWORD}" \
   --from-literal=OPENBAO_ROLE_ID="${OPENBAO_ROLE_ID}" \
@@ -194,6 +195,7 @@ kubectl -n dataagent-service create secret generic db-init-secrets \
   --from-literal=KB_BACKEND_PASSWORD="${KB_BACKEND_PASSWORD}" \
   --from-literal=PGBOUNCER_AUTH_PASSWORD="${PGBOUNCER_AUTH_PASSWORD}" \
   --from-literal=KB_INGESTION_WORKER_PASSWORD="${KB_INGESTION_WORKER_PASSWORD}" \
+  --from-literal=CRAWLER_SVC_PASSWORD="${CRAWLER_SVC_PASSWORD}" \
   --from-literal=POSTGRES_CRAWLER_PASSWORD="${POSTGRES_CRAWLER_PASSWORD:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 

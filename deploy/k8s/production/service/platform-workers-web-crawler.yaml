@@ -24,6 +24,8 @@ data:
   DB_PORT: '8300'
   # NOBYPASSRLS: scans walk the tenants and writes run in a tenant_session (common/db).
   DB_USER: app_user
+  # The V2 ingest schema (raw.py): crawler_svc, INSERT/SELECT on ingest.artifact/fetch only.
+  INGEST_DB_USER: crawler_svc
   MINIO_BUCKET: knowledge-base
   KAFKA_SASL_USERNAME: web-crawler-worker
   POLL_INTERVAL_SECONDS: '5'

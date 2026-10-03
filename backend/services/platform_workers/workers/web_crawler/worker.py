@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import threading
 import time
 import uuid
@@ -50,7 +51,7 @@ from libs.shared.storage_ownership import is_v2_structured_source
 from services.platform_workers.common import db as worker_db
 from services.platform_workers.common import kafka as kafka_factory
 from services.platform_workers.common.settings import KafkaSettings, PostgresSettings
-from services.platform_workers.workers.web_crawler import bronze, secrets
+from services.platform_workers.workers.web_crawler import bronze, raw, secrets
 
 log = logging.getLogger("platform-workers.web-crawler")
 
@@ -108,6 +109,11 @@ def _get_promote_producer() -> KafkaProducer | None:
                 log.warning("auto-promote: Kafka producer unavailable, will retry on the next eligible run", exc_info=True)
                 return None
     return _promote_producer
+
+
+# Where every fetch's bytes are kept immutably (raw.py). Set by run(); a caller
+# driving run_source directly (tests) sets it or runs without the raw layer.
+RAW: raw.RawStore | None = None
 
 
 # Owner tag of this worker's OutboxEvents rows (its relay drains only these).
@@ -338,6 +344,8 @@ def run_source(
     purpose = config.get("purpose", "production")
     try:
         artifact = connector_fetch(connector_type, fetch_config)
+        if RAW is not None:
+            RAW.keep(artifact, tenant_id=tenant_id, source_id=source_id, run_id=run_id)
         outcome: dict[str, Any] = {}
         with worker_db.tenant_session(SessionLocal, tenant_id) as session:
             if connector_type in _RAW_BYTES_CONNECTOR_TYPES:
@@ -492,6 +500,8 @@ def _run_queue_item(SessionLocal: SessionFactory, row: dict[str, Any]) -> None:
     purpose = config.get("purpose", "production")
     try:
         artifact = connector_fetch("web_crawl", config)
+        if RAW is not None:
+            RAW.keep(artifact, tenant_id=tenant_id, source_id=source_id, run_id=run_id)
         outcome: dict[str, Any] = {}
         with worker_db.tenant_session(SessionLocal, tenant_id) as session:
             data_id = bronze.register_web_bronze(
@@ -683,6 +693,14 @@ def run() -> None:
     setup_observability("platform-workers-web-crawler")
 
     SessionLocal = worker_db.make_session_factory(PostgresSettings())
+    global RAW
+    RAW = raw.RawStore(
+        objects=bronze._minio_client(),
+        # crawler_svc (ADR-V2-46): INSERT/SELECT on ingest.artifact and ingest.fetch only.
+        ingest_sessions=worker_db.make_session_factory(
+            PostgresSettings(user=os.environ["INGEST_DB_USER"], password=os.environ["INGEST_DB_PASSWORD"])
+        ),
+    )
     abandon_running_runs(SessionLocal)
     pool = RunPool(SessionLocal, MAX_PARALLEL_RUNS)
 
