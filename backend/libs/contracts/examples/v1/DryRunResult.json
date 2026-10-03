@@ -1,0 +1,91 @@
+{
+  "release": {
+    "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+    "source_id": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01",
+    "artifact_sha256": "3f2a9c0000000000000000000000000000000000000000000000000000000000",
+    "release_seq": 42,
+    "publication_time": "2026-09-30T10:30:00-04:00",
+    "publication_time_basis": "source_declared",
+    "available_at": "2026-09-30T10:30:00-04:00"
+  },
+  "profile": {
+    "columns": [
+      {
+        "position": 0,
+        "name_raw": "Date",
+        "name_norm": "date",
+        "dtype": "date",
+        "missing_markers_seen": [],
+        "null_ratio": 0.0,
+        "samples": [
+          "46289",
+          "46290"
+        ]
+      },
+      {
+        "position": 1,
+        "name_raw": "Europe Brent Spot Price FOB (Dollars per Barrel)",
+        "name_norm": "europe brent spot price fob (dollars per barrel)",
+        "dtype": "decimal",
+        "locale_guess": "en-US",
+        "unit_guess": "usd_per_barrel",
+        "missing_markers_seen": [
+          "NA"
+        ],
+        "null_ratio": 0.001,
+        "samples": [
+          "67.42",
+          "66.98"
+        ]
+      }
+    ],
+    "fingerprint": "9b1e441111111111111111111111111111111111111111111111111111111111",
+    "diff_vs_approved": {
+      "added": [],
+      "removed": [],
+      "changed": []
+    }
+  },
+  "candidates_preview": [
+    {
+      "event_time_start": "2026-09-22T00:00:00-04:00",
+      "event_time_end": "2026-09-23T00:00:00-04:00",
+      "market_timezone": "America/New_York",
+      "publication_time": "2026-09-30T10:30:00-04:00",
+      "available_at": "2026-09-30T10:30:00-04:00",
+      "system_time": "2026-09-30T15:02:11Z",
+      "series_key": "EIA:RBRTE:D",
+      "value": "67.42",
+      "obs_status": "value",
+      "unit": "usd_per_barrel",
+      "unit_multiplier": 0,
+      "source_ref": {
+        "kind": "cell",
+        "sheet": "Data 1",
+        "row": 9864,
+        "col": "Europe Brent Spot Price FOB (Dollars per Barrel)"
+      },
+      "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+      "artifact_sha256": "3f2a9c0000000000000000000000000000000000000000000000000000000000",
+      "time_basis": "release_declared",
+      "origin": "structured_mapping",
+      "period_code": "2026-09-22",
+      "raw_text": "67.42",
+      "change_kind": "new"
+    }
+  ],
+  "parse_errors": [
+    {
+      "location": {
+        "kind": "cell",
+        "sheet": "Data 1",
+        "row": 9870,
+        "col": "Europe Brent Spot Price FOB (Dollars per Barrel)"
+      },
+      "raw_text": "1.234",
+      "error_code": "AMBIGUOUS_NUMBER",
+      "message": "'1.234' reads as 1234 or 1.234 under an undeclared locale"
+    }
+  ],
+  "truncated": true
+}

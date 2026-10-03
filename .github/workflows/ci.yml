@@ -53,6 +53,7 @@ jobs:
         run: |
           for target in \
             backend/libs/basemodel backend/libs/database_connector backend/libs/shared \
+            backend/libs/contracts \
             backend/services/kb_backend backend/services/workflow_runtime \
             backend/services/auth_api backend/services/model_service \
             backend/services/sandbox_executor \
@@ -84,6 +85,12 @@ jobs:
           - suite: platform_workers
             python: "3.12"
             install: -r backend/services/platform_workers/requirements.txt
+          # libs/contracts (NOP-150) in the kb-backend environment: it has PyYAML for
+          # the seed test and pins pydantic, which the generated/ staleness check needs.
+          - suite: contracts
+            python: "3.13"
+            install: -r backend/services/kb_backend/requirements.txt
+            apt: libpq-dev
           - suite: sandbox_executor
             python: "3.11"
             install: -r backend/services/sandbox_executor/requirements.txt

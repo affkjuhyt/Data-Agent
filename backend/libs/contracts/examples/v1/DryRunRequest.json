@@ -1,0 +1,19 @@
+{
+  "source_id": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01",
+  "mapping": {
+    "time": {
+      "column": "Date",
+      "format": "excel_serial",
+      "frequency": "D",
+      "market_timezone": "America/New_York"
+    },
+    "values": [
+      {
+        "column": "Europe Brent Spot Price FOB (Dollars per Barrel)",
+        "series_key": "EIA:RBRTE:D",
+        "measure": "value"
+      }
+    ]
+  },
+  "limit": 50
+}

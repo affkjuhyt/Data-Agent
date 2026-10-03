@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "VERSION_CONFLICT",
+    "message": "mapping version 3 was changed by another reviewer",
+    "current_version": 4,
+    "details": {}
+  }
+}

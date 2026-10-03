@@ -1,0 +1,21 @@
+{
+  "model": "EventEnvelope",
+  "loc": "occurred_at",
+  "data": {
+    "envelope_version": 1,
+    "event_id": "0f1e2d3c-4b5a-4968-8776-655443322a07",
+    "event_type": "artifact.stored",
+    "schema_version": 1,
+    "tenant_id": "a0000000-0000-0000-0000-000000000001",
+    "occurred_at": "2026-09-30T15:01:58",
+    "producer": "web_crawler",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "idempotency_key": "0f1e2d3c-4b5a-4968-8776-655443322a07",
+    "partition_key": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01",
+    "payload": {
+      "source_id": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01",
+      "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+      "artifact_sha256": "3f2a9c0000000000000000000000000000000000000000000000000000000000"
+    }
+  }
+}

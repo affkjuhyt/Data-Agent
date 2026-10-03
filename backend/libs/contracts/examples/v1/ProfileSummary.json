@@ -1,0 +1,38 @@
+{
+  "columns": [
+    {
+      "position": 0,
+      "name_raw": "Date",
+      "name_norm": "date",
+      "dtype": "date",
+      "missing_markers_seen": [],
+      "null_ratio": 0.0,
+      "samples": [
+        "46289",
+        "46290"
+      ]
+    },
+    {
+      "position": 1,
+      "name_raw": "Europe Brent Spot Price FOB (Dollars per Barrel)",
+      "name_norm": "europe brent spot price fob (dollars per barrel)",
+      "dtype": "decimal",
+      "locale_guess": "en-US",
+      "unit_guess": "usd_per_barrel",
+      "missing_markers_seen": [
+        "NA"
+      ],
+      "null_ratio": 0.001,
+      "samples": [
+        "67.42",
+        "66.98"
+      ]
+    }
+  ],
+  "fingerprint": "9b1e441111111111111111111111111111111111111111111111111111111111",
+  "diff_vs_approved": {
+    "added": [],
+    "removed": [],
+    "changed": []
+  }
+}

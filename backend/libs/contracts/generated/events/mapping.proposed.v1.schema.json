@@ -1,0 +1,35 @@
+{
+  "additionalProperties": false,
+  "examples": [
+    {
+      "mapping_version_id": "3a4b5c6d-7e8f-4a9b-8c0d-1e2f3a4b5c08",
+      "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+      "source_id": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01"
+    }
+  ],
+  "properties": {
+    "mapping_version_id": {
+      "format": "uuid",
+      "title": "Mapping Version Id",
+      "type": "string"
+    },
+    "release_id": {
+      "format": "uuid",
+      "title": "Release Id",
+      "type": "string"
+    },
+    "source_id": {
+      "format": "uuid",
+      "title": "Source Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source_id",
+    "release_id",
+    "mapping_version_id"
+  ],
+  "title": "mapping.proposed payload v1",
+  "type": "object",
+  "x-schema-version": 1
+}

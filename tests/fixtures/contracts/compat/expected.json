@@ -1,0 +1,5 @@
+{
+  "breaking_with_bump": "pass",
+  "breaking_without_bump": "blocked",
+  "compatible_optional_field": "pass"
+}

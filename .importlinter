@@ -42,6 +42,23 @@ forbidden_modules =
     libs.database_connector
     libs.ingestion
 
+# NOP-150. libs.contracts holds the wire shapes indicator-api, platform_workers,
+# workflow_runtime and kb_backend share; a service import here would make every
+# consumer import that service. libs.indicator (numeric core) is the only libs
+# package it may use; libs.semantic's v1 DTOs are not the V2 contract.
+[importlinter:contract:contracts-is-a-leaf]
+name = libs.contracts (V2 wire contract) must not depend on services or other libs but libs.indicator
+type = forbidden
+source_modules =
+    libs.contracts
+forbidden_modules =
+    services
+    libs.shared
+    libs.semantic
+    libs.database_connector
+    libs.ingestion
+    libs.basemodel
+
 # V2 data boundary (ADR-V2-38): V2 numbers never go through the v1 structured-KB
 # path, and V2 business data never lands in MongoDB (ADR-V2-09, ADR-V2-34).
 # Every new V2 package (services.indicator_api, the series_extractor /
@@ -54,6 +71,7 @@ name = V2 packages must not use the v1 structured-KB path or MongoDB
 type = forbidden
 source_modules =
     libs.indicator
+    libs.contracts
     libs.shared.storage_ownership
     libs.ingestion.storage_boundary
 forbidden_modules =

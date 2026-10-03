@@ -1,0 +1,20 @@
+{
+  "model": "MappingRules",
+  "loc": "time",
+  "data": {
+    "time": {
+      "column": "Date",
+      "format": "excel_serial",
+      "frequency": "D",
+      "market_timezone": "America/New_York",
+      "field": "date"
+    },
+    "values": [
+      {
+        "column": "Europe Brent Spot Price FOB (Dollars per Barrel)",
+        "series_key": "EIA:RBRTE:D",
+        "measure": "value"
+      }
+    ]
+  }
+}

@@ -1,0 +1,183 @@
+{
+  "components": {
+    "schemas": {
+      "Observation": {
+        "additionalProperties": false,
+        "description": "An effective observation: one row per version in ClickHouse `obs.observation`.",
+        "examples": [
+          {
+            "artifact_sha256": "3f2a9c0000000000000000000000000000000000000000000000000000000000",
+            "available_at": "2026-09-30T10:30:00-04:00",
+            "effective_version": 1,
+            "event_time_end": "2026-09-23T00:00:00-04:00",
+            "event_time_start": "2026-09-22T00:00:00-04:00",
+            "market_timezone": "America/New_York",
+            "obs_status": "value",
+            "publication_time": "2026-09-30T10:30:00-04:00",
+            "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+            "review_case_id": null,
+            "series_key": "EIA:RBRTE:D",
+            "source_ref": {
+              "col": "Europe Brent Spot Price FOB (Dollars per Barrel)",
+              "kind": "cell",
+              "row": 9864,
+              "sheet": "Data 1"
+            },
+            "system_time": "2026-09-30T15:02:11Z",
+            "unit": "usd_per_barrel",
+            "unit_multiplier": 0,
+            "value": "67.42",
+            "version_kind": "machine"
+          }
+        ],
+        "properties": {
+          "artifact_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Artifact Sha256",
+            "type": "string"
+          },
+          "available_at": {
+            "format": "date-time",
+            "title": "Available At",
+            "type": "string"
+          },
+          "effective_version": {
+            "minimum": 1,
+            "title": "Effective Version",
+            "type": "integer"
+          },
+          "event_time_end": {
+            "format": "date-time",
+            "title": "Event Time End",
+            "type": "string"
+          },
+          "event_time_start": {
+            "format": "date-time",
+            "title": "Event Time Start",
+            "type": "string"
+          },
+          "market_timezone": {
+            "description": "IANA zone, e.g. America/New_York, Asia/Ho_Chi_Minh, UTC",
+            "pattern": "^(UTC|[A-Z][A-Za-z_]+(/[A-Za-z0-9_+\\-]+)+)$",
+            "title": "Market Timezone",
+            "type": "string"
+          },
+          "obs_status": {
+            "$ref": "#/components/schemas/ObsStatus"
+          },
+          "publication_time": {
+            "format": "date-time",
+            "title": "Publication Time",
+            "type": "string"
+          },
+          "release_id": {
+            "format": "uuid",
+            "title": "Release Id",
+            "type": "string"
+          },
+          "review_case_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Review Case Id"
+          },
+          "series_key": {
+            "description": "e.g. EIA:RBRTE:D",
+            "pattern": "^[A-Z0-9][A-Z0-9_.\\-]*(:[A-Z0-9][A-Z0-9_.\\-]*)+$",
+            "title": "Series Key",
+            "type": "string"
+          },
+          "source_ref": {
+            "discriminator": {
+              "mapping": {
+                "api_query": "#/components/schemas/ApiQueryRef",
+                "cell": "#/components/schemas/TableCellRef",
+                "json_path": "#/components/schemas/JsonPathRef",
+                "page": "#/components/schemas/PageRef",
+                "xpath": "#/components/schemas/XPathRef"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TableCellRef"
+              },
+              {
+                "$ref": "#/components/schemas/JsonPathRef"
+              },
+              {
+                "$ref": "#/components/schemas/XPathRef"
+              },
+              {
+                "$ref": "#/components/schemas/PageRef"
+              },
+              {
+                "$ref": "#/components/schemas/ApiQueryRef"
+              }
+            ],
+            "title": "Source Ref"
+          },
+          "system_time": {
+            "format": "date-time",
+            "title": "System Time",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "object"
+          },
+          "unit_multiplier": {
+            "default": 0,
+            "maximum": 18,
+            "minimum": -18,
+            "title": "Unit Multiplier",
+            "type": "integer"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "version_kind": {
+            "$ref": "#/components/schemas/VersionKind"
+          }
+        },
+        "required": [
+          "event_time_start",
+          "event_time_end",
+          "market_timezone",
+          "publication_time",
+          "available_at",
+          "system_time",
+          "series_key",
+          "value",
+          "obs_status",
+          "unit",
+          "source_ref",
+          "release_id",
+          "artifact_sha256",
+          "version_kind",
+          "effective_version"
+        ],
+        "title": "Observation",
+        "type": "object",
+        "x-schema-version": 1
+      }
+    }
+  },
+  "openapi": "3.1.0"
+}

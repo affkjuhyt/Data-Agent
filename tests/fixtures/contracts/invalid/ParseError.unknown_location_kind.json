@@ -1,0 +1,15 @@
+{
+  "model": "ParseError",
+  "loc": "location",
+  "data": {
+    "location": {
+      "kind": "page",
+      "sheet": "Data 1",
+      "row": 9870,
+      "col": "Europe Brent Spot Price FOB (Dollars per Barrel)"
+    },
+    "raw_text": "1.234",
+    "error_code": "AMBIGUOUS_NUMBER",
+    "message": "'1.234' reads as 1234 or 1.234 under an undeclared locale"
+  }
+}

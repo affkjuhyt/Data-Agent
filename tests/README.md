@@ -18,7 +18,9 @@ tests/
 │   ├── sandbox_executor/    #   workflow_runtime. There is no single image that can
 │   ├── auth_api/            #   import every service (their pins conflict: OTel,
 │   ├── kb_worker/         #   boto3), so the suites are never run together.
-│   └── model_service/
+│   ├── model_service/
+│   └── contracts/           # libs/contracts (NOP-150), run in the kb-backend image (PyYAML, pinned pydantic)
+├── fixtures/contracts/      # invalid DTO cases + compat/ pairs for the contract gate (NOP-152)
 ├── integration/             # testcontainers; same per-service split as unit/
 │   ├── _db.py               # reset_database / run_alembic / alembic_head for the shared container
 │   ├── _sandbox.py          # sandbox-runner image gate (SANDBOX_RUNNER_IMAGE)
