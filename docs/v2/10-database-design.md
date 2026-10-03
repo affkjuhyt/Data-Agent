@@ -112,6 +112,30 @@ Schema và role Postgres tạo ở migration `5b7d9f1a3c6e` (NOP-147): role ch�
 trên bảng của schema mình; role khác chỉ có `USAGE`, quyền đọc từng bảng do migration tạo bảng cấp. Mật
 khẩu đặt ở Job `db-init` từ vault, chưa có cho các role V2 (làm cùng NOP-214).
 
+RLS cho bảng V2 (NOP-148): migration tạo bảng gọi helper `libs/shared/tenant_rls.py` ngay sau
+`CREATE TABLE`, không tự viết policy:
+
+```python
+from libs.shared.tenant_rls import enable_tenant_rls
+
+for sql in enable_tenant_rls("ingest", "release"):          # downgrade: disable_tenant_rls
+    op.execute(sql)
+```
+
+Helper bật `ENABLE` + `FORCE ROW LEVEL SECURITY`, `REVOKE ALL ... FROM PUBLIC`, và tạo policy theo từng
+lệnh trên `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid`: SELECT, INSERT,
+UPDATE (cả USING và WITH CHECK, không chuyển dòng sang tenant khác). DELETE chỉ có policy khi truyền
+`allow_delete=True`; mặc định không xoá được dòng nào (hợp ADR-V2-30). Role làm việc trên mọi tenant
+(`outbox_relay`, `maintenance`) truyền qua `cross_tenant_roles`: có SELECT/UPDATE `USING (true)` chỉ
+cho role đó, không bao giờ có INSERT. Quyền đọc chéo schema vẫn `GRANT SELECT` từng bảng trong cùng
+migration.
+
+Kiểm chứng: `tests/integration/_rls.py` có `as_service(dsn, role, tenant_id)` để chạy query bằng role
+dịch vụ thật, và `rls_violations(dsn)`. Test `tests/integration/workflow_runtime/test_v2_tenant_rls.py`
+chạy sau `alembic upgrade head` và fail nếu bảng nào trong năm schema V2 thiếu `tenant_id NOT NULL`,
+ENABLE, FORCE hoặc policy SELECT. Bảng cố ý dùng chung (ADR-V2-28) phải được thêm tên vào
+`SHARED_V2_TABLES` của test đó, kèm lý do.
+
 Nối với bảng cũ: `ingest.release.artifact_sha256` trỏ object MinIO; `KBData` giữ vai trò bản tìm kiếm
 của KB (ADR-V2-21) và mang thêm `artifact_sha256` để nối về raw. Không FK chéo từ schema V2 vào `public`.
 
@@ -138,7 +162,7 @@ của KB (ADR-V2-21) và mang thêm `artifact_sha256` để nối về raw. Khô
 | `/neo4j/query` nhận nhãn (đã kiểm tra), server tự dựng Cypher có lọc tenant, chạy session READ; route SSE `/stream` không ai gọi nên đã xoá | **Xong** | Không còn nhận Cypher tuỳ ý từ client |
 | Xoá cạnh Neo4j theo tài liệu dựa vào mirror `KBNeo4jRelationship` | **Xong** cho trash flush; re-crawl của web_crawler còn no-op, sửa cùng S2-02 | web_crawler là mã sync, `GraphStore` là async |
 | Bật RLS cho bảng mục 2.2 và chuyển service khỏi `admin` | **Xong phần service** (03/10): worker audit, memory, schema-crawler, web-crawler, CronJob memory-cleanup (`STRICT_TENANT_ISOLATION=1`) và auth-api chạy bằng `app_user`; auth-api đọc liên tenant (xác thực API key theo prefix, CIDR cho Kong, quét secret quá hạn rotate) qua 3 hàm `SECURITY DEFINER` của migration `4a7c2e9f1b3d`, mọi route có `X-Tenant-Id` mở `get_session(tenant_id)`. model-service ghi `KBModel` bằng `app_user`; `workflow-runtime-secrets` và `kb-backend-secrets` không còn mang URL admin (trước là dự phòng khi thiếu `RUNTIME_DB_URL`/`KB_BACKEND_URL_ASYNC`, code đã bỏ fallback). Credential admin chỉ còn ở hạ tầng: migrate, db-init, seed, backup/restore, Keycloak, Kong. Bật RLS thêm (03/10, migration `5b9e3d7a2c4f`): `compliance_settings` (tenant_id varchar, so sánh text không phân biệt hoa thường), `KBSourceConfig`/`KBSourceRun` (policy con qua `KBSource`; `kb_ingestion_worker` được SELECT `KBSource` vì subquery của policy chạy bằng quyền người gọi). Migration `6c1f4a8e3b5d`: `KBKnowledgeBase`, `KBNeo4jNode/Relationship` (policy chuẩn), `KBEntityLookup` (đọc dòng của tenant và dòng global `tenant_id IS NULL`, chỉ ghi dòng của tenant); `GraphStore`, `entity_registry` truyền tenant tường minh. Migration `7d2a5f9c4e6b`: `Messages`, `AgentTraces` (qua `Conversations`), `Workflows`, `WorkflowVersions` (qua `Agents`); `save_message`/`save_trace` bắt buộc nhận tenant; review chờ duyệt (`/api/reviews`) lọc theo tenant của người gọi; lịch ROI quét `Tenants` thay vì quét `PlatformSettings` không scope (trước đó không lịch nào chạy). Còn: role riêng cho từng service sau POC | Mỗi bảng phải kiểm service đọc nó đã đặt `app.tenant_id` chưa, nếu không sẽ trả rỗng. Worker đồng bộ dùng `platform_workers/common/db`: `set_tenant` (flush trước khi đổi tenant trong cùng transaction), `tenant_session` cho một đơn vị ghi, `tenant_ids` để quét lần lượt từng tenant (`Tenants` không có RLS). Integration test của worker và job chạy bằng `app_user` (fixture `app_user_dsn`, `tests/integration/conftest.py`) |
-| MinIO raw theo SHA-256, không xoá | **Xong** (S2-02, 03/10): bucket `raw` object lock (dev GOVERNANCE, production COMPLIANCE, 3650 ngày), `ingest.artifact` + `ingest.fetch` append-only (migration `9f3c7a1e5d2b`), ghi bằng `crawler_svc`; `KBData.artifact_sha256` | ADR-V2-21. Re-crawl vẫn thay bản tìm kiếm KB, raw cũ còn nguyên |
+| MinIO raw theo SHA-256, không xoá | **Xong** (S2-02, 03/10): bucket `raw` object lock (dev GOVERNANCE, production COMPLIANCE, 3650 ngày), `ingest.artifact` + `ingest.fetch` append-only (migration `9f3c7a1e5d2b`; RLS qua helper NOP-148 từ `a2c4e6f8b0d1`), ghi bằng `crawler_svc`; `KBData.artifact_sha256` | ADR-V2-21. Re-crawl vẫn thay bản tìm kiếm KB, raw cũ còn nguyên |
 | Canvas, silver staging, conflict payload chuyển từ Mongo sang Postgres JSONB | Sau POC | Không thêm dữ liệu mới vào Mongo |
 | Key trạng thái Redis (`plan_session`, `analytical_slots`) chuyển sang Postgres hoặc Redis không LRU | Sau POC | |
 | Backup ngoài node cho Postgres và MinIO raw | P0-07 | Dữ liệu đã duyệt không tái tạo được từ nguồn |

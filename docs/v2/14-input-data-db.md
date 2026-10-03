@@ -591,7 +591,9 @@ CREATE INDEX ON ingest.outbox (producer, id) WHERE published_at IS NULL AND dead
 ```
 
 Relay dùng role `outbox_relay`: có policy RLS riêng `USING (true)` chỉ trên bảng này và chỉ được
-`UPDATE (published_at, attempts, last_error, dead_at)`. Không role nào có `BYPASSRLS`.
+`UPDATE (published_at, attempts, last_error, dead_at)`. Không role nào có `BYPASSRLS`. Migration của
+bảng gọi `enable_tenant_rls("ingest", "outbox", cross_tenant_roles=("outbox_relay",))` (NOP-148), rồi
+`GRANT SELECT, UPDATE (published_at, attempts, last_error, dead_at)` cho relay.
 
 ### 9.2 ClickHouse `obs.observation` (NOP-108, thêm 4 cột)
 
@@ -675,7 +677,7 @@ Nguồn thử Brent feed B **không** nạp ở đây; nó đi theo kịch bản
 ## 13. Thứ tự migration
 
 ```text
-M0 NOP-147/148   schema, role, btree_gist (migration 5b7d9f1a3c6e); RLS helper (NOP-148)
+M0 NOP-147/148   schema, role, btree_gist (migration 5b7d9f1a3c6e); RLS helper libs/shared/tenant_rls.py (NOP-148)
 M1 NOP-117       registry.entity, entity_alias, entity_relation, series, series_source, catalog_change + seed
 M2 NOP-114/124   ingest.artifact, fetch, release, source_state, sla_event, outbox;  KBData.artifact_sha256
 M3 NOP-126       ingest.profile, mapping_version, release_processing
