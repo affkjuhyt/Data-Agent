@@ -1,11 +1,10 @@
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import (
     AuthPlatformSettingORM,
-    IPAllowlistORM,
 )
 try:
     from services.auth_api.infrastructure.config import KONG_ADMIN, PRIVATE_FALLBACK_CIDRS, log
@@ -40,14 +39,8 @@ def get_active_cidrs() -> list[str]:
     still decided by its token.
     """
     with get_session() as session:
-        return list(
-            session.scalars(
-                select(IPAllowlistORM.cidr)
-                .where(IPAllowlistORM.is_active.is_(True))
-                .distinct()
-                .order_by(IPAllowlistORM.cidr)
-            )
-        )
+        # Across tenants by design: auth_active_cidrs is the SECURITY DEFINER read.
+        return list(session.scalars(text("SELECT * FROM auth_active_cidrs()")))
 
 
 def upsert_ip_restriction_plugin(scope_url: str, payload: dict[str, Any]) -> None:

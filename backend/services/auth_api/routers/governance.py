@@ -66,7 +66,7 @@ def get_governance(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         return _governance(session, x_tenant_id)
 
 
@@ -76,7 +76,7 @@ def set_governance(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         for key in GOVERNANCE_KEYS:
             if key in body:
                 _upsert_setting(session, key, "true" if body[key] else "false")
@@ -91,7 +91,7 @@ def trigger_panic(
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
     revoked = []
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         rows = session.scalars(
             select(SecretVaultORM).where(
                 SecretVaultORM.tenant_id == x_tenant_id,
@@ -172,7 +172,7 @@ def sign_data(
     if not body or not body.data:
         raise HTTPException(status_code=422, detail="data (base64) is required")
 
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         row = session.scalar(
             select(SecretVaultORM).where(
                 SecretVaultORM.id == secret_id,
@@ -213,7 +213,7 @@ def verify_data(
     if not body or not body.data or not body.signature:
         raise HTTPException(status_code=422, detail="data and signature are required")
 
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         row = session.scalar(
             select(SecretVaultORM).where(
                 SecretVaultORM.id == secret_id,
@@ -246,7 +246,7 @@ def secrets_pii_log(
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> list[dict[str, Any]]:
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         rows = session.execute(
             select(KeyRotationORM, SecretVaultORM)
             .join(SecretVaultORM, SecretVaultORM.id == KeyRotationORM.secret_id)
@@ -276,7 +276,7 @@ def secrets_audit_log(
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> list[dict[str, Any]]:
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         rows = session.execute(
             select(KeyRotationORM, SecretVaultORM)
             .join(SecretVaultORM, SecretVaultORM.id == KeyRotationORM.secret_id)

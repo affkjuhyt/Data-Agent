@@ -1,10 +1,11 @@
 import threading
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from collections.abc import Iterator
 from typing import Any
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, sessionmaker
@@ -46,10 +47,26 @@ def get_session_factory() -> sessionmaker[Session]:
     return SessionLocal
 
 
+_SET_TENANT = text("SELECT set_config('app.tenant_id', :tenant_id, true)")
+
+
 @contextmanager
-def get_session() -> Iterator[Session]:
+def get_session(tenant_id: str | None = None) -> Iterator[Session]:
+    """One transaction, scoped to `tenant_id` when given.
+
+    auth-api connects as app_user (NOBYPASSRLS). api_keys, ip_allowlists and
+    secrets_vault have row-level policies on app.tenant_id: without the tenant a
+    read sees no rows and an insert is rejected. An unscoped session is for the
+    tables without a policy (platform_settings, key_rotations, compliance_settings,
+    microsoft_sso_approvals, Tenants); reads across tenants go through the
+    SECURITY DEFINER functions of migration 4a7c2e9f1b3d.
+    Raises ValueError for a tenant that is not a UUID.
+    """
+    scope = str(uuid.UUID(str(tenant_id))) if tenant_id is not None else None
     session = get_session_factory()()
     try:
+        if scope is not None:
+            session.execute(_SET_TENANT, {"tenant_id": scope})
         yield session
         session.commit()
     except Exception:

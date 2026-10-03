@@ -131,6 +131,8 @@ END
 $$;
 
 GRANT USAGE ON SCHEMA public TO app_user;
+-- What deploy/docker/sql/grant-roles.sql gives it on the cluster.
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
     GRANT USAGE, SELECT ON SEQUENCES TO app_user;
@@ -177,6 +179,27 @@ def _app_user_dsn(postgres_container: dict[str, str]) -> str:
     return f"postgresql://app_user:{_RLS_PASSWORD}@{host}:{port}/{db}"
 
 
+def _drop_app_pools() -> None:
+    """Close the app's pooled connections after a reset.
+
+    reset_database drops app_user and the migrations create it again under a new
+    OID, but a pooled connection keeps the dropped role's identity and is refused
+    everything ("permission denied"). Only modules already imported: importing
+    infrastructure.db here would freeze DATABASE_URL before auth_api_app sets it.
+    """
+    import sys
+
+    for module_name, attr in (
+        ("services.auth_api.infrastructure.db", "SessionLocal"),
+        ("libs.shared.db_context", "_session_factory"),
+    ):
+        module = sys.modules.get(module_name)
+        factory = getattr(module, attr, None) if module else None
+        if factory is not None:
+            factory.kw["bind"].dispose()
+            setattr(module, attr, None)
+
+
 @pytest.fixture
 def auth_api_db(postgres_container) -> dict[str, str]:
     """Reset the shared container, then apply the minimal schema + RLS setup.
@@ -193,6 +216,7 @@ def auth_api_db(postgres_container) -> dict[str, str]:
     import psycopg2
 
     reset_database(postgres_container["dsn"])
+    _drop_app_pools()
     conn = psycopg2.connect(postgres_container["dsn"])
     conn.autocommit = True
     try:
@@ -215,10 +239,11 @@ def auth_api_app(postgres_container):
     DSN. Bypasses the startup() task that touches Kong + spawns the
     auto-rotation loop — we don't need either for smoke tests.
     """
-    os.environ["DATABASE_URL"] = postgres_container["dsn"]
-    # APP_DATABASE_URL is what shared.db_context.get_tenant_session connects to.
-    # Must be the app_user role for RLS to apply (owner connections bypass
-    # FORCE RLS via the superuser bit testcontainers sets on the owner role).
+    # auth-api runs as app_user on the cluster, so here too: owner connections
+    # bypass FORCE RLS via the superuser bit testcontainers sets on the owner
+    # role, and a route that forgot its tenant would pass. APP_DATABASE_URL is
+    # what shared.db_context.get_tenant_session connects to.
+    os.environ["DATABASE_URL"] = _app_user_dsn(postgres_container)
     os.environ["APP_DATABASE_URL"] = _app_user_dsn(postgres_container)
 
     from services.auth_api.app import create_app
@@ -296,11 +321,19 @@ def migrated_auth_db(postgres_container) -> dict[str, str]:
         reset_database(dsn)
         result = run_alembic(dsn, "upgrade", "head")
         assert result.returncode == 0, f"alembic upgrade failed:\n{result.stdout}\n{result.stderr}"
+        _drop_app_pools()
 
     conn = psycopg2.connect(dsn)
     conn.autocommit = True
     try:
         with conn.cursor() as cur:
+            # The app connects as app_user (auth_api_app); the chain creates the
+            # role without a login password or the cluster's grants.
+            cur.execute(f"ALTER ROLE app_user LOGIN PASSWORD '{_RLS_PASSWORD}'")
+            cur.execute(
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user"
+            )
+            cur.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user")
             cur.execute(f"TRUNCATE {', '.join(_ROUTER_TABLES)}")
             # Back to the defaults b8c9d0e1f2a3 seeds; tests flip these.
             cur.execute("DELETE FROM platform_settings")

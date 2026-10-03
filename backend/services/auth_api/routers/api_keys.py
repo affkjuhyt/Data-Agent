@@ -3,7 +3,7 @@ from typing import Any
 from datetime import UTC, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path
-from sqlalchemy import or_, select
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
 from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import APIKeyORM
@@ -42,7 +42,7 @@ def list_api_keys(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> list[dict[str, Any]]:
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         rows = session.scalars(
             select(APIKeyORM)
             .where(APIKeyORM.tenant_id == x_tenant_id)
@@ -90,7 +90,7 @@ def create_api_key(
         except ValueError:
             raise HTTPException(status_code=422, detail="Invalid expires_at format")
 
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         row = APIKeyORM(
             tenant_id=x_tenant_id,
             created_by=user["user_id"],
@@ -112,7 +112,7 @@ def revoke_api_key(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         row = session.scalar(
             select(APIKeyORM).where(
                 APIKeyORM.id == key_id,
@@ -133,7 +133,7 @@ def rotate_api_key(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         old = session.scalar(
             select(APIKeyORM)
             .where(
@@ -188,25 +188,26 @@ def verify_api_key(
         raise HTTPException(status_code=401, detail="Invalid API key")
 
     now = datetime.now(UTC)
+    # The key is what names its tenant, so the lookup cannot be scoped first:
+    # auth_api_key_candidates is the SECURITY DEFINER read across tenants.
     with get_session() as session:
-        candidates = session.scalars(
-            select(APIKeyORM).where(
-                APIKeyORM.key_prefix == prefix,
-                APIKeyORM.revoked_at.is_(None),
-                or_(APIKeyORM.expires_at.is_(None), APIKeyORM.expires_at > now),
-            )
+        candidates = session.execute(
+            text("SELECT * FROM auth_api_key_candidates(:prefix)"), {"prefix": prefix}
         ).all()
-        # The prefix has four random letters, so two live keys can share one.
-        row = next((r for r in candidates if api_key_matches(body.key, r.key_hash)), None)
-        if row is None or row.scope not in SCOPE_ROLES:
-            raise HTTPException(status_code=401, detail="Invalid API key")
-        if row.last_used_at is None or now - row.last_used_at >= _LAST_USED_RESOLUTION:
-            row.last_used_at = now
-        return {
-            "key_id": str(row.id),
-            "user_id": f"api-key:{row.id}",
-            "user_name": row.name,
-            "tenant_id": str(row.tenant_id),
-            "scope": row.scope,
-            "roles": [SCOPE_ROLES[row.scope]],
-        }
+    # The prefix has four random letters, so two live keys can share one.
+    row = next((r for r in candidates if api_key_matches(body.key, r.key_hash)), None)
+    if row is None or row.scope not in SCOPE_ROLES:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    if row.last_used_at is None or now - row.last_used_at >= _LAST_USED_RESOLUTION:
+        with get_session(str(row.tenant_id)) as session:
+            session.execute(
+                update(APIKeyORM).where(APIKeyORM.id == row.id).values(last_used_at=now)
+            )
+    return {
+        "key_id": str(row.id),
+        "user_id": f"api-key:{row.id}",
+        "user_name": row.name,
+        "tenant_id": str(row.tenant_id),
+        "scope": row.scope,
+        "roles": [SCOPE_ROLES[row.scope]],
+    }

@@ -68,7 +68,7 @@ def list_ip_allowlists(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> list[dict[str, Any]]:
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         rows = session.scalars(
             select(IPAllowlistORM)
             .where(IPAllowlistORM.tenant_id == x_tenant_id)
@@ -89,7 +89,7 @@ def create_ip_rule(
         raise HTTPException(status_code=422, detail=f"Invalid CIDR: {body.cidr}")
 
     try:
-        with get_session() as session:
+        with get_session(x_tenant_id) as session:
             row = IPAllowlistORM(
                 tenant_id=x_tenant_id,
                 cidr=body.cidr,
@@ -118,7 +118,7 @@ def toggle_ip_rule(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         row = session.scalar(
             select(IPAllowlistORM).where(
                 IPAllowlistORM.id == rule_id,
@@ -141,7 +141,7 @@ def delete_ip_rule(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> None:
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         row = session.scalar(
             select(IPAllowlistORM).where(
                 IPAllowlistORM.id == rule_id,

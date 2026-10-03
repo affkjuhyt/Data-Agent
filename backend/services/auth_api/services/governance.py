@@ -55,7 +55,7 @@ def set_panic_mode(db: Session, tenant_id: str, enabled: bool) -> None:
 def enforce_vault_not_in_panic_mode(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
 ) -> None:
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         if get_panic_mode(session, x_tenant_id):
             raise HTTPException(
                 status_code=503,

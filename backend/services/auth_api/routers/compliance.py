@@ -105,7 +105,7 @@ def get_settings(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         return _fetch(session, x_tenant_id)
 
 
@@ -115,7 +115,7 @@ def put_settings(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         current = _fetch(session, x_tenant_id)
         merged = {**current}
         data = body.model_dump(exclude_none=True)
@@ -165,7 +165,7 @@ def get_score(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         return _compute_score(_fetch(session, x_tenant_id))
 
 

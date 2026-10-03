@@ -77,7 +77,7 @@ def list_secrets(
     if not is_platform_admin and not _is_tenant_admin_for(user, x_tenant_id):
         raise HTTPException(status_code=403, detail="Required role: platform-admin or tenant-admin")
 
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         stmt = select(SecretVaultORM).where(SecretVaultORM.tenant_id == x_tenant_id)
         if not is_platform_admin:
             stmt = stmt.where(SecretVaultORM.key_type.in_(TENANT_MANAGEABLE_KEY_TYPES))
@@ -139,7 +139,7 @@ def create_secret(
     rotation_due = datetime.now(timezone.utc) + timedelta(days=body.rotation_days)
 
     try:
-        with get_session() as session:
+        with get_session(x_tenant_id) as session:
             row = SecretVaultORM(
                 tenant_id=x_tenant_id,
                 key_name=body.key_name,
@@ -169,7 +169,7 @@ def delete_secret(
     if not is_platform_admin and not _is_tenant_admin_for(user, x_tenant_id):
         raise HTTPException(status_code=403, detail="Required role: platform-admin or tenant-admin")
 
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         row = session.scalar(
             select(SecretVaultORM).where(
                 SecretVaultORM.id == secret_id,
@@ -212,7 +212,7 @@ def rotate_secret(
 ) -> dict[str, Any]:
     new_value = (body or {}).get("value", "")
 
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         old = session.scalar(
             select(SecretVaultORM)
             .where(
@@ -286,7 +286,7 @@ def reveal_secret(
     user: dict[str, Any] = Depends(require_role("platform-admin")),
     _panic: None = Depends(enforce_vault_not_in_panic_mode),
 ) -> dict[str, Any]:
-    with get_session() as session:
+    with get_session(x_tenant_id) as session:
         row = session.scalar(
             select(SecretVaultORM).where(
                 SecretVaultORM.id == secret_id,

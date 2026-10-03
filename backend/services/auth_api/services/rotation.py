@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import KeyRotationORM, SecretVaultORM
 
@@ -27,21 +27,18 @@ def run_auto_rotation() -> None:
     with get_session() as session:
         if not get_governance_setting(session, "vault_auto_rotation"):
             return
-        overdue_ids = session.scalars(
-            select(SecretVaultORM.id).where(
-                SecretVaultORM.is_active.is_(True),
-                SecretVaultORM.rotation_due_at < datetime.now(timezone.utc),
-            )
-        ).all()
+        # Every tenant's overdue secrets: auth_secrets_due_for_rotation is the
+        # SECURITY DEFINER read across tenants. Each is then rotated under its own.
+        overdue = session.execute(text("SELECT * FROM auth_secrets_due_for_rotation()")).all()
 
-    if not overdue_ids:
+    if not overdue:
         return
 
     vault = get_vault()
-    for secret_id in overdue_ids:
+    for secret_id, tenant_id in overdue:
         row: SecretVaultORM | None = None
         try:
-            with get_session() as session:
+            with get_session(str(tenant_id)) as session:
                 row = session.scalar(
                     select(SecretVaultORM)
                     .where(
