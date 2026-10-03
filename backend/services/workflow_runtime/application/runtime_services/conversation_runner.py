@@ -509,11 +509,12 @@ async def run_conversation_stream(
             if conv_id:
                 # Sequential on purpose: history is ordered by created_at, so the
                 # user message has to land before the assistant one.
-                await save_message(conv_id, "user", req.query)
+                await save_message(conv_id, "user", req.query, tenant_id=tenant_id)
                 assistant_msg_id = await save_message(
                     conv_id,
                     "assistant",
                     assistant_text,
+                    tenant_id=tenant_id,
                     latency_ms=latency,
                     metadata={
                         "agent_version_id": cfg.get("agent_version_id"),
@@ -563,6 +564,7 @@ async def run_conversation_stream(
                                 output=nt["output"],
                                 latency_ms=nt["latency_ms"],
                                 status=nt.get("status", "success"),
+                                tenant_id=tenant_id,
                             )
                             for idx, nt in enumerate(node_traces)
                         ))
@@ -574,6 +576,7 @@ async def run_conversation_stream(
                             input={"query": req.query},
                             output={"response": assistant_text},
                             latency_ms=latency,
+                            tenant_id=tenant_id,
                         )
 
             # orchestrated=True: orchestrator sẽ ghi memory sau synthesize, agent không ghi
@@ -737,6 +740,8 @@ async def run_conversation_stream(
                             interrupt_payload = intr.value
                             break
                     _pending_reviews[cast(str, conv_id)] = {
+                        # Only the same tenant may see or resume it (reviews router).
+                        "tenant_id":  tenant_id,
                         "agent_id":   req.agent_id,
                         "query":      req.query,
                         "payload":    interrupt_payload,

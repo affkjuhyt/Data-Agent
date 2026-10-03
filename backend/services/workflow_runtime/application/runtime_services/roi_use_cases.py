@@ -375,12 +375,14 @@ async def run_due_schedules(tenant_id: str, *, updated_by: str | None = None, no
 async def run_due_schedules_for_all_tenants() -> dict[str, Any]:
     if client is None or PlatformSettingsORM is None or select is None or not client.is_connected():
         return {"tenants": 0, "ran": 0}
-    async with client.get_client() as session:
-        rows = (await session.execute(
-            select(PlatformSettingsORM.tenant_id).where(PlatformSettingsORM.key == _SCHEDULE_KEY)
-        )).fetchall()
+    # "PlatformSettings" has row-level security, so an unscoped scan of it found no
+    # schedules at all and nothing ever ran. "Tenants" has none: walk the tenants,
+    # and run_due_schedules reads each one's schedules under its own tenant.
+    from libs.basemodel.services_databaseconnector.postgres_orm.auth_release_orm import TenantsORM
+
+    async with client.get_platform_client() as session:
+        tenants = [str(t) for t in (await session.scalars(select(TenantsORM.id)))]
     total_ran = 0
-    tenants = {str(r.tenant_id) for r in rows}
     for tenant_id in tenants:
         try:
             out = await run_due_schedules(tenant_id, updated_by="roi_scheduler")

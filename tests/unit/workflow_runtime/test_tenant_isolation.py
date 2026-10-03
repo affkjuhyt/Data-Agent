@@ -100,8 +100,9 @@ _UNSCOPED_BUDGET = {
     # 5 + mongo_client's save_canvas/load_canvas (ex flow_builder): Mongo has no
     # tenant scoping to pass, the canvas routes gate them on
     # workflow_version_belongs_to instead. jobs/memory_cleanup.py's 3 are gone:
-    # it runs as app_user and cleans one tenant at a time.
-    "workflow_runtime": 7,
+    # it runs as app_user and cleans one tenant at a time. 6: the ROI scheduler
+    # walks "Tenants" instead of scanning PlatformSettings unscoped.
+    "workflow_runtime": 6,
     "sandbox_executor": 1,
     "platform_workers": 1,
 }

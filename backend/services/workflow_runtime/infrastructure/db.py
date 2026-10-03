@@ -220,17 +220,24 @@ async def save_message(
     tokens: int = 0,
     latency_ms: int = 0,
     metadata: Optional[dict[str, Any]] = None,
+    *,
+    tenant_id: str,
 ) -> Optional[str]:
+    """Messages has no tenant_id; its row-level policy goes through the
+    conversation's, so the insert runs in a session scoped to `tenant_id`."""
     if not client.is_connected():
         return None
-    result = await client.insert(MessagesInsert(
-        conversation_id=conversation_id,
-        role=role,
-        content={"text": content},
-        msg_metadata=metadata or {},
-        tokens_used=tokens,
-        latency_ms=latency_ms,
-    ))
+    async with client.get_client(tenant_id=tenant_id) as session:
+        result = await client.insert(MessagesInsert(
+            conversation_id=conversation_id,
+            role=role,
+            content={"text": content},
+            msg_metadata=metadata or {},
+            tokens_used=tokens,
+            latency_ms=latency_ms,
+        ), session=session)
+        if result.code == 200:
+            await session.commit()
     if result.code != 200:
         logger.error("save_message failed: %s", result.error)
         return None
@@ -247,18 +254,25 @@ async def save_trace(
     output: dict[str, Any],
     status: str = "success",
     latency_ms: int = 0,
+    *,
+    tenant_id: str,
 ) -> None:
+    """Scoped like save_message: AgentTraces' policy goes through the message's
+    conversation."""
     if not client.is_connected():
         return
-    result = await client.insert(AgentTracesInsert(
-        message_id=message_id,
-        trace_index=trace_index,
-        tool_name=tool_name,
-        input=_sanitize_trace(input),
-        output=_sanitize_trace(output),
-        status=status,
-        latency_ms=latency_ms,
-    ))
+    async with client.get_client(tenant_id=tenant_id) as session:
+        result = await client.insert(AgentTracesInsert(
+            message_id=message_id,
+            trace_index=trace_index,
+            tool_name=tool_name,
+            input=_sanitize_trace(input),
+            output=_sanitize_trace(output),
+            status=status,
+            latency_ms=latency_ms,
+        ), session=session)
+        if result.code == 200:
+            await session.commit()
     if result.code == 409:
         pass  # duplicate (message_id, trace_index) — silently ignore
     elif result.code != 200:
