@@ -22,7 +22,6 @@ MAX_SYNTHESIS_RETRY = int(os.environ.get("ORCHESTRATOR_MAX_SYNTHESIS_RETRY", "2"
 MAX_CONCURRENT_TURNS = int(os.environ.get("ORCHESTRATOR_MAX_CONCURRENT_TURNS", "8"))
 
 # ── Database ─────────────────────────────────────────────────────────────────
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
 DEV_TENANT_ID = os.environ.get("DEV_TENANT_ID", "00000000-0000-0000-0000-000000000001")
 
 # ── Redis (planning-state checkpoint cache) ──────────────────────────────────

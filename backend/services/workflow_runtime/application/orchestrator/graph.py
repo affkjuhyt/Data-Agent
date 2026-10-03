@@ -87,10 +87,10 @@ _CHECKPOINTER_SCHEMA = "langgraph"
 
 
 def _checkpointer_dsn() -> str:
-    url = os.environ.get("RUNTIME_DB_URL") or os.environ.get("DATABASE_URL") or ""
+    url = os.environ.get("RUNTIME_DB_URL") or ""
     if not url:
         raise RuntimeError(
-            "RUNTIME_DB_URL/DATABASE_URL not set — cannot open the shared "
+            "RUNTIME_DB_URL not set — cannot open the shared "
             "LangGraph checkpointer (Postgres)."
         )
     # This codebase's URLs are SQLAlchemy-style ("postgresql+asyncpg://...");

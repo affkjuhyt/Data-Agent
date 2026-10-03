@@ -70,9 +70,11 @@ _DEV_AGENT_VER_ID = os.getenv("DEV_AGENT_VER_ID", "00000000-0000-0000-0000-00000
 
 
 async def init_db() -> None:
-    url = os.environ.get("RUNTIME_DB_URL") or os.environ.get("DATABASE_URL")
+    # runtime_writer (NOBYPASSRLS). No DATABASE_URL fallback: that is the owner
+    # role, and falling back to it silently turned row-level security off.
+    url = os.environ.get("RUNTIME_DB_URL")
     if not url:
-        logger.warning("RUNTIME_DB_URL/DATABASE_URL not set — DB persistence disabled")
+        logger.warning("RUNTIME_DB_URL not set — DB persistence disabled")
         return
     client.set_url(url)
     await client.open()

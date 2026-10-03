@@ -17,7 +17,6 @@ kubectl -n dataagent-service create secret generic auth-api-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic kb-backend-secrets \
-  --from-literal=POSTGRES_URL="${POSTGRES_URL_ASYNC}" \
   --from-literal=KB_BACKEND_URL_ASYNC="${KB_BACKEND_URL_ASYNC}" \
   --from-literal=MINIO_URL="${MINIO_URL}" \
   --from-literal=GATEWAY_KEY="${GATEWAY_KEY}" \
@@ -25,7 +24,6 @@ kubectl -n dataagent-service create secret generic kb-backend-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic workflow-runtime-secrets \
-  --from-literal=DATABASE_URL="${DATABASE_URL}" \
   --from-literal=RUNTIME_DB_URL="${RUNTIME_DB_URL}" \
   --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \
   --from-literal=LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY}" \
@@ -40,7 +38,7 @@ kubectl -n dataagent-service create secret generic workflow-runtime-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic model-service-secrets \
-  --from-literal=POSTGRES_DSN="${POSTGRES_DSN}" \
+  --from-literal=POSTGRES_DSN="${APP_DATABASE_URL}" \
   --from-literal=REMOTE_API_KEY="${REMOTE_API_KEY}" \
   --from-literal=REMOTE_LLM_KEY="${REMOTE_LLM_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
