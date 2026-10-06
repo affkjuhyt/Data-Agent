@@ -1,15 +1,9 @@
 import asyncio
 
-try:
-    from services.auth_api.infrastructure.config import POOL_MAX, log
-    from services.auth_api.infrastructure.db import ensure_settings_table
-    from services.auth_api.services.kong_sync import sync_kong_ip_restrictions
-    from services.auth_api.services.rotation import auto_rotation_loop
-except ModuleNotFoundError:
-    from auth_api.infrastructure.config import POOL_MAX, log
-    from auth_api.infrastructure.db import ensure_settings_table
-    from auth_api.services.kong_sync import sync_kong_ip_restrictions
-    from auth_api.services.rotation import auto_rotation_loop
+from services.auth_api.infrastructure.config import POOL_MAX, log
+from services.auth_api.infrastructure.db import ensure_settings_table
+from services.auth_api.services.kong_sync import sync_kong_ip_restrictions
+from services.auth_api.services.rotation import auto_rotation_loop
 
 
 async def sync_kong_on_startup() -> None:

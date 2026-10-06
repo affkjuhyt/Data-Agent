@@ -110,7 +110,6 @@ spec:
         emptyDir: {}
       - name: snapshots
         emptyDir: {}
-      enableServiceLinks: false
       serviceAccountName: qdrant
   volumeClaimTemplates:
   - metadata:

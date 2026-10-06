@@ -46,11 +46,13 @@ class ContractModel(BaseModel):
     # `serialize_by_alias` setting yet.
     def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         kwargs.setdefault("by_alias", True)
-        return super().model_dump(**kwargs)
+        dumped: dict[str, Any] = super().model_dump(**kwargs)
+        return dumped
 
     def model_dump_json(self, **kwargs: Any) -> str:
         kwargs.setdefault("by_alias", True)
-        return super().model_dump_json(**kwargs)
+        dumped: str = super().model_dump_json(**kwargs)
+        return dumped
 
 
 def _refuse_float(value: object) -> object:

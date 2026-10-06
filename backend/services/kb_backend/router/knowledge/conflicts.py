@@ -50,8 +50,8 @@ async def get_conflict_route(
 async def resolve_batch_route(
         batch_id: str,
         body: ResolveBatchRequest,
-        request: Request, ctx: dict = Depends(require_perm("editConflict")),
-):
+        request: Request, ctx: dict[str, Any] = Depends(require_perm("editConflict")),
+) -> ResponseModel[Any]:
     result = await resolve_batch(
         postgres=svc(request, "postgres"),
         batch_id=batch_id,

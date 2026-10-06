@@ -84,7 +84,6 @@ spec:
       volumes:
       - name: tmp
         emptyDir: {}
-      enableServiceLinks: false
       serviceAccountName: mongo
   volumeClaimTemplates:
   - metadata:

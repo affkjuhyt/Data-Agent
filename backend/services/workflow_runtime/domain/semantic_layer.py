@@ -159,7 +159,7 @@ async def _load_resolver(tenant_id: str) -> MetricResolver:
 
 
 async def get_resolver(tenant_id: str) -> MetricResolver:
-    cached = _cache.get(tenant_id)
+    cached: MetricResolver | None = _cache.get(tenant_id)
     if cached is not None:
         return cached
     try:

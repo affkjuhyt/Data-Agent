@@ -152,7 +152,7 @@ def _as_list(value: Any) -> list[str]:
     return [v for v in (value or []) if isinstance(v, str) and v]
 
 
-def _pick_urls(connector: str, entry: dict) -> tuple[list[str], str | None]:
+def _pick_urls(connector: str, entry: dict[str, Any]) -> tuple[list[str], str | None]:
     """The URL(s) to fetch for one registry row, or ([], reason).
 
     Each connector type keeps its fetchable address in a different field, and
@@ -211,7 +211,9 @@ def _url_label(url: str, index: int) -> str:
     return str(index + 1)
 
 
-def _entry_to_create_requests(entry: dict) -> tuple[list[CreateSourceRequest], str | None]:
+def _entry_to_create_requests(
+        entry: dict[str, Any],
+) -> tuple[list[CreateSourceRequest], str | None]:
     """One ANKT registry row -> one or more CreateSourceRequests, or ([], reason)
     if the row cannot become a scheduled source (manual-upload / bulk-parquet
     are one-off imports; a row without a connector has nothing to fetch; the

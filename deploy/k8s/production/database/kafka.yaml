@@ -163,7 +163,6 @@ spec:
         emptyDir: {}
       - name: logs
         emptyDir: {}
-      enableServiceLinks: false
       serviceAccountName: kafka
   volumeClaimTemplates:
   - metadata:

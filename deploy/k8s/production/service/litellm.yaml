@@ -134,7 +134,6 @@ spec:
           name: litellm-config
       - name: tmp
         emptyDir: {}
-      enableServiceLinks: false
       serviceAccountName: litellm
 
 ---

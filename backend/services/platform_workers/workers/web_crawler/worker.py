@@ -29,7 +29,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
-from typing import Any, TypedDict
+from typing import Any, TypeAlias, TypedDict
 
 from kafka import KafkaProducer
 from pydantic import Field
@@ -63,7 +63,9 @@ _RAW_BYTES_CONNECTOR_TYPES = {"http_file", "rss", "rest_api", "sdmx"}
 
 
 def _retry_backoff_seconds(retry_count: int) -> int:
-    return 300 * (2 ** min(retry_count, 6))  # 5min, 10min, 20min, ... capped at ~5h
+    # `int ** int` is typed Any (a negative exponent gives a float); the exponent here is >= 0.
+    multiplier: int = 2 ** min(retry_count, 6)
+    return 300 * multiplier  # 5min, 10min, 20min, ... capped at ~5h
 
 
 class Settings(BaseSettings):
@@ -77,7 +79,7 @@ class Settings(BaseSettings):
 
 
 _settings = Settings()
-SessionFactory = sessionmaker[Session]
+SessionFactory: TypeAlias = sessionmaker[Session]
 
 POLL_INTERVAL_SECONDS = _settings.poll_interval_seconds
 MAX_PARALLEL_RUNS = max(1, _settings.max_parallel_runs)

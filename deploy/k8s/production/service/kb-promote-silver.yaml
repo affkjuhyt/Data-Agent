@@ -120,5 +120,4 @@ spec:
           claimName: kb-promote-silver-cache
       - name: tmp
         emptyDir: {}
-      enableServiceLinks: false
       serviceAccountName: kb-promote-silver

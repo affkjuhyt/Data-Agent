@@ -30,7 +30,8 @@ def _default_encode(texts: list[str]) -> list[list[float]]:
     entry = registry.default(Capability.EMBED)
     if entry is None or not isinstance(entry.caller, EmbedCaller):
         raise RuntimeError("no embedding model loaded")
-    return entry.caller.embed(texts)
+    vectors: list[list[float]] = entry.caller.embed(texts)
+    return vectors
 
 
 # Cache + dynamic-batch wrapper for the default embedding path (the hot path).

@@ -94,7 +94,6 @@ spec:
       volumes:
       - name: tmp
         emptyDir: {}
-      enableServiceLinks: false
       serviceAccountName: minio
   volumeClaimTemplates:
   - metadata:

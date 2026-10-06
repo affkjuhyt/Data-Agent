@@ -60,12 +60,18 @@ def _safe_cell(value: Any) -> Any:
     return json.dumps(value, ensure_ascii=False, default=_json_default)
 
 
+def _dict_field(container: dict[str, Any], key: str) -> dict[str, Any]:
+    value = container.get(key)
+    return value if isinstance(value, dict) else {}
+
+
 def _source_rows(run: dict[str, Any], question: str) -> list[tuple[str, Any]]:
-    metric = run.get("metric") if isinstance(run.get("metric"), dict) else {}
-    provenance = run.get("provenance") if isinstance(run.get("provenance"), dict) else {}
-    aggregation = run.get("aggregation") if isinstance(run.get("aggregation"), dict) else {}
-    truncation = run.get("truncation") if isinstance(run.get("truncation"), dict) else {}
-    tables = provenance.get("tables") if isinstance(provenance.get("tables"), list) else []
+    metric = _dict_field(run, "metric")
+    provenance = _dict_field(run, "provenance")
+    aggregation = _dict_field(run, "aggregation")
+    truncation = _dict_field(run, "truncation")
+    tables_value = provenance.get("tables")
+    tables: list[Any] = tables_value if isinstance(tables_value, list) else []
     return [
         ("Question", question),
         ("Exported at", datetime.now(timezone.utc).isoformat()),
@@ -161,7 +167,8 @@ def _ensure_bucket(client: Any) -> None:
 
 def _get_object(client: Any, key: str) -> bytes:
     resp = client.get_object(Bucket=BUCKET, Key=key)
-    return resp["Body"].read()
+    body: bytes = resp["Body"].read()
+    return body
 
 
 async def create_answer_export(run: dict[str, Any], *, tenant_id: str, question: str) -> dict[str, Any] | None:

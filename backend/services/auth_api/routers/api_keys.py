@@ -9,30 +9,17 @@ from sqlalchemy.orm import Session
 from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import APIKeyORM
 from libs.shared.db_context import get_tenant_session
 from libs.shared.auth import gateway_key, require_role
-try:
-    from services.auth_api.domain.api_keys import (
-        SCOPE_ROLES,
-        VALID_SCOPES,
-        api_key_matches,
-        format_api_key,
-        generate_api_key,
-        hash_api_key,
-        key_prefix_of,
-    )
-    from services.auth_api.infrastructure.db import get_session, orm_to_dict
-    from services.auth_api.schemas import APIKeyCreateInput, APIKeyVerifyInput
-except ModuleNotFoundError:
-    from auth_api.domain.api_keys import (
-        SCOPE_ROLES,
-        VALID_SCOPES,
-        api_key_matches,
-        format_api_key,
-        generate_api_key,
-        hash_api_key,
-        key_prefix_of,
-    )
-    from auth_api.infrastructure.db import get_session, orm_to_dict
-    from auth_api.schemas import APIKeyCreateInput, APIKeyVerifyInput
+from services.auth_api.domain.api_keys import (
+    SCOPE_ROLES,
+    VALID_SCOPES,
+    api_key_matches,
+    format_api_key,
+    generate_api_key,
+    hash_api_key,
+    key_prefix_of,
+)
+from services.auth_api.infrastructure.db import get_session, orm_to_dict
+from services.auth_api.schemas import APIKeyCreateInput, APIKeyVerifyInput
 
 router = APIRouter()
 

@@ -111,5 +111,4 @@ spec:
           name: db-init-sql
       - name: tmp
         emptyDir: {}
-      enableServiceLinks: false
       serviceAccountName: db-init

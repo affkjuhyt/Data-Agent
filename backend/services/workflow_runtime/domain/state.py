@@ -23,7 +23,8 @@ class AgentState(TypedDict):
     rrf_results: List[dict[str, Any]]
     reranked_chunks: List[dict[str, Any]]
     response: str
-    citations: List[dict]      # set bởi responder_node — nguồn thực sự được trích dẫn trong response
+    # set bởi responder_node — nguồn thực sự được trích dẫn trong response
+    citations: List[dict[str, Any]]
     # set bởi responder_node — {"runs": [SQL đã chạy + metric + provenance +
     # rows preview], "clarifications": [...], "warnings": [...]}. Sinh tất định
     # từ metadata của tool result, không do model khai — đi ra SSE qua `__evidence`.

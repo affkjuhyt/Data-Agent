@@ -179,11 +179,12 @@ def build_envelope(
 
 def parse_envelope(raw: bytes | str) -> EventEnvelope:
     """Read a message off Kafka. Raises pydantic.ValidationError naming each bad field."""
-    return EventEnvelope.model_validate_json(raw)
+    envelope: EventEnvelope = EventEnvelope.model_validate_json(raw)
+    return envelope
 
 
 def typed_payload(envelope: EventEnvelope) -> ContractModel:
     """The payload as its model; UnknownPayloadVersion for a version this build does not know."""
-    return payload_model(envelope.event_type, envelope.schema_version).model_validate(
-        envelope.payload
-    )
+    model = payload_model(envelope.event_type, envelope.schema_version)
+    payload: ContractModel = model.model_validate(envelope.payload)
+    return payload

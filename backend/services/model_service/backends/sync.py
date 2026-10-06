@@ -125,7 +125,7 @@ def _async_dsn(dsn: str) -> str:
 
 
 async def _resolve_or_create(session: AsyncSession, model_name: str, task_type: str) -> _uuid.UUID:
-    found = await session.scalar(
+    found: _uuid.UUID | None = await session.scalar(
         select(KBModelORM.model_id).where(
             KBModelORM.model_name == model_name,
             KBModelORM.task_type == task_type,

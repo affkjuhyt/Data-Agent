@@ -173,11 +173,11 @@ def _evidence_run(chunk: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str,
     return preview, rows
 
 
-def _citation_type(chunk: dict) -> str:
+def _citation_type(chunk: dict[str, Any]) -> str:
     """kb | mcp | db | web | tool — dùng để FE tô màu badge theo loại nguồn.
     rrf_sources do rrf_ranking_node gắn (giữ nguyên qua reranker vì reranker
     chỉ spread **item, không xoá field lạ)."""
-    category = (chunk.get("rrf_sources") or ["kb"])[0]
+    category: str = (chunk.get("rrf_sources") or ["kb"])[0]
     if category != "tool":
         return category
     chunk_id = chunk.get("id", "")
@@ -251,7 +251,7 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
         "warnings": list(assumptions),
     }
 
-    chunk_meta: dict[int, dict] = {}
+    chunk_meta: dict[int, dict[str, Any]] = {}
     # (evidence run, its export task) — exports run alongside the LLM call below.
     export_jobs: list[tuple[dict[str, Any], asyncio.Task[dict[str, Any] | None]]] = []
     if state.get("reranked_chunks"):

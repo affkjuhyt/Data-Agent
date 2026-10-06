@@ -25,9 +25,11 @@ try:
     from libs.database_connector.postgres_connector import client
     from services.workflow_runtime.application.runtime_services import platform_queries
 except Exception:  # pragma: no cover - unit hosts may not install service deps
+    # Optional-import fallback: rebinding the imported names is the point, and
+    # run_due_schedules_for_all_tenants checks them for None before use.
     select = None
-    PlatformSettingsORM = None
-    client = None
+    PlatformSettingsORM = None  # type: ignore[assignment,misc]
+    client = None  # type: ignore[assignment]
 
     class _MissingPlatformQueries:
         async def get_setting(self, *_a: Any, **_k: Any) -> dict[str, Any]:
@@ -42,7 +44,7 @@ except Exception:  # pragma: no cover - unit hosts may not install service deps
         async def list_traces(self, *_a: Any, **_k: Any) -> dict[str, Any]:
             raise RuntimeError("platform query dependencies are not installed")
 
-    platform_queries = _MissingPlatformQueries()
+    platform_queries = _MissingPlatformQueries()  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +127,8 @@ def _cron_due(cron: str, base: dt.datetime, now: dt.datetime) -> bool:
     try:
         from croniter import croniter
 
-        return croniter(cron, base).get_next(dt.datetime) <= now
+        next_run: dt.datetime = croniter(cron, base).get_next(dt.datetime)
+        return next_run <= now
     except Exception:
         parts = cron.split()
         if len(parts) != 5:

@@ -43,6 +43,9 @@ MODE_SINGLE_KEEP_INCOMING = "single_keep_incoming"
 MODE_MERGE = "merge"
 MODE_INVALID = "invalid"
 
+# (conflict_id, resolution_method, resolution_instruction) — one row of the `chosen` VALUES.
+_Choice = tuple[uuid.UUID, str, str | None]
+
 
 def _summary(row: dict[str, Any]) -> dict[str, Any]:
     return {
@@ -81,7 +84,9 @@ def _classify_batch_resolution(methods: list[str]) -> str:
     return MODE_INVALID
 
 
-async def _fetch_status_bucket(postgres, tenant_id, user_id, status: str, page: int) -> list[dict]:
+async def _fetch_status_bucket(
+        postgres: Any, tenant_id: str | None, user_id: str, status: str, page: int,
+) -> list[dict[str, Any]]:
     cursor_key = f"conflicts:{status}:{tenant_id}"
     response = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id,
@@ -96,7 +101,7 @@ async def _fetch_status_bucket(postgres, tenant_id, user_id, status: str, page: 
     return rows
 
 
-async def _fetch_batch_anchor(postgres, batch_id: str) -> str | None:
+async def _fetch_batch_anchor(postgres: Any, batch_id: str) -> str | None:
     try:
         async with postgres.get_client() as session:
             block_id = await session.scalar(
@@ -109,7 +114,9 @@ async def _fetch_batch_anchor(postgres, batch_id: str) -> str | None:
         return None
 
 
-async def _fetch_batch_document(mongo, batch_id: str, tenant_id: str | None) -> dict:
+async def _fetch_batch_document(
+        mongo: Any, batch_id: str, tenant_id: str | None,
+) -> dict[str, Any]:
     try:
         document = await mongo.get_client()[CONFLICT_RESOLUTION_COLLECTION].find_one(
             {"batch_id": batch_id, "tenant_id": tenant_id}
@@ -120,7 +127,9 @@ async def _fetch_batch_document(mongo, batch_id: str, tenant_id: str | None) -> 
     return document or {}
 
 
-async def _fetch_conflict_payload(mongo, conflict_id: str, tenant_id: str | None) -> dict:
+async def _fetch_conflict_payload(
+        mongo: Any, conflict_id: str, tenant_id: str | None,
+) -> dict[str, Any]:
     try:
         document = await mongo.get_client()[CONFLICT_PAYLOAD_COLLECTION].find_one(
             {"conflict_id": conflict_id, "tenant_id": tenant_id}
@@ -131,7 +140,7 @@ async def _fetch_conflict_payload(mongo, conflict_id: str, tenant_id: str | None
     return document or {}
 
 
-async def _fetch_final_block_content(postgres, block_id: str) -> str | None:
+async def _fetch_final_block_content(postgres: Any, block_id: str) -> str | None:
     try:
         async with postgres.get_client() as session:
             result = await session.execute(
@@ -148,9 +157,11 @@ async def _fetch_final_block_content(postgres, block_id: str) -> str | None:
         return None
 
 
-def _required_choices(open_conflicts: list[dict], resolutions: list[dict]) -> list[tuple]:
+def _required_choices(
+        open_conflicts: list[dict[str, Any]], resolutions: list[dict[str, Any]],
+) -> list[_Choice]:
     choice_by_conflict_id = {choice["conflict_id"]: choice for choice in resolutions}
-    chosen: list[tuple] = []
+    chosen: list[_Choice] = []
     for row in open_conflicts:
         conflict_id = to_string(row.get("conflict_id"))
         choice = choice_by_conflict_id.get(conflict_id)
@@ -165,11 +176,11 @@ def _required_choices(open_conflicts: list[dict], resolutions: list[dict]) -> li
 
 
 async def _stamp_batch_awaiting(
-        postgres,
+        postgres: Any,
         batch_id: str,
         tenant_id: str | None,
         resolved_by: str,
-        choices: list[tuple],
+        choices: list[_Choice],
 ) -> None:
     tenant_uuid = uuid.UUID(tenant_id) if tenant_id else None
     chosen = values(
@@ -204,7 +215,7 @@ async def _stamp_batch_awaiting(
             raise
 
 
-async def _publish_resolve_event(kafka_producer, batch_id: str, tenant_id: str | None) -> None:
+async def _publish_resolve_event(kafka_producer: Any, batch_id: str, tenant_id: str | None) -> None:
     if kafka_producer is None:
         return
     try:
@@ -294,7 +305,7 @@ async def get_conflict(postgres: Any, mongo: Any, conflict_id: str, tenant_id: s
 async def resolve_batch(
         postgres: Any,
         batch_id: str,
-        resolutions: list[dict],
+        resolutions: list[dict[str, Any]],
         resolved_by: str,
         kafka_producer: Any = None,
         tenant_id: str | None = None,

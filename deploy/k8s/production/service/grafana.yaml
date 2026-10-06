@@ -127,7 +127,6 @@ spec:
       - name: dashboards
         configMap:
           name: grafana-dashboards
-      enableServiceLinks: false
       serviceAccountName: grafana
 
 ---
