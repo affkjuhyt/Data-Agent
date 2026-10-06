@@ -1,9 +1,7 @@
 # 13. Nguyên tắc giao diện cho con số
 
 > Đối tượng: FE (P0-02, E-01, S3-05, S6-03), người review màn hình. Ngày 27/09/2026. Tám nguyên tắc
-> và quy ước số của thiết kế v1, viết lại cho V2 (observation có release và as-of thay cho "chỉ số có
-> vintage"). Màn hình cụ thể: [03](03-target-design.md) mục 14. Sơ đồ: [20](diagrams/20-ui-ia.puml),
-> [22](diagrams/22-render-contract.puml), [23](diagrams/23-frontend-arch.puml).
+> và quy ước số cho V2 (observation có release và as-of). Màn hình cụ thể: [03](03-target-design.md) mục 14; bố cục V3 ở `docs/v3/01` §5.
 > Mọi màn hình V2 phải kiểm được theo tám điểm ở mục 1 trước khi coi là xong.
 
 ## 1. Tám nguyên tắc

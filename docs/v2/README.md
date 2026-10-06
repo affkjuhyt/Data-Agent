@@ -1,7 +1,13 @@
 # Data Agent V2: POC dầu/vàng
 
+> **Từ 06/10/2026 định hướng sản phẩm nằm ở [`docs/v3/`](../v3/README.md)** (sản phẩm doanh nghiệp, không
+> còn là POC). Thư mục này vẫn có hiệu lực cho Observation Engine (chuỗi chỉ số, as-of, DQ, HITL số liệu),
+> là Data Space tham chiếu đầu tiên của V3; các ID trong 05 giữ nguyên. Việc giữ hay dời nghiệm thu 27/10
+> là quyết định D2 ở `docs/v3/README.md`.
+>
 > Thư mục này là kế hoạch và thiết kế đang có hiệu lực cho V2. Thiết kế v1 (Nợ công/GDP) đã xoá khỏi
-> cây (còn trong lịch sử git); phần còn dùng được nằm ở 11, 12, 13 và `diagrams/`.
+> cây (còn trong lịch sử git); phần còn dùng được nằm ở 11, 12, 13. Sơ đồ PlantUML và ERD sinh tự
+> động đã xoá 06/10/2026 (lỗi thời, còn gọi `flow_builder`); ORM là nguồn sự thật của schema.
 > Cập nhật lần cuối: 28/09/2026.
 
 ## Bắt đầu từ đâu (người mới và phiên Claude mới)
@@ -44,8 +50,6 @@ Quy tắc repo (lint/type/test trong container, so baseline, không commit secre
 | [13-ui-principles.md](13-ui-principles.md) | Nguyên tắc P1–P8, quy ước số/ngày formatVN, lỗi có cấu trúc, deep link |
 | [14-input-data-db.md](14-input-data-db.md) | Thiết kế DB cho luồng đầu vào: cấu hình nguồn V2, artifact/fetch/release, profile/mapping, candidate, `available_at` cho số lịch sử, outbox, quyền, thứ tự migration, phần cần sửa trong task Linear |
 | [15-test-strategy.md](15-test-strategy.md) | Kiểm thử V2: ba cổng merge/story/mốc, DoD theo vai trò, level/kind/`req` tag, assertion tất định, coverage theo requirement, catalog fixture, traceability UC → issue, owner suite QA, mẫu báo lỗi + evidence bundle |
-| [database-schema.dbml](database-schema.dbml) | ERD toàn bộ Postgres `dataagent` (`public`, 59 bảng, 69 FK, nhóm theo domain, comment của cột) ở alembic head `a2c4e6f8b0d1`, sinh từ catalog sau `alembic upgrade head`; dán vào [dbdiagram.io](https://dbdiagram.io/d) để xem |
-| [diagrams/](diagrams/README.md) | 39 sơ đồ PlantUML: kiến trúc 00–18, giao diện 20–26, vận hành 30–42 |
 | [data/sources-oil-gold.yaml](data/sources-oil-gold.yaml) | 28 nguồn: 24 nhập qua Add Data → Bulk Import, 4 tải tay qua Document Hub |
 | [data/brent-5d-drop-episodes.csv](data/brent-5d-drop-episodes.csv) | 32 đợt Brent giảm ≥5%/5 phiên (2023–2026), có SHA-256 của release EIA gốc |
 | [data/cross-source-reference-2026-08.csv](data/cross-source-reference-2026-08.csv) | Đối chiếu đa nguồn có lớp conflict kỳ vọng |

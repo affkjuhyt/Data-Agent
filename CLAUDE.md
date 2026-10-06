@@ -20,7 +20,6 @@ so a green `make ci` is a green pipeline.
 | Serving gate | `make bench-gate` | judges a bench report against `model/bench/thresholds.json`. Exit 0 pass / 1 fail / **2 inconclusive** — 2 means a budget could not be judged (shared GPU, missing metrics), re-run rather than widen |
 | Agent e2e latency | `make bench-e2e` | per-stage breakdown of one real question against a deployed agent. Needs `BENCH_AGENT_URL`, `BENCH_AGENT_ID`, `BENCH_TENANT_ID`, `GATEWAY_KEY` exported — never read from `.env` |
 | Deploy | `make deploy` | Ansible is the only deploy path; it deploys **committed** changes only |
-| Diagrams | `make diagrams` | renders `docs/v2/diagrams/*.puml`; PlantUML pinned to 1.2024.8 and how to check the SVGs for errors: `docs/v2/diagrams/README.md` |
 
 ### Gates that are currently red
 
@@ -140,7 +139,9 @@ tests/unit/<service>/, tests/integration/<service>/   one suite per service imag
 tests/integration/test_*.py                         e2e tests (make e2e)
 tests/e2e           demo seed data (k8s seed Job), eval and Playwright harnesses
 tests/loadtest      k6
-docs                RUNBOOK, SECURITY, SILVER-FORMAT, v2/ (current design; v2/diagrams/ PlantUML sources + SVG)
+docs                RUNBOOK, SECURITY, SILVER-FORMAT, v3/ (product direction, agent core, R0 design,
+                    backlog — start here), v2/ (Observation Engine spec and the oil/gold reference Data
+                    Space; v2/data/ fixtures are read by tests)
 ```
 
 ## 8. Definition of done
@@ -152,11 +153,20 @@ docs                RUNBOOK, SECURITY, SILVER-FORMAT, v2/ (current design; v2/di
 - Docs updated in the same commit when behaviour, commands or layout change.
 - Deleted code is deleted, not commented out.
 
-## 9. V2 work (Data Agent POC, oil/gold)
+## 9. Product work (Data Agent V3) and the V2 Observation Engine
 
-Any work on the V2 data/knowledge/agent platform starts at `docs/v2/README.md`.
-`docs/v2/00-architecture-v2.md` is the source of truth; its twelve invariants (immutable raw,
-structured data never goes through chunk/embedding, LLM proposes and deterministic checks plus a
-human decide, point-in-time by `available_at`, OCC instead of last-write-wins, …) are not
-negotiable per task. Pick the next item from `docs/v2/05-implementation-plan.md` in STEP order and
-update its `TT` column in the same commit that finishes it.
+Since 06/10/2026 Data Agent is an enterprise product, not a POC. Any product, agent-core or
+frontend work starts at `docs/v3/README.md`: `docs/v3/00-product-strategy.md` is the source of truth
+for scope and architecture, `docs/v3/01-agent-core-and-ui.md` for the agent core and screens,
+`docs/v3/03-r0-technical-design.md` for the R0 code fixes, and `docs/v3/04-backlog.md` holds the
+backlog with the `TT` column (`todo` → `doing` → `done <commit>`), updated in the same commit that
+finishes an item. Pick the first `todo` whose dependencies are `done`.
+
+The twelve invariants of `docs/v2/00-architecture-v2.md` (immutable raw, structured data never
+goes through chunk/embedding, LLM proposes and deterministic checks plus a human decide,
+point-in-time by `available_at`, OCC instead of last-write-wins, …) still hold, plus V3's 13–17
+(permissions checked before generation, a trust label on every answer, query in place by default,
+an output contract before execution, a statically validated plan DAG). `docs/v2/` remains the spec of
+the Observation Engine (indicator series, as-of, DQ, HITL on numbers) and of the oil/gold reference
+Data Space; its `05` IDs stay valid for that work. Do not take product direction from `docs/v2/`
+where it conflicts with `docs/v3/`.

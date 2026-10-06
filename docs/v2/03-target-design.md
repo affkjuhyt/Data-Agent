@@ -22,7 +22,7 @@
 
 Deployable mới trong POC: `indicator-api`, `forecast-worker`. Consumer mới chạy trong image
 `platform_workers` (cùng quy ước loop + Kafka như `schema_crawler`). Không tách thêm microservice
-trong POC (Bảng 5.6 của thiết kế v1 vẫn đúng); ranh giới module giữ để tách sau.
+trong POC; ranh giới module giữ để tách sau.
 
 Bố cục mã của `indicator_api` (ADR-V2-36): một deployable, mã chia theo domain để tách sau không phải
 viết lại.

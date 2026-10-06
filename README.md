@@ -1,16 +1,14 @@
-# GTEL Data Agent — AeroFlow AI OS
+# Data Agent
 
-Multi-tenant Enterprise AI OS for RAG orchestration: a React Knowledge Base UI on top of a
-workflow runtime, flow builder, knowledge-base backend, auth/gateway services, storage layers,
-and observability tooling.
+An enterprise data agent platform, deployed inside the customer's own infrastructure: it turns
+scattered data (operational databases and warehouses, Excel, Vietnamese Word/PDF documents, web
+sources) into certified metrics, evidence-backed answers and automated monitoring. Every answer
+carries a trust label and opens to the SQL or document it came from.
 
-The active focus of this repository is the **Knowledge Operations Center** frontend under
-[`frontend/src/components/knowledge/`](./frontend/src/components/knowledge), backed by the `kb-backend` service and
-the Kafka-driven KB workers (`kb_backend/workers/{promote_silver,promote_gold,structured_data,
-conflict_resolution}`, one `kb-worker` image).
-
-The V2 plan (oil/gold data agent POC) starts at [`docs/v2/README.md`](./docs/v2/README.md);
-[`docs/v2/00-architecture-v2.md`](./docs/v2/00-architecture-v2.md) is its source of truth.
+Product direction, agent-core design, the R0 code fixes and the backlog start at
+[`docs/v3/README.md`](./docs/v3/README.md). The Observation Engine (indicator series, as-of, data
+quality, human review of numbers) and the oil/gold reference Data Space are specified in
+[`docs/v2/README.md`](./docs/v2/README.md). Working rules for humans and agents: [`CLAUDE.md`](./CLAUDE.md).
 
 ## Repository Layout
 
@@ -21,7 +19,7 @@ backend/     Python import root: services/ (FastAPI/worker services), libs/ (sha
 frontend/    React 19 + Vite app (npm workspace): src/, index.html, vite/vitest/tsconfig, Dockerfile.dev
 deploy/      ansible/ (deploy pipeline: deploy.yml) · k8s/ (manifests: production/ and dev/) · docker/ (Dockerfiles + service config)
 tests/       unit/<service> · integration/<service> · e2e/ (demo seed data, eval + Playwright harnesses) · loadtest/ (k6)
-docs/        v2/ (current design, diagrams in v2/diagrams/) · RUNBOOK · SECURITY · SILVER-FORMAT
+docs/        v3/ (product direction, agent core, R0 design, backlog) · v2/ (Observation Engine spec, reference Data Space, data/ fixtures) · RUNBOOK · SECURITY · SILVER-FORMAT
 model/       eval/ (release gate: cases, scorers incl. RAGAS faithfulness, thresholds) · bench/ (serving latency)
 ```
 
