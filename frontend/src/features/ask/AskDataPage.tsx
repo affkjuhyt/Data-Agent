@@ -290,6 +290,11 @@ export default function AskDataPage() {
                         onSave={() => { const q = questionFor(msg.id); if (q) saveQuestion(q); }}
                         onOpenEvidence={() => { setSelectedId(msg.id); setPanelOpen(true); }}
                         showEvidenceStrip={!panelOpen || selected?.id !== msg.id}
+                        onRetry={() => ask(questionFor(msg.id))}
+                        onRephrase={() => {
+                          setInput(questionFor(msg.id));
+                          textareaRef.current?.focus();
+                        }}
                       />
                     </div>
                   )}

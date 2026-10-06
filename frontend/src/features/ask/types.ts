@@ -186,6 +186,25 @@ export interface Evidence {
 }
 
 /**
+ * Why a turn ended without an answer — the `__refusal` frame, shape of
+ * backend/libs/contracts/v1/errors.py `Refusal`. Screens branch on `code` and
+ * `next_action`, never on `message` (which is the user-facing sentence).
+ */
+export type RefusalNextAction = 'retry' | 'rephrase' | 'contact_steward';
+
+export interface Refusal {
+  /** ErrorCode, e.g. AGENT_CONFIG_ERROR, PLANNER_ERROR — an open set */
+  code: string;
+  message: string;
+  /** an unknown value (a newer backend) renders as no action, never as a wrong one */
+  next_action: RefusalNextAction | string;
+  /** finds the turn's trace for whoever operates the platform */
+  detail_id?: string;
+  /** checks that failed, for a plan refused before it ran (R0-10) */
+  issues?: string[];
+}
+
+/**
  * Two ways the backend asks before answering:
  *  - `resume`: the orchestrator graph is interrupted; the answer must go to
  *    POST /api/orchestrate/resume/stream with the session id.
@@ -232,6 +251,8 @@ export interface AskMessage {
   evidence?: Evidence;
   clarification?: Clarification;
   pendingReview?: PendingReviewInfo;
+  /** set instead of an answer: the turn was refused with a code */
+  refusal?: Refusal;
   latencyMs?: number;
 }
 
