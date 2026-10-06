@@ -29,8 +29,10 @@ test = [
     "kubernetes>=31.0",
 ]
 dev = [
-    "ruff>=0.6",
-    "mypy>=1.10",
+    # Exact pins: CI installs this extra, and an unpinned linter changes its verdict
+    # the day a release adds rules. Bump them in their own commit.
+    "ruff==0.6.9",
+    "mypy==2.4.0",
     "pre-commit>=3.7",
     "import-linter>=2.0",   # Dependency Rule arch test (.importlinter)
     "vulture>=2.14",        # dead-code detection (SRS §7.2)

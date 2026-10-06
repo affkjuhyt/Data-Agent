@@ -144,4 +144,5 @@ async def execute_readonly_query(sql: str, connection_params: dict[str, Any]) ->
     # DictCursor.fetchall() has already materialised the result, so this
     # bounds what travels onward. STATEMENT_TIMEOUT_IN_SECONDS above is what
     # bounds the query that produced it.
-    return result_limits.cap_rows(rows).as_dict()
+    result: dict[str, Any] = result_limits.cap_rows(rows).as_dict()
+    return result

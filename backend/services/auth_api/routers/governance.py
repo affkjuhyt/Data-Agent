@@ -10,34 +10,19 @@ from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import 
     SecretVaultORM,
 )
 from libs.shared.auth import require_role
-try:
-    from services.auth_api.domain.secrets import TRANSIT_KEY_TYPES, TRANSIT_MOUNT, build_transit_key_name
-    from services.auth_api.infrastructure.config import log
-    from services.auth_api.infrastructure.db import get_session
-    from services.auth_api.infrastructure.vault import get_vault
-    from services.auth_api.schemas import SignPayload, VerifyPayload
-    from services.auth_api.services.governance import (
-        GOVERNANCE_KEYS,
-        PANIC_MODE_KEY,
-        enforce_vault_not_in_panic_mode,
-        get_governance_setting,
-        get_panic_mode,
-        set_panic_mode,
-    )
-except ModuleNotFoundError:
-    from auth_api.domain.secrets import TRANSIT_KEY_TYPES, TRANSIT_MOUNT, build_transit_key_name
-    from auth_api.infrastructure.config import log
-    from auth_api.infrastructure.db import get_session
-    from auth_api.infrastructure.vault import get_vault
-    from auth_api.schemas import SignPayload, VerifyPayload
-    from auth_api.services.governance import (
-        GOVERNANCE_KEYS,
-        PANIC_MODE_KEY,
-        enforce_vault_not_in_panic_mode,
-        get_governance_setting,
-        get_panic_mode,
-        set_panic_mode,
-    )
+from services.auth_api.domain.secrets import TRANSIT_KEY_TYPES, TRANSIT_MOUNT, build_transit_key_name
+from services.auth_api.infrastructure.config import log
+from services.auth_api.infrastructure.db import get_session
+from services.auth_api.infrastructure.vault import get_vault
+from services.auth_api.schemas import SignPayload, VerifyPayload
+from services.auth_api.services.governance import (
+    GOVERNANCE_KEYS,
+    PANIC_MODE_KEY,
+    enforce_vault_not_in_panic_mode,
+    get_governance_setting,
+    get_panic_mode,
+    set_panic_mode,
+)
 
 router = APIRouter()
 

@@ -115,9 +115,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="sandbox_executor", version="0.1.0", lifespan=lifespan)
 
 
+# The CI strict mypy run names this dir `services.sandbox_executor.*`, so the bare
+# sibling imports above (`from execution…`, `import result_limits`) do not resolve
+# there and their returns arrive as Any. The annotated locals in the functions below
+# (and in the *_readonly backends) restate the declared type instead of returning Any.
 def _load_backend(backend: str) -> tuple[Any, type[Exception]]:
     """Compatibility facade for tests and callers that patch ``main._load_backend``."""
-    return load_backend(backend)
+    loaded: tuple[Any, type[Exception]] = load_backend(backend)
+    return loaded
 
 
 # -- job executors (run inside JobQueue's worker loop, not on the request
@@ -135,7 +140,7 @@ async def _run_sandbox_job(payload: dict[str, Any]) -> dict[str, Any]:
 
 async def _run_execute_shell(payload: dict[str, Any]) -> dict[str, Any]:
     assert python_queue is not None
-    return await run_shell_job(
+    result: dict[str, Any] = await run_shell_job(
         payload,
         queue=python_queue,
         runner=run_shell_sandboxed,
@@ -146,11 +151,12 @@ async def _run_execute_shell(payload: dict[str, Any]) -> dict[str, Any]:
         max_output_chars=DEFAULT_MAX_OUTPUT_CHARS,
         logger=logger,
     )
+    return result
 
 
 async def _run_execute_python(payload: dict[str, Any]) -> dict[str, Any]:
     assert python_queue is not None
-    return await run_python_job(
+    result: dict[str, Any] = await run_python_job(
         payload,
         queue=python_queue,
         runner=run_python_sandboxed,
@@ -163,10 +169,11 @@ async def _run_execute_python(payload: dict[str, Any]) -> dict[str, Any]:
         max_output_chars=DEFAULT_MAX_OUTPUT_CHARS,
         logger=logger,
     )
+    return result
 
 
 async def _run_execute_sql(payload: dict[str, Any]) -> dict[str, Any]:
-    return await run_sql_job(
+    result: dict[str, Any] = await run_sql_job(
         payload,
         backend_loader=_load_backend,
         validate_select_only=validate_select_only,
@@ -174,6 +181,7 @@ async def _run_execute_sql(payload: dict[str, Any]) -> dict[str, Any]:
         minio_store=minio_store,
         logger=logger,
     )
+    return result
 
 
 # -- HTTP surface ------------------------------------------------------------
@@ -194,7 +202,8 @@ def _job_summary(job: Job, kind: str) -> dict[str, Any]:
     is stamped on each row (not just implied by which array it's in) so
     a client that flattens both lists into one combined view still knows
     which endpoint (`/execute/{kind}/...`) a given job_id belongs to."""
-    return _response_job_summary(job, kind)
+    summary: dict[str, Any] = _response_job_summary(job, kind)
+    return summary
 
 
 @app.get("/status")

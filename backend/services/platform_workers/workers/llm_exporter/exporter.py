@@ -22,6 +22,7 @@ import time
 import urllib.request
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import TypedDict
 
 import uvicorn
 from fastapi import FastAPI, Response
@@ -36,9 +37,28 @@ PORT        = int(os.getenv("LISTEN_PORT", "8270"))
 SINGLE_PROMPT     = "List 5 capital cities."
 CONCURRENT_PROMPT = "Explain what machine learning is in 5 sentences."
 
+class _ProbeResult(TypedDict):
+    ttft_ms: float | None
+    total_ms: float
+    tokens: int
+
+
+class _MetricState(TypedDict):
+    up: int
+    single_ttft_ms: float | None
+    single_total_ms: float | None
+    single_tps: float | None
+    single_tokens: int | None
+    conc_agg_tps: float | None
+    conc_wall_ms: float | None
+    conc_avg_ttft_ms: float | None
+    probes_total: int
+    errors_total: int
+
+
 # Shared metric state, guarded by _lock. None = not yet measured / probe failed.
 _lock = threading.Lock()
-_state = {
+_state: _MetricState = {
     "up": 0,
     "single_ttft_ms": None,
     "single_total_ms": None,
@@ -55,7 +75,7 @@ _probe_started = False
 _probe_started_lock = threading.Lock()
 
 
-def stream_request(messages, max_tokens):
+def stream_request(messages: list[dict[str, str]], max_tokens: int) -> _ProbeResult:
     """One streaming completion; returns TTFT (ms), total (ms), token count."""
     data = json.dumps({
         "model": MODEL,
@@ -69,7 +89,7 @@ def stream_request(messages, max_tokens):
         headers={"Content-Type": "application/json"},
     )
     t0 = time.time()
-    ttft = None
+    ttft: float | None = None
     tokens = 0
     with urllib.request.urlopen(req, timeout=120) as resp:
         for raw in resp:
@@ -91,7 +111,7 @@ def stream_request(messages, max_tokens):
     }
 
 
-def _tps(r):
+def _tps(r: _ProbeResult) -> float:
     if r["ttft_ms"] and r["tokens"]:
         gen_ms = r["total_ms"] - r["ttft_ms"]
         if gen_ms > 0:
@@ -99,15 +119,15 @@ def _tps(r):
     return 0.0
 
 
-def probe_once():
+def probe_once() -> None:
     """Run a single + concurrent probe and update the shared state."""
     # --- single request ---
     single = stream_request([{"role": "user", "content": SINGLE_PROMPT}], 80)
 
     # --- concurrent batch (measures whether the LLM serialises) ---
-    results = [None] * CONCURRENCY
+    results: list[_ProbeResult | None] = [None] * CONCURRENCY
 
-    def worker(i):
+    def worker(i: int) -> None:
         try:
             results[i] = stream_request(
                 [{"role": "user", "content": CONCURRENT_PROMPT}], 150)
@@ -140,7 +160,7 @@ def probe_once():
         _state["probes_total"] += 1
 
 
-def probe_loop():
+def probe_loop() -> None:
     while True:
         try:
             probe_once()
@@ -161,7 +181,7 @@ def start_probe_loop() -> None:
         _probe_started = True
 
 
-def render_metrics():
+def render_metrics() -> bytes:
     with _lock:
         s = dict(_state)
     ml = f'model="{MODEL}"'
@@ -189,7 +209,7 @@ def render_metrics():
         f"kb_llm_errors_total {s['errors_total']}",
     ]
     # gauges that are only emitted once measured (avoid publishing stale zeros)
-    def emit(name, key):
+    def emit(name: str, key: str) -> None:
         if s[key] is not None:
             lines.append(f"{name}{{{ml}}} {s[key]:.3f}")
     emit("kb_llm_single_ttft_ms", "single_ttft_ms")
@@ -225,7 +245,7 @@ def metrics() -> Response:
     return PlainTextResponse(render_metrics(), media_type="text/plain; version=0.0.4")
 
 
-def main():
+def main() -> None:
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")
 
 

@@ -7,10 +7,7 @@ from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import 
     AuthPlatformSettingORM,
     ComplianceSettingORM,
 )
-try:
-    from services.auth_api.infrastructure.db import get_session
-except ModuleNotFoundError:
-    from auth_api.infrastructure.db import get_session
+from services.auth_api.infrastructure.db import get_session
 
 # Platform-wide switches, in platform_settings. Panic mode is not one of them:
 # it is per tenant (compliance_settings.vault_panic_mode), see get_panic_mode.

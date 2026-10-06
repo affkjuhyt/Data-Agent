@@ -6,12 +6,8 @@ from sqlalchemy import select, text
 from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import (
     AuthPlatformSettingORM,
 )
-try:
-    from services.auth_api.infrastructure.config import KONG_ADMIN, PRIVATE_FALLBACK_CIDRS, log
-    from services.auth_api.infrastructure.db import get_session
-except ModuleNotFoundError:
-    from auth_api.infrastructure.config import KONG_ADMIN, PRIVATE_FALLBACK_CIDRS, log
-    from auth_api.infrastructure.db import get_session
+from services.auth_api.infrastructure.config import KONG_ADMIN, PRIVATE_FALLBACK_CIDRS, log
+from services.auth_api.infrastructure.db import get_session
 
 IP_PROTECTED_SERVICES = ["aeroflow-backend"]
 IP_PROTECTED_ROUTES = ["auth_api-keys-route", "auth_api-secrets-route"]

@@ -14,10 +14,7 @@ from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import 
     AuthPlatformSettingORM,
 )
 
-try:
-    from services.auth_api.infrastructure.config import OWNER_POOL_MAX, PG_DSN, log
-except ModuleNotFoundError:
-    from auth_api.infrastructure.config import OWNER_POOL_MAX, PG_DSN, log
+from services.auth_api.infrastructure.config import OWNER_POOL_MAX, PG_DSN, log
 
 SessionLocal: sessionmaker[Session] | None = None
 session_lock = threading.Lock()

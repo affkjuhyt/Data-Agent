@@ -11,16 +11,10 @@ from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import 
     IPAllowlistORM,
 )
 from libs.shared.auth import require_role
-try:
-    from services.auth_api.domain.ip_allowlists import format_ip_allowlist
-    from services.auth_api.infrastructure.db import get_session, orm_to_dict
-    from services.auth_api.schemas import IPAllowlistCreateInput
-    from services.auth_api.services.kong_sync import get_ip_allowlist_mode, sync_kong_ip_restrictions
-except ModuleNotFoundError:
-    from auth_api.domain.ip_allowlists import format_ip_allowlist
-    from auth_api.infrastructure.db import get_session, orm_to_dict
-    from auth_api.schemas import IPAllowlistCreateInput
-    from auth_api.services.kong_sync import get_ip_allowlist_mode, sync_kong_ip_restrictions
+from services.auth_api.domain.ip_allowlists import format_ip_allowlist
+from services.auth_api.infrastructure.db import get_session, orm_to_dict
+from services.auth_api.schemas import IPAllowlistCreateInput
+from services.auth_api.services.kong_sync import get_ip_allowlist_mode, sync_kong_ip_restrictions
 
 _UNIQUE_VIOLATION = "23505"
 

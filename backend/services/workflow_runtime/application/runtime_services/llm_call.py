@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import nullcontext
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import litellm
 
@@ -71,7 +71,8 @@ async def acompletion(
             stream = await completion(**kwargs, stream=True, stream_options={"include_usage": True})
             stream_type = getattr(litellm, "CustomStreamWrapper", None)
             if isinstance(stream_type, type) and isinstance(stream, stream_type):
-                async for chunk in stream:
+                # isinstance against a runtime-looked-up class narrows to `object`.
+                async for chunk in cast(AsyncIterator[Any], stream):
                     chunks.append(chunk)
                     text = getattr(chunk.choices[0].delta, "content", None) if chunk.choices else None
                     if not text:

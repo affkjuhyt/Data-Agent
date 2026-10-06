@@ -5,22 +5,15 @@ from sqlalchemy import select, text
 
 from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import KeyRotationORM, SecretVaultORM
 
-try:
-    from services.auth_api.domain.secrets import (
-        TRANSIT_KEY_TYPES,
-        TRANSIT_MOUNT,
-        build_transit_key_name,
-    )
-    from services.auth_api.infrastructure.config import log
-    from services.auth_api.infrastructure.db import get_session
-    from services.auth_api.infrastructure.vault import get_vault
-    from services.auth_api.services.governance import get_governance_setting
-except ModuleNotFoundError:
-    from auth_api.domain.secrets import TRANSIT_KEY_TYPES, TRANSIT_MOUNT, build_transit_key_name
-    from auth_api.infrastructure.config import log
-    from auth_api.infrastructure.db import get_session
-    from auth_api.infrastructure.vault import get_vault
-    from auth_api.services.governance import get_governance_setting
+from services.auth_api.domain.secrets import (
+    TRANSIT_KEY_TYPES,
+    TRANSIT_MOUNT,
+    build_transit_key_name,
+)
+from services.auth_api.infrastructure.config import log
+from services.auth_api.infrastructure.db import get_session
+from services.auth_api.infrastructure.vault import get_vault
+from services.auth_api.services.governance import get_governance_setting
 
 
 def run_auto_rotation() -> None:

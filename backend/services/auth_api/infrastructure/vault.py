@@ -2,10 +2,7 @@ import os
 
 import hvac
 
-try:
-    from services.auth_api.infrastructure.config import OPENBAO_ADDR
-except ModuleNotFoundError:
-    from auth_api.infrastructure.config import OPENBAO_ADDR
+from services.auth_api.infrastructure.config import OPENBAO_ADDR
 
 TOKEN_FILE = "/openbao/data/.root-token"
 

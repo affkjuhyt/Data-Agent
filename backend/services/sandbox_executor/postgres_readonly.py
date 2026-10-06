@@ -184,4 +184,5 @@ async def execute_readonly_query(sql: str, connection_params: dict[str, Any]) ->
         await _drop_connection(connection_params, conn)
         raise PostgresQueryError(f"query execution failed: {e}") from e
 
-    return accumulator.finish().as_dict()
+    result: dict[str, Any] = accumulator.finish().as_dict()
+    return result

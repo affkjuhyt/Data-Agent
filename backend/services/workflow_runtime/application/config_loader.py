@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_SYSTEM_PROMPT = open(os.path.join(PROMPTS_DIR, "default_system_prompt.txt"), encoding="utf-8").read().strip()
 
-DEV_CONFIG = {
+DEV_CONFIG: dict[str, Any] = {
     "kb_endpoint": os.environ.get("KB_ENDPOINT", "http://kb-backend:8220"),
     "planner_model": "openai/planner",
     "planner_temperature": 0,

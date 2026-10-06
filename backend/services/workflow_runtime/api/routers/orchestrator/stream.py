@@ -5,7 +5,7 @@ import json
 import logging
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import aclosing, nullcontext
 from typing import Any
 
@@ -160,7 +160,7 @@ async def _stream_graph(
     span_name: str,
     span_input: dict[str, Any],
     span_metadata: dict[str, Any],
-) -> AsyncIterator[str]:
+) -> AsyncGenerator[str, None]:
     """Run — or resume — the orchestrator graph as SSE frames.
 
     Shared by a new turn and a resumed one, so the answer to a clarification
@@ -298,7 +298,9 @@ async def _stream_graph(
     yield "data: [DONE]\n\n"
 
 
-def _sse_response(frames: AsyncIterator[str], cleanup: Callable[[], None]) -> StreamingResponse:
+def _sse_response(
+    frames: AsyncGenerator[str, None], cleanup: Callable[[], None]
+) -> StreamingResponse:
     async def event_stream() -> AsyncIterator[str]:
         # Cancel-on-disconnect + admission release: if the client goes away,
         # Starlette aclose()s this generator, aclosing() closes the graph

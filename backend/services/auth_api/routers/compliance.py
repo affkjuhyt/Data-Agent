@@ -15,14 +15,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import ComplianceSettingORM
 from libs.shared.auth import require_role
 from libs.shared.pii_detector import PII_TYPES, scan as pii_scan
-try:
-    from services.auth_api.infrastructure.config import log
-    from services.auth_api.infrastructure.db import get_session, orm_to_dict
-    from services.auth_api.schemas import ComplianceSettingsInput, PiiScanInput
-except ModuleNotFoundError:
-    from auth_api.infrastructure.config import log
-    from auth_api.infrastructure.db import get_session, orm_to_dict
-    from auth_api.schemas import ComplianceSettingsInput, PiiScanInput
+from services.auth_api.infrastructure.config import log
+from services.auth_api.infrastructure.db import get_session, orm_to_dict
+from services.auth_api.schemas import ComplianceSettingsInput, PiiScanInput
 
 router = APIRouter()
 

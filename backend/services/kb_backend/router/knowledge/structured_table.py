@@ -80,12 +80,13 @@ class ApproveRequest(BaseModel):
 
 async def _latest_job(postgres: Any, data_id: str) -> KBStructuredImportJobORM | None:
     async with postgres.get_client() as session:
-        return (await session.execute(
+        job: KBStructuredImportJobORM | None = (await session.execute(
             sa_select(KBStructuredImportJobORM)
             .where(KBStructuredImportJobORM.owner_id == uuid.UUID(data_id))
             .order_by(KBStructuredImportJobORM.created_at.desc())
             .limit(1)
         )).scalars().first()
+        return job
 
 
 def _job_to_dict(job: KBStructuredImportJobORM) -> dict[str, Any]:

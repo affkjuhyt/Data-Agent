@@ -22,118 +22,61 @@ import hvac
 from fastapi import Depends, Header, HTTPException, Path, Query
 
 from libs.shared.auth import get_current_user, require_role
-try:
-    from services.auth_api.domain.api_keys import (
-        SCOPE_PREFIX,
-        VALID_SCOPES,
-        format_api_key as _fmt_key,
-        generate_api_key as _gen_key,
-        hash_api_key as _hash_key,
-    )
-    from services.auth_api.domain.ip_allowlists import format_ip_allowlist as _fmt_ip
-    from services.auth_api.domain.secrets import (
-        TENANT_MANAGEABLE_KEY_TYPES,
-        TRANSIT_ALGORITHM_MAP as _ALGO_TO_TRANSIT,
-        TRANSIT_KEY_TYPES as _TRANSIT_TYPES,
-        TRANSIT_MOUNT as _TRANSIT_MOUNT,
-        VALID_KEY_TYPES,
-        VAULT_MOUNT as _VAULT_MOUNT,
-        build_transit_key_name as _transit_key_name,
-        build_vault_path as _vault_path,
-        format_secret as _fmt_secret,
-    )
-    from services.auth_api.infrastructure.config import (
-        KONG_ADMIN,
-        OPENBAO_ADDR,
-        OWNER_POOL_MAX as _OWNER_POOL_MAX,
-        PG_DSN,
-        POOL_MAX,
-        PRIVATE_FALLBACK_CIDRS as _PRIVATE_FALLBACK,
-        log,
-    )
-    from services.auth_api.infrastructure.db import (
-        ensure_settings_table as _ensure_settings_table,
-    )
-    from services.auth_api.infrastructure.vault import (
-        OPENBAO_TOKEN,
-        TOKEN_FILE as _TOKEN_FILE,
-        get_vault,
-        load_openbao_token as _load_openbao_token,
-    )
-    from services.auth_api.lifecycle import startup
-    from services.auth_api.services.governance import (
-        GOVERNANCE_KEYS as _GOV_KEYS,
-        enforce_vault_not_in_panic_mode as _vault_panic_check,
-        get_governance_setting as _get_gov_setting,
-    )
-    from services.auth_api.services.kong_sync import (
-        IP_PROTECTED_ROUTES as _IP_PROTECTED_ROUTES,
-        IP_PROTECTED_SERVICES as _IP_PROTECTED_SERVICES,
-        get_active_cidrs as _get_active_cidrs,
-        get_ip_allowlist_mode as _get_ip_mode,
-        sync_kong_ip_restrictions as _sync_kong,
-        upsert_ip_restriction_plugin as _upsert_ip_plugin,
-    )
-    from services.auth_api.services.rotation import (
-        auto_rotation_loop as _auto_rotation_loop,
-        run_auto_rotation as _run_auto_rotation,
-    )
-except ModuleNotFoundError:
-    from auth_api.domain.api_keys import (
-        SCOPE_PREFIX,
-        VALID_SCOPES,
-        format_api_key as _fmt_key,
-        generate_api_key as _gen_key,
-        hash_api_key as _hash_key,
-    )
-    from auth_api.domain.ip_allowlists import format_ip_allowlist as _fmt_ip
-    from auth_api.domain.secrets import (
-        TENANT_MANAGEABLE_KEY_TYPES,
-        TRANSIT_ALGORITHM_MAP as _ALGO_TO_TRANSIT,
-        TRANSIT_KEY_TYPES as _TRANSIT_TYPES,
-        TRANSIT_MOUNT as _TRANSIT_MOUNT,
-        VALID_KEY_TYPES,
-        VAULT_MOUNT as _VAULT_MOUNT,
-        build_transit_key_name as _transit_key_name,
-        build_vault_path as _vault_path,
-        format_secret as _fmt_secret,
-    )
-    from auth_api.infrastructure.config import (
-        KONG_ADMIN,
-        OPENBAO_ADDR,
-        OWNER_POOL_MAX as _OWNER_POOL_MAX,
-        PG_DSN,
-        POOL_MAX,
-        PRIVATE_FALLBACK_CIDRS as _PRIVATE_FALLBACK,
-        log,
-    )
-    from auth_api.infrastructure.db import (
-        ensure_settings_table as _ensure_settings_table,
-    )
-    from auth_api.infrastructure.vault import (
-        OPENBAO_TOKEN,
-        TOKEN_FILE as _TOKEN_FILE,
-        get_vault,
-        load_openbao_token as _load_openbao_token,
-    )
-    from auth_api.lifecycle import startup
-    from auth_api.services.governance import (
-        GOVERNANCE_KEYS as _GOV_KEYS,
-        enforce_vault_not_in_panic_mode as _vault_panic_check,
-        get_governance_setting as _get_gov_setting,
-    )
-    from auth_api.services.kong_sync import (
-        IP_PROTECTED_ROUTES as _IP_PROTECTED_ROUTES,
-        IP_PROTECTED_SERVICES as _IP_PROTECTED_SERVICES,
-        get_active_cidrs as _get_active_cidrs,
-        get_ip_allowlist_mode as _get_ip_mode,
-        sync_kong_ip_restrictions as _sync_kong,
-        upsert_ip_restriction_plugin as _upsert_ip_plugin,
-    )
-    from auth_api.services.rotation import (
-        auto_rotation_loop as _auto_rotation_loop,
-        run_auto_rotation as _run_auto_rotation,
-    )
+from services.auth_api.domain.api_keys import (
+    SCOPE_PREFIX,
+    VALID_SCOPES,
+    format_api_key as _fmt_key,
+    generate_api_key as _gen_key,
+    hash_api_key as _hash_key,
+)
+from services.auth_api.domain.ip_allowlists import format_ip_allowlist as _fmt_ip
+from services.auth_api.domain.secrets import (
+    TENANT_MANAGEABLE_KEY_TYPES,
+    TRANSIT_ALGORITHM_MAP as _ALGO_TO_TRANSIT,
+    TRANSIT_KEY_TYPES as _TRANSIT_TYPES,
+    TRANSIT_MOUNT as _TRANSIT_MOUNT,
+    VALID_KEY_TYPES,
+    VAULT_MOUNT as _VAULT_MOUNT,
+    build_transit_key_name as _transit_key_name,
+    build_vault_path as _vault_path,
+    format_secret as _fmt_secret,
+)
+from services.auth_api.infrastructure.config import (
+    KONG_ADMIN,
+    OPENBAO_ADDR,
+    OWNER_POOL_MAX as _OWNER_POOL_MAX,
+    PG_DSN,
+    POOL_MAX,
+    PRIVATE_FALLBACK_CIDRS as _PRIVATE_FALLBACK,
+    log,
+)
+from services.auth_api.infrastructure.db import (
+    ensure_settings_table as _ensure_settings_table,
+)
+from services.auth_api.infrastructure.vault import (
+    OPENBAO_TOKEN,
+    TOKEN_FILE as _TOKEN_FILE,
+    get_vault,
+    load_openbao_token as _load_openbao_token,
+)
+from services.auth_api.lifecycle import startup
+from services.auth_api.services.governance import (
+    GOVERNANCE_KEYS as _GOV_KEYS,
+    enforce_vault_not_in_panic_mode as _vault_panic_check,
+    get_governance_setting as _get_gov_setting,
+)
+from services.auth_api.services.kong_sync import (
+    IP_PROTECTED_ROUTES as _IP_PROTECTED_ROUTES,
+    IP_PROTECTED_SERVICES as _IP_PROTECTED_SERVICES,
+    get_active_cidrs as _get_active_cidrs,
+    get_ip_allowlist_mode as _get_ip_mode,
+    sync_kong_ip_restrictions as _sync_kong,
+    upsert_ip_restriction_plugin as _upsert_ip_plugin,
+)
+from services.auth_api.services.rotation import (
+    auto_rotation_loop as _auto_rotation_loop,
+    run_auto_rotation as _run_auto_rotation,
+)
 
 
 async def _sync_kong_on_startup() -> None:

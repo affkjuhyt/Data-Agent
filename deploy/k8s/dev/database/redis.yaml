@@ -95,7 +95,6 @@ spec:
           name: redis-config
       - name: tmp
         emptyDir: {}
-      enableServiceLinks: false
       serviceAccountName: redis
   volumeClaimTemplates:
   - metadata:

@@ -10,47 +10,25 @@ from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import 
     SecretVaultORM,
 )
 from libs.shared.auth import get_current_user, require_role
-
-try:
-    from services.auth_api.domain.secrets import (
-        TENANT_MANAGEABLE_KEY_TYPES,
-        TRANSIT_ALGORITHM_MAP,
-        TRANSIT_KEY_TYPES,
-        TRANSIT_MOUNT,
-        VALID_KEY_TYPES,
-        VAULT_MOUNT,
-        build_transit_key_name,
-        build_vault_path,
-        format_secret,
-    )
-    from services.auth_api.infrastructure.config import log
-    from services.auth_api.infrastructure.db import get_session, orm_to_dict
-    from services.auth_api.infrastructure.vault import get_vault
-    from services.auth_api.schemas import SecretCreateInput
-    from services.auth_api.services.governance import (
-        enforce_vault_not_in_panic_mode,
-        get_governance_setting,
-    )
-except ModuleNotFoundError:
-    from auth_api.domain.secrets import (
-        TENANT_MANAGEABLE_KEY_TYPES,
-        TRANSIT_ALGORITHM_MAP,
-        TRANSIT_KEY_TYPES,
-        TRANSIT_MOUNT,
-        VALID_KEY_TYPES,
-        VAULT_MOUNT,
-        build_transit_key_name,
-        build_vault_path,
-        format_secret,
-    )
-    from auth_api.infrastructure.config import log
-    from auth_api.infrastructure.db import get_session, orm_to_dict
-    from auth_api.infrastructure.vault import get_vault
-    from auth_api.schemas import SecretCreateInput
-    from auth_api.services.governance import (
-        enforce_vault_not_in_panic_mode,
-        get_governance_setting,
-    )
+from services.auth_api.domain.secrets import (
+    TENANT_MANAGEABLE_KEY_TYPES,
+    TRANSIT_ALGORITHM_MAP,
+    TRANSIT_KEY_TYPES,
+    TRANSIT_MOUNT,
+    VALID_KEY_TYPES,
+    VAULT_MOUNT,
+    build_transit_key_name,
+    build_vault_path,
+    format_secret,
+)
+from services.auth_api.infrastructure.config import log
+from services.auth_api.infrastructure.db import get_session, orm_to_dict
+from services.auth_api.infrastructure.vault import get_vault
+from services.auth_api.schemas import SecretCreateInput
+from services.auth_api.services.governance import (
+    enforce_vault_not_in_panic_mode,
+    get_governance_setting,
+)
 
 router = APIRouter()
 

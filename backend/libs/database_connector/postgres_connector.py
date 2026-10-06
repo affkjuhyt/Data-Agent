@@ -218,7 +218,7 @@ _SERVER_MANAGED_INSERT_COLUMNS = frozenset({"inserted_at"})
 
 
 def _insert_payload(data: BaseModel, orm_cls: Any) -> dict[str, Any]:
-    payload = data.model_dump(mode="python")
+    payload: dict[str, Any] = data.model_dump(mode="python")
     mapped_columns = {attr.key for attr in sa_inspect(orm_cls).column_attrs}
 
     for column in _SERVER_MANAGED_INSERT_COLUMNS:

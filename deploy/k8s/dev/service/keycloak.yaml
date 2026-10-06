@@ -109,7 +109,6 @@ spec:
         emptyDir: {}
       - name: tmp
         emptyDir: {}
-      enableServiceLinks: false
       serviceAccountName: keycloak
 ---
 apiVersion: v1

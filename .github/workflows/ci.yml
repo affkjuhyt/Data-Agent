@@ -14,14 +14,22 @@ jobs:
     name: Python · ruff
     runs-on: ubuntu-latest
     steps:
+      # The tree has never been ruff-clean (CLAUDE.md §1), so the gate is "no new
+      # findings": tests/ruff_ratchet.py compares against the first parent, which
+      # for a pull_request merge commit is the base branch tip (as contract-compat).
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
       - run: pip install ".[dev]"
-      - run: ruff check .
-      - run: ruff format --check .
+      - name: ruff · no new findings against the base (BLOCKING)
+        run: |
+          mkdir -p "$RUNNER_TEMP/ruff-base"
+          git archive HEAD^1 -- pyproject.toml '*.py' | tar -x -C "$RUNNER_TEMP/ruff-base"
+          python tests/ruff_ratchet.py --base-dir "$RUNNER_TEMP/ruff-base"
 
   python-type:
     name: Python · mypy

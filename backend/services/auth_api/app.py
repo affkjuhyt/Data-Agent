@@ -2,12 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from libs.shared.observability import setup_observability
-try:
-    from services.auth_api.lifecycle import startup as run_startup_tasks
-    from services.auth_api.routers import api_keys, approvals, compliance, governance, health, ip_allowlist, secrets
-except ModuleNotFoundError:
-    from auth_api.lifecycle import startup as run_startup_tasks
-    from auth_api.routers import api_keys, approvals, compliance, governance, health, ip_allowlist, secrets
+from services.auth_api.lifecycle import startup as run_startup_tasks
+from services.auth_api.routers import api_keys, approvals, compliance, governance, health, ip_allowlist, secrets
 
 
 def create_app() -> FastAPI:

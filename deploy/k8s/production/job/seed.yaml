@@ -148,5 +148,4 @@ spec:
           name: seed-sql
       - name: tmp
         emptyDir: {}
-      enableServiceLinks: false
       serviceAccountName: seed

@@ -10,8 +10,8 @@ so a green `make ci` is a green pipeline.
 
 | Task | Command | Notes |
 | --- | --- | --- |
-| Lint / format | `make lint`, `make fmt` | ruff, run inside the service image. Import sorting (`I001`) is on and `combine-as-imports` is off, so ruff writes one `from x import (y as z,)` statement per alias — that is its output, not churn; do not hand-collapse it |
-| Types | `make type` | mypy (`pyproject.toml` config, not strict) on the whole of `backend/libs` + `backend/services` — red, see below. CI's blocking step is the strict per-surface list in `.github/workflows/ci.yml` |
+| Lint / format | `make lint`, `make fmt` | ruff 0.6.9 (pinned in `pyproject.toml`), run inside the service image. `make lint` and CI's `python-lint` are a **ratchet** (`tests/ruff_ratchet.py`): they fail only on findings, per file and rule, that the change adds against its base (`LINT_BASE`, default `main`), and on files it leaves unformatted that were formatted before or are new. `make fmt` rewrites the whole tree — do not commit its output with a behaviour change. Import sorting (`I001`) is on and `combine-as-imports` is off, so ruff writes one `from x import (y as z,)` statement per alias — that is its output, not churn; do not hand-collapse it |
+| Types | `make type` | mypy 2.4.0 (pinned; `pyproject.toml` config, not strict) on the whole of `backend/libs` + `backend/services` — red, see below. CI's blocking step is the strict per-surface list in `.github/workflows/ci.yml` |
 | Tests | `make test-changed`, `make test-unit`, `make test-integration`, `make test` | one pytest suite per service (`tests/unit/<service>/`, `tests/integration/<service>/`), each run in **that service's image** (plus the cached test tooling, `tests/test-image.Dockerfile`) — no single image can import every service. Suites run in parallel (`TEST_JOBS=1` to serialise); `make test-changed` runs only the suites the changes since `main` can affect — use it while iterating, `make test` before a merge. **Host Python is 3.10, the code targets 3.11**: never run tests with the host interpreter (`tests/run_suites.py` only drives docker). One suite: `make test-unit UNIT_SUITES=kb_backend:kb-backend` |
 | Dead code | `make deadcode` | vulture (python, `min_confidence = 60`, vetted exceptions in `backend/.vulture_whitelist.py`, both set in `pyproject.toml`) + knip (frontend) |
 | Frontend | `make frontend-lint`, `make frontend-test` | tsc + vitest. There is **no ESLint**: the config was v8-format, unreferenced and never ran, so it and its five devDeps were removed. Correctness is tsc's job, style is prettier's, unused code is knip's. Reintroducing ESLint means a flat `eslint.config.js`, an npm script and a CI step — all three or none |
@@ -23,22 +23,24 @@ so a green `make ci` is a green pipeline.
 
 ### Gates that are currently red
 
-Do not claim "lint is green" — it is not, and it is not your change that did it.
-Measured on 28/09/2026 in the `workflow_runtime` image with ruff 0.6.9:
+Do not claim "the tree is lint-clean" — it is not, and it is not your change that did it.
+CI's `python-lint` job is green because it only blocks new findings (the ratchet above);
+the whole tree, measured on 06/10/2026 with ruff 0.6.9 over the tracked files:
 
 | Gate | State | Meaning |
 | --- | --- | --- |
-| `ruff check .` | 1531 errors (868 auto-fixable) | never enforced; CI's `python-lint` job fails on `main` |
-| `ruff format --check .` | 514 of 620 files differ | the tree was never formatted with ruff |
-| `mypy` (whole tree) | 311 errors in 66 files; reported only (`|| true`) | only the strict per-surface list in `ci.yml` blocks |
+| `ruff check .` | 1386 errors (752 auto-fixable) | never enforced on the whole tree; the ratchet holds it from growing |
+| `ruff format --check .` | 517 of 717 files differ | the tree was never formatted with ruff |
+| `mypy` (whole tree) | 311 errors in 66 files on 28/09/2026; reported only (`|| true`) | only the strict per-surface list in `ci.yml` blocks |
 
 Tests are **not** on this list: `make test-unit` is green (8 suites, 2120 passed on
 28/09/2026) and `make test-integration` is green (4 suites). A failing test is a real
 regression — fix it or explain it, do not wave it through as pre-existing.
 
 Fixing the lint gates is worth doing, but as its own commit: a repo-wide `ruff format .`
-touches ~514 files and must not ride along with a behaviour change. Until then, judge your work
-by "no *new* findings in the files you touched", verified against a baseline worktree.
+touches ~517 files and must not ride along with a behaviour change. Until then, judge your work
+by "no *new* findings", which `make lint` checks for ruff; for whole-tree mypy, verify it
+against a baseline worktree.
 
 ## 2. Before you delete anything
 

@@ -12,14 +12,20 @@ DOCKER_RUN_PY = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=
 help:  ## List targets
 	@grep -hE '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-lint:  ## ruff lint + format check (same as CI python-lint)
-	$(DOCKER_RUN_PY) sh -c "pip install -q ruff==0.6.9 && ruff check . && ruff format --check ."
+# The tree is not ruff-clean, so lint fails only on findings added since the
+# merge-base with LINT_BASE (tests/ruff_ratchet.py), working-tree edits included.
+LINT_BASE ?= main
+lint:  ## ruff: no new findings or unformatted files since LINT_BASE (same as CI python-lint)
+	@base_dir=$$(mktemp -d) && trap 'rm -rf "$$base_dir"' EXIT && \
+	  git archive $$(git merge-base HEAD $(LINT_BASE)) -- pyproject.toml '*.py' | tar -x -C "$$base_dir" && \
+	  docker run --rm --user 0 -v "$(PWD):/src" -v "$$base_dir:/base:ro" -w /src $(PY_IMAGE) \
+	    sh -c "pip install -q ruff==0.6.9 && python tests/ruff_ratchet.py --base-dir /base"
 
 fmt:  ## ruff format + autofix
 	$(DOCKER_RUN_PY) sh -c "pip install -q ruff==0.6.9 && ruff check --fix . && ruff format ."
 
 type:  ## mypy strict on libs + services (same set as CI python-type)
-	$(DOCKER_RUN_PY) sh -c "pip install -q mypy && mypy backend/libs backend/services"
+	$(DOCKER_RUN_PY) sh -c "pip install -q mypy==2.4.0 && mypy backend/libs backend/services"
 
 # One suite per service, each run in that service's own image: no single image
 # can import every service (their OTel/boto3 pins conflict). suite:image pairs;

@@ -154,6 +154,8 @@ _AGENT_STREAM_END = object()
 async def single_agent_node(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     guardrail_task = (config.get("configurable") or {}).get("guardrail_task")
     query = state["query"]
+    agent_id = state["agent_id"]
+    assert agent_id, "_route_start/_route_mode send only turns with an agent_id here"
 
     # The clarification/rewrite check (input_refine) runs ALONGSIDE the agent
     # instead of in front of it, where it held every question for one LLM call.
@@ -170,8 +172,9 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
     # is refused there: that is the loop the answer just ended.
     clarification_answers = state.get("clarification_answers") or []
     answered = bool(state.get("clarification_response") or clarification_answers)
-    if state.get("clarification_response"):
-        query = merge_clarification(state["query"], state["clarification_response"])
+    clarification = state.get("clarification_response")
+    if clarification:
+        query = merge_clarification(state["query"], clarification)
     refine_task: asyncio.Task[tuple[str, list[dict[str, Any]]]] | None = asyncio.create_task(
         run_input_refine(query, state.get("messages", []), state.get("cfg", {}), allow_clarify=not answered)
     )
@@ -203,12 +206,12 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
     lf = get_langfuse_client()
     ctx = lf.start_as_current_span(
         name="single-agent",
-        input={"query": query, "agent_id": state["agent_id"]},
+        input={"query": query, "agent_id": agent_id},
     ) if lf else nullcontext()
 
     buffer: list[str] = []
     conversation_id = None
-    citations: list[dict] = []
+    citations: list[dict[str, Any]] = []
     success = False
     response_text = ""
     latency_ms = 0
@@ -232,7 +235,7 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
         async def pump() -> None:
             try:
                 async for item in call_agent_stream(
-                    agent_id=state["agent_id"],
+                    agent_id=agent_id,
                     prompt=prompt,
                     user_id=state["user_id"],
                     tenant_id=state["tenant_id"],
@@ -341,7 +344,7 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
     task_result = TaskResult(
         task_index=0,
         task_title=query[:100],
-        agent_id=state["agent_id"],
+        agent_id=agent_id,
         output=response_text,
         success=success,
         conversation_id=conversation_id,
@@ -480,6 +483,9 @@ async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict
 
     plan = state["plan"]
     process = state["process"]
+    # tot_planner_node sets both together, and _route_after_planner only routes
+    # here when it did.
+    assert plan is not None and process is not None
     redis = (config.get("configurable") or {}).get("redis")
     tenant_id, session_id, query = state["tenant_id"], state["session_id"], state["rewritten_query"]
 
@@ -545,7 +551,7 @@ async def _guardrail_output_check(text: str, cfg: dict[str, Any]) -> tuple[bool,
         return True, "Xin lỗi, tôi không thể tiếp tục trả lời câu hỏi này."
 
 
-def _merge_citations(target_results: list) -> list[dict]:
+def _merge_citations(target_results: list[TargetResult]) -> list[dict[str, Any]]:
     """Gộp citations từ tất cả agent con thành công thành 1 bảng nguồn duy nhất,
     dedupe theo source + renumber liên tục — bước tổng hợp (summarize()) viết
     lại toàn bộ câu trả lời nên KHÔNG giữ được vị trí [n] chính xác của từng
@@ -554,7 +560,7 @@ def _merge_citations(target_results: list) -> list[dict]:
     `outputs` (feed vào summarize()) cũng chỉ lấy task_results[0], để không
     hiện nguồn của 1 sub-task mà nội dung của nó chưa từng được đưa vào bản
     tổng hợp."""
-    merged: list[dict] = []
+    merged: list[dict[str, Any]] = []
     seen_sources: set[str] = set()
     for tr in target_results:
         if not (tr.success and tr.task_results):

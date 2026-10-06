@@ -61,6 +61,7 @@ def normalize_questions(raw: Any) -> list[dict[str, Any]]:
     """
     questions: list[dict[str, Any]] = []
     for item in raw if isinstance(raw, list) else []:
+        options: Any
         if isinstance(item, str):
             text, options = item, []
         elif isinstance(item, dict):
@@ -202,11 +203,12 @@ async def input_refine_node(state: OrchestratorState, config: RunnableConfig) ->
     xong khi input_refine đã xong → chạy tiếp bình thường như cũ, guardrail
     vẫn được check lại ở gate cuối để không bỏ sót case guardrail xong SAU."""
     messages, cfg = state.get("messages", []), state.get("cfg", {})
-    if state.get("clarification_response"):
+    clarification = state.get("clarification_response")
+    if clarification:
         # The answer is merged into the question that was asked, which may
         # still say "ông". The planner and agents below see only this question,
         # so it is rewritten against the history first — never asked again.
-        merged = merge_clarification(state["query"], state["clarification_response"])
+        merged = merge_clarification(state["query"], clarification)
         refined, _ = await run_input_refine(merged, messages, cfg, allow_clarify=False)
         return {"rewritten_query": refined, "clarification_needed": False}
 

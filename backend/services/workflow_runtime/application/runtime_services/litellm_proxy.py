@@ -34,7 +34,7 @@ _SPEND_TIMEOUT_S = 20.0
 # is served until it expires, exactly as the hand-rolled {at, payload} dict
 # did: a failed probe is not retried on every dashboard poll.
 _HEALTH_KEY = "health"
-_health_cache: TTLCache = TTLCache(maxsize=1, ttl=_HEALTH_CACHE_TTL_S)
+_health_cache: TTLCache[str, dict[str, Any]] = TTLCache(maxsize=1, ttl=_HEALTH_CACHE_TTL_S)
 _health_lock = asyncio.Lock()
 
 
@@ -124,7 +124,7 @@ def _health_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 async def models_health(*, force: bool = False) -> dict[str, Any]:
     if not force:
-        cached = _health_cache.get(_HEALTH_KEY)
+        cached: dict[str, Any] | None = _health_cache.get(_HEALTH_KEY)
         if cached is not None:
             return cached
     async with _health_lock:
@@ -195,10 +195,10 @@ def aggregate_spend_logs(rows: list[dict[str, Any]], start: dt.date, end: dt.dat
             "tokens": int(by_day[key]["tokens"]) if key in by_day else 0,
         })
         d += dt.timedelta(days=1)
-    models = sorted(
-        ({"model": m, "spend": round(v["spend"], 6), "tokens": int(v["tokens"])} for m, v in by_model.items()),
-        key=lambda x: x["spend"], reverse=True,
-    )
+    ranked = sorted(by_model.items(), key=lambda kv: round(kv[1]["spend"], 6), reverse=True)
+    models = [
+        {"model": m, "spend": round(v["spend"], 6), "tokens": int(v["tokens"])} for m, v in ranked
+    ]
     return {"total": round(total, 6), "series": series, "by_model": models}
 
 

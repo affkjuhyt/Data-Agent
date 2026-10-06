@@ -175,4 +175,5 @@ async def execute_readonly_query(sql: str, connection_params: dict[str, Any]) ->
     # clickhouse_connect hands over a finished result, so this bounds what
     # travels onward rather than what the driver already allocated. The
     # server-side settings above are what bound the latter.
-    return result_limits.cap_rows(rows).as_dict()
+    result: dict[str, Any] = result_limits.cap_rows(rows).as_dict()
+    return result
