@@ -358,3 +358,14 @@ async def test_pandas_still_refuses_a_path_outside_allowed_dir(monkeypatch, tmp_
     assert result is None
     assert "outside allowed_dir" in error["error"]
     assert seen == {}
+
+
+def test_pandas_epilogue_passes_the_sandbox_ast_check(monkeypatch):
+    """The epilogue rides on every text_to_pandas submission: if the sandbox's
+    allowlist refused it, every pandas question would fail as "security
+    validation failed" whatever the model wrote."""
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "backend" / "services" / "sandbox_executor"))
+    import nodes.sandbox.tool_executor.handlers.data as data
+    from security_visitor import validate_python_code
+
+    validate_python_code("import pandas as pd\nresult = pd.DataFrame()" + data._PANDAS_RENDER_EPILOGUE)

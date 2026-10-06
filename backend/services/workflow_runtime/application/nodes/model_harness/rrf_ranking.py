@@ -9,11 +9,13 @@ _K = 60
 
 
 def rrf_ranking_node(state: AgentState) -> dict[str, Any]:
+    """Fuse the TEXT sources only. Query results (`result_sets`) are not
+    candidates: a table is not a better or worse passage than a document, and
+    ranking it against them is how one used to lose its place in the top-N."""
     kb_chunks    = state.get("kb_chunks", [])
     mcp_results  = state.get("mcp_results", [])
     tool_results = state.get("tool_results", [])
-    db_results   = state.get("db_results", [])
-    all_items    = kb_chunks + mcp_results + tool_results + db_results
+    all_items    = kb_chunks + mcp_results + tool_results
 
     if not all_items:
         return {"rrf_results": []}
@@ -22,7 +24,7 @@ def rrf_ranking_node(state: AgentState) -> dict[str, Any]:
     meta:    dict[str, dict[str, Any]]       = {}
     sources: dict[str, list[str]]  = {}
 
-    for source_name, items in [("kb", kb_chunks), ("mcp", mcp_results), ("tool", tool_results), ("db", db_results)]:
+    for source_name, items in [("kb", kb_chunks), ("mcp", mcp_results), ("tool", tool_results)]:
         for rank, item in enumerate(items, start=1):
             item_id = item.get("id")
             if not item_id:

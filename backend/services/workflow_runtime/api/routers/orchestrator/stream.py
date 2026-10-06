@@ -227,6 +227,8 @@ async def _stream_graph(
                         yield _sse({"__options": event["data"]})
                     elif name == "evidence":
                         yield _sse({"__evidence": event["data"]})
+                    elif name == "result_set":
+                        yield _sse({"__result_set": event["data"]})
 
         except Exception as e:
             logger.error("stream | graph error: %s", e)

@@ -9,6 +9,7 @@ import { AlertTriangle, Database, FileText, Gauge, ShieldCheck, Sigma } from 'lu
 import { formatDateTime, formatDuration, formatNumber, formatTime } from '../../../lib/formatVN';
 import { CITATION_TAGS, FRESHNESS_LABELS, GENERATED_BY_LABELS, TRUNCATION_LABELS } from '../labels';
 import type { AskMessage, EvidenceRun } from '../types';
+import { resultSetToEvidenceRun } from '../resultSets';
 import { splitMetricRef } from './evidenceSummary';
 import { Chip, CopyButton, SqlBlock } from './EvidenceStrip';
 
@@ -75,6 +76,9 @@ function RunDetail({ run, index, total }: { run: EvidenceRun; index: number; tot
       <Section icon={Database} title="Query">
         <Row k="Database" v={run.db_name ? `${run.db_name}${run.db_type ? ` (${run.db_type})` : ''}` : null} />
         <Row k="Row count" v={run.row_count !== null && run.row_count !== undefined ? formatNumber(run.row_count) : null} />
+        <Row k="Trust" v={run.trust} />
+        <Row k="Executed at" v={run.executed_at ? formatDateTime(run.executed_at) : null} />
+        <Row k="SQL hash" v={run.sql_hash ? <span style={{ fontFamily: 'var(--font-mono)' }}>{run.sql_hash}</span> : null} />
         <Row k="Executed via" v="sandbox_executor · READ ONLY · logged" />
         <SqlBlock sql={run.sql} />
         <div style={{ marginTop: 6 }}><CopyButton text={run.sql} label="Copy SQL" /></div>
@@ -87,6 +91,7 @@ function RunDetail({ run, index, total }: { run: EvidenceRun; index: number; tot
           </div>
         )}
         <Row k="Data as of" v={prov?.as_of ? formatDateTime(prov.as_of) : prov ? 'not measured' : null} />
+        <Row k="Watermark" v={run.watermark ? formatDateTime(run.watermark) : null} />
         <Row k="Data age" v={typeof prov?.age_seconds === 'number' ? formatDuration(prov.age_seconds * 1000) : null} />
         <Row k="Classification" v={prov?.classification} />
         <Row k="Data owner" v={prov?.owners?.length ? prov.owners.join(', ') : null} />
@@ -107,7 +112,7 @@ function RunDetail({ run, index, total }: { run: EvidenceRun; index: number; tot
         {prov?.unknown_tables?.length ? <Row k="Unmeasured" v={prov.unknown_tables.join(', ')} /> : null}
       </Section>
 
-      {(findings.length > 0 || run.truncation?.reason || run.rows_capped) && (
+      {(findings.length > 0 || run.truncation?.reason || run.rows_capped || run.result_warnings?.length) && (
         <Section icon={AlertTriangle} title="Warnings">
           <ul style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 3 }}>
             {findings.map((f, i) => (
@@ -122,6 +127,9 @@ function RunDetail({ run, index, total }: { run: EvidenceRun; index: number; tot
               </li>
             )}
             {run.rows_capped && <li style={{ color: 'var(--ab-muted)' }}>The table below only previews the first {formatNumber(run.rows.length)} rows.</li>}
+            {run.result_warnings?.map((warning, i) => (
+              <li key={`result-${i}`} style={{ color: 'var(--ab-warn)' }}>{warning.detail || warning.code}</li>
+            ))}
           </ul>
         </Section>
       )}
@@ -132,6 +140,7 @@ function RunDetail({ run, index, total }: { run: EvidenceRun; index: number; tot
 export function EvidencePanel({ message }: { message: AskMessage | null }) {
   const ev = message?.evidence;
   const citations = message?.citations ?? [];
+  const resultRuns = (message?.resultSets ?? []).map(resultSetToEvidenceRun);
 
   if (!message) {
     return (
@@ -142,9 +151,10 @@ export function EvidencePanel({ message }: { message: AskMessage | null }) {
     );
   }
 
-  const hasRuns = !!ev?.runs?.length;
+  const runs = resultRuns.length ? resultRuns : ev?.runs ?? [];
+  const hasRuns = runs.length > 0;
 
-  if (message.status === 'streaming' && !ev) {
+  if (message.status === 'streaming' && !ev && !resultRuns.length) {
     return (
       <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--ab-muted)', fontSize: 12, lineHeight: 1.6 }}>
         Running… evidence (metric, SQL, row count) will appear once the answer is complete.
@@ -159,7 +169,7 @@ export function EvidencePanel({ message }: { message: AskMessage | null }) {
       </div>
 
       {hasRuns ? (
-        ev!.runs.map((run, i) => <RunDetail key={run.id ?? i} run={run} index={i} total={ev!.runs.length} />)
+        runs.map((run, i) => <RunDetail key={run.id ?? i} run={run} index={i} total={runs.length} />)
       ) : (
         <div style={{ fontSize: 12, color: 'var(--ab-muted)', lineHeight: 1.6 }}>
           {ev?.clarifications?.length

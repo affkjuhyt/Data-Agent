@@ -1,6 +1,4 @@
-import asyncio
 import contextlib
-import json
 import logging
 import os
 import re
@@ -11,7 +9,7 @@ import litellm
 from langchain_core.callbacks.manager import adispatch_custom_event
 
 from libs.shared import aggregation_check, freshness, untrusted
-from services.workflow_runtime.application.answer_exports import create_answer_export
+from services.workflow_runtime.application import result_sets
 from services.workflow_runtime.application.nodes.model_harness.intent import guidance
 from services.workflow_runtime.application.nodes.model_harness.intent import (
     parse as parse_analysis_type,
@@ -114,65 +112,6 @@ async def _stream_token(text: str) -> None:
     with contextlib.suppress(RuntimeError):
         await adispatch_custom_event(RESPONDER_TOKEN_EVENT, text)
 
-# Rows shipped to the UI per SQL run inside the `__evidence` frame. The full
-# result already went to the model (capped by result_limits in the sandbox);
-# this is the preview a person scrolls, not a second export path.
-_EVIDENCE_MAX_ROWS = 100
-
-
-def _evidence_run(chunk: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
-    """One SQL execution the answer was built from, in the shape the UI shows.
-
-    Everything here comes from the tool result's metadata written where the
-    query ran (handlers/data.py) — which statement, how many rows, which metric
-    contract compiled it, how fresh the tables are, whether the shape can
-    multiply a total. Nothing is restated by the model: the point of an
-    evidence strip is that it cannot drift from what actually executed.
-    """
-    md = chunk.get("metadata") or {}
-    sql = md.get("sql")
-    if not isinstance(sql, str) or not sql.strip():
-        return None
-
-    content = chunk.get("content")
-    parsed: Any = None
-    if isinstance(content, str):
-        try:
-            parsed = json.loads(content)
-        except (json.JSONDecodeError, ValueError):
-            parsed = None
-    elif isinstance(content, list):
-        parsed = content
-    rows = [r for r in parsed if isinstance(r, dict)] if isinstance(parsed, list) else []
-
-    columns: list[str] = []
-    for row in rows:
-        for key in row:
-            if key not in columns:
-                columns.append(key)
-
-    preview = {
-        "id": chunk.get("id"),
-        "kind": "sql",
-        "db_name": md.get("db_name"),
-        "db_type": md.get("db_type"),
-        "sql": sql,
-        "row_count": md.get("row_count", len(rows)),
-        # "semantic_layer" when an approved metric contract compiled the SQL,
-        # "llm" when the model wrote it — the single most important fact for
-        # "why should I trust this number".
-        "generated_by": md.get("generated_by") or "llm",
-        "metric": md.get("semantic"),
-        "provenance": md.get("provenance"),
-        "truncation": md.get("truncation"),
-        "aggregation": md.get("aggregation"),
-        "columns": columns,
-        "rows": rows[:_EVIDENCE_MAX_ROWS],
-        "rows_capped": len(rows) > _EVIDENCE_MAX_ROWS,
-    }
-    return preview, rows
-
-
 def _citation_type(chunk: dict[str, Any]) -> str:
     """kb | mcp | db | web | tool — dùng để FE tô màu badge theo loại nguồn.
     rrf_sources do rrf_ranking_node gắn (giữ nguyên qua reranker vì reranker
@@ -241,8 +180,6 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
     system_prompt += "\n\n" + _LANGUAGE_RULE.replace("{LANGUAGE}", lang_label)
 
     # Deterministic "why trust this" payload for the UI — built alongside the
-    # prompt from the same chunks, so what the strip shows is exactly what the
-    # model was given. `clarifications` rides along so a client can render the
     # structured question (with its options) instead of only the prose.
     evidence: dict[str, Any] = {
         "runs": [],
@@ -252,50 +189,63 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
     }
 
     chunk_meta: dict[int, dict[str, Any]] = {}
-    # (evidence run, its export task) — exports run alongside the LLM call below.
-    export_jobs: list[tuple[dict[str, Any], asyncio.Task[dict[str, Any] | None]]] = []
-    if state.get("reranked_chunks"):
-        max_chunks = cfg.get("context_max_chunks", 5)
-        max_chars  = cfg.get("context_max_chars", 4000)
-        chunks = state["reranked_chunks"][:max_chunks]
+    tables, chunks = result_sets.context_items(state, cfg)
+    used_tables: list[dict[str, Any]] = []
+    if tables or chunks:
+        max_chars = cfg.get("context_max_chars", 4000)
+        max_rows  = result_sets.context_max_rows(cfg)
 
         parts = []
-        total_chars = 0
         has_governance = False
         has_truncation = False
         has_aggregation_risk = False
-        for i, c in enumerate(chunks):
-            # `source` is retrieved data too: a document whose name embeds a
-            # newline plus a fake "[2] source=..." header forges a second
-            # context item, and therefore a second citation, out of one chunk.
-            source    = untrusted.one_line(c.get("source") or c.get("id", "unknown"))
-            score     = c.get("score", c.get("rrf_score", ""))
-            score_str = f" | score={score:.3f}" if isinstance(score, float) else ""
-            header    = f"[{i+1}] source={source}{score_str}"
-            content   = c["content"]
 
+        for i, rs in enumerate(tables, 1):
+            prov = rs.get("provenance") or {}
+            source = untrusted.one_line(prov.get("connection_id") or "result")
+            header = f"[{i}] source={source} | result={rs.get('result_id')} | trust={rs.get('trust')}"
             # Freshness/owner/classification/lineage for the tables behind this
-            # item, attached where the query ran (handlers/data.py). Rendered on
-            # its own line above the rows rather than mixed into them: the
-            # content is JSON the model parses as data, and a provenance key
-            # inside it would read as another column of the result.
-            #
-            # Deliberately NOT counted against max_chars — it is one short line,
-            # and letting an accurate "as of" be the thing trimmed away by a
-            # long result set defeats the point.
-            governance = freshness.describe((c.get("metadata") or {}).get("provenance"))
+            # result, on its own line above the rows rather than mixed into
+            # them: a provenance key inside the JSON would read as another
+            # column of the result.
+            governance = freshness.describe(prov.get("freshness"))
             if governance:
                 header = f"{header}\ngovernance: {governance}"
                 has_governance = True
-
             # A capped result is not a smaller answer to the same question. A
             # total over the rows that fitted looks exactly like the real total,
             # so the model is told the rows are a prefix and instructed below
             # not to aggregate over them as if they were everything.
-            truncation = _truncation_note((c.get("metadata") or {}).get("truncation"))
+            truncation = _truncation_note(prov.get("truncation"))
             if truncation:
                 header = f"{header}\n{truncation}"
                 has_truncation = True
+            text = result_sets.render(rs, max_rows)
+            parts.append(f"{header}\n{text}")
+            chunk_meta[i] = {
+                "index":   i,
+                "source":  source,
+                "type":    "db",
+                "score":   None,
+                "snippet": text[:200],
+                "url":     None,
+                "doc_id":  None,
+                "page":    None,
+                "result_id": rs.get("result_id"),
+                "provenance": prov.get("freshness") or None,
+                "truncation": prov.get("truncation") or None,
+                "aggregation": prov.get("aggregation") or None,
+            }
+            evidence["runs"].append(result_sets.evidence_run(rs, citation_index=i))
+            used_tables.append(result_sets.frame(rs, citation_index=i))
+
+        total_chars = 0
+        for i, c in enumerate(chunks, len(tables) + 1):
+            source    = untrusted.one_line(c.get("source") or c.get("id", "unknown"))
+            score     = c.get("score", c.get("rrf_score", ""))
+            score_str = f" | score={score:.3f}" if isinstance(score, float) else ""
+            header    = f"[{i}] source={source}{score_str}"
+            content   = c["content"]
 
             if total_chars + len(content) > max_chars:
                 content = content[:max_chars - total_chars]
@@ -303,8 +253,8 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
             total_chars += len(content)
 
             ctype = _citation_type(c)
-            chunk_meta[i + 1] = {
-                "index":   i + 1,
+            chunk_meta[i] = {
+                "index":   i,
                 "source":  source,
                 "type":    ctype,
                 "score":   score if isinstance(score, float) else None,
@@ -315,27 +265,10 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
                 # chỗ (#page=N) thay vì mở trang đầu của một bản tin 60 trang.
                 # None với tài liệu nạp trước khi toạ độ được lưu.
                 "page":    c.get("page") if ctype == "kb" else None,
-                # Surfaced on the citation so the UI can badge a stale answer
-                # without re-deriving anything the model said.
-                "provenance": (c.get("metadata") or {}).get("provenance") or None,
-                "truncation": (c.get("metadata") or {}).get("truncation") or None,
-                "aggregation": (c.get("metadata") or {}).get("aggregation") or None,
+                "provenance": None,
+                "truncation": None,
+                "aggregation": None,
             }
-
-            evidence_pair = _evidence_run(c)
-            if evidence_pair:
-                run, full_rows = evidence_pair
-                run["citation_index"] = i + 1
-                if full_rows:
-                    full_run = {**run, "rows": full_rows}
-                    # Independent of the prompt: built and uploaded while the
-                    # model answers, attached to this run once both are done.
-                    export_jobs.append((run, asyncio.create_task(create_answer_export(
-                        full_run,
-                        tenant_id=cfg.get("tenant_id", "") or "",
-                        question=state["query"],
-                    ))))
-                evidence["runs"].append(run)
 
             if total_chars >= max_chars:
                 break
@@ -345,8 +278,8 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
         # comes from an approved metric contract, so combining VND with USD is
         # not a risk to weigh but an error to state.
         unit_conflict = aggregation_check.check_units([
-            ((c.get("metadata") or {}).get("semantic") or {}).get("unit", "")
-            for c in chunks
+            ((rs.get("provenance") or {}).get("metric") or {}).get("unit", "")
+            for rs in tables
         ])
         if unit_conflict:
             parts.append(f"aggregation-risk: {unit_conflict.kind}: {unit_conflict.detail}")
@@ -386,26 +319,17 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
 
     model = cfg.get("responder_model", "responder")
     t0 = time.monotonic()
-    try:
-        response = await llm_call.acompletion(
-            "llm:responder", litellm.acompletion,
-            on_token=_stream_token,
-            model=model,
-            api_base=_LITELLM_BASE,
-            api_key=_LITELLM_KEY,
-            messages=messages,
-            temperature=cfg.get("responder_temperature", 0.2),
-            max_tokens=cfg.get("responder_max_tokens", 1000),
-        )
-    except BaseException:
-        for _, job in export_jobs:
-            job.cancel()
-        raise
+    response = await llm_call.acompletion(
+        "llm:responder", litellm.acompletion,
+        on_token=_stream_token,
+        model=model,
+        api_base=_LITELLM_BASE,
+        api_key=_LITELLM_KEY,
+        messages=messages,
+        temperature=cfg.get("responder_temperature", 0.2),
+        max_tokens=cfg.get("responder_max_tokens", 1000),
+    )
     latency_ms = int((time.monotonic() - t0) * 1000)
-    for run, job in export_jobs:
-        export_meta = await job
-        if export_meta:
-            run["export"] = export_meta
 
     full_text = response.choices[0].message.content or ""
     usage = response.usage or {}
@@ -425,4 +349,9 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
             seen.add(n)
             citations.append(chunk_meta[n])
 
-    return {"response": full_text, "citations": citations, "evidence": evidence}
+    # `_result_sets` is not a state key — LangGraph drops it on merge, as it
+    # does tool_executor's `_tool_traces` — but it is in the node output that
+    # conversation_runner reads, which sends one `__result_set` frame per table
+    # the answer was built from.
+    return {"response": full_text, "citations": citations, "evidence": evidence,
+            "_result_sets": used_tables}

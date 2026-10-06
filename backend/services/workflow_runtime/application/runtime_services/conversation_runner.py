@@ -451,6 +451,9 @@ async def run_conversation_stream(
         "mcp_results": [],
         "tool_results": [],
         "tool_errors": [],
+        # None, not []: result_sets appends (domain/state.py), and on a
+        # checkpointed thread the previous turn's tables are still in it.
+        "result_sets": None,
         "loop_iteration": 0,
         "judge_verdict": None,
         "judge_error_type": None,
@@ -635,6 +638,8 @@ async def run_conversation_stream(
         last_responder_citations: list[dict[str, Any]] = []
         last_responder_evidence: dict[str, Any] | None = None
         pending_evidence: dict[str, Any] | None = None
+        last_responder_result_sets: list[dict[str, Any]] = []
+        pending_result_sets: list[dict[str, Any]] = []
         guardrail_task: asyncio.Task[Any] | None = None
         # The answer shown while the responder writes it. The judge and the
         # output guardrail still decide on the finished text; a rejected one is
@@ -714,6 +719,7 @@ async def run_conversation_stream(
                         last_responder_text = text
                         last_responder_citations = out.get("citations", []) if isinstance(out, dict) else []
                         last_responder_evidence = out.get("evidence") if isinstance(out, dict) else None
+                        last_responder_result_sets = (out.get("_result_sets") or []) if isinstance(out, dict) else []
                         # Bản trước (nếu có) sắp lỗi thời — Judge vừa cho responder
                         # chạy lại, huỷ kết quả check dở dang của bản cũ.
                         if guardrail_task and not guardrail_task.done():
@@ -779,6 +785,7 @@ async def run_conversation_stream(
                     # Only for an answer that is actually delivered — a refused
                     # turn must not leak the rows the guardrail just blocked.
                     pending_evidence = last_responder_evidence or None
+                    pending_result_sets = last_responder_result_sets
                     # Ghép câu nhắc "có chart" KHÔNG qua LLM — Responder chạy song song với
                     # Visualization nên tự nó không biết chart có vẽ được hay không lúc sinh
                     # văn bản; đây là điểm DUY NHẤT đã biết chắc cả 2 nhánh đều xong.
@@ -797,6 +804,12 @@ async def run_conversation_stream(
                         rest = clean_text
                     if rest or not live.emitted:
                         yield f"data: {json.dumps(rest)}\n\n"
+
+            # One frame per table the answer was built from, before `__evidence`:
+            # the evidence strip refers to them, so they have to be there first.
+            # Each carries a bounded preview; the rows are fetched by result_id.
+            for rs in pending_result_sets:
+                yield f"data: {json.dumps({'__result_set': rs}, ensure_ascii=False, default=str)}\n\n"
 
             # Evidence BEFORE options/suggestions: a client that stops reading at
             # the first "what next" frame still has the "why trust this" one.

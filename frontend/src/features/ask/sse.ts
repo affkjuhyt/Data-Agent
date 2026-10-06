@@ -8,7 +8,7 @@
  * network chunks — a frame split across two chunks used to be parsed as two
  * broken pieces of text.
  */
-import type { ChartSpec, Citation, ClarificationQuestion, Evidence } from './types';
+import type { ChartSpec, Citation, ClarificationQuestion, Evidence, ResultSet } from './types';
 
 export type SseEvent =
   | { type: 'token'; text: string }
@@ -20,6 +20,7 @@ export type SseEvent =
   | { type: 'clarification'; sessionId: string; questions: string[]; details: ClarificationQuestion[] }
   | { type: 'pending_review'; convId: string; payload: unknown }
   | { type: 'chart'; specs: ChartSpec[] }
+  | { type: 'result_set'; resultSet: ResultSet }
   | { type: 'citations'; citations: Citation[] }
   | { type: 'suggestions'; suggestions: string[] }
   | { type: 'options'; options: string[] }
@@ -80,6 +81,9 @@ export function parseSseData(raw: string): SseEvent {
   }
 
   if (Array.isArray(obj.__chart)) return { type: 'chart', specs: obj.__chart as ChartSpec[] };
+  if (obj.__result_set && typeof obj.__result_set === 'object') {
+    return { type: 'result_set', resultSet: obj.__result_set as ResultSet };
+  }
   if (Array.isArray(obj.__citations)) return { type: 'citations', citations: obj.__citations as Citation[] };
   if (Array.isArray(obj.__suggestions)) return { type: 'suggestions', suggestions: obj.__suggestions.map(String) };
   if (Array.isArray(obj.__options)) return { type: 'options', options: obj.__options.map(String) };

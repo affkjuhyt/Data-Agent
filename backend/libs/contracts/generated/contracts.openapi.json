@@ -212,6 +212,91 @@
         "type": "object",
         "x-schema-version": 1
       },
+      "ColumnStats": {
+        "additionalProperties": false,
+        "description": "Computed over every row returned, not the preview: a total the preview\ncannot show is still a number the answer may state, and the judge checks it\nagainst this. When the source capped the result, `provenance.truncation`\nsays so and the stats describe the rows that came back.\n\nNumeric columns fill min/max/sum; text columns fill `distinct` (first\nDISTINCT_MAX_VALUES, in row order) and `distinct_count`.",
+        "properties": {
+          "distinct": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Distinct"
+          },
+          "distinct_count": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Distinct Count"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Min"
+          },
+          "nulls": {
+            "minimum": 0,
+            "title": "Nulls",
+            "type": "integer"
+          },
+          "sum": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sum"
+          }
+        },
+        "required": [
+          "nulls"
+        ],
+        "title": "ColumnStats",
+        "type": "object",
+        "x-schema-version": 1
+      },
       "CsvProfile": {
         "additionalProperties": false,
         "properties": {
@@ -923,6 +1008,16 @@
         "title": "FetchTime",
         "type": "object",
         "x-schema-version": 1
+      },
+      "GeneratedBy": {
+        "description": "Who decided the statement's shape — the first fact behind \"why trust this number\".",
+        "enum": [
+          "semantic_layer",
+          "verified_query",
+          "llm"
+        ],
+        "title": "GeneratedBy",
+        "type": "string"
       },
       "HtmlRegexTime": {
         "additionalProperties": false,
@@ -2155,6 +2250,418 @@
         "type": "object",
         "x-schema-version": 1
       },
+      "ResultColumn": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ResultColumnType"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "ResultColumn",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ResultColumnType": {
+        "enum": [
+          "text",
+          "number",
+          "date",
+          "datetime",
+          "bool",
+          "json"
+        ],
+        "title": "ResultColumnType",
+        "type": "string"
+      },
+      "ResultKind": {
+        "description": "`scalar` is one row of one column, `series` has a date column to plot against.",
+        "enum": [
+          "table",
+          "scalar",
+          "series"
+        ],
+        "title": "ResultKind",
+        "type": "string"
+      },
+      "ResultProvenance": {
+        "additionalProperties": false,
+        "description": "Where the rows came from. `sql` keeps the executed statement's shape but\nhas literals redacted by the audit policy; `sql_hash` identifies the exact\noriginal without copying sensitive predicate values onto the wire.",
+        "properties": {
+          "aggregation": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Aggregation"
+          },
+          "connection_id": {
+            "minLength": 1,
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "engine": {
+            "minLength": 1,
+            "title": "Engine",
+            "type": "string"
+          },
+          "executed_at": {
+            "format": "date-time",
+            "title": "Executed At",
+            "type": "string"
+          },
+          "freshness": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Freshness"
+          },
+          "generated_by": {
+            "$ref": "#/components/schemas/GeneratedBy"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Metric"
+          },
+          "sql": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sql"
+          },
+          "sql_hash": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sql Hash"
+          },
+          "tables": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tables",
+            "type": "array"
+          },
+          "truncation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResultTruncation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "watermark": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Watermark"
+          }
+        },
+        "required": [
+          "connection_id",
+          "engine",
+          "executed_at",
+          "generated_by"
+        ],
+        "title": "ResultProvenance",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ResultSet": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "columns": [
+              {
+                "name": "chi_nhanh",
+                "type": "text",
+                "unit": null
+              },
+              {
+                "name": "doanh_thu_thuan",
+                "type": "number",
+                "unit": "VND"
+              }
+            ],
+            "full_rows_available": true,
+            "kind": "table",
+            "provenance": {
+              "aggregation": {
+                "findings": [],
+                "joins": 0,
+                "structurally_safe": true
+              },
+              "connection_id": "dw_pilot",
+              "engine": "postgres",
+              "executed_at": "2026-10-06T09:15:00+07:00",
+              "freshness": {
+                "as_of": "2026-10-05T23:00:00+07:00",
+                "status": "fresh"
+              },
+              "generated_by": "semantic_layer",
+              "metric": {
+                "metric": "doanh_thu_thuan@3",
+                "owner": "Tài chính",
+                "unit": "VND"
+              },
+              "sql": "SELECT chi_nhanh, SUM(doanh_thu_thuan) AS doanh_thu_thuan FROM mart.fact_doanh_thu WHERE thang = ? GROUP BY chi_nhanh",
+              "sql_hash": "9b74c9897bac770ffc029102a200c5de2c1c3e2c4b0b9c3f3bd2d2b5c51e3a1f",
+              "tables": [
+                "mart.fact_doanh_thu"
+              ],
+              "truncation": null,
+              "watermark": "2026-10-05T23:00:00+07:00"
+            },
+            "result_id": "3f2a9c1e5b7d4e0f8a6b2c4d1e3f5a7b",
+            "row_count": 3,
+            "rows_preview": [
+              {
+                "chi_nhanh": "Hà Nội",
+                "doanh_thu_thuan": 20115300000
+              },
+              {
+                "chi_nhanh": "TP.HCM",
+                "doanh_thu_thuan": 18900000000
+              },
+              {
+                "chi_nhanh": "Đà Nẵng",
+                "doanh_thu_thuan": 9200000000
+              }
+            ],
+            "stats": {
+              "chi_nhanh": {
+                "distinct": [
+                  "Hà Nội",
+                  "TP.HCM",
+                  "Đà Nẵng"
+                ],
+                "distinct_count": 3,
+                "nulls": 0
+              },
+              "doanh_thu_thuan": {
+                "max": "20115300000",
+                "min": "9200000000",
+                "nulls": 0,
+                "sum": "48215300000"
+              }
+            },
+            "trust": "GOVERNED",
+            "warnings": []
+          }
+        ],
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ResultColumn"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "full_rows_available": {
+            "default": false,
+            "title": "Full Rows Available",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ResultKind"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ResultProvenance"
+          },
+          "result_id": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Result Id",
+            "type": "string"
+          },
+          "row_count": {
+            "minimum": 0,
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "rows_preview": {
+            "items": {
+              "type": "object"
+            },
+            "maxItems": 50,
+            "title": "Rows Preview",
+            "type": "array"
+          },
+          "stats": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ColumnStats"
+            },
+            "title": "Stats",
+            "type": "object"
+          },
+          "trust": {
+            "$ref": "#/components/schemas/TrustLabel"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ResultWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "result_id",
+          "kind",
+          "columns",
+          "row_count",
+          "rows_preview",
+          "provenance",
+          "trust"
+        ],
+        "title": "ResultSet",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ResultTruncation": {
+        "additionalProperties": false,
+        "description": "The source capped the result: `row_count` is what came back, not what exists.",
+        "properties": {
+          "cells_truncated": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cells Truncated"
+          },
+          "reason": {
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "result_bytes": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Result Bytes"
+          },
+          "rows_returned": {
+            "minimum": 0,
+            "title": "Rows Returned",
+            "type": "integer"
+          },
+          "rows_total": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rows Total"
+          }
+        },
+        "required": [
+          "reason",
+          "rows_returned"
+        ],
+        "title": "ResultTruncation",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ResultWarning": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "ResultWarning",
+        "type": "object",
+        "x-schema-version": 1
+      },
       "ReviewCaseKind": {
         "enum": [
           "SCHEMA_DRIFT",
@@ -2794,6 +3301,16 @@
         "type": "object",
         "x-schema-version": 1
       },
+      "TrustLabel": {
+        "description": "Trust of a computed number (docs/v3/01 §4). DOCUMENT and INSUFFICIENT\nlabel answer blocks, not results, so they are not values here.",
+        "enum": [
+          "VERIFIED",
+          "GOVERNED",
+          "EXPLORATORY"
+        ],
+        "title": "TrustLabel",
+        "type": "string"
+      },
       "UseRights": {
         "enum": [
           "internal_analysis",
@@ -3303,7 +3820,7 @@
   "info": {
     "description": "Shared wire shapes (libs/contracts, NOP-150). No paths: indicator-api (NOP-162) serves these models under its own routes.",
     "title": "Data Agent V2 contract",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "openapi": "3.1.0",
   "paths": {}

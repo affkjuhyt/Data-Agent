@@ -5,7 +5,7 @@ import { AnswerTheme } from './AnswerTheme';
 import { ClarificationCard } from './ClarificationCard';
 import { DataGrid } from './DataGrid';
 import { runChips } from './evidenceSummary';
-import type { AskMessage, Evidence, EvidenceRun } from '../types';
+import type { AskMessage, Evidence, EvidenceRun, ResultSet } from '../types';
 
 const run: EvidenceRun = {
   id: 'sql_1',
@@ -44,15 +44,47 @@ const msg: AskMessage = {
 const wrap = (ui: React.ReactElement) => render(<AnswerTheme mode="light">{ui}</AnswerTheme>);
 
 describe('AnswerBlock', () => {
+  it('renders every first-class result set, including an empty result', () => {
+    const base: ResultSet = {
+      result_id: '3f2a9c1e5b7d4e0f8a6b2c4d1e3f5a7b',
+      kind: 'table',
+      columns: [{ name: 'region', type: 'text' }, { name: 'revenue', type: 'number', unit: 'VND' }],
+      row_count: 1200,
+      rows_preview: Array.from({ length: 50 }, (_, i) => ({ region: `Region ${i + 1}`, revenue: i + 1 })),
+      stats: { revenue: { nulls: 0, min: '10', max: '10', sum: '10' } },
+      provenance: { connection_id: 'dw', engine: 'postgres', sql: 'SELECT 1', tables: ['fact_sales'], executed_at: '2026-10-06T09:15:00Z', generated_by: 'llm' },
+      trust: 'EXPLORATORY', warnings: [], full_rows_available: false,
+    };
+    const empty = { ...base, result_id: '4f2a9c1e5b7d4e0f8a6b2c4d1e3f5a7c', columns: [], row_count: 0, rows_preview: [] };
+    const truncated = {
+      ...base,
+      result_id: '5f2a9c1e5b7d4e0f8a6b2c4d1e3f5a7d',
+      row_count: 10000,
+      provenance: { ...base.provenance, truncation: { reason: 'row_limit', rows_returned: 10000 } },
+      warnings: [{ code: 'truncated', detail: 'row_limit' }],
+    };
+    wrap(<AnswerBlock msg={{ ...msg, evidence: undefined, resultSets: [base, empty, truncated] }} />);
+
+    expect(screen.getAllByTestId('data-grid')).toHaveLength(3);
+    expect(screen.getAllByRole('columnheader', { name: /revenue \(VND\)/ })).toHaveLength(2);
+    expect(screen.getByText(/Query result 1/)).toBeInTheDocument();
+    expect(screen.getAllByText(/1\.200 rows/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Preview 10 \/ 50 rows/)).toHaveLength(2);
+    expect(screen.getByText('Không có dòng nào khớp điều kiện')).toBeInTheDocument();
+    expect(screen.getByText('Kết quả bị cắt ở 10.000 dòng')).toBeInTheDocument();
+    expect(screen.getAllByText('Model-generated SQL').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('EXPLORATORY').length).toBeGreaterThan(0);
+  });
+
   it('shows answer, table, evidence strip with metric + SQL toggle, and suggestions', () => {
     wrap(<AnswerBlock msg={msg} onSuggestion={() => {}} />);
 
     expect(screen.getByText(/Net revenue for June 2026/)).toBeInTheDocument();
 
     const grid = screen.getByTestId('data-grid');
-    expect(within(grid).getByText(/1,204 rows/)).toBeInTheDocument();
+    expect(within(grid).getByText(/1\.204 rows/)).toBeInTheDocument();
     // US number formatting of a numeric string from Postgres
-    expect(within(grid).getByText('612,000,000')).toBeInTheDocument();
+    expect(within(grid).getByText('612.000.000')).toBeInTheDocument();
 
     const strip = screen.getByTestId('evidence-strip');
     expect(within(strip).getByText(/Approved metric · net_revenue v3/)).toBeInTheDocument();
@@ -221,13 +253,13 @@ describe('DataGrid', () => {
     const amountHeader = screen.getByRole('columnheader', { name: /amount/ });
     fireEvent.click(amountHeader); // asc
     const firstDataRow = screen.getAllByRole('row')[1];
-    expect(within(firstDataRow).getByText('1,000')).toBeInTheDocument();
+    expect(within(firstDataRow).getByText('1.000')).toBeInTheDocument();
     expect(amountHeader).toHaveAttribute('aria-sort', 'ascending');
   });
 
   it('flags a truncated result', () => {
     wrap(<DataGrid columns={['id']} rows={[{ id: 1 }]} truncation={{ reason: 'row_limit', rows_returned: 1 }} />);
-    expect(screen.getByText(/row cap/)).toBeInTheDocument();
+    expect(screen.getByText('Kết quả bị cắt ở 1 dòng')).toBeInTheDocument();
   });
 
   it('loads full result pages from the backend artifact', async () => {
@@ -252,7 +284,7 @@ describe('DataGrid', () => {
 
     await waitFor(() => expect(loadRows).toHaveBeenCalledWith({ offset: 0, limit: 500, sort: undefined, dir: undefined }));
     expect(screen.getByText('SO-501')).toBeInTheDocument();
-    expect(screen.getByText(/Full result 1-1 \/ 1,200 rows/)).toBeInTheDocument();
+    expect(screen.getByText(/Full result 1-1 \/ 1\.200 rows/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Excel \+ Source/ })).toBeInTheDocument();
   });
 });

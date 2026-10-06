@@ -11,6 +11,7 @@ import type { Truncation } from '../types';
 
 interface DataGridProps {
   columns: string[];
+  columnUnits?: Record<string, string>;
   rows: Record<string, unknown>[];
   /** total rows the query returned (may exceed rows.length when the preview is capped) */
   rowCount?: number | null;
@@ -46,7 +47,7 @@ function compare(a: unknown, b: unknown): number {
   return String(a).localeCompare(String(b), 'en');
 }
 
-export function DataGrid({ columns, rows, rowCount, capped, truncation, pageSize = 10, title = 'Data table', onExport, fullResult }: DataGridProps) {
+export function DataGrid({ columns, columnUnits, rows, rowCount, capped, truncation, pageSize = 10, title = 'Data table', onExport, fullResult }: DataGridProps) {
   const [sort, setSort] = useState<Sort>(null);
   const [visible, setVisible] = useState(pageSize);
   const [mode, setMode] = useState<Mode>('preview');
@@ -104,8 +105,6 @@ export function DataGrid({ columns, rows, rowCount, capped, truncation, pageSize
     return copy;
   }, [fullRows, mode, rows, sort]);
 
-  if (!columns.length || !rows.length) return null;
-
   const activeColumns = mode === 'full' ? fullColumns : columns;
   const shown = mode === 'full' ? sorted : sorted.slice(0, visible);
   const total = mode === 'full' ? fullTotal : rowCount ?? rows.length;
@@ -124,7 +123,9 @@ export function DataGrid({ columns, rows, rowCount, capped, truncation, pageSize
   };
 
   const truncNote = truncation?.reason
-    ? TRUNCATION_LABELS[truncation.reason] ?? `result truncated (${truncation.reason})`
+    ? truncation.reason === 'row_limit' && truncation.rows_returned
+      ? `Kết quả bị cắt ở ${formatNumber(truncation.rows_returned)} dòng`
+      : TRUNCATION_LABELS[truncation.reason] ?? `result truncated (${truncation.reason})`
     : null;
 
   return (
@@ -196,7 +197,7 @@ export function DataGrid({ columns, rows, rowCount, capped, truncation, pageSize
                     }}
                   >
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexDirection: numeric[c] ? 'row-reverse' : 'row' }}>
-                      {c}
+                      {c}{columnUnits?.[c] ? ` (${columnUnits[c]})` : ''}
                       <Icon size={10} style={{ opacity: active ? 1 : 0.4 }} />
                     </span>
                   </th>
@@ -205,7 +206,13 @@ export function DataGrid({ columns, rows, rowCount, capped, truncation, pageSize
             </tr>
           </thead>
           <tbody>
-            {shown.map((row, i) => (
+            {shown.length === 0 ? (
+              <tr>
+                <td colSpan={Math.max(1, activeColumns.length)} style={{ padding: '18px 10px', textAlign: 'center', color: 'var(--ab-muted)' }}>
+                  Không có dòng nào khớp điều kiện
+                </td>
+              </tr>
+            ) : shown.map((row, i) => (
               <tr key={i} style={{ borderBottom: '1px solid var(--ab-border)' }}>
                 {activeColumns.map(c => (
                   <td
@@ -228,7 +235,7 @@ export function DataGrid({ columns, rows, rowCount, capped, truncation, pageSize
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', fontSize: 10.5, color: 'var(--ab-muted)', flexWrap: 'wrap' }}>
         <span>
           {mode === 'full'
-            ? `Full result ${formatNumber(fullOffset + 1)}-${formatNumber(fullOffset + shown.length)} / ${formatNumber(fullTotal)} rows`
+            ? `Full result ${formatNumber(shown.length ? fullOffset + 1 : 0)}-${formatNumber(fullOffset + shown.length)} / ${formatNumber(fullTotal)} rows`
             : `Preview ${formatNumber(shown.length)} / ${formatNumber(rows.length)} rows${capped ? ' (preview)' : ''}`}
         </span>
         {fullLoading && <span>Loading full result…</span>}

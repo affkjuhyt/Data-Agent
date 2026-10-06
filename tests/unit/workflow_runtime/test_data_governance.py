@@ -473,18 +473,22 @@ class TestCatalogContext:
 # ── the answer ─────────────────────────────────────────────────────────────
 
 class TestResponderDisclosure:
-    def _state(self, chunks):
+    def _state(self, items):
+        # A query result is a ResultSet (result_sets channel, R0-1); anything
+        # else is a ranked text chunk.
         return {
             "config": {"system_prompt": "You are helpful.", "context_max_chunks": 5,
                        "context_max_chars": 4000, "responder_model": "m"},
             "query": "doanh thu tháng 6",
             "messages": [],
-            "reranked_chunks": chunks,
+            "result_sets": [i for i in items if "result_id" in i],
+            "reranked_chunks": [i for i in items if "result_id" not in i],
         }
 
-    def _chunk(self, provenance=None):
-        return {"id": "sql_1", "source": "tool/sql", "content": '[{"total": 42}]',
-                "rrf_sources": ["tool"], "metadata": {"provenance": provenance}}
+    def _chunk(self, provenance=None, rows=({"total": 42},)):
+        from services.workflow_runtime.application import result_sets
+        return result_sets.build(list(rows), connection_id="dw", engine="postgres", generated_by="llm",
+                                 sql="SELECT SUM(amount) AS total FROM orders", governance=provenance)
 
     async def _run(self, monkeypatch, runtime_path, chunks):
         import nodes.model_harness.responder as responder
@@ -553,8 +557,7 @@ class TestResponderDisclosure:
         prov = summarize([
             _table("orders", data_as_of=NOW - timedelta(days=9), freshness_sla_seconds=DAY),
         ], now=NOW).to_dict()
-        chunk = self._chunk(prov)
-        chunk["content"] = "x" * 50_000
+        chunk = self._chunk(prov, rows=[{"note": "x" * 1_000} for _ in range(50)])
 
         system_prompt, _ = await self._run(monkeypatch, runtime_path, [chunk])
 

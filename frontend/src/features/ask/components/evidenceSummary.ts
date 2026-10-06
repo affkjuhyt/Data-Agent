@@ -28,7 +28,18 @@ export function splitMetricRef(ref: string | undefined | null): { key: string; v
 export function runChips(run: EvidenceRun): Chip[] {
   const chips: Chip[] = [];
 
-  if (run.generated_by === 'semantic_layer' && run.metric?.metric) {
+  if (run.trust) {
+    chips.push({
+      key: 'trust',
+      tone: run.trust === 'EXPLORATORY' ? 'warn' : 'ok',
+      label: run.trust,
+      title: run.trust === 'EXPLORATORY' ? 'Model-authored query' : 'Governed query source',
+    });
+  }
+
+  if (run.trust === 'VERIFIED' || run.generated_by === 'verified_query') {
+    chips.push({ key: 'metric', tone: 'ok', label: 'Verified query' });
+  } else if (run.generated_by === 'semantic_layer' && run.metric?.metric) {
     const { key, version } = splitMetricRef(run.metric.metric);
     chips.push({
       key: 'metric',
@@ -66,6 +77,10 @@ export function runChips(run: EvidenceRun): Chip[] {
 
   if (run.truncation?.reason) {
     chips.push({ key: 'truncation', tone: 'warn', label: 'Result truncated', title: `Reason: ${run.truncation.reason}` });
+  }
+
+  if (run.result_warnings?.length) {
+    chips.push({ key: 'warnings', tone: 'warn', label: `${run.result_warnings.length} warning${run.result_warnings.length === 1 ? '' : 's'}`, title: run.result_warnings.map(w => w.detail || w.code).join('\n') });
   }
 
   return chips;

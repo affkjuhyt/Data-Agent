@@ -63,6 +63,18 @@ from libs.contracts.v1.refs import (
     TableCellRef,
     XPathRef,
 )
+from libs.contracts.v1.result_set import (
+    ColumnStats,
+    GeneratedBy,
+    ResultColumn,
+    ResultColumnType,
+    ResultKind,
+    ResultProvenance,
+    ResultSet,
+    ResultTruncation,
+    ResultWarning,
+    TrustLabel,
+)
 from libs.contracts.v1.source_config import (
     Purpose,
     ReleaseTimes,
@@ -94,6 +106,7 @@ PUBLIC_MODELS: tuple[type[ContractModel], ...] = (
     ExtractionCompleted,
     MappingProposed,
     SourceSlaBreached,
+    ResultSet,
 )
 
 # Enums a producer may extend without a version bump (COMPATIBILITY.md): consumers
@@ -113,6 +126,7 @@ __all__ = [
     "ChangeKind",
     "ColumnDiff",
     "ColumnProfile",
+    "ColumnStats",
     "ContractModel",
     "DryRunRequest",
     "DryRunResult",
@@ -124,6 +138,7 @@ __all__ = [
     "EventType",
     "EvidenceRef",
     "ExtractionCompleted",
+    "GeneratedBy",
     "JsonPathRef",
     "MappingProposed",
     "MappingRules",
@@ -140,6 +155,13 @@ __all__ = [
     "ReleaseProcessingStatus",
     "ReleaseRef",
     "ReleaseTimes",
+    "ResultColumn",
+    "ResultColumnType",
+    "ResultKind",
+    "ResultProvenance",
+    "ResultSet",
+    "ResultTruncation",
+    "ResultWarning",
     "ReviewCaseKind",
     "ReviewCaseRef",
     "SeriesRef",
@@ -149,6 +171,7 @@ __all__ = [
     "TimeAxes",
     "TimeBasis",
     "TimeRule",
+    "TrustLabel",
     "UnknownPayloadVersion",
     "UseRights",
     "ValueRule",

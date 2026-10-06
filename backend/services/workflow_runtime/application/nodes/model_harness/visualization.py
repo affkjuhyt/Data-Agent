@@ -6,6 +6,7 @@ from typing import Any, cast
 
 import litellm
 
+from services.workflow_runtime.application import answer_exports
 from services.workflow_runtime.application.runtime_services import llm_call
 from services.workflow_runtime.domain.state import AgentState
 
@@ -16,11 +17,19 @@ _LITELLM_KEY = os.environ.get("LITELLM_API_KEY", "sk-dev")
 
 _MAX_POINTS = 200
 
+# Text-channel field per source node. db_connector writes no text: its rows
+# are result sets (_RESULT_SET_SOURCES), as are tool_executor's tabular tools.
 _SOURCE_FIELD = {
-    "db_connector":  "db_results",
+    "db_connector":  None,
     "mcp":           "mcp_results",
     "kb_search":     "kb_chunks",
     "tool_executor": "tool_results",
+}
+
+# Which result sets belong to which node. pandas is the only tabular tool.
+_RESULT_SET_SOURCES = {
+    "db_connector":  lambda engine: engine != "pandas",
+    "tool_executor": lambda engine: engine == "pandas",
 }
 
 _CHART_TYPES = {"bar", "line", "area", "pie", "scatter", "radar", "radialBar", "composed"}
@@ -62,6 +71,32 @@ def _parse_tabular_rows(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
             rows.extend(parsed)
         elif isinstance(parsed, dict):
             rows.append(parsed)
+    return rows
+
+
+async def _result_set_rows(rs: dict[str, Any], tenant_id: str) -> list[dict[str, Any]]:
+    """Rows to plot for one result set: the stored full rows when the preview
+    is shorter than a chart can use, else the preview. A year of daily points
+    is not a 50-row chart, and the rows are a GET away under the result id."""
+    preview = [r for r in rs.get("rows_preview") or [] if isinstance(r, dict)]
+    if rs.get("row_count", 0) <= len(preview) or not rs.get("full_rows_available") or not tenant_id:
+        return preview
+    try:
+        payload = await answer_exports.load_payload(tenant_id, rs["result_id"])
+    except (ValueError, FileNotFoundError) as e:
+        logger.warning("visualization | full rows of %s unavailable, plotting the preview: %s", rs.get("result_id"), e)
+        return preview
+    return [r for r in payload.get("rows") or [] if isinstance(r, dict)][:_MAX_POINTS]
+
+
+async def _source_rows(source: str, state: AgentState, tenant_id: str) -> list[dict[str, Any]]:
+    field = _SOURCE_FIELD[source]
+    rows = _parse_tabular_rows(cast(list[dict[str, Any]], state.get(field) or [])) if field else []
+    belongs = _RESULT_SET_SOURCES.get(source)
+    if belongs:
+        for rs in state.get("result_sets") or []:
+            if belongs((rs.get("provenance") or {}).get("engine")):
+                rows.extend(await _result_set_rows(rs, tenant_id))
     return rows
 
 
@@ -177,10 +212,8 @@ async def visualization_node(state: AgentState) -> dict[str, Any]:
     # Mỗi nguồn nối vào → 1 chart RIÊNG (không gộp chung rows từ các nguồn có
     # schema khác nhau vào 1 chart, vd DB Connector {month,revenue} và MCP
     # {region,sales} không cùng cấu trúc cột) — chạy song song, độc lập.
-    per_source_rows = [
-        _parse_tabular_rows(cast(list[dict[str, Any]], state.get(_SOURCE_FIELD[t]) or []))
-        for t in sorted(connected)
-    ]
+    tenant_id = cfg.get("tenant_id", "") or ""
+    per_source_rows = await asyncio.gather(*(_source_rows(t, state, tenant_id) for t in sorted(connected)))
     specs = await asyncio.gather(*(_build_spec_for_source(query, rows, cfg) for rows in per_source_rows))
     chart_specs = [s for s in specs if s is not None]
 

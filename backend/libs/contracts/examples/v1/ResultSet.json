@@ -1,0 +1,35 @@
+{
+  "result_id": "3f2a9c1e5b7d4e0f8a6b2c4d1e3f5a7b",
+  "kind": "table",
+  "columns": [
+    {"name": "chi_nhanh", "type": "text", "unit": null},
+    {"name": "doanh_thu_thuan", "type": "number", "unit": "VND"}
+  ],
+  "row_count": 3,
+  "rows_preview": [
+    {"chi_nhanh": "Hà Nội", "doanh_thu_thuan": 20115300000},
+    {"chi_nhanh": "TP.HCM", "doanh_thu_thuan": 18900000000},
+    {"chi_nhanh": "Đà Nẵng", "doanh_thu_thuan": 9200000000}
+  ],
+  "stats": {
+    "chi_nhanh": {"nulls": 0, "distinct": ["Hà Nội", "TP.HCM", "Đà Nẵng"], "distinct_count": 3},
+    "doanh_thu_thuan": {"nulls": 0, "min": "9200000000", "max": "20115300000", "sum": "48215300000"}
+  },
+  "provenance": {
+    "connection_id": "dw_pilot",
+    "engine": "postgres",
+    "sql": "SELECT chi_nhanh, SUM(doanh_thu_thuan) AS doanh_thu_thuan FROM mart.fact_doanh_thu WHERE thang = ? GROUP BY chi_nhanh",
+    "sql_hash": "9b74c9897bac770ffc029102a200c5de2c1c3e2c4b0b9c3f3bd2d2b5c51e3a1f",
+    "tables": ["mart.fact_doanh_thu"],
+    "executed_at": "2026-10-06T09:15:00+07:00",
+    "watermark": "2026-10-05T23:00:00+07:00",
+    "truncation": null,
+    "generated_by": "semantic_layer",
+    "metric": {"metric": "doanh_thu_thuan@3", "owner": "Tài chính", "unit": "VND"},
+    "freshness": {"status": "fresh", "as_of": "2026-10-05T23:00:00+07:00"},
+    "aggregation": {"findings": [], "structurally_safe": true, "joins": 0}
+  },
+  "trust": "GOVERNED",
+  "warnings": [],
+  "full_rows_available": true
+}

@@ -208,38 +208,39 @@ async def test_tool_error_when_db_error_present_on_an_undecided_plan():
 
     state = {
         "tool_calls": _FALLBACK_TOOL_CALL, **_EMPTY,
-        "db_results": [], "db_error": "failed after 3 attempts: connection refused",
+        "result_sets": [], "db_error": "failed after 3 attempts: connection refused",
     }
     result = await graph_mod.judge_phase1_node(state)
 
     assert result["judge_phase1_error"] == "TOOL_ERROR"
-    assert result["db_results"] == []
+    # None clears the appending result_sets channel (domain/state.py).
+    assert result["result_sets"] is None
     assert result["db_error"] is None
     assert result["kb_chunks"] == [] and result["tool_results"] == []
     assert result["judge_reason"]
     assert result["loop_iteration"] == 1
 
 
-async def test_empty_db_results_on_a_decided_db_plan_are_not_retried():
+async def test_empty_result_sets_on_a_decided_db_plan_are_not_retried():
     import graph as graph_mod
 
     state = {
         "tool_calls": [{"type": "db_query", "query": "test"}], **_EMPTY,
-        "db_results": [], "db_error": None,
+        "result_sets": [], "db_error": None,
     }
     result = await graph_mod.judge_phase1_node(state)
 
     assert result == {"judge_phase1_error": None}
 
 
-async def test_passes_when_only_db_results_has_data():
+async def test_passes_when_only_result_sets_has_data():
     import graph as graph_mod
 
     # kb_chunks/mcp_results/tool_results rỗng là bình thường nếu planner chỉ
-    # gọi DB Connector — không nên bị coi là RETRIEVAL_ERROR miễn db_results có gì.
+    # gọi DB Connector — không nên bị coi là RETRIEVAL_ERROR miễn result_sets có gì.
     state = {
         "tool_calls": _FALLBACK_TOOL_CALL, **_EMPTY,
-        "db_results": [{"id": "sql_1", "content": "data"}], "db_error": None,
+        "result_sets": [{"result_id": "a" * 32}], "db_error": None,
     }
     result = await graph_mod.judge_phase1_node(state)
 
