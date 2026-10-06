@@ -3,7 +3,8 @@
 SQL execution) lives in _text_to_sql_handler (see
 test_text_to_sql_handler.py). This node just extracts the query from
 tool_calls and maps the handler's (results, errors) tuple into
-state["db_results"]/state["db_error"]."""
+state["result_sets"] (result_sets.capture: one ResultSet per query, full rows
+stored) and state["db_error"]."""
 from __future__ import annotations
 
 import pathlib
@@ -30,15 +31,31 @@ def _sys_path():
             sys.path.remove(p)
 
 
+_SQL_ITEM = {
+    "id": "sql_1", "content": '[{"thang": "2026-02-01", "doanh_thu": 1200}]', "source": "tool/sql",
+    "metadata": {"sql": "SELECT thang, doanh_thu FROM f", "db_name": "dw", "db_type": "postgres"},
+}
+
+
 async def test_maps_successful_results(monkeypatch):
     import nodes.sandbox.db_connector as mod
-    fake_handler = AsyncMock(return_value=([{"id": "sql_1", "content": "[]"}], []))
+    fake_handler = AsyncMock(return_value=([_SQL_ITEM], []))
     monkeypatch.setattr(mod, "_text_to_sql_handler", fake_handler)
+    stored = AsyncMock(return_value={"result_id": "x"})
+    monkeypatch.setattr(mod.result_sets, "create_answer_export", stored)
 
-    state = {"query": "doanh thu tháng 2", "tool_calls": [], "config": {}}
+    state = {"query": "doanh thu tháng 2", "tool_calls": [], "config": {"tenant_id": "t1"}}
     result = await mod.db_connector_node(state)
 
-    assert result == {"db_results": [{"id": "sql_1", "content": "[]"}], "db_error": None}
+    assert result["db_error"] is None
+    [rs] = result["result_sets"]
+    assert rs["rows_preview"] == [{"thang": "2026-02-01", "doanh_thu": 1200}]
+    assert rs["provenance"]["connection_id"] == "dw"
+    assert rs["trust"] == "EXPLORATORY"
+    # Stored under the ResultSet's own id, so the download and the frame agree.
+    assert rs["full_rows_available"] is True
+    assert stored.await_args.kwargs["result_id"] == rs["result_id"]
+    assert stored.await_args.kwargs["tenant_id"] == "t1"
     # cfg is the agent config with this turn's slots overlaid — the handler
     # needs them to compile a follow-up as "previous request + one filter".
     call_args, call_cfg = fake_handler.call_args.args
@@ -54,7 +71,7 @@ async def test_maps_error_when_handler_returns_none(monkeypatch):
     state = {"query": "hello", "tool_calls": [], "config": {}}
     result = await mod.db_connector_node(state)
 
-    assert result == {"db_results": [], "db_error": "no database connection configured"}
+    assert result == {"result_sets": [], "db_error": "no database connection configured"}
 
 
 async def test_uses_db_query_tool_call_query_over_raw_state_query(monkeypatch):
@@ -75,12 +92,12 @@ async def test_uses_db_query_tool_call_query_over_raw_state_query(monkeypatch):
 
 
 async def test_partial_success_still_reports_first_error(monkeypatch):
-    """Multi-DB case: some queries succeed, some fail — db_results keeps the
+    """Multi-DB case: some queries succeed, some fail — result_sets keeps the
     successes, db_error surfaces (the first) failure rather than silently
     dropping it."""
     import nodes.sandbox.db_connector as mod
     fake_handler = AsyncMock(return_value=(
-        [{"id": "sql_1", "metadata": {"db_name": "Sales"}}],
+        [_SQL_ITEM],
         [{"tool_name": "text_to_sql", "db_name": "Warehouse", "error": "connection refused"}],
     ))
     monkeypatch.setattr(mod, "_text_to_sql_handler", fake_handler)
@@ -88,7 +105,9 @@ async def test_partial_success_still_reports_first_error(monkeypatch):
     state = {"query": "q", "tool_calls": [], "config": {}}
     result = await mod.db_connector_node(state)
 
-    assert result["db_results"] == [{"id": "sql_1", "metadata": {"db_name": "Sales"}}]
+    # No tenant, nothing stored: the table still reaches the answer, without a download.
+    assert [rs["provenance"]["connection_id"] for rs in result["result_sets"]] == ["dw"]
+    assert result["result_sets"][0]["full_rows_available"] is False
     assert result["db_error"] == "connection refused"
 
 

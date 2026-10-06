@@ -171,12 +171,18 @@ def _get_object(client: Any, key: str) -> bytes:
     return body
 
 
-async def create_answer_export(run: dict[str, Any], *, tenant_id: str, question: str) -> dict[str, Any] | None:
-    """Persist full rows + workbook for one SQL run; never fail the answer."""
+async def create_answer_export(
+    run: dict[str, Any], *, tenant_id: str, question: str, result_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Persist full rows + workbook for one SQL run; never fail the answer.
+
+    `result_id` is the ResultSet's own id when there is one (result_sets.py), so
+    the stored rows and the object on the wire share a single key.
+    """
     if not tenant_id or not run.get("columns") or not run.get("rows"):
         return None
 
-    result_id = uuid.uuid4().hex
+    result_id = result_id or uuid.uuid4().hex
     prefix = _prefix(tenant_id, result_id)
     payload = {
         "result_id": result_id,

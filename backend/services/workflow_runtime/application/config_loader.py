@@ -52,6 +52,7 @@ DEV_CONFIG: dict[str, Any] = {
     "reranker_top_n": 5,
     "context_max_chunks": 5,
     "context_max_chars": 4000,
+    "context_max_result_rows": 50,
     "memory_enabled": False,
     "mcp_endpoints": [],
     "allowed_tools": [],
@@ -177,6 +178,9 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
             "responder_temperature": llm_config.get("temperature", DEV_CONFIG["responder_temperature"]),
             "responder_max_tokens":  llm_config.get("max_tokens",  DEV_CONFIG["responder_max_tokens"]),
             "responder_stream":      llm_config.get("stream",      True),
+            "context_max_result_rows": llm_config.get(
+                "context_max_result_rows", DEV_CONFIG["context_max_result_rows"]
+            ),
             # system prompt
             "system_prompt": row.system_prompt or DEV_CONFIG["system_prompt"],
             # kb
@@ -291,6 +295,8 @@ def _extract_node_config(flow_nodes: list[dict[str, Any]]) -> dict[str, Any]:
         elif t == "responder":
             if "temperature" in c: cfg["responder_temperature"] = c["temperature"]
             if "max_tokens"  in c: cfg["responder_max_tokens"]  = c["max_tokens"]
+            if "context_max_result_rows" in c:
+                cfg["context_max_result_rows"] = c["context_max_result_rows"]
         elif t == "judge":
             if "max_iterations" in c: cfg["loop_max_iterations"] = int(c["max_iterations"])
             if "model_id"       in c: cfg["judge_model"]         = c["model_id"]

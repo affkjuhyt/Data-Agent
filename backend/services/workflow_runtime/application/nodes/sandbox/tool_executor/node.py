@@ -3,6 +3,7 @@ import logging
 import time
 from typing import Any, cast
 
+from services.workflow_runtime.application import result_sets
 from services.workflow_runtime.application.nodes.sandbox.tool_executor.handlers.agent import (
     _delegate_to_agent_handler,
 )
@@ -137,7 +138,15 @@ async def tool_executor_node(state: AgentState) -> dict[str, Any]:
                 "latency_ms": lat,
             })
 
-    logger.info("tool_executor | %d results, %d errors", len(results), len(errors))
+    # A tool that returned rows (text_to_pandas over a frame) answers like a
+    # query, so it leaves the ranked text sources for the result-set channel.
+    tabular = [r for r in results if result_sets.is_tabular(r)]
+    texts = [r for r in results if not result_sets.is_tabular(r)]
+    captured = await result_sets.capture(
+        tabular, tenant_id=cfg.get("tenant_id", "") or "", question=state.get("query", ""),
+    ) if tabular else []
+
+    logger.info("tool_executor | %d results (%d tables), %d errors", len(results), len(captured), len(errors))
     # _tool_traces is NOT in AgentState — LangGraph ignores it for state merge
     # but it appears in astream_events on_chain_end output for conversation_runner to read
-    return {"tool_results": results, "tool_errors": errors, "_tool_traces": traces}
+    return {"tool_results": texts, "result_sets": captured, "tool_errors": errors, "_tool_traces": traces}

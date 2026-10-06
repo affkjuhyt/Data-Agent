@@ -46,9 +46,13 @@ class TestExtractNodeConfig:
 
     def test_responder_overrides(self) -> None:
         cfg = config_loader._extract_node_config(
-            [_node("responder", temperature=0.9, max_tokens=512)]
+            [_node("responder", temperature=0.9, max_tokens=512, context_max_result_rows=25)]
         )
-        assert cfg == {"responder_temperature": 0.9, "responder_max_tokens": 512}
+        assert cfg == {
+            "responder_temperature": 0.9,
+            "responder_max_tokens": 512,
+            "context_max_result_rows": 25,
+        }
 
     def test_partial_fields_only_set_present_keys(self) -> None:
         # Chỉ set "top_n" trên canvas (không có "model_id") — cfg chỉ nên có

@@ -13,7 +13,7 @@ import { formatTime } from '../../lib/formatVN';
 import { AnswerBlock } from '../../features/ask/components/AnswerBlock';
 import { AnswerTheme } from '../../features/ask/components/AnswerTheme';
 import { parseSseData } from '../../features/ask/sse';
-import type { ChartSpec, Citation, Clarification, ClarificationAnswer, ClarificationReply, Evidence } from '../../features/ask/types';
+import type { ChartSpec, Citation, Clarification, ClarificationAnswer, ClarificationReply, Evidence, ResultSet } from '../../features/ask/types';
 import { withClarificationAnswer } from '../../features/ask/hooks/useAgentStream';
 
 /* ─── Types ─────────────────────────────────────────────────── */
@@ -54,6 +54,7 @@ interface Message {
   suggestions?: string[];
   routed?: { name: string; conf: number } | null;
   chartSpecs?: ChartSpec[];
+  resultSets?: ResultSet[];
   citations?: Citation[];
   evidence?: Evidence;
   clarification?: Clarification;
@@ -1040,6 +1041,12 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
               break;
             case 'chart':
               patch(m => ({ ...m, chartSpecs: ev.specs }));
+              break;
+            case 'result_set':
+              patch(m => ({
+                ...m,
+                resultSets: [...(m.resultSets ?? []).filter(r => r.result_id !== ev.resultSet.result_id), ev.resultSet],
+              }));
               break;
             case 'citations':
               patch(m => ({ ...m, citations: ev.citations }));

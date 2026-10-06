@@ -1,27 +1,27 @@
 /**
- * US number / currency / date formatting — one place, no locale guessing.
+ * Vietnamese number / currency / date formatting — one place, no locale guessing.
  *
  * Everything user-facing in the data agent goes through here instead of
  * `toLocaleString()` without arguments (which formats according to the
  * viewer's browser, so the same number reads "1,284,560" on one laptop and
  * "1.284.560" on the next). The rules follow US convention:
  *
- *   - thousands grouped with ","  → 1,284,560,000
- *   - decimals with "."           → 1.28
- *   - currency suffixed with "₫"  → 1,284,560,000 ₫
- *   - compact form                → 1.28B · 12.5M · 3.2K
- *   - dates as MM/dd/yyyy, weeks start on Sunday
+ *   - thousands grouped with "."  → 1.284.560.000
+ *   - decimals with ","           → 1,28
+ *   - currency suffixed with "₫"  → 1.284.560.000 ₫
+ *   - compact form                → 1,28B · 12,5M · 3,2K
+ *   - dates as dd/MM/yyyy, weeks start on Monday
  *
  * Implemented by hand rather than through Intl so the output is identical in
  * every runtime (Node without full ICU, older WebViews) and fully unit-testable.
  */
 
-const GROUP = ',';
-const DECIMAL = '.';
+const GROUP = '.';
+const DECIMAL = ',';
 const DASH = '—';
 
-/** getDay() index for the first day of the week (Sunday === 0). */
-export const WEEK_STARTS_ON = 0;
+/** getDay() index for the first day of the week (Monday === 1). */
+export const WEEK_STARTS_ON = 1;
 
 type Numeric = number | string | bigint | null | undefined;
 
@@ -120,11 +120,11 @@ export function toDate(value: DateInput): Date | null {
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-/** MM/dd/yyyy */
+/** dd/MM/yyyy */
 export function formatDate(value: DateInput): string {
   const d = toDate(value);
   if (!d) return DASH;
-  return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()}`;
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
 /** HH:mm (24h) */
@@ -135,7 +135,7 @@ export function formatTime(value: DateInput, withSeconds = false): string {
   return withSeconds ? `${base}:${pad(d.getSeconds())}` : base;
 }
 
-/** MM/dd/yyyy HH:mm */
+/** dd/MM/yyyy HH:mm */
 export function formatDateTime(value: DateInput): string {
   const d = toDate(value);
   if (!d) return DASH;
@@ -172,9 +172,9 @@ export function formatRelative(value: DateInput, now: Date = new Date()): string
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
 
 /**
- * Format one table cell of unknown type the way a US reader expects.
+ * Format one table cell of unknown type the way a Vietnamese reader expects.
  * Numeric strings (Postgres NUMERIC arrives as "1284560000.00") are treated as
- * numbers; ISO dates become MM/dd/yyyy (with HH:mm when a time is present).
+ * numbers; ISO dates become dd/MM/yyyy (with HH:mm when a time is present).
  */
 export function formatCell(value: unknown): string {
   if (value === null || value === undefined) return DASH;

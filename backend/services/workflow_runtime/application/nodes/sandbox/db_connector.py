@@ -1,5 +1,6 @@
 from typing import Any
 
+from services.workflow_runtime.application import result_sets
 from services.workflow_runtime.application.nodes.sandbox.tool_executor.handlers.data import (
     _text_to_sql_handler,
 )
@@ -20,7 +21,12 @@ async def db_connector_node(state: AgentState) -> dict[str, Any]:
     call = next((tc for tc in state.get("tool_calls", []) if tc.get("type") == "db_query"), None)
     query = (call or {}).get("query") or state["query"]
     results, errors = await _text_to_sql_handler({"query": query}, cfg)
+    captured = await result_sets.capture(
+        results or [],
+        tenant_id=cfg.get("tenant_id", "") or "",
+        question=state["query"],
+    )
     return {
-        "db_results": results or [],
+        "result_sets": captured,
         "db_error": errors[0]["error"] if errors else None,
     }

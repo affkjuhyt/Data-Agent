@@ -1,6 +1,22 @@
-from typing import Any, List, Optional
+from typing import Annotated, Any, List, Optional
 
 from typing_extensions import TypedDict
+
+
+def merge_result_sets(
+    current: list[dict[str, Any]], update: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Reducer for `result_sets`: producers add, None clears.
+
+    db_connector and tool_executor can finish in the same step, and a plain
+    channel accepts one write per step. A list from either is appended; None is
+    how a retry (judge_phase1, judge PLANNING_ERROR) and a new turn on a
+    checkpointed thread start over — an empty list cannot mean "clear", since
+    a producer with nothing to add writes exactly that.
+    """
+    if update is None:
+        return []
+    return [*current, *update]
 
 
 class AgentState(TypedDict):
@@ -16,7 +32,10 @@ class AgentState(TypedDict):
     mcp_errors: List[dict[str, Any]]
     tool_results: List[dict[str, Any]]
     tool_errors: List[dict[str, Any]]
-    db_results: List[dict[str, Any]]            # set bởi db_connector_node — có thể gộp từ nhiều DB chạy song song
+    # Query results (libs.contracts.v1.ResultSet, wire form) from db_connector
+    # and the tabular tools. A separate channel from the text sources: never
+    # ranked, never cut by the reranker (application/result_sets.py).
+    result_sets: Annotated[list[dict[str, Any]], merge_result_sets]
     db_error: Optional[str]
     chart_specs: List[dict[str, Any]]           # set bởi visualization_node — 1 phần tử/nguồn nối vào (không gộp chung khác schema)
     chart_error: Optional[str]        # best-effort — KHÔNG bounce về planner/judge_phase1
@@ -27,7 +46,7 @@ class AgentState(TypedDict):
     citations: List[dict[str, Any]]
     # set bởi responder_node — {"runs": [SQL đã chạy + metric + provenance +
     # rows preview], "clarifications": [...], "warnings": [...]}. Sinh tất định
-    # từ metadata của tool result, không do model khai — đi ra SSE qua `__evidence`.
+    # từ result_sets, không do model khai — đi ra SSE qua `__evidence`.
     evidence: dict[str, Any] | None
     suggestions: List[str]
     intent: Optional[str]             # "question" | "task" — set by planner

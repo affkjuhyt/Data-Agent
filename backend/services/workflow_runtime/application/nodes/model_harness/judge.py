@@ -9,6 +9,7 @@ import litellm
 from libs.indicator.numeric import readings
 from libs.indicator.verifier import EvidenceItem, Verdict, verify
 from libs.shared import untrusted
+from services.workflow_runtime.application import result_sets
 from services.workflow_runtime.application.runtime_services import llm_call
 from services.workflow_runtime.domain.state import AgentState
 from services.workflow_runtime.prompts import PROMPTS_DIR
@@ -43,8 +44,6 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
         logger.warning("judge | max_iterations=%d reached → force PASS", max_iter)
         return _pass(iteration, reason="max_iterations_reached")
 
-    # Build prompt
-    reranked  = state.get("reranked_chunks", [])
     tool_errs = state.get("tool_errors", [])
 
     # Same budget the responder answered from (responder.py): the judge used to
@@ -52,15 +51,13 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
     # rows and every figure after them read as invented — GROUNDING_ERROR on a
     # correct answer, then a wasted responder retry. Reproduced live: 3/3 FAIL
     # truncated, 0/3 with the responder's context.
-    max_chunks = cfg.get("context_max_chunks", 5)
     max_chars  = cfg.get("context_max_chars", 4000)
-    # Đúng lát cắt responder.py đã đánh số, KHÔNG lọc chunk rỗng: citation [n]
-    # của câu trả lời trỏ theo vị trí trong lát này, nên bỏ một phần tử ở đây
-    # sẽ làm mọi trích dẫn lệch đi một tài liệu.
-    chunks_for_judge = reranked[:max_chunks]
-    context_lines = []
+    max_rows   = result_sets.context_max_rows(cfg)
+    tables, chunks_for_judge = result_sets.context_items(state, cfg)
+    rendered_tables = [result_sets.render(rs, max_rows) for rs in tables]
+    context_lines = [f"[{i}] {text}" for i, text in enumerate(rendered_tables, 1)]
     total_chars = 0
-    for i, c in enumerate(chunks_for_judge, 1):
+    for i, c in enumerate(chunks_for_judge, len(tables) + 1):
         content = c.get("content", "")
         if not content:
             continue
@@ -80,7 +77,7 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
     # tính bất định vào đúng chỗ đó — judge_system.txt vẫn so khớp chuỗi nên
     # "1284" lọt qua khi nguồn ghi "128,4". Trượt ở đây là GROUNDING_ERROR
     # ngay, không tốn một lượt gọi LLM và không thể tranh cãi.
-    numeric_verdict = verify(response, _evidence(chunks_for_judge))
+    numeric_verdict = verify(response, _table_evidence(tables, rendered_tables) + _evidence(chunks_for_judge))
     verifier_report = {"verifier": _report(numeric_verdict)}
     if not numeric_verdict.passed:
         detail = "; ".join(
@@ -139,6 +136,22 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
         return _fail(iteration, error_type, reason) | verifier_report
 
     return _pass(iteration, reason=reason) | verifier_report
+
+
+def _table_evidence(tables: list[dict[str, Any]], rendered: list[str]) -> list[EvidenceItem]:
+    """The figures each result set entitles the answer to state: its preview
+    rows and its stats over every returned row — so a total read off `sum` is
+    grounded although no single row shows it. Cited by result id: the reader
+    opens the table, not a document."""
+    return [
+        EvidenceItem(
+            readings=tuple(reading for _, candidates in readings(text) for reading in candidates),
+            doc_id="",
+            page=None,
+            source_ref=rs.get("result_id") or None,
+        )
+        for rs, text in zip(tables, rendered, strict=True)
+    ]
 
 
 def _evidence(chunks: list[dict[str, Any]]) -> list[EvidenceItem]:
@@ -200,6 +213,7 @@ def _fail(iteration: int, error_type: str | None, reason: str) -> dict[str, Any]
         # Reset toàn bộ downstream của planner — planner sẽ re-emit tool_calls mới
         reset |= {"tool_calls": [], "kb_chunks": [], "mcp_results": [],
                   "tool_results": [], "tool_errors": [],
+                  "result_sets": None, "db_error": None,
                   "rrf_results": [], "reranked_chunks": []}
     # GROUNDING_ERROR: chỉ reset "response" (default ở trên) — context/data đã
     # đúng, chỉ có bước diễn giải của responder bị sai, không cần tra lại.

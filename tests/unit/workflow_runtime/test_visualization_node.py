@@ -40,6 +40,13 @@ def _cfg_with_edge(source_type: str) -> dict:
     return {"flow_nodes": flow_nodes, "flow_edges": flow_edges}
 
 
+def _rs(rows: list[dict]) -> dict:
+    """A ResultSet as db_connector writes it (result_sets.build)."""
+    from services.workflow_runtime.application import result_sets
+
+    return result_sets.build(rows, connection_id="dw", engine="postgres", generated_by="llm", sql="SELECT 1")
+
+
 def _viz_tool_calls(query: str = "vẽ biểu đồ") -> list[dict]:
     return [{"type": "visualize", "query": query}]
 
@@ -59,7 +66,7 @@ async def test_no_incoming_edge_is_noop():
     state = {
         "tool_calls": _viz_tool_calls(),
         "config": {"flow_nodes": [{"id": "viz1", "data": {"nodeType": "visualization"}}], "flow_edges": []},
-        "db_results": [{"content": json.dumps([{"month": "01", "revenue": 100}])}],
+        "result_sets": [_rs([{"month": "01", "revenue": 100}])],
     }
     result = await mod.visualization_node(state)
 
@@ -72,7 +79,7 @@ async def test_db_connector_source_empty_rows_returns_chart_error():
     state = {
         "tool_calls": _viz_tool_calls(),
         "config": _cfg_with_edge("db_connector"),
-        "db_results": [],
+        "result_sets": [],
     }
     result = await mod.visualization_node(state)
 
@@ -109,7 +116,7 @@ async def test_valid_rows_calls_llm_and_maps_real_data(monkeypatch):
     state = {
         "tool_calls": _viz_tool_calls(),
         "config": _cfg_with_edge("db_connector"),
-        "db_results": [{"content": json.dumps(rows)}],
+        "result_sets": [_rs(rows)],
     }
     result = await mod.visualization_node(state)
 
@@ -131,7 +138,7 @@ async def test_llm_picks_unknown_x_key_returns_no_chart_for_that_source(monkeypa
     state = {
         "tool_calls": _viz_tool_calls(),
         "config": _cfg_with_edge("db_connector"),
-        "db_results": [{"content": json.dumps([{"month": "01", "revenue": 100}])}],
+        "result_sets": [_rs([{"month": "01", "revenue": 100}])],
     }
     result = await mod.visualization_node(state)
 
@@ -164,7 +171,7 @@ async def test_multi_source_produces_one_chart_per_source_not_merged(monkeypatch
     state = {
         "tool_calls": _viz_tool_calls(),
         "config": cfg,
-        "db_results": [{"content": json.dumps([{"month": "01", "revenue": 100}])}],
+        "result_sets": [_rs([{"month": "01", "revenue": 100}])],
         "mcp_results": [{"content": json.dumps([{"region": "North", "sales": 50}])}],
     }
     result = await mod.visualization_node(state)
@@ -185,10 +192,7 @@ async def test_multi_db_rows_within_same_source_are_merged_into_one_chart(monkey
     state = {
         "tool_calls": _viz_tool_calls(),
         "config": _cfg_with_edge("db_connector"),
-        "db_results": [
-            {"content": json.dumps([{"month": "01", "revenue": 100}])},
-            {"content": json.dumps([{"month": "02", "revenue": 200}])},
-        ],
+        "result_sets": [_rs([{"month": "01", "revenue": 100}]), _rs([{"month": "02", "revenue": 200}])],
     }
     result = await mod.visualization_node(state)
 
@@ -210,7 +214,7 @@ async def test_composed_chart_type_includes_series(monkeypatch):
     state = {
         "tool_calls": _viz_tool_calls(),
         "config": _cfg_with_edge("db_connector"),
-        "db_results": [{"content": json.dumps(rows)}],
+        "result_sets": [_rs(rows)],
     }
     result = await mod.visualization_node(state)
 
@@ -232,9 +236,33 @@ async def test_composed_chart_without_valid_series_is_dropped(monkeypatch):
     state = {
         "tool_calls": _viz_tool_calls(),
         "config": _cfg_with_edge("db_connector"),
-        "db_results": [{"content": json.dumps([{"month": "01", "revenue": 100}])}],
+        "result_sets": [_rs([{"month": "01", "revenue": 100}])],
     }
     result = await mod.visualization_node(state)
 
     assert result["chart_specs"] == []
     assert result["chart_error"]
+
+
+async def test_a_result_set_longer_than_its_preview_is_plotted_from_the_stored_rows(monkeypatch):
+    """The preview is 50 rows; a year of daily points is not. The full rows are
+    read back by result id rather than drawing the first 50 days."""
+    import nodes.model_harness.visualization as mod
+
+    monkeypatch.setattr(mod, "_pick_chart_schema", AsyncMock(return_value={
+        "chart_type": "line", "title": "x", "x_key": "day", "y_keys": ["revenue"],
+    }))
+    rows = [{"day": f"2026-01-{d % 28 + 1:02d}", "revenue": d} for d in range(120)]
+    rs = {**_rs(rows), "full_rows_available": True}
+    load = AsyncMock(return_value={"rows": rows})
+    monkeypatch.setattr(mod.answer_exports, "load_payload", load)
+
+    result = await mod.visualization_node({
+        "tool_calls": _viz_tool_calls(),
+        "config": {**_cfg_with_edge("db_connector"), "tenant_id": "t1"},
+        "result_sets": [rs],
+    })
+
+    assert len(rs["rows_preview"]) == 50
+    assert len(result["chart_specs"][0]["data"]) == 120
+    load.assert_awaited_once_with("t1", rs["result_id"])

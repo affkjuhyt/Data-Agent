@@ -13,6 +13,9 @@ describe('parseSseData', () => {
     expect(parseSseData('{"__pending_review":"c2"}'))
       .toEqual({ type: 'pending_review', convId: 'c2', payload: null });
     expect(parseSseData('{"__chart":[{"chart_type":"bar"}]}').type).toBe('chart');
+    expect(parseSseData('{"__result_set":{"result_id":"abc","rows_preview":[]}}')).toEqual({
+      type: 'result_set', resultSet: { result_id: 'abc', rows_preview: [] },
+    });
     expect(parseSseData('{"__citations":[{"index":1}]}').type).toBe('citations');
     expect(parseSseData('{"__suggestions":["a","b"]}')).toEqual({ type: 'suggestions', suggestions: ['a', 'b'] });
     expect(parseSseData('{"__options":["This month"]}')).toEqual({ type: 'options', options: ['This month'] });

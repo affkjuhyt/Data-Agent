@@ -302,6 +302,8 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
                             await adispatch_custom_event("options", data)
                         elif event_type == "evidence":
                             await adispatch_custom_event("evidence", data)
+                        elif event_type == "result_set":
+                            await adispatch_custom_event("result_set", data)
                     success = True
                 except Exception as e:
                     logger.warning("single_agent | failed: %s", e)

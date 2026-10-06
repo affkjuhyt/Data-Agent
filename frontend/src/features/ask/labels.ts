@@ -41,6 +41,7 @@ export const TRUNCATION_LABELS: Record<string, string> = {
 
 export const GENERATED_BY_LABELS: Record<string, string> = {
   semantic_layer: 'Approved metric',
+  verified_query: 'Verified query',
   llm: 'Model-generated SQL',
 };
 

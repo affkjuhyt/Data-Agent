@@ -190,6 +190,7 @@ async def call_agent_stream(
       ("citations", list[dict]) — nguồn đã được responder trích dẫn (workflow_runtime)
       ("options", list[str])   — lựa chọn trả lời khi agent hỏi lại (responder <OPTIONS>)
       ("evidence", dict)       — SQL đã chạy, metric contract, provenance, rows preview
+      ("result_set", dict)     — một bảng kết quả (libs.contracts.v1.ResultSet) + citation_index
       ("reset", None)          — bỏ toàn bộ token đã nhận; câu trả lời thay thế theo sau
     """
     if not agent_id:
@@ -242,4 +243,6 @@ async def call_agent_stream(
                 yield ("options", parsed["__options"])
             elif "__evidence" in parsed:
                 yield ("evidence", parsed["__evidence"])
+            elif "__result_set" in parsed:
+                yield ("result_set", parsed["__result_set"])
             # các event khác bỏ qua

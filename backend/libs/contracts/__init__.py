@@ -10,4 +10,4 @@ SCHEMA_VERSION. The rules for bumping either are in COMPATIBILITY.md.
 
 from __future__ import annotations
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "1.1.0"

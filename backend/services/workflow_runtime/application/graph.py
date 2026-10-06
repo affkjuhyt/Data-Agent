@@ -125,7 +125,7 @@ _PHASE1_REASONS = {
 async def judge_phase1_node(state: AgentState) -> dict[str, Any]:
     """Judge Pha 1 (mới) — check thuần state, không LLM, ngay sau khi retrieval
     xong (trước rrf_ranking/reranker/responder). Bắt RETRIEVAL_ERROR (rỗng
-    toàn bộ — kb_chunks/mcp_results/tool_results/db_results đều không có gì) và
+    toàn bộ — kb_chunks/mcp_results/tool_results/result_sets đều không có gì) và
     TOOL_ERROR (tool_errors/db_error không rỗng — tool như DB Connector đã tự
     sinh SQL + tự chạy + tự sửa lỗi kỹ thuật nội bộ tối đa 3 lần trước khi báo
     lỗi ra đây, nên không phải lỗi tạm thời). Reset đúng phần cần sinh lại, route
@@ -196,7 +196,7 @@ async def judge_phase1_node(state: AgentState) -> dict[str, Any]:
     error_type = None
     if state.get("tool_errors") or state.get("db_error"):
         error_type = "TOOL_ERROR"
-    elif not (state.get("kb_chunks") or state.get("mcp_results") or state.get("tool_results") or state.get("db_results")):
+    elif not (state.get("kb_chunks") or state.get("mcp_results") or state.get("tool_results") or state.get("result_sets")):
         error_type = "RETRIEVAL_ERROR"
 
     if error_type is None:
@@ -229,7 +229,8 @@ async def judge_phase1_node(state: AgentState) -> dict[str, Any]:
         "loop_iteration": iteration + 1,
         "attempted_plans": attempted + [signature],
         "kb_chunks": [], "mcp_results": [], "tool_results": [], "tool_errors": [],
-        "db_results": [], "db_error": None,
+        # None, not []: result_sets is an appending channel (domain/state.py).
+        "result_sets": None, "db_error": None,
         "rrf_results": [], "reranked_chunks": [],
         "chart_specs": [], "chart_error": None,
     }

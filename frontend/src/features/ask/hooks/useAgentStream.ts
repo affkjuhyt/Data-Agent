@@ -125,6 +125,12 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
         case 'chart':
           patch(assistantId, m => ({ ...m, chartSpecs: e.specs }));
           break;
+        case 'result_set':
+          patch(assistantId, m => ({
+            ...m,
+            resultSets: [...(m.resultSets ?? []).filter(r => r.result_id !== e.resultSet.result_id), e.resultSet],
+          }));
+          break;
         case 'citations':
           patch(assistantId, m => ({ ...m, citations: e.citations }));
           break;

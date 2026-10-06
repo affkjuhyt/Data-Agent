@@ -57,11 +57,10 @@ def _llm(content: str) -> MagicMock:
 
 _ROWS = [{"region": "Bắc", "revenue": 1200}, {"region": "Nam", "revenue": 800}]
 
-_SQL_CHUNK = {
+_SQL_ITEM = {
     "id": "sql_abc",
     "content": json.dumps(_ROWS),
     "source": "tool/sql",
-    "rrf_sources": ["db"],
     "metadata": {
         "sql": "SELECT region, SUM(amount) AS revenue FROM fact_sales GROUP BY region",
         "row_count": 2,
@@ -84,13 +83,22 @@ _KB_CHUNK = {
 }
 
 
-class TestEvidenceRunIsBuiltFromMetadata:
-    def test_sql_chunk_becomes_a_run_with_columns_and_rows(self, runtime_path):
-        result = _responder()._evidence_run(_SQL_CHUNK)
+def _result_set(item=_SQL_ITEM):
+    from services.workflow_runtime.application import result_sets
+    rs, _ = result_sets.from_handler_item(item)
+    return rs
 
-        assert result is not None
-        run, all_rows = result
-        assert all_rows == _ROWS
+
+class TestEvidenceRunIsBuiltFromTheResultSet:
+    """`__evidence.runs[]` keeps its pre-R0-1 shape for one release, rebuilt
+    from the ResultSet so it cannot disagree with the `__result_set` frame."""
+
+    def test_sql_result_becomes_a_run_with_columns_and_rows(self, runtime_path):
+        from services.workflow_runtime.application import result_sets
+        rs = _result_set()
+        run = result_sets.evidence_run(rs, citation_index=1)
+
+        assert run["id"] == rs["result_id"]
         assert run["kind"] == "sql"
         assert run["sql"].startswith("SELECT region")
         assert run["columns"] == ["region", "revenue"]
@@ -100,33 +108,22 @@ class TestEvidenceRunIsBuiltFromMetadata:
         assert run["metric"]["metric"] == "doanh_thu_thuan@3"
         assert run["provenance"]["status"] == "fresh"
         assert run["rows_capped"] is False
+        assert run["citation_index"] == 1
+        # Nothing stored, so no download is offered.
+        assert "export" not in run
 
-    def test_model_written_sql_is_labelled_llm_not_left_blank(self, runtime_path):
-        chunk = {**_SQL_CHUNK, "metadata": {k: v for k, v in _SQL_CHUNK["metadata"].items() if k != "generated_by"}}
-        result = _responder()._evidence_run(chunk)
-        assert result is not None
-        assert result[0]["generated_by"] == "llm"
-
-    def test_kb_chunk_is_not_evidence_of_a_query(self, runtime_path):
-        assert _responder()._evidence_run(_KB_CHUNK) is None
-
-    def test_rows_are_capped_and_the_cap_is_declared(self, runtime_path):
-        responder = _responder()
-        many = [{"i": n} for n in range(responder._EVIDENCE_MAX_ROWS + 5)]
-        result = responder._evidence_run({**_SQL_CHUNK, "content": json.dumps(many)})
-        assert result is not None
-        run, all_rows = result
-        assert len(run["rows"]) == responder._EVIDENCE_MAX_ROWS
-        assert run["rows_capped"] is True
-        # The preview is capped; the full set still comes back for the caller.
-        assert len(all_rows) == len(many)
+    def test_model_written_sql_is_labelled_llm_and_exploratory(self, runtime_path):
+        md = {k: v for k, v in _SQL_ITEM["metadata"].items() if k != "generated_by"}
+        rs = _result_set({**_SQL_ITEM, "metadata": md})
+        assert rs["provenance"]["generated_by"] == "llm"
+        assert rs["trust"] == "EXPLORATORY"
 
     def test_unparseable_content_still_yields_the_sql(self, runtime_path):
-        result = _responder()._evidence_run({**_SQL_CHUNK, "content": "not json"})
-        assert result is not None
-        run, _ = result
+        from services.workflow_runtime.application import result_sets
+        run = result_sets.evidence_run(_result_set({**_SQL_ITEM, "content": "not json"}))
         assert run["rows"] == []
         assert run["columns"] == []
+        assert run["sql"].startswith("SELECT region")
 
 
 class TestResponderReturnsEvidence:
@@ -135,31 +132,37 @@ class TestResponderReturnsEvidence:
         monkeypatch.setattr(responder.litellm, "acompletion", AsyncMock(return_value=_llm("Doanh thu 2.000 [1]")))
 
         clar = [{"reason": "missing_time_range", "text": "Kỳ nào?", "options": ["this_month"]}]
+        rs = _result_set()
         state = {
             "query": "doanh thu theo vùng",
             "config": {"system_prompt": "Bạn là trợ lý dữ liệu."},
             "messages": [],
-            "reranked_chunks": [_SQL_CHUNK, _KB_CHUNK],
+            "result_sets": [rs],
+            "reranked_chunks": [_KB_CHUNK],
             "clarifications": clar,
         }
         out = await responder.responder_node(state)
 
-        assert "evidence" in out
         ev = out["evidence"]
-        assert [r["id"] for r in ev["runs"]] == ["sql_abc"]
+        assert [r["id"] for r in ev["runs"]] == [rs["result_id"]]
         assert ev["runs"][0]["citation_index"] == 1
         assert ev["clarifications"] == clar
         assert ev["warnings"] == []
         # citations are still only what the model actually cited
         assert [c["index"] for c in out["citations"]] == [1]
+        assert out["citations"][0]["type"] == "db"
+        # The tables the answer was built from, for the `__result_set` frames.
+        assert [f["result_id"] for f in out["_result_sets"]] == [rs["result_id"]]
+        assert out["_result_sets"][0]["citation_index"] == 1
 
-    async def test_no_chunks_still_returns_an_empty_evidence_shape(self, runtime_path, monkeypatch):
+    async def test_no_context_still_returns_an_empty_evidence_shape(self, runtime_path, monkeypatch):
         responder = _responder()
         monkeypatch.setattr(responder.litellm, "acompletion", AsyncMock(return_value=_llm("Xin chào")))
         out = await responder.responder_node({
             "query": "hi", "config": {"system_prompt": "x"}, "messages": [],
         })
         assert out["evidence"] == {"runs": [], "clarifications": [], "warnings": []}
+        assert out["_result_sets"] == []
 
 
 class TestRuntimeStreamEmitsEvidence:
@@ -172,6 +175,9 @@ class TestRuntimeStreamEmitsEvidence:
         refused_branch = src.index("if triggered:")
         delivered = src.index("pending_evidence = last_responder_evidence")
         assert delivered > refused_branch
+        # Result sets follow the same rule, and go out before `__evidence`.
+        assert src.index("pending_result_sets = last_responder_result_sets") > refused_branch
+        assert src.index("'__result_set'") < src.index("'__evidence'")
 
 
 class TestOrchestratorForwardsEvidenceAndOptions:
@@ -197,6 +203,7 @@ class TestOrchestratorForwardsEvidenceAndOptions:
 
         frames = [
             'data: "Doanh thu"',
+            'data: {"__result_set": {"result_id": "abc"}}',
             'data: {"__evidence": {"runs": [{"sql": "SELECT 1"}]}}',
             'data: {"__options": ["Tháng này", "Tháng trước"]}',
             'data: {"__suggestions": ["x"]}',
@@ -221,6 +228,7 @@ class TestOrchestratorForwardsEvidenceAndOptions:
 
         assert ("conv_id", "conv-1") in events
         assert ("token", "Doanh thu") in events
+        assert ("result_set", {"result_id": "abc"}) in events
         assert ("evidence", {"runs": [{"sql": "SELECT 1"}]}) in events
         assert ("options", ["Tháng này", "Tháng trước"]) in events
         # suggestions are the orchestrator's own job — still not forwarded
@@ -254,11 +262,11 @@ class TestOrchestratorForwardsEvidenceAndOptions:
     def test_single_agent_node_and_sse_route_pass_them_through(self):
         graph_src = (pathlib.Path(_ORCH_DIR) / "graph.py").read_text(encoding="utf-8")
         stream_src = (pathlib.Path(_ORCH_DIR).parents[1] / "api" / "routers" / "orchestrator" / "stream.py").read_text(encoding="utf-8")
-        for name in ("options", "evidence"):
+        for name in ("options", "evidence", "result_set"):
             assert f'adispatch_custom_event("{name}", data)' in graph_src
             assert f'"__{name}": event["data"]' in stream_src
 
     def test_docstring_declares_the_new_events(self, agent_client):
         ac = agent_client
         doc = inspect.getdoc(ac.call_agent_stream) or ""
-        assert '("options"' in doc and '("evidence"' in doc
+        assert '("options"' in doc and '("evidence"' in doc and '("result_set"' in doc

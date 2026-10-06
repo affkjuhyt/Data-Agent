@@ -78,7 +78,52 @@ export interface DataProvenance {
 export interface Truncation {
   reason: 'row_limit' | 'byte_limit' | 'cell_limit' | string;
   rows_returned?: number;
+  rows_total?: number | null;
+  result_bytes?: number | null;
   cells_truncated?: number;
+}
+
+export interface ResultColumn {
+  name: string;
+  type: 'text' | 'number' | 'date' | 'datetime' | 'bool' | 'json' | string;
+  unit?: string | null;
+}
+
+export interface ResultColumnStats {
+  nulls: number;
+  min?: string | number | null;
+  max?: string | number | null;
+  sum?: string | number | null;
+  distinct?: string[] | null;
+  distinct_count?: number | null;
+}
+
+/** First-class query result sent in one `__result_set` frame. */
+export interface ResultSet {
+  result_id: string;
+  kind: 'table' | 'scalar' | 'series' | string;
+  columns: ResultColumn[];
+  row_count: number;
+  rows_preview: Record<string, unknown>[];
+  stats: Record<string, ResultColumnStats>;
+  provenance: {
+    connection_id: string;
+    engine: string;
+    sql?: string | null;
+    sql_hash?: string | null;
+    tables: string[];
+    executed_at: string;
+    watermark?: string | null;
+    truncation?: Truncation | null;
+    generated_by: 'semantic_layer' | 'verified_query' | 'llm' | string;
+    metric?: MetricProvenance | null;
+    freshness?: DataProvenance | null;
+    aggregation?: AggregationReport | null;
+  };
+  trust: 'VERIFIED' | 'GOVERNED' | 'EXPLORATORY' | string;
+  warnings: Array<{ code: string; detail: string }>;
+  full_rows_available: boolean;
+  citation_index?: number | null;
 }
 
 /** backend/libs/shared/aggregation_check.AggregationReport.to_dict() */
@@ -96,16 +141,23 @@ export interface EvidenceRun {
   db_name?: string | null;
   db_type?: string | null;
   sql: string;
+  sql_hash?: string | null;
+  executed_at?: string | null;
+  watermark?: string | null;
   row_count?: number | null;
   /** "semantic_layer" = compiled from an approved metric; "llm" = model-written. */
   generated_by: 'semantic_layer' | 'llm' | string;
+  trust?: 'VERIFIED' | 'GOVERNED' | 'EXPLORATORY' | string;
   metric?: MetricProvenance | null;
   provenance?: DataProvenance | null;
   truncation?: Truncation | null;
   aggregation?: AggregationReport | null;
   columns: string[];
+  column_units?: Record<string, string>;
   rows: Record<string, unknown>[];
   rows_capped?: boolean;
+  result_warnings?: Array<{ code: string; detail: string }>;
+  stats?: Record<string, ResultColumnStats>;
   export?: {
     result_id: string;
     preview_rows: number;
@@ -175,6 +227,7 @@ export interface AskMessage {
   sessionId?: string;
   suggestions?: string[];
   chartSpecs?: ChartSpec[];
+  resultSets?: ResultSet[];
   citations?: Citation[];
   evidence?: Evidence;
   clarification?: Clarification;
@@ -188,4 +241,3 @@ export interface AgentOption {
   description: string;
   routing_keywords?: string[];
 }
-

@@ -858,22 +858,54 @@ _PANDAS_TIMEOUT_S = 30
 # used to happen here happens in the sandbox instead. Written to pass
 # security_visitor's AST check: no open/eval/getattr, and pandas is on its
 # import allowlist.
+#
+# A frame comes back as rows (JSON records), not as a markdown picture of them,
+# so it becomes a ResultSet like a SQL result (application/result_sets.py). A
+# grouped result keeps its keys: they live in the index, which records drop.
+# sandbox_executor cuts stdout at 10 000 chars (output.py) and a cut JSON is
+# unreadable, so the epilogue shrinks the slice until it fits and sends the
+# frame's real length alongside.
 _PANDAS_RENDER_EPILOGUE = """
 
 import pandas as pd
 
 if 'result' not in dir():
     print('__PANDAS_TOOL_NO_RESULT__')
-elif isinstance(result, pd.DataFrame):
-    if len(result) > 50:
-        print(result.head(50).to_markdown(index=False))
-        print('... (' + str(len(result)) + ' rows)')
-    else:
-        print(result.to_markdown(index=False))
 else:
-    print(result)
+    if isinstance(result, pd.Series):
+        result = result.to_frame(name=result.name if result.name is not None else 'value')
+    if isinstance(result, pd.DataFrame):
+        if not isinstance(result.index, pd.RangeIndex):
+            result = result.reset_index()
+        rows_json = '[]'
+        for n in (500, 200, 100, 50, 20, 5):
+            rows_json = result.head(n).to_json(orient='records', date_format='iso', force_ascii=False)
+            if len(rows_json) <= 8000:
+                break
+        print('__PANDAS_TOOL_FRAME__')
+        print(len(result))
+        print(rows_json)
+    else:
+        print(result)
 """
 _NO_RESULT_SENTINEL = "__PANDAS_TOOL_NO_RESULT__"
+_FRAME_SENTINEL = "__PANDAS_TOOL_FRAME__"
+
+
+def _pandas_frame(stdout: str) -> tuple[list[dict[str, Any]], int] | None:
+    """(rows, the frame's length) from the epilogue's frame output, or None."""
+    _, sentinel, rest = stdout.partition(_FRAME_SENTINEL)
+    if not sentinel:
+        return None
+    total_line, _, rows_json = rest.strip().partition("\n")
+    try:
+        total = int(total_line.strip())
+        rows = json.loads(rows_json)
+    except (ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+        return None
+    return rows, total
 
 
 async def _text_to_pandas_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
@@ -993,6 +1025,22 @@ async def _text_to_pandas_handler(call: dict[str, Any], cfg: dict[str, Any]) -> 
     content = (result.get("stdout") or "").strip()
     if _NO_RESULT_SENTINEL in content:
         return None, {"tool_name": "text_to_pandas", "error": "code did not set 'result'", "code": code}
+
+    frame = None if result.get("is_truncated") else _pandas_frame(content)
+    if frame is not None:
+        rows, total = frame
+        return {
+            "id": f"pandas_{uuid.uuid4().hex[:8]}",
+            "content": json.dumps(rows, ensure_ascii=False, default=str),
+            "source": "tool/pandas",
+            "metadata": {
+                "file": file_path, "executed_via": "sandbox_executor", "code": code,
+                "tabular": True, "row_count": len(rows),
+                "truncation": {"reason": "row_limit", "rows_returned": len(rows), "rows_total": total}
+                if total > len(rows) else None,
+            },
+        }, None
+
     if result.get("is_truncated"):
         content += "\n[output truncated]"
 
