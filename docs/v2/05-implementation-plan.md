@@ -222,7 +222,7 @@ kế hoạch **không có đệm**. Mỗi thứ Sáu rà cột TT, trễ thì c�
 ## 8. Sau POC
 
 Forecast (UC11), skill (UC14), tin tức, MCP chuẩn nếu chưa làm, Neo4j projection, Dagster, MLflow,
-licence LBMA (D3 phương án A) và futures, tách `indicator-api` theo Bảng 5.1 thiết kế v1.
+licence LBMA (D3 phương án A) và futures, tách `indicator-api` theo domain (ADR-V2-36).
 
 ### 8.1 Phương pháp forecast (S12-01/02)
 

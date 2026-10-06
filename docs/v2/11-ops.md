@@ -3,16 +3,8 @@
 > Đối tượng: Ops (0,5 người trong POC), DevOps/SRE, trưởng nhóm backend, hai senior làm S1-02.
 > Đo ngày 27/09/2026 trên d63d896 (nhánh `feat/remove-redundant-service`) và cụm dev `10.10.55.101`;
 > cập nhật 28/09 sau khi gỡ release management và stack Docker Compose.
-> File này **thay phần vận hành và hạ tầng của thiết kế v1**; phần nào mâu thuẫn với
-> [00](00-architecture-v2.md) thì 00 thắng. Việc có ID nằm ở [05](05-implementation-plan.md) (P0-03,
-> P0-07, P0-08); quy ước database ở [10](10-database-design.md).
-> Sơ đồ: [30](diagrams/30-cicd.puml) CI/CD · [31](diagrams/31-gitops.puml) GitOps ·
-> [32](diagrams/32-envs.puml) môi trường · [33](diagrams/33-infra.puml) hạ tầng ·
-> [34](diagrams/34-network.puml) mạng · [35](diagrams/35-kafka.puml) Kafka ·
-> [36](diagrams/36-observability.puml) observability · [37](diagrams/37-incident.puml) sự cố ·
-> [38](diagrams/38-dataops.puml) DataOps · [39](diagrams/39-backup-dr.puml) backup/DR ·
-> [40](diagrams/40-supply-chain.puml) chuỗi cung ứng · [41](diagrams/41-mlops-lifecycle.puml) vòng đời
-> MLOps · [42](diagrams/42-mlops-arch.puml) kiến trúc MLOps.
+> Phần nào mâu thuẫn với [00](00-architecture-v2.md) thì 00 thắng. Việc có ID nằm ở [05](05-implementation-plan.md) (P0-03,
+> P0-07, P0-08); quy ước database ở [10](10-database-design.md). Sơ đồ PlantUML đã xoá 06/10/2026.
 
 ## 0. Kết luận
 
@@ -79,7 +71,6 @@
 
 ## 2. GitOps đích (sau POC)
 
-Sơ đồ [30](diagrams/30-cicd.puml) → [31](diagrams/31-gitops.puml), môi trường [32](diagrams/32-envs.puml).
 
 ### 2.1 Nguyên tắc
 
@@ -141,7 +132,6 @@ Ba script secret bị xoá khi ESO chạy ở dev. Trước đó, bước trung 
 
 ## 3. Hạ tầng đích
 
-Sơ đồ [33](diagrams/33-infra.puml), mạng [34](diagrams/34-network.puml), chuỗi cung ứng [40](diagrams/40-supply-chain.puml).
 
 ### 3.1 Thành phần
 
@@ -201,7 +191,7 @@ không chỉ tiến trình còn sống; `resources` cho `sandbox-runner` (tránh
 
 ## 4. Backup / DR (P0-07)
 
-Sơ đồ [39](diagrams/39-backup-dr.puml). Chia theo ADR-V2-34: kho nguồn sự thật phải backup ra ngoài node;
+Chia theo ADR-V2-34: kho nguồn sự thật phải backup ra ngoài node;
 bản chiếu chỉ cần dựng lại được. `/data` là ổ của cùng máy, **không** tính là ngoài node.
 
 ### 4.1 Theo kho
@@ -231,7 +221,7 @@ Phạm vi P0-07 trong 05 ghi "Backup Postgres ngoài node"; mục này mở rộ
 
 ## 5. Kafka hardening (P0-03)
 
-Sơ đồ [35](diagrams/35-kafka.puml). Thứ tự rẻ trước.
+Thứ tự rẻ trước.
 
 | # | Việc | Hôm nay | Đích | Khi nào |
 | --- | --- | --- | --- | --- |
@@ -266,7 +256,6 @@ Xong P0-03 khi: gửi tới topic chưa khai báo bị từ chối, và test pro
 
 ## 7. Alert vận hành
 
-Sơ đồ [36](diagrams/36-observability.puml), [37](diagrams/37-incident.puml), [38](diagrams/38-dataops.puml).
 
 **Alertmanager chưa tồn tại.** Tối thiểu cho POC: Alertmanager + kube-state-metrics + node-exporter +
 kafka-exporter + blackbox-exporter, rule khai báo trong repo. node-exporter cần `hostPath`, namespace
@@ -299,7 +288,6 @@ Jaeger/Langfuse.
 
 ## 8. MLOps / LLMOps
 
-Sơ đồ [41](diagrams/41-mlops-lifecycle.puml), [42](diagrams/42-mlops-arch.puml).
 
 ### 8.1 Đã có
 

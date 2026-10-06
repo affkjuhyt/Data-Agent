@@ -1,12 +1,11 @@
 # 12. Lõi số: lỗi đã sửa, kỹ thuật, rủi ro, quyết định
 
 > Đối tượng: BE làm P0-01/P0-04/S1-02/S8-01/S10-01, người review `backend/libs/indicator`. Đo ngày
-> 27/09/2026 trên `feat/remove-redundant-service`. Phần kỹ thuật số của thiết kế v1 được giữ lại ở
-> đây và viết lại theo V2; nơi hiện thực nằm ở [03](03-target-design.md) mục 3.4, 9, 10.3.
+> 27/09/2026 trên `feat/remove-redundant-service`. Nơi hiện thực nằm ở [03](03-target-design.md)
+> mục 3.4, 9, 10.3.
 >
-> **Đổi mã:** thiết kế v1 đánh số E1–E3, T1–T18, R1–R8, ADR-T1…T12. Vì [04](04-sources-oil-gold.md)
-> mục 6 đã dùng T1–T12 cho bẫy dữ liệu, mọi mã ở file này thêm tiền tố `NC-` (numeric core):
-> E2 → NC-E2, T1 → NC-T1, R2 → NC-R2, ADR-T5 → NC-ADR-T5. Docstring trong mã và test dùng mã mới.
+> Mã ở file này mang tiền tố `NC-` (numeric core) để không trùng T1–T12 của
+> [04](04-sources-oil-gold.md) mục 6; docstring trong mã và test dùng các mã này.
 
 ## 0. Kết luận
 
@@ -94,7 +93,7 @@
 | Quy tắc | Số trích từ OCR/VLM mang `confidence`, luôn qua DQ numeric; dưới ngưỡng thì ReviewCase `EXTRACTION_LOW_CONF` (08 UC02) |
 | Đo | Độ chính xác **token số** (từng chữ số và dấu phân cách), không phải CER/WER: CER thấp vẫn có thể sai đúng chữ số quan trọng. Bảng: Cell F1, TEDS |
 
-## 3. Các kỹ thuật khác của thiết kế v1: V2 xử lý ở đâu
+## 3. Các kỹ thuật lõi số khác: V2 xử lý ở đâu
 
 | Mã | Kỹ thuật | Trong V2 |
 | --- | --- | --- |

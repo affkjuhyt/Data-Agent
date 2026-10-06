@@ -4,10 +4,9 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 PY_IMAGE ?= localhost:5000/dataagent/workflow_runtime:latest
-PLANTUML_IMAGE ?= plantuml/plantuml:1.2024.8
 DOCKER_RUN_PY = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(PY_IMAGE)
 
-.PHONY: help lint type test test-unit test-integration test-changed deadcode frontend-lint frontend-test ci e2e diagrams \
+.PHONY: help lint type test test-unit test-integration test-changed deadcode frontend-lint frontend-test ci e2e \
         deploy fmt bench bench-gate bench-e2e mock-api contract-compat
 
 help:  ## List targets
@@ -181,8 +180,3 @@ e2e:  ## pytest -m e2e against the deployed dev cluster (LAN NodePorts; URLs ove
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml
 
-# HOME=/tmp + user.home=/tmp: the non-root uid has no passwd entry, so Java's user.home
-# is "?" and it writes its font cache into the mounted diagrams dir as `?/.java/`, which
-# then gets committed. HOME alone does not change user.home; the -D flag does.
-diagrams:  ## render docs/v2/diagrams/*.puml to SVG (PlantUML pinned; see docs/v2/diagrams/README.md)
-	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -e JAVA_TOOL_OPTIONS=-Duser.home=/tmp -v "$(PWD)/docs/v2/diagrams:/data" -w /data $(PLANTUML_IMAGE) -tsvg -charset UTF-8 '*.puml'
