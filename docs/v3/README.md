@@ -26,7 +26,7 @@ Quy tắc repo (test trong container, so baseline lint, outbox, naming) ở `CLA
 | ID | Câu hỏi | Trạng thái |
 | --- | --- | --- |
 | D1 | Năng lực model / GPU | Chờ; R0-9 đo và nộp bảng điểm |
-| D2 | Giữ nghiệm thu dầu/vàng 27/10? | **Chờ, cần chốt trước khi bắt đầu R0** (04 §0) |
+| D2 | Giữ nghiệm thu dầu/vàng 27/10? | **Chốt 06/10: dời**; cả đội vào R0 → R1; Linear P-NOP-2 đóng, backlog mới ở P-NOP-3 |
 | D3 | Khách thiết kế đầu tiên | Chờ; tiêu chí ở 02 §6 |
 | D4 | Chuẩn semantic model | Khuyến nghị: nội bộ + import/export YAML chuẩn mở |
 | D5 | C-level bật deep analysis? | Khuyến nghị: có, dạng mục lục + xác nhận ngân sách |
@@ -45,3 +45,4 @@ Câu hỏi mới ghi vào bảng này; chốt xong thì cập nhật trạng th�
 | Ngày | Thay đổi |
 | --- | --- |
 | 06/10/2026 | Tạo thư mục: 00 (chiến lược), 01 (agent core + UI từ awesome-data-agents), 02 (thị trường, phản biện v1.0), 03 (R0), 04 (backlog). Chốt D8–D12 |
+| 06/10/2026 | Chốt D2 (dời 27/10). Linear: đóng P-NOP-2, tạo P-NOP-3 với milestone R0–R4 và story R0/R1; 04 §0 phân công theo người thật |

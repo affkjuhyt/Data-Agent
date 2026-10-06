@@ -1,23 +1,28 @@
 # 04. Backlog V3: R0 và R1
 
 > Ngày 06/10/2026. Cột **TT** là nơi ghi tiến độ: `todo` → `doing` → `done <commit>`; cắt ghi `cut`. Ai làm
-> xong một ID thì sửa cột này trong cùng commit (cùng quy ước với `docs/v2/05`). Vai theo đội của
-> `docs/v2/05` §1: BE1, BE2, SR1, SR2, DE, FE1, FE2, RS, QA, Ops. Cỡ: S < 1 tuần-người, M 1–3, L > 3.
-> Thiết kế kỹ thuật của R0 ở [03](03-r0-technical-design.md); R1 trở đi tham chiếu [00](00-product-strategy.md),
-> [01](01-agent-core-and-ui.md), [02](02-market-solution.md).
+> xong một ID thì sửa cột này trong cùng commit (cùng quy ước với `docs/v2/05`). Cỡ: S < 1 tuần-người,
+> M 1–3, L > 3. Thiết kế kỹ thuật của R0 ở [03](03-r0-technical-design.md); R1 trở đi tham chiếu
+> [00](00-product-strategy.md), [01](01-agent-core-and-ui.md), [02](02-market-solution.md).
+>
+> **Linear:** project P-NOP-3 "Data Agent V3 · Sản phẩm doanh nghiệp", milestone R0–R4; mỗi story mang mã
+> ở cột ID trong tiêu đề, task con `[BE]/[FE]/[DB]/[AI]` theo lớp. Project V2 P-NOP-2 đã đóng 06/10/2026.
 
-## 0. Điều kiện bắt đầu (cần anh Linh chốt D2 trước)
+## 0. Người và điều kiện bắt đầu
 
-R0 tranh người với POC dầu/vàng (nghiệm thu 27/10). Đề xuất phân bổ nếu **giữ** 27/10:
+D2 chốt 06/10/2026: **dời** nghiệm thu dầu/vàng 27/10; cả đội vào R0 rồi R1; lịch R1 xếp sau discovery
+với khách thiết kế (D3). Cột "Vai" bên dưới giữ tên vai của bản đầu; người thật:
 
-| Nhánh | Người | Việc |
+| Người | Phụ trách | Vai trong bảng |
 | --- | --- | --- |
-| R0 (2 tuần, 06–17/10) | SR1, BE2 | R0-1, R0-10, R0-7, R0-8, R0-11, R0-4, R0-5 |
-| R0 vận hành | Ops | R0-3, R0-6, R0-9 |
-| POC V2 tiếp tục (= R1 phần Observation Engine) | DE, SR2, RS, BE1, FE1, FE2 | `docs/v2/05` W2–W3 như cũ |
+| Trần Hải Long | Agent core và giao diện: R0-1, R0-10, R0-7, R0-8, R0-11; R1-08, R1-09, R1-11, R1-13, R1-14; mọi `[FE]` | SR1, FE1, FE2 |
+| Đức Long | Nền tảng và dữ liệu: R0-2, R0-3, R0-4, R0-5, R0-6, R0-12; R1-01…R1-07, R1-10; mọi `[DB]` | BE2, BE1, SR2, DE, Ops |
+| Quân | Dữ liệu, đánh giá, kiểm thử: R0-13, R1-12, R1-15, R1-16; `[Data]` của R0-9 và R1-06 | RS, QA |
+| Linh | Model: R0-9; mọi `[AI]` (R0-10, R0-11, R1-03, R1-05, R1-08, R1-09) | ML |
 
-Hệ quả: S6-03 (Review Inbox, SR1) và S9-01/S9-02 (capability, SR1) của POC lùi một tuần; cắt theo
-`docs/v2/05` §5. Nếu **dời** 27/10: cả đội vào R0 + R1, lịch mới sau discovery với khách thiết kế (D3).
+Năng lực: R0 khoảng 13 tuần-người (5 việc M, 7 việc S) trên hai người làm mã chính, tức khoảng 6 tuần
+lịch nếu không thêm người. Thứ tự ưu tiên trong R0 khi phải cắt: R0-1 → R0-7 → R0-10 → R0-8 → R0-11 →
+R0-6 → R0-5 → R0-3 → R0-4 → R0-2 → R0-12.
 
 ## 1. R0 Nền mã
 
@@ -34,6 +39,7 @@ Hệ quả: S6-03 (Review Inbox, SR1) và S9-01/S9-02 (capability, SR1) của PO
 | R0-5 | `/run` công khai không nhận `memory_context`/`guardrail_cfg`/`orchestrated`; `InternalRunRequest` chỉ cho service `orchestrator` | | SR1 | S | 422 cho client; orchestrator qua assertion | todo |
 | R0-6 | Sandbox xác thực service assertion; `connection_ref` thay mật khẩu; schema crawler đọc OpenBao; policy OpenBao qua Ansible; xoá env mật khẩu | | Ops | M | 401 không assertion; grep CI không còn `WAREHOUSE_PASSWORD__` | todo |
 | R0-9 | Đo model (D1): `make bench` + eval hai cấu hình, báo cáo một trang | | Ops, QA | S | Bảng điểm nộp anh Linh | todo |
+| R0-13 | Kịch bản kiểm thử và nghiệm thu đợt R0: kịch bản chạy trên cụm dev cho từng story R0, ghi lỗi theo mức, biên bản ký | R0-1…R0-12 | Quân | M | Biên bản nghiệm thu R0 ký | todo |
 | R0-12 | RUNBOOK: HITL bền, MCP, OpenBao policy; `docs/v2/09-frontend.md` ghi chú Workspace (D9) | R0-2, R0-3, R0-6 | Ops, FE1 | S | Docs cùng commit | todo |
 
 ## 2. R1 Hỏi đúng trên kho + ngữ cảnh
@@ -44,7 +50,7 @@ của chúng, không đánh lại). Chỉ liệt kê việc **mới** so với V
 | ID | Việc | Phụ thuộc | Vai | Cỡ | Xong khi | TT |
 | --- | --- | --- | --- | --- | --- | --- |
 | R1-01 | Connections: bảng `registry.connection` (engine, host, db, `secret_ref`, owner, classification, read-only role, giới hạn rows/bytes/timeout); UI "Connections" thay WarehouseCenter Snowflake-only; connection test | R0-6 | BE1, FE2 | M | Thêm Postgres/ClickHouse/Snowflake từ UI; không mật khẩu trong Postgres | todo |
-| R1-02 | Executor MySQL, SQL Server (đọc-chỉ, `sql_guard` theo dialect SQLGlot); BigQuery/Databricks/Oracle/Trino theo khách (cắt nếu không có khách) | R1-01 | SR2 | M | Test readonly + guard cho mỗi engine | todo |
+| R1-02 | Executor MySQL, SQL Server (đọc-chỉ; thêm SQLGlot làm dependency để parse/kiểm theo dialect — hiện sandbox dùng `sql_scan` + sqlparse, compiler semantic chỉ có postgres/clickhouse); BigQuery/Databricks/Oracle/Trino theo khách (cắt nếu không có khách) | R1-01 | SR2 | M | Test readonly + guard cho mỗi engine | todo |
 | R1-03 | Schema crawler thu PK/FK, cardinality, null rate, giá trị mẫu; join hint từ khoá thật trước, LLM sau và gắn `proposed` | R0-6 | DE | M | Catalog có FK; join LLM không được dùng khi chưa duyệt | todo |
 | R1-04 | Catalog thống nhất `catalog.asset` (table, column, document, series, api) + `asset_id` dùng chung; màn Catalog trong Data Studio | R1-03, V2 S1-03 | BE1, FE2 | L | Một màn thấy bảng, tài liệu, series; link tới nguồn | todo |
 | R1-05 | Chỉ mục giá trị cột text (HNSW/FTS) cho schema linking; `sem_value_retrieval` | R1-03 | SR2 | M | Từ khoá → giá trị thật; test DeepEye-SQL §3.4 | todo |
@@ -57,6 +63,7 @@ của chúng, không đánh lại). Chỉ liệt kê việc **mới** so với V
 | R1-12 | Eval Set theo Data Space: schema case (01 §6: hợp đồng đóng băng, so multiset), harness chạy đường text-to-SQL thật, bảng điểm theo nhãn tin cậy, cổng publish agent | R1-11 | QA, RS | M | 100–150 case pilot, hai người giải mù | todo |
 | R1-13 | Workspace lưu server: thread/run/artifact tối thiểu (SQL, note, chart) có version; bỏ `localStorage`; URL state (FE-00 V2) | R0-1 | FE1 | M | Mở lại link thấy đúng thread và result set | todo |
 | R1-14 | Trust label trên mọi câu trả lời (TrustLabel, ConfidenceMeter) | R0-8, R1-09 | FE1 | S | Nhãn đúng theo `generated_by` | todo |
+| R1-16 | Dữ liệu pilot mẫu: kho bán hàng, giá vốn, công nợ, tồn kho và tài liệu chính sách tiếng Việt có sẵn bẫy số liệu (join nhân đôi, trung bình tỷ lệ, cộng tồn kho, tài liệu hết hiệu lực, hai phiên bản cùng kỳ); nạp bằng một lệnh | | Quân | M | R1 dev và R1-12 dùng được trước khi có khách thiết kế | todo |
 | R1-15 | Onboarding checklist: 10–20 câu khách → nguồn → metric → eval; màn trạng thái (nguồn chưa kết nối, metric chưa duyệt, eval chưa đạt) | R1-11, R1-12 | FE2, RS | S | Dùng cho khách thiết kế | todo |
 
 Ra R1 khi: Eval Set pilot ≥ 0,95 trên VERIFIED/GOVERNED, `unsupported_number_rate = 0`, test isolation

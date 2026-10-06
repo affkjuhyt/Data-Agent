@@ -211,6 +211,19 @@ fine-tune; Spider 2.0-Snow 50,5% so ReFoRCE 38,0%):
 | Cổng chất lượng | Chạy tất cả ứng viên, gom theo kết quả; confidence = tỷ lệ cụm; > 0,6 trả; thấp hơn → LLM so cặp; **rất thấp → hỏi lại hoặc đẩy người** | −0,8; confidence ~ đúng/sai r = 0,954 | Mới; là nguồn của nhãn tin cậy và của "khi nào nhờ người" |
 
 Confidence thấp là tín hiệu đáng tin nhất hiện có để quyết định tự trả lời, hỏi lại hay đẩy review.
+
+**Ngưỡng chốt 06/10/2026** (chỉ cho đường Khám phá; verified query và semantic model không bỏ phiếu). Sáu
+ứng viên = 3 cách sinh × 2 mẫu, gom theo bảng kết quả:
+
+| Đồng thuận | Hành động |
+| --- | --- |
+| ≥ 4/6 | Trả lời, nhãn Khám phá |
+| 3/6 | So cặp rồi trả lời, kèm "nên kiểm lại" |
+| ≤ 2/6 | Không đưa số; hỏi lại một câu có lựa chọn hoặc `INSUFFICIENT_EVIDENCE` |
+| Mọi ứng viên lỗi | Lỗi có mã |
+
+Hiệu chỉnh trên Eval Set: ngưỡng thấp nhất mà nhóm câu vượt ngưỡng đúng ≥ 90% và tỷ lệ hỏi lại ≤ 20%.
+Ngưỡng của DeepEye-SQL đo trên BIRD với model khác; model của ta phải đo lại.
 Đây là cơ chế "biết mình không biết" của sản phẩm.
 
 ### 3.5 Phản tư theo nguyên nhân gốc
@@ -396,6 +409,12 @@ Frame theo mô hình AG-UI (V2 09 §4.2), bổ sung cho agent core mới:
 | `__suggestion` | gợi ý chủ động: loại, lý do, xem trước, thời hạn |
 | `__refusal`, `__lineage`, `__citations` | như V2 |
 
+**Nhãn tin cậy chốt 06/10/2026:** gắn theo từng khối (mỗi con số, bảng, biểu đồ). Huy hiệu tổng của câu trả
+lời = nhãn yếu nhất, kèm phân rã ("2 số Có quản trị · 1 số Khám phá"). Thang cho con số: Đã kiểm > Có
+quản trị > Khám phá > Chưa đủ bằng chứng. Phần giải thích lấy từ tài liệu mang nhãn riêng "Giả thuyết từ
+tài liệu" và không kéo nhãn của con số xuống. Lý do: một câu trả lời chỉ chắc bằng mắt xích yếu nhất, và
+quyết định kinh doanh thường dựa đúng vào phần giải thích.
+
 Catalog khối: ValueCard, SeriesChart, DataGrid (có hợp đồng đầu ra), DriverBar, EvidenceList (trang,
 bbox), VerifierBadge, TrustLabel, ConfidenceMeter, OutputContractCard, PlanNodeCard, RefusalCard,
 ClarificationCard, ApprovalCard, SuggestionToast, ReportSection, **ReconciliationNote** (STAGE, TARGET,
@@ -430,6 +449,12 @@ Rút từ cách các benchmark chấm, để eval nội bộ (00 Q9) có cùng k
 | Dựng bộ case | Hai người giải mù độc lập rồi đối chiếu; ~30% "lỗi" còn lại của DeepEye-SQL là lỗi nhãn | DeepEye-SQL, DataSpace |
 
 Mỗi Data Space có Eval Set; không mở mức tự chủ L3 cho một agent khi Eval Set của nó chưa đạt ngưỡng.
+
+**Cổng phát hành chốt 06/10/2026:** tối thiểu 20 case đã đóng băng cho agent phòng ban, 100–150 cho Data
+Space pilot; mỗi chỉ số đã duyệt có ít nhất 1 case; ít nhất 20% case là câu phải từ chối hoặc hỏi lại (để
+agent "trả lời mọi thứ" không qua được); `unsupported_number_rate` = 0. Case đóng băng = câu hỏi + bảng đáp
+án + hợp đồng đầu ra, hai người giải độc lập, sửa phải tạo phiên bản mới. Với 20 case, 19/20 vẫn có khoảng
+tin cậy khoảng 76–99%: 20 là sàn chống phát hành với bộ test rỗng, không phải bằng chứng chất lượng.
 
 ## 7. Thay đổi so với 00 và lộ trình
 

@@ -173,7 +173,7 @@ lại mã để xác nhận từng dòng in đậm.
 └────────────────────────────────────┬──────────────────────────────────────────────┘
 ┌────────────────────────────────────▼──────────────────────────────────────────────┐
 │ QUERY ENGINES                                                                     │
-│ Semantic Compiler (SQLGlot, mọi dialect) │ Governed text-to-SQL │ Python sandbox  │
+│ Semantic Compiler (SQLGlot*, mọi dialect)│ Governed text-to-SQL │ Python sandbox  │
 │ Document Retrieval (LightRAG + FTS) │ Observation Engine (V2: as-of, vintage)     │
 │ Graph query (Neo4j)                                                               │
 └────────────────────────────────────┬──────────────────────────────────────────────┘
@@ -188,6 +188,9 @@ lại mã để xác nhận từng dòng in đậm.
 │ Nhãn tin cậy │ Provenance │ Audit tool call │ Chi phí │ HITL/OCC │ Eval gate      │
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+\*SQLGlot chưa là dependency của repo (06/10/2026): compiler hiện tại tự dựng SQL cho postgres/clickhouse,
+sandbox kiểm bằng `sql_scan` + sqlparse; thêm SQLGlot ở R1-02/R1-06.
 
 So với V2 (00 mục 2), thay đổi là: **Context Layer** thay vị trí "Semantic & Knowledge Fabric" và
 mở rộng ra mọi dữ liệu; **Observation Engine** của V2 thành một engine chuyên trong nhiều engine;
@@ -338,8 +341,8 @@ ngoài, nên cần anh quyết.
 Đã chốt 06/10/2026 theo khuyến nghị của [02](02-market-solution.md) §6: **D8** hoãn gói Publisher; **D9**
 Workspace (cây artifact) thay Thread/Notebook/Report; **D10** Zalo/Teams/email cho C-level trước, mobile
 sau; **D11** thử giá theo kết quả cho ingestion ở pilot; **D12** phơi Data Space qua MCP cho coding agent
-từ R2. Còn chờ: D1–D7 (D2 cần quyết trước khi bắt đầu R0 vì tranh người với POC 27/10; xem
-[04-backlog.md](04-backlog.md) §0).
+từ R2. **D2** chốt cùng ngày: dời nghiệm thu 27/10, cả đội vào R0 rồi R1 ([04-backlog.md](04-backlog.md) §0).
+Còn chờ: D1, D3–D7.
 
 ## 9. Lộ trình phát hành
 

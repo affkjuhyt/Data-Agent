@@ -2,8 +2,8 @@
 
 > **Từ 06/10/2026 định hướng sản phẩm nằm ở [`docs/v3/`](../v3/README.md)** (sản phẩm doanh nghiệp, không
 > còn là POC). Thư mục này vẫn có hiệu lực cho Observation Engine (chuỗi chỉ số, as-of, DQ, HITL số liệu),
-> là Data Space tham chiếu đầu tiên của V3; các ID trong 05 giữ nguyên. Việc giữ hay dời nghiệm thu 27/10
-> là quyết định D2 ở `docs/v3/README.md`.
+> là Data Space tham chiếu đầu tiên của V3. **Nghiệm thu 27/10 đã dời** (06/10/2026); lịch, mốc C1–C3
+> và cột TT trong 05 không còn là kế hoạch đang chạy; project Linear P-NOP-2 đã đóng, việc mới ở P-NOP-3.
 >
 > Thư mục này là kế hoạch và thiết kế đang có hiệu lực cho V2. Thiết kế v1 (Nợ công/GDP) đã xoá khỏi
 > cây (còn trong lịch sử git); phần còn dùng được nằm ở 11, 12, 13. Sơ đồ PlantUML và ERD sinh tự
