@@ -82,3 +82,37 @@ Ra R1 khi: Eval Set pilot ≥ 0,95 trên VERIFIED/GOVERNED, `unsupported_number_
 - Thứ Sáu hằng tuần rà cột TT; việc trễ > 2 ngày thì cắt hoặc đổi người ngay trong tuần.
 - Mỗi ID một PR; PR ghi ID trong tiêu đề; test và docs trong cùng PR.
 - Không mở ID của đợt sau khi đợt trước chưa đạt tiêu chí ra (00 §9).
+
+## 5. Thứ tự thực hiện (theo phụ thuộc trên Linear P-NOP-3)
+
+Trong mỗi story: `[DB]` → `[BE]` → `[FE]`; `[AI]` chạy song song và phải xong trước bước `[BE]` cắm prompt.
+Không mở R1 khi biên bản R0-13 chưa ký; ngoại lệ là việc chuẩn bị không đụng mã sản phẩm (dữ liệu pilot,
+định nghĩa chỉ số, viết kịch bản kiểm thử).
+
+### 5.1 R0
+
+| Bước | Hải Long | Đức Long | Linh | Quân |
+| --- | --- | --- | --- | --- |
+| 1 | R0-1 NOP-278 (279 → 282) | R0-6 NOP-347 | — chờ bộ câu của Quân | R0-9 [Data] NOP-363 |
+| 2 | R0-7 NOP-301 (319 → 321) | R0-5 NOP-342 | R0-9 NOP-352 | R0-13 viết kịch bản NOP-365 |
+| 3 | R0-10 NOP-292: 295 phần contract + validator | R0-3 NOP-300 (302 → 304) | R0-10 [AI] NOP-357 | R1-16 dữ liệu pilot NOP-364 |
+| 4 | R0-10: 295 cắm prompt → 296 | R0-4 NOP-325 (332) | R0-11 [AI] NOP-358 | R1-06 [Data] NOP-362 |
+| 5 | R0-8 NOP-324 (327 → 329) | R0-2 NOP-290 (294 → 297) | | |
+| 6 | R0-11 NOP-338 (359) · R0-4 FE NOP-334 | R0-12 NOP-354 | | R0-13 chạy kịch bản, biên bản |
+
+Thứ tự cắt nếu trễ (giữ từ trên xuống): R0-1 → R0-7 → R0-10 → R0-8 → R0-11 → R0-6 → R0-5 → R0-3 →
+R0-4 → R0-2 → R0-12.
+
+### 5.2 R1 (sau khi ký biên bản R0)
+
+| Bước | Hải Long | Đức Long | Linh | Quân |
+| --- | --- | --- | --- | --- |
+| 1 | R1-13 NOP-328 (339 → 341, sau DB 337) | R1-01 NOP-280 (285 → 287) · R1-13 DB 337 | R1-03 [AI] NOP-360 | R1-16 hoàn tất, giải mù câu đối chứng |
+| 2 | R1-01 FE NOP-289 | R1-03 NOP-305 (320 → 322) | R1-05 [AI] NOP-345 | R1-06 [Data] NOP-362 |
+| 3 | R1-04 FE NOP-336 | R1-04 NOP-326 (330 → 333) | R1-08 [AI] NOP-361 | R1-12 dựng case từ dữ liệu pilot |
+| 4 | R1-11 NOP-281 (DB 284 → 286 → 288) | R1-05 BE NOP-346 · R1-06 NOP-283 (291 → 293) | R1-09 [AI] NOP-355 | |
+| 5 | R1-08 NOP-344 (DB 348 → 349 → 350) | R1-07 NOP-303 (331 → 335) · R1-10 NOP-351 | hiệu chỉnh ngưỡng R1-09 trên Eval Set | R1-12 NOP-299 |
+| 6 | R1-09 NOP-353 (356) → R1-14 NOP-277 · R1-07 FE NOP-340 | R1-02 NOP-298 (chỉ khi khách cần MySQL/SQL Server) | | R1-15 NOP-323 |
+
+Đường găng R1 nằm trọn ở Đức Long: R0-6 → R1-03 → R1-04 → R1-06 → R1-07 → R1-08/R1-11 → R1-12 → R1-15.
+Muốn rút ngắn thì chuyển R1-05 BE, R1-10, R1-02 sang người khác; không chuyển R1-03, R1-04, R1-06.
