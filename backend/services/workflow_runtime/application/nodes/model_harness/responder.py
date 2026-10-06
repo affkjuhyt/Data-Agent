@@ -349,9 +349,9 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
             seen.add(n)
             citations.append(chunk_meta[n])
 
-    # `_result_sets` is not a state key — LangGraph drops it on merge, as it
-    # does tool_executor's `_tool_traces` — but it is in the node output that
-    # conversation_runner reads, which sends one `__result_set` frame per table
-    # the answer was built from.
+    # `_result_sets` is not a state key — LangGraph may drop it on merge, as it
+    # does tool_executor's `_tool_traces`. conversation_runner reads it when
+    # available and falls back to the responder input's result_sets channel,
+    # then sends one `__result_set` frame per table used by the answer.
     return {"response": full_text, "citations": citations, "evidence": evidence,
             "_result_sets": used_tables}

@@ -13,6 +13,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from libs.shared.auth import require_tenant
 from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
+from services.workflow_runtime.application import result_sets
 from services.workflow_runtime.application.config_loader import load_agent_config
 from services.workflow_runtime.application.graph import build_graph
 from services.workflow_runtime.application.nodes.model_harness.responder import (
@@ -719,7 +720,23 @@ async def run_conversation_stream(
                         last_responder_text = text
                         last_responder_citations = out.get("citations", []) if isinstance(out, dict) else []
                         last_responder_evidence = out.get("evidence") if isinstance(out, dict) else None
-                        last_responder_result_sets = (out.get("_result_sets") or []) if isinstance(out, dict) else []
+                        # `_result_sets` is deliberately not an AgentState key.
+                        # Some LangGraph versions preserve that extra return field
+                        # in `on_chain_end.output`, while others expose only the
+                        # merged state.  In the latter case the responder input
+                        # still contains the exact ResultSet channel it consumed;
+                        # frame that channel here so the UI does not silently lose
+                        # the table after a successful answer.
+                        if isinstance(out, dict) and "_result_sets" in out:
+                            last_responder_result_sets = out.get("_result_sets") or []
+                        else:
+                            inp = event["data"].get("input", {})
+                            state_result_sets = inp.get("result_sets") if isinstance(inp, dict) else None
+                            last_responder_result_sets = [
+                                result_sets.frame(rs, citation_index=i)
+                                for i, rs in enumerate(state_result_sets or [], 1)
+                                if isinstance(rs, dict)
+                            ]
                         # Bản trước (nếu có) sắp lỗi thời — Judge vừa cho responder
                         # chạy lại, huỷ kết quả check dở dang của bản cũ.
                         if guardrail_task and not guardrail_task.done():
