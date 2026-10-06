@@ -229,6 +229,8 @@ async def _stream_graph(
                         yield _sse({"__evidence": event["data"]})
                     elif name == "result_set":
                         yield _sse({"__result_set": event["data"]})
+                    elif name == "refusal":
+                        yield _sse({"__refusal": event["data"]})
 
         except Exception as e:
             logger.error("stream | graph error: %s", e)
@@ -409,6 +411,7 @@ async def stream_orchestration(
         "target_results":          [],
         "recovered":               False,
         "success":                 False,
+        "refused":                 False,
         "planner_ms":              0,
         "executor_ms":             0,
         "summary_ms":              0,

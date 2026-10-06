@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Coroutine, cast
 
@@ -11,6 +12,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from langgraph.checkpoint.memory import MemorySaver
 
+from libs.contracts.v1 import ErrorCode, NextAction, Refusal
 from libs.shared.auth import require_tenant
 from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 from services.workflow_runtime.application import result_sets
@@ -21,6 +23,7 @@ from services.workflow_runtime.application.nodes.model_harness.responder import 
 )
 from services.workflow_runtime.application.nodes.sandbox.kb_search import discard_speculative_search
 from services.workflow_runtime.application.runtime_services.answer_ready import notify_answer_ready
+from services.workflow_runtime.domain.refusals import AgentConfigError, RefusalError
 from services.workflow_runtime.domain.schemas import RunRequest
 from services.workflow_runtime.domain.transcript_compression import compress_tool_results
 from services.workflow_runtime.infrastructure.db import (
@@ -265,6 +268,17 @@ def invalidate_graph_version(workflow_version_id: str) -> int:
     return removed
 
 
+def _refusal_frame(refusal: Refusal) -> str:
+    return f"data: {json.dumps({'__refusal': refusal.model_dump(mode='json')}, ensure_ascii=False)}\n\n"
+
+
+def _refusal_response(refusal: Refusal) -> StreamingResponse:
+    async def _frames() -> AsyncIterator[str]:
+        yield _refusal_frame(refusal)
+        yield "data: [DONE]\n\n"
+    return StreamingResponse(_frames(), media_type="text/event-stream")
+
+
 def _previous_clarified_reasons(previous_slots: dict[str, Any] | None) -> list[str] | None:
     """Reasons the previous turn's marker settled; None when it predates them."""
     reasons = (previous_slots or {}).get("_clarified_reasons")
@@ -308,12 +322,22 @@ async def run_conversation_stream(
     # never scoped to it. 403 instead.
     caller = caller or {}
     tenant_id = require_tenant(caller)
-    cfg = await load_agent_config(req.agent_id, tenant_id=tenant_id)
+    # No conversation exists yet, so the lookup id is the one the client sent or
+    # a fresh one written next to the cause in the log.
+    detail_id = req.conversation_id or uuid.uuid4().hex
+    try:
+        cfg = await load_agent_config(req.agent_id, tenant_id=tenant_id)
+    except AgentConfigError as e:
+        logger.warning("conversation_runner | refused %s: %s detail_id=%s", e.code, e, detail_id)
+        return _refusal_response(e.refusal(detail_id))
     if cfg is None:
-        async def _err() -> AsyncIterator[str]:
-            yield "data: [ERROR] Agent chưa được publish.\n\n"
-            yield "data: [DONE]\n\n"
-        return StreamingResponse(_err(), media_type="text/event-stream")
+        # Same code as an unreadable config — the agent cannot run — but retrying
+        # will not publish it, so the user is pointed at whoever owns it.
+        return _refusal_response(Refusal.of(
+            ErrorCode.AGENT_CONFIG_ERROR, detail_id=detail_id,
+            message="Agent này chưa được publish nên chưa trả lời được câu hỏi.",
+            next_action=NextAction.CONTACT_STEWARD,
+        ))
     agent_id = cfg.get("agent_id", _DEV_AGENT_ID)
 
     flow_nodes = cfg.get("flow_nodes") or []
@@ -851,7 +875,18 @@ async def run_conversation_stream(
             _fire_and_forget(asyncio.to_thread(flush_langfuse))
             yield "data: [DONE]\n\n"
 
+        except RefusalError as e:
+            # A node that cannot go on for a reason with a code (planner failed
+            # twice, …): the user is told which, and no answer token follows.
+            logger.warning("conversation_runner | refused %s: %s conv=%s", e.code, e, conv_id)
+            refusal = e.refusal(conv_id or "")
+            if live.emitted:
+                yield _RESET_FRAME
+            full_response.append(refusal.message)
+            yield _refusal_frame(refusal)
+            yield "data: [DONE]\n\n"
         except Exception:
+            # Only the unforeseen is left uncoded (R0-7).
             logger.exception("event_stream error")
             yield "data: [ERROR] Đã xảy ra lỗi, vui lòng thử lại.\n\n"
         except (GeneratorExit, asyncio.CancelledError):

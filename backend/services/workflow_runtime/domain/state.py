@@ -10,7 +10,7 @@ def merge_result_sets(
 
     db_connector and tool_executor can finish in the same step, and a plain
     channel accepts one write per step. A list from either is appended; None is
-    how a retry (judge_phase1, judge PLANNING_ERROR) and a new turn on a
+    how a retry (judge PLANNING_ERROR) and a new turn on a
     checkpointed thread start over — an empty list cannot mean "clear", since
     a producer with nothing to add writes exactly that.
     """
@@ -85,10 +85,8 @@ class AgentState(TypedDict):
     # dòng, để UI hiện VerifierBadge và để đo được, thay vì gộp thành một điểm
     # không nói được cái nào đã sai.
     verifier: dict[str, Any] | None
-    judge_phase1_error: Optional[str]  # "RETRIEVAL_ERROR" | "TOOL_ERROR" | None — set bởi judge_phase1_node
-    # Signatures of tool plans judge_phase1 already sent back to the planner. A
-    # repeat would return the same nothing, so it stops the loop (graph.py).
-    attempted_plans: List[str]
+    # Always None since R0-7 (no stand-in plan left to retry); R0-11 routes on it again.
+    judge_phase1_error: Optional[str]
     human_approved: Optional[bool]    # None = chưa qua HITL node, True/False = kết quả review
     human_note: Optional[str]         # ghi chú reviewer khi reject
     injected_metadata: Optional[dict[str, Any]]  # set bởi metadata_injector_node — đọc bởi planner + responder

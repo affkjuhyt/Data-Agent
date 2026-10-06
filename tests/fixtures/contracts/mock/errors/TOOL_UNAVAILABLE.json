@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "TOOL_UNAVAILABLE",
+    "message": "a required tool is temporarily unavailable",
+    "current_version": null,
+    "details": {}
+  }
+}

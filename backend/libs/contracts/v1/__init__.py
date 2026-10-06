@@ -10,7 +10,16 @@ from enum import StrEnum
 
 from libs.contracts.v1.base import ContractModel, TimeAxes
 from libs.contracts.v1.concurrency import VersionedWrite
-from libs.contracts.v1.errors import HTTP_STATUS, ErrorBody, ErrorCode, ErrorDetail
+from libs.contracts.v1.errors import (
+    HTTP_STATUS,
+    NEXT_ACTION,
+    USER_MESSAGE_VI,
+    ErrorBody,
+    ErrorCode,
+    ErrorDetail,
+    NextAction,
+    Refusal,
+)
 from libs.contracts.v1.events import (
     PARTITION_KEY_FIELD,
     PAYLOAD_MODELS,
@@ -107,6 +116,7 @@ PUBLIC_MODELS: tuple[type[ContractModel], ...] = (
     MappingProposed,
     SourceSlaBreached,
     ResultSet,
+    Refusal,
 )
 
 # Enums a producer may extend without a version bump (COMPATIBILITY.md): consumers
@@ -116,10 +126,12 @@ OPEN_ENUMS: tuple[type[StrEnum], ...] = (ErrorCode, ParseErrorCode, EventType, R
 
 __all__ = [
     "HTTP_STATUS",
+    "NEXT_ACTION",
     "OPEN_ENUMS",
     "PARTITION_KEY_FIELD",
     "PAYLOAD_MODELS",
     "PUBLIC_MODELS",
+    "USER_MESSAGE_VI",
     "ApiQueryRef",
     "ArtifactStored",
     "CapabilityRef",
@@ -142,6 +154,7 @@ __all__ = [
     "JsonPathRef",
     "MappingProposed",
     "MappingRules",
+    "NextAction",
     "ObsStatus",
     "Observation",
     "ObservationCandidate",
@@ -152,6 +165,7 @@ __all__ = [
     "ProfileSummary",
     "PublicationTimeBasis",
     "Purpose",
+    "Refusal",
     "ReleaseProcessingStatus",
     "ReleaseRef",
     "ReleaseTimes",

@@ -46,6 +46,9 @@ class OrchestratorState(TypedDict):
     target_results: list[Any]
     recovered: bool
     success: bool
+    # The single agent ended its turn with a `__refusal` (R0-7): no answer, so
+    # no follow-up suggestions either.
+    refused: bool
 
     # Timings (ms)
     planner_ms: int
