@@ -8,9 +8,11 @@ không được bounce planner (bug tìm thấy qua Langfuse trace thực tế: 
 "xin chào" bị lặp 3 lần, mất 59s, vì route_after_planner có fallback ép
 chạy kb_search dù tool_calls rỗng).
 
-Và CHỈ quay lại planner khi planner không quyết định được gì (plan dự phòng
-khi output không parse được). Một plan đã quyết định mà rỗng/lỗi thì đi tiếp:
-hỏi lại planner chỉ ra đúng plan cũ (đo thực tế trên KB trống: 3 lần plan y hệt).
+Từ R0-7 không còn plan dự phòng (planner hỏng hai lần → PLANNER_ERROR, xem
+test_structured_errors.py), nên mọi plan tới đây đều do planner quyết định, và
+một plan đã quyết định mà rỗng/lỗi thì đi tiếp: hỏi lại planner chỉ ra đúng plan
+cũ (đo thực tế trên KB trống: 3 lần plan y hệt). Node chỉ còn ghi nhận lỗi;
+R0-11 sẽ gán lớp lỗi và định tuyến ở đây.
 
 judge_phase1_node là ASYNC dù thân hàm không await gì — bắt buộc để LangGraph
 không đẩy nó qua threadpool executor (làm mất OTEL contextvars mà Langfuse
@@ -41,82 +43,41 @@ def _sys_path():
             sys.path.remove(p)
 
 
-# A plan the planner decided on.
-_KB_TOOL_CALL = [{"type": "kb_search", "query": "test", "reason": "", "confidence": 1.0}]
-# The plan used when the planner's output could not be parsed — nothing was decided.
-_FALLBACK_TOOL_CALL = [{"type": "kb_search", "query": None, "reason": "planner fallback", "confidence": 0.5}]
 _EMPTY = {"kb_chunks": [], "mcp_results": [], "tool_results": [], "tool_errors": []}
 
 
-async def test_retrieval_error_when_the_planner_could_not_decide():
-    import graph as graph_mod
-
-    state = {"tool_calls": _FALLBACK_TOOL_CALL, **_EMPTY}
-    result = await graph_mod.judge_phase1_node(state)
-
-    assert result["judge_phase1_error"] == "RETRIEVAL_ERROR"
-    assert result["kb_chunks"] == []
-    assert result["tool_results"] == []
-    assert result["tool_errors"] == []
-    assert result["reranked_chunks"] == []
-    # judge_reason phải có nội dung — planner_node CHỈ đọc field này để tự
-    # sửa chiến lược ở lần thử sau (không đọc judge_phase1_error).
-    assert result["judge_reason"]
-    assert result["loop_iteration"] == 1
-
-
-async def test_an_empty_result_on_a_decided_plan_is_not_retried():
+async def test_an_empty_result_is_answered_not_retried():
     """An empty knowledge base: the planner chose kb_search and nothing matched.
     Asking the planner again returns the same plan — answer "not found" instead."""
     import graph as graph_mod
 
-    result = await graph_mod.judge_phase1_node({"tool_calls": _KB_TOOL_CALL, **_EMPTY})
-
-    assert result == {"judge_phase1_error": None}
-
-
-async def test_a_tool_error_on_a_decided_plan_is_not_retried():
-    import graph as graph_mod
-
     result = await graph_mod.judge_phase1_node({
-        "tool_calls": [{"type": "tool", "tool_name": "text_to_sql", "query": "test"}],
-        "kb_chunks": [], "mcp_results": [], "tool_results": [],
-        "tool_errors": [{"tool_name": "text_to_sql", "error": "failed after 3 attempts"}],
+        "tool_calls": [{"type": "kb_search", "query": "test"}], **_EMPTY, "result_sets": [],
     })
 
     assert result == {"judge_phase1_error": None}
 
 
-async def test_tool_error_when_the_planner_could_not_decide_even_with_other_data():
+async def test_a_tool_error_is_answered_not_retried():
+    """The tool already corrected itself up to three times before reporting;
+    nothing is reset, so the responder still sees what did come back."""
     import graph as graph_mod
 
-    # kb_chunks có data, nhưng tool_errors không rỗng — vẫn phải chặn khi plan
-    # là plan dự phòng (planner không quyết định được).
-    state = {
-        "tool_calls": _FALLBACK_TOOL_CALL,
-        "kb_chunks": [{"id": "1", "content": "x"}],
-        "mcp_results": [],
-        "tool_results": [],
-        "tool_errors": [{"tool_name": "text_to_sql", "error": "failed after 3 attempts"}],
-    }
-    result = await graph_mod.judge_phase1_node(state)
+    result = await graph_mod.judge_phase1_node({
+        "tool_calls": [{"type": "db_query", "query": "test"}],
+        "kb_chunks": [{"id": "1", "content": "x"}], "mcp_results": [], "tool_results": [],
+        "tool_errors": [], "db_error": "failed after 3 attempts: connection refused",
+    })
 
-    assert result["judge_phase1_error"] == "TOOL_ERROR"
-    assert result["tool_results"] == []
-    assert result["tool_errors"] == []
-    assert result["kb_chunks"] == []
-    assert result["reranked_chunks"] == []
-    assert result["judge_reason"]
-    assert result["loop_iteration"] == 1
+    assert result == {"judge_phase1_error": None}
 
 
 async def test_passes_when_tool_calls_empty_even_if_everything_else_empty():
     """Regression test — bug thật phát hiện qua Langfuse trace: câu "xin
     chào" khiến planner trả tool_calls=[] (đúng, không cần tra cứu), nhưng
     route_after_planner vẫn ép chạy kb_search (fallback `or not tool_calls`),
-    trả rỗng — TRƯỚC KHI có test này, judge_phase1 coi đây là RETRIEVAL_ERROR
-    và bounce về planner 3 lần, mất ~59s cho 1 câu chào. Rỗng ở đây là ĐÚNG
-    như thiết kế (planner chủ động không yêu cầu gì), không phải lỗi."""
+    trả rỗng — judge_phase1 từng coi đây là RETRIEVAL_ERROR và bounce về
+    planner 3 lần, mất ~59s cho 1 câu chào."""
     import graph as graph_mod
 
     result = await graph_mod.judge_phase1_node({"tool_calls": [], **_EMPTY})
@@ -124,180 +85,11 @@ async def test_passes_when_tool_calls_empty_even_if_everything_else_empty():
     assert result == {"judge_phase1_error": None}
 
 
-async def test_passes_when_tool_calls_missing_from_state():
-    import graph as graph_mod
-
-    result = await graph_mod.judge_phase1_node(dict(_EMPTY))
-
-    assert result == {"judge_phase1_error": None}
-
-
-async def test_loop_iteration_increments_each_bounce():
-    import graph as graph_mod
-
-    state = {"tool_calls": _FALLBACK_TOOL_CALL, **_EMPTY, "loop_iteration": 1}
-    result = await graph_mod.judge_phase1_node(state)
-
-    assert result["judge_phase1_error"] == "RETRIEVAL_ERROR"
-    assert result["loop_iteration"] == 2
-
-
-async def test_force_pass_when_loop_max_iterations_reached():
-    """Dùng chung hạn mức lượt thử (loop_iteration) với Judge Pha 2 — phải có
-    điểm dừng, không được bounce vô hạn về planner."""
-    import graph as graph_mod
-
-    state = {
-        "tool_calls": _FALLBACK_TOOL_CALL, **_EMPTY,
-        "loop_iteration": 3,   # đã chạm loop_max_iterations mặc định (3)
-        "config": {},
-    }
-    result = await graph_mod.judge_phase1_node(state)
-
-    # Hết hạn mức → cho đi tiếp (không bounce nữa), dù vẫn đang rỗng.
-    assert result == {"judge_phase1_error": None}
-
-
-async def test_force_pass_respects_custom_loop_max_iterations_from_config():
-    import graph as graph_mod
-
-    state = {
-        "tool_calls": _FALLBACK_TOOL_CALL, **_EMPTY,
-        "loop_iteration": 1,
-        "config": {"loop_max_iterations": 1},   # workflow này chỉ cho phép 1 lần retry
-    }
-    result = await graph_mod.judge_phase1_node(state)
-
-    assert result == {"judge_phase1_error": None}
-
-
-async def test_passes_when_any_retrieval_source_has_data_and_no_tool_errors():
-    import graph as graph_mod
-
-    state = {
-        "tool_calls": _FALLBACK_TOOL_CALL,
-        "kb_chunks": [{"id": "1", "content": "x"}],
-        "mcp_results": [],
-        "tool_results": [],
-        "tool_errors": [],
-    }
-    result = await graph_mod.judge_phase1_node(state)
-
-    assert result == {"judge_phase1_error": None}
-
-
-async def test_passes_when_only_tool_results_has_data():
-    import graph as graph_mod
-
-    # kb_chunks/mcp_results rỗng là bình thường nếu planner chỉ gọi tool —
-    # không nên bị coi là RETRIEVAL_ERROR miễn tool_results có gì.
-    state = {
-        "tool_calls": _FALLBACK_TOOL_CALL,
-        "kb_chunks": [],
-        "mcp_results": [],
-        "tool_results": [{"id": "sql_1", "content": "data"}],
-        "tool_errors": [],
-    }
-    result = await graph_mod.judge_phase1_node(state)
-
-    assert result == {"judge_phase1_error": None}
-
-
-async def test_tool_error_when_db_error_present_on_an_undecided_plan():
-    import graph as graph_mod
-
-    state = {
-        "tool_calls": _FALLBACK_TOOL_CALL, **_EMPTY,
-        "result_sets": [], "db_error": "failed after 3 attempts: connection refused",
-    }
-    result = await graph_mod.judge_phase1_node(state)
-
-    assert result["judge_phase1_error"] == "TOOL_ERROR"
-    # None clears the appending result_sets channel (domain/state.py).
-    assert result["result_sets"] is None
-    assert result["db_error"] is None
-    assert result["kb_chunks"] == [] and result["tool_results"] == []
-    assert result["judge_reason"]
-    assert result["loop_iteration"] == 1
-
-
-async def test_empty_result_sets_on_a_decided_db_plan_are_not_retried():
-    import graph as graph_mod
-
-    state = {
-        "tool_calls": [{"type": "db_query", "query": "test"}], **_EMPTY,
-        "result_sets": [], "db_error": None,
-    }
-    result = await graph_mod.judge_phase1_node(state)
-
-    assert result == {"judge_phase1_error": None}
-
-
-async def test_passes_when_only_result_sets_has_data():
-    import graph as graph_mod
-
-    # kb_chunks/mcp_results/tool_results rỗng là bình thường nếu planner chỉ
-    # gọi DB Connector — không nên bị coi là RETRIEVAL_ERROR miễn result_sets có gì.
-    state = {
-        "tool_calls": _FALLBACK_TOOL_CALL, **_EMPTY,
-        "result_sets": [{"result_id": "a" * 32}], "db_error": None,
-    }
-    result = await graph_mod.judge_phase1_node(state)
-
-    assert result == {"judge_phase1_error": None}
-
-
-async def test_a_repeated_undecided_plan_stops_retrying():
-    """The fallback plan searches the user's question; getting it twice means
-    the planner is stuck, and the same search returns the same nothing."""
-    import graph as graph_mod
-
-    state = {
-        "tool_calls": _FALLBACK_TOOL_CALL, **_EMPTY,
-        "query": "câu hỏi",
-        "loop_iteration": 1,
-        "attempted_plans": [graph_mod._plan_signature(_FALLBACK_TOOL_CALL, "câu hỏi")],
-    }
-    result = await graph_mod.judge_phase1_node(state)
-
-    assert result == {"judge_phase1_error": None}
-
-
-async def test_a_bounce_records_the_plan_it_sent_back():
-    import graph as graph_mod
-
-    result = await graph_mod.judge_phase1_node({"tool_calls": _FALLBACK_TOOL_CALL, **_EMPTY, "query": "q"})
-
-    assert result["judge_phase1_error"] == "RETRIEVAL_ERROR"
-    assert result["attempted_plans"] == [graph_mod._plan_signature(_FALLBACK_TOOL_CALL, "q")]
-
-
-def test_plan_signature_ignores_call_order_case_and_spacing():
-    import graph as graph_mod
-
-    a = [{"type": "kb_search", "query": "Nghỉ  phép"}, {"type": "db_query", "query": "doanh thu"}]
-    b = [{"type": "db_query", "query": "DOANH THU"}, {"type": "kb_search", "query": "nghỉ phép"}]
-    assert graph_mod._plan_signature(a, "q") == graph_mod._plan_signature(b, "q")
-    # A call without a query searches the user's question.
-    assert graph_mod._plan_signature([{"type": "kb_search", "query": None}], "Câu hỏi") == \
-        graph_mod._plan_signature([{"type": "kb_search", "query": "câu hỏi"}], "khác")
-
-
-def test_the_fallback_marker_is_the_planners_own():
-    """judge_phase1 recognises an undecided plan by this reason; if the planner
-    changed the string, no plan would ever be retried again."""
-    import graph as graph_mod
-    import nodes.model_harness.planner as planner
-
-    assert planner._FALLBACK_TOOL_CALLS[0]["reason"] == planner.PLANNER_FALLBACK_REASON
-    assert graph_mod.PLANNER_FALLBACK_REASON == planner.PLANNER_FALLBACK_REASON
-
-
 def test_route_after_phase1_blocks_to_planner_on_error():
+    """Kept for R0-11, which sets judge_phase1_error again per error class."""
     import graph as graph_mod
 
     route = graph_mod._make_route_after_phase1(["rrf_ranking"])
 
     assert route({"judge_phase1_error": "TOOL_ERROR"}) == ["planner"]
-    assert route({"judge_phase1_error": "RETRIEVAL_ERROR"}) == ["planner"]
     assert route({"judge_phase1_error": None}) == ["rrf_ranking"]

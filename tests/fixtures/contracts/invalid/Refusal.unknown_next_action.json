@@ -1,0 +1,10 @@
+{
+  "model": "Refusal",
+  "loc": "next_action",
+  "data": {
+    "code": "PLANNER_ERROR",
+    "message": "Hệ thống chưa lập được cách trả lời cho câu hỏi này.",
+    "next_action": "call_support",
+    "detail_id": ""
+  }
+}

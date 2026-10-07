@@ -1,5 +1,6 @@
 /**
- * One assistant answer, in the fixed order a reader scans:
+ * One assistant answer, in the fixed order a reader scans (a refused turn is
+ * one RefusalCard instead — it has no answer, table or sources to show):
  *   1 text (with citation markers) → 2 clarification card (if asking)
  *   → 3 data table → 4 charts → 5 "why trust this" strip → 6 sources
  *   → 7 actions (export, copy) → 8 follow-up chips.
@@ -18,6 +19,7 @@ import { DataGrid } from './DataGrid';
 import { EvidenceStrip, CopyButton } from './EvidenceStrip';
 import { hasEvidence, primaryRun } from './evidenceSummary';
 import { MarkdownContent } from './MarkdownContent';
+import { RefusalCard } from './RefusalCard';
 
 const ChartRenderer = lazy(() =>
   import('./ChartRenderer').then(module => ({ default: module.ChartRenderer })),
@@ -35,6 +37,12 @@ interface AnswerBlockProps {
   /** hide the inline strip when a side panel already shows the details */
   showEvidenceStrip?: boolean;
   showTimestamp?: boolean;
+  /** refused turn, next_action "retry": send the same question again */
+  onRetry?: () => void;
+  /** refused turn, next_action "rephrase": put the question back in the input */
+  onRephrase?: () => void;
+  /** Playground: show the refusal's code and lookup id */
+  showRefusalDetail?: boolean;
 }
 
 function TypingDots() {
@@ -49,7 +57,7 @@ function TypingDots() {
 
 export function AnswerBlock({
   msg, question, busy, onSuggestion, onAnswerClarification, onSave, onOpenEvidence,
-  showEvidenceStrip = true, showTimestamp = true,
+  showEvidenceStrip = true, showTimestamp = true, onRetry, onRephrase, showRefusalDetail,
 }: AnswerBlockProps) {
   const resultRuns = useMemo(() => (msg.resultSets ?? []).map(resultSetToEvidenceRun), [msg.resultSets]);
   const run = resultRuns[0] ?? primaryRun(msg.evidence);
@@ -63,6 +71,20 @@ export function AnswerBlock({
     if (!target || !target.rows.length) return;
     downloadCsv(csvFileName(question ?? msg.content.slice(0, 40)), toCsv(target.columns, target.rows));
   };
+
+  if (msg.refusal) {
+    return (
+      <div data-testid="answer-block" style={{ display: 'flex', flexDirection: 'column' }}>
+        <RefusalCard
+          refusal={msg.refusal}
+          onRetry={onRetry}
+          onRephrase={onRephrase}
+          showDetail={showRefusalDetail}
+          disabled={busy}
+        />
+      </div>
+    );
+  }
 
   return (
     <div data-testid="answer-block" style={{ display: 'flex', flexDirection: 'column' }}>

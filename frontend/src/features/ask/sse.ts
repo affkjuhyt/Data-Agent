@@ -8,7 +8,7 @@
  * network chunks — a frame split across two chunks used to be parsed as two
  * broken pieces of text.
  */
-import type { ChartSpec, Citation, ClarificationQuestion, Evidence, ResultSet } from './types';
+import type { ChartSpec, Citation, ClarificationQuestion, Evidence, Refusal, ResultSet } from './types';
 
 export type SseEvent =
   | { type: 'token'; text: string }
@@ -25,6 +25,8 @@ export type SseEvent =
   | { type: 'suggestions'; suggestions: string[] }
   | { type: 'options'; options: string[] }
   | { type: 'evidence'; evidence: Evidence }
+  // The turn ended without an answer, for a reason with a code; no token follows.
+  | { type: 'refusal'; refusal: Refusal }
   | { type: 'conv_ids'; convs: Array<{ conv_id: string; title?: string; agent_name?: string }> }
   | { type: 'error'; message: string }
   | { type: 'done' }
@@ -88,6 +90,20 @@ export function parseSseData(raw: string): SseEvent {
   if (Array.isArray(obj.__suggestions)) return { type: 'suggestions', suggestions: obj.__suggestions.map(String) };
   if (Array.isArray(obj.__options)) return { type: 'options', options: obj.__options.map(String) };
   if (Array.isArray(obj.__conv_ids)) return { type: 'conv_ids', convs: obj.__conv_ids as SseEvent extends { convs: infer C } ? C : never };
+
+  if (obj.__refusal && typeof obj.__refusal === 'object') {
+    const r = obj.__refusal as Partial<Record<keyof Refusal, unknown>>;
+    return {
+      type: 'refusal',
+      refusal: {
+        code: String(r.code ?? ''),
+        message: String(r.message ?? ''),
+        next_action: String(r.next_action ?? ''),
+        detail_id: r.detail_id ? String(r.detail_id) : '',
+        ...(Array.isArray(r.issues) ? { issues: r.issues.map(String) } : {}),
+      },
+    };
+  }
 
   if (obj.__evidence && typeof obj.__evidence === 'object') {
     const ev = obj.__evidence as Partial<Evidence>;

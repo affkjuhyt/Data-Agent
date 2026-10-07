@@ -1,4 +1,3 @@
-import json
 import logging
 from collections import defaultdict
 from typing import Any, Callable
@@ -13,7 +12,6 @@ from services.workflow_runtime.application.nodes.model_harness.human_approval im
 )
 from services.workflow_runtime.application.nodes.model_harness.judge import judge_node
 from services.workflow_runtime.application.nodes.model_harness.planner import (
-    PLANNER_FALLBACK_REASON,
     planner_node,
 )
 from services.workflow_runtime.application.nodes.model_harness.reranker import reranker_node
@@ -97,143 +95,42 @@ def join_retrieval_node(state: AgentState) -> dict[str, Any]:
 _JUDGE_PHASE1_NODE = "judge_phase1"
 
 
-def _plan_signature(tool_calls: list[dict[str, Any]], query: str) -> str:
-    """What a tool plan asks for: type, tool, normalised query and arguments per
-    call, order-free. A call without a query searches the user's question, as
-    kb_search does."""
-    calls = sorted(
-        json.dumps(
-            [
-                tc.get("type"),
-                tc.get("tool_name"),
-                " ".join(str(tc.get("query") or query).casefold().split()),
-                tc.get("arguments") or {},
-            ],
-            ensure_ascii=False, sort_keys=True, default=str,
-        )
-        for tc in tool_calls
-    )
-    return "\n".join(calls)
-
-
-_PHASE1_REASONS = {
-    "RETRIEVAL_ERROR": "Không tìm thấy dữ liệu liên quan — thử diễn đạt lại câu hỏi hoặc dùng nguồn/tool khác.",
-    "TOOL_ERROR": "Công cụ đã thử nhiều lần nhưng vẫn lỗi — thử cách tiếp cận hoặc tool khác.",
-}
-
-
 async def judge_phase1_node(state: AgentState) -> dict[str, Any]:
-    """Judge Pha 1 (mới) — check thuần state, không LLM, ngay sau khi retrieval
-    xong (trước rrf_ranking/reranker/responder). Bắt RETRIEVAL_ERROR (rỗng
-    toàn bộ — kb_chunks/mcp_results/tool_results/result_sets đều không có gì) và
-    TOOL_ERROR (tool_errors/db_error không rỗng — tool như DB Connector đã tự
-    sinh SQL + tự chạy + tự sửa lỗi kỹ thuật nội bộ tối đa 3 lần trước khi báo
-    lỗi ra đây, nên không phải lỗi tạm thời). Reset đúng phần cần sinh lại, route
-    thẳng về planner ngay — tiết kiệm chi phí rrf_ranking/reranker/responder
-    cho các lỗi biết được sớm mà không cần LLM.
+    """Judge Pha 1 — check thuần state, không LLM, ngay sau khi retrieval xong
+    (trước rrf_ranking/reranker/responder). Ghi nhận RETRIEVAL_ERROR (mọi nguồn
+    rỗng) và TOOL_ERROR (tool_errors/db_error không rỗng), nhưng KHÔNG gửi lại
+    planner: mọi plan giờ đều do planner quyết định (R0-7 bỏ plan dự phòng —
+    planner hỏng hai lần thì lượt kết thúc bằng PLANNER_ERROR, không tới đây),
+    và một plan đã quyết định mà rỗng hoặc lỗi thì đã có câu trả lời: responder
+    nói "không tìm thấy". Hỏi lại planner chỉ ra đúng plan cũ (đo thực tế: 3 lần
+    plan y hệt trên KB trống, ~1,3 s mỗi lần).
 
-    Chỉ quay lại planner khi planner KHÔNG quyết định được gì (output không
-    parse được → plan dự phòng PLANNER_FALLBACK_REASON). Một plan planner đã
-    chọn rõ ràng mà vẫn rỗng hoặc lỗi (KB trống, tool đã tự sửa mà vẫn lỗi) thì
-    đi tiếp để responder nói "không tìm thấy": hỏi lại planner chỉ ra đúng plan
-    cũ (đo thực tế: 3 lần plan y hệt trên KB trống, ~1,3 s mỗi lần).
+    Node và route_after_phase1 vẫn giữ trong graph: đây là chỗ R0-11 gán lớp lỗi
+    (DATA_MISSING_* → __refusal, TOOL_GRAMMAR → sửa một lần, …) theo bảng định
+    tuyến tất định (docs/v3/03 §10).
 
-    CỐ Ý không cố phân biệt "data thật sự không tồn tại" với "query sai
-    logic nên ra 0 dòng" (ví dụ SQL chạy thành công nhưng row_count=0) —
-    2 trường hợp này nhìn giống hệt nhau ở tầng state (tool_results vẫn có 1
-    phần tử, chỉ là content rỗng), và mỗi tool lại có 1 dạng "rỗng" khác
-    nhau (SQL/pandas/web_search...) nên cố generic-hoá việc phát hiện ở đây
-    rất dễ vỡ. Case đó CỐ TÌNH bỏ qua, để trôi tới responder → Judge Pha 2
-    (đã có rule PLANNING_ERROR: "context không đủ") — nơi duy nhất có đủ
-    ngữ nghĩa (LLM) để phán đoán "0 dòng này có hợp lý với câu hỏi không".
-
-    Dùng CHUNG bộ đếm loop_iteration với Judge Pha 2 (giới hạn tổng số lần
-    retry, mặc định loop_max_iterations=3) — nếu không, khi data THẬT SỰ
-    không tồn tại (không phải lỗi tạm thời), planner/retrieval sẽ bị bounce
-    vô hạn không có điểm dừng. Hết hạn mức lượt thử chung (dù lỗi tới từ
-    Pha 1 hay Pha 2) → cho đi tiếp để responder tự trả lời kiểu "không tìm
-    thấy thông tin", thay vì lặp mãi.
-
-    Cũng set "judge_reason" (không chỉ judge_phase1_error) — planner_node
-    chỉ đọc field này để tự sửa chiến lược ở lần thử sau (xem
-    nodes/model_harness/planner.py); nếu bỏ trống, planner sẽ không biết
-    cần đổi gì và có thể lặp lại y hệt query cũ.
-
-    Nếu planner không hề yêu cầu tool/KB nào (tool_calls rỗng — ví dụ câu
-    chào hỏi thông thường, không cần tra cứu), thì việc kb_chunks/tool_results
-    rỗng là ĐÚNG NHƯ THIẾT KẾ (route_after_planner có fallback ép chạy
-    kb_search dù tool_calls rỗng — xem graph.py:_make_route_after_planner),
-    KHÔNG phải lỗi retrieval — không được phạt/bounce planner trong trường
-    hợp này, nếu không mọi lời chào đơn giản sẽ bị lặp tốn kém vô ích.
+    CỐ Ý không phân biệt "data thật sự không tồn tại" với "query sai logic nên
+    ra 0 dòng" — hai trường hợp nhìn giống hệt nhau ở tầng state; Judge Pha 2
+    (LLM, rule PLANNING_ERROR "context không đủ") là nơi có đủ ngữ nghĩa.
 
     ASYNC dù thân hàm không await gì — bắt buộc, KHÔNG được đổi lại thành sync.
     LangGraph chạy node sync qua threadpool executor, làm mất OTEL contextvars
-    mà Langfuse SDK v3 (OTEL-based) dùng để nối span vào đúng cha — planner_node
-    từng dính chính xác lỗi này (xem commit c41ea72 "refactor langfuse": sync
-    → async là cách fix, không phải thêm await nào). Biểu hiện quan sát được:
-    judge_phase1 xuất hiện 2 lần trong 1 trace — 1 bản lồng đúng chỗ dưới
-    span "single-agent", 1 bản rơi ra thành span mồ côi ở top-level (mất
-    parent_span_id) — chỉ node sync mới bị, các node async khác (planner,
-    kb_search, responder...) không bị.
+    mà Langfuse SDK v3 (OTEL-based) dùng để nối span vào đúng cha (commit
+    c41ea72): node sync rơi ra thành span mồ côi ở top-level.
 
-    Khi PASS (judge_phase1_error=None) hạ level span xuống DEBUG — Langfuse
-    UI mặc định ẩn observation level DEBUG khỏi trace view. Node này chỉ có
-    giá trị quan sát lúc THẬT SỰ bounce về planner; trên happy path (luôn
-    PASS) nó chỉ là nhiễu 1-2ms trong trace, không nên hiện mặc định."""
-    cfg = state.get("config", {})
-    max_iter = cfg.get("loop_max_iterations", 3)
-    iteration = state.get("loop_iteration", 0)
+    Hạ level span xuống DEBUG — Langfuse UI mặc định ẩn observation level DEBUG
+    khỏi trace view; node này chỉ là nhiễu 1-2ms trên happy path."""
     lf = get_langfuse_client()
+    if lf:
+        lf.update_current_span(level="DEBUG")
 
-    def _pass() -> dict[str, Any]:
-        if lf:
-            lf.update_current_span(level="DEBUG")
-        return {"judge_phase1_error": None}
-
-    if not state.get("tool_calls"):
-        return _pass()
-
-    error_type = None
-    if state.get("tool_errors") or state.get("db_error"):
-        error_type = "TOOL_ERROR"
-    elif not (state.get("kb_chunks") or state.get("mcp_results") or state.get("tool_results") or state.get("result_sets")):
-        error_type = "RETRIEVAL_ERROR"
-
-    if error_type is None:
-        return _pass()
-
-    # Retry only a plan the planner did not actually decide. A decided plan that
-    # came back empty (an empty knowledge base) or failed after the tool's own
-    # corrections has its answer: say nothing was found.
-    if not any(tc.get("reason") == PLANNER_FALLBACK_REASON for tc in state.get("tool_calls") or []):
-        logger.info("judge_phase1 | %s on a decided plan → answer from what came back, no retry", error_type)
-        return _pass()
-
-    # Running the same plan again returns the same nothing — and a planner told
-    # to change strategy often emits the identical plan anyway (seen live: three
-    # identical re-plans against an empty knowledge base, ~1.3 s each). Stop at
-    # the first repeat instead of spending the rest of loop_max_iterations.
-    signature = _plan_signature(state.get("tool_calls") or [], state.get("query", ""))
-    attempted = list(state.get("attempted_plans") or [])
-    if signature in attempted:
-        logger.info("judge_phase1 | planner repeated a plan that already returned %s → stop retrying", error_type)
-        return _pass()
-
-    if iteration >= max_iter:
-        logger.warning("judge_phase1 | max_iterations=%d reached → force pass", max_iter)
-        return _pass()
-
-    return {
-        "judge_phase1_error": error_type,
-        "judge_reason": _PHASE1_REASONS[error_type],
-        "loop_iteration": iteration + 1,
-        "attempted_plans": attempted + [signature],
-        "kb_chunks": [], "mcp_results": [], "tool_results": [], "tool_errors": [],
-        # None, not []: result_sets is an appending channel (domain/state.py).
-        "result_sets": None, "db_error": None,
-        "rrf_results": [], "reranked_chunks": [],
-        "chart_specs": [], "chart_error": None,
-    }
+    if state.get("tool_calls"):
+        if state.get("tool_errors") or state.get("db_error"):
+            logger.info("judge_phase1 | TOOL_ERROR on a decided plan → answer from what came back")
+        elif not (state.get("kb_chunks") or state.get("mcp_results") or state.get("tool_results")
+                  or state.get("result_sets")):
+            logger.info("judge_phase1 | RETRIEVAL_ERROR on a decided plan → answer from what came back")
+    return {"judge_phase1_error": None}
 
 
 def _make_route_after_phase1(after_targets: list[str]) -> Callable[[AgentState], list[str]]:

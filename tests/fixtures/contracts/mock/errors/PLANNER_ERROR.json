@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "PLANNER_ERROR",
+    "message": "the planner returned no usable plan after one retry",
+    "current_version": null,
+    "details": {}
+  }
+}

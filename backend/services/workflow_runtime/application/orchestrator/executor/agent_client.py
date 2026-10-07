@@ -153,6 +153,11 @@ async def call_agent(
                 collected.append(token)
             elif isinstance(token, dict) and "__citations" in token:
                 citations = token["__citations"]
+            elif isinstance(token, dict) and "__refusal" in token:
+                # A task whose agent refused has no output: it fails like an
+                # [ERROR] turn did, rather than passing an empty answer upward.
+                refusal = token["__refusal"] or {}
+                raise RuntimeError(f"Agent refused: {refusal.get('code')}: {refusal.get('message')}")
         except json.JSONDecodeError:
             collected.append(raw)
 
@@ -191,6 +196,7 @@ async def call_agent_stream(
       ("options", list[str])   — lựa chọn trả lời khi agent hỏi lại (responder <OPTIONS>)
       ("evidence", dict)       — SQL đã chạy, metric contract, provenance, rows preview
       ("result_set", dict)     — một bảng kết quả (libs.contracts.v1.ResultSet) + citation_index
+      ("refusal", dict)        — lượt kết thúc không có câu trả lời (libs.contracts.v1.Refusal)
       ("reset", None)          — bỏ toàn bộ token đã nhận; câu trả lời thay thế theo sau
     """
     if not agent_id:
@@ -245,4 +251,6 @@ async def call_agent_stream(
                 yield ("evidence", parsed["__evidence"])
             elif "__result_set" in parsed:
                 yield ("result_set", parsed["__result_set"])
+            elif "__refusal" in parsed:
+                yield ("refusal", parsed["__refusal"])
             # các event khác bỏ qua

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "CONTRACT_MISMATCH",
+    "message": "the result does not match the requested output contract",
+    "current_version": null,
+    "details": {}
+  }
+}

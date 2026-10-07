@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "AGENT_CONFIG_ERROR",
+    "message": "agent configuration could not be read",
+    "current_version": null,
+    "details": {}
+  }
+}

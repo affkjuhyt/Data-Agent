@@ -7,6 +7,7 @@ from typing import Any
 from dotenv import find_dotenv, load_dotenv
 
 from services.workflow_runtime.domain.llm_models import sdk_model_name
+from services.workflow_runtime.domain.refusals import AgentConfigError
 
 load_dotenv(find_dotenv())
 
@@ -70,7 +71,21 @@ DEV_CONFIG: dict[str, Any] = {
 }
 
 
+def _dev_fallback() -> bool:
+    """DEV_CONFIG may stand in for an unreadable agent config only on a personal
+    dev machine. Anywhere else it answers as a different agent — another prompt,
+    model and tool set — under the name the user asked, so the flag is read per
+    call (a test or a dev shell can flip it) and never set under deploy/."""
+    return os.environ.get("RUNTIME_DEV_FALLBACK") == "1"
+
+
 async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict[str, Any] | None:
+    """The published config of `agent_id`, or None when it has no published version.
+
+    Raises AgentConfigError when the config cannot be read at all (database not
+    connected, query failed): that is not "no agent", and answering with
+    DEV_CONFIG instead is answering as some other agent.
+    """
     from libs.database_connector.postgres_connector import client
     from services.workflow_runtime.infrastructure.mongo_client import (
         load_flow_edges,
@@ -78,8 +93,10 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
     )
 
     if not client.is_connected():
-        logger.debug("DB not available — using DEV_CONFIG")
-        return {**DEV_CONFIG, "agent_id": agent_id}
+        if _dev_fallback():
+            logger.warning("DB not available — RUNTIME_DEV_FALLBACK=1, answering with DEV_CONFIG")
+            return {**DEV_CONFIG, "agent_id": agent_id}
+        raise AgentConfigError("agent config database is not connected")
 
     try:
         async with client.get_client(tenant_id=tenant_id) as session:
@@ -96,7 +113,7 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
                     )
                     # The first selected column is AgentVersions, so without an explicit
                     # left side SQLAlchemy cannot tell where the join starts (InvalidRequestError,
-                    # swallowed below into DEV_CONFIG for every agent).
+                    # which used to be swallowed into DEV_CONFIG for every agent).
                     .select_from(AgentsORM)
                     .join(AgentVersionsORM, AgentVersionsORM.id == AgentsORM.published_version_id)
                     .outerjoin(SystemPromptsORM, SystemPromptsORM.id == AgentVersionsORM.system_prompt_id)
@@ -199,8 +216,10 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
         }
 
     except Exception as e:
-        logger.warning("load_agent_config DB failed: %s — fallback DEV_CONFIG", e)
-        return {**DEV_CONFIG, "agent_id": agent_id}
+        if _dev_fallback():
+            logger.warning("load_agent_config DB failed: %s — RUNTIME_DEV_FALLBACK=1, answering with DEV_CONFIG", e)
+            return {**DEV_CONFIG, "agent_id": agent_id}
+        raise AgentConfigError(f"load_agent_config failed for agent={agent_id}: {e}") from e
 
 
 async def _resolve_warehouse_secret(node_cfg: dict[str, Any], tenant_id: str | None) -> None:

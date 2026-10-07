@@ -31,7 +31,7 @@ Event được version độc lập với storage: thêm cột vào `ingest.*` h
 - Xoá giá trị enum bất kỳ.
 - Thêm giá trị vào enum **đóng** — consumer phải xử lý đủ mọi giá trị: `ObsStatus`, `TimeBasis`,
   `Origin`, `ChangeKind`, `VersionKind`, `ReleaseProcessingStatus`, `PublicationTimeBasis`, `UseRights`,
-  `Purpose`.
+  `Purpose`, `NextAction`, `ResultColumnType`, `ResultKind`, `GeneratedBy`, `TrustLabel`.
 - Thêm biến thể vào union phân biệt bằng `kind` / `from` (`ReleaseInfo`, `ReleaseCalendar`,
   `ExtractionProfile`, `SourceRef`).
 - Đổi trường khoá phân vùng của một topic (`PARTITION_KEY_FIELD`).

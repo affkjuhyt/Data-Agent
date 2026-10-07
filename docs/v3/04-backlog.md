@@ -28,9 +28,9 @@ R0-6 → R0-5 → R0-3 → R0-4 → R0-2 → R0-12.
 
 | ID | Việc | Phụ thuộc | Vai | Cỡ | Xong khi | TT |
 | --- | --- | --- | --- | --- | --- | --- |
-| R0-1 | Kênh result set: contract `ResultSet`, state `result_sets`, không vào rrf/reranker, responder + judge + visualization đọc trực tiếp, frame `__result_set`, lưu MinIO | | SR1 | M | 03 §1 test 1–4 xanh; `db_results` không còn | todo |
+| R0-1 | Kênh result set: contract `ResultSet`, state `result_sets`, không vào rrf/reranker, responder + judge + visualization đọc trực tiếp, frame `__result_set`, lưu MinIO | | SR1 | M | 03 §1 test 1–4 xanh; `db_results` không còn | done 2bfd519 |
 | R0-10 | Plan IR + validator tĩnh; orchestrator validate trước executor; `runtime.task_run`; frame `__plan`, `__step` | | BE2 | M | 03 §9 test; plan sai không chạy node nào | todo |
-| R0-7 | Mã lỗi hợp nhất `libs/contracts/v1/errors.py`; bỏ `DEV_CONFIG` fallback và planner fallback; frame `__refusal`; RefusalCard | | BE2, FE1 (0,25) | S | DB lỗi → `AGENT_CONFIG_ERROR`, không trả lời bằng agent khác | todo |
+| R0-7 | Mã lỗi hợp nhất `libs/contracts/v1/errors.py`; bỏ `DEV_CONFIG` fallback và planner fallback; frame `__refusal`; RefusalCard | | BE2, FE1 (0,25) | S | DB lỗi → `AGENT_CONFIG_ERROR`, không trả lời bằng agent khác | done ec8def5 |
 | R0-8 | Frame `__verification`; VerifierBadge | R0-1, R0-7 | SR1, FE1 (0,25) | S | Frame phát đúng một lần/câu trả lời | todo |
 | R0-11 | Lớp lỗi trong judge và bảng định tuyến tất định; dừng khi lặp lớp | R0-8 | SR1 | S | 03 §10 test | todo |
 | R0-2 | MCP chuẩn: SDK `mcp`, `infrastructure/mcp_client.py`, planner thấy tool + schema, `mcp.py` gọi `call_tool`, `MCP.protocol`, từ chối legacy khi publish | R0-6 (api_key_ref) | BE2 | M | FastMCP test in-process; không còn `"/execute"` | todo |

@@ -140,6 +140,11 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
         case 'pending_review':
           patch(assistantId, m => ({ ...m, pendingReview: { convId: e.convId, payload: e.payload as never } }));
           break;
+        case 'refusal':
+          // In place of an answer, never beside one: anything streamed is dropped.
+          buffer = '';
+          patch(assistantId, m => ({ ...m, content: '', refusal: e.refusal }));
+          break;
         case 'error':
           patch(assistantId, m => ({ ...m, content: m.content || e.message, status: 'error' }));
           break;

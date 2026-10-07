@@ -407,7 +407,8 @@ Frame theo mô hình AG-UI (V2 09 §4.2), bổ sung cho agent core mới:
 | `__block` | khối render có kiểu từ catalog |
 | `__interrupt` | `clarify` (câu, lựa chọn) · `approve` (hành động, lý do) · `budget` |
 | `__suggestion` | gợi ý chủ động: loại, lý do, xem trước, thời hạn |
-| `__refusal`, `__lineage`, `__citations` | như V2 |
+| `__refusal` | lượt kết thúc không có câu trả lời: `code` (ErrorCode chung, `libs/contracts/v1/errors.py`), `message` tiếng Việt, `next_action ∈ {retry, rephrase, contact_steward}`, `detail_id`; không có token trả lời nào đi kèm (R0-7) |
+| `__lineage`, `__citations` | như V2 |
 
 **Nhãn tin cậy chốt 06/10/2026:** gắn theo từng khối (mỗi con số, bảng, biểu đồ). Huy hiệu tổng của câu trả
 lời = nhãn yếu nhất, kèm phân rã ("2 số Có quản trị · 1 số Khám phá"). Thang cho con số: Đã kiểm > Có

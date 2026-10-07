@@ -13,7 +13,7 @@ import { formatTime } from '../../lib/formatVN';
 import { AnswerBlock } from '../../features/ask/components/AnswerBlock';
 import { AnswerTheme } from '../../features/ask/components/AnswerTheme';
 import { parseSseData } from '../../features/ask/sse';
-import type { ChartSpec, Citation, Clarification, ClarificationAnswer, ClarificationReply, Evidence, ResultSet } from '../../features/ask/types';
+import type { ChartSpec, Citation, Clarification, ClarificationAnswer, ClarificationReply, Evidence, Refusal, ResultSet } from '../../features/ask/types';
 import { withClarificationAnswer } from '../../features/ask/hooks/useAgentStream';
 
 /* ─── Types ─────────────────────────────────────────────────── */
@@ -58,6 +58,7 @@ interface Message {
   citations?: Citation[];
   evidence?: Evidence;
   clarification?: Clarification;
+  refusal?: Refusal;
   status?: 'streaming' | 'done' | 'error';
 }
 
@@ -800,11 +801,13 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
 
 /* ─── ChatBubble ─────────────────────────────────────────────── */
 
-function ChatBubble({ msg, busy, onSuggestion, onAnswerClarification }: {
+function ChatBubble({ msg, busy, onSuggestion, onAnswerClarification, onRetry, onRephrase }: {
   msg: Message;
   busy?: boolean;
   onSuggestion: (text: string) => void;
   onAnswerClarification: (msgId: string, reply: ClarificationReply) => void;
+  onRetry?: () => void;
+  onRephrase?: () => void;
 }) {
   const isUser = msg.role === 'user';
   return (
@@ -848,6 +851,10 @@ function ChatBubble({ msg, busy, onSuggestion, onAnswerClarification }: {
                 onSuggestion={onSuggestion}
                 onAnswerClarification={reply => onAnswerClarification(msg.id, reply)}
                 showTimestamp={false}
+                onRetry={onRetry}
+                onRephrase={onRephrase}
+                // A builder quotes the code and lookup id to whoever runs the platform.
+                showRefusalDetail
               />
             )
           }
@@ -993,6 +1000,11 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
               break;
             case 'error':
               patch(m => ({ ...m, content: ev.message, status: 'error' }));
+              break;
+            case 'refusal':
+              // In place of an answer: anything streamed before it is dropped.
+              fullText = '';
+              patch(m => ({ ...m, content: '', refusal: ev.refusal }));
               break;
             case 'token':
               fullText += ev.text;
@@ -1311,7 +1323,18 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                     </motion.div>
                   );
                 }
-                return <ChatBubble key={msg.id} msg={msg} busy={sending} onSuggestion={handleSend} onAnswerClarification={handleClarificationAnswer} />;
+                const asked = messages.slice(0, messages.indexOf(msg)).reverse().find(m => m.role === 'user')?.content ?? '';
+                return (
+                  <ChatBubble
+                    key={msg.id}
+                    msg={msg}
+                    busy={sending}
+                    onSuggestion={handleSend}
+                    onAnswerClarification={handleClarificationAnswer}
+                    onRetry={asked ? () => handleSend(asked) : undefined}
+                    onRephrase={asked ? () => { setInput(asked); textareaRef.current?.focus(); } : undefined}
+                  />
+                );
               })}
             </AnimatePresence>
             <div ref={bottomRef} />

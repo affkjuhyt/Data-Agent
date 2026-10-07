@@ -213,6 +213,7 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
     conversation_id = None
     citations: list[dict[str, Any]] = []
     success = False
+    refused = False
     response_text = ""
     latency_ms = 0
     questions: list[dict[str, Any]] = []
@@ -304,7 +305,11 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
                             await adispatch_custom_event("evidence", data)
                         elif event_type == "result_set":
                             await adispatch_custom_event("result_set", data)
-                    success = True
+                        elif event_type == "refusal":
+                            refused = True
+                            await adispatch_custom_event("refusal", data)
+                    # A refused turn delivered nothing to suggest a follow-up to.
+                    success = not refused
                 except Exception as e:
                     logger.warning("single_agent | failed: %s", e)
                     err = "Đã xảy ra lỗi, vui lòng thử lại."
@@ -356,6 +361,7 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
     return {
         "rewritten_query": query,
         "final_response": response_text,
+        "refused": refused,
         "success": success,
         "executor_ms": latency_ms,
         "target_results": [TargetResult(
@@ -646,7 +652,7 @@ async def summary_node(state: OrchestratorState) -> dict[str, Any]:
 
 
 async def suggestion_node(state: OrchestratorState) -> dict[str, Any]:
-    if state.get("suggestions_ready"):
+    if state.get("suggestions_ready") or state.get("refused"):
         return {}
     suggestions = await run_suggestion(
         state["rewritten_query"],

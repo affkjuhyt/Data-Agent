@@ -25,6 +25,25 @@ describe('parseSseData', () => {
     expect(parseSseData('[ERROR]')).toEqual({ type: 'error', message: 'An error occurred, please try again.' });
   });
 
+  it('reads a refusal and keeps [ERROR] for the uncoded failure', () => {
+    const ev = parseSseData(JSON.stringify({ __refusal: {
+      code: 'AGENT_CONFIG_ERROR',
+      message: 'Không đọc được cấu hình của agent này nên hệ thống chưa trả lời.',
+      next_action: 'retry',
+      detail_id: 'conv-7',
+    } }));
+    expect(ev).toEqual({
+      type: 'refusal',
+      refusal: {
+        code: 'AGENT_CONFIG_ERROR',
+        message: 'Không đọc được cấu hình của agent này nên hệ thống chưa trả lời.',
+        next_action: 'retry',
+        detail_id: 'conv-7',
+      },
+    });
+    expect(parseSseData('[ERROR] broken').type).toBe('error');
+  });
+
   it('keeps the options of each clarification question', () => {
     const ev = parseSseData(JSON.stringify({ __clarification: {
       session_id: 's1',

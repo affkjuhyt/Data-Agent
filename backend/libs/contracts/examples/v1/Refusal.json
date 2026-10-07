@@ -1,0 +1,6 @@
+{
+  "code": "AGENT_CONFIG_ERROR",
+  "message": "Không đọc được cấu hình của agent này nên hệ thống chưa trả lời.",
+  "next_action": "retry",
+  "detail_id": "9f1c2a7e4b3d4c8e9a0b1c2d3e4f5a6b"
+}

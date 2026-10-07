@@ -17,7 +17,6 @@ from libs.semantic.ambiguity import apply_answers as apply_clarification_answers
 from libs.semantic.ambiguity import settle as settle_clarifications
 from libs.shared import untrusted
 from services.workflow_runtime.application.nodes.model_harness.intent import (
-    AnalysisType,
     capability,
 )
 from services.workflow_runtime.application.nodes.model_harness.intent import (
@@ -29,6 +28,7 @@ from services.workflow_runtime.application.nodes.sandbox.kb_search import (
 )
 from services.workflow_runtime.application.nodes.sandbox.tool_executor import TOOL_DEFINITIONS
 from services.workflow_runtime.application.runtime_services import llm_call
+from services.workflow_runtime.domain.refusals import PlannerError
 from services.workflow_runtime.domain.state import AgentState
 from services.workflow_runtime.prompts import PROMPTS_DIR
 
@@ -95,22 +95,13 @@ _LITELLM_KEY = os.environ.get("LITELLM_API_KEY", "sk-dev")
 
 _SYSTEM = open(os.path.join(PROMPTS_DIR, "planner_system.txt"), encoding="utf-8").read()
 
-# Marks the plan used when the model's output could not be parsed: the planner
-# did not decide anything, which is the one case judge_phase1 sends back for
-# another try (graph.py).
-PLANNER_FALLBACK_REASON = "planner fallback"
-
-_FALLBACK_TOOL_CALLS: list[dict[str, Any]] = [
-    {"type": "kb_search", "query": None, "reason": PLANNER_FALLBACK_REASON, "confidence": 0.5, "parallel": True, "depends_on": []}
-]
-
 _CODE_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
 
 def _extract_json_object(raw: str) -> str | None:
     """Model đôi khi bọc JSON trong văn xuôi hoặc code fence thay vì trả JSON
     thuần — model_validate_json(raw) fail ngay cả khi payload JSON bên trong
-    vẫn hợp lệ. Thử 2 cách trích trước khi chấp nhận fallback kb_search:
+    vẫn hợp lệ. Thử 2 cách trích trước khi gọi lại model:
     1) khối trong ```json ... ``` / ``` ... ```
     2) từ dấu '{' đầu tiên tới dấu '}' cuối cùng trong raw"""
     fence = _CODE_FENCE_RE.search(raw)
@@ -120,6 +111,22 @@ def _extract_json_object(raw: str) -> str | None:
     if start != -1 and end != -1 and end > start:
         return raw[start:end + 1]
     return None
+
+
+def _parse_plan(raw: str) -> _PlannerOutput | None:
+    try:
+        return _PlannerOutput.model_validate_json(raw)
+    except (ValidationError, ValueError):
+        pass
+    extracted = _extract_json_object(raw)
+    if extracted is None:
+        return None
+    try:
+        plan = _PlannerOutput.model_validate_json(extracted)
+    except (ValidationError, ValueError):
+        return None
+    logger.info("planner | recovered valid JSON from wrapped response")
+    return plan
 
 
 async def planner_node(state: AgentState, config: RunnableConfig | None = None) -> dict[str, Any]:
@@ -201,60 +208,43 @@ async def planner_node(state: AgentState, config: RunnableConfig | None = None) 
         {"role": "system", "content": system},
         {"role": "user", "content": state["query"]},
     ]
-    response = await llm_call.acompletion(
-        "llm:planner", litellm.acompletion,
-        model=model,
-        api_base=_LITELLM_BASE,
-        api_key=_LITELLM_KEY,
-        messages=messages_payload,
-        temperature=cfg.get("planner_temperature", 0),
-        max_tokens=cfg.get("planner_max_tokens", 256),
-        response_format=cfg.get("planner_response_format", {"type": "json_object"}),
-        timeout=cfg.get("planner_timeout", 10),
-        num_retries=cfg.get("planner_num_retries", 2),
-    )
 
-    latency_ms = int((time.monotonic() - t0) * 1000)
-    usage = response.usage or {}
-    prompt_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0)
-    completion_tokens = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0)
-    logger.info("planner | latency=%dms prompt_tokens=%d completion_tokens=%d",
-                latency_ms, prompt_tokens, completion_tokens)
+    async def _plan(temperature: float) -> _PlannerOutput | None:
+        response = await llm_call.acompletion(
+            "llm:planner", litellm.acompletion,
+            model=model,
+            api_base=_LITELLM_BASE,
+            api_key=_LITELLM_KEY,
+            messages=messages_payload,
+            temperature=temperature,
+            max_tokens=cfg.get("planner_max_tokens", 256),
+            response_format=cfg.get("planner_response_format", {"type": "json_object"}),
+            timeout=cfg.get("planner_timeout", 10),
+            num_retries=cfg.get("planner_num_retries", 2),
+        )
+        usage = response.usage or {}
+        prompt_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0)
+        completion_tokens = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0)
+        logger.info("planner | latency=%dms prompt_tokens=%d completion_tokens=%d",
+                    int((time.monotonic() - t0) * 1000), prompt_tokens, completion_tokens)
+        raw = response.choices[0].message.content or ""
+        plan = _parse_plan(raw)
+        if plan is None:
+            logger.warning("planner | response is not a valid plan (temperature=%s). raw=%r", temperature, raw)
+        return plan
 
-    raw = response.choices[0].message.content or ""
-    parsed = None
-    try:
-        parsed = _PlannerOutput.model_validate_json(raw)
-    except (ValidationError, Exception):
-        extracted = _extract_json_object(raw)
-        if extracted is not None:
-            try:
-                parsed = _PlannerOutput.model_validate_json(extracted)
-                logger.info("planner | recovered valid JSON from wrapped response")
-            except (ValidationError, Exception):
-                pass
+    # One retry, at temperature 0, then a refusal. There is no stand-in plan: a
+    # document search on the raw question used to run here as if the planner had
+    # chosen it, and its answer was indistinguishable from a planned one (R0-7).
+    parsed = await _plan(cfg.get("planner_temperature", 0)) or await _plan(0)
+    if parsed is None:
+        raise PlannerError("planner returned no valid plan after one retry at temperature 0")
 
-    if parsed is not None:
-        tool_calls = parsed.model_dump()["tool_calls"]
-        intent = parsed.intent if parsed.intent in ("question", "task") else "question"
-        analysis_type = parse_analysis_type(parsed.analysis_type)
-        incoming_slots = AnalyticalSlots.from_dict(parsed.slots)
-        language = parsed.language if parsed.language in ("vi", "en") else "vi"
-    else:
-        logger.warning("planner | failed to validate response, using fallback. raw=%r", raw)
-        fallback = _FALLBACK_TOOL_CALLS.copy()
-        fallback[0] = {**fallback[0], "query": state["query"]}
-        tool_calls = fallback
-        intent = "question"
-        # OTHER, not LOOKUP: a failed parse means the classification is UNKNOWN,
-        # and LOOKUP would assert the question is answerable from one retrieved
-        # fact — a claim we have no basis for making.
-        analysis_type = AnalysisType.OTHER
-        # Empty, NOT the previous turn's slots: a failed parse means we do
-        # not know what was asked, and silently re-running the last query
-        # under a new question is worse than not answering it.
-        incoming_slots = AnalyticalSlots()
-        language = "vi"
+    tool_calls = parsed.model_dump()["tool_calls"]
+    intent = parsed.intent if parsed.intent in ("question", "task") else "question"
+    analysis_type = parse_analysis_type(parsed.analysis_type)
+    incoming_slots = AnalyticalSlots.from_dict(parsed.slots)
+    language = parsed.language if parsed.language in ("vi", "en") else "vi"
 
     supported = capability(analysis_type)
     if not supported.supported:

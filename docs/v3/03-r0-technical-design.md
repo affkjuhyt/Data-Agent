@@ -303,8 +303,8 @@ PLAN_LOGIC, TOOL_GRAMMAR, INTENT_MISMATCH, MATERIALIZATION, EVIDENCE_INSUFFICIEN
 tất định: `DATA_MISSING_*` → `__refusal NO_DATA|NO_JOIN_PATH` (không replan); `PLAN_LOGIC`,
 `TOOL_GRAMMAR` → planner/tool một lần với chỉ thị của checker; `INTENT_MISMATCH` → `CLARIFY`;
 `MATERIALIZATION` → ép lại theo `output_contract` (tất định, không LLM); `EVIDENCE_INSUFFICIENT` → một
-vòng retrieval sâu hơn rồi `INSUFFICIENT_EVIDENCE`. Cùng lớp lặp lại → dừng. `attempted_plans` đã có
-trong state dùng để phát hiện lặp.
+vòng retrieval sâu hơn rồi `INSUFFICIENT_EVIDENCE`. Cùng lớp lặp lại → dừng. Phát hiện lặp bằng chữ ký kế hoạch trong state
+(`attempted_plans` + `_plan_signature`, đã bỏ ở R0-7 cùng plan dự phòng; lấy lại từ commit trước R0-7).
 
 **Test.** `test_judge_error_classes.py`: mỗi lớp → đúng đường; lớp lặp → dừng sau 2.
 
