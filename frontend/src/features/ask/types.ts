@@ -204,6 +204,55 @@ export interface Refusal {
   issues?: string[];
 }
 
+/*
+ * Agent-run frames (docs/v3 01 "frame" table, 03 §8–9). The runtime does not
+ * emit them yet (R0-8, R0-10); only the fields the screen relies on are typed,
+ * the rest of each frame is kept as sent. Drawing them is E-01 / FE-01.
+ */
+
+/** `__run`: the run started or ended (fields merge across the two frames). */
+export interface RunInfo {
+  run_id: string;
+  status?: 'started' | 'finished' | 'error' | string;
+  [field: string]: unknown;
+}
+
+/** `__plan`: the plan (Plan IR) the run will execute. */
+export interface RunPlan {
+  nodes: unknown[];
+  edges?: unknown[];
+  [field: string]: unknown;
+}
+
+/** `__step`: one plan node changed state. */
+export interface StepUpdate {
+  node_id: string;
+  status: string;
+  started_at?: string;
+  ended_at?: string;
+  error_code?: string;
+  [field: string]: unknown;
+}
+
+/** `__block`: a typed block from the approved catalog (never HTML from the model). */
+export interface CatalogBlock {
+  block: string;
+  props?: Record<string, unknown>;
+  data?: unknown;
+}
+
+/** `__verification`: what the verifier checked for this answer. */
+export interface Verification {
+  checks: Array<{ name: string; passed: boolean; detail?: string; [field: string]: unknown }>;
+  [field: string]: unknown;
+}
+
+/** `__lineage`: source → artifact → … → the answer. */
+export interface Lineage {
+  nodes: unknown[];
+  edges?: unknown[];
+}
+
 /**
  * Two ways the backend asks before answering:
  *  - `resume`: the orchestrator graph is interrupted; the answer must go to
@@ -253,6 +302,13 @@ export interface AskMessage {
   pendingReview?: PendingReviewInfo;
   /** set instead of an answer: the turn was refused with a code */
   refusal?: Refusal;
+  run?: RunInfo;
+  plan?: RunPlan;
+  /** latest state of each plan node, by node_id */
+  steps?: Record<string, StepUpdate>;
+  blocks?: CatalogBlock[];
+  verification?: Verification;
+  lineage?: Lineage;
   latencyMs?: number;
 }
 

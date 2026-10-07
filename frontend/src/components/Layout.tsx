@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Role } from '../types';
+import { NotificationBell } from './shared/NotificationBell';
 
 /* ─── Command Palette ─────────────────────────────────────────────── */
 const PALETTE_GROUPS = [
@@ -382,6 +383,8 @@ const TopBar = ({
           <Terminal className="w-3.5 h-3.5" />
           <span className="hidden xl:inline">Expert</span>
         </button>
+
+        <NotificationBell />
 
         <div className="flex items-center gap-2 pl-2 border-l border-[#D6C79F]">
           <div className="hidden sm:block text-right">

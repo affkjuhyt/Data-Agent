@@ -69,8 +69,10 @@ deadcode:  ## vulture (python) + knip (frontend)
 	$(DOCKER_RUN_PY) sh -c "pip install -q vulture && vulture"
 	npm --workspace frontend run deadcode
 
-frontend-lint:  ## tsc --noEmit
+frontend-lint:  ## tsc --noEmit + generated contract types are current
 	npm --workspace frontend run typecheck
+	npm --workspace frontend run gen:api
+	git diff --exit-code -- frontend/src/lib/api/contracts.d.ts
 
 frontend-test:  ## vitest
 	npm --workspace frontend run test

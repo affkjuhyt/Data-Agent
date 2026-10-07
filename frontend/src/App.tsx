@@ -1,5 +1,8 @@
 import React from 'react';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { AppStateProvider, useAppState } from './AppStateContext';
+import { createQueryClient } from './lib/api/queryClient';
+import { NotificationProvider } from './lib/notifications/NotificationProvider';
 import { AppLayout } from './components/Layout';
 import { Placeholder } from './components/shared/Placeholder';
 import IngestionProgressOverlay from './components/shared/IngestionProgressOverlay';
@@ -58,10 +61,16 @@ function AppContent() {
   );
 }
 
+const queryClient = createQueryClient();
+
 export default function App() {
   return (
-    <AppStateProvider>
-      <AppContent />
-    </AppStateProvider>
+    <QueryClientProvider client={queryClient}>
+      <NotificationProvider>
+        <AppStateProvider>
+          <AppContent />
+        </AppStateProvider>
+      </NotificationProvider>
+    </QueryClientProvider>
   );
 }

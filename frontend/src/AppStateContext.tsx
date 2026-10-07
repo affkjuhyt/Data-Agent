@@ -93,7 +93,7 @@ export const resolveRoute = (module: string, sub?: string): { module: string; su
 // URL renders them lowercase — /build/workflows reads better than
 // /build/WORKFLOWS. parseRoute upper-cases whatever it reads back so both
 // case forms of a link (including ones bookmarked before this change) resolve.
-const routePath = (module: string, sub?: string) => `/${module}${sub ? `/${sub.toLowerCase()}` : ''}`;
+export const routePath = (module: string, sub?: string) => `/${module}${sub ? `/${sub.toLowerCase()}` : ''}`;
 
 const parseRoute = (fallback: { module: string; sub?: string }): { module: string; sub?: string } => {
   if (typeof window === 'undefined') return fallback;

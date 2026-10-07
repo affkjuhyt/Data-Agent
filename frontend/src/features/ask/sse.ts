@@ -8,7 +8,10 @@
  * network chunks — a frame split across two chunks used to be parsed as two
  * broken pieces of text.
  */
-import type { ChartSpec, Citation, ClarificationQuestion, Evidence, Refusal, ResultSet } from './types';
+import type {
+  CatalogBlock, ChartSpec, Citation, ClarificationQuestion, Evidence, Lineage, Refusal, ResultSet, RunInfo, RunPlan,
+  StepUpdate, Verification,
+} from './types';
 
 export type SseEvent =
   | { type: 'token'; text: string }
@@ -28,11 +31,32 @@ export type SseEvent =
   // The turn ended without an answer, for a reason with a code; no token follows.
   | { type: 'refusal'; refusal: Refusal }
   | { type: 'conv_ids'; convs: Array<{ conv_id: string; title?: string; agent_name?: string }> }
+  // Agent-run frames (docs/v3 01): run start/end, plan, node state, catalog
+  // block, verifier checks, lineage. A frame missing its key fields is unknown.
+  | { type: 'run'; run: RunInfo }
+  | { type: 'plan'; plan: RunPlan }
+  | { type: 'step'; step: StepUpdate }
+  | { type: 'block'; block: CatalogBlock }
+  | { type: 'verification'; verification: Verification }
+  | { type: 'lineage'; lineage: Lineage }
   | { type: 'error'; message: string }
   | { type: 'done' }
   | { type: 'unknown'; raw: unknown };
 
 const DEFAULT_ERROR = 'An error occurred, please try again.';
+
+/**
+ * Blocks the screen may render (09 §4.4, plus DataGrid named in 09 §4.2). A
+ * block outside the catalog is dropped, never rendered as something else;
+ * E-01 owns the final list.
+ */
+const BLOCK_CATALOG: ReadonlySet<string> = new Set([
+  'ValueCard', 'SeriesChart', 'DataGrid', 'SourceRefChip', 'DocumentPageViewer', 'AsOfControl', 'TimeAxesTooltip',
+  'VerifierBadge', 'RefusalCard', 'LicenceBadge', 'TaskGraphView', 'LineagePanel', 'ReviewCaseCard', 'ReviewDecision',
+  'CorrectionForm', 'AlertCard', 'ConflictClassBadge',
+]);
+
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /** One `data:` payload → a typed event. Never throws. */
 export function parseSseData(raw: string): SseEvent {
@@ -46,6 +70,8 @@ export function parseSseData(raw: string): SseEvent {
   try {
     parsed = JSON.parse(data);
   } catch {
+    // A frame cut off mid-object (the stream dropped) is not text to show.
+    if (data.startsWith('{')) return { type: 'unknown', raw };
     // Not JSON — the backend only ever sends JSON, but a raw chunk is still
     // text the user should see rather than a silent drop.
     return { type: 'token', text: raw };
@@ -103,6 +129,21 @@ export function parseSseData(raw: string): SseEvent {
         ...(Array.isArray(r.issues) ? { issues: r.issues.map(String) } : {}),
       },
     };
+  }
+
+  if (isRecord(obj.__run) && typeof obj.__run.run_id === 'string') return { type: 'run', run: obj.__run as RunInfo };
+  if (isRecord(obj.__plan) && Array.isArray(obj.__plan.nodes)) return { type: 'plan', plan: obj.__plan as RunPlan };
+  if (isRecord(obj.__step) && typeof obj.__step.node_id === 'string' && typeof obj.__step.status === 'string') {
+    return { type: 'step', step: obj.__step as StepUpdate };
+  }
+  if (isRecord(obj.__block) && typeof obj.__block.block === 'string' && BLOCK_CATALOG.has(obj.__block.block)) {
+    return { type: 'block', block: obj.__block as unknown as CatalogBlock };
+  }
+  if (isRecord(obj.__verification) && Array.isArray(obj.__verification.checks)) {
+    return { type: 'verification', verification: obj.__verification as Verification };
+  }
+  if (isRecord(obj.__lineage) && Array.isArray(obj.__lineage.nodes)) {
+    return { type: 'lineage', lineage: obj.__lineage as unknown as Lineage };
   }
 
   if (obj.__evidence && typeof obj.__evidence === 'object') {

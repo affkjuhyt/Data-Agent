@@ -7,7 +7,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { openOrchestrateStream, openResumeStream } from '../api';
 import { readSseStream, type SseEvent } from '../sse';
-import type { AskMessage, Clarification, ClarificationAnswer, ClarificationReply } from '../types';
+import { finishStream, startStream, streamReducer } from '../streamReducer';
+import type { AskMessage, ClarificationAnswer, ClarificationReply } from '../types';
 
 interface UseAgentStreamOptions {
   userId: string;
@@ -74,83 +75,17 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
     const controller = new AbortController();
     abortRef.current = controller;
 
-    let buffer = '';
-    let sessionId: string | undefined;
-    let options: string[] | null = null;
-    let interrupted = false;
+    let stream = startStream(placeholder, query);
 
     const onEvent = (e: SseEvent) => {
-      switch (e.type) {
-        case 'token':
-          buffer += e.text;
-          patch(assistantId, m => ({ ...m, content: buffer }));
-          break;
-        case 'reset':
-          // The streamed answer was rejected; its replacement follows.
-          buffer = '';
-          patch(assistantId, m => ({ ...m, content: '' }));
-          break;
-        case 'session':
-          sessionId = e.sessionId;
-          patch(assistantId, m => ({ ...m, sessionId: e.sessionId }));
-          break;
-        case 'clarification': {
-          // Orchestrator graph interrupted: the answer must go to /resume.
-          interrupted = true;
-          const clar: Clarification = {
-            kind: 'resume',
-            sessionId: e.sessionId || sessionId || '',
-            questions: e.details,
-          };
-          patch(assistantId, m => ({ ...m, clarification: clar }));
-          break;
-        }
-        case 'evidence':
-          patch(assistantId, m => {
-            const next: AskMessage = { ...m, evidence: e.evidence };
-            // Deterministic questions from the runtime: render them as a card
-            // whose answer is simply the next turn (slots merge server-side).
-            if (e.evidence.clarifications.length && !m.clarification) {
-              next.clarification = { kind: 'followup', questions: e.evidence.clarifications, query };
-            }
-            return next;
-          });
-          break;
-        case 'options':
-          options = e.options;
-          break;
-        case 'conv_ids':
-          if (agentId && e.convs[0]?.conv_id) agentConvRef.current = e.convs[0].conv_id;
-          break;
-        case 'chart':
-          patch(assistantId, m => ({ ...m, chartSpecs: e.specs }));
-          break;
-        case 'result_set':
-          patch(assistantId, m => ({
-            ...m,
-            resultSets: [...(m.resultSets ?? []).filter(r => r.result_id !== e.resultSet.result_id), e.resultSet],
-          }));
-          break;
-        case 'citations':
-          patch(assistantId, m => ({ ...m, citations: e.citations }));
-          break;
-        case 'suggestions':
-          patch(assistantId, m => ({ ...m, suggestions: e.suggestions }));
-          break;
-        case 'pending_review':
-          patch(assistantId, m => ({ ...m, pendingReview: { convId: e.convId, payload: e.payload as never } }));
-          break;
-        case 'refusal':
-          // In place of an answer, never beside one: anything streamed is dropped.
-          buffer = '';
-          patch(assistantId, m => ({ ...m, content: '', refusal: e.refusal }));
-          break;
-        case 'error':
-          patch(assistantId, m => ({ ...m, content: m.content || e.message, status: 'error' }));
-          break;
-        default:
-          break;
+      if (e.type === 'conv_ids') {
+        if (agentId && e.convs[0]?.conv_id) agentConvRef.current = e.convs[0].conv_id;
+        return;
       }
+      const next = streamReducer(stream, e);
+      const changed = next.message !== stream.message;
+      stream = next;
+      if (changed) patch(assistantId, () => next.message);
     };
 
     try {
@@ -170,16 +105,8 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
       await readSseStream(res.body!, onEvent);
 
       if (!mounted.current) return;
-      patch(assistantId, m => {
-        const next: AskMessage = { ...m, latencyMs: Date.now() - started, status: m.status === 'error' ? 'error' : 'done' };
-        // A responder <OPTIONS> block without structured clarifications:
-        // still a question the user should be able to answer in one click.
-        if (options && !next.clarification) {
-          next.clarification = { kind: 'followup', questions: [{ text: '', options }], query };
-        }
-        if (interrupted && !next.content) next.content = next.clarification?.questions.map(x => x.text).filter(Boolean).join('\n') || '';
-        return next;
-      });
+      const done = finishStream(stream, Date.now() - started);
+      patch(assistantId, () => done);
     } catch (err) {
       if (!mounted.current) return;
       const aborted = controller.signal.aborted;

@@ -75,6 +75,23 @@ describe('parseSseData', () => {
     expect(parseSseData('42')).toEqual({ type: 'unknown', raw: 42 });
     expect(parseSseData('{"__something_new":1}').type).toBe('unknown');
   });
+
+  it('drops a frame cut off mid-object instead of showing it as text', () => {
+    expect(parseSseData('{"__block":{"block":"ValueCard","pro')).toEqual({ type: 'unknown', raw: '{"__block":{"block":"ValueCard","pro' });
+  });
+
+  it('maps the agent-run frames and rejects the ones missing their key fields', () => {
+    expect(parseSseData('{"__run":{"run_id":"r1","status":"started"}}')).toEqual({ type: 'run', run: { run_id: 'r1', status: 'started' } });
+    expect(parseSseData('{"__plan":{"nodes":[]}}')).toEqual({ type: 'plan', plan: { nodes: [] } });
+    expect(parseSseData('{"__step":{"node_id":"n1","status":"done"}}').type).toBe('step');
+    expect(parseSseData('{"__block":{"block":"SeriesChart","data":[]}}').type).toBe('block');
+    expect(parseSseData('{"__verification":{"checks":[]}}').type).toBe('verification');
+    expect(parseSseData('{"__lineage":{"nodes":[]}}').type).toBe('lineage');
+
+    expect(parseSseData('{"__run":{"status":"started"}}').type).toBe('unknown');
+    expect(parseSseData('{"__block":{"block":"NotInCatalog"}}').type).toBe('unknown');
+    expect(parseSseData('{"__verification":{"passed":true}}').type).toBe('unknown');
+  });
 });
 
 function streamOf(chunks: string[]): ReadableStream<Uint8Array> {

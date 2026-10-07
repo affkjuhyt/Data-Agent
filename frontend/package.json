@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
+    "gen:api": "openapi-typescript ../backend/libs/contracts/generated/contracts.openapi.json -o src/lib/api/contracts.d.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:strict": "tsc --noEmit -p tsconfig.strict.json",
     "deadcode": "knip",
@@ -19,6 +20,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
+    "@tanstack/react-query": "^5.104.1",
     "@vitejs/plugin-react": "^5.0.4",
     "@xyflow/react": "^12.11.0",
     "clsx": "^2.1.1",
@@ -43,6 +45,7 @@
     "@vitest/coverage-v8": "^2.1.2",
     "jsdom": "^25.0.1",
     "knip": "^5.64.4",
+    "openapi-typescript": "7.13.0",
     "prettier": "^3.6.2",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",

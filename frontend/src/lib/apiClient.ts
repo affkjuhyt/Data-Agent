@@ -19,7 +19,7 @@ const BASE =
   'http://localhost:8100'; // Kong gateway
 
 /** Bearer-only auth header. Kong injects the authoritative X-* identity. */
-const authHeaders = (): Record<string, string> =>
+export const authHeaders = (): Record<string, string> =>
   keycloak.token ? { Authorization: `Bearer ${keycloak.token}` } : {};
 
 /** Unwraps FastAPI ResponseModel envelope { code, data, error }. Raw responses pass through. */

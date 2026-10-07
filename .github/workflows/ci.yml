@@ -307,6 +307,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      # V2 types are generated from libs/contracts; a contract change without a
+      # regenerated contracts.d.ts fails here, before release.
+      - name: generated API types are current
+        run: |
+          npm run gen:api
+          git diff --exit-code -- frontend/src/lib/api/contracts.d.ts \
+            || { echo "::error::contracts.d.ts is stale: run 'npm run gen:api' and commit it"; exit 1; }
 
   frontend-test:
     name: Frontend · vitest

@@ -7,3 +7,4 @@ coverage
 package-lock.json
 public
 frontend/src/components/ui
+frontend/src/lib/api/contracts.d.ts
