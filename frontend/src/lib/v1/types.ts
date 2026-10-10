@@ -145,6 +145,10 @@ export interface NarrativeEvent {
 export interface RunPlanStep {
   title: string;
   state: 'done' | 'running' | 'pending_approval' | 'error' | 'waiting';
+  /** "02:09", "3 lần thử theo chính sách", "Chưa chạy" — the line under the title. */
+  detail?: string;
+  /** "0:31" */
+  duration_text?: string;
 }
 
 /** agent.agent_step, for "Xem kỹ thuật" (GET /v1/runs/{id}?view=technical). */
@@ -162,7 +166,21 @@ export interface AgentStep {
   name: string;
   summary: string | null;
   status: 'ok' | 'error' | 'retried' | 'skipped' | 'simulated';
+  /** null while the step is under way or not started. */
   duration_ms: number | null;
+  /*
+   * PROPOSAL, for the trace waterfall of "P13 · Lượt chạy · Kỹ thuật" (2310:20156): the step it
+   * runs inside (indent), when it started (its place on the time axis), what ran it ("Qwen3-72B",
+   * "SQL", "kỹ năng"), one figure ("1.2k tok", "214 dòng"), and for the detail panel whose
+   * permissions it ran under, what it read and the query it sent.
+   */
+  parent_seq: number | null;
+  started_at: Timestamp | null;
+  actor: string;
+  metric_text: string | null;
+  run_as_text: string | null;
+  rows_text: string | null;
+  sql: string | null;
 }
 
 export interface AgentRun {
@@ -192,6 +210,17 @@ export interface AgentRun {
   hitl_count: number;
   /** PROPOSAL: the plan beside the story, on GET /v1/runs/{id}. */
   plan?: RunPlanStep[];
+  /**
+   * PROPOSAL, for "v3.1 · Trạng thái · Lượt chạy lỗi" (2076:5030): a failed run's error in words
+   * and as the system gave it, what the agent did to stay safe, and the fallback source it can
+   * rerun against (null when there is none).
+   */
+  failure?: {
+    title: string;
+    detail: string;
+    safety: string[];
+    fallback_source: string | null;
+  };
   /** view=technical only. */
   steps?: AgentStep[];
 }

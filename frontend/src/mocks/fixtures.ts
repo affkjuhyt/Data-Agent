@@ -4,6 +4,7 @@ import type {
   ConflictContext,
   Proposal,
   AgentRun,
+  AgentStep,
   AppUser,
   DataSpace,
   Dataset,
@@ -358,7 +359,7 @@ export function runsFixture(): AgentRun[] {
       agent_id: 'agent-dq',
       agent_name: 'Agent Chất lượng dữ liệu',
       status: 'failed',
-      title: 'Kiểm tra DWH bán lẻ',
+      title: 'Kiểm tra DWH bán lẻ sau ETL',
       initiated_label: 'Sau ETL',
       trigger_kind: 'event',
       minutes: 1,
@@ -393,6 +394,31 @@ export function runsFixture(): AgentRun[] {
       cost: 33000,
     }),
   ];
+  const runStart = new Date(runs[0].started_at as string).getTime();
+  const span = (
+    seq: number,
+    parent: number | null,
+    kind: AgentStep['kind'],
+    name: string,
+    actor: string,
+    startSec: number | null,
+    seconds: number | null,
+    metric: string | null,
+  ): AgentStep => ({
+    seq,
+    kind,
+    name,
+    summary: null,
+    status: 'ok',
+    duration_ms: seconds === null ? null : seconds * 1000,
+    parent_seq: parent,
+    started_at: startSec === null ? null : new Date(runStart + startSec * 1000).toISOString(),
+    actor,
+    metric_text: metric,
+    run_as_text: 'Đỗ Hải Yến',
+    rows_text: null,
+    sql: null,
+  });
   // The run of "P13 · Lượt chạy · Đang làm gì" (2310:19989), told in full.
   runs[0] = {
     ...runs[0],
@@ -432,48 +458,54 @@ export function runsFixture(): AgentRun[] {
       { title: 'Kiểm tra 214 khoản lệch ngày quá hạn', state: 'running' },
       { title: 'Đề xuất điều chỉnh · cần bạn duyệt', state: 'waiting' },
     ],
+    // The trace of "P13 · Lượt chạy · Kỹ thuật" (2310:20156): seconds from the run's start.
     steps: [
+      span(1, null, 'plan', 'agent.plan', 'Qwen3-72B', 0, 9, '1.2k tok'),
+      span(2, 1, 'query', 'tool.query core_banking', 'SQL', 9, 60, '1,28 tr dòng'),
+      span(3, 1, 'query', 'tool.query submitted_report', 'SQL', 69, 6, '12 dòng'),
+      span(4, 1, 'skill', 'skill.compare_periods v3', 'kỹ năng', 75, 45, null),
+      span(5, 4, 'llm_call', 'llm.sql_gen', 'Qwen3-Coder', 78, 4.5, '840 tok'),
+      span(6, 4, 'query', 'tool.query diff', 'SQL', 82.5, 33, '214 dòng'),
+      span(7, 1, 'llm_call', 'llm.reason', 'Qwen3-72B', 120, 12, '3.1k tok'),
       {
-        seq: 1,
-        kind: 'plan',
-        name: 'Lập kế hoạch 5 bước',
-        summary: 'Plan IR v1 · hợp lệ',
-        status: 'ok',
-        duration_ms: 1800,
+        ...span(8, 1, 'query', 'tool.query overdue_check', 'SQL', 132, null, null),
+        run_as_text: 'Đỗ Hải Yến · chính sách POL-002 áp dụng',
+        rows_text: '214 khoản · 2 bảng',
+        sql: [
+          'SELECT l.loan_id, l.overdue_days, s.overdue_days',
+          'FROM core.ld_loans l JOIN submitted.loans_t9 s',
+          '  USING (loan_id)',
+          'WHERE l.overdue_days <> s.overdue_days',
+        ].join('\n'),
       },
-      {
-        seq: 2,
-        kind: 'query',
-        name: 'query.semantic LOAN_BALANCE',
-        summary: '1.284.112 dòng · Core banking 30/09',
-        status: 'ok',
-        duration_ms: 12800,
-      },
-      {
-        seq: 3,
-        kind: 'tool_call',
-        name: 'filings.get NHNN T9',
-        summary: 'Báo cáo nộp 05/10',
-        status: 'ok',
-        duration_ms: 900,
-      },
-      {
-        seq: 4,
-        kind: 'llm_call',
-        name: 'So từng chỉ tiêu',
-        summary: 'Lệch 0,12% (25 tỷ)',
-        status: 'ok',
-        duration_ms: 4200,
-      },
-      {
-        seq: 5,
-        kind: 'query',
-        name: 'compute.run overdue_diff',
-        summary: '214 khoản lệch ngày quá hạn',
-        status: 'ok',
-        duration_ms: null,
-      },
+      span(9, 1, 'checkpoint', 'hitl.create_proposal', 'chờ', null, null, null),
     ],
+  };
+  // The failed run of "v3.1 · Trạng thái · Lượt chạy lỗi" (2076:5030).
+  const failed = runs.findIndex((r) => r.id === 'run-409');
+  runs[failed] = {
+    ...runs[failed],
+    plan: [
+      { title: 'Nhận sự kiện ETL xong', state: 'done', detail: '02:09' },
+      {
+        title: 'Kết nối DWH bán lẻ',
+        state: 'error',
+        detail: '3 lần thử theo chính sách',
+        duration_text: '0:31',
+      },
+      { title: 'Kiểm tra 148 bảng', state: 'waiting', detail: 'Chưa chạy' },
+    ],
+    failure: {
+      title: 'Không kết nối được DWH bán lẻ sau 3 lần thử',
+      detail: 'ORA-12170: TNS connect timeout · 90 s · 02:10, 02:25, 02:40',
+      safety: [
+        'Không ghi hoặc đánh dấu dữ liệu nào là “đạt”',
+        'Đánh dấu DWH bán lẻ là “trễ” cho 3 agent đang dùng',
+        'Báo chủ sở hữu agent và quản trị nguồn qua Teams',
+        'Tạm dừng, sẽ tự thử lại khi nguồn có tín hiệu',
+      ],
+      fallback_source: 'DWH bán lẻ (bản sao 01:00)',
+    },
   };
   return runs;
 }

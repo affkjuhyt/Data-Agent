@@ -60,6 +60,13 @@ export const controlRun = async (
     verb === 'cancel' ? { reason } : undefined,
   );
 
+/**
+ * PROPOSAL: POST /v1/runs/{id}:retry — a failed run again, as a new run (202); `use_fallback`
+ * reads the agent's fallback source instead of the one that failed. The spec has no retry yet.
+ */
+export const retryRun = async (id: string, useFallback = false) =>
+  v1Send<AgentRun>('POST', `/runs/${pathId(id)}:retry`, { use_fallback: useFallback });
+
 /* Phiên làm việc */
 export const listWorkspaces = () =>
   v1Get<Page<Workspace>>('/workspaces', { ...ALL, status: 'active' });
