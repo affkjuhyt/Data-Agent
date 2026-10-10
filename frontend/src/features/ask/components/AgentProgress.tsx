@@ -61,7 +61,12 @@ export function PartialResult({
         <span className="text-muted-foreground da-caption">{partial.meta}</span>
       </header>
       <div className="flex flex-col gap-da-lg px-da-lg py-da-lg">
-        <RunStep state="running" title={partial.step_title} detail={partial.step_detail} duration="" />
+        <RunStep
+          state="running"
+          title={partial.step_title}
+          detail={partial.step_detail}
+          duration=""
+        />
         <div aria-hidden className="flex flex-col gap-[8px]">
           {BARS.map((b, i) => (
             <div key={i} className="flex items-center gap-da-sm">
@@ -71,7 +76,9 @@ export function PartialResult({
           ))}
         </div>
         <div className="flex items-center gap-da-md">
-          <span className="text-muted-foreground da-caption">Đang nhận kết quả… {partial.received}</span>
+          <span className="text-muted-foreground da-caption">
+            Đang nhận kết quả… {partial.received}
+          </span>
           {onStop && (
             <button
               type="button"
