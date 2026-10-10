@@ -17,8 +17,20 @@ import { useV1 } from '../../lib/v1/useV1';
  */
 const DEFAULT = { left: 'pv-2026-08-v1', right: 'pv-2026-08-v2' };
 
+/*
+ * A spreadsheet runs a cell that starts with = + - @ (or tab / CR) as a formula, so such cells —
+ * "+0,04 điểm", or a server-supplied reason crafted as a payload — get a leading apostrophe,
+ * which Excel and Sheets read as "text" and do not display.
+ */
+const FORMULA_START = /^[=+\-@\t\r]/;
+
+export function csvCell(value: string): string {
+  const safe = FORMULA_START.test(value) ? `'${value}` : value;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
 function csvOf(result: PeriodComparison): string {
-  const cell = (value: string) => `"${value.replace(/"/g, '""')}"`;
+  const cell = csvCell;
   const head = ['Chỉ số', result.left.label, result.right.label, 'Chênh', 'Vì sao'];
   const rows = result.rows.map((r) => [r.metric, r.left, r.right, r.delta, r.reason ?? '']);
   return [head, ...rows].map((row) => row.map(cell).join(',')).join('\n');
@@ -26,7 +38,7 @@ function csvOf(result: PeriodComparison): string {
 
 function download(name: string, text: string) {
   // A BOM so Excel opens the Vietnamese text as UTF-8.
-  const url = URL.createObjectURL(new Blob(['﻿', text], { type: 'text/csv;charset=utf-8' }));
+  const url = URL.createObjectURL(new Blob(['\ufeff', text], { type: 'text/csv;charset=utf-8' }));
   const link = document.createElement('a');
   link.href = url;
   link.download = name;
