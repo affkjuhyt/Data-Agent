@@ -248,6 +248,22 @@ export interface AgentProgress {
   partial?: { title: string; meta: string; step_title: string; step_detail: string; received: string };
 }
 
+/**
+ * PROPOSAL, A1 question stream event `understood` ("v3.1 · Semantic · Agent hiểu câu hỏi",
+ * 2088:7584): how the question was read — the sentence with its pieces marked, each slot with the
+ * value chosen, where it came from and how sure the agent is, an ambiguous term's readings and the
+ * plan. Sent as `{"__understood": {...}}`; with `check_required` the turn waits for the person.
+ */
+export interface Understanding {
+  session_id: string;
+  agent: string;
+  parts: { text: string; kind?: 'metric' | 'filter' | 'ambiguous' | 'period' }[];
+  slots: { slot: string; value: string; source: string; confidence: number | null; divider?: boolean }[];
+  ambiguity: { term: string; options: { key: string; label: string }[]; selected: string } | null;
+  plan: string;
+  check_required: boolean;
+}
+
 export interface AskMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -267,6 +283,8 @@ export interface AskMessage {
   refusal?: Refusal;
   /** while streaming: what the agent is doing (cleared from view once the answer is done) */
   progress?: AgentProgress;
+  /** the agent's reading of the question; waits for a check when `check_required` */
+  understanding?: Understanding;
   latencyMs?: number;
 }
 

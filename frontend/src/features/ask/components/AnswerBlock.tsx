@@ -5,7 +5,7 @@
  *   → 4 charts → 5 data tables → 6 "Vì sao tin được" strip → 7 sources
  *   → 8 meta row: trust label, timing, Cách tính · Xuất · Sao chép · Lưu câu hỏi · Lưu thành tri thức · Báo sai
  *   → 9 follow-up chips.
- * While streaming, the agent's steps lead and a result still arriving follows the text
+ * A reading the agent wants checked comes first (InterpretationCheck). While streaming, the agent's steps lead and a result still arriving follows the text
  * (AgentProgress). The trust label is on every finished answer (invariant 14). Used by the Ask screen and the
  * agent Playground.
  */
@@ -29,6 +29,7 @@ import { ExportDialog } from './ExportDialog';
 import { MarkdownContent } from './MarkdownContent';
 import { RefusalCard } from './RefusalCard';
 import { AgentSteps, PartialResult } from './AgentProgress';
+import { InterpretationCheck } from './InterpretationCheck';
 
 const ChartRenderer = lazy(() =>
   import('./ChartRenderer').then(module => ({ default: module.ChartRenderer })),
@@ -61,6 +62,10 @@ interface AnswerBlockProps {
   onSaveKnowledge?: () => void;
   /** "Dừng" on a result still arriving */
   onStop?: () => void;
+  /** "Đúng rồi, chạy" on the agent's reading of the question */
+  onConfirmUnderstanding?: (choice: { meaning?: string; remember: boolean }) => void;
+  /** "Sửa cách hiểu": back to the question to change it */
+  onEditUnderstanding?: () => void;
 }
 
 const TRUST_DOT = { success: 'success', primary: 'primary', warning: 'warning', info: 'info', neutral: 'neutral' } as const;
@@ -96,7 +101,7 @@ export function AnswerBlock({
   msg, question, busy, onSuggestion, onAnswerClarification, onSave, onOpenEvidence,
   showEvidenceStrip = true, showTimestamp = true, onRetry, onRephrase, showRefusalDetail,
   onReport, reported,
-  onSaveKnowledge, onStop,
+  onSaveKnowledge, onStop, onConfirmUnderstanding, onEditUnderstanding,
 }: AnswerBlockProps) {
   const [exportOpen, setExportOpen] = useState(false);
   const resultRuns = useMemo(() => (msg.resultSets ?? []).map(resultSetToEvidenceRun), [msg.resultSets]);
@@ -137,6 +142,15 @@ export function AnswerBlock({
   return (
     <div data-testid="answer-block" className="flex flex-col gap-da-lg">
       {streaming && msg.progress && <AgentSteps progress={msg.progress} />}
+
+      {msg.understanding && onConfirmUnderstanding && (
+        <InterpretationCheck
+          understanding={msg.understanding}
+          disabled={busy}
+          onConfirm={onConfirmUnderstanding}
+          onEdit={onEditUnderstanding}
+        />
+      )}
 
       {reading.length > 0 && (
         <div className="flex flex-col gap-da-md">

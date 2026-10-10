@@ -8,7 +8,7 @@
  * network chunks — a frame split across two chunks used to be parsed as two
  * broken pieces of text.
  */
-import type { AgentProgress, ChartSpec, Citation, ClarificationQuestion, Evidence, Refusal, ResultSet } from './types';
+import type { AgentProgress, Understanding, ChartSpec, Citation, ClarificationQuestion, Evidence, Refusal, ResultSet } from './types';
 
 export type SseEvent =
   | { type: 'token'; text: string }
@@ -28,6 +28,7 @@ export type SseEvent =
   // The turn ended without an answer, for a reason with a code; no token follows.
   | { type: 'refusal'; refusal: Refusal }
   | { type: 'progress'; progress: AgentProgress }
+  | { type: 'understood'; understanding: Understanding }
   | { type: 'conv_ids'; convs: Array<{ conv_id: string; title?: string; agent_name?: string }> }
   | { type: 'error'; message: string }
   | { type: 'done' }
@@ -102,6 +103,40 @@ export function parseSseData(raw: string): SseEvent {
         next_action: String(r.next_action ?? ''),
         detail_id: r.detail_id ? String(r.detail_id) : '',
         ...(Array.isArray(r.issues) ? { issues: r.issues.map(String) } : {}),
+      },
+    };
+  }
+
+  if (obj.__understood && typeof obj.__understood === 'object') {
+    const u = obj.__understood as Record<string, unknown>;
+    const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object') : []);
+    const KINDS = ['metric', 'filter', 'ambiguous', 'period'] as const;
+    const amb = u.ambiguity && typeof u.ambiguity === 'object' ? (u.ambiguity as Record<string, unknown>) : null;
+    return {
+      type: 'understood',
+      understanding: {
+        session_id: String(u.session_id ?? ''),
+        agent: String(u.agent ?? ''),
+        parts: list(u.parts).map(p => {
+          const kind = KINDS.find(k => k === p.kind);
+          return { text: String(p.text ?? ''), ...(kind ? { kind } : {}) };
+        }),
+        slots: list(u.slots).map(sl => ({
+          slot: String(sl.slot ?? ''),
+          value: String(sl.value ?? ''),
+          source: String(sl.source ?? ''),
+          confidence: typeof sl.confidence === 'number' ? sl.confidence : null,
+          ...(sl.divider ? { divider: true } : {}),
+        })),
+        ambiguity: amb
+          ? {
+            term: String(amb.term ?? ''),
+            options: list(amb.options).map(o => ({ key: String(o.key ?? ''), label: String(o.label ?? '') })),
+            selected: String(amb.selected ?? ''),
+          }
+          : null,
+        plan: String(u.plan ?? ''),
+        check_required: u.check_required === true,
       },
     };
   }

@@ -92,7 +92,7 @@ export default function AskDataPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const { messages, sending, send, answerClarification, stop } = useAgentStream({
+  const { messages, sending, send, answerClarification, confirmUnderstanding, stop } = useAgentStream({
     userId: user.id,
     agentId: scope === AUTO ? null : scope,
   });
@@ -328,6 +328,11 @@ export default function AskDataPage() {
                     onSaveKnowledge={msg.content ? () => setKnowledgeFor(msg.id) : undefined}
                     reported={!!reported[msg.id]}
                     onStop={msg.status === 'streaming' ? stop : undefined}
+                    onConfirmUnderstanding={choice => void confirmUnderstanding(msg.id, choice)}
+                    onEditUnderstanding={() => {
+                      setInput(questionFor(msg.id));
+                      textareaRef.current?.focus();
+                    }}
                   />
                 </article>
               ))}

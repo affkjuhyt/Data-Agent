@@ -25,6 +25,26 @@ describe('parseSseData', () => {
     expect(parseSseData('[ERROR]')).toEqual({ type: 'error', message: 'An error occurred, please try again.' });
   });
 
+  it('reads how the agent understood the question', () => {
+    const ev = parseSseData(JSON.stringify({ __understood: {
+      session_id: 's9', agent: 'Agent Phân tích',
+      parts: [{ text: 'So sánh' }, { text: 'nợ xấu', kind: 'metric' }, { text: 'miền Bắc', kind: 'odd' }],
+      slots: [{ slot: 'Chỉ số', value: 'NPL_RATIO v4', source: '“nợ xấu”', confidence: 0.98 }, { slot: 'Hạt', value: 'Quý', source: '', divider: true }],
+      ambiguity: { term: 'miền Bắc', options: [{ key: 'geo', label: 'Địa lý · 4 vùng' }], selected: 'geo' },
+      plan: 'metric: NPL_RATIO@v4', check_required: true,
+    } }));
+    expect(ev).toEqual({ type: 'understood', understanding: {
+      session_id: 's9', agent: 'Agent Phân tích',
+      parts: [{ text: 'So sánh' }, { text: 'nợ xấu', kind: 'metric' }, { text: 'miền Bắc' }],
+      slots: [
+        { slot: 'Chỉ số', value: 'NPL_RATIO v4', source: '“nợ xấu”', confidence: 0.98 },
+        { slot: 'Hạt', value: 'Quý', source: '', confidence: null, divider: true },
+      ],
+      ambiguity: { term: 'miền Bắc', options: [{ key: 'geo', label: 'Địa lý · 4 vùng' }], selected: 'geo' },
+      plan: 'metric: NPL_RATIO@v4', check_required: true,
+    } });
+  });
+
   it('reads the agent at work, and drops a malformed step state to waiting', () => {
     const ev = parseSseData(JSON.stringify({ __progress: {
       agent: 'Agent Phân tích',

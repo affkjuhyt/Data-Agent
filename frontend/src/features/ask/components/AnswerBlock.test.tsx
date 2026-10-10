@@ -330,3 +330,40 @@ describe('AnswerBlock · Agent đang chạy', () => {
     expect(screen.getByTestId('trust-label')).toBeInTheDocument();
   });
 });
+
+describe('AnswerBlock · Agent hiểu câu hỏi', () => {
+  const understanding = {
+    session_id: 's9',
+    agent: 'Agent Phân tích',
+    parts: [{ text: 'So sánh' }, { text: 'nợ xấu', kind: 'metric' as const }, { text: 'miền Bắc', kind: 'ambiguous' as const }],
+    slots: [
+      { slot: 'Chỉ số', value: 'NPL_RATIO v4', source: '“nợ xấu”', confidence: 0.98 },
+      { slot: 'Lọc', value: 'region ∈ 4 vùng phía Bắc', source: '“miền Bắc”', confidence: 0.62 },
+    ],
+    ambiguity: {
+      term: 'miền Bắc',
+      options: [{ key: 'geo', label: 'Địa lý · 4 vùng' }, { key: 'org', label: 'Khối miền Bắc' }],
+      selected: 'geo',
+    },
+    plan: 'metric: NPL_RATIO@v4',
+    check_required: true,
+  };
+
+  it('asks to check an unsure reading, and confirms the meaning picked and whether to remember it', () => {
+    const onConfirm = vi.fn();
+    render(
+      <AnswerBlock
+        msg={{ id: 'u1', role: 'assistant', content: '', timestamp: '2026-10-11T08:00:00', status: 'done', understanding }}
+        onConfirmUnderstanding={onConfirm}
+      />,
+    );
+    const card = screen.getByRole('region', { name: 'Kiểm tra cách hiểu' });
+    expect(within(card).getByText('0,62')).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole('radio', { name: 'Khối miền Bắc' }));
+    fireEvent.click(within(card).getByRole('checkbox', { name: /Lưu “miền Bắc = khối miền bắc” cho tôi/ }));
+    fireEvent.click(within(card).getByRole('button', { name: 'Đúng rồi, chạy' }));
+    expect(onConfirm).toHaveBeenCalledWith({ meaning: 'org', remember: true });
+    expect(screen.queryByTestId('trust-label')).not.toBeInTheDocument();
+  });
+});
+

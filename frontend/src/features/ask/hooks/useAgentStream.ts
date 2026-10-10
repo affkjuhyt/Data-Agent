@@ -145,6 +145,11 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
           buffer = '';
           patch(assistantId, m => ({ ...m, content: '', refusal: e.refusal }));
           break;
+        case 'understood':
+          // A reading the agent is unsure of waits for the person, like a clarification.
+          if (e.understanding.check_required) interrupted = true;
+          patch(assistantId, m => ({ ...m, understanding: e.understanding }));
+          break;
         case 'progress':
           patch(assistantId, m => ({ ...m, progress: e.progress }));
           break;
@@ -226,6 +231,23 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
     await send(reply.text, { resumeSessionId: clar.sessionId });
   }, [messages, patch, send, sending]);
 
+  /**
+   * Confirm the reading attached to message `id`: the interrupted turn resumes, told in words
+   * (the resume stream takes text) which meaning of the ambiguous term to use and whether to
+   * remember it for this person.
+   */
+  const confirmUnderstanding = useCallback(async (id: string, choice: { meaning?: string; remember: boolean }) => {
+    const u = messages.find(m => m.id === id)?.understanding;
+    if (!u || sending) return;
+    const option = u.ambiguity?.options.find(o => o.key === choice.meaning);
+    const words = [
+      option ? `Đúng rồi, “${u.ambiguity?.term}” theo ${option.label}` : 'Đúng rồi, chạy',
+      choice.remember && option ? 'và nhớ cách hiểu này cho tôi' : '',
+    ].filter(Boolean).join(' ');
+    patch(id, m => ({ ...m, understanding: { ...u, check_required: false } }));
+    await send(words, { resumeSessionId: u.session_id });
+  }, [messages, patch, send, sending]);
+
   const stop = useCallback(() => abortRef.current?.abort(), []);
   const reset = useCallback(() => {
     abortRef.current?.abort();
@@ -234,5 +256,5 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
     setSending(false);
   }, []);
 
-  return { messages, sending, send, answerClarification, stop, reset };
+  return { messages, sending, send, answerClarification, confirmUnderstanding, stop, reset };
 }
