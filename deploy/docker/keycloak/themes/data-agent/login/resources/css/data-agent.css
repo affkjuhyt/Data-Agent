@@ -1,0 +1,232 @@
+/*
+ * Data Agent login theme. The values are the design tokens of
+ * frontend/src/design-system/tokens.css (Figma "DA · Foundations"); Keycloak serves this file on
+ * its own, so they are repeated here. Change both together.
+ * The inherited Keycloak pages keep their PatternFly class names; they are styled below.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+:root {
+  --background: #f5f5f3;
+  --card: #ffffff;
+  --subtle: #efefec;
+  --accent: #e6f4f1;
+  --foreground: #17212b;
+  --muted-foreground: #4d5a6c;
+  --primary: #0f766e;
+  --primary-hover: #115e59;
+  --primary-foreground: #ffffff;
+  --success: #166534;
+  --success-subtle: #e9f6ee;
+  --warning: #92400e;
+  --warning-subtle: #fdf3e2;
+  --error: #b91c1c;
+  --error-subtle: #fdecec;
+  --info: #1d4ed8;
+  --info-subtle: #e8effd;
+  --border: #e3e3de;
+  --border-strong: #c9c9c2;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --focus-ring: 0 0 0 3px rgb(15 118 110 / 0.45);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--card);
+  color: var(--foreground);
+  font: 400 13px/18px "Inter", ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* Shell: Figma "v3.1 · Đăng nhập" — a 420px card, 32px padding, 16px gaps. */
+.da-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px;
+}
+.da-card {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 32px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.da-brand { display: flex; align-items: center; gap: 10px; }
+.da-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  background: var(--primary);
+  position: relative;
+}
+.da-mark::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  background: var(--primary-foreground);
+  -webkit-mask: url(../img/agent.svg) center / 16px 16px no-repeat;
+  mask: url(../img/agent.svg) center / 16px 16px no-repeat;
+}
+.da-brand-name { font-size: 18px; font-weight: 600; }
+#kc-page-title { margin: 0; font-size: 22px; font-weight: 600; line-height: 1.25; }
+
+.da-username {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--subtle);
+  border-radius: var(--radius-md);
+  font-weight: 500;
+}
+.da-username a, .da-link, #kc-form-options a, #kc-info a, #kc-registration a,
+#kc-content a, .da-card a:not(.pf-c-button) {
+  color: var(--primary);
+  font-weight: 500;
+  text-decoration: none;
+}
+.da-card a:not(.pf-c-button):hover { text-decoration: underline; }
+
+.da-notice {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-size: 13px;
+}
+.da-notice-error { background: var(--error-subtle); color: var(--error); border-color: transparent; }
+.da-notice-warning { background: var(--warning-subtle); color: var(--warning); border-color: transparent; }
+.da-notice-success { background: var(--success-subtle); color: var(--success); border-color: transparent; }
+.da-notice-info { background: var(--info-subtle); color: var(--info); border-color: transparent; }
+
+.da-note { padding: 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.da-note p { margin: 0; }
+.da-onprem { display: flex; flex-direction: column; gap: 6px; }
+.da-onprem p { margin: 0; font-size: 11px; color: var(--muted-foreground); }
+.da-onprem-status { display: inline-flex; align-items: center; gap: 6px; }
+.da-dot-success { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+.da-footer { margin: 0; font-size: 11px; color: var(--muted-foreground); text-align: center; }
+
+/* Forms of the inherited pages. */
+form { display: flex; flex-direction: column; gap: 12px; margin: 0; }
+.form-group, #kc-form-buttons { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+label, .pf-c-form__label, .control-label { font: 500 12px/16px "Inter", sans-serif; color: var(--foreground); }
+.required { color: var(--error); }
+
+input[type="text"], input[type="password"], input[type="email"], input[type="tel"],
+.pf-c-form-control, select {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--foreground);
+  background: var(--card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+input[aria-invalid="true"] { border-color: var(--error); }
+input:focus { outline: none; border-color: var(--primary); box-shadow: var(--focus-ring); }
+
+.pf-c-input-group { display: flex; position: relative; }
+.pf-c-input-group .pf-c-form-control { padding-right: 40px; }
+.pf-c-button.pf-m-control {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+}
+.pf-c-button.pf-m-control:hover { background: var(--subtle); }
+.da-eye {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: auto;
+  background: var(--muted-foreground);
+  -webkit-mask: url(../img/eye.svg) center / 16px 16px no-repeat;
+  mask: url(../img/eye.svg) center / 16px 16px no-repeat;
+}
+.da-eye-off { background: var(--primary); }
+
+.pf-c-form__helper-text.pf-m-error, .kc-feedback-text { color: var(--error); font-size: 12px; }
+
+/* Buttons: design-system Button (36px, radius-md, Body Strong). */
+input[type="submit"], button[type="submit"], .pf-c-button:not(.pf-m-control), .btn-default {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  font: 500 13px/18px "Inter", sans-serif;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+}
+input[type="submit"].pf-m-primary, button.pf-m-primary, .pf-c-button.pf-m-primary {
+  background: var(--primary);
+  border-color: transparent;
+  color: var(--primary-foreground);
+}
+input[type="submit"].pf-m-primary:hover, .pf-c-button.pf-m-primary:hover { background: var(--primary-hover); }
+input[type="submit"]:disabled { opacity: 0.6; cursor: not-allowed; }
+
+input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); width: 16px; height: 16px; margin: 0; }
+.checkbox label, #kc-form-options label, label:has(> input[type="checkbox"]) { display: inline-flex; align-items: center; gap: 6px; font-weight: 400; }
+#kc-form-options + div, .login-pf-settings { display: flex; justify-content: space-between; font-size: 13px; }
+
+/* One-time code set-up (login-config-totp) and choice (login-otp). */
+#kc-totp-settings { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; color: var(--muted-foreground); }
+#kc-totp-settings li p { margin: 0 0 4px; }
+#kc-totp-settings ul { padding-left: 18px; margin: 4px 0; }
+#kc-totp-settings img#kc-totp-secret-qr-code { display: block; width: 160px; height: 160px; border: 1px solid var(--border); border-radius: var(--radius-md); }
+#kc-totp-secret-key { font: 500 13px/18px "JetBrains Mono", ui-monospace, monospace; color: var(--foreground); word-break: break-all; }
+#kc-totp-supported-apps { color: var(--foreground); }
+.pf-c-tile, .pf-c-tile__input + label, #kc-otp-credentials label { display: inline-flex; gap: 6px; padding: 8px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-md); }
+
+/* Select another way (select-authenticator). */
+.select-auth-container { display: flex; flex-direction: column; gap: 8px; }
+.select-auth-box-parent {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+.select-auth-box-parent:hover { background: var(--subtle); }
+.select-auth-box-headline { font-weight: 500; }
+.select-auth-box-desc { color: var(--muted-foreground); font-size: 12px; }
+.select-auth-box-icon, .select-auth-box-arrow { display: none; }
+
+/* Identity providers listed by Keycloak itself (when the app did not pass a hint). */
+#kc-social-providers hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0 12px; }
+#kc-social-providers h2 { margin: 0 0 8px; font-size: 12px; font-weight: 500; color: var(--muted-foreground); }
+#kc-social-providers ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+#kc-social-providers a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--foreground);
+}

@@ -141,6 +141,20 @@ for username in "${TEST_USERS[@]}"; do
     echo "  → cleared $username (id=$user_id)"
 done
 
+# ── 6. Login theme ─────────────────────────────────────────────────────
+# The realm import only applies to a new realm, so a running one gets the Data Agent theme
+# (themes/data-agent, baked into the keycloak image) and Vietnamese here. Idempotent: a PUT
+# of a partial realm changes only these fields.
+echo
+echo "🎨 Login theme data-agent, locale vi..."
+curl -sf -X PUT \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"loginTheme":"data-agent","internationalizationEnabled":true,"supportedLocales":["vi"],"defaultLocale":"vi"}' \
+    "$KC_BASE/admin/realms/$REALM" \
+    > /dev/null
+echo "  → realm $REALM uses the data-agent login theme"
+
 echo
 echo "✅ Audience mappers configured + test users unblocked. Tokens from"
 echo "   $TARGET_CLIENT will include: ${AUDIENCES[*]} in the aud claim."

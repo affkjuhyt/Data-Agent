@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import keycloak from './keycloak';
 import { fetchMyStatus, submitProfile } from './useMicrosoftApprovals';
 import { AuthScreen } from '../features/auth/AuthScreen';
+import { LoginPage } from '../features/auth/LoginPage';
 import { PendingApproval } from '../features/auth/PendingApproval';
 import { ProfileSetup } from '../features/auth/ProfileSetup';
 import { Button } from '../design-system/Button';
@@ -65,6 +66,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     // No mock/demo bypass: the app always authenticates against Keycloak and
     // talks to the backend through Kong. There is no offline/demo mode.
+    // check-sso, not login-required: an anonymous visit gets the app's own login page
+    // (Figma "v3.1 · Đăng nhập"), which sends the user to Keycloak or straight to the IdP.
     if ((keycloak as any).didInitialize) {
       const u = buildUser();
       setUser(u);
@@ -75,7 +78,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     keycloak
       .init({
-        onLoad:           'login-required',
+        onLoad:           'check-sso',
+        silentCheckSsoRedirectUri: `${window.location.origin}/silent-check-sso.html`,
         checkLoginIframe: false,
         pkceMethod:       'S256',
       })
@@ -84,8 +88,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const u = buildUser();
           setUser(u);
           if (u) await checkApprovalGate();
-        } else {
-          keycloak?.login();
         }
       })
       .catch(err => {
@@ -120,7 +122,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     );
   }
 
-  if (!user) return null;
+  if (!user) return <LoginPage />;
 
   if (gateStatus === 'needs_profile') {
     return (

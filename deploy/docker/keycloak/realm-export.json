@@ -2,6 +2,7 @@
   "id": "53471ee8-bae0-42c1-b2f4-89cdde7272aa",
   "realm": "aeroflow",
   "displayName": "AeroFlow Platform",
+  "loginTheme": "data-agent",
   "notBefore": 0,
   "defaultSignatureAlgorithm": "RS256",
   "revokeRefreshToken": false,
@@ -1992,8 +1993,9 @@
       }
     ]
   },
-  "internationalizationEnabled": false,
-  "supportedLocales": [],
+  "internationalizationEnabled": true,
+  "supportedLocales": ["vi"],
+  "defaultLocale": "vi",
   "authenticationFlows": [
     {
       "id": "afe31e4d-52b8-43c7-a4cc-33136a84787b",

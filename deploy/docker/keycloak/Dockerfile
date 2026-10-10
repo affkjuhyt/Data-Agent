@@ -8,3 +8,8 @@
 # (keycloak.yaml), same as the stock image.
 FROM quay.io/keycloak/keycloak:24.0
 RUN /opt/keycloak/bin/kc.sh build --db=postgres --health-enabled=true --cache=ispn --cache-stack=kubernetes
+
+# The Data Agent login theme (themes/data-agent): Keycloak's password, one-time-code and error
+# pages drawn like the app's login page. The realm selects it (loginTheme, realm-export.json;
+# setup-audience-mappers.sh sets it on a realm that already exists).
+COPY themes/ /opt/keycloak/themes/
