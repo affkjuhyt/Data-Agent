@@ -46,6 +46,7 @@ const MetricPage = React.lazy(() => import('./features/semantics/MetricPage'));
 const ExamplesPage = React.lazy(() => import('./features/semantics/ExamplesPage'));
 const SourceAuthorityPage = React.lazy(() => import('./features/semantics/SourceAuthorityPage'));
 const KnowledgePageView = React.lazy(() => import('./features/knowledge/KnowledgePageView'));
+const KnowledgeReviewPage = React.lazy(() => import('./features/knowledge/KnowledgeReviewPage'));
 const DecisionRulePage = React.lazy(() => import('./features/rules/DecisionRulePage'));
 const ProfilePage = React.lazy(() => import('./features/admin-platform/ProfilePage'));
 const NotificationsPage = React.lazy(() => import('./features/admin-platform/NotificationsPage'));
@@ -118,6 +119,7 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     KNOWLEDGE:       { render: () => <KnowledgePageView /> },
     AUTHORITY:       { render: () => <SourceAuthorityPage /> },
     RULE:            { render: () => <DecisionRulePage /> },
+    KNOWLEDGE_REVIEW: { render: () => <KnowledgeReviewPage /> },
   },
 
   admin: {

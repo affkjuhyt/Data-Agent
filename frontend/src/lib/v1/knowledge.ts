@@ -81,3 +81,69 @@ export const recompileKnowledgePage = (pageId: string) =>
     source_kind: 'page',
     source_ref: pageId,
   });
+
+/* ─── Rà soát tri thức (UC-07-11) ─────────────────────────────────────── */
+
+/** The latest lint run, in the screen's terms. PROPOSAL: the counts and texts. */
+export interface KnowledgeLintRun {
+  id: string;
+  finished_at: string;
+  page_count: number;
+  open_findings: number;
+  high_findings: number;
+  stale_pages: number;
+  skipped_source_pct: number;
+  duration_minutes: number;
+  /** "tối đa 30 phút, 50 thẻ Cần bạn" */
+  limits_text: string;
+  /** "lượt dùng mô hình chạy chủ nhật 02:00" */
+  schedule_text: string;
+}
+
+export type FindingKind =
+  | 'contradiction'
+  | 'expired_claim'
+  | 'decertified_source'
+  | 'orphan'
+  | 'metric_without_page'
+  | 'undefined_term';
+
+export type FindingAction =
+  | 'propose_edit'
+  | 'mark_stale'
+  | 'retire_page'
+  | 'create_page'
+  | 'dismiss'
+  | 'reassign';
+
+/** GET /v1/knowledge-findings — KnowledgeLintFinding. */
+export interface KnowledgeFinding {
+  id: string;
+  severity: 'high' | 'medium' | 'low';
+  kind: FindingKind;
+  /** PROPOSAL: the page (or pages, term, metric) it is about, in words. */
+  subject_text: string;
+  detail: string;
+  status: 'open' | 'resolved' | 'dismissed';
+  /** PROPOSAL: the two sides of a contradiction, or other evidence lines. */
+  evidence: { label: string; value: string }[];
+  /** PROPOSAL: the agent's suggested action, in a sentence. */
+  suggestion: string | null;
+}
+
+/** A2: GET /v1/knowledge-runs ?kind ?status — the newest finished lint run first. */
+export const getLatestLintRun = () =>
+  v1Get<Page<KnowledgeLintRun>>('/knowledge-runs', { kind: 'lint', status: 'succeeded' });
+
+export const listOpenFindings = () =>
+  v1Get<Page<KnowledgeFinding>>('/knowledge-findings', { status: 'open', page_size: 500 });
+
+/** A2: one of six fixed actions; dismiss needs a reason (BR-166, hidden 90 days). */
+export const resolveFinding = async (
+  id: string,
+  body: { action: FindingAction; reason?: string; assignee_id?: string },
+) => v1Send<KnowledgeFinding>('POST', `/knowledge-findings/${pathId(id)}:resolve`, body);
+
+/** A2: POST /v1/knowledge-runs (202) — a lint run now. */
+export const runKnowledgeLint = () =>
+  v1Send<{ id: string }>('POST', '/knowledge-runs', { kind: 'lint' });

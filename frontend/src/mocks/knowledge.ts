@@ -1,5 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import type {
+  KnowledgeFinding,
+  KnowledgeLintRun,
   KnowledgePage,
   KnowledgePageSummary,
   KnowledgePageVersion,
@@ -113,6 +115,102 @@ const VERSIONS: KnowledgePageVersion[] = [5, 4, 3, 2, 1].map((v) => ({
   created_at: new Date(2026, 9, 8 - (5 - v) * 7).toISOString(),
 }));
 
+// "P07 · Rà soát tri thức" (2405:15078): the latest lint run and its open findings.
+const LINT_RUN: KnowledgeLintRun = {
+  id: 'kr-lint-1010',
+  finished_at: '2026-10-10T01:30:00+07:00',
+  page_count: 412,
+  open_findings: 38,
+  high_findings: 6,
+  stale_pages: 17,
+  skipped_source_pct: 61,
+  duration_minutes: 11,
+  limits_text: 'tối đa 30 phút, 50 thẻ Cần bạn',
+  schedule_text: 'lượt dùng mô hình chạy chủ nhật 02:00',
+};
+
+function findingsFixture(): KnowledgeFinding[] {
+  const f = (
+    id: string,
+    severity: KnowledgeFinding['severity'],
+    kind: KnowledgeFinding['kind'],
+    subject_text: string,
+    detail: string,
+    extra: Partial<KnowledgeFinding> = {},
+  ): KnowledgeFinding => ({
+    id,
+    severity,
+    kind,
+    subject_text,
+    detail,
+    status: 'open',
+    evidence: [],
+    suggestion: null,
+    ...extra,
+  });
+  return [
+    f(
+      'kf-bank-k',
+      'high',
+      'decertified_source',
+      'Ngân hàng K',
+      'Dataset hợp nhất v41 bị thu hồi 09/10; trang tạm mất chứng nhận',
+      { suggestion: 'Gợi ý: Biên soạn lại trang trên dataset v42 rồi gửi chứng nhận.' },
+    ),
+    f(
+      'kf-bank-m',
+      'high',
+      'contradiction',
+      'Lãi suất 12 tháng bình quân ↔ Ngân hàng M',
+      'Website 5,10% và API 4,90% cùng tuần 41',
+      {
+        evidence: [
+          {
+            label: 'Trang “Lãi suất 12 tháng bình quân”',
+            value: '5,10%/năm · website · 08:04 10/10',
+          },
+          { label: 'Trang “Ngân hàng M”', value: '4,90%/năm · API · 08:31 10/10' },
+        ],
+        suggestion: 'Gợi ý: Đề xuất sửa, sau khi xử lý xung đột nguồn ở Cần bạn.',
+      },
+    ),
+    f(
+      'kf-bank-b',
+      'medium',
+      'expired_claim',
+      'Ngân hàng B',
+      '“Sáp nhập công ty tài chính con” hết hạn 31/12/2025',
+    ),
+    f(
+      'kf-casa',
+      'medium',
+      'metric_without_page',
+      'Tỷ lệ CASA',
+      '34 câu hỏi trong 30 ngày, chưa có trang',
+      {
+        suggestion: 'Gợi ý: Tạo trang chỉ số từ định nghĩa đã chứng nhận.',
+      },
+    ),
+    f(
+      'kf-floating',
+      'low',
+      'undefined_term',
+      '“lãi suất thả nổi”',
+      'Xuất hiện ở 4 trang, chưa có trong từ điển',
+    ),
+    f(
+      'kf-fees-2024',
+      'low',
+      'orphan',
+      'Biểu phí 2024',
+      'Không có liên kết đến, 90 ngày không ai đọc',
+      {
+        suggestion: 'Gợi ý: Gỡ trang; vẫn mở lại được từ trích dẫn cũ.',
+      },
+    ),
+  ];
+}
+
 const problem = (status: number, code: string, detail: string) =>
   HttpResponse.json(
     { title: code, status, code, detail },
@@ -121,7 +219,38 @@ const problem = (status: number, code: string, detail: string) =>
 
 export function createKnowledgeHandlers() {
   const pages = pagesFixture();
+  let findings = findingsFixture();
   return [
+    http.get('*/v1/knowledge-runs', () =>
+      HttpResponse.json({ items: [LINT_RUN], next_page_token: '' }),
+    ),
+    http.get('*/v1/knowledge-findings', () =>
+      HttpResponse.json({
+        items: findings.filter((x) => x.status === 'open'),
+        next_page_token: '',
+      }),
+    ),
+    http.post('*/v1/knowledge-findings/:action', async ({ params, request }) => {
+      const [id] = String(params.action).split(':');
+      const finding = findings.find((x) => x.id === id);
+      if (!finding) return problem(404, 'not_found', 'Không tìm thấy phát hiện.');
+      if (finding.status !== 'open') return problem(409, 'conflict', 'Phát hiện đã được xử lý.');
+      const body = (await request.json()) as {
+        action: string;
+        reason?: string;
+        assignee_id?: string;
+      };
+      if (body.action === 'dismiss' && !body.reason?.trim())
+        return problem(422, 'validation_failed', 'Bỏ qua cần ghi lý do (BR-166).');
+      if (body.action === 'reassign' && !body.assignee_id)
+        return problem(422, 'validation_failed', 'Chọn người nhận.');
+      const done: KnowledgeFinding = {
+        ...finding,
+        status: body.action === 'dismiss' ? 'dismissed' : 'resolved',
+      };
+      findings = findings.map((x) => (x.id === id ? done : x));
+      return HttpResponse.json(done);
+    }),
     http.get('*/v1/knowledge-pages', () =>
       HttpResponse.json({ items: pages, next_page_token: '' }),
     ),

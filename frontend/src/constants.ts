@@ -59,6 +59,7 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
         { id: 'KNOWLEDGE', label: 'Trang tri thức' },
         { id: 'AUTHORITY', label: 'Thẩm quyền nguồn' },
         { id: 'RULE', label: 'Quy tắc từ quyết định' },
+        { id: 'KNOWLEDGE_REVIEW', label: 'Rà soát tri thức' },
       ],
     },
   ],
