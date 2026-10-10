@@ -12,21 +12,37 @@ const AnalysisPage = React.lazy(() => import('./features/analysis/AnalysisPage')
 const DataPage = React.lazy(() => import('./features/data/DataPage'));
 const AdminPage = React.lazy(() => import('./features/admin/AdminPage'));
 const AskDataPage = React.lazy(() => import('./features/ask/AskDataPage'));
-const KnowledgeOpsCenter = React.lazy(() => import('./components/knowledge/KnowledgeOpsCenter'));
-const AgentPlayground = React.lazy(() => import('./components/agent-builder/AgentPlayground'));
-const Conversations = React.lazy(() => import('./components/agent-builder/Conversations'));
-const SettingsView = React.lazy(() => import('./components/Settings/Overview'));
-const WorkflowEngine = React.lazy(() => import('./components/agent-builder/workflow/Overview'));
-const AgentRuntimeView = React.lazy(() =>
-  import('./components/agent-builder/agents/AgentRuntime').then(module => ({
-    default: module.AgentRuntimeView,
-  })),
-);
-const ExecutiveDashboard = React.lazy(() =>
-  import('./components/ExecutiveDashboard').then(module => ({
-    default: module.ExecutiveDashboard,
-  })),
-);
+const UsersPage = React.lazy(() => import('./features/admin-access/UsersPage'));
+const DataSpacesPage = React.lazy(() => import('./features/admin-access/DataSpacesPage'));
+const CreateDataSpacePage = React.lazy(() => import('./features/admin-access/CreateDataSpacePage'));
+const PermissionComparePage = React.lazy(() => import('./features/admin-access/PermissionComparePage'));
+const PoliciesPage = React.lazy(() => import('./features/admin-access/PoliciesPage'));
+const AccessRequestsPage = React.lazy(() => import('./features/admin-access/AccessRequestsPage'));
+const AuditPage = React.lazy(() => import('./features/admin-access/AuditPage'));
+const PrivacyPage = React.lazy(() => import('./features/admin-access/PrivacyPage'));
+const ModelsPage = React.lazy(() => import('./features/admin-platform/ModelsPage'));
+const IntegrationsPage = React.lazy(() => import('./features/admin-platform/IntegrationsPage'));
+const MonitoringPage = React.lazy(() => import('./features/admin-platform/MonitoringPage'));
+const CreateAgentPage = React.lazy(() => import('./features/agent-builder-v3/CreateAgentPage'));
+const AgentConfigPage = React.lazy(() => import('./features/agent-builder-v3/AgentConfigPage'));
+const EvaluatePage = React.lazy(() => import('./features/agent-ops/EvaluatePage'));
+const OrchestrationPage = React.lazy(() => import('./features/agent-ops/OrchestrationPage'));
+const AgentOperationsPage = React.lazy(() => import('./features/admin-platform/AgentOperationsPage'));
+const SessionsPage = React.lazy(() => import('./features/sessions/SessionsPage'));
+const ReportReviewPage = React.lazy(() => import('./features/sessions/ReportReviewPage'));
+const DashboardPage = React.lazy(() => import('./features/dashboards/DashboardPage'));
+const SourcesPage = React.lazy(() => import('./features/data-sources/SourcesPage'));
+const SourceDetailPage = React.lazy(() => import('./features/data-sources/SourceDetailPage'));
+const TableProfilePage = React.lazy(() => import('./features/data-sources/TableProfilePage'));
+const ConnectPage = React.lazy(() => import('./features/data-sources/ConnectPage'));
+const JobsPage = React.lazy(() => import('./features/data-sources/JobsPage'));
+const UploadPage = React.lazy(() => import('./features/data-sources/UploadPage'));
+const CollectionsPage = React.lazy(() => import('./features/data-sources/CollectionsPage'));
+const CollectionPage = React.lazy(() => import('./features/data-sources/CollectionPage'));
+const ProfilePage = React.lazy(() => import('./features/admin-platform/ProfilePage'));
+const NotificationsPage = React.lazy(() => import('./features/admin-platform/NotificationsPage'));
+const ChannelRulesPage = React.lazy(() => import('./features/admin-platform/ChannelRulesPage'));
+const ShortcutsPage = React.lazy(() => import('./features/admin-platform/ShortcutsPage'));
 
 type RouteEntry = { render: () => React.ReactNode };
 
@@ -34,7 +50,7 @@ type RouteEntry = { render: () => React.ReactNode };
 export const SINGLE_SCREEN = '_';
 
 /**
- * area → page → screen, for the six v3.1 areas (constants.ts AREA_RAILS, AREA_LANDING).
+ * area → page → screen, for the six v3.1 areas and Cài đặt (constants.ts AREA_RAILS, AREA_LANDING).
  * SINGLE_SCREEN is an area's landing.
  * Nothing here is a placeholder: every entry is a real screen.
  */
@@ -52,41 +68,59 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
 
   agents: {
     TEAM:          { render: () => <AgentTeamPage /> },
-    // Off the rail: "Tạo agent" opens the existing builder until P13 · Tạo agent từ mô tả exists.
-    BUILDER:       { render: () => <AgentRuntimeView /> },
+    // Off the rail, under "Đội agent": P13 Tạo agent từ mô tả and one agent's page (/agents/agent/<id>).
+    BUILDER:       { render: () => <CreateAgentPage /> },
+    AGENT:         { render: () => <AgentConfigPage /> },
     RUNS:          { render: () => <RunsPage /> },
     // /agents/run/<id>, under the "Lượt chạy" rail item.
     RUN:           { render: () => <RunDetailPage /> },
-    EVALUATE:      { render: () => <AgentPlayground /> },
-    ORCHESTRATION: { render: () => <WorkflowEngine /> },
+    EVALUATE:      { render: () => <EvaluatePage /> },
+    ORCHESTRATION: { render: () => <OrchestrationPage /> },
+    OPERATIONS:    { render: () => <AgentOperationsPage /> },
   },
 
   analysis: {
     [SINGLE_SCREEN]: { render: () => <AnalysisPage /> },
     ASK:       { render: () => <AskDataPage /> },
-    SESSIONS:  { render: () => <Conversations /> },
-    DASHBOARD: { render: () => <ExecutiveDashboard /> },
+    // /analysis/sessions lists sessions, /analysis/sessions/<id> opens one as a notebook.
+    SESSIONS:  { render: () => <SessionsPage /> },
+    // /analysis/report/<id>, under "Phiên làm việc"; Cần bạn report_publish cards open it.
+    REPORT:    { render: () => <ReportReviewPage /> },
+    DASHBOARD: { render: () => <DashboardPage /> },
   },
 
   data: {
     [SINGLE_SCREEN]: { render: () => <DataPage /> },
-    // Sources, uploads and collections until P04/P05 are rebuilt.
-    SOURCES:         { render: () => <KnowledgeOpsCenter /> },
+    SOURCES:         { render: () => <SourcesPage /> },
+    SOURCE:          { render: () => <SourceDetailPage /> },
+    TABLE:           { render: () => <TableProfilePage /> },
+    CONNECT:         { render: () => <ConnectPage /> },
+    JOBS:            { render: () => <JobsPage /> },
+    UPLOAD:          { render: () => <UploadPage /> },
+    COLLECTIONS:     { render: () => <CollectionsPage /> },
+    COLLECTION:      { render: () => <CollectionPage /> },
   },
 
   admin: {
-    [SINGLE_SCREEN]: { render: () => <AdminPage /> },
-    OVERVIEW:       { render: () => <SettingsView section="OVERVIEW" /> },
-    ORGANIZATION:   { render: () => <SettingsView section="ORGANIZATION" /> },
-    IAM:            { render: () => <SettingsView section="IAM" /> },
-    AUTH:           { render: () => <SettingsView section="AUTH" /> },
-    SECRETS:        { render: () => <SettingsView section="SECRETS" /> },
-    SECURITY:       { render: () => <SettingsView section="SECURITY" /> },
-    AI_PROVIDERS:   { render: () => <SettingsView section="AI_PROVIDERS" /> },
-    INFRASTRUCTURE: { render: () => <SettingsView section="INFRASTRUCTURE" /> },
-    STORAGE:        { render: () => <SettingsView section="STORAGE" /> },
-    BILLING:        { render: () => <SettingsView section="BILLING" /> },
-    API:            { render: () => <SettingsView section="API" /> },
-    ADVANCED:       { render: () => <SettingsView section="ADVANCED" /> },
+    [SINGLE_SCREEN]:    { render: () => <AdminPage /> },
+    USERS:              { render: () => <UsersPage /> },
+    DATA_SPACES:        { render: () => <DataSpacesPage /> },
+    DATA_SPACE_NEW:     { render: () => <CreateDataSpacePage /> },
+    PERMISSION_COMPARE: { render: () => <PermissionComparePage /> },
+    POLICIES:           { render: () => <PoliciesPage /> },
+    ACCESS_REQUESTS:    { render: () => <AccessRequestsPage /> },
+    MODELS:             { render: () => <ModelsPage /> },
+    INTEGRATIONS:       { render: () => <IntegrationsPage /> },
+    MONITORING:         { render: () => <MonitoringPage /> },
+    AUDIT:              { render: () => <AuditPage /> },
+    PRIVACY:            { render: () => <PrivacyPage /> },
+  },
+
+  // Cài đặt: the user's own settings, opened from the avatar menu.
+  account: {
+    PROFILE:       { render: () => <ProfilePage /> },
+    NOTIFICATIONS: { render: () => <NotificationsPage /> },
+    CHANNEL_RULES: { render: () => <ChannelRulesPage /> },
+    SHORTCUTS:     { render: () => <ShortcutsPage /> },
   },
 };

@@ -1,35 +1,26 @@
 /**
- * "Why you can trust this" — one line under the answer: which approved metric
- * (or model-written SQL), how many rows, how many tables, how fresh, any risk
- * — and a "View SQL" toggle. Everything comes from the `__evidence` frame.
+ * "Vì sao tin được" — one compact block under the answer: trust label, which approved metric
+ * (or model-written SQL), how many rows and tables, how fresh, any risk — and a "Xem SQL"
+ * toggle. SQL stays folded by default (docs/v3/01 §5.4). Everything comes from the run frames.
  */
-import React, { useState } from 'react';
-import { Check, ChevronDown, ChevronUp, Code2, Copy, ShieldCheck } from 'lucide-react';
+import { useState } from 'react';
+import { Badge } from '../../../design-system/Badge';
+import { Button } from '../../../design-system/Button';
+import { Icon } from '../../../design-system/Icon';
 import type { Evidence } from '../types';
 import { runChips, type Tone } from './evidenceSummary';
 
-const TONE_STYLE: Record<Tone, React.CSSProperties> = {
-  ok:      { background: 'var(--ab-ok-bg)',   color: 'var(--ab-ok)',   borderColor: 'transparent' },
-  warn:    { background: 'var(--ab-warn-bg)', color: 'var(--ab-warn)', borderColor: 'transparent' },
-  bad:     { background: 'var(--ab-bad-bg)',  color: 'var(--ab-bad)',  borderColor: 'transparent' },
-  neutral: { background: 'var(--ab-bg-2)',    color: 'var(--ab-fg-2)', borderColor: 'var(--ab-border)' },
-};
+const BADGE_TONE = { ok: 'success', warn: 'warning', bad: 'error', neutral: 'neutral' } as const;
 
 export function Chip({ label, tone, title }: { label: string; tone: Tone; title?: string }) {
   return (
-    <span
-      title={title}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 9999,
-        fontSize: 10.5, fontWeight: 600, border: '1px solid', whiteSpace: 'nowrap', ...TONE_STYLE[tone],
-      }}
-    >
-      {label}
+    <span title={title} className="inline-flex">
+      <Badge tone={BADGE_TONE[tone]}>{label}</Badge>
     </span>
   );
 }
 
-export function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {
+export function CopyButton({ text, label = 'Sao chép' }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
   const copy = async () => {
     try {
@@ -39,9 +30,9 @@ export function CopyButton({ text, label = 'Copy' }: { text: string; label?: str
     } catch { /* clipboard unavailable */ }
   };
   return (
-    <button type="button" className="ab-btn" onClick={copy} title={label}>
-      {done ? <Check size={11} /> : <Copy size={11} />} {done ? 'Copied' : label}
-    </button>
+    <Button kind="ghost" size="sm" icon={done ? 'check' : 'copy'} onClick={copy} title={label}>
+      {done ? 'Đã chép' : label}
+    </Button>
   );
 }
 
@@ -49,11 +40,7 @@ export function SqlBlock({ sql }: { sql: string }) {
   return (
     <pre
       data-testid="sql-block"
-      style={{
-        margin: '6px 0 0', padding: '10px 12px', borderRadius: 8, fontSize: 11.5, lineHeight: 1.6,
-        fontFamily: 'var(--font-mono)', background: 'var(--ab-code-bg)', color: 'var(--ab-fg-2)',
-        border: '1px solid var(--ab-border)', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-      }}
+      className="m-0 overflow-x-auto whitespace-pre-wrap break-words rounded-md border border-border bg-subtle px-da-lg py-da-md text-foreground da-mono"
     >
       {sql}
     </pre>
@@ -65,35 +52,42 @@ export function EvidenceStrip({ evidence, onOpenPanel }: { evidence: Evidence; o
   if (!evidence.runs.length && !evidence.warnings.length) return null;
 
   return (
-    <div data-testid="evidence-strip" style={{ marginTop: 10, padding: '8px 10px', borderRadius: 10, background: 'var(--ab-bg)', border: '1px solid var(--ab-border)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-        <ShieldCheck size={12} style={{ color: 'var(--ab-accent)' }} />
-        <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--ab-muted)' }}>Why you can trust this</span>
+    <section
+      data-testid="evidence-strip"
+      aria-label="Vì sao tin được"
+      className="flex flex-col gap-da-md rounded-md border border-border bg-background px-da-lg py-da-md"
+    >
+      <div className="flex items-center gap-da-sm">
+        <Icon name="shield" size={14} className="text-primary" />
+        <span className="text-muted-foreground da-caption">Vì sao tin được</span>
         {onOpenPanel && (
-          <button type="button" className="ab-link" style={{ marginLeft: 'auto' }} onClick={onOpenPanel}>Details ›</button>
+          <button type="button" className="ml-auto text-primary hover:underline da-body-strong" onClick={onOpenPanel}>
+            Chi tiết
+          </button>
         )}
       </div>
 
       {evidence.runs.map((run, i) => (
-        <div key={run.id ?? i} style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: i ? 6 : 0, borderTop: i ? '1px dashed var(--ab-border)' : 'none' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <div key={run.id ?? i} className={i ? 'flex flex-col gap-da-sm border-t border-border pt-da-md' : 'flex flex-col gap-da-sm'}>
+          <div className="flex flex-wrap items-center gap-da-sm">
             {runChips(run).map(({ key, ...c }) => <Chip key={key} {...c} />)}
-            <button
-              type="button"
-              className="ab-btn"
+            <Button
+              kind="ghost"
+              size="sm"
+              className="ml-auto"
               aria-expanded={openSql === i}
               onClick={() => setOpenSql(openSql === i ? null : i)}
-              style={{ marginLeft: 'auto' }}
             >
-              <Code2 size={11} /> {openSql === i ? 'Hide SQL' : 'View SQL'} {openSql === i ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-            </button>
+              {openSql === i ? 'Ẩn SQL' : 'Xem SQL'}
+              <Icon name="chevron-down" size={14} className={openSql === i ? 'rotate-180' : undefined} />
+            </Button>
           </div>
           {openSql === i && (
-            <div>
+            <div className="flex flex-col gap-da-sm">
               <SqlBlock sql={run.sql} />
-              <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
-                <CopyButton text={run.sql} label="Copy SQL" />
-                <span style={{ fontSize: 10.5, color: 'var(--ab-muted)' }}>Passed the read-only guard · access logged</span>
+              <div className="flex items-center gap-da-sm">
+                <CopyButton text={run.sql} label="Sao chép SQL" />
+                <span className="text-muted-foreground da-caption">Đã qua lớp chặn chỉ-đọc · có ghi nhật ký truy cập</span>
               </div>
             </div>
           )}
@@ -102,9 +96,9 @@ export function EvidenceStrip({ evidence, onOpenPanel }: { evidence: Evidence; o
 
       {evidence.warnings.map((w, i) => (
         w.kind === 'assumption'
-          ? <div key={i} data-testid="assumption" style={{ marginTop: 6, fontSize: 11, color: 'var(--ab-muted)' }}>ⓘ Assumed: {w.detail}</div>
-          : <div key={i} style={{ marginTop: 6, fontSize: 11, color: 'var(--ab-bad)' }}>⚠ {w.detail}</div>
+          ? <p key={i} data-testid="assumption" className="m-0 text-muted-foreground da-caption">Giả định: {w.detail}</p>
+          : <p key={i} className="m-0 flex items-center gap-da-xs text-error da-caption"><Icon name="alert" size={12} />{w.detail}</p>
       ))}
-    </div>
+    </section>
   );
 }

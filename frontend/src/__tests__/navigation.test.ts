@@ -7,8 +7,11 @@ import { ROUTE_MAP, SINGLE_SCREEN } from '../routes';
 import { landingFor, resolveRoute } from '../AppStateContext';
 
 describe('navigation', () => {
-  it('shows the six v3.1 areas in order', () => {
-    expect(AREAS.map(a => a.label)).toEqual(['Trang chủ', 'Cần bạn', 'Agents', 'Phân tích', 'Dữ liệu', 'Quản trị']);
+  it('shows the six v3.1 areas in order, with Cài đặt only behind the avatar', () => {
+    expect(AREAS.filter(a => !a.hidden).map(a => a.label)).toEqual([
+      'Trang chủ', 'Cần bạn', 'Agents', 'Phân tích', 'Dữ liệu', 'Quản trị',
+    ]);
+    expect(AREAS.filter(a => a.hidden).map(a => a.id)).toEqual(['account']);
   });
 
   it('keeps Trang chủ and Cần bạn in the bar on narrow screens', () => {
@@ -27,7 +30,17 @@ describe('navigation', () => {
   it('draws the rail on rail pages only', () => {
     expect(isRailPage('analysis', undefined)).toBe(false);
     expect(isRailPage('analysis', 'ASK')).toBe(true);
-    expect(isRailPage('agents', 'BUILDER')).toBe(false);
+    // A detail page draws its parent's rail: Tạo agent sits under Đội agent, as in Figma.
+    expect(isRailPage('agents', 'BUILDER')).toBe(true);
+    expect(isRailPage('analysis', 'REPORT')).toBe(true);
+    expect(isRailPage('agents', 'UNKNOWN')).toBe(false);
+  });
+
+  it('keeps no rail item of the old Settings screens', () => {
+    const adminIds = (AREA_RAILS.admin ?? []).flatMap(g => g.items.map(i => i.id));
+    for (const old of ['IAM', 'AUTH', 'SECRETS', 'SECURITY', 'AI_PROVIDERS', 'INFRASTRUCTURE', 'STORAGE', 'BILLING', 'API', 'ADVANCED']) {
+      expect(adminIds).not.toContain(old);
+    }
   });
 
   it('lands everyone on Trang chủ', () => {
@@ -40,6 +53,7 @@ describe('navigation', () => {
     expect(firstPageOf('agents')).toBe('TEAM');
     expect(firstPageOf('analysis')).toBeUndefined();
     expect(firstPageOf('home')).toBeUndefined();
+    expect(firstPageOf('account')).toBe('PROFILE');
   });
 
   it('redirects links of the earlier IAs to the v3.1 areas', () => {
@@ -53,8 +67,10 @@ describe('navigation', () => {
     expect(resolveRoute('ops', 'TRACES')).toEqual({ module: 'agents', sub: 'RUNS' });
     expect(resolveRoute('ops', 'REVIEWS')).toEqual({ module: 'needs-you', sub: undefined });
     expect(resolveRoute('ops', 'ANALYTICS')).toEqual({ module: 'analysis', sub: 'DASHBOARD' });
-    expect(resolveRoute('settings', 'TEAM')).toEqual({ module: 'admin', sub: 'IAM' });
-    expect(resolveRoute('settings', 'BILLING')).toEqual({ module: 'admin', sub: 'BILLING' });
+    expect(resolveRoute('settings', 'TEAM')).toEqual({ module: 'admin', sub: 'USERS' });
+    expect(resolveRoute('settings', 'AI_PROVIDERS')).toEqual({ module: 'admin', sub: 'MODELS' });
+    expect(resolveRoute('settings', 'BILLING')).toEqual({ module: 'agents', sub: 'OPERATIONS' });
+    expect(resolveRoute('settings', 'ADVANCED')).toEqual({ module: 'admin', sub: undefined });
     expect(resolveRoute('monitor', 'TRACES')).toEqual({ module: 'agents', sub: 'RUNS' });
     expect(resolveRoute('test', 'PLAYGROUND')).toEqual({ module: 'agents', sub: 'EVALUATE' });
   });

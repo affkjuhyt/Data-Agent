@@ -10,6 +10,7 @@ import { setDataSpace } from '../../lib/v1/client';
 import { listDataSpaces } from '../../lib/v1/api';
 import { useV1 } from '../../lib/v1/useV1';
 import { NotificationDrawer } from '../../features/notifications/NotificationDrawer';
+import { useAuth } from '../../lib/AuthProvider';
 
 /*
  * The frame shared by every desktop screen ("Spec · Khung trang"): the 56px top bar and the
@@ -18,6 +19,7 @@ import { NotificationDrawer } from '../../features/notifications/NotificationDra
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const { activeModule, subTab, navigate, setSubTab, user } = useAppState();
+  const { logout } = useAuth();
   const area = activeModule as AreaId;
   const page = subTab[area] ?? firstPageOf(area);
   const rail = isRailPage(area, page) ? AREA_RAILS[area] : undefined;
@@ -64,6 +66,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         onWorkspace={chooseSpace}
         onOpenCommand={() => setPaletteOpen(true)}
         onOpenNotifications={() => setNotificationsOpen(true)}
+        onOpenAccount={(page) => navigate('account', page)}
+        onLogout={logout}
         userName={user.name}
       />
       <div className="flex min-h-0 flex-1">

@@ -26,7 +26,8 @@ const topBar = (props: Partial<Parameters<typeof AppTopBar>[0]> = {}) => (
 describe('AppTopBar', () => {
   it('lists the six areas and marks the current one', () => {
     render(topBar({ active: 'agents' }));
-    for (const area of AREAS) expect(screen.getAllByText(area.label).length).toBeGreaterThan(0);
+    for (const area of AREAS.filter((a) => !a.hidden))
+      expect(screen.getAllByText(area.label).length).toBeGreaterThan(0);
     expect(screen.getByRole('link', { name: 'Agents' })).toHaveAttribute('aria-current', 'page');
   });
 

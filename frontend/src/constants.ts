@@ -8,10 +8,7 @@ export { AREAS } from './components/shell/areas';
  * as in Figma, where "v3.1 · Phân tích" has no rail and the detail screens do.
  * Page ids are upper-case internally and lower-case in the URL (/agents/runs ↔ RUNS);
  * routes.tsx maps every id below to a screen.
- *
- * Until each screen is rebuilt on the v3 design, the rail points at the existing screen that
- * does the job: Lượt chạy is the trace explorer, Điều phối the workflow canvas, Đánh giá &
- * triển khai the playground, Phiên làm việc the conversation list.
+ * Rail items follow the Figma rails, minus the items that have no screen yet.
  */
 export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
   agents: [
@@ -22,6 +19,7 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
         { id: 'RUNS', label: 'Lượt chạy' },
         { id: 'EVALUATE', label: 'Đánh giá & triển khai' },
         { id: 'ORCHESTRATION', label: 'Điều phối' },
+        { id: 'OPERATIONS', label: 'Vận hành' },
       ],
     },
   ],
@@ -30,43 +28,55 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
       label: 'Phân tích',
       items: [
         { id: 'ASK', label: 'Hỏi đáp' },
-        { id: 'SESSIONS', label: 'Phiên làm việc' },
         { id: 'DASHBOARD', label: 'Dashboard' },
+        { id: 'SESSIONS', label: 'Phiên làm việc' },
       ],
     },
   ],
-  // Ids = SettingsSection (components/Settings/Overview.tsx).
+  data: [
+    {
+      label: 'Nguồn & nạp',
+      items: [
+        { id: 'SOURCES', label: 'Nguồn' },
+        { id: 'JOBS', label: 'Job nạp' },
+        { id: 'UPLOAD', label: 'Tải tệp' },
+      ],
+    },
+    { label: 'Tài liệu', items: [{ id: 'COLLECTIONS', label: 'Bộ sưu tập' }] },
+  ],
+  account: [
+    {
+      label: 'Cá nhân',
+      items: [
+        { id: 'PROFILE', label: 'Hồ sơ' },
+        { id: 'NOTIFICATIONS', label: 'Thông báo' },
+        { id: 'SHORTCUTS', label: 'Phím tắt' },
+      ],
+    },
+  ],
   admin: [
     {
-      label: 'Chung',
+      label: 'Người & quyền',
       items: [
-        { id: 'OVERVIEW', label: 'Tổng quan' },
-        { id: 'ORGANIZATION', label: 'Tổ chức' },
+        { id: 'USERS', label: 'Người dùng & vai trò' },
+        { id: 'DATA_SPACES', label: 'Data Space' },
+        { id: 'POLICIES', label: 'Chính sách dữ liệu' },
+        { id: 'ACCESS_REQUESTS', label: 'Yêu cầu quyền' },
       ],
     },
     {
-      label: 'Bảo mật',
+      label: 'Hệ thống',
       items: [
-        { id: 'IAM', label: 'Người dùng & quyền' },
-        { id: 'AUTH', label: 'Đăng nhập & SSO' },
-        { id: 'SECRETS', label: 'Kho bí mật' },
-        { id: 'SECURITY', label: 'Bảo mật & tuân thủ' },
+        { id: 'MODELS', label: 'Mô hình AI' },
+        { id: 'INTEGRATIONS', label: 'Tích hợp' },
+        { id: 'MONITORING', label: 'Giám sát hệ thống' },
       ],
     },
     {
-      label: 'Nền tảng',
+      label: 'Tuân thủ',
       items: [
-        { id: 'AI_PROVIDERS', label: 'Mô hình AI' },
-        { id: 'INFRASTRUCTURE', label: 'Hạ tầng runtime' },
-        { id: 'STORAGE', label: 'Lưu trữ' },
-      ],
-    },
-    {
-      label: 'Vận hành',
-      items: [
-        { id: 'BILLING', label: 'Chi phí' },
-        { id: 'API', label: 'API & nhà phát triển' },
-        { id: 'ADVANCED', label: 'Nâng cao' },
+        { id: 'AUDIT', label: 'Kiểm toán' },
+        { id: 'PRIVACY', label: 'Quyền riêng tư' },
       ],
     },
   ],
@@ -81,7 +91,11 @@ export const firstPageOf = (area: AreaId): string | undefined =>
 
 /** Detail pages that live under a rail item: /agents/run/<id> keeps "Lượt chạy" selected. */
 const RAIL_PARENT: Partial<Record<AreaId, Record<string, string>>> = {
-  agents: { RUN: 'RUNS' },
+  agents: { RUN: 'RUNS', AGENT: 'TEAM', BUILDER: 'TEAM' },
+  analysis: { REPORT: 'SESSIONS' },
+  data: { SOURCE: 'SOURCES', TABLE: 'SOURCES', CONNECT: 'SOURCES', COLLECTION: 'COLLECTIONS' },
+  admin: { DATA_SPACE_NEW: 'DATA_SPACES', PERMISSION_COMPARE: 'DATA_SPACES' },
+  account: { CHANNEL_RULES: 'NOTIFICATIONS' },
 };
 
 /** The rail item a page highlights: itself, or the item its detail page belongs to. */

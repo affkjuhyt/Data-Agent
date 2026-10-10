@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import { cn } from '../../lib/utils';
 import { Avatar } from '../../design-system/Avatar';
 import { Icon } from '../../design-system/Icon';
+import { Menu } from '../../design-system/Menu';
 import type { AreaId, AreaDef } from './areas';
 
 /*
@@ -31,6 +32,8 @@ export function AppTopBar({
   onWorkspace,
   onOpenCommand,
   onOpenNotifications,
+  onOpenAccount,
+  onLogout,
   userName,
 }: {
   areas: AreaDef[];
@@ -44,9 +47,13 @@ export function AppTopBar({
   onWorkspace: (id: string) => void;
   onOpenCommand: () => void;
   onOpenNotifications?: () => void;
+  /** Avatar menu: a Cài đặt page (PROFILE, NOTIFICATIONS, SHORTCUTS) or sign-out. */
+  onOpenAccount?: (page: string) => void;
+  onLogout?: () => void;
   userName: string;
 }) {
-  const folded = areas.filter((a) => !a.pinnedOnNarrow);
+  const shown = areas.filter((a) => !a.hidden);
+  const folded = shown.filter((a) => !a.pinnedOnNarrow);
 
   return (
     <header className="sticky top-0 z-[var(--z-topbar)] flex h-14 shrink-0 items-center gap-da-lg border-b border-border bg-card px-da-xl">
@@ -62,7 +69,7 @@ export function AppTopBar({
       </div>
 
       <nav aria-label="Khu vực" className="flex shrink-0 items-center gap-da-xs">
-        {areas.map((area) => (
+        {shown.map((area) => (
           <AreaLink
             key={area.id}
             area={area}
@@ -107,7 +114,17 @@ export function AppTopBar({
       >
         <Icon name="bell" />
       </button>
-      <Avatar name={userName} />
+      <Menu
+        label="Tài khoản"
+        trigger={<Avatar name={userName} />}
+        items={[
+          { label: 'Hồ sơ', icon: 'users', onSelect: () => onOpenAccount?.('PROFILE') },
+          { label: 'Thông báo', icon: 'bell', onSelect: () => onOpenAccount?.('NOTIFICATIONS') },
+          { label: 'Phím tắt', onSelect: () => onOpenAccount?.('SHORTCUTS') },
+          { kind: 'separator' },
+          { label: 'Đăng xuất', onSelect: () => onLogout?.() },
+        ]}
+      />
     </header>
   );
 }

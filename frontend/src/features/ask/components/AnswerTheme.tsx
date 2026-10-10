@@ -1,12 +1,12 @@
 /**
- * Theme scope for the shared answer components.
+ * Scope for the shared answer components (Ask screen and the agent Playground).
  *
- * The Playground draws on a near-black panel, the rest of the product on the
- * cream/gold system. The answer block is used in both, so its colours come
- * from CSS variables set by `.answer-theme-light` / `.answer-theme-dark`
- * (src/index.css) rather than being hard-coded per copy of the component.
+ * The components draw with the v3.1 design tokens (design-system/tokens.css). Only the light
+ * theme exists there — dark mode is paused in Figma ("zz · Bản tối") — so `mode` is kept for the
+ * callers' API but "dark" renders like "light" until the tokens get a dark set.
  */
 import React, { createContext, useContext } from 'react';
+import { cn } from '../../../lib/utils';
 
 type AnswerThemeMode = 'light' | 'dark';
 
@@ -14,15 +14,8 @@ const Ctx = createContext<AnswerThemeMode>('light');
 
 export const useAnswerTheme = (): AnswerThemeMode => useContext(Ctx);
 
-export const CHART_COLORS: Record<AnswerThemeMode, string[]> = {
-  dark:  ['#EBD07C', '#93C5FD', '#86EFAC', '#F8A4A4', '#C084FC', '#7DD3FC'],
-  light: ['#B88719', '#0E5F63', '#1D6F4C', '#A83A32', '#6B4FBB', '#2F6FB3'],
-};
-
-export const CITATION_COLORS: Record<AnswerThemeMode, Record<string, string>> = {
-  dark:  { kb: '#93C5FD', web: '#86EFAC', mcp: '#C084FC', tool: '#86EFAC', db: '#93C5FD' },
-  light: { kb: '#2F6FB3', web: '#1D6F4C', mcp: '#6B4FBB', tool: '#1D6F4C', db: '#0E5F63' },
-};
+/** Series colours in the fixed order of color/chart/1..6. */
+export const chartColor = (index: number): string => `var(--chart-${(index % 6) + 1})`;
 
 export function AnswerTheme({
   mode,
@@ -37,7 +30,7 @@ export function AnswerTheme({
 }) {
   return (
     <Ctx.Provider value={mode}>
-      <div className={`answer-theme-${mode}${className ? ` ${className}` : ''}`} style={style}>
+      <div className={cn('text-foreground', className)} style={style}>
         {children}
       </div>
     </Ctx.Provider>

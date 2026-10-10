@@ -34,7 +34,7 @@ export default function AdminPage() {
           iconSlot={40}
           titleSize="md"
           title="Người & quyền"
-          onOpen={open('IAM')}
+          onOpen={open('USERS')}
         >
           {people !== undefined && (
             <span className="text-muted-foreground da-body-small">
@@ -47,7 +47,7 @@ export default function AdminPage() {
           iconSlot={40}
           titleSize="md"
           title="Chính sách & quy tắc"
-          onOpen={open('SECURITY')}
+          onOpen={open('POLICIES')}
         >
           <span className="text-muted-foreground da-body-small">
             Chính sách dữ liệu và hành vi của agent
@@ -58,7 +58,7 @@ export default function AdminPage() {
           iconSlot={40}
           titleSize="md"
           title="Mô hình AI"
-          onOpen={open('AI_PROVIDERS')}
+          onOpen={open('MODELS')}
         >
           {models.data && (
             <span className="text-muted-foreground da-body-small">
@@ -76,7 +76,7 @@ export default function AdminPage() {
           iconSlot={40}
           titleSize="md"
           title="Tích hợp"
-          onOpen={open('API')}
+          onOpen={open('INTEGRATIONS')}
         >
           <span className="text-muted-foreground da-body-small">Teams, email, SSO, API, MCP</span>
         </LinkCard>
@@ -85,7 +85,7 @@ export default function AdminPage() {
           iconSlot={40}
           titleSize="md"
           title="Kiểm toán"
-          onOpen={open('SECURITY')}
+          onOpen={open('AUDIT')}
         >
           <span className="text-muted-foreground da-body-small">
             Ai đã làm gì, khi nào, thay ai
@@ -96,7 +96,7 @@ export default function AdminPage() {
           iconSlot={40}
           titleSize="md"
           title="Quyền riêng tư"
-          onOpen={open('SECURITY')}
+          onOpen={open('PRIVACY')}
         >
           <span className="text-muted-foreground da-body-small">Yêu cầu của chủ thể dữ liệu</span>
         </LinkCard>

@@ -3,13 +3,15 @@
  * approved 08/10/2026) and the secondary rail of the areas that have one.
  * URL: /<area>/<page>, both kebab-case; an area's first page is its landing.
  */
-export type AreaId = 'home' | 'needs-you' | 'agents' | 'analysis' | 'data' | 'admin';
+export type AreaId = 'home' | 'needs-you' | 'agents' | 'analysis' | 'data' | 'admin' | 'account';
 
 export interface AreaDef {
   id: AreaId;
   label: string;
   /** Stays in the top bar under 1280px; the others fold into "☰". */
   pinnedOnNarrow?: boolean;
+  /** Not in the top bar: Cài đặt opens from the avatar menu (Figma "Popover · Tài khoản"). */
+  hidden?: boolean;
 }
 
 export const AREAS: AreaDef[] = [
@@ -19,6 +21,7 @@ export const AREAS: AreaDef[] = [
   { id: 'analysis', label: 'Phân tích' },
   { id: 'data', label: 'Dữ liệu' },
   { id: 'admin', label: 'Quản trị' },
+  { id: 'account', label: 'Cài đặt', hidden: true },
 ];
 
 export interface RailItem {

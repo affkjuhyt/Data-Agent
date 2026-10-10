@@ -77,9 +77,15 @@ const REDIRECT_MAP: Record<string, Redirect> = {
   settings: {
     module: 'admin', sub: '',
     subs: {
-      TEAM:      { module: 'admin', sub: 'IAM' },
-      PROVIDERS: { module: 'admin', sub: 'AI_PROVIDERS' },
-      AUDIT:     { module: 'admin', sub: 'SECURITY' },
+      TEAM:           { module: 'admin', sub: 'USERS' },
+      IAM:            { module: 'admin', sub: 'USERS' },
+      PROVIDERS:      { module: 'admin', sub: 'MODELS' },
+      AI_PROVIDERS:   { module: 'admin', sub: 'MODELS' },
+      API:            { module: 'admin', sub: 'INTEGRATIONS' },
+      INFRASTRUCTURE: { module: 'admin', sub: 'MONITORING' },
+      AUDIT:          { module: 'admin', sub: 'AUDIT' },
+      SECURITY:       { module: 'admin', sub: 'AUDIT' },
+      BILLING:        { module: 'agents', sub: 'OPERATIONS' },
     },
   },
   // Older IAs
@@ -90,7 +96,7 @@ const REDIRECT_MAP: Record<string, Redirect> = {
   'release-management': { module: 'agents', sub: 'TEAM' },
   'release':            { module: 'agents', sub: 'TEAM' },
   'operations-center':  { module: 'agents', sub: 'RUNS' },
-  'governance':         { module: 'admin', sub: 'SECURITY' },
+  'governance':         { module: 'admin', sub: 'AUDIT' },
   'test':               { module: 'agents', sub: 'EVALUATE' },
   'monitor': {
     module: 'analysis', sub: 'SESSIONS',
@@ -109,8 +115,6 @@ export const resolveRoute = (module: string, sub?: string): { module: string; su
   if (!r) return { module, sub };
   const mapped = sub ? r.subs?.[sub] : undefined;
   if (mapped) return { module: mapped.module, sub: mapped.sub || undefined };
-  // An old settings section keeps its id under Quản trị.
-  if (module === 'settings' && sub) return { module: 'admin', sub };
   return { module: r.module, sub: r.sub || undefined };
 };
 

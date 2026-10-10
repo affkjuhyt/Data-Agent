@@ -8,7 +8,6 @@ import { setupServer } from 'msw/node';
 import type { ReactElement } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
-import { createAdminPlatformHandlers } from '../../mocks/adminPlatform';
 import { createHandlers } from '../../mocks/handlers';
 import AgentOperationsPage from './AgentOperationsPage';
 import ChannelRulesPage from './ChannelRulesPage';
@@ -24,7 +23,7 @@ vi.mock('../../AppStateContext', () => ({ useAppState: () => ({ navigate }) }));
 
 const server = setupServer();
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
-beforeEach(() => server.use(...createAdminPlatformHandlers(), ...createHandlers()));
+beforeEach(() => server.use(...createHandlers()));
 afterEach(() => {
   server.resetHandlers();
   navigate.mockReset();
@@ -178,7 +177,7 @@ describe('NotificationsPage', () => {
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'quy tắc kênh' }));
-    expect(navigate).toHaveBeenCalledWith('settings', 'CHANNEL_RULES');
+    expect(navigate).toHaveBeenCalledWith('account', 'CHANNEL_RULES');
   });
 });
 

@@ -1,23 +1,30 @@
 /**
- * One assistant answer, in the fixed order a reader scans (a refused turn is
- * one RefusalCard instead — it has no answer, table or sources to show):
- *   1 text (with citation markers) → 2 clarification card (if asking)
- *   → 3 data table → 4 charts → 5 "why trust this" strip → 6 sources
- *   → 7 actions (export, copy) → 8 follow-up chips.
- * Used by the Ask screen (light) and the Playground (dark) through AnswerTheme.
+ * One assistant answer, in the order of "P01 · Hỏi đáp" (2296:18531…18620); a refused turn is
+ * one RefusalCard instead — it has no answer, table or sources to show:
+ *   1 "Hệ thống hiểu là" chips → 2 text (with citation markers) → 3 clarification card
+ *   → 4 charts → 5 data tables → 6 "Vì sao tin được" strip → 7 sources
+ *   → 8 meta row: trust label, timing, Cách tính · Xuất · Sao chép · Lưu câu hỏi · Báo sai
+ *   → 9 follow-up chips.
+ * The trust label is on every finished answer (invariant 14). Used by the Ask screen and the
+ * agent Playground.
  */
-import { lazy, Suspense, useMemo } from 'react';
-import { Bookmark, Download, Sparkles } from 'lucide-react';
-import { formatTime } from '../../../lib/formatVN';
+import { lazy, Suspense, useMemo, useState } from 'react';
+import { Badge } from '../../../design-system/Badge';
+import { StatusDot } from '../../../design-system/StatusDot';
+import { SuggestionChip } from '../../../design-system/SuggestionChip';
+import { formatDuration, formatTime } from '../../../lib/formatVN';
 import { downloadResultXlsx, fetchResultRows } from '../api';
 import { csvFileName, downloadCsv, toCsv } from '../exportCsv';
-import type { AskMessage, ClarificationReply } from '../types';
+import { interpretationChips } from '../interpretation';
 import { resultSetToEvidenceRun } from '../resultSets';
+import { answerTrust } from '../trust';
+import type { AskMessage, ClarificationReply, EvidenceRun } from '../types';
 import { CitationPanel } from './CitationPanel';
 import { ClarificationCard } from './ClarificationCard';
 import { DataGrid } from './DataGrid';
-import { EvidenceStrip, CopyButton } from './EvidenceStrip';
+import { EvidenceStrip } from './EvidenceStrip';
 import { hasEvidence, primaryRun } from './evidenceSummary';
+import { ExportDialog } from './ExportDialog';
 import { MarkdownContent } from './MarkdownContent';
 import { RefusalCard } from './RefusalCard';
 
@@ -33,6 +40,7 @@ interface AnswerBlockProps {
   onSuggestion?: (text: string) => void;
   onAnswerClarification?: (reply: ClarificationReply) => void;
   onSave?: () => void;
+  /** "Cách tính": open the side panel for this answer */
   onOpenEvidence?: () => void;
   /** hide the inline strip when a side panel already shows the details */
   showEvidenceStrip?: boolean;
@@ -43,22 +51,47 @@ interface AnswerBlockProps {
   onRephrase?: () => void;
   /** Playground: show the refusal's code and lookup id */
   showRefusalDetail?: boolean;
+  /** "Báo sai": open the report dialog for this answer */
+  onReport?: () => void;
+  /** the reader reported this answer; it shows "Đang kiểm tra" until review */
+  reported?: boolean;
 }
+
+const TRUST_DOT = { success: 'success', primary: 'primary', warning: 'warning', info: 'info', neutral: 'neutral' } as const;
+const LINK = 'shrink-0 whitespace-nowrap text-primary hover:underline da-body-strong disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline';
 
 function TypingDots() {
   return (
-    <span data-testid="typing" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 0' }}>
+    <span data-testid="typing" aria-label="Đang trả lời" className="inline-flex items-center gap-da-xs py-da-xs">
       {[0, 1, 2].map(i => (
-        <span key={i} className="pulse-soft" style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--ab-muted)', display: 'inline-block', animationDelay: `${i * 0.18}s` }} />
+        <span key={i} className="size-1.5 animate-pulse rounded-full bg-muted-foreground" style={{ animationDelay: `${i * 0.18}s` }} />
       ))}
     </span>
+  );
+}
+
+function CopyLink({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard?.writeText(text);
+      setDone(true);
+      setTimeout(() => setDone(false), 1500);
+    } catch { /* clipboard unavailable */ }
+  };
+  return (
+    <button type="button" className={LINK} onClick={copy}>
+      {done ? 'Đã chép' : 'Sao chép'}
+    </button>
   );
 }
 
 export function AnswerBlock({
   msg, question, busy, onSuggestion, onAnswerClarification, onSave, onOpenEvidence,
   showEvidenceStrip = true, showTimestamp = true, onRetry, onRephrase, showRefusalDetail,
+  onReport, reported,
 }: AnswerBlockProps) {
+  const [exportOpen, setExportOpen] = useState(false);
   const resultRuns = useMemo(() => (msg.resultSets ?? []).map(resultSetToEvidenceRun), [msg.resultSets]);
   const run = resultRuns[0] ?? primaryRun(msg.evidence);
   const displayedRuns = resultRuns.length ? resultRuns : run ? [run] : [];
@@ -66,15 +99,20 @@ export function AnswerBlock({
     ? { runs: resultRuns, clarifications: msg.evidence?.clarifications ?? [], warnings: msg.evidence?.warnings ?? [] }
     : msg.evidence, [msg.evidence, resultRuns]);
   const streaming = msg.status === 'streaming';
+  const allRuns = displayEvidence?.runs ?? [];
+  const trust = useMemo(() => answerTrust(allRuns, msg.citations ?? []), [allRuns, msg.citations]);
+  const reading = useMemo(() => interpretationChips(run), [run]);
 
-  const exportCsv = (target = run) => {
+  const exportCsv = (target: EvidenceRun | null = run) => {
     if (!target || !target.rows.length) return;
     downloadCsv(csvFileName(question ?? msg.content.slice(0, 40)), toCsv(target.columns, target.rows));
   };
+  const xlsxId = run?.export?.xlsx_available ? run.export.result_id : null;
+  const exportable = !!run && (run.rows.length > 0 || !!xlsxId);
 
   if (msg.refusal) {
     return (
-      <div data-testid="answer-block" style={{ display: 'flex', flexDirection: 'column' }}>
+      <div data-testid="answer-block" className="flex flex-col">
         <RefusalCard
           refusal={msg.refusal}
           onRetry={onRetry}
@@ -86,12 +124,35 @@ export function AnswerBlock({
     );
   }
 
+  // Asking back is not an answer yet: no label until something was answered.
+  const answered = !streaming && (!!msg.content || allRuns.length > 0) && !(msg.clarification && !allRuns.length);
+
   return (
-    <div data-testid="answer-block" style={{ display: 'flex', flexDirection: 'column' }}>
+    <div data-testid="answer-block" className="flex flex-col gap-da-lg">
+      {reading.length > 0 && (
+        <div className="flex flex-col gap-da-md">
+          <span className="text-muted-foreground da-caption">Hệ thống hiểu là</span>
+          <ul aria-label="Hệ thống hiểu là" className="m-0 flex list-none flex-wrap gap-da-sm p-0">
+            {reading.map(chip => (
+              <li key={chip.key} className="inline-flex items-center gap-da-sm rounded-sm border border-border px-[10px] py-[5px]">
+                <span className="text-muted-foreground da-caption">{chip.label}</span>
+                <span className="text-foreground da-body-strong">{chip.value}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {msg.content ? <MarkdownContent text={msg.content} citations={msg.citations} /> : streaming ? <TypingDots /> : null}
 
       {msg.clarification && onAnswerClarification && (
         <ClarificationCard clarification={msg.clarification} disabled={busy} onAnswer={onAnswerClarification} />
+      )}
+
+      {!!msg.chartSpecs?.length && (
+        <Suspense fallback={<div className="min-h-[180px] rounded-md border border-border" />}>
+          {msg.chartSpecs.map((spec, i) => <ChartRenderer key={i} spec={spec} />)}
+        </Suspense>
       )}
 
       {displayedRuns.map((displayRun, index) => {
@@ -114,18 +175,12 @@ export function AnswerBlock({
             rowCount={displayRun.row_count}
             capped={displayRun.rows_capped}
             truncation={displayRun.truncation}
-            title={displayedRuns.length > 1 ? `Query result ${index + 1}` : 'Data table'}
+            title={displayedRuns.length > 1 ? `Kết quả truy vấn ${index + 1}` : 'Bảng dữ liệu'}
             onExport={displayRun.rows.length ? () => exportCsv(displayRun) : undefined}
             fullResult={displayFullResult}
           />
         );
       })}
-
-      {!!msg.chartSpecs?.length && (
-        <Suspense fallback={<div className="ab-card" style={{ minHeight: 180 }} />}>
-          {msg.chartSpecs.map((spec, i) => <ChartRenderer key={i} spec={spec} />)}
-        </Suspense>
-      )}
 
       {showEvidenceStrip && displayEvidence && hasEvidence(displayEvidence) && (
         <EvidenceStrip evidence={displayEvidence} onOpenPanel={onOpenEvidence} />
@@ -133,36 +188,52 @@ export function AnswerBlock({
 
       {msg.citations && msg.citations.length > 0 && <CitationPanel citations={msg.citations} />}
 
-      {!streaming && msg.content && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-          {run && run.rows.length > 0 && (
-            <button type="button" className="ab-btn" onClick={() => exportCsv()} title="Download the data table (CSV, opens in Excel)">
-              <Download size={11} /> Export CSV
-            </button>
+      {answered && (
+        <div className="flex flex-wrap items-center gap-x-da-xl gap-y-da-sm">
+          <span data-testid="trust-label" title={trust.meaning} className="inline-flex items-center gap-da-sm">
+            <StatusDot tone={TRUST_DOT[trust.tone]}>{trust.label}</StatusDot>
+            {trust.breakdown && <span className="text-muted-foreground da-caption">({trust.breakdown})</span>}
+          </span>
+          {reported && <Badge tone="warning">Đang kiểm tra</Badge>}
+          {(msg.latencyMs || showTimestamp) && (
+            <span className="text-muted-foreground da-caption">
+              {[msg.latencyMs ? formatDuration(msg.latencyMs) : null, showTimestamp ? formatTime(msg.timestamp) : null].filter(Boolean).join(' · ')}
+            </span>
           )}
-          {run?.sql && <CopyButton text={run.sql} label="Copy SQL" />}
-          <CopyButton text={msg.content} label="Copy answer" />
+          <span className="flex-1" />
+          {onOpenEvidence && displayEvidence && hasEvidence(displayEvidence) && (
+            <button type="button" className={LINK} onClick={onOpenEvidence}>Cách tính</button>
+          )}
+          {exportable && (
+            <button type="button" className={LINK} onClick={() => setExportOpen(true)}>Xuất</button>
+          )}
+          {msg.content && <CopyLink text={msg.content} />}
           {onSave && (
-            <button type="button" className="ab-btn" onClick={onSave} title="Save this question to ask again quickly">
-              <Bookmark size={11} /> Save question
-            </button>
+            <button type="button" className={LINK} onClick={onSave} title="Lưu câu hỏi để hỏi lại nhanh">Lưu câu hỏi</button>
           )}
-          {showTimestamp && (
-            <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ab-muted)' }}>{formatTime(msg.timestamp)}</span>
+          {onReport && (
+            <button type="button" className={LINK} onClick={onReport} disabled={reported}>Báo sai</button>
           )}
         </div>
       )}
 
       {!streaming && !!msg.suggestions?.length && onSuggestion && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+        <div className="flex flex-wrap gap-da-md">
           {msg.suggestions.map((s, i) => (
-            <button key={i} type="button" className="ab-chip-btn" onClick={() => onSuggestion(s)} disabled={busy}>
-              <Sparkles size={9} style={{ verticalAlign: '-1px', marginRight: 4 }} />{s}
-            </button>
+            <SuggestionChip key={i} label={s} showIcon={false} onSelect={() => { if (!busy) onSuggestion(s); }} />
           ))}
         </div>
       )}
 
+      {exportable && (
+        <ExportDialog
+          open={exportOpen}
+          run={run}
+          onClose={() => setExportOpen(false)}
+          onExportCsv={run.rows.length ? () => exportCsv(run) : undefined}
+          onExportXlsx={xlsxId ? () => downloadResultXlsx(xlsxId, run.export?.file_name) : undefined}
+        />
+      )}
     </div>
   );
 }

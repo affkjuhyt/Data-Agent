@@ -15,7 +15,15 @@ import {
   usersFixture,
   workspacesFixture,
 } from './fixtures';
+import { createAdminAccessHandlers } from './adminAccess';
+import { createAdminPlatformHandlers } from './adminPlatform';
+import { createAgentBuilderHandlers } from './agentBuilder';
+import { createAgentOpsHandlers } from './agentOps';
+import { createAnswerReportHandlers } from './answerReports';
+import { createDashboardHandlers } from './dashboards';
 import { createNotificationHandlers } from './notifications';
+import { createSessionHandlers } from './sessions';
+import { createSourcesHandlers } from './sources';
 
 /*
  * MSW handlers for the v1 endpoints the screens call (lib/v1/api.ts). State lives in memory for
@@ -43,6 +51,18 @@ export function createHandlers() {
   let runs: AgentRun[] = runsFixture();
 
   return [
+    // First: these serve paths the handlers below also answer, with richer rows
+    // (/runs/:id for test runs, /sources, /admin/models, /admin/users, /data-spaces, /policies),
+    // and pass the rest through.
+    ...createAdminAccessHandlers(),
+    ...createAgentBuilderHandlers(),
+    ...createSourcesHandlers(),
+    ...createAdminPlatformHandlers(),
+    ...createAgentOpsHandlers(),
+    ...createSessionHandlers(),
+    ...createDashboardHandlers(),
+    ...createAnswerReportHandlers(),
+
     http.get('*/v1/inbox', ({ request }) => {
       const status = new URL(request.url).searchParams.get('status') ?? 'open';
       return page(inbox.filter((item) => item.status === status));

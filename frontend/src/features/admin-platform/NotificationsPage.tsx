@@ -165,7 +165,7 @@ export default function NotificationsPage() {
                   Ô khoá: việc rủi ro cao luôn báo trong ứng dụng (
                   <button
                     type="button"
-                    onClick={() => navigate('settings', 'CHANNEL_RULES')}
+                    onClick={() => navigate('account', 'CHANNEL_RULES')}
                     className="text-primary hover:underline"
                   >
                     quy tắc kênh

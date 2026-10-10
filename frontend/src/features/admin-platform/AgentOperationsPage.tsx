@@ -51,7 +51,7 @@ export default function AgentOperationsPage() {
     const { kind, target_id } = issue.action;
     if (kind === 'run') navigate('agents', 'RUN', target_id);
     else if (kind === 'eval') navigate('agents', 'EVALUATE', target_id);
-    else navigate('agents', 'BUILDER', target_id);
+    else navigate('agents', 'AGENT', target_id);
   };
 
   return (
