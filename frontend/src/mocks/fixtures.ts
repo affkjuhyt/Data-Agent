@@ -620,7 +620,8 @@ export function datasetsFixture(): Dataset[] {
 
 export function metricsFixture(): Metric[] {
   return Array.from({ length: 148 }, (_, i) => ({
-    id: `metric-${i}`,
+    // NPL_RATIO shares its id with the detail mock (mocks/metrics.ts).
+    id: i === 0 ? 'metric-npl-ratio' : `metric-${i}`,
     code: i === 0 ? 'NPL_RATIO' : i === 1 ? 'LOAN_BALANCE' : `METRIC_${i}`,
     status: 'active' as const,
     current_version: 1,

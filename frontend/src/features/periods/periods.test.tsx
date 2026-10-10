@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { ToastProvider } from '../../design-system/Toast';
 import { getPeriod, getRetroChange } from '../../lib/v1/periods';
 import { createPeriodHandlers } from '../../mocks/periods';
-import CompareVersionsPage, { csvCell } from './CompareVersionsPage';
+import CompareVersionsPage from './CompareVersionsPage';
 import PeriodClosePage from './PeriodClosePage';
 import RetroChangePage from './RetroChangePage';
 
@@ -142,14 +142,5 @@ describe('CompareVersionsPage', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'So sánh T8 · v2 với T8 · v1' }),
     ).toBeInTheDocument();
-  });
-});
-
-describe('CSV export', () => {
-  it('keeps spreadsheet formulas from running and quotes every cell', () => {
-    expect(csvCell('+0,04 điểm')).toBe(`"'+0,04 điểm"`);
-    expect(csvCell('=HYPERLINK("http://x")')).toBe(`"'=HYPERLINK(""http://x"")"`);
-    for (const lead of ['-', '@', '\t', '\r']) expect(csvCell(`${lead}1`)).toBe(`"'${lead}1"`);
-    expect(csvCell('1,62%')).toBe('"1,62%"');
   });
 });

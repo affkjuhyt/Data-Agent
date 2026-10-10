@@ -313,6 +313,13 @@ export function createPeriodHandlers() {
       });
       return HttpResponse.json({ id, status: 'answered' });
     }),
+    http.get('*/v1/retro-changes', ({ request }) => {
+      const status = new URL(request.url).searchParams.get('status');
+      return HttpResponse.json({
+        items: retro.filter((r) => !status || r.status === status),
+        next_page_token: '',
+      });
+    }),
     http.get('*/v1/retro-changes/:id', ({ params }) => {
       const change = retro.find((r) => r.id === params.id);
       return change

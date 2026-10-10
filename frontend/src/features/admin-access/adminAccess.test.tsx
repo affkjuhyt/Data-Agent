@@ -80,7 +80,11 @@ describe('UsersPage', () => {
     expect(await screen.findByText('Đã gửi lời mời tới minh.pd@congty.vn')).toBeInTheDocument();
     expect(sent).toContainEqual({
       path: '/admin/invitations',
-      body: expect.objectContaining({ email: 'minh.pd@congty.vn', role_id: 'role-analyst', row_scope: null }),
+      body: expect.objectContaining({
+        email: 'minh.pd@congty.vn',
+        role_id: 'role-analyst',
+        row_scope: null,
+      }),
     });
   });
 });
@@ -103,7 +107,9 @@ describe('DataSpacesPage', () => {
     expect(screen.getByText('không bao giờ')).toBeInTheDocument();
     expect(screen.getByText('Thành viên · 66')).toBeInTheDocument();
     expect(await screen.findByText('Người xem · Hết hạn 30/10')).toBeInTheDocument();
-    expect(await screen.findByText(/1 yêu cầu quyền đang chờ: Agent Báo cáo · xuất PDF chi tiết/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/1 yêu cầu quyền đang chờ: Agent Báo cáo · xuất PDF chi tiết/),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Thêm thành viên' }));
     const dialog = screen.getByRole('dialog', { name: 'Thêm thành viên Data Space' });
@@ -113,7 +119,9 @@ describe('DataSpacesPage', () => {
     fireEvent.click(await screen.findByRole('option', { name: 'Phân tích viên' }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Thêm' }));
 
-    expect(await screen.findByText('Đã thêm GRP_RISK_ANALYST vào Rủi ro tín dụng')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Đã thêm GRP_RISK_ANALYST vào Rủi ro tín dụng'),
+    ).toBeInTheDocument();
     const put = sent.find((s) => s.path === '/data-spaces/ds-rui-ro-tin-dung/members');
     expect((put?.body as { items: unknown[] }).items).toHaveLength(6);
   });
@@ -171,7 +179,10 @@ describe('PermissionComparePage', () => {
     await waitFor(() =>
       expect(sent).toContainEqual({
         path: '/access-requests',
-        body: expect.objectContaining({ capability: 'run_agent', data_space_id: 'ds-rui-ro-tin-dung' }),
+        body: expect.objectContaining({
+          capability: 'run_agent',
+          data_space_id: 'ds-rui-ro-tin-dung',
+        }),
       }),
     );
   });
@@ -198,9 +209,13 @@ describe('AccessRequestsPage', () => {
     const dialog = screen.getByRole('alertdialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Từ chối' }));
     expect(within(dialog).getByText('Ghi lý do để người xin biết vì sao.')).toBeInTheDocument();
-    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Ngoài phạm vi công việc' } });
+    fireEvent.change(within(dialog).getByRole('textbox'), {
+      target: { value: 'Ngoài phạm vi công việc' },
+    });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Từ chối' }));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith('admin', 'ACCESS_REQUESTS', 'ar-0092'));
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith('admin', 'ACCESS_REQUESTS', 'ar-0092'),
+    );
     expect(sent).toContainEqual({
       path: '/access-requests/ar-0091:decide',
       body: { decision: 'reject', note: 'Ngoài phạm vi công việc' },
@@ -212,11 +227,16 @@ describe('AccessRequestsPage', () => {
     wrap(<AccessRequestsPage />);
     await screen.findByRole('heading', { name: /Lê Minh Châu/ });
     fireEvent.click(screen.getByRole('button', { name: 'Cấp hẹp hơn' }));
-    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cấp hẹp hơn' }));
+    fireEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cấp hẹp hơn' }),
+    );
     await waitFor(() =>
       expect(sent).toContainEqual({
         path: '/access-requests/ar-0091:decide',
-        body: expect.objectContaining({ decision: 'narrow', granted_scope: expect.stringContaining('Số tổng hợp') }),
+        body: expect.objectContaining({
+          decision: 'narrow',
+          granted_scope: expect.stringContaining('Số tổng hợp'),
+        }),
       }),
     );
   });
@@ -229,7 +249,9 @@ describe('PoliciesPage', () => {
     fireEvent.click(within(row).getByRole('button', { name: 'Thao tác với POL-007' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Tắt chính sách' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Tắt chính sách này?' });
-    expect(within(dialog).getByText(/23 yêu cầu tuần này được tự xử lý nhờ quy tắc/)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/23 yêu cầu tuần này được tự xử lý nhờ quy tắc/),
+    ).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Tắt chính sách' }));
     await waitFor(() => expect(within(row).getByText('Đã tắt')).toBeInTheDocument());
   });
@@ -239,12 +261,17 @@ describe('PoliciesPage', () => {
     wrap(<PoliciesPage />);
     const rule = (await screen.findByRole('textbox', { name: 'Quy tắc' })) as HTMLTextAreaElement;
     expect(rule.value).toContain('Chỉ cho thấy dòng: branch_code IN user.ad.branches');
-    expect(screen.getByText(/Chính sách theo dòng · Data Space Kinh doanh bán lẻ · đang bật/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Chính sách theo dòng · Data Space Kinh doanh bán lẻ · đang bật/),
+    ).toBeInTheDocument();
     expect(await screen.findByText('1.102.311')).toBeInTheDocument();
     expect(screen.getByText('18.420')).toBeInTheDocument();
     expect(screen.getByText('hỏi “dư nợ bán lẻ theo chi nhánh tháng 9”')).toBeInTheDocument();
     expect(screen.getByText('2.140 / 18.302')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Lưu thay đổi' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Lưu thay đổi' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 });
 
@@ -267,14 +294,22 @@ describe('PrivacyPage', () => {
     expect(await screen.findByText('Khách hàng yêu cầu xoá dữ liệu cá nhân')).toBeInTheDocument();
     expect(screen.getByText('Không · nghĩa vụ lưu trữ báo cáo')).toHaveClass('text-warning');
     expect(screen.getByRole('checkbox', { name: 'Nhật ký kiểm toán' })).toBeDisabled();
-    expect(screen.getByRole('checkbox', { name: 'Câu hỏi và trả lời trong phiên' })).toBeChecked();
+    // The deletable items are selected in an effect after the request renders.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('checkbox', { name: 'Câu hỏi và trả lời trong phiên' }),
+      ).toBeChecked(),
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Xoá đã chọn' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Duyệt kế hoạch xoá DSR-014?' });
     expect(within(dialog).getByText(/Xoá 18 mục ở 3 nơi/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Duyệt và thực hiện' }));
     await waitFor(() => expect(screen.getByText('Đã xong')).toBeInTheDocument());
-    expect(sent).toContainEqual({ path: '/dsr/dsr-014:execute', body: { item_ids: ['it-1', 'it-2', 'it-3'] } });
+    expect(sent).toContainEqual({
+      path: '/dsr/dsr-014:execute',
+      body: { item_ids: ['it-1', 'it-2', 'it-3'] },
+    });
   });
 
   it('creates a request from the list', async () => {
@@ -282,7 +317,9 @@ describe('PrivacyPage', () => {
     await screen.findByText('DSR-014');
     fireEvent.click(screen.getByRole('button', { name: 'Tạo yêu cầu' }));
     const dialog = screen.getByRole('dialog', { name: 'Tạo yêu cầu của chủ thể dữ liệu' });
-    fireEvent.change(within(dialog).getByPlaceholderText(/Số CCCD/), { target: { value: '001088012345' } });
+    fireEvent.change(within(dialog).getByPlaceholderText(/Số CCCD/), {
+      target: { value: '001088012345' },
+    });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Tạo yêu cầu' }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('admin', 'PRIVACY', 'dsr-016'));
   });

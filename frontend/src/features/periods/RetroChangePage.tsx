@@ -4,11 +4,17 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
+import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
-import { decideRetroChange, getRetroChange, type RetroChange } from '../../lib/v1/periods';
+import {
+  decideRetroChange,
+  getRetroChange,
+  listOpenRetroChanges,
+  type RetroChange,
+} from '../../lib/v1/periods';
 import { useV1 } from '../../lib/v1/useV1';
 
 /*
@@ -30,7 +36,21 @@ type Decision = 'new_version' | 'no_change';
 
 export default function RetroChangePage() {
   const { routeId } = useAppState();
-  const change = useV1(routeId ? () => getRetroChange(routeId) : null, [routeId]);
+  // From the rail without an id: the first change still waiting for a decision.
+  const open = useV1(routeId ? null : listOpenRetroChanges, [routeId]);
+  const id = routeId || open.data?.items[0]?.id;
+  const change = useV1(id ? () => getRetroChange(id) : null, [id]);
+  if (!routeId && open.data && open.data.items.length === 0) {
+    return (
+      <div className="px-da-3xl pt-da-xl">
+        <EmptyState
+          icon="check"
+          title="Không có thay đổi hồi tố nào chờ quyết định"
+          description="Khi dữ liệu của kỳ đã khoá đổi ở nguồn, agent tạo một mục ở đây."
+        />
+      </div>
+    );
+  }
   return (
     <AsyncRegion state={change} what="thay đổi hồi tố">
       {(c) => <RetroBody change={c} onChanged={change.reload} />}

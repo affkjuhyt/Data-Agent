@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
+import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
@@ -13,6 +14,7 @@ import {
   backtestDecisionRule,
   discardDecisionRule,
   getDecisionRule,
+  listDraftRules,
   submitDecisionRule,
   type DecisionRule,
 } from '../../lib/v1/rules';
@@ -38,7 +40,21 @@ const STATUS: Record<
 
 export default function DecisionRulePage() {
   const { routeId } = useAppState();
-  const rule = useV1(routeId ? () => getDecisionRule(routeId) : null, [routeId]);
+  // From the rail without an id: the first draft waiting to be sent to its owner.
+  const drafts = useV1(routeId ? null : listDraftRules, [routeId]);
+  const id = routeId || drafts.data?.items[0]?.id;
+  const rule = useV1(id ? () => getDecisionRule(id) : null, [id]);
+  if (!routeId && drafts.data && drafts.data.items.length === 0) {
+    return (
+      <div className="px-da-3xl pt-da-xl">
+        <EmptyState
+          icon="check"
+          title="Không có quy tắc nháp nào"
+          description="Chọn “Ghi nhớ thành quy tắc” khi trả lời một việc Cần bạn để tạo quy tắc từ quyết định."
+        />
+      </div>
+    );
+  }
   return (
     <AsyncRegion state={rule} what="quy tắc">
       {(r) => <RuleBody rule={r} onChanged={rule.reload} />}

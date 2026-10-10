@@ -96,6 +96,10 @@ export interface RetroChange {
   decision_note: string | null;
 }
 
+/** PROPOSAL: GET /v1/retro-changes?status=open across periods, for the rail's "Thay đổi hồi tố". */
+export const listOpenRetroChanges = () =>
+  v1Get<Page<RetroChange>>('/retro-changes', { status: 'open', page_size: 500 });
+
 /** PROPOSAL: GET /v1/retro-changes/{id} (A2 only lists them per period). */
 export const getRetroChange = async (id: string) =>
   v1Get<RetroChange>(`/retro-changes/${pathId(id)}`);

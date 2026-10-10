@@ -16,6 +16,7 @@ import {
   type MetricDetail,
   type MetricVersion,
 } from '../../lib/v1/metrics';
+import { listMetrics } from '../../lib/v1/api';
 import { useV1 } from '../../lib/v1/useV1';
 
 /*
@@ -59,7 +60,10 @@ const monthYear = (iso: string) => formatDate(iso).slice(3);
 
 export default function MetricPage() {
   const { routeId } = useAppState();
-  const metric = useV1(routeId ? () => getMetric(routeId) : null, [routeId]);
+  // Opened from the rail without an id, the page shows the first metric of the list.
+  const list = useV1(routeId ? null : listMetrics, [routeId]);
+  const id = routeId || list.data?.items[0]?.id;
+  const metric = useV1(id ? () => getMetric(id) : null, [id]);
   return (
     <AsyncRegion state={metric} what="chỉ số">
       {(m) => <MetricBody metric={m} onChanged={metric.reload} />}

@@ -56,6 +56,15 @@ export function createRuleHandlers() {
   };
 
   return [
+    // Only the drafts-from-decisions query; every other policy list falls through.
+    http.get('*/v1/policies', ({ request }) => {
+      const q = new URL(request.url).searchParams;
+      if (q.get('origin') !== 'hitl' || q.get('status') !== 'draft') return undefined;
+      return HttpResponse.json({
+        items: rules.filter((r) => r.status === 'draft'),
+        next_page_token: '',
+      });
+    }),
     http.get('*/v1/policies/:id', ({ params }) => {
       const rule = rules.find((r) => r.id === params.id);
       return rule ? HttpResponse.json(rule) : undefined;

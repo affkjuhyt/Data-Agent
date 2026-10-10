@@ -43,6 +43,23 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
       ],
     },
     { label: 'Tài liệu', items: [{ id: 'COLLECTIONS', label: 'Bộ sưu tập' }] },
+    {
+      label: 'Kỳ chốt',
+      items: [
+        { id: 'PERIOD', label: 'Các kỳ' },
+        { id: 'RETRO', label: 'Thay đổi hồi tố' },
+        { id: 'COMPARE', label: 'So sánh bản' },
+      ],
+    },
+    {
+      label: 'Ngữ nghĩa',
+      items: [
+        { id: 'METRIC', label: 'Chỉ số' },
+        { id: 'EXAMPLES', label: 'Câu hỏi mẫu' },
+        { id: 'AUTHORITY', label: 'Thẩm quyền nguồn' },
+        { id: 'RULE', label: 'Quy tắc từ quyết định' },
+      ],
+    },
   ],
   account: [
     {
@@ -83,7 +100,13 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
 };
 
 /** Areas that open on a landing page (route key SINGLE_SCREEN) rather than on a rail page. */
-export const AREA_LANDING: ReadonlySet<AreaId> = new Set(['home', 'needs-you', 'analysis', 'data', 'admin']);
+export const AREA_LANDING: ReadonlySet<AreaId> = new Set([
+  'home',
+  'needs-you',
+  'analysis',
+  'data',
+  'admin',
+]);
 
 /** The page an area opens on: undefined = its landing; otherwise the first rail item. */
 export const firstPageOf = (area: AreaId): string | undefined =>
@@ -105,5 +128,7 @@ export const railItemOf = (area: AreaId, page: string | undefined): string | und
 /** Whether `page` of `area` sits in the area's rail, itself or through its parent (and so draws it). */
 export const isRailPage = (area: AreaId, page: string | undefined): boolean => {
   const item = railItemOf(area, page);
-  return Boolean(item && AREA_RAILS[area]?.some(group => group.items.some(entry => entry.id === item)));
+  return Boolean(
+    item && AREA_RAILS[area]?.some((group) => group.items.some((entry) => entry.id === item)),
+  );
 };

@@ -39,6 +39,13 @@ const JobsPage = React.lazy(() => import('./features/data-sources/JobsPage'));
 const UploadPage = React.lazy(() => import('./features/data-sources/UploadPage'));
 const CollectionsPage = React.lazy(() => import('./features/data-sources/CollectionsPage'));
 const CollectionPage = React.lazy(() => import('./features/data-sources/CollectionPage'));
+const PeriodClosePage = React.lazy(() => import('./features/periods/PeriodClosePage'));
+const RetroChangePage = React.lazy(() => import('./features/periods/RetroChangePage'));
+const CompareVersionsPage = React.lazy(() => import('./features/periods/CompareVersionsPage'));
+const MetricPage = React.lazy(() => import('./features/semantics/MetricPage'));
+const ExamplesPage = React.lazy(() => import('./features/semantics/ExamplesPage'));
+const SourceAuthorityPage = React.lazy(() => import('./features/semantics/SourceAuthorityPage'));
+const DecisionRulePage = React.lazy(() => import('./features/rules/DecisionRulePage'));
 const ProfilePage = React.lazy(() => import('./features/admin-platform/ProfilePage'));
 const NotificationsPage = React.lazy(() => import('./features/admin-platform/NotificationsPage'));
 const ChannelRulesPage = React.lazy(() => import('./features/admin-platform/ChannelRulesPage'));
@@ -99,6 +106,15 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     UPLOAD:          { render: () => <UploadPage /> },
     COLLECTIONS:     { render: () => <CollectionsPage /> },
     COLLECTION:      { render: () => <CollectionPage /> },
+    // Kỳ chốt: /data/period/<id>, /data/retro/<id>; without an id each opens its first item.
+    PERIOD:          { render: () => <PeriodClosePage /> },
+    RETRO:           { render: () => <RetroChangePage /> },
+    COMPARE:         { render: () => <CompareVersionsPage /> },
+    // Ngữ nghĩa (lớp ngữ cảnh): /data/metric/<id>, /data/rule/<id>.
+    METRIC:          { render: () => <MetricPage /> },
+    EXAMPLES:        { render: () => <ExamplesPage /> },
+    AUTHORITY:       { render: () => <SourceAuthorityPage /> },
+    RULE:            { render: () => <DecisionRulePage /> },
   },
 
   admin: {

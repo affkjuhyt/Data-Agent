@@ -21,7 +21,12 @@ import { createAgentBuilderHandlers } from './agentBuilder';
 import { createAgentOpsHandlers } from './agentOps';
 import { createAnswerReportHandlers } from './answerReports';
 import { createDashboardHandlers } from './dashboards';
+import { createAuthorityHandlers } from './authorities';
+import { createExampleHandlers } from './examples';
+import { createMetricHandlers } from './metrics';
 import { createNotificationHandlers } from './notifications';
+import { createPeriodHandlers } from './periods';
+import { createRuleHandlers } from './rules';
 import { createSessionHandlers } from './sessions';
 import { createSourcesHandlers } from './sources';
 
@@ -62,6 +67,12 @@ export function createHandlers() {
     ...createSessionHandlers(),
     ...createDashboardHandlers(),
     ...createAnswerReportHandlers(),
+    // Before the inbox: the period mock answers its own reconciliation HITL request.
+    ...createPeriodHandlers(),
+    ...createRuleHandlers(),
+    ...createMetricHandlers(),
+    ...createExampleHandlers(),
+    ...createAuthorityHandlers(),
 
     http.get('*/v1/inbox', ({ request }) => {
       const status = new URL(request.url).searchParams.get('status') ?? 'open';
@@ -162,6 +173,24 @@ export function createHandlers() {
           to: 'cancelled',
         },
       };
+      // PROPOSAL :retry — a failed run again, as a new queued run (202).
+      if (verb === 'retry') {
+        if (run.status !== 'failed')
+          return problem(409, 'invalid_state', 'Chỉ chạy lại được lượt chạy lỗi.');
+        const retried: AgentRun = {
+          ...run,
+          id: `${run.id}-retry-${runs.length}`,
+          code: `#${430 + runs.length}`,
+          status: 'queued',
+          started_at: new Date().toISOString(),
+          finished_at: null,
+          error: null,
+          stop_reason: null,
+          failure: undefined,
+        };
+        runs = [retried, ...runs];
+        return HttpResponse.json(retried, { status: 202 });
+      }
       const rule = next[verb];
       if (!rule) return problem(404, 'not_found', 'Không có thao tác này.');
       if (!rule.from.includes(run.status))

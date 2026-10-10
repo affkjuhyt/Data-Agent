@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send } from './client';
+import { pathId, v1Get, v1Send, type Page } from './client';
 import type { BehaviorPolicy } from './types';
 
 /*
@@ -32,6 +32,10 @@ export interface DecisionRule extends Omit<BehaviorPolicy, 'status'> {
   expires_at: string | null;
   review_reminder_days: number;
 }
+
+/** A2: GET /v1/policies ?scope ?status — the drafts made from decisions. */
+export const listDraftRules = () =>
+  v1Get<Page<DecisionRule>>('/policies', { scope: 'data_space', status: 'draft', origin: 'hitl' });
 
 /** PROPOSAL: GET /v1/policies/{id} (A2 lists policies but has no single read). */
 export const getDecisionRule = async (id: string) => v1Get<DecisionRule>(`/policies/${pathId(id)}`);
