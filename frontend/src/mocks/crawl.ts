@@ -3,6 +3,7 @@ import type {
   AcquireSummary,
   CrawlRun,
   CrawlSchemaVersion,
+  ConsolidationRun,
   ExtractedRecord,
   SchemaDrift,
   CrawlSource,
@@ -185,6 +186,7 @@ const SUMMARY: AcquireSummary = {
     published_at: '2026-10-10T08:20:00+07:00',
     title: 'Lãi suất huy động tuần 41',
     detail: 'Dataset v41 · 30 ngân hàng',
+    consolidation_run_id: 'cons-deposit-w41',
   },
 };
 
@@ -501,6 +503,70 @@ function recordsFixture(): ExtractedRecord[] {
   ];
 }
 
+// "P14 · Hợp nhất dữ liệu" (2390:14727): week 41 of the market deposit-rate dataset.
+function consolidationFixture(): ConsolidationRun {
+  return {
+    id: 'cons-deposit-w41',
+    spec_name: 'Lãi suất huy động thị trường',
+    title: 'Hợp nhất dữ liệu · tuần 41',
+    summary_text: '3 nguồn thu · 30 ngân hàng · 412 bản ghi vào, 148 dòng hợp nhất',
+    status: 'pending_review',
+    next_dataset_version: 42,
+    steps: [
+      { label: 'Chuẩn hoá', state: 'done' },
+      { label: 'Thực thể', state: 'waiting' },
+      { label: 'Khử trùng lặp', state: 'done' },
+      { label: 'Đối chiếu', state: 'waiting' },
+      { label: 'Bảng hợp nhất', state: 'done' },
+      { label: 'Tổng quát', state: 'done' },
+      { label: 'Phát hành', state: 'pending' },
+      { label: 'Nhúng', state: 'pending' },
+    ],
+    table: {
+      title: 'Bảng tổng hợp · tuần 41 · tại quầy · %/năm',
+      columns: ['Kỳ hạn', 'Trung bình', 'Trung vị', 'Thấp nhất', 'Cao nhất', 'Số nguồn'],
+      rows: [
+        ['1 tháng', '3,02', '3,00', '2,10', '3,60', '30'],
+        ['3 tháng', '3,35', '3,40', '2,40', '3,90', '30'],
+        ['6 tháng', '4,52', '4,55', '3,30', '5,30', '30'],
+        ['12 tháng', '4,85', '4,80', '3,90', '5,60', '29'],
+        ['24 tháng', '5,02', '5,00', '4,10', '5,70', '28'],
+      ],
+      highlighted_row: 3,
+      note: 'Ngân hàng K kỳ hạn 12 tháng (6,85%, tiền gửi từ 500 tỷ) không tính vào bình quân theo quyết định ở hàng duyệt.',
+    },
+    summary_paragraph: {
+      text: 'Lãi suất huy động tại quầy kỳ hạn 12 tháng bình quân của 29 ngân hàng tuần 41 là 4,85%/năm, tăng 0,12 điểm so với tuần 40; cao nhất 5,60% (Ngân hàng P), thấp nhất 3,90%. 7 ngân hàng tăng, 1 ngân hàng giảm.',
+      provenance:
+        'Mọi số lấy từ bảng tổng hợp · 29 trang gốc · nhãn nguồn ngoài · độ tin cậy nguồn 0,7',
+    },
+    entity_matches: [
+      {
+        id: 'em-vietbank',
+        alias: '“VietBank”',
+        canonical: 'Ngân hàng TMCP Việt Nam Thương Tín',
+        score: 0.82,
+        reason: 'khớp tên rút gọn và website',
+        decision: null,
+      },
+      {
+        id: 'em-bv',
+        alias: '“Ngân hàng BV”',
+        canonical: 'Ngân hàng TMCP Bản Việt',
+        score: 0.76,
+        reason: 'cùng website, khác tên viết tắt',
+        decision: null,
+      },
+    ],
+    conflicts: [
+      {
+        text: 'Ngân hàng M · 12 tháng: website 5,10% · API 4,90% · lệch 0,20 điểm, trên ngưỡng trọng yếu 0,05 điểm → đã tạo yêu cầu so sánh hai nguồn trong Cần bạn',
+        open: true,
+      },
+    ],
+  };
+}
+
 const problem = (status: number, code: string, detail: string) =>
   HttpResponse.json(
     { title: code, status, code, detail },
@@ -512,6 +578,7 @@ export function createCrawlHandlers() {
   const schemas = new Map<string, CrawlSchemaVersion>();
   let drift = driftFixture();
   let run = runFixture();
+  let consolidation = consolidationFixture();
   let records = recordsFixture();
   const pending = () => records.filter((x) => x.status === 'pending');
   const recount = () => {
@@ -528,6 +595,44 @@ export function createCrawlHandlers() {
     return schemas.get(sourceId) as CrawlSchemaVersion;
   };
   return [
+    http.get('*/v1/consolidation-runs/:id', ({ params }) =>
+      params.id === consolidation.id
+        ? HttpResponse.json(consolidation)
+        : problem(404, 'not_found', 'Không tìm thấy lượt hợp nhất.'),
+    ),
+    http.post('*/v1/entity-matches/:action', async ({ params, request }) => {
+      const [id, verb] = String(params.action).split(':');
+      const match = consolidation.entity_matches.find((m) => m.id === id);
+      if (!match || verb !== 'decide') return problem(404, 'not_found', 'Không tìm thấy liên kết.');
+      const { decision } = (await request.json()) as { decision: 'merge' | 'split' };
+      consolidation = {
+        ...consolidation,
+        entity_matches: consolidation.entity_matches.map((m) =>
+          m.id === id ? { ...m, decision } : m,
+        ),
+      };
+      // The entity step is done once no link waits on a person.
+      if (consolidation.entity_matches.every((m) => m.decision))
+        consolidation = {
+          ...consolidation,
+          steps: consolidation.steps.map((st) =>
+            st.label === 'Thực thể' ? { ...st, state: 'done' } : st,
+          ),
+        };
+      return HttpResponse.json({ id, decision });
+    }),
+    http.post('*/v1/consolidation-runs/:action', ({ params }) => {
+      const [id, verb] = String(params.action).split(':');
+      if (id !== consolidation.id || verb !== 'publish')
+        return problem(404, 'not_found', 'Không tìm thấy lượt hợp nhất.');
+      const waiting =
+        consolidation.entity_matches.filter((m) => !m.decision).length +
+        consolidation.conflicts.filter((c) => c.open).length;
+      if (waiting)
+        return problem(409, 'invalid_state', `Còn ${waiting} mục chờ trước khi phát hành.`);
+      consolidation = { ...consolidation, status: 'published' };
+      return HttpResponse.json(consolidation);
+    }),
     http.get('*/v1/crawl-runs/:id/records', ({ params }) =>
       params.id === run.id
         ? HttpResponse.json({ items: pending(), next_page_token: '' })

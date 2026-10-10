@@ -53,7 +53,13 @@ export interface AcquireSummary {
   sample_text: string;
   pending_records: number;
   blocking_records: number;
-  latest_dataset: { published_at: string; title: string; detail: string } | null;
+  latest_dataset: {
+    published_at: string;
+    title: string;
+    detail: string;
+    /** PROPOSAL: the consolidation run that is waiting to publish the next version. */
+    consolidation_run_id: string | null;
+  } | null;
 }
 
 export const listCrawlSources = () =>
@@ -305,3 +311,48 @@ export const bulkReviewRecords = (body: {
 /** A2: :publish — 422 while blocking records remain (BR-153). */
 export const publishCrawlRun = async (id: string) =>
   v1Send<CrawlRun>('POST', `/crawl-runs/${pathId(id)}:publish`);
+
+/* ─── Hợp nhất dữ liệu (UC-14-05) ─────────────────────────────────────── */
+
+/** A2: GET /v1/consolidation-runs/{id} — ConsolidationRun. PROPOSAL: the display shape. */
+export interface ConsolidationRun {
+  id: string;
+  spec_name: string;
+  title: string;
+  summary_text: string;
+  status: 'pending_review' | 'published';
+  next_dataset_version: number;
+  steps: { label: string; state: 'done' | 'waiting' | 'pending' }[];
+  table: {
+    title: string;
+    columns: string[];
+    rows: string[][];
+    highlighted_row: number | null;
+    note: string | null;
+  };
+  /** Only the table, claims and this paragraph are embedded (BR-154). */
+  summary_paragraph: { text: string; provenance: string };
+  entity_matches: {
+    id: string;
+    alias: string;
+    canonical: string;
+    score: number;
+    reason: string;
+    decision: 'merge' | 'split' | null;
+  }[];
+  /** Material gaps between sources open a Cần bạn request (BR-155). */
+  conflicts: { text: string; open: boolean }[];
+}
+
+export const getConsolidationRun = async (id: string) =>
+  v1Get<ConsolidationRun>(`/consolidation-runs/${pathId(id)}`);
+
+/** PROPOSAL: POST /v1/entity-matches/{id}:decide — merge the alias into the entity, or keep apart. */
+export const decideEntityMatch = async (id: string, decision: 'merge' | 'split') =>
+  v1Send<{ id: string; decision: string }>('POST', `/entity-matches/${pathId(id)}:decide`, {
+    decision,
+  });
+
+/** PROPOSAL: :publish — the dataset version, once no entity match or conflict is open. */
+export const publishConsolidationRun = async (id: string) =>
+  v1Send<ConsolidationRun>('POST', `/consolidation-runs/${pathId(id)}:publish`);

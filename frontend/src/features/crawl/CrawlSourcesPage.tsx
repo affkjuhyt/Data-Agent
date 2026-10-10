@@ -47,6 +47,8 @@ export default function CrawlSourcesPage() {
   const { navigate } = useAppState();
   const sources = useV1(listCrawlSources, []);
   const summary = useV1(getAcquireSummary, []);
+  const latest = summary.data?.latest_dataset ?? null;
+  const mergeRunId = latest?.consolidation_run_id ?? null;
   const toast = useToast();
   const [selected, setSelected] = useState<string>();
   const [running, setRunning] = useState(false);
@@ -126,12 +128,20 @@ export default function CrawlSourcesPage() {
               tone="warning"
               foot="Hàng duyệt dữ liệu thu thập"
             />
-            {summary.data.latest_dataset && (
+            {latest && (
               <Stat
                 label="Dữ liệu hợp nhất mới nhất"
-                value={`${formatDate(summary.data.latest_dataset.published_at).slice(0, 5)} ${formatTime(summary.data.latest_dataset.published_at)}`}
-                note={summary.data.latest_dataset.title}
-                foot={summary.data.latest_dataset.detail}
+                value={`${formatDate(latest.published_at).slice(0, 5)} ${formatTime(latest.published_at)}`}
+                note={latest.title}
+                foot={latest.detail}
+                action={
+                  mergeRunId
+                    ? {
+                        label: 'Lượt hợp nhất kế tiếp',
+                        onClick: () => navigate('data', 'CRAWL_MERGE', mergeRunId),
+                      }
+                    : undefined
+                }
               />
             )}
           </div>
@@ -274,12 +284,14 @@ function Stat({
   note,
   tone,
   foot,
+  action,
 }: {
   label: string;
   value: string;
   note: string;
   tone?: 'warning' | 'success';
   foot: string;
+  action?: { label: string; onClick: () => void };
 }) {
   return (
     <div className="flex min-w-[200px] flex-1 flex-col gap-[6px] rounded-md border border-border bg-card px-da-xl py-[14px]">
@@ -298,6 +310,15 @@ function Stat({
         {note}
       </p>
       <p className="text-muted-foreground da-caption">{foot}</p>
+      {action && (
+        <button
+          type="button"
+          onClick={action.onClick}
+          className="self-start text-info hover:underline da-caption"
+        >
+          {action.label}
+        </button>
+      )}
     </div>
   );
 }

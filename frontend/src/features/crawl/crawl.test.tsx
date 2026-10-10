@@ -1,13 +1,14 @@
 /**
  * Thu thập ngoài against the v1 mock: the source list and running one, registering a source
  * (a forbidden source cannot be ticked, saving opens the schema), and approving a schema only
- * after the agent's unsure field is mapped.
+ * after the agent's unsure field is mapped; drift, record review, and consolidation.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
 import { createHandlers } from '../../mocks/handlers';
+import CrawlConsolidationPage from './CrawlConsolidationPage';
 import CrawlDriftPage from './CrawlDriftPage';
 import CrawlRegisterPage from './CrawlRegisterPage';
 import CrawlReviewPage from './CrawlReviewPage';
@@ -216,5 +217,44 @@ describe('CrawlReviewPage', () => {
       }),
     );
     expect(navigate).toHaveBeenCalledWith('data', 'CRAWL_RUN', 'crun-deposit-1010');
+  });
+});
+
+describe('CrawlConsolidationPage', () => {
+  it('decides the entity links, and keeps publishing blocked by the open conflict', async () => {
+    routeId = 'cons-deposit-w41';
+    wrap(<CrawlConsolidationPage />);
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Hợp nhất dữ liệu · tuần 41' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/chờ 2 liên kết thực thể và 1 xung đột trước khi phát hành/),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Thực thể · 2 chờ')).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /^12 tháng/ })).toHaveClass('bg-accent');
+    const publish = screen.getByRole('button', { name: 'Phát hành dataset v42' });
+    expect(publish).toHaveAttribute('aria-disabled', 'true');
+
+    const vietbank = screen.getByRole('listitem', { name: 'Liên kết “VietBank”' });
+    fireEvent.click(within(vietbank).getByRole('button', { name: 'Gộp' }));
+    expect(
+      await screen.findByText('Đã gộp “VietBank” vào Ngân hàng TMCP Việt Nam Thương Tín'),
+    ).toBeInTheDocument();
+    const bv = await screen.findByRole('listitem', { name: 'Liên kết “Ngân hàng BV”' });
+    fireEvent.click(within(bv).getByRole('button', { name: 'Tách' }));
+    expect(await screen.findByText('Đã tách “Ngân hàng BV”')).toBeInTheDocument();
+    expect(await screen.findByText('Nhận diện thực thể chờ duyệt · 0')).toBeInTheDocument();
+    expect(screen.getByText('Thực thể')).toBeInTheDocument();
+    expect(screen.getByText(/chờ 1 xung đột trước khi phát hành/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Phát hành dataset v42' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  });
+
+  it('is opened from the latest dataset in the source list', async () => {
+    wrap(<CrawlSourcesPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Lượt hợp nhất kế tiếp' }));
+    expect(navigate).toHaveBeenCalledWith('data', 'CRAWL_MERGE', 'cons-deposit-w41');
   });
 });
