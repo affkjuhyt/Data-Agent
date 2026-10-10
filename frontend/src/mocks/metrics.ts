@@ -68,6 +68,35 @@ export function createMetricHandlers() {
   let metrics = metricsFixture();
   return [
     http.get('*/v1/metrics/:id', ({ params }) => {
+      // "v3.1 · Trạng thái · Thiếu quyền" (2076:5267): a metric over a Data Space the user is not in.
+      if (params.id === 'metric-cost-of-risk')
+        return HttpResponse.json(
+          {
+            type: 'about:blank',
+            title: 'Forbidden',
+            status: 403,
+            code: 'forbidden',
+            detail: 'Bạn chưa có quyền với Data Space Kế toán.',
+            access: {
+              title: 'Bạn chưa có quyền với dữ liệu trích lập dự phòng',
+              detail:
+                'Chỉ số COST_OF_RISK dùng bảng provision_detail thuộc Data Space Kế toán. Chủ sở hữu: Trần Quốc An.',
+              data_space_id: 'ds-accounting',
+              owner_name: 'Trần Quốc An',
+              options: [
+                {
+                  capability: 'view_aggregate',
+                  label: 'Xem tổng hợp theo vùng (không chi tiết khoản vay)',
+                },
+                { capability: 'view_detail', label: 'Xem chi tiết khoản vay' },
+              ],
+              reason_hint: 'Điều tra nợ xấu bán lẻ T9 · phiên của Đỗ Hải Yến',
+              fallback_text:
+                'Trong lúc chờ, agent có thể trả lời ở mức tổng hợp toàn hệ thống mà không lộ dữ liệu bạn chưa được xem.',
+            },
+          },
+          { status: 403, headers: { 'Content-Type': 'application/problem+json' } },
+        );
       const metric = metrics.find((m) => m.id === params.id);
       return metric ? HttpResponse.json(metric) : undefined;
     }),

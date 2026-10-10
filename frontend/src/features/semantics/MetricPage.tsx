@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 import { Button } from '../../design-system/Button';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
@@ -64,6 +65,8 @@ export default function MetricPage() {
   const list = useV1(routeId ? null : listMetrics, [routeId]);
   const id = routeId || list.data?.items[0]?.id;
   const metric = useV1(id ? () => getMetric(id) : null, [id]);
+  const forbidden = forbiddenOf(metric.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   return (
     <AsyncRegion state={metric} what="chỉ số">
       {(m) => <MetricBody metric={m} onChanged={metric.reload} />}

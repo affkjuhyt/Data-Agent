@@ -17,17 +17,41 @@ export interface Page<T> {
 }
 
 /** A1.7: the problem+json body, kept whole so a screen can branch on `code`. */
+/**
+ * PROPOSAL, for "v3.1 · Trạng thái · Thiếu quyền" (2076:5267): a 403 on a read says what was
+ * refused, whose it is, and which access levels may be asked for — never the data itself.
+ */
+export interface ForbiddenAccess {
+  title: string;
+  detail: string;
+  data_space_id: string;
+  owner_name: string;
+  options: { capability: 'view_aggregate' | 'view_detail' | 'ask' | 'run_agent'; label: string }[];
+  /** The context the request came from, to prefill its reason. */
+  reason_hint: string;
+  /** What the agent can still answer meanwhile, or null. */
+  fallback_text: string | null;
+}
+
 export class V1Error extends Error {
   readonly status: number;
   readonly code: string;
   readonly traceId?: string;
+  readonly access?: ForbiddenAccess;
 
-  constructor(status: number, code: string, detail: string, traceId?: string) {
+  constructor(
+    status: number,
+    code: string,
+    detail: string,
+    traceId?: string,
+    access?: ForbiddenAccess,
+  ) {
     super(detail);
     this.name = 'V1Error';
     this.status = status;
     this.code = code;
     this.traceId = traceId;
+    this.access = access;
   }
 }
 
@@ -92,6 +116,7 @@ async function failure(res: Response): Promise<V1Error> {
       body.code ?? 'unknown',
       body.detail ?? body.title ?? res.statusText,
       body.trace_id,
+      res.status === 403 ? body.access : undefined,
     );
   } catch {
     return new V1Error(res.status, 'unknown', res.statusText);
