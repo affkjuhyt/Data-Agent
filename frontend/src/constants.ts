@@ -3,7 +3,9 @@ import type { AreaId, RailGroup } from './components/shell/areas';
 export { AREAS } from './components/shell/areas';
 
 /*
- * Secondary rail per area (v3.1). An area absent here is a single screen at full width.
+ * Secondary rail per area (v3.1). The rail is drawn on its pages only: an area with a landing
+ * (AREA_LANDING) opens on that full-width page and shows the rail once one of its pages is open,
+ * as in Figma, where "v3.1 · Phân tích" has no rail and the detail screens do.
  * Page ids are upper-case internally and lower-case in the URL (/agents/runs ↔ RUNS);
  * routes.tsx maps every id below to a screen.
  *
@@ -70,5 +72,13 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
   ],
 };
 
-/** First page of an area with a rail; undefined for single-screen areas. */
-export const firstPageOf = (area: AreaId): string | undefined => AREA_RAILS[area]?.[0]?.items[0]?.id;
+/** Areas that open on a landing page (route key SINGLE_SCREEN) rather than on a rail page. */
+export const AREA_LANDING: ReadonlySet<AreaId> = new Set(['home', 'needs-you', 'analysis', 'data', 'admin']);
+
+/** The page an area opens on: undefined = its landing; otherwise the first rail item. */
+export const firstPageOf = (area: AreaId): string | undefined =>
+  AREA_LANDING.has(area) ? undefined : AREA_RAILS[area]?.[0]?.items[0]?.id;
+
+/** Whether `page` of `area` sits in the area's rail (and so draws it). */
+export const isRailPage = (area: AreaId, page: string | undefined): boolean =>
+  Boolean(page && AREA_RAILS[area]?.some(group => group.items.some(item => item.id === page)));

@@ -11,9 +11,11 @@ import { Icon } from '../../design-system/Icon';
 export function AskBar({
   suggestions,
   onAsk,
+  placeholder = 'Hỏi về dữ liệu, hoặc giao việc cho agent…',
 }: {
   suggestions: string[];
   onAsk: (question: string) => void;
+  placeholder?: string;
 }) {
   const [text, setText] = useState('');
   const submit = () => {
@@ -36,7 +38,7 @@ export function AskBar({
         <input
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder="Hỏi về dữ liệu, hoặc giao việc cho agent…"
+          placeholder={placeholder}
           aria-label="Câu hỏi"
           className="min-w-0 flex-1 bg-transparent text-foreground outline-none da-reading placeholder:text-muted-foreground focus-visible:shadow-none"
         />

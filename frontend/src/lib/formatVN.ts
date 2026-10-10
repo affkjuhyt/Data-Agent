@@ -154,6 +154,19 @@ export function formatDuration(ms: Numeric): string {
 }
 
 /**
+ * Money in the short form of the v3 screens: 1_200_000 → "1,2 triệu đ", 3_500_000_000 → "3,5 tỷ đ",
+ * 8000 → "8.000 đ". Amounts arrive as decimal strings (A1.1).
+ */
+export function formatMoneyShort(value: Numeric): string {
+  const n = toNumber(value);
+  if (n === null) return DASH;
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return `${formatNumber(n / 1e9, { maxFractionDigits: 1 })} tỷ đ`;
+  if (abs >= 1e6) return `${formatNumber(n / 1e6, { maxFractionDigits: 1 })} triệu đ`;
+  return `${formatNumber(Math.round(n))} đ`;
+}
+
+/**
  * How long something has waited, in the words of the v3 screens: 30 → "vừa xong",
  * 360 → "6 phút", 7500 → "2 giờ 05 phút", 270000 → "3 ngày".
  */

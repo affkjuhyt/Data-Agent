@@ -52,14 +52,14 @@ type Redirect = { module: string; sub: string; subs?: Record<string, { module: s
 const REDIRECT_MAP: Record<string, Redirect> = {
   // V3.0 IA (ask / knowledge / build / ops / settings)
   ask:       { module: 'analysis', sub: 'ASK' },
-  knowledge: { module: 'data', sub: '' },
+  knowledge: { module: 'data', sub: 'SOURCES' },
   build: {
     module: 'agents', sub: 'TEAM',
     subs: {
       AGENTS:     { module: 'agents', sub: 'TEAM' },
       WORKFLOWS:  { module: 'agents', sub: 'ORCHESTRATION' },
       PLAYGROUND: { module: 'agents', sub: 'EVALUATE' },
-      KNOWLEDGE:  { module: 'data', sub: '' },
+      KNOWLEDGE:  { module: 'data', sub: 'SOURCES' },
       VERSIONS:   { module: 'agents', sub: 'TEAM' },
     },
   },
@@ -73,7 +73,7 @@ const REDIRECT_MAP: Record<string, Redirect> = {
     },
   },
   settings: {
-    module: 'admin', sub: 'OVERVIEW',
+    module: 'admin', sub: '',
     subs: {
       TEAM:      { module: 'admin', sub: 'IAM' },
       PROVIDERS: { module: 'admin', sub: 'AI_PROVIDERS' },
@@ -83,7 +83,7 @@ const REDIRECT_MAP: Record<string, Redirect> = {
   // Older IAs
   'dashboard':          { module: 'analysis', sub: 'DASHBOARD' },
   'national-ops':       { module: 'analysis', sub: 'DASHBOARD' },
-  'knowledge-ops':      { module: 'data', sub: '' },
+  'knowledge-ops':      { module: 'data', sub: 'SOURCES' },
   'ai-runtime':         { module: 'agents', sub: 'TEAM' },
   'release-management': { module: 'agents', sub: 'TEAM' },
   'release':            { module: 'agents', sub: 'TEAM' },
@@ -233,9 +233,14 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     moduleId = resolved.module;
     subId = resolved.sub;
     _setActiveModule(moduleId);
-    if (subId) {
-      _setSubTabState(prev => ({ ...prev, [moduleId]: subId }));
-    }
+    // No page means the area's own start (its landing, or its first rail page).
+    const page = subId;
+    _setSubTabState(prev => {
+      const next = { ...prev };
+      if (page) next[moduleId] = page;
+      else delete next[moduleId];
+      return next;
+    });
   }, []);
 
   /* Keep URL path in sync with state */

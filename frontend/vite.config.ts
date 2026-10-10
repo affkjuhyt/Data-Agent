@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import fs from "fs";
 import path from "path";
 import { defineConfig, loadEnv } from "vite";
 
@@ -10,7 +11,19 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ENV_DIR, "");
   return {
     envDir: ENV_DIR,
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        // public/mockServiceWorker.js serves the dev-only v1 mock (src/mocks, VITE_MOCK_V1=1);
+        // production must not ship it.
+        name: "drop-mock-service-worker",
+        apply: "build",
+        closeBundle() {
+          fs.rmSync(path.resolve(__dirname, "dist/mockServiceWorker.js"), { force: true });
+        },
+      },
+    ],
     define: {
       "process.env.GEMINI_API_KEY": JSON.stringify(env.GEMINI_API_KEY),
     },

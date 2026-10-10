@@ -9,7 +9,7 @@ import { ToastProvider } from './design-system/Toast';
 import { SkeletonRows } from './design-system/SkeletonRow';
 import { useDelayedFlag } from './design-system/useDelayedFlag';
 import { ROUTE_MAP, SINGLE_SCREEN } from './routes';
-import { AREA_RAILS, firstPageOf } from './constants';
+import { firstPageOf } from './constants';
 
 /* Under 300 ms nothing shows (no flash); after that a skeleton in the page's place. */
 const RouteLoading = () => {
@@ -30,8 +30,8 @@ function AppContent() {
 
   const renderView = () => {
     const routes = ROUTE_MAP[area];
-    const page = AREA_RAILS[area] ? (subTab[area] ?? firstPageOf(area)) : SINGLE_SCREEN;
-    const entry = routes && page ? (routes[page] ?? routes[SINGLE_SCREEN]) : undefined;
+    const page = subTab[area] ?? firstPageOf(area) ?? SINGLE_SCREEN;
+    const entry = routes ? (routes[page] ?? routes[SINGLE_SCREEN]) : undefined;
 
     if (!entry) {
       return (

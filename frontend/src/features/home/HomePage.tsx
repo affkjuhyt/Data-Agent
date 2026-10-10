@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
 import { useAppState } from '../../AppStateContext';
+import { listInbox, listRuns, listSources } from '../../lib/v1/api';
+import { useV1 } from '../../lib/v1/useV1';
+import { AgentActivity } from './AgentActivity';
 import { AskBar } from './AskBar';
+import { DataToday } from './DataToday';
 import { NeedsYouCard } from './NeedsYouCard';
-import { fetchPendingReviews, recentQuestions, type PendingReview } from './api';
+import { recentQuestions } from './api';
 
 /*
  * "v3.1 · Trang chủ" (2132:15338, UC-01-01, UC-08-05): the page everyone lands on.
- * Two columns under 16×32 padding with a 24px gap: the main column (greeting, question bar)
- * and a 380px right column (what needs you). Blocks without a data source yet are left out
- * rather than drawn with made-up numbers.
+ * Two columns under 16×32 padding with a 24px gap: the main column (greeting, question bar,
+ * what agents are doing, today's data) and a 380px right column (what needs you).
+ * "Chỉ số của bạn" and "Dashboard của bạn" of the design have no v1 endpoint yet (no list of a
+ * viewer's metrics with values, no /v1/dashboards); they are left out rather than invented.
  */
 const WEEKDAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
 
@@ -27,16 +31,9 @@ function givenName(fullName: string): string {
 
 export default function HomePage() {
   const { user, tenant, navigate } = useAppState();
-  const [reviews, setReviews] = useState<PendingReview[] | undefined>(undefined);
-  const [reviewsError, setReviewsError] = useState(false);
-
-  const loadReviews = useCallback(() => {
-    setReviewsError(false);
-    fetchPendingReviews()
-      .then((list) => setReviews(Array.isArray(list) ? list : []))
-      .catch(() => setReviewsError(true));
-  }, []);
-  useEffect(loadReviews, [loadReviews]);
+  const inbox = useV1(() => listInbox({ status: 'open' }), []);
+  const runs = useV1(() => listRuns(), []);
+  const sources = useV1(listSources, []);
 
   const now = new Date();
   const dateLine = `${WEEKDAYS[now.getDay()]}, ${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -58,15 +55,12 @@ export default function HomePage() {
           </h1>
         </header>
         <AskBar suggestions={recentQuestions(4)} onAsk={ask} />
+        <AgentActivity runs={runs} onOpenAll={() => navigate('agents', 'RUNS')} />
+        <DataToday sources={sources} onManage={() => navigate('data')} />
       </div>
 
       <aside className="flex w-[380px] shrink-0 flex-col gap-da-xl max-[1279px]:w-full">
-        <NeedsYouCard
-          reviews={reviews}
-          error={reviewsError}
-          onOpen={() => navigate('needs-you')}
-          onRetry={loadReviews}
-        />
+        <NeedsYouCard inbox={inbox} onOpen={() => navigate('needs-you')} />
       </aside>
     </div>
   );

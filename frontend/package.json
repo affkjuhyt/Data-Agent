@@ -43,11 +43,17 @@
     "@vitest/coverage-v8": "^2.1.2",
     "jsdom": "^25.0.1",
     "knip": "^5.64.4",
+    "msw": "^2.15.0",
     "prettier": "^3.6.2",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
     "vitest": "^2.1.2"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
   }
 }

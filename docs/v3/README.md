@@ -49,3 +49,4 @@ Câu hỏi mới ghi vào bảng này; chốt xong thì cập nhật trạng th�
 | 06/10/2026 | Tạo thư mục: 00 (chiến lược), 01 (agent core + UI từ awesome-data-agents), 02 (thị trường, phản biện v1.0), 03 (R0), 04 (backlog). Chốt D8–D12 |
 | 06/10/2026 | Chốt D2 (dời 27/10). Linear: đóng P-NOP-2, tạo P-NOP-3 với milestone R0–R4 và story R0/R1; 04 §0 phân công theo người thật |
 | 10/10/2026 | Thêm 05 (giao diện v3.1 theo Figma): hệ thiết kế, khung trang, điều hướng sáu khu vực, Trang chủ |
+| 10/10/2026 | 05: màn chính của sáu khu vực trên API `/v1` của tài liệu thiết kế, mock MSW khi dev (`VITE_MOCK_V1`), danh sách trường đề xuất cho backend |

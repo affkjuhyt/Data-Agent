@@ -2,7 +2,7 @@
  * Information architecture guards for the v3.1 navigation (Figma "Điều hướng v3.1").
  */
 import { describe, expect, it } from 'vitest';
-import { AREA_RAILS, AREAS, firstPageOf } from '../constants';
+import { AREA_LANDING, AREA_RAILS, AREAS, firstPageOf, isRailPage } from '../constants';
 import { ROUTE_MAP, SINGLE_SCREEN } from '../routes';
 import { landingFor, resolveRoute } from '../AppStateContext';
 
@@ -15,17 +15,19 @@ describe('navigation', () => {
     expect(AREAS.filter(a => a.pinnedOnNarrow).map(a => a.id)).toEqual(['home', 'needs-you']);
   });
 
-  it('routes every area and every rail item to a real screen', () => {
+  it('routes every landing and every rail item to a real screen', () => {
     for (const area of AREAS) {
-      const rail = AREA_RAILS[area.id];
-      if (!rail) {
-        expect(ROUTE_MAP[area.id]?.[SINGLE_SCREEN], area.id).toBeDefined();
-        continue;
-      }
-      for (const item of rail.flatMap(g => g.items)) {
+      if (AREA_LANDING.has(area.id)) expect(ROUTE_MAP[area.id]?.[SINGLE_SCREEN], area.id).toBeDefined();
+      for (const item of (AREA_RAILS[area.id] ?? []).flatMap(g => g.items)) {
         expect(ROUTE_MAP[area.id]?.[item.id], `${area.id}/${item.id}`).toBeDefined();
       }
     }
+  });
+
+  it('draws the rail on rail pages only', () => {
+    expect(isRailPage('analysis', undefined)).toBe(false);
+    expect(isRailPage('analysis', 'ASK')).toBe(true);
+    expect(isRailPage('agents', 'BUILDER')).toBe(false);
   });
 
   it('lands everyone on Trang chủ', () => {
@@ -34,18 +36,20 @@ describe('navigation', () => {
     expect(landingFor('PLATFORM_ADMIN')).toEqual({ module: 'home' });
   });
 
-  it('opens an area with a rail on its first page', () => {
+  it('opens Agents on Đội agent and the other areas on their landing', () => {
     expect(firstPageOf('agents')).toBe('TEAM');
+    expect(firstPageOf('analysis')).toBeUndefined();
     expect(firstPageOf('home')).toBeUndefined();
   });
 
   it('redirects links of the earlier IAs to the v3.1 areas', () => {
     expect(resolveRoute('ask')).toEqual({ module: 'analysis', sub: 'ASK' });
-    expect(resolveRoute('knowledge')).toEqual({ module: 'data', sub: undefined });
+    expect(resolveRoute('knowledge')).toEqual({ module: 'data', sub: 'SOURCES' });
     expect(resolveRoute('build', 'AGENTS')).toEqual({ module: 'agents', sub: 'TEAM' });
     expect(resolveRoute('build', 'WORKFLOWS')).toEqual({ module: 'agents', sub: 'ORCHESTRATION' });
     expect(resolveRoute('build', 'PLAYGROUND')).toEqual({ module: 'agents', sub: 'EVALUATE' });
-    expect(resolveRoute('build', 'KNOWLEDGE')).toEqual({ module: 'data', sub: undefined });
+    expect(resolveRoute('build', 'KNOWLEDGE')).toEqual({ module: 'data', sub: 'SOURCES' });
+    expect(resolveRoute('settings')).toEqual({ module: 'admin', sub: undefined });
     expect(resolveRoute('ops', 'TRACES')).toEqual({ module: 'agents', sub: 'RUNS' });
     expect(resolveRoute('ops', 'REVIEWS')).toEqual({ module: 'needs-you', sub: undefined });
     expect(resolveRoute('ops', 'ANALYTICS')).toEqual({ module: 'analysis', sub: 'DASHBOARD' });

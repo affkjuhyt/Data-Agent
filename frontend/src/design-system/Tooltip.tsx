@@ -6,7 +6,16 @@ import { useId, useRef, useState, type ReactNode } from 'react';
  */
 const OPEN_DELAY_MS = 300;
 
-export function Tooltip({ content, children }: { content: ReactNode; children: ReactNode }) {
+export function Tooltip({
+  content,
+  children,
+  className,
+}: {
+  content: ReactNode;
+  children: ReactNode;
+  /** Layout of the wrapper, e.g. to let a card inside it fill its column. */
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   const timer = useRef<number | undefined>(undefined);
   const id = useId();
@@ -22,7 +31,7 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
 
   return (
     <span
-      className="relative inline-flex"
+      className={className ? `relative ${className}` : 'relative inline-flex'}
       onMouseEnter={show}
       onMouseLeave={hide}
       onFocus={show}

@@ -6,7 +6,7 @@ import { cn } from '../lib/utils';
  * As drawn in the screens (table "Trạng thái", "● Chứng nhận"): 7px dot, 6px gap, 13/18 text in
  * the default colour. The dot carries the tone; the words carry the meaning.
  */
-type StatusTone = 'success' | 'warning' | 'error' | 'info' | 'primary' | 'neutral';
+type StatusTone = 'success' | 'warning' | 'error' | 'info' | 'primary' | 'neutral' | 'idle';
 
 const DOT: Record<StatusTone, string> = {
   success: 'bg-success',
@@ -15,6 +15,8 @@ const DOT: Record<StatusTone, string> = {
   info: 'bg-info',
   primary: 'bg-primary',
   neutral: 'bg-muted-foreground',
+  // "Chờ lịch": waiting for its schedule, nothing wrong.
+  idle: 'bg-border-strong',
 };
 
 const TEXT: Record<StatusTone, string> = {
@@ -24,6 +26,7 @@ const TEXT: Record<StatusTone, string> = {
   info: 'text-info',
   primary: 'text-primary',
   neutral: 'text-muted-foreground',
+  idle: 'text-muted-foreground',
 };
 
 export function StatusDot({

@@ -7,6 +7,7 @@ import {
   formatDateTime,
   formatDuration,
   formatElapsed,
+  formatMoneyShort,
   formatNumber,
   formatPercent,
   formatRelative,
@@ -175,5 +176,13 @@ describe('formatElapsed', () => {
   it('shows a dash for nothing to measure', () => {
     expect(formatElapsed(null)).toBe('—');
     expect(formatElapsed(-1)).toBe('—');
+  });
+});
+
+describe('formatMoneyShort', () => {
+  it('writes money the short Vietnamese way', () => {
+    expect(formatMoneyShort('1200000')).toBe('1,2 triệu đ');
+    expect(formatMoneyShort(3_500_000_000)).toBe('3,5 tỷ đ');
+    expect(formatMoneyShort(8000)).toBe('8.000 đ');
   });
 });
