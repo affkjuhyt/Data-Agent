@@ -162,3 +162,15 @@ export async function v1Send<T = unknown>(
     return (res.status === 204 ? undefined : await res.json()) as T;
   return (await res.json()) as T;
 }
+
+/** POST multipart/form-data (a file upload); the browser sets the boundary, so no Content-Type here. */
+export async function v1Upload<T = unknown>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(`${BASE}${safePath(path)}`, {
+    method: 'POST',
+    headers: headers({ 'Idempotency-Key': crypto.randomUUID() }),
+    body: form,
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) throw await failure(res);
+  return (await res.json()) as T;
+}

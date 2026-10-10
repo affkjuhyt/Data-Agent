@@ -37,6 +37,7 @@ import { createKnowledgeHandlers } from './knowledge';
 import { createMetricHandlers } from './metrics';
 import { createMonitorHandlers } from './monitors';
 import { createNotificationHandlers } from './notifications';
+import { createPackHandlers } from './packs';
 import { createPeriodHandlers } from './periods';
 import { createReportHandlers } from './reports';
 import { createRuleHandlers } from './rules';
@@ -101,6 +102,7 @@ export function createHandlers() {
     ...createMonitorHandlers(),
     ...createAlertHandlers(),
     ...createReportHandlers(),
+    ...createPackHandlers(),
 
     http.get('*/v1/inbox', ({ request }) => {
       const status = new URL(request.url).searchParams.get('status') ?? 'open';

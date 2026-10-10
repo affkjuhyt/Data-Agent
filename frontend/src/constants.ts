@@ -106,6 +106,14 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
         { id: 'KNOWLEDGE_REVIEW', label: 'Rà soát tri thức' },
       ],
     },
+    {
+      label: 'Gói ngành',
+      items: [
+        { id: 'PACKS', label: 'Gói đã cài' },
+        { id: 'PACK_ONBOARD', label: 'Đưa vào ngành' },
+        { id: 'PACK_AUTHOR', label: 'Biên soạn gói' },
+      ],
+    },
   ],
   account: [
     {
@@ -195,6 +203,10 @@ const RAIL_PARENT: Partial<Record<AreaId, Record<string, string>>> = {
     CRAWL_DRIFT: 'CRAWL',
     CRAWL_RUN: 'CRAWL',
     CRAWL_MERGE: 'CRAWL',
+    PACK_INSTALL: 'PACKS',
+    PACK_UPGRADE: 'PACKS',
+    PACK_CALIBRATE: 'PACK_ONBOARD',
+    METRIC_OVERRIDE: 'METRIC',
   },
   admin: { DATA_SPACE_NEW: 'DATA_SPACES', PERMISSION_COMPARE: 'DATA_SPACES' },
   account: { CHANNEL_RULES: 'NOTIFICATIONS' },
