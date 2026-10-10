@@ -18,6 +18,7 @@ import {
   type PipelineStep,
 } from '../../lib/v1/dataPrep';
 import { useV1 } from '../../lib/v1/useV1';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * "P06 · Làm sạch bằng hội thoại" (2288:17795, UC-06-01): the user describes the cleaning in
@@ -89,6 +90,9 @@ export default function PipelinePage() {
     }
   };
 
+  // A loaded in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(loaded.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   if (!routeId)
     return (
       <EmptyState

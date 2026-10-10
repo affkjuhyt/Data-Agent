@@ -22,6 +22,7 @@ import {
 import { useV1 } from '../../lib/v1/useV1';
 import { cn } from '../../lib/utils';
 import { ScheduleDialog } from './ScheduleDialog';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * "v3.1 · Dashboard có tóm tắt AI" (2140:15741, UC-08-03) and its "Dữ liệu cũ" state
@@ -61,6 +62,9 @@ export default function DashboardPage() {
 function DashboardView({ id }: { id: string }) {
   const [filters, setFilters] = useState<Record<string, string>>({});
   const dashboard = useV1(() => getDashboard(id, filters), [id, JSON.stringify(filters)]);
+  // A dashboard in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(dashboard.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   return (
     <AsyncRegion state={dashboard} what="dashboard">
       {(d) => (

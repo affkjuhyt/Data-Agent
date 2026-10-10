@@ -10,6 +10,7 @@ import { formatNumber, formatTime } from '../../lib/formatVN';
 import { getSource, testSource, type SourceDetail } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
 import { dataSpacesText, freshnessText, modeLabel, sourceTone } from './sourceFormat';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * One source (/data/source/<id>): what it is, its health, and its tables; a table opens
@@ -20,6 +21,9 @@ import { dataSpacesText, freshnessText, modeLabel, sourceTone } from './sourceFo
 export default function SourceDetailPage() {
   const { routeId } = useAppState();
   const source = useV1(routeId ? () => getSource(routeId) : null, [routeId]);
+  // A source in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(source.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   return (
     <AsyncRegion state={source} what="nguồn" skeletonRows={6}>
       {(data) => <SourceView source={data} reload={source.reload} />}

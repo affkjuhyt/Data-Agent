@@ -10,6 +10,7 @@ import { getLineage, listLineageTargets, type LineageGraph } from '../../lib/v1/
 import { useV1 } from '../../lib/v1/useV1';
 import { FormDialog } from '../sessions/FormDialog';
 import { NODE_H, NODE_W, layoutLineage, lineageToSvg, type LineageLayout } from './lineageLayout';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * "P06 · Dòng dữ liệu" (2290:17979, UC-06-05): what a table, metric or report is built from and
@@ -23,6 +24,9 @@ export default function LineagePage() {
   const graph = useV1(() => getLineage(routeId), [routeId]);
   const [picking, setPicking] = useState(false);
 
+  // A graph in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(graph.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader

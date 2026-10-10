@@ -27,6 +27,7 @@ import {
 import { useV1 } from '../../lib/v1/useV1';
 import { cutoffShort, ForecastChart, ForecastLegend } from './ForecastChart';
 import { DataTable, type Column } from './parts';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * "P15 · Kết quả dự báo & kịch bản" (2391:15164, UC-15-01, UC-15-05): history, forecast and its
@@ -75,6 +76,9 @@ export default function ForecastPage() {
   const list = useV1(routeId ? null : listForecasts, [routeId]);
   const id = routeId || list.data?.items[0]?.id;
   const forecast = useV1(id ? () => getForecast(id) : null, [id]);
+  // A forecast in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(forecast.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   if (!routeId && list.error) {
     return (
       <AsyncRegion state={list} what="dự báo">

@@ -24,6 +24,7 @@ import {
 } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
 import { FormDialog } from '../sessions/FormDialog';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * "v3.1 · Dữ liệu · Khám phá bảng" (2082:6566, UC-04-02, UC-06-02): rows of one table under
@@ -61,6 +62,9 @@ export default function TableExplorePage() {
 function Explorer({ id }: { id: string }) {
   const [filters, setFilters] = useState<ExploreFilter[]>([]);
   const preview = useV1(() => previewTable(id, filters), [id, filters]);
+  // A preview in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(preview.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   return (
     <AsyncRegion state={preview} what="dữ liệu của bảng" skeletonRows={8}>
       {(data) => <ExploreView id={id} preview={data} filters={filters} onFilters={setFilters} />}

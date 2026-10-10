@@ -18,6 +18,7 @@ import {
 } from '../../lib/v1/explore';
 import { useV1 } from '../../lib/v1/useV1';
 import { cn } from '../../lib/utils';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * "v3.1 · Chi tiết · Artifact toàn màn" (2074:4442, UC-01-01): one chart or table produced in
@@ -35,6 +36,9 @@ export default function ArtifactPage() {
   const { routeId } = useAppState();
   const artifact = useV1(routeId ? () => getArtifact(routeId) : null, [routeId]);
 
+  // A artifact in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(artifact.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   if (!routeId)
     return (
       <div className="p-da-2xl">

@@ -19,6 +19,7 @@ import {
 } from '../../lib/v1/forecast';
 import { useV1 } from '../../lib/v1/useV1';
 import { DataTable, Stat } from './parts';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * "P15 · Mô hình dự báo · duyệt & theo dõi" (2391:15485, UC-15-04, UC-15-06): the draft model
@@ -44,6 +45,9 @@ export default function ForecastModelPage() {
   const list = useV1(routeId ? null : listForecastModels, [routeId]);
   const id = routeId || list.data?.items[0]?.id;
   const model = useV1(id ? () => getForecastModel(id) : null, [id]);
+  // A model in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(model.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   if (!routeId && list.error) {
     return (
       <AsyncRegion state={list} what="mô hình dự báo">

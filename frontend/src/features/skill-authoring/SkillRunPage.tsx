@@ -19,6 +19,7 @@ import type { Page } from '../../lib/v1/client';
 import { useV1, type V1State } from '../../lib/v1/useV1';
 import { ExternalFactorsView } from './ExternalFactorsView';
 import { Waterfall } from './Waterfall';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * Running a skill directly (UC-03-01, UC-03-02). The skill's run form decides the screen:
@@ -32,6 +33,9 @@ export default function SkillRunPage() {
   const { routeId } = useAppState();
   const form = useV1(routeId ? () => getSkillRunForm(routeId) : null, [routeId]);
   const latest = useV1(routeId ? () => listSkillRuns(routeId) : null, [routeId]);
+  // A form in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(form.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   return (
     <AsyncRegion state={form} what="kỹ năng">
       {(f) => <Runner key={f.skill_id} form={f} latest={latest} />}

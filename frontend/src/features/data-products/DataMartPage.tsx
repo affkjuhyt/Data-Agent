@@ -16,6 +16,7 @@ import {
 } from '../../lib/v1/dataProducts';
 import { useV1 } from '../../lib/v1/useV1';
 import { SuggestMartDialog } from './SuggestMartDialog';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * "P06 · Data mart & sản phẩm dữ liệu" (2290:18136, UC-06-06 step 1): a mart as its star model
@@ -84,6 +85,9 @@ function MartView({ id }: { id: string }) {
     }
   };
 
+  // A mart in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(mart.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   return (
     <div className="flex min-h-full flex-col">
       <PageHeader

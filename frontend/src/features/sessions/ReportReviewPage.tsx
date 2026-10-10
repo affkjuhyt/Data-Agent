@@ -17,6 +17,7 @@ import {
   type SessionReport,
 } from '../../lib/v1/sessions';
 import { useV1 } from '../../lib/v1/useV1';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * "P02 · Phiên · Duyệt & phát hành báo cáo" (2297:18812, UC-02-07), at /analysis/report/<id>:
@@ -43,6 +44,9 @@ const hhmm = (iso: string) =>
 export default function ReportReviewPage() {
   const { routeId } = useAppState();
   const report = useV1(routeId ? () => getSessionReport(routeId) : null, [routeId]);
+  // A report in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(report.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   return (
     <AsyncRegion state={report} what="báo cáo">
       {(r) => <Review report={r} />}

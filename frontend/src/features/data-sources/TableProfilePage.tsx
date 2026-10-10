@@ -15,6 +15,7 @@ import {
   type TableProfile,
 } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * "P04 · Nguồn · Hồ sơ bảng" (2280:16974, UC-04-02): the profile of one table — per column its
@@ -28,6 +29,9 @@ type Tab = 'profile' | 'sample' | 'schema' | 'lineage' | 'access';
 export default function TableProfilePage() {
   const { routeId } = useAppState();
   const profile = useV1(routeId ? () => getTableProfile(routeId) : null, [routeId]);
+  // A profile in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(profile.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   return (
     <AsyncRegion state={profile} what="hồ sơ bảng" skeletonRows={8}>
       {(data) => <ProfileView profile={data} />}

@@ -28,6 +28,7 @@ import { agentStatus } from '../agents/agentStatus';
 import { runStatus } from '../agents/runStatus';
 import { MemoryTab } from './MemoryTab';
 import { TestRunDrawer, useTestRun } from './TestRunDrawer';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * One agent, addressed /agents/agent/<id>, with the tabs of the P13 agent frames: "Cấu hình"
@@ -67,6 +68,9 @@ const HISTORY_PENDING = 'Màn lịch sử phiên bản đang được làm.';
 export default function AgentConfigPage() {
   const { routeId } = useAppState();
   const agent = useV1(routeId ? () => getAgent(routeId) : null, [routeId]);
+  // A agent in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(agent.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   return (
     <AsyncRegion state={agent} what="agent">
       {(detail) => <AgentBody key={detail.config.id} agent={detail} onSaved={agent.reload} />}

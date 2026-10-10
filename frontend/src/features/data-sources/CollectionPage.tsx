@@ -20,6 +20,7 @@ import {
   type StepState,
 } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * "P05 · Bộ sưu tập · Tài liệu & tiền xử lý" (2300:18794, UC-05-01, UC-05-02): the documents of
@@ -55,6 +56,9 @@ const STATE_WORD: Record<StepState, string> = {
 export default function CollectionPage() {
   const { routeId } = useAppState();
   const collection = useV1(routeId ? () => getCollection(routeId) : null, [routeId]);
+  // A collection in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(collection.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   return (
     <AsyncRegion state={collection} what="bộ sưu tập" skeletonRows={6}>
       {(data) => <CollectionView collection={data} />}

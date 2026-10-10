@@ -25,6 +25,7 @@ import {
 import { useV1 } from '../../lib/v1/useV1';
 import { SessionToAgentDialog } from '../skill-authoring/SessionToAgentDialog';
 import { ShareDialog } from './ShareDialog';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * "P02 · Phiên · Notebook" (2297:18612, UC-02-01, 02, 04, 05, 06): a bordered header with who is
@@ -67,6 +68,9 @@ const tileList = (tiles: WorkspaceTile[]) => {
 
 export function NotebookPage({ workspaceId }: { workspaceId: string }) {
   const workspace = useV1(() => getWorkspace(workspaceId), [workspaceId]);
+  // A workspace in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(workspace.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   return (
     <AsyncRegion state={workspace} what="phiên làm việc">
       {(ws) => <Notebook ws={ws} onChanged={workspace.reload} />}

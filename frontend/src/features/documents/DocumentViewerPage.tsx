@@ -29,6 +29,7 @@ import { useV1 } from '../../lib/v1/useV1';
 import { CallViewer } from './CallViewer';
 import { EmailViewer } from './EmailViewer';
 import { HEAD_ROW, ROW } from './parts';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * "v3.1 · Phi cấu trúc · Trình xem tài liệu" (2069:3041, UC-05-04, UC-05-05) at /data/document/<id>:
@@ -40,6 +41,9 @@ import { HEAD_ROW, ROW } from './parts';
 export default function DocumentViewerPage() {
   const { routeId } = useAppState();
   const doc = useV1(routeId ? () => getDocumentView(routeId) : null, [routeId]);
+  // A doc in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(doc.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
   if (!routeId)
     return (
       <EmptyState
