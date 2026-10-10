@@ -205,9 +205,6 @@ export interface SchemaDrift {
   resolution: 'approved_new' | 'manual_fix' | 'reverted' | 'false_alarm' | null;
 }
 
-export const listOpenDrifts = () =>
-  v1Get<Page<SchemaDrift>>('/schema-drifts', { resolution: 'open', page_size: 500 });
-
 /** PROPOSAL: GET /v1/schema-drifts/{id} (A2 only lists them). */
 export const getSchemaDrift = async (id: string) =>
   v1Get<SchemaDrift>(`/schema-drifts/${pathId(id)}`);
