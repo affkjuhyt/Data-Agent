@@ -23,6 +23,7 @@ import { createAnswerReportHandlers } from './answerReports';
 import { createDashboardHandlers } from './dashboards';
 import { createAuthorityHandlers } from './authorities';
 import { createExampleHandlers } from './examples';
+import { createKnowledgeHandlers } from './knowledge';
 import { createMetricHandlers } from './metrics';
 import { createNotificationHandlers } from './notifications';
 import { createPeriodHandlers } from './periods';
@@ -73,6 +74,7 @@ export function createHandlers() {
     ...createMetricHandlers(),
     ...createExampleHandlers(),
     ...createAuthorityHandlers(),
+    ...createKnowledgeHandlers(),
 
     http.get('*/v1/inbox', ({ request }) => {
       const status = new URL(request.url).searchParams.get('status') ?? 'open';

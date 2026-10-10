@@ -45,6 +45,7 @@ const CompareVersionsPage = React.lazy(() => import('./features/periods/CompareV
 const MetricPage = React.lazy(() => import('./features/semantics/MetricPage'));
 const ExamplesPage = React.lazy(() => import('./features/semantics/ExamplesPage'));
 const SourceAuthorityPage = React.lazy(() => import('./features/semantics/SourceAuthorityPage'));
+const KnowledgePageView = React.lazy(() => import('./features/knowledge/KnowledgePageView'));
 const DecisionRulePage = React.lazy(() => import('./features/rules/DecisionRulePage'));
 const ProfilePage = React.lazy(() => import('./features/admin-platform/ProfilePage'));
 const NotificationsPage = React.lazy(() => import('./features/admin-platform/NotificationsPage'));
@@ -113,6 +114,8 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     // Ngữ nghĩa (lớp ngữ cảnh): /data/metric/<id>, /data/rule/<id>.
     METRIC:          { render: () => <MetricPage /> },
     EXAMPLES:        { render: () => <ExamplesPage /> },
+    // /data/knowledge/<id>; without an id the first page of the index.
+    KNOWLEDGE:       { render: () => <KnowledgePageView /> },
     AUTHORITY:       { render: () => <SourceAuthorityPage /> },
     RULE:            { render: () => <DecisionRulePage /> },
   },
