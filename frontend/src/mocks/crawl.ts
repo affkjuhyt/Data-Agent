@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw';
 import type {
   AcquireSummary,
   CrawlSchemaVersion,
+  SchemaDrift,
   CrawlSource,
   SourceSuggestion,
 } from '../lib/v1/crawl';
@@ -34,6 +35,7 @@ function sourcesFixture(): CrawlSource[] {
     sample_accuracy_pct,
     pending_review,
     review_gate,
+    drift_id: health === 'drift_quarantined' ? 'drift-fees-0710' : null,
   });
   return [
     s(
@@ -293,6 +295,84 @@ function draftSchema(sourceId: string): CrawlSchemaVersion {
   };
 }
 
+// "P14 · Thay đổi cấu trúc · Hoàn tác" (2389:15400): the fee-schedule PDFs changed layout.
+function driftFixture(): SchemaDrift {
+  return {
+    id: 'drift-fees-0710',
+    source_id: 'cs-fees',
+    source_name: 'Biểu phí dịch vụ · 12 ngân hàng',
+    title: 'Thay đổi cấu trúc nặng · lượt 07/10',
+    summary_text:
+      'Điểm lệch 0,62 vượt ngưỡng 0,4: nguồn đã tạm ngưng, dữ liệu lượt bị cách ly, chờ người quyết (BR-152) · loại: cấu trúc',
+    drift_kind: 'structural',
+    drift_score: 0.62,
+    thresholds: { light: 0.15, heavy: 0.4 },
+    signals: [
+      { name: 'Cấu trúc', measure: 'Tiêu đề cột khác 3/7 cột', value: 0.48, weight: 0.3 },
+      {
+        name: 'Trích được',
+        measure: 'Mất trường khoá fee_code; bắt buộc còn 64%',
+        value: 0.78,
+        weight: 0.5,
+      },
+      {
+        name: 'Phân bố',
+        measure: 'PSI phí giao dịch so với 10 lượt trước',
+        value: 0.35,
+        weight: 0.2,
+      },
+    ],
+    impact: [
+      { text: '186 bản ghi của lượt 07/10 đang cách ly, chưa phát hành', tone: 'warning' },
+      {
+        text: 'Dataset hợp nhất “Biểu phí dịch vụ” giữ phiên bản v12, chưa cập nhật',
+        tone: 'info',
+      },
+      { text: 'Không câu trả lời nào đã dùng số của lượt này', tone: 'success' },
+      { text: 'Bản gốc 48 tệp PDF còn lưu 400 ngày: trích lại được toàn bộ', tone: 'success' },
+    ],
+    active_version: { id: 'schema-cs-fees-v3', version: 3 },
+    proposed_version: { id: 'schema-cs-fees-v4', version: 4 },
+    changes: [
+      {
+        change: 'modify',
+        field: 'fee_code',
+        before: 'Cột “Mã phí”',
+        after: 'Cột “Mã dịch vụ”',
+        test_text: '12/12 tệp khớp',
+      },
+      {
+        change: 'add',
+        field: 'fee_min',
+        before: '—',
+        after: 'Cột “Phí tối thiểu (VNĐ)”',
+        test_text: '12/12 tệp khớp',
+      },
+      {
+        change: 'modify',
+        field: 'fee_rate',
+        before: 'Cột 3 · đơn vị %',
+        after: 'Cột 4 · % giá trị giao dịch',
+        test_text: '11/12 · 1 tệp scan',
+      },
+      {
+        change: 'remove',
+        field: 'note',
+        before: 'Cột 5 “Ghi chú”',
+        after: 'Không còn trong mẫu mới',
+        test_text: '—',
+      },
+    ],
+    revert_steps: [
+      'Đặt lại phiên bản active về v3; v4 nháp chuyển rejected.',
+      'Bản ghi trích bằng phiên bản lỗi chuyển superseded; không sửa dữ liệu đã phát hành.',
+      'Trích lại 48 tệp gốc bằng v3; tệp không trích được đưa vào hàng duyệt.',
+      'Chạy lại hợp nhất, phát hành dataset phiên bản mới; câu trả lời đã dùng số cũ được gắn nhãn.',
+    ],
+    resolution: null,
+  };
+}
+
 const problem = (status: number, code: string, detail: string) =>
   HttpResponse.json(
     { title: code, status, code, detail },
@@ -302,11 +382,40 @@ const problem = (status: number, code: string, detail: string) =>
 export function createCrawlHandlers() {
   const sources = sourcesFixture();
   const schemas = new Map<string, CrawlSchemaVersion>();
+  let drift = driftFixture();
   const schemaOf = (sourceId: string) => {
     if (!schemas.has(sourceId)) schemas.set(sourceId, draftSchema(sourceId));
     return schemas.get(sourceId) as CrawlSchemaVersion;
   };
   return [
+    http.get('*/v1/schema-drifts', () =>
+      HttpResponse.json({ items: drift.resolution ? [] : [drift], next_page_token: '' }),
+    ),
+    http.get('*/v1/schema-drifts/:id', ({ params }) =>
+      params.id === drift.id
+        ? HttpResponse.json(drift)
+        : problem(404, 'not_found', 'Không tìm thấy sự cố.'),
+    ),
+    http.post('*/v1/schema-drifts/:action', async ({ params, request }) => {
+      const [id, verb] = String(params.action).split(':');
+      if (id !== drift.id || verb !== 'resolve')
+        return problem(404, 'not_found', 'Không tìm thấy sự cố.');
+      if (drift.resolution) return problem(409, 'conflict', 'Sự cố đã được xử lý.');
+      const body = (await request.json()) as {
+        resolution: SchemaDrift['resolution'];
+        note?: string;
+      };
+      if (body.resolution === 'reverted' && !body.note?.trim())
+        return problem(422, 'validation_failed', 'Ghi lý do hoàn tác.');
+      drift = { ...drift, resolution: body.resolution };
+      const source = sources.find((x) => x.id === drift.source_id);
+      if (source) {
+        source.health = 'on_schedule';
+        source.health_text = 'Đúng lịch';
+        source.drift_id = null;
+      }
+      return HttpResponse.json(drift);
+    }),
     http.get('*/v1/crawl-sources/:id/schemas', ({ params }) => {
       const source = sources.find((x) => x.id === params.id);
       if (!source) return problem(404, 'not_found', 'Không tìm thấy nguồn.');
@@ -389,6 +498,7 @@ export function createCrawlHandlers() {
         sample_accuracy_pct: null,
         pending_review: 0,
         review_gate: 'exceptions',
+        drift_id: null,
       });
       return HttpResponse.json({ id }, { status: 201 });
     }),

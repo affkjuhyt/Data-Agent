@@ -126,6 +126,7 @@ const RAIL_PARENT: Partial<Record<AreaId, Record<string, string>>> = {
     COLLECTION: 'COLLECTIONS',
     CRAWL_NEW: 'CRAWL',
     CRAWL_SOURCE: 'CRAWL',
+    CRAWL_DRIFT: 'CRAWL',
   },
   admin: { DATA_SPACE_NEW: 'DATA_SPACES', PERMISSION_COMPARE: 'DATA_SPACES' },
   account: { CHANNEL_RULES: 'NOTIFICATIONS' },

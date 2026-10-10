@@ -8,6 +8,7 @@ import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
 import { createHandlers } from '../../mocks/handlers';
+import CrawlDriftPage from './CrawlDriftPage';
 import CrawlRegisterPage from './CrawlRegisterPage';
 import CrawlSchemaPage from './CrawlSchemaPage';
 import CrawlSourcesPage from './CrawlSourcesPage';
@@ -113,5 +114,40 @@ describe('CrawlSchemaPage', () => {
     expect(
       within(screen.getByRole('row', { name: /^channel/ })).getByText('Kênh giao dịch'),
     ).toBeInTheDocument();
+  });
+});
+
+describe('CrawlDriftPage', () => {
+  it('shows the drift and approves the proposed version', async () => {
+    routeId = 'drift-fees-0710';
+    wrap(<CrawlDriftPage />);
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Thay đổi cấu trúc nặng · lượt 07/10' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('0,62')).toHaveClass('text-error');
+    expect(screen.getByRole('row', { name: /Bỏ note/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Duyệt phiên bản v4' }));
+    expect(await screen.findByText('Đã duyệt v4; nguồn chạy tiếp')).toBeInTheDocument();
+    expect(await screen.findByText(/Đã xử lý: duyệt v4/)).toBeInTheDocument();
+  });
+
+  it('reverts only with a reason', async () => {
+    routeId = 'drift-fees-0710';
+    wrap(<CrawlDriftPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Hoàn tác về v3' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Hoàn tác về v3?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Hoàn tác' }));
+    expect(await within(dialog).findByText('Ghi lý do hoàn tác.')).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText('Lý do (bắt buộc)'), {
+      target: { value: 'v4 trích sai tệp scan' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Hoàn tác' }));
+    expect(await screen.findByText(/Đã xử lý: hoàn tác về v3/)).toBeInTheDocument();
+  });
+
+  it('opens the drift from the quarantined source in the list', async () => {
+    wrap(<CrawlSourcesPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Đổi cấu trúc · cách ly' }));
+    expect(navigate).toHaveBeenCalledWith('data', 'CRAWL_DRIFT', 'drift-fees-0710');
   });
 });

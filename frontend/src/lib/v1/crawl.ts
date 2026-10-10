@@ -35,6 +35,8 @@ export interface CrawlSource {
   sample_accuracy_pct: number | null;
   pending_review: number;
   review_gate: ReviewGate;
+  /** PROPOSAL: the open structure drift that quarantined the source, if any. */
+  drift_id: string | null;
 }
 
 /** PROPOSAL: GET /v1/acquire/summary — the four figures over the list. */
@@ -170,3 +172,52 @@ export const approveCrawlSchema = async (id: string, fieldMappings: Record<strin
   v1Send<CrawlSchemaVersion>('POST', `/crawl-schemas/${pathId(id)}:approve`, {
     field_mappings: fieldMappings,
   });
+
+/* ─── Thay đổi cấu trúc · hoàn tác (UC-14-03) ─────────────────────────── */
+
+/** A2: GET /v1/schema-drifts — SchemaDrift "kèm signals và phiên bản đề xuất". */
+export interface SchemaDrift {
+  id: string;
+  source_id: string;
+  source_name: string;
+  /** PROPOSAL: "Thay đổi cấu trúc nặng · lượt 07/10". */
+  title: string;
+  /** PROPOSAL: what happened and why the run is quarantined, in one line. */
+  summary_text: string;
+  drift_kind: 'structural' | 'semantic';
+  drift_score: number;
+  thresholds: { light: number; heavy: number };
+  signals: { name: string; measure: string; value: number; weight: number }[];
+  /** PROPOSAL: what the drift touches, each line with a tone. */
+  impact: { text: string; tone: 'warning' | 'info' | 'success' }[];
+  active_version: { id: string; version: number };
+  proposed_version: { id: string; version: number } | null;
+  /** PROPOSAL: field by field between the version in use and the proposal. */
+  changes: {
+    change: 'modify' | 'add' | 'remove';
+    field: string;
+    before: string;
+    after: string;
+    test_text: string;
+  }[];
+  /** PROPOSAL: what reverting does, step by step (BR-152). */
+  revert_steps: string[];
+  resolution: 'approved_new' | 'manual_fix' | 'reverted' | 'false_alarm' | null;
+}
+
+export const listOpenDrifts = () =>
+  v1Get<Page<SchemaDrift>>('/schema-drifts', { resolution: 'open', page_size: 500 });
+
+/** PROPOSAL: GET /v1/schema-drifts/{id} (A2 only lists them). */
+export const getSchemaDrift = async (id: string) =>
+  v1Get<SchemaDrift>(`/schema-drifts/${pathId(id)}`);
+
+/** A2: :resolve — closes the Cần bạn schema_drift request; the source runs again. */
+export const resolveSchemaDrift = async (
+  id: string,
+  body: {
+    resolution: 'approved_new' | 'reverted';
+    proposed_version_id?: string;
+    note?: string;
+  },
+) => v1Send<SchemaDrift>('POST', `/schema-drifts/${pathId(id)}:resolve`, body);

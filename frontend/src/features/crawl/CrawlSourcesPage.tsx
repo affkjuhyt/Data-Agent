@@ -159,6 +159,7 @@ export default function CrawlSourcesPage() {
                     selected={s.id === selected}
                     onSelect={() => setSelected(s.id === selected ? undefined : s.id)}
                     onOpen={() => navigate('data', 'CRAWL_SOURCE', s.id)}
+                    onOpenDrift={(driftId) => navigate('data', 'CRAWL_DRIFT', driftId)}
                   />
                 ))}
               </tbody>
@@ -180,11 +181,13 @@ function SourceRow({
   selected,
   onSelect,
   onOpen,
+  onOpenDrift,
 }: {
   source: CrawlSource;
   selected: boolean;
   onSelect: () => void;
   onOpen: () => void;
+  onOpenDrift: (driftId: string) => void;
 }) {
   return (
     <tr
@@ -221,7 +224,20 @@ function SourceRow({
       <td className="px-da-lg py-[10px] text-foreground">{source.format_label}</td>
       <td className="px-da-lg py-[10px] text-foreground">{source.schedule_text}</td>
       <td className="px-da-lg py-[10px]">
-        <StatusDot tone={HEALTH[source.health]}>{source.health_text}</StatusDot>
+        {source.drift_id ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenDrift(source.drift_id as string);
+            }}
+            className="hover:underline"
+          >
+            <StatusDot tone={HEALTH[source.health]}>{source.health_text}</StatusDot>
+          </button>
+        ) : (
+          <StatusDot tone={HEALTH[source.health]}>{source.health_text}</StatusDot>
+        )}
       </td>
       <td className="px-da-lg py-[10px] text-foreground">{source.last_run_text ?? '—'}</td>
       <td className="px-da-lg py-[10px] text-foreground">
