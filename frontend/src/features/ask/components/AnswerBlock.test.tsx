@@ -288,3 +288,45 @@ describe('DataGrid', () => {
     expect(screen.getByRole('button', { name: /Excel kèm nguồn/ })).toBeInTheDocument();
   });
 });
+
+describe('AnswerBlock · Agent đang chạy', () => {
+  const progress = {
+    agent: 'Agent Phân tích',
+    steps: [
+      { title: 'Hiểu câu hỏi · chọn NPL_RATIO v4', state: 'done' as const, duration: '0:02' },
+      { title: 'Truy vấn NPL theo vùng', detail: 'Core banking · 7/7 vùng', state: 'running' as const },
+      { title: 'Phân rã theo sản phẩm', state: 'waiting' as const },
+    ],
+    partial: {
+      title: 'Đóng góp vào mức giảm biên LN · theo ngành hàng',
+      meta: 'Kỳ: T8 → T9/2026',
+      step_title: 'Đối chiếu với tài liệu giá',
+      step_detail: 'Agent tài liệu · đang đọc PL02',
+      received: '2/5 nhóm hàng',
+    },
+  };
+
+  it('shows the steps and the result still arriving while streaming, and stops it', () => {
+    const onStop = vi.fn();
+    render(
+      <AnswerBlock
+        msg={{ id: 'p1', role: 'assistant', content: 'Mức tăng tập trung ở Duyên hải Bắc Bộ.', timestamp: '2026-10-11T08:00:00', status: 'streaming', progress }}
+        onStop={onStop}
+      />,
+    );
+    const steps = screen.getByRole('region', { name: 'Agent Phân tích đang chạy' });
+    expect(within(steps).getByText('Truy vấn NPL theo vùng')).toBeInTheDocument();
+    expect(within(steps).getByText('Chưa chạy')).toBeInTheDocument();
+    expect(screen.getByText('Đang nhận kết quả… 2/5 nhóm hàng')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Dừng' }));
+    expect(onStop).toHaveBeenCalled();
+    expect(screen.queryByTestId('trust-label')).not.toBeInTheDocument();
+  });
+
+  it('leaves the finished answer as before: no steps, the trust label shown', () => {
+    render(<AnswerBlock msg={{ ...msg, progress }} />);
+    expect(screen.queryByRole('region', { name: 'Agent Phân tích đang chạy' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Đang nhận kết quả/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('trust-label')).toBeInTheDocument();
+  });
+});

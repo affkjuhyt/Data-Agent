@@ -8,7 +8,7 @@
  * network chunks — a frame split across two chunks used to be parsed as two
  * broken pieces of text.
  */
-import type { ChartSpec, Citation, ClarificationQuestion, Evidence, Refusal, ResultSet } from './types';
+import type { AgentProgress, ChartSpec, Citation, ClarificationQuestion, Evidence, Refusal, ResultSet } from './types';
 
 export type SseEvent =
   | { type: 'token'; text: string }
@@ -27,6 +27,7 @@ export type SseEvent =
   | { type: 'evidence'; evidence: Evidence }
   // The turn ended without an answer, for a reason with a code; no token follows.
   | { type: 'refusal'; refusal: Refusal }
+  | { type: 'progress'; progress: AgentProgress }
   | { type: 'conv_ids'; convs: Array<{ conv_id: string; title?: string; agent_name?: string }> }
   | { type: 'error'; message: string }
   | { type: 'done' }
@@ -101,6 +102,40 @@ export function parseSseData(raw: string): SseEvent {
         next_action: String(r.next_action ?? ''),
         detail_id: r.detail_id ? String(r.detail_id) : '',
         ...(Array.isArray(r.issues) ? { issues: r.issues.map(String) } : {}),
+      },
+    };
+  }
+
+  if (obj.__progress && typeof obj.__progress === 'object') {
+    const p = obj.__progress as Partial<Record<keyof AgentProgress, unknown>>;
+    const STATES = ['done', 'running', 'waiting'] as const;
+    const steps = Array.isArray(p.steps)
+      ? p.steps
+        .filter((st): st is Record<string, unknown> => !!st && typeof st === 'object' && 'title' in st)
+        .map(st => ({
+          title: String(st.title),
+          ...(st.detail ? { detail: String(st.detail) } : {}),
+          state: STATES.find(x => x === st.state) ?? 'waiting',
+          ...(st.duration ? { duration: String(st.duration) } : {}),
+        }))
+      : [];
+    const part = p.partial && typeof p.partial === 'object' ? (p.partial as Record<string, unknown>) : null;
+    return {
+      type: 'progress',
+      progress: {
+        agent: String(p.agent ?? ''),
+        steps,
+        ...(part
+          ? {
+            partial: {
+              title: String(part.title ?? ''),
+              meta: String(part.meta ?? ''),
+              step_title: String(part.step_title ?? ''),
+              step_detail: String(part.step_detail ?? ''),
+              received: String(part.received ?? ''),
+            },
+          }
+          : {}),
       },
     };
   }

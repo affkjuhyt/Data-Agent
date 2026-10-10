@@ -5,7 +5,8 @@
  *   → 4 charts → 5 data tables → 6 "Vì sao tin được" strip → 7 sources
  *   → 8 meta row: trust label, timing, Cách tính · Xuất · Sao chép · Lưu câu hỏi · Lưu thành tri thức · Báo sai
  *   → 9 follow-up chips.
- * The trust label is on every finished answer (invariant 14). Used by the Ask screen and the
+ * While streaming, the agent's steps lead and a result still arriving follows the text
+ * (AgentProgress). The trust label is on every finished answer (invariant 14). Used by the Ask screen and the
  * agent Playground.
  */
 import { lazy, Suspense, useMemo, useState } from 'react';
@@ -27,6 +28,7 @@ import { hasEvidence, primaryRun } from './evidenceSummary';
 import { ExportDialog } from './ExportDialog';
 import { MarkdownContent } from './MarkdownContent';
 import { RefusalCard } from './RefusalCard';
+import { AgentSteps, PartialResult } from './AgentProgress';
 
 const ChartRenderer = lazy(() =>
   import('./ChartRenderer').then(module => ({ default: module.ChartRenderer })),
@@ -57,6 +59,8 @@ interface AnswerBlockProps {
   reported?: boolean;
   /** "Lưu thành tri thức": open P07 Lưu câu trả lời thành tri thức for this answer */
   onSaveKnowledge?: () => void;
+  /** "Dừng" on a result still arriving */
+  onStop?: () => void;
 }
 
 const TRUST_DOT = { success: 'success', primary: 'primary', warning: 'warning', info: 'info', neutral: 'neutral' } as const;
@@ -92,7 +96,7 @@ export function AnswerBlock({
   msg, question, busy, onSuggestion, onAnswerClarification, onSave, onOpenEvidence,
   showEvidenceStrip = true, showTimestamp = true, onRetry, onRephrase, showRefusalDetail,
   onReport, reported,
-  onSaveKnowledge,
+  onSaveKnowledge, onStop,
 }: AnswerBlockProps) {
   const [exportOpen, setExportOpen] = useState(false);
   const resultRuns = useMemo(() => (msg.resultSets ?? []).map(resultSetToEvidenceRun), [msg.resultSets]);
@@ -132,6 +136,8 @@ export function AnswerBlock({
 
   return (
     <div data-testid="answer-block" className="flex flex-col gap-da-lg">
+      {streaming && msg.progress && <AgentSteps progress={msg.progress} />}
+
       {reading.length > 0 && (
         <div className="flex flex-col gap-da-md">
           <span className="text-muted-foreground da-caption">Hệ thống hiểu là</span>
@@ -147,6 +153,8 @@ export function AnswerBlock({
       )}
 
       {msg.content ? <MarkdownContent text={msg.content} citations={msg.citations} /> : streaming ? <TypingDots /> : null}
+
+      {streaming && msg.progress?.partial && <PartialResult partial={msg.progress.partial} onStop={onStop} />}
 
       {msg.clarification && onAnswerClarification && (
         <ClarificationCard clarification={msg.clarification} disabled={busy} onAnswer={onAnswerClarification} />

@@ -236,6 +236,18 @@ export interface PendingReviewInfo {
   payload: { title?: string; description?: string; detail?: unknown } | null;
 }
 
+/**
+ * PROPOSAL, A1 question stream event `progress` ("v3.1 · Trạng thái · Agent đang chạy",
+ * 2076:5351): the agent at work, its steps so far, and a result still arriving. Sent as
+ * `{"__progress": {...}}` on the legacy stream; absent, the answer streams as before.
+ */
+export interface AgentProgress {
+  agent: string;
+  steps: { title: string; detail?: string; state: 'done' | 'running' | 'waiting'; duration?: string }[];
+  /** A result card still filling in: its title, meta line, the step behind it and how far it got. */
+  partial?: { title: string; meta: string; step_title: string; step_detail: string; received: string };
+}
+
 export interface AskMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -253,6 +265,8 @@ export interface AskMessage {
   pendingReview?: PendingReviewInfo;
   /** set instead of an answer: the turn was refused with a code */
   refusal?: Refusal;
+  /** while streaming: what the agent is doing (cleared from view once the answer is done) */
+  progress?: AgentProgress;
   latencyMs?: number;
 }
 

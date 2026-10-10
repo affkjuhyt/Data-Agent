@@ -25,6 +25,31 @@ describe('parseSseData', () => {
     expect(parseSseData('[ERROR]')).toEqual({ type: 'error', message: 'An error occurred, please try again.' });
   });
 
+  it('reads the agent at work, and drops a malformed step state to waiting', () => {
+    const ev = parseSseData(JSON.stringify({ __progress: {
+      agent: 'Agent Phân tích',
+      steps: [
+        { title: 'Hiểu câu hỏi · chọn NPL_RATIO v4', state: 'done', duration: '0:02' },
+        { title: 'Truy vấn NPL theo vùng', detail: 'Core banking · 7/7 vùng', state: 'running' },
+        { title: 'Phân rã theo sản phẩm', state: 'bogus' },
+        'not a step',
+      ],
+      partial: { title: 'Đóng góp', meta: 'Kỳ: T8 → T9', step_title: 'Đối chiếu', step_detail: 'đang đọc', received: '2/5' },
+    } }));
+    expect(ev).toEqual({
+      type: 'progress',
+      progress: {
+        agent: 'Agent Phân tích',
+        steps: [
+          { title: 'Hiểu câu hỏi · chọn NPL_RATIO v4', state: 'done', duration: '0:02' },
+          { title: 'Truy vấn NPL theo vùng', detail: 'Core banking · 7/7 vùng', state: 'running' },
+          { title: 'Phân rã theo sản phẩm', state: 'waiting' },
+        ],
+        partial: { title: 'Đóng góp', meta: 'Kỳ: T8 → T9', step_title: 'Đối chiếu', step_detail: 'đang đọc', received: '2/5' },
+      },
+    });
+  });
+
   it('reads a refusal and keeps [ERROR] for the uncoded failure', () => {
     const ev = parseSseData(JSON.stringify({ __refusal: {
       code: 'AGENT_CONFIG_ERROR',

@@ -327,6 +327,7 @@ export default function AskDataPage() {
                     onReport={msg.content ? () => setReportFor(msg) : undefined}
                     onSaveKnowledge={msg.content ? () => setKnowledgeFor(msg.id) : undefined}
                     reported={!!reported[msg.id]}
+                    onStop={msg.status === 'streaming' ? stop : undefined}
                   />
                 </article>
               ))}

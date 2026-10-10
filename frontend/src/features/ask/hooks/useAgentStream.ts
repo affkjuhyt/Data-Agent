@@ -145,6 +145,9 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
           buffer = '';
           patch(assistantId, m => ({ ...m, content: '', refusal: e.refusal }));
           break;
+        case 'progress':
+          patch(assistantId, m => ({ ...m, progress: e.progress }));
+          break;
         case 'error':
           patch(assistantId, m => ({ ...m, content: m.content || e.message, status: 'error' }));
           break;
