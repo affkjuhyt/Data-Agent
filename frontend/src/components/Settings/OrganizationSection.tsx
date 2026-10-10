@@ -19,7 +19,7 @@ export const OrganizationSection = () => {
   const tenants = usePlatformTenants();
   const compliance = useCompliance();
 
-  const goTo = (section: string) => navigate('settings', section);
+  const goTo = (section: string) => navigate('admin', section);
 
   return (
     <div className="space-y-8 pb-10">

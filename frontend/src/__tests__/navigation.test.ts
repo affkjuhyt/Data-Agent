@@ -1,60 +1,62 @@
 /**
- * Information architecture guards — the things a demo notices first.
+ * Information architecture guards for the v3.1 navigation (Figma "Điều hướng v3.1").
  */
 import { describe, expect, it } from 'vitest';
-import { MODULE_SUB_ITEMS, NAV_ITEMS } from '../constants';
+import { AREA_RAILS, AREAS, firstPageOf } from '../constants';
 import { ROUTE_MAP, SINGLE_SCREEN } from '../routes';
 import { landingFor, resolveRoute } from '../AppStateContext';
 
 describe('navigation', () => {
-  it('opens with "Hỏi dữ liệu" and uses Vietnamese labels for end-user modules', () => {
-    expect(NAV_ITEMS.map(n => n.id)).toEqual(['ask', 'knowledge', 'build', 'ops', 'settings']);
-    expect(NAV_ITEMS[0].label).toBe('Hỏi dữ liệu');
+  it('shows the six v3.1 areas in order', () => {
+    expect(AREAS.map(a => a.label)).toEqual(['Trang chủ', 'Cần bạn', 'Agents', 'Phân tích', 'Dữ liệu', 'Quản trị']);
   });
 
-  it('has no "Coming Soon" entries anywhere in the nav or routes', () => {
-    for (const items of Object.values(MODULE_SUB_ITEMS)) {
-      for (const item of items) expect(item.comingSoon).toBeFalsy();
-    }
-    for (const routes of Object.values(ROUTE_MAP)) {
-      for (const entry of Object.values(routes)) expect('comingSoon' in entry).toBe(false);
-    }
+  it('keeps Trang chủ and Cần bạn in the bar on narrow screens', () => {
+    expect(AREAS.filter(a => a.pinnedOnNarrow).map(a => a.id)).toEqual(['home', 'needs-you']);
   });
 
-  it('routes every sub-nav item to a real screen', () => {
-    for (const [module, items] of Object.entries(MODULE_SUB_ITEMS)) {
-      for (const item of items) {
-        expect(ROUTE_MAP[module]?.[item.id], `${module}/${item.id}`).toBeDefined();
+  it('routes every area and every rail item to a real screen', () => {
+    for (const area of AREAS) {
+      const rail = AREA_RAILS[area.id];
+      if (!rail) {
+        expect(ROUTE_MAP[area.id]?.[SINGLE_SCREEN], area.id).toBeDefined();
+        continue;
+      }
+      for (const item of rail.flatMap(g => g.items)) {
+        expect(ROUTE_MAP[area.id]?.[item.id], `${area.id}/${item.id}`).toBeDefined();
       }
     }
   });
 
-  it('single-screen modules have no secondary nav and a default route', () => {
-    for (const module of ['ask', 'knowledge']) {
-      expect(MODULE_SUB_ITEMS[module]).toBeUndefined();
-      expect(ROUTE_MAP[module][SINGLE_SCREEN]).toBeDefined();
-    }
+  it('lands everyone on Trang chủ', () => {
+    expect(landingFor('EXECUTIVE')).toEqual({ module: 'home' });
+    expect(landingFor('AI_ENGINEER')).toEqual({ module: 'home' });
+    expect(landingFor('PLATFORM_ADMIN')).toEqual({ module: 'home' });
   });
 
-  it('exposes the Review Center under Vận hành › Chờ duyệt', () => {
-    expect(MODULE_SUB_ITEMS.ops.find(i => i.id === 'REVIEWS')?.label).toBe('Chờ duyệt');
-    expect(ROUTE_MAP.ops.REVIEWS).toBeDefined();
+  it('opens an area with a rail on its first page', () => {
+    expect(firstPageOf('agents')).toBe('TEAM');
+    expect(firstPageOf('home')).toBeUndefined();
   });
 
-  it('keeps old bookmarks working', () => {
-    expect(resolveRoute('test', 'PLAYGROUND')).toEqual({ module: 'build', sub: 'PLAYGROUND' });
-    expect(resolveRoute('release')).toEqual({ module: 'build', sub: 'AGENTS' });
-    expect(resolveRoute('build', 'VERSIONS')).toEqual({ module: 'build', sub: 'AGENTS' });
-    expect(resolveRoute('monitor', 'TRACES')).toEqual({ module: 'ops', sub: 'TRACES' });
-    expect(resolveRoute('monitor')).toEqual({ module: 'ops', sub: 'CONVERSATIONS' });
-    expect(resolveRoute('build', 'KNOWLEDGE')).toEqual({ module: 'knowledge' });
-    expect(resolveRoute('knowledge-ops')).toEqual({ module: 'knowledge', sub: undefined });
-    expect(resolveRoute('ops', 'REVIEWS')).toEqual({ module: 'ops', sub: 'REVIEWS' });
+  it('redirects links of the earlier IAs to the v3.1 areas', () => {
+    expect(resolveRoute('ask')).toEqual({ module: 'analysis', sub: 'ASK' });
+    expect(resolveRoute('knowledge')).toEqual({ module: 'data', sub: undefined });
+    expect(resolveRoute('build', 'AGENTS')).toEqual({ module: 'agents', sub: 'TEAM' });
+    expect(resolveRoute('build', 'WORKFLOWS')).toEqual({ module: 'agents', sub: 'ORCHESTRATION' });
+    expect(resolveRoute('build', 'PLAYGROUND')).toEqual({ module: 'agents', sub: 'EVALUATE' });
+    expect(resolveRoute('build', 'KNOWLEDGE')).toEqual({ module: 'data', sub: undefined });
+    expect(resolveRoute('ops', 'TRACES')).toEqual({ module: 'agents', sub: 'RUNS' });
+    expect(resolveRoute('ops', 'REVIEWS')).toEqual({ module: 'needs-you', sub: undefined });
+    expect(resolveRoute('ops', 'ANALYTICS')).toEqual({ module: 'analysis', sub: 'DASHBOARD' });
+    expect(resolveRoute('settings', 'TEAM')).toEqual({ module: 'admin', sub: 'IAM' });
+    expect(resolveRoute('settings', 'BILLING')).toEqual({ module: 'admin', sub: 'BILLING' });
+    expect(resolveRoute('monitor', 'TRACES')).toEqual({ module: 'agents', sub: 'RUNS' });
+    expect(resolveRoute('test', 'PLAYGROUND')).toEqual({ module: 'agents', sub: 'EVALUATE' });
   });
 
-  it('lands business users on Ask and engineers on Build', () => {
-    expect(landingFor('EXECUTIVE')).toEqual({ module: 'ask' });
-    expect(landingFor('AI_ENGINEER')).toEqual({ module: 'build', sub: 'AGENTS' });
-    expect(landingFor('PLATFORM_ADMIN')).toEqual({ module: 'build', sub: 'AGENTS' });
+  it('leaves v3.1 routes untouched', () => {
+    expect(resolveRoute('agents', 'RUNS')).toEqual({ module: 'agents', sub: 'RUNS' });
+    expect(resolveRoute('home')).toEqual({ module: 'home', sub: undefined });
   });
 });

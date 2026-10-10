@@ -94,7 +94,7 @@ export const OverviewSection = () => {
   };
 
   const overall = alerts.some(a => a.level === 'bad') ? 'CRITICAL' : alerts.length > 0 ? 'WARNING' : 'STABLE';
-  const goTo = (section: SettingsSection) => navigate('settings', section);
+  const goTo = (section: SettingsSection) => navigate('admin', section);
 
   return (
     <div className="space-y-8">

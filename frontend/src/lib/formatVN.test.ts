@@ -6,6 +6,7 @@ import {
   formatDate,
   formatDateTime,
   formatDuration,
+  formatElapsed,
   formatNumber,
   formatPercent,
   formatRelative,
@@ -159,5 +160,20 @@ describe('isNumericColumn', () => {
     expect(isNumericColumn(['a', 1])).toBe(false);
     expect(isNumericColumn([null, undefined])).toBe(false);
     expect(isNumericColumn([])).toBe(false);
+  });
+});
+
+describe('formatElapsed', () => {
+  it('says how long something waited in Vietnamese', () => {
+    expect(formatElapsed(30)).toBe('vừa xong');
+    expect(formatElapsed(360)).toBe('6 phút');
+    expect(formatElapsed(3600)).toBe('1 giờ');
+    expect(formatElapsed(7500)).toBe('2 giờ 05 phút');
+    expect(formatElapsed(270000)).toBe('3 ngày');
+  });
+
+  it('shows a dash for nothing to measure', () => {
+    expect(formatElapsed(null)).toBe('—');
+    expect(formatElapsed(-1)).toBe('—');
   });
 });

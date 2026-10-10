@@ -1,60 +1,60 @@
 import React from 'react';
 import { AppStateProvider, useAppState } from './AppStateContext';
-import { AppLayout } from './components/Layout';
-import { Placeholder } from './components/shared/Placeholder';
+import { AppShell } from './components/shell/AppShell';
+import type { AreaId } from './components/shell/areas';
 import IngestionProgressOverlay from './components/shared/IngestionProgressOverlay';
 import { ForbiddenToast } from './components/shared/ForbiddenToast';
+import { EmptyState } from './design-system/EmptyState';
+import { ToastProvider } from './design-system/Toast';
+import { SkeletonRows } from './design-system/SkeletonRow';
+import { useDelayedFlag } from './design-system/useDelayedFlag';
 import { ROUTE_MAP, SINGLE_SCREEN } from './routes';
-import { MODULE_SUB_ITEMS } from './constants';
+import { AREA_RAILS, firstPageOf } from './constants';
 
-const RouteLoading = () => (
-  <div className="ui-empty min-h-[320px]">
-    <div className="w-8 h-8 rounded-full border-2 border-[#BFA66A] border-t-[#8A5A00] animate-spin mb-3" />
-    <p className="text-[12px] text-[#5F5F5F]">Đang tải màn hình…</p>
-  </div>
-);
+/* Under 300 ms nothing shows (no flash); after that a skeleton in the page's place. */
+const RouteLoading = () => {
+  const show = useDelayedFlag(true);
+  return show ? (
+    <div className="px-da-3xl py-da-2xl">
+      <SkeletonRows label="Đang tải màn hình…" />
+    </div>
+  ) : null;
+};
 
 function AppContent() {
-  const { activeModule, setActiveModule, subTab } = useAppState();
+  const { activeModule, subTab } = useAppState();
+  const area = activeModule as AreaId;
 
   // Identity is never sent from the client: the bearer token goes to Kong, which
   // injects the authoritative X-* identity headers the backend trusts.
 
   const renderView = () => {
-    const subItems = MODULE_SUB_ITEMS[activeModule] ?? [];
-    const routes = ROUTE_MAP[activeModule] ?? {};
-    // Modules with a single screen have no secondary nav and route to `_`.
-    const activeSub = subItems.length > 0 ? (subTab[activeModule] ?? subItems[0]?.id) : SINGLE_SCREEN;
-    const entry = activeSub ? (routes[activeSub] ?? routes[SINGLE_SCREEN]) : undefined;
+    const routes = ROUTE_MAP[area];
+    const page = AREA_RAILS[area] ? (subTab[area] ?? firstPageOf(area)) : SINGLE_SCREEN;
+    const entry = routes && page ? (routes[page] ?? routes[SINGLE_SCREEN]) : undefined;
 
     if (!entry) {
       return (
-        <Placeholder
-          title="Not available"
-          description="This area isn't available yet. Pick another item from the menu."
-        />
+        <div className="px-da-3xl py-da-2xl">
+          <EmptyState
+            icon="alert"
+            title="Không có màn hình này"
+            description="Đường dẫn này không còn dùng. Chọn một khu vực ở thanh trên."
+          />
+        </div>
       );
     }
-    if ('comingSoon' in entry) {
-      return <Placeholder {...entry.comingSoon} />;
-    }
-    return (
-      <React.Suspense fallback={<RouteLoading />}>
-        {entry.render()}
-      </React.Suspense>
-    );
+    return <React.Suspense fallback={<RouteLoading />}>{entry.render()}</React.Suspense>;
   };
 
   return (
-    <>
-      <AppLayout activeTab={activeModule} setActiveTab={setActiveModule}>
-        {renderView()}
-      </AppLayout>
+    <ToastProvider>
+      <AppShell>{renderView()}</AppShell>
       {/* Progress overlay - always available, visible when ingestions active */}
       <IngestionProgressOverlay />
       {/* 403 from apiClient → toast (listens to window 'app:forbidden') */}
       <ForbiddenToast />
-    </>
+    </ToastProvider>
   );
 }
 

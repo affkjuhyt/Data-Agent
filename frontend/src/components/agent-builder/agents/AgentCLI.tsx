@@ -38,7 +38,7 @@ export const CLIScreen = () => {
       <SectionTitle
         title="CLI"
         subtitle="Gọi platform qua Kong gateway bằng API key. Thay <…> bằng giá trị thật."
-        actions={<Button variant="primary" icon={KeyRound} onClick={() => navigate('settings', 'API')}>Tạo API key</Button>}
+        actions={<Button variant="primary" icon={KeyRound} onClick={() => navigate('admin', 'API')}>Tạo API key</Button>}
       />
 
       <Card title="Thiết lập" subtitle="Đặt API key vào biến môi trường trước khi chạy các lệnh bên dưới" padding="sm">

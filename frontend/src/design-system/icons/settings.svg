@@ -1,0 +1,11 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="glyph" clip-path="url(#clip0_0_115)">
+<path id="Vector" d="M10.5 8C10.5 9.38071 9.38071 10.5 8 10.5C6.61929 10.5 5.5 9.38071 5.5 8C5.5 6.61929 6.61929 5.5 8 5.5C9.38071 5.5 10.5 6.61929 10.5 8Z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke="#17212B"/>
+<path id="Vector_2" d="M8 1.5V3.5M8 12.5V14.5M1.5 8H3.5M12.5 8H14.5M3.4 3.4L4.8 4.8M11.2 11.2L12.6 12.6M3.4 12.6L4.8 11.2M11.2 4.8L12.6 3.4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke="#17212B"/>
+</g>
+<defs>
+<clipPath id="clip0_0_115">
+<rect width="16" height="16" fill="white"/>
+</clipPath>
+</defs>
+</svg>

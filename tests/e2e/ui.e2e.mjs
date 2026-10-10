@@ -6,7 +6,7 @@
 //   E2E_HEADED=1 … to watch it
 //
 // Starts vite on :3000 with VITE_API_URL pointed at Kong if nothing is listening,
-// logs in through the Keycloak form as E2E_USER, opens "Hỏi dữ liệu", asks the
+// logs in through the Keycloak form as E2E_USER, opens Phân tích › Hỏi đáp, asks the
 // canonical metric question and checks what the answer block shows.
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -70,7 +70,7 @@ page.on('response', async r => {
 
 try {
   // 1. login through Keycloak (login-required → redirect to :8080)
-  await page.goto(`${APP}/#ask`);
+  await page.goto(`${APP}/analysis/ask`);
   await page.waitForURL(/realms\/aeroflow/, { timeout: 30000 });
   await page.fill('#username', USER);
   await page.fill('#password', PASS);
@@ -79,9 +79,9 @@ try {
   check('keycloak login redirects back to the app', true);
 
   // 2. the Ask screen
-  await page.goto(`${APP}/#ask`);
+  await page.goto(`${APP}/analysis/ask`);
   await page.waitForSelector('textarea[aria-label="Câu hỏi"]', { timeout: 30000 });
-  check('Hỏi dữ liệu screen renders', true);
+  check('Hỏi đáp screen renders', true);
   // agents load asynchronously after the screen renders — give the request a moment
   await page.waitForFunction(() => document.querySelectorAll('aside .subnav-item').length > 1, null, { timeout: 15000 }).catch(() => {});
   const agentRows = await page.locator('aside .subnav-item').count();

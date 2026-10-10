@@ -11,7 +11,7 @@ import { SecurityComplianceSection } from './SecurityComplianceSection';
 import { BillingQuotasSection } from './BillingQuotasSection';
 import { APISection } from './APISection';
 import { AdvancedPlatformSection } from './AdvancedPlatformSection';
-import { Placeholder } from '../shared/Placeholder';
+import { EmptyState } from '../../design-system/EmptyState';
 
 /** Settings sections. IDs are the `settings` sub-tab IDs in constants.ts
  *  (MODULE_SUB_ITEMS) and routes.tsx — the module's secondary nav is the ONLY
@@ -51,7 +51,7 @@ const SettingsView = ({ section }: { section: SettingsSection }) => {
   const render = SECTIONS[section];
   return render
     ? <>{render()}</>
-    : <Placeholder title="Not available" description={`Section "${section}" is not available.`} comingSoon={false} />;
+    : <EmptyState icon="alert" title="Không có mục này" description={`Mục "${section}" không còn trong Quản trị. Chọn một mục ở menu bên trái.`} />;
 };
 
 export default SettingsView;

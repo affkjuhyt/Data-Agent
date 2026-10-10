@@ -1,0 +1,222 @@
+/*
+ * Data Agent design tokens, copied 1:1 from the Figma library
+ * "Data Agent - Thiết kế giao diện", page "DA · Foundations" (node 2013:6).
+ * The CSS names are the variables' code syntax in Figma (page "DA · Đặc tả cho dev",
+ * frame "Token cho dev"), so a value read in Dev Mode is the variable used here.
+ * Change a value in Figma first, then here; never hardcode a hex in a component.
+ *
+ * Dark mode exists in Figma but is paused (page "zz · Bản tối"), so only light is defined.
+ */
+
+:root {
+  /* color/bg/* */
+  --background: #f5f5f3;
+  --card: #ffffff;
+  --subtle: #efefec;
+  --accent: #e6f4f1;
+  --success-subtle: #e9f6ee;
+  --warning-subtle: #fdf3e2;
+  --error-subtle: #fdecec;
+  --info-subtle: #e8effd;
+
+  /* color/text/* */
+  --foreground: #17212b;
+  --muted-foreground: #4d5a6c;
+  --primary-foreground: #ffffff;
+
+  /* color/status/* */
+  --success: #166534;
+  --warning: #92400e;
+  --error: #b91c1c;
+  --info: #1d4ed8;
+
+  /* color/border/* */
+  --border: #e3e3de;
+  --border-strong: #c9c9c2;
+  --ring: #0f766e;
+
+  /* color/action/* */
+  --primary: #0f766e;
+  --primary-hover: #115e59;
+
+  /* color/chart/1..6, fixed series order */
+  --chart-1: #0f766e;
+  --chart-2: #1d4ed8;
+  --chart-3: #b45309;
+  --chart-4: #7c3aed;
+  --chart-5: #be123c;
+  --chart-6: #64748b;
+
+  /* space/* */
+  --space-xs: 4px;
+  --space-sm: 6px;
+  --space-md: 8px;
+  --space-lg: 12px;
+  --space-xl: 16px;
+  --space-2xl: 24px;
+  --space-3xl: 32px;
+  --space-4xl: 48px;
+  --space-5xl: 64px;
+
+  /* radius/* */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 18px;
+  --radius-3xl: 22px;
+  --radius-4xl: 26px;
+  --radius-full: 9999px;
+
+  /* DA/Shadow/* — only for floating layers: popover, dialog, toast */
+  --shadow-md: 0 8px 20px 0 rgb(15 23 42 / 0.08);
+  --shadow-lg: 0 16px 40px 0 rgb(15 23 42 / 0.08);
+
+  /* Focus ring of Button/Focus: 3px primary at 45% */
+  --focus-ring: 0 0 0 3px rgb(15 118 110 / 0.45);
+
+  /* Z-index scale from "Spec · Khung trang" */
+  --z-topbar: 30;
+  --z-drawer: 40;
+  --z-dialog: 50;
+  --z-popover: 60;
+  --z-toast: 70;
+  --z-tooltip: 80;
+}
+
+/* DA / Spacing "Compact" mode: one step smaller, for dense tables (≥ 50 rows/page). */
+[data-density='compact'] {
+  --space-sm: 4px;
+  --space-md: 6px;
+  --space-lg: 8px;
+  --space-xl: 12px;
+  --space-2xl: 16px;
+  --space-3xl: 24px;
+}
+
+/*
+ * Tailwind utilities over the same variables: `bg-card`, `text-muted-foreground`,
+ * `border-border-strong`, `rounded-lg`, `shadow-md`, `p-da-xl`, `gap-da-lg`…
+ * `inline` makes the utility reference the variable, so density modes apply.
+ * Spacing is namespaced `da-`: a bare `--spacing-xl` would also redefine Tailwind's size scale
+ * (`max-w-xl` became 16px), which the screens still use.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-card: var(--card);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-error-subtle: var(--error-subtle);
+  --color-info-subtle: var(--info-subtle);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --color-info: var(--info);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+
+  --spacing-da-xs: var(--space-xs);
+  --spacing-da-sm: var(--space-sm);
+  --spacing-da-md: var(--space-md);
+  --spacing-da-lg: var(--space-lg);
+  --spacing-da-xl: var(--space-xl);
+  --spacing-da-2xl: var(--space-2xl);
+  --spacing-da-3xl: var(--space-3xl);
+  --spacing-da-4xl: var(--space-4xl);
+  --spacing-da-5xl: var(--space-5xl);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-2xl: var(--radius-2xl);
+  --radius-3xl: var(--radius-3xl);
+  --radius-4xl: var(--radius-4xl);
+  --radius-full: var(--radius-full);
+
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+}
+
+/*
+ * Text styles DA/* (page "DA · Foundations", frame "Kiểu chữ"). One class per Figma text
+ * style so a layer's style name maps to exactly one class: DA/Body Strong → .da-body-strong.
+ */
+@layer components {
+  .da-display {
+    font: 600 28px/36px var(--font-sans);
+    letter-spacing: -0.4px;
+  }
+  .da-heading-1 {
+    font: 600 20px/28px var(--font-sans);
+    letter-spacing: -0.2px;
+  }
+  .da-heading-2 {
+    font: 600 16px/24px var(--font-sans);
+  }
+  .da-heading-3 {
+    font: 600 14px/20px var(--font-sans);
+  }
+  .da-body {
+    font: 400 14px/20px var(--font-sans);
+  }
+  .da-body-small {
+    font: 400 13px/18px var(--font-sans);
+  }
+  .da-body-strong {
+    font: 500 13px/18px var(--font-sans);
+  }
+  .da-reading {
+    font: 400 15px/24px var(--font-sans);
+  }
+  .da-caption {
+    font: 400 12px/16px var(--font-sans);
+  }
+  .da-label {
+    font: 500 12px/16px var(--font-sans);
+  }
+  .da-overline {
+    font: 600 11px/16px var(--font-sans);
+    letter-spacing: 0.4px;
+  }
+  .da-metric {
+    font: 600 24px/32px var(--font-sans);
+    letter-spacing: -0.3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .da-metric-small {
+    font: 600 18px/24px var(--font-sans);
+    letter-spacing: -0.2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .da-table {
+    font: 400 13px/18px var(--font-sans);
+  }
+  .da-mono {
+    font: 400 12px/16px var(--font-mono);
+  }
+}
+
+/* "Chuyển động": hover/focus 120 ms, popover 150 ms, drawer/dialog 200 ms; reduced motion → 0. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0ms !important;
+    transition-duration: 0ms !important;
+  }
+}

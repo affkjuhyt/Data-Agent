@@ -142,7 +142,7 @@ export const ExecutiveDashboard = () => {
       <Card
         title="AI Runtime"
         subtitle="Agent, hội thoại và độ trễ hiện tại"
-        actions={<Button size="sm" variant="ghost" icon={ArrowRight} onClick={() => navigate('build', 'AGENTS')}>Xem runtime</Button>}
+        actions={<Button size="sm" variant="ghost" icon={ArrowRight} onClick={() => navigate('agents', 'TEAM')}>Xem runtime</Button>}
       >
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[

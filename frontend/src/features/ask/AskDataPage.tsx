@@ -133,6 +133,21 @@ export default function AskDataPage() {
     void send(q);
   };
 
+  // A question handed over from elsewhere (Trang chủ's question bar, ⌘K) arrives as ?q=.
+  // It is asked once, then dropped from the URL so a reload does not ask it again.
+  const handedOver = useRef(false);
+  useEffect(() => {
+    if (handedOver.current) return;
+    handedOver.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('q');
+    if (!q) return;
+    params.delete('q');
+    const rest = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`);
+    ask(q);
+  }, []);
+
   const toggleMic = () => {
     const SR = speechRecognition();
     if (!SR) return;

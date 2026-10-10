@@ -1,5 +1,7 @@
 import React from 'react';
+import type { AreaId } from './components/shell/areas';
 
+const HomePage = React.lazy(() => import('./features/home/HomePage'));
 const AskDataPage = React.lazy(() => import('./features/ask/AskDataPage'));
 const KnowledgeOpsCenter = React.lazy(() => import('./components/knowledge/KnowledgeOpsCenter'));
 const AgentPlayground = React.lazy(() => import('./components/agent-builder/AgentPlayground'));
@@ -23,55 +25,42 @@ const ExecutiveDashboard = React.lazy(() =>
   })),
 );
 
-interface ComingSoonInfo {
-  title: string;
-  description: string;
-  icon?: any;
-  plannedFeatures?: string[];
-}
+type RouteEntry = { render: () => React.ReactNode };
 
-type RouteEntry =
-  | { render: () => React.ReactNode }
-  | { comingSoon: ComingSoonInfo };
-
-/** Sub-tab key for modules that have a single screen and no secondary nav. */
+/** Page key for areas that have a single screen and no rail. */
 export const SINGLE_SCREEN = '_';
 
 /**
- * module → subTab → screen.
- *
- * The IA starts with what a business user needs to DO (ask the data), then
- * knowledge, then the builder console, then operations. A module whose only
- * entry is `SINGLE_SCREEN` renders full-width with no secondary nav.
- *
- * Nothing here is a placeholder: every entry is a real screen. Areas without
- * a screen yet (router, tools, evals, experiments, endpoints, webhooks) are
- * simply absent from the nav until one exists.
+ * area → page → screen, for the six v3.1 areas (constants.ts AREA_RAILS).
+ * Nothing here is a placeholder: every entry is a real screen.
  */
-export const ROUTE_MAP: Record<string, Record<string, RouteEntry>> = {
-  ask: {
-    [SINGLE_SCREEN]: { render: () => <AskDataPage /> },
+export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
+  home: {
+    [SINGLE_SCREEN]: { render: () => <HomePage /> },
   },
 
-  knowledge: {
+  'needs-you': {
+    [SINGLE_SCREEN]: { render: () => <ReviewCenter /> },
+  },
+
+  agents: {
+    TEAM:          { render: () => <AgentRuntimeView /> },
+    RUNS:          { render: () => <TraceExplorer /> },
+    EVALUATE:      { render: () => <AgentPlayground /> },
+    ORCHESTRATION: { render: () => <WorkflowEngine /> },
+  },
+
+  analysis: {
+    ASK:       { render: () => <AskDataPage /> },
+    SESSIONS:  { render: () => <Conversations /> },
+    DASHBOARD: { render: () => <ExecutiveDashboard /> },
+  },
+
+  data: {
     [SINGLE_SCREEN]: { render: () => <KnowledgeOpsCenter /> },
   },
 
-  build: {
-    AGENTS:     { render: () => <AgentRuntimeView /> },
-    WORKFLOWS:  { render: () => <WorkflowEngine /> },
-    PLAYGROUND: { render: () => <AgentPlayground /> },
-  },
-
-  ops: {
-    CONVERSATIONS: { render: () => <Conversations /> },
-    TRACES:        { render: () => <TraceExplorer /> },
-    REVIEWS:       { render: () => <ReviewCenter /> },
-    ANALYTICS:     { render: () => <ExecutiveDashboard /> },
-  },
-
-  // One entry per Settings section; the module's secondary nav is its only nav.
-  settings: {
+  admin: {
     OVERVIEW:       { render: () => <SettingsView section="OVERVIEW" /> },
     ORGANIZATION:   { render: () => <SettingsView section="ORGANIZATION" /> },
     IAM:            { render: () => <SettingsView section="IAM" /> },

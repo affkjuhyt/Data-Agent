@@ -43,50 +43,73 @@ interface AppStateContextType {
 const AppStateContext = createContext<AppStateContextType | undefined>(undefined);
 
 /* ─── URL route helpers ────────────────────────────────────────────── */
-/* Old module IDs → current IA. Applied in parseRoute + navigate so existing
- * links/bookmarks keep working and the URL stays canonical. The 2026-08 IA
- * change (Build/Test/Release/Monitor → Hỏi dữ liệu/Tri thức/Xây dựng/Vận hành)
- * is expressed here too, with a sub-tab map so "#monitor/TRACES" still lands
- * on the traces screen rather than the module's first item. */
-const REDIRECT_MAP: Record<string, { module: string; sub: string; subs?: Record<string, string> }> = {
-  'dashboard':           { module: 'ops',      sub: 'ANALYTICS' },
-  'knowledge-ops':       { module: 'knowledge', sub: '' },
-  'ai-runtime':          { module: 'build',    sub: 'AGENTS' },
-  'operations-center':   { module: 'ops',      sub: 'TRACES' },
-  'release-management':  { module: 'build',    sub: 'AGENTS' },
-  'governance':          { module: 'settings', sub: 'SECURITY' },
-  'national-ops':        { module: 'ops',      sub: 'ANALYTICS' },
-  // previous 5-module IA
-  'test':                { module: 'build',    sub: 'PLAYGROUND', subs: { PLAYGROUND: 'PLAYGROUND' } },
-  'release':             { module: 'build',    sub: 'AGENTS' },
-  'monitor':             { module: 'ops',      sub: 'CONVERSATIONS', subs: { CONVERSATIONS: 'CONVERSATIONS', TRACES: 'TRACES', ANALYTICS: 'ANALYTICS' } },
-};
-// "#build/KNOWLEDGE" (old) → the knowledge module. The Versions screen (release
-// management) was removed with its backend; its links land on Agents.
-const BUILD_SUB_REDIRECTS: Record<string, { module: string; sub?: string }> = {
-  KNOWLEDGE: { module: 'knowledge' },
-  VERSIONS: { module: 'build', sub: 'AGENTS' },
-};
-// Settings sub-tabs before the nested sidebar was folded into the module nav.
-const SETTINGS_SUB_REDIRECTS: Record<string, string> = {
-  TEAM: 'IAM',
-  PROVIDERS: 'AI_PROVIDERS',
-  AUDIT: 'SECURITY',
+/* Module ids of earlier IAs → the six v3.1 areas (Trang chủ · Cần bạn · Agents · Phân tích ·
+ * Dữ liệu · Quản trị). Applied in parseRoute + navigate so existing links and bookmarks keep
+ * working and the URL stays canonical. `subs` maps an old page to its new one; a missing
+ * entry lands on `sub`, or on the area's first page when `sub` is empty. */
+type Redirect = { module: string; sub: string; subs?: Record<string, { module: string; sub: string }> };
+
+const REDIRECT_MAP: Record<string, Redirect> = {
+  // V3.0 IA (ask / knowledge / build / ops / settings)
+  ask:       { module: 'analysis', sub: 'ASK' },
+  knowledge: { module: 'data', sub: '' },
+  build: {
+    module: 'agents', sub: 'TEAM',
+    subs: {
+      AGENTS:     { module: 'agents', sub: 'TEAM' },
+      WORKFLOWS:  { module: 'agents', sub: 'ORCHESTRATION' },
+      PLAYGROUND: { module: 'agents', sub: 'EVALUATE' },
+      KNOWLEDGE:  { module: 'data', sub: '' },
+      VERSIONS:   { module: 'agents', sub: 'TEAM' },
+    },
+  },
+  ops: {
+    module: 'analysis', sub: 'SESSIONS',
+    subs: {
+      CONVERSATIONS: { module: 'analysis', sub: 'SESSIONS' },
+      TRACES:        { module: 'agents', sub: 'RUNS' },
+      REVIEWS:       { module: 'needs-you', sub: '' },
+      ANALYTICS:     { module: 'analysis', sub: 'DASHBOARD' },
+    },
+  },
+  settings: {
+    module: 'admin', sub: 'OVERVIEW',
+    subs: {
+      TEAM:      { module: 'admin', sub: 'IAM' },
+      PROVIDERS: { module: 'admin', sub: 'AI_PROVIDERS' },
+      AUDIT:     { module: 'admin', sub: 'SECURITY' },
+    },
+  },
+  // Older IAs
+  'dashboard':          { module: 'analysis', sub: 'DASHBOARD' },
+  'national-ops':       { module: 'analysis', sub: 'DASHBOARD' },
+  'knowledge-ops':      { module: 'data', sub: '' },
+  'ai-runtime':         { module: 'agents', sub: 'TEAM' },
+  'release-management': { module: 'agents', sub: 'TEAM' },
+  'release':            { module: 'agents', sub: 'TEAM' },
+  'operations-center':  { module: 'agents', sub: 'RUNS' },
+  'governance':         { module: 'admin', sub: 'SECURITY' },
+  'test':               { module: 'agents', sub: 'EVALUATE' },
+  'monitor': {
+    module: 'analysis', sub: 'SESSIONS',
+    subs: {
+      TRACES:    { module: 'agents', sub: 'RUNS' },
+      ANALYTICS: { module: 'analysis', sub: 'DASHBOARD' },
+    },
+  },
 };
 
-/** Where a user lands with no hash: business users ask, engineers build. */
-export const landingFor = (role: Role): { module: string; sub?: string } =>
-  role === 'AI_ENGINEER' || role === 'PLATFORM_ADMIN' ? { module: 'build', sub: 'AGENTS' } : { module: 'ask' };
+/** Everyone lands on Trang chủ (v3.1): it is the start of every role's day. */
+export const landingFor = (_role: Role): { module: string; sub?: string } => ({ module: 'home' });
 
 export const resolveRoute = (module: string, sub?: string): { module: string; sub?: string } => {
   const r = REDIRECT_MAP[module];
-  if (r) {
-    const mapped = sub && r.subs?.[sub];
-    return { module: r.module, sub: mapped || r.sub || undefined };
-  }
-  if (module === 'build' && sub && BUILD_SUB_REDIRECTS[sub]) return BUILD_SUB_REDIRECTS[sub];
-  if (module === 'settings' && sub && SETTINGS_SUB_REDIRECTS[sub]) return { module, sub: SETTINGS_SUB_REDIRECTS[sub] };
-  return { module, sub };
+  if (!r) return { module, sub };
+  const mapped = sub ? r.subs?.[sub] : undefined;
+  if (mapped) return { module: mapped.module, sub: mapped.sub || undefined };
+  // An old settings section keeps its id under Quản trị.
+  if (module === 'settings' && sub) return { module: 'admin', sub };
+  return { module: r.module, sub: r.sub || undefined };
 };
 
 // Sub-tab keys are uppercase internally (ROUTE_MAP, REDIRECT_MAP, ...) but the

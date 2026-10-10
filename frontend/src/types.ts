@@ -83,10 +83,3 @@ export interface KnowledgeDocument {
   conflicts?: boolean;
 }
 
-export interface NavItem {
-  id: string;
-  label: string;
-  icon: any;
-  roles: Role[];
-  industry?: Industry;
-}

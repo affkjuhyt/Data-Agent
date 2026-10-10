@@ -153,6 +153,24 @@ export function formatDuration(ms: Numeric): string {
   return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
+/**
+ * How long something has waited, in the words of the v3 screens: 30 → "vừa xong",
+ * 360 → "6 phút", 7500 → "2 giờ 05 phút", 270000 → "3 ngày".
+ */
+export function formatElapsed(seconds: Numeric): string {
+  const n = toNumber(seconds);
+  if (n === null || n < 0) return DASH;
+  if (n < 60) return 'vừa xong';
+  const minutes = Math.floor(n / 60);
+  if (minutes < 60) return `${minutes} phút`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const rest = minutes % 60;
+    return rest ? `${hours} giờ ${String(rest).padStart(2, '0')} phút` : `${hours} giờ`;
+  }
+  return `${Math.floor(hours / 24)} ngày`;
+}
+
 /** "2h ago", "just now" — for timestamps in lists. */
 export function formatRelative(value: DateInput, now: Date = new Date()): string {
   const d = toDate(value);
