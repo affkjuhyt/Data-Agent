@@ -7,6 +7,7 @@ import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
@@ -240,10 +241,10 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
 
         {step === 'endpoint' && (
           <Panel>
-            <Field label="Tên nguồn">
+            <Field labelTone="muted" label="Tên nguồn">
               <Input className="w-full" value={name} onChange={(e) => setName(e.target.value)} />
             </Field>
-            <Field label="URL" hint="Chỉ nhận https. Phương thức GET.">
+            <Field labelTone="muted" label="URL" hint="Chỉ nhận https. Phương thức GET.">
               <Input
                 className="w-full"
                 value={request.url}
@@ -252,6 +253,7 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
               />
             </Field>
             <Field
+              labelTone="muted"
               label="Tham số truy vấn"
               hint="{{last_run}} là thời điểm lần chạy trước, {{page}} là số trang."
             >
@@ -261,12 +263,13 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
                 onChange={(e) => set({ query: e.target.value })}
               />
             </Field>
-            <Field label="Header" hint="Mỗi dòng một header, dạng Tên: giá trị.">
-              <textarea
+            <Field labelTone="muted" label="Header" hint="Mỗi dòng một header, dạng Tên: giá trị.">
+              <Textarea
                 rows={3}
                 value={headers}
                 onChange={(e) => setHeaders(e.target.value)}
-                className="w-full rounded-md border border-border bg-card px-da-lg py-da-sm text-foreground da-mono focus-visible:border-ring"
+                className="w-full"
+                mono
               />
             </Field>
           </Panel>
@@ -274,7 +277,7 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
 
         {step === 'auth' && (
           <Panel>
-            <Field label="Kiểu xác thực">
+            <Field labelTone="muted" label="Kiểu xác thực">
               <Select
                 label="Kiểu xác thực"
                 value={request.auth}
@@ -282,7 +285,11 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
                 options={AUTH}
               />
             </Field>
-            <Field label="Thông tin xác thực" hint="Không lưu khoá hay mật khẩu trong Data Agent.">
+            <Field
+              labelTone="muted"
+              label="Thông tin xác thực"
+              hint="Không lưu khoá hay mật khẩu trong Data Agent."
+            >
               <Select
                 label="Thông tin xác thực"
                 placeholder="Chọn khoá trong kho bí mật"
@@ -298,7 +305,7 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
         {step === 'paging' && (
           <Panel>
             <div className="grid grid-cols-2 gap-da-lg">
-              <Field label="Phân trang">
+              <Field labelTone="muted" label="Phân trang">
                 <Select
                   label="Phân trang"
                   value={request.pagination}
@@ -306,7 +313,7 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
                   options={PAGING}
                 />
               </Field>
-              <Field label="Tối đa số trang mỗi lần chạy">
+              <Field labelTone="muted" label="Tối đa số trang mỗi lần chạy">
                 <Input
                   className="w-full"
                   inputMode="numeric"
@@ -314,7 +321,7 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
                   onChange={(e) => set({ max_pages: Number(e.target.value) || 0 })}
                 />
               </Field>
-              <Field label="Lịch">
+              <Field labelTone="muted" label="Lịch">
                 <Select
                   label="Lịch"
                   value={request.schedule}
@@ -322,7 +329,7 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
                   options={SCHEDULE}
                 />
               </Field>
-              <Field label="Giới hạn yêu cầu/giây">
+              <Field labelTone="muted" label="Giới hạn yêu cầu/giây">
                 <Input
                   className="w-full"
                   inputMode="numeric"
@@ -330,7 +337,7 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
                   onChange={(e) => set({ rate_limit_per_second: Number(e.target.value) || 0 })}
                 />
               </Field>
-              <Field label="Số lần thử lại">
+              <Field labelTone="muted" label="Số lần thử lại">
                 <Input
                   className="w-full"
                   inputMode="numeric"

@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { Button } from '../../design-system/Button';
+import { useEffect, useState } from 'react';
+import { Dialog } from '../../design-system/Dialog';
 import { Field } from '../../design-system/Field';
-import { Icon } from '../../design-system/Icon';
 import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
 import { addEvalCase, type EvalCase, type EvalCaseKind } from '../../lib/v1/agentOps';
@@ -10,8 +9,7 @@ import { useV1 } from '../../lib/v1/useV1';
 
 /*
  * "Hộp thoại · addTest" (2095:9006): add a case to the eval set, optionally frozen from a real
- * run. The design system has ConfirmDialog only, so this form dialog reuses its frame (scrim,
- * radius-xl, shadow-lg, Esc closes, focus kept inside) at the 560px of the Figma frame.
+ * run. Dialog md is the 560px of the Figma frame.
  */
 const KINDS: { value: EvalCaseKind; label: string }[] = [
   { value: 'correct_conclusion', label: 'Kết luận đúng' },
@@ -42,18 +40,14 @@ export function AddCaseDialog({
   const [kind, setKind] = useState<EvalCaseKind>('ask_on_time');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
-  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const previous = document.activeElement as HTMLElement | null;
     setSource(MANUAL);
     setInput('');
     setExpected('');
     setKind('ask_on_time');
     setError(undefined);
-    dialogRef.current?.querySelector<HTMLElement>('button[role="combobox"]')?.focus();
-    return () => previous?.focus();
   }, [open]);
 
   if (!open) return null;
@@ -93,95 +87,34 @@ export function AddCaseDialog({
     }
   };
 
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape' && !event.defaultPrevented) {
-      event.stopPropagation();
-      onClose();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-    const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-      'button:not([aria-disabled="true"]), input',
-    );
-    if (!focusable || focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
-
   return (
-    <div
-      className="fixed inset-0 z-[var(--z-dialog)] flex items-center justify-center bg-[rgb(23_33_43/0.32)]"
-      onMouseDown={onClose}
+    <Dialog
+      open
+      title="Thêm tình huống thử"
+      description="Tình huống từ lượt chạy thật giữ nguyên dữ liệu tại thời điểm đó."
+      onClose={onClose}
+      onSubmit={() => void submit()}
+      submitLabel="Thêm vào bộ thử"
+      submitting={sending}
+      error={error}
     >
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="add-case-title"
-        onKeyDown={onKeyDown}
-        onMouseDown={(event) => event.stopPropagation()}
-        className="flex w-[560px] max-w-[calc(100vw-32px)] flex-col gap-da-xl rounded-xl bg-card p-da-xl shadow-lg"
-      >
-        <div className="flex items-start">
-          <div className="flex min-w-0 flex-1 flex-col gap-da-xs">
-            <h2 id="add-case-title" className="text-foreground da-heading-2">
-              Thêm tình huống thử
-            </h2>
-            <p className="text-muted-foreground da-caption">
-              Tình huống từ lượt chạy thật giữ nguyên dữ liệu tại thời điểm đó.
-            </p>
-          </div>
-          <button
-            type="button"
-            aria-label="Đóng"
-            onClick={onClose}
-            className="shrink-0 text-foreground"
-          >
-            <Icon name="x" />
-          </button>
-        </div>
-        <Field label="Lấy từ">
-          <Select<string>
-            label="Lấy từ"
-            options={sourceOptions}
-            value={source}
-            onChange={pickSource}
-          />
-        </Field>
-        <Field label="Đầu vào">
-          <Input value={input} onChange={(e) => setInput(e.target.value)} className="w-full" />
-        </Field>
-        <Field label="Kỳ vọng">
-          <Input
-            value={expected}
-            onChange={(e) => setExpected(e.target.value)}
-            className="w-full"
-          />
-        </Field>
-        <Field label="Loại">
-          <Select<EvalCaseKind> label="Loại" options={KINDS} value={kind} onChange={setKind} />
-        </Field>
-        {error && (
-          <p role="alert" className="text-error da-caption">
-            {error}
-          </p>
-        )}
-        <div className="flex justify-end gap-da-md">
-          <Button kind="ghost" onClick={onClose}>
-            Huỷ
-          </Button>
-          <Button kind="primary" loading={sending} onClick={submit}>
-            Thêm vào bộ thử
-          </Button>
-        </div>
-      </div>
-    </div>
+      <Field label="Lấy từ">
+        <Select<string>
+          label="Lấy từ"
+          options={sourceOptions}
+          value={source}
+          onChange={pickSource}
+        />
+      </Field>
+      <Field label="Đầu vào">
+        <Input value={input} onChange={(e) => setInput(e.target.value)} className="w-full" />
+      </Field>
+      <Field label="Kỳ vọng">
+        <Input value={expected} onChange={(e) => setExpected(e.target.value)} className="w-full" />
+      </Field>
+      <Field label="Loại">
+        <Select<EvalCaseKind> label="Loại" options={KINDS} value={kind} onChange={setKind} />
+      </Field>
+    </Dialog>
   );
 }

@@ -18,7 +18,7 @@ import {
   type DocumentValidity,
 } from '../../lib/v1/documents';
 import { useV1 } from '../../lib/v1/useV1';
-import { FormDialog } from '../admin-access/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 import { HEAD_ROW, ROW, SidePanel } from './parts';
 
 /*
@@ -233,22 +233,22 @@ function RelationDialog({
   };
 
   return (
-    <FormDialog
+    <Dialog
       open
       title="Sửa quan hệ hiệu lực"
       description={`${v.title} bị thay thế bởi văn bản nào, từ ngày nào.`}
       submitLabel="Lưu"
-      loading={busy}
+      submitting={busy}
       error={error}
-      onCancel={onClose}
+      onClose={onClose}
       onSubmit={() => void save()}
     >
-      <Field label="Văn bản thay thế">
+      <Field labelTone="muted" label="Văn bản thay thế">
         <Select label="Văn bản thay thế" options={options} value={by} onChange={setBy} />
       </Field>
-      <Field label="Hết hiệu lực từ">
+      <Field labelTone="muted" label="Hết hiệu lực từ">
         <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
-    </FormDialog>
+    </Dialog>
   );
 }

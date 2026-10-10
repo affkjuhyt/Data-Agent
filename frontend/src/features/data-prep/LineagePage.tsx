@@ -8,7 +8,7 @@ import { Select } from '../../design-system/Select';
 import { cn } from '../../lib/utils';
 import { getLineage, listLineageTargets, type LineageGraph } from '../../lib/v1/dataPrep';
 import { useV1 } from '../../lib/v1/useV1';
-import { FormDialog } from '../sessions/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 import { NODE_H, NODE_W, layoutLineage, lineageToSvg, type LineageLayout } from './lineageLayout';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
@@ -181,13 +181,12 @@ function TargetDialog({
   const chosen = value ?? current ?? null;
 
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title="Đổi đối tượng"
       onClose={onClose}
       footer={
         <>
-          <span className="flex-1" />
           <Button kind="ghost" onClick={onClose}>
             Huỷ
           </Button>
@@ -206,6 +205,6 @@ function TargetDialog({
           placeholder={targets.loading ? 'Đang tải…' : 'Chọn đối tượng'}
         />
       </Field>
-    </FormDialog>
+    </Dialog>
   );
 }

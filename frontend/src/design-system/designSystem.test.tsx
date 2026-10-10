@@ -375,3 +375,65 @@ describe('Data Agent components', () => {
     expect(onSuggest).toHaveBeenCalled();
   });
 });
+
+describe('Dialog', () => {
+  it('is a form: Enter submits, Huỷ and Esc close, a failure keeps it open', async () => {
+    const { Dialog } = await import('./Dialog');
+    const onSubmit = vi.fn();
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <Dialog open title="Mời người" description="Gửi lời mời" onClose={onClose} onSubmit={onSubmit} submitLabel="Gửi lời mời">
+        <input aria-label="Email" />
+      </Dialog>,
+    );
+    expect(screen.getByRole('dialog', { name: 'Mời người' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Email' })).toHaveFocus();
+    fireEvent.submit(screen.getByRole('dialog'));
+    expect(onSubmit).toHaveBeenCalledOnce();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledOnce();
+    rerender(
+      <Dialog open title="Mời người" onClose={onClose} onSubmit={onSubmit} submitLabel="Gửi lời mời" error="Email đã có">
+        <input aria-label="Email" />
+      </Dialog>,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Email đã có');
+  });
+
+  it('does not submit while it cannot', async () => {
+    const { Dialog } = await import('./Dialog');
+    const onSubmit = vi.fn();
+    render(
+      <Dialog open title="Thêm" onClose={vi.fn()} onSubmit={onSubmit} submitLabel="Thêm" canSubmit={false}>
+        <span />
+      </Dialog>,
+    );
+    fireEvent.submit(screen.getByRole('dialog'));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+describe('Drawer', () => {
+  it('opens from the right with its title, and Esc or × closes it', async () => {
+    const { Drawer } = await import('./Drawer');
+    const onClose = vi.fn();
+    render(
+      <Drawer open title="Kết quả chạy thử" onClose={onClose} footer={<button type="button">Kích hoạt</button>}>
+        <p>Nội dung</p>
+      </Drawer>,
+    );
+    expect(screen.getByRole('dialog', { name: 'Kết quả chạy thử' })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Đóng' }));
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Textarea', () => {
+  it('marks itself invalid and shows the error', async () => {
+    const { Textarea } = await import('./Textarea');
+    render(<Textarea aria-label="Lý do" error="Ghi lý do" />);
+    expect(screen.getByRole('textbox', { name: 'Lý do' })).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Ghi lý do')).toBeInTheDocument();
+  });
+});

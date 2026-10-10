@@ -12,7 +12,7 @@ import {
 } from '../../lib/v1/documents';
 import { listCollections } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
-import { FormDialog } from '../admin-access/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "Hộp thoại · upload" (2095:8532, UC-05-01): files into a collection, read with its extraction
@@ -124,14 +124,14 @@ export function UploadDocumentsDialog({
   const total = files.reduce((n, f) => n + f.size, 0);
 
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title="Nạp tệp vào bộ sưu tập"
       description="Tệp đi qua pipeline: nhận dạng, trích trường, lập chỉ mục, che dữ liệu cá nhân."
       submitLabel="Nạp tệp"
-      loading={busy}
+      submitting={busy}
       error={error}
-      onCancel={onClose}
+      onClose={onClose}
       onSubmit={() => void submit()}
     >
       <div className="flex flex-col gap-da-xs">
@@ -163,7 +163,7 @@ export function UploadDocumentsDialog({
             : 'Kéo thả hoặc chọn tệp'}
         </button>
       </div>
-      <Field label="Bộ sưu tập">
+      <Field labelTone="muted" label="Bộ sưu tập">
         <Select
           label="Bộ sưu tập"
           placeholder="Chọn bộ sưu tập"
@@ -174,7 +174,7 @@ export function UploadDocumentsDialog({
           onChange={setCollection}
         />
       </Field>
-      <Field label="Lược đồ trích xuất">
+      <Field labelTone="muted" label="Lược đồ trích xuất">
         <Select
           label="Lược đồ trích xuất"
           options={[
@@ -188,7 +188,7 @@ export function UploadDocumentsDialog({
           onChange={setSchema}
         />
       </Field>
-      <Field label="Dữ liệu cá nhân">
+      <Field labelTone="muted" label="Dữ liệu cá nhân">
         <Select<PiiPolicy> label="Dữ liệu cá nhân" options={PII} value={pii} onChange={setPii} />
       </Field>
       {note && (
@@ -197,6 +197,6 @@ export function UploadDocumentsDialog({
           {note}
         </p>
       )}
-    </FormDialog>
+    </Dialog>
   );
 }

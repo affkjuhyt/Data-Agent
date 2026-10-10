@@ -20,14 +20,17 @@ export function Notice({
   tone = 'warning',
   children,
   action,
+  icon: iconName,
   className,
 }: {
   tone?: NoticeTone;
   children: ReactNode;
   action?: ReactNode;
+  /** Replaces the tone's icon (a clock for stale data); the colour still follows the tone. */
+  icon?: IconName;
   className?: string;
 }) {
-  const icon = ICON[tone];
+  const icon = { ...ICON[tone], ...(iconName ? { name: iconName } : {}) };
   return (
     <div
       role={tone === 'error' ? 'alert' : 'status'}

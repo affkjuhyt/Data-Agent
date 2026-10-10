@@ -4,7 +4,7 @@ import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
 import { createDsr, type DsrKind, type DsrRequest } from '../../lib/v1/adminAccess';
 import { addDays, dayMonth } from './format';
-import { FormDialog } from './FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "Hộp thoại · createDSR" (2095:8857): kind, subject, receiving channel, deadline. The subject
@@ -78,15 +78,15 @@ export function CreateDsrDialog({
   };
 
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title="Tạo yêu cầu của chủ thể dữ liệu"
       description="Agent sẽ tìm dữ liệu ở mọi nơi; thao tác xoá luôn cần duyệt."
       submitLabel="Tạo yêu cầu"
-      loading={sending}
+      submitting={sending}
       error={error}
       onSubmit={submit}
-      onCancel={onClose}
+      onClose={onClose}
     >
       <Field label="Loại">
         <Select<DsrKind> label="Loại" options={DSR_KINDS} value={kind} onChange={setKind} />
@@ -106,6 +106,6 @@ export function CreateDsrDialog({
       <Field label="Hạn">
         <Select label="Hạn" options={DEADLINES} value={deadline} onChange={setDeadline} />
       </Field>
-    </FormDialog>
+    </Dialog>
   );
 }

@@ -8,6 +8,7 @@ import { Field } from '../../design-system/Field';
 import { Icon } from '../../design-system/Icon';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber } from '../../lib/formatVN';
 import {
@@ -20,7 +21,7 @@ import {
   type WritebackStatus,
 } from '../../lib/v1/dataPrep';
 import { useV1 } from '../../lib/v1/useV1';
-import { FormDialog } from '../sessions/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "P06 · Ghi ngược có duyệt" (2290:17788, UC-06-04): a proposal to write changed values back to
@@ -270,13 +271,12 @@ function ReasonDialog({
 
   const reject = kind === 'reject';
   return (
-    <FormDialog
+    <Dialog
       open={kind !== null}
       title={reject ? 'Từ chối lệnh ghi ngược' : 'Yêu cầu sửa lệnh ghi ngược'}
       onClose={onClose}
       footer={
         <>
-          <span className="flex-1" />
           <Button kind="ghost" onClick={onClose}>
             Huỷ
           </Button>
@@ -296,13 +296,13 @@ function ReasonDialog({
         label={reject ? 'Lý do từ chối' : 'Cần sửa gì'}
         hint="Người đề xuất nhận được nội dung này. Không có gì được ghi vào bảng chờ."
       >
-        <textarea
+        <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={4}
-          className="rounded-md border border-border-strong bg-card px-da-lg py-[10px] text-foreground da-body-small"
+          className="w-full"
         />
       </Field>
-    </FormDialog>
+    </Dialog>
   );
 }

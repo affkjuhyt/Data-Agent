@@ -7,6 +7,7 @@ import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import { formatTime } from '../../lib/formatVN';
@@ -252,13 +253,13 @@ function RequestDetail({
               ? 'Người xin nhận lý do của bạn và có thể gửi lại yêu cầu hẹp hơn.'
               : `Quyền được cấp tới ${dayMonth(r.requested_until)} rồi tự thu hồi.`}
           </span>
-          <textarea
+          <Textarea
             value={dialog === 'reject' ? note : scope}
             onChange={(e) => (dialog === 'reject' ? setNote(e.target.value) : setScope(e.target.value))}
             aria-label={dialog === 'reject' ? 'Lý do từ chối (bắt buộc)' : 'Phạm vi được cấp'}
             placeholder={dialog === 'reject' ? 'Lý do từ chối (bắt buộc)' : 'Phạm vi được cấp'}
             rows={3}
-            className="w-full rounded-md border border-border-strong bg-card px-da-lg py-da-md text-foreground outline-none da-body-small focus-visible:border-ring"
+            className="w-full"
           />
         </div>
       </ConfirmDialog>

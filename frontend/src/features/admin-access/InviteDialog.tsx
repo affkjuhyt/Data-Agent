@@ -5,7 +5,7 @@ import { Select } from '../../design-system/Select';
 import { inviteUser, listDataSpaceSummaries, type Role } from '../../lib/v1/adminAccess';
 import { useV1 } from '../../lib/v1/useV1';
 import { EXPIRIES, ROW_SCOPES, expiryValue, scopeValue } from './format';
-import { FormDialog } from './FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 
 /** "Hộp thoại · invite" (2095:8252): email, role, Data Space, row scope, expiry. */
 export function InviteDialog({
@@ -62,15 +62,15 @@ export function InviteDialog({
   };
 
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title="Mời người dùng"
       description="Người được mời đăng nhập qua SSO; quyền theo vai trò trong Data Space."
       submitLabel="Gửi lời mời"
-      loading={sending}
+      submitting={sending}
       error={error}
       onSubmit={submit}
-      onCancel={onClose}
+      onClose={onClose}
     >
       <Field label="Email">
         <Input
@@ -103,6 +103,6 @@ export function InviteDialog({
       <Field label="Hết hạn">
         <Select label="Hết hạn" options={EXPIRIES} value={expiry} onChange={setExpiry} />
       </Field>
-    </FormDialog>
+    </Dialog>
   );
 }

@@ -10,10 +10,12 @@ import { Icon, type IconName } from './Icon';
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   icon?: IconName;
   error?: string;
+  /** Code-like values (a cursor value, a table name, a key) in the mono face, as Figma draws them. */
+  mono?: boolean;
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ icon, error, className, disabled, ...rest }, ref) => (
+  ({ icon, error, mono = false, className, disabled, ...rest }, ref) => (
     <span className={cn('inline-flex flex-col gap-da-xs', className)}>
       <span
         className={cn(
@@ -28,7 +30,10 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           disabled={disabled}
           aria-invalid={error ? true : undefined}
-          className="min-w-0 flex-1 bg-transparent text-foreground outline-none da-body-small placeholder:text-muted-foreground focus-visible:shadow-none disabled:cursor-not-allowed"
+          className={cn(
+            'min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground focus-visible:shadow-none disabled:cursor-not-allowed',
+            mono ? 'da-mono' : 'da-body-small',
+          )}
           {...rest}
         />
       </span>

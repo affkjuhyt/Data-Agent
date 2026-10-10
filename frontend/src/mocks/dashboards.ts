@@ -133,7 +133,7 @@ function dashboardsFixture(): Dashboard[] {
           kind: 'kpi',
           label: 'Chi phí rủi ro',
           value: '1,12%',
-          delta: { text: '+0,05 điểm', direction: 'up', good: false },
+          delta: { text: '+0,05 điểm', direction: 'up', good: false, warning: true },
           stale: false,
         },
         {

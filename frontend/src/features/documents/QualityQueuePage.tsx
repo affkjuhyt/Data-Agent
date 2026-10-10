@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import {
   listQualityIssues,
@@ -14,7 +15,7 @@ import {
   type ResolveIssue,
 } from '../../lib/v1/documents';
 import { useV1 } from '../../lib/v1/useV1';
-import { FormDialog } from '../admin-access/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "P05 · Hàng chờ chất lượng" (2300:19017, UC-05-03): one uncertain page at a time, the original
@@ -158,12 +159,12 @@ function IssueView({
               <p className="text-foreground da-body-strong">{issue.read.heading}</p>
             )}
             {editing ? (
-              <textarea
+              <Textarea
                 aria-label="Sửa văn bản agent đọc được"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 rows={6}
-                className="w-full resize-y rounded-md border border-border-strong bg-card px-da-md py-da-sm text-foreground da-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="w-full"
               />
             ) : (
               issue.read.paragraphs.map((p, i) => (
@@ -192,23 +193,23 @@ function IssueView({
           </p>
         </section>
       </div>
-      <FormDialog
+      <Dialog
         open={dropping}
         title="Bỏ trang này?"
         description="Trang bị bỏ không dùng để trả lời. Lý do được ghi vào lịch sử tài liệu."
         submitLabel="Bỏ trang"
-        loading={busy === 'drop'}
+        submitting={busy === 'drop'}
         error={dropError}
-        onCancel={() => setDropping(false)}
+        onClose={() => setDropping(false)}
         onSubmit={() => {
           if (!reason.trim()) setDropError('Ghi lý do bỏ trang.');
           else void resolve({ action: 'drop', reason: reason.trim() }, `Đã bỏ ${title}.`);
         }}
       >
-        <Field label="Lý do">
+        <Field labelTone="muted" label="Lý do">
           <Input value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
-      </FormDialog>
+      </Dialog>
     </div>
   );
 }

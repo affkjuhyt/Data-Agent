@@ -12,7 +12,7 @@ import {
   type DerivedTable,
 } from '../../lib/v1/dataPrep';
 import { useV1 } from '../../lib/v1/useV1';
-import { FormDialog } from '../sessions/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "Hộp thoại · saveDataset" (2095:9207, UC-06-02): the query in the SQL editor becomes a
@@ -85,13 +85,12 @@ export function SaveDatasetDialog({
   };
 
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title="Lưu thành dataset"
       onClose={onClose}
       footer={
         <>
-          <span className="flex-1" />
           <Button kind="ghost" onClick={onClose}>
             Huỷ
           </Button>
@@ -123,6 +122,6 @@ export function SaveDatasetDialog({
       <Field label="Quyền">
         <Select label="Quyền" options={ACCESS} value={access} onChange={(v) => setAccess(v)} />
       </Field>
-    </FormDialog>
+    </Dialog>
   );
 }

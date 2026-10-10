@@ -10,6 +10,7 @@ import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { RunStep } from '../../design-system/RunStep';
 import { Tabs } from '../../design-system/Tabs';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import {
@@ -163,13 +164,13 @@ function Editor({ initial, onSaved }: { initial: SkillDefinition; onSaved: () =>
           </div>
           <div className="flex min-w-0 flex-col gap-da-md">
             <Card size="sm" title="Hướng dẫn cho agent" className="gap-da-sm px-da-lg py-da-md">
-              <textarea
+              <Textarea
                 aria-label="Hướng dẫn cho agent"
                 value={instructions}
                 readOnly={!draft}
                 onChange={(e) => setInstructions(e.target.value)}
                 rows={4}
-                className="w-full resize-y border-b border-border bg-card p-da-md text-foreground da-body-small outline-none focus-visible:border-ring"
+                className="w-full"
               />
             </Card>
             <Card size="sm" title="Giới hạn an toàn" className="gap-da-sm px-da-lg py-da-md">

@@ -38,6 +38,8 @@
   /* color/action/* */
   --primary: #0f766e;
   --primary-hover: #115e59;
+  /* Behind a dialog or drawer: foreground at 32% (ConfirmDialog spec). */
+  --scrim: rgb(23 33 43 / 0.32);
 
   /* color/chart/1..6, fixed series order */
   --chart-1: #0f766e;
@@ -122,6 +124,7 @@
   --color-ring: var(--ring);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
+  --color-scrim: var(--scrim);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);

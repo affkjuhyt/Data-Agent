@@ -5,6 +5,7 @@ import { Button } from '../../design-system/Button';
 import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { formatNumber } from '../../lib/formatVN';
@@ -114,13 +115,14 @@ export default function PolicyDetail({ id }: { id: string }) {
             <div className="flex min-h-0 flex-1">
               <div className="flex min-w-0 flex-1 flex-col gap-[14px] pl-da-3xl pr-da-2xl pt-da-xl pb-da-xl">
                 <h2 className="text-foreground da-heading-3">Quy tắc</h2>
-                <textarea
+                <Textarea
                   aria-label="Quy tắc"
                   value={rule ?? p.rule_text}
                   onChange={(e) => setRule(e.target.value)}
                   rows={Math.max(4, (rule ?? p.rule_text).split('\n').length)}
                   spellCheck={false}
-                  className="w-full resize-y rounded-sm border border-border bg-background px-[14px] py-da-lg text-foreground outline-none da-mono focus-visible:border-ring"
+                  className="w-full"
+                  mono
                 />
                 <h2 className="text-foreground da-heading-3">Mô phỏng: một người sẽ thấy gì</h2>
                 <Simulation policy={p} />

@@ -1,19 +1,8 @@
-import {
-  useEffect,
-  useId,
-  useRef,
-  type FormEvent,
-  type KeyboardEvent,
-  type ReactNode,
-} from 'react';
-import { Button } from '../../design-system/Button';
-import { Icon } from '../../design-system/Icon';
+import type { ReactNode } from 'react';
 import { cn } from '../../lib/utils';
 
 /*
- * Pieces the admin-platform screens share. FormDialog stands in for a design-system form
- * dialog ("Hộp thoại · addModel" 2095:8757, "addIntegration" 2095:8701): the DS only has
- * ConfirmDialog, which takes no fields.
+ * Pieces the admin-platform screens share.
  */
 
 const NOTE_TONE = {
@@ -88,121 +77,5 @@ export function KeyValueList({
         </div>
       ))}
     </dl>
-  );
-}
-
-/*
- * A modal form: 440px card, radius-xl, shadow-lg, 16px gaps; title + caption, × at the right,
- * the fields, then Huỷ and one primary submit. Esc and the scrim close it; Tab stays inside.
- */
-export function FormDialog({
-  open,
-  title,
-  description,
-  submitLabel,
-  submitting = false,
-  canSubmit = true,
-  error,
-  onSubmit,
-  onClose,
-  children,
-}: {
-  open: boolean;
-  title: string;
-  description: string;
-  submitLabel: string;
-  submitting?: boolean;
-  canSubmit?: boolean;
-  error?: string;
-  onSubmit: () => void;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  const ref = useRef<HTMLFormElement>(null);
-  const titleId = useId();
-
-  useEffect(() => {
-    if (!open) return;
-    const previous = document.activeElement as HTMLElement | null;
-    ref.current?.querySelector<HTMLElement>('input, button[role="combobox"], textarea')?.focus();
-    return () => previous?.focus();
-  }, [open]);
-
-  if (!open) return null;
-
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      event.stopPropagation();
-      onClose();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-    const focusable = ref.current?.querySelectorAll<HTMLElement>(
-      'input:not([disabled]), button:not([disabled]), textarea:not([disabled])',
-    );
-    if (!focusable || focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (canSubmit && !submitting) onSubmit();
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-[var(--z-dialog)] flex items-center justify-center bg-[rgb(23_33_43/0.32)]"
-      onMouseDown={onClose}
-    >
-      <form
-        ref={ref}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        onSubmit={submit}
-        onKeyDown={onKeyDown}
-        onMouseDown={(event) => event.stopPropagation()}
-        className="flex w-[440px] max-w-[calc(100vw-32px)] flex-col gap-da-xl rounded-xl bg-card p-da-xl shadow-lg"
-      >
-        <div className="flex items-start gap-da-md">
-          <div className="flex min-w-0 flex-1 flex-col gap-da-xs">
-            <h2 id={titleId} className="text-foreground da-heading-2">
-              {title}
-            </h2>
-            <p className="text-muted-foreground da-caption">{description}</p>
-          </div>
-          <button
-            type="button"
-            aria-label="Đóng"
-            onClick={onClose}
-            className="text-foreground hover:text-muted-foreground"
-          >
-            <Icon name="x" />
-          </button>
-        </div>
-        {children}
-        {error && (
-          <p role="alert" className="text-error da-caption">
-            {error}
-          </p>
-        )}
-        <div className="flex justify-end gap-da-md">
-          <Button type="button" kind="ghost" onClick={onClose}>
-            Huỷ
-          </Button>
-          <Button type="submit" kind="primary" loading={submitting} disabled={!canSubmit}>
-            {submitLabel}
-          </Button>
-        </div>
-      </form>
-    </div>
   );
 }

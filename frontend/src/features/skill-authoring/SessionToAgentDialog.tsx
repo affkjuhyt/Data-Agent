@@ -3,10 +3,10 @@ import { useAppState } from '../../AppStateContext';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Checkbox } from '../../design-system/Checkbox';
+import { Dialog } from '../../design-system/Dialog';
 import { Select } from '../../design-system/Select';
 import { getSessionAgentDraft, type SessionAgentDraft } from '../../lib/v1/skillAuthoring';
 import { useV1 } from '../../lib/v1/useV1';
-import { FormDialog } from '../sessions/FormDialog';
 
 /*
  * "Biến phiên thành agent" (2070:3988 in "v3.1 · Chi tiết · Biến phiên thành agent", UC-03-03,
@@ -15,8 +15,7 @@ import { FormDialog } from '../sessions/FormDialog';
  * năng" goes to "P03 · Tạo kỹ năng từ phiên"; "Tạo agent nháp" hands the job over to "Tạo agent
  * từ mô tả" (agents/BUILDER) as a description in ?description=, where the config agent drafts the
  * agent and a draft must pass a test run before it is activated.
- * The frame is 760px with the two lists side by side; the shared FormDialog is 560px, so they
- * stack here (reported: no wide dialog variant).
+ * The frame is 760px with the two lists side by side (Dialog size lg).
  */
 export function SessionToAgentDialog({
   sessionId,
@@ -29,31 +28,26 @@ export function SessionToAgentDialog({
 }) {
   const draft = useV1(open ? () => getSessionAgentDraft(sessionId) : null, [open, sessionId]);
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title="Biến phiên thành agent"
+      description="Agent sẽ lặp lại các bước bạn đã làm trong phiên này, với tham số thay đổi theo mỗi lần chạy."
+      size="lg"
       onClose={onClose}
       footer={draft.data ? null : <CloseOnly onClose={onClose} />}
     >
-      <p className="-mt-[10px] text-muted-foreground da-caption">
-        Agent sẽ lặp lại các bước bạn đã làm trong phiên này, với tham số thay đổi theo mỗi lần
-        chạy.
-      </p>
       <AsyncRegion state={draft} what="các ô của phiên">
         {(d) => <DraftForm key={d.session_id} draft={d} onClose={onClose} />}
       </AsyncRegion>
-    </FormDialog>
+    </Dialog>
   );
 }
 
 function CloseOnly({ onClose }: { onClose: () => void }) {
   return (
-    <>
-      <span className="flex-1" />
-      <Button kind="ghost" onClick={onClose}>
-        Đóng
-      </Button>
-    </>
+    <Button kind="ghost" onClick={onClose}>
+      Đóng
+    </Button>
   );
 }
 
@@ -91,35 +85,37 @@ function DraftForm({ draft, onClose }: { draft: SessionAgentDraft; onClose: () =
 
   return (
     <>
-      <div className="flex flex-col gap-da-sm">
-        <span className="text-muted-foreground da-label">Các ô sẽ thành bước</span>
-        {draft.cells.map((c) => (
-          <Checkbox key={c.seq} checked={kept.has(c.seq)} onChange={(v) => toggle(c.seq, v)}>
-            <span className={kept.has(c.seq) ? 'text-foreground' : 'text-muted-foreground'}>
-              {c.label}
-            </span>
-          </Checkbox>
-        ))}
-      </div>
-      <div className="flex flex-col gap-da-sm">
-        <span className="text-muted-foreground da-label">Tham số mỗi lần chạy</span>
-        {draft.params.map((p) => (
-          <div
-            key={p.key}
-            className="flex items-center gap-da-md border-b border-border px-da-md py-da-sm"
-          >
-            <span aria-hidden className="w-[80px] shrink-0 text-muted-foreground da-caption">
-              {p.label}
-            </span>
-            <Select
-              className="min-w-0 flex-1"
-              label={p.label}
-              options={p.options.map((o) => ({ value: o, label: o }))}
-              value={values[p.key] ?? null}
-              onChange={(v) => setValues((prev) => ({ ...prev, [p.key]: v }))}
-            />
-          </div>
-        ))}
+      <div className="grid grid-cols-2 gap-da-xl">
+        <div className="flex min-w-0 flex-col gap-da-sm">
+          <span className="text-muted-foreground da-label">Các ô sẽ thành bước</span>
+          {draft.cells.map((c) => (
+            <Checkbox key={c.seq} checked={kept.has(c.seq)} onChange={(v) => toggle(c.seq, v)}>
+              <span className={kept.has(c.seq) ? 'text-foreground' : 'text-muted-foreground'}>
+                {c.label}
+              </span>
+            </Checkbox>
+          ))}
+        </div>
+        <div className="flex min-w-0 flex-col gap-da-sm">
+          <span className="text-muted-foreground da-label">Tham số mỗi lần chạy</span>
+          {draft.params.map((p) => (
+            <div
+              key={p.key}
+              className="flex items-center gap-da-md border-b border-border px-da-md py-da-sm"
+            >
+              <span aria-hidden className="w-[80px] shrink-0 text-muted-foreground da-caption">
+                {p.label}
+              </span>
+              <Select
+                className="min-w-0 flex-1"
+                label={p.label}
+                options={p.options.map((o) => ({ value: o, label: o }))}
+                value={values[p.key] ?? null}
+                onChange={(v) => setValues((prev) => ({ ...prev, [p.key]: v }))}
+              />
+            </div>
+          ))}
+        </div>
       </div>
       {error && <p className="text-error da-caption">{error}</p>}
       <div className="flex items-center gap-da-sm">

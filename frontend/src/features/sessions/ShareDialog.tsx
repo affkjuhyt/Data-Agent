@@ -16,7 +16,7 @@ import {
   type WorkspaceMember,
 } from '../../lib/v1/sessions';
 import { useV1 } from '../../lib/v1/useV1';
-import { FormDialog } from './FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "P02 · Phiên · Chia sẻ" (2297:18988, UC-02-03): add people or groups, give each a role, and
@@ -132,7 +132,7 @@ export function ShareDialog({
   const available = matches.filter((p) => !members?.some((m) => m.principal_id === p.id));
 
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title={`Chia sẻ “${workspace.title}”`}
       onClose={onClose}
@@ -231,6 +231,6 @@ export function ShareDialog({
       )}
 
       {error && <p className="text-error da-caption">{error}</p>}
-    </FormDialog>
+    </Dialog>
   );
 }

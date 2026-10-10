@@ -13,7 +13,7 @@ import type {
   SkillRun,
   SkillRunForm,
 } from '../../lib/v1/skillAuthoring';
-import { FormDialog } from '../sessions/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "P03 · Tìm yếu tố bên ngoài" (2293:18368, UC-03-02): the approved external series compared
@@ -113,13 +113,12 @@ export function ExternalFactorsView({
         </aside>
       </div>
       {metricParam && (
-        <FormDialog
+        <Dialog
           open={picking}
           title="Đổi chỉ số"
           onClose={() => setPicking(false)}
           footer={
             <>
-              <span className="flex-1" />
               <Button kind="ghost" onClick={() => setPicking(false)}>
                 Huỷ
               </Button>
@@ -143,7 +142,7 @@ export function ExternalFactorsView({
             value={choice}
             onChange={setChoice}
           />
-        </FormDialog>
+        </Dialog>
       )}
     </div>
   );

@@ -21,7 +21,7 @@ import {
 import { listDataSpaces } from '../../lib/v1/api';
 import { useV1 } from '../../lib/v1/useV1';
 import { formatExpiry, pct } from './format';
-import { FormDialog } from './parts';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "P12 · Tích hợp · Client & sử dụng" (2306:20082, UC-12-01, UC-12-03, UC-12-04): the clients
@@ -288,7 +288,8 @@ function AddIntegrationDialog({
   };
 
   return (
-    <FormDialog
+    <Dialog
+      size="sm"
       open
       title="Thêm tích hợp"
       description="Nơi agent nhận việc hoặc gửi kết quả."
@@ -332,6 +333,6 @@ function AddIntegrationDialog({
       <Field label="Ai dùng được">
         <Select label="Ai dùng được" options={audiences} value={audience} onChange={setAudience} />
       </Field>
-    </FormDialog>
+    </Dialog>
   );
 }

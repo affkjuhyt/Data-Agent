@@ -7,7 +7,7 @@ import { Select } from '../../design-system/Select';
 import { listAgents } from '../../lib/v1/api';
 import { registerTool, type McpServer, type Tool, type ToolLevel } from '../../lib/v1/skills';
 import { useV1 } from '../../lib/v1/useV1';
-import { FormDialog } from '../sessions/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 import { TOOL_LEVELS } from './labels';
 
 /*
@@ -89,13 +89,12 @@ export function RegisterToolDialog({
   };
 
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title="Đăng ký công cụ"
       onClose={onClose}
       footer={
         <>
-          <span className="flex-1" />
           <Button kind="ghost" onClick={onClose}>
             Huỷ
           </Button>
@@ -140,6 +139,6 @@ export function RegisterToolDialog({
         </Field>
       )}
       {error && <Notice tone="error">{error}</Notice>}
-    </FormDialog>
+    </Dialog>
   );
 }

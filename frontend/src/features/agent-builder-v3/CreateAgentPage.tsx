@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Notice } from '../../design-system/Notice';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
@@ -179,7 +180,7 @@ export default function CreateAgentPage() {
           <label htmlFor="agent-description" className="text-foreground da-heading-3">
             Bạn muốn agent làm gì?
           </label>
-          <textarea
+          <Textarea
             id="agent-description"
             value={description}
             onChange={(event) => {
@@ -188,7 +189,7 @@ export default function CreateAgentPage() {
             }}
             rows={5}
             placeholder="Ví dụ: mỗi sáng thứ Hai, xem nợ quá hạn theo chi nhánh và gửi tóm tắt cho tôi qua Teams."
-            className="w-full resize-y rounded-md border border-border-strong bg-card px-[14px] py-da-lg text-foreground outline-none da-body placeholder:text-muted-foreground focus:border-ring focus:shadow-[inset_0_0_0_1px_var(--ring)]"
+            className="w-full"
           />
           <p className="text-muted-foreground da-caption">Hoặc bắt đầu từ mẫu</p>
           <AsyncRegion state={templates} what="mẫu agent" skeletonRows={3}>

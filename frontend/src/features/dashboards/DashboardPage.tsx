@@ -123,6 +123,7 @@ function DashboardBody({
               <Select
                 key={f.key}
                 label={f.label}
+                size="sm"
                 className="w-[140px]"
                 value={f.value}
                 options={f.options.map((o) => ({
@@ -147,6 +148,7 @@ function DashboardBody({
       {d.stale && (
         <Notice
           tone="warning"
+          icon="clock"
           action={
             <Button onClick={() => navigate('data', 'SOURCE', d.stale!.source_id)}>
               Xem nguồn

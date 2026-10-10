@@ -23,7 +23,7 @@ import {
   type TablePreview,
 } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
-import { FormDialog } from '../sessions/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
@@ -327,13 +327,12 @@ function AddFilterDialog({
     setValue('');
   };
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title="Thêm lọc"
       onClose={onClose}
       footer={
         <>
-          <span className="flex-1" />
           <Button kind="ghost" onClick={onClose}>
             Huỷ
           </Button>
@@ -359,6 +358,6 @@ function AddFilterDialog({
           <Input className="w-full" value={value} onChange={(e) => setValue(e.target.value)} />
         </Field>
       </div>
-    </FormDialog>
+    </Dialog>
   );
 }

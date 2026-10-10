@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import { executeDsr, getDsr, listDsr, rejectDsr, type DsrRequest } from '../../lib/v1/adminAccess';
@@ -311,13 +312,13 @@ function DsrDetail({ id }: { id: string }) {
                 {dialog === 'reject' ? (
                   <div className="flex flex-col gap-da-sm">
                     <span>Yêu cầu sẽ đóng và khách hàng nhận thư nêu lý do.</span>
-                    <textarea
+                    <Textarea
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
                       aria-label="Lý do từ chối (bắt buộc)"
                       placeholder="Lý do từ chối (bắt buộc)"
                       rows={3}
-                      className="w-full rounded-md border border-border-strong bg-card px-da-lg py-da-md text-foreground outline-none da-body-small focus-visible:border-ring"
+                      className="w-full"
                     />
                   </div>
                 ) : (

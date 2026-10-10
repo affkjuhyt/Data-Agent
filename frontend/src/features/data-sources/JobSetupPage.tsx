@@ -224,7 +224,7 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
             <p className="text-muted-foreground da-caption">{METHOD_HELP[job.method]}</p>
             {incremental && (
               <Row>
-                <Field label="Cột con trỏ" hint={cursor?.hint ?? undefined}>
+                <Field labelTone="muted" label="Cột con trỏ" hint={cursor?.hint ?? undefined}>
                   <Select
                     label="Cột con trỏ"
                     value={job.cursor_column}
@@ -235,15 +235,15 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
                     }))}
                   />
                 </Field>
-                <Field label="Giá trị hiện tại">
-                  <Input className="w-full" readOnly value={candidate.cursor_value ?? '—'} />
+                <Field labelTone="muted" label="Giá trị hiện tại">
+                  <Input mono className="w-full" readOnly value={candidate.cursor_value ?? '—'} />
                 </Field>
               </Row>
             )}
           </Section>
           <Section title="Lịch và giới hạn">
             <Row>
-              <Field label="Lịch">
+              <Field labelTone="muted" label="Lịch">
                 <Select
                   label="Lịch"
                   value={job.schedule}
@@ -251,7 +251,7 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
                   options={SCHEDULES}
                 />
               </Field>
-              <Field label="Hạn độ mới">
+              <Field labelTone="muted" label="Hạn độ mới">
                 <Select
                   label="Hạn độ mới"
                   value={String(job.freshness_sla_hours)}
@@ -261,7 +261,7 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
               </Field>
             </Row>
             <Row>
-              <Field label="Thử lại khi lỗi">
+              <Field labelTone="muted" label="Thử lại khi lỗi">
                 <Select
                   label="Thử lại khi lỗi"
                   value={job.retry}
@@ -269,7 +269,11 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
                   options={RETRIES}
                 />
               </Field>
-              <Field label="Không chạy chồng" hint="Luôn bật: lần chạy sau chờ lần trước xong.">
+              <Field
+                labelTone="muted"
+                label="Không chạy chồng"
+                hint="Luôn bật: lần chạy sau chờ lần trước xong."
+              >
                 <Select
                   label="Không chạy chồng"
                   value="on"
@@ -281,7 +285,7 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
             </Row>
           </Section>
           <Section title="Khi dữ liệu có vấn đề">
-            <Field label="Cấu trúc nguồn thay đổi">
+            <Field labelTone="muted" label="Cấu trúc nguồn thay đổi">
               <Select
                 label="Cấu trúc nguồn thay đổi"
                 value={job.on_schema_change}
@@ -289,7 +293,7 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
                 options={ON_SCHEMA}
               />
             </Field>
-            <Field label="Bản ghi không hợp lệ">
+            <Field labelTone="muted" label="Bản ghi không hợp lệ">
               <Select
                 label="Bản ghi không hợp lệ"
                 value={job.on_invalid_record}
@@ -299,8 +303,8 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
             </Field>
           </Section>
           <Section title="Đích">
-            <Field label="Bảng đích">
-              <Input className="w-full" readOnly value={candidate.target_text} />
+            <Field labelTone="muted" label="Bảng đích">
+              <Input mono className="w-full" readOnly value={candidate.target_text} />
             </Field>
           </Section>
         </form>

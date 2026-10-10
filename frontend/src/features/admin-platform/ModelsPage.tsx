@@ -22,7 +22,7 @@ import {
 } from '../../lib/v1/adminPlatform';
 import { useV1 } from '../../lib/v1/useV1';
 import { formatHour, formatLatency, pct } from './format';
-import { FormDialog } from './parts';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "P11 · Mô hình & chính sách AI" (2306:19746, UC-11-05 and UC-11-04): which model serves each
@@ -324,7 +324,8 @@ function AddModelDialog({
   };
 
   return (
-    <FormDialog
+    <Dialog
+      size="sm"
       open
       title="Thêm mô hình"
       description="Mô hình chạy nội bộ; sẽ chạy bộ đánh giá trước khi được định tuyến."
@@ -363,6 +364,6 @@ function AddModelDialog({
         <Icon name="agent" className="shrink-0 text-info" />
         Agent sẽ chạy bộ đánh giá của các tác vụ thử để so sánh với mô hình đang dùng.
       </p>
-    </FormDialog>
+    </Dialog>
   );
 }

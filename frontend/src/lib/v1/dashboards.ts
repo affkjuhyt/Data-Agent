@@ -16,8 +16,11 @@ export interface DashboardKpi {
   kind: 'kpi';
   label: string;
   value: string;
-  /** `good` says whether the move is good for this metric, which sets the colour. */
-  delta: { text: string; direction: 'up' | 'down' | 'flat'; good: boolean };
+  /**
+   * `good` says whether the move is good for this metric, which sets the colour. `warning`
+   * (PROPOSAL) marks a bad move still inside tolerance, drawn amber instead of red.
+   */
+  delta: { text: string; direction: 'up' | 'down' | 'flat'; good: boolean; warning?: boolean };
   /** The source behind it is late: the tile carries the clock mark. */
   stale: boolean;
 }

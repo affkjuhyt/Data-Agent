@@ -13,7 +13,7 @@ import {
   type ScheduleKind,
 } from '../../lib/v1/dataPrep';
 import { useV1 } from '../../lib/v1/useV1';
-import { FormDialog } from '../sessions/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "v3.1 · Hộp thoại · Lịch chạy" (2239:15581, UC-06-03): when a pipeline runs, plus three
@@ -82,13 +82,12 @@ export function ScheduleDialog({
   ];
 
   return (
-    <FormDialog
+    <Dialog
       open={pipelineId !== null}
       title={`Lịch chạy · ${tableName}`}
       onClose={onClose}
       footer={
         <>
-          <span className="flex-1" />
           <Button kind="ghost" onClick={onClose}>
             Huỷ
           </Button>
@@ -145,6 +144,6 @@ export function ScheduleDialog({
           )}
         </>
       )}
-    </FormDialog>
+    </Dialog>
   );
 }

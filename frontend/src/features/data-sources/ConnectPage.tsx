@@ -332,7 +332,7 @@ function ConnectionForm({
   return (
     <div className="flex flex-1 max-[1023px]:flex-col">
       <div className="flex w-[620px] shrink-0 flex-col gap-da-xl border-r border-border pl-da-3xl pr-da-2xl pt-[20px] max-[1023px]:w-full max-[1023px]:border-r-0 max-[1023px]:pr-da-3xl">
-        <Field label="Tên hiển thị">
+        <Field labelTone="muted" label="Tên hiển thị">
           <Input
             value={form.name}
             onChange={(e) => set('name')(e.target.value)}
@@ -341,7 +341,7 @@ function ConnectionForm({
         </Field>
         <div className="flex gap-da-md">
           <div className="min-w-0 flex-1">
-            <Field label="Máy chủ">
+            <Field labelTone="muted" label="Máy chủ">
               <Input
                 value={form.host}
                 onChange={(e) => set('host')(e.target.value)}
@@ -350,7 +350,7 @@ function ConnectionForm({
             </Field>
           </div>
           <div className="w-[90px]">
-            <Field label="Cổng">
+            <Field labelTone="muted" label="Cổng">
               <Input
                 value={form.port}
                 inputMode="numeric"
@@ -359,7 +359,7 @@ function ConnectionForm({
             </Field>
           </div>
           <div className="w-[150px]">
-            <Field label={connector.form!.database_label}>
+            <Field labelTone="muted" label={connector.form!.database_label}>
               <Input value={form.database} onChange={(e) => set('database')(e.target.value)} />
             </Field>
           </div>
@@ -367,6 +367,7 @@ function ConnectionForm({
         <div className="flex gap-da-md">
           <div className="min-w-0 flex-1">
             <Field
+              labelTone="muted"
               label="Tài khoản"
               hint="Tài khoản chỉ đọc. Bước sau sẽ kiểm tra không có quyền ghi."
             >
@@ -378,7 +379,7 @@ function ConnectionForm({
             </Field>
           </div>
           <div className="min-w-0 flex-1">
-            <Field label="Mật khẩu" hint="Không lưu mật khẩu trong Data Agent.">
+            <Field labelTone="muted" label="Mật khẩu" hint="Không lưu mật khẩu trong Data Agent.">
               <Select
                 label="Mật khẩu"
                 placeholder="Chọn khoá trong kho bí mật"
@@ -678,7 +679,11 @@ function Assign({
           <h2 className="text-foreground da-heading-3">Quét cấu trúc và hồ sơ dữ liệu</h2>
           <div className="flex gap-da-lg max-[767px]:flex-col">
             <div className="min-w-0 flex-1">
-              <Field label="Quét cấu trúc" hint="Phát hiện cột thêm, đổi kiểu, bị xoá">
+              <Field
+                labelTone="muted"
+                label="Quét cấu trúc"
+                hint="Phát hiện cột thêm, đổi kiểu, bị xoá"
+              >
                 <Select
                   label="Quét cấu trúc"
                   value={schedule.schema_scan}
@@ -689,6 +694,7 @@ function Assign({
             </div>
             <div className="min-w-0 flex-1">
               <Field
+                labelTone="muted"
                 label="Lập hồ sơ dữ liệu"
                 hint="Thống kê giá trị trên mẫu 1%, đã che dữ liệu cá nhân"
               >
@@ -701,7 +707,7 @@ function Assign({
               </Field>
             </div>
             <div className="min-w-0 flex-1">
-              <Field label="Khi cấu trúc thay đổi">
+              <Field labelTone="muted" label="Khi cấu trúc thay đổi">
                 <Select
                   label="Khi cấu trúc thay đổi"
                   value={schedule.on_schema_change}

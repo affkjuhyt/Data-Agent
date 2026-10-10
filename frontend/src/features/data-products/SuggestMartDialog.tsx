@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Checkbox } from '../../design-system/Checkbox';
 import { applyMartSuggestion, type DataMart } from '../../lib/v1/dataProducts';
-import { FormDialog } from '../admin-access/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "Hộp thoại · suggestMart" (2095:9307): the dimensions and measures the agent proposes adding to
@@ -70,19 +70,19 @@ export function SuggestMartDialog({
     ));
 
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title="Agent đề xuất data mart"
       description="Từ các câu hỏi thường gặp và chỉ số đã chứng nhận."
       // copy: provisional, Figma 2095:9342 unread (rate limit)
       submitLabel="Thêm vào mart"
-      loading={sending}
+      submitting={sending}
       error={error}
       onSubmit={submit}
-      onCancel={onClose}
+      onClose={onClose}
     >
       {group('Thêm chiều', suggestion?.dimensions ?? [])}
       {group('Thêm độ đo', suggestion?.measures ?? [])}
-    </FormDialog>
+    </Dialog>
   );
 }

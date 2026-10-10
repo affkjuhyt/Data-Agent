@@ -7,6 +7,7 @@ import { Checkbox } from '../../design-system/Checkbox';
 import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import {
@@ -32,9 +33,6 @@ export default function SkillFromSessionPage() {
     </AsyncRegion>
   );
 }
-
-const area =
-  'w-full resize-none rounded-sm border border-border-strong bg-card px-[10px] py-[7px] text-foreground da-body-small outline-none focus-visible:border-ring';
 
 function FromSession({ draft }: { draft: SessionSkillDraft }) {
   const { navigate } = useAppState();
@@ -140,11 +138,11 @@ function FromSession({ draft }: { draft: SessionSkillDraft }) {
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
           <Field label="Mô tả một câu">
-            <textarea
+            <Textarea
               rows={2}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className={area}
+              className="w-full"
             />
           </Field>
           <h2 className="text-foreground da-heading-3">Tham số agent nhận ra</h2>

@@ -11,7 +11,7 @@ import {
   type ScheduleInput,
   type ScheduleKind,
 } from '../../lib/v1/dashboards';
-import { FormDialog } from '../sessions/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "v3.1 · Hộp thoại · Lịch chạy" (2239:15781, UC-06-03, UC-08-03) for a dashboard's send
@@ -91,13 +91,12 @@ export function ScheduleDialog({
   };
 
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title={`Lịch gửi · ${dashboard.title}`}
       onClose={onClose}
       footer={
         <>
-          <span className="flex-1" />
           <Button kind="ghost" onClick={onClose}>
             Huỷ
           </Button>
@@ -150,6 +149,6 @@ export function ScheduleDialog({
         </div>
       )}
       {error && <p className="text-error da-caption">{error}</p>}
-    </FormDialog>
+    </Dialog>
   );
 }

@@ -30,7 +30,7 @@ import {
 } from '../../lib/v1/explore';
 import { useV1 } from '../../lib/v1/useV1';
 import { cn } from '../../lib/utils';
-import { FormDialog } from '../sessions/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 import { ExplainPanel } from './ExplainPanel';
 import { FieldList, type FieldRef } from './FieldList';
 import { ResultChart, ValueTable, type ChartKind } from './ResultChart';
@@ -552,13 +552,12 @@ function SaveDialog({
     }
   };
   return (
-    <FormDialog
+    <Dialog
       open
       title="Lưu vào dashboard"
       onClose={onClose}
       footer={
         <>
-          <span className="flex-1" />
           <Button kind="ghost" onClick={onClose}>
             Huỷ
           </Button>
@@ -580,6 +579,6 @@ function SaveDialog({
         )}
       </AsyncRegion>
       {failure && <p className="text-error da-caption">Không lưu được: {failure}</p>}
-    </FormDialog>
+    </Dialog>
   );
 }

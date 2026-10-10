@@ -14,7 +14,7 @@ import {
   type CollectionSuggestion,
 } from '../../lib/v1/documents';
 import { useV1 } from '../../lib/v1/useV1';
-import { FormDialog } from '../admin-access/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * The two ways to start a collection on "v3.1 · Phi cấu trúc · Bộ sưu tập" (UC-05-06):
@@ -76,27 +76,27 @@ export function CreateCollectionDialog({
   };
 
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title="Tạo bộ sưu tập"
       description="Gom các tệp cùng loại để agent đọc, trích xuất và tìm kiếm."
       submitLabel="Tạo"
-      loading={busy}
+      submitting={busy}
       error={error}
-      onCancel={onClose}
+      onClose={onClose}
       onSubmit={() => void submit()}
     >
-      <Field label="Tên">
+      <Field labelTone="muted" label="Tên">
         <Input value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
-      <Field label="Loại tệp">
+      <Field labelTone="muted" label="Loại tệp">
         <Input
           value={types}
           placeholder="PDF, Word, ảnh"
           onChange={(e) => setTypes(e.target.value)}
         />
       </Field>
-      <Field label="Nguồn nạp">
+      <Field labelTone="muted" label="Nguồn nạp">
         <Select
           label="Nguồn nạp"
           placeholder="Chọn nguồn"
@@ -105,7 +105,7 @@ export function CreateCollectionDialog({
           onChange={setSource}
         />
       </Field>
-      <Field label="Lược đồ trích xuất">
+      <Field labelTone="muted" label="Lược đồ trích xuất">
         <Select
           label="Lược đồ trích xuất"
           options={[
@@ -121,7 +121,7 @@ export function CreateCollectionDialog({
           onChange={setSchema}
         />
       </Field>
-      <Field label="Chủ sở hữu">
+      <Field labelTone="muted" label="Chủ sở hữu">
         <Select
           label="Chủ sở hữu"
           placeholder="Chọn người"
@@ -132,7 +132,7 @@ export function CreateCollectionDialog({
           onChange={setOwner}
         />
       </Field>
-    </FormDialog>
+    </Dialog>
   );
 }
 
@@ -201,14 +201,14 @@ export function SuggestCollectionDialog({
   };
 
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title="Agent đề xuất bộ sưu tập"
       description="Agent quét các nguồn tệp đã kết nối và gợi ý cách tổ chức."
       submitLabel="Tạo bộ sưu tập đã chọn"
-      loading={busy}
+      submitting={busy}
       error={error}
-      onCancel={onClose}
+      onClose={onClose}
       onSubmit={() => void submit()}
     >
       {suggestions === null && !error ? (
@@ -231,6 +231,6 @@ export function SuggestCollectionDialog({
           {note}
         </p>
       )}
-    </FormDialog>
+    </Dialog>
   );
 }

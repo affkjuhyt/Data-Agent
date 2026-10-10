@@ -9,6 +9,7 @@ import { Field } from '../../design-system/Field';
 import { Icon } from '../../design-system/Icon';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import {
@@ -336,12 +337,12 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
               <span>
                 Phiên bản v{pending.version} trở về {skill.created_by.name} kèm nhận xét của bạn.
               </span>
-              <textarea
+              <Textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={3}
                 aria-label="Điều cần sửa"
-                className="rounded-md border border-border bg-card px-da-lg py-da-md text-foreground da-body-small outline-none focus:border-ring"
+                className="w-full"
               />
             </label>
           </ConfirmDialog>

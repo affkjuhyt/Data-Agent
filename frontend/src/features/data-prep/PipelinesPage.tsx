@@ -19,7 +19,7 @@ import {
   type PipelineStatus,
 } from '../../lib/v1/dataPrep';
 import { useV1 } from '../../lib/v1/useV1';
-import { FormDialog } from '../sessions/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 import { ScheduleDialog } from './ScheduleDialog';
 
 /*
@@ -233,13 +233,12 @@ function NewPipelineDialog({
   };
 
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title="Pipeline mới"
       onClose={onClose}
       footer={
         <>
-          <span className="flex-1" />
           <Button kind="ghost" onClick={onClose}>
             Huỷ
           </Button>
@@ -256,6 +255,6 @@ function NewPipelineDialog({
       <Field label="Bảng đầu vào" hint="Ví dụ raw.ld_loans. Agent chỉ đọc, không ghi vào nguồn.">
         <Input value={input} onChange={(e) => setInput(e.target.value)} className="w-full" />
       </Field>
-    </FormDialog>
+    </Dialog>
   );
 }

@@ -21,7 +21,7 @@ import {
 } from '../../lib/v1/documents';
 import { getCollection } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
-import { FormDialog } from '../admin-access/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 import { FactValue, KeyValue, SidePanel } from './parts';
 
 /*
@@ -180,23 +180,23 @@ function ReviewCard({ review, onChanged }: { review: ThreadReview; onChanged: ()
           Chấp nhận
         </Button>
       </div>
-      <FormDialog
+      <Dialog
         open={asking}
         title="Yêu cầu sửa bản nháp"
         description="Agent sửa theo ghi chú rồi gửi lại cho bạn duyệt."
         submitLabel="Gửi yêu cầu"
-        loading={busy}
+        submitting={busy}
         error={error}
-        onCancel={() => setAsking(false)}
+        onClose={() => setAsking(false)}
         onSubmit={() => {
           if (!note.trim()) setError('Ghi rõ cần sửa gì.');
           else void answer('reject', note.trim());
         }}
       >
-        <Field label="Cần sửa gì">
+        <Field labelTone="muted" label="Cần sửa gì">
           <Input value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
-      </FormDialog>
+      </Dialog>
     </div>
   );
 }

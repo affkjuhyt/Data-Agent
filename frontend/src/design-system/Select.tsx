@@ -22,6 +22,7 @@ export function Select<V extends string>({
   placeholder = 'Chọn…',
   error,
   disabled,
+  size = 'md',
   className,
 }: {
   options: SelectOption<V>[];
@@ -32,6 +33,8 @@ export function Select<V extends string>({
   placeholder?: string;
   error?: string;
   disabled?: boolean;
+  /** sm = the 28px filter pills of page headers ("Kỳ: tuần 41"); md = the 36px form field. */
+  size?: 'md' | 'sm';
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -114,7 +117,8 @@ export function Select<V extends string>({
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openList())}
         className={cn(
-          'flex h-9 w-full items-center rounded-md border bg-card px-da-md text-left da-body-small',
+          'flex w-full items-center rounded-md border bg-card px-da-md text-left da-body-small',
+          size === 'sm' ? 'h-7' : 'h-9',
           open
             ? 'border-ring shadow-[inset_0_0_0_1px_var(--ring)]'
             : error

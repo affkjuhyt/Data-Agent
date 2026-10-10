@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import {
@@ -251,11 +252,11 @@ function ModelBody({ model, onChanged }: { model: ForecastModel; onChanged: () =
           ) : (
             <label className="flex flex-col gap-da-xs">
               <span className="text-foreground da-label">Lý do (bắt buộc)</span>
-              <textarea
+              <Textarea
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
                 rows={3}
-                className="rounded-md border border-border-strong bg-card px-da-md py-da-sm text-foreground da-body-small"
+                className="w-full"
               />
             </label>
           )}

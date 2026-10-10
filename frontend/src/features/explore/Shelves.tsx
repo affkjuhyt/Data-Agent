@@ -4,7 +4,7 @@ import { Checkbox } from '../../design-system/Checkbox';
 import { Icon } from '../../design-system/Icon';
 import type { ExploreDimension, ExploreFilter, ExploreModel } from '../../lib/v1/explore';
 import { cn } from '../../lib/utils';
-import { FormDialog } from '../sessions/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 import { FIELD_MIME, type FieldRef } from './FieldList';
 import { filterText } from './format';
 
@@ -302,13 +302,12 @@ function FilterDialog({
 }) {
   const [values, setValues] = useState<string[]>(current?.values ?? []);
   return (
-    <FormDialog
+    <Dialog
       open
       title={`Lọc theo ${dimension.label.toLowerCase()}`}
       onClose={onClose}
       footer={
         <>
-          <span className="flex-1" />
           <Button kind="ghost" onClick={onClose}>
             Huỷ
           </Button>
@@ -337,6 +336,6 @@ function FilterDialog({
           </Checkbox>
         ))}
       </div>
-    </FormDialog>
+    </Dialog>
   );
 }

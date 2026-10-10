@@ -5,6 +5,7 @@ import { AppTopBar } from './AppTopBar';
 import { CommandPalette } from './CommandPalette';
 import { SideRail } from './SideRail';
 import type { AreaId } from './areas';
+import { useRailCounts } from './useRailCounts';
 import { useShellCounts } from './useShellCounts';
 import { setDataSpace } from '../../lib/v1/client';
 import { listDataSpaces } from '../../lib/v1/api';
@@ -30,6 +31,8 @@ export function AppShell({
   const area = activeModule as AreaId;
   const page = subTab[area] ?? firstPageOf(area);
   const rail = isRailPage(area, page) ? AREA_RAILS[area] : undefined;
+  // Only the area whose rail is on screen; a landing page draws no rail and loads no counts.
+  const railCounts = useRailCounts(rail ? area : undefined);
   const counts = useShellCounts();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -86,7 +89,7 @@ export function AppShell({
             label={AREAS.find((a) => a.id === area)?.label ?? ''}
             groups={rail}
             active={railItemOf(area, page) ?? ''}
-            counts={area === 'agents' ? { TEAM: counts.agents } : undefined}
+            counts={area === 'agents' ? { ...railCounts, TEAM: counts.agents } : railCounts}
             onSelect={(page) => setSubTab(area, page)}
           />
         )}

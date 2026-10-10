@@ -7,6 +7,7 @@ import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
@@ -19,7 +20,7 @@ import {
   type SkillTestRun,
 } from '../../lib/v1/skillAuthoring';
 import { useV1 } from '../../lib/v1/useV1';
-import { FormDialog } from '../sessions/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "P03 · Kiểm định kỹ năng" (2294:18369, UC-03-04): the skill's test cases run on locked data
@@ -205,13 +206,13 @@ function Tests({ initial }: { initial: SkillTestRun }) {
                   label="Hoặc ghi chú cho người duyệt"
                   hint="Ca lỗi có ghi chú không chặn việc gửi duyệt."
                 >
-                  <textarea
+                  <Textarea
                     rows={2}
                     value={notes[failedCase.id] ?? ''}
                     onChange={(e) =>
                       setNotes((prev) => ({ ...prev, [failedCase.id]: e.target.value }))
                     }
-                    className="w-full resize-none rounded-sm border border-border-strong bg-card px-[10px] py-[7px] text-foreground da-body-small outline-none focus-visible:border-ring"
+                    className="w-full"
                   />
                 </Field>
               </div>
@@ -274,13 +275,12 @@ function AddCaseDialog({
     }
   };
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title="Thêm ca kiểm thử"
       onClose={onClose}
       footer={
         <>
-          <span className="flex-1" />
           <Button kind="ghost" onClick={onClose}>
             Huỷ
           </Button>
@@ -300,6 +300,6 @@ function AddCaseDialog({
       <Field label="Kỳ vọng">
         <Input value={expected} onChange={(e) => setExpected(e.target.value)} />
       </Field>
-    </FormDialog>
+    </Dialog>
   );
 }

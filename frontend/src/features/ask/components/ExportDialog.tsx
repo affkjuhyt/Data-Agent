@@ -7,12 +7,11 @@
  * yet, so they are not drawn.
  */
 import { useEffect, useState } from 'react';
-import { Button } from '../../../design-system/Button';
+import { Dialog } from '../../../design-system/Dialog';
 import { Radio } from '../../../design-system/Radio';
 import { formatNumber } from '../../../lib/formatVN';
 import { cn } from '../../../lib/utils';
 import type { EvidenceRun } from '../types';
-import { AskDialog } from './AskDialog';
 
 type Format = 'xlsx' | 'csv';
 
@@ -77,17 +76,15 @@ export function ExportDialog({
   };
 
   return (
-    <AskDialog
+    <Dialog
       open={open}
       title="Xuất kết quả"
       onClose={onClose}
-      footer={
-        <>
-          <span className="flex-1" />
-          <Button kind="ghost" onClick={onClose}>Huỷ</Button>
-          <Button kind="primary" onClick={submit} loading={busy} disabled={!format}>Xuất</Button>
-        </>
-      }
+      onSubmit={() => void submit()}
+      submitLabel="Xuất"
+      submitting={busy}
+      canSubmit={format !== null}
+      error={error ?? undefined}
     >
       {options.length ? (
         <fieldset className="m-0 flex flex-col overflow-hidden rounded-md border border-border p-0">
@@ -112,7 +109,6 @@ export function ExportDialog({
       ) : (
         <p className="m-0 text-muted-foreground da-body-small">Câu trả lời này không có bảng dữ liệu để xuất.</p>
       )}
-      {error && <p role="alert" className="m-0 text-error da-caption">{error}</p>}
-    </AskDialog>
+    </Dialog>
   );
 }

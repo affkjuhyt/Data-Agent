@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../../design-system/Button';
+import { Drawer } from '../../design-system/Drawer';
 import { Icon } from '../../design-system/Icon';
 import { Notice } from '../../design-system/Notice';
 import { RunStep } from '../../design-system/RunStep';
@@ -70,13 +71,6 @@ export function TestRunDrawer({
   onEdit: () => void;
   onClose: () => void;
 }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    closeRef.current?.focus();
-    return () => previous?.focus();
-  }, []);
-
   const report = run.test_report;
   const seconds =
     run.started_at && run.finished_at
@@ -93,40 +87,28 @@ export function TestRunDrawer({
         .join(' · ')
     : 'Đang chạy thử · không gửi gì ra ngoài';
 
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      event.stopPropagation();
-      onClose();
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-[var(--z-drawer)]" onKeyDown={onKeyDown}>
-      {/* Same scrim as ConfirmDialog: foreground at 32% (no token yet). */}
-      <div className="absolute inset-0 bg-[rgb(23_33_43/0.32)]" onMouseDown={onClose} aria-hidden />
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="test-run-title"
-        className="absolute inset-y-0 right-0 flex w-[560px] max-w-full flex-col gap-da-lg overflow-y-auto border-l border-border bg-card p-da-xl"
-      >
-        <div className="flex items-start gap-da-md">
-          <div className="flex min-w-0 flex-1 flex-col gap-da-xs">
-            <h2 id="test-run-title" className="text-foreground da-heading-2">
-              Chạy thử · {run.agent_name}
-            </h2>
-            <p className="text-muted-foreground da-caption">{subtitle}</p>
-          </div>
-          <button
-            ref={closeRef}
-            type="button"
-            onClick={onClose}
-            className="rounded-sm text-foreground hover:text-muted-foreground"
-          >
-            <Icon name="x" label="Đóng" />
-          </button>
-        </div>
-
+    <Drawer
+      open
+      title={`Chạy thử · ${run.agent_name}`}
+      description={subtitle}
+      width="lg"
+      onClose={onClose}
+      footer={
+        <>
+          <p className="min-w-0 flex-1 self-center text-muted-foreground da-caption">
+            Kích hoạt cần chủ sở hữu dữ liệu đồng ý
+          </p>
+          <Button kind="ghost" onClick={onEdit}>
+            Sửa cấu hình
+          </Button>
+          <Button kind="primary" disabled={!report} loading={activating} onClick={onActivate}>
+            Kích hoạt
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-da-lg">
         {!report ? (
           run.status === 'failed' ? (
             <Notice tone="error">Lượt chạy thử bị lỗi, không có kết quả.</Notice>
@@ -175,18 +157,8 @@ export function TestRunDrawer({
 
         {error && <Notice tone="error">Không thực hiện được: {error}</Notice>}
 
-        <span className="flex-1" />
-        <footer className="flex items-center gap-da-sm">
-          <p className="min-w-0 flex-1 text-muted-foreground da-caption">Kích hoạt cần chủ sở hữu dữ liệu đồng ý</p>
-          <Button kind="ghost" onClick={onEdit}>
-            Sửa cấu hình
-          </Button>
-          <Button kind="primary" disabled={!report} loading={activating} onClick={onActivate}>
-            Kích hoạt
-          </Button>
-        </footer>
-      </aside>
-    </div>
+      </div>
+    </Drawer>
   );
 }
 

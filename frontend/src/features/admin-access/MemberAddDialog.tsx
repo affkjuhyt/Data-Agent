@@ -11,7 +11,7 @@ import {
 } from '../../lib/v1/adminAccess';
 import { useV1 } from '../../lib/v1/useV1';
 import { ROW_SCOPES, scopeValue } from './format';
-import { FormDialog } from './FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "Hộp thoại · memberAdd" (2095:9350): a person or an AD group, a role, a row scope. A2 only has
@@ -94,15 +94,15 @@ export function MemberAddDialog({
   };
 
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title="Thêm thành viên Data Space"
       description="Quyền theo vai trò; agent luôn theo quyền của chủ sở hữu."
       submitLabel="Thêm"
-      loading={sending}
+      submitting={sending}
       error={error}
       onSubmit={submit}
-      onCancel={onClose}
+      onClose={onClose}
     >
       <Field label="Người hoặc nhóm">
         <Select label="Người hoặc nhóm" options={options} value={principal} onChange={setPrincipal} />
@@ -120,6 +120,6 @@ export function MemberAddDialog({
       <Field label="Phạm vi dòng">
         <Select label="Phạm vi dòng" options={ROW_SCOPES} value={scope} onChange={setScope} />
       </Field>
-    </FormDialog>
+    </Dialog>
   );
 }

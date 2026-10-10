@@ -3,7 +3,7 @@ import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Radio } from '../../design-system/Radio';
 import { createQualityRule, type RuleSeverity } from '../../lib/v1/dataProducts';
-import { FormDialog } from '../admin-access/FormDialog';
+import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "Thêm quy tắc" of "P06 · Quy tắc chất lượng". The design has no dialog for it, so the fields are
@@ -50,15 +50,15 @@ export function AddRuleDialog({
   };
 
   return (
-    <FormDialog
+    <Dialog
       open={open}
       title="Thêm quy tắc"
       description="Quy tắc chạy sau mỗi lần nạp và mỗi lần pipeline chạy."
       submitLabel="Thêm quy tắc"
-      loading={sending}
+      submitting={sending}
       error={error}
       onSubmit={submit}
-      onCancel={onClose}
+      onClose={onClose}
     >
       <Field label="Quy tắc">
         <Input
@@ -95,6 +95,6 @@ export function AddRuleDialog({
           </Radio>
         </div>
       </fieldset>
-    </FormDialog>
+    </Dialog>
   );
 }

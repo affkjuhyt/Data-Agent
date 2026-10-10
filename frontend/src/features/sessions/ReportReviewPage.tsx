@@ -7,6 +7,7 @@ import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { Icon } from '../../design-system/Icon';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import {
@@ -226,12 +227,12 @@ function Review({ report: loaded }: { report: SessionReport }) {
       >
         <label className="flex flex-col gap-da-xs">
           <span>Agent Báo cáo soạn lại theo ghi chú này rồi gửi bạn duyệt lần nữa.</span>
-          <textarea
+          <Textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={3}
             aria-label="Điều cần sửa"
-            className="rounded-md border border-border bg-card px-da-lg py-da-md text-foreground da-body-small outline-none focus:border-ring"
+            className="w-full"
           />
         </label>
       </ConfirmDialog>

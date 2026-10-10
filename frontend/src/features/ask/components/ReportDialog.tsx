@@ -4,12 +4,11 @@
  * changes the number by itself.
  */
 import { useEffect, useState } from 'react';
-import { Button } from '../../../design-system/Button';
 import { Checkbox } from '../../../design-system/Checkbox';
+import { Dialog } from '../../../design-system/Dialog';
 import { Input } from '../../../design-system/Input';
 import { Radio } from '../../../design-system/Radio';
 import { reportAnswer, type AnswerReport, type AnswerReportKind } from '../../../lib/v1/answerReports';
-import { AskDialog } from './AskDialog';
 
 const KINDS: Array<{ value: AnswerReportKind; label: string }> = [
   { value: 'misread_question', label: 'Hiểu sai câu hỏi (chỉ số, phạm vi, kỳ)' },
@@ -76,17 +75,14 @@ export function ReportDialog({
     : '';
 
   return (
-    <AskDialog
+    <Dialog
       open={open}
       title="Báo câu trả lời sai"
       onClose={onClose}
-      footer={
-        <>
-          <span className="flex-1" />
-          <Button kind="ghost" onClick={onClose}>Huỷ</Button>
-          <Button kind="primary" onClick={submit} loading={busy}>Gửi báo sai</Button>
-        </>
-      }
+      onSubmit={() => void submit()}
+      submitLabel="Gửi báo sai"
+      submitting={busy}
+      error={error ?? undefined}
     >
       {excerpt && (
         <blockquote className="m-0 rounded-sm bg-subtle p-[10px] text-muted-foreground da-caption">“{excerpt}”</blockquote>
@@ -113,7 +109,6 @@ export function ReportDialog({
       <p className="m-0 text-muted-foreground da-caption">
         Câu trả lời được gắn nhãn “đang kiểm tra” cho mọi người đã xem. Bạn nhận kết quả trong Trung tâm thông báo.
       </p>
-      {error && <p role="alert" className="m-0 text-error da-caption">{error}</p>}
-    </AskDialog>
+    </Dialog>
   );
 }

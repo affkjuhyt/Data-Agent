@@ -13,6 +13,8 @@ interface KpiDelta {
   direction: 'up' | 'down' | 'flat';
   /** Whether this move is good for the metric (NPL going down is good). */
   good: boolean;
+  /** A bad move still inside tolerance, drawn amber rather than red ("+0,05 điểm"). */
+  warning?: boolean;
 }
 
 type KpiState = 'default' | 'loading' | 'stale' | 'noAccess';
@@ -117,7 +119,9 @@ function KpiDeltaLine({ delta }: { delta: KpiDelta }) {
       ? 'text-muted-foreground'
       : delta.good
         ? 'text-success'
-        : 'text-error';
+        : delta.warning
+          ? 'text-warning'
+          : 'text-error';
   return (
     <span className={cn('inline-flex items-center gap-da-xs da-body-strong', tone)}>
       {delta.direction !== 'flat' && (
