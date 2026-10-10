@@ -98,12 +98,15 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
     {
       label: 'Ngữ nghĩa',
       items: [
+        { id: 'ENTITIES', label: 'Mô hình thực thể' },
         { id: 'METRIC', label: 'Chỉ số' },
+        { id: 'GLOSSARY', label: 'Từ điển nghiệp vụ' },
         { id: 'EXAMPLES', label: 'Câu hỏi mẫu' },
         { id: 'KNOWLEDGE', label: 'Trang tri thức' },
         { id: 'AUTHORITY', label: 'Thẩm quyền nguồn' },
         { id: 'RULE', label: 'Quy tắc từ quyết định' },
         { id: 'KNOWLEDGE_REVIEW', label: 'Rà soát tri thức' },
+        { id: 'CONTEXT_EVAL', label: 'Đánh giá lớp ngữ cảnh' },
       ],
     },
     {

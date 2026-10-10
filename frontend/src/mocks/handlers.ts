@@ -40,6 +40,7 @@ import { createNotificationHandlers } from './notifications';
 import { createPackHandlers } from './packs';
 import { createPeriodHandlers } from './periods';
 import { createReportHandlers } from './reports';
+import { createSemanticLayerHandlers } from './semanticLayer';
 import { createRuleHandlers } from './rules';
 import { createSessionHandlers } from './sessions';
 import { createSourcesHandlers } from './sources';
@@ -103,6 +104,7 @@ export function createHandlers() {
     ...createAlertHandlers(),
     ...createReportHandlers(),
     ...createPackHandlers(),
+    ...createSemanticLayerHandlers(),
 
     http.get('*/v1/inbox', ({ request }) => {
       const status = new URL(request.url).searchParams.get('status') ?? 'open';
