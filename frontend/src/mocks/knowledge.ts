@@ -221,6 +221,37 @@ export function createKnowledgeHandlers() {
   const pages = pagesFixture();
   let findings = findingsFixture();
   return [
+    http.get('*/v1/answers/:id/knowledge-draft', ({ params }) =>
+      params.id === 'answer-npl-t9'
+        ? HttpResponse.json({
+            target_page: { id: 'kp-npl', title: 'Nợ xấu bán lẻ (chỉ số NPL_RATIO)' },
+            paragraph:
+              'Nợ xấu bán lẻ T9 tăng {npl_ratio_delta} so với T8, chủ yếu từ khoản vay tiêu dùng tín chấp ở vùng Đông Nam Bộ.',
+            source_text: 'Lượt truy vấn QR-2026-1009-118 · chỉ số NPL_RATIO v4 đã chứng nhận',
+            validity_text: 'Kỳ T9/2026',
+          })
+        : problem(404, 'not_found', 'Không có câu trả lời này.'),
+    ),
+    http.post('*/v1/knowledge-pages\\:from-answer', async ({ request }) => {
+      const body = (await request.json()) as { answer_id: string };
+      // An answer with a hand-typed figure cannot be saved (BR-167).
+      if (body.answer_id === 'answer-typed-number')
+        return problem(
+          422,
+          'business_rule_violated',
+          'Câu trả lời có số không gắn với lượt truy vấn nên không lưu được (BR-167).',
+        );
+      return HttpResponse.json(
+        {
+          id: 'kpv-saveback-' + Date.now(),
+          version: 1,
+          status: 'pending_review',
+          change_note: 'Lưu từ câu trả lời',
+          created_at: new Date().toISOString(),
+        },
+        { status: 201 },
+      );
+    }),
     http.get('*/v1/knowledge-runs', () =>
       HttpResponse.json({ items: [LINT_RUN], next_page_token: '' }),
     ),

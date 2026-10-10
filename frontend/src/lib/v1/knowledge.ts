@@ -147,3 +147,33 @@ export const resolveFinding = async (
 /** A2: POST /v1/knowledge-runs (202) — a lint run now. */
 export const runKnowledgeLint = () =>
   v1Send<{ id: string }>('POST', '/knowledge-runs', { kind: 'lint' });
+
+/* ─── Lưu câu trả lời thành tri thức (UC-07-12) ───────────────────────── */
+
+/**
+ * PROPOSAL: GET /v1/answers/{id}/knowledge-draft — what saving this answer would propose: the
+ * page it fits, the paragraph with its figures turned into placeholders bound to the query
+ * (never fixed numbers, BR-162), the source and the period it holds for.
+ */
+interface KnowledgeDraft {
+  target_page: { id: string; title: string } | null;
+  paragraph: string;
+  source_text: string;
+  validity_text: string;
+}
+
+export const getKnowledgeDraft = async (answerId: string) =>
+  v1Get<KnowledgeDraft>(`/answers/${pathId(answerId)}/knowledge-draft`);
+
+/**
+ * A2: POST /v1/knowledge-pages:from-answer — the answer becomes a draft version of the target
+ * page, submitted for review; 422 business_rule_violated when a figure has no query run, a
+ * citation failed its check or the answer holds personal data (BR-167).
+ */
+export const saveAnswerToKnowledge = (body: {
+  answer_id: string;
+  mode: 'paragraph' | 'page';
+  target_page_id?: string;
+  title?: string;
+  note?: string;
+}) => v1Send<KnowledgePageVersion>('POST', '/knowledge-pages:from-answer', body);

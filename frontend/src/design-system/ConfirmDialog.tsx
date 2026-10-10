@@ -1,4 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { cn } from '../lib/utils';
 import { Button } from './Button';
 
 /*
@@ -17,6 +18,7 @@ export function ConfirmDialog({
   error,
   onConfirm,
   onCancel,
+  size = 'sm',
 }: {
   open: boolean;
   title: string;
@@ -28,6 +30,8 @@ export function ConfirmDialog({
   error?: string;
   onConfirm: () => void;
   onCancel: () => void;
+  /** sm = 440px of the spec; md = 560px for a dialog that holds a short form. */
+  size?: 'sm' | 'md';
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -76,7 +80,10 @@ export function ConfirmDialog({
         aria-labelledby="confirm-dialog-title"
         onKeyDown={onKeyDown}
         onMouseDown={(event) => event.stopPropagation()}
-        className="flex w-[440px] max-w-[calc(100vw-32px)] flex-col gap-da-md rounded-xl bg-card p-da-xl shadow-lg"
+        className={cn(
+          'flex max-w-[calc(100vw-32px)] flex-col gap-da-md rounded-xl bg-card p-da-xl shadow-lg',
+          size === 'md' ? 'w-[560px]' : 'w-[440px]',
+        )}
       >
         <h2 id="confirm-dialog-title" className="text-foreground da-heading-2">
           {title}
