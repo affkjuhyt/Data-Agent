@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import type { AgentRun, DecideProposal, HitlRequest, Proposal, ResolveHitl } from '../lib/v1/types';
+import type { PlanEdit } from '../lib/v1/runPlan';
 import {
   agentsFixture,
   dataSpacesFixture,
@@ -164,6 +165,50 @@ export function createHandlers() {
       if (!run) return problem(404, 'not_found', 'Không tìm thấy lượt chạy.');
       const technical = new URL(request.url).searchParams.get('view') === 'technical';
       return HttpResponse.json(technical ? run : { ...run, steps: undefined });
+    }),
+    // "P13 · Can thiệp kế hoạch": a stopped run takes a new plan version and runs on from it.
+    http.put('*/v1/runs/:id/plan', async ({ params, request }) => {
+      const run = runs.find((r) => r.id === params.id);
+      if (!run) return problem(404, 'not_found', 'Không tìm thấy lượt chạy.');
+      if (!['paused', 'waiting_human'].includes(run.status))
+        return problem(409, 'invalid_state', 'Lượt chạy chưa dừng ở ranh giới bước.');
+      const edit = (await request.json()) as PlanEdit;
+      const done = (run.plan ?? []).filter((s) => s.state === 'done');
+      const ahead = edit.steps.filter((s) => !s.removed && !done.some((d) => d.id === s.id));
+      const version = (run.plan_version ?? 1) + 1;
+      const updated: AgentRun = {
+        ...run,
+        status: 'running',
+        plan_version: version,
+        current_step: done.length + 1,
+        total_steps: done.length + ahead.length,
+        plan: [
+          ...done,
+          ...ahead.map((s, i) => ({
+            id: s.id ?? `ps-new-${i}`,
+            title: s.title,
+            agent_name: s.agent_name,
+            state: i === 0 ? ('running' as const) : ('waiting' as const),
+          })),
+        ],
+      };
+      runs = runs.map((r) => (r.id === run.id ? updated : r));
+      return HttpResponse.json({ id: `plan-${run.id}-v${version}`, version });
+    }),
+    http.post('*/v1/runs/:id/:action', async ({ params, request }) => {
+      if (params.action !== 'plan:estimate')
+        return problem(404, 'not_found', 'Không có thao tác này.');
+      const edit = (await request.json()) as PlanEdit;
+      const added = edit.steps.filter((s) => !s.id && !s.removed).length;
+      const removed = edit.steps.filter((s) => s.removed).length;
+      const seconds = Math.max(0, 50 + added * 30 - removed * 20);
+      const parts = [
+        `Ước tính thêm ${Math.floor(seconds / 60)} phút ${seconds % 60} giây`,
+        `${(added * 8000 + 4000).toLocaleString('vi-VN')} đ`,
+      ];
+      if (edit.steps.some((s) => s.removed && s.agent_name === 'Agent Báo cáo'))
+        parts.push('bản tin tuần sẽ không nhận kết quả này');
+      return HttpResponse.json({ text: parts.join(' · ') });
     }),
     http.post('*/v1/runs/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');

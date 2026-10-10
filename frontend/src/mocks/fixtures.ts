@@ -307,7 +307,7 @@ export function runsFixture(): AgentRun[] {
       hitl: 1,
       cost: 41000,
       now: 'Đang chờ bạn chọn định nghĩa “nợ xấu” để viết kết luận',
-      step: [2, 5],
+      step: [3, 6],
     }),
     run({
       id: 'run-415',
@@ -506,6 +506,40 @@ export function runsFixture(): AgentRun[] {
       ],
       fallback_source: 'DWH bán lẻ (bản sao 01:00)',
     },
+  };
+  // The plan "P13 · Can thiệp kế hoạch" (2070:3221) edits: stopped at step 3, waiting on a person.
+  const npl = runs.findIndex((r) => r.id === 'run-418');
+  runs[npl] = {
+    ...runs[npl],
+    plan_version: 1,
+    plan: [
+      {
+        id: 'ps-1',
+        title: 'Phát hiện vượt ngưỡng',
+        agent_name: 'Agent Giám sát rủi ro',
+        state: 'done',
+      },
+      {
+        id: 'ps-2',
+        title: 'Kế hoạch, truy vấn tổng quan',
+        agent_name: 'Agent Phân tích',
+        state: 'done',
+      },
+      {
+        id: 'ps-3',
+        title: 'Phân rã vùng × sản phẩm',
+        agent_name: 'Agent Phân tích',
+        state: 'pending_approval',
+      },
+      {
+        id: 'ps-4',
+        title: 'Kết luận + bằng chứng',
+        agent_name: 'Agent Phân tích',
+        state: 'waiting',
+      },
+      { id: 'ps-5', title: 'Kiểm tra số', agent_name: 'Agent Đối soát', state: 'waiting' },
+      { id: 'ps-6', title: 'Đưa vào bản tin tuần', agent_name: 'Agent Báo cáo', state: 'waiting' },
+    ],
   };
   return runs;
 }

@@ -149,6 +149,9 @@ export interface RunPlanStep {
   detail?: string;
   /** "0:31" */
   duration_text?: string;
+  /** PROPOSAL, for "P13 · Can thiệp kế hoạch" (2070:3221): the step's id in Plan IR and who does it. */
+  id?: string;
+  agent_name?: string;
 }
 
 /** agent.agent_step, for "Xem kỹ thuật" (GET /v1/runs/{id}?view=technical). */
@@ -210,6 +213,8 @@ export interface AgentRun {
   hitl_count: number;
   /** PROPOSAL: the plan beside the story, on GET /v1/runs/{id}. */
   plan?: RunPlanStep[];
+  /** PROPOSAL: qa.plan.version of `plan`; editing it saves version + 1. */
+  plan_version?: number;
   /**
    * PROPOSAL, for "v3.1 · Trạng thái · Lượt chạy lỗi" (2076:5030): a failed run's error in words
    * and as the system gave it, what the agent did to stay safe, and the fallback source it can

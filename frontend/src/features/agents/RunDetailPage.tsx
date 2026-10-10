@@ -15,6 +15,7 @@ import { controlRun, getRun } from '../../lib/v1/api';
 import type { AgentRun } from '../../lib/v1/types';
 import { useV1 } from '../../lib/v1/useV1';
 import { FailedRun } from './FailedRun';
+import { PlanEditDrawer } from './PlanEditDrawer';
 import { SpanDetail, TraceWaterfall, defaultSpan } from './RunTrace';
 import { PLAN_STEP, runStatus } from './runStatus';
 
@@ -25,8 +26,9 @@ import { PLAN_STEP, runStatus } from './runStatus';
  * "Xem kỹ thuật" ("P13 · Lượt chạy · Kỹ thuật", 2310:20156) shows the steps (agent_step) as a
  * waterfall instead, with the selected step in place of the plan. A failed run gets its own
  * layout (FailedRun) that leads with the error and the way out. A live run refreshes every 5 s until the
- * event stream (GET /v1/runs/{id}/events) reaches the browser. Editing the plan needs the run
- * paused and the plan editor, which is a later screen.
+ * event stream (GET /v1/runs/{id}/events) reaches the browser. "Sửa kế hoạch" opens the plan
+ * editor (PlanEditDrawer) once the run has stopped at a step boundary — paused, or waiting on a
+ * person.
  */
 type View = 'simple' | 'technical';
 const LIVE: AgentRun['status'][] = ['queued', 'planning', 'running', 'waiting_human'];
@@ -73,6 +75,9 @@ function RunBody({
 }) {
   const toast = useToast();
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [editingPlan, setEditingPlan] = useState(false);
+  const stopped = run.status === 'paused' || run.status === 'waiting_human';
+  const canEditPlan = stopped && (run.plan ?? []).some((s) => s.state !== 'done');
   const [busy, setBusy] = useState<'pause' | 'resume' | 'cancel' | null>(null);
   const [picked, setPicked] = useState<number>();
   const steps = run.steps ?? [];
@@ -148,17 +153,23 @@ function RunBody({
                   Tạm dừng
                 </Button>
               )}
-              <Tooltip
-                content={
-                  run.status === 'paused'
-                    ? 'Trình sửa kế hoạch đang được làm.'
-                    : 'Tạm dừng lượt chạy trước khi sửa kế hoạch.'
-                }
-              >
-                <Button kind="primary" disabled>
+              {canEditPlan ? (
+                <Button kind="primary" onClick={() => setEditingPlan(true)}>
                   Sửa kế hoạch
                 </Button>
-              </Tooltip>
+              ) : (
+                <Tooltip
+                  content={
+                    stopped
+                      ? 'Kế hoạch không còn bước nào chưa làm.'
+                      : 'Tạm dừng lượt chạy trước khi sửa kế hoạch.'
+                  }
+                >
+                  <Button kind="primary" disabled>
+                    Sửa kế hoạch
+                  </Button>
+                </Tooltip>
+              )}
             </>
           )
         }
@@ -192,6 +203,20 @@ function RunBody({
           {view === 'technical' ? span && <SpanDetail step={span} /> : <PlanPanel run={run} />}
         </aside>
       </div>
+      {editingPlan && (
+        <PlanEditDrawer
+          run={run}
+          onClose={() => setEditingPlan(false)}
+          onApplied={(version) => {
+            setEditingPlan(false);
+            toast({
+              tone: 'success',
+              message: `Đã lưu kế hoạch phiên bản ${version}; ${run.agent_name} chạy tiếp`,
+            });
+            onChanged();
+          }}
+        />
+      )}
       <ConfirmDialog
         open={confirmCancel}
         title={`Huỷ lượt chạy ${run.code}?`}

@@ -1,5 +1,6 @@
 /**
- * Lượt chạy against the v1 mock: filtering the list, and the story and controls of one run.
+ * Lượt chạy against the v1 mock: filtering the list, the story and controls of one run, and
+ * editing the plan of a stopped run.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
@@ -112,6 +113,64 @@ describe('RunDetailPage', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Huỷ lượt chạy' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Chạy tiếp' })).toBeNull());
     expect(screen.getByText('Đã huỷ')).toBeInTheDocument();
+  });
+});
+
+describe('PlanEditDrawer', () => {
+  it('edits, drops and adds steps of a stopped run, then applies the next plan version', async () => {
+    routeId = 'run-418';
+    wrap(<RunDetailPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Sửa kế hoạch' }));
+    const drawer = screen.getByRole('dialog', { name: 'Can thiệp kế hoạch · lượt #418' });
+    expect(
+      within(drawer).getByText(/Agent đang dừng an toàn ở bước 3.*kết quả bước 1–2 được giữ/),
+    ).toBeInTheDocument();
+    expect(within(drawer).getAllByText('Giữ kết quả')).toHaveLength(2);
+    expect(within(drawer).getByRole('button', { name: 'Áp dụng và chạy tiếp' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+
+    const step3 = within(drawer).getByRole('listitem', { name: 'Bước Phân rã vùng × sản phẩm' });
+    fireEvent.click(within(step3).getByRole('button', { name: /Thao tác với bước/ }));
+    fireEvent.click(within(step3).getByRole('menuitem', { name: 'Sửa bước' }));
+    fireEvent.change(within(step3).getByLabelText('Tên bước'), {
+      target: { value: 'Phân rã vùng × sản phẩm · dùng NPL_RATIO v4' },
+    });
+    fireEvent.click(within(step3).getByRole('button', { name: 'Xong' }));
+    expect(within(step3).getByText('Đã sửa')).toBeInTheDocument();
+
+    const step6 = within(drawer).getByRole('listitem', { name: 'Bước Đưa vào bản tin tuần' });
+    fireEvent.click(within(step6).getByRole('button', { name: /Thao tác với bước/ }));
+    fireEvent.click(within(step6).getByRole('menuitem', { name: 'Bỏ bước' }));
+    expect(within(step6).getByText('Bỏ')).toBeInTheDocument();
+    expect(
+      await within(drawer).findByText(/bản tin tuần sẽ không nhận kết quả này/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Thêm bước' }));
+    fireEvent.change(within(drawer).getByLabelText('Tên bước'), {
+      target: { value: 'So sánh cùng kỳ 2025 cho DH Bắc Bộ' },
+    });
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Xong' }));
+    expect(within(drawer).getByText('Thêm')).toBeInTheDocument();
+
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Áp dụng và chạy tiếp' }));
+    expect(
+      await screen.findByText('Đã lưu kế hoạch phiên bản 2; Agent Phân tích chạy tiếp'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(await screen.findByText('Kế hoạch · 6 bước')).toBeInTheDocument();
+    expect(screen.getByText('So sánh cùng kỳ 2025 cho DH Bắc Bộ')).toBeInTheDocument();
+  });
+
+  it('keeps the editor closed while the run is still working', async () => {
+    routeId = 'run-427';
+    wrap(<RunDetailPage />);
+    expect(await screen.findByRole('button', { name: 'Sửa kế hoạch' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 });
 
