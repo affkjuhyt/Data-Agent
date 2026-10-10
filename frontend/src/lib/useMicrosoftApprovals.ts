@@ -1,31 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
 import keycloak from './keycloak';
 
 const API = import.meta.env.VITE_API_URL ?? '';
-
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
-
-export interface MsApproval {
-  id: string;
-  keycloak_user_id: string;
-  email: string;
-  display_name: string;
-  status: ApprovalStatus;
-  requested_role: string | null;
-  requested_tenant_id: string | null;
-  reviewed_by: string | null;
-  reviewed_at: string | null;
-  created_at: string;
-}
-
-interface Result {
-  approvals: MsApproval[];
-  loading: boolean;
-  error: string | null;
-  refetch: () => void;
-  approve: (userId: string) => Promise<void>;
-  reject:  (userId: string) => Promise<void>;
-}
 
 async function authFetch(path: string, init?: RequestInit): Promise<Response> {
   await keycloak.updateToken(30).catch(() => {});
@@ -38,46 +13,6 @@ async function authFetch(path: string, init?: RequestInit): Promise<Response> {
     },
   });
 }
-
-export const useMicrosoftApprovals = (
-  isAdmin: boolean,
-  status: ApprovalStatus | 'all' = 'pending',
-): Result => {
-  const [approvals, setApprovals] = useState<MsApproval[]>([]);
-  const [loading, setLoading]     = useState(false);
-  const [error, setError]         = useState<string | null>(null);
-
-  const fetchApprovals = useCallback(async () => {
-    if (!isAdmin) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await authFetch(`/api/auth/approvals?status=${status}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setApprovals(await res.json());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to fetch approvals');
-    } finally {
-      setLoading(false);
-    }
-  }, [isAdmin, status]);
-
-  useEffect(() => { fetchApprovals(); }, [fetchApprovals]);
-
-  const approve = useCallback(async (userId: string) => {
-    const res = await authFetch(`/api/auth/approvals/${userId}/approve`, { method: 'POST' });
-    if (!res.ok) throw new Error(`Approve failed: HTTP ${res.status}`);
-    await fetchApprovals();
-  }, [fetchApprovals]);
-
-  const reject = useCallback(async (userId: string) => {
-    const res = await authFetch(`/api/auth/approvals/${userId}/reject`, { method: 'POST' });
-    if (!res.ok) throw new Error(`Reject failed: HTTP ${res.status}`);
-    await fetchApprovals();
-  }, [fetchApprovals]);
-
-  return { approvals, loading, error, refetch: fetchApprovals, approve, reject };
-};
 
 export async function fetchMyStatus(): Promise<{ status: string; since?: string }> {
   await keycloak.updateToken(30).catch(() => {});

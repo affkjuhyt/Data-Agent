@@ -65,7 +65,7 @@ commented-out code is not allowed to stay.
 | Python modules, packages, functions, vars | `snake_case` | `warehouse_secrets.py`, `run_input_refine` |
 | Python classes | `PascalCase` | `AnalyticalSlots` |
 | Private helpers | leading `_`, module-local; do **not** re-export them from `__init__.py` | `_parse_source` |
-| React components | `PascalCase.tsx`, one component per file | `AgentPlayground.tsx` |
+| React components | `PascalCase.tsx`, one component per file | `AgentTeamPage.tsx` |
 | Hooks | `useThing.ts` | `useAgentStream.ts` |
 | Other TS modules | `camelCase.ts` | `apiClient.ts`, `formatVN.ts` |
 | Kubernetes manifests, k8s objects, Kafka topics | `kebab-case` | `workflow-runtime.yaml`, `observation.published` |

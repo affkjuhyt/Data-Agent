@@ -2,8 +2,7 @@ import React from 'react';
 import { AppStateProvider, useAppState } from './AppStateContext';
 import { AppShell } from './components/shell/AppShell';
 import type { AreaId } from './components/shell/areas';
-import IngestionProgressOverlay from './components/shared/IngestionProgressOverlay';
-import { ForbiddenToast } from './components/shared/ForbiddenToast';
+import { useForbiddenToast } from './features/auth/useForbiddenToast';
 import { EmptyState } from './design-system/EmptyState';
 import { ToastProvider } from './design-system/Toast';
 import { SkeletonRows } from './design-system/SkeletonRow';
@@ -20,6 +19,12 @@ const RouteLoading = () => {
     </div>
   ) : null;
 };
+
+/* Needs the toast context, so it sits inside ToastProvider. */
+function ForbiddenToasts() {
+  useForbiddenToast();
+  return null;
+}
 
 function AppContent() {
   const { activeModule, subTab } = useAppState();
@@ -49,11 +54,8 @@ function AppContent() {
 
   return (
     <ToastProvider>
+      <ForbiddenToasts />
       <AppShell>{renderView()}</AppShell>
-      {/* Progress overlay - always available, visible when ingestions active */}
-      <IngestionProgressOverlay />
-      {/* 403 from apiClient → toast (listens to window 'app:forbidden') */}
-      <ForbiddenToast />
     </ToastProvider>
   );
 }

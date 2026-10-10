@@ -1,22 +1,11 @@
 /**
- * Pure helpers behind the ops screens and the tenant context.
+ * Pure helpers behind the tenant context.
  */
 import { describe, expect, it } from 'vitest';
-import { cleanParams, durationMs, pickTenant } from '../lib/platformApi';
+import { pickTenant } from '../lib/tenants';
 import { initialEnvironment } from '../AppStateContext';
 
-describe('platformApi helpers', () => {
-  it('drops empty filters from query params', () => {
-    expect(cleanParams({ q: '', status: undefined, agent_id: null, limit: 20, offset: 0 })).toEqual({ limit: 20, offset: 0 });
-  });
-
-  it('computes conversation duration only when both ends are known', () => {
-    expect(durationMs('2026-08-30T10:00:00Z', '2026-08-30T10:03:42Z')).toBe(222_000);
-    expect(durationMs('2026-08-30T10:00:00Z', null)).toBeNull();
-    expect(durationMs('2026-08-30T10:00:00Z', '2026-08-30T09:00:00Z')).toBeNull();
-    expect(durationMs('not a date', '2026-08-30T09:00:00Z')).toBeNull();
-  });
-
+describe('pickTenant', () => {
   it('activates the persisted tenant when still available, else the first', () => {
     const tenants = [
       { id: 't1', name: 'Alpha', slug: 'alpha' },

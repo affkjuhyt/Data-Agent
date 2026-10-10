@@ -1,8 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import keycloak from './keycloak';
 import { fetchMyStatus, submitProfile } from './useMicrosoftApprovals';
-import { PendingApproval } from '../components/PendingApproval';
-import { ProfileSetup } from '../components/ProfileSetup';
+import { AuthScreen } from '../features/auth/AuthScreen';
+import { PendingApproval } from '../features/auth/PendingApproval';
+import { ProfileSetup } from '../features/auth/ProfileSetup';
+import { Button } from '../design-system/Button';
+import { Notice } from '../design-system/Notice';
 
 interface AuthUser {
   id:    string;
@@ -88,7 +91,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       .catch(err => {
         const msg = err instanceof Error ? err.message : JSON.stringify(err);
         console.error('Keycloak init failed:', err);
-        setError(msg || 'Cannot reach authentication server.');
+        setError(msg || 'Không kết nối được máy chủ xác thực.');
       })
       .finally(() => setLoading(false));
 
@@ -100,29 +103,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   if (loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#FAF6ED]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-[#B88719] border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm text-[#5A5A5A]">Connecting to Keycloak…</span>
-        </div>
-      </div>
+      <AuthScreen icon="lock" title="Đang đăng nhập…">
+        <p className="text-center text-muted-foreground da-body">Đang kết nối tới máy chủ xác thực.</p>
+      </AuthScreen>
     );
   }
 
   if (error) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#FAF6ED]">
-        <div className="flex flex-col items-center gap-4 max-w-sm text-center p-6">
-          <div className="text-2xl">⚠️</div>
-          <p className="text-sm text-[#5A5A5A] font-mono break-all">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-[#B88719] text-white rounded-lg text-sm"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
+      <AuthScreen icon="alert" title="Không đăng nhập được">
+        <Notice tone="error">{error}</Notice>
+        <Button icon="refresh" onClick={() => window.location.reload()}>
+          Thử lại
+        </Button>
+      </AuthScreen>
     );
   }
 
@@ -155,21 +149,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   if (gateStatus === 'rejected') {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#FAF6ED]">
-        <div className="flex flex-col items-center gap-4 max-w-sm text-center p-6">
-          <div className="text-2xl">🚫</div>
-          <p className="text-sm font-semibold text-[#111]">Access denied</p>
-          <p className="text-sm text-[#5A5A5A]">
-            Your Microsoft account access request was rejected by an administrator.
-          </p>
-          <button
-            onClick={() => keycloak.logout({ redirectUri: window.location.origin })}
-            className="px-4 py-2 bg-[#111111] text-white rounded-lg text-sm"
-          >
-            Sign out
-          </button>
-        </div>
-      </div>
+      <AuthScreen icon="lock" title="Không được cấp quyền">
+        <p className="text-center text-muted-foreground da-body">
+          Quản trị đã từ chối yêu cầu truy cập của tài khoản Microsoft này.
+        </p>
+        <Button kind="secondary" onClick={() => keycloak.logout({ redirectUri: window.location.origin })}>
+          Đăng xuất
+        </Button>
+      </AuthScreen>
     );
   }
 

@@ -24,34 +24,9 @@ export default defineConfig(({ mode }) => {
         },
       },
     ],
-    define: {
-      "process.env.GEMINI_API_KEY": JSON.stringify(env.GEMINI_API_KEY),
-    },
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "."),
-      },
-    },
-    optimizeDeps: {
-      // Without this, Vite only discovers `motion`/`framer-motion` the first
-      // time a component using them renders, after the initial page load
-      // has already pre-bundled react/react-dom. That late discovery
-      // triggers a second, separate optimize pass that re-bundles react
-      // under a new dep hash, so the page ends up with two different react
-      // module instances and hooks break with "Cannot read properties of
-      // null (reading 'useState'/'useContext')". Listing them here forces
-      // both into the same cold-start scan as react itself.
-      include: ["motion", "motion/react", "framer-motion"],
-    },
-    build: {
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-            if (!id.includes("node_modules")) return undefined;
-            if (id.includes("lucide-react")) return "vendor-icons";
-            if (id.includes("xlsx")) return "vendor-xlsx";
-          },
-        },
       },
     },
     preview: {

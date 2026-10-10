@@ -1,22 +1,16 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { Role, Industry, TenantContext, User, Environment, KnowledgeDocument, PagedResponse } from './types';
+import type { Role, TenantContext, User, Environment } from './types';
 import { apiGet } from './lib/apiClient';
 import { useAuth } from './lib/AuthProvider';
-import { pickTenant, type Tenant } from './lib/platformApi';
+import { pickTenant, type Tenant } from './lib/tenants';
 
 interface AppStateContextType {
-  role: Role;
-  setRole: (role: Role) => void;
-  industry: Industry;
-  setIndustry: (industry: Industry) => void;
   tenant: TenantContext;
   setTenant: (tenant: Partial<TenantContext>) => void;
   /** Tenants the signed-in user belongs to (GET /api/auth/me/tenants). */
   tenants: Tenant[];
   tenantsLoading: boolean;
   user: User;
-  isExpertMode: boolean;
-  setIsExpertMode: (val: boolean) => void;
 
   /* Navigation routing — single source of truth */
   activeModule: string;
@@ -29,17 +23,6 @@ interface AppStateContextType {
   navigate: (moduleId: string, subId?: string, id?: string) => void;
   /** The record a detail page shows: the third URL segment, /needs-you/proposal/<id>. */
   routeId: string | undefined;
-
-  /* Documents — loaded on mount, mutated in-place */
-  documents: KnowledgeDocument[];
-  docsLoading: boolean;
-  addDocument: (doc: KnowledgeDocument) => void;
-  updateDocument: (id: string, patch: Partial<KnowledgeDocument>) => void;
-  deleteDocument: (id: string) => void;
-
-  /* Wizard trigger — sidebar action buttons */
-  pendingAction: string | null;
-  setPendingAction: (action: string | null) => void;
 }
 
 const AppStateContext = createContext<AppStateContextType | undefined>(undefined);
@@ -169,9 +152,6 @@ export const initialEnvironment = (stored: string | null): Environment =>
   ENV_VALUES.includes(stored as Environment) ? (stored as Environment) : 'PROD';
 
 export const AppStateProvider = ({ children }: { children: ReactNode }) => {
-  const [role, setRole] = useState<Role>('AI_ENGINEER');
-  const [industry, setIndustry] = useState<Industry>('GENERAL');
-  const [isExpertMode, setIsExpertMode] = useState(false);
   const [tenant, setTenantState] = useState<TenantContext>(() => ({
     tenantId: null,
     tenantName: null,
@@ -290,54 +270,14 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     setTenantState(prev => ({ ...prev, ...newTenant }));
   }, []);
 
-  /* Documents */
-  const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
-  const [docsLoading, setDocsLoading] = useState(true);
-
-  useEffect(() => {
-    apiGet<PagedResponse<KnowledgeDocument> | KnowledgeDocument[]>('/api/data/documents')
-      .then(data => {
-        const items = Array.isArray(data) ? data : (data as PagedResponse<KnowledgeDocument>).items ?? [];
-        setDocuments(items);
-      })
-      .catch(() => setDocuments([]))
-      .finally(() => setDocsLoading(false));
-  }, []);
-
-  const addDocument = useCallback((doc: KnowledgeDocument) => {
-    setDocuments(prev => [doc, ...prev]);
-  }, []);
-
-  const updateDocument = useCallback((data_id: string, patch: Partial<KnowledgeDocument>) => {
-    setDocuments(prev => prev.map(d => {
-      if (d.data_id !== data_id) return d;
-      const updated = { ...d, ...patch };
-      if (patch.metadata) updated.metadata = { ...d.metadata, ...patch.metadata };
-      return updated;
-    }));
-  }, []);
-
-  const deleteDocument = useCallback((data_id: string) => {
-    setDocuments(prev => prev.filter(d => d.data_id !== data_id));
-  }, []);
-
-  /* Wizard trigger */
-  const [pendingAction, setPendingAction] = useState<string | null>(null);
-
   return (
     <AppStateContext.Provider
       value={{
-        role,
-        setRole,
-        industry,
-        setIndustry,
         tenant,
         setTenant,
         tenants,
         tenantsLoading,
         user,
-        isExpertMode,
-        setIsExpertMode,
         activeModule,
         setActiveModule,
         subTab,
@@ -345,13 +285,6 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
         getSubTab,
         navigate,
         routeId,
-        documents,
-        docsLoading,
-        addDocument,
-        updateDocument,
-        deleteDocument,
-        pendingAction,
-        setPendingAction,
       }}
     >
       {children}
