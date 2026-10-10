@@ -51,7 +51,7 @@ export default function HowItWorksPage() {
         metrics.data && terms.data
           ? `${metrics.data.items.length.toLocaleString('vi-VN')} chỉ số · ${terms.data.items.length.toLocaleString('vi-VN')} thuật ngữ`
           : undefined,
-      open: () => navigate('data', 'METRIC'),
+      open: () => navigate('data', 'METRIC_CATALOG'),
     },
     {
       icon: 'search',
