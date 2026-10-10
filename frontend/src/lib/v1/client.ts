@@ -47,17 +47,19 @@ export function pathId(id: string): string {
 
 /*
  * The second line of defence, for a module that forgets pathId(): every path is checked before
- * the request is built. It must be "/" followed by plain segments — no "." or ".." segment, no
- * encoded dot, slash or backslash, no backslash, query or fragment (queries go in `query`).
+ * the request is built. A blacklist of "..", %2e and backslash was not enough — the URL parser
+ * strips tabs and newlines (".\t." becomes ".."), and a server that decodes twice turns %252e
+ * into a dot — so a path is accepted only when every segment is a plain name, optionally with a
+ * ":verb" action (A1), the same alphabet as pathId(). Queries go in `query`.
  */
-const UNSAFE_PATH = /%2e|%2f|%5c|\\|[?#]/i;
+const SAFE_SEGMENT = /^[A-Za-z0-9_-]{1,128}(:[a-z][a-z-]{0,63})?$/;
 
 function safePath(path: string): string {
-  const segments = path.split('/').slice(1);
+  const segments = path.split('/');
   if (
-    !path.startsWith('/') ||
-    UNSAFE_PATH.test(path) ||
-    segments.some((segment) => segment === '' || segment === '.' || segment === '..')
+    segments[0] !== '' ||
+    segments.length < 2 ||
+    !segments.slice(1).every((s) => SAFE_SEGMENT.test(s))
   ) {
     throw new V1Error(400, 'invalid_request', 'Đường dẫn API không hợp lệ.');
   }

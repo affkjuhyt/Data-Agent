@@ -100,6 +100,14 @@ describe('paths built without pathId', () => {
       '/a?x=1',
       '/a//b',
       'proposals',
+      // The URL parser strips tab and newline, so these would become "..".
+      '/proposals/.\t.',
+      '/proposals/.\n./admin',
+      '/proposals/%252e%252e',
+      '/proposals/．．',
+      '/a b',
+      '/a:',
+      '/',
     ]) {
       const error = await v1Get(path).catch((e) => e);
       expect(error, path).toMatchObject({ status: 400, code: 'invalid_request' });
@@ -113,5 +121,6 @@ describe('paths built without pathId', () => {
     await expect(v1Send('POST', '/runs/run-427:pause')).resolves.toMatchObject({
       status: 'paused',
     });
+    await expect(v1Get('/admin/users')).resolves.toHaveProperty('items');
   });
 });
