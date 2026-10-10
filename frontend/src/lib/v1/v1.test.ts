@@ -18,9 +18,10 @@ import {
   listTerms,
   listUsers,
   listWorkspaces,
+  getProposal,
   resolveHitl,
 } from './api';
-import { V1Error } from './client';
+import { V1Error, pathId } from './client';
 
 const server = setupServer(...createHandlers());
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -68,5 +69,22 @@ describe('v1 client', () => {
     const again = await resolveHitl(first.id, { decision: 'answer' }).catch((e) => e);
     expect(again).toBeInstanceOf(V1Error);
     expect(again).toMatchObject({ status: 409, code: 'invalid_state' });
+  });
+});
+
+describe('ids from the URL', () => {
+  it('refuses ids that would leave the resource path, without calling the API', async () => {
+    for (const id of ['..', '../../admin/users', '%2e%2e', 'a/b', 'x?y=1', '']) {
+      const error = await getProposal(id).catch((e) => e);
+      expect(error, id).toBeInstanceOf(V1Error);
+      expect(error).toMatchObject({ status: 400, code: 'invalid_request' });
+    }
+  });
+
+  it('accepts UUIDs and codes', async () => {
+    await expect(getProposal('pr-0318')).resolves.toMatchObject({ code: 'PR-0318' });
+    expect(pathId('0192f1a2-7c3d-7e4f-8a9b-0c1d2e3f4a5b')).toBe(
+      '0192f1a2-7c3d-7e4f-8a9b-0c1d2e3f4a5b',
+    );
   });
 });

@@ -31,6 +31,20 @@ export class V1Error extends Error {
   }
 }
 
+/*
+ * Ids reach the API paths from the URL (/needs-you/proposal/<id>), so they are untrusted: an id
+ * like "../../admin/users" (or "%2e%2e", which URL parsing also treats as "..") would send the
+ * bearer token to another endpoint. Ids are UUIDv7 or business codes (A1.1), so anything other
+ * than letters, digits, "-" and "_" is refused before a request is made.
+ */
+const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+export function pathId(id: string): string {
+  if (!SAFE_ID.test(id))
+    throw new V1Error(400, 'invalid_request', 'Đường dẫn chứa mã không hợp lệ.');
+  return id;
+}
+
 let dataSpace: string | null = null;
 
 /** The Data Space the user works in (top bar switcher); null = the whole organisation. */
