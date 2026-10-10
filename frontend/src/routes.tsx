@@ -47,6 +47,9 @@ const ExamplesPage = React.lazy(() => import('./features/semantics/ExamplesPage'
 const SourceAuthorityPage = React.lazy(() => import('./features/semantics/SourceAuthorityPage'));
 const KnowledgePageView = React.lazy(() => import('./features/knowledge/KnowledgePageView'));
 const KnowledgeReviewPage = React.lazy(() => import('./features/knowledge/KnowledgeReviewPage'));
+const CrawlSourcesPage = React.lazy(() => import('./features/crawl/CrawlSourcesPage'));
+const CrawlRegisterPage = React.lazy(() => import('./features/crawl/CrawlRegisterPage'));
+const CrawlSchemaPage = React.lazy(() => import('./features/crawl/CrawlSchemaPage'));
 const DecisionRulePage = React.lazy(() => import('./features/rules/DecisionRulePage'));
 const ProfilePage = React.lazy(() => import('./features/admin-platform/ProfilePage'));
 const NotificationsPage = React.lazy(() => import('./features/admin-platform/NotificationsPage'));
@@ -108,6 +111,10 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     UPLOAD:          { render: () => <UploadPage /> },
     COLLECTIONS:     { render: () => <CollectionsPage /> },
     COLLECTION:      { render: () => <CollectionPage /> },
+    // Thu thập ngoài (P14): the list, registering a source, one source's schema (/data/crawl_source/<id>).
+    CRAWL:           { render: () => <CrawlSourcesPage /> },
+    CRAWL_NEW:       { render: () => <CrawlRegisterPage /> },
+    CRAWL_SOURCE:    { render: () => <CrawlSchemaPage /> },
     // Kỳ chốt: /data/period/<id>, /data/retro/<id>; without an id each opens its first item.
     PERIOD:          { render: () => <PeriodClosePage /> },
     RETRO:           { render: () => <RetroChangePage /> },

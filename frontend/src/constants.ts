@@ -40,6 +40,7 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
         { id: 'SOURCES', label: 'Nguồn' },
         { id: 'JOBS', label: 'Job nạp' },
         { id: 'UPLOAD', label: 'Tải tệp' },
+        { id: 'CRAWL', label: 'Thu thập ngoài' },
       ],
     },
     { label: 'Tài liệu', items: [{ id: 'COLLECTIONS', label: 'Bộ sưu tập' }] },
@@ -118,7 +119,14 @@ export const firstPageOf = (area: AreaId): string | undefined =>
 const RAIL_PARENT: Partial<Record<AreaId, Record<string, string>>> = {
   agents: { RUN: 'RUNS', AGENT: 'TEAM', BUILDER: 'TEAM' },
   analysis: { REPORT: 'SESSIONS' },
-  data: { SOURCE: 'SOURCES', TABLE: 'SOURCES', CONNECT: 'SOURCES', COLLECTION: 'COLLECTIONS' },
+  data: {
+    SOURCE: 'SOURCES',
+    TABLE: 'SOURCES',
+    CONNECT: 'SOURCES',
+    COLLECTION: 'COLLECTIONS',
+    CRAWL_NEW: 'CRAWL',
+    CRAWL_SOURCE: 'CRAWL',
+  },
   admin: { DATA_SPACE_NEW: 'DATA_SPACES', PERMISSION_COMPARE: 'DATA_SPACES' },
   account: { CHANNEL_RULES: 'NOTIFICATIONS' },
 };

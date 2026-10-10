@@ -22,6 +22,7 @@ import { createAgentOpsHandlers } from './agentOps';
 import { createAnswerReportHandlers } from './answerReports';
 import { createDashboardHandlers } from './dashboards';
 import { createAuthorityHandlers } from './authorities';
+import { createCrawlHandlers } from './crawl';
 import { createExampleHandlers } from './examples';
 import { createKnowledgeHandlers } from './knowledge';
 import { createMetricHandlers } from './metrics';
@@ -75,6 +76,7 @@ export function createHandlers() {
     ...createExampleHandlers(),
     ...createAuthorityHandlers(),
     ...createKnowledgeHandlers(),
+    ...createCrawlHandlers(),
 
     http.get('*/v1/inbox', ({ request }) => {
       const status = new URL(request.url).searchParams.get('status') ?? 'open';
