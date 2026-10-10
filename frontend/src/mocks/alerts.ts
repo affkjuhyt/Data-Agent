@@ -58,7 +58,7 @@ function alert(
   };
 }
 
-export function alertsFixture(): Alert[] {
+function alertsFixture(): Alert[] {
   return [
     alert({
       id: 'alert-npl-north',

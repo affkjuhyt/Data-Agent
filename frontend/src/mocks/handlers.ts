@@ -38,6 +38,7 @@ import { createMetricHandlers } from './metrics';
 import { createMonitorHandlers } from './monitors';
 import { createNotificationHandlers } from './notifications';
 import { createPeriodHandlers } from './periods';
+import { createReportHandlers } from './reports';
 import { createRuleHandlers } from './rules';
 import { createSessionHandlers } from './sessions';
 import { createSourcesHandlers } from './sources';
@@ -99,6 +100,7 @@ export function createHandlers() {
     ...createCrawlHandlers(),
     ...createMonitorHandlers(),
     ...createAlertHandlers(),
+    ...createReportHandlers(),
 
     http.get('*/v1/inbox', ({ request }) => {
       const status = new URL(request.url).searchParams.get('status') ?? 'open';

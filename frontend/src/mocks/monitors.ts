@@ -28,7 +28,7 @@ const monitor = (m: Partial<Monitor> & Pick<Monitor, 'id' | 'name' | 'metric_tex
   ...m,
 });
 
-export function monitorsFixture(): Monitor[] {
+function monitorsFixture(): Monitor[] {
   return [
     monitor({
       id: 'mon-npl-north',
@@ -166,7 +166,7 @@ export function monitorsFixture(): Monitor[] {
   ];
 }
 
-export function monitorOptionsFixture(): MonitorOptions {
+function monitorOptionsFixture(): MonitorOptions {
   return {
     metrics: [
       {

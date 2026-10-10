@@ -77,6 +77,8 @@ const ForecastModelPage = React.lazy(() => import('./features/forecast/ForecastM
 const WatchListPage = React.lazy(() => import('./features/monitoring/WatchListPage'));
 const WatchCreatePage = React.lazy(() => import('./features/monitoring/WatchCreatePage'));
 const AlertPage = React.lazy(() => import('./features/monitoring/AlertPage'));
+const ReportSetupPage = React.lazy(() => import('./features/monitoring/ReportSetupPage'));
+const DigestPage = React.lazy(() => import('./features/monitoring/DigestPage'));
 const DocumentAnswerPage = React.lazy(() => import('./features/documents/DocumentAnswerPage'));
 const DocumentsPage = React.lazy(() => import('./features/documents/DocumentsPage'));
 const DocumentViewerPage = React.lazy(() => import('./features/documents/DocumentViewerPage'));
@@ -165,6 +167,8 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     WATCH_NEW:       { render: () => <WatchCreatePage /> },
     // /analysis/alerts opens the newest open alert, /analysis/alerts/<id> one alert.
     ALERTS:          { render: () => <AlertPage /> },
+    REPORTS:         { render: () => <ReportSetupPage /> },
+    DIGEST:          { render: () => <DigestPage /> },
   },
 
   data: {

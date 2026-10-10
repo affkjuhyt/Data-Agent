@@ -48,6 +48,8 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
       items: [
         { id: 'WATCH', label: 'Theo dõi' },
         { id: 'ALERTS', label: 'Cảnh báo' },
+        { id: 'REPORTS', label: 'Báo cáo định kỳ' },
+        { id: 'DIGEST', label: 'Bản tin' },
       ],
     },
   ],
