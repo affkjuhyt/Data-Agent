@@ -1,7 +1,9 @@
 import { http, HttpResponse } from 'msw';
 import type {
   AcquireSummary,
+  CrawlRun,
   CrawlSchemaVersion,
+  ExtractedRecord,
   SchemaDrift,
   CrawlSource,
   SourceSuggestion,
@@ -36,6 +38,7 @@ function sourcesFixture(): CrawlSource[] {
     pending_review,
     review_gate,
     drift_id: health === 'drift_quarantined' ? 'drift-fees-0710' : null,
+    review_run_id: id === 'cs-deposit' ? 'crun-deposit-1010' : null,
   });
   return [
     s(
@@ -373,6 +376,131 @@ function driftFixture(): SchemaDrift {
   };
 }
 
+// "P14 · Duyệt dữ liệu thu thập" (2390:14372): the deposit-rate run of 10/10 and its queue.
+function runFixture(): CrawlRun {
+  return {
+    id: 'crun-deposit-1010',
+    source_id: 'cs-deposit',
+    source_name: 'Lãi suất huy động',
+    label: 'lượt 10/10',
+    status: 'extracted',
+    record_count: 412,
+    review_count: 23,
+    blocking_count: 4,
+    sample_count: 5,
+    sample_pct: 2,
+    accuracy: {
+      sample_reviewed: 3,
+      sample_accuracy_pct: 100,
+      recent_runs_ok: true,
+      gate: 'exceptions',
+      gate_note: 'đủ điều kiện bật Tự động',
+    },
+  };
+}
+
+function recordsFixture(): ExtractedRecord[] {
+  const raw = (
+    rows: string[][],
+    highlighted: number | null,
+    footnote: string | null,
+    caption: string,
+  ) => ({
+    caption,
+    columns: ['Kỳ hạn', 'Lãi suất (%/năm)'],
+    rows,
+    highlighted_row: highlighted,
+    footnote,
+  });
+  const r = (
+    id: string,
+    title: string,
+    value_text: string,
+    reasons: ExtractedRecord['reasons'],
+    reason_text: string,
+    blocking: boolean,
+    extra: Partial<ExtractedRecord> = {},
+  ): ExtractedRecord => ({
+    id,
+    title,
+    value_text,
+    reasons,
+    reason_text,
+    blocking,
+    status: 'pending',
+    raw: raw([['12 tháng', value_text.replace('%', '')]], 0, null, 'Bản gốc'),
+    values: [{ field: 'rate', value: value_text, confidence: 0.9 }],
+    evidence: null,
+    agent_note: null,
+    proposed_values: null,
+    ...extra,
+  });
+  return [
+    r(
+      'rec-k-12',
+      'Ngân hàng K · 12 tháng',
+      '6,85%',
+      ['cross_source_anomaly'],
+      'Bất thường chéo nguồn',
+      true,
+      {
+        raw: raw(
+          [
+            ['6 tháng', '4,70'],
+            ['12 tháng', '6,85 (*)'],
+            ['24 tháng', '5,20'],
+          ],
+          1,
+          '(*) Áp dụng cho khoản tiền gửi từ 500 tỷ đồng',
+          'Bản gốc · nganhangk.vn/lai-suat · 08:04',
+        ),
+        values: [
+          { field: 'rate', value: '6,85 %/năm', confidence: 0.96 },
+          { field: 'term_months', value: '12', confidence: 0.98 },
+          { field: 'channel', value: 'Tại quầy', confidence: 0.9 },
+        ],
+        evidence: 'Trung vị 29 ngân hàng khác cùng kỳ: 4,85% · lệch 4,1 MAD (ngưỡng 3,5)',
+        agent_note:
+          'Số đúng như trang nguồn nhưng có ghi chú chân bảng; có thể là lãi suất riêng cho tiền gửi lớn. Đề xuất: sửa kênh thành “Tiền gửi từ 500 tỷ”, không tính vào bình quân thị trường.',
+        proposed_values: { channel: 'Tiền gửi từ 500 tỷ' },
+      },
+    ),
+    r(
+      'rec-b-6',
+      'Ngân hàng B · 6 tháng',
+      '4,6?%',
+      ['low_confidence'],
+      'Độ tin thấp 0,71 · PDF',
+      true,
+    ),
+    r(
+      'rec-t-24',
+      'Ngân hàng T · 24 tháng',
+      '—',
+      ['missing_required'],
+      'Thiếu trường bắt buộc',
+      true,
+    ),
+    r(
+      'rec-q-1',
+      'Ngân hàng Q · 1 tháng',
+      '0,30%',
+      ['source_anomaly'],
+      'Bất thường theo nguồn',
+      true,
+    ),
+    r(
+      'rec-a-online',
+      'Ngân hàng A · online 12 tháng',
+      '5,05%',
+      ['new_value'],
+      'Giá trị mới: kênh “Ví điện tử”',
+      false,
+    ),
+    r('rec-g-3', 'Ngân hàng G · 3 tháng', '3,40%', ['random_sample'], 'Mẫu ngẫu nhiên', false),
+  ];
+}
+
 const problem = (status: number, code: string, detail: string) =>
   HttpResponse.json(
     { title: code, status, code, detail },
@@ -383,11 +511,85 @@ export function createCrawlHandlers() {
   const sources = sourcesFixture();
   const schemas = new Map<string, CrawlSchemaVersion>();
   let drift = driftFixture();
+  let run = runFixture();
+  let records = recordsFixture();
+  const pending = () => records.filter((x) => x.status === 'pending');
+  const recount = () => {
+    run = {
+      ...run,
+      review_count: pending().length,
+      blocking_count: pending().filter((x) => x.blocking).length,
+    };
+  };
+  // The header counts what the queue holds, so they stay true as records are decided.
+  recount();
   const schemaOf = (sourceId: string) => {
     if (!schemas.has(sourceId)) schemas.set(sourceId, draftSchema(sourceId));
     return schemas.get(sourceId) as CrawlSchemaVersion;
   };
   return [
+    http.get('*/v1/crawl-runs/:id/records', ({ params }) =>
+      params.id === run.id
+        ? HttpResponse.json({ items: pending(), next_page_token: '' })
+        : problem(404, 'not_found', 'Không tìm thấy lượt.'),
+    ),
+    http.get('*/v1/crawl-runs/:id', ({ params }) =>
+      params.id === run.id
+        ? HttpResponse.json(run)
+        : problem(404, 'not_found', 'Không tìm thấy lượt.'),
+    ),
+    http.post('*/v1/crawl-runs/:action', ({ params }) => {
+      const [id, verb] = String(params.action).split(':');
+      if (id !== run.id || verb !== 'publish')
+        return problem(404, 'not_found', 'Không tìm thấy lượt.');
+      if (run.blocking_count > 0)
+        return problem(
+          422,
+          'business_rule_violated',
+          `Còn ${run.blocking_count} mục chặn trong hàng duyệt (BR-153).`,
+        );
+      run = { ...run, status: 'published' };
+      return HttpResponse.json(run);
+    }),
+    http.post('*/v1/extracted-records\\:bulk-review', async ({ request }) => {
+      const body = (await request.json()) as {
+        review_reasons: string[];
+        decision: string;
+        reason: string;
+      };
+      if (run.status === 'published') return problem(409, 'invalid_state', 'Lượt đã phát hành.');
+      let updated = 0;
+      records = records.map((x) => {
+        if (x.status !== 'pending' || !x.reasons.some((rr) => body.review_reasons.includes(rr)))
+          return x;
+        updated += 1;
+        return { ...x, status: body.decision === 'reject' ? 'rejected' : 'confirmed' };
+      });
+      recount();
+      return HttpResponse.json({ updated });
+    }),
+    http.post('*/v1/extracted-records/:action', async ({ params, request }) => {
+      const [id, verb] = String(params.action).split(':');
+      const rec = records.find((x) => x.id === id);
+      if (!rec || verb !== 'review') return problem(404, 'not_found', 'Không tìm thấy bản ghi.');
+      if (run.status === 'published') return problem(409, 'invalid_state', 'Lượt đã phát hành.');
+      const body = (await request.json()) as {
+        decision: string;
+        corrected_values?: Record<string, string>;
+      };
+      if (body.decision === 'correct' && !body.corrected_values)
+        return problem(422, 'validation_failed', 'Sửa cần giá trị mới.');
+      const status =
+        body.decision === 'reject'
+          ? 'rejected'
+          : body.decision === 'correct'
+            ? 'corrected'
+            : 'confirmed';
+      const done: ExtractedRecord = { ...rec, status };
+      records = records.map((x) => (x.id === id ? done : x));
+      recount();
+      return HttpResponse.json(done);
+    }),
     http.get('*/v1/schema-drifts', () =>
       HttpResponse.json({ items: drift.resolution ? [] : [drift], next_page_token: '' }),
     ),
@@ -499,6 +701,7 @@ export function createCrawlHandlers() {
         pending_review: 0,
         review_gate: 'exceptions',
         drift_id: null,
+        review_run_id: null,
       });
       return HttpResponse.json({ id }, { status: 201 });
     }),

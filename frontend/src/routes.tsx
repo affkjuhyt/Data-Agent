@@ -51,6 +51,7 @@ const CrawlSourcesPage = React.lazy(() => import('./features/crawl/CrawlSourcesP
 const CrawlRegisterPage = React.lazy(() => import('./features/crawl/CrawlRegisterPage'));
 const CrawlSchemaPage = React.lazy(() => import('./features/crawl/CrawlSchemaPage'));
 const CrawlDriftPage = React.lazy(() => import('./features/crawl/CrawlDriftPage'));
+const CrawlReviewPage = React.lazy(() => import('./features/crawl/CrawlReviewPage'));
 const DecisionRulePage = React.lazy(() => import('./features/rules/DecisionRulePage'));
 const ProfilePage = React.lazy(() => import('./features/admin-platform/ProfilePage'));
 const NotificationsPage = React.lazy(() => import('./features/admin-platform/NotificationsPage'));
@@ -117,6 +118,7 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     CRAWL_NEW:       { render: () => <CrawlRegisterPage /> },
     CRAWL_SOURCE:    { render: () => <CrawlSchemaPage /> },
     CRAWL_DRIFT:     { render: () => <CrawlDriftPage /> },
+    CRAWL_RUN:       { render: () => <CrawlReviewPage /> },
     // Kỳ chốt: /data/period/<id>, /data/retro/<id>; without an id each opens its first item.
     PERIOD:          { render: () => <PeriodClosePage /> },
     RETRO:           { render: () => <RetroChangePage /> },

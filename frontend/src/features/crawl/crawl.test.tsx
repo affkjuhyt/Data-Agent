@@ -10,6 +10,7 @@ import { ToastProvider } from '../../design-system/Toast';
 import { createHandlers } from '../../mocks/handlers';
 import CrawlDriftPage from './CrawlDriftPage';
 import CrawlRegisterPage from './CrawlRegisterPage';
+import CrawlReviewPage from './CrawlReviewPage';
 import CrawlSchemaPage from './CrawlSchemaPage';
 import CrawlSourcesPage from './CrawlSourcesPage';
 
@@ -149,5 +150,71 @@ describe('CrawlDriftPage', () => {
     wrap(<CrawlSourcesPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Đổi cấu trúc · cách ly' }));
     expect(navigate).toHaveBeenCalledWith('data', 'CRAWL_DRIFT', 'drift-fees-0710');
+  });
+});
+
+describe('CrawlReviewPage', () => {
+  it('confirms the anomaly as the agent suggests, then publishes once nothing blocks', async () => {
+    routeId = 'crun-deposit-1010';
+    wrap(<CrawlReviewPage />);
+    expect(
+      await screen.findByText(/412 bản ghi trích được · 6 cần người xem · 4 mục chặn/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Phát hành lượt' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    const card = await screen.findByRole('region', { name: 'Bản ghi đang xem' });
+    expect(within(card).getByText(/lệch 4,1 MAD/)).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole('button', { name: 'Xác nhận theo đề xuất' }));
+    expect(await screen.findByText('Đã sửa Ngân hàng K · 12 tháng')).toBeInTheDocument();
+
+    // The other three blocking records share no reason, so decide them one by one.
+    for (const title of [
+      'Ngân hàng B · 6 tháng',
+      'Ngân hàng T · 24 tháng',
+      'Ngân hàng Q · 1 tháng',
+    ]) {
+      fireEvent.click(await screen.findByRole('button', { name: new RegExp(title) }));
+      const current = await screen.findByRole('region', { name: 'Bản ghi đang xem' });
+      fireEvent.click(within(current).getByRole('button', { name: 'Xác nhận' }));
+      expect(await screen.findByText(`Đã xác nhận ${title}`)).toBeInTheDocument();
+    }
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Phát hành lượt' })).not.toHaveAttribute(
+        'aria-disabled',
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Phát hành lượt' }));
+    expect(await screen.findByText('Đã phát hành')).toBeInTheDocument();
+  });
+
+  it('rejects a record only with a reason, and bulk-reviews by reason', async () => {
+    routeId = 'crun-deposit-1010';
+    wrap(<CrawlReviewPage />);
+    const card = await screen.findByRole('region', { name: 'Bản ghi đang xem' });
+    fireEvent.click(within(card).getByRole('button', { name: 'Bỏ bản ghi' }));
+    const dialog = screen.getByRole('alertdialog', { name: /Bỏ bản ghi Ngân hàng K/ });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Bỏ bản ghi' }));
+    expect(await within(dialog).findByText('Ghi lý do bỏ bản ghi.')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Quay lại' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Duyệt hàng loạt theo lý do' }));
+    const bulk = screen.getByRole('alertdialog', { name: 'Duyệt hàng loạt theo lý do' });
+    fireEvent.change(within(bulk).getByLabelText('Lý do (bắt buộc)'), {
+      target: { value: 'Đã đối chiếu biểu PDF gốc' },
+    });
+    fireEvent.click(within(bulk).getByRole('button', { name: 'Áp dụng' }));
+    expect(await screen.findByText('Đã duyệt 1 bản ghi')).toBeInTheDocument();
+  });
+
+  it('is opened from the source list by its waiting count', async () => {
+    wrap(<CrawlSourcesPage />);
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: '3 bản ghi chờ duyệt của Lãi suất huy động · 30 ngân hàng',
+      }),
+    );
+    expect(navigate).toHaveBeenCalledWith('data', 'CRAWL_RUN', 'crun-deposit-1010');
   });
 });

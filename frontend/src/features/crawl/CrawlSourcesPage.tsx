@@ -160,6 +160,7 @@ export default function CrawlSourcesPage() {
                     onSelect={() => setSelected(s.id === selected ? undefined : s.id)}
                     onOpen={() => navigate('data', 'CRAWL_SOURCE', s.id)}
                     onOpenDrift={(driftId) => navigate('data', 'CRAWL_DRIFT', driftId)}
+                    onOpenReview={(runId) => navigate('data', 'CRAWL_RUN', runId)}
                   />
                 ))}
               </tbody>
@@ -182,12 +183,14 @@ function SourceRow({
   onSelect,
   onOpen,
   onOpenDrift,
+  onOpenReview,
 }: {
   source: CrawlSource;
   selected: boolean;
   onSelect: () => void;
   onOpen: () => void;
   onOpenDrift: (driftId: string) => void;
+  onOpenReview: (runId: string) => void;
 }) {
   return (
     <tr
@@ -243,7 +246,23 @@ function SourceRow({
       <td className="px-da-lg py-[10px] text-foreground">
         {source.sample_accuracy_pct === null ? '—' : pct(source.sample_accuracy_pct)}
       </td>
-      <td className="px-da-lg py-[10px] text-foreground">{source.pending_review}</td>
+      <td className="px-da-lg py-[10px] text-foreground">
+        {source.review_run_id && source.pending_review > 0 ? (
+          <button
+            type="button"
+            aria-label={`${source.pending_review} bản ghi chờ duyệt của ${source.name}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenReview(source.review_run_id as string);
+            }}
+            className="text-primary hover:underline"
+          >
+            {source.pending_review}
+          </button>
+        ) : (
+          source.pending_review
+        )}
+      </td>
       <td className="px-da-lg py-[10px] text-foreground">{GATE[source.review_gate]}</td>
     </tr>
   );

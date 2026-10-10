@@ -37,6 +37,8 @@ export interface CrawlSource {
   review_gate: ReviewGate;
   /** PROPOSAL: the open structure drift that quarantined the source, if any. */
   drift_id: string | null;
+  /** PROPOSAL: the run whose records wait for review, if any. */
+  review_run_id: string | null;
 }
 
 /** PROPOSAL: GET /v1/acquire/summary — the four figures over the list. */
@@ -218,3 +220,88 @@ export const resolveSchemaDrift = async (
     note?: string;
   },
 ) => v1Send<SchemaDrift>('POST', `/schema-drifts/${pathId(id)}:resolve`, body);
+
+/* ─── Duyệt dữ liệu thu thập (UC-14-04) ───────────────────────────────── */
+
+export type ReviewReason =
+  | 'low_confidence'
+  | 'cross_source_anomaly'
+  | 'source_anomaly'
+  | 'missing_required'
+  | 'new_value'
+  | 'random_sample';
+
+/** A2: GET /v1/crawl-runs/{id} — CrawlRun, with what the review screen counts. PROPOSAL: the counts. */
+export interface CrawlRun {
+  id: string;
+  source_id: string;
+  source_name: string;
+  /** PROPOSAL: "lượt 10/10". */
+  label: string;
+  status: 'extracted' | 'published';
+  record_count: number;
+  review_count: number;
+  blocking_count: number;
+  sample_count: number;
+  sample_pct: number;
+  /** PROPOSAL: random-sample accuracy and what it means for the review gate. */
+  accuracy: {
+    sample_reviewed: number;
+    sample_accuracy_pct: number | null;
+    recent_runs_ok: boolean;
+    gate: ReviewGate;
+    gate_note: string;
+  };
+}
+
+/** A2: GET /v1/crawl-runs/{id}/records — ExtractedRecord "kèm vùng gốc". PROPOSAL: the display shape. */
+export interface ExtractedRecord {
+  id: string;
+  title: string;
+  value_text: string;
+  reasons: ReviewReason[];
+  /** "Bất thường chéo nguồn", "Độ tin thấp 0,71 · PDF". */
+  reason_text: string;
+  /** Blocks publishing until decided (BR-153). */
+  blocking: boolean;
+  status: 'pending' | 'confirmed' | 'corrected' | 'rejected';
+  raw: {
+    caption: string;
+    columns: string[];
+    rows: string[][];
+    highlighted_row: number | null;
+    footnote: string | null;
+  };
+  values: { field: string; value: string; confidence: number }[];
+  evidence: string | null;
+  agent_note: string | null;
+  /** The agent's proposed correction, applied by "Xác nhận theo đề xuất". */
+  proposed_values: Record<string, string> | null;
+}
+
+export const getCrawlRun = async (id: string) => v1Get<CrawlRun>(`/crawl-runs/${pathId(id)}`);
+
+export const listRunRecords = async (runId: string) =>
+  v1Get<Page<ExtractedRecord>>(`/crawl-runs/${pathId(runId)}/records`, { status: 'pending' });
+
+/** A2: :review — confirm, correct (corrected_values required) or reject; corrections become examples. */
+export const reviewRecord = async (
+  id: string,
+  body: {
+    decision: 'confirm' | 'correct' | 'reject';
+    corrected_values?: Record<string, string>;
+    reason?: string;
+  },
+) => v1Send<ExtractedRecord>('POST', `/extracted-records/${pathId(id)}:review`, body);
+
+/** A2: :bulk-review by filter — every pending record of the run with that reason. */
+export const bulkReviewRecords = (body: {
+  run_id: string;
+  review_reasons: ReviewReason[];
+  decision: 'confirm' | 'reject';
+  reason: string;
+}) => v1Send<{ updated: number }>('POST', '/extracted-records:bulk-review', body);
+
+/** A2: :publish — 422 while blocking records remain (BR-153). */
+export const publishCrawlRun = async (id: string) =>
+  v1Send<CrawlRun>('POST', `/crawl-runs/${pathId(id)}:publish`);
