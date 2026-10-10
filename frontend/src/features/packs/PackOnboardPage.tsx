@@ -289,6 +289,7 @@ function MappingBody({
           open={codeTable !== null}
           title={`Bảng gộp ${codeTable?.attr ?? ''}`}
           confirmLabel="Dùng bảng gộp này"
+          tone="primary"
           cancelLabel="Quay lại"
           loading={busy}
           error={codeTable ? error : undefined}

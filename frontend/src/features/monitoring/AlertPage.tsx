@@ -339,6 +339,7 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
         open={dialog === 'assign'}
         title={`Giao ${alert.code} cho người khác`}
         confirmLabel="Giao"
+        tone="primary"
         cancelLabel="Quay lại"
         loading={busy === 'assign'}
         error={dialog === 'assign' ? error : undefined}
@@ -376,6 +377,7 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
               : `Đánh dấu ${alert.code} đã xử lý?`
         }
         confirmLabel={dialog === 'dispute' ? 'Gửi' : 'Đóng cảnh báo'}
+        tone="primary"
         cancelLabel="Quay lại"
         loading={busy === dialog}
         error={dialog ? error : undefined}

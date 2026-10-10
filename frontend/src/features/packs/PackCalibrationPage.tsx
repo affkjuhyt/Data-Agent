@@ -226,6 +226,7 @@ function CalibrationBody({
         open={accepting !== null}
         title="Chấp nhận phần lệch?"
         confirmLabel="Chấp nhận"
+        tone="primary"
         cancelLabel="Quay lại"
         loading={busy === 'accept'}
         error={accepting ? error : undefined}
