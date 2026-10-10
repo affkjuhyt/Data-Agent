@@ -21,7 +21,7 @@ import {
   getProposal,
   resolveHitl,
 } from './api';
-import { V1Error, pathId } from './client';
+import { V1Error, pathId, v1Get, v1Send } from './client';
 
 const server = setupServer(...createHandlers());
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -86,5 +86,32 @@ describe('ids from the URL', () => {
     expect(pathId('0192f1a2-7c3d-7e4f-8a9b-0c1d2e3f4a5b')).toBe(
       '0192f1a2-7c3d-7e4f-8a9b-0c1d2e3f4a5b',
     );
+  });
+});
+
+describe('paths built without pathId', () => {
+  it('are still refused when they would leave the resource', async () => {
+    for (const path of [
+      '/proposals/..',
+      '/proposals/../admin/users',
+      '/proposals/%2e%2e',
+      '/a%2Fb',
+      '/a\\b',
+      '/a?x=1',
+      '/a//b',
+      'proposals',
+    ]) {
+      const error = await v1Get(path).catch((e) => e);
+      expect(error, path).toMatchObject({ status: 400, code: 'invalid_request' });
+      const sent = await v1Send('POST', path).catch((e) => e);
+      expect(sent, path).toMatchObject({ status: 400, code: 'invalid_request' });
+    }
+  });
+
+  it('let normal paths and :verb actions through', async () => {
+    await expect(v1Get('/proposals/pr-0318')).resolves.toMatchObject({ code: 'PR-0318' });
+    await expect(v1Send('POST', '/runs/run-427:pause')).resolves.toMatchObject({
+      status: 'paused',
+    });
   });
 });

@@ -45,6 +45,25 @@ export function pathId(id: string): string {
   return id;
 }
 
+/*
+ * The second line of defence, for a module that forgets pathId(): every path is checked before
+ * the request is built. It must be "/" followed by plain segments — no "." or ".." segment, no
+ * encoded dot, slash or backslash, no backslash, query or fragment (queries go in `query`).
+ */
+const UNSAFE_PATH = /%2e|%2f|%5c|\\|[?#]/i;
+
+function safePath(path: string): string {
+  const segments = path.split('/').slice(1);
+  if (
+    !path.startsWith('/') ||
+    UNSAFE_PATH.test(path) ||
+    segments.some((segment) => segment === '' || segment === '.' || segment === '..')
+  ) {
+    throw new V1Error(400, 'invalid_request', 'Đường dẫn API không hợp lệ.');
+  }
+  return path;
+}
+
 let dataSpace: string | null = null;
 
 /** The Data Space the user works in (top bar switcher); null = the whole organisation. */
@@ -78,7 +97,7 @@ async function failure(res: Response): Promise<V1Error> {
 }
 
 export async function v1Get<T>(path: string, query?: Query): Promise<T> {
-  const url = new URL(`${BASE}${path}`);
+  const url = new URL(`${BASE}${safePath(path)}`);
   Object.entries(query ?? {}).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '')
       url.searchParams.set(key, String(value));
@@ -95,11 +114,12 @@ export async function v1Send<T = unknown>(
   body?: unknown,
   options: { ifMatch?: string } = {},
 ): Promise<T> {
+  const target = `${BASE}${safePath(path)}`;
   const extra: Record<string, string> = {};
   if (body !== undefined) extra['Content-Type'] = 'application/json';
   if (options.ifMatch) extra['If-Match'] = options.ifMatch;
   if (method === 'POST') extra['Idempotency-Key'] = crypto.randomUUID();
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(target, {
     method,
     headers: headers(extra),
     body: body === undefined ? undefined : JSON.stringify(body),
