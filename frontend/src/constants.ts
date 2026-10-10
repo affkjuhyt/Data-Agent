@@ -99,7 +99,7 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
       label: 'Ngữ nghĩa',
       items: [
         { id: 'ENTITIES', label: 'Mô hình thực thể' },
-        { id: 'METRIC', label: 'Chỉ số' },
+        { id: 'METRIC_CATALOG', label: 'Chỉ số' },
         { id: 'GLOSSARY', label: 'Từ điển nghiệp vụ' },
         { id: 'EXAMPLES', label: 'Câu hỏi mẫu' },
         { id: 'KNOWLEDGE', label: 'Trang tri thức' },
@@ -209,7 +209,9 @@ const RAIL_PARENT: Partial<Record<AreaId, Record<string, string>>> = {
     PACK_INSTALL: 'PACKS',
     PACK_UPGRADE: 'PACKS',
     PACK_CALIBRATE: 'PACK_ONBOARD',
-    METRIC_OVERRIDE: 'METRIC',
+    METRIC_OVERRIDE: 'METRIC_CATALOG',
+    // The definition editor of one metric, opened from the catalog.
+    METRIC: 'METRIC_CATALOG',
   },
   admin: { DATA_SPACE_NEW: 'DATA_SPACES', PERMISSION_COMPARE: 'DATA_SPACES' },
   account: { CHANNEL_RULES: 'NOTIFICATIONS' },

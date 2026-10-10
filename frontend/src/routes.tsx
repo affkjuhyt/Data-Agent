@@ -55,6 +55,7 @@ const CrawlDriftPage = React.lazy(() => import('./features/crawl/CrawlDriftPage'
 const CrawlReviewPage = React.lazy(() => import('./features/crawl/CrawlReviewPage'));
 const CrawlConsolidationPage = React.lazy(() => import('./features/crawl/CrawlConsolidationPage'));
 const EntityModelPage = React.lazy(() => import('./features/semantics/EntityModelPage'));
+const MetricCatalogPage = React.lazy(() => import('./features/semantics/MetricCatalogPage'));
 const GlossaryPage = React.lazy(() => import('./features/semantics/GlossaryPage'));
 const ContextEvalPage = React.lazy(() => import('./features/semantics/ContextEvalPage'));
 const PacksPage = React.lazy(() => import('./features/packs/PacksPage'));
@@ -202,6 +203,7 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     CRAWL_RUN:       { render: () => <CrawlReviewPage /> },
     CRAWL_MERGE:     { render: () => <CrawlConsolidationPage /> },
     ENTITIES:        { render: () => <EntityModelPage /> },
+    METRIC_CATALOG:  { render: () => <MetricCatalogPage /> },
     GLOSSARY:        { render: () => <GlossaryPage /> },
     CONTEXT_EVAL:    { render: () => <ContextEvalPage /> },
     PACKS:           { render: () => <PacksPage /> },

@@ -35,6 +35,7 @@ import { createCollaborationHandlers } from './collaboration';
 import { createCrawlHandlers } from './crawl';
 import { createExampleHandlers } from './examples';
 import { createKnowledgeHandlers } from './knowledge';
+import { createMetricCatalogHandlers } from './metricCatalog';
 import { createMetricHandlers } from './metrics';
 import { createMonitorHandlers } from './monitors';
 import { createNotificationHandlers } from './notifications';
@@ -96,6 +97,8 @@ export function createHandlers() {
     // Before the inbox: the period mock answers its own reconciliation HITL request.
     ...createPeriodHandlers(),
     ...createRuleHandlers(),
+    // Before the metric mock: it answers GET /v1/metrics?view=catalog and falls through otherwise.
+    ...createMetricCatalogHandlers(),
     ...createMetricHandlers(),
     ...createExampleHandlers(),
     ...createAuthorityHandlers(),
