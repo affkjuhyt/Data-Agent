@@ -5,7 +5,7 @@ import { formatElapsed } from '../../lib/formatVN';
 import type { Page } from '../../lib/v1/client';
 import type { HitlRequest } from '../../lib/v1/types';
 import type { V1State } from '../../lib/v1/useV1';
-import { DECISION, decisionKindOf, detailRouteOf } from '../needs-you/decision';
+import { DECISION, decisionKindOf, detailRouteOf, type DetailRoute } from '../needs-you/decision';
 
 /*
  * "Cần bạn quyết định" of "v3.1 · Trang chủ": the open requests (GET /v1/inbox), each a row of
@@ -29,7 +29,7 @@ export function NeedsYouCard({
   inbox: V1State<Page<HitlRequest>>;
   onOpen: () => void;
   /** A row with a detail page opens it; the others open Cần bạn. */
-  onOpenDetail: (page: string, id: string) => void;
+  onOpenDetail: (detail: DetailRoute) => void;
 }) {
   const items = inbox.data?.items ?? [];
   return (
@@ -59,7 +59,7 @@ export function NeedsYouCard({
                     type="button"
                     onClick={() => {
                       const detail = detailRouteOf(request);
-                      if (detail) onOpenDetail(detail.page, detail.id);
+                      if (detail) onOpenDetail(detail);
                       else onOpen();
                     }}
                     className="flex w-full flex-col gap-da-sm border-b border-border p-da-md text-left hover:bg-subtle"

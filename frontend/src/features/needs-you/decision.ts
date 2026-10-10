@@ -66,12 +66,22 @@ export const isExpiringSoon = (request: HitlRequest, now = new Date()) =>
 
 /**
  * The detail page a request opens: proposals on "P07 · Duyệt đề xuất" (by the proposal id in
- * source_ref), conflicts on "Cần bạn · So sánh hai nguồn". Others have no detail page yet.
+ * source_ref), conflicts on "Cần bạn · So sánh hai nguồn", a report to publish on "P02 · Duyệt &
+ * phát hành báo cáo" under Phân tích (by the session-report id in source_ref). Others have no
+ * detail page yet.
  */
-export function detailRouteOf(request: HitlRequest): { page: string; id: string } | null {
+export interface DetailRoute {
+  area: 'needs-you' | 'analysis';
+  page: string;
+  id: string;
+}
+
+export function detailRouteOf(request: HitlRequest): DetailRoute | null {
   if (request.kind === 'approve_proposal' && request.source_ref)
-    return { page: 'PROPOSAL', id: request.source_ref };
-  if (request.kind === 'conflict') return { page: 'CONFLICT', id: request.id };
+    return { area: 'needs-you', page: 'PROPOSAL', id: request.source_ref };
+  if (request.kind === 'conflict') return { area: 'needs-you', page: 'CONFLICT', id: request.id };
+  if (request.kind === 'report_publish' && request.source_ref)
+    return { area: 'analysis', page: 'REPORT', id: request.source_ref };
   return null;
 }
 

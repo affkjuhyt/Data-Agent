@@ -33,7 +33,7 @@ export default function ConflictPage() {
 
   const openRequest = (r: HitlRequest) => {
     const detail = detailRouteOf(r);
-    if (detail) navigate('needs-you', detail.page, detail.id);
+    if (detail) navigate(detail.area, detail.page, detail.id);
     else navigate('needs-you');
   };
 

@@ -63,7 +63,7 @@ export default function HomePage() {
         <NeedsYouCard
           inbox={inbox}
           onOpen={() => navigate('needs-you')}
-          onOpenDetail={(page, id) => navigate('needs-you', page, id)}
+          onOpenDetail={(detail) => navigate(detail.area, detail.page, detail.id)}
         />
       </aside>
     </div>

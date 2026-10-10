@@ -121,7 +121,10 @@ export function DecisionCard({
           )}
           {kind === 'compare' && <DetailButton label="So sánh nguồn" onOpen={onOpenDetail} />}
           {kind === 'review' && (
-            <PendingDetail label={request.kind === 'report_publish' ? 'Mở báo cáo' : 'Mở'} />
+            <DetailButton
+              label={request.kind === 'report_publish' ? 'Mở báo cáo' : 'Mở'}
+              onOpen={onOpenDetail}
+            />
           )}
         </div>
       </div>

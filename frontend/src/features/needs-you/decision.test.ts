@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { HitlRequest } from '../../lib/v1/types';
 import { inboxFixture } from '../../mocks/fixtures';
-import { decisionKindOf, dueOf } from './decision';
+import { decisionKindOf, detailRouteOf, dueOf } from './decision';
 
 const byId = (id: string) => inboxFixture().find((r) => r.id === id) as HitlRequest;
 
@@ -11,6 +11,20 @@ describe('decision cards', () => {
     expect(decisionKindOf(byId('hitl-adjust-214'))).toBe('approve');
     expect(decisionKindOf(byId('hitl-core-vs-dwh'))).toBe('compare');
     expect(decisionKindOf(byId('hitl-report-sept'))).toBe('review');
+  });
+
+  it('opens each request on its own detail page, in its own area', () => {
+    expect(detailRouteOf(byId('hitl-adjust-214'))).toEqual({
+      area: 'needs-you',
+      page: 'PROPOSAL',
+      id: 'proposal-214',
+    });
+    expect(detailRouteOf(byId('hitl-report-sept'))).toEqual({
+      area: 'analysis',
+      page: 'REPORT',
+      id: 'report-risk-sept',
+    });
+    expect(detailRouteOf(byId('hitl-npl-definition'))).toBeNull();
   });
 
   it('answers a clarification without choices in words', () => {

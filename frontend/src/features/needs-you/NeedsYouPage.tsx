@@ -147,7 +147,7 @@ export default function NeedsYouPage() {
                   onAskMore={() => askMore(request)}
                   onOpenDetail={(() => {
                     const detail = detailRouteOf(request);
-                    return detail ? () => navigate('needs-you', detail.page, detail.id) : undefined;
+                    return detail ? () => navigate(detail.area, detail.page, detail.id) : undefined;
                   })()}
                   onLater={() =>
                     setLater((prev) => [...prev.filter((id) => id !== request.id), request.id])
