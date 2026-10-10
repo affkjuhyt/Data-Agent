@@ -17,6 +17,13 @@ import {
   workspacesFixture,
 } from './fixtures';
 import { createAdminAccessHandlers } from './adminAccess';
+import { createDataPrepHandlers } from './dataPrep';
+import { createDataProductsHandlers } from './dataProducts';
+import { createDocumentHandlers } from './documents';
+import { createExploreHandlers } from './explore';
+import { createForecastHandlers } from './forecast';
+import { createSkillAuthoringHandlers } from './skillAuthoring';
+import { createSkillsHandlers } from './skills';
 import { createAdminPlatformHandlers } from './adminPlatform';
 import { createAgentBuilderHandlers } from './agentBuilder';
 import { createAgentOpsHandlers } from './agentOps';
@@ -62,6 +69,16 @@ export function createHandlers() {
     // First: these serve paths the handlers below also answer, with richer rows
     // (/runs/:id for test runs, /sources, /admin/models, /admin/users, /data-spaces, /policies),
     // and pass the rest through.
+    // documents: /documents/:id for the ids it holds (before sources), its own HITL request;
+    // explore: marks a requested Data Space, then falls through to the access-request mock;
+    // forecast: its own HITL request; skills before skill authoring (shared /skills/:id).
+    ...createDocumentHandlers(),
+    ...createExploreHandlers(),
+    ...createForecastHandlers(),
+    ...createSkillsHandlers(),
+    ...createSkillAuthoringHandlers(),
+    ...createDataPrepHandlers(),
+    ...createDataProductsHandlers(),
     ...createAdminAccessHandlers(),
     ...createAgentBuilderHandlers(),
     ...createSourcesHandlers(),

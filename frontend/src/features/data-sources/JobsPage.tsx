@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
@@ -23,8 +24,8 @@ import {
 
 /*
  * "P04 · Job nạp · Giám sát" (2281:16917, UC-04-09): every ingestion job with a 24-hour strip
- * (one cell per hour: success, error, no run), lag, rows loaded today and status. "Chạy bù" and
- * "Tạo job" have no flow in Figma yet; a row's "…" runs, pauses or resumes the job.
+ * (one cell per hour: success, error, no run), lag, rows loaded today and status. "Tạo job" opens
+ * Job nạp · Thiết lập; "Chạy bù" has no flow in Figma yet; a row's "…" runs, pauses or resumes it.
  */
 const CELL: Record<IngestionJob['hours'][number], string> = {
   ok: 'bg-success opacity-55',
@@ -33,6 +34,7 @@ const CELL: Record<IngestionJob['hours'][number], string> = {
 };
 
 export default function JobsPage() {
+  const { navigate } = useAppState();
   const toast = useToast();
   const jobs = useV1(listJobs, []);
   const [filter, setFilter] = useState<JobFilter>('all');
@@ -66,11 +68,9 @@ export default function JobsPage() {
             <Tooltip content="Chạy bù theo khoảng thời gian đang được làm.">
               <Button disabled>Chạy bù</Button>
             </Tooltip>
-            <Tooltip content="Tạo job nạp mới đi qua Kết nối nguồn; màn tạo job riêng đang được làm.">
-              <Button kind="primary" disabled>
-                Tạo job
-              </Button>
-            </Tooltip>
+            <Button kind="primary" onClick={() => navigate('data', 'JOB_NEW')}>
+              Tạo job
+            </Button>
           </>
         }
       />

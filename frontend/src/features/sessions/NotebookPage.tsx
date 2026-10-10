@@ -23,6 +23,7 @@ import {
   type WorkspaceTile,
 } from '../../lib/v1/sessions';
 import { useV1 } from '../../lib/v1/useV1';
+import { SessionToAgentDialog } from '../skill-authoring/SessionToAgentDialog';
 import { ShareDialog } from './ShareDialog';
 
 /*
@@ -83,6 +84,7 @@ function Notebook({ ws: loaded, onChanged }: { ws: WorkspaceDetail; onChanged: (
     () => (loaded.tiles.find((t) => t.comment_count > 0) ?? loaded.tiles[0])?.id ?? null,
   );
   const [sharing, setSharing] = useState(false);
+  const [toAgent, setToAgent] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string>();
 
@@ -139,6 +141,10 @@ function Notebook({ ws: loaded, onChanged }: { ws: WorkspaceDetail; onChanged: (
                 Dạng hội thoại
               </Button>
             </Tooltip>
+            {/* "v3.1 · Chi tiết · Biến phiên thành agent" (2070:3837): a session that repeats becomes an agent. */}
+            <Button kind="ghost" icon="agent" onClick={() => setToAgent(true)}>
+              Biến thành agent
+            </Button>
             <Button onClick={() => setSharing(true)}>Chia sẻ</Button>
             <Button kind="primary" loading={busy === 'report'} onClick={openReport}>
               Tạo báo cáo
@@ -223,6 +229,7 @@ function Notebook({ ws: loaded, onChanged }: { ws: WorkspaceDetail; onChanged: (
         )}
       </div>
 
+      <SessionToAgentDialog sessionId={ws.id} open={toAgent} onClose={() => setToAgent(false)} />
       <ShareDialog
         open={sharing}
         workspace={ws}

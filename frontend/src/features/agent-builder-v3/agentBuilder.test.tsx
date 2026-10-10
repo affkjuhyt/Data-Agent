@@ -57,6 +57,14 @@ describe('CreateAgentPage', () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('agents', 'AGENT', 'agent-new-1'));
   });
 
+  it('takes a description handed over from a session and drops it from the URL', async () => {
+    window.history.replaceState(null, '', '/agents/builder?description=Mỗi%20sáng%20xem%20nợ%20quá%20hạn%20theo%20chi%20nhánh&from_session=s-1');
+    wrap(<CreateAgentPage />);
+    expect(screen.getByLabelText('Bạn muốn agent làm gì?')).toHaveValue('Mỗi sáng xem nợ quá hạn theo chi nhánh');
+    expect(window.location.search).toBe('');
+    expect(await screen.findByText('Agent Theo dõi quá hạn chi nhánh', {}, SLOW)).toBeInTheDocument();
+  });
+
   it('starts from a template and cancels back to the team', async () => {
     wrap(<CreateAgentPage />);
     fireEvent.click(await screen.findByRole('button', { name: /Soạn bản tin tuần/ }));

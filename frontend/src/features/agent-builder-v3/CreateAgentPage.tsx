@@ -34,13 +34,29 @@ const DRAFT_DELAY_MS = 800;
 const MIN_DESCRIPTION = 20;
 const NEED_DESCRIPTION = 'Mô tả việc bạn muốn giao trước.';
 
+/*
+ * "Biến phiên thành agent" (UC-03-03 → UC-13-01) hands the description over as
+ * ?description=…&from_session=…; take it once and drop it from the URL so a reload starts clean.
+ * from_session has no field in POST /v1/agents yet, so it is only dropped.
+ */
+function takeHandover(): string {
+  const params = new URLSearchParams(window.location.search);
+  const text = params.get('description');
+  if (text === null) return '';
+  params.delete('description');
+  params.delete('from_session');
+  const rest = params.toString();
+  window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`);
+  return text;
+}
+
 export default function CreateAgentPage() {
   const { navigate } = useAppState();
   const toast = useToast();
   const templates = useV1(listTemplates, []);
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(takeHandover);
   const [templateRef, setTemplateRef] = useState<string>();
-  const [settled, setSettled] = useState('');
+  const [settled, setSettled] = useState(() => description.trim());
   const [corrections, setCorrections] = useState<Partial<Record<DraftField, string>>>({});
 
   // Re-draft once typing pauses, not on every keystroke (each draft is an LLM call).

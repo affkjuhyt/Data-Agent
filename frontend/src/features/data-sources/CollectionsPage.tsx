@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
@@ -6,7 +7,6 @@ import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Icon } from '../../design-system/Icon';
 import { StatusDot } from '../../design-system/StatusDot';
-import { Tooltip } from '../../design-system/Tooltip';
 import { formatNumber, formatPercent } from '../../lib/formatVN';
 import {
   getCollectionsSummary,
@@ -14,6 +14,7 @@ import {
   type CollectionsSummary,
 } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
+import { CreateCollectionDialog, SuggestCollectionDialog } from '../documents/CollectionDialogs';
 
 /*
  * "v3.1 · Phi cấu trúc · Bộ sưu tập" (2068:3067, UC-05-06): files, mail, recordings and images
@@ -26,6 +27,7 @@ export default function CollectionsPage() {
   const { navigate } = useAppState();
   const collections = useV1(listCollections, []);
   const summary = useV1(getCollectionsSummary, []);
+  const [dialog, setDialog] = useState<'create' | 'suggest' | null>(null);
 
   return (
     <div className="flex flex-col">
@@ -36,16 +38,12 @@ export default function CollectionsPage() {
         description="Tệp, văn bản, email, ghi âm và hình ảnh được nạp theo pipeline: nhận dạng, trích trường, chia đoạn, lập chỉ mục, liên kết với bản ghi có cấu trúc và che dữ liệu cá nhân."
         actions={
           <>
-            <Tooltip content="Agent đề xuất bộ sưu tập đang được làm.">
-              <Button icon="agent" disabled>
-                Nhờ agent đề xuất bộ sưu tập
-              </Button>
-            </Tooltip>
-            <Tooltip content="Tạo bộ sưu tập đang được làm.">
-              <Button kind="primary" disabled>
-                Tạo bộ sưu tập
-              </Button>
-            </Tooltip>
+            <Button icon="agent" onClick={() => setDialog('suggest')}>
+              Nhờ agent đề xuất bộ sưu tập
+            </Button>
+            <Button kind="primary" onClick={() => setDialog('create')}>
+              Tạo bộ sưu tập
+            </Button>
           </>
         }
       />
@@ -100,6 +98,23 @@ export default function CollectionsPage() {
           )}
         </AsyncRegion>
       </div>
+      <CreateCollectionDialog
+        open={dialog === 'create'}
+        onClose={() => setDialog(null)}
+        onCreated={(created) => {
+          setDialog(null);
+          navigate('data', 'COLLECTION', created.id);
+        }}
+      />
+      <SuggestCollectionDialog
+        open={dialog === 'suggest'}
+        onClose={() => setDialog(null)}
+        onCreated={() => {
+          setDialog(null);
+          collections.reload();
+          summary.reload();
+        }}
+      />
     </div>
   );
 }

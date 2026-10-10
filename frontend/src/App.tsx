@@ -3,6 +3,7 @@ import { AppStateProvider, useAppState } from './AppStateContext';
 import { AppShell } from './components/shell/AppShell';
 import type { AreaId } from './components/shell/areas';
 import { useForbiddenToast } from './features/auth/useForbiddenToast';
+import { FirstRunGate } from './features/onboarding/FirstRunGate';
 import { EmptyState } from './design-system/EmptyState';
 import { ToastProvider } from './design-system/Toast';
 import { SkeletonRows } from './design-system/SkeletonRow';
@@ -55,7 +56,9 @@ function AppContent() {
   return (
     <ToastProvider>
       <ForbiddenToasts />
-      <AppShell>{renderView()}</AppShell>
+      <FirstRunGate>
+        {(spaceId) => <AppShell initialSpaceId={spaceId}>{renderView()}</AppShell>}
+      </FirstRunGate>
     </ToastProvider>
   );
 }

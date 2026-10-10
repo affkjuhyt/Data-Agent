@@ -56,7 +56,21 @@ function SourceView({ source, reload }: { source: SourceDetail; reload: () => vo
         breadcrumb={['Dữ liệu', 'Nguồn', source.name]}
         title={source.name}
         description={`${source.connector} · ${source.endpoint} · ${modeLabel(source)} · dữ liệu mới nhất ${freshnessText(source)} · ${dataSpacesText(source)}`}
-        actions={<Button onClick={() => void check()}>Kiểm tra kết nối</Button>}
+        actions={
+          <>
+            {source.connector === 'rest' && (
+              <Button kind="ghost" onClick={() => navigate('data', 'CONNECT_API', source.id)}>
+                Sửa kết nối API
+              </Button>
+            )}
+            <Button onClick={() => void check()}>Kiểm tra kết nối</Button>
+            {source.drift_id && (
+              <Button kind="primary" onClick={() => navigate('data', 'DRIFT', source.drift_id!)}>
+                Duyệt thay đổi cấu trúc
+              </Button>
+            )}
+          </>
+        }
       />
       <div className="flex flex-col gap-da-lg px-da-3xl pt-da-xl">
         <div className="flex items-center gap-da-md">

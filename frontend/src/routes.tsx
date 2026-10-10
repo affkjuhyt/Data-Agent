@@ -59,6 +59,42 @@ const NotificationsPage = React.lazy(() => import('./features/admin-platform/Not
 const ChannelRulesPage = React.lazy(() => import('./features/admin-platform/ChannelRulesPage'));
 const ShortcutsPage = React.lazy(() => import('./features/admin-platform/ShortcutsPage'));
 
+const SkillLibraryPage = React.lazy(() => import('./features/skills/SkillLibraryPage'));
+const SkillSuggestionsPage = React.lazy(() => import('./features/skills/SkillSuggestionsPage'));
+const SkillVersionsPage = React.lazy(() => import('./features/skills/SkillVersionsPage'));
+const SkillsToolsPage = React.lazy(() => import('./features/skills/SkillsToolsPage'));
+const SkillEditorPage = React.lazy(() => import('./features/skill-authoring/SkillEditorPage'));
+const SkillFromSessionPage = React.lazy(() => import('./features/skill-authoring/SkillFromSessionPage'));
+const SkillTestsPage = React.lazy(() => import('./features/skill-authoring/SkillTestsPage'));
+const SkillRunPage = React.lazy(() => import('./features/skill-authoring/SkillRunPage'));
+const ExplorePage = React.lazy(() => import('./features/explore/ExplorePage'));
+const ArtifactPage = React.lazy(() => import('./features/explore/ArtifactPage'));
+const HowItWorksPage = React.lazy(() => import('./features/onboarding/HowItWorksPage'));
+const ForecastPage = React.lazy(() => import('./features/forecast/ForecastPage'));
+const ForecastJobPage = React.lazy(() => import('./features/forecast/ForecastJobPage'));
+const ForecastStudioPage = React.lazy(() => import('./features/forecast/ForecastStudioPage'));
+const ForecastModelPage = React.lazy(() => import('./features/forecast/ForecastModelPage'));
+const DocumentAnswerPage = React.lazy(() => import('./features/documents/DocumentAnswerPage'));
+const DocumentsPage = React.lazy(() => import('./features/documents/DocumentsPage'));
+const DocumentViewerPage = React.lazy(() => import('./features/documents/DocumentViewerPage'));
+const QualityQueuePage = React.lazy(() => import('./features/documents/QualityQueuePage'));
+const ValidityPage = React.lazy(() => import('./features/documents/ValidityPage'));
+const ExtractionSchemaPage = React.lazy(() => import('./features/documents/ExtractionSchemaPage'));
+const SourceDriftPage = React.lazy(() => import('./features/data-sources/SourceDriftPage'));
+const ErrorRecordsPage = React.lazy(() => import('./features/data-sources/ErrorRecordsPage'));
+const JobSetupPage = React.lazy(() => import('./features/data-sources/JobSetupPage'));
+const TableExplorePage = React.lazy(() => import('./features/data-sources/TableExplorePage'));
+const ApiConnectPage = React.lazy(() => import('./features/data-sources/ApiConnectPage'));
+const SqlPage = React.lazy(() => import('./features/data-prep/SqlPage'));
+const PipelinesPage = React.lazy(() => import('./features/data-prep/PipelinesPage'));
+const PipelinePage = React.lazy(() => import('./features/data-prep/PipelinePage'));
+const PipelineSavePage = React.lazy(() => import('./features/data-prep/PipelineSavePage'));
+const WritebackPage = React.lazy(() => import('./features/data-prep/WritebackPage'));
+const LineagePage = React.lazy(() => import('./features/data-prep/LineagePage'));
+const DataMartPage = React.lazy(() => import('./features/data-products/DataMartPage'));
+const DataProductsPage = React.lazy(() => import('./features/data-products/DataProductsPage'));
+const QualityRulesPage = React.lazy(() => import('./features/data-products/QualityRulesPage'));
+
 type RouteEntry = { render: () => React.ReactNode };
 
 /** Page key for areas that have a single screen and no rail. */
@@ -72,6 +108,8 @@ export const SINGLE_SCREEN = '_';
 export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
   home: {
     [SINGLE_SCREEN]: { render: () => <HomePage /> },
+    // "Data Agent hoạt động thế nào", opened after onboarding and from the guide link.
+    HOW_IT_WORKS: { render: () => <HowItWorksPage /> },
   },
 
   'needs-you': {
@@ -92,6 +130,15 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     EVALUATE:      { render: () => <EvaluatePage /> },
     ORCHESTRATION: { render: () => <OrchestrationPage /> },
     OPERATIONS:    { render: () => <AgentOperationsPage /> },
+    // Kỹ năng (P03): the library pages are rail items; the editor, tests and runs sit under them.
+    SKILLS:             { render: () => <SkillLibraryPage /> },
+    SKILL_SUGGESTIONS:  { render: () => <SkillSuggestionsPage /> },
+    SKILL_VERSIONS:     { render: () => <SkillVersionsPage /> },
+    TOOLS:              { render: () => <SkillsToolsPage /> },
+    SKILL_EDITOR:       { render: () => <SkillEditorPage /> },
+    SKILL_FROM_SESSION: { render: () => <SkillFromSessionPage /> },
+    SKILL_TESTS:        { render: () => <SkillTestsPage /> },
+    SKILL_RUN:          { render: () => <SkillRunPage /> },
   },
 
   analysis: {
@@ -102,6 +149,15 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     // /analysis/report/<id>, under "Phiên làm việc"; Cần bạn report_publish cards open it.
     REPORT:    { render: () => <ReportReviewPage /> },
     DASHBOARD: { render: () => <DashboardPage /> },
+    EXPLORE:         { render: () => <ExplorePage /> },
+    // /analysis/artifact/<id>: an answer's or notebook's artifact, full screen.
+    ARTIFACT:        { render: () => <ArtifactPage /> },
+    FORECAST:        { render: () => <ForecastPage /> },
+    // A forecast question answered asynchronously; it belongs to a session.
+    FORECAST_JOB:    { render: () => <ForecastJobPage /> },
+    FORECAST_STUDIO: { render: () => <ForecastStudioPage /> },
+    FORECAST_MODEL:  { render: () => <ForecastModelPage /> },
+    DOC_ASK:         { render: () => <DocumentAnswerPage /> },
   },
 
   data: {
@@ -133,6 +189,29 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     AUTHORITY:       { render: () => <SourceAuthorityPage /> },
     RULE:            { render: () => <DecisionRulePage /> },
     KNOWLEDGE_REVIEW: { render: () => <KnowledgeReviewPage /> },
+    // P04 rest.
+    DRIFT:              { render: () => <SourceDriftPage /> },
+    ERRORS:             { render: () => <ErrorRecordsPage /> },
+    JOB_NEW:            { render: () => <JobSetupPage /> },
+    EXPLORE:            { render: () => <TableExplorePage /> },
+    CONNECT_API:        { render: () => <ApiConnectPage /> },
+    // P05 Tài liệu; /data/document/<id> is the viewer.
+    DOCUMENTS:          { render: () => <DocumentsPage /> },
+    DOCUMENT:           { render: () => <DocumentViewerPage /> },
+    DOC_QUALITY:        { render: () => <QualityQueuePage /> },
+    DOC_VALIDITY:       { render: () => <ValidityPage /> },
+    EXTRACTION_SCHEMAS: { render: () => <ExtractionSchemaPage /> },
+    // P06 Chuẩn bị.
+    SQL:                { render: () => <SqlPage /> },
+    PIPELINES:          { render: () => <PipelinesPage /> },
+    PIPELINE:           { render: () => <PipelinePage /> },
+    PIPELINE_SAVE:      { render: () => <PipelineSavePage /> },
+    DATA_MARTS:         { render: () => <DataMartPage /> },
+    DATA_MART:          { render: () => <DataMartPage /> },
+    DATA_PRODUCTS:      { render: () => <DataProductsPage /> },
+    QUALITY:            { render: () => <QualityRulesPage /> },
+    WRITEBACK:          { render: () => <WritebackPage /> },
+    LINEAGE:            { render: () => <LineagePage /> },
   },
 
   admin: {

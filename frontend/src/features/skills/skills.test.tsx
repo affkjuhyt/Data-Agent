@@ -1,0 +1,222 @@
+/**
+ * P03 Kỹ năng, library side, against the v1 mock: the library and its filters, sharing a
+ * certified skill, reviewing and publishing a pending version, the agent's suggestions, and the
+ * tools / MCP tabs with registering a tool.
+ */
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { setupServer } from 'msw/node';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ToastProvider } from '../../design-system/Toast';
+import { createHandlers } from '../../mocks/handlers';
+import SkillLibraryPage from './SkillLibraryPage';
+import SkillSuggestionsPage from './SkillSuggestionsPage';
+import SkillsToolsPage from './SkillsToolsPage';
+import SkillVersionsPage from './SkillVersionsPage';
+
+const navigate = vi.fn();
+let routeId = '';
+vi.mock('../../AppStateContext', () => ({ useAppState: () => ({ navigate, routeId }) }));
+
+const server = setupServer();
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+beforeEach(() => {
+  routeId = '';
+  server.resetHandlers(...createHandlers());
+});
+afterEach(() => navigate.mockReset());
+afterAll(() => server.close());
+
+const wrap = (ui: React.ReactNode) => render(<ToastProvider>{ui}</ToastProvider>);
+
+describe('SkillLibraryPage', () => {
+  it('lists the skills, filters by origin and opens one to run', async () => {
+    wrap(<SkillLibraryPage />);
+    expect(await screen.findByRole('button', { name: 'Phân rã biến động' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Tất cả 11' })).toBeChecked();
+    expect(screen.getByText('412 lượt')).toBeInTheDocument();
+    expect(screen.getByText('Ngừng · thay bằng v3')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Toàn tổ chức 3' }));
+    expect(screen.queryByRole('button', { name: 'Dự báo thử 13 tuần' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'So sánh kỳ' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'So sánh kỳ' }));
+    expect(navigate).toHaveBeenCalledWith('agents', 'SKILL_RUN', 'sk-period-compare');
+  });
+
+  it('creates an empty draft and opens it in the editor', async () => {
+    wrap(<SkillLibraryPage />);
+    await screen.findByRole('button', { name: 'Phân rã biến động' });
+    fireEvent.click(screen.getByRole('button', { name: 'Kỹ năng mới' }));
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith('agents', 'SKILL_EDITOR', 'sk-new-1'),
+    );
+  });
+
+  it('shares a certified skill; only certified skills offer it', async () => {
+    wrap(<SkillLibraryPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Thao tác với Dự báo thử 13 tuần' }));
+    expect(screen.queryByRole('menuitem', { name: 'Chia sẻ' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Thao tác với Phân rã biến động' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Chia sẻ' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Chia sẻ cho' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Toàn tổ chức' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Chia sẻ' }));
+    expect(
+      await screen.findByText('Đã gửi quản trị viên duyệt chia sẻ Phân rã biến động'),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('SkillVersionsPage', () => {
+  it('opens the first skill waiting for review and publishes it after confirming', async () => {
+    wrap(<SkillVersionsPage />);
+    expect(
+      await screen.findByText('3 phiên bản · v3 chờ duyệt · v2 đang dùng ở 4 agent và 9 phiên'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Người duyệt khác người tạo')).toBeInTheDocument();
+    expect(screen.getByText('Khi phát hành v3, ngừng dùng v2?')).toBeInTheDocument();
+    expect(screen.getByText('Agent Giám sát rủi ro')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Duyệt và phát hành v3' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(
+      within(dialog).getByText(
+        '4 agent đang dùng v2 không tự nâng cấp; chủ sở hữu từng agent sẽ được thông báo.',
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Xuất bản' }));
+    expect(await screen.findByText('Đã phát hành Phân nhóm khách hàng v3')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Duyệt và phát hành v3' }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText('Ngừng 07/11 · thay bằng v3')).toBeInTheDocument();
+  });
+
+  it('refuses organisation-wide publishing without an administrator', async () => {
+    routeId = 'sk-segment';
+    wrap(<SkillVersionsPage />);
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Phạm vi dùng' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Toàn tổ chức' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Duyệt và phát hành v3' }));
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Xuất bản' }),
+    );
+    expect(await screen.findByText(/Phát hành toàn tổ chức cần quản trị viên/)).toBeInTheDocument();
+  });
+
+  it('asks for a note before sending changes back to the author', async () => {
+    routeId = 'sk-segment';
+    wrap(<SkillVersionsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Yêu cầu sửa' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Gửi yêu cầu' }));
+    expect(await within(dialog).findByText('Ghi điều cần sửa.')).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText('Điều cần sửa'), {
+      target: { value: 'Giữ lại biến thu nhập cho nhóm tự doanh' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Gửi yêu cầu' }));
+    expect(await screen.findByText('Đã trả v3 về Đỗ Hải Yến')).toBeInTheDocument();
+  });
+
+  it('says so when nothing waits for review', async () => {
+    // Approve the only pending version first, then the rail entry has nothing to show.
+    const { unmount } = wrap(<SkillVersionsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Duyệt và phát hành v3' }));
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Xuất bản' }),
+    );
+    await screen.findByText('Đã phát hành Phân nhóm khách hàng v3');
+    unmount();
+    wrap(<SkillVersionsPage />);
+    expect(await screen.findByText('Không có phiên bản nào chờ duyệt')).toBeInTheDocument();
+  });
+});
+
+describe('SkillSuggestionsPage', () => {
+  it('shows the repeated chains, their occurrences, and creates a skill from the first session', async () => {
+    wrap(<SkillSuggestionsPage />);
+    expect(await screen.findByText('Đối soát số với báo cáo đã nộp')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Lấy số đã nộp → lấy số nội bộ cùng kỳ → so từng chỉ tiêu → khoanh vùng chênh lệch',
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Xem các lần lặp' })[0]);
+    expect(
+      screen.getByRole('list', { name: 'Các lần lặp của Đối soát số với báo cáo đã nộp' }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Tạo kỹ năng' })[0]);
+    expect(navigate).toHaveBeenCalledWith('agents', 'SKILL_FROM_SESSION', 'ws-filed-recon-q3');
+  });
+
+  it('dismisses a suggestion for 90 days', async () => {
+    wrap(<SkillSuggestionsPage />);
+    await screen.findByText('Kiểm tra khoản cơ cấu trong kỳ');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Bỏ qua' })[1]);
+    expect(
+      await screen.findByText(
+        'Đã bỏ qua. Agent không đề xuất lại “Kiểm tra khoản cơ cấu trong kỳ” trong 90 ngày.',
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('heading', { name: 'Kiểm tra khoản cơ cấu trong kỳ' }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+});
+
+describe('SkillsToolsPage', () => {
+  it('opens on the tools, and shows skills by card and MCP servers by tab', async () => {
+    wrap(<SkillsToolsPage />);
+    expect(await screen.findByText('query.run')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Công cụ/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('Truy vấn qua semantic layer')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Kết nối MCP/ }));
+    expect(await screen.findByText('Lỗi xác thực')).toBeInTheDocument();
+    expect(screen.getByText('Chờ duyệt PII')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Kỹ năng/ }));
+    expect(await screen.findByText('Công cụ theo mức quyền')).toBeInTheDocument();
+    expect(screen.getByText('Chỉ quản trị viên; agent không được gán')).toBeInTheDocument();
+    expect(await screen.findByText('Agent đề xuất kỹ năng mới')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Đối soát hai nguồn/ }));
+    expect(navigate).toHaveBeenCalledWith('agents', 'SKILL_RUN', 'sk-reconcile');
+  });
+
+  it('registers a tool from an MCP server', async () => {
+    wrap(<SkillsToolsPage />);
+    await screen.findByText('query.run');
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng ký công cụ' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Đăng ký công cụ' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Đăng ký' }));
+    expect(
+      await within(dialog).findByText('Điền tên, loại, mức quyền và mô tả cho agent.'),
+    ).toBeInTheDocument();
+
+    fireEvent.change(within(dialog).getByLabelText('Tên'), { target: { value: 'ticket.create' } });
+    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Loại' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'MCP · máy chủ Ticket nội bộ' }));
+    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Mức quyền' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Ghi bản derived · cần duyệt' }));
+    fireEvent.change(within(dialog).getByLabelText('Mô tả cho agent'), {
+      target: { value: 'Tạo phiếu yêu cầu xử lý dữ liệu cho đội vận hành' },
+    });
+    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Agent được dùng' }));
+    fireEvent.click((await screen.findAllByRole('option'))[0]);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Đăng ký' }));
+
+    expect(await screen.findByText('Đã đăng ký ticket.create')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Tạo phiếu yêu cầu xử lý dữ liệu cho đội vận hành'),
+    ).toBeInTheDocument();
+  });
+});

@@ -234,6 +234,7 @@ function DocumentPanel({ id, onClose }: { id: string; onClose: () => void }) {
 }
 
 function DocumentBody({ doc, onClose }: { doc: DocumentDetail; onClose: () => void }) {
+  const { navigate } = useAppState();
   return (
     <>
       <div className="flex items-start gap-da-md">
@@ -248,6 +249,7 @@ function DocumentBody({ doc, onClose }: { doc: DocumentDetail; onClose: () => vo
         </button>
       </div>
       <p className="text-muted-foreground da-caption">{doc.origin_text}</p>
+      <Button onClick={() => navigate('data', 'DOCUMENT', doc.id)}>Mở tài liệu</Button>
       <section className="flex flex-col gap-da-xs">
         <h3 className="text-muted-foreground da-overline">Agent Tài liệu đã xử lý</h3>
         {doc.processing.map((step) => (

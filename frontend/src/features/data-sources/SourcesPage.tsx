@@ -214,6 +214,15 @@ export default function SourcesPage() {
                             icon: 'refresh',
                             onSelect: () => void check(source),
                           },
+                          ...(source.drift_id
+                            ? [
+                                {
+                                  label: 'Duyệt thay đổi cấu trúc',
+                                  icon: 'layers' as const,
+                                  onSelect: () => navigate('data', 'DRIFT', source.drift_id!),
+                                },
+                              ]
+                            : []),
                         ]}
                       />
                     </td>

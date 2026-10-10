@@ -6,7 +6,6 @@ import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Tabs } from '../../design-system/Tabs';
 import { useToast } from '../../design-system/Toast';
-import { Tooltip } from '../../design-system/Tooltip';
 import { formatNumber, formatPercent, formatTime } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
 import {
@@ -22,6 +21,7 @@ import { useV1 } from '../../lib/v1/useV1';
  * type, share empty, distinct values, a small histogram and a note — and, on the right (340px),
  * the Data Prep agent's remarks. Only "Hồ sơ dữ liệu" has an API; the other tabs say so.
  * "Xem ánh xạ" and "Đặt quy tắc chất lượng" of the agent panel have no screen yet and are not drawn.
+ * "Dùng trong Khám phá" opens Khám phá bảng.
  */
 type Tab = 'profile' | 'sample' | 'schema' | 'lineage' | 'access';
 
@@ -71,11 +71,9 @@ function ProfileView({ profile }: { profile: TableProfile }) {
               Lập hồ sơ lại
             </Button>
             <Button onClick={() => navigate('analysis', 'ASK')}>Hỏi về bảng này</Button>
-            <Tooltip content="Khám phá kéo thả đang được làm.">
-              <Button kind="primary" disabled>
-                Dùng trong Khám phá
-              </Button>
-            </Tooltip>
+            <Button kind="primary" onClick={() => navigate('data', 'EXPLORE', profile.id)}>
+              Dùng trong Khám phá
+            </Button>
           </>
         }
       />

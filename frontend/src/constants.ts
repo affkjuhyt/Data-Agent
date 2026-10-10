@@ -22,13 +22,24 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
         { id: 'OPERATIONS', label: 'Vận hành' },
       ],
     },
+    {
+      label: 'Kỹ năng',
+      items: [
+        { id: 'SKILLS', label: 'Thư viện' },
+        { id: 'SKILL_SUGGESTIONS', label: 'Đề xuất từ agent' },
+        { id: 'SKILL_VERSIONS', label: 'Đang chờ duyệt' },
+        { id: 'TOOLS', label: 'Công cụ' },
+      ],
+    },
   ],
   analysis: [
     {
       label: 'Phân tích',
       items: [
         { id: 'ASK', label: 'Hỏi đáp' },
+        { id: 'EXPLORE', label: 'Khám phá' },
         { id: 'DASHBOARD', label: 'Dashboard' },
+        { id: 'FORECAST', label: 'Dự báo' },
         { id: 'SESSIONS', label: 'Phiên làm việc' },
       ],
     },
@@ -39,11 +50,34 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
       items: [
         { id: 'SOURCES', label: 'Nguồn' },
         { id: 'JOBS', label: 'Job nạp' },
+        { id: 'DRIFT', label: 'Lệch cấu trúc' },
+        { id: 'ERRORS', label: 'Bản ghi lỗi' },
         { id: 'UPLOAD', label: 'Tải tệp' },
         { id: 'CRAWL', label: 'Thu thập ngoài' },
       ],
     },
-    { label: 'Tài liệu', items: [{ id: 'COLLECTIONS', label: 'Bộ sưu tập' }] },
+    {
+      label: 'Tài liệu',
+      items: [
+        { id: 'COLLECTIONS', label: 'Bộ sưu tập' },
+        { id: 'DOCUMENTS', label: 'Tệp & tài liệu' },
+        { id: 'DOC_QUALITY', label: 'Hàng chờ chất lượng' },
+        { id: 'DOC_VALIDITY', label: 'Hiệu lực văn bản' },
+        { id: 'EXTRACTION_SCHEMAS', label: 'Lược đồ trích xuất' },
+      ],
+    },
+    {
+      label: 'Chuẩn bị',
+      items: [
+        { id: 'SQL', label: 'SQL' },
+        { id: 'PIPELINES', label: 'Pipeline' },
+        { id: 'DATA_MARTS', label: 'Data mart' },
+        { id: 'DATA_PRODUCTS', label: 'Sản phẩm dữ liệu' },
+        { id: 'QUALITY', label: 'Chất lượng' },
+        { id: 'WRITEBACK', label: 'Ghi ngược' },
+        { id: 'LINEAGE', label: 'Dòng dữ liệu' },
+      ],
+    },
     {
       label: 'Kỳ chốt',
       items: [
@@ -117,13 +151,35 @@ export const firstPageOf = (area: AreaId): string | undefined =>
 
 /** Detail pages that live under a rail item: /agents/run/<id> keeps "Lượt chạy" selected. */
 const RAIL_PARENT: Partial<Record<AreaId, Record<string, string>>> = {
-  agents: { RUN: 'RUNS', AGENT: 'TEAM', BUILDER: 'TEAM' },
-  analysis: { REPORT: 'SESSIONS' },
+  agents: {
+    RUN: 'RUNS',
+    AGENT: 'TEAM',
+    BUILDER: 'TEAM',
+    SKILL_EDITOR: 'SKILLS',
+    SKILL_RUN: 'SKILLS',
+    SKILL_FROM_SESSION: 'SKILLS',
+    SKILL_TESTS: 'SKILL_VERSIONS',
+  },
+  analysis: {
+    REPORT: 'SESSIONS',
+    ARTIFACT: 'SESSIONS',
+    FORECAST_JOB: 'SESSIONS',
+    FORECAST_STUDIO: 'FORECAST',
+    FORECAST_MODEL: 'FORECAST',
+    DOC_ASK: 'ASK',
+  },
   data: {
     SOURCE: 'SOURCES',
     TABLE: 'SOURCES',
     CONNECT: 'SOURCES',
     COLLECTION: 'COLLECTIONS',
+    JOB_NEW: 'JOBS',
+    EXPLORE: 'SOURCES',
+    CONNECT_API: 'SOURCES',
+    DOCUMENT: 'DOCUMENTS',
+    PIPELINE: 'PIPELINES',
+    PIPELINE_SAVE: 'PIPELINES',
+    DATA_MART: 'DATA_MARTS',
     CRAWL_NEW: 'CRAWL',
     CRAWL_SOURCE: 'CRAWL',
     CRAWL_DRIFT: 'CRAWL',

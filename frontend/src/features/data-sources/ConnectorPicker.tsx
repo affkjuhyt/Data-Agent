@@ -24,8 +24,8 @@ import { freshnessText, sourceTone } from './sourceFormat';
  * "v3.1 · Kết nối dữ liệu · Chưa có nguồn" (2165:17285, UC-04-01): step 1 of connecting, and
  * what the source list shows while there is no source. The connector catalogue on the left
  * (search, category chips, 235px cards), the connected sources on the right (400px).
- * A database connector opens the connect flow, CSV / Excel opens Tải tệp; connectors without
- * a set-up screen yet are shown but not clickable.
+ * A database connector opens the connect flow, REST API opens Kết nối API, CSV / Excel opens
+ * Tải tệp; connectors without a set-up screen yet are shown but not clickable.
  */
 const CATEGORY: Record<ConnectorCategory, string> = {
   database: 'Cơ sở dữ liệu',
@@ -90,6 +90,7 @@ function ConnectorIcon({ code, size = 40 }: { code: string; size?: 32 | 40 }) {
 /** Where a connector card leads, or null when it has no set-up screen yet. */
 function targetOf(connector: Connector): { page: string; id?: string } | null {
   if (connector.code === 'csv') return { page: 'UPLOAD' };
+  if (connector.code === 'rest') return { page: 'CONNECT_API' };
   if (connector.form) return { page: 'CONNECT', id: connector.code };
   return null;
 }

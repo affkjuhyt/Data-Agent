@@ -17,7 +17,14 @@ import { useAuth } from '../../lib/AuthProvider';
  * 208px rail stay fixed, only the main region scrolls. The rail shows on an area's rail pages;
  * landings and off-rail pages get the full width. ⌘K / Ctrl+K opens the command palette.
  */
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({
+  children,
+  initialSpaceId = '',
+}: {
+  children: ReactNode;
+  /** The space picked on "v3.1 · Chọn Data Space" before the shell opened; '' = Toàn tổ chức. */
+  initialSpaceId?: string;
+}) {
   const { activeModule, subTab, navigate, setSubTab, user } = useAppState();
   const { logout } = useAuth();
   const area = activeModule as AreaId;
@@ -31,7 +38,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   // (GET /v1/data-spaces). "Toàn tổ chức" sends no X-Data-Space; choosing a space sets the
   // header for every v1 call and remounts the page so it reloads for that space.
   const spaces = useV1(listDataSpaces, []);
-  const [dataSpaceId, setDataSpaceId] = useState<string>('');
+  const [dataSpaceId, setDataSpaceId] = useState<string>(initialSpaceId);
+  useEffect(() => {
+    setDataSpace(initialSpaceId || null);
+  }, [initialSpaceId]);
   const chooseSpace = (id: string) => {
     setDataSpace(id || null);
     setDataSpaceId(id);

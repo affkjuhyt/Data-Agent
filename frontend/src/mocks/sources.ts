@@ -1,6 +1,17 @@
 import { http, HttpResponse } from 'msw';
 import type {
   ActivateSource,
+  ApiFieldMapping,
+  ApiRequest,
+  ApiSourceConfig,
+  CellValue,
+  ColumnStats,
+  ErrorRecordGroup,
+  ExploreFilter,
+  JobCandidate,
+  NewJob,
+  SourceDrift,
+  TablePreview,
   Collection,
   CollectionDetail,
   CollectionDocument,
@@ -72,6 +83,7 @@ function row(
     refresh_text: null,
     status_label: 'Đúng lịch',
     schema_drift: false,
+    drift_id: null,
     lag_seconds: null,
     held_records: null,
     data_spaces: [],
@@ -127,6 +139,7 @@ export function sourceRowsFixture(): SourceRow[] {
       refresh_text: '2 giờ',
       status_label: 'Đổi cấu trúc · chờ duyệt',
       schema_drift: true,
+      drift_id: 'drift-card-0810',
       status_reason: 'Nguồn thêm trường mới; 1.402 bản ghi đang chờ bạn xem trước khi nạp.',
       last_refreshed_at: at(8, 0),
       held_records: 1402,
@@ -879,6 +892,326 @@ const COLLECTION_DETAIL: Record<string, Omit<CollectionDetail, keyof Collection>
   },
 };
 
+/* ─── Lệch cấu trúc, Job nạp · Thiết lập, Bản ghi lỗi (UC-04-03, -06, -07) ─ */
+
+const CARD_DRIFT_ID = 'drift-card-0810';
+
+function sourceDriftFixture(): SourceDrift {
+  return {
+    id: CARD_DRIFT_ID,
+    source_id: 'src-card',
+    source_name: 'Thẻ tín dụng',
+    job_id: 'job-card-transactions',
+    table_name: 'card_transactions',
+    title: 'Thẻ tín dụng đổi cấu trúc',
+    status: 'pending',
+    detected_text: '08:00 hôm nay khi quét',
+    job_paused: true,
+    held_records: 1402,
+    changes: [
+      {
+        column: 'merchant_category',
+        before: null,
+        after: 'VARCHAR2(8)',
+        kind: 'add_column',
+        note: null,
+      },
+      {
+        column: 'amount',
+        before: 'NUMBER(15,2)',
+        after: 'NUMBER(18,2)',
+        kind: 'widen_type',
+        note: 'an toàn',
+      },
+      {
+        column: 'channel_code',
+        before: 'CHAR(2)',
+        after: 'VARCHAR2(10)',
+        kind: 'change_type',
+        note: '2 chỉ số dùng cột này',
+      },
+    ],
+    impact_by: { name: 'Agent Chất lượng dữ liệu', at_text: '08:02' },
+    impact: [
+      {
+        object: 'CARD_CHANNEL_MIX',
+        kind_label: 'Chỉ số',
+        effect: 'Giá trị kênh mới “QR_DYN” chưa có trong nhóm kênh',
+      },
+      {
+        object: 'Báo cáo thẻ tháng',
+        kind_label: 'Báo cáo',
+        effect: 'Dùng CARD_CHANNEL_MIX; kỳ tới sẽ thiếu nhóm mới',
+      },
+      {
+        object: 'Agent Giám sát rủi ro',
+        kind_label: 'Agent',
+        effect: 'Theo dõi “Dư nợ thẻ” không bị ảnh hưởng',
+      },
+    ],
+    proposal:
+      'Chấp nhận cả ba thay đổi. Ánh xạ channel_code “QR_DYN” vào nhóm kênh “QR” của CARD_CHANNEL_MIX, rồi nạp lại 1.402 bản ghi đang giữ.',
+    reviewers_text:
+      'Trần Quốc An · chủ sở hữu bảng. Đổi kiểu cột mà chỉ số đang dùng cần thêm người phụ trách chỉ số: Phạm Đức Long.',
+    if_rejected_text:
+      'Job giữ cấu trúc cũ, cột mới bị bỏ qua; bản ghi có channel_code dài hơn 2 ký tự vào hàng bản ghi lỗi.',
+    approvals_required: 2,
+    approvals: [],
+  };
+}
+
+function errorGroupsFixture(): ErrorRecordGroup[] {
+  return [
+    {
+      id: 'err-channel-code',
+      cause: 'channel_code dài hơn 2 ký tự',
+      job_id: 'job-card-transactions',
+      table_name: 'card_transactions',
+      count: 1399,
+      suggestion: 'Chấp nhận thay đổi cấu trúc rồi nạp lại',
+      blocked_by_drift_id: CARD_DRIFT_ID,
+      sample:
+        '{ "txn_id": "T26100800412", "amount": 1250000, "channel_code": "QR_DYN",\n  "card_no": "4111 •••• •••• 1093", "txn_time": "2026-10-08T07:58:12" }',
+      retention_days: 30,
+    },
+    {
+      id: 'err-customer-id',
+      cause: 'Thiếu customer_id',
+      job_id: 'job-card-transactions',
+      table_name: 'card_transactions',
+      count: 3,
+      suggestion: 'Bỏ: nguồn đã xác nhận là giao dịch thử',
+      blocked_by_drift_id: null,
+      sample:
+        '{ "txn_id": "T26100800977", "amount": 10000, "channel_code": "PO",\n  "customer_id": null, "txn_time": "2026-10-08T07:41:03" }',
+      retention_days: 30,
+    },
+    {
+      id: 'err-date-range',
+      cause: 'Ngày ngoài khoảng hợp lệ',
+      job_id: 'job-branch-targets',
+      table_name: 'branch_targets',
+      count: 0,
+      suggestion: null,
+      blocked_by_drift_id: null,
+      sample: null,
+      retention_days: 30,
+    },
+  ];
+}
+
+function jobCandidatesFixture(): JobCandidate[] {
+  return [
+    {
+      dataset_id: 'tbl-card-transactions',
+      table_name: 'card_transactions',
+      source_name: 'Thẻ tín dụng',
+      cursor_columns: [
+        {
+          name: 'updated_at',
+          data_type: 'TIMESTAMP',
+          hint: 'Agent gợi ý: cột này luôn được cập nhật khi dòng đổi',
+        },
+        { name: 'txn_time', data_type: 'TIMESTAMP', hint: null },
+        { name: 'txn_id', data_type: 'VARCHAR2(16)', hint: null },
+      ],
+      cursor_value: '2026-10-08 10:00:00',
+      suggested_method: 'incremental',
+      target_text: 'raw.card_transactions · ghi thêm theo phân vùng ngày',
+      estimate: {
+        rows_per_run: '~180.000 dòng',
+        duration: '~2 phút',
+        source_load: 'thấp · dùng chỉ mục updated_at',
+      },
+    },
+    {
+      dataset_id: 'tbl-card-statements',
+      table_name: 'card_statements',
+      source_name: 'Thẻ tín dụng',
+      cursor_columns: [{ name: 'stmt_date', data_type: 'DATE', hint: null }],
+      cursor_value: '2026-09-30',
+      suggested_method: 'schedule',
+      target_text: 'raw.card_statements · thay theo kỳ sao kê',
+      estimate: { rows_per_run: '~2 triệu dòng', duration: '~9 phút', source_load: 'vừa' },
+    },
+  ];
+}
+
+/* ─── Khám phá bảng (UC-04-02, UC-06-02) ───────────────────────────────── */
+
+const LD_LOANS_PREVIEW_COLUMNS: TablePreview['columns'] = [
+  { name: 'loan_id', type_label: 'text', numeric: false, masked: false },
+  { name: 'customer_id', type_label: 'text · che', numeric: false, masked: true },
+  { name: 'region', type_label: 'text', numeric: false, masked: false },
+  { name: 'product', type_label: 'text', numeric: false, masked: false },
+  { name: 'balance', type_label: 'số', numeric: true, masked: false },
+  { name: 'debt_group', type_label: 'số', numeric: true, masked: false },
+  { name: 'overdue_days', type_label: 'số', numeric: true, masked: false },
+  { name: 'settle_date', type_label: 'ngày', numeric: false, masked: false },
+];
+
+const LD_LOANS_ROWS: CellValue[][] = [
+  ['LD2409-0187', '••••4821', 'DH Bắc Bộ', 'Tiêu dùng', 1_250_000_000, 3, 96, null],
+  ['LD2409-0190', '••••7712', 'DH Bắc Bộ', 'Tiêu dùng', 480_000_000, 3, 104, null],
+  ['LD2311-0456', '••••3390', 'DH Bắc Bộ', 'Tiêu dùng', 620_000_000, 3, 121, '2026-10-01'],
+  ['LD2402-1190', '••••1180', 'DH Bắc Bộ', 'Thẻ', 95_000_000, 4, 188, null],
+  ['LD2402-1190', '••••1180', 'DH Bắc Bộ', 'Thẻ', 95_000_000, 4, 188, null],
+  ['LD2406-0071', '••••5504', 'DH Bắc Bộ', 'Tiêu dùng', 310_000_000, 3, 92, null],
+  ['LD2405-0333', '••••6021', 'Nam Bộ', 'Mua nhà', 2_400_000_000, 1, 0, null],
+  ['LD2408-0912', '••••2287', 'Nam Bộ', 'Tiêu dùng', 150_000_000, 2, 35, null],
+  ['LD2401-0450', '••••9930', 'Trung Bộ', 'Kinh doanh', 3_100_000_000, 1, 0, '2026-09-15'],
+  ['LD2407-0118', '••••4410', 'Trung Bộ', 'Thẻ', 42_000_000, 5, 402, null],
+];
+
+const OVERDUE_HISTOGRAM = [70, 12, 8, 6, 10, 14, 9, 5, 3, 2].map((h, i) => ({
+  height: h / 70,
+  flagged: i === 1 || i === 4 || i === 5,
+}));
+
+function matches(row: CellValue[], filter: ExploreFilter): boolean {
+  const index = LD_LOANS_PREVIEW_COLUMNS.findIndex((c) => c.name === filter.column);
+  if (index < 0) return false;
+  const cell = row[index];
+  if (filter.op === 'eq') return String(cell ?? '') === filter.value;
+  const n = Number(filter.value);
+  if (typeof cell !== 'number' || Number.isNaN(n)) return false;
+  return filter.op === 'gte' ? cell >= n : cell <= n;
+}
+
+function previewOf(table: SourceTable, sourceName: string, filters: ExploreFilter[]): TablePreview {
+  const rows = LD_LOANS_ROWS.filter((r) => filters.every((f) => matches(r, f)));
+  const seen = new Map<string, number>();
+  const duplicates: number[] = [];
+  let firstPair: [number, number] | null = null;
+  rows.forEach((r, i) => {
+    const key = JSON.stringify(r);
+    const earlier = seen.get(key);
+    if (earlier === undefined) seen.set(key, i);
+    else {
+      duplicates.push(i);
+      firstPair ??= [earlier, i];
+    }
+  });
+  const pair = firstPair as [number, number] | null;
+  return {
+    id: table.id,
+    name: table.name.toLowerCase(),
+    source_name: sourceName,
+    row_count: table.row_count ?? 0,
+    matched_rows: filters.length === 0 ? (table.row_count ?? 0) : rows.length,
+    snapshot_text: 'snapshot 30/09 v3',
+    columns: LD_LOANS_PREVIEW_COLUMNS,
+    rows,
+    duplicate_rows: duplicates,
+    quality: pair
+      ? {
+          agent_name: 'Agent Chất lượng dữ liệu',
+          text: `dòng ${pair[1] + 1} trùng hoàn toàn với dòng ${pair[0] + 1} (${duplicates.length} bản ghi trùng trong bộ lọc này).`,
+        }
+      : null,
+  };
+}
+
+function columnStatsOf(name: string): ColumnStats | null {
+  const index = LD_LOANS_PREVIEW_COLUMNS.findIndex((c) => c.name === name);
+  if (index < 0) return null;
+  const column = LD_LOANS_PREVIEW_COLUMNS[index];
+  if (name === 'overdue_days')
+    return {
+      name,
+      type_label: 'số nguyên',
+      null_ratio: 0,
+      distinct: 1204,
+      min: '0',
+      max: '1.462',
+      median: '0',
+      histogram: OVERDUE_HISTOGRAM,
+      buckets_text: '0 · 30 · 60 · 90 · 120 · 180+ ngày',
+    };
+  const values = LD_LOANS_ROWS.map((r) => r[index]);
+  const present = values.filter((v): v is string | number => v !== null);
+  const sorted = [...present].sort((a, b) =>
+    typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b)),
+  );
+  const text = (v: string | number | undefined) =>
+    v === undefined ? '—' : typeof v === 'number' ? v.toLocaleString('vi-VN') : v;
+  return {
+    name,
+    type_label: column.numeric ? 'số' : column.type_label,
+    null_ratio: (values.length - present.length) / values.length,
+    distinct: new Set(present.map(String)).size,
+    min: text(sorted[0]),
+    max: text(sorted[sorted.length - 1]),
+    median: text(sorted[Math.floor(sorted.length / 2)]),
+    histogram: [],
+    buckets_text: '',
+  };
+}
+
+/* ─── Kết nối API (REST connector) ─────────────────────────────────────── */
+
+const API_SECRET_REFS: SecretRef[] = [
+  { ref: 'openbao://api/card-client', label: 'Lưu trong kho bí mật · openbao://api/card-client' },
+  { ref: 'openbao://api/sbv-fx', label: 'Lưu trong kho bí mật · openbao://api/sbv-fx' },
+];
+
+const CARD_API_MAPPING: ApiFieldMapping[] = [
+  { path: 'data[].card_id', column: 'card_id', type: 'text', note: 'Khoá chính' },
+  {
+    path: 'data[].loan_ref',
+    column: 'loan_id',
+    type: 'text',
+    note: 'Liên kết Core banking · khớp 97,8%',
+  },
+  {
+    path: 'data[].stmt_date',
+    column: 'statement_date',
+    type: 'date',
+    note: 'Dùng làm mốc thời điểm',
+  },
+  { path: 'data[].overdue_days', column: 'overdue_days', type: 'number', note: 'Đặt quy tắc ≥ 0' },
+];
+
+const CARD_API_BODY = `{ "data": [ { "card_id": "C-55102",
+    "loan_ref": "LD2402-1190",
+    "stmt_date": "2026-09-30",
+    "min_due": 1250000,
+    "overdue_days": 188 } ],
+  "next_page": 2 }`;
+
+function apiConfigsFixture(): Record<string, ApiSourceConfig> {
+  return {
+    'src-card': {
+      source_id: 'src-card',
+      name: 'Nguồn thẻ tín dụng',
+      request: {
+        url: 'https://card-api.noibo/v2/statements',
+        query: 'updated_since={{last_run}}&page={{page}}',
+        headers: [{ name: 'X-Branch-Scope', value: 'retail' }],
+        auth: 'oauth2_client',
+        secret_ref: 'openbao://api/card-client',
+        pagination: 'page',
+        max_pages: 200,
+        schedule: 'every_2h',
+        rate_limit_per_second: 10,
+        retries: 3,
+      },
+      mapping: CARD_API_MAPPING,
+      health: {
+        last_run_text: '08/10 08:00 · 1.204 bản ghi',
+        latency_ms: 380,
+        errors_7d_text: '2 lần 429 · đã tự thử lại',
+        gap: {
+          text: '6 ngày 24–29/09 (nguồn báo bảo trì)',
+          from: '2026-09-24',
+          to: '2026-09-29',
+          label: '24–29/09',
+        },
+      },
+    },
+  };
+}
+
 export function createSourcesHandlers() {
   let sources = sourceRowsFixture();
   const tables = tablesFixture();
@@ -890,6 +1223,10 @@ export function createSourcesHandlers() {
   const collections = collectionsFixture();
   const documents = documentsFixture();
   const connectors = connectorsFixture();
+  let drift = sourceDriftFixture();
+  let errorGroups = errorGroupsFixture();
+  const candidates = jobCandidatesFixture();
+  const apiConfigs = apiConfigsFixture();
 
   const findTable = (id: string) => {
     for (const [sourceId, list] of Object.entries(tables)) {
@@ -908,7 +1245,36 @@ export function createSourcesHandlers() {
         : problem(404, 'not_found', 'Không tìm thấy nguồn.');
     }),
     http.post('*/v1/sources', async ({ request }) => {
-      const body = (await request.json()) as NewSource;
+      const raw = (await request.json()) as NewSource & {
+        api?: { request: ApiRequest; mapping: ApiFieldMapping[] };
+      };
+      if (raw.api) {
+        if (!raw.name?.trim() || !raw.api.request.url.startsWith('https://'))
+          return problem(422, 'validation_failed', 'Cần tên và URL https.');
+        const id = `src-api-${Object.keys(apiConfigs).length + 1}`;
+        const created = row({
+          id,
+          name: raw.name,
+          connector: 'rest',
+          connector_label: 'API',
+          endpoint: new URL(raw.api.request.url).host,
+          status: 'testing',
+          status_label: 'Đang chạy lần đầu',
+          refresh_text: { hourly: 'mỗi giờ', every_2h: '2 giờ', daily: 'hằng ngày' }[
+            raw.api.request.schedule
+          ],
+        });
+        apiConfigs[id] = {
+          source_id: id,
+          name: raw.name,
+          request: raw.api.request,
+          mapping: raw.api.mapping,
+          health: null,
+        };
+        sources = [created, ...sources];
+        return HttpResponse.json(created, { status: 201 });
+      }
+      const body = raw as NewSource;
       if (!body.name?.trim() || !body.config?.host?.trim() || !body.config?.username?.trim())
         return problem(422, 'validation_failed', 'Cần tên, máy chủ và tài khoản.');
       const connector = connectors.find((c) => c.code === body.connector);
@@ -981,7 +1347,42 @@ export function createSourcesHandlers() {
         sources = sources.map((s) => (s.id === id ? activated : s));
         return HttpResponse.json(activated);
       }
+      if (verb === 'backfill') {
+        if (!apiConfigs[id]) return problem(404, 'not_found', 'Nguồn không chạy bù được.');
+        const range = (await request.json()) as { from?: string; to?: string };
+        if (!range.from || !range.to || range.from > range.to)
+          return problem(422, 'validation_failed', 'Khoảng ngày không hợp lệ.');
+        return HttpResponse.json({ status: 'queued' }, { status: 202 });
+      }
       return problem(404, 'not_found', 'Không có thao tác này.');
+    }),
+    http.get('*/v1/sources/:id/api-config', ({ params }) => {
+      const config = apiConfigs[String(params.id)];
+      return config
+        ? HttpResponse.json(config)
+        : problem(404, 'not_found', 'Nguồn này không phải nguồn REST API.');
+    }),
+    http.put('*/v1/sources/:id/api-config', async ({ params, request }) => {
+      const config = apiConfigs[String(params.id)];
+      if (!config) return problem(404, 'not_found', 'Nguồn này không phải nguồn REST API.');
+      const body = (await request.json()) as { request: ApiRequest; mapping: ApiFieldMapping[] };
+      if (!body.request?.url?.startsWith('https://'))
+        return problem(422, 'validation_failed', 'URL phải bắt đầu bằng https://.');
+      apiConfigs[config.source_id] = { ...config, ...body };
+      return HttpResponse.json(apiConfigs[config.source_id]);
+    }),
+    http.post('*/v1/connectors/rest\\:try', async ({ request }) => {
+      const { request: req } = (await request.json()) as { request: ApiRequest };
+      if (!req?.url?.startsWith('https://'))
+        return problem(422, 'validation_failed', 'URL phải bắt đầu bằng https://.');
+      if (!req.secret_ref)
+        return problem(422, 'validation_failed', 'Chọn thông tin xác thực trong kho bí mật.');
+      return HttpResponse.json({
+        status: 200,
+        duration_ms: 412,
+        body: CARD_API_BODY,
+        mapping: CARD_API_MAPPING,
+      });
     }),
 
     http.get('*/v1/datasets/:id/profile', ({ params }) => {
@@ -990,11 +1391,45 @@ export function createSourcesHandlers() {
         ? HttpResponse.json(profileOf(found.table, found.source))
         : problem(404, 'not_found', 'Không tìm thấy bảng.');
     }),
-    http.post('*/v1/datasets/:action', ({ params }) => {
+    http.post('*/v1/datasets/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
-      if (verb !== 'profile' || !findTable(id))
-        return problem(404, 'not_found', 'Không tìm thấy bảng.');
-      return HttpResponse.json({ status: 'queued' }, { status: 202 });
+      const found = findTable(id);
+      if (!found) return problem(404, 'not_found', 'Không tìm thấy bảng.');
+      if (verb === 'profile') return HttpResponse.json({ status: 'queued' }, { status: 202 });
+      if (verb === 'preview') {
+        const body = (await request.json()) as { filters?: ExploreFilter[] };
+        return HttpResponse.json(previewOf(found.table, found.source.name, body.filters ?? []));
+      }
+      if (verb === 'derive') {
+        const body = (await request.json()) as {
+          filters: ExploreFilter[];
+          drop_duplicates: boolean;
+        };
+        const preview = previewOf(found.table, found.source.name, body.filters ?? []);
+        const rows =
+          preview.rows.length - (body.drop_duplicates ? preview.duplicate_rows.length : 0);
+        return HttpResponse.json(
+          {
+            id: `${id}-derived`,
+            name: `${preview.name}_${body.drop_duplicates ? 'dedup' : 'filtered'}`,
+            row_count: body.filters?.length ? rows : preview.row_count,
+          },
+          { status: 201 },
+        );
+      }
+      return problem(404, 'not_found', 'Không có thao tác này.');
+    }),
+    http.get('*/v1/datasets/:id/columns/:column', ({ params }) => {
+      if (!findTable(String(params.id))) return problem(404, 'not_found', 'Không tìm thấy bảng.');
+      const column = LD_LOANS_PREVIEW_COLUMNS.find((c) => c.name === params.column);
+      if (column?.masked)
+        return problem(
+          403,
+          'masked_column',
+          'Cột dữ liệu cá nhân không lập hồ sơ, chỉ hiện “đã che”.',
+        );
+      const stats = columnStatsOf(String(params.column));
+      return stats ? HttpResponse.json(stats) : problem(404, 'not_found', 'Không có cột này.');
     }),
 
     http.get('*/v1/connectors', () =>
@@ -1006,7 +1441,9 @@ export function createSourcesHandlers() {
         })),
       ),
     ),
-    http.get('*/v1/secret-refs', () => page(SECRET_REFS)),
+    http.get('*/v1/secret-refs', ({ request }) =>
+      page(new URL(request.url).searchParams.get('kind') === 'api' ? API_SECRET_REFS : SECRET_REFS),
+    ),
 
     http.get('*/v1/ingestion-jobs', () => page(jobs)),
     http.post('*/v1/ingestion-jobs/:action', ({ params }) => {
@@ -1103,6 +1540,144 @@ export function createSourcesHandlers() {
         .flat()
         .find((d) => d.id === params.id);
       return doc ? HttpResponse.json(doc) : problem(404, 'not_found', 'Không tìm thấy tài liệu.');
+    }),
+
+    // Schema drifts of connected sources. P14's mock serves the same paths for crawled sources:
+    // answer only our ids (and the origin=source list) and fall through otherwise.
+    http.get('*/v1/schema-drifts', ({ request }) => {
+      if (new URL(request.url).searchParams.get('origin') !== 'source') return undefined;
+      return page(drift.status === 'pending' ? [drift] : []);
+    }),
+    http.get('*/v1/schema-drifts/:id', ({ params }) =>
+      params.id === drift.id ? HttpResponse.json(drift) : undefined,
+    ),
+    http.post('*/v1/schema-drifts/:action', async ({ params, request }) => {
+      const [id, verb] = String(params.action).split(':');
+      if (id !== drift.id) return undefined;
+      if (verb !== 'resolve') return problem(404, 'not_found', 'Không có thao tác này.');
+      if (drift.status !== 'pending')
+        return problem(409, 'conflict', 'Thay đổi này đã được xử lý.');
+      const body = (await request.json()) as { resolution: 'accept' | 'reject'; note?: string };
+      if (body.resolution === 'accept') {
+        if (drift.approvals.some((a) => a.name === 'Bạn'))
+          return problem(
+            409,
+            'second_approval_required',
+            'Bạn đã duyệt; thay đổi này cần thêm người phụ trách chỉ số duyệt.',
+          );
+        const approvals = [...drift.approvals, { name: 'Bạn', at: new Date().toISOString() }];
+        drift = {
+          ...drift,
+          approvals,
+          status: approvals.length >= drift.approvals_required ? 'accepted' : 'pending',
+        };
+      } else if (body.resolution === 'reject') {
+        drift = { ...drift, status: 'rejected' };
+      } else return problem(422, 'validation_failed', 'Chọn chấp nhận hoặc từ chối.');
+      if (drift.status !== 'pending') {
+        // Decided: the job runs again (old or new structure) and the source is no longer flagged.
+        sources = sources.map((s) =>
+          s.id === drift.source_id
+            ? { ...s, schema_drift: false, drift_id: null, status_label: 'Đúng lịch' }
+            : s,
+        );
+        jobs = jobs.map((j) =>
+          j.id === drift.job_id ? { ...j, status: 'running', status_reason: null } : j,
+        );
+        errorGroups = errorGroups.map((g) =>
+          g.blocked_by_drift_id === drift.id
+            ? {
+                ...g,
+                blocked_by_drift_id: null,
+                suggestion:
+                  drift.status === 'accepted' ? 'Nạp lại' : 'Bỏ, hoặc sửa ánh xạ rồi nạp lại',
+              }
+            : g,
+        );
+      }
+      return HttpResponse.json(drift);
+    }),
+
+    http.get('*/v1/ingestion-job-candidates', () => page(candidates)),
+    http.post('*/v1/ingestion-jobs\\:dry-run', async ({ request }) => {
+      const body = (await request.json()) as NewJob;
+      const candidate = candidates.find((c) => c.dataset_id === body.dataset_id);
+      if (!candidate) return problem(404, 'not_found', 'Không tìm thấy bảng.');
+      if (body.method === 'incremental' && !body.cursor_column)
+        return problem(422, 'validation_failed', 'Nạp tăng dần cần một cột con trỏ.');
+      return HttpResponse.json({
+        rows_read: 1000,
+        checks: [
+          {
+            title: body.method === 'incremental' ? 'Đọc được theo con trỏ' : 'Đọc được từ nguồn',
+            result: 'đạt',
+            ok: true,
+          },
+          { title: 'Khớp kiểu với bảng đích', result: 'đạt', ok: true },
+          { title: 'Dòng trùng khoá', result: '0', ok: true },
+          {
+            title: 'Dòng thiếu trường bắt buộc',
+            result:
+              body.on_invalid_record === 'stop'
+                ? '3 · job sẽ dừng'
+                : body.on_invalid_record === 'skip_and_log'
+                  ? '3 · sẽ bị bỏ, có ghi nhật ký'
+                  : '3 · sẽ vào hàng bản ghi lỗi',
+            ok: false,
+          },
+        ],
+      });
+    }),
+    http.post('*/v1/ingestion-jobs', async ({ request }) => {
+      const body = (await request.json()) as NewJob;
+      const candidate = candidates.find((c) => c.dataset_id === body.dataset_id);
+      if (!candidate) return problem(404, 'not_found', 'Không tìm thấy bảng.');
+      if (body.method === 'incremental' && !body.cursor_column)
+        return problem(422, 'validation_failed', 'Nạp tăng dần cần một cột con trỏ.');
+      const created: IngestionJob = {
+        id: `job-new-${jobs.length + 1}`,
+        table_name: candidate.table_name,
+        source_name: candidate.source_name,
+        method: body.method,
+        hours: Array.from({ length: 24 }, () => 'none' as const),
+        lag_seconds: null,
+        late: false,
+        rows_today: 0,
+        status: 'on_time',
+        status_reason: 'chờ lần chạy đầu',
+      };
+      jobs = [created, ...jobs];
+      return HttpResponse.json(created, { status: 201 });
+    }),
+
+    http.get('*/v1/error-record-groups', () => page(errorGroups)),
+    http.post('*/v1/error-record-groups\\:reload', async ({ request }) => {
+      const { ids } = (await request.json()) as { ids: string[] };
+      const chosen = errorGroups.filter((g) => ids?.includes(g.id));
+      if (chosen.length === 0) return problem(422, 'validation_failed', 'Chọn ít nhất một nhóm.');
+      const blocked = chosen.find((g) => g.blocked_by_drift_id);
+      if (blocked)
+        return problem(
+          409,
+          'blocked_by_schema_drift',
+          `“${blocked.cause}” chỉ nạp lại được sau khi thay đổi cấu trúc được chấp nhận.`,
+        );
+      const reloaded = chosen.reduce((n, g) => n + g.count, 0);
+      errorGroups = errorGroups.map((g) =>
+        ids.includes(g.id) ? { ...g, count: 0, suggestion: null, sample: null } : g,
+      );
+      return HttpResponse.json({ reloaded });
+    }),
+    http.post('*/v1/error-record-groups\\:discard', async ({ request }) => {
+      const { ids, reason } = (await request.json()) as { ids: string[]; reason: string };
+      if (!reason?.trim()) return problem(422, 'validation_failed', 'Cần lý do để bỏ bản ghi.');
+      const chosen = errorGroups.filter((g) => ids?.includes(g.id));
+      if (chosen.length === 0) return problem(422, 'validation_failed', 'Chọn ít nhất một nhóm.');
+      const discarded = chosen.reduce((n, g) => n + g.count, 0);
+      errorGroups = errorGroups.map((g) =>
+        ids.includes(g.id) ? { ...g, count: 0, suggestion: null, sample: null } : g,
+      );
+      return HttpResponse.json({ discarded });
     }),
   ];
 }

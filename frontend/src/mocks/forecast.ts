@@ -1,0 +1,684 @@
+import { http, HttpResponse } from 'msw';
+import type {
+  Forecast,
+  ForecastJob,
+  ForecastModel,
+  ForecastWorkbench,
+  HistoryPoint,
+} from '../lib/v1/forecast';
+
+/*
+ * P15 Dự báo (section 2392:14840): one forecast question about retail deposits. The job waits on
+ * an assumption for the policy rate (answered through the ordinary HITL :resolve, handled here
+ * for this mock's request only), then runs backtest and finishes after two polls. The forecast,
+ * the studio's workbench and the model card (v7 waiting for review, v6 degrading) are the
+ * figures of the Figma frames.
+ */
+const JOB_ID = 'fj-2026-1010-03';
+const HITL_ID = 'hitl-forecast-policy-rate';
+const FORECAST_ID = 'fc-deposit-2026-11';
+const STALE_ID = 'fc-deposit-2026-09-v6';
+const MODEL_ID = 'fm-deposit-retail';
+const V7_ID = 'fmv-deposit-retail-v7';
+/** Polls of a running job before it finishes. */
+const POLLS_TO_FINISH = 2;
+
+const problem = (status: number, code: string, detail: string) =>
+  HttpResponse.json(
+    { title: code, status, code, detail },
+    { status, headers: { 'Content-Type': 'application/problem+json' } },
+  );
+
+const MONTHS: [string, string, number][] = [
+  ['2024-10', 'T10/2024', 371.2],
+  ['2024-11', 'T11/2024', 373.0],
+  ['2024-12', 'T12/2024', 369.4],
+  ['2025-01', 'T1/2025', 372.1],
+  ['2025-02', 'T2/2025', 375.6],
+  ['2025-03', 'T3/2025', 378.2],
+  ['2025-04', 'T4/2025', 379.9],
+  ['2025-05', 'T5/2025', 382.4],
+  ['2025-06', 'T6/2025', 383.7],
+  ['2025-07', 'T7/2025', 381.9],
+  ['2025-08', 'T8/2025', 386.3],
+  ['2025-09', 'T9/2025', 389.0],
+  ['2025-10', 'T10/2025', 396.0],
+  ['2025-11', 'T11/2025', 399.1],
+  ['2025-12', 'T12/2025', 401.2],
+  ['2026-01', 'T1/2026', 397.0],
+  ['2026-02', 'T2/2026', 400.3],
+  ['2026-03', 'T3/2026', 404.6],
+  ['2026-04', 'T4/2026', 407.9],
+  ['2026-05', 'T5/2026', 411.2],
+  ['2026-06', 'T6/2026', 414.0],
+  ['2026-07', 'T7/2026', 412.3],
+  ['2026-08', 'T8/2026', 416.8],
+  ['2026-09', 'T9/2026', 420.5],
+];
+
+const history = (until: string): HistoryPoint[] =>
+  MONTHS.filter(([period]) => period <= until).map(([period, label, actual]) => ({
+    period,
+    label,
+    actual,
+  }));
+
+const SCENARIO_DISCLAIMER =
+  'Kịch bản là phép tính có điều kiện, không phải ước lượng tác động nhân quả. Nếu lãi suất điều hành tăng 0,5 điểm từ T12/2026 và các giả định khác giữ nguyên, mô hình cho kết quả dưới đây. Mô hình học từ tương quan trong dữ liệu quá khứ, nên chênh lệch này không chứng minh lãi suất điều hành gây ra thay đổi của số dư huy động. Khoảng của kịch bản không gồm độ bất định của giả định.';
+
+function scenario(text: string): Forecast['scenario'] {
+  return {
+    text,
+    saved: false,
+    disclaimer: SCENARIO_DISCLAIMER,
+    summary:
+      'T1/2027: 435,0 nghìn tỷ, cao hơn kịch bản gốc 3,6 nghìn tỷ (+0,8%). Tác động chủ yếu qua biến lãi suất 12T thị trường với độ trễ 1–2 tháng.',
+    short_label: 'Kịch bản +0,5 điểm',
+    points: [
+      { period: '2026-11', value: 428.6 },
+      { period: '2026-12', value: 437.9 },
+      { period: '2027-01', value: 435.0 },
+    ],
+  };
+}
+
+const SCENARIO_VARIABLES = ['lãi suất điều hành', 'lãi suất huy động 12t', 'cpi'];
+
+function forecast(): Forecast {
+  return {
+    id: FORECAST_ID,
+    metric_name: 'Số dư huy động bán lẻ',
+    horizon_label: 'T11/2026 – T1/2027',
+    unit_label: 'nghìn tỷ đồng',
+    model: {
+      id: MODEL_ID,
+      version_label: 'v7',
+      algorithm_label: 'Ensemble',
+      mase: 0.64,
+      status: 'published',
+    },
+    data_cutoff: '2026-09-30',
+    created_at: '2026-10-10T10:42:00+07:00',
+    label: 'approved',
+    approved_by_name: 'Đỗ Hải Yến',
+    stale_note: null,
+    history: history('2026-09'),
+    points: [
+      {
+        period: '2026-11',
+        label: 'T11/2026',
+        mean: 428.6,
+        lo80: 421.9,
+        hi80: 435.3,
+        lo95: 418.2,
+        hi95: 439.0,
+      },
+      {
+        period: '2026-12',
+        label: 'T12/2026',
+        mean: 436.1,
+        lo80: 426.8,
+        hi80: 445.4,
+        lo95: 421.7,
+        hi95: 450.5,
+      },
+      {
+        period: '2027-01',
+        label: 'T1/2027',
+        mean: 431.4,
+        lo80: 419.6,
+        hi80: 443.2,
+        lo95: 413.3,
+        hi95: 449.5,
+      },
+    ],
+    interval_note: 'Khoảng đã gồm sai số của dự báo lãi suất huy động 12 tháng thị trường.',
+    contributions: {
+      title: 'Đóng góp vào thay đổi T1/2027 so T9/2026',
+      items: [
+        { label: 'Xu hướng và mùa vụ', value: 5.8 },
+        { label: 'Lãi suất 12T thị trường', value: 3.1 },
+        { label: 'Lãi suất điều hành', value: 0.9 },
+        { label: 'Lịch Tết (rút trước Tết)', value: -2.4 },
+      ],
+    },
+    assumptions_text:
+      'Lãi suất điều hành giữ 4,50% (kịch bản gốc) · lãi suất 12T thị trường theo dự báo ETS riêng · CPI theo công bố gần nhất · Tết 17/02/2027.',
+    scenario_variables: SCENARIO_VARIABLES,
+    scenario: scenario('Lãi suất điều hành +0,5 điểm từ T12/2026'),
+    session_id: 'ws-huy-dong-q4',
+    added_to_session: false,
+  };
+}
+
+// The v6 forecast the in-progress answer offers for the trend, labelled as stale.
+function staleForecast(): Forecast {
+  return {
+    ...forecast(),
+    id: STALE_ID,
+    horizon_label: 'T9/2026 – T11/2026',
+    model: {
+      id: MODEL_ID,
+      version_label: 'v6',
+      algorithm_label: 'SARIMAX',
+      mase: 0.7,
+      status: 'degraded',
+    },
+    data_cutoff: '2026-08-31',
+    created_at: '2026-09-05T07:10:00+07:00',
+    label: 'stale',
+    approved_by_name: null,
+    stale_note: 'dự báo cũ, dữ liệu đến 31/08, mô hình suy giảm',
+    history: history('2026-08'),
+    points: [
+      {
+        period: '2026-09',
+        label: 'T9/2026',
+        mean: 418.9,
+        lo80: 413.0,
+        hi80: 424.8,
+        lo95: 409.6,
+        hi95: 428.2,
+      },
+      {
+        period: '2026-10',
+        label: 'T10/2026',
+        mean: 421.7,
+        lo80: 414.2,
+        hi80: 429.2,
+        lo95: 409.9,
+        hi95: 433.5,
+      },
+      {
+        period: '2026-11',
+        label: 'T11/2026',
+        mean: 424.0,
+        lo80: 415.0,
+        hi80: 433.0,
+        lo95: 409.8,
+        hi95: 438.2,
+      },
+    ],
+    interval_note: 'Khoảng theo sai số backtest của v6 tại thời điểm phát hành.',
+    contributions: {
+      title: 'Đóng góp vào thay đổi T11/2026 so T8/2026',
+      items: [
+        { label: 'Xu hướng và mùa vụ', value: 5.1 },
+        { label: 'Lãi suất 12T thị trường', value: 2.1 },
+      ],
+    },
+    assumptions_text:
+      'Lãi suất điều hành giữ 4,50% · lãi suất 12T thị trường theo dự báo ETS riêng.',
+    scenario: null,
+    session_id: null,
+  };
+}
+
+function job(): ForecastJob {
+  return {
+    id: JOB_ID,
+    code: 'FJ-2026-1010-03',
+    status: 'waiting_human',
+    metric_name: 'Số dư huy động bán lẻ',
+    session: {
+      id: 'ws-huy-dong-q4',
+      title: 'Huy động bán lẻ Q4',
+      owner_name: 'Đỗ Hải Yến',
+      question_count: 2,
+    },
+    question: 'Dự báo số dư huy động bán lẻ 3 tháng tới, có tính tác động của lãi suất?',
+    intent_chips: [
+      'Ý định: dự báo',
+      'Chỉ số: Số dư huy động bán lẻ',
+      'Phạm vi: toàn hàng',
+      'Tần suất: tháng',
+      'Tầm: T11/2026 – T1/2027',
+    ],
+    message:
+      'Chưa có dự báo còn hiệu lực cho chỉ số này (mô hình v6 đang suy giảm, dữ liệu mới nhất 30/09). Mình đã tạo việc dự báo mới, dự kiến xong lúc 10:42, khoảng 12 phút nữa. Kết quả sẽ hiện ngay trong hội thoại này và gửi thông báo cho bạn.',
+    steps: [
+      {
+        title: 'Lấy chuỗi mục tiêu 69 tháng',
+        detail: 'query.semantic · cắt tại 30/09/2026',
+        state: 'done',
+        at_text: '10:30',
+      },
+      {
+        title: 'Đề xuất 5 biến ngoại sinh, loại 1 biến rò rỉ',
+        detail: 'dữ liệu hợp nhất P14 · lịch Tết',
+        state: 'done',
+        at_text: '10:31',
+      },
+      {
+        title: 'Xác nhận giả định cho lãi suất điều hành',
+        detail: 'cần bạn · bên phải',
+        state: 'needs_you',
+        at_text: '10:31',
+      },
+      {
+        title: 'Backtest 6 mô hình, 6 điểm cắt',
+        detail: 'chọn theo MASE',
+        state: 'pending',
+        at_text: null,
+      },
+      {
+        title: 'Dự báo, khoảng 80% và 95%, đóng góp biến',
+        detail: 'conformal trên sai số backtest',
+        state: 'pending',
+        at_text: null,
+      },
+    ],
+    stale_forecast: {
+      id: STALE_ID,
+      version_label: 'v6',
+      note: 'dự báo cũ, dữ liệu đến 31/08, mô hình suy giảm',
+    },
+    assumption_request: {
+      hitl_id: HITL_ID,
+      question: 'Lãi suất điều hành là biến cần giá trị tương lai. Chọn giả định cho 3 tháng tới:',
+      options: [
+        { id: 'hold', label: 'Giữ nguyên 4,50% (mặc định)', is_default: true },
+        { id: 'own_forecast', label: 'Theo dự báo riêng của biến', is_default: false },
+        { id: 'scenario_plus_50', label: 'Theo kịch bản: +0,5 điểm từ T12', is_default: false },
+      ],
+      other_assumptions: [
+        { variable: 'Lãi suất huy động 12T thị trường', assumption: 'Theo dự báo riêng (ETS)' },
+        { variable: 'CPI so cùng kỳ', assumption: 'Theo công bố gần nhất' },
+        { variable: 'Lịch Tết', assumption: 'Biết trước · 17/02/2027' },
+      ],
+    },
+    forecast_id: null,
+    model_id: null,
+  };
+}
+
+function workbench(): ForecastWorkbench {
+  return {
+    job_id: JOB_ID,
+    job_code: 'FJ-2026-1010-03',
+    metric_name: 'Số dư huy động bán lẻ',
+    summary_text:
+      'Chuỗi tháng · cắt tại 30/09/2026 · tầm 3 tháng · Agent Dự báo đã chạy 6 mô hình trên 6 điểm cắt cuốn chiếu',
+    series_stats: [
+      { label: 'Chuỗi mục tiêu', value: '69 kỳ', note: 'T1/2021 – T9/2026', tone: 'success' },
+      { label: 'Khoảng trống', value: '0', note: 'không cần nội suy', tone: 'success' },
+      { label: 'Ngắt cấu trúc', value: '1', note: 'T4/2023 · gộp chi nhánh', tone: 'warning' },
+      { label: 'Ngoại lai', value: '2', note: 'đánh dấu, không xoá', tone: 'warning' },
+    ],
+    variables: [
+      {
+        name: 'Lãi suất huy động 12T thị trường',
+        source: 'Hợp nhất P14 · tuần → tháng',
+        lag_text: '1 tháng',
+        correlation_text: '0,62',
+        future_value_text: 'Dự báo riêng',
+        status: 'used',
+        status_text: 'Dùng',
+      },
+      {
+        name: 'Lãi suất điều hành NHNN',
+        source: 'sbv.gov.vn',
+        lag_text: '2 tháng',
+        correlation_text: '0,48',
+        future_value_text: 'Giả định 4,50%',
+        status: 'used',
+        status_text: 'Dùng',
+      },
+      {
+        name: 'CPI so cùng kỳ',
+        source: 'gso.gov.vn',
+        lag_text: '1 tháng',
+        correlation_text: '−0,31',
+        future_value_text: 'Công bố gần nhất',
+        status: 'used',
+        status_text: 'Dùng',
+      },
+      {
+        name: 'Lịch Tết',
+        source: 'Lịch làm việc',
+        lag_text: '—',
+        correlation_text: '—',
+        future_value_text: 'Biết trước',
+        status: 'used',
+        status_text: 'Dùng',
+      },
+      {
+        name: 'Số dư cuối tháng toàn hệ thống',
+        source: 'công bố T+25 · sau thời điểm cắt',
+        lag_text: '0',
+        correlation_text: '0,97',
+        future_value_text: '—',
+        status: 'excluded',
+        status_text: 'Loại · rò rỉ',
+      },
+    ],
+    variables_note:
+      'Mọi biến căn theo thời điểm ghi nhận; biến chỉ có sau thời điểm cắt bị loại tự động (BR-157).',
+    backtest: [
+      {
+        model: 'Seasonal naive',
+        mase: 1.0,
+        smape_text: '3,9%',
+        cover80_text: '—',
+        cover95_text: '—',
+        role: 'baseline',
+      },
+      {
+        model: 'Theta',
+        mase: 0.88,
+        smape_text: '3,4%',
+        cover80_text: '76%',
+        cover95_text: '92%',
+        role: 'candidate',
+      },
+      {
+        model: 'ETS',
+        mase: 0.82,
+        smape_text: '3,2%',
+        cover80_text: '78%',
+        cover95_text: '93%',
+        role: 'candidate',
+      },
+      {
+        model: 'SARIMAX',
+        mase: 0.71,
+        smape_text: '2,8%',
+        cover80_text: '80%',
+        cover95_text: '94%',
+        role: 'candidate',
+      },
+      {
+        model: 'LightGBM',
+        mase: 0.69,
+        smape_text: '2,7%',
+        cover80_text: '79%',
+        cover95_text: '95%',
+        role: 'candidate',
+      },
+      {
+        model: 'Ensemble 3',
+        mase: 0.64,
+        smape_text: '2,5%',
+        cover80_text: '81%',
+        cover95_text: '95%',
+        role: 'selected',
+      },
+    ],
+    backtest_note:
+      'Ensemble trung bình LightGBM, SARIMAX, ETS giảm MASE 7% so mô hình tốt nhất (ngưỡng 5%). Khoảng dự báo theo conformal trên sai số backtest từng bước tầm.',
+    next_version_label: 'v7',
+    can_create_card: { allowed: true, reason: null },
+    model_id: null,
+  };
+}
+
+function model(): ForecastModel {
+  return {
+    id: MODEL_ID,
+    metric_name: 'Số dư huy động bán lẻ',
+    frequency_label: 'tháng',
+    status_text:
+      'v6 đang phát hành · suy giảm từ 06/10 · v7 nháp chờ duyệt · người tạo không tự duyệt (BR-158)',
+    candidate: {
+      version_id: V7_ID,
+      version_label: 'v7',
+      status: 'pending_review',
+      card: [
+        { label: 'Mục tiêu', value: 'Số dư huy động bán lẻ cuối tháng, toàn hàng' },
+        { label: 'Dữ liệu huấn luyện', value: 'T1/2021 – T9/2026 · 69 kỳ · cắt 30/09/2026' },
+        {
+          label: 'Biến và giả định',
+          value:
+            'Lãi suất 12T thị trường (dự báo riêng), lãi suất điều hành (giả định), CPI, lịch Tết',
+        },
+        { label: 'Thuật toán', value: 'Ensemble trung bình LightGBM, SARIMAX, ETS' },
+        { label: 'Người tạo', value: 'Agent Dự báo · trình bởi Trần Minh Quân' },
+        { label: 'Người duyệt', value: 'Đỗ Hải Yến · phụ trách chỉ số' },
+      ],
+      horizons: [
+        {
+          horizon_label: '1 tháng',
+          mase_text: '0,52',
+          baseline_text: '1,00',
+          cover80_text: '82%',
+          cover95_text: '96%',
+        },
+        {
+          horizon_label: '2 tháng',
+          mase_text: '0,63',
+          baseline_text: '1,00',
+          cover80_text: '81%',
+          cover95_text: '95%',
+        },
+        {
+          horizon_label: '3 tháng',
+          mase_text: '0,77',
+          baseline_text: '1,00',
+          cover80_text: '80%',
+          cover95_text: '94%',
+        },
+      ],
+      limitation:
+        'Giới hạn: chưa có dữ liệu khuyến mại của đối thủ; ngắt cấu trúc T4/2023 xử lý bằng biến giả.',
+      rejection_reason: null,
+    },
+    can_approve: { allowed: true, reason: null },
+    monitoring: {
+      version_label: 'v6',
+      status: 'published',
+      stats: [
+        {
+          label: 'MASE cuốn chiếu 6 kỳ',
+          value: '0,94',
+          note: 'ngưỡng 0,84 = 1,2 × 0,70',
+          tone: 'error',
+        },
+        { label: 'Trong khoảng 95%', value: '4 / 6', note: 'T8, T9 nằm ngoài', tone: 'error' },
+      ],
+      rows: [
+        {
+          label: 'T4/2026',
+          forecast_text: '405,2',
+          actual_text: '407,9',
+          error_text: '+0,7%',
+          inside95: true,
+        },
+        {
+          label: 'T5/2026',
+          forecast_text: '409,8',
+          actual_text: '411,2',
+          error_text: '+0,3%',
+          inside95: true,
+        },
+        {
+          label: 'T6/2026',
+          forecast_text: '415,1',
+          actual_text: '414,0',
+          error_text: '−0,3%',
+          inside95: true,
+        },
+        {
+          label: 'T7/2026',
+          forecast_text: '417,4',
+          actual_text: '412,3',
+          error_text: '−1,2%',
+          inside95: true,
+        },
+        {
+          label: 'T8/2026',
+          forecast_text: '410,6',
+          actual_text: '416,8',
+          error_text: '+1,5%',
+          inside95: false,
+        },
+        {
+          label: 'T9/2026',
+          forecast_text: '413,9',
+          actual_text: '420,5',
+          error_text: '+1,6%',
+          inside95: false,
+        },
+      ],
+      note: 'Suy giảm theo BR-160: dự báo của v6 gắn nhãn “suy giảm” cho tới khi v7 được duyệt. Huấn luyện lại mỗi kỳ dữ liệu mới (ngày 5 hằng tháng) hoặc khi suy giảm.',
+    },
+  };
+}
+
+export function createForecastHandlers() {
+  let currentJob = job();
+  let polls = 0;
+  let forecasts = [forecast(), staleForecast()];
+  let bench = workbench();
+  let currentModel = model();
+
+  const saveForecast = (next: Forecast) => {
+    forecasts = forecasts.map((f) => (f.id === next.id ? next : f));
+    return HttpResponse.json(next);
+  };
+
+  return [
+    http.get('*/v1/forecast-jobs/:id/workbench', ({ params }) =>
+      params.id === JOB_ID
+        ? HttpResponse.json(bench)
+        : problem(404, 'not_found', 'Không tìm thấy việc dự báo.'),
+    ),
+    http.get('*/v1/forecast-jobs/:id', ({ params }) => {
+      if (params.id !== JOB_ID) return problem(404, 'not_found', 'Không tìm thấy việc dự báo.');
+      if (currentJob.status === 'running' && ++polls >= POLLS_TO_FINISH) {
+        currentJob = {
+          ...currentJob,
+          status: 'done',
+          message:
+            'Dự báo đã xong lúc 10:42. Mô hình v7 (Ensemble) thắng seasonal naive trên 6 điểm cắt; kết quả có khoảng 80% và 95%.',
+          steps: currentJob.steps.map((s) => ({
+            ...s,
+            state: 'done',
+            at_text: s.at_text ?? '10:42',
+          })),
+          forecast_id: FORECAST_ID,
+          stale_forecast: null,
+        };
+      }
+      return HttpResponse.json(currentJob);
+    }),
+    http.post('*/v1/forecast-jobs/:action', ({ params }) => {
+      const [id, verb] = String(params.action).split(':');
+      if (id !== JOB_ID) return problem(404, 'not_found', 'Không tìm thấy việc dự báo.');
+      if (verb === 'rerun-backtest') return HttpResponse.json(bench, { status: 202 });
+      if (verb === 'create-model-card') {
+        if (!bench.can_create_card.allowed)
+          return problem(409, 'invalid_state', bench.can_create_card.reason ?? 'Chưa tạo được.');
+        bench = { ...bench, model_id: MODEL_ID };
+        currentJob = { ...currentJob, model_id: MODEL_ID };
+        return HttpResponse.json({ model_id: MODEL_ID, version_id: V7_ID }, { status: 201 });
+      }
+      return problem(404, 'not_found', 'Không có thao tác này.');
+    }),
+    // The assumption is the ordinary HITL :resolve; only this mock's own request is handled
+    // here, every other one falls through to the inbox mock.
+    http.post('*/v1/hitl-requests/:action', async ({ params, request }) => {
+      const [id] = String(params.action).split(':');
+      if (id !== HITL_ID) return undefined;
+      if (!currentJob.assumption_request)
+        return problem(409, 'invalid_state', 'Giả định đã được xác nhận.');
+      const body = (await request.json()) as { option?: string };
+      const option = currentJob.assumption_request.options.find((o) => o.id === body.option);
+      if (!option) return problem(422, 'validation_failed', 'Chọn một giả định.');
+      polls = 0;
+      currentJob = {
+        ...currentJob,
+        status: 'running',
+        assumption_request: null,
+        steps: currentJob.steps.map((s) =>
+          s.state === 'needs_you'
+            ? { ...s, state: 'done', detail: `Đã chọn: ${option.label}`, at_text: '10:32' }
+            : s.title.startsWith('Backtest')
+              ? { ...s, state: 'running', at_text: '10:32' }
+              : s,
+        ),
+      };
+      return HttpResponse.json({ id, status: 'answered' });
+    }),
+
+    http.get('*/v1/forecasts', () => HttpResponse.json({ items: forecasts, next_page_token: '' })),
+    http.get('*/v1/forecasts/:id', ({ params }) => {
+      const found = forecasts.find((f) => f.id === params.id);
+      return found ? HttpResponse.json(found) : problem(404, 'not_found', 'Không tìm thấy dự báo.');
+    }),
+    http.post('*/v1/forecasts/:action', async ({ params, request }) => {
+      const [id, verb] = String(params.action).split(':');
+      const found = forecasts.find((f) => f.id === id);
+      if (!found) return problem(404, 'not_found', 'Không tìm thấy dự báo.');
+      if (verb === 'run-scenario') {
+        const { text = '' } = (await request.json()) as { text?: string };
+        const lower = text.toLowerCase();
+        if (!text.trim())
+          return problem(422, 'validation_failed', 'Nhập một giả định để chạy kịch bản.');
+        // UC-15-05: a variable the model does not use cannot be moved.
+        if (!found.scenario_variables.some((v) => lower.includes(v)))
+          return problem(
+            422,
+            'scenario_not_applicable',
+            'Mô hình không dùng biến này, nên kịch bản không áp dụng.',
+          );
+        return saveForecast({ ...found, scenario: scenario(text.trim()) });
+      }
+      if (verb === 'save-scenario') {
+        if (!found.scenario) return problem(409, 'invalid_state', 'Chưa có kịch bản để lưu.');
+        return saveForecast({ ...found, scenario: { ...found.scenario, saved: true } });
+      }
+      if (verb === 'clear-scenario') return saveForecast({ ...found, scenario: null });
+      if (verb === 'add-to-session') {
+        if (!found.session_id)
+          return problem(409, 'invalid_state', 'Dự báo này không thuộc phiên nào.');
+        return saveForecast({ ...found, added_to_session: true });
+      }
+      return problem(404, 'not_found', 'Không có thao tác này.');
+    }),
+
+    http.get('*/v1/forecast-models', () =>
+      HttpResponse.json({ items: [currentModel], next_page_token: '' }),
+    ),
+    http.get('*/v1/forecast-models/:id', ({ params }) =>
+      params.id === MODEL_ID
+        ? HttpResponse.json(currentModel)
+        : problem(404, 'not_found', 'Không tìm thấy mô hình.'),
+    ),
+    http.post('*/v1/forecast-model-versions/:action', async ({ params, request }) => {
+      const [id, verb] = String(params.action).split(':');
+      const candidate = currentModel.candidate;
+      if (!candidate || candidate.version_id !== id)
+        return problem(404, 'not_found', 'Không tìm thấy phiên bản mô hình.');
+      if (!currentModel.can_approve.allowed)
+        return problem(
+          403,
+          'forbidden',
+          currentModel.can_approve.reason ?? 'Bạn không duyệt được.',
+        );
+      if (candidate.status !== 'pending_review')
+        return problem(409, 'invalid_state', 'Phiên bản này đã được quyết.');
+      if (verb === 'approve') {
+        currentModel = {
+          ...currentModel,
+          status_text: `${candidate.version_label} đang phát hành · v6 đã thôi phát hành`,
+          candidate: { ...candidate, status: 'published' },
+          can_approve: { allowed: false, reason: 'Phiên bản đã được duyệt.' },
+          monitoring: currentModel.monitoring && { ...currentModel.monitoring, status: 'retired' },
+        };
+        return HttpResponse.json(currentModel);
+      }
+      if (verb === 'reject') {
+        const { reason = '' } = (await request.json()) as { reason?: string };
+        if (!reason.trim()) return problem(422, 'validation_failed', 'Cần lý do khi từ chối.');
+        currentModel = {
+          ...currentModel,
+          status_text: `v6 đang phát hành · suy giảm từ 06/10 · ${candidate.version_label} bị từ chối`,
+          candidate: { ...candidate, status: 'rejected', rejection_reason: reason.trim() },
+          can_approve: { allowed: false, reason: 'Phiên bản đã bị từ chối.' },
+        };
+        return HttpResponse.json(currentModel);
+      }
+      return problem(404, 'not_found', 'Không có thao tác này.');
+    }),
+  ];
+}
