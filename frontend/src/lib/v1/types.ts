@@ -132,23 +132,68 @@ export type RunStatus =
   | 'failed'
   | 'cancelled';
 
+/** One sentence of a run's story ("Spec · v3.1 · Kể việc của agent"). PROPOSAL: the shape of `narrative`. */
+export interface NarrativeEvent {
+  at: Timestamp;
+  text: string;
+  /** done = already happened; now = the step under way (with progress); next = what comes after. */
+  state: 'done' | 'now' | 'next';
+  progress?: number;
+}
+
+/** One step of the plan beside the story. PROPOSAL: from the run's current plan version. */
+export interface RunPlanStep {
+  title: string;
+  state: 'done' | 'running' | 'pending_approval' | 'error' | 'waiting';
+}
+
+/** agent.agent_step, for "Xem kỹ thuật" (GET /v1/runs/{id}?view=technical). */
+export interface AgentStep {
+  seq: number;
+  kind:
+    | 'plan'
+    | 'llm_call'
+    | 'tool_call'
+    | 'query'
+    | 'skill'
+    | 'agent_call'
+    | 'checkpoint'
+    | 'message';
+  name: string;
+  summary: string | null;
+  status: 'ok' | 'error' | 'retried' | 'skipped' | 'simulated';
+  duration_ms: number | null;
+}
+
 export interface AgentRun {
   id: Uuid;
   agent_id: Uuid;
+  config_version: number;
   status: RunStatus;
   trigger_kind: 'schedule' | 'event' | 'threshold' | 'agent_call' | 'manual' | 'test';
   current_step: number | null;
-  /** "Diễn biến kể thành câu cho màn Đang làm gì". PROPOSAL: entries are {at, text}. */
-  narrative: { at: Timestamp; text: string }[];
+  /** "Diễn biến kể thành câu cho màn Đang làm gì". */
+  narrative: NarrativeEvent[];
   cost: string;
   waiting_since: Timestamp | null;
   started_at: Timestamp | null;
   finished_at: Timestamp | null;
   error: string | null;
+  stop_reason: string | null;
   /** PROPOSAL: joined agent name, step count and ETA for the progress rows. */
   agent_name: string;
   total_steps: number | null;
   eta_text: string | null;
+  /** PROPOSAL, for "Lượt chạy": a short code, the goal in words, who or what started it, HITL count. */
+  code: string;
+  title: string;
+  initiated_label: string;
+  trigger_text: string;
+  hitl_count: number;
+  /** PROPOSAL: the plan beside the story, on GET /v1/runs/{id}. */
+  plan?: RunPlanStep[];
+  /** view=technical only. */
+  steps?: AgentStep[];
 }
 
 /* ─── Phân tích: workspace.workspace ──────────────────────────────────── */
@@ -243,3 +288,79 @@ export interface BehaviorPolicy {
   /** PROPOSAL: how often the rule handled a request instead of asking, this week. */
   applied_this_week: number;
 }
+
+/* ─── Duyệt đề xuất: inbox.proposal (GET /v1/proposals/{id}) ──────────── */
+
+export type ProposalStatus =
+  | 'open'
+  | 'evaluating'
+  | 'pending_review'
+  | 'accepted'
+  | 'applied'
+  | 'apply_failed'
+  | 'rejected'
+  | 'expired'
+  | 'withdrawn';
+
+export interface Proposal {
+  id: Uuid;
+  kind: string;
+  title: string;
+  /** PROPOSAL: the shape of `diff` for a definition change — the two versions side by side. */
+  diff: { before: { label: string; text: string }; after: { label: string; text: string } };
+  reason: string | null;
+  /**
+   * "Kèm diff, ảnh hưởng, kết quả eval_run". PROPOSAL: the shape — a backtest table over past
+   * periods and the consequence in one sentence.
+   */
+  impact: {
+    window_label: string;
+    columns: [string, string];
+    rows: { period: string; before: string; after: string; delta: string }[];
+    summary: string;
+  };
+  impact_level: 'low' | 'medium' | 'high';
+  status: ProposalStatus;
+  expires_at: Timestamp;
+  requires_compliance: boolean;
+  /** PROPOSAL: eval_run results in words, each passed or flagged. */
+  checks: { ok: boolean; text: string }[];
+  /** PROPOSAL: the approval chain (proposal_review steps) and why it has that many steps. */
+  approval: { reason: string; steps: { name: string; role: string }[]; note: string };
+  /** PROPOSAL: who proposed it and from where, "Agent Phân tích từ phiên “Nợ xấu bán lẻ T9”". */
+  proposed_by_label: string;
+  /** PROPOSAL: a short code for the breadcrumb, "PR-0318". */
+  code: string;
+}
+
+/** POST /v1/proposals/{id}:decide — proposal_review.decision; `note` is required to reject. */
+export interface DecideProposal {
+  decision: 'accept' | 'accept_with_edit' | 'reject' | 'request_changes';
+  note?: string;
+  reviewed_regressions?: boolean;
+}
+
+/* ─── So sánh hai nguồn: context of a `conflict` HITL request ─────────── */
+
+/** PROPOSAL: what a conflict request carries in `context` for "Cần bạn · So sánh hai nguồn". */
+// A type alias, not an interface, so it fits HitlRequest.context (an open record).
+export type ConflictContext = {
+  why?: string;
+  subtitle: string;
+  sources: {
+    name: string;
+    authority: string;
+    authority_tone: 'success' | 'info';
+    detail: string;
+    value: string;
+    value_label: string;
+    query: string;
+  }[];
+  gap: { headline: string; detail: string };
+  checks: { mark: 'ok' | 'warn' | 'unknown'; text: string }[];
+  impact_title: string;
+  impact: { title: string; detail: string }[];
+  authority_note: string;
+  similar_note: string;
+  rule_suggestion: string | null;
+};

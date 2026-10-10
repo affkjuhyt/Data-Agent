@@ -14,8 +14,8 @@ import { DECISION, decisionKindOf, dueOf } from './decision';
  * DA/Heading 2, "Vì sao agent hỏi: …", the choices with their consequence (the agent's default
  * preselected, 1.5px primary border), and the asking agent with the actions on the right.
  *
- * Approve, compare and review open a detail screen (Duyệt đề xuất, So sánh hai nguồn, báo cáo)
- * that is not built yet; their button says so instead of doing nothing.
+ * Approve and compare open their detail page (Duyệt đề xuất, So sánh hai nguồn); review opens
+ * the report screen, not built yet, so its button says so instead of doing nothing.
  */
 const DETAIL_PENDING = 'Màn chi tiết của việc này đang được làm.';
 
@@ -24,11 +24,14 @@ export function DecisionCard({
   onChoose,
   onAskMore,
   onLater,
+  onOpenDetail,
 }: {
   request: HitlRequest;
   onChoose: (optionId: string) => void;
   onAskMore: () => void;
   onLater: () => void;
+  /** Opens the request's detail page; absent when it has none yet. */
+  onOpenDetail?: () => void;
 }) {
   const kind = decisionKindOf(request);
   const look = DECISION[kind];
@@ -113,10 +116,10 @@ export function DecisionCard({
               <Button kind="ghost" onClick={onLater}>
                 Để sau
               </Button>
-              <PendingDetail label="Xem thay đổi" />
+              <DetailButton label="Xem thay đổi" onOpen={onOpenDetail} />
             </>
           )}
-          {kind === 'compare' && <PendingDetail label="So sánh nguồn" />}
+          {kind === 'compare' && <DetailButton label="So sánh nguồn" onOpen={onOpenDetail} />}
           {kind === 'review' && (
             <PendingDetail label={request.kind === 'report_publish' ? 'Mở báo cáo' : 'Mở'} />
           )}
@@ -124,6 +127,16 @@ export function DecisionCard({
       </div>
     </article>
   );
+}
+
+function DetailButton({ label, onOpen }: { label: string; onOpen?: () => void }) {
+  if (onOpen)
+    return (
+      <Button kind="primary" onClick={onOpen}>
+        {label}
+      </Button>
+    );
+  return <PendingDetail label={label} />;
 }
 
 function PendingDetail({ label }: { label: string }) {

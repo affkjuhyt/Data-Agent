@@ -2,6 +2,8 @@ import { v1Get, v1Send, type Page } from './client';
 import type {
   AgentDef,
   BehaviorPolicy,
+  DecideProposal,
+  Proposal,
   AgentRun,
   AppUser,
   DataSpace,
@@ -27,14 +29,28 @@ const ALL = { page_size: 500 };
 export const listInbox = (query: { kind?: string; status?: string } = {}) =>
   v1Get<Page<HitlRequest>>('/inbox', { ...ALL, ...query });
 
+export const getHitl = (id: string) => v1Get<HitlRequest>(`/hitl-requests/${id}`);
+
 export const resolveHitl = (id: string, body: ResolveHitl) =>
   v1Send<HitlRequest>('POST', `/hitl-requests/${id}:resolve`, body);
+
+export const getProposal = (id: string) => v1Get<Proposal>(`/proposals/${id}`);
+
+export const decideProposal = (id: string, body: DecideProposal) =>
+  v1Send<Proposal>('POST', `/proposals/${id}:decide`, body);
 
 /* Agent */
 export const listAgents = () => v1Get<Page<AgentDef>>('/agents', ALL);
 
 export const listRuns = (query: { status?: RunStatus; agent_id?: string } = {}) =>
   v1Get<Page<AgentRun>>('/runs', { ...ALL, ...query });
+
+export const getRun = (id: string, view: 'simple' | 'technical' = 'simple') =>
+  v1Get<AgentRun>(`/runs/${id}`, { view });
+
+/** Pause stops safely at a step boundary; resume continues; cancel keeps partial results 30 days. */
+export const controlRun = (id: string, verb: 'pause' | 'resume' | 'cancel', reason?: string) =>
+  v1Send<AgentRun>('POST', `/runs/${id}:${verb}`, verb === 'cancel' ? { reason } : undefined);
 
 /* Phiên làm việc */
 export const listWorkspaces = () =>

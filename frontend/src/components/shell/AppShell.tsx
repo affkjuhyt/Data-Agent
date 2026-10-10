@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useAppState } from '../../AppStateContext';
-import { AREA_RAILS, AREAS, firstPageOf, isRailPage } from '../../constants';
+import { AREA_RAILS, AREAS, firstPageOf, isRailPage, railItemOf } from '../../constants';
 import { AppTopBar } from './AppTopBar';
 import { CommandPalette } from './CommandPalette';
 import { SideRail } from './SideRail';
@@ -68,7 +68,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <SideRail
             label={AREAS.find((a) => a.id === area)?.label ?? ''}
             groups={rail}
-            active={page ?? ''}
+            active={railItemOf(area, page) ?? ''}
             counts={area === 'agents' ? { TEAM: counts.agents } : undefined}
             onSelect={(page) => setSubTab(area, page)}
           />

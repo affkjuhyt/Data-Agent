@@ -7,7 +7,7 @@ import { Tooltip } from './Tooltip';
  * Paused | Error. A 24px agent mark, the name in Body Strong, then a 6px dot and the status in
  * words — the status is never colour alone. Clicking opens the agent's current run.
  */
-type AgentStatus = 'running' | 'waiting' | 'idle' | 'paused' | 'error';
+export type AgentStatus = 'running' | 'waiting' | 'idle' | 'paused' | 'error';
 
 const STATUS: Record<AgentStatus, { dot: string; label: string }> = {
   running: { dot: 'bg-primary', label: 'Đang chạy' },

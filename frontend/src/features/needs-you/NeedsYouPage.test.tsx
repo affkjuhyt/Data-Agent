@@ -50,8 +50,8 @@ describe('NeedsYouPage', () => {
       'aria-checked',
       'true',
     );
-    expect(screen.getAllByRole('article')).toHaveLength(4);
-    expect(screen.getByRole('radio', { name: 'Đang chờ · 4' })).toBeInTheDocument();
+    expect(screen.getAllByRole('article')).toHaveLength(5);
+    expect(screen.getByRole('radio', { name: 'Đang chờ · 5' })).toBeInTheDocument();
   });
 
   it('sends the choice after the 5 s undo window, and Hoàn tác keeps the card', async () => {
@@ -75,7 +75,7 @@ describe('NeedsYouPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Xác nhận lựa chọn' }));
     await act(() => vi.advanceTimersByTimeAsync(5000));
     await waitFor(() => expect(resolved).toEqual(['hitl-npl-definition:resolve']));
-    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(3));
+    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(4));
   });
 
   it('says nothing waits when the inbox is empty', async () => {

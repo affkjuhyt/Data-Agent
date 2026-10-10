@@ -60,7 +60,11 @@ export default function HomePage() {
       </div>
 
       <aside className="flex w-[380px] shrink-0 flex-col gap-da-xl max-[1279px]:w-full">
-        <NeedsYouCard inbox={inbox} onOpen={() => navigate('needs-you')} />
+        <NeedsYouCard
+          inbox={inbox}
+          onOpen={() => navigate('needs-you')}
+          onOpenDetail={(page, id) => navigate('needs-you', page, id)}
+        />
       </aside>
     </div>
   );

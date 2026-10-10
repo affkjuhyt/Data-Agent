@@ -79,6 +79,17 @@ export const AREA_LANDING: ReadonlySet<AreaId> = new Set(['home', 'needs-you', '
 export const firstPageOf = (area: AreaId): string | undefined =>
   AREA_LANDING.has(area) ? undefined : AREA_RAILS[area]?.[0]?.items[0]?.id;
 
-/** Whether `page` of `area` sits in the area's rail (and so draws it). */
-export const isRailPage = (area: AreaId, page: string | undefined): boolean =>
-  Boolean(page && AREA_RAILS[area]?.some(group => group.items.some(item => item.id === page)));
+/** Detail pages that live under a rail item: /agents/run/<id> keeps "Lượt chạy" selected. */
+const RAIL_PARENT: Partial<Record<AreaId, Record<string, string>>> = {
+  agents: { RUN: 'RUNS' },
+};
+
+/** The rail item a page highlights: itself, or the item its detail page belongs to. */
+export const railItemOf = (area: AreaId, page: string | undefined): string | undefined =>
+  page ? (RAIL_PARENT[area]?.[page] ?? page) : page;
+
+/** Whether `page` of `area` sits in the area's rail, itself or through its parent (and so draws it). */
+export const isRailPage = (area: AreaId, page: string | undefined): boolean => {
+  const item = railItemOf(area, page);
+  return Boolean(item && AREA_RAILS[area]?.some(group => group.items.some(entry => entry.id === item)));
+};

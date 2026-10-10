@@ -9,7 +9,7 @@ import { listInbox, listMyRules, resolveHitl } from '../../lib/v1/api';
 import type { HitlRequest } from '../../lib/v1/types';
 import { useV1 } from '../../lib/v1/useV1';
 import { DecisionCard } from './DecisionCard';
-import { isExpiringSoon } from './decision';
+import { detailRouteOf, isExpiringSoon } from './decision';
 import { RulesPanel } from './RulesPanel';
 
 /*
@@ -145,6 +145,10 @@ export default function NeedsYouPage() {
                   request={request}
                   onChoose={(optionId) => choose(request, optionId)}
                   onAskMore={() => askMore(request)}
+                  onOpenDetail={(() => {
+                    const detail = detailRouteOf(request);
+                    return detail ? () => navigate('needs-you', detail.page, detail.id) : undefined;
+                  })()}
                   onLater={() =>
                     setLater((prev) => [...prev.filter((id) => id !== request.id), request.id])
                   }

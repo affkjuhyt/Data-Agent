@@ -5,7 +5,7 @@ import { formatElapsed } from '../../lib/formatVN';
 import type { Page } from '../../lib/v1/client';
 import type { HitlRequest } from '../../lib/v1/types';
 import type { V1State } from '../../lib/v1/useV1';
-import { DECISION, decisionKindOf } from '../needs-you/decision';
+import { DECISION, decisionKindOf, detailRouteOf } from '../needs-you/decision';
 
 /*
  * "Cần bạn quyết định" of "v3.1 · Trang chủ": the open requests (GET /v1/inbox), each a row of
@@ -24,9 +24,12 @@ const ACTION = {
 export function NeedsYouCard({
   inbox,
   onOpen,
+  onOpenDetail,
 }: {
   inbox: V1State<Page<HitlRequest>>;
   onOpen: () => void;
+  /** A row with a detail page opens it; the others open Cần bạn. */
+  onOpenDetail: (page: string, id: string) => void;
 }) {
   const items = inbox.data?.items ?? [];
   return (
@@ -54,7 +57,11 @@ export function NeedsYouCard({
                 <li key={request.id}>
                   <button
                     type="button"
-                    onClick={onOpen}
+                    onClick={() => {
+                      const detail = detailRouteOf(request);
+                      if (detail) onOpenDetail(detail.page, detail.id);
+                      else onOpen();
+                    }}
                     className="flex w-full flex-col gap-da-sm border-b border-border p-da-md text-left hover:bg-subtle"
                   >
                     <span className="text-foreground da-body-strong">{request.title}</span>

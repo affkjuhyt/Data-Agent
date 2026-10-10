@@ -26,7 +26,9 @@ interface AppStateContextType {
   getSubTab: (moduleId: string, fallback?: string) => string | undefined;
 
   /* Navigation imperatives */
-  navigate: (moduleId: string, subId?: string) => void;
+  navigate: (moduleId: string, subId?: string, id?: string) => void;
+  /** The record a detail page shows: the third URL segment, /needs-you/proposal/<id>. */
+  routeId: string | undefined;
 
   /* Documents — loaded on mount, mutated in-place */
   documents: KnowledgeDocument[];
@@ -116,23 +118,29 @@ export const resolveRoute = (module: string, sub?: string): { module: string; su
 // URL renders them lowercase — /build/workflows reads better than
 // /build/WORKFLOWS. parseRoute upper-cases whatever it reads back so both
 // case forms of a link (including ones bookmarked before this change) resolve.
-const routePath = (module: string, sub?: string) => `/${module}${sub ? `/${sub.toLowerCase()}` : ''}`;
+const routePath = (module: string, sub?: string, id?: string) =>
+  `/${module}${sub ? `/${sub.toLowerCase()}` : ''}${sub && id ? `/${encodeURIComponent(id)}` : ''}`;
 
-const parseRoute = (fallback: { module: string; sub?: string }): { module: string; sub?: string } => {
+const parseRoute = (fallback: { module: string; sub?: string }): { module: string; sub?: string; id?: string } => {
   if (typeof window === 'undefined') return fallback;
   const legacyHash = window.location.hash.replace(/^#\/?/, '');
   const raw = legacyHash || window.location.pathname.replace(/^\/+/, '');
   if (!raw) return fallback;
-  const [module, sub] = raw.split('/');
-  return resolveRoute(module || fallback.module, sub ? sub.toUpperCase() : undefined);
+  const [module, sub, id] = raw.split('/');
+  const resolved = resolveRoute(module || fallback.module, sub ? sub.toUpperCase() : undefined);
+  // Ids keep their case; they only survive when the page is not redirected elsewhere.
+  return id && resolved.sub === sub?.toUpperCase() ? { ...resolved, id: decodeURIComponent(id) } : resolved;
 };
 
-const writeRoute = (module: string, sub?: string) => {
+const writeRoute = (module: string, sub?: string, id?: string) => {
   if (typeof window === 'undefined') return;
-  const next = routePath(module, sub);
+  const next = routePath(module, sub, id);
   if (window.location.pathname !== next || window.location.hash) {
-    // Preserve query params so Keycloak can read ?code=&state= on auth redirect
-    window.history.replaceState(null, '', `${next}${window.location.search}`);
+    // Preserve query params so Keycloak can read ?code=&state= on auth redirect.
+    // A new page is a history entry, so Back returns from a detail page to its list;
+    // rewriting a legacy hash (or the first URL) replaces instead.
+    const replace = window.location.hash !== '' || !window.history.state?.app;
+    window.history[replace ? 'replaceState' : 'pushState']({ app: true }, '', `${next}${window.location.search}`);
   }
 };
 
@@ -213,12 +221,14 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   const [subTab, _setSubTabState] = useState<Record<string, string>>(
     initial.sub ? { [initial.module]: initial.sub } : {},
   );
+  const [routeId, setRouteId] = useState<string | undefined>(initial.id);
 
   const setActiveModule = useCallback((id: string) => {
     _setActiveModule(id);
   }, []);
 
   const setSubTab = useCallback((moduleId: string, subId: string) => {
+    setRouteId(undefined);
     _setSubTabState(prev => ({ ...prev, [moduleId]: subId }));
   }, []);
 
@@ -227,12 +237,13 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     [subTab],
   );
 
-  const navigate = useCallback((moduleId: string, subId?: string) => {
+  const navigate = useCallback((moduleId: string, subId?: string, id?: string) => {
     /* Honor redirect map if a caller still uses an old module id */
     const resolved = resolveRoute(moduleId, subId);
     moduleId = resolved.module;
     subId = resolved.sub;
     _setActiveModule(moduleId);
+    setRouteId(subId ? id : undefined);
     // No page means the area's own start (its landing, or its first rail page).
     const page = subId;
     _setSubTabState(prev => {
@@ -245,15 +256,21 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
 
   /* Keep URL path in sync with state */
   useEffect(() => {
-    writeRoute(activeModule, subTab[activeModule]);
-  }, [activeModule, subTab]);
+    writeRoute(activeModule, subTab[activeModule], routeId);
+  }, [activeModule, subTab, routeId]);
 
   /* Listen for back/forward navigation */
   useEffect(() => {
     const onRouteChange = () => {
-      const { module, sub } = parseRoute(landingFor(user.role));
+      const { module, sub, id } = parseRoute(landingFor(user.role));
       _setActiveModule(module);
-      if (sub) _setSubTabState(prev => ({ ...prev, [module]: sub }));
+      setRouteId(id);
+      _setSubTabState(prev => {
+        const next = { ...prev };
+        if (sub) next[module] = sub;
+        else delete next[module];
+        return next;
+      });
     };
     window.addEventListener('popstate', onRouteChange);
     window.addEventListener('hashchange', onRouteChange);
@@ -323,6 +340,7 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
         setSubTab,
         getSubTab,
         navigate,
+        routeId,
         documents,
         docsLoading,
         addDocument,

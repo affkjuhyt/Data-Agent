@@ -9,7 +9,7 @@ import type { V1State } from '../../lib/v1/useV1';
 /*
  * "Agent đang làm gì cho bạn" of "v3.1 · Trang chủ": one row per live run (running or waiting
  * on a person), top border, 6px padding, 16px gap: the AgentChip, the latest sentence of its
- * narrative in DA/Body over a 6px progress bar (primary, warning while it waits), and the ETA.
+ * narrative (the step under way) in DA/Body over a 6px progress bar (primary, warning while it waits), and the ETA.
  */
 export function AgentActivity({
   runs,
@@ -32,7 +32,11 @@ export function AgentActivity({
           <ul className="flex flex-col">
             {live.map((run) => {
               const waiting = run.status === 'waiting_human';
-              const sentence = run.narrative[run.narrative.length - 1]?.text ?? 'Đang chạy';
+              const sentence =
+                (
+                  run.narrative.find((e) => e.state === 'now') ??
+                  run.narrative[run.narrative.length - 1]
+                )?.text ?? 'Đang chạy';
               const progress =
                 run.total_steps && run.current_step
                   ? Math.min(1, run.current_step / run.total_steps)

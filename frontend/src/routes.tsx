@@ -3,7 +3,11 @@ import type { AreaId } from './components/shell/areas';
 
 const HomePage = React.lazy(() => import('./features/home/HomePage'));
 const NeedsYouPage = React.lazy(() => import('./features/needs-you/NeedsYouPage'));
+const ProposalPage = React.lazy(() => import('./features/needs-you/ProposalPage'));
+const ConflictPage = React.lazy(() => import('./features/needs-you/ConflictPage'));
 const AgentTeamPage = React.lazy(() => import('./features/agents/AgentTeamPage'));
+const RunsPage = React.lazy(() => import('./features/agents/RunsPage'));
+const RunDetailPage = React.lazy(() => import('./features/agents/RunDetailPage'));
 const AnalysisPage = React.lazy(() => import('./features/analysis/AnalysisPage'));
 const DataPage = React.lazy(() => import('./features/data/DataPage'));
 const AdminPage = React.lazy(() => import('./features/admin/AdminPage'));
@@ -16,11 +20,6 @@ const WorkflowEngine = React.lazy(() => import('./components/agent-builder/workf
 const AgentRuntimeView = React.lazy(() =>
   import('./components/agent-builder/agents/AgentRuntime').then(module => ({
     default: module.AgentRuntimeView,
-  })),
-);
-const TraceExplorer = React.lazy(() =>
-  import('./components/agent-builder/agents/AgentTraces').then(module => ({
-    default: module.TraceExplorer,
   })),
 );
 const ExecutiveDashboard = React.lazy(() =>
@@ -46,13 +45,18 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
 
   'needs-you': {
     [SINGLE_SCREEN]: { render: () => <NeedsYouPage /> },
+    // Detail pages, addressed /needs-you/<page>/<id>.
+    PROPOSAL:        { render: () => <ProposalPage /> },
+    CONFLICT:        { render: () => <ConflictPage /> },
   },
 
   agents: {
     TEAM:          { render: () => <AgentTeamPage /> },
     // Off the rail: "Tạo agent" opens the existing builder until P13 · Tạo agent từ mô tả exists.
     BUILDER:       { render: () => <AgentRuntimeView /> },
-    RUNS:          { render: () => <TraceExplorer /> },
+    RUNS:          { render: () => <RunsPage /> },
+    // /agents/run/<id>, under the "Lượt chạy" rail item.
+    RUN:           { render: () => <RunDetailPage /> },
     EVALUATE:      { render: () => <AgentPlayground /> },
     ORCHESTRATION: { render: () => <WorkflowEngine /> },
   },

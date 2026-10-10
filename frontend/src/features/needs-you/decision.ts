@@ -63,3 +63,22 @@ export function dueOf(
 
 export const isExpiringSoon = (request: HitlRequest, now = new Date()) =>
   dueOf(request, now)?.urgent ?? false;
+
+/**
+ * The detail page a request opens: proposals on "P07 · Duyệt đề xuất" (by the proposal id in
+ * source_ref), conflicts on "Cần bạn · So sánh hai nguồn". Others have no detail page yet.
+ */
+export function detailRouteOf(request: HitlRequest): { page: string; id: string } | null {
+  if (request.kind === 'approve_proposal' && request.source_ref)
+    return { page: 'PROPOSAL', id: request.source_ref };
+  if (request.kind === 'conflict') return { page: 'CONFLICT', id: request.id };
+  return null;
+}
+
+/** The short kind label of the request list on the detail pages ("Cần duyệt", "Xung đột"…). */
+export const LIST_LABEL: Record<DecisionKind, string> = {
+  choose: 'Cần làm rõ',
+  approve: 'Cần duyệt',
+  compare: 'Xung đột',
+  review: 'Đánh giá',
+};
