@@ -49,7 +49,8 @@ export function ConfirmDialog({
     }
     if (event.key !== 'Tab') return;
     const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-      'button:not([aria-disabled="true"])',
+      // Fields count too: a dialog may ask for a reason before confirming.
+      'button:not([aria-disabled="true"]), textarea, input, select',
     );
     if (!focusable || focusable.length === 0) return;
     const first = focusable[0];

@@ -6,9 +6,10 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
-import { getPeriod } from '../../lib/v1/periods';
+import { getPeriod, getRetroChange } from '../../lib/v1/periods';
 import { createPeriodHandlers } from '../../mocks/periods';
 import PeriodClosePage from './PeriodClosePage';
+import RetroChangePage from './RetroChangePage';
 
 const navigate = vi.fn();
 let routeId = '';
@@ -77,5 +78,43 @@ describe('PeriodClosePage', () => {
       'aria-disabled',
       'true',
     );
+  });
+});
+
+describe('RetroChangePage', () => {
+  const retro = () =>
+    render(
+      <ToastProvider>
+        <RetroChangePage />
+      </ToastProvider>,
+    );
+
+  it('shows what changed at the source and which locked figures move, published ones flagged', async () => {
+    routeId = 'retro-012';
+    retro();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: /Dữ liệu kỳ T8 thay đổi sau khi khoá/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /LD_LOANS 214/ })).toBeInTheDocument();
+    const npl = screen.getByRole('row', { name: /Nợ xấu bán lẻ/ });
+    expect(within(npl).getByText('Có · NHNN T8')).toHaveClass('text-warning');
+    expect(screen.getByText(/Pháp chế quyết có gửi đính chính/)).toBeInTheDocument();
+  });
+
+  it('creates the adjusted version only with a reason', async () => {
+    routeId = 'retro-012';
+    retro();
+    fireEvent.click(await screen.findByRole('button', { name: 'Tạo bản điều chỉnh T8 · v2' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Tạo bản điều chỉnh T8 · v2?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tạo bản điều chỉnh' }));
+    expect(await within(dialog).findByText('Nhập lý do trước khi ghi nhận.')).toBeInTheDocument();
+
+    fireEvent.change(within(dialog).getByLabelText('Lý do (bắt buộc)'), {
+      target: { value: 'Core banking sửa lô ngày quá hạn sau khoá.' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tạo bản điều chỉnh' }));
+    expect(await screen.findByText(/Lý do quyết định: Core banking sửa lô/)).toBeInTheDocument();
+    expect((await getRetroChange('retro-012')).status).toBe('new_version');
+    expect(screen.queryByRole('button', { name: 'Tạo bản điều chỉnh T8 · v2' })).toBeNull();
   });
 });

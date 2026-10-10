@@ -62,3 +62,46 @@ export const lockPeriod = async (id: string) =>
 /** PROPOSAL: :cancel-close drops the close under way and reopens the period. */
 export const cancelPeriodClose = async (id: string) =>
   v1Send<PeriodClose>('POST', `/periods/${pathId(id)}:cancel-close`);
+
+/* ─── Thay đổi hồi tố (period.retro_change, UC-10-04) ─────────────────── */
+
+export interface RetroChange {
+  id: string;
+  /** PROPOSAL: "RC-012" */
+  code: string;
+  period_id: string;
+  period_code: string;
+  /** new_version / no_change once decided (A3: decision). */
+  status: 'open' | 'new_version' | 'no_change';
+  /** PROPOSAL: "Dữ liệu kỳ T8 thay đổi sau khi khoá". */
+  title: string;
+  /** PROPOSAL: when and how it was found, and what changed, in one line. */
+  detected_text: string;
+  /** PROPOSAL: the source rows that changed after the lock. */
+  source_changes: { table: string; rows: number; fields: string; changed_at_text: string }[];
+  /** PROPOSAL: each locked figure against its recalculation, and where it was published. */
+  impact: {
+    metric: string;
+    locked: string;
+    recalculated: string;
+    delta: string;
+    published_to: string | null;
+  }[];
+  /** PROPOSAL: "T8 · v2" — the version a new_version decision creates. */
+  next_version_label: string;
+  /** PROPOSAL: what a new version means for answers. */
+  version_note: string;
+  /** PROPOSAL: who else must decide when a published figure moved (null when none did). */
+  escalation: { title: string; text: string } | null;
+  decision_note: string | null;
+}
+
+/** PROPOSAL: GET /v1/retro-changes/{id} (A2 only lists them per period). */
+export const getRetroChange = async (id: string) =>
+  v1Get<RetroChange>(`/retro-changes/${pathId(id)}`);
+
+/** A3: decision = new_version creates a new close version, the old one stays (BR-43). */
+export const decideRetroChange = async (
+  id: string,
+  body: { decision: 'new_version' | 'no_change'; decision_note: string },
+) => v1Send<RetroChange>('POST', `/retro-changes/${pathId(id)}:decide`, body);

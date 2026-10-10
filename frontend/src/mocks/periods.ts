@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import type { PeriodClose, PeriodSummary } from '../lib/v1/periods';
+import type { PeriodClose, PeriodSummary, RetroChange } from '../lib/v1/periods';
 
 /*
  * The periods of "P10 · Kỳ chốt · Chốt kỳ" (2304:19277). T9/2026 is mid-close and stopped on a
@@ -89,7 +89,64 @@ function plain(summary: PeriodSummary): PeriodClose {
   };
 }
 
+// "P10 · Thay đổi hồi tố" (2304:19466): T8 changed at the source after it was locked.
+function retroChanges(): RetroChange[] {
+  return [
+    {
+      id: 'retro-012',
+      code: 'RC-012',
+      period_id: 'period-2026-08',
+      period_code: 'T8/2026',
+      status: 'open',
+      title: 'Dữ liệu kỳ T8 thay đổi sau khi khoá',
+      detected_text:
+        'Phát hiện 07/10 08:12 khi Agent Đối soát so mã băm · 214 khoản vay ở Core banking đổi ngày quá hạn',
+      source_changes: [
+        {
+          table: 'LD_LOANS',
+          rows: 214,
+          fields: 'overdue_days, debt_group',
+          changed_at_text: '03/10 22:40 · sửa lô',
+        },
+        { table: 'LD_REPAYMENTS', rows: 38, fields: 'paid_date', changed_at_text: '03/10 22:41' },
+      ],
+      impact: [
+        {
+          metric: 'Nợ xấu bán lẻ',
+          locked: '1,62%',
+          recalculated: '1,66%',
+          delta: '+0,04 điểm',
+          published_to: 'NHNN T8',
+        },
+        {
+          metric: 'Dư nợ quá hạn 30+',
+          locked: '5.812 tỷ',
+          recalculated: '5.890 tỷ',
+          delta: '+1,34%',
+          published_to: null,
+        },
+        {
+          metric: 'Số khoản nhóm 3–5',
+          locked: '24.102',
+          recalculated: '24.316',
+          delta: '+214',
+          published_to: null,
+        },
+      ],
+      next_version_label: 'T8 · v2',
+      version_note:
+        'T8 · v1 giữ nguyên làm bản đã công bố. T8 · v2 chứa số tính lại; câu hỏi “theo số đã công bố” vẫn trả v1, câu hỏi “theo số mới nhất” trả v2.',
+      escalation: {
+        title: 'Vì nợ xấu đã công bố bị ảnh hưởng',
+        text: 'Cần Trần Quốc An duyệt và Pháp chế quyết có gửi đính chính cho NHNN không.',
+      },
+      decision_note: null,
+    },
+  ];
+}
+
 export function createPeriodHandlers() {
+  let retro = retroChanges();
   let periods: PeriodClose[] = summaries().map((s) =>
     s.id === 'period-2026-09' ? september() : plain(s),
   );
@@ -172,6 +229,38 @@ export function createPeriodHandlers() {
           : { allowed: false, reason: 'Đang chờ sổ cái điều chỉnh.' },
       });
       return HttpResponse.json({ id, status: 'answered' });
+    }),
+    http.get('*/v1/retro-changes/:id', ({ params }) => {
+      const change = retro.find((r) => r.id === params.id);
+      return change
+        ? HttpResponse.json(change)
+        : problem(404, 'not_found', 'Không tìm thấy thay đổi hồi tố.');
+    }),
+    http.post('*/v1/retro-changes/:action', async ({ params, request }) => {
+      const [id, verb] = String(params.action).split(':');
+      const change = retro.find((r) => r.id === id);
+      if (!change || verb !== 'decide')
+        return problem(404, 'not_found', 'Không tìm thấy thay đổi hồi tố.');
+      if (change.status !== 'open') return problem(409, 'invalid_state', 'Thay đổi đã được quyết.');
+      const body = (await request.json()) as {
+        decision: 'new_version' | 'no_change';
+        decision_note: string;
+      };
+      if (!body.decision_note?.trim())
+        return problem(422, 'validation_failed', 'Cần lý do cho quyết định.');
+      const decided: RetroChange = {
+        ...change,
+        status: body.decision,
+        decision_note: body.decision_note,
+      };
+      retro = retro.map((r) => (r.id === id ? decided : r));
+      // A new version is one more adjustment on the locked period (BR-43: v1 stays).
+      if (body.decision === 'new_version') {
+        periods = periods.map((p) =>
+          p.id === change.period_id ? { ...p, adjustment_count: p.adjustment_count + 1 } : p,
+        );
+      }
+      return HttpResponse.json(decided);
     }),
   ];
 }
