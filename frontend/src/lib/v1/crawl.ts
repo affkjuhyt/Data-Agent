@@ -147,7 +147,7 @@ export interface CrawlSchemaVersion {
   test: { pages: number; records: number; required_correct_pct: number } | null;
 }
 
-export interface CrawlSourceHeader {
+interface CrawlSourceHeader {
   id: string;
   name: string;
 }
