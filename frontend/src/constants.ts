@@ -43,6 +43,13 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
         { id: 'SESSIONS', label: 'Phiên làm việc' },
       ],
     },
+    {
+      label: 'Theo dõi & báo cáo',
+      items: [
+        { id: 'WATCH', label: 'Theo dõi' },
+        { id: 'ALERTS', label: 'Cảnh báo' },
+      ],
+    },
   ],
   data: [
     {
@@ -167,6 +174,7 @@ const RAIL_PARENT: Partial<Record<AreaId, Record<string, string>>> = {
     FORECAST_STUDIO: 'FORECAST',
     FORECAST_MODEL: 'FORECAST',
     DOC_ASK: 'ASK',
+    WATCH_NEW: 'WATCH',
   },
   data: {
     SOURCE: 'SOURCES',

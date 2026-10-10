@@ -27,6 +27,7 @@ import { createSkillsHandlers } from './skills';
 import { createAdminPlatformHandlers } from './adminPlatform';
 import { createAgentBuilderHandlers } from './agentBuilder';
 import { createAgentOpsHandlers } from './agentOps';
+import { createAlertHandlers } from './alerts';
 import { createAnswerReportHandlers } from './answerReports';
 import { createDashboardHandlers } from './dashboards';
 import { createAuthorityHandlers } from './authorities';
@@ -34,6 +35,7 @@ import { createCrawlHandlers } from './crawl';
 import { createExampleHandlers } from './examples';
 import { createKnowledgeHandlers } from './knowledge';
 import { createMetricHandlers } from './metrics';
+import { createMonitorHandlers } from './monitors';
 import { createNotificationHandlers } from './notifications';
 import { createPeriodHandlers } from './periods';
 import { createRuleHandlers } from './rules';
@@ -95,6 +97,8 @@ export function createHandlers() {
     ...createAuthorityHandlers(),
     ...createKnowledgeHandlers(),
     ...createCrawlHandlers(),
+    ...createMonitorHandlers(),
+    ...createAlertHandlers(),
 
     http.get('*/v1/inbox', ({ request }) => {
       const status = new URL(request.url).searchParams.get('status') ?? 'open';
