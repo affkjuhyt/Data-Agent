@@ -55,6 +55,17 @@ describe('answer meta row', () => {
     expect(onReport).toHaveBeenCalledOnce();
   });
 
+  it('offers Lưu thành tri thức only where the screen handles it', () => {
+    const onSaveKnowledge = vi.fn();
+    const { unmount } = wrap(<AnswerBlock msg={msg} />);
+    expect(screen.queryByRole('button', { name: 'Lưu thành tri thức' })).toBeNull();
+    unmount();
+
+    wrap(<AnswerBlock msg={msg} onSaveKnowledge={onSaveKnowledge} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu thành tri thức' }));
+    expect(onSaveKnowledge).toHaveBeenCalledOnce();
+  });
+
   it('marks a reported answer as under review', () => {
     wrap(<AnswerBlock msg={msg} onReport={vi.fn()} reported />);
     expect(screen.getByText('Đang kiểm tra')).toBeInTheDocument();

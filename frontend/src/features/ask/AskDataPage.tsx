@@ -29,6 +29,7 @@ import { AnswerBlock } from './components/AnswerBlock';
 import { AnswerTheme } from './components/AnswerTheme';
 import { EvidencePanel } from './components/EvidencePanel';
 import { ReportDialog } from './components/ReportDialog';
+import { SaveToKnowledgeDialog } from '../knowledge/SaveToKnowledgeDialog';
 import type { AgentOption, AskMessage } from './types';
 
 /* ─── per-viewer convenience storage ─────────────────────────────── */
@@ -84,6 +85,7 @@ export default function AskDataPage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reportFor, setReportFor] = useState<AskMessage | null>(null);
+  const [knowledgeFor, setKnowledgeFor] = useState<string | null>(null);
   const [reported, setReported] = useState<Record<string, AnswerReport>>({});
   const [listening, setListening] = useState(false);
   const recogRef = useRef<Recognition | null>(null);
@@ -323,6 +325,7 @@ export default function AskDataPage() {
                       textareaRef.current?.focus();
                     }}
                     onReport={msg.content ? () => setReportFor(msg) : undefined}
+                    onSaveKnowledge={msg.content ? () => setKnowledgeFor(msg.id) : undefined}
                     reported={!!reported[msg.id]}
                   />
                 </article>
@@ -383,6 +386,9 @@ export default function AskDataPage() {
         )}
       </div>
 
+      {knowledgeFor && (
+        <SaveToKnowledgeDialog answerId={knowledgeFor} onClose={() => setKnowledgeFor(null)} />
+      )}
       <ReportDialog
         open={!!reportFor}
         target={reportFor ? {

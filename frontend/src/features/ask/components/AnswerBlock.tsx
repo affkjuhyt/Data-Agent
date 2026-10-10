@@ -3,7 +3,7 @@
  * one RefusalCard instead — it has no answer, table or sources to show:
  *   1 "Hệ thống hiểu là" chips → 2 text (with citation markers) → 3 clarification card
  *   → 4 charts → 5 data tables → 6 "Vì sao tin được" strip → 7 sources
- *   → 8 meta row: trust label, timing, Cách tính · Xuất · Sao chép · Lưu câu hỏi · Báo sai
+ *   → 8 meta row: trust label, timing, Cách tính · Xuất · Sao chép · Lưu câu hỏi · Lưu thành tri thức · Báo sai
  *   → 9 follow-up chips.
  * The trust label is on every finished answer (invariant 14). Used by the Ask screen and the
  * agent Playground.
@@ -55,6 +55,8 @@ interface AnswerBlockProps {
   onReport?: () => void;
   /** the reader reported this answer; it shows "Đang kiểm tra" until review */
   reported?: boolean;
+  /** "Lưu thành tri thức": open P07 Lưu câu trả lời thành tri thức for this answer */
+  onSaveKnowledge?: () => void;
 }
 
 const TRUST_DOT = { success: 'success', primary: 'primary', warning: 'warning', info: 'info', neutral: 'neutral' } as const;
@@ -90,6 +92,7 @@ export function AnswerBlock({
   msg, question, busy, onSuggestion, onAnswerClarification, onSave, onOpenEvidence,
   showEvidenceStrip = true, showTimestamp = true, onRetry, onRephrase, showRefusalDetail,
   onReport, reported,
+  onSaveKnowledge,
 }: AnswerBlockProps) {
   const [exportOpen, setExportOpen] = useState(false);
   const resultRuns = useMemo(() => (msg.resultSets ?? []).map(resultSetToEvidenceRun), [msg.resultSets]);
@@ -210,6 +213,9 @@ export function AnswerBlock({
           {msg.content && <CopyLink text={msg.content} />}
           {onSave && (
             <button type="button" className={LINK} onClick={onSave} title="Lưu câu hỏi để hỏi lại nhanh">Lưu câu hỏi</button>
+          )}
+          {onSaveKnowledge && (
+            <button type="button" className={LINK} onClick={onSaveKnowledge}>Lưu thành tri thức</button>
           )}
           {onReport && (
             <button type="button" className={LINK} onClick={onReport} disabled={reported}>Báo sai</button>
