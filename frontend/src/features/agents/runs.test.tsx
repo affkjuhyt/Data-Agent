@@ -6,13 +6,16 @@ import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
 import { createHandlers } from '../../mocks/handlers';
+import AgentTeamPage from './AgentTeamPage';
 import RunDetailPage from './RunDetailPage';
 import RunsPage from './RunsPage';
 import { runDuration, shortCost } from './runStatus';
 
 const navigate = vi.fn();
 let routeId = '';
-vi.mock('../../AppStateContext', () => ({ useAppState: () => ({ navigate, routeId }) }));
+vi.mock('../../AppStateContext', () => ({
+  useAppState: () => ({ navigate, routeId, tenant: { tenantName: 'Rủi ro tín dụng' } }),
+}));
 
 const server = setupServer();
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -82,5 +85,20 @@ describe('run figures', () => {
     expect(runDuration({ started_at: start, finished_at: end } as never)).toBe('1:12');
     expect(shortCost('8400')).toBe('8k');
     expect(shortCost('900')).toBe('900');
+  });
+});
+
+describe('AgentTeamPage', () => {
+  it('opens what a busy agent is doing now, and its configuration', async () => {
+    wrap(<AgentTeamPage />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Thao tác với Agent Chất lượng dữ liệu' }),
+    );
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Đang làm gì' }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('agents', 'RUN', 'run-415'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Thao tác với Agent Chất lượng dữ liệu' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Cấu hình' }));
+    expect(navigate).toHaveBeenCalledWith('agents', 'AGENT', 'agent-dq');
   });
 });

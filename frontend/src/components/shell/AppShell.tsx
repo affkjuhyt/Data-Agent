@@ -9,6 +9,7 @@ import { useShellCounts } from './useShellCounts';
 import { setDataSpace } from '../../lib/v1/client';
 import { listDataSpaces } from '../../lib/v1/api';
 import { useV1 } from '../../lib/v1/useV1';
+import { NotificationDrawer } from '../../features/notifications/NotificationDrawer';
 
 /*
  * The frame shared by every desktop screen ("Spec · Khung trang"): the 56px top bar and the
@@ -22,6 +23,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const rail = isRailPage(area, page) ? AREA_RAILS[area] : undefined;
   const counts = useShellCounts();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   // The Data Space switcher ("v3.1 · Chọn Data Space"): the spaces the viewer belongs to
   // (GET /v1/data-spaces). "Toàn tổ chức" sends no X-Data-Space; choosing a space sets the
@@ -61,6 +63,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         workspaces={spaceOptions}
         onWorkspace={chooseSpace}
         onOpenCommand={() => setPaletteOpen(true)}
+        onOpenNotifications={() => setNotificationsOpen(true)}
         userName={user.name}
       />
       <div className="flex min-h-0 flex-1">
@@ -77,6 +80,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
+      <NotificationDrawer
+        open={notificationsOpen}
+        onClose={() => setNotificationsOpen(false)}
+        onOpenTarget={(route) =>
+          navigate(route.area, route.page ?? firstPageOf(route.area), route.id)
+        }
+      />
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}

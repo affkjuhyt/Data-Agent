@@ -8,8 +8,8 @@ import { StatusDot } from '../../design-system/StatusDot';
 import { Tooltip } from '../../design-system/Tooltip';
 import { formatMoneyShort } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
-import { listAgents } from '../../lib/v1/api';
-import type { AgentDef } from '../../lib/v1/types';
+import { listAgents, listRuns } from '../../lib/v1/api';
+import type { AgentDef, RunStatus } from '../../lib/v1/types';
 import { useV1 } from '../../lib/v1/useV1';
 import { agentStatus, sevenDaysText } from './agentStatus';
 
@@ -20,7 +20,8 @@ import { agentStatus, sevenDaysText } from './agentStatus';
  * someone, error when it stopped), when it runs, what it may do, last 7 days, status.
  *
  * "Tạo agent" opens the existing agent builder until "P13 · Tạo agent từ mô tả" is built;
- * "Từ mẫu" waits for the template screen.
+ * "Từ mẫu" waits for the template screen. A row's menu opens what the agent is doing now (its
+ * live run), its configuration (P13 Cấu hình & trigger) or its runs.
  */
 const NOW_TONE = {
   normal: 'text-foreground',
@@ -28,6 +29,17 @@ const NOW_TONE = {
   error: 'text-error',
 } as const;
 const TEMPLATE_PENDING = 'Màn tạo agent từ mẫu đang được làm.';
+const LIVE: RunStatus[] = ['waiting_human', 'running', 'planning', 'paused', 'queued'];
+
+/** The run to show for "Đang làm gì": one waiting on a person first, then the newest live one. */
+async function liveRunOf(agentId: string): Promise<string | undefined> {
+  const runs = (await listRuns({ agent_id: agentId })).items;
+  for (const status of LIVE) {
+    const run = runs.find((r) => r.status === status);
+    if (run) return run.id;
+  }
+  return undefined;
+}
 
 export default function AgentTeamPage() {
   const { tenant, navigate } = useAppState();
@@ -105,6 +117,15 @@ export default function AgentTeamPage() {
                     key={agent.id}
                     agent={agent}
                     onRuns={() => navigate('agents', 'RUNS')}
+                    onConfigure={() => navigate('agents', 'AGENT', agent.id)}
+                    onLive={() =>
+                      liveRunOf(agent.id)
+                        .then((runId) =>
+                          runId ? navigate('agents', 'RUN', runId) : navigate('agents', 'RUNS'),
+                        )
+                        // The run list still answers the question when the lookup fails.
+                        .catch(() => navigate('agents', 'RUNS'))
+                    }
                   />
                 ))}
               </tbody>
@@ -120,8 +141,19 @@ export default function AgentTeamPage() {
   );
 }
 
-function AgentRow({ agent, onRuns }: { agent: AgentDef; onRuns: () => void }) {
+function AgentRow({
+  agent,
+  onRuns,
+  onConfigure,
+  onLive,
+}: {
+  agent: AgentDef;
+  onRuns: () => void;
+  onConfigure: () => void;
+  onLive: () => void;
+}) {
   const status = agentStatus(agent);
+  const busy = agent.runs_running + agent.runs_waiting_human > 0;
   return (
     <tr className="border-b border-border align-middle">
       <td className="px-da-lg py-[9px]">
@@ -148,7 +180,11 @@ function AgentRow({ agent, onRuns }: { agent: AgentDef; onRuns: () => void }) {
       <td className="px-da-xs py-[9px] text-right">
         <Menu
           label={`Thao tác với ${agent.name}`}
-          items={[{ label: 'Xem lượt chạy', icon: 'play', onSelect: onRuns }]}
+          items={[
+            ...(busy ? [{ label: 'Đang làm gì', icon: 'eye' as const, onSelect: onLive }] : []),
+            { label: 'Cấu hình', icon: 'settings', onSelect: onConfigure },
+            { label: 'Xem lượt chạy', icon: 'play', onSelect: onRuns },
+          ]}
         />
       </td>
     </tr>

@@ -15,6 +15,7 @@ import {
   usersFixture,
   workspacesFixture,
 } from './fixtures';
+import { createNotificationHandlers } from './notifications';
 
 /*
  * MSW handlers for the v1 endpoints the screens call (lib/v1/api.ts). State lives in memory for
@@ -114,8 +115,14 @@ export function createHandlers() {
 
     http.get('*/v1/agents', () => page(agentsFixture())),
     http.get('*/v1/runs', ({ request }) => {
-      const status = new URL(request.url).searchParams.get('status');
-      return page(status ? runs.filter((run) => run.status === status) : runs);
+      const params = new URL(request.url).searchParams;
+      const status = params.get('status');
+      const agentId = params.get('agent_id');
+      return page(
+        runs.filter(
+          (run) => (!status || run.status === status) && (!agentId || run.agent_id === agentId),
+        ),
+      );
     }),
     http.get('*/v1/runs/:id', ({ params, request }) => {
       const run = runs.find((r) => r.id === params.id);
@@ -157,5 +164,6 @@ export function createHandlers() {
     http.get('*/v1/data-spaces', () => page(dataSpacesFixture())),
     http.get('*/v1/admin/users', () => page(usersFixture())),
     http.get('*/v1/admin/models', () => page(modelsFixture())),
+    ...createNotificationHandlers(),
   ];
 }
