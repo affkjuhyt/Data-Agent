@@ -31,6 +31,7 @@ import { createAlertHandlers } from './alerts';
 import { createAnswerReportHandlers } from './answerReports';
 import { createDashboardHandlers } from './dashboards';
 import { createAuthorityHandlers } from './authorities';
+import { createCollaborationHandlers } from './collaboration';
 import { createCrawlHandlers } from './crawl';
 import { createExampleHandlers } from './examples';
 import { createKnowledgeHandlers } from './knowledge';
@@ -105,6 +106,7 @@ export function createHandlers() {
     ...createReportHandlers(),
     ...createPackHandlers(),
     ...createSemanticLayerHandlers(),
+    ...createCollaborationHandlers(),
 
     http.get('*/v1/inbox', ({ request }) => {
       const status = new URL(request.url).searchParams.get('status') ?? 'open';

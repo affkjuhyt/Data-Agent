@@ -5,6 +5,7 @@ const HomePage = React.lazy(() => import('./features/home/HomePage'));
 const NeedsYouPage = React.lazy(() => import('./features/needs-you/NeedsYouPage'));
 const ProposalPage = React.lazy(() => import('./features/needs-you/ProposalPage'));
 const ConflictPage = React.lazy(() => import('./features/needs-you/ConflictPage'));
+const ApprovalChainPage = React.lazy(() => import('./features/needs-you/ApprovalChainPage'));
 const AgentTeamPage = React.lazy(() => import('./features/agents/AgentTeamPage'));
 const RunsPage = React.lazy(() => import('./features/agents/RunsPage'));
 const RunDetailPage = React.lazy(() => import('./features/agents/RunDetailPage'));
@@ -132,6 +133,8 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     // Detail pages, addressed /needs-you/<page>/<id>.
     PROPOSAL:        { render: () => <ProposalPage /> },
     CONFLICT:        { render: () => <ConflictPage /> },
+    // /needs-you/approval/<proposal id>: a proposal several people review in turn.
+    APPROVAL:        { render: () => <ApprovalChainPage /> },
   },
 
   agents: {

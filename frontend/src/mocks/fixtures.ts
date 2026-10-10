@@ -867,8 +867,13 @@ export function proposalsFixture(): Proposal[] {
         { ok: true, text: 'Khớp số đã nộp ngày 05/10' },
       ],
       approval: {
-        reason: 'Ghi đè số nội bộ',
-        steps: [{ name: 'Bạn', role: 'người phụ trách dữ liệu' }],
+        reason: 'Ghi đè số nội bộ của kỳ đã nộp',
+        // The chain of "Cộng tác · Duyệt nhiều người" (2084:7085), mocks/collaboration.ts.
+        steps: [
+          { name: 'Nguyễn Thu Hà', role: 'người lập kiểm tra' },
+          { name: 'Bạn', role: 'chủ sở hữu dữ liệu' },
+          { name: 'Đỗ Hải Yến', role: 'kiểm soát vì kỳ đã nộp' },
+        ],
         note: 'Người đề xuất không tự duyệt',
       },
       proposed_by_label: 'Agent Đối soát từ lượt chạy #427',

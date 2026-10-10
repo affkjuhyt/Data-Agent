@@ -113,6 +113,14 @@ export default function ProposalPage() {
                   actions={
                     open && (
                       <>
+                        {p.approval.steps.length > 1 && (
+                          <Button
+                            kind="ghost"
+                            onClick={() => navigate('needs-you', 'APPROVAL', p.id)}
+                          >
+                            Người duyệt & thảo luận
+                          </Button>
+                        )}
                         <Button kind="ghost" onClick={() => setDialog({ decision: 'reject' })}>
                           Từ chối
                         </Button>
