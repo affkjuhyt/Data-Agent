@@ -1,5 +1,11 @@
 import { http, HttpResponse } from 'msw';
-import type { PeriodClose, PeriodSummary, RetroChange } from '../lib/v1/periods';
+import type {
+  PeriodClose,
+  PeriodComparison,
+  PeriodSummary,
+  PeriodVersion,
+  RetroChange,
+} from '../lib/v1/periods';
 
 /*
  * The periods of "P10 · Kỳ chốt · Chốt kỳ" (2304:19277). T9/2026 is mid-close and stopped on a
@@ -145,6 +151,77 @@ function retroChanges(): RetroChange[] {
   ];
 }
 
+// "P10 · So sánh hai bản" (2304:19616): T8 as published against its retro adjustment.
+const VERSIONS: PeriodVersion[] = [
+  { id: 'pv-2026-08-v1', label: 'T8/2026 · v1 · đã công bố', note: 'đã công bố 05/09' },
+  { id: 'pv-2026-08-v2', label: 'T8/2026 · v2 · điều chỉnh', note: 'điều chỉnh hồi tố 07/10' },
+  { id: 'pv-2026-07-v1', label: 'T7/2026 · v1 · đã công bố', note: 'đã công bố 05/08' },
+];
+
+const FIGURES: Record<string, Record<string, string>> = {
+  'Nợ xấu bán lẻ': { 'pv-2026-08-v1': '1,62%', 'pv-2026-08-v2': '1,66%', 'pv-2026-07-v1': '1,58%' },
+  'Dư nợ quá hạn 30+': {
+    'pv-2026-08-v1': '5.812 tỷ',
+    'pv-2026-08-v2': '5.890 tỷ',
+    'pv-2026-07-v1': '5.640 tỷ',
+  },
+  'Dư nợ cho vay': {
+    'pv-2026-08-v1': '180.416 tỷ',
+    'pv-2026-08-v2': '180.416 tỷ',
+    'pv-2026-07-v1': '178.902 tỷ',
+  },
+  'Tỷ lệ dự phòng': {
+    'pv-2026-08-v1': '1,44%',
+    'pv-2026-08-v2': '1,44%',
+    'pv-2026-07-v1': '1,43%',
+  },
+  'Số khoản nhóm 3–5': {
+    'pv-2026-08-v1': '24.102',
+    'pv-2026-08-v2': '24.316',
+    'pv-2026-07-v1': '23.870',
+  },
+};
+
+/** The design's gaps for v1 → v2; other pairs only say whether the figure moved. */
+const V1_TO_V2: Record<string, string> = {
+  'Nợ xấu bán lẻ': '+0,04 điểm',
+  'Dư nợ quá hạn 30+': '+78 tỷ',
+  'Số khoản nhóm 3–5': '+214',
+};
+
+function compare(leftId: string, rightId: string): PeriodComparison | null {
+  const left = VERSIONS.find((v) => v.id === leftId);
+  const right = VERSIONS.find((v) => v.id === rightId);
+  if (!left || !right) return null;
+  const pair = [left.id, right.id].sort().join('|') === 'pv-2026-08-v1|pv-2026-08-v2';
+  let explained = false;
+  return {
+    left,
+    right,
+    versions: VERSIONS,
+    rows: Object.entries(FIGURES).map(([metric, values]) => {
+      const changed = values[left.id] !== values[right.id];
+      const retro = pair && changed;
+      // The first moved figure names its cause; the rest say "như trên", as in the design.
+      const reason = retro
+        ? explained
+          ? 'như trên'
+          : '214 khoản đổi ngày quá hạn (RC-012)'
+        : null;
+      if (retro) explained = true;
+      return {
+        metric,
+        left: values[left.id],
+        right: values[right.id],
+        delta: !changed ? '0' : pair ? (V1_TO_V2[metric] ?? '≠') : '≠',
+        changed,
+        reason: changed ? (reason ?? 'khác kỳ') : null,
+        retro_change_id: retro ? 'retro-012' : null,
+      };
+    }),
+  };
+}
+
 export function createPeriodHandlers() {
   let retro = retroChanges();
   let periods: PeriodClose[] = summaries().map((s) =>
@@ -165,6 +242,12 @@ export function createPeriodHandlers() {
     http.get('*/v1/periods', () =>
       HttpResponse.json({ items: periods.map(summary), next_page_token: '' }),
     ),
+    // Before /v1/periods/:id, which would otherwise take "compare" as an id.
+    http.get('*/v1/periods/compare', ({ request }) => {
+      const params = new URL(request.url).searchParams;
+      const result = compare(params.get('left') ?? '', params.get('right') ?? '');
+      return result ? HttpResponse.json(result) : problem(404, 'not_found', 'Không tìm thấy bản.');
+    }),
     http.get('*/v1/periods/:id', ({ params }) => {
       const period = periods.find((p) => p.id === params.id);
       return period ? HttpResponse.json(period) : problem(404, 'not_found', 'Không tìm thấy kỳ.');

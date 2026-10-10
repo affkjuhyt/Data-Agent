@@ -105,3 +105,34 @@ export const decideRetroChange = async (
   id: string,
   body: { decision: 'new_version' | 'no_change'; decision_note: string },
 ) => v1Send<RetroChange>('POST', `/retro-changes/${pathId(id)}:decide`, body);
+
+/* ─── So sánh hai bản (UC-10-05) ──────────────────────────────────────── */
+
+export interface PeriodVersion {
+  id: string;
+  /** "T8/2026 · v1 · đã công bố" */
+  label: string;
+  /** "đã công bố 05/09", "điều chỉnh hồi tố 07/10" */
+  note: string;
+}
+
+export interface PeriodComparison {
+  left: PeriodVersion;
+  right: PeriodVersion;
+  /** PROPOSAL: the versions the pickers offer. */
+  versions: PeriodVersion[];
+  /** Every gap traces back to the retro change or run that made it (UC-10-05). */
+  rows: {
+    metric: string;
+    left: string;
+    right: string;
+    delta: string;
+    changed: boolean;
+    reason: string | null;
+    retro_change_id: string | null;
+  }[];
+}
+
+/** A2: GET /v1/periods/compare — two versions (or two points in time) of a period. */
+export const comparePeriodVersions = (left: string, right: string) =>
+  v1Get<PeriodComparison>('/periods/compare', { left, right });

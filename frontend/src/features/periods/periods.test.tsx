@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { ToastProvider } from '../../design-system/Toast';
 import { getPeriod, getRetroChange } from '../../lib/v1/periods';
 import { createPeriodHandlers } from '../../mocks/periods';
+import CompareVersionsPage from './CompareVersionsPage';
 import PeriodClosePage from './PeriodClosePage';
 import RetroChangePage from './RetroChangePage';
 
@@ -116,5 +117,30 @@ describe('RetroChangePage', () => {
     expect(await screen.findByText(/Lý do quyết định: Core banking sửa lô/)).toBeInTheDocument();
     expect((await getRetroChange('retro-012')).status).toBe('new_version');
     expect(screen.queryByRole('button', { name: 'Tạo bản điều chỉnh T8 · v2' })).toBeNull();
+  });
+});
+
+describe('CompareVersionsPage', () => {
+  it('compares two versions figure by figure and links each gap to its retro change', async () => {
+    render(
+      <ToastProvider>
+        <CompareVersionsPage />
+      </ToastProvider>,
+    );
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'So sánh T8 · v1 với T8 · v2' }),
+    ).toBeInTheDocument();
+    const npl = screen.getByRole('row', { name: /Nợ xấu bán lẻ/ });
+    expect(within(npl).getByText('+0,04 điểm')).toHaveClass('text-warning');
+    expect(within(screen.getByRole('row', { name: /Dư nợ cho vay/ })).getByText('0')).toHaveClass(
+      'text-muted-foreground',
+    );
+    fireEvent.click(within(npl).getByRole('button', { name: /RC-012/ }));
+    expect(navigate).toHaveBeenCalledWith('data', 'RETRO', 'retro-012');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đổi bản' }));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'So sánh T8 · v2 với T8 · v1' }),
+    ).toBeInTheDocument();
   });
 });
