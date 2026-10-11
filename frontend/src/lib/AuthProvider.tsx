@@ -81,7 +81,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     keycloak
       .init({
         onLoad:           'check-sso',
-        silentCheckSsoRedirectUri: `${window.location.origin}/silent-check-sso.html`,
+        // The dev/prod frontend and Keycloak normally have different origins
+        // (for example localhost:30280 and 10.10.55.101:30110). Chrome blocks
+        // the silent third-party iframe in that arrangement, leaving keycloak-js
+        // waiting forever for the postMessage. The redirect check is one short
+        // round-trip and works with the same client redirect allow-list.
         checkLoginIframe: false,
         pkceMethod:       'S256',
       })
