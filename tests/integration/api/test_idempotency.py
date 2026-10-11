@@ -91,3 +91,17 @@ async def test_a1_5_a_key_over_128_characters_is_refused(seed: Seed) -> None:
             "/v1/audit:export", json={"filters": {}}, headers={"Idempotency-Key": "k" * 129}
         )
     assert r.status_code == 400
+
+
+async def test_a1_5_no_replay_for_a_caller_who_lost_access(seed: Seed) -> None:
+    org, store = build(seed), MemoryStore()
+    key = {"Idempotency-Key": "before-revoke"}
+    async with client(org, store) as c:
+        first = await c.post("/v1/audit:export", json={"filters": {}}, headers=key)
+        assert first.status_code == 202
+        seed.conn.cursor().execute(
+            "UPDATE org.app_user SET status = 'disabled' WHERE org_id = %s AND external_id = 'kc-ac06'",
+            (str(org),),
+        )
+        again = await c.post("/v1/audit:export", json={"filters": {}}, headers=key)
+    assert again.status_code == 403 and "Idempotent-Replayed" not in again.headers

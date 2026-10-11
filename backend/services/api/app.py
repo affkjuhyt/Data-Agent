@@ -16,9 +16,12 @@ from fastapi import FastAPI, Request, Response
 
 from services.api.config import Settings
 from services.api.kernel.auth import IdentityResolver, JwksTokenVerifier, TokenVerifier
+from services.api.kernel.etag import etag_middleware
 from services.api.kernel.idempotency import (
+    IdempotentAnswer,
     ResponseStore,
     idempotency_middleware,
+    on_idempotent_answer,
     response_store_from_env,
 )
 from services.api.kernel.problems import Problem, install_problem_handlers, problem_response
@@ -73,6 +76,7 @@ def create_app(
     app.state.identity_resolver = identity_resolver or OrgIdentityResolver()
 
     install_problem_handlers(app)
+    app.add_exception_handler(IdempotentAnswer, on_idempotent_answer)
     store = response_store or response_store_from_env()
 
     @app.middleware("http")
@@ -80,6 +84,9 @@ def create_app(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         return await idempotency_middleware(request, call_next, store)
+
+    # Outside the idempotency check: a stale If-Match answers 412 before a key is claimed.
+    app.middleware("http")(etag_middleware)
 
     @app.middleware("http")
     async def trace_and_contain(

@@ -17,7 +17,10 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
+from fastapi import Depends
+
 from services.api.kernel.auth import CAPABILITIES, require
+from services.api.kernel.idempotency import replay_guard
 from services.api.kernel.problems import ProblemBody
 
 CATALOGUE_FILE = Path(__file__).with_name("a2_endpoints.json")
@@ -147,6 +150,10 @@ def endpoint(
                 f"{method.upper()} {path}: merged rows need variant_guard= and a capability per row"
             )
         guards = [require(*caps), variant_guard]
+    if method.upper() == "POST":
+        # After the guards: a replayed Idempotency-Key answer is only for a caller who would
+        # still be let in (kernel/idempotency.py).
+        guards.append(Depends(replay_guard))
     return {
         "operation_id": operation_id,
         "tags": list(dict.fromkeys(r.group for r in rows)),

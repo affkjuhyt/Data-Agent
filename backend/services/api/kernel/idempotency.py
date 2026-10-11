@@ -86,7 +86,13 @@ def _caller(claims: dict[str, Any]) -> tuple[uuid.UUID, uuid.UUID] | None:
 
 def _request_hash(request: Request, body: bytes) -> str:
     digest = hashlib.sha256()
-    for part in (request.method.encode(), request.url.path.encode(), request.url.query.encode()):
+    for part in (
+        request.method.encode(),
+        request.url.path.encode(),
+        request.url.query.encode(),
+        # The same body in another Data Space is another request.
+        request.headers.get("X-Data-Space", "").encode(),
+    ):
         digest.update(part + b"\n")
     digest.update(body)
     return digest.hexdigest()
@@ -161,6 +167,25 @@ async def _claim(org_id: uuid.UUID, principal_id: uuid.UUID, key: str, request_h
     return _Claim(replay_ref=first.response_ref)
 
 
+class IdempotentAnswer(Exception):
+    """Raised by replay_guard; its handler returns the response decided by the middleware."""
+
+    def __init__(self, response: Response) -> None:
+        self.response = response
+
+
+async def replay_guard(request: Request) -> None:
+    """Route dependency (catalogue.endpoint puts it after the auth and capability guards)."""
+    answer = getattr(request.state, "idempotent_answer", None)
+    if answer is not None:
+        raise IdempotentAnswer(answer)
+
+
+async def on_idempotent_answer(request: Request, exc: Exception) -> Response:
+    assert isinstance(exc, IdempotentAnswer)
+    return exc.response
+
+
 def _problem(status: int, code: str, detail: str) -> Response:
     return problem_response(Problem(status, code, detail))
 
@@ -196,14 +221,22 @@ async def idempotency_middleware(
     org_id, principal_id = caller
     body = await request.body()
     claim = await _claim(org_id, principal_id, key, _request_hash(request, body))
-    if claim.answer is not None:
-        return claim.answer
-    if claim.replay_ref is not None:
-        stored = await store.get(claim.replay_ref)
-        if stored is None:
-            return _problem(409, "conflict", "The first response with this key is no longer kept.")
-        return _replay(stored)
-    assert claim.row_id is not None
+    if claim.row_id is None:
+        # Not answered here: the route runs its authentication and capability check first, and
+        # replay_guard answers after them, so a caller who has since lost access gets their 401
+        # or 403, never the stored response.
+        answer = claim.answer
+        if claim.replay_ref is not None:
+            stored = await store.get(claim.replay_ref)
+            answer = (
+                _replay(stored)
+                if stored is not None
+                else _problem(
+                    409, "conflict", "The first response with this key is no longer kept."
+                )
+            )
+        request.state.idempotent_answer = answer
+        return await call_next(request)
     try:
         response = await call_next(request)
     except BaseException:

@@ -11,6 +11,7 @@ from services.api.app import create_app
 from services.api.catalogue import catalogue, endpoint, endpoints
 from services.api.catalogue.check import compare
 from services.api.config import Settings
+from services.api.kernel.idempotency import replay_guard
 
 pytestmark = [pytest.mark.unit, pytest.mark.contract]
 
@@ -29,7 +30,9 @@ def test_endpoint_metadata_comes_from_a2() -> None:
         "x-use-cases": ["UC-01-01", "UC-01-04", "UC-05-04", "UC-10-01"],
         "x-capability": ["ask"],
     }
-    assert len(kw["dependencies"]) == 1
+    # The capability guard, then the Idempotency-Key replay that must come after it (A1.5).
+    guard, replay = kw["dependencies"]
+    assert replay.dependency is replay_guard
 
 
 def test_route_outside_a2_fails_at_import() -> None:
@@ -61,7 +64,7 @@ def test_one_route_can_serve_both_data_product_rows() -> None:
         variant_guard=check,
     )
     assert kw["tags"] == ["Biến đổi dữ liệu", "Lớp ngữ cảnh"]
-    assert kw["dependencies"][-1] is check
+    assert kw["dependencies"][-2] is check
 
 
 def test_channel_and_client_routes_need_their_own_authentication() -> None:
@@ -70,7 +73,7 @@ def test_channel_and_client_routes_need_their_own_authentication() -> None:
         endpoint(channel.method, channel.path, operation_id="x")
     check = object()
     kw = endpoint(channel.method, channel.path, operation_id="x", authenticate=check)
-    assert kw["dependencies"] == [check]
+    assert kw["dependencies"][0] is check
     with pytest.raises(ValueError, match="only for channel/client"):
         endpoint("GET", "/v1/inbox", operation_id="x", authenticate=check)
 

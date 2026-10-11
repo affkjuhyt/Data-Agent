@@ -106,7 +106,16 @@ thêm. Khoá giữ trong `integration.idempotency_key` theo tổ chức và ngư
 trước khi handler chạy nên bản gửi trùng lúc bản đầu còn chạy nhận 409. Phản hồi đầu (mã, Content-Type,
 Location, ETag, thân) lưu 24 giờ ở Redis (`REDIS_URL`); gửi lại trả đúng phản hồi đó kèm `Idempotent-Replayed:
 true`, cùng khoá khác thân trả 422 `idempotency_mismatch`, lỗi 5xx nhả khoá để gửi lại chạy lại. Thiếu
-`REDIS_URL` thì header bị bỏ qua (cảnh báo khi khởi động).
+`REDIS_URL` thì header bị bỏ qua (cảnh báo khi khởi động). Bản phát lại chỉ trả sau khi route chạy xong xác thực
+và kiểm năng lực (`replay_guard`, `catalogue.endpoint` gắn cho mọi POST), nên người đã mất quyền nhận 401/403 chứ
+không nhận lại phản hồi cũ.
+
+ETag và If-Match (A1.5) cũng ở kernel (`kernel/etag.py`). Mọi GET 200 dạng JSON có ETag là băm thân trả về (luồng SSE
+thì không). PATCH, PUT và POST `…/{id}:{động từ}` có If-Match được so với ETag của GET `…/{id}` mà chính người gọi
+đọc lúc đó (gọi trong tiến trình); lệch trả 412 `precondition_failed` trước khi handler chạy. Không có GET tương ứng
+hoặc không gửi If-Match thì không kiểm (A1 ghi "nên gửi"); route bắt buộc If-Match tự kiểm (POST
+`/v1/me/clients/{id}:confirm`). Đây không phải khoá: hai người đọc cùng ETag vẫn có thể cùng qua trong vài mili
+giây; bảng cần chặt hơn giữ OCC của riêng nó.
 
 A2 có 382 endpoint, làm dần theo nhóm: một nhóm vào `COMPLETE_GROUPS` trong commit phục vụ endpoint cuối
 của nhóm, từ đó bỏ một endpoint là lỗi. Thêm hoặc bỏ endpoint phải sửa tab 4 A2 và `a2_endpoints.json`
