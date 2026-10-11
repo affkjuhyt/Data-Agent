@@ -23,6 +23,8 @@
    OpenAPI với A2 (ADR-48), cách viết module, thứ tự các nhóm endpoint.
 8. [07-database.md](07-database.md): CSDL V3 sinh từ tab 3/3b của tài liệu thiết kế: bộ sinh DDL và
    ORM, routines viết tay, biến phiên RLS, `scoped_session`, kiểm thử.
+9. [08-legacy-cutover.md](08-legacy-cutover.md): bảng kiểm kê deployable cũ, replacement V3 và điều kiện
+   xoá từng workload; không xoá theo một đợt khi replacement chưa có.
 
 Người mới và phiên Claude mới: đọc 00 §0 và §3.2, rồi 04; lấy ID đầu tiên `todo` mà phụ thuộc đã `done`.
 Quy tắc repo (test trong container, so baseline lint, outbox, naming) ở `CLAUDE.md` gốc.

@@ -22,6 +22,7 @@ cd "$(dirname "$0")/../.."
 REGISTRY="${REGISTRY:-}"
 
 declare -A IMAGES=(
+  [api]="backend/services/api/Dockerfile|."
   [auth_api]="backend/services/auth_api/Dockerfile|."
   [kb-backend]="backend/services/kb_backend/Dockerfile|."
   [kb-worker]="deploy/docker/kb-worker/Dockerfile|."

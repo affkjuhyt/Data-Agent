@@ -105,7 +105,7 @@ trong cùng PR. Xem độ phủ: `python -m services.api.catalogue.check` trong 
 | API-03 | Phiên làm việc (`workspace`) | Màn Phiên |
 | API-04 | Cần bạn và đánh giá (`inbox`, `eval`) | Màn Cần bạn, HITL |
 | API-05 | Agent (`agent`) | Lượt chạy, `/v1/runs/{id}/events` |
-| API-06 | Triển khai: manifest `deploy/k8s/*/api.yaml`, Ansible `service_workloads`, route `/v1` ở gateway, secret `DATAAGENT_DB_URL__*` từ OpenBao | Sau khi API-02 có dữ liệu thật |
+| API-06 | Triển khai: manifest `deploy/k8s/*/service/api.yaml`, Ansible `service_workloads`, route `/v1` ở gateway, secret `DATAAGENT_DB_URL__*` từ OpenBao | Sau khi API-02 có dữ liệu thật |
 
 `GET /v1/me` được thêm vào A2 (nhóm Quản trị) ngày 11/10/2026; các `/v1/me/*` khác frontend đang gọi vẫn là
 PROPOSAL và đi theo nhóm của chúng.
