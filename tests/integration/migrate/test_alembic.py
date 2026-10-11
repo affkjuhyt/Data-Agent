@@ -9,6 +9,8 @@ from urllib.parse import urlsplit, urlunsplit
 import psycopg2
 import pytest
 
+from alembic.script import ScriptDirectory
+
 pytestmark = pytest.mark.integration
 
 ALEMBIC = Path(__file__).resolve().parents[3] / "backend" / "alembic"
@@ -52,10 +54,12 @@ def admin(ddl_server) -> str:
     return _db(ddl_server["dataagent"], "postgres")
 
 
-def test_a_fresh_install_puts_audit_in_its_own_database(admin):
+def test_a_fresh_install_runs_the_whole_chain_and_puts_audit_apart(admin):
+    # Every revision must apply on a database that never saw the legacy schema or its roles.
     _fresh(admin, "chain_fresh", "chain_fresh_audit")
-    _alembic(_db(admin, "chain_fresh"), "upgrade", "v3_0002")
-    assert _one(_db(admin, "chain_fresh"), "SELECT version_num FROM alembic_version") == "v3_0002"
+    _alembic(_db(admin, "chain_fresh"), "upgrade", "head")
+    head = ScriptDirectory(str(ALEMBIC)).get_current_head()
+    assert _one(_db(admin, "chain_fresh"), "SELECT version_num FROM alembic_version") == head
     assert _one(_db(admin, "chain_fresh"), "SELECT to_regnamespace('audit') IS NULL") is True
     assert (
         _one(_db(admin, "chain_fresh_audit"), "SELECT to_regclass('audit.audit_log') IS NOT NULL")

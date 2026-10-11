@@ -1,4 +1,12 @@
-"""Add durable human-approval records and the LangGraph checkpoint schema."""
+"""Durable human-approval records and the LangGraph checkpoint schema of the legacy runtime.
+
+Transitional (design tab 6 R-28; docs/v3/03 R0-3): workflow_runtime keeps running beside the V3
+blocks until UAT, and its single-agent approvals must survive a pod restart. The target is ADR-37's
+own runtime in worker-agent, where a run is agent.agent_run and an approval inbox.hitl_request;
+when it replaces workflow_runtime (docs/v3/09 G1) a revision drops the `runtime` and `langgraph`
+schemas. The legacy roles exist only on clusters initialised before V3, so they are created
+NOLOGIN here when missing; a fresh install does not run workflow_runtime.
+"""
 
 from alembic import op
 
@@ -11,6 +19,16 @@ depends_on = None
 def upgrade() -> None:
     op.execute(
         """
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'runtime_writer') THEN
+            CREATE ROLE runtime_writer NOLOGIN NOSUPERUSER NOBYPASSRLS;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+            CREATE ROLE app_user NOLOGIN NOSUPERUSER NOBYPASSRLS;
+          END IF;
+        END $$;
+
         CREATE SCHEMA IF NOT EXISTS runtime AUTHORIZATION runtime_writer;
         CREATE SCHEMA IF NOT EXISTS langgraph AUTHORIZATION app_user;
 
