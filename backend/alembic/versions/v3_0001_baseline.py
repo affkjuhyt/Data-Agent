@@ -1,4 +1,7 @@
-"""Create the V3 dataagent and dataagent_audit databases.
+"""Create the V3 `dataagent` database: 23 schemas, roles, row-level security, routines.
+
+The audit database is v3_0002's (it lives apart, D1 item 1). Clusters that ran an earlier
+version of this revision also got the audit schema inside `dataagent`; v3_0002 moves it.
 
 Revision ID: v3_0001
 Revises:
@@ -28,7 +31,6 @@ def _apply_sql(filename: str) -> None:
 
 def upgrade() -> None:
     _apply_sql("dataagent.sql")
-    _apply_sql("dataagent_audit.sql")
 
 
 def downgrade() -> None:
