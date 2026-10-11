@@ -39,6 +39,36 @@ class ModelProviderView(BaseModel):
 ModelProviderPage = Page[ModelProviderView]
 
 
+class ModelRouteDecisionView(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    data_space_id: uuid.UUID | None
+    task: str
+    caller_kind: str
+    caller_id: uuid.UUID | None
+    data_product_id: uuid.UUID | None
+    product_scope: str
+    context_labels: list[str]
+    max_classification: str
+    contains_internal_data: bool
+    pii_redactions: int
+    candidate_provider_id: uuid.UUID | None
+    decision: str
+    reasons: list[str]
+    chosen_provider_id: uuid.UUID
+    model_name: str
+    prompt_sha256: str
+    input_tokens: int | None
+    output_tokens: int | None
+    outcome: str
+    model_usage_id: uuid.UUID | None
+    decided_at: datetime.datetime
+
+
+ModelRouteDecisionPage = Page[ModelRouteDecisionView]
+
+
 class ModelProviderCreate(BaseModel):
     code: str = Field(min_length=1, max_length=100)
     display_name: str = Field(min_length=1, max_length=500)

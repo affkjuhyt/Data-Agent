@@ -30,6 +30,8 @@ from services.api.modules.governance.schemas import (
     ModelProviderPage,
     ModelProviderPatch,
     ModelProviderView,
+    ModelRouteDecisionPage,
+    ModelRouteDecisionView,
 )
 
 router = APIRouter()
@@ -300,3 +302,65 @@ async def approve_model_provider(
         await session.flush()
         await session.refresh(row)
     return ModelProviderView.model_validate(row)
+
+
+@router.get(
+    "/v1/admin/model-route-decisions",
+    response_model=ModelRouteDecisionPage,
+    **endpoint(
+        "GET",
+        "/v1/admin/model-route-decisions",
+        operation_id="listModelRouteDecisions",
+    ),
+)
+async def list_model_route_decisions(
+    principal: CurrentPrincipal,
+    page: Annotated[PageRequest, Depends(page_request)],
+    decision: str | None = Query(default=None, max_length=40),
+    reason: str | None = Query(default=None, max_length=80),
+    provider_id: uuid.UUID | None = None,
+    caller_kind: str | None = Query(default=None, max_length=30),
+    caller_id: uuid.UUID | None = None,
+    from_: Annotated[datetime.datetime | None, Query(alias="from")] = None,
+    to: datetime.datetime | None = None,
+) -> ModelRouteDecisionPage:
+    row_type = governance.ModelRouteDecision
+    query = select(row_type).where(row_type.org_id == principal.org_id)
+    if decision:
+        query = query.where(row_type.decision == decision)
+    if reason:
+        query = query.where(row_type.reasons.any(reason))
+    if provider_id:
+        query = query.where(row_type.chosen_provider_id == provider_id)
+    if caller_kind:
+        query = query.where(row_type.caller_kind == caller_kind)
+    if caller_id:
+        query = query.where(row_type.caller_id == caller_id)
+    if from_:
+        query = query.where(row_type.decided_at >= from_)
+    if to:
+        query = query.where(row_type.decided_at < to)
+    if page.cursor:
+        try:
+            after = (
+                datetime.datetime.fromisoformat(str(page.cursor["k"])),
+                uuid.UUID(str(page.cursor["id"])),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise invalid_page_token() from exc
+        query = query.where(tuple_(row_type.decided_at, row_type.id) < after)
+    query = query.order_by(row_type.decided_at.desc(), row_type.id.desc()).limit(
+        page.page_size + 1
+    )
+
+    async with transaction(ROLE, principal) as session:
+        rows = list((await session.scalars(query)).all())
+    more = len(rows) > page.page_size
+    rows = rows[: page.page_size]
+    last = rows[-1] if more else None
+    return ModelRouteDecisionPage(
+        items=[ModelRouteDecisionView.model_validate(row) for row in rows],
+        next_page_token=encode_page_token(
+            {"k": last.decided_at.isoformat(), "id": str(last.id)} if last else None
+        ),
+    )
