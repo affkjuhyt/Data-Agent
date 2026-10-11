@@ -46,3 +46,13 @@ def test_frontier_provider_requires_a_safe_external_contract(api: TestClient) ->
     )
     assert response.status_code == 422
     assert response.json()["code"] == "validation_failed"
+
+
+def test_model_provider_approval_requires_compliance(api: TestClient) -> None:
+    response = api.post(
+        "/v1/admin/model-providers/01920000-0000-7000-8000-000000000002:approve",
+        headers={"Authorization": f"Bearer {ADMIN}"},
+        json={"note": "Reviewed contract."},
+    )
+    assert response.status_code == 403
+    assert response.json()["code"] == "forbidden"

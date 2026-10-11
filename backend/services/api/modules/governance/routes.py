@@ -25,6 +25,7 @@ from services.api.kernel.pagination import (
 )
 from services.api.kernel.problems import Problem
 from services.api.modules.governance.schemas import (
+    ModelProviderApprove,
     ModelProviderCreate,
     ModelProviderPage,
     ModelProviderPatch,
@@ -222,6 +223,12 @@ async def patch_model_provider(
                 "business_rule_violated",
                 "A frontier provider needs compliance approval and zero retention before enabling.",
             )
+        if body.enabled is True and row.approved_by == principal.user_id:
+            raise Problem(
+                403,
+                "policy_denied",
+                "The person who approved a frontier provider cannot enable it.",
+            )
 
         if changed_contract:
             row.enabled = False
@@ -229,6 +236,65 @@ async def patch_model_provider(
             row.approved_at = None
         elif body.enabled is not None:
             row.enabled = body.enabled
+            if body.enabled:
+                row.enabled_by = principal.user_id
+        row.updated_by = principal.user_id
+        row.updated_at = datetime.datetime.now(datetime.UTC)
+        await session.flush()
+        await session.refresh(row)
+    return ModelProviderView.model_validate(row)
+
+
+@router.post(
+    "/v1/admin/model-providers/{id}:approve",
+    response_model=ModelProviderView,
+    **endpoint(
+        "POST",
+        "/v1/admin/model-providers/{id}:approve",
+        operation_id="approveModelProvider",
+    ),
+)
+async def approve_model_provider(
+    body: ModelProviderApprove,
+    provider_id: Annotated[uuid.UUID, Path(alias="id")],
+    principal: CurrentPrincipal,
+) -> ModelProviderView:
+    if "compliance" not in principal.capabilities:
+        raise Problem(403, "policy_denied", "Only compliance can approve a model provider.")
+    async with transaction(ROLE, principal) as session:
+        row = await session.scalar(
+            select(governance.ModelProvider)
+            .where(
+                governance.ModelProvider.id == provider_id,
+                governance.ModelProvider.org_id == principal.org_id,
+            )
+            .with_for_update()
+        )
+        if row is None:
+            raise Problem(404, "not_found", "Model provider not found.")
+        if row.kind != "frontier":
+            raise Problem(422, "business_rule_violated", "Only frontier providers need approval.")
+        if row.status == "retired":
+            raise Problem(409, "invalid_state", "A retired provider cannot be approved.")
+        if row.enabled and row.enabled_by == principal.user_id:
+            raise Problem(
+                403,
+                "policy_denied",
+                "The person who enabled a frontier provider cannot approve it.",
+            )
+        if (
+            not row.endpoint.startswith("https://")
+            or row.secret_ref is None
+            or row.data_region is None
+            or not row.zero_retention
+        ):
+            raise Problem(
+                422,
+                "business_rule_violated",
+                "A frontier provider needs a safe external contract before approval.",
+            )
+        row.approved_by = principal.user_id
+        row.approved_at = datetime.datetime.now(datetime.UTC)
         row.updated_by = principal.user_id
         row.updated_at = datetime.datetime.now(datetime.UTC)
         await session.flush()

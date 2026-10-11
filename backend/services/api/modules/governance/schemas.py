@@ -66,3 +66,7 @@ class ModelProviderPatch(BaseModel):
     monthly_budget_vnd: decimal.Decimal | None = Field(default=None, ge=0, max_digits=14)
     enabled: bool | None = None
     status: Literal["active", "suspended", "retired"] | None = None
+
+
+class ModelProviderApprove(BaseModel):
+    note: str = Field(min_length=1, max_length=2_000)
