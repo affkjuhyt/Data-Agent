@@ -718,13 +718,7 @@ async def publish_period(
                     + " (UC-10-03 E1).",
                 )
         for i, override in enumerate(body.overrides):
-            approver = override.approved_by
-            if approver is None:
-                raise Problem(
-                    422,
-                    "business_rule_violated",
-                    f"overrides[{i}]: a manual number needs the controller's approval (BR-133).",
-                )
+            approver = override.approver_id
             if approver == principal.user_id or not await _holds_compliance(
                 session, principal, approver
             ):
@@ -732,9 +726,10 @@ async def publish_period(
                 raise Problem(
                     422,
                     "business_rule_violated",
-                    f"overrides[{i}]: approved_by must be another person holding compliance "
+                    f"overrides[{i}]: approver_id must be another person holding compliance "
                     "(BR-133).",
                 )
+        approval_ids = {o.metric_version_id: uuid7() for o in body.overrides}
         row.filed_report_code = body.report_code
         row.filed_at = body.filed_at
         row.updated_by, row.updated_at = principal.user_id, _now()
@@ -756,12 +751,33 @@ async def publish_period(
                 {
                     "metric_version_id": str(o.metric_version_id),
                     "reported_value": str(o.reported_value),
-                    "approved_by": str(o.approved_by),
                     "override_reason": o.override_reason.strip(),
+                    # Frozen only once this approval is decided: published_result.approved_by
+                    # is the hitl request's resolved_by, never a value from the filer (BR-133).
+                    "approval_id": str(approval_ids[o.metric_version_id]),
                 }
                 for o in body.overrides
             ],
         )
+        for o in body.overrides:
+            # The inbox opens a period_exception request for the named controller from this
+            # event, with this id; a decision by anyone else, or the filer, does not count.
+            _emit(
+                session,
+                principal,
+                "period_close",
+                row.id,
+                "period.override_approval_requested",
+                period_close_id=row.id,
+                data_space_id=data_space,
+                hitl_request_id=approval_ids[o.metric_version_id],
+                hitl_kind="period_exception",
+                assignee_id=o.approver_id,
+                excluded_approver_ids=[principal.user_id],
+                metric_version_id=o.metric_version_id,
+                reported_value=str(o.reported_value),
+                requested_by=principal.user_id,
+            )
         await session.flush()
         return PeriodCloseView.model_validate(row)
 

@@ -111,8 +111,9 @@ class Override(_Body):
     metric_version_id: uuid.UUID
     reported_value: decimal.Decimal
     override_reason: str = Field(min_length=1, max_length=4_000)
-    # BR-133: the controller (AC06) who approved the manual number.
-    approved_by: uuid.UUID | None = None
+    # BR-133: the controller (AC06) asked to approve the manual number. They approve it in Cần
+    # bạn; the filer never states an approval.
+    approver_id: uuid.UUID
 
 
 class PublishRequest(_Body):

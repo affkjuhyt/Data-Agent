@@ -6,14 +6,18 @@ import asyncio
 import datetime
 import decimal
 import hashlib
+import ipaddress
 import json
 import os
+import re
+import socket
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from collections.abc import Iterable
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy import select, tuple_
@@ -30,7 +34,7 @@ from services.api.kernel.pagination import (
     invalid_page_token,
     page_request,
 )
-from services.api.kernel.problems import Problem
+from services.api.kernel.problems import FieldError, Problem
 from services.api.modules.governance.schemas import (
     ModelProviderApprove,
     ModelProviderCreate,
@@ -50,6 +54,52 @@ TEST_PROMPT = "Reply with exactly the word OK."
 
 class _ProviderUnavailable(Exception):
     pass
+
+
+_SECRET_SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _tenant_secret_ref(ref: str, org_id: uuid.UUID) -> str:
+    """An OpenBao path under the organisation's own prefix (the catalog module's convention).
+
+    The api reads OpenBao with one token for every organisation, so a path outside the caller's
+    prefix would send another tenant's key to an endpoint the caller chose."""
+    prefix = f"secret/tenants/{org_id}/"
+    rest = ref[len(prefix) :] if ref.startswith(prefix) else ""
+    if not rest or any(s in (".", "..") or not _SECRET_SEGMENT.match(s) for s in rest.split("/")):
+        raise Problem(
+            422,
+            "validation_failed",
+            f"secret_ref is an OpenBao path under {prefix} of your organisation.",
+            errors=[FieldError(field="secret_ref", code="invalid", message=f"under {prefix}")],
+        )
+    return ref
+
+
+def _public_https(url: str) -> bool:
+    """A frontier endpoint is an https host on the public internet: never a loopback,
+    private, link-local or reserved address, which would turn the probe into a way in."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https" or not parts.hostname or parts.username or parts.password:
+        return False
+    try:
+        infos = socket.getaddrinfo(parts.hostname, parts.port or 443, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return False
+    for info in infos:
+        address = ipaddress.ip_address(info[4][0])
+        if not address.is_global:
+            return False
+    return True
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+        # A redirect would carry the provider key to a host nobody approved.
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
 
 
 def _secret_value(secret_ref: str | None) -> str | None:
@@ -88,6 +138,15 @@ def _secret_value(secret_ref: str | None) -> str | None:
 def _probe_provider(
     provider: governance.ModelProvider, model_name: str
 ) -> tuple[int, int | None, int | None]:
+    if provider.secret_ref is not None:
+        try:
+            _tenant_secret_ref(provider.secret_ref, provider.org_id)
+        except Problem as exc:
+            raise _ProviderUnavailable(
+                "The provider secret_ref is outside the organisation."
+            ) from exc
+    if provider.kind == "frontier" and not _public_https(provider.endpoint):
+        raise _ProviderUnavailable("A frontier endpoint must be a public https host.")
     secret = _secret_value(provider.secret_ref)
     endpoint = provider.endpoint.rstrip("/")
     if provider.api_style == "openai_compatible":
@@ -125,7 +184,7 @@ def _probe_provider(
     )
     started = time.perf_counter()
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
+        with _OPENER.open(request, timeout=15) as response:
             body = json.loads(response.read())
     except (OSError, ValueError, urllib.error.URLError) as exc:
         raise _ProviderUnavailable("The provider did not return a usable response.") from exc
@@ -240,6 +299,10 @@ async def create_model_provider(
             "validation_failed",
             "A frontier provider needs an https endpoint, secret_ref and data_region.",
         )
+    if body.secret_ref is not None:
+        _tenant_secret_ref(body.secret_ref, principal.org_id)
+    if body.kind == "frontier" and not await asyncio.to_thread(_public_https, body.endpoint):
+        raise Problem(422, "validation_failed", "A frontier endpoint must be a public https host.")
     async with transaction(ROLE, principal) as session:
         row = governance.ModelProvider(
             id=uuid7(),
@@ -276,6 +339,8 @@ async def patch_model_provider(
     provider_id: Annotated[uuid.UUID, Path(alias="id")],
     principal: CurrentPrincipal,
 ) -> ModelProviderView:
+    if body.secret_ref is not None:
+        _tenant_secret_ref(body.secret_ref, principal.org_id)
     async with transaction(ROLE, principal) as session:
         row = await session.scalar(
             select(governance.ModelProvider)
@@ -289,8 +354,7 @@ async def patch_model_provider(
             raise Problem(404, "not_found", "Model provider not found.")
 
         changed_contract = bool(
-            {"endpoint", "secret_ref", "data_region", "zero_retention"}
-            & body.model_fields_set
+            {"endpoint", "secret_ref", "data_region", "zero_retention"} & body.model_fields_set
         )
         for field in (
             "display_name",
@@ -306,11 +370,21 @@ async def patch_model_provider(
             if field in body.model_fields_set:
                 setattr(row, field, getattr(body, field))
 
-        if row.kind == "frontier" and row.endpoint is not None and not row.endpoint.startswith("https://"):
-            raise Problem(422, "validation_failed", "A frontier provider needs an https endpoint.")
-        if row.kind == "frontier" and (
-            row.secret_ref is None or row.data_region is None
+        if (
+            row.kind == "frontier"
+            and row.endpoint is not None
+            and not row.endpoint.startswith("https://")
         ):
+            raise Problem(422, "validation_failed", "A frontier provider needs an https endpoint.")
+        if (
+            row.kind == "frontier"
+            and "endpoint" in body.model_fields_set
+            and not await asyncio.to_thread(_public_https, row.endpoint)
+        ):
+            raise Problem(
+                422, "validation_failed", "A frontier endpoint must be a public https host."
+            )
+        if row.kind == "frontier" and (row.secret_ref is None or row.data_region is None):
             raise Problem(
                 422,
                 "validation_failed",
@@ -318,8 +392,10 @@ async def patch_model_provider(
             )
         if row.status == "retired" and body.enabled is True:
             raise Problem(422, "business_rule_violated", "A retired provider cannot be enabled.")
-        if body.enabled is True and row.kind == "frontier" and (
-            row.approved_by is None or row.approved_at is None or not row.zero_retention
+        if (
+            body.enabled is True
+            and row.kind == "frontier"
+            and (row.approved_by is None or row.approved_at is None or not row.zero_retention)
         ):
             raise Problem(
                 422,
@@ -538,9 +614,7 @@ async def list_model_route_decisions(
         except (KeyError, TypeError, ValueError) as exc:
             raise invalid_page_token() from exc
         query = query.where(tuple_(row_type.decided_at, row_type.id) < after)
-    query = query.order_by(row_type.decided_at.desc(), row_type.id.desc()).limit(
-        page.page_size + 1
-    )
+    query = query.order_by(row_type.decided_at.desc(), row_type.id.desc()).limit(page.page_size + 1)
 
     async with transaction(ROLE, principal) as session:
         rows = list((await session.scalars(query)).all())
