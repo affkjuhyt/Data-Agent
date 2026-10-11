@@ -185,6 +185,19 @@ export interface Evidence {
   warnings: Array<{ kind: string; detail: string; expression?: string; reason?: string }>;
 }
 
+export interface VerificationCheck {
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface VerificationFrame {
+  checks: VerificationCheck[];
+  verdict: 'PASS' | 'FAIL';
+  iteration: number;
+  confidence: number | null;
+}
+
 /**
  * Why a turn ended without an answer — the `__refusal` frame, shape of
  * backend/libs/contracts/v1/errors.py `Refusal`. Screens branch on `code` and
@@ -277,6 +290,7 @@ export interface AskMessage {
   resultSets?: ResultSet[];
   citations?: Citation[];
   evidence?: Evidence;
+  verification?: VerificationFrame;
   clarification?: Clarification;
   pendingReview?: PendingReviewInfo;
   /** set instead of an answer: the turn was refused with a code */

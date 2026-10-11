@@ -8,7 +8,7 @@
  * network chunks — a frame split across two chunks used to be parsed as two
  * broken pieces of text.
  */
-import type { AgentProgress, Understanding, ChartSpec, Citation, ClarificationQuestion, Evidence, Refusal, ResultSet } from './types';
+import type { AgentProgress, Understanding, ChartSpec, Citation, ClarificationQuestion, Evidence, Refusal, ResultSet, VerificationFrame } from './types';
 
 export type SseEvent =
   | { type: 'token'; text: string }
@@ -25,6 +25,7 @@ export type SseEvent =
   | { type: 'suggestions'; suggestions: string[] }
   | { type: 'options'; options: string[] }
   | { type: 'evidence'; evidence: Evidence }
+  | { type: 'verification'; verification: VerificationFrame }
   // The turn ended without an answer, for a reason with a code; no token follows.
   | { type: 'refusal'; refusal: Refusal }
   | { type: 'progress'; progress: AgentProgress }
@@ -183,6 +184,19 @@ export function parseSseData(raw: string): SseEvent {
         runs: Array.isArray(ev.runs) ? ev.runs : [],
         clarifications: Array.isArray(ev.clarifications) ? ev.clarifications : [],
         warnings: Array.isArray(ev.warnings) ? ev.warnings : [],
+      },
+    };
+  }
+
+  if (obj.__verification && typeof obj.__verification === 'object') {
+    const verification = obj.__verification as Partial<VerificationFrame>;
+    return {
+      type: 'verification',
+      verification: {
+        checks: Array.isArray(verification.checks) ? verification.checks as VerificationFrame['checks'] : [],
+        verdict: verification.verdict === 'PASS' ? 'PASS' : 'FAIL',
+        iteration: typeof verification.iteration === 'number' ? verification.iteration : 0,
+        confidence: typeof verification.confidence === 'number' ? verification.confidence : null,
       },
     };
   }

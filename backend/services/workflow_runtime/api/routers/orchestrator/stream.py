@@ -227,6 +227,8 @@ async def _stream_graph(
                         yield _sse({"__options": event["data"]})
                     elif name == "evidence":
                         yield _sse({"__evidence": event["data"]})
+                    elif name == "verification":
+                        yield _sse({"__verification": event["data"]})
                     elif name == "result_set":
                         yield _sse({"__result_set": event["data"]})
                     elif name == "plan":

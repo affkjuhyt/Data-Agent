@@ -116,6 +116,9 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
             return next;
           });
           break;
+        case 'verification':
+          patch(assistantId, m => ({ ...m, verification: e.verification }));
+          break;
         case 'options':
           options = e.options;
           break;

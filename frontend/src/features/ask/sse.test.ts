@@ -115,6 +115,13 @@ describe('parseSseData', () => {
     });
   });
 
+  it('parses a verification frame', () => {
+    expect(parseSseData('{"__verification":{"checks":[],"verdict":"PASS","iteration":1,"confidence":null}}')).toEqual({
+      type: 'verification',
+      verification: { checks: [], verdict: 'PASS', iteration: 1, confidence: null },
+    });
+  });
+
   it('never throws on garbage and keeps raw text visible', () => {
     expect(parseSseData('not json')).toEqual({ type: 'token', text: 'not json' });
     expect(parseSseData('42')).toEqual({ type: 'unknown', raw: 42 });

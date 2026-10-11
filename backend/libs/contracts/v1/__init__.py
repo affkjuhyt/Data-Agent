@@ -91,6 +91,7 @@ from libs.contracts.v1.source_config import (
     SourceConfigV2,
     UseRights,
 )
+from libs.contracts.v1.verification import VerificationCheck, VerificationFrame
 
 # The models the contract publishes: each appears in generated/contracts.openapi.json
 # with its x-schema-version and an example from libs/contracts/examples/v1/.
@@ -197,6 +198,8 @@ __all__ = [
     "ValueRule",
     "VersionKind",
     "VersionedWrite",
+    "VerificationCheck",
+    "VerificationFrame",
     "XPathRef",
     "build_envelope",
     "parse_envelope",

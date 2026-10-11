@@ -30,6 +30,7 @@ import { MarkdownContent } from './MarkdownContent';
 import { RefusalCard } from './RefusalCard';
 import { AgentSteps, PartialResult } from './AgentProgress';
 import { InterpretationCheck } from './InterpretationCheck';
+import { VerifierBadge } from './VerifierBadge';
 
 const ChartRenderer = lazy(() =>
   import('./ChartRenderer').then(module => ({ default: module.ChartRenderer })),
@@ -212,6 +213,8 @@ export function AnswerBlock({
       {showEvidenceStrip && displayEvidence && hasEvidence(displayEvidence) && (
         <EvidenceStrip evidence={displayEvidence} onOpenPanel={onOpenEvidence} />
       )}
+
+      {!streaming && msg.verification && <VerifierBadge verification={msg.verification} />}
 
       {msg.citations && msg.citations.length > 0 && <CitationPanel citations={msg.citations} />}
 

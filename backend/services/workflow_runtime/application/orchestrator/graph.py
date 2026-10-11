@@ -330,6 +330,8 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
                             await adispatch_custom_event("options", data)
                         elif event_type == "evidence":
                             await adispatch_custom_event("evidence", data)
+                        elif event_type == "verification":
+                            await adispatch_custom_event("verification", data)
                         elif event_type == "result_set":
                             await adispatch_custom_event("result_set", data)
                         elif event_type == "refusal":

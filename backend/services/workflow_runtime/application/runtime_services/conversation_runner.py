@@ -23,6 +23,7 @@ from services.workflow_runtime.application.nodes.model_harness.responder import 
 )
 from services.workflow_runtime.application.nodes.sandbox.kb_search import discard_speculative_search
 from services.workflow_runtime.application.runtime_services.answer_ready import notify_answer_ready
+from services.workflow_runtime.application.verification import build_verification_frame
 from services.workflow_runtime.domain.refusals import AgentConfigError, RefusalError
 from services.workflow_runtime.domain.schemas import RunRequest
 from services.workflow_runtime.domain.transcript_compression import compress_tool_results
@@ -665,6 +666,10 @@ async def run_conversation_stream(
         pending_evidence: dict[str, Any] | None = None
         last_responder_result_sets: list[dict[str, Any]] = []
         pending_result_sets: list[dict[str, Any]] = []
+        last_verifier: dict[str, Any] | None = None
+        last_judge_verdict: str | None = None
+        last_judge_iteration = 0
+        pending_verification: dict[str, Any] | None = None
         guardrail_task: asyncio.Task[Any] | None = None
         # The answer shown while the responder writes it. The judge and the
         # output guardrail still decide on the finished text; a rejected one is
@@ -761,6 +766,12 @@ async def run_conversation_stream(
                                 for i, rs in enumerate(state_result_sets or [], 1)
                                 if isinstance(rs, dict)
                             ]
+                    elif node == "judge":
+                        out = event["data"].get("output", {})
+                        if isinstance(out, dict):
+                            last_verifier = out.get("verifier")
+                            last_judge_verdict = out.get("judge_verdict")
+                            last_judge_iteration = int(out.get("loop_iteration", 0) or 0)
                         # Bản trước (nếu có) sắp lỗi thời — Judge vừa cho responder
                         # chạy lại, huỷ kết quả check dở dang của bản cũ.
                         if guardrail_task and not guardrail_task.done():
@@ -827,6 +838,11 @@ async def run_conversation_stream(
                     # turn must not leak the rows the guardrail just blocked.
                     pending_evidence = last_responder_evidence or None
                     pending_result_sets = last_responder_result_sets
+                    pending_verification = build_verification_frame(
+                        last_verifier,
+                        judge_verdict=last_judge_verdict,
+                        iteration=last_judge_iteration,
+                    )
                     # Ghép câu nhắc "có chart" KHÔNG qua LLM — Responder chạy song song với
                     # Visualization nên tự nó không biết chart có vẽ được hay không lúc sinh
                     # văn bản; đây là điểm DUY NHẤT đã biết chắc cả 2 nhánh đều xong.
@@ -859,6 +875,9 @@ async def run_conversation_stream(
             # indistinguishable from a broken wire.
             if pending_evidence is not None:
                 yield f"data: {json.dumps({'__evidence': pending_evidence}, ensure_ascii=False, default=str)}\n\n"
+
+            if pending_verification is not None:
+                yield f"data: {json.dumps({'__verification': pending_verification}, ensure_ascii=False, default=str)}\n\n"
 
             if responder_options:
                 yield f"data: {json.dumps({'__options': responder_options})}\n\n"
