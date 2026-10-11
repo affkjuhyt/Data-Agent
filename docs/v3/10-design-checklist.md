@@ -11,9 +11,9 @@
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 0 UC đủ tiêu chí bắt buộc | todo 115 |
 | Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 94 có test nhắc mã AC | todo 778 |
-| Endpoint A2 (tab 4) | 378 (A2 ghi 379 dòng; POST /v1/data-products ở hai nhóm) | 364 được `api` phục vụ | — |
+| Endpoint A2 (tab 4) | 378 (A2 ghi 379 dòng; POST /v1/data-products ở hai nhóm) | 377 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 219 trong DDL | DDL sinh từ thiết kế | — |
-| Quy tắc nghiệp vụ | 195 | 158 có mã nhắc tới | todo 195 |
+| Quy tắc nghiệp vụ | 195 | 159 có mã nhắc tới | todo 195 |
 | Màn hình (SCR) | 75 | 9 có mã nhắc tới | todo 75 |
 | ADR (tab 6) | 48 | — | todo 45, partial 2, done 1 |
 
@@ -114,7 +114,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC-07-05 | Khai báo thẩm quyền nguồn | todo | 1/1 | 1/1 | 0/3 |  |
 | UC-07-06 | Đánh giá lớp ngữ cảnh | todo | 2/2 | 2/2 | 0/5 |  |
 | UC-07-07 | Trả lời yêu cầu của agent | todo | 1/1 | 2/2 | 3/7 |  |
-| UC-07-08 | Biến quyết định thành quy tắc | todo | 1/2 | 2/2 | 0/4 |  |
+| UC-07-08 | Biến quyết định thành quy tắc | todo | 2/2 | 2/2 | 0/4 |  |
 | UC-07-09 | Quản lý thuật ngữ và cách hiểu câu hỏi | todo | 2/2 | 3/3 | 0/3 |  |
 | UC-07-10 | Biên soạn và cập nhật trang tri thức | todo | 6/6 | 7/7 | 0/7 |  |
 | UC-07-11 | Rà soát tri thức định kỳ | todo | 4/4 | 5/5 | 0/5 |  |
@@ -160,13 +160,13 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
 | UC-11-01 | Quản lý người dùng và vai trò | todo | 2/2 | 5/5 | 0/5 |  |
-| UC-11-02 | Phân quyền dữ liệu | todo | 0/2 | 1/1 | 0/8 |  |
+| UC-11-02 | Phân quyền dữ liệu | todo | 2/2 | 1/1 | 0/8 |  |
 | UC-11-03 | Tra cứu nhật ký kiểm toán | todo | 1/2 | 2/2 | 0/6 |  |
-| UC-11-04 | Giám sát hệ thống | todo | 0/1 | 1/1 | 0/5 |  |
-| UC-11-05 | Cấu hình mô hình và chính sách AI | todo | 6/8 | 4/4 | 0/8 |  |
-| UC-11-06 | Xử lý yêu cầu của chủ thể dữ liệu | todo | 0/2 | 2/2 | 0/5 |  |
+| UC-11-04 | Giám sát hệ thống | todo | 1/1 | 1/1 | 0/5 |  |
+| UC-11-05 | Cấu hình mô hình và chính sách AI | todo | 8/8 | 4/4 | 0/8 |  |
+| UC-11-06 | Xử lý yêu cầu của chủ thể dữ liệu | todo | 2/2 | 2/2 | 0/5 |  |
 | UC-11-07 | Yêu cầu và cấp quyền | todo | 2/2 | 1/1 | 0/6 |  |
-| UC-11-08 | Quản lý thành viên Data Space | todo | 1/2 | 2/2 | 0/5 |  |
+| UC-11-08 | Quản lý thành viên Data Space | todo | 2/2 | 2/2 | 0/5 |  |
 
 ### P12 Tích hợp MCP và API
 
@@ -240,11 +240,11 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | Lớp ngữ cảnh | 39/39 |  |
 | Xung đột | 6/6 |  |
 | Cần bạn và đánh giá | 16/16 |  |
-| Chính sách | 0/6 | `GET /v1/policies`, `POST /v1/permissions:simulate`, `POST /v1/policies`, `POST /v1/policies/{id}:activate` +2 |
+| Chính sách | 6/6 |  |
 | Theo dõi, báo cáo, thông báo | 29/29 |  |
 | Gói ngành | 17/17 |  |
 | Kỳ chốt | 10/10 |  |
-| Quản trị | 20/27 | `GET /v1/admin/models`, `GET /v1/admin/system/health`, `GET /v1/dsr/{id}`, `POST /v1/dsr` +3 |
+| Quản trị | 27/27 |  |
 | Kiểm toán | 3/4 | `POST /v1/audit:export` |
 | Tích hợp | 9/9 |  |
 | Agent | 24/24 |  |
@@ -300,7 +300,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-42 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-43 | UC-10-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-44 | UC-11-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +10 |
-| BR-45 | UC-11-02 | todo |  |
+| BR-45 | UC-11-02 | todo | `backend/services/api/modules/governance/policies.py` |
 | BR-46 | UC-11-02 | todo |  |
 | BR-47 | UC-11-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/sql/dataagent_audit.sql`, `backend/libs/dataagent_db/models/audit.py` +8 |
 | BR-48 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +8 |
@@ -392,11 +392,11 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-134 | UC-10-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-135 | UC-10-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-136 | UC-11-01 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/org/admin/grants.py` |
-| BR-137 | UC-11-02 | todo | `backend/services/api/catalogue/source/tab4.md` |
+| BR-137 | UC-11-02 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/governance/policies.py` |
 | BR-138 | UC-11-03 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/audit/schemas.py` |
 | BR-139 | UC-11-04 | todo |  |
-| BR-140 | UC-11-05 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md` |
-| BR-141 | UC-11-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-140 | UC-11-05 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/governance/admin_models.py` |
+| BR-141 | UC-11-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-142 | UC-11-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-143 | UC-11-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +3 |
 | BR-144 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +6 |
@@ -435,7 +435,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-177 | UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +14 |
 | BR-179 | UC-01-05, UC-07-14, UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/schema/csdl/definitions.json` +13 |
-| BR-180 | UC-01-01, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/governance.py` +12 |
+| BR-180 | UC-01-01, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/governance.py` +13 |
 | BR-181 | UC-01-07, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/qa.py` +8 |
 | BR-182 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-183 | UC-08-08, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/dataagent_db/models/monitor.py` +8 |

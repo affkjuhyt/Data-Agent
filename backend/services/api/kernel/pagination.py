@@ -67,5 +67,9 @@ def invalid_page_token() -> Problem:
 def page_request(
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
     page_token: Annotated[str, Query(max_length=2048)] = "",
+    cursor: Annotated[
+        str | None, Query(max_length=2048, description="A3's name for page_token")
+    ] = None,
 ) -> PageRequest:
-    return PageRequest(page_size=page_size, cursor=decode_page_token(page_token))
+    """A1.4 paging. A3 names the token `cursor` on several lists; both names are accepted."""
+    return PageRequest(page_size=page_size, cursor=decode_page_token(cursor or page_token))

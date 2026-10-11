@@ -82,3 +82,32 @@ async def data_product_eval_summary(
             )
         )
     return EvalSummary(latest_run=latest, open_error_book_entries=int(open_entries or 0))
+
+
+async def eval_runs(principal: Principal, ids: list[uuid.UUID]) -> dict[uuid.UUID, dict[str, Any]]:
+    """Summaries of the named eval runs of this organisation, by id."""
+    wanted = [i for i in ids if i is not None]
+    if not wanted:
+        return {}
+    async with transaction("svc_eval", principal) as session:
+        runs = (
+            await session.scalars(
+                select(evaluation.EvalRun).where(
+                    evaluation.EvalRun.id.in_(wanted),
+                    evaluation.EvalRun.org_id == principal.org_id,
+                )
+            )
+        ).all()
+    return {
+        run.id: {
+            "id": str(run.id),
+            "status": run.status,
+            "item_count": run.item_count,
+            "passed": run.passed,
+            "failed": run.failed,
+            "regressions": run.regressions,
+            "pass_rate": float(run.pass_rate) if run.pass_rate is not None else None,
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        }
+        for run in runs
+    }

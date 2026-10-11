@@ -44,6 +44,8 @@ COMPLETE_GROUPS: frozenset[str] = frozenset(
         "Kỳ chốt",
         "Thu thập",
         "Lớp riêng lãnh đạo",
+        "Chính sách",
+        "Quản trị",
     }
 )
 
