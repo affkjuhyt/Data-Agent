@@ -1193,7 +1193,10 @@ async def _admin_handover(
             "business_rule_violated",
             "A selective handover needs the owner; without them only seal or shred (BR-195).",
         )
-    if body.kind != _admin_kind(vault.exit_policy):
+    # The end of a seal's term is the seal policy itself ending in a shred (BR-195: "tới
+    # sealed_read_until rồi huỷ khoá"), so it is not held to exit_policy = shred.
+    expiry = body.kind == "shred" and body.reason == "sealed_expired"
+    if not expiry and body.kind != _admin_kind(vault.exit_policy):
         raise Problem(
             422,
             "business_rule_violated",
@@ -1203,7 +1206,7 @@ async def _admin_handover(
     if vault.status == "shredded" or (body.kind == "seal" and vault.status != "active"):
         raise Problem(409, "invalid_state", f"The vault is {vault.status}.")
     status = "in_progress" if body.kind == "seal" else "requested"
-    if body.kind == "shred" and body.reason == "sealed_expired":
+    if expiry:
         # The sealed term ran out (UC-16-06 step 3): the contract already decided, no AC06 step.
         expired = vault.status == "sealed" and (
             vault.sealed_read_until is not None and vault.sealed_read_until < _now().date()
