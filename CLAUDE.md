@@ -112,9 +112,12 @@ from a literal.
 ```
 backend/libs        shared libraries (basemodel, database_connector, shared, ingestion,
                     semantic, indicator)
-backend/services    one deployable per directory, Dockerfile inside. kb_backend also holds the four KB
-                    Kafka workers (workers/*), built as the `kb-worker` image (deploy/docker/kb-worker);
-                    llm-exporter is a platform_workers worker. Add a worker, not a service, for a new
+backend/services    one deployable per directory, Dockerfile inside. `api` is the V3 modular monolith
+                    (ADR-28, docs/v3/06-api-v1.md): every /v1 module goes there, one package per schema,
+                    and its routes take their metadata and capability check from the A2 snapshot
+                    (catalogue/). The other directories are the legacy services it replaces.
+                    kb_backend also holds the four KB Kafka workers (workers/*), built as the
+                    `kb-worker` image (deploy/docker/kb-worker); llm-exporter is a platform_workers worker. Add a worker, not a service, for a new
                     queue consumer
 
                     workflow_runtime is layered: api/ (routers, auth, app factory) > application/

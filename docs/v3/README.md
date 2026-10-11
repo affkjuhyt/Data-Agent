@@ -19,6 +19,8 @@
 5. [04-backlog.md](04-backlog.md): backlog R0, R1 có ID, phụ thuộc, vai, cột TT; R2–R4 giữ chỗ.
 6. [05-ui-v3.md](05-ui-v3.md): giao diện v3.1 từ Figma: hệ thiết kế (token, component), khung trang,
    điều hướng sáu khu vực, cách lấy thiết kế xuống mã, trạng thái làm lại các màn.
+7. [06-api-v1.md](06-api-v1.md): API `/v1` của khối `api` (modular monolith, ADR-28): kernel, cổng so
+   OpenAPI với A2 (ADR-48), cách viết module, thứ tự các nhóm endpoint.
 
 Người mới và phiên Claude mới: đọc 00 §0 và §3.2, rồi 04; lấy ID đầu tiên `todo` mà phụ thuộc đã `done`.
 Quy tắc repo (test trong container, so baseline lint, outbox, naming) ở `CLAUDE.md` gốc.

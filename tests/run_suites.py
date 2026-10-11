@@ -33,7 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # Pass-through of the Makefile defaults so `python3 tests/run_suites.py …` works alone.
 DEFAULT_UNIT = (
     "workflow_runtime:workflow_runtime kb_backend:kb-backend platform_workers:platform-workers "
-    "sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker model_service:model_service"
+    "sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker model_service:model_service api:api"
 )
 DEFAULT_INTEGRATION = (
     "workflow_runtime:workflow_runtime auth_api:auth_api platform_workers:platform-workers "
@@ -46,6 +46,7 @@ DEFAULT_INTEGRATION = (
 # model_service and sandbox_executor modules; the workflow_runtime integration
 # suite runs sandbox_executor's app in-process).
 SERVICE_SUITES: dict[str, set[tuple[str, str]]] = {
+    "api": {("unit", "api")},
     "auth_api": {("unit", "auth_api"), ("unit", "workflow_runtime"), ("integration", "auth_api")},
     "kb_backend": {
         ("unit", "kb_backend"), ("unit", "kb_worker"), ("unit", "workflow_runtime"),

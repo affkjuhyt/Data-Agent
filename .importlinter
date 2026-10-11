@@ -124,3 +124,31 @@ layers =
     services.workflow_runtime.application
     services.workflow_runtime.infrastructure
     services.workflow_runtime.domain
+
+# The `api` block (ADR-28, docs/v3/06-api-v1.md). The shared kernel
+# serves every module and may not depend on one; the api is new code and takes
+# nothing from the services it replaces. Module-to-module rules (only through a
+# module's package __init__) are added with the second module.
+[importlinter:contract:api-kernel-is-a-leaf]
+name = services.api.kernel must not depend on api modules or the catalogue
+type = forbidden
+source_modules =
+    services.api.kernel
+forbidden_modules =
+    services.api.modules
+    services.api.catalogue
+    services.api.app
+
+[importlinter:contract:api-is-independent]
+name = services.api must not import the legacy services
+type = forbidden
+source_modules =
+    services.api
+forbidden_modules =
+    services.workflow_runtime
+    services.kb_backend
+    services.auth_api
+    services.indicator_api
+    services.platform_workers
+    services.sandbox_executor
+    services.model_service

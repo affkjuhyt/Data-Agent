@@ -1,0 +1,4735 @@
+{
+ "source": "Data Agent V3 — Tài liệu phân tích thiết kế hệ thống, tab 4 · Đặc tả API, A2 (rev 91)",
+ "as_of": "2026-10-11",
+ "note": "Snapshot of A2. ADR-48: OpenAPI is generated from code and checked against this list; adding or removing an endpoint updates A2 and this file in the same PR.",
+ "groups": {
+  "Hỏi đáp": {
+   "schemas": [
+    "qa"
+   ]
+  },
+  "Truy vấn": {
+   "schemas": [
+    "query"
+   ]
+  },
+  "Phiên làm việc": {
+   "schemas": [
+    "workspace"
+   ]
+  },
+  "Kỹ năng": {
+   "schemas": [
+    "skill"
+   ]
+  },
+  "Nguồn và danh mục": {
+   "schemas": [
+    "catalog"
+   ]
+  },
+  "Nạp dữ liệu": {
+   "schemas": [
+    "ingest"
+   ]
+  },
+  "Tài liệu": {
+   "schemas": [
+    "document"
+   ]
+  },
+  "Biến đổi dữ liệu": {
+   "schemas": [
+    "pipeline"
+   ]
+  },
+  "Lớp ngữ cảnh": {
+   "schemas": [
+    "context"
+   ]
+  },
+  "Xung đột": {
+   "schemas": [
+    "conflict"
+   ]
+  },
+  "Cần bạn và đánh giá": {
+   "schemas": [
+    "inbox",
+    "eval"
+   ]
+  },
+  "Chính sách": {
+   "schemas": [
+    "governance"
+   ]
+  },
+  "Theo dõi, báo cáo, thông báo": {
+   "schemas": [
+    "monitor",
+    "notify"
+   ]
+  },
+  "Gói ngành": {
+   "schemas": [
+    "pack"
+   ]
+  },
+  "Kỳ chốt": {
+   "schemas": [
+    "period"
+   ]
+  },
+  "Quản trị": {
+   "schemas": [
+    "org",
+    "governance"
+   ]
+  },
+  "Kiểm toán": {
+   "schemas": [
+    "audit"
+   ]
+  },
+  "Tích hợp": {
+   "schemas": [
+    "integration"
+   ]
+  },
+  "Agent": {
+   "schemas": [
+    "agent"
+   ]
+  },
+  "Thu thập": {
+   "schemas": [
+    "acquire"
+   ]
+  },
+  "Dự báo": {
+   "schemas": [
+    "forecast"
+   ]
+  },
+  "Lớp riêng lãnh đạo": {
+   "schemas": [
+    "exec"
+   ]
+  }
+ },
+ "endpoints": [
+  {
+   "group": "Hỏi đáp",
+   "method": "POST",
+   "path": "/v1/questions",
+   "summary": "Gửi câu hỏi; trả 202 kèm question_id",
+   "use_cases": [
+    "01-01",
+    "01-04",
+    "05-04",
+    "10-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "GET",
+   "path": "/v1/questions/{id}",
+   "summary": "Trạng thái câu hỏi, kế hoạch hiện hành",
+   "use_cases": [
+    "01-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "GET",
+   "path": "/v1/questions/{id}/stream",
+   "summary": "Luồng SSE: cách hiểu, tiến độ, câu trả lời",
+   "use_cases": [
+    "01-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "PATCH",
+   "path": "/v1/questions/{id}/plan",
+   "summary": "Sửa chip cách hiểu, chạy lại",
+   "use_cases": [
+    "01-03"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "GET",
+   "path": "/v1/conversations",
+   "summary": "Danh sách hội thoại của tôi",
+   "use_cases": [
+    "01-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "GET",
+   "path": "/v1/answers/{id}",
+   "summary": "Câu trả lời đầy đủ: số, biểu đồ, trích dẫn",
+   "use_cases": [
+    "01-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "GET",
+   "path": "/v1/answers/{id}/lineage",
+   "summary": "Cách tính một con số",
+   "use_cases": [
+    "01-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "POST",
+   "path": "/v1/answers/{id}/feedback",
+   "summary": "Đánh giá hoặc báo sai",
+   "use_cases": [
+    "01-05"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "PATCH",
+   "path": "/v1/feedback/{id}",
+   "summary": "Xử lý báo sai (xác nhận, bác)",
+   "use_cases": [
+    "01-05"
+   ],
+   "capability": [
+    "approve"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "POST",
+   "path": "/v1/feedback/{id}:to-eval",
+   "summary": "Đưa báo sai đã xác nhận vào bộ đánh giá",
+   "use_cases": [
+    "01-05"
+   ],
+   "capability": [
+    "approve"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "POST",
+   "path": "/v1/answers/{id}/exports",
+   "summary": "Xuất kết quả ra tệp",
+   "use_cases": [
+    "01-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "GET",
+   "path": "/v1/exports/{id}",
+   "summary": "Trạng thái và liên kết tải (24 giờ)",
+   "use_cases": [
+    "01-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "POST",
+   "path": "/v1/explore/queries",
+   "summary": "Khám phá theo chỉ số không qua câu hỏi",
+   "use_cases": [
+    "01-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "GET",
+   "path": "/v1/answers/{id}/receipt",
+   "summary": "Biên nhận của câu trả lời trong phạm vi data product",
+   "use_cases": [
+    "01-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "GET",
+   "path": "/v1/receipts/{receipt_no}",
+   "summary": "Mở biên nhận theo mã BN-…, kiểm lại mã băm",
+   "use_cases": [
+    "01-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "POST",
+   "path": "/v1/receipts/{id}:replay",
+   "summary": "Chạy lại tại thời điểm cũ, so từng số",
+   "use_cases": [
+    "01-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "GET",
+   "path": "/v1/receipt-replays/{id}",
+   "summary": "Kết quả một lần chạy lại",
+   "use_cases": [
+    "01-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Truy vấn",
+   "method": "GET",
+   "path": "/v1/query-runs/{id}",
+   "summary": "Thông tin lượt chạy SQL",
+   "use_cases": [
+    "01-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Truy vấn",
+   "method": "GET",
+   "path": "/v1/query-runs/{id}/sql",
+   "summary": "SQL đã viết lại theo chính sách",
+   "use_cases": [
+    "01-02"
+   ],
+   "capability": [
+    "view_detail"
+   ]
+  },
+  {
+   "group": "Truy vấn",
+   "method": "GET",
+   "path": "/v1/query-runs/{id}/rows",
+   "summary": "Dòng kết quả, phân trang",
+   "use_cases": [
+    "01-02"
+   ],
+   "capability": [
+    "view_detail"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "GET",
+   "path": "/v1/workspaces",
+   "summary": "Danh sách phiên",
+   "use_cases": [
+    "02-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "POST",
+   "path": "/v1/workspaces",
+   "summary": "Tạo phiên (trống, từ hội thoại, mẫu, lượt chạy)",
+   "use_cases": [
+    "02-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "GET",
+   "path": "/v1/workspaces/{id}",
+   "summary": "Chi tiết phiên kèm ô",
+   "use_cases": [
+    "02-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "PATCH",
+   "path": "/v1/workspaces/{id}",
+   "summary": "Sửa tiêu đề, tham số",
+   "use_cases": [
+    "02-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "POST",
+   "path": "/v1/workspaces/{id}/tiles",
+   "summary": "Thêm ô",
+   "use_cases": [
+    "02-01",
+    "02-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "PATCH",
+   "path": "/v1/tiles/{id}",
+   "summary": "Sửa ô, chấp nhận hoặc bỏ ô agent đề xuất",
+   "use_cases": [
+    "02-01",
+    "02-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "POST",
+   "path": "/v1/tiles/{id}:run",
+   "summary": "Chạy lại một ô",
+   "use_cases": [
+    "02-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "POST",
+   "path": "/v1/workspaces/{id}:refresh",
+   "summary": "Làm mới cả phiên theo thứ tự phụ thuộc; 202",
+   "use_cases": [
+    "02-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "PUT",
+   "path": "/v1/workspaces/{id}/shares",
+   "summary": "Chia sẻ có hạn",
+   "use_cases": [
+    "02-03"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "DELETE",
+   "path": "/v1/workspaces/{id}/shares/{principal_id}",
+   "summary": "Thu hồi chia sẻ",
+   "use_cases": [
+    "02-03"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "POST",
+   "path": "/v1/workspaces/{id}/participants",
+   "summary": "Mời người hoặc agent vào phiên",
+   "use_cases": [
+    "02-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "POST",
+   "path": "/v1/tiles/{id}/comments",
+   "summary": "Bình luận, @nhắc, giao việc",
+   "use_cases": [
+    "02-05"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "PATCH",
+   "path": "/v1/comments/{id}",
+   "summary": "Sửa bình luận, đánh dấu xong",
+   "use_cases": [
+    "02-05"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "POST",
+   "path": "/v1/workspaces/{id}/reports",
+   "summary": "Tạo báo cáo từ phiên",
+   "use_cases": [
+    "02-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "POST",
+   "path": "/v1/session-reports/{id}:check",
+   "summary": "Chạy bốn kiểm tra trước phát hành",
+   "use_cases": [
+    "02-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "POST",
+   "path": "/v1/session-reports/{id}:publish",
+   "summary": "Gửi duyệt và phát hành báo cáo",
+   "use_cases": [
+    "02-07"
+   ],
+   "capability": [
+    "approve"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "GET",
+   "path": "/v1/skills",
+   "summary": "Thư viện kỹ năng",
+   "use_cases": [
+    "03-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "POST",
+   "path": "/v1/skills",
+   "summary": "Tạo kỹ năng (tay hoặc từ phiên)",
+   "use_cases": [
+    "03-03"
+   ],
+   "capability": [
+    "create_skill"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "GET",
+   "path": "/v1/skills/{id}",
+   "summary": "Chi tiết kỹ năng và phiên bản",
+   "use_cases": [
+    "03-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "POST",
+   "path": "/v1/skills/{id}/runs",
+   "summary": "Chạy kỹ năng; 202",
+   "use_cases": [
+    "03-01",
+    "03-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "GET",
+   "path": "/v1/skill-runs/{id}",
+   "summary": "Kết quả lượt chạy kỹ năng",
+   "use_cases": [
+    "03-01",
+    "03-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "POST",
+   "path": "/v1/skills/{id}/versions",
+   "summary": "Tạo phiên bản mới",
+   "use_cases": [
+    "03-03"
+   ],
+   "capability": [
+    "create_skill"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "PATCH",
+   "path": "/v1/skill-versions/{id}",
+   "summary": "Sửa phiên bản nháp",
+   "use_cases": [
+    "03-03"
+   ],
+   "capability": [
+    "create_skill"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "POST",
+   "path": "/v1/skill-versions/{id}:test",
+   "summary": "Chạy kiểm định; 202",
+   "use_cases": [
+    "03-04"
+   ],
+   "capability": [
+    "create_skill"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "POST",
+   "path": "/v1/skill-versions/{id}:publish",
+   "summary": "Gửi duyệt phát hành",
+   "use_cases": [
+    "03-05"
+   ],
+   "capability": [
+    "create_skill"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "POST",
+   "path": "/v1/skill-versions/{id}:retire",
+   "summary": "Ngừng dùng, chỉ định thay thế",
+   "use_cases": [
+    "03-06"
+   ],
+   "capability": [
+    "approve"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "POST",
+   "path": "/v1/skills/{id}:share",
+   "summary": "Đổi phạm vi chia sẻ",
+   "use_cases": [
+    "03-07"
+   ],
+   "capability": [
+    "create_skill"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "GET",
+   "path": "/v1/skill-suggestions",
+   "summary": "Kỹ năng agent đề xuất",
+   "use_cases": [
+    "03-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "POST",
+   "path": "/v1/skill-suggestions/{id}:accept",
+   "summary": "Nhận đề xuất",
+   "use_cases": [
+    "03-07"
+   ],
+   "capability": [
+    "create_skill"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "POST",
+   "path": "/v1/skill-suggestions/{id}:dismiss",
+   "summary": "Bỏ đề xuất 90 ngày",
+   "use_cases": [
+    "03-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "GET",
+   "path": "/v1/sources",
+   "summary": "Danh sách nguồn",
+   "use_cases": [
+    "04-01"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "POST",
+   "path": "/v1/sources",
+   "summary": "Đăng ký nguồn",
+   "use_cases": [
+    "04-01"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "PATCH",
+   "path": "/v1/sources/{id}",
+   "summary": "Sửa nguồn, giới hạn tải",
+   "use_cases": [
+    "04-01"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "POST",
+   "path": "/v1/sources/{id}:test",
+   "summary": "Kiểm tra kết nối và quyền tài khoản",
+   "use_cases": [
+    "04-01"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "PUT",
+   "path": "/v1/sources/{id}/scan-schedule",
+   "summary": "Đặt lịch quét",
+   "use_cases": [
+    "04-05"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "POST",
+   "path": "/v1/sources/{id}/scans",
+   "summary": "Quét ngay; 202",
+   "use_cases": [
+    "04-02"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "GET",
+   "path": "/v1/scan-runs/{id}",
+   "summary": "Tiến độ lượt quét",
+   "use_cases": [
+    "04-02"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "GET",
+   "path": "/v1/datasets",
+   "summary": "Danh mục bảng",
+   "use_cases": [
+    "04-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "GET",
+   "path": "/v1/datasets/{id}",
+   "summary": "Bảng, cột, hồ sơ dữ liệu",
+   "use_cases": [
+    "04-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "PATCH",
+   "path": "/v1/datasets/{id}",
+   "summary": "Bật, tắt, người phụ trách, mô tả",
+   "use_cases": [
+    "04-04"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "GET",
+   "path": "/v1/datasets/{id}/versions",
+   "summary": "Lịch sử cấu trúc",
+   "use_cases": [
+    "04-03"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "POST",
+   "path": "/v1/dataset-versions/{id}:certify",
+   "summary": "Chứng nhận phiên bản dataset hợp nhất",
+   "use_cases": [
+    "14-05"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "POST",
+   "path": "/v1/dataset-versions/{id}:revoke-certification",
+   "summary": "Thu hồi chứng nhận, bắt buộc lý do",
+   "use_cases": [
+    "14-05"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "POST",
+   "path": "/v1/sources/{id}/jobs",
+   "summary": "Tạo job nạp",
+   "use_cases": [
+    "04-06"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "GET",
+   "path": "/v1/jobs",
+   "summary": "Giám sát job nạp",
+   "use_cases": [
+    "04-09"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "PATCH",
+   "path": "/v1/jobs/{id}",
+   "summary": "Sửa job",
+   "use_cases": [
+    "04-06"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "POST",
+   "path": "/v1/jobs/{id}:pause",
+   "summary": "Tạm dừng, bắt buộc lý do",
+   "use_cases": [
+    "04-09"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "POST",
+   "path": "/v1/jobs/{id}:resume",
+   "summary": "Chạy tiếp",
+   "use_cases": [
+    "04-07",
+    "04-09"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "POST",
+   "path": "/v1/jobs/{id}:backfill",
+   "summary": "Nạp lại một khoảng",
+   "use_cases": [
+    "04-06"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "GET",
+   "path": "/v1/job-runs",
+   "summary": "Lượt chạy theo job",
+   "use_cases": [
+    "04-09"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "GET",
+   "path": "/v1/jobs/{id}/dlq",
+   "summary": "Bản ghi lỗi",
+   "use_cases": [
+    "04-07"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "POST",
+   "path": "/v1/dlq/{id}:replay",
+   "summary": "Nạp lại bản ghi lỗi",
+   "use_cases": [
+    "04-07"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "POST",
+   "path": "/v1/dlq/{id}:discard",
+   "summary": "Bỏ bản ghi kèm lý do",
+   "use_cases": [
+    "04-07"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "POST",
+   "path": "/v1/uploads",
+   "summary": "Tải tệp CSV, Excel (multipart)",
+   "use_cases": [
+    "04-08"
+   ],
+   "capability": [
+    "upload"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "PATCH",
+   "path": "/v1/uploads/{id}",
+   "summary": "Sửa ánh xạ cột, bảng đích",
+   "use_cases": [
+    "04-08"
+   ],
+   "capability": [
+    "upload"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "POST",
+   "path": "/v1/uploads/{id}:commit",
+   "summary": "Ghi vào bảng",
+   "use_cases": [
+    "04-08"
+   ],
+   "capability": [
+    "upload"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "GET",
+   "path": "/v1/quality-rules",
+   "summary": "Quy tắc chất lượng",
+   "use_cases": [
+    "06-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "POST",
+   "path": "/v1/quality-rules",
+   "summary": "Tạo quy tắc",
+   "use_cases": [
+    "06-07"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "PATCH",
+   "path": "/v1/quality-rules/{id}",
+   "summary": "Sửa quy tắc",
+   "use_cases": [
+    "06-07"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "GET",
+   "path": "/v1/quality-results",
+   "summary": "Kết quả kiểm tra chất lượng",
+   "use_cases": [
+    "06-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
+   "method": "POST",
+   "path": "/v1/quality-results/{id}:acknowledge",
+   "summary": "Xác nhận dùng tiếp khi vi phạm mức cao",
+   "use_cases": [
+    "06-07"
+   ],
+   "capability": [
+    "approve"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "GET",
+   "path": "/v1/collections",
+   "summary": "Bộ sưu tập",
+   "use_cases": [
+    "05-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "POST",
+   "path": "/v1/collections",
+   "summary": "Tạo bộ sưu tập",
+   "use_cases": [
+    "05-06"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "POST",
+   "path": "/v1/document-sources",
+   "summary": "Đăng ký nguồn đồng bộ",
+   "use_cases": [
+    "05-01"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "POST",
+   "path": "/v1/document-sources/{id}:sync",
+   "summary": "Đồng bộ ngay",
+   "use_cases": [
+    "05-01"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "POST",
+   "path": "/v1/documents",
+   "summary": "Tải tài liệu (multipart); 202",
+   "use_cases": [
+    "05-01"
+   ],
+   "capability": [
+    "upload"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "GET",
+   "path": "/v1/documents/{id}",
+   "summary": "Trạng thái, tiến độ tiền xử lý",
+   "use_cases": [
+    "05-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "PATCH",
+   "path": "/v1/documents/{id}",
+   "summary": "Sửa số hiệu, hiệu lực, văn bản thay thế",
+   "use_cases": [
+    "05-05"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "GET",
+   "path": "/v1/documents/{id}/pages/{n}",
+   "summary": "Trang: ảnh, văn bản, đoạn",
+   "use_cases": [
+    "05-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "GET",
+   "path": "/v1/documents/{id}/versions",
+   "summary": "Dòng thời gian hiệu lực",
+   "use_cases": [
+    "05-05"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "POST",
+   "path": "/v1/search/documents",
+   "summary": "Tìm lai ghép vector và từ khoá",
+   "use_cases": [
+    "05-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "GET",
+   "path": "/v1/quality-issues",
+   "summary": "Hàng chờ chất lượng",
+   "use_cases": [
+    "05-03"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "POST",
+   "path": "/v1/quality-issues/{id}:resolve",
+   "summary": "Xử lý vấn đề",
+   "use_cases": [
+    "05-03"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "POST",
+   "path": "/v1/extraction-schemas",
+   "summary": "Tạo lược đồ trích xuất",
+   "use_cases": [
+    "05-06"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "POST",
+   "path": "/v1/extraction-schemas/{id}:test",
+   "summary": "Chạy thử trên mẫu; 202",
+   "use_cases": [
+    "05-06"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "POST",
+   "path": "/v1/extraction-schemas/{id}:activate",
+   "summary": "Kích hoạt",
+   "use_cases": [
+    "05-06"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "GET",
+   "path": "/v1/pipelines",
+   "summary": "Danh sách pipeline",
+   "use_cases": [
+    "06-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "POST",
+   "path": "/v1/pipelines",
+   "summary": "Tạo pipeline",
+   "use_cases": [
+    "06-01"
+   ],
+   "capability": [
+    "prepare_data"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "PATCH",
+   "path": "/v1/pipelines/{id}",
+   "summary": "Sửa các bước",
+   "use_cases": [
+    "06-01"
+   ],
+   "capability": [
+    "prepare_data"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "POST",
+   "path": "/v1/pipelines/{id}:preview",
+   "summary": "Chạy thử trên mẫu",
+   "use_cases": [
+    "06-01"
+   ],
+   "capability": [
+    "prepare_data"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "POST",
+   "path": "/v1/pipelines/{id}:materialize",
+   "summary": "Lưu thành bảng",
+   "use_cases": [
+    "06-02"
+   ],
+   "capability": [
+    "prepare_data"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "PUT",
+   "path": "/v1/pipelines/{id}/schedule",
+   "summary": "Đặt lịch",
+   "use_cases": [
+    "06-03"
+   ],
+   "capability": [
+    "prepare_data"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "GET",
+   "path": "/v1/lineage",
+   "summary": "Dòng dữ liệu của một đối tượng",
+   "use_cases": [
+    "06-05"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "POST",
+   "path": "/v1/marts",
+   "summary": "Tạo data mart",
+   "use_cases": [
+    "06-06"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "POST",
+   "path": "/v1/data-products",
+   "summary": "Tạo sản phẩm dữ liệu",
+   "use_cases": [
+    "06-06"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "POST",
+   "path": "/v1/data-products/{id}:publish",
+   "summary": "Phát hành",
+   "use_cases": [
+    "06-06"
+   ],
+   "capability": [
+    "approve"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "POST",
+   "path": "/v1/writebacks",
+   "summary": "Tạo yêu cầu ghi ngược (dry_run để xem diff)",
+   "use_cases": [
+    "06-04"
+   ],
+   "capability": [
+    "writeback"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "POST",
+   "path": "/v1/writebacks/{id}:submit",
+   "summary": "Gửi duyệt",
+   "use_cases": [
+    "06-04"
+   ],
+   "capability": [
+    "writeback"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "POST",
+   "path": "/v1/writebacks/{id}:undo",
+   "summary": "Hoàn tác trong 30 ngày",
+   "use_cases": [
+    "06-04"
+   ],
+   "capability": [
+    "writeback"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/metrics",
+   "summary": "Danh sách chỉ số",
+   "use_cases": [
+    "07-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/metrics",
+   "summary": "Tạo chỉ số",
+   "use_cases": [
+    "07-01"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/metrics/{id}",
+   "summary": "Chỉ số và các phiên bản",
+   "use_cases": [
+    "07-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/metrics/{id}/versions",
+   "summary": "Tạo phiên bản nháp",
+   "use_cases": [
+    "07-01"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/metric-versions/{id}:preview",
+   "summary": "Chạy thử, so với bản đang dùng và số đã nộp",
+   "use_cases": [
+    "07-01"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/relationships",
+   "summary": "Khai báo quan hệ",
+   "use_cases": [
+    "07-02"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/synonyms",
+   "summary": "Thêm từ đồng nghĩa",
+   "use_cases": [
+    "07-02"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/examples",
+   "summary": "Thêm câu hỏi mẫu",
+   "use_cases": [
+    "07-02"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/terms",
+   "summary": "Từ điển nghiệp vụ",
+   "use_cases": [
+    "07-09"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/terms",
+   "summary": "Thêm thuật ngữ",
+   "use_cases": [
+    "07-09"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/unmapped-phrases",
+   "summary": "Cụm từ chưa ánh xạ",
+   "use_cases": [
+    "07-09"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "PUT",
+   "path": "/v1/me/term-preferences",
+   "summary": "Cách hiểu riêng của tôi",
+   "use_cases": [
+    "07-09"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/knowledge/index",
+   "summary": "Mục lục tri thức cho planner và người dùng",
+   "use_cases": [
+    "07-10",
+    "07-12"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/knowledge-pages",
+   "summary": "Danh sách trang tri thức",
+   "use_cases": [
+    "07-10"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/knowledge-pages",
+   "summary": "Tạo trang (trạng thái draft)",
+   "use_cases": [
+    "07-10"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/knowledge-pages/{id}",
+   "summary": "Đọc trang đang phục vụ, số điền theo quyền người đọc",
+   "use_cases": [
+    "07-10",
+    "07-12"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/knowledge-pages/{id}/versions",
+   "summary": "Lịch sử phiên bản của trang",
+   "use_cases": [
+    "07-10"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/knowledge-page-versions/{id}",
+   "summary": "Đọc một phiên bản (kể cả đã thay) để mở lại trích dẫn",
+   "use_cases": [
+    "07-10",
+    "07-11"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/knowledge-pages/{id}/versions",
+   "summary": "Tạo phiên bản nháp có nguồn, khẳng định, ràng buộc số",
+   "use_cases": [
+    "07-10",
+    "07-11"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/knowledge-page-versions/{id}:submit",
+   "summary": "Gửi duyệt; tạo đề xuất knowledge_page trong Cần bạn",
+   "use_cases": [
+    "07-10",
+    "07-12"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/knowledge-page-versions/{id}:certify",
+   "summary": "Chứng nhận phiên bản đã duyệt",
+   "use_cases": [
+    "07-10"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/knowledge-pages/{id}:retire",
+   "summary": "Ngừng trang; không xoá",
+   "use_cases": [
+    "07-11"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/knowledge-pages:from-answer",
+   "summary": "Lưu câu trả lời thành trang hoặc đoạn, qua duyệt",
+   "use_cases": [
+    "07-12"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/knowledge-runs",
+   "summary": "Chạy biên soạn hoặc rà soát ngay",
+   "use_cases": [
+    "07-10",
+    "07-11"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/knowledge-runs",
+   "summary": "Danh sách lượt biên soạn, rà soát",
+   "use_cases": [
+    "07-10",
+    "07-11"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/knowledge-runs/{id}",
+   "summary": "Một lượt: số nguồn bỏ qua, trang sửa, trang dời, phát hiện",
+   "use_cases": [
+    "07-10",
+    "07-11"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/knowledge-findings",
+   "summary": "Danh sách phát hiện rà soát",
+   "use_cases": [
+    "07-11"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/knowledge-findings/{id}:resolve",
+   "summary": "Xử lý phát hiện bằng một hành động cố định",
+   "use_cases": [
+    "07-11"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/data-products/index",
+   "summary": "Danh mục phạm vi cho Understander (dataproduct.match)",
+   "use_cases": [
+    "07-13",
+    "01-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/data-products",
+   "summary": "Danh sách data product",
+   "use_cases": [
+    "07-13"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/data-products",
+   "summary": "Tạo data product (draft)",
+   "use_cases": [
+    "07-13"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/data-products/{id}",
+   "summary": "Phạm vi, thành phần, cam kết, trạng thái",
+   "use_cases": [
+    "07-13"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "PATCH",
+   "path": "/v1/data-products/{id}",
+   "summary": "Sửa bản draft; bản active tạo phiên bản mới qua duyệt",
+   "use_cases": [
+    "07-13"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/data-products/{id}/members",
+   "summary": "Thêm thành phần và cam kết độ tươi",
+   "use_cases": [
+    "07-13"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "DELETE",
+   "path": "/v1/data-products/{id}/members/{member_id}",
+   "summary": "Gỡ thành phần",
+   "use_cases": [
+    "07-13"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/data-products/{id}:submit",
+   "summary": "Chạy bộ đánh giá, gửi duyệt kích hoạt",
+   "use_cases": [
+    "07-13"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/data-products/{id}:suspend",
+   "summary": "Tạm ngưng, câu hỏi trả lời ngoài phạm vi",
+   "use_cases": [
+    "07-13"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/data-products/{id}:retire",
+   "summary": "Ngừng data product; không xoá, biên nhận cũ vẫn đọc được",
+   "use_cases": [
+    "07-13"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/data-products/{id}/freshness",
+   "summary": "Độ tươi từng dataset so cam kết (freshness.check)",
+   "use_cases": [
+    "07-13",
+    "01-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Xung đột",
+   "method": "GET",
+   "path": "/v1/conflicts",
+   "summary": "Danh sách xung đột",
+   "use_cases": [
+    "07-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Xung đột",
+   "method": "GET",
+   "path": "/v1/conflicts/{id}",
+   "summary": "So sánh hai nguồn",
+   "use_cases": [
+    "07-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Xung đột",
+   "method": "POST",
+   "path": "/v1/conflicts/{id}:resolve",
+   "summary": "Chọn phương án, có thể lưu thành quy tắc",
+   "use_cases": [
+    "07-04"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Xung đột",
+   "method": "GET",
+   "path": "/v1/source-authorities",
+   "summary": "Thẩm quyền nguồn theo loại dữ liệu",
+   "use_cases": [
+    "07-05"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Xung đột",
+   "method": "PUT",
+   "path": "/v1/source-authorities",
+   "summary": "Đặt thứ tự ưu tiên và ngưỡng trọng yếu",
+   "use_cases": [
+    "07-05"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Xung đột",
+   "method": "POST",
+   "path": "/v1/resolution-rules",
+   "summary": "Thêm quy tắc giải quyết",
+   "use_cases": [
+    "07-04"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "GET",
+   "path": "/v1/inbox",
+   "summary": "Việc chờ tôi quyết định",
+   "use_cases": [
+    "07-03",
+    "07-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "GET",
+   "path": "/v1/hitl-requests/{id}",
+   "summary": "Chi tiết yêu cầu",
+   "use_cases": [
+    "07-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "POST",
+   "path": "/v1/hitl-requests/{id}:resolve",
+   "summary": "Trả lời, duyệt, từ chối, chuyển người",
+   "use_cases": [
+    "07-07",
+    "07-08"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "GET",
+   "path": "/v1/proposals/{id}",
+   "summary": "Đề xuất: diff, ảnh hưởng, kết quả đánh giá",
+   "use_cases": [
+    "07-03"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "POST",
+   "path": "/v1/proposals/{id}:decide",
+   "summary": "Chấp nhận, sửa rồi chấp nhận, từ chối",
+   "use_cases": [
+    "07-03",
+    "07-13",
+    "07-14",
+    "16-05"
+   ],
+   "capability": [
+    "approve"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "POST",
+   "path": "/v1/eval-sets/{id}/items",
+   "summary": "Thêm mục đánh giá",
+   "use_cases": [
+    "07-06"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "POST",
+   "path": "/v1/eval-sets/{id}/runs",
+   "summary": "Chạy bộ đánh giá; 202",
+   "use_cases": [
+    "07-06"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "GET",
+   "path": "/v1/eval-runs/{id}",
+   "summary": "Kết quả đánh giá từng mục",
+   "use_cases": [
+    "07-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "GET",
+   "path": "/v1/error-book-entries",
+   "summary": "Danh sách mục Error Book (errorbook.search)",
+   "use_cases": [
+    "07-14"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "POST",
+   "path": "/v1/error-book-entries",
+   "summary": "Ghi mục từ lỗi đã xác nhận (errorbook.create); dự báo lệch tạo qua sự kiện forecast.ledger.missed",
+   "use_cases": [
+    "07-14",
+    "15-06"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "GET",
+   "path": "/v1/error-book-entries/{id}",
+   "summary": "Chi tiết một mục kèm biên nhận, cách sửa, ca hồi quy",
+   "use_cases": [
+    "07-14"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "PATCH",
+   "path": "/v1/error-book-entries/{id}",
+   "summary": "Loại lỗi, nguyên nhân gốc, người xử lý, mức",
+   "use_cases": [
+    "07-14"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "POST",
+   "path": "/v1/error-book-entries/{id}:mark-fixed",
+   "summary": "Gắn cách sửa, chuyển fixed",
+   "use_cases": [
+    "07-14"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "POST",
+   "path": "/v1/error-book-entries/{id}:add-regression",
+   "summary": "Tạo ca hồi quy origin error_book (tự gọi khi fixed)",
+   "use_cases": [
+    "07-14"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "POST",
+   "path": "/v1/error-book-entries/{id}:dismiss",
+   "summary": "Không phải lỗi hoặc trùng mục khác",
+   "use_cases": [
+    "07-14"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "POST",
+   "path": "/v1/error-book-entries/{id}:propose-to-pack",
+   "summary": "Đề xuất cách sửa cho gói ngành, đã bỏ dữ liệu của khách",
+   "use_cases": [
+    "07-14",
+    "09-05"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Chính sách",
+   "method": "GET",
+   "path": "/v1/policies",
+   "summary": "Chính sách dữ liệu và hành vi",
+   "use_cases": [
+    "11-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Chính sách",
+   "method": "POST",
+   "path": "/v1/policies",
+   "summary": "Tạo chính sách (nháp)",
+   "use_cases": [
+    "07-08",
+    "11-02"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Chính sách",
+   "method": "POST",
+   "path": "/v1/policies/{id}:simulate",
+   "summary": "Mô phỏng dưới danh tính một người",
+   "use_cases": [
+    "11-02"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Chính sách",
+   "method": "POST",
+   "path": "/v1/policies/{id}:backtest",
+   "summary": "Chạy thử trên lịch sử",
+   "use_cases": [
+    "07-08",
+    "11-02"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Chính sách",
+   "method": "POST",
+   "path": "/v1/policies/{id}:activate",
+   "summary": "Bật chính sách",
+   "use_cases": [
+    "07-08",
+    "11-02"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Chính sách",
+   "method": "POST",
+   "path": "/v1/permissions:simulate",
+   "summary": "Xem một bảng dưới hai vai trò",
+   "use_cases": [
+    "11-08"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/monitors",
+   "summary": "Đặt theo dõi",
+   "use_cases": [
+    "08-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "PATCH",
+   "path": "/v1/monitors/{id}",
+   "summary": "Sửa theo dõi",
+   "use_cases": [
+    "08-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/monitors/{id}:backtest",
+   "summary": "Chạy thử luật trên 12 kỳ",
+   "use_cases": [
+    "08-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "GET",
+   "path": "/v1/alerts",
+   "summary": "Cảnh báo",
+   "use_cases": [
+    "08-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/alerts/{id}:ack",
+   "summary": "Xác nhận",
+   "use_cases": [
+    "08-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/alerts/{id}:assign",
+   "summary": "Giao người khác",
+   "use_cases": [
+    "08-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/alerts/{id}:close",
+   "summary": "Đóng kèm ghi chú",
+   "use_cases": [
+    "08-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/reports",
+   "summary": "Đặt báo cáo định kỳ",
+   "use_cases": [
+    "02-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "PATCH",
+   "path": "/v1/reports/{id}",
+   "summary": "Sửa lịch, người nhận",
+   "use_cases": [
+    "02-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/reports/{id}:pause",
+   "summary": "Tạm dừng",
+   "use_cases": [
+    "02-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/reports/{id}:run-now",
+   "summary": "Chạy ngay; 202",
+   "use_cases": [
+    "08-03"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "GET",
+   "path": "/v1/report-runs/{id}",
+   "summary": "Kết quả một lần chạy",
+   "use_cases": [
+    "08-03",
+    "08-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "PUT",
+   "path": "/v1/me/digest",
+   "summary": "Đăng ký bản tin",
+   "use_cases": [
+    "08-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "GET",
+   "path": "/v1/me/notifications",
+   "summary": "Thông báo của tôi",
+   "use_cases": [
+    "08-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "GET",
+   "path": "/v1/me/notification-prefs",
+   "summary": "Cài đặt nhận thông báo",
+   "use_cases": [
+    "08-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "PUT",
+   "path": "/v1/me/notification-prefs",
+   "summary": "Đổi cài đặt",
+   "use_cases": [
+    "08-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "PUT",
+   "path": "/v1/me/channels/{channel}",
+   "summary": "Liên kết Teams, Zalo, email, di động",
+   "use_cases": [
+    "08-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/channels/{kind}/callback",
+   "summary": "Nhận thao tác người dùng trên kênh ngoài (ký HMAC)",
+   "use_cases": [
+    "08-06"
+   ],
+   "capability": [
+    "channel"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/tasks",
+   "summary": "Giao việc cho agent nền",
+   "use_cases": [
+    "08-05"
+   ],
+   "capability": [
+    "run_agent"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "GET",
+   "path": "/v1/tasks/{id}",
+   "summary": "Trạng thái việc",
+   "use_cases": [
+    "08-05"
+   ],
+   "capability": [
+    "run_agent"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/tasks/{id}:cancel",
+   "summary": "Huỷ việc",
+   "use_cases": [
+    "08-05"
+   ],
+   "capability": [
+    "run_agent"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "GET",
+   "path": "/v1/external-calendars",
+   "summary": "Lịch sự kiện ngoài của Data Space",
+   "use_cases": [
+    "08-08"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/external-calendars",
+   "summary": "Khai báo lịch sự kiện ngoài",
+   "use_cases": [
+    "08-08"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "PATCH",
+   "path": "/v1/external-calendars/{id}",
+   "summary": "Sửa giờ bản tin, nguồn phát hiện, mô hình, trạng thái",
+   "use_cases": [
+    "08-08"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "GET",
+   "path": "/v1/external-calendars/{id}/events",
+   "summary": "Kỳ dự kiến, đã xác nhận, dời, đã diễn ra",
+   "use_cases": [
+    "08-08"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/external-events/{id}:confirm",
+   "summary": "Xác nhận, dời hoặc huỷ một kỳ",
+   "use_cases": [
+    "08-08"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "PUT",
+   "path": "/v1/external-calendars/{id}/subscription",
+   "summary": "Theo dõi hoặc bỏ theo dõi lịch, chọn loại bản tin và kênh",
+   "use_cases": [
+    "08-08"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "GET",
+   "path": "/v1/event-bulletins/{id}",
+   "summary": "Bản tin trước kỳ hoặc sau kỳ, kết quả cổng, trạng thái gửi",
+   "use_cases": [
+    "08-08"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/external-events/{id}:run-bulletin",
+   "summary": "Chạy ngay bản tin trước kỳ; 202",
+   "use_cases": [
+    "08-08"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "GET",
+   "path": "/v1/packs",
+   "summary": "Gói ngành đã nhập",
+   "use_cases": [
+    "09-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "POST",
+   "path": "/v1/packs:import",
+   "summary": "Nhập tệp gói, kiểm chữ ký",
+   "use_cases": [
+    "09-01"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "GET",
+   "path": "/v1/pack-versions/{id}",
+   "summary": "Nội dung phiên bản gói",
+   "use_cases": [
+    "09-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "POST",
+   "path": "/v1/packs/{id}/versions",
+   "summary": "Tạo phiên bản (môi trường biên soạn)",
+   "use_cases": [
+    "09-05"
+   ],
+   "capability": [
+    "pack_author"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "POST",
+   "path": "/v1/pack-versions/{id}:validate",
+   "summary": "Chạy kiểm tra trước phát hành; 202",
+   "use_cases": [
+    "09-05"
+   ],
+   "capability": [
+    "pack_author"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "POST",
+   "path": "/v1/pack-versions/{id}:publish",
+   "summary": "Ký số và phát hành",
+   "use_cases": [
+    "09-05"
+   ],
+   "capability": [
+    "pack_author"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "POST",
+   "path": "/v1/pack-installs",
+   "summary": "Chọn gói cho Data Space",
+   "use_cases": [
+    "09-02"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "POST",
+   "path": "/v1/pack-installs/{id}:suggest-mappings",
+   "summary": "Đề xuất ánh xạ; 202",
+   "use_cases": [
+    "09-02"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "PUT",
+   "path": "/v1/pack-installs/{id}/mappings",
+   "summary": "Xác nhận ánh xạ và bảng mã",
+   "use_cases": [
+    "09-02"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "POST",
+   "path": "/v1/pack-installs/{id}:calibrate",
+   "summary": "Đối chiếu số; 202",
+   "use_cases": [
+    "09-02"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "POST",
+   "path": "/v1/pack-installs/{id}:activate",
+   "summary": "Gửi duyệt kích hoạt",
+   "use_cases": [
+    "09-02"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "POST",
+   "path": "/v1/metric-overrides",
+   "summary": "Hiệu chỉnh chỉ số theo tổ chức",
+   "use_cases": [
+    "09-03"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "POST",
+   "path": "/v1/metric-overrides/{id}:approve",
+   "summary": "Duyệt hiệu chỉnh",
+   "use_cases": [
+    "09-03"
+   ],
+   "capability": [
+    "approve"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "POST",
+   "path": "/v1/pack-installs/{id}:upgrade",
+   "summary": "Gộp ba chiều với phiên bản mới (dry_run)",
+   "use_cases": [
+    "09-04"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "PUT",
+   "path": "/v1/pack-upgrades/{id}/decisions",
+   "summary": "Chọn phương án cho từng xung đột",
+   "use_cases": [
+    "09-04"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "POST",
+   "path": "/v1/pack-upgrades/{id}:apply",
+   "summary": "Áp dụng nâng cấp",
+   "use_cases": [
+    "09-04"
+   ],
+   "capability": [
+    "approve"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "POST",
+   "path": "/v1/pack-upgrades/{id}:rollback",
+   "summary": "Quay lại trong 30 ngày",
+   "use_cases": [
+    "09-04"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Kỳ chốt",
+   "method": "GET",
+   "path": "/v1/periods",
+   "summary": "Danh sách kỳ",
+   "use_cases": [
+    "10-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Kỳ chốt",
+   "method": "GET",
+   "path": "/v1/periods/{id}",
+   "summary": "Kỳ: trạng thái, bản, tệp",
+   "use_cases": [
+    "10-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Kỳ chốt",
+   "method": "POST",
+   "path": "/v1/periods/{id}:close",
+   "summary": "Chốt kỳ; 202",
+   "use_cases": [
+    "10-02"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Kỳ chốt",
+   "method": "GET",
+   "path": "/v1/periods/{id}/reconciliation",
+   "summary": "Đối soát từng chỉ tiêu",
+   "use_cases": [
+    "10-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Kỳ chốt",
+   "method": "POST",
+   "path": "/v1/periods/{id}/exceptions",
+   "summary": "Xin ngoại lệ cho chỉ tiêu lệch",
+   "use_cases": [
+    "10-02"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Kỳ chốt",
+   "method": "POST",
+   "path": "/v1/periods/{id}:publish",
+   "summary": "Đánh dấu đã nộp, đóng băng số",
+   "use_cases": [
+    "10-03"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Kỳ chốt",
+   "method": "GET",
+   "path": "/v1/periods/{id}/retro-changes",
+   "summary": "Thay đổi hồi tố",
+   "use_cases": [
+    "10-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Kỳ chốt",
+   "method": "POST",
+   "path": "/v1/retro-changes/{id}:decide",
+   "summary": "Tạo bản mới hoặc không cần, kèm lý do",
+   "use_cases": [
+    "10-04"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Kỳ chốt",
+   "method": "GET",
+   "path": "/v1/periods/compare",
+   "summary": "So sánh hai bản hoặc hai thời điểm",
+   "use_cases": [
+    "10-05"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Kỳ chốt",
+   "method": "GET",
+   "path": "/v1/periods/compare/{id}/rows",
+   "summary": "Dòng gây chênh",
+   "use_cases": [
+    "10-05"
+   ],
+   "capability": [
+    "view_detail"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/admin/users",
+   "summary": "Người dùng và vai trò hiệu lực",
+   "use_cases": [
+    "11-01"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/admin/users/{id}",
+   "summary": "Chi tiết, nguồn gốc từng quyền",
+   "use_cases": [
+    "11-01"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "PUT",
+   "path": "/v1/admin/group-mappings",
+   "summary": "Ánh xạ nhóm sang vai trò",
+   "use_cases": [
+    "11-01"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/admin/emergency-access",
+   "summary": "Cấp quyền khẩn cấp 24 giờ, cần người thứ hai",
+   "use_cases": [
+    "11-01"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/data-spaces",
+   "summary": "Data Space tôi được vào",
+   "use_cases": [
+    "11-08"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/data-spaces",
+   "summary": "Tạo Data Space",
+   "use_cases": [
+    "11-08"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "PATCH",
+   "path": "/v1/data-spaces/{id}",
+   "summary": "Sửa Data Space, chính sách mặc định",
+   "use_cases": [
+    "11-08"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "PUT",
+   "path": "/v1/data-spaces/{id}/members",
+   "summary": "Thành viên, vai trò, phạm vi dòng",
+   "use_cases": [
+    "11-08"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "PUT",
+   "path": "/v1/data-spaces/{id}/sources",
+   "summary": "Gán nguồn",
+   "use_cases": [
+    "04-04"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/access-requests",
+   "summary": "Yêu cầu quyền",
+   "use_cases": [
+    "11-07"
+   ],
+   "capability": [
+    "—"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/access-requests/{id}:decide",
+   "summary": "Duyệt, thu hẹp, từ chối",
+   "use_cases": [
+    "11-07"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/admin/models",
+   "summary": "Mô hình theo tác vụ",
+   "use_cases": [
+    "11-05"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "PUT",
+   "path": "/v1/admin/models/{task}",
+   "summary": "Đổi mô hình (chạy bộ đánh giá trước)",
+   "use_cases": [
+    "11-05"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "PUT",
+   "path": "/v1/admin/ai-settings/{key}",
+   "summary": "Quy định AI",
+   "use_cases": [
+    "11-05"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/admin/system/health",
+   "summary": "Tình trạng dịch vụ, GPU, hàng đợi",
+   "use_cases": [
+    "11-04"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/calendars",
+   "summary": "Lịch làm việc",
+   "use_cases": [
+    "02-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "PUT",
+   "path": "/v1/calendars/{id}",
+   "summary": "Sửa lịch, ngày nghỉ",
+   "use_cases": [
+    "02-04"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/dsr",
+   "summary": "Mở yêu cầu của chủ thể dữ liệu",
+   "use_cases": [
+    "11-06"
+   ],
+   "capability": [
+    "compliance"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/dsr/{id}",
+   "summary": "Vị trí tìm thấy và hành động đề xuất",
+   "use_cases": [
+    "11-06"
+   ],
+   "capability": [
+    "compliance"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/dsr/{id}:execute",
+   "summary": "Thực hiện xoá, cung cấp",
+   "use_cases": [
+    "11-06"
+   ],
+   "capability": [
+    "compliance"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/admin/model-providers",
+   "summary": "Provider mô hình tại chỗ và frontier",
+   "use_cases": [
+    "11-05"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/admin/model-providers",
+   "summary": "Khai báo provider (frontier mặc định tắt)",
+   "use_cases": [
+    "11-05"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "PATCH",
+   "path": "/v1/admin/model-providers/{id}",
+   "summary": "Sửa, bật tắt; đổi endpoint hoặc khoá thì cần duyệt lại",
+   "use_cases": [
+    "11-05"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/admin/model-providers/{id}:approve",
+   "summary": "AC06 duyệt bật provider frontier",
+   "use_cases": [
+    "11-05"
+   ],
+   "capability": [
+    "compliance"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/admin/model-providers/{id}:test",
+   "summary": "Gọi thử với prompt mẫu công khai",
+   "use_cases": [
+    "11-05"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/admin/model-route-decisions",
+   "summary": "Nhật ký định tuyến và lời gọi frontier",
+   "use_cases": [
+    "11-05",
+    "01-07"
+   ],
+   "capability": [
+    "compliance"
+   ]
+  },
+  {
+   "group": "Kiểm toán",
+   "method": "GET",
+   "path": "/v1/audit",
+   "summary": "Tra cứu nhật ký",
+   "use_cases": [
+    "11-03"
+   ],
+   "capability": [
+    "audit_read"
+   ]
+  },
+  {
+   "group": "Kiểm toán",
+   "method": "POST",
+   "path": "/v1/audit:verify",
+   "summary": "Kiểm toàn vẹn chuỗi băm",
+   "use_cases": [
+    "11-03"
+   ],
+   "capability": [
+    "audit_read"
+   ]
+  },
+  {
+   "group": "Kiểm toán",
+   "method": "POST",
+   "path": "/v1/audit:export",
+   "summary": "Xuất CSV có chữ ký; quá 100.000 dòng cần duyệt",
+   "use_cases": [
+    "11-03"
+   ],
+   "capability": [
+    "audit_read"
+   ]
+  },
+  {
+   "group": "Kiểm toán",
+   "method": "GET",
+   "path": "/v1/security-events",
+   "summary": "Sự kiện bảo mật",
+   "use_cases": [
+    "11-03"
+   ],
+   "capability": [
+    "audit_read"
+   ]
+  },
+  {
+   "group": "Tích hợp",
+   "method": "POST",
+   "path": "/v1/admin/clients",
+   "summary": "Cấp client REST hoặc MCP",
+   "use_cases": [
+    "12-01"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Tích hợp",
+   "method": "PATCH",
+   "path": "/v1/admin/clients/{id}",
+   "summary": "Sửa công cụ, hạn mức, hạn dùng",
+   "use_cases": [
+    "12-01"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Tích hợp",
+   "method": "POST",
+   "path": "/v1/admin/clients/{id}:rotate-secret",
+   "summary": "Xoay bí mật",
+   "use_cases": [
+    "12-01"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Tích hợp",
+   "method": "POST",
+   "path": "/v1/admin/clients/{id}:revoke",
+   "summary": "Thu hồi khẩn",
+   "use_cases": [
+    "12-01"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Tích hợp",
+   "method": "GET",
+   "path": "/v1/admin/clients/{id}/usage",
+   "summary": "Sử dụng theo giờ, công cụ",
+   "use_cases": [
+    "12-04"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Tích hợp",
+   "method": "POST",
+   "path": "/v1/webhooks",
+   "summary": "Đăng ký webhook",
+   "use_cases": [
+    "12-03"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Tích hợp",
+   "method": "GET",
+   "path": "/v1/webhooks/{id}/deliveries",
+   "summary": "Lịch sử gửi",
+   "use_cases": [
+    "12-03"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Tích hợp",
+   "method": "POST",
+   "path": "/v1/webhook-deliveries/{id}:retry",
+   "summary": "Gửi lại",
+   "use_cases": [
+    "12-03"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Tích hợp",
+   "method": "POST",
+   "path": "/mcp",
+   "summary": "MCP tools/list, tools/call (JSON-RPC)",
+   "use_cases": [
+    "12-02"
+   ],
+   "capability": [
+    "client"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "GET",
+   "path": "/v1/agents",
+   "summary": "Đội agent",
+   "use_cases": [
+    "13-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "POST",
+   "path": "/v1/agents:draft-from-text",
+   "summary": "Đề xuất cấu hình từ mô tả",
+   "use_cases": [
+    "13-01"
+   ],
+   "capability": [
+    "create_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "POST",
+   "path": "/v1/agents",
+   "summary": "Tạo agent",
+   "use_cases": [
+    "13-01"
+   ],
+   "capability": [
+    "create_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "GET",
+   "path": "/v1/agents/{id}",
+   "summary": "Agent, phiên bản đang chạy",
+   "use_cases": [
+    "13-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "GET",
+   "path": "/v1/agents/{id}/configs",
+   "summary": "Các phiên bản cấu hình",
+   "use_cases": [
+    "13-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "POST",
+   "path": "/v1/agents/{id}/configs",
+   "summary": "Lưu phiên bản cấu hình",
+   "use_cases": [
+    "13-02"
+   ],
+   "capability": [
+    "create_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "PUT",
+   "path": "/v1/agents/{id}/triggers",
+   "summary": "Đặt trigger",
+   "use_cases": [
+    "13-03"
+   ],
+   "capability": [
+    "create_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "POST",
+   "path": "/v1/agents/{id}/test-runs",
+   "summary": "Chạy thử giả lập; 202",
+   "use_cases": [
+    "13-04"
+   ],
+   "capability": [
+    "create_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "POST",
+   "path": "/v1/agents/{id}/eval-runs",
+   "summary": "Chạy bộ thử; 202",
+   "use_cases": [
+    "13-04"
+   ],
+   "capability": [
+    "create_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "POST",
+   "path": "/v1/agents/{id}/deployments",
+   "summary": "Triển khai theo tỷ lệ lượt",
+   "use_cases": [
+    "13-05"
+   ],
+   "capability": [
+    "create_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "PATCH",
+   "path": "/v1/deployments/{id}",
+   "summary": "Đổi tỷ lệ lượt",
+   "use_cases": [
+    "13-05"
+   ],
+   "capability": [
+    "create_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "POST",
+   "path": "/v1/deployments/{id}:rollback",
+   "summary": "Quay lui",
+   "use_cases": [
+    "13-05"
+   ],
+   "capability": [
+    "create_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "GET",
+   "path": "/v1/runs",
+   "summary": "Lượt chạy",
+   "use_cases": [
+    "13-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "GET",
+   "path": "/v1/runs/{id}",
+   "summary": "Lượt chạy (view=simple hoặc technical)",
+   "use_cases": [
+    "13-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "GET",
+   "path": "/v1/runs/{id}/events",
+   "summary": "Luồng SSE diễn biến lượt chạy",
+   "use_cases": [
+    "13-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "GET",
+   "path": "/v1/runs/{id}/children",
+   "summary": "Lượt con",
+   "use_cases": [
+    "13-08"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "POST",
+   "path": "/v1/runs/{id}:pause",
+   "summary": "Tạm dừng",
+   "use_cases": [
+    "13-06"
+   ],
+   "capability": [
+    "run_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "POST",
+   "path": "/v1/runs/{id}:resume",
+   "summary": "Chạy tiếp",
+   "use_cases": [
+    "13-06"
+   ],
+   "capability": [
+    "run_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "POST",
+   "path": "/v1/runs/{id}:cancel",
+   "summary": "Huỷ",
+   "use_cases": [
+    "13-06"
+   ],
+   "capability": [
+    "run_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "PUT",
+   "path": "/v1/runs/{id}/plan",
+   "summary": "Sửa kế hoạch khi tạm dừng",
+   "use_cases": [
+    "13-06"
+   ],
+   "capability": [
+    "run_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "GET",
+   "path": "/v1/agents/{id}/memories",
+   "summary": "Bộ nhớ agent",
+   "use_cases": [
+    "13-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "POST",
+   "path": "/v1/agents/{id}/memories",
+   "summary": "Thêm ghi nhớ",
+   "use_cases": [
+    "13-07"
+   ],
+   "capability": [
+    "create_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "PATCH",
+   "path": "/v1/memories/{id}",
+   "summary": "Sửa, vô hiệu ghi nhớ",
+   "use_cases": [
+    "13-07"
+   ],
+   "capability": [
+    "create_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "DELETE",
+   "path": "/v1/memories/{id}",
+   "summary": "Xoá ghi nhớ",
+   "use_cases": [
+    "13-07"
+   ],
+   "capability": [
+    "create_agent"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "GET",
+   "path": "/v1/crawl-sources",
+   "summary": "Nguồn thu thập, giám sát",
+   "use_cases": [
+    "14-01",
+    "14-06"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/crawl-sources",
+   "summary": "Đăng ký nguồn thu thập",
+   "use_cases": [
+    "14-01"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "GET",
+   "path": "/v1/crawl-sources/{id}",
+   "summary": "Nguồn, schema đang dùng, lượt gần nhất",
+   "use_cases": [
+    "14-01",
+    "14-06"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "PATCH",
+   "path": "/v1/crawl-sources/{id}",
+   "summary": "Sửa lịch, tốc độ, cổng duyệt",
+   "use_cases": [
+    "14-01"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/crawl-sources/{id}:legal-review",
+   "summary": "Duyệt pháp lý nguồn trước khi bật, xem lại định kỳ",
+   "use_cases": [
+    "14-01"
+   ],
+   "capability": [
+    "compliance"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/crawl-sources/{id}:pause",
+   "summary": "Tạm ngưng, bắt buộc lý do",
+   "use_cases": [
+    "14-03",
+    "14-06"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/crawl-sources/{id}:resume",
+   "summary": "Chạy tiếp",
+   "use_cases": [
+    "14-03",
+    "14-06"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/crawl-sources/{id}/runs",
+   "summary": "Chạy ngay một lượt; 202",
+   "use_cases": [
+    "14-06"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "GET",
+   "path": "/v1/crawl-runs",
+   "summary": "Lượt thu",
+   "use_cases": [
+    "14-06"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "GET",
+   "path": "/v1/crawl-runs/{id}",
+   "summary": "Lượt thu, trang đã tải, chỉ số",
+   "use_cases": [
+    "14-06"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/crawl-sources/{id}/schema-inference",
+   "summary": "Suy ngược schema; 202",
+   "use_cases": [
+    "14-02"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "GET",
+   "path": "/v1/crawl-sources/{id}/schemas",
+   "summary": "Các phiên bản schema",
+   "use_cases": [
+    "14-02",
+    "14-03"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/crawl-schemas/{id}:test",
+   "summary": "Chạy thử trên mẫu giữ lại; 202",
+   "use_cases": [
+    "14-02"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/crawl-schemas/{id}:approve",
+   "summary": "Duyệt schema",
+   "use_cases": [
+    "14-02"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/crawl-schemas/{id}:revert",
+   "summary": "Hoàn tác về phiên bản đúng gần nhất; 202",
+   "use_cases": [
+    "14-03"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "GET",
+   "path": "/v1/schema-drifts",
+   "summary": "Sự cố thay đổi cấu trúc",
+   "use_cases": [
+    "14-03"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/schema-drifts/{id}:resolve",
+   "summary": "Xử lý sự cố",
+   "use_cases": [
+    "14-03"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "GET",
+   "path": "/v1/crawl-runs/{id}/records",
+   "summary": "Bản ghi trích, hàng duyệt",
+   "use_cases": [
+    "14-04"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/extracted-records/{id}:review",
+   "summary": "Xác nhận, sửa, bỏ bản ghi",
+   "use_cases": [
+    "14-04"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/extracted-records:bulk-review",
+   "summary": "Duyệt hàng loạt cùng lý do",
+   "use_cases": [
+    "14-04"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/crawl-runs/{id}:publish",
+   "summary": "Phát hành lượt sang lớp hợp nhất",
+   "use_cases": [
+    "14-04"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "GET",
+   "path": "/v1/consolidation-specs",
+   "summary": "Đặc tả hợp nhất",
+   "use_cases": [
+    "14-05"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/consolidation-specs",
+   "summary": "Tạo đặc tả hợp nhất",
+   "use_cases": [
+    "14-05"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "PATCH",
+   "path": "/v1/consolidation-specs/{id}",
+   "summary": "Sửa đặc tả hợp nhất; kích hoạt, ngừng",
+   "use_cases": [
+    "14-05"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/consolidation-specs/{id}/runs",
+   "summary": "Chạy hợp nhất; 202",
+   "use_cases": [
+    "14-05"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "GET",
+   "path": "/v1/consolidation-runs/{id}",
+   "summary": "Kết quả hợp nhất",
+   "use_cases": [
+    "14-05"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "GET",
+   "path": "/v1/entity-links",
+   "summary": "Liên kết thực thể chờ quyết định",
+   "use_cases": [
+    "14-05"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/entity-links/{id}:decide",
+   "summary": "Xác nhận, bác liên kết thực thể",
+   "use_cases": [
+    "14-05"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "POST",
+   "path": "/v1/forecasts",
+   "summary": "Tạo việc dự báo; 202, hoặc trả ngay dự báo còn hiệu lực",
+   "use_cases": [
+    "15-01",
+    "15-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
+   "path": "/v1/forecasts/{id}",
+   "summary": "Việc dự báo, tiến độ, kết quả",
+   "use_cases": [
+    "15-01",
+    "15-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
+   "path": "/v1/forecasts/{id}/events",
+   "summary": "Luồng SSE tiến độ dự báo",
+   "use_cases": [
+    "15-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "POST",
+   "path": "/v1/forecasts/{id}:cancel",
+   "summary": "Huỷ",
+   "use_cases": [
+    "15-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
+   "path": "/v1/forecast-models",
+   "summary": "Mô hình dự báo",
+   "use_cases": [
+    "15-04",
+    "15-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
+   "path": "/v1/forecast-models/{id}",
+   "summary": "Mô hình, phiên bản đang phát hành",
+   "use_cases": [
+    "15-05"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
+   "path": "/v1/forecast-model-versions/{id}",
+   "summary": "Phiên bản, thẻ mô hình",
+   "use_cases": [
+    "15-02",
+    "15-03",
+    "15-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
+   "path": "/v1/forecast-model-versions/{id}/backtest",
+   "summary": "Kết quả backtest so mô hình chuẩn",
+   "use_cases": [
+    "15-03",
+    "15-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "POST",
+   "path": "/v1/forecast-model-versions/{id}:submit",
+   "summary": "Gửi duyệt",
+   "use_cases": [
+    "15-04"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "POST",
+   "path": "/v1/forecast-model-versions/{id}:approve",
+   "summary": "Duyệt, phát hành mô hình",
+   "use_cases": [
+    "15-04"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "POST",
+   "path": "/v1/forecast-model-versions/{id}:reject",
+   "summary": "Từ chối, bắt buộc lý do",
+   "use_cases": [
+    "15-04"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "POST",
+   "path": "/v1/forecast-models/{id}:retrain",
+   "summary": "Huấn luyện lại; 202",
+   "use_cases": [
+    "15-06"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "POST",
+   "path": "/v1/forecast-models/{id}/scenarios",
+   "summary": "Chạy kịch bản biến ngoại sinh",
+   "use_cases": [
+    "15-05"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
+   "path": "/v1/forecast-models/{id}/predictions",
+   "summary": "Dự báo theo kỳ, khoảng 80/95%",
+   "use_cases": [
+    "15-05"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
+   "path": "/v1/forecast-models/{id}/accuracy",
+   "summary": "Độ chính xác theo kỳ",
+   "use_cases": [
+    "15-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
+   "path": "/v1/formula-models",
+   "summary": "Mô hình dự báo theo công thức, phiên bản công thức chỉ số, mặt hàng",
+   "use_cases": [
+    "15-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "POST",
+   "path": "/v1/formula-models",
+   "summary": "Tạo mô hình công thức từ phiên bản chỉ số công thức đã chứng nhận",
+   "use_cases": [
+    "15-07"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
+   "path": "/v1/formula-models/{id}",
+   "summary": "Mô hình công thức, cửa sổ kỳ, nguồn nowcast, mô hình Quỹ",
+   "use_cases": [
+    "15-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
+   "path": "/v1/formula-models/{id}/components",
+   "summary": "Tham số theo ngày hiệu lực, văn bản gốc, người chứng nhận",
+   "use_cases": [
+    "15-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "POST",
+   "path": "/v1/formula-models/{id}/components",
+   "summary": "Đề xuất giá trị tham số mới từ văn bản",
+   "use_cases": [
+    "15-07"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "POST",
+   "path": "/v1/formula-components/{id}:certify",
+   "summary": "Chứng nhận tham số, người khác người nhập",
+   "use_cases": [
+    "15-07"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "POST",
+   "path": "/v1/formula-models/{id}/runs",
+   "summary": "Chạy dự báo Monte Carlo cho kỳ tới; 202",
+   "use_cases": [
+    "15-07",
+    "08-08"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
+   "path": "/v1/forecasts/{id}/distribution",
+   "summary": "Phân phối, xác suất Quỹ, phân rã kèm nguồn",
+   "use_cases": [
+    "15-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
+   "path": "/v1/forecast-ledger",
+   "summary": "Sổ dự báo theo mô hình, mặt hàng, kỳ, trạng thái chấm",
+   "use_cases": [
+    "15-08"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
+   "path": "/v1/forecast-ledger/{id}",
+   "summary": "Một dòng sổ: dự báo đã phát hành, kết quả, chấm điểm, mục Error Book",
+   "use_cases": [
+    "15-08"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "POST",
+   "path": "/v1/forecast-ledger/{id}:score",
+   "summary": "Chấm lại khi giá công bố được đính chính; 202",
+   "use_cases": [
+    "15-08"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Dự báo",
+   "method": "GET",
+   "path": "/v1/forecast-models/{id}/calibration",
+   "summary": "Chỉ số hiệu chỉnh N kỳ: độ phủ 80%, 95%, MAE, CRPS, số kỳ miss",
+   "use_cases": [
+    "15-08"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "GET",
+   "path": "/v1/exec/vault",
+   "summary": "Trạng thái kho, khoá công khai, danh sách khoá bọc (không có bản rõ)",
+   "use_cases": [
+    "16-01",
+    "16-06"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "POST",
+   "path": "/v1/exec/vault",
+   "summary": "Tạo kho: khoá công khai, khoá riêng đã bọc, ít nhất 2 khoá bọc",
+   "use_cases": [
+    "16-01"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "POST",
+   "path": "/v1/exec/vault/key-wraps",
+   "summary": "Thêm khoá bọc (passkey, khoá phần cứng, mã giấy)",
+   "use_cases": [
+    "16-01"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "DELETE",
+   "path": "/v1/exec/vault/key-wraps/{id}",
+   "summary": "Thu hồi khoá bọc; còn ít nhất 2, một ngoại tuyến",
+   "use_cases": [
+    "16-01"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "GET",
+   "path": "/v1/exec/transit-key",
+   "summary": "Khoá công khai RSA và phiên bản khoá điều kiện của kho",
+   "use_cases": [
+    "16-01"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "GET",
+   "path": "/v1/exec/theses",
+   "summary": "Luận điểm của chủ kho: cột vận hành và bản mã",
+   "use_cases": [
+    "16-01",
+    "16-03",
+    "16-04"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "POST",
+   "path": "/v1/exec/theses",
+   "summary": "Ghi luận điểm (bản mã nội dung, bản mã điều kiện, due_at)",
+   "use_cases": [
+    "16-01"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "GET",
+   "path": "/v1/exec/theses/{id}",
+   "summary": "Một luận điểm",
+   "use_cases": [
+    "16-01"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "POST",
+   "path": "/v1/exec/theses/{id}:withdraw",
+   "summary": "Rút trước hạn",
+   "use_cases": [
+    "16-01"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "GET",
+   "path": "/v1/exec/theses/{id}/evidence",
+   "summary": "Các lô bằng chứng niêm phong",
+   "use_cases": [
+    "16-03"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "POST",
+   "path": "/v1/exec/theses/{id}/evidence:refresh",
+   "summary": "Yêu cầu làm mới bằng chứng; 202",
+   "use_cases": [
+    "16-03"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "GET",
+   "path": "/v1/exec/theses/{id}/scores",
+   "summary": "Điểm chấm của luận điểm",
+   "use_cases": [
+    "16-04"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "GET",
+   "path": "/v1/exec/scores",
+   "summary": "Mọi điểm chấm của chủ kho, để tính hiệu chỉnh trên thiết bị",
+   "use_cases": [
+    "16-04"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "GET",
+   "path": "/v1/exec/key-access-log",
+   "summary": "Sổ truy cập khoá",
+   "use_cases": [
+    "16-03",
+    "16-04",
+    "16-06"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "GET",
+   "path": "/v1/exec/memory-items",
+   "summary": "Mục bộ nhớ riêng (bản mã)",
+   "use_cases": [
+    "16-02"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "POST",
+   "path": "/v1/exec/memory-items",
+   "summary": "Ghi mục bộ nhớ riêng",
+   "use_cases": [
+    "16-02"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "POST",
+   "path": "/v1/exec/memory-items/{id}:shred",
+   "summary": "Huỷ một mục",
+   "use_cases": [
+    "16-02"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "POST",
+   "path": "/v1/exec/private-questions",
+   "summary": "Hỏi riêng bằng mô hình tại chỗ, không lưu bản rõ; 202",
+   "use_cases": [
+    "16-02"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "GET",
+   "path": "/v1/exec/private-questions/{id}/stream",
+   "summary": "Luồng SSE câu trả lời hỏi riêng",
+   "use_cases": [
+    "16-02"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "POST",
+   "path": "/v1/exec/theses/{id}/publications",
+   "summary": "Tạo bản công bố, trang giả thuyết nháp và đề xuất duyệt",
+   "use_cases": [
+    "16-05"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "GET",
+   "path": "/v1/exec/publications/{id}",
+   "summary": "Bản công bố và trạng thái duyệt",
+   "use_cases": [
+    "16-05"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "POST",
+   "path": "/v1/exec/publications/{id}:withdraw",
+   "summary": "Rút bản công bố, trang chuyển retired",
+   "use_cases": [
+    "16-05"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "POST",
+   "path": "/v1/exec/handovers",
+   "summary": "Yêu cầu niêm phong, bàn giao có chọn lọc hoặc huỷ khoá",
+   "use_cases": [
+    "16-06"
+   ],
+   "capability": [
+    "exec_vault",
+    "admin"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "GET",
+   "path": "/v1/exec/handovers/{id}",
+   "summary": "Yêu cầu và tiến độ",
+   "use_cases": [
+    "16-06"
+   ],
+   "capability": [
+    "exec_vault",
+    "admin",
+    "compliance"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "POST",
+   "path": "/v1/exec/handovers/{id}/items",
+   "summary": "Chủ kho tải mục đã niêm phong lại cho người nhận",
+   "use_cases": [
+    "16-06"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "GET",
+   "path": "/v1/exec/handovers/{id}/items",
+   "summary": "Người nhận lấy mục bàn giao",
+   "use_cases": [
+    "16-06"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "POST",
+   "path": "/v1/exec/handovers/{id}:approve",
+   "summary": "AC06 duyệt huỷ khoá khi chủ kho không tham gia",
+   "use_cases": [
+    "16-06"
+   ],
+   "capability": [
+    "compliance"
+   ]
+  },
+  {
+   "group": "Lớp riêng lãnh đạo",
+   "method": "POST",
+   "path": "/v1/exec/handovers/{id}:accept",
+   "summary": "Người nhận xác nhận đã nhập",
+   "use_cases": [
+    "16-06"
+   ],
+   "capability": [
+    "exec_vault"
+   ]
+  }
+ ]
+}

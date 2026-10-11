@@ -77,6 +77,21 @@ Ra R1 khi: Eval Set pilot ≥ 0,95 trên VERIFIED/GOVERNED, `unsupported_number_
 | R3 | R3-01…R3-08 | Scheduler; Monitor vùng an toàn (lõi `detector` V2); alert gom nhóm + kênh Zalo/Teams/email (D10); proposal/action có duyệt; correction memory + Context Studio theo lớp lỗi; SOP có duyệt; gợi ý chủ động; forecast baseline nhãn experimental |
 | R4 | R4-01…R4-07 | Agent Studio (T2: từ mô tả + Data Space, eval trước publish); skill có cổng (T3); danh tính agent; PII masking result set; giới hạn chi phí; A2A; HA/restore/security eval; Publisher chỉ khi D8 mở lại |
 
+## 3b. API /v1 (khối `api`, thiết kế ở [06](06-api-v1.md))
+
+Thêm 11/10/2026 khi giao diện v3.1 đã đủ màn và bắt đầu thay mock MSW bằng API thật. Nguồn đặc tả là tab 4
+của tài liệu thiết kế hệ thống; cổng A2 trong CI giữ mã khớp đặc tả.
+
+| ID | Việc | Phụ thuộc | Vai | Cỡ | Tiêu chí | TT |
+| --- | --- | --- | --- | --- | --- | --- |
+| API-00 | Khung `backend/services/api`: kernel (token JWKS, `app.org_id` mỗi giao dịch, problem+json, con trỏ, SSE), bản chụp A2 và cổng so OpenAPI, suite `api`, CI, import-linter | | BE | S | `make test-unit UNIT_SUITES=api:api` xanh; route ngoài A2 lỗi khi import | doing |
+| API-01 | Bộ giải năng lực từ `org.role.capabilities`; nhóm Quản trị phần của tôi | API-00, ORM `libs/dataagent_db` | BE | S | Route `ask` từ chối người không có năng lực, theo dữ liệu CSDL | todo |
+| API-02 | Hỏi đáp + Truy vấn: câu hỏi 202, luồng SSE có `answer_id`, câu trả lời, phản hồi, biên nhận | API-01 | BE, FE | L | Nhóm vào `COMPLETE_GROUPS`; màn Hỏi đáp chạy không cần mock | todo |
+| API-03 | Phiên làm việc | API-01 | BE, FE | M | Như trên cho màn Phiên | todo |
+| API-04 | Cần bạn và đánh giá | API-01 | BE, FE | M | Như trên cho màn Cần bạn | todo |
+| API-05 | Agent: lượt chạy, sự kiện SSE, tạm dừng/tiếp tục | API-02 | BE, FE | L | Như trên cho màn Agent | todo |
+| API-06 | Triển khai khối `api`: manifest, Ansible, route `/v1` ở gateway, secret từ OpenBao | API-02 | Ops | S | `make deploy` đưa `api` lên cụm dev; e2e gọi `/v1` qua gateway | todo |
+
 ## 4. Quy tắc theo dõi
 
 - Thứ Sáu hằng tuần rà cột TT; việc trễ > 2 ngày thì cắt hoặc đổi người ngay trong tuần.
