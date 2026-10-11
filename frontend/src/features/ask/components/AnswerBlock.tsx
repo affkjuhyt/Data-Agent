@@ -3,7 +3,7 @@
  * one RefusalCard instead — it has no answer, table or sources to show:
  *   1 "Hệ thống hiểu là" chips → 2 text (with citation markers) → 3 clarification card
  *   → 4 charts → 5 data tables → 6 "Vì sao tin được" strip → 7 sources
- *   → 8 meta row: trust label, timing, Cách tính · Xuất · Sao chép · Lưu câu hỏi · Lưu thành tri thức · Báo sai
+ *   → 8 meta row: trust label, timing, Biên nhận · Cách tính · Xuất · Sao chép · Lưu câu hỏi · Lưu thành tri thức · Báo sai
  *   → 9 follow-up chips.
  * A reading the agent wants checked comes first (InterpretationCheck). While streaming, the agent's steps lead and a result still arriving follows the text
  * (AgentProgress). The trust label is on every finished answer (invariant 14). Used by the Ask screen and the
@@ -58,6 +58,8 @@ interface AnswerBlockProps {
   onReport?: () => void;
   /** the reader reported this answer; it shows "Đang kiểm tra" until review */
   reported?: boolean;
+  /** "Biên nhận": open P01 Biên nhận câu trả lời (UC-01-07) for this answer */
+  onOpenReceipt?: () => void;
   /** "Lưu thành tri thức": open P07 Lưu câu trả lời thành tri thức for this answer */
   onSaveKnowledge?: () => void;
   /** "Dừng" on a result still arriving */
@@ -100,7 +102,7 @@ function CopyLink({ text }: { text: string }) {
 export function AnswerBlock({
   msg, question, busy, onSuggestion, onAnswerClarification, onSave, onOpenEvidence,
   showEvidenceStrip = true, showTimestamp = true, onRetry, onRephrase, showRefusalDetail,
-  onReport, reported,
+  onReport, reported, onOpenReceipt,
   onSaveKnowledge, onStop, onConfirmUnderstanding, onEditUnderstanding,
 }: AnswerBlockProps) {
   const [exportOpen, setExportOpen] = useState(false);
@@ -226,6 +228,9 @@ export function AnswerBlock({
             </span>
           )}
           <span className="flex-1" />
+          {onOpenReceipt && (
+            <button type="button" className={LINK} onClick={onOpenReceipt}>Biên nhận</button>
+          )}
           {onOpenEvidence && displayEvidence && hasEvidence(displayEvidence) && (
             <button type="button" className={LINK} onClick={onOpenEvidence}>Cách tính</button>
           )}

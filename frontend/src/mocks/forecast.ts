@@ -2,8 +2,11 @@ import { http, HttpResponse } from 'msw';
 import type {
   Forecast,
   ForecastJob,
+  ForecastLedger,
+  ForecastLedgerRow,
   ForecastModel,
   ForecastWorkbench,
+  FuelPriceForecast,
   HistoryPoint,
 } from '../lib/v1/forecast';
 
@@ -524,6 +527,319 @@ function model(): ForecastModel {
   };
 }
 
+/*
+ * P15 Giá xăng dầu (2422:15221, 2424:15221): the ceiling price of the 09/7/2026 period for five
+ * fuels and the ledger of the twenty periods before it. E5RON92 carries the figures of the Figma
+ * frames (medians and published prices read off the ledger chart); the other fuels are the same
+ * shapes shifted to their own previous ceiling. Every figure is illustrative.
+ */
+interface FuelProduct {
+  code: string;
+  label: string;
+  /** Replaces "xang" in the formula parameter keys. */
+  key: string;
+  previous: number;
+  unit: string;
+}
+
+const FUELS: FuelProduct[] = [
+  { code: 'e5ron92', label: 'E5RON92', key: 'xang', previous: 19730, unit: 'đ/lít' },
+  { code: 'ron95-iii', label: 'RON95-III', key: 'ron95', previous: 20370, unit: 'đ/lít' },
+  { code: 'diesel-005s', label: 'Diesel 0,05S', key: 'diesel', previous: 18910, unit: 'đ/lít' },
+  { code: 'dau-hoa', label: 'Dầu hoả', key: 'dau_hoa', previous: 18460, unit: 'đ/lít' },
+  { code: 'mazut', label: 'Mazut', key: 'mazut', previous: 15720, unit: 'đ/kg' },
+];
+
+const fuelForecastId = (f: FuelProduct) => `fpf-2026-07-09-${f.code}`;
+const seriesId = (f: FuelProduct) => `fs-ceiling-${f.code}`;
+const FUEL_BASE = FUELS[0].previous;
+
+/** A two-sided normal density whose 10th/50th/90th percentiles are the forecast's. */
+function density(median: number, lo80: number, hi80: number, from: number, to: number) {
+  const z80 = 1.2816;
+  const left = (median - lo80) / z80;
+  const right = (hi80 - median) / z80;
+  const prices = new Set<number>();
+  for (let p = from; p <= to; p += 20) prices.add(p);
+  return [...prices]
+    .sort((a, b) => a - b)
+    .map((price) => {
+      const s = price < median ? left : right;
+      const z = (price - median) / s;
+      return { price, density: Math.round(Math.exp(-0.5 * z * z) * 1000) / 1000 };
+    });
+}
+
+function fuelForecast(fuel: FuelProduct): FuelPriceForecast {
+  const shift = fuel.previous - FUEL_BASE;
+  const at = (v: number) => v + shift;
+  const median = at(19910);
+  const lo80 = at(19640);
+  const hi80 = at(20190);
+  return {
+    id: fuelForecastId(fuel),
+    series_id: seriesId(fuel),
+    product_label: fuel.label,
+    products: FUELS.map((f) => ({ forecast_id: fuelForecastId(f), label: f.label })),
+    period_date: '2026-07-09',
+    period_note: 'dự kiến 15:00, theo nhịp thường lệ',
+    run_at: '2026-07-08T18:02:00+07:00',
+    model: { version_label: 'formula_mc v2', simulations: 10000 },
+    source_note: 'không dùng Platts: số bình quân Bộ Công Thương công bố và chuỗi giá công khai',
+    illustrative: true,
+    unit_label: fuel.unit,
+    previous: {
+      period_date: '2026-07-02',
+      ceiling: fuel.previous,
+      source_text: 'Bộ Công Thương công bố',
+    },
+    distribution: {
+      median,
+      lo80,
+      hi80,
+      lo95: at(19480),
+      hi95: at(20350),
+      p_increase: 0.72,
+      density: density(median, lo80, hi80, at(19400), at(20400)),
+    },
+    decomposition: {
+      steps: [
+        { label: 'Thế giới', value: 195 },
+        { label: 'Tỷ giá', value: 14 },
+        { label: 'Thuế phí', value: 0 },
+        { label: 'Quỹ', value: -24 },
+      ],
+      expected: at(19915),
+      axis_from: at(19680),
+      source_note:
+        'Nguồn: giá thế giới bình quân Bộ Công Thương 25/6–02/7 + chuỗi công khai · tỷ giá trung tâm NHNN · thuế phí theo NQ 34/2026/NQ-CP · Quỹ theo mô hình xác suất.',
+    },
+    fund_levels: [
+      { label: `Trích 0 ${fuel.unit}`, probability: 0.12 },
+      { label: `Trích 200 ${fuel.unit}`, probability: 0.7 },
+      { label: `Trích 300 ${fuel.unit}`, probability: 0.18 },
+      { label: `Chi 300 ${fuel.unit}`, probability: 0.08 },
+    ],
+    parameters: [
+      {
+        key: `thue_bvmt_${fuel.key}`,
+        value_text: `2.000 ${fuel.unit}`,
+        effective_from: '2026-01-01',
+        legal_ref: { label: 'NQ 34/2026/NQ-CP', document_id: 'doc-nq-34-2026' },
+        certified_by_name: 'Lê Thu Hà',
+      },
+      {
+        key: fuel.key === 'xang' ? 'thue_ttdb_xang_e5' : `thue_ttdb_${fuel.key}`,
+        value_text: '7%',
+        effective_from: '2026-01-01',
+        legal_ref: { label: 'Luật 66/2025/QH15', document_id: 'doc-luat-66-2025' },
+        certified_by_name: 'Lê Thu Hà',
+      },
+      {
+        key: `thue_nk_bq_${fuel.key}`,
+        value_text: '9,3%',
+        effective_from: '2026-06-26',
+        legal_ref: { label: 'CV 9017/BTC-QLG', document_id: 'doc-cv-9017-btc' },
+        certified_by_name: 'Nguyễn Thị Hạnh',
+      },
+      {
+        key: `chi_phi_dinh_muc_${fuel.key}`,
+        value_text: `1.150 ${fuel.unit}`,
+        effective_from: '2026-06-26',
+        legal_ref: { label: 'CV 9149/BTC-QLG', document_id: 'doc-cv-9149-btc' },
+        certified_by_name: 'Nguyễn Thị Hạnh',
+      },
+    ],
+    world_price: { known_days: 5, total_days: 7, simulated_range_text: '03/7–08/7' },
+    fund_scenario: null,
+    following_schedule: false,
+  };
+}
+
+/** [period, median, published] — read off "Biểu đồ sổ dự báo" (2424:15479), oldest first. */
+const LEDGER_E5: [string, number, number][] = [
+  ['2026-02-19', 20040, 20100],
+  ['2026-02-26', 20340, 20250],
+  ['2026-03-05', 20330, 20480],
+  ['2026-03-12', 20420, 20390],
+  ['2026-03-19', 20430, 20720],
+  ['2026-03-26', 20740, 20540],
+  ['2026-04-02', 20590, 20610],
+  ['2026-04-09', 20640, 20950],
+  ['2026-04-16', 20990, 21080],
+  ['2026-04-23', 20930, 20870],
+  ['2026-04-29', 20820, 20520],
+  ['2026-05-07', 20470, 20460],
+  ['2026-05-14', 20520, 20640],
+  ['2026-05-21', 20540, 20390],
+  ['2026-05-28', 20150, 20200],
+  ['2026-06-04', 19800, 19840],
+  ['2026-06-11', 20480, 20020],
+  ['2026-06-18', 20420, 20380],
+  ['2026-06-25', 20700, 20785],
+  ['2026-07-02', 19850, 19730],
+];
+
+const DRIVERS: Record<string, [string | null, string | null]> = {
+  '2026-07-02': ['Giá thế giới thấp hơn dự kiến', null],
+  '2026-06-25': ['Tỷ giá', null],
+  '2026-06-11': ['Quỹ chi không dự kiến 300 đ/lít', 'EB-0031'],
+  '2026-04-09': ['Giá thế giới tăng mạnh cuối kỳ', 'EB-0027'],
+};
+
+/** A miss: outside 95% or an error above this many units. */
+const MISS_THRESHOLD = 300;
+
+function ledgerRows(fuel: FuelProduct): ForecastLedgerRow[] {
+  const shift = fuel.previous - FUEL_BASE;
+  return LEDGER_E5.map(([period, m, actualE5]) => {
+    const median = m + shift;
+    const actual = actualE5 + shift;
+    const [lo80, hi80, lo95, hi95] = [median - 290, median + 270, median - 440, median + 420];
+    const error = actual - median;
+    const inside95 = actual >= lo95 && actual <= hi95;
+    const day = new Date(`${period}T00:00:00Z`);
+    day.setUTCDate(day.getUTCDate() - 1);
+    const [driver, errorBook] = DRIVERS[period] ?? [null, null];
+    return {
+      period_date: period,
+      published_at: `${day.toISOString().slice(0, 10)}T20:00:00+07:00`,
+      channel_label: 'bản tin',
+      median,
+      lo80,
+      hi80,
+      lo95,
+      hi95,
+      actual,
+      error,
+      inside80: actual >= lo80 && actual <= hi80,
+      inside95,
+      missed: !inside95 || Math.abs(error) > MISS_THRESHOLD,
+      main_driver: driver,
+      error_book_ref: errorBook,
+    };
+  }).reverse();
+}
+
+function ledger(fuel: FuelProduct, periods: number): ForecastLedger {
+  const all = ledgerRows(fuel);
+  const scored = all.filter((r) => r.error !== null);
+  return {
+    series_id: seriesId(fuel),
+    product_label: fuel.label,
+    products: FUELS.map((f) => ({ series_id: seriesId(f), label: f.label })),
+    model_version_label: 'formula_mc v2',
+    illustrative: true,
+    unit_label: fuel.unit,
+    calibration: {
+      periods: scored.length,
+      inside80: scored.filter((r) => r.inside80).length,
+      inside95: scored.filter((r) => r.inside95).length,
+      mae: scored.reduce((sum, r) => sum + Math.abs(r.error ?? 0), 0) / scored.length,
+      crps_vs_naive: -0.38,
+      missed: scored.filter((r) => r.missed).length,
+      miss_rule_text: `ngoài 95% hoặc sai > ${MISS_THRESHOLD} ${fuel.unit}`,
+    },
+    windows: [
+      { periods: 20, label: '20 kỳ gần nhất' },
+      { periods: 10, label: '10 kỳ gần nhất' },
+    ],
+    window_periods: periods,
+    rows: all.slice(0, periods),
+    following_schedule: false,
+  };
+}
+
+/** The Fund scenario shifts the distribution by the Fund's deviation from its expected level. */
+const FUND_SHIFT: Record<string, number> = {
+  'Trích 0': -170,
+  'Trích 200': 30,
+  'Trích 300': 130,
+  'Chi 300': -470,
+};
+
+function fuelHandlers() {
+  let fuelForecasts = FUELS.map(fuelForecast);
+  // Following is per fuel, shared by the forecast and the ledger of that fuel.
+  const following = new Set<string>();
+  const findFuel = (id: string) => fuelForecasts.find((f) => f.id === id);
+  const withFollow = (f: FuelPriceForecast) => ({
+    ...f,
+    following_schedule: following.has(f.series_id),
+  });
+  const saveFuel = (next: FuelPriceForecast) => {
+    fuelForecasts = fuelForecasts.map((f) => (f.id === next.id ? next : f));
+    return HttpResponse.json(withFollow(next));
+  };
+
+  return [
+    http.get('*/v1/fuel-price-forecasts', () =>
+      HttpResponse.json({ items: fuelForecasts.map(withFollow), next_page_token: '' }),
+    ),
+    http.get('*/v1/fuel-price-forecasts/:id', ({ params }) => {
+      const found = findFuel(String(params.id));
+      return found
+        ? HttpResponse.json(withFollow(found))
+        : problem(404, 'not_found', 'Không tìm thấy dự báo giá.');
+    }),
+    http.post('*/v1/fuel-price-forecasts/:action', async ({ params, request }) => {
+      const [id, verb] = String(params.action).split(':');
+      const found = findFuel(id);
+      if (!found) return problem(404, 'not_found', 'Không tìm thấy dự báo giá.');
+      if (verb === 'rerun')
+        return saveFuel({ ...found, run_at: '2026-07-08T19:15:00+07:00', fund_scenario: null });
+      if (verb === 'run-fund-scenario') {
+        const { fund_level = '' } = (await request.json()) as { fund_level?: string };
+        const level = found.fund_levels.find((l) => l.label === fund_level);
+        if (!level) return problem(422, 'validation_failed', 'Chọn một mức Quỹ.');
+        const key = Object.keys(FUND_SHIFT).find((k) => level.label.startsWith(k));
+        const delta = key ? FUND_SHIFT[key] : 0;
+        const d = found.distribution;
+        return saveFuel({
+          ...found,
+          fund_scenario: {
+            fund_level_label: level.label,
+            // Fixing the Fund removes its share of the spread.
+            median: d.median + delta,
+            lo80: d.lo80 + delta + 40,
+            hi80: d.hi80 + delta - 40,
+            lo95: d.lo95 + delta + 60,
+            hi95: d.hi95 + delta - 60,
+          },
+        });
+      }
+      if (verb === 'clear-fund-scenario') return saveFuel({ ...found, fund_scenario: null });
+      return problem(404, 'not_found', 'Không có thao tác này.');
+    }),
+
+    http.get('*/v1/forecast-series', () =>
+      HttpResponse.json({
+        items: FUELS.map((f) => ({ id: seriesId(f), label: f.label })),
+        next_page_token: '',
+      }),
+    ),
+    http.get('*/v1/forecast-series/:id/ledger', ({ params, request }) => {
+      const fuel = FUELS.find((f) => seriesId(f) === params.id);
+      if (!fuel) return problem(404, 'not_found', 'Không tìm thấy sổ dự báo.');
+      const url = new URL(request.url);
+      const periods = Number(url.searchParams.get('periods')) || 20;
+      return HttpResponse.json({
+        ...ledger(fuel, periods),
+        following_schedule: following.has(seriesId(fuel)),
+      });
+    }),
+    http.post('*/v1/forecast-series/:action', ({ params }) => {
+      const [id, verb] = String(params.action).split(':');
+      if (!FUELS.some((f) => seriesId(f) === id))
+        return problem(404, 'not_found', 'Không tìm thấy sổ dự báo.');
+      if (verb === 'follow') following.add(id);
+      else if (verb === 'unfollow') following.delete(id);
+      else return problem(404, 'not_found', 'Không có thao tác này.');
+      return HttpResponse.json({ following: following.has(id) });
+    }),
+  ];
+}
+
 export function createForecastHandlers() {
   let currentJob = job();
   let polls = 0;
@@ -537,6 +853,7 @@ export function createForecastHandlers() {
   };
 
   return [
+    ...fuelHandlers(),
     http.get('*/v1/forecast-jobs/:id/workbench', ({ params }) =>
       params.id === JOB_ID
         ? HttpResponse.json(bench)

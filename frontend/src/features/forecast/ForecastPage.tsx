@@ -26,7 +26,7 @@ import {
 } from '../../lib/v1/forecast';
 import { useV1 } from '../../lib/v1/useV1';
 import { cutoffShort, ForecastChart, ForecastLegend } from './ForecastChart';
-import { DataTable, type Column } from './parts';
+import { DataTable, downloadCsv, type Column } from './parts';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
@@ -58,16 +58,6 @@ function csvOf(f: Forecast): string {
     [`Dữ liệu đến ${dateVN(f.data_cutoff)} · đơn vị ${f.unit_label}`],
   ];
   return [...meta, head, ...rows].map((row) => row.map(csvCell).join(',')).join('\n');
-}
-
-function download(name: string, text: string) {
-  // A BOM so Excel opens the Vietnamese text as UTF-8.
-  const url = URL.createObjectURL(new Blob(['﻿', text], { type: 'text/csv;charset=utf-8' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = name;
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
 export default function ForecastPage() {
@@ -143,7 +133,7 @@ function ForecastBody({ forecast, onChanged }: { forecast: Forecast; onChanged: 
         }
         actions={
           <>
-            <Button onClick={() => download(`du-bao-${f.id}.csv`, csvOf(f))}>Xuất</Button>
+            <Button onClick={() => downloadCsv(`du-bao-${f.id}.csv`, csvOf(f))}>Xuất</Button>
             {f.session_id && (
               <Button kind="primary" loading={adding} disabled={f.added_to_session} onClick={add}>
                 {f.added_to_session ? 'Đã thêm vào phiên' : 'Thêm vào phiên'}

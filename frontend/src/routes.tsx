@@ -86,6 +86,9 @@ const ForecastPage = React.lazy(() => import('./features/forecast/ForecastPage')
 const ForecastJobPage = React.lazy(() => import('./features/forecast/ForecastJobPage'));
 const ForecastStudioPage = React.lazy(() => import('./features/forecast/ForecastStudioPage'));
 const ForecastModelPage = React.lazy(() => import('./features/forecast/ForecastModelPage'));
+const FuelForecastPage = React.lazy(() => import('./features/forecast/FuelForecastPage'));
+const ForecastLedgerPage = React.lazy(() => import('./features/forecast/ForecastLedgerPage'));
+const AnswerReceiptPage = React.lazy(() => import('./features/answer-receipt/AnswerReceiptPage'));
 const WatchListPage = React.lazy(() => import('./features/monitoring/WatchListPage'));
 const WatchCreatePage = React.lazy(() => import('./features/monitoring/WatchCreatePage'));
 const AlertPage = React.lazy(() => import('./features/monitoring/AlertPage'));
@@ -176,6 +179,12 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     FORECAST_JOB:    { render: () => <ForecastJobPage /> },
     FORECAST_STUDIO: { render: () => <ForecastStudioPage /> },
     FORECAST_MODEL:  { render: () => <ForecastModelPage /> },
+    // P15 formula forecast (fuel price) and the forecast ledger; under "Dự báo".
+    FUEL_FORECAST:   { render: () => <FuelForecastPage /> },
+    FORECAST_LEDGER: { render: () => <ForecastLedgerPage /> },
+    // /analysis/receipt/<answer id>: an answer's receipt on its own page (shared link, notification);
+    // from Hỏi đáp it opens as a drawer over the conversation.
+    RECEIPT:         { render: () => <AnswerReceiptPage /> },
     DOC_ASK:         { render: () => <DocumentAnswerPage /> },
     WATCH:           { render: () => <WatchListPage /> },
     WATCH_NEW:       { render: () => <WatchCreatePage /> },

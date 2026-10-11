@@ -9,6 +9,7 @@ const STAT_TONE: Record<ForecastStat['tone'], string> = {
   warning: 'text-warning',
   error: 'text-error',
   neutral: 'text-muted-foreground',
+  default: 'text-foreground',
 };
 
 /** "Stat · Chuỗi mục tiêu": caption, the value in DA/Metric, a toned note. */
@@ -78,4 +79,14 @@ export function DataTable<T>({
       </table>
     </div>
   );
+}
+
+/** Saves a CSV; a BOM so Excel opens the Vietnamese text as UTF-8. */
+export function downloadCsv(name: string, text: string) {
+  const url = URL.createObjectURL(new Blob(['\ufeff', text], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
 }

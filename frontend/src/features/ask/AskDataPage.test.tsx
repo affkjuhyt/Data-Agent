@@ -4,10 +4,11 @@ import AskDataPage from './AskDataPage';
 import type { AskMessage } from './types';
 
 const send = vi.fn();
+const navigate = vi.fn();
 let messages: AskMessage[] = [];
 
 vi.mock('../../AppStateContext', () => ({
-  useAppState: () => ({ user: { id: 'u1', name: 'Đỗ Hải Yến' } }),
+  useAppState: () => ({ user: { id: 'u1', name: 'Đỗ Hải Yến' }, navigate }),
 }));
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
@@ -35,6 +36,7 @@ const conversation: AskMessage[] = [
 
 beforeEach(() => {
   send.mockReset();
+  navigate.mockReset();
   messages = [];
   localStorage.clear();
 });
@@ -64,6 +66,15 @@ describe('AskDataPage', () => {
     expect(screen.getByText(/Phiên của Đỗ Hải Yến · 1 câu hỏi/)).toBeInTheDocument();
     expect(screen.getByTestId('trust-label')).toHaveTextContent('Có quản trị');
     expect(screen.getByLabelText('Câu hỏi')).toHaveAttribute('placeholder', 'Hỏi tiếp…');
+  });
+
+  it('opens the receipt of an answer over the conversation, which stays', () => {
+    messages = conversation;
+    render(<AskDataPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Biên nhận' }));
+    expect(screen.getByRole('dialog', { name: 'Biên nhận câu trả lời' })).toBeInTheDocument();
+    expect(screen.getByTestId('trust-label')).toBeInTheDocument();
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it('opens Cách tính beside the conversation and closes it', () => {

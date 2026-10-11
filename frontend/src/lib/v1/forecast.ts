@@ -68,7 +68,8 @@ export interface ForecastStat {
   label: string;
   value: string;
   note: string;
-  tone: 'success' | 'warning' | 'error' | 'neutral';
+  /** neutral: a muted note; default: a plain one. */
+  tone: 'success' | 'warning' | 'error' | 'neutral' | 'default';
 }
 
 export interface ForecastVariable {
@@ -267,6 +268,199 @@ export const rejectModelVersion = async (versionId: string, reason: string) =>
     reason,
   });
 
+/* ─── Giá xăng dầu: phân phối, phân rã và sổ dự báo (UC-15-07, UC-15-08) ─ */
+
+/*
+ * The retail ceiling price of one fuel for the next adjustment period, computed by the price
+ * formula (world price, exchange rate, taxes and fees, the stabilisation Fund) under Monte Carlo
+ * simulation: a distribution, never a single number (BR-183). The Fund decision belongs to the
+ * ministries, so the model only estimates a probability per Fund level (BR-184). Every published
+ * forecast is written to the ledger before its period, is never edited, and is scored when the
+ * Ministry of Industry and Trade publishes the price; missed periods stay visible (BR-185).
+ * PROPOSAL: no fuel forecast resource exists in the spec yet.
+ */
+
+/** One sample of the simulated density; `density` is relative (the chart only needs its shape). */
+export interface DensityPoint {
+  price: number;
+  density: number;
+}
+
+export interface FuelPriceDistribution {
+  median: number;
+  lo80: number;
+  hi80: number;
+  lo95: number;
+  hi95: number;
+  /** P(ceiling above the previous period), 0–1. */
+  p_increase: number;
+  density: DensityPoint[];
+}
+
+export interface FuelFundLevel {
+  /** "Trích 200 đ/lít" */
+  label: string;
+  /** 0–1 */
+  probability: number;
+}
+
+/** A formula parameter in force, certified by someone other than who entered it (BR-182). */
+export interface FuelFormulaParameter {
+  /** "thue_bvmt_xang" */
+  key: string;
+  /** "2.000 đ/lít" */
+  value_text: string;
+  /** ISO date the value takes effect. */
+  effective_from: string;
+  /** The legal document it comes from, opened in the document viewer. */
+  legal_ref: { label: string; document_id: string | null };
+  certified_by_name: string;
+}
+
+export interface FuelForecastProduct {
+  forecast_id: string;
+  /** "E5RON92", "Diesel 0,05S" */
+  label: string;
+}
+
+export interface FuelFundScenario {
+  fund_level_label: string;
+  median: number;
+  lo80: number;
+  hi80: number;
+  lo95: number;
+  hi95: number;
+}
+
+export interface FuelPriceForecast {
+  id: string;
+  /** The ledger series of this fuel (UC-15-08). */
+  series_id: string;
+  product_label: string;
+  /** The run's other fuels, in tab order (this one included). */
+  products: FuelForecastProduct[];
+  /** ISO date of the adjustment period, "2026-07-09". */
+  period_date: string;
+  /** "dự kiến 15:00, theo nhịp thường lệ" */
+  period_note: string;
+  /** ISO time the simulation ran. */
+  run_at: string;
+  model: { version_label: string; simulations: number };
+  /** "không dùng Platts: số bình quân Bộ Công Thương công bố và chuỗi giá công khai" */
+  source_note: string;
+  /** The figures are illustrative (demo data); the screen says so in the title badge. */
+  illustrative: boolean;
+  unit_label: string;
+  previous: { period_date: string; ceiling: number; source_text: string };
+  distribution: FuelPriceDistribution;
+  /** Expected change from the previous ceiling, by formula component. */
+  decomposition: {
+    steps: { label: string; value: number }[];
+    /** The expected (mean) ceiling the steps add up to. */
+    expected: number;
+    /** The value axis starts here so small steps stay visible ("trục cắt từ 19.680"). */
+    axis_from: number;
+    source_note: string;
+  };
+  fund_levels: FuelFundLevel[];
+  parameters: FuelFormulaParameter[];
+  /** Days of the averaging window already known vs simulated. */
+  world_price: { known_days: number; total_days: number; simulated_range_text: string };
+  fund_scenario: FuelFundScenario | null;
+  /** Whether the viewer follows the publication schedule of this fuel. */
+  following_schedule: boolean;
+}
+
+export const listFuelPriceForecasts = () =>
+  v1Get<Page<FuelPriceForecast>>('/fuel-price-forecasts', { page_size: 20 });
+
+export const getFuelPriceForecast = async (id: string) =>
+  v1Get<FuelPriceForecast>(`/fuel-price-forecasts/${pathId(id)}`);
+
+/** Re-runs the simulation with the latest known world prices; returns the new run. */
+export const rerunFuelPriceForecast = async (id: string) =>
+  v1Send<FuelPriceForecast>('POST', `/fuel-price-forecasts/${pathId(id)}:rerun`);
+
+/** The distribution conditional on one Fund level, never a forecast of the Fund decision. */
+export const runFundScenario = async (id: string, fundLevel: string) =>
+  v1Send<FuelPriceForecast>('POST', `/fuel-price-forecasts/${pathId(id)}:run-fund-scenario`, {
+    fund_level: fundLevel,
+  });
+
+export const clearFundScenario = async (id: string) =>
+  v1Send<FuelPriceForecast>('POST', `/fuel-price-forecasts/${pathId(id)}:clear-fund-scenario`);
+
+/* Sổ dự báo (UC-15-08) */
+
+export interface ForecastLedgerRow {
+  /** ISO date of the period. */
+  period_date: string;
+  /** ISO time it was published, always before the period. */
+  published_at: string;
+  /** "bản tin" — the channel it was published through. */
+  channel_label: string;
+  median: number;
+  lo80: number;
+  hi80: number;
+  lo95: number;
+  hi95: number;
+  /** Null until the ministry publishes the price. */
+  actual: number | null;
+  /** actual − median; null while unscored. */
+  error: number | null;
+  inside80: boolean | null;
+  inside95: boolean | null;
+  /** Outside 95% or error above the miss threshold. */
+  missed: boolean;
+  /** "Giá thế giới thấp hơn dự kiến"; null when nothing stands out. */
+  main_driver: string | null;
+  /** The Error Book entry a missed period opened, "EB-0031". */
+  error_book_ref: string | null;
+}
+
+export interface ForecastLedger {
+  series_id: string;
+  product_label: string;
+  /** The other fuels' ledgers. */
+  products: { series_id: string; label: string }[];
+  model_version_label: string;
+  illustrative: boolean;
+  unit_label: string;
+  /** Calibration over a fixed N set by the model, whatever the window shows. */
+  calibration: {
+    periods: number;
+    inside80: number;
+    inside95: number;
+    /** Mean absolute error in the unit. */
+    mae: number;
+    /** CRPS relative to the naive "keep last price" forecast; −0.38 = 38% better. */
+    crps_vs_naive: number;
+    missed: number;
+    /** "ngoài 95% hoặc sai > 300 đ/lít" */
+    miss_rule_text: string;
+  };
+  /** Windows the table can show: "20 kỳ gần nhất". */
+  windows: { periods: number; label: string }[];
+  window_periods: number;
+  /** Newest first. */
+  rows: ForecastLedgerRow[];
+  following_schedule: boolean;
+}
+
+export const listForecastSeries = () =>
+  v1Get<Page<{ id: string; label: string }>>('/forecast-series', { page_size: 20 });
+
+/** The newest `periods` rows of the ledger; the calibration always covers the model's fixed N. */
+export const getForecastLedger = async (seriesId: string, periods?: number) =>
+  v1Get<ForecastLedger>(`/forecast-series/${pathId(seriesId)}/ledger`, { periods });
+
+/** Subscribe to (or leave) the pre- and post-period bulletins of one fuel. */
+export const followForecastSchedule = async (seriesId: string, follow: boolean) =>
+  v1Send<{ following: boolean }>(
+    'POST',
+    `/forecast-series/${pathId(seriesId)}:${follow ? 'follow' : 'unfollow'}`,
+  );
+
 /* ─── Formatting ──────────────────────────────────────────────────────── */
 
 const VN1 = new Intl.NumberFormat('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -280,3 +474,15 @@ export const formatTwo = (value: number) => VN2.format(value).replace('-', '−'
 /** +1,8 / −2,4 / 0,0 */
 export const formatSigned = (value: number) =>
   value > 0 ? `+${formatOne(value)}` : formatOne(value);
+
+const VN0 = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 });
+
+/** 19730 → "19.730"; −120 → "−120". */
+export const formatWhole = (value: number) => VN0.format(Math.round(value)).replace('-', '−');
+
+/** +180 / −24 / 0 */
+export const formatWholeSigned = (value: number) =>
+  value > 0 ? `+${formatWhole(value)}` : formatWhole(value);
+
+/** 0.72 → "72%" */
+export const formatPercent = (share: number) => `${Math.round(share * 100)}%`;

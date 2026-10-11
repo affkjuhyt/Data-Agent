@@ -30,6 +30,7 @@ import { AnswerTheme } from './components/AnswerTheme';
 import { EvidencePanel } from './components/EvidencePanel';
 import { ReportDialog } from './components/ReportDialog';
 import { SaveToKnowledgeDialog } from '../knowledge/SaveToKnowledgeDialog';
+import { ReceiptDrawer } from '../answer-receipt/AnswerReceiptPage';
 import type { AgentOption, AskMessage } from './types';
 
 /* ─── per-viewer convenience storage ─────────────────────────────── */
@@ -85,6 +86,7 @@ export default function AskDataPage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reportFor, setReportFor] = useState<AskMessage | null>(null);
+  const [receiptFor, setReceiptFor] = useState<string | null>(null);
   const [knowledgeFor, setKnowledgeFor] = useState<string | null>(null);
   const [reported, setReported] = useState<Record<string, AnswerReport>>({});
   const [listening, setListening] = useState(false);
@@ -330,6 +332,9 @@ export default function AskDataPage() {
                     }}
                     onReport={msg.content ? () => setReportFor(msg) : undefined}
                     onSaveKnowledge={msg.content ? () => setKnowledgeFor(msg.id) : undefined}
+                    /* The stream gives no server answer id yet (docs/v3/05-ui-v3.md §4), so this is the
+                       client message id: the receipt page shows "chưa có biên nhận" until it does. */
+                    onOpenReceipt={msg.content ? () => setReceiptFor(msg.id) : undefined}
                     reported={!!reported[msg.id]}
                     onStop={msg.status === 'streaming' ? stop : undefined}
                     onConfirmUnderstanding={choice => void confirmUnderstanding(msg.id, choice)}
@@ -397,6 +402,8 @@ export default function AskDataPage() {
         )}
       </div>
 
+      {/* The receipt opens over the conversation (Figma 2420:15098), so the turns stay. */}
+      <ReceiptDrawer answerId={receiptFor} onClose={() => setReceiptFor(null)} />
       {knowledgeFor && (
         <SaveToKnowledgeDialog answerId={knowledgeFor} onClose={() => setKnowledgeFor(null)} />
       )}

@@ -28,6 +28,7 @@ import { createAdminPlatformHandlers } from './adminPlatform';
 import { createAgentBuilderHandlers } from './agentBuilder';
 import { createAgentOpsHandlers } from './agentOps';
 import { createAlertHandlers } from './alerts';
+import { createAnswerReceiptHandlers } from './answerReceipts';
 import { createAnswerReportHandlers } from './answerReports';
 import { createDashboardHandlers } from './dashboards';
 import { createAuthorityHandlers } from './authorities';
@@ -81,6 +82,7 @@ export function createHandlers() {
     // documents: /documents/:id for the ids it holds (before sources), its own HITL request;
     // explore: marks a requested Data Space, then falls through to the access-request mock;
     // forecast: its own HITL request; skills before skill authoring (shared /skills/:id).
+    ...createAnswerReceiptHandlers(),
     ...createDocumentHandlers(),
     ...createExploreHandlers(),
     ...createForecastHandlers(),

@@ -6,10 +6,11 @@ import { useModalFocus } from './useModalFocus';
 /*
  * A panel from the right edge over the page ("Kết quả chạy thử agent" 2072:4944, Trung tâm thông
  * báo 2072:3821): full height on the scrim, --z-drawer, a header with the title, a caption and ×,
- * a scrolling body and an optional pinned footer. Widths: md 440, lg 560. Esc, the × and a click
+ * a scrolling body and an optional pinned footer. Widths: md 440, receipt 480 ("P01 · Biên nhận câu
+ * trả lời" 2420:15098), lg 560. Esc, the × and a click
  * on the scrim close it; focus is trapped like a dialog.
  */
-const WIDTH = { md: 'w-[440px]', lg: 'w-[560px]' } as const;
+const WIDTH = { md: 'w-[440px]', receipt: 'w-[480px]', lg: 'w-[560px]' } as const;
 
 export function Drawer({
   open,

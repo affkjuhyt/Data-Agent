@@ -66,6 +66,17 @@ describe('answer meta row', () => {
     expect(onSaveKnowledge).toHaveBeenCalledOnce();
   });
 
+  it('offers Biên nhận only where the screen handles it', () => {
+    const onOpenReceipt = vi.fn();
+    const { unmount } = wrap(<AnswerBlock msg={msg} />);
+    expect(screen.queryByRole('button', { name: 'Biên nhận' })).toBeNull();
+    unmount();
+
+    wrap(<AnswerBlock msg={msg} onOpenReceipt={onOpenReceipt} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Biên nhận' }));
+    expect(onOpenReceipt).toHaveBeenCalledOnce();
+  });
+
   it('marks a reported answer as under review', () => {
     wrap(<AnswerBlock msg={msg} onReport={vi.fn()} reported />);
     expect(screen.getByText('Đang kiểm tra')).toBeInTheDocument();
