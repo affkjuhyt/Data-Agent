@@ -9,11 +9,12 @@ import { EmptyState } from '../../design-system/EmptyState';
 import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { useToast } from '../../design-system/Toast';
-import { formatNumber } from '../../lib/formatVN';
+import { formatNumber, formatTime } from '../../lib/formatVN';
 import {
   discardErrorGroups,
   listErrorGroups,
   reloadErrorGroups,
+  skipErrorGroup,
   type ErrorRecordGroup,
 } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
@@ -22,7 +23,8 @@ import { useV1 } from '../../lib/v1/useV1';
  * "P04 · Bản ghi lỗi" (2281:17467, UC-04-07): records a job could not load, grouped by cause,
  * with the suggested fix. Selected groups are loaded again (in time order, without duplicates)
  * or dropped with a reason that goes to the audit log. A group whose cause is a structure change
- * loads only after that change is accepted; the right panel links to it.
+ * loads only after that change is accepted; the right panel links to it. "Bỏ qua lô" gives up on
+ * one batch: its records stay in the DLQ but never reach the table ("Xác nhận · skipBatch").
  */
 export default function ErrorRecordsPage() {
   const groups = useV1(listErrorGroups, []);
@@ -52,10 +54,12 @@ function ErrorGroups({ groups, onChanged }: { groups: ErrorRecordGroup[]; onChan
   const { navigate } = useAppState();
   const toast = useToast();
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState<'reload' | 'discard' | null>(null);
+  const [busy, setBusy] = useState<'reload' | 'discard' | 'skip' | null>(null);
   const [discarding, setDiscarding] = useState(false);
   const [reason, setReason] = useState('');
   const [discardError, setDiscardError] = useState<string>();
+  const [skipping, setSkipping] = useState<ErrorRecordGroup | null>(null);
+  const [skipError, setSkipError] = useState<string>();
 
   // Groups emptied by a reload or discard cannot be chosen again.
   const chosen = groups.filter((g) => selected.has(g.id) && g.count > 0);
@@ -112,6 +116,30 @@ function ErrorGroups({ groups, onChanged }: { groups: ErrorRecordGroup[]; onChan
     }
   };
 
+  const skip = async () => {
+    if (!skipping) return;
+    setBusy('skip');
+    setSkipError(undefined);
+    try {
+      await skipErrorGroup(skipping.id);
+      toast({
+        tone: 'success',
+        message: `Đã bỏ qua lô ${formatTime(skipping.batch_at)} · ${formatNumber(skipping.count)} bản ghi.`,
+      });
+      setSelected((s) => {
+        const next = new Set(s);
+        next.delete(skipping.id);
+        return next;
+      });
+      setSkipping(null);
+      onChanged();
+    } catch (e) {
+      setSkipError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div className="flex min-h-full flex-col">
       <PageHeader
@@ -158,6 +186,9 @@ function ErrorGroups({ groups, onChanged }: { groups: ErrorRecordGroup[]; onChan
                 <th className="w-[276px] px-da-md py-da-md font-normal max-[1279px]:hidden">
                   Cách xử lý gợi ý
                 </th>
+                <th className="w-[96px] px-da-md py-da-md">
+                  <span className="sr-only">Thao tác</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -183,6 +214,22 @@ function ErrorGroups({ groups, onChanged }: { groups: ErrorRecordGroup[]; onChan
                   </td>
                   <td className="px-da-md py-[9px] text-foreground da-body-small max-[1279px]:hidden">
                     {group.suggestion ?? '—'}
+                  </td>
+                  <td className="px-da-md py-[9px]">
+                    {group.count > 0 && (
+                      <button
+                        type="button"
+                        disabled={busy !== null}
+                        onClick={() => {
+                          setSkipError(undefined);
+                          setSkipping(group);
+                        }}
+                        aria-label={`Bỏ qua lô ${formatTime(group.batch_at)} · ${group.cause}`}
+                        className="whitespace-nowrap rounded-sm text-primary da-body-strong hover:underline disabled:text-muted-foreground"
+                      >
+                        Bỏ qua lô
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -228,6 +275,18 @@ function ErrorGroups({ groups, onChanged }: { groups: ErrorRecordGroup[]; onChan
           </p>
         </aside>
       </div>
+      <ConfirmDialog
+        open={skipping !== null}
+        title={`Bỏ qua lô ${skipping ? formatTime(skipping.batch_at) : ''}?`}
+        confirmLabel="Bỏ qua lô"
+        loading={busy === 'skip'}
+        error={skipError}
+        onConfirm={() => void skip()}
+        onCancel={() => setSkipping(null)}
+      >
+        {skipping &&
+          `${formatNumber(skipping.count)} bản ghi giữ trong DLQ ${skipping.retention_days} ngày, không vào ${skipping.target_table}.${skipping.impact_text ? ` ${skipping.impact_text}` : ''}`}
+      </ConfirmDialog>
       <ConfirmDialog
         open={discarding}
         size="md"

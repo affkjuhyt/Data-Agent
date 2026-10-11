@@ -8,18 +8,20 @@ import { EmptyState } from '../../design-system/EmptyState';
 import { Icon } from '../../design-system/Icon';
 import { Input } from '../../design-system/Input';
 import { Tabs } from '../../design-system/Tabs';
+import { useToast } from '../../design-system/Toast';
 import { formatTime } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
 import { listDataProducts, type DataProduct } from '../../lib/v1/dataProducts';
 import { useV1 } from '../../lib/v1/useV1';
 import { versionLabel } from './format';
+import { ImportCatalogDialog } from './ImportCatalogDialog';
 import { ProductDrawer } from './ProductDrawer';
 
 /*
  * "v3.1 · Dữ liệu · Sản phẩm dữ liệu" (2062:2601, UC-06-06): the products this Data Space offers
  * to the others, as cards (contract version, status, Data Spaces using it, quality, last refresh),
  * filtered by Của tôi / Đang được dùng / Chờ xuất bản, with the selected one in a drawer.
- * "Nhập từ catalog" is not drawn: no endpoint imports a product from an external catalog.
+ * "Nhập từ catalog" requests read access to products of other Data Spaces (ImportCatalogDialog).
  */
 type Filter = 'mine' | 'in_use' | 'pending';
 
@@ -32,6 +34,8 @@ export default function DataProductsPage() {
   const products = useV1(listDataProducts, []);
   const [filter, setFilter] = useState<Filter>('mine');
   const [query, setQuery] = useState('');
+  const [importing, setImporting] = useState(false);
+  const toast = useToast();
   // undefined = nothing picked yet: the drawer shows the first product, as drawn; null = closed.
   const [picked, setPicked] = useState<string | null | undefined>(routeId);
 
@@ -55,9 +59,12 @@ export default function DataProductsPage() {
           title="Sản phẩm dữ liệu"
           description="Dữ liệu Tài chính cung cấp cho các Data Space khác: contract, phiên bản, quyền và chất lượng."
           actions={
-            <Button kind="primary" icon="agent" onClick={() => navigate('data', 'DATA_MARTS')}>
-              Nhờ agent tạo sản phẩm
-            </Button>
+            <>
+              <Button onClick={() => setImporting(true)}>Nhập từ catalog</Button>
+              <Button kind="primary" icon="agent" onClick={() => navigate('data', 'DATA_MARTS')}>
+                Nhờ agent tạo sản phẩm
+              </Button>
+            </>
           }
         />
         <div className="flex items-center gap-da-md border-b border-border">
@@ -111,6 +118,15 @@ export default function DataProductsPage() {
         </AsyncRegion>
       </div>
       {selected && <ProductDrawer id={selected} onClose={() => setPicked(null)} />}
+      <ImportCatalogDialog
+        open={importing}
+        onClose={() => setImporting(false)}
+        onRequested={(count) => {
+          setImporting(false);
+          // copy: provisional, the frame has no success state.
+          toast({ tone: 'success', message: `Đã gửi ${count} yêu cầu dùng cho chủ sở hữu` });
+        }}
+      />
     </div>
   );
 }

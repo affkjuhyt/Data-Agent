@@ -138,9 +138,17 @@ export interface ModelRoute extends ModelConfig {
   eval_suite_name: string | null;
 }
 
-/** PROPOSAL: GET /v1/admin/ai-policy, the org-wide guardrails in the words shown to admins. */
+/** PROPOSAL: GET/PUT /v1/admin/ai-policy, the org-wide guardrails in the words shown to admins. */
 export interface AiPolicy {
   rules: { key: string; label: string; value_text: string }[];
+  /**
+   * PROPOSAL: the org switch for frontier providers (UC-11-05). Off = every call runs on the
+   * local models; on = calls whose whole context is labelled Công khai may go to a frontier
+   * provider approved by AC06. The server refuses `true` (409) while none is approved.
+   */
+  frontier_allowed: boolean;
+  /** PROPOSAL: the sensitivity routing rules, in order, as the policy guard applies them. */
+  routing_rules: string[];
 }
 
 /** PROPOSAL: GET /v1/admin/gpu-load?window=24h. */
@@ -171,6 +179,87 @@ export const runModelEvals = () =>
 
 export const rollbackModel = async (id: string) =>
   v1Send<ModelRoute>('POST', `/admin/models/${pathId(id)}:rollback`);
+
+/** PROPOSAL: turning frontier on or off is a policy change; it is audited server-side. */
+export const saveAiPolicy = (body: AiPolicy) => v1Send<AiPolicy>('PUT', '/admin/ai-policy', body);
+
+/* ─── Provider và định tuyến theo độ nhạy (UC-11-05, BR-180, BR-181) ───── */
+
+/** PROPOSAL: GET /v1/admin/providers, where the models run and whether data may go there. */
+export interface AiProvider {
+  id: string;
+  name: string;
+  /** "local" runs inside the bank; "frontier" is an outside API. */
+  kind: 'local' | 'frontier';
+  model_name: string;
+  /** Second line of the model cell: the secondary model, or how the provider may be used. */
+  model_note: string | null;
+  endpoint_label: string;
+  /** "llm.noibo.local · trong ngân hàng", "Vùng Singapore". */
+  region_text: string;
+  /** Zero data retention commitment; not applicable to a local provider. */
+  zero_retention: 'not_applicable' | 'committed' | 'verifying' | 'none';
+  /** Approval by the AC06 committee; a frontier provider is routed to only once approved. */
+  ac06_status: 'approved' | 'pending' | 'rejected';
+  /** Month-to-date spend and monthly budget in VND; both null for local (GPU hours). */
+  month_cost_vnd: number | null;
+  month_budget_vnd: number | null;
+  /** "2026-10": the month the spend counts. */
+  budget_month: string;
+}
+
+export interface NewProvider {
+  name: string;
+  kind: 'local' | 'frontier';
+  model_name: string;
+  endpoint: string;
+  region: string;
+  /** null for a local provider. */
+  month_budget_vnd: number | null;
+}
+
+/** PROPOSAL: one trial call through the provider. */
+export interface ProviderTest {
+  ok: boolean;
+  latency_ms: number | null;
+  /** Why it failed, in words for the admin. */
+  detail: string | null;
+}
+
+export type RoutingDecision = 'frontier' | 'blocked' | 'local';
+
+/** PROPOSAL: one row of the routing audit (BR-181): decision, reason, provider, asker. */
+export interface RoutingLogEntry {
+  id: string;
+  at: Timestamp;
+  question: string;
+  decision: RoutingDecision;
+  reason: string;
+  provider_name: string;
+  asked_by_name: string;
+}
+
+/** PROPOSAL: GET /v1/admin/routing-log?week=, a cursor page plus the week's counts. */
+export interface RoutingLog extends Page<RoutingLogEntry> {
+  /** ISO week, "2026-W41". */
+  week: string;
+  frontier_calls: number;
+  blocked_internal: number;
+  local_calls: number;
+}
+
+export const listProviders = () => v1Get<Page<AiProvider>>('/admin/providers', { page_size: 500 });
+
+/** PROPOSAL: a new frontier provider starts pending AC06 and is not routed to until approved. */
+export const addProvider = (body: NewProvider) =>
+  v1Send<AiProvider>('POST', '/admin/providers', body);
+
+export const testProvider = async (id: string) =>
+  v1Send<ProviderTest>('POST', `/admin/providers/${pathId(id)}:test`);
+
+/** Without `week` the server answers the current one. */
+export const getRoutingLog = (opts: { week?: string; page_size: number; page_token?: string }) =>
+  v1Get<RoutingLog>('/admin/routing-log', opts);
 
 /* ─── Tích hợp: client API, MCP, webhook (UC-12-01..04) ────────────────── */
 

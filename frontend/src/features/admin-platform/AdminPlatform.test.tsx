@@ -82,7 +82,6 @@ describe('ModelsPage', () => {
     renderPage(<ModelsPage />);
     expect(await screen.findByText('Qwen3-72B · GPU cụm A')).toBeInTheDocument();
     expect(screen.getByText('4,1 giây')).toBeInTheDocument();
-    expect(screen.getByText('Chặn yêu cầu lấy dữ liệu cá nhân hàng loạt')).toBeInTheDocument();
     expect(await screen.findByText(/Cao điểm 83% lúc 15:00/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Thao tác với Soạn báo cáo' }));
@@ -123,6 +122,100 @@ describe('ModelsPage', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await screen.findByText(/LLM-M 24B/)).toBeInTheDocument();
     expect(screen.getByText(/đang đánh giá/)).toBeInTheDocument();
+  });
+});
+
+describe('ModelsPage tabs', () => {
+  it('shows the AI policy on its own tab', async () => {
+    renderPage(<ModelsPage />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Chính sách AI' }));
+    expect(
+      await screen.findByText('Chặn yêu cầu lấy dữ liệu cá nhân hàng loạt'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Tải GPU 24 giờ')).toBeNull();
+  });
+
+  it('lists providers with AC06 status and cost, and calls one to test it', async () => {
+    renderPage(<ModelsPage />);
+    expect(
+      await screen.findByRole('tab', { name: 'Nhật ký định tuyến · 412' }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Provider' }));
+    expect(await screen.findByText('Provider · 3')).toBeInTheDocument();
+    const a = screen.getByText('Nhà cung cấp A (API)').closest('tr')!;
+    expect(within(a).getByText('Có cam kết')).toBeInTheDocument();
+    expect(within(a).getByText('18,4 / 30 triệu đ')).toBeInTheDocument();
+    expect(within(a).getByText('61% ngân sách tháng 10')).toBeInTheDocument();
+    const b = screen.getByText('Nhà cung cấp B (API)').closest('tr')!;
+    expect(within(b).getByText('Chờ duyệt AC06')).toBeInTheDocument();
+    expect(within(b).getByText('chưa phát sinh')).toBeInTheDocument();
+    expect(await screen.findByText('Nhật ký định tuyến · tuần 41')).toBeInTheDocument();
+    expect(screen.getByText('9.860')).toBeInTheDocument();
+    expect(screen.getByText('So sánh dư nợ CN Hà Nội với kế hoạch')).toBeInTheDocument();
+
+    fireEvent.click(within(a).getByRole('button', { name: 'Gọi thử Nhà cung cấp A (API)' }));
+    expect(await screen.findByText('Nhà cung cấp A (API) trả lời sau 1,3 s.')).toBeInTheDocument();
+    fireEvent.click(within(b).getByRole('button', { name: 'Gọi thử Nhà cung cấp B (API)' }));
+    expect(await screen.findByText(/Nhà cung cấp B \(API\) không trả lời/)).toBeInTheDocument();
+  });
+
+  it('turns frontier off and back on, each after a confirm', async () => {
+    renderPage(<ModelsPage />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Provider' }));
+    const toggle = await screen.findByRole('switch', { name: 'Cho phép frontier trong tổ chức' });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText('Đang bật')).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    let dialog = screen.getByRole('alertdialog', { name: 'Tắt frontier trong tổ chức?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tắt frontier' }));
+    expect(await screen.findByText('Đang tắt')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Cho phép frontier trong tổ chức' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Cho phép frontier trong tổ chức' }));
+    dialog = screen.getByRole('alertdialog', { name: 'Cho phép frontier trong tổ chức?' });
+    expect(within(dialog).getByText(/Nhà cung cấp A \(API\)/)).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Nhà cung cấp B/)).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Bật frontier' }));
+    expect(await screen.findByText('Đang bật')).toBeInTheDocument();
+  });
+
+  it('adds a frontier provider, which waits for AC06', async () => {
+    renderPage(<ModelsPage />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Provider' }));
+    await screen.findByText('Provider · 3');
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm provider' }));
+    const dialog = screen.getByRole('dialog', { name: 'Thêm provider' });
+    const submit = within(dialog).getByRole('button', { name: 'Thêm provider' });
+    expect(submit).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.change(within(dialog).getByLabelText('Tên'), { target: { value: 'Nhà cung cấp C' } });
+    fireEvent.change(within(dialog).getByLabelText('Mô hình'), { target: { value: 'Mô hình C' } });
+    fireEvent.change(within(dialog).getByLabelText('Địa chỉ'), {
+      target: { value: 'https://api.c.example/v1' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Ngân sách tháng (triệu đ)'), {
+      target: { value: '5' },
+    });
+    fireEvent.click(submit);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(
+      await screen.findByText('Đã thêm Nhà cung cấp C; chỉ được định tuyến sau khi AC06 duyệt.'),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('Provider · 4')).toBeInTheDocument();
+    const row = screen.getByText('Nhà cung cấp C').closest('tr')!;
+    expect(within(row).getByText('0 / 5 triệu đ')).toBeInTheDocument();
+  });
+
+  it('shows the whole week on the routing log tab', async () => {
+    renderPage(<ModelsPage />);
+    fireEvent.click(screen.getByRole('tab', { name: /Nhật ký định tuyến/ }));
+    expect(await screen.findByText('Top 10 khách hàng theo dư nợ')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Người hỏi' })).toBeInTheDocument();
+    expect(screen.getByText('09/10 09:42')).toBeInTheDocument();
+    expect(screen.getAllByRole('row')).toHaveLength(9);
   });
 });
 

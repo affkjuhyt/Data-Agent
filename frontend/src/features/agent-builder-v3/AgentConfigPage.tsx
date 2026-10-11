@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Checkbox } from '../../design-system/Checkbox';
+import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
 import { Segmented } from '../../design-system/Segmented';
@@ -95,6 +96,21 @@ function AgentBody({ agent, onSaved }: { agent: AgentDetail; onSaved: () => void
     checkpoints.some((c, i) => c.enabled !== agent.config.checkpoints[i]?.enabled);
   const triggersDirty = triggers.some((t, i) => t.description !== agent.triggers[i]?.description);
   const nextVersion = agent.config.version + 1;
+
+  // Leaving "Cấu hình" with unsaved edits asks first ("Xác nhận · cancelEdit" 2094:8561);
+  // confirming drops the edits so coming back shows the saved version.
+  const [leavingTo, setLeavingTo] = useState<Tab | null>(null);
+  const changeTab = (next: Tab) => {
+    if (tab === 'config' && next !== 'config' && (configDirty || triggersDirty)) setLeavingTo(next);
+    else setTab(next);
+  };
+  const discard = () => {
+    setAutonomy(agent.config.autonomy);
+    setCheckpoints(agent.config.checkpoints);
+    setTriggers(agent.triggers);
+    if (leavingTo) setTab(leavingTo);
+    setLeavingTo(null);
+  };
   const status = agent.status === 'draft' ? { label: 'Nháp', tone: 'idle' as const } : agentStatus(agent);
 
   const save = async () => {
@@ -168,7 +184,7 @@ function AgentBody({ agent, onSaved }: { agent: AgentDetail; onSaved: () => void
         }
         actions={actions}
       />
-      <Tabs<Tab> label="Phần của agent" items={TABS} value={tab} onChange={setTab} className="pl-da-2xl" />
+      <Tabs<Tab> label="Phần của agent" items={TABS} value={tab} onChange={changeTab} className="pl-da-2xl" />
       {(error ?? test.error) && !test.run && (
         <div className="px-da-3xl pt-da-lg">
           <Notice tone="error">Không thực hiện được: {error ?? test.error}</Notice>
@@ -250,6 +266,15 @@ function AgentBody({ agent, onSaved }: { agent: AgentDetail; onSaved: () => void
           onClose={test.close}
         />
       )}
+      <ConfirmDialog
+        open={leavingTo !== null}
+        title="Bỏ thay đổi chưa lưu?"
+        confirmLabel="Bỏ thay đổi"
+        onConfirm={discard}
+        onCancel={() => setLeavingTo(null)}
+      >
+        Các thay đổi trong bản nháp sẽ mất.
+      </ConfirmDialog>
     </div>
   );
 }

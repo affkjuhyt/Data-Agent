@@ -1,6 +1,6 @@
 /**
  * Bản ghi lỗi against the v1 mock: a group held by a structure change cannot reload; another
- * group is dropped with a reason.
+ * group is dropped with a reason; one batch is skipped after a confirm.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { setupServer } from 'msw/node';
@@ -76,5 +76,25 @@ describe('ErrorRecordsPage', () => {
     await waitFor(() =>
       expect(screen.getByRole('checkbox', { name: 'Thiếu customer_id' })).toBeDisabled(),
     );
+  });
+
+  it('skips one batch after confirming what it costs', async () => {
+    renderPage();
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Bỏ qua lô 08:00 · channel_code dài hơn 2 ký tự' }),
+    );
+    const dialog = screen.getByRole('alertdialog');
+    expect(within(dialog).getByText('Bỏ qua lô 08:00?')).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        '1.399 bản ghi giữ trong DLQ 30 ngày, không vào raw.card_transactions. Agent Theo dõi thẻ sẽ thiếu dữ liệu giao dịch thẻ hôm nay.',
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Bỏ qua lô' }));
+    expect(await screen.findByText('Đã bỏ qua lô 08:00 · 1.399 bản ghi.')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('checkbox', { name: 'channel_code dài hơn 2 ký tự' })).toBeDisabled(),
+    );
+    expect(screen.queryByRole('button', { name: /^Bỏ qua lô 08:00/ })).not.toBeInTheDocument();
   });
 });

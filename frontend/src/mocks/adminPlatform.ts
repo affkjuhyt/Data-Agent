@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw';
 import type {
   AgentOpsSummary,
   AiPolicy,
+  AiProvider,
   ChannelRules,
   GpuLoad,
   Integration,
@@ -10,14 +11,16 @@ import type {
   ModelRoute,
   NewIntegration,
   NewModel,
+  NewProvider,
   NotificationPreferences,
   OpsPeriod,
+  RoutingLogEntry,
   SystemHealth,
 } from '../lib/v1/adminPlatform';
 
 /*
  * MSW handlers for lib/v1/adminPlatform.ts. Data is the data drawn in the Figma frames
- * (Giám sát hệ thống 2237:15149, Vận hành agent 2058:1356, P11 Mô hình 2306:19746,
+ * (Giám sát hệ thống 2237:15149, Vận hành agent 2058:1356, P11 Mô hình 2306:19746 and its Provider tab 2436:15566,
  * P12 Tích hợp 2306:20082, Cài đặt 2324:20173 / 2272:16341, Kênh · Quy tắc 2112:12987).
  * State lives in memory: an added model or integration shows in the list, a rollback swaps
  * the model, saved notification choices come back on the next read.
@@ -370,7 +373,132 @@ export function aiPolicyFixture(): AiPolicy {
         value_text: '30 ngày, đã che dữ liệu cá nhân',
       },
     ],
+    frontier_allowed: true,
+    routing_rules: [
+      'Mặc định mọi lời gọi chạy trên vLLM tại chỗ.',
+      'Chỉ gửi frontier khi mọi dữ liệu trong ngữ cảnh có nhãn Công khai, hoặc câu hỏi ngoài phạm vi data product và không kèm dữ liệu nội bộ.',
+      'Policy guard kiểm nhãn của từng dữ liệu trước khi gọi; còn một nhãn Nội bộ trở lên thì chặn và chạy tại chỗ.',
+      'Mỗi lời gọi ghi kiểm toán: quyết định, lý do, provider, người hỏi (BR-180, BR-181).',
+    ],
   };
+}
+
+export function providersFixture(): AiProvider[] {
+  return [
+    {
+      id: 'prov-vllm',
+      name: 'vLLM tại chỗ',
+      kind: 'local',
+      model_name: 'Qwen3.6-27B',
+      model_note: 'Qwen3.6-35B-A3B',
+      endpoint_label: 'Cụm GPU nội bộ',
+      region_text: 'llm.noibo.local · trong ngân hàng',
+      zero_retention: 'not_applicable',
+      ac06_status: 'approved',
+      month_cost_vnd: null,
+      month_budget_vnd: null,
+      budget_month: '2026-10',
+    },
+    {
+      id: 'prov-a',
+      name: 'Nhà cung cấp A (API)',
+      kind: 'frontier',
+      model_name: 'Mô hình frontier A',
+      model_note: 'chỉ ngữ cảnh Công khai',
+      endpoint_label: 'Endpoint API nhà cung cấp A',
+      region_text: 'Vùng Singapore',
+      zero_retention: 'committed',
+      ac06_status: 'approved',
+      month_cost_vnd: 18_400_000,
+      month_budget_vnd: 30_000_000,
+      budget_month: '2026-10',
+    },
+    {
+      id: 'prov-b',
+      name: 'Nhà cung cấp B (API)',
+      kind: 'frontier',
+      model_name: 'Mô hình frontier B',
+      model_note: 'chưa được dùng',
+      endpoint_label: 'Endpoint API nhà cung cấp B',
+      region_text: 'Vùng chưa xác nhận',
+      zero_retention: 'verifying',
+      ac06_status: 'pending',
+      month_cost_vnd: 0,
+      month_budget_vnd: 10_000_000,
+      budget_month: '2026-10',
+    },
+  ];
+}
+
+/* Week 41's audit, newest first: the three rows of the frame, then older ones of the week. */
+export function routingLogFixture(): RoutingLogEntry[] {
+  const rows: [string, string, RoutingLogEntry['decision'], string, string][] = [
+    [
+      '2026-10-09T09:42:00+07:00',
+      'Giải thích khái niệm NIM là gì?',
+      'frontier',
+      'Ngoài phạm vi data product, không kèm dữ liệu',
+      'Nhà cung cấp A',
+    ],
+    [
+      '2026-10-09T09:31:00+07:00',
+      'So sánh dư nợ CN Hà Nội với kế hoạch',
+      'blocked',
+      'Có dữ liệu nhãn Nội bộ',
+      'vLLM tại chỗ',
+    ],
+    [
+      '2026-10-09T09:20:00+07:00',
+      'NPL bán lẻ T9 theo vùng',
+      'local',
+      'Dữ liệu nhãn Mật, mặc định',
+      'vLLM tại chỗ',
+    ],
+    [
+      '2026-10-09T08:57:00+07:00',
+      'Tóm tắt thông tư 02/2023 về cơ cấu nợ',
+      'frontier',
+      'Văn bản nhãn Công khai',
+      'Nhà cung cấp A',
+    ],
+    [
+      '2026-10-08T16:12:00+07:00',
+      'Huy động vốn CN Đà Nẵng tuần này',
+      'local',
+      'Dữ liệu nhãn Nội bộ, mặc định',
+      'vLLM tại chỗ',
+    ],
+    [
+      '2026-10-08T15:40:00+07:00',
+      'Viết lại email gửi khách hàng doanh nghiệp',
+      'blocked',
+      'Có tên khách hàng, nhãn Mật',
+      'vLLM tại chỗ',
+    ],
+    [
+      '2026-10-08T10:05:00+07:00',
+      'Lãi suất điều hành của NHNN hiện nay',
+      'frontier',
+      'Ngoài phạm vi data product, không kèm dữ liệu',
+      'Nhà cung cấp A',
+    ],
+    [
+      '2026-10-07T14:22:00+07:00',
+      'Top 10 khách hàng theo dư nợ',
+      'local',
+      'Dữ liệu nhãn Mật, mặc định',
+      'vLLM tại chỗ',
+    ],
+  ];
+  return rows.map(([at, question, decision, reason, provider_name], i) => ({
+    id: `route-${i + 1}`,
+    at,
+    question,
+    decision,
+    reason,
+    provider_name,
+    asked_by_name: i % 2 ? 'Trần Minh Anh' : 'Lê Quốc Huy',
+  }));
 }
 
 export function gpuLoadFixture(): GpuLoad {
@@ -647,6 +775,9 @@ export function createAdminPlatformHandlers() {
   let models = modelRoutesFixture();
   let integrations = integrationsFixture();
   let preferences = notificationPreferencesFixture();
+  let policy = aiPolicyFixture();
+  let providers = providersFixture();
+  const routingLog = routingLogFixture();
 
   return [
     http.get('*/v1/admin/system-health', () => HttpResponse.json(systemHealthFixture())),
@@ -698,7 +829,77 @@ export function createAdminPlatformHandlers() {
       models = models.map((m) => (m.id === id ? back : m));
       return HttpResponse.json(back);
     }),
-    http.get('*/v1/admin/ai-policy', () => HttpResponse.json(aiPolicyFixture())),
+    http.get('*/v1/admin/ai-policy', () => HttpResponse.json(policy)),
+    http.put('*/v1/admin/ai-policy', async ({ request }) => {
+      const body = (await request.json()) as AiPolicy;
+      const approved = providers.some((p) => p.kind === 'frontier' && p.ac06_status === 'approved');
+      if (body.frontier_allowed && !approved)
+        return problem(409, 'invalid_state', 'Chưa có provider frontier nào được AC06 duyệt.');
+      policy = { ...policy, frontier_allowed: body.frontier_allowed };
+      return HttpResponse.json(policy);
+    }),
+
+    http.get('*/v1/admin/providers', () => page(providers)),
+    http.post('*/v1/admin/providers', async ({ request }) => {
+      const body = (await request.json()) as NewProvider;
+      if (
+        !body.name?.trim() ||
+        !body.model_name?.trim() ||
+        !/^https?:\/\//.test(body.endpoint ?? '')
+      )
+        return problem(422, 'validation_failed', 'Cần tên, mô hình và địa chỉ http(s).');
+      const local = body.kind === 'local';
+      const added: AiProvider = {
+        id: `prov-${providers.length + 1}`,
+        name: body.name.trim(),
+        kind: body.kind,
+        model_name: body.model_name.trim(),
+        model_note: local ? null : 'chưa được dùng',
+        endpoint_label: new URL(body.endpoint).host,
+        region_text: body.region.trim() || 'Vùng chưa xác nhận',
+        zero_retention: local ? 'not_applicable' : 'verifying',
+        ac06_status: local ? 'approved' : 'pending',
+        month_cost_vnd: local ? null : 0,
+        month_budget_vnd: local ? null : body.month_budget_vnd,
+        budget_month: '2026-10',
+      };
+      providers = [...providers, added];
+      return HttpResponse.json(added, { status: 201 });
+    }),
+    http.post('*/v1/admin/providers/:action', ({ params }) => {
+      // MSW reads ":test" as part of the segment: "<id>:test".
+      const [id, verb] = String(params.action).split(':');
+      if (verb !== 'test') return problem(404, 'not_found', 'Không có thao tác này.');
+      const provider = providers.find((p) => p.id === id);
+      if (!provider) return problem(404, 'not_found', 'Không tìm thấy provider.');
+      if (provider.zero_retention === 'verifying')
+        return HttpResponse.json({
+          ok: false,
+          latency_ms: null,
+          detail: 'Endpoint chưa xác nhận vùng dữ liệu nên chưa nhận lời gọi.',
+        });
+      return HttpResponse.json({
+        ok: true,
+        latency_ms: provider.kind === 'local' ? 640 : 1280,
+        detail: null,
+      });
+    }),
+    http.get('*/v1/admin/routing-log', ({ request }) => {
+      const params = new URL(request.url).searchParams;
+      const week = params.get('week') ?? '2026-W41';
+      if (week !== '2026-W41') return problem(404, 'not_found', 'Chưa có nhật ký của tuần này.');
+      const size = Number(params.get('page_size') ?? 50);
+      const start = Number(params.get('page_token') || 0);
+      const end = start + size;
+      return HttpResponse.json({
+        items: routingLog.slice(start, end),
+        next_page_token: end < routingLog.length ? String(end) : '',
+        week,
+        frontier_calls: 412,
+        blocked_internal: 37,
+        local_calls: 9860,
+      });
+    }),
     http.get('*/v1/admin/gpu-load', () => HttpResponse.json(gpuLoadFixture())),
 
     http.get('*/v1/admin/integrations', () => page(integrations)),

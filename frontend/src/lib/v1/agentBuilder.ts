@@ -176,6 +176,12 @@ export interface AgentDeployment {
 
 export type MemoryScope = 'agent' | 'user' | 'data_space';
 
+/**
+ * PROPOSAL: when a memory stops applying ("Hạn" of "Hộp thoại · addMemory" 2095:8909): after 30 or
+ * 90 days, once people correct the agent twice where it applied, or never.
+ */
+export type MemoryExpiry = 'days_30' | 'days_90' | 'until_wrong_2' | 'never';
+
 /** agent.agent_memory */
 export interface AgentMemory {
   id: Uuid;
@@ -194,6 +200,8 @@ export interface AgentMemory {
   scope_text: string;
   /** PROPOSAL: the last run that used it; null when never used. */
   last_used_at: Timestamp | null;
+  /** PROPOSAL: see MemoryExpiry. */
+  expiry: MemoryExpiry;
 }
 
 export interface NewMemory {
@@ -201,7 +209,12 @@ export interface NewMemory {
   kind: AgentMemory['kind'];
   content: string;
   user_id?: Uuid;
+  /** PROPOSAL: defaults to days_90 when omitted. */
+  expiry?: MemoryExpiry;
 }
+
+/** PROPOSAL: the fields "Hộp thoại · editMemory" (2095:8961) changes. */
+export type MemoryPatch = Pick<AgentMemory, 'content' | 'scope' | 'expiry'>;
 
 /* ─── Endpoints ───────────────────────────────────────────────────────── */
 
@@ -254,5 +267,9 @@ export const listMemories = async (id: string) =>
 
 export const addMemory = async (id: string, body: NewMemory) =>
   v1Send<AgentMemory>('POST', `/agents/${pathId(id)}/memories`, body);
+
+/** PROPOSAL: PATCH /v1/memories/{id}; applies from the next run (a data_space scope re-enters review). */
+export const updateMemory = async (memoryId: string, body: MemoryPatch) =>
+  v1Send<AgentMemory>('PATCH', `/memories/${pathId(memoryId)}`, body);
 
 export const forgetMemory = async (memoryId: string) => v1Send<void>('DELETE', `/memories/${pathId(memoryId)}`);

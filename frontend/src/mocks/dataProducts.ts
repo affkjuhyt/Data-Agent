@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import type {
+  CatalogProduct,
   DataMart,
   DataProduct,
   DataProductDetail,
@@ -175,6 +176,28 @@ function productsFixture(): DataProductDetail[] {
   ];
 }
 
+/* "Hộp thoại · importCatalog" (2095:9055): products the other Data Spaces publish. */
+function catalogFixture(): CatalogProduct[] {
+  return [
+    {
+      id: 'cat-net-revenue',
+      code: 'net_revenue',
+      name: 'Doanh thu thuần theo ngày',
+      version: 'v4.1',
+      owner_space: { id: 'ds-retail-sales', name: 'Kinh doanh bán lẻ' },
+      has_pii: false,
+    },
+    {
+      id: 'cat-customer-360',
+      code: 'customer_360',
+      name: 'Hồ sơ khách hàng 360',
+      version: 'v2.0',
+      owner_space: { id: 'ds-crm', name: 'CRM' },
+      has_pii: true,
+    },
+  ];
+}
+
 /* "P06 · Quy tắc chất lượng" (2290:18318). */
 function rulesFixture(): QualityRule[] {
   const an = { id: 'u-tran-quoc-an', name: 'Trần Quốc An' };
@@ -283,6 +306,24 @@ export function createDataProductsHandlers() {
     }),
 
     http.get('*/v1/data-products', () => page(products.map(summary))),
+    // Before /data-products/:id, which would read "catalog" as an id.
+    http.get('*/v1/data-products/catalog', () => page(catalogFixture())),
+    http.post('*/v1/data-products\\:request-use', async ({ request }) => {
+      const body = (await request.json()) as { product_ids: string[]; data_space_id: string };
+      const known = catalogFixture().filter((p) => body.product_ids?.includes(p.id));
+      if (known.length === 0 || !body.data_space_id)
+        return problem(422, 'validation_failed', 'Chọn sản phẩm và Data Space dùng nó.');
+      return HttpResponse.json(
+        {
+          requests: known.map((p, i) => ({
+            id: `req-use-${i + 1}`,
+            product_id: p.id,
+            status: 'pending',
+          })),
+        },
+        { status: 202 },
+      );
+    }),
     http.get('*/v1/data-products/:id', ({ params }) => {
       const found = products.find((p) => p.id === params.id);
       return found

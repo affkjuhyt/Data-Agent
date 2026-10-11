@@ -5,6 +5,7 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Badge } from '../../design-system/Badge';
 import { Button } from '../../design-system/Button';
 import { Card } from '../../design-system/Card';
+import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { Icon } from '../../design-system/Icon';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
@@ -61,9 +62,16 @@ function Editor({ initial, onSaved }: { initial: SkillDefinition; onSaved: () =>
     steps.length !== initial.steps.length ||
     steps.some((s, i) => s.seq !== initial.steps[i]?.seq);
 
-  const onTab = (tab: Tab) => {
+  // A tab leaving the editor with unsaved edits asks first ("Xác nhận · cancelEdit" 2094:8561).
+  const [leavingTo, setLeavingTo] = useState<Tab | null>(null);
+  const go = (tab: Tab) => {
     if (tab === 'tests') navigate('agents', 'SKILL_TESTS', id);
     if (tab === 'versions') navigate('agents', 'SKILL_VERSIONS', id);
+  };
+  const onTab = (tab: Tab) => {
+    if (tab === 'definition') return;
+    if (dirty) setLeavingTo(tab);
+    else go(tab);
   };
 
   const runTrial = async () => {
@@ -244,6 +252,18 @@ function Editor({ initial, onSaved }: { initial: SkillDefinition; onSaved: () =>
           </Button>
         </div>
       </aside>
+      <ConfirmDialog
+        open={leavingTo !== null}
+        title="Bỏ thay đổi chưa lưu?"
+        confirmLabel="Bỏ thay đổi"
+        onConfirm={() => {
+          if (leavingTo) go(leavingTo);
+          setLeavingTo(null);
+        }}
+        onCancel={() => setLeavingTo(null)}
+      >
+        Các thay đổi trong bản nháp sẽ mất.
+      </ConfirmDialog>
     </div>
   );
 }

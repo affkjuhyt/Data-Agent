@@ -973,6 +973,9 @@ function errorGroupsFixture(): ErrorRecordGroup[] {
       sample:
         '{ "txn_id": "T26100800412", "amount": 1250000, "channel_code": "QR_DYN",\n  "card_no": "4111 •••• •••• 1093", "txn_time": "2026-10-08T07:58:12" }',
       retention_days: 30,
+      batch_at: new Date(2026, 9, 8, 8, 0).toISOString(),
+      target_table: 'raw.card_transactions',
+      impact_text: 'Agent Theo dõi thẻ sẽ thiếu dữ liệu giao dịch thẻ hôm nay.',
     },
     {
       id: 'err-customer-id',
@@ -985,6 +988,9 @@ function errorGroupsFixture(): ErrorRecordGroup[] {
       sample:
         '{ "txn_id": "T26100800977", "amount": 10000, "channel_code": "PO",\n  "customer_id": null, "txn_time": "2026-10-08T07:41:03" }',
       retention_days: 30,
+      batch_at: new Date(2026, 9, 8, 7, 45).toISOString(),
+      target_table: 'raw.card_transactions',
+      impact_text: null,
     },
     {
       id: 'err-date-range',
@@ -996,6 +1002,9 @@ function errorGroupsFixture(): ErrorRecordGroup[] {
       blocked_by_drift_id: null,
       sample: null,
       retention_days: 30,
+      batch_at: new Date(2026, 9, 8, 6, 0).toISOString(),
+      target_table: 'raw.branch_targets',
+      impact_text: null,
     },
   ];
 }
@@ -1678,6 +1687,15 @@ export function createSourcesHandlers() {
         ids.includes(g.id) ? { ...g, count: 0, suggestion: null, sample: null } : g,
       );
       return HttpResponse.json({ discarded });
+    }),
+    // Skipped records leave the reload queue but stay in the DLQ until retention runs out.
+    http.post('*/v1/error-record-groups/:action', ({ params }) => {
+      const [id, verb] = String(params.action).split(':');
+      const found = errorGroups.find((g) => g.id === id);
+      if (!found || verb !== 'skip') return problem(404, 'not_found', 'Không tìm thấy lô lỗi.');
+      const skipped = { ...found, count: 0, suggestion: null, sample: null };
+      errorGroups = errorGroups.map((g) => (g.id === id ? skipped : g));
+      return HttpResponse.json(skipped);
     }),
   ];
 }

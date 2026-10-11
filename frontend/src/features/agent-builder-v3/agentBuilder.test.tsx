@@ -123,14 +123,58 @@ describe('AgentConfigPage', () => {
     await waitFor(() => expect(screen.queryByText(/Báo cáo cho Ban điều hành/)).toBeNull());
 
     fireEvent.click(screen.getByRole('button', { name: 'Thêm ghi nhớ' }));
-    const field = screen.getByRole('textbox', { name: 'Ghi nhớ' });
+    const add = screen.getByRole('dialog', { name: 'Thêm ghi nhớ' });
+    expect(within(add).getByRole('combobox', { name: 'Loại' })).toHaveTextContent('Sở thích người dùng');
+    expect(within(add).getByRole('combobox', { name: 'Hạn' })).toHaveTextContent('90 ngày');
+    const field = within(add).getByRole('textbox', { name: 'Nội dung' });
     fireEvent.change(field, { target: { value: 'Khách hàng 0123456789 là khách VIP' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Lưu ghi nhớ' }));
-    expect(await screen.findByText(/không được chứa dữ liệu cá nhân/)).toBeInTheDocument();
+    fireEvent.click(within(add).getByRole('button', { name: 'Lưu ghi nhớ' }));
+    expect(await within(add).findByText(/không được chứa dữ liệu cá nhân/)).toBeInTheDocument();
 
     fireEvent.change(field, { target: { value: 'Quý tài chính bắt đầu từ tháng 4' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Lưu ghi nhớ' }));
+    fireEvent.click(within(add).getByRole('button', { name: 'Lưu ghi nhớ' }));
     expect(await screen.findByText('Quý tài chính bắt đầu từ tháng 4')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('edits a memory in a dialog', async () => {
+    routeId = 'agent-analysis';
+    wrap(<AgentConfigPage />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'Bộ nhớ' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Sửa: Khi giải thích nợ xấu/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Sửa ghi nhớ' });
+    expect(within(dialog).getByText('Thay đổi áp dụng cho lượt chạy tiếp theo.')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('combobox', { name: 'Loại' })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('combobox', { name: 'Hạn' })).toHaveTextContent('Tới khi sai 2 lần');
+
+    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Phạm vi' }));
+    fireEvent.click(within(dialog).getByRole('option', { name: 'Riêng agent này' }));
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Nội dung' }), {
+      target: { value: 'Khi giải thích nợ xấu, tách riêng khoản tái cơ cấu' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }));
+    expect(await screen.findByText('Đã lưu ghi nhớ')).toBeInTheDocument();
+    expect(await screen.findByText('Khi giải thích nợ xấu, tách riêng khoản tái cơ cấu')).toBeInTheDocument();
+    expect(screen.getByText('Agent này')).toBeInTheDocument();
+  });
+
+  it('asks before leaving the config tab with unsaved changes', async () => {
+    routeId = 'agent-reconcile';
+    wrap(<AgentConfigPage />);
+    fireEvent.click(await screen.findByRole('radio', { name: 'Chỉ gợi ý' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Bộ nhớ' }));
+    let dialog = screen.getByRole('alertdialog');
+    expect(within(dialog).getByText('Bỏ thay đổi chưa lưu?')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Huỷ' }));
+    expect(screen.getByRole('tab', { name: 'Cấu hình' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('radio', { name: 'Chỉ gợi ý' })).toBeChecked();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Bộ nhớ' }));
+    dialog = screen.getByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Bỏ thay đổi' }));
+    expect(screen.getByRole('tab', { name: 'Bộ nhớ' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(screen.getByRole('tab', { name: 'Cấu hình' }));
+    expect(screen.getByRole('button', { name: 'Lưu thành phiên bản v6' })).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('lists the runs of this agent and opens one', async () => {

@@ -133,6 +133,38 @@ export async function publishDataProduct(id: string) {
   return v1Send<DataProduct>('POST', `/data-products/${pathId(id)}:publish`);
 }
 
+/* ─── Catalog: products of other Data Spaces ("Hộp thoại · importCatalog" 2095:9055) ─── */
+
+/** PROPOSAL: a published product of another Data Space, as the shared catalog lists it. */
+export interface CatalogProduct {
+  id: string;
+  /** "customer_360" */
+  code: string;
+  name: string;
+  version: string;
+  /** The Data Space that owns it and grants read access. */
+  owner_space: { id: string; name: string };
+  /** Carries personal data: reading it needs the owner's approval. */
+  has_pii: boolean;
+}
+
+/** PROPOSAL: GET /v1/data-products/catalog — published products of the other Data Spaces. */
+export const listCatalogProducts = () => v1Get<Page<CatalogProduct>>('/data-products/catalog');
+
+/** PROPOSAL: one access request per product, decided by the owning Data Space. */
+export interface ProductUseRequest {
+  id: string;
+  product_id: string;
+  status: 'pending' | 'approved';
+}
+
+/**
+ * PROPOSAL: POST /v1/data-products:request-use → 202 with the access requests created; the
+ * products become readable in `data_space_id` once each owner approves.
+ */
+export const requestProductUse = (body: { product_ids: string[]; data_space_id: string }) =>
+  v1Send<{ requests: ProductUseRequest[] }>('POST', '/data-products:request-use', body);
+
 /* ─── Quality rule (ingest.quality_rule / quality_result) ─────────────── */
 
 export type RuleSeverity = 'block' | 'warn';

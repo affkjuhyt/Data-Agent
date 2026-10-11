@@ -62,6 +62,28 @@ describe('SkillEditorPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: /Kiểm thử/ }));
     expect(navigate).toHaveBeenCalledWith('agents', 'SKILL_TESTS', 'sk-variance');
   });
+
+  it('asks before a tab drops unsaved edits', async () => {
+    routeId = 'sk-variance';
+    wrap(<SkillEditorPage />);
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Hướng dẫn cho agent' }), {
+      target: { value: 'Luôn nêu kỳ so sánh.' },
+    });
+    fireEvent.click(screen.getByRole('tab', { name: /Phiên bản/ }));
+    let dialog = screen.getByRole('alertdialog');
+    expect(within(dialog).getByText('Bỏ thay đổi chưa lưu?')).toBeInTheDocument();
+    expect(within(dialog).getByText('Các thay đổi trong bản nháp sẽ mất.')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Huỷ' }));
+    expect(navigate).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox', { name: 'Hướng dẫn cho agent' })).toHaveValue(
+      'Luôn nêu kỳ so sánh.',
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: /Phiên bản/ }));
+    dialog = screen.getByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Bỏ thay đổi' }));
+    expect(navigate).toHaveBeenCalledWith('agents', 'SKILL_VERSIONS', 'sk-variance');
+  });
 });
 
 describe('SkillFromSessionPage', () => {

@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
-import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
+import { Dialog } from '../../design-system/Dialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
-import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { formatTime } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
@@ -14,21 +14,39 @@ import {
   addMemory,
   forgetMemory,
   listMemories,
+  updateMemory,
   type AgentMemory,
+  type MemoryExpiry,
   type MemoryScope,
 } from '../../lib/v1/agentBuilder';
 import { useV1 } from '../../lib/v1/useV1';
 
 /*
  * "P13 · Agent · Bộ nhớ" (2310:20345, UC-13-07): what the agent learnt from people, with where it
- * came from, how far it applies and when it was last used; "Quên" deletes one. A self-learnt or
+ * came from, how far it applies and when it was last used; "Sửa" opens the edit dialog, "Quên" deletes one. A self-learnt or
  * Data Space-wide memory only applies once the Data Space owner approves it, so it shows
  * "chờ duyệt" in warning.
  */
 const SCOPES: { value: MemoryScope; label: string }[] = [
-  { value: 'agent', label: 'Agent này' },
-  { value: 'user', label: 'Riêng tôi' },
+  { value: 'agent', label: 'Riêng agent này' },
+  { value: 'user', label: 'Riêng với tôi' },
   { value: 'data_space', label: 'Data Space (cần chủ sở hữu duyệt)' },
+];
+
+// copy: only "Sở thích người dùng" is drawn (2095:8909); the other three labels are provisional.
+const KINDS: { value: AgentMemory['kind']; label: string }[] = [
+  { value: 'preference', label: 'Sở thích người dùng' },
+  { value: 'domain_context', label: 'Kiến thức nghiệp vụ' },
+  { value: 'data_insight', label: 'Hiểu biết về dữ liệu' },
+  { value: 'decision', label: 'Quyết định' },
+];
+
+// copy: "90 ngày" and "Tới khi sai 2 lần" are drawn; "30 ngày" and "Không hết hạn" are provisional.
+const EXPIRIES: { value: MemoryExpiry; label: string }[] = [
+  { value: 'days_30', label: '30 ngày' },
+  { value: 'days_90', label: '90 ngày' },
+  { value: 'until_wrong_2', label: 'Tới khi sai 2 lần' },
+  { value: 'never', label: 'Không hết hạn' },
 ];
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -48,6 +66,7 @@ export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; 
   const toast = useToast();
   const memories = useV1(() => listMemories(agentId), [agentId]);
   const [forgetting, setForgetting] = useState<AgentMemory | null>(null);
+  const [editing, setEditing] = useState<AgentMemory | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -73,11 +92,13 @@ export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; 
         Agent ghi nhớ những điều người dùng dạy nó để lần sau làm đúng hơn. Mỗi ghi nhớ có nguồn gốc,
         phạm vi và có thể xoá.
       </p>
-      {adding && (
-        <NewMemoryForm
+      {(adding || editing) && (
+        <MemoryDialog
           agentId={agentId}
+          memory={editing}
           onDone={(saved) => {
-            onAddingDone();
+            if (editing) setEditing(null);
+            else onAddingDone();
             if (saved) memories.reload();
           }}
         />
@@ -103,7 +124,7 @@ export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; 
                 <th className="w-[230px] px-da-lg py-da-md font-normal">Từ đâu</th>
                 <th className="w-[150px] px-da-lg py-da-md font-normal">Phạm vi</th>
                 <th className="w-[120px] px-da-lg py-da-md font-normal">Dùng gần nhất</th>
-                <th className="w-[60px] px-da-lg py-da-md">
+                <th className="w-[110px] px-da-lg py-da-md">
                   <span className="sr-only">Thao tác</span>
                 </th>
               </tr>
@@ -120,6 +141,15 @@ export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; 
                     </td>
                     <td className="px-da-lg py-[9px] text-muted-foreground">{lastUsedText(memory.last_used_at)}</td>
                     <td className="px-da-lg py-[9px]">
+                      <span className="flex gap-da-md">
+                      <button
+                        type="button"
+                        onClick={() => setEditing(memory)}
+                        aria-label={`Sửa: ${memory.content}`}
+                        className="rounded-sm text-primary da-body-strong hover:underline"
+                      >
+                        Sửa
+                      </button>
                       <button
                         type="button"
                         onClick={() => setForgetting(memory)}
@@ -128,6 +158,7 @@ export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; 
                       >
                         Quên
                       </button>
+                      </span>
                     </td>
                   </tr>
                 );
@@ -159,10 +190,26 @@ export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; 
   );
 }
 
-function NewMemoryForm({ agentId, onDone }: { agentId: string; onDone: (saved: boolean) => void }) {
+/*
+ * "Hộp thoại · addMemory" (2095:8909) and "Hộp thoại · editMemory" (2095:8961): the same fields,
+ * except that the kind of a memory is fixed once it exists.
+ */
+function MemoryDialog({
+  agentId,
+  memory,
+  onDone,
+}: {
+  agentId: string;
+  /** null = a new memory. */
+  memory: AgentMemory | null;
+  onDone: (saved: boolean) => void;
+}) {
   const toast = useToast();
-  const [content, setContent] = useState('');
-  const [scope, setScope] = useState<MemoryScope>('agent');
+  const editing = memory !== null;
+  const [content, setContent] = useState(memory?.content ?? '');
+  const [kind, setKind] = useState<AgentMemory['kind']>(memory?.kind ?? 'preference');
+  const [scope, setScope] = useState<MemoryScope>(memory?.scope ?? 'agent');
+  const [expiry, setExpiry] = useState<MemoryExpiry>(memory?.expiry ?? 'days_90');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -170,52 +217,66 @@ function NewMemoryForm({ agentId, onDone }: { agentId: string; onDone: (saved: b
     setSaving(true);
     setError(undefined);
     try {
-      const memory = await addMemory(agentId, { scope, kind: 'domain_context', content: content.trim() });
+      const saved = editing
+        ? await updateMemory(memory.id, { content: content.trim(), scope, expiry })
+        : await addMemory(agentId, { scope, kind, content: content.trim(), expiry });
       toast({
         tone: 'success',
-        message: memory.status === 'pending_review' ? 'Đã gửi ghi nhớ cho chủ sở hữu Data Space duyệt' : 'Đã thêm ghi nhớ',
+        message:
+          saved.status === 'pending_review' && memory?.status !== 'pending_review'
+            ? 'Đã gửi ghi nhớ cho chủ sở hữu Data Space duyệt'
+            : editing
+              ? 'Đã lưu ghi nhớ'
+              : 'Đã thêm ghi nhớ',
       });
       onDone(true);
     } catch (e) {
-      setError((e as Error).message);
+      setError(`Không lưu được: ${(e as Error).message}`);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <form
-      className="flex flex-col gap-da-md rounded-lg border border-border p-da-lg"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (content.trim()) void save();
-      }}
+    <Dialog
+      open
+      title={editing ? 'Sửa ghi nhớ' : 'Thêm ghi nhớ'}
+      description={
+        editing
+          ? 'Thay đổi áp dụng cho lượt chạy tiếp theo.'
+          : 'Ghi nhớ giúp agent làm đúng ý bạn ở lượt sau.'
+      }
+      submitLabel={editing ? 'Lưu' : 'Lưu ghi nhớ'}
+      submitting={saving}
+      canSubmit={content.trim() !== ''}
+      error={error}
+      onSubmit={save}
+      onClose={() => onDone(false)}
     >
-      <div className="flex items-end gap-da-md max-[1023px]:flex-col max-[1023px]:items-stretch">
-        <div className="min-w-0 flex-1">
-          <Field label="Ghi nhớ">
-            <Input
-              autoFocus
-              className="w-full"
-              value={content}
-              onChange={(event) => setContent(event.target.value)}
-              placeholder="Ví dụ: “Miền Nam” gồm Đông Nam Bộ và ĐB sông Cửu Long"
-            />
-          </Field>
-        </div>
-        <div className="w-[260px] max-[1023px]:w-full">
-          <Field label="Phạm vi">
-            <Select<MemoryScope> label="Phạm vi" options={SCOPES} value={scope} onChange={setScope} />
-          </Field>
-        </div>
-        <Button kind="ghost" onClick={() => onDone(false)}>
-          Huỷ
-        </Button>
-        <Button kind="primary" type="submit" disabled={!content.trim()} loading={saving}>
-          Lưu ghi nhớ
-        </Button>
-      </div>
-      {error && <Notice tone="error">Không lưu được: {error}</Notice>}
-    </form>
+      <Field label="Nội dung" labelTone="muted">
+        {editing ? (
+          <Textarea autoFocus rows={3} value={content} onChange={(e) => setContent(e.target.value)} />
+        ) : (
+          <Input
+            autoFocus
+            className="w-full"
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            placeholder="Ví dụ: “Miền Nam” gồm Đông Nam Bộ và ĐB sông Cửu Long"
+          />
+        )}
+      </Field>
+      {!editing && (
+        <Field label="Loại" labelTone="muted">
+          <Select<AgentMemory['kind']> label="Loại" options={KINDS} value={kind} onChange={setKind} />
+        </Field>
+      )}
+      <Field label="Phạm vi" labelTone="muted">
+        <Select<MemoryScope> label="Phạm vi" options={SCOPES} value={scope} onChange={setScope} />
+      </Field>
+      <Field label="Hạn" labelTone="muted">
+        <Select<MemoryExpiry> label="Hạn" options={EXPIRIES} value={expiry} onChange={setExpiry} />
+      </Field>
+    </Dialog>
   );
 }

@@ -459,7 +459,14 @@ export interface ErrorRecordGroup {
   blocked_by_drift_id: Uuid | null;
   /** One record, personal data already masked, as the source sent it. */
   sample: string | null;
+  /** How long the records stay in the dead-letter queue (DLQ), also once a batch is skipped. */
   retention_days: number;
+  /** PROPOSAL: when the load batch these records came from ran ("Bỏ qua lô 08:00?"). */
+  batch_at: Timestamp;
+  /** PROPOSAL: the table the batch was loading into, schema-qualified ("raw.card_transactions"). */
+  target_table: string;
+  /** PROPOSAL: who misses data if the batch is skipped, one sentence; null when nobody reads it. */
+  impact_text: string | null;
 }
 
 export const listErrorGroups = () => v1Get<Page<ErrorRecordGroup>>('/error-record-groups', ALL);
@@ -471,6 +478,14 @@ export const reloadErrorGroups = (ids: string[]) =>
 /** PROPOSAL: :discard drops the groups; the reason goes to the audit log. */
 export const discardErrorGroups = (ids: string[], reason: string) =>
   v1Send<{ discarded: number }>('POST', '/error-record-groups:discard', { ids, reason });
+
+/**
+ * PROPOSAL: POST /v1/error-record-groups/{id}:skip — gives up on this batch: its records stay in
+ * the DLQ for `retention_days` and never reach the target table ("Xác nhận · skipBatch" 2094:8435).
+ */
+export async function skipErrorGroup(id: string) {
+  return v1Send<ErrorRecordGroup>('POST', `/error-record-groups/${pathId(id)}:skip`);
+}
 
 /* ─── Khám phá bảng (UC-04-02, UC-06-02) ──────────────────────────────── */
 

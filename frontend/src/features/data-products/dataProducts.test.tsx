@@ -74,6 +74,38 @@ describe('DataProductsPage', () => {
   });
 });
 
+describe('ImportCatalogDialog', () => {
+  it('requests use of products from another Data Space and flags PII', async () => {
+    wrap(<DataProductsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Nhập từ catalog' }));
+    const dialog = screen.getByRole('dialog', { name: 'Nhập sản phẩm từ catalog' });
+    expect(
+      within(dialog).getByText('Dùng sản phẩm dữ liệu của Data Space khác; quyền theo chủ sở hữu.'),
+    ).toBeInTheDocument();
+    const submit = within(dialog).getByRole('button', { name: 'Yêu cầu dùng' });
+    expect(submit).toHaveAttribute('aria-disabled', 'true');
+
+    fireEvent.click(
+      await within(dialog).findByRole('checkbox', { name: 'net_revenue · Kinh doanh bán lẻ · v4.1' }),
+    );
+    expect(within(dialog).queryByText(/chứa PII/)).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'customer_360 · CRM · v2.0' }));
+    expect(
+      within(dialog).getByText('customer_360 chứa PII; quyền đọc cần chủ sở hữu CRM duyệt.'),
+    ).toBeInTheDocument();
+
+    // The target defaults to the first Data Space; pick it explicitly by role, whatever its name.
+    const target = within(dialog).getByRole('combobox', { name: 'Dùng cho' });
+    await waitFor(() => expect(target).not.toBeDisabled());
+    fireEvent.click(target);
+    fireEvent.click(within(dialog).getAllByRole('option')[0]);
+
+    fireEvent.click(submit);
+    expect(await screen.findByText('Đã gửi 2 yêu cầu dùng cho chủ sở hữu')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+});
+
 describe('DataMartPage', () => {
   it('draws the first mart and sends a breaking change for approval', async () => {
     wrap(<DataMartPage />);

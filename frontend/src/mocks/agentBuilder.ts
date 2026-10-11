@@ -8,6 +8,7 @@ import type {
   AgentTrigger,
   ConfigInput,
   DraftRequest,
+  MemoryPatch,
   NewMemory,
   TestRun,
 } from '../lib/v1/agentBuilder';
@@ -177,7 +178,13 @@ const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString
 
 /** "P13 · Agent · Bộ nhớ" (2310:20345): what Agent Phân tích remembers. */
 function memoriesFixture(): AgentMemory[] {
-  const base = { agent_id: 'agent-analysis', user_id: null, use_count: 0, created_at: '2026-09-28T02:00:00Z' };
+  const base = {
+    agent_id: 'agent-analysis',
+    user_id: null,
+    use_count: 0,
+    created_at: '2026-09-28T02:00:00Z',
+    expiry: 'days_90' as const,
+  };
   return [
     {
       ...base,
@@ -185,6 +192,7 @@ function memoriesFixture(): AgentMemory[] {
       scope: 'data_space',
       kind: 'decision',
       content: 'Khi giải thích nợ xấu, tách riêng khoản tái cơ cấu chưa điều chỉnh',
+      expiry: 'until_wrong_2',
       source_kind: 'hitl',
       status: 'active',
       use_count: 4,
@@ -428,9 +436,33 @@ export function createAgentBuilderHandlers() {
         source_text: `${OWNER.name}, vừa thêm`,
         scope_text: { agent: 'Agent này', user: `Riêng ${OWNER.name}`, data_space: 'Data Space' }[body.scope],
         last_used_at: null,
+        expiry: body.expiry ?? 'days_90',
       };
       memories = [memory, ...memories];
       return HttpResponse.json(memory, { status: 201 });
+    }),
+
+    http.patch('*/v1/memories/:id', async ({ params, request }) => {
+      const found = memories.find((m) => m.id === params.id);
+      if (!found) return problem(404, 'not_found', 'Không tìm thấy ghi nhớ.');
+      const body = (await request.json()) as MemoryPatch;
+      if (!body.content?.trim()) return problem(422, 'validation_failed', 'Ghi nhớ không được để trống.');
+      if (/\d{9,}/.test(body.content))
+        return problem(422, 'business_rule_violated', 'Ghi nhớ không được chứa dữ liệu cá nhân như số tài khoản.');
+      const updated: AgentMemory = {
+        ...found,
+        content: body.content.trim(),
+        scope: body.scope,
+        expiry: body.expiry,
+        // Widening to the Data Space goes back to the owner, as a new one would.
+        status: body.scope === 'data_space' && found.scope !== 'data_space' ? 'pending_review' : found.status,
+        scope_text:
+          body.scope === found.scope
+            ? found.scope_text
+            : { agent: 'Agent này', user: `Riêng ${OWNER.name}`, data_space: 'Data Space' }[body.scope],
+      };
+      memories = memories.map((m) => (m.id === found.id ? updated : m));
+      return HttpResponse.json(updated);
     }),
 
     http.delete('*/v1/memories/:id', ({ params }) => {
