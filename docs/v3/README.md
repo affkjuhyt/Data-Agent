@@ -25,7 +25,9 @@
    ORM, routines viết tay, biến phiên RLS, `scoped_session`, kiểm thử.
 9. [08-legacy-cutover.md](08-legacy-cutover.md): bảng kiểm kê deployable cũ, replacement V3 và điều kiện
    xoá từng workload; không xoá theo một đợt khi replacement chưa có.
-10. [10-design-checklist.md](10-design-checklist.md): đã làm được gì của tài liệu thiết kế hệ thống (UC và tiêu chí
+10. [09-target-deploy-and-cleanup.md](09-target-deploy-and-cleanup.md): kiến trúc đích theo ADR-28 (5 khối + `web`,
+   `migrate`), quy tắc đặt tên, lộ trình xoá dịch vụ cũ G0–G5, triển khai theo tab 6, việc tiếp của API.
+11. [10-design-checklist.md](10-design-checklist.md): đã làm được gì của tài liệu thiết kế hệ thống (UC và tiêu chí
     nghiệm thu, endpoint, bảng, BR, màn, ADR) và audit; cách dùng ở [checklist/README.md](checklist/README.md).
 
 Người mới và phiên Claude mới: đọc 00 §0 và §3.2, rồi 04; lấy ID đầu tiên `todo` mà phụ thuộc đã `done`.
