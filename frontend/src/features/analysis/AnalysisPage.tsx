@@ -4,6 +4,7 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Badge } from '../../design-system/Badge';
 import { Button } from '../../design-system/Button';
 import { Card } from '../../design-system/Card';
+import { EmptyState } from '../../design-system/EmptyState';
 import { Icon } from '../../design-system/Icon';
 import { LinkCard } from '../../design-system/LinkCard';
 import { StatusDot } from '../../design-system/StatusDot';
@@ -17,7 +18,8 @@ import { AskBar } from '../home/AskBar';
 /*
  * "v3.1 · Phân tích" (2155:16027, UC-01-01, UC-02-01): where analysis starts. 16×32 padding,
  * 20px gap: header with actions, the question bar, four ways to start, recent sessions, and the
- * certified datasets. The "Dashboard" block of the design has no API yet (no /v1/dashboards).
+ * certified datasets. With no session yet the recent list gives way to "v3.1 · Phân tích · Trống"
+ * (2165:17070), which points to Khám phá.
  */
 const PENDING = 'Màn này đang được làm.';
 
@@ -62,7 +64,12 @@ export default function AnalysisPage() {
       />
 
       <div className="grid grid-cols-4 gap-da-lg max-[1023px]:grid-cols-2">
-        <LinkCard icon="chart" title="Khám phá kéo thả" corner="chevron" pendingReason={PENDING}>
+        <LinkCard
+          icon="chart"
+          title="Khám phá kéo thả"
+          corner="chevron"
+          onOpen={() => navigate('analysis', 'EXPLORE')}
+        >
           <span className="text-muted-foreground da-caption">
             Chọn chỉ số và chiều, không cần SQL
           </span>
@@ -87,53 +94,75 @@ export default function AnalysisPage() {
             Kết hợp câu hỏi, SQL, biểu đồ với agent
           </span>
         </LinkCard>
-        <LinkCard icon="file" title="Báo cáo định kỳ" corner="chevron" pendingReason={PENDING}>
+        <LinkCard
+          icon="file"
+          title="Báo cáo định kỳ"
+          corner="chevron"
+          onOpen={() => navigate('analysis', 'REPORTS')}
+        >
           <span className="text-muted-foreground da-caption">
             Agent soạn, bạn duyệt rồi phát hành
           </span>
         </LinkCard>
       </div>
 
-      <Card title="Phiên gần đây">
-        <AsyncRegion
-          state={workspaces}
-          what="phiên làm việc"
-          isEmpty={(page) => page.items.length === 0}
-          empty={
-            <p className="text-muted-foreground da-body-small">
-              Chưa có phiên nào. Bấm “Phiên mới” để bắt đầu.
-            </p>
+      {workspaces.data && workspaces.data.items.length === 0 ? (
+        <EmptyState
+          icon="chart"
+          title="Chưa có dashboard hay phiên nào"
+          description="Hỏi một câu ở ô phía trên, hoặc mở Khám phá để kéo thả chỉ số đầu tiên."
+          className="rounded-lg border border-border bg-card"
+          action={
+            <div className="flex gap-da-sm">
+              <Button kind="primary" onClick={() => navigate('analysis', 'EXPLORE')}>
+                Mở Khám phá
+              </Button>
+              <Button onClick={() => navigate('home', 'HOW_IT_WORKS')}>Xem ví dụ</Button>
+            </div>
           }
-        >
-          {(page) => (
-            <ul className="flex flex-col">
-              {page.items.slice(0, 5).map((ws) => (
-                <li key={ws.id}>
-                  <button
-                    type="button"
-                    onClick={() => navigate('analysis', 'SESSIONS')}
-                    className="flex w-full items-center gap-da-md border-b border-border py-da-sm text-left hover:bg-subtle"
-                  >
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate text-foreground da-body-strong">{ws.title}</span>
-                      <span className="text-muted-foreground da-caption">
-                        {[
-                          FROM_LABEL[ws.created_from],
-                          ws.participants.people > 1 ? `${ws.participants.people} người` : null,
-                          ws.participants.agents > 0 ? `${ws.participants.agents} agent` : null,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
+        />
+      ) : (
+        <Card title="Phiên gần đây">
+          <AsyncRegion
+            state={workspaces}
+            what="phiên làm việc"
+            isEmpty={(page) => page.items.length === 0}
+            empty={
+              <p className="text-muted-foreground da-body-small">
+                Chưa có phiên nào. Bấm “Phiên mới” để bắt đầu.
+              </p>
+            }
+          >
+            {(page) => (
+              <ul className="flex flex-col">
+                {page.items.slice(0, 5).map((ws) => (
+                  <li key={ws.id}>
+                    <button
+                      type="button"
+                      onClick={() => navigate('analysis', 'SESSIONS')}
+                      className="flex w-full items-center gap-da-md border-b border-border py-da-sm text-left hover:bg-subtle"
+                    >
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate text-foreground da-body-strong">{ws.title}</span>
+                        <span className="text-muted-foreground da-caption">
+                          {[
+                            FROM_LABEL[ws.created_from],
+                            ws.participants.people > 1 ? `${ws.participants.people} người` : null,
+                            ws.participants.agents > 0 ? `${ws.participants.agents} agent` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </span>
                       </span>
-                    </span>
-                    <SessionState ws={ws} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </AsyncRegion>
-      </Card>
+                      <SessionState ws={ws} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </AsyncRegion>
+        </Card>
+      )}
 
       <section aria-labelledby="certified-title" className="flex flex-col gap-da-md">
         <h2 id="certified-title" className="text-foreground da-heading-3">
