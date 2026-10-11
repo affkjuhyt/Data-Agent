@@ -155,6 +155,24 @@ curl -sf -X PUT \
     > /dev/null
 echo "  → realm $REALM uses the data-agent login theme"
 
+# ── 7. Realm roles added after the first import ────────────────────────
+# The realm import only applies to a new realm; a running one gets roles added later here.
+# exec_vault gates P16 Kho riêng (frontend rail item + the vault API); it is only created,
+# never granted: an admin assigns it per person.
+echo
+echo "🔐 Realm role exec_vault..."
+if curl -sf -H "Authorization: Bearer $TOKEN" "$KC_BASE/admin/realms/$REALM/roles/exec_vault" > /dev/null; then
+    echo "  → exec_vault already present"
+else
+    curl -sf -X POST \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"name":"exec_vault","description":"P16 Kho riêng lãnh đạo. Granted per person by an admin, never by default."}' \
+        "$KC_BASE/admin/realms/$REALM/roles" \
+        > /dev/null
+    echo "  → created exec_vault"
+fi
+
 echo
 echo "✅ Audience mappers configured + test users unblocked. Tokens from"
 echo "   $TARGET_CLIENT will include: ${AUDIENCES[*]} in the aud claim."

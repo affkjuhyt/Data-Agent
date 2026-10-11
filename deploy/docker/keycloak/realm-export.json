@@ -113,6 +113,14 @@
         "clientRole": false,
         "containerId": "53471ee8-bae0-42c1-b2f4-89cdde7272aa",
         "attributes": {}
+      },
+      {
+        "name": "exec_vault",
+        "description": "P16 Kho riêng lãnh đạo: private theses, end-to-end encrypted in the browser. Granted per person by an admin, never by default.",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "53471ee8-bae0-42c1-b2f4-89cdde7272aa",
+        "attributes": {}
       }
     ],
     "client": {
