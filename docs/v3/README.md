@@ -25,6 +25,8 @@
    ORM, routines viết tay, biến phiên RLS, `scoped_session`, kiểm thử.
 9. [08-legacy-cutover.md](08-legacy-cutover.md): bảng kiểm kê deployable cũ, replacement V3 và điều kiện
    xoá từng workload; không xoá theo một đợt khi replacement chưa có.
+10. [10-design-checklist.md](10-design-checklist.md): đã làm được gì của tài liệu thiết kế hệ thống (UC và tiêu chí
+    nghiệm thu, endpoint, bảng, BR, màn, ADR) và audit; cách dùng ở [checklist/README.md](checklist/README.md).
 
 Người mới và phiên Claude mới: đọc 00 §0 và §3.2, rồi 04; lấy ID đầu tiên `todo` mà phụ thuộc đã `done`.
 Quy tắc repo (test trong container, so baseline lint, outbox, naming) ở `CLAUDE.md` gốc.

@@ -1,0 +1,4 @@
+id	status	owner	note
+ADR-28	partial	data-agent-80	Khối api (backend/services/api) phục vụ /v1; worker-ingest, worker-agent, crawler, ml-forecast chưa có
+ADR-31	done	data-agent-80	libs/dataagent_db.scoped_session đặt app.org_id bằng set_config(..., true) mỗi giao dịch, tắt statement cache; test tích hợp tests/integration/api
+ADR-48	partial	data-agent-80	OpenAPI sinh từ FastAPI, cổng so với A2 (catalogue/check.py); Schemathesis chưa chạy

@@ -7,7 +7,7 @@ PY_IMAGE ?= localhost:5000/dataagent/workflow_runtime:latest
 DOCKER_RUN_PY = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(PY_IMAGE)
 
 .PHONY: help lint type test test-unit test-integration test-changed deadcode frontend-lint frontend-test ci e2e \
-        deploy fmt bench bench-gate bench-e2e mock-api contract-compat
+        deploy fmt bench bench-gate bench-e2e mock-api contract-compat design-checklist design-audit
 
 help:  ## List targets
 	@grep -hE '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -65,6 +65,13 @@ test:  ## unit + integration suites, all at once (same suites as CI python-test 
 test-changed:  ## only the suites the changes since CHANGED_BASE (default main) can affect
 	@$(RUN_SUITES) changed --base $(CHANGED_BASE)
 
+# Stdlib only and reads files, like tests/run_suites.py, so it runs on the host interpreter.
+design-checklist:  ## rewrite docs/v3/10-design-checklist.md: design coverage from code evidence + status.tsv
+	python3 tests/design_checklist.py
+
+design-audit:  ## fail when 10-design-checklist.md is stale or a declared status contradicts the evidence
+	python3 tests/design_checklist.py --check
+
 deadcode:  ## vulture (python) + knip (frontend)
 	$(DOCKER_RUN_PY) sh -c "pip install -q vulture && vulture"
 	npm --workspace frontend run deadcode
@@ -75,7 +82,7 @@ frontend-lint:  ## tsc --noEmit
 frontend-test:  ## vitest
 	npm --workspace frontend run test
 
-ci: lint type test frontend-lint frontend-test contract-compat  ## everything CI runs, locally
+ci: lint type test frontend-lint frontend-test contract-compat design-audit  ## everything CI runs, locally
 
 # Same check as the CI contract-compat job (NOP-152). Locally HEAD is a branch, not
 # a merge commit, so the agreed contract is the one at the merge-base. Exit 2 (the

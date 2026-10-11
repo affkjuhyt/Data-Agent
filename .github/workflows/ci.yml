@@ -30,6 +30,10 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ruff-base"
           git archive HEAD^1 -- pyproject.toml '*.py' | tar -x -C "$RUNNER_TEMP/ruff-base"
           python tests/ruff_ratchet.py --base-dir "$RUNNER_TEMP/ruff-base"
+      # docs/v3/checklist/README.md: the design checklist is regenerated with every change it
+      # reflects, and no declared status may contradict what the code shows.
+      - name: design checklist · current and consistent (BLOCKING)
+        run: python tests/design_checklist.py --check
 
   python-type:
     name: Python · mypy
