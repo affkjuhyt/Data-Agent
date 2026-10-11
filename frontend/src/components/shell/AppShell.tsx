@@ -4,7 +4,7 @@ import { AREA_RAILS, AREAS, firstPageOf, isRailPage, railItemOf } from '../../co
 import { AppTopBar } from './AppTopBar';
 import { CommandPalette } from './CommandPalette';
 import { SideRail } from './SideRail';
-import type { AreaId } from './areas';
+import type { AreaId, RailGroup } from './areas';
 import { useRailCounts } from './useRailCounts';
 import { useShellCounts } from './useShellCounts';
 import { setDataSpace } from '../../lib/v1/client';
@@ -19,6 +19,21 @@ import { useAuth } from '../../lib/AuthProvider';
  * 208px rail stay fixed, only the main region scrolls. The rail shows on an area's rail pages;
  * landings and off-rail pages get the full width. ⌘K / Ctrl+K opens the command palette.
  */
+// "exec-vault" and "exec_vault" are the same capability, whichever way Keycloak spells it.
+const normalise = (role: string) => role.toLowerCase().replace(/-/g, '_');
+
+/** The rail groups the viewer may see: items needing a capability they lack are left out. */
+export function railFor(groups: RailGroup[] | undefined, roles: string[]): RailGroup[] | undefined {
+  if (!groups) return undefined;
+  const held = new Set(roles.map(normalise));
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.requires || held.has(normalise(item.requires))),
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
 export function AppShell({
   children,
   initialSpaceId = '',
@@ -28,10 +43,12 @@ export function AppShell({
   initialSpaceId?: string;
 }) {
   const { activeModule, subTab, navigate, setSubTab, user } = useAppState();
-  const { logout } = useAuth();
+  const { logout, user: authUser } = useAuth();
   const area = activeModule as AreaId;
   const page = subTab[area] ?? firstPageOf(area);
-  const rail = isRailPage(area, page) ? AREA_RAILS[area] : undefined;
+  const rail = isRailPage(area, page)
+    ? railFor(AREA_RAILS[area], authUser?.roles ?? [])
+    : undefined;
   // Only the area whose rail is on screen; a landing page draws no rail and loads no counts.
   const railCounts = useRailCounts(rail ? area : undefined);
   const counts = useShellCounts();

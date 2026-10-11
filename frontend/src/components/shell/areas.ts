@@ -27,6 +27,11 @@ export const AREAS: AreaDef[] = [
 export interface RailItem {
   id: string;
   label: string;
+  /**
+   * A capability the viewer must hold for the item to show (a realm role in the token, e.g.
+   * "exec_vault"); hidden otherwise. Only the rail entry: the page and the API still check.
+   */
+  requires?: string;
 }
 
 export interface RailGroup {

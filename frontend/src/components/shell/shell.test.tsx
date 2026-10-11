@@ -134,3 +134,16 @@ describe('SideRail and PageHeader', () => {
     expect(screen.getByRole('button', { name: 'Tạo agent' })).toBeInTheDocument();
   });
 });
+
+describe('railFor', () => {
+  it('leaves out an item whose capability the viewer lacks, and an emptied group', async () => {
+    const { railFor } = await import('./AppShell');
+    const groups = [
+      { label: 'Phân tích', items: [{ id: 'ASK', label: 'Hỏi đáp' }, { id: 'VAULT', label: 'Kho riêng', requires: 'exec_vault' }] },
+      { label: 'Riêng', items: [{ id: 'ONLY', label: 'Chỉ lãnh đạo', requires: 'exec_vault' }] },
+    ];
+    expect(railFor(groups, [])?.map((g) => g.items.map((i) => i.id))).toEqual([['ASK']]);
+    // Keycloak may spell the role with a hyphen.
+    expect(railFor(groups, ['EXEC-VAULT'])?.flatMap((g) => g.items.map((i) => i.id))).toEqual(['ASK', 'VAULT', 'ONLY']);
+  });
+});
