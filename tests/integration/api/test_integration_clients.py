@@ -322,10 +322,13 @@ async def test_br_48_a_client_granted_to_someone_else_waits_for_them(seed: Seed)
     async with client(org, kc, "kc-ac01") as owner:
         mine = (await owner.get("/v1/me/clients", params={"status": "pending_owner"})).json()
         assert [c["id"] for c in mine["items"]] == [pending["id"]]
-        confirmed = await owner.post(f"/v1/me/clients/{pending['id']}:confirm")
+        seen = {"If-Match": f'"{mine["items"][0]["updated_at"]}"'}
+        blind = await owner.post(f"/v1/me/clients/{pending['id']}:confirm")
+        assert blind.status_code == 412
+        confirmed = await owner.post(f"/v1/me/clients/{pending['id']}:confirm", headers=seen)
         assert confirmed.status_code == 200, confirmed.text
         assert confirmed.json()["status"] == "active" and confirmed.json()["owner_confirmed_at"]
-        again = await owner.post(f"/v1/me/clients/{pending['id']}:confirm")
+        again = await owner.post(f"/v1/me/clients/{pending['id']}:confirm", headers=seen)
     assert again.status_code == 409 and again.json()["code"] == "invalid_state"
 
 
@@ -359,7 +362,10 @@ async def test_br_48_widening_by_someone_else_asks_the_owner_again(seed: Seed) -
             )
         ).json()
     async with client(org, kc, "kc-ac01") as owner:
-        await owner.post(f"/v1/me/clients/{made['id']}:confirm")
+        seen = {"If-Match": f'"{made["updated_at"]}"'}
+        assert (
+            await owner.post(f"/v1/me/clients/{made['id']}:confirm", headers=seen)
+        ).status_code == 200
     async with client(org, kc) as admin:
         narrowed = await admin.patch(f"/v1/admin/clients/{made['id']}", json={"quota_per_day": 10})
         widened = await admin.patch(
@@ -371,3 +377,24 @@ async def test_br_48_widening_by_someone_else_asks_the_owner_again(seed: Seed) -
         "pending_owner",
         None,
     )
+
+
+async def test_br_48_owner_confirms_only_the_scope_they_saw(seed: Seed) -> None:
+    org, kc = build(seed), FakeKeycloak()
+    async with client(org, kc) as admin:
+        made = (
+            await admin.post(
+                "/v1/admin/clients",
+                json=new_client(org, owner_user_id=str(org.analyst), tools=["ask_question"]),
+            )
+        ).json()
+        # Widened between the owner's look and their click.
+        await admin.patch(
+            f"/v1/admin/clients/{made['id']}",
+            json={"tools": ["ask_question", "get_metric_definition"]},
+        )
+    async with client(org, kc, "kc-ac01") as owner:
+        stale = await owner.post(
+            f"/v1/me/clients/{made['id']}:confirm", headers={"If-Match": f'"{made["updated_at"]}"'}
+        )
+    assert stale.status_code == 412 and stale.json()["code"] == "precondition_failed"

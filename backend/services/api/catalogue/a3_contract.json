@@ -4617,7 +4617,7 @@
    ],
    "body": {},
    "query": [],
-   "returns": "ApiClient, status active, owner_confirmed_at đặt; chỉ chính người phụ trách được gọi",
+   "returns": "ApiClient, status active, owner_confirmed_at đặt; chỉ chính người phụ trách được gọi. If-Match bắt buộc (ETag của client như người phụ trách đã xem), để họ không đồng ý một phạm vi đã bị sửa sau khi xem",
    "errors": [
     [
      404,
@@ -4626,6 +4626,10 @@
     [
      409,
      "invalid_state"
+    ],
+    [
+     412,
+     "precondition_failed"
     ]
    ],
    "request_text": "—"

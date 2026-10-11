@@ -975,7 +975,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/admin/clients/{id}:revoke | reason\* | ApiClient. Token đang dùng bị vô hiệu ngay | — |
 | GET /v1/admin/clients/{id}/usage | ?from, ?to, ?granularity, ?tool | Danh sách UsageCounter | — |
 | GET /v1/me/clients | ?status | Danh sách ApiClient có owner\_user\_id là người gọi | — |
-| POST /v1/me/clients/{id}:confirm | — | ApiClient, status active, owner\_confirmed\_at đặt; chỉ chính người phụ trách được gọi | 404 not\_found (không phải client của người gọi); 409 invalid\_state (client không ở pending\_owner) |
+| POST /v1/me/clients/{id}:confirm | — | ApiClient, status active, owner\_confirmed\_at đặt; chỉ chính người phụ trách được gọi. If-Match bắt buộc (ETag của client như người phụ trách đã xem), để họ không đồng ý một phạm vi đã bị sửa sau khi xem | 404 not\_found (không phải client của người gọi); 409 invalid\_state (client không ở pending\_owner); 412 precondition\_failed (thiếu If-Match hoặc client đã đổi) |
 | POST /v1/webhooks | api\_client\_id\*, event\_types\*, target\_url\* | WebhookSubscription. Phản hồi kèm khoá ký HMAC một lần | 422 business\_rule\_violated (địa chỉ không thuộc danh sách đích được phép) |
 | GET /v1/webhooks/{id}/deliveries | ?status, ?from, ?to | Danh sách WebhookDelivery | — |
 | POST /v1/webhook-deliveries/{id}:retry | — | 202, Location tới webhook\_delivery | — |
