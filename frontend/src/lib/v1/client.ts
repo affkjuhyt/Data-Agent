@@ -174,3 +174,26 @@ export async function v1Upload<T = unknown>(path: string, form: FormData): Promi
   if (!res.ok) throw await failure(res);
   return (await res.json()) as T;
 }
+
+/**
+ * GET a short Server-Sent Events stream and return its events once it ends — for answers that
+ * arrive whole in a few events (P16 Hỏi riêng), not for token streams (features/ask/sse.ts).
+ */
+export async function v1Events(path: string): Promise<{ event: string; data: string }[]> {
+  const res = await fetch(`${BASE}${safePath(path)}`, {
+    headers: headers({ Accept: 'text/event-stream' }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) throw await failure(res);
+  return (await res.text())
+    .split(/\r?\n\r?\n/)
+    .filter((block) => block.trim())
+    .map((block) => {
+      const lines = block.split(/\r?\n/);
+      const field = (name: string) =>
+        lines
+          .filter((l) => l.startsWith(`${name}:`))
+          .map((l) => l.slice(name.length + 1).trimStart());
+      return { event: field('event')[0] ?? 'message', data: field('data').join('\n') };
+    });
+}

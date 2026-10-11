@@ -60,6 +60,7 @@ const GlossaryPage = React.lazy(() => import('./features/semantics/GlossaryPage'
 const ContextEvalPage = React.lazy(() => import('./features/semantics/ContextEvalPage'));
 const AnswerProductsPage = React.lazy(() => import('./features/answer-products/AnswerProductsPage'));
 const ErrorBookPage = React.lazy(() => import('./features/error-book/ErrorBookPage'));
+const VaultPage = React.lazy(() => import('./features/vault/VaultPage'));
 const PacksPage = React.lazy(() => import('./features/packs/PacksPage'));
 const PackInstallPage = React.lazy(() => import('./features/packs/PackInstallPage'));
 const PackOnboardPage = React.lazy(() => import('./features/packs/PackOnboardPage'));
@@ -173,6 +174,8 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     // /analysis/report/<id>, under "Phiên làm việc"; Cần bạn report_publish cards open it.
     REPORT:    { render: () => <ReportReviewPage /> },
     DASHBOARD: { render: () => <DashboardPage /> },
+    // P16 Kho riêng: the executive vault, four tabs on one page.
+    VAULT:     { render: () => <VaultPage /> },
     EXPLORE:         { render: () => <ExplorePage /> },
     // /analysis/artifact/<id>: an answer's or notebook's artifact, full screen.
     ARTIFACT:        { render: () => <ArtifactPage /> },

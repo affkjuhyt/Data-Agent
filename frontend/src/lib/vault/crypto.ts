@@ -21,8 +21,8 @@ const sodium = sodiumModule;
 export const ready = sodium.ready;
 
 const B64 = () => sodium.base64_variants.ORIGINAL;
-const toB64 = (bytes: Uint8Array) => sodium.to_base64(bytes, B64());
-const fromB64 = (text: string) => sodium.from_base64(text, B64());
+export const toB64 = (bytes: Uint8Array) => sodium.to_base64(bytes, B64());
+export const fromB64 = (text: string) => sodium.from_base64(text, B64());
 /*
  * libsodium checks `instanceof Uint8Array` against its own realm; bytes from TextEncoder (and from
  * jsdom in tests) can come from another one and are refused as "unsupported input type". Every
@@ -70,7 +70,7 @@ function open(key: Uint8Array, sealed: Uint8Array, aad: string): Uint8Array {
 }
 
 /** Overwrite secret bytes before letting them go. */
-function wipe(bytes: Uint8Array | null | undefined) {
+export function wipe(bytes: Uint8Array | null | undefined) {
   if (bytes) sodium.memzero(bytes);
 }
 
@@ -83,7 +83,7 @@ interface KdfSpec {
 }
 
 /** "argon2id;t=3;m=268435456" or "prf-hkdf-sha256" — what VaultKeyWrap.kdf stores. */
-function kdfString(spec: KdfSpec): string {
+export function kdfString(spec: KdfSpec): string {
   return spec.kind === 'argon2id'
     ? `argon2id;t=${spec.opsLimit};m=${spec.memLimit}`
     : 'prf-hkdf-sha256';

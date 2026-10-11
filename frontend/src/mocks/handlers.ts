@@ -21,6 +21,7 @@ import { createDataPrepHandlers } from './dataPrep';
 import { createAnswerProductHandlers } from './answerProducts';
 import { createDataProductsHandlers } from './dataProducts';
 import { createErrorBookHandlers } from './errorBook';
+import { createExecHandlers } from './exec';
 import { createDocumentHandlers } from './documents';
 import { createExploreHandlers } from './explore';
 import { createForecastHandlers } from './forecast';
@@ -118,6 +119,7 @@ export function createHandlers() {
     ...createPackHandlers(),
     ...createSemanticLayerHandlers(),
     ...createErrorBookHandlers(),
+    ...createExecHandlers(),
     ...createCollaborationHandlers(),
     ...createInboxHandlers(),
     ...createHomeHandlers(),
