@@ -65,3 +65,65 @@ class WorkspaceSummary(BaseModel):
 
 class WorkspaceDetail(WorkspaceSummary):
     tiles: list[TileView]
+
+
+class ShareCreate(BaseModel):
+    principal_type: Literal["user", "group"]
+    principal_id: uuid.UUID
+    permission: Literal["view", "comment", "edit"]
+    expires_at: datetime.datetime | None = None
+
+
+class ShareView(ShareCreate):
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+
+
+class ParticipantCreate(BaseModel):
+    principal_type: Literal["user", "agent"]
+    principal_id: uuid.UUID
+    role: Literal["owner", "editor", "viewer", "agent_helper"]
+
+
+class ParticipantView(ParticipantCreate):
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    joined_at: datetime.datetime
+
+
+class CommentCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=8_000)
+    mentions: list[uuid.UUID] = Field(default_factory=list)
+    assignee_id: uuid.UUID | None = None
+    due_at: datetime.datetime | None = None
+
+
+class CommentPatch(BaseModel):
+    body: str | None = Field(default=None, min_length=1, max_length=8_000)
+    status: Literal["open", "done"] | None = None
+
+
+class CommentView(CommentCreate):
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    tile_id: uuid.UUID | None
+    author_id: uuid.UUID
+    status: str
+    resolved_at: datetime.datetime | None
+
+
+class ReportCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+    body_ref: str = Field(min_length=1, max_length=2_000)
+
+
+class ReportView(BaseModel):
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    version: int
+    title: str
+    body_ref: str
+    checks: Any
+    status: str
+    approved_by: uuid.UUID | None
+    published_at: datetime.datetime | None

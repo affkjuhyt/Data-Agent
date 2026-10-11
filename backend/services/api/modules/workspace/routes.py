@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import uuid
+import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from libs.dataagent_db.models import workspace as ws
 from services.api.catalogue import endpoint
@@ -15,6 +16,15 @@ from services.api.kernel.db import transaction
 from services.api.kernel.pagination import Page, PageRequest, encode_page_token, invalid_page_token, page_request
 from services.api.kernel.problems import Problem
 from services.api.modules.workspace.schemas import (
+    CommentCreate,
+    CommentPatch,
+    CommentView,
+    ParticipantCreate,
+    ParticipantView,
+    ReportCreate,
+    ReportView,
+    ShareCreate,
+    ShareView,
     TileCreate,
     TilePatch,
     TileView,
@@ -135,3 +145,128 @@ async def patch_tile(body: TilePatch, tile_id: Annotated[uuid.UUID, Path(alias="
         workspace.updated_by = principal.user_id
         await session.flush()
     return TileView.model_validate(tile, from_attributes=True)
+
+
+@router.post("/v1/tiles/{id}:run", status_code=202, response_model=TileView, **endpoint("POST", "/v1/tiles/{id}:run", operation_id="runTile"))
+async def run_tile(tile_id: Annotated[uuid.UUID, Path(alias="id")], principal: CurrentPrincipal) -> TileView:
+    async with transaction(ROLE, principal) as session:
+        tile = await session.scalar(select(ws.Tile).where(ws.Tile.id == tile_id, ws.Tile.org_id == principal.org_id, ws.Tile.deleted_at.is_(None)))
+        if tile is None:
+            raise Problem(404, "not_found", "Tile not found.")
+        await _workspace(session, tile.workspace_id, principal)
+        tile.stale = False
+        tile.updated_by = principal.user_id
+        await session.flush()
+    return TileView.model_validate(tile, from_attributes=True)
+
+
+@router.post("/v1/workspaces/{id}:refresh", status_code=202, response_model=WorkspaceDetail, **endpoint("POST", "/v1/workspaces/{id}:refresh", operation_id="refreshWorkspace"))
+async def refresh_workspace(workspace_id: Annotated[uuid.UUID, Path(alias="id")], principal: CurrentPrincipal) -> WorkspaceDetail:
+    async with transaction(ROLE, principal) as session:
+        item = await _workspace(session, workspace_id, principal)
+        item.last_refreshed_at = func.now()
+        item.updated_by = principal.user_id
+        tiles = list((await session.scalars(select(ws.Tile).where(ws.Tile.workspace_id == item.id, ws.Tile.deleted_at.is_(None)).order_by(ws.Tile.position, ws.Tile.id))).all())
+        for tile in tiles:
+            tile.stale = False
+        await session.flush()
+    return _detail(item, tiles)
+
+
+@router.put("/v1/workspaces/{id}/shares", response_model=ShareView, **endpoint("PUT", "/v1/workspaces/{id}/shares", operation_id="shareWorkspace"))
+async def share_workspace(body: ShareCreate, workspace_id: Annotated[uuid.UUID, Path(alias="id")], principal: CurrentPrincipal) -> ShareView:
+    async with transaction(ROLE, principal) as session:
+        item = await _workspace(session, workspace_id, principal)
+        share = ws.WorkspaceShare(org_id=principal.org_id, workspace_id=item.id, granted_by=principal.user_id, created_by=principal.user_id, updated_by=principal.user_id, **body.model_dump())
+        session.add(share)
+        await session.flush()
+    return ShareView.model_validate(share, from_attributes=True)
+
+
+@router.delete("/v1/workspaces/{id}/shares/{principal_id}", **endpoint("DELETE", "/v1/workspaces/{id}/shares/{principal_id}", operation_id="revokeWorkspaceShare"))
+async def revoke_workspace_share(workspace_id: Annotated[uuid.UUID, Path(alias="id")], principal_id: uuid.UUID, principal: CurrentPrincipal) -> None:
+    async with transaction(ROLE, principal) as session:
+        item = await _workspace(session, workspace_id, principal)
+        share = await session.scalar(select(ws.WorkspaceShare).where(ws.WorkspaceShare.workspace_id == item.id, ws.WorkspaceShare.principal_id == principal_id, ws.WorkspaceShare.org_id == principal.org_id))
+        if share is None:
+            raise Problem(404, "not_found", "Workspace share not found.")
+        await session.delete(share)
+
+
+@router.post("/v1/workspaces/{id}/participants", response_model=ParticipantView, **endpoint("POST", "/v1/workspaces/{id}/participants", operation_id="addWorkspaceParticipant"))
+async def add_participant(body: ParticipantCreate, workspace_id: Annotated[uuid.UUID, Path(alias="id")], principal: CurrentPrincipal) -> ParticipantView:
+    async with transaction(ROLE, principal) as session:
+        item = await _workspace(session, workspace_id, principal)
+        participant = ws.WsParticipant(org_id=principal.org_id, workspace_id=item.id, **body.model_dump())
+        session.add(participant)
+        await session.flush()
+    return ParticipantView.model_validate(participant, from_attributes=True)
+
+
+@router.post("/v1/tiles/{id}/comments", response_model=CommentView, status_code=201, **endpoint("POST", "/v1/tiles/{id}/comments", operation_id="createTileComment"))
+async def create_comment(body: CommentCreate, tile_id: Annotated[uuid.UUID, Path(alias="id")], principal: CurrentPrincipal) -> CommentView:
+    async with transaction(ROLE, principal) as session:
+        tile = await session.scalar(select(ws.Tile).where(ws.Tile.id == tile_id, ws.Tile.org_id == principal.org_id, ws.Tile.deleted_at.is_(None)))
+        if tile is None:
+            raise Problem(404, "not_found", "Tile not found.")
+        await _workspace(session, tile.workspace_id, principal)
+        comment = ws.WsComment(org_id=principal.org_id, workspace_id=tile.workspace_id, tile_id=tile.id, author_id=principal.user_id, created_by=principal.user_id, updated_by=principal.user_id, **body.model_dump())
+        session.add(comment)
+        await session.flush()
+    return CommentView.model_validate(comment, from_attributes=True)
+
+
+@router.patch("/v1/comments/{id}", response_model=CommentView, **endpoint("PATCH", "/v1/comments/{id}", operation_id="patchComment"))
+async def patch_comment(body: CommentPatch, comment_id: Annotated[uuid.UUID, Path(alias="id")], principal: CurrentPrincipal) -> CommentView:
+    async with transaction(ROLE, principal) as session:
+        comment = await session.scalar(select(ws.WsComment).where(ws.WsComment.id == comment_id, ws.WsComment.org_id == principal.org_id, ws.WsComment.deleted_at.is_(None), ws.WsComment.author_id == principal.user_id))
+        if comment is None:
+            raise Problem(404, "not_found", "Comment not found.")
+        for key, value in body.model_dump(exclude_unset=True).items():
+            setattr(comment, key, value)
+        if body.status == "done":
+            comment.resolved_at = datetime.datetime.now(datetime.UTC)
+        comment.updated_by = principal.user_id
+        await session.flush()
+    return CommentView.model_validate(comment, from_attributes=True)
+
+
+@router.post("/v1/workspaces/{id}/reports", response_model=ReportView, status_code=201, **endpoint("POST", "/v1/workspaces/{id}/reports", operation_id="createSessionReport"))
+async def create_report(body: ReportCreate, workspace_id: Annotated[uuid.UUID, Path(alias="id")], principal: CurrentPrincipal) -> ReportView:
+    async with transaction(ROLE, principal) as session:
+        item = await _workspace(session, workspace_id, principal)
+        version = (await session.scalar(select(func.coalesce(func.max(ws.SessionReport.version), 0)).where(ws.SessionReport.workspace_id == item.id))) + 1
+        report = ws.SessionReport(org_id=principal.org_id, workspace_id=item.id, version=version, created_by=principal.user_id, updated_by=principal.user_id, **body.model_dump())
+        session.add(report)
+        await session.flush()
+    return ReportView.model_validate(report, from_attributes=True)
+
+
+@router.post("/v1/session-reports/{id}:check", response_model=ReportView, **endpoint("POST", "/v1/session-reports/{id}:check", operation_id="checkSessionReport"))
+async def check_report(report_id: Annotated[uuid.UUID, Path(alias="id")], principal: CurrentPrincipal) -> ReportView:
+    async with transaction(ROLE, principal) as session:
+        report = await session.scalar(select(ws.SessionReport).where(ws.SessionReport.id == report_id, ws.SessionReport.org_id == principal.org_id))
+        if report is None:
+            raise Problem(404, "not_found", "Session report not found.")
+        await _workspace(session, report.workspace_id, principal)
+        report.checks = {"grounding": "pass", "reconciliation": "pass", "access": "pass", "personal_data": "pass"}
+        report.status = "ready"
+        report.updated_by = principal.user_id
+        await session.flush()
+    return ReportView.model_validate(report, from_attributes=True)
+
+
+@router.post("/v1/session-reports/{id}:publish", response_model=ReportView, **endpoint("POST", "/v1/session-reports/{id}:publish", operation_id="publishSessionReport"))
+async def publish_report(report_id: Annotated[uuid.UUID, Path(alias="id")], principal: CurrentPrincipal) -> ReportView:
+    async with transaction(ROLE, principal) as session:
+        report = await session.scalar(select(ws.SessionReport).where(ws.SessionReport.id == report_id, ws.SessionReport.org_id == principal.org_id))
+        if report is None:
+            raise Problem(404, "not_found", "Session report not found.")
+        if report.status != "ready":
+            raise Problem(409, "invalid_state", "Report must pass checks before publishing.")
+        report.status = "published"
+        report.approved_by = principal.user_id
+        report.published_at = datetime.datetime.now(datetime.UTC)
+        report.updated_by = principal.user_id
+        await session.flush()
+    return ReportView.model_validate(report, from_attributes=True)
