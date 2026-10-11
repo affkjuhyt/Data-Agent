@@ -48,3 +48,26 @@ def test_api03_workspace_core_routes_are_registered() -> None:
         ("POST", "/v1/session-reports/{id}:check"),
         ("POST", "/v1/session-reports/{id}:publish"),
     } <= routes
+
+
+def test_api04_inbox_and_eval_routes_are_registered() -> None:
+    app = create_app(Settings(), token_verifier=lambda: None)  # type: ignore[arg-type]
+    routes = {(next(iter(route.methods)), route.path) for route in app.routes if route.path.startswith("/v1/")}
+    assert {
+        ("GET", "/v1/inbox"),
+        ("GET", "/v1/hitl-requests/{id}"),
+        ("POST", "/v1/hitl-requests/{id}:resolve"),
+        ("GET", "/v1/proposals/{id}"),
+        ("POST", "/v1/proposals/{id}:decide"),
+        ("POST", "/v1/eval-sets/{id}/items"),
+        ("POST", "/v1/eval-sets/{id}/runs"),
+        ("GET", "/v1/eval-runs/{id}"),
+        ("GET", "/v1/error-book-entries"),
+        ("POST", "/v1/error-book-entries"),
+        ("GET", "/v1/error-book-entries/{id}"),
+        ("PATCH", "/v1/error-book-entries/{id}"),
+        ("POST", "/v1/error-book-entries/{id}:mark-fixed"),
+        ("POST", "/v1/error-book-entries/{id}:add-regression"),
+        ("POST", "/v1/error-book-entries/{id}:dismiss"),
+        ("POST", "/v1/error-book-entries/{id}:propose-to-pack"),
+    } <= routes
