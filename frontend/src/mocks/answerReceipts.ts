@@ -18,7 +18,8 @@ const hex = (head: string, tail: string, fill: string) =>
   head + fill.repeat(64).slice(0, 64 - head.length - tail.length) + tail;
 
 function receiptsFixture(): AnswerReceipt[] {
-  const xangDau = { id: 'dp-xang-dau-v3', name: 'Giá xăng dầu trong nước v3' };
+  // The P07 context data product (mocks of the other session use the adp- prefix).
+  const xangDau = { id: 'adp-fuel-prices', name: 'Giá xăng dầu trong nước v3' };
   const metric = {
     code: 'gia_tran_ban_le',
     version: 2,

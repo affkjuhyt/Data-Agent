@@ -116,6 +116,7 @@ export default function AnswerReceiptPage() {
 
 function ReceiptBody({ receipt }: { receipt: AnswerReceipt }) {
   const toast = useToast();
+  const { navigate } = useAppState();
   const copyHash = async () => {
     try {
       await navigator.clipboard.writeText(receipt.receipt_sha256);
@@ -132,7 +133,15 @@ function ReceiptBody({ receipt }: { receipt: AnswerReceipt }) {
         {receipt.status === 'locked' && <Badge tone="success">Đã khoá</Badge>}
       </div>
       <p className="text-muted-foreground da-caption">
-        {[formatDateTime(receipt.created_at), receipt.data_product.name, receipt.asked_by_name].join(' · ')}
+        {formatDateTime(receipt.created_at)} ·{' '}
+        <button
+          type="button"
+          className="text-info hover:underline"
+          onClick={() => navigate('data', 'ANSWER_PRODUCTS', receipt.data_product.id)}
+        >
+          {receipt.data_product.name}
+        </button>{' '}
+        · {receipt.asked_by_name}
       </p>
 
       <div className="flex items-center gap-da-md rounded-sm bg-subtle py-da-sm pl-[10px] pr-da-sm">

@@ -36,9 +36,15 @@ describe('AnswerReceiptPage', () => {
       screen.getByRole('heading', { level: 1, name: 'Biên nhận câu trả lời' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Đã khoá')).toBeInTheDocument();
+    // The data product in the meta line is a link to it (P07 Data product).
     expect(
-      screen.getByText('02/07/2026 16:05 · Giá xăng dầu trong nước v3 · Trần Văn Khánh'),
+      screen.getByText(
+        (_, el) =>
+          el?.tagName === 'P' &&
+          el.textContent === '02/07/2026 16:05 · Giá xăng dầu trong nước v3 · Trần Văn Khánh',
+      ),
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Giá xăng dầu trong nước v3' })).toBeInTheDocument();
     expect(screen.getByText(/SHA-256 biên nhận\s+4b7e91c2…a90c/)).toBeInTheDocument();
     expect(screen.getByText('Số trong câu trả lời · 2')).toBeInTheDocument();
 

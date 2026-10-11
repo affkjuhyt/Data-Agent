@@ -220,7 +220,14 @@ function LedgerBody({
       head: 'Error Book',
       cell: (r) =>
         r.error_book_ref ? (
-          <span className="font-medium text-info">{r.error_book_ref}</span>
+          // Error Book ids are the code in lower case (EB-0031 → eb-0031), P07 SCR-69.
+          <button
+            type="button"
+            className="font-medium text-info hover:underline"
+            onClick={() => navigate('data', 'ERROR_BOOK', r.error_book_ref?.toLowerCase())}
+          >
+            {r.error_book_ref}
+          </button>
         ) : (
           <span className="text-muted-foreground">—</span>
         ),
