@@ -5,9 +5,9 @@ from __future__ import annotations
 import datetime
 import decimal
 import uuid
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from services.api.kernel.pagination import Page
 
@@ -37,3 +37,19 @@ class ModelProviderView(BaseModel):
 
 
 ModelProviderPage = Page[ModelProviderView]
+
+
+class ModelProviderCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=100)
+    display_name: str = Field(min_length=1, max_length=500)
+    kind: Literal["on_prem", "frontier"]
+    api_style: Literal["openai_compatible", "anthropic_messages", "google_genai", "other"] = (
+        "openai_compatible"
+    )
+    endpoint: str = Field(min_length=1, max_length=2_000)
+    secret_ref: str | None = Field(default=None, max_length=500)
+    data_region: str | None = Field(default=None, max_length=200)
+    zero_retention: bool = False
+    contract_ref: str | None = Field(default=None, max_length=500)
+    price: dict[str, Any] = Field(default_factory=dict)
+    monthly_budget_vnd: decimal.Decimal | None = Field(default=None, ge=0, max_digits=14)

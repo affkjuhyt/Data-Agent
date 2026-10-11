@@ -11,6 +11,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, tuple_
 
+from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import governance
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentPrincipal
@@ -22,7 +23,12 @@ from services.api.kernel.pagination import (
     invalid_page_token,
     page_request,
 )
-from services.api.modules.governance.schemas import ModelProviderPage, ModelProviderView
+from services.api.kernel.problems import Problem
+from services.api.modules.governance.schemas import (
+    ModelProviderCreate,
+    ModelProviderPage,
+    ModelProviderView,
+)
 
 router = APIRouter()
 ROLE = "svc_governance"
@@ -108,3 +114,48 @@ async def list_model_providers(
             {"code": last.code, "id": str(last.id)} if last else None
         ),
     )
+
+
+@router.post(
+    "/v1/admin/model-providers",
+    response_model=ModelProviderView,
+    status_code=201,
+    **endpoint("POST", "/v1/admin/model-providers", operation_id="createModelProvider"),
+)
+async def create_model_provider(
+    body: ModelProviderCreate, principal: CurrentPrincipal
+) -> ModelProviderView:
+    if body.kind == "frontier" and (
+        body.secret_ref is None
+        or body.data_region is None
+        or not body.endpoint.startswith("https://")
+    ):
+        raise Problem(
+            422,
+            "validation_failed",
+            "A frontier provider needs an https endpoint, secret_ref and data_region.",
+        )
+    async with transaction(ROLE, principal) as session:
+        row = governance.ModelProvider(
+            id=uuid7(),
+            org_id=principal.org_id,
+            code=body.code,
+            display_name=body.display_name,
+            kind=body.kind,
+            api_style=body.api_style,
+            endpoint=body.endpoint,
+            secret_ref=body.secret_ref,
+            data_region=body.data_region,
+            zero_retention=body.zero_retention,
+            contract_ref=body.contract_ref,
+            max_classification="public" if body.kind == "frontier" else "restricted",
+            enabled=False,
+            price=body.price,
+            monthly_budget_vnd=body.monthly_budget_vnd,
+            created_by=principal.user_id,
+            updated_by=principal.user_id,
+        )
+        session.add(row)
+        await session.flush()
+        await session.refresh(row)
+    return ModelProviderView.model_validate(row)
