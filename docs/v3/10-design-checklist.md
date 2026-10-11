@@ -447,7 +447,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-189 | UC-16-01, UC-16-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +10 |
 | BR-190 | UC-16-03, UC-16-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-191 | UC-16-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-192 | UC-16-03, UC-16-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-192 | UC-16-03, UC-16-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-193 | UC-16-02 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `frontend/src/lib/v1/exec.ts` |
 | BR-194 | UC-16-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +7 |
 | BR-195 | UC-16-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +6 |
