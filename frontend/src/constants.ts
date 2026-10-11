@@ -107,6 +107,8 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
         { id: 'RULE', label: 'Quy tắc từ quyết định' },
         { id: 'KNOWLEDGE_REVIEW', label: 'Rà soát tri thức' },
         { id: 'CONTEXT_EVAL', label: 'Đánh giá lớp ngữ cảnh' },
+        { id: 'ANSWER_PRODUCTS', label: 'Data product' },
+        { id: 'ERROR_BOOK', label: 'Error Book' },
       ],
     },
     {

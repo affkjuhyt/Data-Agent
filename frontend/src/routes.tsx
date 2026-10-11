@@ -58,6 +58,8 @@ const EntityModelPage = React.lazy(() => import('./features/semantics/EntityMode
 const MetricCatalogPage = React.lazy(() => import('./features/semantics/MetricCatalogPage'));
 const GlossaryPage = React.lazy(() => import('./features/semantics/GlossaryPage'));
 const ContextEvalPage = React.lazy(() => import('./features/semantics/ContextEvalPage'));
+const AnswerProductsPage = React.lazy(() => import('./features/answer-products/AnswerProductsPage'));
+const ErrorBookPage = React.lazy(() => import('./features/error-book/ErrorBookPage'));
 const PacksPage = React.lazy(() => import('./features/packs/PacksPage'));
 const PackInstallPage = React.lazy(() => import('./features/packs/PackInstallPage'));
 const PackOnboardPage = React.lazy(() => import('./features/packs/PackOnboardPage'));
@@ -215,6 +217,9 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     METRIC_CATALOG:  { render: () => <MetricCatalogPage /> },
     GLOSSARY:        { render: () => <GlossaryPage /> },
     CONTEXT_EVAL:    { render: () => <ContextEvalPage /> },
+    // P07 data product (context.data_product), not P06's shared DATA_PRODUCTS; /data/answer_products/<id>.
+    ANSWER_PRODUCTS: { render: () => <AnswerProductsPage /> },
+    ERROR_BOOK:      { render: () => <ErrorBookPage /> },
     PACKS:           { render: () => <PacksPage /> },
     PACK_INSTALL:    { render: () => <PackInstallPage /> },
     PACK_ONBOARD:    { render: () => <PackOnboardPage /> },
