@@ -101,8 +101,8 @@ export default function NeedsYouPage() {
   };
 
   return (
-    <div className="flex min-h-full">
-      <div className="flex min-w-0 flex-1 flex-col gap-da-xl px-da-3xl py-da-xl">
+    <div className="flex min-h-full max-[1279px]:flex-col">
+      <div className="flex min-w-0 flex-1 flex-col gap-da-xl px-da-3xl py-da-xl max-[1279px]:flex-none max-[767px]:gap-da-md max-[767px]:px-da-md max-[767px]:py-da-lg">
         <header className="flex flex-col gap-da-xs">
           <h1 className="text-foreground da-heading-1">Cần bạn quyết định</h1>
           {inbox.data && pendingCount > 0 && (

@@ -43,9 +43,9 @@ export function DecisionCard({
   return (
     <article
       aria-labelledby={`decision-${request.id}`}
-      className="flex w-full items-start gap-da-xl rounded-lg border border-border bg-card px-da-xl py-da-lg"
+      className="flex w-full items-start gap-da-xl rounded-lg border border-border bg-card px-da-xl py-da-lg max-[767px]:px-da-md max-[767px]:py-da-md"
     >
-      <span className="inline-flex size-10 shrink-0 items-center justify-center text-muted-foreground">
+      <span className="inline-flex size-10 shrink-0 items-center justify-center text-muted-foreground max-[767px]:hidden">
         <Icon name={look.icon} />
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-da-sm">
@@ -69,7 +69,11 @@ export function DecisionCard({
         )}
 
         {kind === 'choose' && (
-          <div role="radiogroup" aria-label="Phương án" className="flex w-full gap-da-md">
+          <div
+            role="radiogroup"
+            aria-label="Phương án"
+            className="flex w-full gap-da-md max-[767px]:flex-col max-[767px]:gap-da-sm"
+          >
             {request.options.map((option) => {
               const active = option.id === chosen;
               return (
@@ -98,34 +102,41 @@ export function DecisionCard({
           </div>
         )}
 
-        <div className="flex w-full items-center gap-da-md">
+        <div className="flex w-full items-center gap-da-md max-[767px]:flex-wrap">
           {request.agent && <AgentChip name={request.agent.name} status="waiting" />}
-          <span className="flex-1" />
-          {kind === 'choose' && (
-            <>
-              <Button kind="ghost" onClick={onAskMore}>
-                Hỏi thêm
-              </Button>
-              <Button kind="primary" disabled={!chosen} onClick={() => chosen && onChoose(chosen)}>
-                Xác nhận lựa chọn
-              </Button>
-            </>
-          )}
-          {kind === 'approve' && (
-            <>
-              <Button kind="ghost" onClick={onLater}>
-                Để sau
-              </Button>
-              <DetailButton label="Xem thay đổi" onOpen={onOpenDetail} />
-            </>
-          )}
-          {kind === 'compare' && <DetailButton label="So sánh nguồn" onOpen={onOpenDetail} />}
-          {kind === 'review' && (
-            <DetailButton
-              label={request.kind === 'report_publish' ? 'Mở báo cáo' : 'Mở'}
-              onOpen={onOpenDetail}
-            />
-          )}
+          <span className="flex-1 max-[767px]:basis-full" />
+          {/* On a phone the actions share the card width. */}
+          <div className="flex items-center gap-da-md max-[767px]:w-full max-[767px]:[&>*]:flex-1">
+            {kind === 'choose' && (
+              <>
+                <Button kind="ghost" onClick={onAskMore}>
+                  Hỏi thêm
+                </Button>
+                <Button
+                  kind="primary"
+                  disabled={!chosen}
+                  onClick={() => chosen && onChoose(chosen)}
+                >
+                  Xác nhận lựa chọn
+                </Button>
+              </>
+            )}
+            {kind === 'approve' && (
+              <>
+                <Button kind="ghost" onClick={onLater}>
+                  Để sau
+                </Button>
+                <DetailButton label="Xem thay đổi" onOpen={onOpenDetail} />
+              </>
+            )}
+            {kind === 'compare' && <DetailButton label="So sánh nguồn" onOpen={onOpenDetail} />}
+            {kind === 'review' && (
+              <DetailButton
+                label={request.kind === 'report_publish' ? 'Mở báo cáo' : 'Mở'}
+                onOpen={onOpenDetail}
+              />
+            )}
+          </div>
         </div>
       </div>
     </article>

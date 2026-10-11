@@ -14,7 +14,7 @@ export function RulesPanel({ rules }: { rules: V1State<Page<BehaviorPolicy>> }) 
   return (
     <aside
       aria-label="Quy tắc của bạn"
-      className="flex w-[380px] shrink-0 flex-col gap-[14px] border-l border-border bg-card p-da-xl max-[1279px]:hidden"
+      className="flex w-[380px] shrink-0 flex-col gap-[14px] border-l border-border bg-card p-da-xl max-[1279px]:w-full max-[1279px]:border-l-0 max-[1279px]:border-t max-[767px]:hidden"
     >
       {items.length > 0 && (
         <>
