@@ -27,7 +27,10 @@ def test_unknown_path_is_a_problem(client: TestClient) -> None:
 
 
 def test_unexpected_error_hides_internals_and_keeps_trace(client: TestClient) -> None:
-    r = client.get("/v1/answers/a1", headers={**bearer("asker"), "traceparent": TRACEPARENT})
+    r = client.get(
+        "/v1/receipt-replays/01920000-0000-7000-8000-000000000001",
+        headers={**bearer("asker"), "traceparent": TRACEPARENT},
+    )
     assert r.status_code == 500
     body = r.json()
     assert body["code"] == "internal_error"

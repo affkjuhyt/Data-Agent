@@ -75,8 +75,8 @@ def probe_router() -> APIRouter:
     router = APIRouter()
 
     @router.get(
-        "/v1/conversations",
-        **endpoint("GET", "/v1/conversations", operation_id="listConversations"),
+        "/v1/skills",
+        **endpoint("GET", "/v1/skills", operation_id="listSkillsProbe"),
     )
     async def conversations(principal: CurrentPrincipal) -> dict[str, Any]:
         return {
@@ -92,7 +92,7 @@ def probe_router() -> APIRouter:
     async def crawl_sources(space: CurrentDataSpace) -> dict[str, str]:
         return {"space": str(space)}
 
-    @router.get("/v1/answers/{id}", **endpoint("GET", "/v1/answers/{id}", operation_id="getAnswer"))
+    @router.get("/v1/receipt-replays/{id}", **endpoint("GET", "/v1/receipt-replays/{id}", operation_id="getReceiptReplayProbe"))
     async def boom(id: str) -> None:
         raise RuntimeError("boom")
 

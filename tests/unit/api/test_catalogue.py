@@ -72,7 +72,7 @@ def test_served_endpoints_count_as_implemented() -> None:
     baseline = compare(_spec()).implemented
     report = compare(_spec(probe_router()))
     assert report.ok, report
-    assert report.implemented == baseline + 3
+    assert report.implemented == baseline + 2
 
 
 def test_route_not_in_a2_is_reported() -> None:
@@ -88,10 +88,10 @@ def test_route_not_in_a2_is_reported() -> None:
 
 def test_drift_from_a2_is_reported() -> None:
     drifted = APIRouter()
-    kw = endpoint("GET", "/v1/conversations", operation_id="listConversations")
+    kw = endpoint("POST", "/v1/skills", operation_id="createSkillProbe")
     kw["openapi_extra"] = {**kw["openapi_extra"], "x-capability": ["admin"]}
 
-    @drifted.get("/v1/conversations", **kw)
+    @drifted.post("/v1/skills", **kw)
     async def r() -> None: ...
 
     report = compare(_spec(drifted))
@@ -99,8 +99,8 @@ def test_drift_from_a2_is_reported() -> None:
 
 
 def test_missing_endpoint_fails_only_in_a_complete_group() -> None:
-    spec = _spec(probe_router())
+    spec = _spec()
     assert compare(spec).ok
-    report = compare(spec, complete_groups=frozenset({"Hỏi đáp"}))
+    report = compare(spec, complete_groups=frozenset({"Thu thập"}))
     assert not report.ok
-    assert "POST /v1/questions (Hỏi đáp)" in report.missing_in_complete_groups
+    assert "GET /v1/crawl-sources (Thu thập)" in report.missing_in_complete_groups

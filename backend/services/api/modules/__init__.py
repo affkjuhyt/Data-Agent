@@ -8,6 +8,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from services.api.modules import org
+from services.api.modules import org, qa
 
-ROUTERS: list[APIRouter] = [org.router]
+ROUTERS: list[APIRouter] = [org.router, qa.router]
