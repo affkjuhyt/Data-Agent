@@ -42,7 +42,12 @@ chế độ transaction (ADR-31).
 | `app.clearance` | số 0–3 (public, internal, confidential, restricted) | Chính sách người đọc trang tri thức |
 | `app.caller_id` | uuid | `svc_qa`, `svc_agent` đọc quyết định định tuyến mô hình của chính lượt gọi |
 
-Biến thiếu thì chính sách từ chối, không báo lỗi. `scoped_session` từ chối tên biến ngoài danh sách này.
+Biến thiếu thì chính sách từ chối, không báo lỗi.
+
+Relay outbox tạm (`svc_outbox_relay`, `unscoped_session`): Debezium đọc outbox từ WAL, không qua RLS
+(ADR-06). Khi chưa có Kafka Connect, một relay thăm dò publish thay: nó thấy outbox của mọi tổ chức, chỉ được
+đặt `published_at` của dòng chưa publish, không có quyền trên bảng nào khác. Revision `v3_0004` thêm vai trò
+này cho cụm đã chạy baseline; bỏ khi Debezium chạy. `scoped_session` từ chối tên biến ngoài danh sách này.
 
 ## Những chỗ thiết kế viết bằng lời đã được diễn giải
 

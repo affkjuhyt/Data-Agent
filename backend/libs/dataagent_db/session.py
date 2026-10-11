@@ -82,3 +82,20 @@ async def scoped_session(
                 {"name": f"app.{name}", "value": value},
             )
         yield session
+
+
+# Roles that act across organisations by design and so run without app.org_id: the interim outbox
+# relay (Debezium's job, ADR-06). Its grants stop at the outbox tables (backend/schema gen_ddl.py).
+UNSCOPED_ROLES = frozenset({"svc_outbox_relay"})
+
+
+@asynccontextmanager
+async def unscoped_session(role: str) -> AsyncIterator[AsyncSession]:
+    """A transaction as `role` with no organisation set; only for UNSCOPED_ROLES."""
+    if role not in UNSCOPED_ROLES:
+        raise ValueError(f"{role} works within one organisation; use scoped_session")
+    async with (
+        AsyncSession(engine_for(role), expire_on_commit=False) as session,
+        session.begin(),
+    ):
+        yield session

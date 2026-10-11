@@ -52,6 +52,7 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'forecast_read') THEN CREATE ROLE forecast_read NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'exec_read') THEN CREATE ROLE exec_read NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_exec_worker') THEN CREATE ROLE svc_exec_worker NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_outbox_relay') THEN CREATE ROLE svc_outbox_relay NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
 END $$;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -532,6 +533,10 @@ COMMENT ON TABLE org.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka (D5
 CREATE INDEX outbox_unpublished_idx ON org.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE org.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON org.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA org TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON org.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON org.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON org.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX user_group_member_user_id_idx ON org.user_group_member (user_id);
 CREATE INDEX data_space_member_principal_type_principal_id_idx ON org.data_space_member (principal_type, principal_id);
 CREATE INDEX data_space_member_valid_until_idx ON org.data_space_member (valid_until) WHERE valid_until IS NOT NULL;
@@ -928,6 +933,10 @@ COMMENT ON TABLE governance.outbox IS 'Sự kiện chờ Debezium đẩy sang Ka
 CREATE INDEX outbox_unpublished_idx ON governance.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE governance.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON governance.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA governance TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON governance.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON governance.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON governance.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX access_policy_dataset_id_idx ON governance.access_policy (dataset_id) WHERE status = 'active';
 CREATE INDEX behavior_policy_scope_data_space_id_idx ON governance.behavior_policy (scope, data_space_id) WHERE status = 'active';
 CREATE INDEX behavior_policy_review_at_idx ON governance.behavior_policy (review_at) WHERE status = 'active';
@@ -1091,6 +1100,10 @@ COMMENT ON TABLE integration.outbox IS 'Sự kiện chờ Debezium đẩy sang K
 CREATE INDEX outbox_unpublished_idx ON integration.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE integration.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON integration.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA integration TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON integration.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON integration.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON integration.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX api_client_expires_at_idx ON integration.api_client (expires_at) WHERE status = 'active';
 CREATE INDEX webhook_delivery_next_attempt_at_idx ON integration.webhook_delivery (next_attempt_at) WHERE status IN ('pending','retrying');
 CREATE INDEX webhook_delivery_subscription_id_created_at_idx ON integration.webhook_delivery (subscription_id, created_at);
@@ -1375,6 +1388,10 @@ COMMENT ON TABLE catalog.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka
 CREATE INDEX outbox_unpublished_idx ON catalog.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE catalog.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON catalog.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA catalog TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON catalog.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON catalog.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON catalog.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX source_data_space_id_idx ON catalog.source (data_space_id) WHERE deleted_at IS NULL;
 CREATE UNIQUE INDEX scan_run_source_id_kind_key ON catalog.scan_run (source_id, kind) WHERE status = 'running';
 CREATE INDEX dataset_data_space_id_idx ON catalog.dataset (data_space_id) WHERE enabled AND deleted_at IS NULL;
@@ -2161,6 +2178,10 @@ COMMENT ON TABLE context.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka
 CREATE INDEX outbox_unpublished_idx ON context.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE context.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON context.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA context TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON context.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON context.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON context.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE UNIQUE INDEX metric_version_metric_id_key ON context.metric_version (metric_id) WHERE status = 'certified';
 CREATE UNIQUE INDEX synonym_data_space_id_phrase_norm_target_kind_ta_key ON context.synonym (data_space_id, phrase_norm, target_kind, target_id) WHERE status = 'active';
 CREATE INDEX value_index_data_space_id_label_norm_idx ON context.value_index (data_space_id, label_norm);
@@ -2553,6 +2574,10 @@ COMMENT ON TABLE qa.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka (D5.
 CREATE INDEX outbox_unpublished_idx ON qa.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE qa.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON qa.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA qa TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON qa.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON qa.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON qa.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX conversation_user_id_last_question_at_idx ON qa.conversation (user_id, last_question_at DESC);
 CREATE INDEX answer_question_id_idx ON qa.answer (question_id);
 CREATE INDEX answer_data_product_id_created_at_idx ON qa.answer (data_product_id, created_at) WHERE data_product_id IS NOT NULL;
@@ -2636,6 +2661,10 @@ COMMENT ON TABLE query.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka (
 CREATE INDEX outbox_unpublished_idx ON query.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE query.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON query.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA query TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON query.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON query.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON query.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX query_run_caller_kind_caller_id_idx ON query.query_run (caller_kind, caller_id);
 CREATE INDEX query_run_source_id_started_at_idx ON query.query_run (source_id, started_at) WHERE status = 'running';
 CREATE INDEX query_result_expires_at_idx ON query.query_result (expires_at);
@@ -2982,6 +3011,10 @@ COMMENT ON TABLE agent.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka (
 CREATE INDEX outbox_unpublished_idx ON agent.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE agent.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON agent.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA agent TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON agent.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON agent.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON agent.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE UNIQUE INDEX agent_deployment_agent_id_key ON agent.agent_deployment (agent_id) WHERE status IN ('pending_approval','rolling');
 CREATE INDEX agent_run_agent_id_idx ON agent.agent_run (agent_id) WHERE status IN ('queued','planning','running','waiting_human','paused');
 CREATE INDEX agent_run_parent_run_id_idx ON agent.agent_run (parent_run_id) WHERE parent_run_id IS NOT NULL;
@@ -3207,6 +3240,10 @@ COMMENT ON TABLE eval.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka (D
 CREATE INDEX outbox_unpublished_idx ON eval.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE eval.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON eval.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA eval TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON eval.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON eval.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON eval.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE UNIQUE INDEX error_book_entry_feedback_id_key ON eval.error_book_entry (feedback_id) WHERE feedback_id IS NOT NULL;
 CREATE UNIQUE INDEX error_book_entry_accuracy_log_id_key ON eval.error_book_entry (accuracy_log_id) WHERE accuracy_log_id IS NOT NULL;
 CREATE UNIQUE INDEX error_book_entry_replay_id_key ON eval.error_book_entry (replay_id) WHERE replay_id IS NOT NULL;
@@ -3359,6 +3396,10 @@ COMMENT ON TABLE inbox.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka (
 CREATE INDEX outbox_unpublished_idx ON inbox.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE inbox.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON inbox.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA inbox TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON inbox.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON inbox.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON inbox.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX proposal_data_space_id_status_idx ON inbox.proposal (data_space_id, status) WHERE status IN ('open','evaluating','pending_review');
 CREATE INDEX proposal_assignee_id_idx ON inbox.proposal (assignee_id) WHERE status = 'pending_review';
 CREATE INDEX hitl_request_assignee_id_status_due_at_idx ON inbox.hitl_request (assignee_id, status, due_at) WHERE status = 'open';
@@ -3602,6 +3643,10 @@ COMMENT ON TABLE workspace.outbox IS 'Sự kiện chờ Debezium đẩy sang Kaf
 CREATE INDEX outbox_unpublished_idx ON workspace.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE workspace.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON workspace.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA workspace TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON workspace.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON workspace.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON workspace.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX workspace_owner_id_idx ON workspace.workspace (owner_id) WHERE deleted_at IS NULL;
 CREATE INDEX tile_snapshot_tile_id_created_at_idx ON workspace.tile_snapshot (tile_id, created_at DESC);
 CREATE INDEX ws_comment_assignee_id_idx ON workspace.ws_comment (assignee_id) WHERE status = 'open';
@@ -3805,6 +3850,10 @@ COMMENT ON TABLE skill.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka (
 CREATE INDEX outbox_unpublished_idx ON skill.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE skill.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON skill.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA skill TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON skill.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON skill.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON skill.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE UNIQUE INDEX skill_version_skill_id_key ON skill.skill_version (skill_id) WHERE status = 'published';
 CREATE INDEX skill_run_skill_version_id_created_at_idx ON skill.skill_run (skill_version_id, created_at DESC);
 
@@ -4124,6 +4173,10 @@ COMMENT ON TABLE monitor.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka
 CREATE INDEX outbox_unpublished_idx ON monitor.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE monitor.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON monitor.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA monitor TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON monitor.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON monitor.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON monitor.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE UNIQUE INDEX alert_monitor_id_dedup_key_key ON monitor.alert (monitor_id, dedup_key) WHERE status <> 'closed';
 CREATE UNIQUE INDEX external_event_calendar_id_period_label_key ON monitor.external_event (calendar_id, period_label) WHERE status <> 'cancelled';
 CREATE INDEX external_event_status_pre_bulletin_at_idx ON monitor.external_event (status, pre_bulletin_at) WHERE status IN ('expected','confirmed','shifted');
@@ -4244,6 +4297,10 @@ COMMENT ON TABLE notify.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka 
 CREATE INDEX outbox_unpublished_idx ON notify.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE notify.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON notify.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA notify TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON notify.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON notify.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON notify.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX notification_user_id_created_at_idx ON notify.notification (user_id, created_at DESC) WHERE read_at IS NULL;
 CREATE INDEX channel_delivery_hitl_request_id_idx ON notify.channel_delivery (hitl_request_id) WHERE hitl_request_id IS NOT NULL;
 
@@ -4557,6 +4614,10 @@ COMMENT ON TABLE document.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafk
 CREATE INDEX outbox_unpublished_idx ON document.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE document.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON document.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA document TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON document.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON document.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON document.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX document_collection_id_doc_no_idx ON document.document (collection_id, doc_no);
 CREATE INDEX chunk_document_id_page_from_idx ON document.chunk (document_id, page_from);
 CREATE INDEX quality_issue_kind_severity_idx ON document.quality_issue (kind, severity) WHERE status = 'open';
@@ -4710,6 +4771,10 @@ COMMENT ON TABLE conflict.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafk
 CREATE INDEX outbox_unpublished_idx ON conflict.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE conflict.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON conflict.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA conflict TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON conflict.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON conflict.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON conflict.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX claim_data_space_id_subject_key_attribute_idx ON conflict.claim (data_space_id, subject_key, attribute);
 CREATE INDEX conflict_data_space_id_idx ON conflict.conflict (data_space_id) WHERE status = 'open';
 
@@ -5062,6 +5127,10 @@ COMMENT ON TABLE pack.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka (D
 CREATE INDEX outbox_unpublished_idx ON pack.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE pack.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON pack.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA pack TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON pack.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON pack.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON pack.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE UNIQUE INDEX pack_install_data_space_id_key ON pack.pack_install (data_space_id) WHERE status NOT IN ('uninstalled','rolled_back');
 CREATE UNIQUE INDEX entity_mapping_pack_install_id_attribute_id_key ON pack.entity_mapping (pack_install_id, attribute_id) WHERE valid_to IS NULL;
 CREATE UNIQUE INDEX code_mapping_pack_install_id_attribute_id_source_code_key ON pack.code_mapping (pack_install_id, attribute_id, source_code) WHERE valid_to IS NULL;
@@ -5245,6 +5314,10 @@ COMMENT ON TABLE period.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka 
 CREATE INDEX outbox_unpublished_idx ON period.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE period.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON period.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA period TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON period.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON period.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON period.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE UNIQUE INDEX period_close_data_space_id_key ON period.period_close (data_space_id) WHERE status = 'closing';
 
 -- ═══ schema pipeline ═══
@@ -5449,6 +5522,10 @@ COMMENT ON TABLE pipeline.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafk
 CREATE INDEX outbox_unpublished_idx ON pipeline.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE pipeline.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON pipeline.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA pipeline TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON pipeline.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON pipeline.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON pipeline.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX pipeline_run_pipeline_id_started_at_idx ON pipeline.pipeline_run (pipeline_id, started_at DESC);
 CREATE INDEX lineage_edge_from_kind_from_id_idx ON pipeline.lineage_edge (from_kind, from_id) WHERE valid_to IS NULL;
 CREATE INDEX lineage_edge_to_kind_to_id_idx ON pipeline.lineage_edge (to_kind, to_id) WHERE valid_to IS NULL;
@@ -5648,6 +5725,10 @@ COMMENT ON TABLE ingest.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka 
 CREATE INDEX outbox_unpublished_idx ON ingest.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE ingest.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON ingest.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA ingest TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON ingest.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON ingest.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON ingest.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX job_run_job_id_started_at_idx ON ingest.job_run (job_id, started_at DESC);
 CREATE INDEX dlq_record_job_id_idx ON ingest.dlq_record (job_id) WHERE status = 'pending';
 CREATE INDEX dlq_record_expires_at_idx ON ingest.dlq_record (expires_at);
@@ -6115,6 +6196,10 @@ COMMENT ON TABLE acquire.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka
 CREATE INDEX outbox_unpublished_idx ON acquire.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE acquire.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON acquire.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA acquire TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON acquire.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON acquire.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON acquire.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX crawl_source_data_space_id_status_idx ON acquire.crawl_source (data_space_id, status);
 CREATE INDEX crawl_source_last_run_at_idx ON acquire.crawl_source (last_run_at) WHERE status = 'active';
 CREATE INDEX crawl_source_legal_review_due_at_idx ON acquire.crawl_source (legal_review_due_at) WHERE legal_status = 'approved';
@@ -6558,6 +6643,10 @@ COMMENT ON TABLE forecast.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafk
 CREATE INDEX outbox_unpublished_idx ON forecast.outbox (created_at) WHERE published_at IS NULL;
 ALTER TABLE forecast.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON forecast.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA forecast TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON forecast.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON forecast.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON forecast.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX forecast_job_question_id_idx ON forecast.forecast_job (question_id);
 CREATE INDEX forecast_job_status_eta_at_idx ON forecast.forecast_job (status, eta_at) WHERE status NOT IN ('ready','failed','cancelled');
 CREATE INDEX forecast_job_data_space_id_metric_code_created_at_idx ON forecast.forecast_job (data_space_id, metric_code, created_at DESC);
@@ -6977,6 +7066,10 @@ CREATE INDEX outbox_unpublished_idx ON exec.outbox (created_at) WHERE published_
 ALTER TABLE exec.outbox ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON exec.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE exec.outbox FORCE ROW LEVEL SECURITY;
+GRANT USAGE ON SCHEMA exec TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON exec.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON exec.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON exec.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX vault_status_idx ON exec.vault (status);
 CREATE INDEX vault_sealed_read_until_idx ON exec.vault (sealed_read_until) WHERE status = 'sealed';
 CREATE UNIQUE INDEX vault_key_wrap_vault_id_credential_id_key ON exec.vault_key_wrap (vault_id, credential_id) WHERE credential_id IS NOT NULL;
