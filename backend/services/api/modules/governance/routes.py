@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Iterable
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy import select, tuple_
 
 from libs.dataagent_db import uuid7
@@ -27,6 +27,7 @@ from services.api.kernel.problems import Problem
 from services.api.modules.governance.schemas import (
     ModelProviderCreate,
     ModelProviderPage,
+    ModelProviderPatch,
     ModelProviderView,
 )
 
@@ -156,6 +157,80 @@ async def create_model_provider(
             updated_by=principal.user_id,
         )
         session.add(row)
+        await session.flush()
+        await session.refresh(row)
+    return ModelProviderView.model_validate(row)
+
+
+@router.patch(
+    "/v1/admin/model-providers/{id}",
+    response_model=ModelProviderView,
+    **endpoint("PATCH", "/v1/admin/model-providers/{id}", operation_id="patchModelProvider"),
+)
+async def patch_model_provider(
+    body: ModelProviderPatch,
+    provider_id: Annotated[uuid.UUID, Path(alias="id")],
+    principal: CurrentPrincipal,
+) -> ModelProviderView:
+    async with transaction(ROLE, principal) as session:
+        row = await session.scalar(
+            select(governance.ModelProvider)
+            .where(
+                governance.ModelProvider.id == provider_id,
+                governance.ModelProvider.org_id == principal.org_id,
+            )
+            .with_for_update()
+        )
+        if row is None:
+            raise Problem(404, "not_found", "Model provider not found.")
+
+        changed_contract = bool(
+            {"endpoint", "secret_ref", "data_region", "zero_retention"}
+            & body.model_fields_set
+        )
+        for field in (
+            "display_name",
+            "endpoint",
+            "secret_ref",
+            "data_region",
+            "zero_retention",
+            "contract_ref",
+            "price",
+            "monthly_budget_vnd",
+            "status",
+        ):
+            if field in body.model_fields_set:
+                setattr(row, field, getattr(body, field))
+
+        if row.kind == "frontier" and row.endpoint is not None and not row.endpoint.startswith("https://"):
+            raise Problem(422, "validation_failed", "A frontier provider needs an https endpoint.")
+        if row.kind == "frontier" and (
+            row.secret_ref is None or row.data_region is None
+        ):
+            raise Problem(
+                422,
+                "validation_failed",
+                "A frontier provider needs secret_ref and data_region.",
+            )
+        if row.status == "retired" and body.enabled is True:
+            raise Problem(422, "business_rule_violated", "A retired provider cannot be enabled.")
+        if body.enabled is True and row.kind == "frontier" and (
+            row.approved_by is None or row.approved_at is None or not row.zero_retention
+        ):
+            raise Problem(
+                422,
+                "business_rule_violated",
+                "A frontier provider needs compliance approval and zero retention before enabling.",
+            )
+
+        if changed_contract:
+            row.enabled = False
+            row.approved_by = None
+            row.approved_at = None
+        elif body.enabled is not None:
+            row.enabled = body.enabled
+        row.updated_by = principal.user_id
+        row.updated_at = datetime.datetime.now(datetime.UTC)
         await session.flush()
         await session.refresh(row)
     return ModelProviderView.model_validate(row)
