@@ -81,14 +81,23 @@ export default function AgentTeamPage() {
       <div className="flex flex-col gap-da-lg px-da-3xl pt-da-xl">
         <AsyncRegion
           state={agents}
-          what="đội agent"
+          what="danh sách agent"
           skeletonRows={5}
           isEmpty={(page) => page.items.length === 0}
           empty={
+            // "v3.1 · Đội agent · Trống" (2165:16745): template agents come with industry packs.
             <EmptyState
               icon="agent"
               title="Chưa có agent nào"
-              description="Agent làm việc thay bạn theo mục tiêu và lịch bạn đặt, trong giới hạn quyền của bạn."
+              description="Giao việc đầu tiên bằng lời, hoặc bắt đầu từ agent mẫu của gói domain."
+              action={
+                <div className="flex gap-da-sm">
+                  <Button kind="primary" onClick={() => navigate('agents', 'BUILDER')}>
+                    Tạo agent
+                  </Button>
+                  <Button onClick={() => navigate('data', 'PACKS')}>Dùng agent mẫu</Button>
+                </div>
+              }
             />
           }
         >

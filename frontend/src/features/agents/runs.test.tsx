@@ -197,4 +197,14 @@ describe('AgentTeamPage', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Cấu hình' }));
     expect(navigate).toHaveBeenCalledWith('agents', 'AGENT', 'agent-dq');
   });
+
+  it('offers to create an agent or start from a pack template when there are none', async () => {
+    server.use(
+      http.get('*/v1/agents', () => HttpResponse.json({ items: [], next_page_token: '' })),
+    );
+    wrap(<AgentTeamPage />);
+    expect(await screen.findByText('Chưa có agent nào')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Dùng agent mẫu' }));
+    expect(navigate).toHaveBeenCalledWith('data', 'PACKS');
+  });
 });
