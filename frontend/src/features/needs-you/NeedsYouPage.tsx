@@ -6,10 +6,12 @@ import { EmptyState } from '../../design-system/EmptyState';
 import { Segmented } from '../../design-system/Segmented';
 import { useToast } from '../../design-system/Toast';
 import { listInbox, listMyRules, resolveHitl } from '../../lib/v1/api';
+import { listResolvedThisWeek } from '../../lib/v1/inbox';
 import type { HitlRequest } from '../../lib/v1/types';
 import { useV1 } from '../../lib/v1/useV1';
 import { DecisionCard } from './DecisionCard';
 import { detailRouteOf, isExpiringSoon } from './decision';
+import { ResolvedList } from './ResolvedList';
 import { RulesPanel } from './RulesPanel';
 
 /*
@@ -19,10 +21,9 @@ import { RulesPanel } from './RulesPanel';
  *
  * Answers are optimistic with a 5 s "Hoàn tác" (spec "Thẻ việc Cần bạn"): the card leaves at
  * once and the answer is sent when the undo window closes; a failure brings the card back.
- * The "Đã xử lý tuần này" segment of the design waits for a list of resolved requests in the
- * API (GET /v1/inbox returns pending ones only).
+ * "Đã xử lý tuần này" (2167:19220) lists what the viewer or their rules settled since Monday.
  */
-type Filter = 'pending' | 'expiring';
+type Filter = 'pending' | 'expiring' | 'resolved';
 const UNDO_MS = 5000;
 
 export default function NeedsYouPage() {
@@ -30,6 +31,7 @@ export default function NeedsYouPage() {
   const toast = useToast();
   const inbox = useV1(() => listInbox({ status: 'open' }), []);
   const rules = useV1(listMyRules, []);
+  const resolved = useV1(listResolvedThisWeek, []);
   const [filter, setFilter] = useState<Filter>('pending');
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [later, setLater] = useState<string[]>([]);
@@ -48,6 +50,7 @@ export default function NeedsYouPage() {
   }, [inbox.data, hidden, later, filter]);
 
   const pendingCount = (inbox.data?.items ?? []).filter((r) => !hidden.has(r.id)).length;
+  const resolvedCount = resolved.data?.items.length ?? 0;
   const expiringCount = (inbox.data?.items ?? []).filter(
     (r) => !hidden.has(r.id) && isExpiringSoon(r),
   ).length;
@@ -111,7 +114,7 @@ export default function NeedsYouPage() {
           )}
         </header>
 
-        {inbox.data && pendingCount > 0 && (
+        {inbox.data && (pendingCount > 0 || resolvedCount > 0) && (
           <Segmented<Filter>
             label="Lọc việc"
             value={filter}
@@ -119,49 +122,60 @@ export default function NeedsYouPage() {
             items={[
               { value: 'pending', label: `Đang chờ · ${pendingCount}` },
               { value: 'expiring', label: `Sắp hết hạn · ${expiringCount}` },
+              ...(resolvedCount > 0
+                ? [{ value: 'resolved' as const, label: `Đã xử lý tuần này · ${resolvedCount}` }]
+                : []),
             ]}
           />
         )}
 
-        <AsyncRegion
-          state={inbox}
-          what="việc cần bạn"
-          isEmpty={() => pendingCount === 0}
-          empty={
-            <EmptyState
-              title="Không có việc nào cần bạn"
-              description="Các agent đang tự làm việc. Khi agent cần bạn quyết định, việc sẽ hiện ở đây và trên Teams."
-              action={
-                <Button onClick={() => navigate('agents', 'TEAM')}>Xem agent đang làm gì</Button>
-              }
-            />
-          }
-        >
-          {() => (
-            <div className="flex flex-col gap-da-lg">
-              {visible.map((request) => (
-                <DecisionCard
-                  key={request.id}
-                  request={request}
-                  onChoose={(optionId) => choose(request, optionId)}
-                  onAskMore={() => askMore(request)}
-                  onOpenDetail={(() => {
-                    const detail = detailRouteOf(request);
-                    return detail ? () => navigate(detail.area, detail.page, detail.id) : undefined;
-                  })()}
-                  onLater={() =>
-                    setLater((prev) => [...prev.filter((id) => id !== request.id), request.id])
-                  }
-                />
-              ))}
-              {visible.length === 0 && (
-                <p className="text-muted-foreground da-body-small">
-                  Không có việc nào sắp hết hạn.
-                </p>
-              )}
-            </div>
-          )}
-        </AsyncRegion>
+        {filter === 'resolved' ? (
+          <AsyncRegion state={resolved} what="việc đã xử lý">
+            {(page) => <ResolvedList items={page.items} />}
+          </AsyncRegion>
+        ) : (
+          <AsyncRegion
+            state={inbox}
+            what="việc cần bạn"
+            isEmpty={() => pendingCount === 0}
+            empty={
+              <EmptyState
+                title="Không có việc nào cần bạn"
+                description="Các agent đang tự làm việc. Khi agent cần bạn quyết định, việc sẽ hiện ở đây và trên Teams."
+                action={
+                  <Button onClick={() => navigate('agents', 'TEAM')}>Xem agent đang làm gì</Button>
+                }
+              />
+            }
+          >
+            {() => (
+              <div className="flex flex-col gap-da-lg">
+                {visible.map((request) => (
+                  <DecisionCard
+                    key={request.id}
+                    request={request}
+                    onChoose={(optionId) => choose(request, optionId)}
+                    onAskMore={() => askMore(request)}
+                    onOpenDetail={(() => {
+                      const detail = detailRouteOf(request);
+                      return detail
+                        ? () => navigate(detail.area, detail.page, detail.id)
+                        : undefined;
+                    })()}
+                    onLater={() =>
+                      setLater((prev) => [...prev.filter((id) => id !== request.id), request.id])
+                    }
+                  />
+                ))}
+                {visible.length === 0 && (
+                  <p className="text-muted-foreground da-body-small">
+                    Không có việc nào sắp hết hạn.
+                  </p>
+                )}
+              </div>
+            )}
+          </AsyncRegion>
+        )}
       </div>
 
       <RulesPanel rules={rules} />

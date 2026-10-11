@@ -98,4 +98,14 @@ describe('NeedsYouPage', () => {
     expect(screen.getByRole('button', { name: 'Thử lại' })).toBeInTheDocument();
     expect(await screen.findByText('Agent hỏi bạn khi nào?')).toBeInTheDocument();
   });
+
+  it('lists what was settled this week, by me or by my rules', async () => {
+    useMockWithSpy();
+    renderPage();
+    fireEvent.click(await screen.findByRole('radio', { name: 'Đã xử lý tuần này · 4' }));
+    const list = await screen.findByRole('list', { name: 'Đã xử lý tuần này' });
+    expect(list).toHaveTextContent('Chọn NPL_RATIO v4 cho lượt #418');
+    expect(list).toHaveTextContent('Agent đã chạy tiếp');
+    expect(list).toHaveTextContent('Tự xử lý');
+  });
 });
