@@ -25,3 +25,16 @@ def test_api02_core_routes_are_registered() -> None:
         ("GET", "/v1/query-runs/{id}/sql"),
         ("GET", "/v1/query-runs/{id}/rows"),
     } <= routes
+
+
+def test_api03_workspace_core_routes_are_registered() -> None:
+    app = create_app(Settings(), token_verifier=lambda: None)  # type: ignore[arg-type]
+    routes = {(next(iter(route.methods)), route.path) for route in app.routes if route.path.startswith("/v1/")}
+    assert {
+        ("GET", "/v1/workspaces"),
+        ("POST", "/v1/workspaces"),
+        ("GET", "/v1/workspaces/{id}"),
+        ("PATCH", "/v1/workspaces/{id}"),
+        ("POST", "/v1/workspaces/{id}/tiles"),
+        ("PATCH", "/v1/tiles/{id}"),
+    } <= routes

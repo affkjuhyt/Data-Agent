@@ -19,7 +19,7 @@ import pytest
 from libs.dataagent_db import engine_for
 from tests.integration.migrate.conftest import ddl_server  # noqa: F401  (fixture)
 
-SERVICE_ROLES = ("svc_org", "svc_qa", "svc_query")
+SERVICE_ROLES = ("svc_org", "svc_qa", "svc_query", "svc_workspace")
 PASSWORD = "api-integration"
 
 
