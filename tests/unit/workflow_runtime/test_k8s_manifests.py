@@ -38,7 +38,7 @@ MANIFEST_DIR = K8S_DIR / "production"
 
 # Deployments that reach Postgres through the ORM, and so must not serve traffic
 # on a schema older than their code.
-MIGRATION_GATED = {"workflow-runtime", "api"}
+MIGRATION_GATED = {"workflow-runtime", "api", "worker-agent"}
 GATE_CONTAINER = "wait-for-migrations"
 
 # Queue consumers and pollers: no inbound traffic, so no Service and no HTTP probe.
@@ -52,6 +52,7 @@ HEADLESS_WORKERS = {
     "platform-workers-memory",
     "platform-workers-schema-crawler",
     "platform-workers-web-crawler",
+    "worker-agent",
 }
 
 
@@ -870,7 +871,7 @@ class TestImageReferencesAreIntact:
     KNOWN = {
         "postgres:16-alpine", "mongo:7.0", "redis:7-alpine", "qdrant/qdrant:v1.13.6",
         "neo4j:5.20", "apache/kafka:3.7.0",
-        "quay.io/minio/minio:latest",
+        "bitnamilegacy/minio:2024.12.18-debian-12-r0",
         "docker.io/clickhouse/clickhouse-server",
         # Pinned: 2.7 dropped the file storage backend this deployment uses.
         "openbao/openbao:2.6.3", "edoburu/pgbouncer:latest",

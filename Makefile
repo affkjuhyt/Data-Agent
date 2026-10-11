@@ -3,7 +3,7 @@
 # .github/workflows/ci.yml does, so a green `make ci` means a green pipeline.
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-PY_IMAGE ?= localhost:5000/dataagent/workflow_runtime:latest
+PY_IMAGE ?= localhost:5001/dataagent/workflow_runtime:latest
 DOCKER_RUN_PY = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(PY_IMAGE)
 # ruff, mypy and import-linter preinstalled (tests/dev-tools.Dockerfile): a cache hit after
 # the first build, so lint runs in seconds instead of re-installing tools from PyPI each time.
@@ -11,7 +11,7 @@ DEV_TOOLS_IMAGE ?= dataagent/dev-tools:local
 DOCKER_RUN_DEV = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(DEV_TOOLS_IMAGE)
 
 .PHONY: help lint type test test-unit test-integration test-changed deadcode frontend-lint frontend-test ci e2e \
-        deploy fmt bench bench-gate bench-e2e mock-api contract-compat design-checklist design-audit api-types dev-tools fmt-files \
+        deploy deploy-local fmt bench bench-gate bench-e2e mock-api contract-compat design-checklist design-audit api-types dev-tools fmt-files \
         type-v3 lint-imports
 
 help:  ## List targets
@@ -49,7 +49,7 @@ type:  ## mypy strict on libs + services (same set as CI python-type)
 # One suite per service, each run in that service's own image: no single image
 # can import every service (their OTel/boto3 pins conflict). suite:image pairs;
 # tests/unit/<suite> and tests/integration/<suite> are the directories.
-IMAGE_REGISTRY ?= localhost:5000
+IMAGE_REGISTRY ?= localhost:5001
 UNIT_SUITES ?= workflow_runtime:workflow_runtime kb_backend:kb-backend platform_workers:platform-workers \
                sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker \
                model_service:model_service contracts:kb-backend indicator_api:indicator-api api:api worker_agent:worker-agent
@@ -219,3 +219,8 @@ e2e:  ## pytest -m e2e against the deployed dev cluster (LAN NodePorts; URLs ove
 
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml
+
+deploy-local:  ## deploy the V3 local slice (api, worker-agent, web, migrate, gateway)
+	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml \
+		-e apply_jobs=true -e image_registry=$(IMAGE_REGISTRY) -e image_push=true \
+		-e '{"deploy_image_allowlist":["api","worker-agent","migrate","frontend","kong","keycloak"],"service_manifests":["api","worker-agent","frontend","kong","keycloak"],"service_workloads":["api","worker-agent","frontend","kong","keycloak"]}'

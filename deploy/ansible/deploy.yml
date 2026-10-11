@@ -201,6 +201,10 @@
              | select('match', '^(' ~ ((k8s_manifests | relpath(project_dir)) ~ '/service/') | regex_escape
                                ~ '|deploy/ansible/)')
              | list | length) > 0 }}
+        service_manifests_changed: >-
+          {{ (full_deploy | bool) or (git_diff.stdout_lines | default([])
+             | select('match', '^' ~ ((k8s_manifests | relpath(project_dir)) ~ '/service/') | regex_escape)
+             | list | length) > 0 }}
 
     - name: Report what changed
       ansible.builtin.debug:
@@ -463,6 +467,23 @@
         jobs_rerun: "{{ jobs_rerun | rejectattr('name', 'equalto', 'kong-migration') | list }}"
       when: kong_migration_pre_gateway is defined and kong_migration_pre_gateway is succeeded
 
+    # Do not make an API/worker image deploy wait for the gateway. On the
+    # one-node local cluster a needless Keycloak restart can be Pending on
+    # memory while the old pod is still healthy.
+    - name: Decide whether the gateway rollout needs waiting
+      ansible.builtin.set_fact:
+        gateway_rollout_needed: >-
+          {{ (full_deploy | bool)
+             or ((built | default({}) | dict2items
+                  | selectattr('key', 'in', ['keycloak', 'kong'])
+                  | selectattr('value.changed', 'equalto', true) | list | length) > 0)
+             or ((changed_paths | default([])
+                  | select('equalto', (k8s_manifests | relpath(project_dir)) ~ '/service/keycloak.yaml')
+                  | list | length) > 0)
+             or ((changed_paths | default([])
+                  | select('equalto', (k8s_manifests | relpath(project_dir)) ~ '/service/kong.yaml')
+                  | list | length) > 0) }}
+
     - name: Wait for the gateway
       ansible.builtin.shell:
         cmd: |
@@ -475,7 +496,10 @@
         executable: /bin/bash
       register: gateway_rollout
       changed_when: false
-      when: (apply_services | bool) and (services_changed | bool)
+      when:
+        - apply_services | bool
+        - services_changed | bool
+        - gateway_rollout_needed | bool
 
     - name: Report the gateway
       ansible.builtin.debug:
@@ -662,7 +686,8 @@
       vars:
         wait_list: >-
           {{ (((service_workloads | map('regex_replace', '^', 'Deployment/')
-                 | map('regex_replace', '$', ' ' ~ ns_service) | list) if ((apply_services | bool) and (services_changed | bool)) else [])
+                 | map('regex_replace', '$', ' ' ~ ns_service) | list)
+                if ((apply_services | bool) and (service_manifests_changed | bool)) else [])
               + (restart_for_images | default([])) + (restart_for_config | default([]))) | unique }}
       register: svc_rollout
       changed_when: false

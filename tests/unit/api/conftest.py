@@ -87,7 +87,22 @@ def probe_router() -> APIRouter:
         }
 
     @router.get(
-        "/v1/crawl-sources", **endpoint("GET", "/v1/crawl-sources", operation_id="listCrawlSources")
+        "/v1/metrics",
+        **endpoint("GET", "/v1/metrics", operation_id="listMetricsProbe"),
+    )
+    async def metrics(space: CurrentDataSpace) -> dict[str, str]:
+        return {"space": str(space)}
+
+    @router.post(
+        "/v1/metrics",
+        **endpoint("POST", "/v1/metrics", operation_id="createMetricProbe"),
+    )
+    async def create_metric(principal: CurrentPrincipal) -> dict[str, str]:
+        return {"user": str(principal.user_id)}
+
+    @router.get(
+        "/v1/crawl-sources",
+        **endpoint("GET", "/v1/crawl-sources", operation_id="listCrawlSourcesProbe"),
     )
     async def crawl_sources(space: CurrentDataSpace) -> dict[str, str]:
         return {"space": str(space)}

@@ -42,6 +42,10 @@ metadata:
     app.kubernetes.io/part-of: dataagent
 spec:
   replicas: 1
+  # One-node local clusters cannot schedule a second 1 GiB Keycloak pod.
+  # Recreate frees the old pod before scheduling the replacement.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: keycloak

@@ -27,6 +27,12 @@ kubectl -n dataagent-service create secret generic api-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_AGENT="${DATAAGENT_DB_URL__SVC_AGENT}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# worker-agent: answers as svc_qa, claims outbox rows as svc_outbox_relay (docs/v3/06-api-v1.md §6).
+kubectl -n dataagent-service create secret generic worker-agent-secrets \
+  --from-literal=DATAAGENT_DB_URL__SVC_QA="${DATAAGENT_DB_URL__SVC_QA}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_OUTBOX_RELAY="${DATAAGENT_DB_URL__SVC_OUTBOX_RELAY}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 kubectl -n dataagent-service create secret generic kb-backend-secrets \
   --from-literal=KB_BACKEND_URL_ASYNC="${KB_BACKEND_URL_ASYNC}" \
   --from-literal=MINIO_URL="${MINIO_URL}" \

@@ -122,6 +122,6 @@ def test_drift_from_a2_is_reported() -> None:
 def test_missing_endpoint_fails_only_in_a_complete_group() -> None:
     spec = _spec()
     assert compare(spec).ok
-    report = compare(spec, complete_groups=frozenset({"Thu thập"}))
+    report = compare(spec, complete_groups=frozenset({"Lớp ngữ cảnh"}))
     assert not report.ok
-    assert "GET /v1/crawl-sources (Thu thập)" in report.missing_in_complete_groups
+    assert "POST /v1/data-products (Lớp ngữ cảnh)" in report.missing_in_complete_groups

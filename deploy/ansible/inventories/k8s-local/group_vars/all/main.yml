@@ -7,7 +7,7 @@ secrets_env_file: "{{ k8s_manifests }}/secrets.env"
 openbao_keys_file: "{{ k8s_manifests }}/.openbao-keys.json"
 openbao_env_file: "{{ k8s_manifests }}/.openbao-env.yml"
 
-image_registry: "localhost:5000"
+image_registry: "localhost:5001"
 image_push: true
 image_import: ""
 image_tag: latest
@@ -26,8 +26,9 @@ wait_job: 900
 # a longer wait just holds the run behind a crash-looping or unpullable pod.
 wait_rollout: 180
 
-# Everything but the OS lives on the /data disk on this host.
-build_log_dir: /data/logs/dataagent-deploy/k8s-local
+# macOS local clusters do not expose the Linux /data mount used by production.
+# Keep build logs outside the checkout, but on a writable local filesystem.
+build_log_dir: "{{ lookup('env', 'TMPDIR') | default('/tmp', true) }}/dataagent-deploy/k8s-local"
 
 seed_demo: true
 

@@ -44,6 +44,29 @@
       {{ lookup('ansible.builtin.file', project_dir ~ '/' ~ item ~ '/' ~ img_dockerfile)
          | dockerfile_inputs(item, img_context, img_dockerfile) }}
 
+- name: Find manifest images missing from the registry
+  ansible.builtin.shell:
+    cmd: |
+      set -u
+      for name in {% for name in manifest_images.stdout_lines %}{{ name | quote }} {% endfor %}; do
+        if ! curl -fsSI \
+          -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+          "{{ image_registry_url }}/v2/{{ image_prefix }}/$name/manifests/{{ image_tag }}" \
+          >/dev/null 2>&1; then
+          echo "$name"
+        fi
+      done
+    executable: /bin/bash
+  register: registry_missing
+  changed_when: false
+  when: image_registry | length > 0
+
+- name: Record an empty missing-image list without a registry
+  ansible.builtin.set_fact:
+    registry_missing:
+      stdout_lines: []
+  when: image_registry | length == 0
+
 # images_on_demand (eval) are left out unless images_only names them: no Deployment or
 # deploy-run Job uses them, and eval alone was minutes of pip install on every
 # backend/libs change. Named in images_only they build whether or not their inputs
@@ -59,6 +82,12 @@
   vars:
     images_only_list: "{{ images_only.split(',') | map('trim') | reject('equalto', '') | list }}"
 
+- name: Add images that the registry does not serve yet
+  ansible.builtin.set_fact:
+    images: "{{ images + [item | combine({'because': ['registry missing']})] }}"
+  loop: "{{ image_catalog | selectattr('name', 'in', registry_missing.stdout_lines) | list }}"
+  when: item.name not in (images | map(attribute='name') | list)
+
 - name: Narrow the build list to images_only
   ansible.builtin.set_fact:
     images: >-
@@ -66,6 +95,11 @@
          | selectattr('name', 'in', images_only.split(',') | map('trim') | reject('equalto', '') | list)
          | list }}
   when: (images_only | length) > 0
+
+- name: Enforce the staged image allowlist
+  ansible.builtin.set_fact:
+    images: "{{ images | selectattr('name', 'in', deploy_image_allowlist) | list }}"
+  when: deploy_image_allowlist | length > 0
 
 - name: Check images_only matched something
   ansible.builtin.assert:

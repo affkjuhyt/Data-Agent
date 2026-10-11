@@ -11,6 +11,15 @@
   delay: 3
   changed_when: false
 
+- name: Check image registry
+  ansible.builtin.uri:
+    url: "{{ image_registry_url }}/v2/"
+    method: GET
+    status_code: 200
+    return_content: false
+  when: image_registry | length > 0
+  changed_when: false
+
 - name: Get current context
   ansible.builtin.command: "{{ kubectl }} config current-context"
   register: kube_context

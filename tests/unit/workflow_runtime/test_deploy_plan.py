@@ -103,7 +103,11 @@ class TestRealImages:
     def test_the_migrate_image_sees_migrations_and_the_orm_only(self):
         inputs = _inputs("backend/alembic")
         assert plan.paths_touching(["backend/alembic/versions/x.py"], inputs)
-        assert plan.paths_touching(["backend/libs/basemodel/services_databaseconnector/postgres_model.py"], inputs)
+        # V3 migrations apply generated SQL directly; the image intentionally
+        # no longer copies the legacy ORM package.
+        assert not plan.paths_touching(
+            ["backend/libs/basemodel/services_databaseconnector/postgres_model.py"], inputs
+        )
         assert not plan.paths_touching(
             ["backend/services/workflow_runtime/main.py", "backend/libs/shared/outbox.py"], inputs
         )

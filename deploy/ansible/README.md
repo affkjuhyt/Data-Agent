@@ -14,6 +14,9 @@ what that change touches.
 cd deploy/ansible
 ansible-playbook deploy.yml                                         # normal run
 ansible-playbook deploy.yml -e apply_jobs=true -e apply_setup=true  # also allow Jobs + gateway setup
+
+# macOS/OrbStack local standard
+make deploy-local
 ```
 
 Run it on the machine that holds the kubeconfig and the Docker daemon — the
@@ -50,7 +53,7 @@ overridden by the inventory's `group_vars/all/`.
 | 10 | **Jobs**: delete and rerun, migrations (`kong-migration`, `migrate`) first, then the init Jobs (`db-init`, `minio-init`, `kafka-topics`, `seed`) — **only the ones whose inputs changed**: the Job's own manifest or an entry in `job_inputs` (e.g. `migrate` ← `backend/alembic`, `seed` ← the seed files, `kong-migration` ← the kong image, `db-init` ← its SQL and a `migrate` rerun). Each wait ends at `Complete` **or** `Failed` (polled every `job_poll` s), so a failing Job shows its logs within seconds instead of after `wait_job` | `apply_jobs` **and** (a Job's inputs changed, a full deploy, or `jobs_force`) |
 | 11 | **Restart** every Deployment/StatefulSet running a rebuilt image **whose running pods are on a different digest** — a rebuild that came out identical restarts nothing | an image was built |
 | 12 | **Restart for config**: the service tier's Secrets and ConfigMaps are hashed before step 5 and after step 9; only the Deployments that read one whose content changed (`envFrom`, `env.valueFrom`, volumes) are restarted | `apply_services` and some content changed |
-| 12b | **Wait** for every restarted workload (and the whole service tier when step 9 ran), all at once (each up to `wait_rollout`); reports, never fails | something restarted, or step 9 ran |
+| 12b | **Wait** for every restarted workload, all at once; the gateway is waited on only when Keycloak/Kong changed, so an API/worker deploy does not block on the gateway | something restarted |
 | 13 | **Gateway setup** (`k8s_setup`): rerun the `setup` Job — Kong services/routes/plugins/CORS, the JWT issuer, Keycloak audience mappers, dev user passwords — and apply the backup CronJob | `apply_setup` |
 | 14 | **Verify** (`k8s_verify`), then write the checkpoint | always; the checkpoint only advances if every step above succeeded |
 
@@ -87,16 +90,17 @@ The only inventory. It deploys the single-node dev server from
 | --- | --- | --- |
 | `k8s_env` | `dev` | applies `deploy/k8s/dev/` |
 | `secrets_env_file`, `openbao_keys_file`, `openbao_env_file` | under `deploy/k8s/dev/` | server-only state, git-ignored |
-| `image_registry` / `image_push` | `localhost:5000` / `true` | k3s pulls from the local registry |
+| `image_registry` / `image_push` | `localhost:5001` / `true` | OrbStack pulls from the local registry |
 | `git_sync_enabled` | `false` | people edit code in this same checkout; a sync would `git switch main` and pull into their working tree |
 | `git_branch` | `main` | used only if sync is turned on |
 | `apply_databases` / `apply_services` | `true` | |
-| `service_manifests` | `[]` | Empty applies every service manifest; set names such as `api,keycloak,kong,frontend` for a staged V3 cutover |
+| `service_manifests` | `[]` | Empty applies every service manifest; set names such as `api,worker-agent,keycloak,kong,frontend` for the V3 local slice |
+| `deploy_image_allowlist` | `[]` | Empty uses change detection for every image; set `api,worker-agent,migrate,frontend,kong,keycloak` to make a staged V3 deploy unable to build legacy images |
 | `database_manifests` | `[]` | Empty applies every database manifest; staged V3 can use `postgres,pgbouncer,openbao` |
 | `apply_jobs` / `apply_setup` | `false` | Jobs rerun migrations, reset role passwords and rebuild demo tables; setup rewrites Kong config. Opt in per run with `-e` |
 | `seed_demo` | `true` | the `seed` Job loads demo data (see RUNBOOK) |
-| `wait_rollout` | `180` | the rollout wait only reports; on one node a longer wait just holds the run behind a stuck pod |
-| `build_log_dir` | `/data/logs/dataagent-deploy/k8s-local` | per-image build/push logs, on the `/data` disk |
+| `wait_rollout` | `180` | only changed/restarted workloads are waited on; gateway waits happen only for a gateway change |
+| `build_log_dir` | `$TMPDIR/dataagent-deploy/k8s-local` | per-image build/push logs on macOS |
 | `public_api_url`, `keycloak_public_url`, `langfuse_public_url` | `http://10.10.55.101:30100`, `:30110`, `:30420` | the URLs **browsers** use — see below |
 
 The three public URLs must be reachable from a user's browser. They end up in

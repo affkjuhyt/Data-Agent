@@ -1,0 +1,288 @@
+"""Request and response shapes of the catalog module (tab 4 A3, group "Nguồn và danh mục").
+
+Responses are the table's columns minus org_id, created_by, updated_by, deleted_at (A3 "Trả về").
+A source carries only OpenBao paths (secret_ref, writeback_secret_ref), never a password or
+token: the request takes `credentials` as a reference and refuses any other key (BR-14).
+"""
+
+from __future__ import annotations
+
+import datetime
+import decimal
+import uuid
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+SourceKind = Literal[
+    "postgresql",
+    "oracle",
+    "sqlserver",
+    "mysql",
+    "snowflake",
+    "bigquery",
+    "databricks",
+    "clickhouse",
+    "kafka_cdc",
+    "object_store",
+    "file",
+    "sftp",
+    "sharepoint",
+    "rest_api",
+    "other",
+]
+SourceMode = Literal["federated", "ingest"]
+AuthorityLevel = Literal["level_1", "level_2", "level_3", "reference"]
+# What a person may set; draft, testing and needs_fix follow from tests and checks.
+SettableSourceStatus = Literal["active", "paused", "archived"]
+DescriptionStatus = Literal["none", "suggested", "approved"]
+PiiLabel = Literal["national_id", "phone", "email", "account_no", "name", "address", "other"]
+
+
+class SecretReference(BaseModel):
+    """Where the account lives in OpenBao (BR-14): a path under the organisation's namespace
+    `secret/tenants/{org_id}/`. A password, token or any other key is refused."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    secret_ref: str = Field(min_length=1, max_length=512)
+
+
+class _Limits(BaseModel):
+    # BR-99 ranges: A3 answers 422 validation_failed outside them, before the CHECK would.
+    max_concurrency: int | None = Field(default=None, ge=1, le=64)
+    query_timeout_s: int | None = Field(default=None, ge=5, le=3600)
+
+
+class SourceCreate(_Limits):
+    name: str = Field(min_length=1, max_length=200)
+    kind: SourceKind
+    host: str | None = Field(default=None, max_length=255)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    database_name: str | None = Field(default=None, max_length=255)
+    # Default: federated for a database or warehouse, ingest for the rest (UC-04-01 step 3).
+    mode: SourceMode | None = None
+    authority_level: AuthorityLevel | None = None
+    freshness_sla: datetime.timedelta | None = None
+    scan_schemas: list[str] | None = Field(default=None, max_length=1000)
+    scan_window: dict[str, Any] | None = None
+    work_calendar_id: uuid.UUID | None = None
+    credentials: SecretReference | None = None
+    # A separate write account, only for write-back (UC-06-04); none means no write-back.
+    writeback_credentials: SecretReference | None = None
+
+
+class SourcePatch(_Limits):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    authority_level: AuthorityLevel | None = None
+    freshness_sla: datetime.timedelta | None = None
+    scan_schemas: list[str] | None = Field(default=None, max_length=1000)
+    scan_window: dict[str, Any] | None = None
+    status: SettableSourceStatus | None = None
+    credentials: SecretReference | None = None
+
+
+class ScheduleUpdate(BaseModel):
+    """PUT: the four values replace the stored ones; null clears a value."""
+
+    scan_cron: str | None = Field(default=None, max_length=200)
+    profile_cron: str | None = Field(default=None, max_length=200)
+    scan_window: dict[str, Any] | None = None
+    work_calendar_id: uuid.UUID | None = None
+
+
+class ScanRequest(BaseModel):
+    kind: Literal["schema", "profile"] = "schema"
+    # Only these tables (schema.table); all tables of scan_schemas when absent.
+    tables: list[str] | None = Field(default=None, max_length=10_000)
+
+
+class Accepted(BaseModel):
+    """A1.6: the body of a 202; Location names where the result appears."""
+
+    id: uuid.UUID
+    status: str
+    poll_after_ms: int = 2_000
+
+
+class SourceView(BaseModel):
+    id: uuid.UUID
+    data_space_id: uuid.UUID
+    name: str
+    kind: str
+    connector_icon: str | None
+    host: str | None
+    port: int | None
+    database_name: str | None
+    conn_options: Any
+    # OpenBao paths only (BR-14); the empty string means no credentials declared.
+    secret_ref: str
+    writeback_secret_ref: str | None
+    mode: str
+    authority_level: str
+    freshness_sla: datetime.timedelta | None
+    max_concurrency: int
+    query_timeout_s: int
+    scan_schemas: list[str]
+    scan_cron: str | None
+    profile_cron: str | None
+    scan_window: Any
+    work_calendar_id: uuid.UUID | None
+    status: str
+    status_reason: str | None
+    last_checked_at: datetime.datetime | None
+    db_version: str | None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+class SourceSchedule(SourceView):
+    """The source and its next five scans of each kind (UC-04-05 step 3)."""
+
+    next_scans: list[datetime.datetime] = Field(default_factory=list)
+    next_profiles: list[datetime.datetime] = Field(default_factory=list)
+
+
+class ScanRunView(BaseModel):
+    id: uuid.UUID
+    source_id: uuid.UUID
+    kind: str
+    trigger: str
+    workflow_id: str | None
+    status: str
+    tables_total: int | None
+    tables_scanned: int
+    tables_skipped: Any
+    resume_from: str | None
+    started_at: datetime.datetime
+    finished_at: datetime.datetime | None
+    created_at: datetime.datetime
+
+
+class DatasetView(BaseModel):
+    id: uuid.UUID
+    source_id: uuid.UUID | None
+    data_space_id: uuid.UUID
+    origin: str
+    schema_name: str
+    table_name: str
+    object_kind: str
+    display_name: str | None
+    description: str | None
+    description_status: str
+    row_estimate: int | None
+    history_kind: str
+    business_date_col: str | None
+    knowledge_time_col: str | None
+    enabled: bool
+    steward_id: uuid.UUID | None
+    scope: str
+    expires_at: datetime.datetime | None
+    current_version: int
+    quality_state: str
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+class ColumnProfileView(BaseModel):
+    scan_run_id: uuid.UUID
+    sample_rows: int
+    null_ratio: decimal.Decimal | None
+    distinct_est: int | None
+    min_value: str | None
+    max_value: str | None
+    top_values: Any
+    pattern_hint: str | None
+    created_at: datetime.datetime
+
+
+class ColumnView(BaseModel):
+    id: uuid.UUID
+    dataset_version: int
+    name: str
+    ordinal: int
+    data_type: str
+    normalized_type: str
+    is_nullable: bool
+    is_key: bool
+    display_name: str | None
+    description: str | None
+    description_status: str
+    unit: str | None
+    pii_label: str | None
+    pii_confirmed: bool
+    profile: ColumnProfileView | None = None
+
+
+class DatasetDetail(DatasetView):
+    # The current columns (not removed) with their latest profile.
+    columns: list[ColumnView] = Field(default_factory=list)
+
+
+class ColumnPatch(BaseModel):
+    id: uuid.UUID
+    display_name: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=4_000)
+    description_status: DescriptionStatus | None = None
+    unit: str | None = Field(default=None, max_length=50)
+    pii_label: PiiLabel | None = None
+    pii_confirmed: bool | None = None
+
+
+class DatasetPatch(BaseModel):
+    enabled: bool | None = None
+    steward_id: uuid.UUID | None = None
+    display_name: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=4_000)
+    description_status: DescriptionStatus | None = None
+    business_date_col: str | None = Field(default=None, max_length=200)
+    knowledge_time_col: str | None = Field(default=None, max_length=200)
+    columns: list[ColumnPatch] | None = Field(default=None, max_length=5_000)
+
+
+class DatasetVersionView(BaseModel):
+    id: uuid.UUID
+    dataset_id: uuid.UUID
+    version: int
+    schema_hash: str
+    diff: Any
+    change_kind: str
+    proposal_id: uuid.UUID | None
+    valid_from: datetime.datetime
+    valid_to: datetime.datetime | None
+    scan_run_id: uuid.UUID | None
+    certified_at: datetime.datetime | None
+    certified_by: uuid.UUID | None
+    created_at: datetime.datetime
+
+
+class CertificationView(BaseModel):
+    id: uuid.UUID
+    dataset_version_id: uuid.UUID
+    action: str
+    actor_id: uuid.UUID
+    note: str | None
+    reason: str | None
+    created_at: datetime.datetime
+
+
+class CertifiedVersion(DatasetVersionView):
+    """The version after the change, with the history row just written (BR-156)."""
+
+    certification: CertificationView
+
+
+class CertifyRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=4_000)
+
+
+class RevokeRequest(BaseModel):
+    reason: str = Field(max_length=4_000)
+
+    @field_validator("reason")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        # AC-14-05-07: a blank or whitespace-only reason is refused.
+        if not value.strip():
+            raise ValueError("reason must not be blank (BR-156)")
+        return value.strip()
