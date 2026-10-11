@@ -73,9 +73,9 @@ async def _run_agent(payload: dict[str, Any], caller: dict[str, Any]) -> Any:
     from services.workflow_runtime.application.runtime_services.conversation_runner import (
         run_conversation_stream,
     )
-    from services.workflow_runtime.domain.schemas import RunRequest
+    from services.workflow_runtime.domain.schemas import InternalRunRequest
 
-    req = RunRequest(**payload)
+    req = InternalRunRequest(**payload)
     # _InProcessRequest stands in for starlette's Request (only .headers is read).
     return await run_conversation_stream(req, _InProcessRequest(), caller)  # type: ignore[arg-type,unused-ignore]
 

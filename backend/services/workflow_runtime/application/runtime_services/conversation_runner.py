@@ -399,8 +399,9 @@ async def run_conversation_stream(
 
     # orchestrated=True: orchestrator đã fetch memory và pass xuống, dùng luôn
     # orchestrated=False: single agent mode, tự fetch memory như bình thường
-    if req.orchestrated:
-        memory_context = list(req.memory_context)
+    orchestrated = bool(getattr(req, "orchestrated", False))
+    if orchestrated:
+        memory_context = list(getattr(req, "memory_context", []))
         workflow_memory_context: list[dict[str, Any]] = []
     else:
         memory_context = []
@@ -520,7 +521,8 @@ async def run_conversation_stream(
     handler = get_langchain_callback_handler(conv_id=conv_id)
     callbacks = [handler] if handler else []
 
-    guardrail_cfg = req.guardrail_cfg.model_dump() if req.guardrail_cfg else {}
+    request_guardrail_cfg = getattr(req, "guardrail_cfg", None)
+    guardrail_cfg = request_guardrail_cfg.model_dump() if request_guardrail_cfg else {}
 
     async def _persist_turn(
         *,
@@ -612,7 +614,7 @@ async def run_conversation_stream(
                         )
 
             # orchestrated=True: orchestrator sẽ ghi memory sau synthesize, agent không ghi
-            if not req.orchestrated and cfg.get("memory_enabled") and conv_id:
+            if not orchestrated and cfg.get("memory_enabled") and conv_id:
                 await request_memory_extraction(
                     agent_id, tenant_id, user_ref,
                     conversation_id=conv_id, message_id=assistant_msg_id,
@@ -622,7 +624,7 @@ async def run_conversation_stream(
         finally:
             await asyncio.to_thread(flush_langfuse)
 
-        for nt in (node_traces if cfg.get("memory_enabled") and not req.orchestrated else []):
+        for nt in (node_traces if cfg.get("memory_enabled") and not orchestrated else []):
             if not nt["tool_name"].startswith("tool/"):
                 continue
             task_type = _DATA_TOOL_TASK_TYPE.get(nt["tool_name"][len("tool/"):])
@@ -690,7 +692,7 @@ async def run_conversation_stream(
                 node = event.get("metadata", {}).get("langgraph_node", "")
 
                 if kind == "on_custom_event" and event.get("name") == RESPONDER_TOKEN_EVENT:
-                    if not req.orchestrated:
+                    if not orchestrated:
                         piece = live.feed(event["data"])
                         if piece:
                             yield f"data: {json.dumps(piece)}\n\n"

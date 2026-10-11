@@ -1,6 +1,6 @@
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Message(BaseModel):
@@ -25,6 +25,8 @@ class ClarificationAnswer(BaseModel):
 
 
 class RunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     query: str
     agent_id: str
     conversation_id: Optional[str] = None
@@ -33,9 +35,11 @@ class RunRequest(BaseModel):
     # onto the slots by the planner (ambiguity.apply_answers), not re-read from
     # the query text.
     clarification_answers: List[ClarificationAnswer] = Field(default_factory=list, max_length=8)
-    # True khi được gọi từ orchestrator trong multi-agent mode:
-    #   - dùng memory_context từ request thay vì tự fetch
-    #   - skip memory write (orchestrator sẽ ghi sau synthesize)
+
+
+class InternalRunRequest(RunRequest):
+    """Additional fields accepted only on the verified orchestrator path."""
+
     orchestrated: bool = False
     memory_context: List[Any] = Field(default_factory=list)
     guardrail_cfg: Optional[GuardrailCfg] = None
