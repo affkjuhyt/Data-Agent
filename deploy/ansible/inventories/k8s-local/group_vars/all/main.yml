@@ -32,6 +32,6 @@ build_log_dir: "{{ lookup('env', 'TMPDIR') | default('/tmp', true) }}/dataagent-
 
 seed_demo: true
 
-public_api_url: http://10.10.55.101:30100
-keycloak_public_url: http://10.10.55.101:30110
-langfuse_public_url: http://10.10.55.101:30420
+public_api_url: http://localhost:30100
+keycloak_public_url: http://localhost:30110
+langfuse_public_url: http://localhost:30420
