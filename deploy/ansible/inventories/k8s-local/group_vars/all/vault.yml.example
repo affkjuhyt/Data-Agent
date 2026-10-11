@@ -28,6 +28,12 @@ vault_sandbox_reader_password: ""
 vault_kb_backend_password: ""
 vault_kb_ingestion_worker_password: ""
 vault_pgbouncer_auth_password: ""
+# V3 database: a password per service role (svc_org, svc_governance, svc_integration,
+# svc_catalog, svc_context, svc_qa, svc_query, svc_agent, svc_eval, svc_inbox, svc_workspace,
+# svc_skill, svc_monitor, svc_notify, svc_document, svc_conflict, svc_pack, svc_period,
+# svc_pipeline, svc_ingest, svc_acquire, svc_forecast, svc_exec, svc_exec_worker, svc_audit).
+# A role left out stays NOLOGIN.
+vault_db_role_passwords: {}
 
 # ── other stores ──────────────────────────────────────────────────────
 vault_neo4j_password: ""

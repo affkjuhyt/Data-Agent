@@ -1,8 +1,8 @@
 """The k8s manifests, checked the way the migrations are checked.
 
-`tests/integration/workflow_runtime/test_alembic_migrations.py` exists because a migration that
-only gets exercised by a deploy is a migration whose failures land in
-production. The manifests had the same shape of problem and no equivalent test:
+`tests/integration/migrate/` exists because a migration that only gets exercised by a deploy is a
+migration whose failures land in production. The manifests had the same shape of problem and no
+equivalent test:
 a misspelled field is not an error to the API server, it is a field that
 silently does not exist, and the first symptom is a pod that starts without the
 setting you thought you gave it.

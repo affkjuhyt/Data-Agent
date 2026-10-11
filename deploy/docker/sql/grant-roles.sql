@@ -1,181 +1,19 @@
--- Privileges for the three non-owner roles. Idempotent; runs from the db-init
--- Job after migrations, before any service starts.
+-- Cluster-level setup the V3 baseline does not own. Idempotent; runs from the db-init Job after
+-- the migrate Job, before any service starts.
 --
--- Replaces grant-app-user.sql (never mounted, so app_user had no CONNECT and no
--- password) and grant-runtime-writer.sql (created the role a second time with a
--- hardcoded password that could not match RUNTIME_DB_URL).
---
--- No passwords here. The db-init Job sets them from the same secrets that build
--- APP_DATABASE_URL and RUNTIME_DB_URL, so the role and the DSN cannot drift.
---
--- Verify afterwards; every row must read `f` for rolsuper and rolbypassrls:
---   SELECT rolname, rolsuper, rolbypassrls FROM pg_roles
---   WHERE rolname IN ('app_user', 'runtime_writer', 'sandbox_reader');
+-- The application roles (da_owner, svc_<schema>, <schema>_read, svc_exec_worker) and every grant
+-- on the 23 schemas come from the migration (backend/alembic/sql/dataagent.sql, design tab 3
+-- D5.2). The db-init Job only turns the svc_ roles into logins: it sets their passwords from the
+-- DB_ROLE_PASSWORDS secret, so a role and the URL that embeds its password cannot drift.
 
--- init.sql creates these, but postgres only runs initdb on an empty data
--- directory. A restored volume or a failed first init leaves Keycloak and Kong
--- without their schemas and their migrations fail. Stated here because db-init
--- runs on every deploy.
+-- init.sql creates these, but postgres only runs initdb on an empty data directory. A restored
+-- volume or a failed first init leaves Keycloak and Kong without their schemas and their
+-- migrations fail. Stated here because db-init runs on every deploy.
 CREATE SCHEMA IF NOT EXISTS keycloak;
 CREATE SCHEMA IF NOT EXISTS kong;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN
-    CREATE ROLE app_user WITH LOGIN;
-  END IF;
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'runtime_writer') THEN
-    CREATE ROLE runtime_writer WITH LOGIN;
-  END IF;
-END
-$$;
-
--- Stated explicitly rather than relied on as a default: one ALTER ROLE ...
--- BYPASSRLS anywhere silently disables every policy for that role, and a
--- superuser bypasses FORCE row-level security unconditionally.
-ALTER ROLE app_user NOBYPASSRLS;
-ALTER ROLE app_user NOSUPERUSER;
-ALTER ROLE runtime_writer NOBYPASSRLS;
-ALTER ROLE runtime_writer NOSUPERUSER;
-
-GRANT CONNECT ON DATABASE dataagent TO app_user;
-GRANT CONNECT ON DATABASE dataagent TO runtime_writer;
-
-GRANT USAGE ON SCHEMA public TO app_user;
-GRANT USAGE ON SCHEMA public TO runtime_writer;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO runtime_writer;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO runtime_writer;
-
--- Tables created by later migrations inherit the same grants, so adopting a new
--- table does not silently 403 the application.
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT USAGE, SELECT ON SEQUENCES TO app_user;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO runtime_writer;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT USAGE, SELECT ON SEQUENCES TO runtime_writer;
-
-GRANT SELECT ON "Agents" TO runtime_writer;
-
--- LangGraph checkpointer (workflow_runtime/orchestrator/graph.py): its setup()
--- runs CREATE TABLE IF NOT EXISTS on every start, and Postgres checks CREATE
--- on the schema before it checks whether the table exists — so pre-creating
--- the tables is not enough. Postgres 15+ grants no CREATE on public, and
--- runtime_writer must not get it there. The checkpointer uses this schema via
--- search_path instead, and runtime_writer owns only what it creates in it.
-CREATE SCHEMA IF NOT EXISTS langgraph;
-GRANT USAGE, CREATE ON SCHEMA langgraph TO runtime_writer;
-
-
--- ── sandbox_reader ───────────────────────────────────────────────────────────
--- Its privileges live in create-extra-dbs.sql against the sandbox_dev database.
--- Only the role is created here: roles are cluster-wide, create-extra-dbs.sql
--- runs from docker-entrypoint-initdb.d (fresh volumes only), and db-init sets
--- this role's password on every deploy.
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'sandbox_reader') THEN
-    CREATE ROLE sandbox_reader WITH LOGIN NOBYPASSRLS;
-  END IF;
-END
-$$;
-
--- ── crawler_ro ───────────────────────────────────────────────────────────────
--- Same situation as sandbox_reader: create-extra-dbs.sql creates it and grants
--- it sandbox_dev, but only on a fresh volume, while db-init sets its password
--- on every deploy under ON_ERROR_STOP. On a volume initialised before the role
--- existed, that ALTER ROLE stopped the Job.
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'crawler_ro') THEN
-    CREATE ROLE crawler_ro WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
-  END IF;
-END
-$$;
-
--- ── kb_backend ───────────────────────────────────────────────────────────────
--- Table-scoped role for the kb-backend service. Unlike app_user it is NOT
--- granted ALL TABLES and gets no ALTER DEFAULT PRIVILEGES in public: a new
--- table reaches this service only by being added to a list below. That is the
--- point — kb-backend cannot read secrets_vault or api_keys at all.
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'kb_backend') THEN
-    CREATE ROLE kb_backend WITH LOGIN;
-  END IF;
-END
-$$;
-
-ALTER ROLE kb_backend NOSUPERUSER;
-ALTER ROLE kb_backend NOBYPASSRLS;
-
-GRANT CONNECT ON DATABASE dataagent TO kb_backend;
-GRANT USAGE ON SCHEMA public TO kb_backend;
-
--- Revoke first so removing a table from the lists below actually takes effect.
-REVOKE ALL ON ALL TABLES IN SCHEMA public FROM kb_backend;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON
-  "KBData",
-  "KBTextBlock",
-  "KBTextBlockVersion",
-  "KBTextTable",
-  "KBTable",
-  "KBKnowledgeBase",
-  "KBLifecycleHistory",
-  "KBConflict",
-  "KBConflictBatch",
-  "KBFilterPolicy",
-  "KBExtractionPolicy",
-  "KBWarehouse",
-  "KBWarehouseConfig",
-  "KBStructuredImportJob",
-  "KBQdrantCollection",
-  -- Source Registry (operations/source_ops.py): sources, their versioned
-  -- config and the run queue Run Now writes to. Deleting a source is a soft
-  -- delete (UPDATE).
-  "KBSource",
-  "KBSourceConfig",
-  "KBSourceRun"
-TO kb_backend;
-
-GRANT SELECT ON
-  "KBQdrantConnection",
-  "KBNeo4jNode",
-  "KBNeo4jRelationship",
-  "KBEntityLookup",
-  "RolePermissions"
-TO kb_backend;
-
--- Kafka outbox (libs/shared/outbox.py): routes enqueue events, the relay marks them sent.
--- No tenant column, so no RLS; the sequence is needed for the id default.
-GRANT SELECT, INSERT, UPDATE ON "OutboxEvents" TO kb_backend;
-GRANT USAGE, SELECT ON SEQUENCE "OutboxEvents_id_seq" TO kb_backend;
-
--- Structured imports: kb-backend creates the physical tables, so it owns them.
-CREATE SCHEMA IF NOT EXISTS kb_structured;
-GRANT USAGE, CREATE ON SCHEMA kb_structured TO kb_backend;
-
--- The reader role's default privileges were attached to app_user, which no
--- longer creates these tables. Without this the text-to-SQL tool stops seeing
--- imports the moment kb-backend switches to its own role.
-DO $$
-BEGIN
-  IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'kb_structured_reader') THEN
-    EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE kb_backend IN SCHEMA kb_structured '
-            'GRANT SELECT ON TABLES TO kb_structured_reader';
-  END IF;
-END
-$$;
-
--- ── pgbouncer_auth ───────────────────────────────────────────────────────────
--- Lets PgBouncer verify client passwords without a superuser DSN, so the
--- client's own role (kb_backend) is what reaches Postgres and RLS still applies.
+-- PgBouncer authenticates every login (the svc_ roles included) with auth_query through this
+-- role, so no service password has to be copied into its userlist.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'pgbouncer_auth') THEN
@@ -183,91 +21,24 @@ BEGIN
   END IF;
 END
 $$;
-
 GRANT CONNECT ON DATABASE dataagent TO pgbouncer_auth;
-
 CREATE OR REPLACE FUNCTION public.pgbouncer_get_auth(p_usename TEXT)
 RETURNS TABLE(usename NAME, passwd TEXT)
 LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog AS $$
   SELECT usename, passwd FROM pg_shadow WHERE usename = p_usename;
 $$;
-
 REVOKE ALL ON FUNCTION public.pgbouncer_get_auth(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.pgbouncer_get_auth(TEXT) TO pgbouncer_auth;
 
--- ── kb_ingestion_worker ──────────────────────────────────────────────────────
--- Table-scoped role for the ingestion worker. Same rule as kb_backend: no
--- ALL TABLES grant and no default privileges, so a new table reaches this
--- service only by being listed here.
+-- Every service role may connect; what it may touch is the migration's grants and row-level
+-- security. Stated explicitly: one BYPASSRLS would silently disable every policy for that role.
 DO $$
+DECLARE
+  r record;
 BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'kb_ingestion_worker') THEN
-    CREATE ROLE kb_ingestion_worker WITH LOGIN;
-  END IF;
-END
-$$;
-
-ALTER ROLE kb_ingestion_worker NOSUPERUSER;
-ALTER ROLE kb_ingestion_worker NOBYPASSRLS;
-
-GRANT CONNECT ON DATABASE dataagent TO kb_ingestion_worker;
-GRANT USAGE ON SCHEMA public TO kb_ingestion_worker;
-
-REVOKE ALL ON ALL TABLES IN SCHEMA public FROM kb_ingestion_worker;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON
-  "KBData",
-  "KBTextBlock",
-  "KBTextBlockVersion",
-  "KBTextTable",
-  "KBLifecycleHistory",
-  "KBConflict",
-  "KBConflictBatch",
-  "KBStructuredImportJob",
-  -- Gold mirrors the graph into Postgres (graph_store.py: upsert nodes,
-  -- insert/delete relationships); without these it fails at "permission denied".
-  "KBNeo4jNode",
-  "KBNeo4jRelationship"
-TO kb_ingestion_worker;
-
--- KBQdrantConnection is not read directly, but KBQdrantCollection's RLS policy
--- (tenant_isolation_child) does EXISTS (SELECT ... FROM "KBQdrantConnection"),
--- so without it every Gold promotion fails with "permission denied".
-GRANT SELECT ON
-  "KBFilterPolicy",
-  "KBExtractionPolicy",
-  "KBEntityLookup",
-  "KBQdrantCollection",
-  "KBQdrantConnection",
-  -- Gold reads the tenant's PII-masking setting here; when the read fails it only
-  -- logs a warning and silently runs with masking disabled.
-  compliance_settings,
-  -- Silver, Gold and kb-structured-data read the document's source config
-  -- (storage_boundary.is_v2_structured_document) to keep V2 structured sources
-  -- off the legacy paths; without it every promotion fails at "permission denied".
-  "KBSourceConfig",
-  -- Not read directly: KBSourceConfig's RLS policy (tenant_isolation_child)
-  -- does EXISTS (SELECT ... FROM "KBSource"), as KBQdrantConnection above.
-  "KBSource"
-TO kb_ingestion_worker;
-
--- Gold registers entity aliases (entity_registry.py _register_aliases inserts
--- KBEntityLookup rows); without INSERT every chunk with entities fails.
-GRANT INSERT ON "KBEntityLookup" TO kb_ingestion_worker;
-
--- Kafka outbox: the silver/gold handlers enqueue retries, DLQ entries and the Gold
--- hand-off; their relay marks them sent (libs/shared/outbox.py).
-GRANT SELECT, INSERT, UPDATE ON "OutboxEvents" TO kb_ingestion_worker;
-GRANT USAGE, SELECT ON SEQUENCE "OutboxEvents_id_seq" TO kb_ingestion_worker;
-
--- ── crawler_svc ──────────────────────────────────────────────────────────────
--- The V2 crawler role (ADR-V2-46). Migration 5b7d9f1a3c6e creates it with its
--- grants (INSERT/SELECT on ingest.artifact and ingest.fetch, 9f3c7a1e5d2b); this
--- block only guarantees it exists before db-init sets its password.
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'crawler_svc') THEN
-    CREATE ROLE crawler_svc WITH LOGIN NOSUPERUSER NOBYPASSRLS;
-  END IF;
+  FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'svc\_%' LOOP
+    EXECUTE format('GRANT CONNECT ON DATABASE dataagent TO %I', r.rolname);
+    EXECUTE format('ALTER ROLE %I NOSUPERUSER NOBYPASSRLS', r.rolname);
+  END LOOP;
 END
 $$;

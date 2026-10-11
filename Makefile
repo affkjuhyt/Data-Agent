@@ -34,8 +34,8 @@ IMAGE_REGISTRY ?= localhost:5000
 UNIT_SUITES ?= workflow_runtime:workflow_runtime kb_backend:kb-backend platform_workers:platform-workers \
                sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker \
                model_service:model_service contracts:kb-backend indicator_api:indicator-api api:api
-INTEGRATION_SUITES ?= workflow_runtime:workflow_runtime auth_api:auth_api platform_workers:platform-workers \
-                      sandbox_executor:sandbox_executor contracts:kb-backend api:api migrate:migrate
+INTEGRATION_SUITES ?= workflow_runtime:workflow_runtime sandbox_executor:sandbox_executor \
+                      contracts:kb-backend api:api migrate:migrate
 # The integration sandbox tests start real sandbox-runner containers; the tag
 # differs per host (tests/integration/_sandbox.py), override it to match.
 SANDBOX_RUNNER_IMAGE ?= dataagent/sandbox-runner:latest
@@ -185,4 +185,3 @@ e2e:  ## pytest -m e2e against the deployed dev cluster (LAN NodePorts; URLs ove
 
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml
-

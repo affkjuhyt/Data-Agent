@@ -196,14 +196,8 @@ kubectl -n dataagent-service create secret generic kong-migration-secrets \
 
 kubectl -n dataagent-service create secret generic db-init-secrets \
   --from-literal=PGPASSWORD="${POSTGRES_PASSWORD}" \
-  --from-literal=APP_USER_PASSWORD="${APP_USER_PASSWORD}" \
-  --from-literal=RUNTIME_WRITER_PASSWORD="${RUNTIME_WRITER_PASSWORD}" \
-  --from-literal=SANDBOX_READER_PASSWORD="${SANDBOX_READER_PASSWORD}" \
-  --from-literal=KB_BACKEND_PASSWORD="${KB_BACKEND_PASSWORD}" \
   --from-literal=PGBOUNCER_AUTH_PASSWORD="${PGBOUNCER_AUTH_PASSWORD}" \
-  --from-literal=KB_INGESTION_WORKER_PASSWORD="${KB_INGESTION_WORKER_PASSWORD}" \
-  --from-literal=CRAWLER_SVC_PASSWORD="${CRAWLER_SVC_PASSWORD}" \
-  --from-literal=POSTGRES_CRAWLER_PASSWORD="${POSTGRES_CRAWLER_PASSWORD:-}" \
+  --from-literal=DB_ROLE_PASSWORDS="${DB_ROLE_PASSWORDS:-{\}}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic seed-secrets \

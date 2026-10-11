@@ -1,22 +1,8 @@
-"""Is row-level security actually doing anything?
+"""Check that tenant scoping is enforced by the connection path and deployment.
 
-`backend/alembic/versions/a1b2c3d4e5f6` enables and FORCEs RLS on every tenant-scoped
-table, the tenant_isolation policy is correct, and
-`get_client(tenant_id=...)` sets `app.tenant_id` correctly. None of that
-isolates anything unless the connecting role is subject to RLS — and a Postgres
-SUPERUSER is not, unconditionally. FORCE does not change that: it subjects the
-table OWNER to its own policies, and says nothing about superusers or roles
-holding BYPASSRLS.
-
-Every service except workflow_runtime connects as `${POSTGRES_USER:-admin}`.
-workflow_runtime connects as `runtime_writer`, which
-`deploy/docker/sql/grant-roles.sql` explicitly sets NOBYPASSRLS — so it is the
-one service where the policies do anything at all today.
-
-`tests/integration/auth_api/test_rls_enforcement.py` proves the policy works, and proves
-it against `app_user` — a role no service connects as. Its
-`test_owner_role_bypasses_rls` even asserts that the DSN every other service
-uses returns all tenants' rows. Both tests pass. The deployment is unprotected.
+The V3 schema uses one `svc_<schema>` role per data domain. `scoped_session` sets the
+transaction-local organisation and user settings, while the role's NOBYPASSRLS attribute makes
+the database policies effective.
 
 So the checks here are about the DEPLOYMENT rather than the policy:
 
@@ -245,25 +231,30 @@ class TestTheScopedFormAdmitsWhenItCannotEnforce:
         assert "rolbypassrls" in sql
 
 
-class TestTheRoleThatMakesRlsRealIsDeployable:
-    def test_app_user_has_grants_and_cannot_bypass(self):
-        """The migration creates app_user with no password and no privileges.
-        grant-roles.sql supplies CONNECT and the grants; the db-init Job supplies
-        the password from APP_USER_PASSWORD, the same value APP_DATABASE_URL embeds."""
+class TestV3RolesAreDeployable:
+    def test_grant_sql_keeps_cluster_roles_and_nobypassrls(self):
         sql = (INFRA / "sql" / "grant-roles.sql").read_text(encoding="utf-8").upper()
         assert "NOBYPASSRLS" in sql
         assert "NOSUPERUSER" in sql
         assert "GRANT CONNECT" in sql
-        assert "GRANT SELECT, INSERT, UPDATE, DELETE" in sql
-        assert "ALTER DEFAULT PRIVILEGES" in sql, (
-            "tables added by later migrations would not be readable"
-        )
+        assert "PGBOUNCER_AUTH" in sql
+        assert "APP_USER" not in sql
+        assert "RUNTIME_WRITER" not in sql
 
-    def test_runtime_writer_is_still_nobypassrls(self):
-        """The only role a service uses today that RLS applies to. If this
-        regresses, the last place isolation is real goes quiet."""
-        sql = (INFRA / "sql" / "grant-roles.sql").read_text(encoding="utf-8").upper()
-        assert "ALTER ROLE RUNTIME_WRITER NOBYPASSRLS" in sql
+    def test_db_init_waits_for_the_v3_schema(self):
+        for path in (
+            REPO_ROOT / "deploy" / "k8s" / "dev" / "job" / "db-init.yaml",
+            REPO_ROOT / "deploy" / "k8s" / "production" / "job" / "db-init.yaml",
+        ):
+            text = path.read_text(encoding="utf-8")
+            assert "org.organization" in text
+            assert "Agents" not in text
+
+    def test_v3_role_passwords_are_supplied_as_json(self):
+        create_secrets = (REPO_ROOT / "deploy" / "k8s" / "create-secrets.sh").read_text(encoding="utf-8")
+        env_example = (REPO_ROOT / "deploy" / "k8s" / "secrets.env.example").read_text(encoding="utf-8")
+        assert "DB_ROLE_PASSWORDS" in create_secrets
+        assert "DB_ROLE_PASSWORDS={}" in env_example
 
     def test_no_role_password_is_hardcoded_in_sql(self):
         """A password in the SQL cannot match the one the DSN carries. The
@@ -278,42 +269,3 @@ class TestTheRoleThatMakesRlsRealIsDeployable:
                 if "PASSWORD '" in stripped.upper():
                     offenders.append(f"{f.name}: {stripped}")
         assert not offenders, f"hardcoded role password: {offenders}"
-
-    def test_the_switch_is_documented_where_an_operator_would_look(self):
-        env = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
-        assert "APP_DATABASE_URL" in env
-        assert "STRICT_TENANT_ISOLATION" in env
-
-
-class TestTheContractTestDoesNotProveTheDeployment:
-    """Pins the gap itself, so nobody reads a green RLS suite as isolation.
-
-    If someone later points the services at app_user, this test should be
-    updated — its failure would mean the situation improved.
-    """
-
-    def test_a_service_is_actually_wired_to_connect_as_app_user(self):
-        """The inverse of what this file used to assert. app_user existed with no
-        password, no CONNECT and no APP_DATABASE_URL anywhere, so RLS was inert
-        for every service but workflow_runtime. Connection strings live in the
-        Secret generator, not in the manifests."""
-        import re
-
-        suite = (REPO_ROOT / "tests" / "integration" / "auth_api" / "test_rls_enforcement.py").read_text(encoding="utf-8")
-        assert "app_user" in suite
-
-        gen = (REPO_ROOT / "deploy" / "k8s" / "create-secrets.sh").read_text(encoding="utf-8")
-        env = (REPO_ROOT / "deploy" / "k8s" / "secrets.env.example").read_text(encoding="utf-8")
-
-        dsn_lines = [
-            line for line in gen.splitlines()
-            if re.search(r"(DATABASE_URL|POSTGRES_URL|POSTGRES_DSN|RUNTIME_DB_URL)", line)
-        ]
-        assert dsn_lines, "no service DSNs found - the check has drifted"
-
-        assert "APP_DATABASE_URL" in gen, "no workload receives the app_user DSN"
-        assert re.search(r"^APP_DATABASE_URL=.*app_user", env, re.M), (
-            "APP_DATABASE_URL must connect as app_user, not the owner role"
-        )
-        for key in ("APP_USER_PASSWORD", "RUNTIME_WRITER_PASSWORD", "SANDBOX_READER_PASSWORD"):
-            assert key in gen, f"{key} is never delivered, so the role password stays unset"

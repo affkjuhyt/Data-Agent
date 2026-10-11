@@ -1,21 +1,11 @@
 import asyncio
-import logging
 import os
-import sys
 from logging.config import fileConfig
 from pathlib import Path
 
-# `libs.*` lives next to this directory (backend/libs, or /app/libs in the migrate
-# image) — make env.py importable regardless of the caller's cwd/PYTHONPATH.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from sqlalchemy import Column, MetaData, String, Table, func, inspect, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import MetaData
 from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
-
-from libs.basemodel.services_databaseconnector.postgres_orm.base import Base
-import libs.basemodel.services_databaseconnector.postgres_orm  # noqa: F401 — registers all ORM classes
 
 config = context.config
 if config.config_file_name is not None:
@@ -30,19 +20,7 @@ if _db_url := os.environ.get("DATABASE_URL"):
         _db_url = _db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     config.set_main_option("sqlalchemy.url", _db_url)
 
-target_metadata = Base.metadata
-
-# Initial schema revision. If the DB has app tables but no alembic version,
-# stamp to this rev — see _stamp_if_init_scripts_ran below.
-_INITIAL_REVISION = "ff9ae8dcd7f7"
-_alembic_metadata = MetaData()
-_alembic_version = Table(
-    "alembic_version",
-    _alembic_metadata,
-    Column("version_num", String(32), primary_key=True),
-)
-
-log = logging.getLogger("alembic.env")
+target_metadata = MetaData()
 
 
 def run_migrations_offline() -> None:
@@ -57,70 +35,9 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-async def _stamp_if_init_scripts_ran(conn) -> None:
-    """Reconcile alembic state with SQL init scripts that ran at first boot.
-
-    `deploy/docker/sql/*.sql` files mounted into Postgres `/docker-entrypoint-initdb.d/`
-    create overlapping schema (some tables, some indexes) with the alembic
-    initial migration. When the DB boots fresh, those run BEFORE alembic, so
-    when alembic tries `CREATE INDEX idx_drift_events_resolved` it fails with
-    DuplicateTable.
-
-    Two source-of-truth schemas is a real bug worth untangling separately.
-    Until then: if we detect a non-empty schema with no alembic_version, we
-    stamp the initial revision as applied and let only NEWER migrations run.
-
-    Logic:
-      - alembic_version table exists AND has a row → normal upgrade
-      - alembic_version missing/empty + Tenants (init-scripts marker) exists
-        → stamp initial, then upgrade head (which only runs later revisions)
-      - Fresh DB → normal upgrade (will create everything from scratch)
-    """
-    # Does the alembic_version table exist?
-    has_alembic_table = await conn.run_sync(
-        lambda sync_conn: inspect(sync_conn).has_table("alembic_version")
-    )
-    if has_alembic_table:
-        version_count = await conn.scalar(select(func.count()).select_from(_alembic_version))
-        if version_count and version_count > 0:
-            log.info("alembic_version present — normal upgrade path")
-            return
-
-    # No alembic version. Did the SQL init scripts populate the schema?
-    # Tenants is in the initial alembic revision; if it exists, init ran.
-    # Marker MUST be a table only the ORM initial migration creates (PascalCase)
-    # and that no later revision drops: it used to be DriftEvents, which the
-    # release-management removal dropped. A lowercase table from
-    # deploy/docker/sql/*.sql does NOT imply the ORM tables (Agents, …) exist —
-    # keying on one wrongly stamps the initial revision and skips creating the
-    # ORM schema.
-    has_init_schema = await conn.run_sync(
-        lambda sync_conn: inspect(sync_conn).has_table("Tenants")
-    )
-
-    if not has_init_schema:
-        log.info("fresh DB — initial migration will create schema")
-        return
-
-    log.warning(
-        "app tables exist but alembic_version is empty — assuming SQL init "
-        "scripts populated schema. Stamping %s and letting only newer "
-        "revisions run.", _INITIAL_REVISION,
-    )
-    # Create alembic_version table + stamp by hand. Same effect as `alembic
-    # stamp <rev>` but inline so we don't need a second container invocation.
-    await conn.run_sync(lambda sync_conn: _alembic_version.create(sync_conn, checkfirst=True))
-    await conn.execute(
-        pg_insert(_alembic_version)
-        .values(version_num=_INITIAL_REVISION)
-        .on_conflict_do_nothing(index_elements=[_alembic_version.c.version_num])
-    )
-
-
 async def run_migrations_online() -> None:
     engine = create_async_engine(config.get_main_option("sqlalchemy.url"))
     async with engine.begin() as conn:
-        await _stamp_if_init_scripts_ran(conn)
         await conn.run_sync(
             lambda sync_conn: context.configure(
                 connection=sync_conn,
