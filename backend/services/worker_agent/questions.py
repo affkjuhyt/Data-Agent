@@ -122,6 +122,11 @@ async def answer_question(event: Event) -> None:
     logger.info("question %s refused with %s", question_id, refusal.code)
     await publish(
         str(question_id),
+        "answer",
+        {"question_id": str(question_id), "answer_id": str(answer_id), "kind": "refusal"},
+    )
+    await publish(
+        str(question_id),
         "done",
         {"question_id": str(question_id), "status": "refused", "answer_id": str(answer_id)},
     )

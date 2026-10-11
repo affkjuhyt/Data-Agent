@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
@@ -35,6 +36,7 @@ from services.api.kernel.problems import FieldError, Problem
 from services.api.kernel.sse import Event, event_stream
 from services.api.kernel.sse import last_event_id as get_last_event_id
 from services.api.modules.eval.public import eval_set_accepts_items
+from services.api.modules.qa import progress
 from services.api.modules.qa import scope
 from services.api.modules.qa.schemas import (
     AnswerView,
@@ -314,8 +316,11 @@ async def stream_question(
     data_space: CurrentDataSpace,
     last_id: Annotated[str | None, Depends(get_last_event_id)],
 ) -> Response:
+    redis_last_id = last_id if last_id and re.fullmatch(r"\d+-\d+", last_id) else None
+    if last_id and redis_last_id is None and not last_id.isdigit():
+        raise Problem(400, "invalid_request", "Last-Event-ID is not an id this stream sent.")
     try:
-        after = int(last_id) if last_id else -1
+        after = int(last_id) if last_id and redis_last_id is None else -1
     except ValueError as exc:
         raise Problem(
             400, "invalid_request", "Last-Event-ID is not an id this stream sent."
@@ -328,9 +333,16 @@ async def stream_question(
             if view.answer_id
             else None
         )
-    # The stream sends the state the worker has recorded so far and closes; EventSource
-    # reconnects with Last-Event-ID and receives only what is new.
-    events = [e for e in _stream_events(view, kind) if int(e.id) > after]
+    # Redis is the live/replay path from worker-agent. The database snapshot remains the
+    # fallback for a cold stream, Redis outage, or an older numeric Last-Event-ID.
+    events = await progress.read(str(question_id), redis_last_id)
+    if events and redis_last_id is None:
+        # The plan is persisted in Postgres before worker progress is published. Keep
+        # the A1.6 understood frame in the initial response; subsequent frames use the
+        # Redis IDs so EventSource can resume directly from the worker stream.
+        events = [e for e in _stream_events(view, kind) if e.event == "understood"] + events
+    elif not events:
+        events = [e for e in _stream_events(view, kind) if int(e.id) > after]
 
     async def produce() -> AsyncIterator[Event]:
         for item in events:
