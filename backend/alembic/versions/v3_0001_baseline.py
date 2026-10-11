@@ -7,6 +7,7 @@ Revises:
 from pathlib import Path
 
 from alembic import op
+from psycopg import ClientCursor
 
 revision = "v3_0001"
 down_revision = None
@@ -16,7 +17,13 @@ depends_on = None
 
 def _apply_sql(filename: str) -> None:
     sql_path = Path(__file__).resolve().parents[1] / "sql" / filename
-    op.get_bind().exec_driver_sql(sql_path.read_text(encoding="utf-8"))
+    # The generated files contain PL/pgSQL format() directives such as %I and
+    # %L.  Psycopg's normal cursor treats those as Python placeholders; the
+    # client cursor sends the script as literal SQL while retaining Alembic's
+    # transaction on the same DB connection.
+    connection = op.get_bind().connection.driver_connection
+    with ClientCursor(connection) as cursor:
+        cursor.execute(sql_path.read_text(encoding="utf-8"))
 
 
 def upgrade() -> None:

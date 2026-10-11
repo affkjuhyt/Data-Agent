@@ -46,6 +46,7 @@ spec:
       containers:
       - name: kong-migration
         image: localhost:5000/dataagent/kong:latest
+        imagePullPolicy: IfNotPresent
         command:
         - sh
         - -c

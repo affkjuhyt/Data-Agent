@@ -91,6 +91,8 @@ The only inventory. It deploys the single-node dev server from
 | `git_sync_enabled` | `false` | people edit code in this same checkout; a sync would `git switch main` and pull into their working tree |
 | `git_branch` | `main` | used only if sync is turned on |
 | `apply_databases` / `apply_services` | `true` | |
+| `service_manifests` | `[]` | Empty applies every service manifest; set names such as `api,keycloak,kong,frontend` for a staged V3 cutover |
+| `database_manifests` | `[]` | Empty applies every database manifest; staged V3 can use `postgres,pgbouncer,openbao` |
 | `apply_jobs` / `apply_setup` | `false` | Jobs rerun migrations, reset role passwords and rebuild demo tables; setup rewrites Kong config. Opt in per run with `-e` |
 | `seed_demo` | `true` | the `seed` Job loads demo data (see RUNBOOK) |
 | `wait_rollout` | `180` | the rollout wait only reports; on one node a longer wait just holds the run behind a stuck pod |

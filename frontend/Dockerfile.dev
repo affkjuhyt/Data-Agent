@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.4
-FROM node:20-alpine
+FROM node:20-slim
 WORKDIR /app
 
 # Tune npm for flaky networks before install. Without these, a single ECONNRESET
@@ -17,6 +17,6 @@ COPY package*.json ./
 # failures pick up cached tarballs instead of re-fetching everything. Skip
 # `npm audit` here — it makes an extra network call, isn't worth blocking the
 # build for, and runs locally via `npm audit` when devs want it.
-RUN --mount=type=cache,target=/root/.npm npm install --no-audit --no-fund
+RUN --mount=type=cache,target=/root/.npm npm install --include=optional --no-audit --no-fund
 
 COPY . .

@@ -274,6 +274,20 @@
         mode: "0600"
       no_log: true
 
+    # The snapshot and secret reapply below address namespaced resources, so a
+    # clean cluster must have its namespaces before either task runs.
+    - name: Apply namespaces, RBAC and NetworkPolicies
+      ansible.builtin.command:
+        cmd: >-
+          {{ kubectl }} apply
+          -f {{ (k8s_manifests ~ '/namespace.yaml') | quote }}
+          -f {{ (k8s_manifests ~ '/rbac.yaml') | quote }}
+          -f {{ (k8s_manifests ~ '/networkpolicy-service.yaml') | quote }}
+          -f {{ (k8s_manifests ~ '/networkpolicy-database.yaml') | quote }}
+          -f {{ (k8s_manifests ~ '/networkpolicy-sandbox.yaml') | quote }}
+      register: base_apply
+      changed_when: "'created' in base_apply.stdout or 'configured' in base_apply.stdout"
+
     # Snapshot before anything is reapplied, so that the restart step further
     # down can restart only the Deployments whose Secrets/ConfigMaps really moved.
     - name: Snapshot the service tier's Secrets and ConfigMaps before
@@ -310,27 +324,15 @@
       when: secrets_changed | bool
       changed_when: true
 
-    - name: Apply namespaces, RBAC and NetworkPolicies
-      ansible.builtin.command:
-        cmd: >-
-          {{ kubectl }} apply
-          -f {{ k8s_manifests }}/namespace.yaml
-          -f {{ k8s_manifests }}/rbac.yaml
-          -f {{ k8s_manifests }}/networkpolicy-service.yaml
-          -f {{ k8s_manifests }}/networkpolicy-database.yaml
-          -f {{ k8s_manifests }}/networkpolicy-sandbox.yaml
-      register: base_apply
-      changed_when: "'created' in base_apply.stdout or 'configured' in base_apply.stdout"
-
     - name: Apply the ConfigMap manifest
       ansible.builtin.command:
-        cmd: "{{ kubectl }} apply -f {{ k8s_manifests }}/configmap.yaml"
+        cmd: "{{ kubectl }} apply -f {{ (k8s_manifests ~ '/configmap.yaml') | quote }}"
       register: cm_manifest
       changed_when: "'configured' in cm_manifest.stdout or 'created' in cm_manifest.stdout"
 
     - name: Reapply the file-backed ConfigMaps
       ansible.builtin.command:
-        cmd: "bash {{ k8s_dir }}/create-configmaps.sh"
+        cmd: "bash {{ (k8s_dir ~ '/create-configmaps.sh') | quote }}"
         chdir: "{{ project_dir }}"
       when: config_changed | bool
       changed_when: true
@@ -340,9 +342,16 @@
         cmd: |
           set -euo pipefail
           stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
+          {% if database_manifests | length > 0 %}
+          for name in {% for name in database_manifests %}{{ name | quote }} {% endfor %}; do
+            f="{{ k8s_manifests }}/database/$name.yaml"
+            {{ manifest_sed }} "$f" > "$stage/$name.yaml"
+          done
+          {% else %}
           for f in "{{ k8s_manifests }}/database"/*.yaml; do
             {{ manifest_sed }} "$f" > "$stage/$(basename "$f")"
           done
+          {% endif %}
           {{ kubectl }} apply -f "$stage/"
         executable: /bin/bash
       register: db_apply
@@ -394,9 +403,16 @@
         cmd: |
           set -euo pipefail
           stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
+          {% if service_manifests | length > 0 %}
+          for name in {% for name in service_manifests %}{{ name | quote }} {% endfor %}; do
+            f="{{ k8s_manifests }}/service/$name.yaml"
+            {{ manifest_sed }} "$f" > "$stage/$name.yaml"
+          done
+          {% else %}
           for f in "{{ k8s_manifests }}/service"/*.yaml; do
             {{ manifest_sed }} "$f" > "$stage/$(basename "$f")"
           done
+          {% endif %}
           {{ kubectl }} apply -f "$stage/"
         executable: /bin/bash
       register: svc_apply
@@ -422,6 +438,30 @@
     - name: Report the Secrets and ConfigMaps that changed
       ansible.builtin.debug:
         msg: "changed in {{ ns_service }}: {{ config_changed_keys | join(', ') | default('nothing', true) }}"
+
+    # Kong cannot start until its schema exists, while the normal job block is
+    # below the gateway wait. On a clean cluster that ordering deadlocks, so
+    # run only this prerequisite before waiting for the gateway.
+    - name: Run Kong migration before waiting for the gateway
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          {{ kubectl }} -n {{ ns_service }} delete job kong-migration --ignore-not-found
+          stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
+          {{ manifest_sed }} "{{ k8s_manifests }}/job/kong-migration.yaml" > "$stage/kong-migration.yaml"
+          {{ kubectl }} apply -f "$stage/kong-migration.yaml"
+          {{ kubectl }} -n {{ ns_service }} wait --for=condition=complete job/kong-migration --timeout={{ wait_job }}s
+        executable: /bin/bash
+      register: kong_migration_pre_gateway
+      changed_when: true
+      when:
+        - apply_jobs | bool
+        - jobs_rerun | selectattr('name', 'equalto', 'kong-migration') | list | length > 0
+
+    - name: Remove the pre-gateway Kong migration from the later job batch
+      ansible.builtin.set_fact:
+        jobs_rerun: "{{ jobs_rerun | rejectattr('name', 'equalto', 'kong-migration') | list }}"
+      when: kong_migration_pre_gateway is defined and kong_migration_pre_gateway is succeeded
 
     - name: Wait for the gateway
       ansible.builtin.shell:

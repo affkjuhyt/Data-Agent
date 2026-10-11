@@ -21,7 +21,7 @@ data:
   KONG_ADMIN_SUBNET: ''
   KONG_PROXY_URL: http://kong.dataagent-service.svc.cluster.local:8100
   KEYCLOAK_DISABLE_MFA: '0'
-  SMOKE_USER: ''
+  SMOKE_USER: 'platform-admin'
 ---
 apiVersion: batch/v1
 kind: Job
