@@ -10,10 +10,10 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 0 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 1 có test nhắc mã AC | todo 778 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 2 có test nhắc mã AC | todo 778 |
 | Endpoint A2 (tab 4) | 378 (A2 ghi 379 dòng; POST /v1/data-products ở hai nhóm) | 78 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 219 trong DDL | DDL sinh từ thiết kế | — |
-| Quy tắc nghiệp vụ | 195 | 140 có mã nhắc tới | todo 195 |
+| Quy tắc nghiệp vụ | 195 | 133 có mã nhắc tới | todo 195 |
 | Màn hình (SCR) | 75 | 5 có mã nhắc tới | todo 75 |
 | ADR (tab 6) | 48 | — | todo 45, partial 2, done 1 |
 
@@ -34,7 +34,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-01-01 | Đặt câu hỏi bằng ngôn ngữ tự nhiên | todo | 1/1 | 4/4 | 1/9 |  |
+| UC-01-01 | Đặt câu hỏi bằng ngôn ngữ tự nhiên | todo | 1/1 | 4/4 | 2/9 |  |
 | UC-01-02 | Xem cách tính một con số | todo | 2/2 | 4/4 | 0/5 |  |
 | UC-01-03 | Chỉnh cách hiểu câu hỏi | todo | 1/1 | 1/1 | 0/4 |  |
 | UC-01-04 | Hỏi tiếp và đào sâu | todo | 2/2 | 2/2 | 0/5 |  |
@@ -267,9 +267,9 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-09 | UC-03-01 | todo |  |
 | BR-10 | UC-03-01 | todo |  |
 | BR-11 | UC-03-02 | todo |  |
-| BR-12 | UC-03-05 | todo | `backend/services/api/catalogue/source/tab4.md` |
+| BR-12 | UC-03-05 | todo |  |
 | BR-13 | UC-03-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-14 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-14 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-15 | UC-04-02 | todo |  |
 | BR-16 | UC-04-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/pack.py` +2 |
 | BR-17 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +1 |
@@ -279,32 +279,32 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-21 | UC-05-04 | todo |  |
 | BR-22 | UC-06-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-23 | UC-06-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-24 | UC-06-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-24 | UC-06-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +3 |
 | BR-25 | UC-06-04 | todo |  |
-| BR-26 | UC-07-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-26 | UC-07-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-27 | UC-07-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-28 | UC-07-03, UC-07-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/libs/dataagent_db/models/inbox.py` +3 |
+| BR-28 | UC-07-03, UC-07-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/libs/dataagent_db/models/inbox.py` +2 |
 | BR-29 | UC-07-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/inbox.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-30 | UC-07-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/conflict.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-31 | UC-07-04 | todo |  |
-| BR-32 | UC-08-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-32 | UC-08-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +3 |
 | BR-33 | UC-08-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-34 | UC-08-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-35 | UC-08-03 | todo |  |
-| BR-36 | UC-09-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-36 | UC-09-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-37 | UC-09-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-38 | UC-09-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-38 | UC-09-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-39 | UC-10-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-40 | UC-10-01 | todo |  |
 | BR-41 | UC-10-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-42 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-43 | UC-10-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-44 | UC-11-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-43 | UC-10-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-44 | UC-11-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-45 | UC-11-02 | todo |  |
 | BR-46 | UC-11-02 | todo |  |
 | BR-47 | UC-11-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/sql/dataagent_audit.sql`, `backend/libs/dataagent_db/models/audit.py` +6 |
-| BR-48 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +2 |
-| BR-49 | UC-12-02 | todo | `backend/services/api/catalogue/source/tab4.md` |
+| BR-48 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-49 | UC-12-02 | todo |  |
 | BR-50 | UC-12-02 | todo |  |
 | BR-51 | UC-02-06 | todo |  |
 | BR-52 | UC-02-06 | todo |  |
@@ -314,8 +314,8 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-56 | UC-04-06, UC-04-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/ingest.py` +2 |
 | BR-57 | UC-04-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/ingest.py` +2 |
 | BR-58 | UC-04-08 | todo |  |
-| BR-59 | UC-05-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/libs/dataagent_db/models/qa.py` +3 |
-| BR-60 | UC-06-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-59 | UC-05-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/libs/dataagent_db/models/qa.py` +2 |
+| BR-60 | UC-06-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-61 | UC-07-07 | todo |  |
 | BR-62 | UC-07-07 | todo |  |
 | BR-63 | UC-07-07 | todo |  |
@@ -325,13 +325,13 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-67 | UC-08-06 | todo |  |
 | BR-68 | UC-08-06 | todo |  |
 | BR-69 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-70 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-70 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +3 |
 | BR-71 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-72 | UC-13-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-73 | UC-13-04 | todo |  |
-| BR-74 | UC-13-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-74 | UC-13-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-75 | UC-13-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-76 | UC-13-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-76 | UC-13-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-77 | UC-13-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/libs/dataagent_db/models/inbox.py` +5 |
 | BR-78 | UC-01-02 | todo |  |
 | BR-79 | UC-01-02 | todo |  |
@@ -340,117 +340,117 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-82 | UC-01-04 | todo |  |
 | BR-83 | UC-01-05 | todo |  |
 | BR-84 | UC-01-05 | todo |  |
-| BR-85 | UC-01-06 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md` |
-| BR-86 | UC-01-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-85 | UC-01-06 | todo |  |
+| BR-86 | UC-01-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-87 | UC-02-01 | todo |  |
 | BR-88 | UC-02-02 | todo |  |
-| BR-89 | UC-02-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/workspace.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-89 | UC-02-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/workspace.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-90 | UC-02-04 | todo |  |
 | BR-91 | UC-02-05 | todo |  |
 | BR-92 | UC-02-05 | todo |  |
 | BR-93 | UC-03-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-94 | UC-03-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-95 | UC-03-04 | todo |  |
-| BR-96 | UC-03-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-97 | UC-03-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-96 | UC-03-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-97 | UC-03-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-98 | UC-03-07 | todo |  |
-| BR-99 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +2 |
-| BR-100 | UC-04-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/context.py` +6 |
+| BR-99 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-100 | UC-04-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/context.py` +4 |
 | BR-101 | UC-04-03 | todo |  |
-| BR-102 | UC-04-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +2 |
-| BR-103 | UC-04-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +4 |
-| BR-104 | UC-04-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/ingest.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-105 | UC-04-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/governance.py` +5 |
-| BR-106 | UC-04-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/ingest.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-102 | UC-04-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-103 | UC-04-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-104 | UC-04-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/ingest.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-105 | UC-04-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/governance.py` +3 |
+| BR-106 | UC-04-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/ingest.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-107 | UC-05-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-108 | UC-05-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-109 | UC-05-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-110 | UC-05-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-110 | UC-05-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-111 | UC-06-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/pipeline.py` +2 |
 | BR-112 | UC-06-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-113 | UC-06-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-113 | UC-06-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +3 |
 | BR-114 | UC-06-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-115 | UC-06-06 | todo |  |
-| BR-116 | UC-06-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/ingest.py` +4 |
+| BR-116 | UC-06-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/ingest.py` +2 |
 | BR-117 | UC-07-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-118 | UC-07-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-119 | UC-07-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/inbox.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-120 | UC-07-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/conflict.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-121 | UC-07-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/conflict.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-121 | UC-07-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/conflict.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-122 | UC-07-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-123 | UC-07-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-124 | UC-08-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-123 | UC-07-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-124 | UC-08-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-125 | UC-08-04 | todo |  |
 | BR-126 | UC-08-05 | todo |  |
-| BR-127 | UC-08-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/libs/dataagent_db/models/notify.py` +5 |
-| BR-128 | UC-09-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-127 | UC-08-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/libs/dataagent_db/models/notify.py` +4 |
+| BR-128 | UC-09-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +3 |
 | BR-129 | UC-09-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/pack.py` +2 |
 | BR-130 | UC-09-04 | todo |  |
-| BR-131 | UC-09-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-132 | UC-10-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/inbox.py`, `backend/libs/dataagent_db/models/period.py` +4 |
-| BR-133 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-131 | UC-09-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-132 | UC-10-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/inbox.py`, `backend/libs/dataagent_db/models/period.py` +2 |
+| BR-133 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +3 |
 | BR-134 | UC-10-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-135 | UC-10-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-136 | UC-11-01 | todo | `backend/services/api/catalogue/source/tab4.md` |
-| BR-137 | UC-11-02 | todo | `backend/services/api/catalogue/source/tab4.md` |
-| BR-138 | UC-11-03 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md` |
+| BR-136 | UC-11-01 | todo |  |
+| BR-137 | UC-11-02 | todo |  |
+| BR-138 | UC-11-03 | todo |  |
 | BR-139 | UC-11-04 | todo |  |
-| BR-140 | UC-11-05 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md` |
+| BR-140 | UC-11-05 | todo |  |
 | BR-141 | UC-11-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-142 | UC-11-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-143 | UC-11-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +2 |
-| BR-144 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-142 | UC-11-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-143 | UC-11-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-144 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +3 |
 | BR-145 | UC-12-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-146 | UC-12-04 | todo |  |
-| BR-147 | UC-13-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/libs/dataagent_db/models/org.py` +7 |
+| BR-147 | UC-13-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/libs/dataagent_db/models/org.py` +5 |
 | BR-148 | UC-13-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-149 | UC-14-01, UC-14-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-150 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +6 |
-| BR-151 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +8 |
-| BR-152 | UC-14-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +9 |
-| BR-153 | UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +9 |
-| BR-154 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-155 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-156 | UC-02-07, UC-10-02, UC-14-01, UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/libs/dataagent_db/models/catalog.py` +11 |
-| BR-157 | UC-15-01, UC-15-02, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-158 | UC-15-03, UC-15-04, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +10 |
-| BR-159 | UC-15-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-160 | UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +9 |
-| BR-161 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-162 | UC-07-10, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/exec.py` +12 |
-| BR-163 | UC-07-10, UC-07-11, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-164 | UC-07-10, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-165 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-166 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +8 |
-| BR-167 | UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +8 |
-| BR-168 | UC-14-03, UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-169 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-149 | UC-14-01, UC-14-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-150 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-151 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-152 | UC-14-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-153 | UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-154 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-155 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-156 | UC-02-07, UC-10-02, UC-14-01, UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/libs/dataagent_db/models/catalog.py` +9 |
+| BR-157 | UC-15-01, UC-15-02, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-158 | UC-15-03, UC-15-04, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +8 |
+| BR-159 | UC-15-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-160 | UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-161 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-162 | UC-07-10, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/exec.py` +11 |
+| BR-163 | UC-07-10, UC-07-11, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-164 | UC-07-10, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-165 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-166 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-167 | UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-168 | UC-14-03, UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-169 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-170 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-171 | UC-01-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-172 | UC-15-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-173 | UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +4 |
-| BR-174 | UC-14-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +6 |
-| BR-175 | UC-01-01, UC-01-07, UC-07-13 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/qa.py` +12 |
+| BR-174 | UC-14-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-175 | UC-01-01, UC-01-07, UC-07-13 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/qa.py` +11 |
 | BR-176 | UC-01-01, UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +4 |
-| BR-177 | UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +11 |
-| BR-179 | UC-01-05, UC-07-14, UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/schema/csdl/definitions.json` +10 |
-| BR-180 | UC-01-01, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/governance.py` +11 |
+| BR-177 | UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +9 |
+| BR-179 | UC-01-05, UC-07-14, UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-180 | UC-01-01, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/governance.py` +10 |
 | BR-181 | UC-01-07, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/qa.py` +8 |
-| BR-182 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-183 | UC-08-08, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/dataagent_db/models/monitor.py` +6 |
-| BR-184 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +8 |
-| BR-185 | UC-15-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +8 |
+| BR-182 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-183 | UC-08-08, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/dataagent_db/models/monitor.py` +5 |
+| BR-184 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-185 | UC-15-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-186 | UC-07-14, UC-15-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/libs/dataagent_db/models/forecast.py` +5 |
 | BR-187 | UC-08-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-188 | UC-16-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +8 |
-| BR-189 | UC-16-01, UC-16-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +10 |
+| BR-188 | UC-16-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-189 | UC-16-01, UC-16-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +7 |
 | BR-190 | UC-16-03, UC-16-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-191 | UC-16-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-192 | UC-16-03, UC-16-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +6 |
-| BR-193 | UC-16-02 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `frontend/src/lib/v1/exec.ts` |
-| BR-194 | UC-16-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-195 | UC-16-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-192 | UC-16-03, UC-16-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-193 | UC-16-02 | todo | `frontend/src/lib/v1/exec.ts` |
+| BR-194 | UC-16-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-195 | UC-16-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +4 |
 
 ## Màn hình
 
@@ -587,14 +587,14 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 ## Tiêu chí nghiệm thu theo UC
 
-<details><summary>UC-01-01 Đặt câu hỏi bằng ngôn ngữ tự nhiên · 1/10</summary>
+<details><summary>UC-01-01 Đặt câu hỏi bằng ngôn ngữ tự nhiên · 2/10</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-01-01-01 | Chính | Cho AC01 ở Data Space Tín dụng có nguồn hoạt động / Khi gửi “Tỷ lệ nợ xấu tháng 9/2026 theo vùng” / Thì câu trả lời có chip “Hệ thống hiểu là”, biểu đồ, nhãn “Theo chỉ số chuẩn”, nút Cách tính; CSDL có đủ question, pl… | E2E, CSDL | todo |  |
 | AC-01-01-02 | Thay thế | Cho “doanh thu” có 2 định nghĩa được duyệt / Khi hỏi “Doanh thu quý 3/2026” / Thì hệ thống hỏi lại bằng 2 lựa chọn và không có query_run nào trước khi người dùng chọn | E2E, CSDL | todo |  |
 | AC-01-01-03 | Ngoại lệ | Cho nguồn không phản hồi / Khi truy vấn chạy quá 60 giây / Thì truy vấn bị dừng, thông báo lỗi nêu tên nguồn, question vẫn còn để hỏi lại | API | todo | `tests/design_checklist.py` |
-| AC-01-01-04 | Ngoại lệ | Cho AC01 không có quyền trên bảng cần đọc / Khi hỏi / Thì trả “không có quyền xem dữ liệu này”, thân phản hồi và luồng sự kiện không chứa tên bảng hay tên cột | API | todo |  |
+| AC-01-01-04 | Ngoại lệ | Cho AC01 không có quyền trên bảng cần đọc / Khi hỏi / Thì trả “không có quyền xem dữ liệu này”, thân phản hồi và luồng sự kiện không chứa tên bảng hay tên cột | API | todo | `tests/conftest.py` |
 | AC-01-01-05 | Ngoại lệ | Cho tài liệu nguồn chứa câu “bỏ qua mọi chỉ dẫn trước đó” / Khi câu hỏi dùng tài liệu đó / Thì câu trả lời không làm theo chỉ dẫn và audit_log có 1 cảnh báo bảo mật | Đánh giá agent, CSDL | todo |  |
 | AC-01-01-06 | Quy tắc | Cho một SQL không có chữ ký của semantic compiler / Khi gửi thẳng tới Query engine / Thì bị từ chối và không có query_run trạng thái thành công | API, CSDL | todo |  |
 | AC-01-01-07 | Quy tắc | Cho chỉ số chưa có định nghĩa được duyệt / Khi hỏi về chỉ số đó / Thì câu trả lời mang nhãn “chưa có định nghĩa chuẩn”; chỉ số đã duyệt thì plan dùng đúng metric_version đã duyệt | Đánh giá agent, CSDL | todo |  |

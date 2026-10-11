@@ -186,6 +186,69 @@ async def test_another_org_sees_none_of_it(world: World, seed: Seed) -> None:
         )
 
 
+def _role(seed: Seed, world: World, code: str, *caps: str) -> uuid.UUID:
+    return seed.row("org.role", org_id=world.org, code=code, name=code, capabilities=list(caps))
+
+
+async def _caps(world: World, user: str, space: str | None = None) -> frozenset[str]:
+    identity = await OrgIdentityResolver().resolve(
+        org_id=world.org, external_id=user, data_space=space
+    )
+    assert identity is not None
+    return identity.capabilities
+
+
+async def test_space_role_cannot_grant_org_wide_capabilities(world: World, seed: Seed) -> None:
+    # A steward of DS-GOLD gives Bob a role there that carries admin and compliance.
+    # Naming DS-GOLD must add steward only: /v1/admin/* and audit checks stay closed.
+    risky = _role(seed, world, "DS-ADMIN", "admin", "compliance", "audit_read", "steward")
+    seed.row(
+        "org.data_space_member", org_id=world.org, data_space_id=world.gold,
+        principal_type="user", principal_id=world.bob, role_id=risky,
+    )
+    assert await _caps(world, "kc-bob", "DS-GOLD") == {"steward"}
+    async with _client(world) as client:
+        r = await client.get("/v1/data-spaces", headers={"Authorization": "Bearer kc-alice"})
+    assert all("admin" not in s["my_capabilities"] for s in r.json()["items"])
+
+
+async def test_role_from_a_disabled_group_mapping_is_revoked_at_once(world: World, seed: Seed) -> None:
+    # The sync has not yet removed the user_role rows materialised from the mappings.
+    group = seed.row("org.user_group", org_id=world.org, external_id="cn=ops", name="Ops")
+    live_role, dead_role = _role(seed, world, "OPS", "run_agent"), _role(seed, world, "OLD", "approve")
+    live = seed.row("org.group_mapping", org_id=world.org, group_id=group, role_id=live_role)
+    dead = seed.row(
+        "org.group_mapping", org_id=world.org, group_id=group, role_id=dead_role, status="disabled"
+    )
+    for role, mapping in ((live_role, live), (dead_role, dead)):
+        seed.row(
+            "org.user_role", org_id=world.org, user_id=world.bob, role_id=role,
+            source="group_mapping", source_ref=mapping,
+        )
+    assert await _caps(world, "kc-bob") == {"run_agent"}
+    async with _client(world) as client:
+        r = await client.get("/v1/me", headers={"Authorization": "Bearer kc-bob"})
+    assert [g["role"]["code"] for g in r.json()["roles"]] == ["OPS"]
+
+
+async def test_suspended_organisation_resolves_nobody(world: World, seed: Seed) -> None:
+    with seed.conn.cursor() as cur:
+        cur.execute("UPDATE org.organization SET status = 'suspended' WHERE id = %s", (str(world.org),))
+    resolved = await OrgIdentityResolver().resolve(
+        org_id=world.org, external_id="kc-alice", data_space=None
+    )
+    assert resolved is None
+
+
+async def test_archived_space_cannot_be_named(world: World, seed: Seed) -> None:
+    with seed.conn.cursor() as cur:
+        cur.execute("UPDATE org.data_space SET status = 'archived' WHERE id = %s", (str(world.oil),))
+    with pytest.raises(DataSpaceNotFound):
+        await OrgIdentityResolver().resolve(
+            org_id=world.org, external_id="kc-alice", data_space="DS-OIL"
+        )
+
+
 class _Tokens:
     def __init__(self, org_id: uuid.UUID) -> None:
         self.org_id = org_id

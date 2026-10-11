@@ -10,7 +10,7 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentPrincipal
 from services.api.kernel.db import transaction
 from services.api.kernel.problems import Problem
-from services.api.modules.org.identity import ROLE, my_groups, still_valid
+from services.api.modules.org.identity import ROLE, my_groups, user_role_in_force
 from services.api.modules.org.schemas import Me, RoleGrant, RoleRef
 
 router = APIRouter()
@@ -28,7 +28,7 @@ async def get_me(principal: CurrentPrincipal) -> Me:
         direct = await session.execute(
             select(org.UserRole, org.Role)
             .join(org.Role, org.Role.id == org.UserRole.role_id)
-            .where(org.UserRole.user_id == user.id, still_valid(org.UserRole.valid_until))
+            .where(org.UserRole.user_id == user.id, user_role_in_force())
         )
         by_group = await session.execute(
             select(org.GroupMapping, org.Role, org.UserGroup)

@@ -39,6 +39,9 @@ Công cụ đọc mã, không chạy dịch vụ:
 2. Xong một UC, màn hình, BR hay ADR mà bằng chứng tự động không thấy được thì thêm hoặc sửa dòng ở `status.tsv`.
 3. Chạy `make design-checklist` rồi commit `10-design-checklist.md` cùng thay đổi. Hai agent cùng sửa tệp này thì
    khi gộp chỉ cần chạy lại lệnh, không gộp tay.
+   Công cụ đọc cây làm việc, nên khi nhiều agent dùng chung một cây, sinh tệp trong một worktree sạch ở `HEAD` có
+   chép thêm đúng các tệp mình sửa; nếu không, tệp sẽ ghi nhận cả mã chưa commit của agent khác và CI (chạy trên
+   cây đã commit) báo tệp cũ.
 4. `make design-audit` (CI chạy) thất bại khi tệp cũ hoặc có điểm khai trái bằng chứng: UC khai `done` mà còn thiếu
    endpoint, bảng hoặc tiêu chí bắt buộc; AC khai `done` không có test cũng không ghi cách kiểm; mã không có trong
    bản chụp.

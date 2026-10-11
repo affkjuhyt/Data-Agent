@@ -20,7 +20,7 @@ from services.api.kernel.pagination import (
     invalid_page_token,
     page_request,
 )
-from services.api.modules.org.identity import ROLE, memberships
+from services.api.modules.org.identity import ORG_ONLY_CAPABILITIES, ROLE, memberships
 from services.api.modules.org.schemas import DataSpaceSummary, RoleRef
 
 router = APIRouter()
@@ -73,7 +73,9 @@ async def list_my_data_spaces(
                 RoleRef(id=r.id, code=r.code, name=r.name)
                 for r in sorted(roles[s.id].values(), key=lambda r: r.code)
             ],
-            my_capabilities=sorted({c for r in roles[s.id].values() for c in r.capabilities}),
+            my_capabilities=sorted(
+                {c for r in roles[s.id].values() for c in r.capabilities} - ORG_ONLY_CAPABILITIES
+            ),
         )
         for s in spaces
     ]
