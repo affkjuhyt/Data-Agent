@@ -9,9 +9,8 @@ import type { components } from './schema';
  */
 
 // Generated from the api's OpenAPI (make api-types, tab 7 F3): the server is the contract.
-export type RoleRef = components['schemas']['RoleRef'];
 /** source: manual, emergency (expires within 24 h, BR-44) or group_mapping (through `group_name`). */
-export type RoleGrant = components['schemas']['RoleGrant'];
+type RoleGrant = components['schemas']['RoleGrant'];
 /** capabilities: the organisation-wide ones (A1.2); a Data Space can add more. */
 export type Me = components['schemas']['Me'];
 

@@ -8,7 +8,7 @@ import { Checkbox } from '../../../design-system/Checkbox';
 import { Dialog } from '../../../design-system/Dialog';
 import { Input } from '../../../design-system/Input';
 import { Radio } from '../../../design-system/Radio';
-import { reportAnswer, type AnswerReport, type AnswerReportKind } from '../../../lib/v1/answerReports';
+import { reportAnswer, type AnswerReportKind, type Feedback } from '../../../lib/v1/answerReports';
 
 const KINDS: Array<{ value: AnswerReportKind; label: string }> = [
   { value: 'misread_question', label: 'Hiểu sai câu hỏi (chỉ số, phạm vi, kỳ)' },
@@ -27,9 +27,10 @@ export function ReportDialog({
   submitReport = reportAnswer,
 }: {
   open: boolean;
-  target: { messageId: string; sessionId?: string; question: string; answer: string } | null;
+  /** the server's answer id: a report is feedback on that answer (A2 · Hỏi đáp) */
+  target: { answerId: string; question: string; answer: string } | null;
   onClose: () => void;
-  onReported: (report: AnswerReport) => void;
+  onReported: (feedback: Feedback) => void;
   /** the endpoint call; tests pass their own */
   submitReport?: typeof reportAnswer;
 }) {
@@ -52,16 +53,12 @@ export function ReportDialog({
     setBusy(true);
     setError(null);
     try {
-      const report = await submitReport({
-        session_id: target.sessionId,
-        message_id: target.messageId,
-        question: target.question,
-        answer: target.answer,
+      const feedback = await submitReport(target.answerId, {
         kind,
         correction: correction.trim() || undefined,
-        send_to_steward: toSteward,
+        sendToSteward: toSteward,
       });
-      onReported(report);
+      onReported(feedback);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? `Chưa gửi được: ${e.message}` : 'Chưa gửi được báo sai.');

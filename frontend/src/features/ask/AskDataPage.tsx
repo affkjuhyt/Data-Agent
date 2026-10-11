@@ -6,8 +6,10 @@
  * chips, and the "Hỏi tiếp…" box under it. "Cách tính" opens the 420px panel on the right
  * (2296:18631, UC-01-02); "Xuất" and "Báo sai" open their dialogs (UC-01-06, UC-01-05).
  *
- * Answers stream from the orchestrator (useAgentStream); the only client-side state is per-viewer
- * convenience (saved questions, recent questions) in localStorage.
+ * Questions go to POST /v1/questions and are followed on their stream (useQuestionStream); the
+ * agent that answers is chosen by the system, so the Figma picker "Agent trả lời" is not drawn
+ * (A3 has no agent field). The only client-side state is per-viewer convenience (saved and
+ * recent questions) in localStorage.
  *
  * Not drawn, no backend yet: "Mở dạng notebook", "Chia sẻ", "Thêm vào phiên" (no session API on
  * this stream), editing a "Hệ thống hiểu là" chip to ask again (UC-01-03), per-number lineage.
@@ -19,19 +21,17 @@ import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Icon } from '../../design-system/Icon';
 import { Menu } from '../../design-system/Menu';
-import { Select } from '../../design-system/Select';
 import { SuggestionChip } from '../../design-system/SuggestionChip';
 import { cn } from '../../lib/utils';
-import type { AnswerReport } from '../../lib/v1/answerReports';
-import { fetchAgents } from './api';
-import { useAgentStream } from './hooks/useAgentStream';
+import type { Feedback } from '../../lib/v1/answerReports';
+import { useQuestionStream } from './hooks/useQuestionStream';
 import { AnswerBlock } from './components/AnswerBlock';
 import { AnswerTheme } from './components/AnswerTheme';
 import { EvidencePanel } from './components/EvidencePanel';
 import { ReportDialog } from './components/ReportDialog';
 import { SaveToKnowledgeDialog } from '../knowledge/SaveToKnowledgeDialog';
 import { ReceiptDrawer } from '../answer-receipt/AnswerReceiptPage';
-import type { AgentOption, AskMessage } from './types';
+import type { AskMessage } from './types';
 
 /* ─── per-viewer convenience storage ─────────────────────────────── */
 
@@ -70,16 +70,11 @@ const EXAMPLES = [
   'Top 10 khách hàng theo doanh thu năm nay',
 ];
 
-const AUTO = 'auto';
 
 /* ─── page ────────────────────────────────────────────────────────── */
 
 export default function AskDataPage() {
   const { user } = useAppState();
-  const [agents, setAgents] = useState<AgentOption[]>([]);
-  const [agentsLoading, setAgentsLoading] = useState(true);
-  const [agentsFailed, setAgentsFailed] = useState(false);
-  const [scope, setScope] = useState<string>(AUTO);
   const [input, setInput] = useState('');
   const [saved, setSaved] = useState<StoredQuestion[]>(() => readList(SAVED_KEY));
   const [history, setHistory] = useState<StoredQuestion[]>(() => readList(HISTORY_KEY));
@@ -88,25 +83,14 @@ export default function AskDataPage() {
   const [reportFor, setReportFor] = useState<AskMessage | null>(null);
   const [receiptFor, setReceiptFor] = useState<string | null>(null);
   const [knowledgeFor, setKnowledgeFor] = useState<string | null>(null);
-  const [reported, setReported] = useState<Record<string, AnswerReport>>({});
+  const [reported, setReported] = useState<Record<string, Feedback>>({});
   const [listening, setListening] = useState(false);
   const recogRef = useRef<Recognition | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const { messages, sending, send, answerClarification, confirmUnderstanding, stop } = useAgentStream({
-    userId: user.id,
-    agentId: scope === AUTO ? null : scope,
-  });
-
-  useEffect(() => {
-    let alive = true;
-    fetchAgents()
-      .then(list => { if (alive) setAgents(list); })
-      .catch(() => { if (alive) setAgentsFailed(true); /* scope stays automatic */ })
-      .finally(() => { if (alive) setAgentsLoading(false); });
-    return () => { alive = false; };
-  }, []);
+  // The agent that answers is chosen by the system: POST /v1/questions has no agent field (A3).
+  const { messages, sending, send, answerClarification, confirmUnderstanding, stop } = useQuestionStream();
 
   useEffect(() => { bottomRef.current?.scrollIntoView?.({ behavior: 'smooth' }); }, [messages]);
 
@@ -192,20 +176,11 @@ export default function AskDataPage() {
 
   const questions = messages.filter(m => m.role === 'user');
   const title = questions[0]?.content ?? 'Hỏi đáp';
-  const scopeOptions = [
-    { value: AUTO, label: 'Tự động chọn agent' },
-    ...agents.map(a => ({ value: a.id, label: a.label })),
-  ];
-  const scopeNote = agentsLoading
-    ? 'đang tải danh sách agent'
-    : agentsFailed
-      ? 'không tải được danh sách agent, câu hỏi được chuyển tự động'
-      : scope === AUTO ? 'hệ thống tự chọn agent trả lời' : agents.find(a => a.id === scope)?.description;
   const description = [
     `Phiên của ${user.name}`,
     `${questions.length} câu hỏi`,
-    scopeNote,
-  ].filter(Boolean).join(' · ');
+    'hệ thống tự chọn agent trả lời',
+  ].join(' · ');
 
   return (
     <AnswerTheme mode="light" className="flex h-full min-h-0 flex-col">
@@ -228,15 +203,6 @@ export default function AskDataPage() {
                 items={saved.slice(0, 12).map(s => ({ label: s.q, onSelect: () => ask(s.q) }))}
               />
             )}
-            <div className="w-56">
-              <Select
-                label="Agent trả lời"
-                options={scopeOptions}
-                value={scope}
-                onChange={setScope}
-                disabled={agentsLoading}
-              />
-            </div>
           </>
         }
       />
@@ -330,12 +296,12 @@ export default function AskDataPage() {
                       setInput(questionFor(msg.id));
                       textareaRef.current?.focus();
                     }}
-                    onReport={msg.content ? () => setReportFor(msg) : undefined}
-                    onSaveKnowledge={msg.content ? () => setKnowledgeFor(msg.id) : undefined}
+                    onReport={msg.answerId && msg.content ? () => setReportFor(msg) : undefined}
+                    onSaveKnowledge={msg.answerId && msg.content ? () => setKnowledgeFor(msg.answerId!) : undefined}
                     /* The stream gives no server answer id yet (docs/v3/05-ui-v3.md §4), so this is the
                        client message id: the receipt page shows "chưa có biên nhận" until it does. */
-                    onOpenReceipt={msg.content ? () => setReceiptFor(msg.id) : undefined}
-                    reported={!!reported[msg.id]}
+                    onOpenReceipt={msg.answerId && msg.content ? () => setReceiptFor(msg.answerId!) : undefined}
+                    reported={!!(msg.answerId && reported[msg.answerId])}
                     onStop={msg.status === 'streaming' ? stop : undefined}
                     onConfirmUnderstanding={choice => void confirmUnderstanding(msg.id, choice)}
                     onEditUnderstanding={() => {
@@ -409,14 +375,13 @@ export default function AskDataPage() {
       )}
       <ReportDialog
         open={!!reportFor}
-        target={reportFor ? {
-          messageId: reportFor.id,
-          sessionId: reportFor.sessionId,
+        target={reportFor?.answerId ? {
+          answerId: reportFor.answerId,
           question: questionFor(reportFor.id),
           answer: reportFor.content,
         } : null}
         onClose={() => setReportFor(null)}
-        onReported={report => setReported(prev => ({ ...prev, [report.message_id]: report }))}
+        onReported={feedback => setReported(prev => ({ ...prev, [feedback.answer_id]: feedback }))}
       />
     </AnswerTheme>
   );

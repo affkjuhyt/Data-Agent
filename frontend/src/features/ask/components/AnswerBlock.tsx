@@ -14,7 +14,7 @@ import { Badge } from '../../../design-system/Badge';
 import { StatusDot } from '../../../design-system/StatusDot';
 import { SuggestionChip } from '../../../design-system/SuggestionChip';
 import { formatDuration, formatTime } from '../../../lib/formatVN';
-import { downloadResultXlsx, fetchResultRows } from '../api';
+import { exportAnswer } from '../../../lib/v1/exports';
 import { csvFileName, downloadCsv, toCsv } from '../exportCsv';
 import { interpretationChips } from '../interpretation';
 import { resultSetToEvidenceRun } from '../resultSets';
@@ -74,6 +74,13 @@ interface AnswerBlockProps {
 const TRUST_DOT = { success: 'success', primary: 'primary', warning: 'warning', info: 'info', neutral: 'neutral' } as const;
 const LINK = 'shrink-0 whitespace-nowrap text-primary hover:underline da-body-strong disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline';
 
+/** UC-01-06 Xuất: the server builds the file (POST /v1/answers/{id}/exports) and hands back a
+ *  signed link; the browser follows it. */
+async function downloadAnswerXlsx(answerId: string) {
+  const job = await exportAnswer(answerId, 'xlsx');
+  if (job.download_url) window.location.assign(job.download_url);
+}
+
 function TypingDots() {
   return (
     <span data-testid="typing" aria-label="Đang trả lời" className="inline-flex items-center gap-da-xs py-da-xs">
@@ -122,8 +129,7 @@ export function AnswerBlock({
     if (!target || !target.rows.length) return;
     downloadCsv(csvFileName(question ?? msg.content.slice(0, 40)), toCsv(target.columns, target.rows));
   };
-  const xlsxId = run?.export?.xlsx_available ? run.export.result_id : null;
-  const exportable = !!run && (run.rows.length > 0 || !!xlsxId);
+  const exportable = !!run && (run.rows.length > 0 || !!msg.answerId);
 
   if (msg.refusal) {
     return (
@@ -184,16 +190,6 @@ export function AnswerBlock({
       )}
 
       {displayedRuns.map((displayRun, index) => {
-        const displayResultId = displayRun.export?.result_id;
-        const displayFullResult = displayResultId && displayRun.export?.full_available
-          ? {
-              totalRows: displayRun.export.total_rows,
-              loadRows: (params: { offset: number; limit: number; sort?: string; dir?: 'asc' | 'desc' }) => fetchResultRows(displayResultId, params),
-              onExportXlsx: displayRun.export.xlsx_available
-                ? async () => { await downloadResultXlsx(displayResultId, displayRun.export?.file_name); }
-                : undefined,
-            }
-          : undefined;
         return (
           <DataGrid
             key={displayRun.id ?? index}
@@ -205,7 +201,6 @@ export function AnswerBlock({
             truncation={displayRun.truncation}
             title={displayedRuns.length > 1 ? `Kết quả truy vấn ${index + 1}` : 'Bảng dữ liệu'}
             onExport={displayRun.rows.length ? () => exportCsv(displayRun) : undefined}
-            fullResult={displayFullResult}
           />
         );
       })}
@@ -267,7 +262,7 @@ export function AnswerBlock({
           run={run}
           onClose={() => setExportOpen(false)}
           onExportCsv={run.rows.length ? () => exportCsv(run) : undefined}
-          onExportXlsx={xlsxId ? () => downloadResultXlsx(xlsxId, run.export?.file_name) : undefined}
+          onExportXlsx={msg.answerId ? () => downloadAnswerXlsx(msg.answerId!) : undefined}
         />
       )}
     </div>

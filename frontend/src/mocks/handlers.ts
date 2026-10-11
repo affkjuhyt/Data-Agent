@@ -32,7 +32,8 @@ import { createAgentBuilderHandlers } from './agentBuilder';
 import { createAgentOpsHandlers } from './agentOps';
 import { createAlertHandlers } from './alerts';
 import { createAnswerReceiptHandlers } from './answerReceipts';
-import { createAnswerReportHandlers } from './answerReports';
+import { createFeedbackHandlers } from './feedback';
+import { createQuestionHandlers } from './questions';
 import { createDashboardHandlers } from './dashboards';
 import { createAuthorityHandlers } from './authorities';
 import { createCollaborationHandlers } from './collaboration';
@@ -103,7 +104,8 @@ export function createHandlers() {
     ...createAgentOpsHandlers(),
     ...createSessionHandlers(),
     ...createDashboardHandlers(),
-    ...createAnswerReportHandlers(),
+    ...createFeedbackHandlers(),
+    ...createQuestionHandlers(),
     // Before the inbox: the period mock answers its own reconciliation HITL request.
     ...createPeriodHandlers(),
     ...createRuleHandlers(),

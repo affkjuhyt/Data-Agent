@@ -1,9 +1,11 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "ignore": [
-    "scripts/**"
+    "scripts/**",
+    "src/lib/v1/schema.ts"
   ],
   "ignoreDependencies": [
-    "vite"
+    "vite",
+    "openapi-typescript"
   ]
 }

@@ -175,14 +175,27 @@ export async function v1Upload<T = unknown>(path: string, form: FormData): Promi
   return (await res.json()) as T;
 }
 
+/** One Server-Sent Event; `id` is what Last-Event-ID resumes after (A1.6). */
+export interface V1Event {
+  id?: string;
+  event: string;
+  data: string;
+}
+
 /**
- * GET a short Server-Sent Events stream and return its events once it ends — for answers that
- * arrive whole in a few events (P16 Hỏi riêng), not for token streams (features/ask/sse.ts).
+ * GET a short Server-Sent Events stream and return its events once it ends — for streams that
+ * send the state recorded so far and close (A1.6: questions, P16 Hỏi riêng). Polling it again
+ * with the last id returns only what is new.
  */
-export async function v1Events(path: string): Promise<{ event: string; data: string }[]> {
+export async function v1Events(
+  path: string,
+  options: { lastEventId?: string; signal?: AbortSignal } = {},
+): Promise<V1Event[]> {
+  const extra: Record<string, string> = { Accept: 'text/event-stream' };
+  if (options.lastEventId) extra['Last-Event-ID'] = options.lastEventId;
   const res = await fetch(`${BASE}${safePath(path)}`, {
-    headers: headers({ Accept: 'text/event-stream' }),
-    signal: AbortSignal.timeout(60_000),
+    headers: headers(extra),
+    signal: options.signal ?? AbortSignal.timeout(60_000),
   });
   if (!res.ok) throw await failure(res);
   return (await res.text())
@@ -194,6 +207,10 @@ export async function v1Events(path: string): Promise<{ event: string; data: str
         lines
           .filter((l) => l.startsWith(`${name}:`))
           .map((l) => l.slice(name.length + 1).trimStart());
-      return { event: field('event')[0] ?? 'message', data: field('data').join('\n') };
+      return {
+        id: field('id')[0],
+        event: field('event')[0] ?? 'message',
+        data: field('data').join('\n'),
+      };
     });
 }

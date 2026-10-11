@@ -10,18 +10,15 @@ let messages: AskMessage[] = [];
 vi.mock('../../AppStateContext', () => ({
   useAppState: () => ({ user: { id: 'u1', name: 'Đỗ Hải Yến' }, navigate }),
 }));
-vi.mock('./api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./api')>()),
-  fetchAgents: () => Promise.resolve([{ id: 'ag1', label: 'Agent Phân tích', description: 'Phân tích nợ xấu' }]),
-}));
-vi.mock('./hooks/useAgentStream', () => ({
-  useAgentStream: () => ({ messages, sending: false, send, answerClarification: vi.fn(), stop: vi.fn() }),
+vi.mock('./hooks/useQuestionStream', () => ({
+  useQuestionStream: () => ({ messages, sending: false, send, answerClarification: vi.fn(), confirmUnderstanding: vi.fn(), stop: vi.fn() }),
 }));
 
 const conversation: AskMessage[] = [
   { id: 'q1', role: 'user', content: 'Nợ xấu bán lẻ tháng này tăng ở đâu?', timestamp: '2026-10-08T10:50:00', status: 'done' },
   {
     id: 'a1', role: 'assistant', content: 'Nợ xấu bán lẻ T9 là 1,84%.', timestamp: '2026-10-08T10:50:02', status: 'done',
+    questionId: 'question-1', answerId: 'answer-1',
     suggestions: ['So với cùng kỳ năm trước'],
     evidence: {
       runs: [{

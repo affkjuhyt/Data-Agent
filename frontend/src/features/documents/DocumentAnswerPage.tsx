@@ -131,7 +131,7 @@ export default function DocumentAnswerPage() {
         open={reporting !== null}
         target={
           reporting
-            ? { messageId: reporting.id, question: reporting.question, answer: reporting.answer }
+            ? { answerId: reporting.id, question: reporting.question, answer: reporting.answer }
             : null
         }
         onClose={() => setReporting(null)}

@@ -278,7 +278,12 @@ export interface Understanding {
 }
 
 export interface AskMessage {
+  /** client id of the bubble */
   id: string;
+  /** the server's question (POST /v1/questions) behind an assistant turn */
+  questionId?: string;
+  /** the server's answer: what Báo sai, Lưu tri thức and Biên nhận act on */
+  answerId?: string;
   role: 'user' | 'assistant';
   content: string;
   /** ISO timestamp */

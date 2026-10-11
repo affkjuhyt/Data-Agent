@@ -123,10 +123,10 @@ describe('ExportDialog', () => {
 });
 
 describe('ReportDialog', () => {
-  const target = { messageId: 'a1', sessionId: 's1', question: 'Nợ xấu bán lẻ tăng ở đâu?', answer: msg.content };
+  const target = { answerId: 'a1', question: 'Nợ xấu bán lẻ tăng ở đâu?', answer: msg.content };
 
   it('sends what is wrong and the correction, then reports back', async () => {
-    reportAnswer.mockResolvedValue({ id: 'rep1', message_id: 'a1', status: 'under_review' } as Awaited<ReturnType<typeof reportAnswerApi>>);
+    reportAnswer.mockResolvedValue({ id: 'rep1', answer_id: 'a1', status: 'open' } as unknown as Awaited<ReturnType<typeof reportAnswerApi>>);
     const onReported = vi.fn();
     const onClose = vi.fn();
     render(<ReportDialog open target={target} onClose={onClose} onReported={onReported} submitReport={reportAnswer} />);
@@ -137,9 +137,8 @@ describe('ReportDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Gửi báo sai' }));
 
     await waitFor(() => expect(onReported).toHaveBeenCalledWith(expect.objectContaining({ id: 'rep1' })));
-    expect(reportAnswer).toHaveBeenCalledWith({
-      session_id: 's1', message_id: 'a1', question: target.question, answer: target.answer,
-      kind: 'misread_question', correction: '1,86%', send_to_steward: true,
+    expect(reportAnswer).toHaveBeenCalledWith('a1', {
+      kind: 'misread_question', correction: '1,86%', sendToSteward: true,
     });
     expect(onClose).toHaveBeenCalled();
   });
