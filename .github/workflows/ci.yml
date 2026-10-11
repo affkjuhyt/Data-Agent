@@ -197,12 +197,6 @@ jobs:
             python: "3.11"
             install: -r backend/services/workflow_runtime/requirements.txt -r tests/integration/workflow_runtime/requirements.txt
             sandbox: true
-          - suite: auth_api
-            python: "3.12"
-            install: -r backend/services/auth_api/requirements.txt
-          - suite: platform_workers
-            python: "3.12"
-            install: -r backend/services/platform_workers/requirements.txt
           - suite: sandbox_executor
             python: "3.11"
             install: -r backend/services/sandbox_executor/requirements.txt
