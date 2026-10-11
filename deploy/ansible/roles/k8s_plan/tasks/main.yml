@@ -20,7 +20,7 @@
   ansible.builtin.shell:
     cmd: |
       set -euo pipefail
-      grep -rhoE '{{ image_prefix }}/[A-Za-z0-9._-]+:' {{ k8s_manifests }} | cut -d/ -f2 | tr -d ':' | sort -u
+      grep -rhoE '{{ image_prefix }}/[A-Za-z0-9._-]+:' "{{ k8s_manifests }}" | cut -d/ -f2 | tr -d ':' | sort -u
     executable: /bin/bash
   register: manifest_images
   changed_when: false
