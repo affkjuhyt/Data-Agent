@@ -10,7 +10,7 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 0 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 67 có test nhắc mã AC | todo 778 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 68 có test nhắc mã AC | todo 778 |
 | Endpoint A2 (tab 4) | 378 (A2 ghi 379 dòng; POST /v1/data-products ở hai nhóm) | 78 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 219 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 149 có mã nhắc tới | todo 195 |
@@ -34,7 +34,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-01-01 | Đặt câu hỏi bằng ngôn ngữ tự nhiên | todo | 1/1 | 4/4 | 2/9 |  |
+| UC-01-01 | Đặt câu hỏi bằng ngôn ngữ tự nhiên | todo | 1/1 | 4/4 | 3/9 |  |
 | UC-01-02 | Xem cách tính một con số | todo | 2/2 | 4/4 | 4/5 |  |
 | UC-01-03 | Chỉnh cách hiểu câu hỏi | todo | 1/1 | 1/1 | 1/4 |  |
 | UC-01-04 | Hỏi tiếp và đào sâu | todo | 2/2 | 2/2 | 1/5 |  |
@@ -340,7 +340,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-82 | UC-01-04 | todo |  |
 | BR-83 | UC-01-05 | todo | `backend/services/api/modules/qa/routes.py` |
 | BR-84 | UC-01-05 | todo |  |
-| BR-85 | UC-01-06 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md` |
+| BR-85 | UC-01-06 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `frontend/src/lib/v1/exports.ts` |
 | BR-86 | UC-01-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +3 |
 | BR-87 | UC-02-01 | todo | `backend/services/api/modules/workspace/routes.py` |
 | BR-88 | UC-02-02 | todo |  |
@@ -587,11 +587,11 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 ## Tiêu chí nghiệm thu theo UC
 
-<details><summary>UC-01-01 Đặt câu hỏi bằng ngôn ngữ tự nhiên · 2/10</summary>
+<details><summary>UC-01-01 Đặt câu hỏi bằng ngôn ngữ tự nhiên · 3/10</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-01-01-01 | Chính | Cho AC01 ở Data Space Tín dụng có nguồn hoạt động / Khi gửi “Tỷ lệ nợ xấu tháng 9/2026 theo vùng” / Thì câu trả lời có chip “Hệ thống hiểu là”, biểu đồ, nhãn “Theo chỉ số chuẩn”, nút Cách tính; CSDL có đủ question, pl… | E2E, CSDL | todo |  |
+| AC-01-01-01 | Chính | Cho AC01 ở Data Space Tín dụng có nguồn hoạt động / Khi gửi “Tỷ lệ nợ xấu tháng 9/2026 theo vùng” / Thì câu trả lời có chip “Hệ thống hiểu là”, biểu đồ, nhãn “Theo chỉ số chuẩn”, nút Cách tính; CSDL có đủ question, pl… | E2E, CSDL | todo | `frontend/src/features/ask/hooks/useQuestionStream.test.tsx` |
 | AC-01-01-02 | Thay thế | Cho “doanh thu” có 2 định nghĩa được duyệt / Khi hỏi “Doanh thu quý 3/2026” / Thì hệ thống hỏi lại bằng 2 lựa chọn và không có query_run nào trước khi người dùng chọn | E2E, CSDL | todo |  |
 | AC-01-01-03 | Ngoại lệ | Cho nguồn không phản hồi / Khi truy vấn chạy quá 60 giây / Thì truy vấn bị dừng, thông báo lỗi nêu tên nguồn, question vẫn còn để hỏi lại | API | todo | `tests/design_checklist.py` |
 | AC-01-01-04 | Ngoại lệ | Cho AC01 không có quyền trên bảng cần đọc / Khi hỏi / Thì trả “không có quyền xem dữ liệu này”, thân phản hồi và luồng sự kiện không chứa tên bảng hay tên cột | API | todo | `tests/conftest.py` |
