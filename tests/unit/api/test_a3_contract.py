@@ -47,6 +47,10 @@ def _query(op: dict[str, Any]) -> set[str]:
     return {p["name"] for p in op.get("parameters", []) if p.get("in") == "query"}
 
 
+def _responses(op: dict[str, Any]) -> set[int]:
+    return {int(status) for status in op.get("responses", {}) if status.isdigit()}
+
+
 def contract_gaps(spec: dict[str, Any], groups: frozenset[str]) -> list[str]:
     gaps = []
     for (method, path), op in sorted(operations(spec).items()):
@@ -65,6 +69,9 @@ def contract_gaps(spec: dict[str, Any], groups: frozenset[str]) -> list[str]:
             gaps.append(f"{where}: A3 requires {sorted(want_required - required)}")
         if set(row["query"]) - _query(op):
             gaps.append(f"{where}: query lacks {sorted(set(row['query']) - _query(op))}")
+        want_statuses = {status for status, _ in row["errors"]}
+        if want_statuses - _responses(op):
+            gaps.append(f"{where}: responses lack statuses {sorted(want_statuses - _responses(op))}")
     return gaps
 
 
