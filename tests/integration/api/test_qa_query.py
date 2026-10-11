@@ -35,7 +35,7 @@ def build(seed: Seed, suffix: str = "") -> World:
         status="active",
     )
     role = seed.row(
-        "org.role", org_id=org, code=f"ASK{suffix or '0'}", name="Ask", capabilities=["ask"]
+        "org.role", org_id=org, code=f"ASK{suffix or '0'}", name="Ask", capabilities=["ask", "approve"]
     )
     seed.row("org.user_role", org_id=org, user_id=user, role_id=role, source="manual")
     space = seed.row(

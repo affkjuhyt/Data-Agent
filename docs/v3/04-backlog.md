@@ -87,7 +87,7 @@ của tài liệu thiết kế hệ thống; cổng A2 trong CI giữ mã khớp
 | API-00 | Khung `backend/services/api`: kernel (token JWKS, `app.org_id` mỗi giao dịch, problem+json, con trỏ, SSE), bản chụp A2 và cổng so OpenAPI, suite `api`, CI, import-linter | | BE | S | `make test-unit UNIT_SUITES=api:api` xanh; route ngoài A2 lỗi khi import | done 543d7be0 |
 | API-01 | Bộ giải danh tính và năng lực từ `org.*` (toàn tổ chức + Data Space qua `X-Data-Space`), `GET /v1/data-spaces`, `GET /v1/me` (thêm vào A2) | API-00, ORM `libs/dataagent_db` | BE | S | Test tích hợp trên DDL thật: năng lực theo vai trò, hết hạn, nhóm, cô lập tổ chức, không vào Data Space khi không là thành viên | done dc268b2b |
 | API-02 | Hỏi đáp + Truy vấn: câu hỏi 202, luồng SSE có `answer_id`, câu trả lời, phản hồi, biên nhận | API-01 | BE, FE | L | Nhóm vào `COMPLETE_GROUPS`; màn Hỏi đáp chạy không cần mock | done afffb02d |
-| API-03 | Phiên làm việc | API-01 | BE, FE | M | Như trên cho màn Phiên | todo |
+| API-03 | Phiên làm việc | API-01 | BE, FE | M | Như trên cho màn Phiên | done ad1168c0 |
 | API-04 | Cần bạn và đánh giá | API-01 | BE, FE | M | Như trên cho màn Cần bạn | todo |
 | API-05 | Agent: lượt chạy, sự kiện SSE, tạm dừng/tiếp tục | API-02 | BE, FE | L | Như trên cho màn Agent | todo |
 | API-06 | Triển khai khối `api`: manifest, Ansible, route `/v1` ở gateway, secret từ OpenBao | API-02 | Ops | S | `make deploy` đưa `api` lên cụm dev; e2e gọi `/v1` qua gateway | todo |
