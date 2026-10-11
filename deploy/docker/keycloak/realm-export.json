@@ -896,6 +896,20 @@
           }
         },
         {
+          "name": "org_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "tenant_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "org_id",
+            "jsonType.label": "String"
+          }
+        },
+        {
           "id": "deb65992-cc9c-46e9-bd64-41adfe0fe1d7",
           "name": "role_id",
           "protocol": "openid-connect",

@@ -69,7 +69,41 @@ echo "  → client $TARGET_CLIENT id=$CLIENT_ID"
 EXISTING=$(curl -sf -H "Authorization: Bearer $TOKEN" \
     "$KC_BASE/admin/realms/$REALM/clients/$CLIENT_ID/protocol-mappers/models")
 
-# ── 4. Add audience mapper per service (skip if name already exists) ────
+# ── 4. Add the V3 organisation claim (skip if already present) ─────────
+# V3 authorisation is tenant-bound at the API boundary.  The seeded users
+# carry the organisation in `tenant_id`; expose the same value as `org_id`
+# because the API deliberately does not accept organisation identity from a
+# request header or body.
+if ! echo "$EXISTING" | python3 -c "
+import sys, json
+existing = json.load(sys.stdin)
+raise SystemExit(0 if any(m['name'] == 'org_id' for m in existing) else 1)
+"; then
+    curl -sf -X POST \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{
+  "name": "org_id",
+  "protocol": "openid-connect",
+  "protocolMapper": "oidc-usermodel-attribute-mapper",
+  "consentRequired": false,
+  "config": {
+    "userinfo.token.claim": "true",
+    "user.attribute": "tenant_id",
+    "id.token.claim": "true",
+    "access.token.claim": "true",
+    "claim.name": "org_id",
+    "jsonType.label": "String"
+  }
+}' \
+        "$KC_BASE/admin/realms/$REALM/clients/$CLIENT_ID/protocol-mappers/models" \
+        > /dev/null
+    echo "  → added org_id mapper from tenant_id"
+else
+    echo "  → org_id mapper already present, skipping"
+fi
+
+# ── 5. Add audience mapper per service (skip if name already exists) ────
 for aud in "${AUDIENCES[@]}"; do
     mapper_name="audience-$aud"
 
@@ -108,7 +142,7 @@ EOF
     echo "  → added $mapper_name"
 done
 
-# ── 5. Clear required actions on seeded test users ─────────────────────
+# ── 6. Clear required actions on seeded test users ─────────────────────
 # Realm-export.json seeds users with `requiredActions: ["UPDATE_PASSWORD"]`
 # (or similar). For a normal UI login that's correct — the user must reset
 # their password on first login. But Direct Access Grant (password flow)
@@ -141,7 +175,7 @@ for username in "${TEST_USERS[@]}"; do
     echo "  → cleared $username (id=$user_id)"
 done
 
-# ── 6. Login theme ─────────────────────────────────────────────────────
+# ── 7. Login theme ─────────────────────────────────────────────────────
 # The realm import only applies to a new realm, so a running one gets the Data Agent theme
 # (themes/data-agent, baked into the keycloak image) and Vietnamese here. Idempotent: a PUT
 # of a partial realm changes only these fields.
@@ -155,7 +189,7 @@ curl -sf -X PUT \
     > /dev/null
 echo "  → realm $REALM uses the data-agent login theme"
 
-# ── 7. Realm roles added after the first import ────────────────────────
+# ── 8. Realm roles added after the first import ────────────────────────
 # The realm import only applies to a new realm; a running one gets roles added later here.
 # exec_vault gates P16 Kho riêng (frontend rail item + the vault API); it is only created,
 # never granted: an admin assigns it per person.

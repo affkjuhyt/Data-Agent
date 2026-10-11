@@ -400,7 +400,7 @@ else
 
   echo "🔐 Enabling aeroflow-jwks plugin on api (aud=dataagent-api)..."
   upsert_plugin "$KONG_ADMIN/services/api/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"dataagent-api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"dataagent-api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"hide_credentials\":false$GATEWAY_KEY_JSON_FIELD}}" \
     "aeroflow-jwks"
 
 fi
