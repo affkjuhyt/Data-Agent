@@ -1,8 +1,9 @@
 """Request and response shapes of the catalog module (tab 4 A3, group "Nguồn và danh mục").
 
-Responses are the table's columns minus org_id, created_by, updated_by, deleted_at (A3 "Trả về").
-A source carries only OpenBao paths (secret_ref, writeback_secret_ref), never a password or
-token: the request takes `credentials` as a reference and refuses any other key (BR-14).
+Responses are the table's columns minus org_id, created_by, updated_by, deleted_at and every
+secret reference (A3 "Trả về"). A source stores only OpenBao paths (secret_ref,
+writeback_secret_ref), never a password or token: the request takes `credentials` as a reference
+and refuses any other key (BR-14); the response says only whether one is set.
 """
 
 from __future__ import annotations
@@ -115,9 +116,10 @@ class SourceView(BaseModel):
     port: int | None
     database_name: str | None
     conn_options: Any
-    # OpenBao paths only (BR-14); the empty string means no credentials declared.
-    secret_ref: str
-    writeback_secret_ref: str | None
+    # A3 drops every secret reference from a response: the OpenBao paths are write-only, the
+    # response only says whether one is set.
+    has_credentials: bool = False
+    has_writeback_credentials: bool = False
     mode: str
     authority_level: str
     freshness_sla: datetime.timedelta | None
@@ -134,6 +136,13 @@ class SourceView(BaseModel):
     db_version: str | None
     created_at: datetime.datetime
     updated_at: datetime.datetime
+
+    @classmethod
+    def of(cls, row: Any) -> SourceView:
+        view = cls.model_validate(row, from_attributes=True)
+        view.has_credentials = bool(row.secret_ref)
+        view.has_writeback_credentials = bool(row.writeback_secret_ref)
+        return view
 
 
 class SourceSchedule(SourceView):

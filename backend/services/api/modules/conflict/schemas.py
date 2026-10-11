@@ -10,7 +10,7 @@ import decimal
 import uuid
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # What a person decides on "So sánh hai nguồn" (UC-07-04 step 6, 6a). insufficient_basis is not
 # an outcome column value: it sets status insufficient_basis and leaves outcome empty.
@@ -120,10 +120,19 @@ class Materiality(BaseModel):
     count: int = Field(default=0, ge=0)
 
 
+def _data_kind(value: str) -> str:
+    # The key of rankings and rules: a blank one would match no conflict.
+    if not value.strip():
+        raise ValueError("data_kind must not be blank")
+    return value.strip()
+
+
 class SourceAuthorityPut(BaseModel):
     data_kind: str = Field(min_length=1, max_length=200)
     ranking: list[uuid.UUID] = Field(min_length=1, max_length=100)
     materiality: Materiality | None = None
+
+    _kind = field_validator("data_kind")(_data_kind)
 
 
 class ResolutionRuleCreate(BaseModel):
@@ -132,6 +141,8 @@ class ResolutionRuleCreate(BaseModel):
     condition: dict[str, Any]
     # {"source_id": …} picks that source's claim.
     action: dict[str, Any]
+
+    _kind = field_validator("data_kind")(_data_kind)
 
 
 class ResolutionRuleView(BaseModel):

@@ -482,7 +482,12 @@ async def put_source_authority(
             session.add(row)
         row.ranking = list(body.ranking)
         if body.materiality is not None:
-            row.materiality = body.materiality.model_dump(mode="json")
+            # JSON numbers, as the column default {"amount_pct": 0.0005, "count": 0} is: a
+            # Decimal dumped "json" is a string, which a numeric comparison would not read.
+            row.materiality = {
+                "amount_pct": float(body.materiality.amount_pct),
+                "count": body.materiality.count,
+            }
         # A draft until approved (UC-07-05 step 5, E1 for data in filed reports): one row per
         # data kind, so the previous ranking stops applying until the new one is approved.
         row.status, row.approved_by, row.approved_at = "draft", None, None

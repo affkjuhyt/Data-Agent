@@ -195,7 +195,7 @@ async def list_sources(
     async with transaction(ROLE, principal) as session:
         rows, token = await _page(session, query, page, src.created_at, src.id)
     return Page(
-        items=[SourceView.model_validate(r, from_attributes=True) for r in rows],
+        items=[SourceView.of(r) for r in rows],
         next_page_token=token,
     )
 
@@ -209,6 +209,13 @@ async def list_sources(
 async def create_source(
     body: SourceCreate, principal: CurrentPrincipal, space: CurrentDataSpace
 ) -> SourceView:
+    if body.mode == "federated" and body.kind not in rules.QUERYABLE_KINDS:
+        # UC-04-01 step 3: an API, file, document or CDC source is ingest only.
+        raise Problem(
+            422,
+            "business_rule_violated",
+            f"A {body.kind} source cannot be queried in place; use mode ingest (UC-04-01).",
+        )
     secret_ref = _secret_ref(body.credentials, principal, "credentials") if body.credentials else ""
     writeback_ref = (
         _secret_ref(body.writeback_credentials, principal, "writeback_credentials")
@@ -262,7 +269,7 @@ async def create_source(
         )
         await session.flush()
         await session.refresh(row)
-        return SourceView.model_validate(row, from_attributes=True)
+        return SourceView.of(row)
 
 
 @router.patch(
@@ -336,7 +343,7 @@ async def update_source(
             )
         await session.flush()
         await session.refresh(row)
-        return SourceView.model_validate(row, from_attributes=True)
+        return SourceView.of(row)
 
 
 @router.post(
@@ -472,7 +479,7 @@ async def set_scan_schedule(
         await session.refresh(row)
         now = _now()
         return SourceSchedule(
-            **SourceView.model_validate(row, from_attributes=True).model_dump(),
+            **SourceView.of(row).model_dump(),
             next_scans=rules.next_runs(scan, now, NEXT_RUNS, zone=zone, skip_day=skip)
             if scan
             else [],
@@ -737,6 +744,7 @@ async def update_dataset(
             if name in sent and getattr(row, name) != getattr(body, name):
                 setattr(row, name, getattr(body, name))
                 changed.append(name)
+        reopened: list[str] = []
         for patch in body.columns or []:
             column = by_id.get(patch.id)
             if column is None:
@@ -751,18 +759,23 @@ async def update_dataset(
                 if name in fields and getattr(patch, name) is None:
                     raise Problem(422, "validation_failed", f"columns[].{name} cannot be null.")
             touched = False
+            relabelled = "pii_label" in fields and column.pii_label != patch.pii_label
             for name in fields:
                 if getattr(column, name) != getattr(patch, name):
                     setattr(column, name, getattr(patch, name))
                     touched = True
-            if "pii_label" in fields and "pii_confirmed" not in fields and touched:
+            if relabelled and "pii_confirmed" not in fields:
                 # A new label has not been confirmed by anyone yet.
                 column.pii_confirmed = False
             if touched:
                 column.updated_at, column.updated_by = _now(), principal.user_id
+                if column.pii_label and not column.pii_confirmed:
+                    reopened.append(column.name)
                 if "columns" not in changed:
                     changed.append("columns")
-        if row.enabled:
+        # Checked when this change enables the table or leaves one of its columns labelled and
+        # unconfirmed: confirming the masking one column at a time stays possible.
+        if row.enabled and ("enabled" in changed or reopened):
             unconfirmed = [c.name for c in columns if c.pii_label and not c.pii_confirmed]
             if unconfirmed:
                 # UC-04-04 step 3: a table enters the context only after its personal-data
