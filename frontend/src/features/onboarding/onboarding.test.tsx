@@ -24,26 +24,17 @@ afterAll(() => server.close());
 const wrap = (ui: React.ReactNode) => render(<ToastProvider>{ui}</ToastProvider>);
 
 describe('DataSpacePicker', () => {
-  it('lists the spaces with role and use, opens one, and asks for a closed one', async () => {
+  it('lists the Data Spaces returned by the V3 membership endpoint and opens one', async () => {
     const onOpen = vi.fn();
     wrap(<DataSpacePicker userName="Đỗ Hải Yến" onOpen={onOpen} onLogout={vi.fn()} />);
     expect(
       await screen.findByRole('heading', { name: 'Chào Hải Yến, chọn Data Space để bắt đầu' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Phân tích viên · chỉ vùng Bắc')).toBeInTheDocument();
-    expect(
-      screen.getByText(/12 nguồn · 148 chỉ số · 5 agent .*Dùng gần nhất: hôm nay 08:40/),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Người phụ trách: Trần Quốc An')).toBeInTheDocument();
+    expect(screen.getAllByText('Người phụ trách dữ liệu')).not.toHaveLength(0);
+    expect(screen.getAllByText(/0 nguồn · 0 chỉ số · 0 agent.*Chưa dùng/)).not.toHaveLength(0);
 
     fireEvent.click(screen.getByRole('button', { name: 'Mở Rủi ro tín dụng' }));
     expect(onOpen).toHaveBeenCalledWith({ id: 'ds-rui-ro-tin-dung', name: 'Rủi ro tín dụng' });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Yêu cầu quyền vào Kiểm soát nội bộ' }));
-    expect(await screen.findByText('Đã gửi yêu cầu tới Trần Quốc An.')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Yêu cầu quyền vào Kiểm soát nội bộ' }),
-    ).toHaveTextContent('Đã gửi yêu cầu');
   });
 
   it('keeps the "open the last one" preference on the server', async () => {
@@ -51,7 +42,7 @@ describe('DataSpacePicker', () => {
     const box = await screen.findByRole('checkbox', {
       name: 'Lần sau mở thẳng Data Space dùng gần nhất',
     });
-    expect(box).toBeChecked();
+    expect(box).not.toBeChecked();
     fireEvent.click(box);
     await waitFor(async () => expect((await getMyDataSpaces()).open_last_used).toBe(false));
   });

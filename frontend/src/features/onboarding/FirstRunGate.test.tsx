@@ -29,8 +29,8 @@ const renderGate = () =>
 describe('FirstRunGate', () => {
   it('asks for a Data Space when the viewer did not choose to reopen the last one', async () => {
     server.use(
-      http.get('*/v1/me/data-spaces', () =>
-        HttpResponse.json({ items: [{ id: 'ds-1', name: 'Rủi ro tín dụng', access: 'member', last_used_text: 'hôm nay' }], open_last_used: false }),
+      http.get('*/v1/data-spaces', () =>
+        HttpResponse.json({ items: [{ id: 'ds-1', name: 'Rủi ro tín dụng', my_roles: [{ id: 'r', code: 'analyst', name: 'Phân tích viên' }], my_capabilities: ['ask'] }], next_page_token: '' }),
       ),
       http.get('*/v1/me/onboarding', () => HttpResponse.json({ state: 'done', steps: [], context_text: '', templates: [] })),
     );
@@ -39,20 +39,21 @@ describe('FirstRunGate', () => {
     expect(screen.queryByText(/^app:/)).toBeNull();
   });
 
-  it('opens the last space straight away when asked to, and the app when onboarding is done', async () => {
+  it('keeps the picker available because the current API does not expose a last-used preference', async () => {
     server.use(
-      http.get('*/v1/me/data-spaces', () =>
-        HttpResponse.json({ items: [{ id: 'ds-1', name: 'Rủi ro tín dụng', access: 'member', last_used_text: 'hôm nay' }], open_last_used: true }),
+      http.get('*/v1/data-spaces', () =>
+        HttpResponse.json({ items: [{ id: 'ds-1', name: 'Rủi ro tín dụng', my_roles: [{ id: 'r', code: 'analyst', name: 'Phân tích viên' }], my_capabilities: ['ask'] }], next_page_token: '' }),
       ),
       http.get('*/v1/me/onboarding', () => HttpResponse.json({ state: 'done', steps: [], context_text: '', templates: [] })),
     );
     renderGate();
-    expect(await screen.findByText('app:ds-1')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Mở Rủi ro tín dụng' })).toBeInTheDocument();
+    expect(screen.queryByText(/^app:/)).toBeNull();
   });
 
   it('never locks the app behind setup screens the backend cannot serve', async () => {
     server.use(
-      http.get('*/v1/me/data-spaces', () => new HttpResponse(null, { status: 404 })),
+      http.get('*/v1/data-spaces', () => new HttpResponse(null, { status: 404 })),
       http.get('*/v1/me/onboarding', () => new HttpResponse(null, { status: 404 })),
     );
     renderGate();

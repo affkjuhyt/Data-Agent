@@ -1,5 +1,6 @@
 import type { Page } from './client';
 import { pathId, v1Get, v1Send } from './client';
+import type { DataSpace } from './types';
 
 /*
  * Khám phá (UC-01-04), the full-screen artifact (UC-01-01) and the global first-visit screens
@@ -245,16 +246,32 @@ export interface DataSpaceChoice {
   request_pending: boolean;
 }
 
-/**
- * PROPOSAL: GET /v1/me/data-spaces — every space the viewer can see, member or not, most
- * recently used first, and the "open the last one next time" preference.
- */
+/** Adapt the implemented membership list to the first-visit picker shape. */
 export interface MyDataSpaces {
   items: DataSpaceChoice[];
   open_last_used: boolean;
 }
 
-export const getMyDataSpaces = () => v1Get<MyDataSpaces>('/me/data-spaces');
+export const getMyDataSpaces = async (): Promise<MyDataSpaces> => {
+  const page = await v1Get<Page<DataSpace>>('/data-spaces', { page_size: 500 });
+  return {
+    items: page.items.map((space) => ({
+      id: space.id,
+      name: space.name,
+      access: 'member' as const,
+      role_label: space.my_roles[0]?.name ?? null,
+      scope_text: null,
+      role_kind: space.my_capabilities.includes('ask') ? ('analyst' as const) : ('viewer' as const),
+      source_count: 0,
+      metric_count: 0,
+      agent_count: 0,
+      last_used_text: null,
+      owner_name: null,
+      request_pending: false,
+    })),
+    open_last_used: false,
+  };
+};
 
 /** PROPOSAL: PUT /v1/me/data-space-preference */
 export const setOpenLastUsed = (openLastUsed: boolean) =>

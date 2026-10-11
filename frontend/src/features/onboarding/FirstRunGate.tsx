@@ -7,7 +7,7 @@ import { OnboardingPage } from './OnboardingPage';
 
 /*
  * "Nhãn · Toàn cục" (2376:14142): Đăng nhập → chọn Data Space → onboarding → hiểu cách agent làm
- * việc → Trang chủ. Both gates are the server's call (GET /v1/me/data-spaces, GET /v1/me/onboarding),
+ * việc → Trang chủ. Both gates are the server's call (GET /v1/data-spaces, GET /v1/me/onboarding),
  * so another browser does not repeat them. The Data Space picker is skipped when the viewer
  * asked to open the last space and one was used. Either call failing (the backend does not
  * serve /v1 yet) opens the app straight away rather than locking it behind a setup screen.
