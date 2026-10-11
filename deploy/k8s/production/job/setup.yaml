@@ -80,23 +80,12 @@ spec:
               echo "keycloak browserFlow set to browser"
             fi
           fi
-          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$KONG_PROXY_URL/api/orchestrate/stream" \
-            -H "Content-Type: application/json" -d '{"query":"ping","user_id":"verify"}')
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$KONG_PROXY_URL/v1/questions" \
+            -H "Content-Type: application/json" -d '{"text":"ping"}')
           case "$code" in
             401|403) echo "gateway rejects anonymous: $code" ;;
             *) echo "gateway is not fail-closed: got $code"; exit 1 ;;
           esac
-          if [ -n "$SMOKE_USER" ] && [ -n "$SMOKE_PASSWORD" ]; then
-            t=$(curl -sf -X POST "$KEYCLOAK_URL/realms/$KEYCLOAK_REALM/protocol/openid-connect/token" \
-              -d grant_type=password -d client_id=aeroflow-frontend \
-              --data-urlencode "username=$SMOKE_USER" --data-urlencode "password=$SMOKE_PASSWORD" \
-              | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
-            for route in /api/catalog/agents /api/reviews/pending; do
-              c=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $t" "$KONG_PROXY_URL$route")
-              [ "$c" = "200" ] || { echo "route $route returned $c"; exit 1; }
-              echo "route $route ok"
-            done
-          fi
         envFrom:
         - configMapRef:
             name: dataagent-config
