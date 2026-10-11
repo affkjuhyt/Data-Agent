@@ -1,6 +1,6 @@
 # Đặc tả API
 
-Tab này đặc tả giao diện lập trình của Data Agent V3: quy ước chung (A1), danh mục endpoint theo dịch vụ (A2), chi tiết request và response từng endpoint (A3), tệp OpenAPI (A4). Danh mục dựng lại từ 103 đặc tả use case và mục 9.2, đã chuẩn hoá tên và cách gọi; cột dữ liệu bám theo thiết kế cơ sở dữ liệu ở tab 3. Trạng thái (09/10/2026): xong A1 đến A4; 301 endpoint có đặc tả chi tiết, tệp OpenAPI 3.1 đã qua kiểm tra hợp lệ với 240 endpoint. Ngày 10/10/2026 thêm nhóm Thu thập và Dự báo (41 endpoint, P14, P15) và 2 endpoint chứng nhận dataset hợp nhất ở nhóm Nguồn và dữ liệu (BR-156); sau đó thêm 2 endpoint ở nhóm Thu thập (PATCH /v1/consolidation-specs/{id}, POST /v1/crawl-sources/{id}:legal-review) và 16 endpoint lớp tri thức ở nhóm Lớp ngữ cảnh. 61 endpoint này nằm ở hai tệp OpenAPI bổ sung đã qua kiểm tra hợp lệ, nay là bản tham khảo (A4, ADR-48). Lượt 4 thêm 77 endpoint: data product, biên nhận, Error Book, provider mô hình (29), dự báo theo công thức và sổ dự báo (12), lịch sự kiện ngoài (8), nhóm mới Lớp riêng lãnh đạo (28). Tổng hiện có (12/10/2026): 381 endpoint trong 22 nhóm (A2), gồm GET /v1/me thêm ngày 11/10/2026 ở nhóm Quản trị, GET /v1/me/clients và POST /v1/me/clients/{id}:confirm thêm ngày 12/10/2026 ở nhóm Tích hợp (người phụ trách xác nhận client, BR-48); OpenAPI của mọi endpoint, kể cả 77 endpoint lượt 4, sinh từ code FastAPI và được kiểm với A2 trong CI (A4, ADR-48).
+Tab này đặc tả giao diện lập trình của Data Agent V3: quy ước chung (A1), danh mục endpoint theo dịch vụ (A2), chi tiết request và response từng endpoint (A3), tệp OpenAPI (A4). Danh mục dựng lại từ 103 đặc tả use case và mục 9.2, đã chuẩn hoá tên và cách gọi; cột dữ liệu bám theo thiết kế cơ sở dữ liệu ở tab 3. Trạng thái (09/10/2026): xong A1 đến A4; 301 endpoint có đặc tả chi tiết, tệp OpenAPI 3.1 đã qua kiểm tra hợp lệ với 240 endpoint. Ngày 10/10/2026 thêm nhóm Thu thập và Dự báo (41 endpoint, P14, P15) và 2 endpoint chứng nhận dataset hợp nhất ở nhóm Nguồn và dữ liệu (BR-156); sau đó thêm 2 endpoint ở nhóm Thu thập (PATCH /v1/consolidation-specs/{id}, POST /v1/crawl-sources/{id}:legal-review) và 16 endpoint lớp tri thức ở nhóm Lớp ngữ cảnh. 61 endpoint này nằm ở hai tệp OpenAPI bổ sung đã qua kiểm tra hợp lệ, nay là bản tham khảo (A4, ADR-48). Lượt 4 thêm 77 endpoint: data product, biên nhận, Error Book, provider mô hình (29), dự báo theo công thức và sổ dự báo (12), lịch sự kiện ngoài (8), nhóm mới Lớp riêng lãnh đạo (28). Tổng hiện có (12/10/2026): 382 endpoint trong 22 nhóm (A2), gồm GET /v1/me thêm ngày 11/10/2026 ở nhóm Quản trị, GET /v1/me/clients và POST /v1/me/clients/{id}:confirm thêm ngày 12/10/2026 ở nhóm Tích hợp (người phụ trách xác nhận client, BR-48), GET /v1/audit/exports/{id} thêm ngày 12/10/2026 ở nhóm Kiểm toán (nơi Location của :export trỏ tới); OpenAPI của mọi endpoint, kể cả 77 endpoint lượt 4, sinh từ code FastAPI và được kiểm với A2 trong CI (A4, ADR-48).
 
 ## A1. Quy ước chung
 
@@ -458,6 +458,7 @@ Dịch vụ: Audit service (audit). 4 endpoint.
 | GET | /v1/audit | Tra cứu nhật ký | 11-03 | audit\_read |
 | POST | /v1/audit:verify | Kiểm toàn vẹn chuỗi băm | 11-03 | audit\_read |
 | POST | /v1/audit:export | Xuất CSV có chữ ký; quá 100.000 dòng cần duyệt | 11-03 | audit\_read |
+| GET | /v1/audit/exports/{id} | Trạng thái một bản xuất nhật ký | 11-03 | audit\_read |
 | GET | /v1/security-events | Sự kiện bảo mật | 11-03 | audit\_read |
 
 ### Tích hợp
@@ -962,7 +963,8 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | --- | --- | --- | --- |
 | GET /v1/audit | ?actor\_id, ?on\_behalf\_of, ?object\_kind, ?object\_id, ?action, ?outcome, ?from, ?to, ?agent\_run\_id | Danh sách AuditLog. Giá trị trước và sau đã che dữ liệu cá nhân; việc tra cứu cũng được ghi nhật ký | — |
 | POST /v1/audit:verify | from\_seq | JSON. Trả {ok, broken\_at\_seq, checked\_rows}; đứt chuỗi tạo security\_event mức cao | — |
-| POST /v1/audit:export | filters\*, format | 202, Location tới audit.export\_job (CSDL dataagent\_audit). Tệp có chữ ký số; quá 100.000 dòng cần người thứ hai duyệt (BR-138) | — |
+| POST /v1/audit:export | filters\*, format | 202, Location tới /v1/audit/exports/{id} (audit.export\_job, CSDL dataagent\_audit). Tệp có chữ ký số; quá 100.000 dòng cần người thứ hai duyệt (BR-138) | — |
+| GET /v1/audit/exports/{id} | — | ExportJob (status, row\_count, format, approved\_by, expires\_at); không trả object\_key | 404 not\_found |
 | GET /v1/security-events | ?kind, ?severity, ?status | Danh sách SecurityEvent | — |
 
 ### A3 · Tích hợp

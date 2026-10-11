@@ -7,21 +7,23 @@ svc_audit may only SELECT and INSERT it. RLS keeps a caller to their organisatio
 Reading the log is itself logged (A3: "việc tra cứu cũng được ghi nhật ký"), in the same
 transaction, so a search that fails leaves no trace and one that succeeds always does.
 
-POST /v1/audit:export is not served: A3 points it at an export_job, and the only one
-(qa.export_job) must belong to an answer or an artifact; the design has no table for an audit
-export yet (raised with the DB layer). The group stays out of COMPLETE_GROUPS until it has one.
+POST /v1/audit:export records an audit.export_job beside the rows it exports; an export
+worker writes and signs the file. Over 100 000 rows a second person must approve it (BR-138), so
+the job waits in waiting_approval, and the CHECKs of audit.export_job keep it from running
+before approved_by is set by someone other than the requester.
 """
 
 from __future__ import annotations
 
 import datetime
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query, Response
 from sqlalchemy import Select, func, select, text, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import audit
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentPrincipal, Principal
@@ -33,9 +35,13 @@ from services.api.kernel.pagination import (
     invalid_page_token,
     page_request,
 )
+from services.api.kernel.problems import Problem
 from services.api.modules.audit.schemas import (
     AuditFilters,
     AuditLogView,
+    ExportAccepted,
+    ExportIn,
+    ExportJobView,
     SecurityEventView,
     VerifyIn,
     VerifyResult,
@@ -44,6 +50,8 @@ from services.api.modules.audit.schemas import (
 router = APIRouter()
 ROLE = "svc_audit"
 SERVICE = "api"
+# BR-138: above this many rows an export needs a second person's approval.
+APPROVAL_ROWS = 100_000
 
 
 def audit_filters(
@@ -185,6 +193,65 @@ async def verify_audit_chain(principal: CurrentPrincipal, body: VerifyIn) -> Ver
         )
         _record(session, principal, "audit.verified", result.model_dump())
     return result
+
+
+@router.post(
+    "/v1/audit:export",
+    status_code=202,
+    response_model=ExportAccepted,
+    **endpoint("POST", "/v1/audit:export", operation_id="exportAuditLog"),
+)
+async def export_audit_log(
+    principal: CurrentPrincipal, body: ExportIn, response: Response
+) -> ExportAccepted:
+    filters = body.filters.model_dump(mode="json", by_alias=True, exclude_none=True)
+    async with transaction(ROLE, principal) as session:
+        # Counted now, so the approval rule is decided on what was asked for, not on what the
+        # log grows to by the time the worker runs (it exports up to this seq, see `filters`).
+        row_count, last_seq = (
+            await session.execute(
+                _where(
+                    select(func.count(), func.max(audit.AuditLog.seq)).select_from(audit.AuditLog),
+                    body.filters,
+                )
+            )
+        ).one()
+        status: Literal["queued", "waiting_approval"] = (
+            "waiting_approval" if row_count > APPROVAL_ROWS else "queued"
+        )
+        job = audit.ExportJob(
+            id=uuid7(),
+            org_id=principal.org_id,
+            filters={**filters, "to_seq": int(last_seq or 0)},
+            format=body.format,
+            row_count=int(row_count),
+            status=status,
+            requested_by=principal.user_id,
+        )
+        session.add(job)
+        _record(
+            session,
+            principal,
+            "audit.export_requested",
+            {"export_job_id": str(job.id), "row_count": job.row_count, "filters": filters},
+        )
+    response.headers["Location"] = f"/v1/audit/exports/{job.id}"
+    return ExportAccepted(id=job.id, status=status, row_count=int(row_count))
+
+
+@router.get(
+    "/v1/audit/exports/{id}",
+    response_model=ExportJobView,
+    **endpoint("GET", "/v1/audit/exports/{id}", operation_id="getAuditExport"),
+)
+async def get_audit_export(
+    principal: CurrentPrincipal, job_id: Annotated[uuid.UUID, Path(alias="id")]
+) -> ExportJobView:
+    async with transaction(ROLE, principal) as session:
+        job = await session.get(audit.ExportJob, job_id)
+        if job is None:
+            raise Problem(404, "not_found", "No such export.")
+        return ExportJobView.model_validate(job)
 
 
 @router.get(

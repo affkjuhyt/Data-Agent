@@ -34,7 +34,7 @@ backend/services/api/
     sse.py            event_stream, Last-Event-ID (A1.6)
     tracing.py        trace_id từ traceparent (ADR-40)
   catalogue/
-    a2_endpoints.json bản chụp A2: 381 endpoint, 22 nhóm, schema của từng nhóm
+    a2_endpoints.json bản chụp A2: 382 endpoint, 22 nhóm, schema của từng nhóm
     __init__.py       endpoint(method, path, operation_id=…) → kwargs của route + kiểm năng lực
     check.py          so OpenAPI sinh ra với A2
   modules/<schema>/   một package mỗi schema; đăng ký router ở modules/__init__.py
@@ -101,7 +101,7 @@ Lỗi CSDL thành problem+json ở kernel (`kernel/problems.py`): SQLSTATE 23514
 23502 → 422 `validation_failed`. Thông điệp của PostgreSQL có tên bảng hoặc ràng buộc không đi ra ngoài
 (A1.7); module không cần tự kiểm lại luật CSDL đã giữ.
 
-A2 có 381 endpoint, làm dần theo nhóm: một nhóm vào `COMPLETE_GROUPS` trong commit phục vụ endpoint cuối
+A2 có 382 endpoint, làm dần theo nhóm: một nhóm vào `COMPLETE_GROUPS` trong commit phục vụ endpoint cuối
 của nhóm, từ đó bỏ một endpoint là lỗi. Thêm hoặc bỏ endpoint phải sửa tab 4 A2 và `a2_endpoints.json`
 trong cùng PR. Xem độ phủ: `python -m services.api.catalogue.check` trong image `api`.
 

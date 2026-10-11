@@ -1,5 +1,5 @@
 {
- "source": "Data Agent V3 — Tài liệu phân tích thiết kế hệ thống, tab 4 · Đặc tả API, A2 (rev 98)",
+ "source": "Data Agent V3 — Tài liệu phân tích thiết kế hệ thống, tab 4 · Đặc tả API, A2 (rev 110)",
  "as_of": "2026-10-12",
  "note": "Snapshot of A2. ADR-48: OpenAPI is generated from code and checked against this list; adding or removing an endpoint updates A2 and this file in the same PR.",
  "groups": {
@@ -3285,6 +3285,18 @@
    "method": "POST",
    "path": "/v1/audit:export",
    "summary": "Xuất CSV có chữ ký; quá 100.000 dòng cần duyệt",
+   "use_cases": [
+    "11-03"
+   ],
+   "capability": [
+    "audit_read"
+   ]
+  },
+  {
+   "group": "Kiểm toán",
+   "method": "GET",
+   "path": "/v1/audit/exports/{id}",
+   "summary": "Trạng thái một bản xuất nhật ký",
    "use_cases": [
     "11-03"
    ],

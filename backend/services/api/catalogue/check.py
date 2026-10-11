@@ -47,6 +47,7 @@ COMPLETE_GROUPS: frozenset[str] = frozenset(
         "Chính sách",
         "Quản trị",
         "Tích hợp",
+        "Kiểm toán",
     }
 )
 

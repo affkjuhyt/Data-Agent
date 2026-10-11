@@ -11,7 +11,7 @@
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 0 UC đủ tiêu chí bắt buộc | todo 115 |
 | Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 94 có test nhắc mã AC | todo 778 |
-| Endpoint A2 (tab 4) | 380 (A2 ghi 381 dòng; POST /v1/data-products ở hai nhóm) | 380 được `api` phục vụ | — |
+| Endpoint A2 (tab 4) | 381 (A2 ghi 382 dòng; POST /v1/data-products ở hai nhóm) | 381 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 220 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 159 có mã nhắc tới | todo 195 |
 | Màn hình (SCR) | 75 | 9 có mã nhắc tới | todo 75 |
@@ -245,7 +245,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | Gói ngành | 17/17 |  |
 | Kỳ chốt | 10/10 |  |
 | Quản trị | 27/27 |  |
-| Kiểm toán | 4/4 |  |
+| Kiểm toán | 5/5 |  |
 | Tích hợp | 11/11 |  |
 | Agent | 24/24 |  |
 | Thu thập | 28/28 |  |
@@ -393,7 +393,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-135 | UC-10-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-136 | UC-11-01 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/org/admin/grants.py` |
 | BR-137 | UC-11-02 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/governance/policies.py` |
-| BR-138 | UC-11-03 | todo | `backend/alembic/sql/dataagent_audit.sql`, `backend/alembic/versions/v3_0006_audit_export_job.py`, `backend/libs/dataagent_db/models/audit.py` +9 |
+| BR-138 | UC-11-03 | todo | `backend/alembic/sql/dataagent_audit.sql`, `backend/alembic/versions/v3_0006_audit_export_job.py`, `backend/libs/dataagent_db/models/audit.py` +10 |
 | BR-139 | UC-11-04 | todo |  |
 | BR-140 | UC-11-05 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/governance/admin_models.py` |
 | BR-141 | UC-11-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/schema/csdl/definitions.json` +2 |

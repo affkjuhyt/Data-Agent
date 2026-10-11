@@ -158,3 +158,59 @@ async def test_tampered_row_breaks_the_chain_and_raises_a_security_event(
         assert r.json()["ok"] is False and r.json()["broken_at_seq"] == 2
         events = (await c.get("/v1/security-events", params={"severity": "high"})).json()["items"]
     assert [(e["kind"], e["detail"]["broken_at_seq"]) for e in events] == [("hash_chain_broken", 2)]
+
+
+async def test_br_138_export_is_queued_with_its_count_and_is_logged(
+    seed: Seed, audit_db: AuditDb
+) -> None:
+    org = build(seed)
+    for action in ("query.executed", "query.executed", "source.created"):
+        audit_db.log(org.id, action, org.controller)
+    async with client(org) as c:
+        r = await c.post(
+            "/v1/audit:export",
+            json={"filters": {"action": "query.executed"}, "format": "jsonl"},
+        )
+        assert r.status_code == 202, r.text
+        assert r.json()["status"] == "queued" and r.json()["row_count"] == 2
+        job = await c.get(r.headers["Location"])
+    assert job.status_code == 200, job.text
+    assert job.json()["format"] == "jsonl" and "object_key" not in job.json()
+    assert job.json()["filters"]["action"] == "query.executed"
+    requested = audit_db.one(
+        "SELECT count(*) FROM audit.audit_log WHERE org_id = %s AND action = 'audit.export_requested'",
+        org.id,
+    )
+    assert requested == 1
+
+
+async def test_br_138_a_large_export_waits_for_a_second_person(
+    seed: Seed, audit_db: AuditDb, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from services.api.modules.audit import routes
+
+    monkeypatch.setattr(routes, "APPROVAL_ROWS", 1)
+    org = build(seed)
+    for _ in range(2):
+        audit_db.log(org.id, "query.executed", org.controller)
+    async with client(org) as c:
+        r = await c.post("/v1/audit:export", json={"filters": {}})
+    assert r.json()["status"] == "waiting_approval"
+    # The table itself refuses to run it before someone else approves (BR-138).
+    with pytest.raises(psycopg2.errors.CheckViolation), audit_db.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE audit.export_job SET status = 'running', row_count = 200000 WHERE id = %s",
+            (r.json()["id"],),
+        )
+
+
+async def test_export_needs_audit_read_and_stays_in_its_organisation(
+    seed: Seed, audit_db: AuditDb
+) -> None:
+    mine, theirs = build(seed), build(seed)
+    async with client(theirs) as c:
+        made = await c.post("/v1/audit:export", json={"filters": {}})
+    async with client(mine, "kc-ac01") as c:
+        assert (await c.post("/v1/audit:export", json={"filters": {}})).status_code == 403
+    async with client(mine) as c:
+        assert (await c.get(made.headers["Location"])).status_code == 404

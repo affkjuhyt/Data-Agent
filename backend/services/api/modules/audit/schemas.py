@@ -62,7 +62,7 @@ class VerifyResult(BaseModel):
 
 class ExportIn(BaseModel):
     filters: AuditFilters
-    format: Literal["csv"] = "csv"
+    format: Literal["csv", "jsonl"] = "csv"
 
 
 class ExportAccepted(BaseModel):
@@ -72,6 +72,25 @@ class ExportAccepted(BaseModel):
     status: Literal["queued", "waiting_approval"]
     row_count: int
     poll_after_ms: int = 2_000
+
+
+class ExportJobView(BaseModel):
+    """ExportJob (A3). object_key stays inside: the file is fetched by a signed link, not a path."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    filters: dict[str, Any]
+    format: str
+    row_count: int | None
+    status: str
+    requested_by: uuid.UUID
+    approved_by: uuid.UUID | None
+    approved_at: datetime.datetime | None
+    signature: str | None
+    expires_at: datetime.datetime | None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
 
 
 class SecurityEventView(BaseModel):

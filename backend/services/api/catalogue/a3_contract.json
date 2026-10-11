@@ -4494,9 +4494,25 @@
     "format": false
    },
    "query": [],
-   "returns": "202, Location tới audit.export_job (CSDL dataagent_audit). Tệp có chữ ký số; quá 100.000 dòng cần người thứ hai duyệt (BR-138)",
+   "returns": "202, Location tới /v1/audit/exports/{id} (audit.export_job, CSDL dataagent_audit). Tệp có chữ ký số; quá 100.000 dòng cần người thứ hai duyệt (BR-138)",
    "errors": [],
    "request_text": "filters*, format"
+  },
+  "GET /v1/audit/exports/{id}": {
+   "group": "Kiểm toán",
+   "groups": [
+    "Kiểm toán"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ExportJob (status, row_count, format, approved_by, expires_at); không trả object_key",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
   },
   "GET /v1/security-events": {
    "group": "Kiểm toán",
