@@ -262,3 +262,31 @@ async def test_ac_12_03_webhook_targets_and_retry(
         "SELECT status, event_id FROM integration.webhook_delivery WHERE id = %s", (str(failed),)
     )
     assert cur.fetchone() == ("retrying", event)
+
+
+async def test_revoking_a_client_pauses_its_webhooks(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(rules.TARGETS_ENV, "hooks.example.vn")
+    org, kc = build(seed), FakeKeycloak()
+    async with client(org, kc) as c:
+        api_client = (await c.post("/v1/admin/clients", json=new_client(org))).json()
+        hook = (
+            await c.post(
+                "/v1/webhooks",
+                json={
+                    "api_client_id": api_client["id"],
+                    "event_types": ["report.delivered"],
+                    "target_url": "https://hooks.example.vn/in",
+                },
+            )
+        ).json()
+        await c.post(
+            f"/v1/admin/clients/{api_client['id']}:revoke", json={"reason": "Hết hợp đồng"}
+        )
+    cur = seed.conn.cursor()
+    cur.execute(
+        "SELECT status, paused_reason FROM integration.webhook_subscription WHERE id = %s",
+        (hook["id"],),
+    )
+    assert cur.fetchone() == ("paused", "api_client revoked")

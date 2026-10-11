@@ -18,7 +18,7 @@ import uuid
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Path, Query, Response
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import func, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -248,6 +248,13 @@ async def revoke_client(
         if row.status == "revoked":
             return ApiClientView.model_validate(row)
         await creds.revoke(org_id=principal.org_id, keycloak_client_id=row.keycloak_client_id)
+        # Revocation also stops what flows the other way: the client's webhooks are paused in
+        # the same transaction, so no event reaches a revoked client's endpoint.
+        await session.execute(
+            update(ig.WebhookSubscription)
+            .where(ig.WebhookSubscription.api_client_id == row.id)
+            .values(status="paused", paused_reason="api_client revoked", updated_at=_now())
+        )
         row.status = "revoked"
         row.revoked_at = row.updated_at = _now()
         row.updated_by = principal.user_id

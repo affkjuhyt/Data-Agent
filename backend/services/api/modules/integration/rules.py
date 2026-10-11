@@ -90,14 +90,29 @@ def check_event_types(event_types: list[str]) -> list[str]:
 
 
 def check_target(url: str, environ: Mapping[str, str] | None = None) -> str:
+    """https://<allowed host>[:443]/path, refused unless every parser reads the same host.
+
+    urlsplit and an HTTP client can disagree on a URL with userinfo, a backslash, control or
+    non-ASCII characters, or an odd port (https://allowed.vn\\@evil.com/ is evil.com to some);
+    such URLs are refused outright rather than reasoned about, so the host checked here is the
+    host the worker connects to. The egress proxy enforces the same list again (UC-12-03).
+    """
+    if not url.isascii() or any(c.isspace() or ord(c) < 32 or c in "\\@" for c in url):
+        raise invalid("target_url", "target_url has characters a webhook URL may not contain.")
     parts = urlsplit(url)
-    if parts.scheme != "https" or not parts.hostname:
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or not host or parts.username or parts.password:
         raise invalid("target_url", "target_url must be an https:// URL.")
+    try:
+        port = parts.port
+    except ValueError as exc:
+        raise invalid("target_url", "target_url has an invalid port.") from exc
+    if port not in (None, 443) or parts.netloc.lower() not in (host, f"{host}:443"):
+        raise invalid("target_url", "target_url must use the default https port.")
     env = os.environ if environ is None else environ
     allowed = [
         s.strip().lower().lstrip(".") for s in env.get(TARGETS_ENV, "").split(",") if s.strip()
     ]
-    host = parts.hostname.lower()
     if not any(host == a or host.endswith("." + a) for a in allowed):
         raise rule("The target is not in the egress proxy's list of allowed destinations.")
     return url
