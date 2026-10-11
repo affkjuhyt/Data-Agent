@@ -7,7 +7,7 @@ PY_IMAGE ?= localhost:5000/dataagent/workflow_runtime:latest
 DOCKER_RUN_PY = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(PY_IMAGE)
 
 .PHONY: help lint type test test-unit test-integration test-changed deadcode frontend-lint frontend-test ci e2e \
-        deploy fmt bench bench-gate bench-e2e mock-api contract-compat design-checklist design-audit
+        deploy fmt bench bench-gate bench-e2e mock-api contract-compat design-checklist design-audit api-types
 
 help:  ## List targets
 	@grep -hE '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -64,6 +64,14 @@ test:  ## unit + integration suites, all at once (same suites as CI python-test 
 
 test-changed:  ## only the suites the changes since CHANGED_BASE (default main) can affect
 	@$(RUN_SUITES) changed --base $(CHANGED_BASE)
+
+# Tab 7 F3: the frontend's types come from the api's own OpenAPI (ADR-48), never written by hand.
+# The api image has the dependencies; backend/ is mounted so the dump reflects the working tree.
+api-types:  ## dump the api OpenAPI to frontend/src/lib/v1/openapi.json and generate schema.ts from it
+	docker run --rm -v "$(PWD)/backend:/app:ro" -e API_OIDC_ISSUER=http://unused $(IMAGE_REGISTRY)/dataagent/api:latest \
+	  python -c "import json, sys; from services.api.app import app; json.dump(app.openapi(), sys.stdout, ensure_ascii=False, indent=1, sort_keys=True)" \
+	  > frontend/src/lib/v1/openapi.json
+	npm --workspace frontend exec -- openapi-typescript src/lib/v1/openapi.json -o src/lib/v1/schema.ts
 
 # Stdlib only and reads files, like tests/run_suites.py, so it runs on the host interpreter.
 design-checklist:  ## rewrite docs/v3/10-design-checklist.md: design coverage from code evidence + status.tsv

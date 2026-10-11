@@ -41,6 +41,7 @@
     "jsdom": "^25.0.1",
     "knip": "^5.64.4",
     "msw": "^2.15.0",
+    "openapi-typescript": "7.4.4",
     "prettier": "^3.6.2",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",

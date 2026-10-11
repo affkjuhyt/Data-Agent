@@ -1,4 +1,5 @@
 import { v1Get } from './client';
+import type { components } from './schema';
 
 /*
  * GET /v1/me (A2 · Quản trị, UC-11-01): who the signed-in user is in the organisation, the
@@ -7,34 +8,12 @@ import { v1Get } from './client';
  * A signed-in Keycloak account with no active account in the organisation gets 403.
  */
 
-export interface RoleRef {
-  id: string;
-  code: string;
-  name: string;
-}
-
-export interface RoleGrant {
-  role: RoleRef;
-  /** manual, emergency (expires within 24 h, BR-44) or group_mapping (through `group_name`). */
-  source: 'manual' | 'emergency' | 'group_mapping';
-  group_name: string | null;
-  valid_until: string | null;
-}
-
-export interface Me {
-  id: string;
-  username: string;
-  display_name: string;
-  email: string | null;
-  department: string | null;
-  kind: 'human' | 'agent' | 'service';
-  default_data_space_id: string | null;
-  locale: string;
-  time_zone: string;
-  roles: RoleGrant[];
-  /** Organisation-wide capabilities (A1.2); a Data Space can add more. */
-  capabilities: string[];
-}
+// Generated from the api's OpenAPI (make api-types, tab 7 F3): the server is the contract.
+export type RoleRef = components['schemas']['RoleRef'];
+/** source: manual, emergency (expires within 24 h, BR-44) or group_mapping (through `group_name`). */
+export type RoleGrant = components['schemas']['RoleGrant'];
+/** capabilities: the organisation-wide ones (A1.2); a Data Space can add more. */
+export type Me = components['schemas']['Me'];
 
 export const getMe = () => v1Get<Me>('/me');
 

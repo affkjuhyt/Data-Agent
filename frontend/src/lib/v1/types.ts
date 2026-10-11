@@ -1,3 +1,4 @@
+import type { components } from './schema';
 /*
  * Resources of the v1 API, as the system design defines them: a PascalCase schema is the DB
  * table of the same name (tab "Thiết kế cơ sở dữ liệu", D4) without org_id, created_by,
@@ -285,19 +286,9 @@ export interface GlossaryTerm {
 
 /* ─── Quản trị: org.data_space, org.app_user, governance.model_config ── */
 
-/** GET /v1/data-spaces (A3 · Quản trị): a space the caller is a member of, "kèm vai trò của người gọi". */
-export interface DataSpace {
-  id: Uuid;
-  code: string;
-  name: string;
-  description: string | null;
-  status: 'draft' | 'onboarding' | 'active' | 'read_only' | 'archived';
-  steward_id: Uuid;
-  opened_at: string | null;
-  my_roles: { id: Uuid; code: string; name: string }[];
-  /** What those roles add inside the space, on top of the organisation-wide capabilities (GET /v1/me). */
-  my_capabilities: string[];
-}
+/** GET /v1/data-spaces (A3 · Quản trị), generated: a space the caller is a member of, with the
+ * caller's roles there and the capabilities they add to the organisation-wide ones (GET /v1/me). */
+export type DataSpace = components['schemas']['DataSpaceSummary'];
 
 export interface AppUser {
   id: Uuid;
