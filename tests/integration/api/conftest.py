@@ -19,7 +19,6 @@ import pytest
 from libs.dataagent_db import engine_for
 from tests.integration.migrate.conftest import ddl_server  # noqa: F401  (fixture)
 
-SERVICE_ROLES = ("svc_org", "svc_qa", "svc_query", "svc_workspace", "svc_inbox", "svc_eval", "svc_agent")
 PASSWORD = "api-integration"
 
 
@@ -29,18 +28,27 @@ def _login_url(dsn: str, role: str) -> str:
     return urlunsplit(("postgresql+asyncpg", netloc, parts.path, "", ""))
 
 
-@pytest.fixture(scope="session")
-def api_database(ddl_server: dict[str, str]) -> Iterator[str]:  # noqa: F811
-    dsn = ddl_server["dataagent"]
+def _service_roles(dsn: str) -> list[str]:
+    """Every svc_* role the DDL created, made a login role."""
     conn = psycopg2.connect(dsn)
     conn.autocommit = True
     with conn.cursor() as cur:
-        for role in SERVICE_ROLES:
+        cur.execute("SELECT rolname FROM pg_roles WHERE rolname LIKE 'svc\\_%' ORDER BY 1")
+        roles = [r[0] for r in cur.fetchall()]
+        for role in roles:
             cur.execute(f"ALTER ROLE {role} WITH LOGIN PASSWORD %s", (PASSWORD,))
     conn.close()
+    return roles
+
+
+@pytest.fixture(scope="session")
+def api_database(ddl_server: dict[str, str]) -> Iterator[str]:  # noqa: F811
+    dsn = ddl_server["dataagent"]
     mp = pytest.MonkeyPatch()
-    for role in SERVICE_ROLES:
-        mp.setenv(f"DATAAGENT_DB_URL__{role.upper()}", _login_url(dsn, role))
+    # Roles are cluster-wide; svc_audit's tables are in the separate audit database (D1.1).
+    for role in _service_roles(dsn):
+        database = ddl_server["dataagent_audit"] if role == "svc_audit" else dsn
+        mp.setenv(f"DATAAGENT_DB_URL__{role.upper()}", _login_url(database, role))
     engine_for.cache_clear()
     yield dsn
     engine_for.cache_clear()
