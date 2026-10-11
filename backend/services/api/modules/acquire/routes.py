@@ -63,8 +63,8 @@ from services.api.modules.acquire.schemas import (
     PauseRequest,
     RecordReview,
     RecordReviewResult,
-    ReviewDecisionView,
     RevertAccepted,
+    ReviewDecisionView,
     SchemaApproveRequest,
     SchemaDriftItem,
     SchemaInferenceRequest,
@@ -203,9 +203,7 @@ def _cut(rows: list[Any], page: PageRequest) -> tuple[list[Any], str]:
     if not more:
         return rows, ""
     last = rows[-1]
-    return rows, encode_page_token(
-        {"created_at": last.created_at.isoformat(), "id": str(last.id)}
-    )
+    return rows, encode_page_token({"created_at": last.created_at.isoformat(), "id": str(last.id)})
 
 
 def _status_changed(
@@ -237,7 +235,9 @@ async def _source(
     *,
     lock: bool = False,
 ) -> acquire.CrawlSource:
-    query = select(S).where(S.id == source_id, S.org_id == principal.org_id, S.data_space_id == space)
+    query = select(S).where(
+        S.id == source_id, S.org_id == principal.org_id, S.data_space_id == space
+    )
     if lock:
         query = query.with_for_update()
     row = await session.scalar(query)
@@ -628,8 +628,21 @@ async def patch_crawl_source(
         if row.status == "retired":
             raise Problem(409, "invalid_state", "A retired source cannot be edited.")
         if "allowed_domains" in changes:
-            rules.check_urls_in_scope("allowed_domains", row.seed_urls, changes["allowed_domains"])
-        if "owner_id" in changes:
+            # Narrowing the domains must keep every URL the source already fetches in scope, as
+            # create checks them: the seeds, and the OpenAPI and terms pages (UC-14-01, BR-174).
+            domains = changes["allowed_domains"]
+            rules.check_urls_in_scope("allowed_domains", row.seed_urls, domains)
+            for field in ("openapi_url", "terms_url"):
+                value = getattr(row, field)
+                if value is not None:
+                    rules.check_urls_in_scope("allowed_domains", [value], domains)
+        if "owner_id" in changes and changes["owner_id"] != row.owner_id:
+            # Handing a source to someone else is the owner's call, or a data admin's; a steward
+            # of the space cannot take over or reassign another person's source.
+            if principal.user_id != row.owner_id and "admin_data" not in principal.capabilities:
+                raise Problem(
+                    403, "forbidden", "Only the owner or a data admin can change owner_id."
+                )
             await _check_active_user(session, principal, changes["owner_id"], "owner_id")
         if "name" in changes:
             changes["name"] = changes["name"].strip()
@@ -903,9 +916,7 @@ async def get_crawl_run(
     "/v1/crawl-sources/{id}/schema-inference",
     status_code=202,
     response_model=Accepted,
-    **endpoint(
-        "POST", "/v1/crawl-sources/{id}/schema-inference", operation_id="inferCrawlSchema"
-    ),
+    **endpoint("POST", "/v1/crawl-sources/{id}/schema-inference", operation_id="inferCrawlSchema"),
 )
 async def infer_schema(
     source_id: PathId,
@@ -1412,7 +1423,10 @@ async def resolve_schema_drift(
                 "business_rule_violated",
                 "approved_new needs the new schema version approved first (BR-152).",
             )
-        if body.resolution == "reverted" and source.active_schema_version_id == drift.from_version_id:
+        if (
+            body.resolution == "reverted"
+            and source.active_schema_version_id == drift.from_version_id
+        ):
             raise Problem(
                 409,
                 "invalid_state",
@@ -1431,9 +1445,7 @@ async def resolve_schema_drift(
                 quarantined = list(
                     (
                         await session.scalars(
-                            select(R.id).where(
-                                R.source_id == source.id, R.status == "quarantined"
-                            )
+                            select(R.id).where(R.source_id == source.id, R.status == "quarantined")
                         )
                     ).all()
                 )
@@ -1503,19 +1515,13 @@ async def list_run_records(
         if is_random_sample is not None:
             query = query.where(E.is_random_sample.is_(is_random_sample))
         rows = list(
-            (
-                await session.execute(
-                    _keyset(query, page, E.created_at, E.id, newest_first=False)
-                )
-            )
+            (await session.execute(_keyset(query, page, E.created_at, E.id, newest_first=False)))
             .tuples()
             .all()
         )
         version_ids = {record.schema_version_id for record, _ in rows}
         fields = dict(
-            (
-                await session.execute(select(V.id, V.fields).where(V.id.in_(version_ids)))
-            )
+            (await session.execute(select(V.id, V.fields).where(V.id.in_(version_ids))))
             .tuples()
             .all()
             if version_ids
@@ -1778,9 +1784,7 @@ async def _check_sources(
     wanted = set(source_ids)
     found = set(
         (
-            await session.scalars(
-                select(S.id).where(S.id.in_(wanted), S.data_space_id == space)
-            )
+            await session.scalars(select(S.id).where(S.id.in_(wanted), S.data_space_id == space))
         ).all()
     )
     if found != wanted:
@@ -1914,9 +1918,7 @@ async def patch_consolidation_spec(
             raise Problem(409, "invalid_state", "A retired spec cannot be changed.")
         content = sorted(SPEC_CONTENT & changes.keys())
         if content and await _consolidation_running(session, row.id):
-            raise Problem(
-                409, "invalid_state", "A consolidation run of this spec is in progress."
-            )
+            raise Problem(409, "invalid_state", "A consolidation run of this spec is in progress.")
         if "source_ids" in changes:
             changes["source_ids"] = list(dict.fromkeys(changes["source_ids"]))
             await _check_sources(session, space, changes["source_ids"])
@@ -1975,9 +1977,7 @@ async def create_consolidation_run(
         if spec.status != "active":
             raise Problem(409, "invalid_state", f"The spec is {spec.status}, not active.")
         if await _consolidation_running(session, spec.id):
-            raise Problem(
-                409, "invalid_state", "A consolidation run of this spec is in progress."
-            )
+            raise Problem(409, "invalid_state", "A consolidation run of this spec is in progress.")
         if request.input_run_ids is not None:
             wanted = list(dict.fromkeys(request.input_run_ids))
             found = set(
