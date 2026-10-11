@@ -61,6 +61,7 @@ from services.workflow_runtime.application.runtime_services.conversation_runner 
 )
 from services.workflow_runtime.application.runtime_services.roi_use_cases import scheduler_loop
 from services.workflow_runtime.infrastructure.config import CORS_ORIGINS, REDIS_URL
+from services.workflow_runtime.infrastructure.checkpointer import close_checkpointer
 from services.workflow_runtime.infrastructure.db import close_db, init_db
 from services.workflow_runtime.infrastructure.kafka_producer import (
     close_kafka_producer,
@@ -147,6 +148,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await close_workflow_qdrant()
     await close_schema_catalog_qdrant()
     await close_db()
+    await close_checkpointer()
     await close_redis()
     await orch_redis.close()
     audit.set_sink(None)

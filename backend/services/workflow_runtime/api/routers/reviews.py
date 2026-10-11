@@ -1,5 +1,5 @@
 import logging
-import time
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,10 +9,14 @@ from pydantic import BaseModel
 from libs.shared.auth import require_tenant
 from services.workflow_runtime.api.auth import get_current_user
 from services.workflow_runtime.application.runtime_services.conversation_runner import (
-    _graph_cache,
-    _pending_reviews,
+    get_graph_for_agent,
 )
 from services.workflow_runtime.infrastructure.db import save_message
+from services.workflow_runtime.infrastructure.pending_reviews import (
+    delete_pending_review,
+    get_pending_review,
+    list_pending_reviews,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -23,12 +27,15 @@ class ResumeRequest(BaseModel):
     note: str = ""
 
 
-def _own_entry(conv_id: str, tenant_id: str) -> dict[str, Any]:
-    """The pending review, if the caller's tenant owns it. Another tenant's is a
-    404 like a missing one: the router was authenticated but not tenant-scoped,
-    so any user could list and resume every tenant's reviews."""
-    entry = _pending_reviews.get(conv_id)
-    if not entry or entry.get("tenant_id") != tenant_id:
+def _waiting_secs(suspended_at: datetime) -> int:
+    if suspended_at.tzinfo is None:
+        suspended_at = suspended_at.replace(tzinfo=UTC)
+    return max(0, int((datetime.now(UTC) - suspended_at).total_seconds()))
+
+
+async def _own_entry(conv_id: str, tenant_id: str) -> dict[str, Any]:
+    entry = await get_pending_review(conv_id, tenant_id)
+    if not entry:
         raise HTTPException(status_code=404, detail="Review not found or already resolved")
     return entry
 
@@ -38,26 +45,25 @@ async def list_pending(caller: dict[str, Any] = Depends(get_current_user)) -> li
     tenant_id = require_tenant(caller)
     return [
         {
-            "conv_id":      cid,
-            "agent_id":     v["agent_id"],
-            "query":        v["query"],
-            "payload":      v["payload"],
-            "waiting_secs": int(time.monotonic() - v["suspended_at"]),
+            "conv_id": str(v["conversation_id"]),
+            "agent_id": str(v["agent_id"]),
+            "query": v["query"],
+            "payload": v["payload"],
+            "waiting_secs": _waiting_secs(v["suspended_at"]),
         }
-        for cid, v in _pending_reviews.items()
-        if v.get("tenant_id") == tenant_id
+        for v in await list_pending_reviews(tenant_id)
     ]
 
 
 @router.get("/api/reviews/{conv_id}")
 async def get_pending(conv_id: str, caller: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
-    entry = _own_entry(conv_id, require_tenant(caller))
+    entry = await _own_entry(conv_id, require_tenant(caller))
     return {
-        "conv_id":      conv_id,
-        "agent_id":     entry["agent_id"],
-        "query":        entry["query"],
-        "payload":      entry["payload"],
-        "waiting_secs": int(time.monotonic() - entry["suspended_at"]),
+        "conv_id": conv_id,
+        "agent_id": str(entry["agent_id"]),
+        "query": entry["query"],
+        "payload": entry["payload"],
+        "waiting_secs": _waiting_secs(entry["suspended_at"]),
     }
 
 
@@ -66,37 +72,30 @@ async def resume_review(
     conv_id: str, body: ResumeRequest, caller: dict[str, Any] = Depends(get_current_user)
 ) -> dict[str, Any]:
     tenant_id = require_tenant(caller)
-    entry = _own_entry(conv_id, tenant_id)
-
-    agent_id  = entry["agent_id"]
-    cache_key = agent_id
-    graph     = _graph_cache.get(cache_key)
+    entry = await _own_entry(conv_id, tenant_id)
+    graph = await get_graph_for_agent(str(entry["agent_id"]), tenant_id)
     if graph is None:
-        raise HTTPException(status_code=503, detail="Graph not cached — restart workflow_runtime")
+        raise HTTPException(status_code=503, detail="Graph unavailable")
 
-    lg_config = {"configurable": {"thread_id": conv_id}}
-    command   = Command(resume={"approved": body.approved, "note": body.note})
-
+    lg_config = {"configurable": {"thread_id": f"{tenant_id}:{conv_id}"}}
+    command = Command(resume={"approved": body.approved, "note": body.note})
     final_response = ""
     try:
         async for event in graph.astream_events(None, version="v2", config=lg_config, command=command):
             kind = event["event"]
             node = event.get("metadata", {}).get("langgraph_node", "")
             if kind == "on_chat_model_stream" and node == "responder":
-                token = event["data"]["chunk"].content or ""
-                final_response += token
+                final_response += event["data"]["chunk"].content or ""
             elif kind == "on_chain_end" and node == "responder":
                 out = event["data"].get("output", {})
                 if isinstance(out, dict) and out.get("response"):
                     final_response = out["response"]
     except Exception as e:
         logger.exception("resume_review | error resuming conv=%s", conv_id)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
-    del _pending_reviews[conv_id]
-
-    if final_response and conv_id:
+    if final_response:
         await save_message(conv_id, "assistant", final_response, tenant_id=tenant_id)
-
+    await delete_pending_review(conv_id, tenant_id)
     logger.info("resume_review | conv=%s approved=%s", conv_id, body.approved)
     return {"conv_id": conv_id, "approved": body.approved, "response": final_response}

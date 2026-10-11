@@ -2,19 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import re
 import time
 from contextlib import nullcontext, suppress
 from typing import Any
 
 from langchain_core.callbacks.manager import adispatch_custom_event
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
-from psycopg_pool import AsyncConnectionPool
 
 from libs.contracts.v1.plan import OutputContract, PlanIR, PlanNode, Port
 from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
@@ -50,83 +45,15 @@ from services.workflow_runtime.application.orchestrator.summary import (
 from services.workflow_runtime.application.plan import to_plan_ir, validate_plan
 from services.workflow_runtime.application.runtime_services.answer_ready import answer_ready_hook
 from services.workflow_runtime.domain.refusals import PlannerError
+from services.workflow_runtime.infrastructure.checkpointer import get_checkpointer
 from services.workflow_runtime.infrastructure.observability import get_langfuse_client
 
 logger = logging.getLogger(__name__)
 
 _MAX_REPLAN = 2
 
-# ── Checkpointer ──────────────────────────────────────────────────────────────
-# Postgres-backed rather than the in-process MemorySaver it replaced: this
-# service runs multiple replicas behind a plain ClusterIP Service (no session
-# affinity), so a /resume call for a pending clarification can land on a pod
-# that never saw /stream open that session — MemorySaver made that a 404
-# ("Session không tồn tại hoặc đã hoàn thành") even though the session was
-# genuinely still open, just on a different pod. Any replica can now see any
-# session's state.
-#
-# psycopg (v3), not this codebase's usual asyncpg — that's the driver
-# langgraph-checkpoint-postgres is built on. The checkpoint tables it creates
-# (checkpoints/checkpoint_blobs/checkpoint_writes) have no tenant_id column,
-# so they're outside anything a1b2c3d4e5f6_enable_tenant_rls.py's
-# tenant_id-column scan would have found — no RLS policy applies to them,
-# same as any other non-tenant-scoped table, and thread_id (the session/trace
-# id) is already the effective partition key.
-#
-# The state holds a live PlanningProcess (needed for report_node_failure) which
-# the default msgpack serde can't encode — checkpoint writes crashed the
-# multi-agent turn after the answer already streamed. pickle_fallback pickles
-# such objects; kept identically for the Postgres saver.
-_CHECKPOINTER_SERDE = JsonPlusSerializer(pickle_fallback=True)
-_ASYNC_DRIVER_RE = re.compile(r"^postgresql\+\w+://")
-
-# The saver's tables live in their own schema. runtime_writer has no CREATE on
-# public (Postgres 15+ default, and deploy/docker/sql/grant-roles.sql keeps it
-# that way), but setup() issues CREATE TABLE IF NOT EXISTS on every start, so it
-# gets CREATE on this schema instead. The saver's SQL is unqualified, so
-# search_path is enough. A pooler in transaction mode would drop the `options`
-# startup parameter; set search_path on the role there instead.
-_CHECKPOINTER_SCHEMA = "langgraph"
-
-
-def _checkpointer_dsn() -> str:
-    url = os.environ.get("RUNTIME_DB_URL") or ""
-    if not url:
-        raise RuntimeError(
-            "RUNTIME_DB_URL not set — cannot open the shared "
-            "LangGraph checkpointer (Postgres)."
-        )
-    # This codebase's URLs are SQLAlchemy-style ("postgresql+asyncpg://...");
-    # psycopg wants the plain scheme.
-    return _ASYNC_DRIVER_RE.sub("postgresql://", url)
-
-
 _graph_lock = asyncio.Lock()
 _compiled_graph: Any = None
-_checkpoint_pool: AsyncConnectionPool | None = None
-
-
-async def _open_checkpointer() -> AsyncPostgresSaver:
-    global _checkpoint_pool
-    _checkpoint_pool = AsyncConnectionPool(
-        conninfo=_checkpointer_dsn(),
-        max_size=10,
-        open=False,
-        # autocommit: AsyncPostgresSaver manages its own transactions per call.
-        # prepare_threshold=None: disables server-side prepared statements —
-        # harmless direct-to-Postgres, and required if a pooler (e.g.
-        # PgBouncer, provisioned elsewhere in this cluster) ever sits in front
-        # of this DSN in transaction-pooling mode.
-        kwargs={
-            "autocommit": True,
-            "prepare_threshold": None,
-            "options": f"-c search_path={_CHECKPOINTER_SCHEMA}",
-        },
-    )
-    await _checkpoint_pool.open()
-    saver = AsyncPostgresSaver(_checkpoint_pool, serde=_CHECKPOINTER_SERDE)
-    await saver.setup()
-    return saver
 
 
 # ── Route ─────────────────────────────────────────────────────────────────────
@@ -809,6 +736,6 @@ async def get_graph() -> Any:
     if _compiled_graph is None:
         async with _graph_lock:
             if _compiled_graph is None:
-                checkpointer = await _open_checkpointer()
+                checkpointer = await get_checkpointer()
                 _compiled_graph = build_graph(checkpointer)
     return _compiled_graph

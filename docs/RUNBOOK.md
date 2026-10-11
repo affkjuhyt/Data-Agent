@@ -294,6 +294,22 @@ Before adding a revision, check its id is unique:
   RLS on a tenant table to "fix" a query — scope the query by tenant.
 - The chain is covered by `tests/integration/workflow_runtime/test_alembic_migrations.py`.
 
+## 10a. Durable HITL reviews
+
+Agent graphs use the Postgres LangGraph checkpointer in schema `langgraph`; the
+schema is owned by `app_user` and workflow runtime reaches it only through the
+`runtime_writer` connection. Checkpoint rows use the tenant-prefixed
+`thread_id` (`<tenant_id>:<conversation_id>`), but the library tables have no
+tenant column and therefore are not RLS tables. Do not grant other service roles
+access to `langgraph`.
+
+Human-approval cards are recorded in `runtime.pending_review`, which is forced
+through RLS using the transaction-local `app.tenant_id`. A pod restart or a
+second replica can therefore list and resume the review. If a resume returns
+`503`, check that `RUNTIME_DB_URL` points at the V3 database and that Alembic
+revision `v3_0003` has run; do not delete the row manually before recovering the
+checkpoint.
+
 ## 10b. Kafka outbox (`OutboxEvents`)
 
 Services do not publish Kafka events directly any more: they insert a row into `OutboxEvents`

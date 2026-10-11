@@ -2,7 +2,7 @@ fastapi==0.115.0
 uvicorn[standard]==0.30.6
 pydantic==2.9.2
 langgraph>=0.2,<1.0
-# Shared checkpointer for the orchestration graph: MemorySaver is per-process,
+# Shared checkpointer for the orchestration graph: an in-process saver is per-process,
 # so a /resume call load-balanced to a different replica than the one that
 # started the session sees no state ("Session không tồn tại hoặc đã hoàn
 # thành" even for a genuinely in-progress clarification). Postgres-backed

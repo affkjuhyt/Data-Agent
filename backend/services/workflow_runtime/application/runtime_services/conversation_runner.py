@@ -4,13 +4,12 @@ import logging
 import re
 import time
 import uuid
-from collections.abc import AsyncIterator
-from typing import Any, Coroutine, cast
+from collections.abc import AsyncIterator, Coroutine
+from typing import Any
 
 from cachetools import LRUCache
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from langgraph.checkpoint.memory import MemorySaver
 
 from libs.contracts.v1 import ErrorCode, NextAction, Refusal
 from libs.shared.auth import require_tenant
@@ -27,6 +26,7 @@ from services.workflow_runtime.application.verification import build_verificatio
 from services.workflow_runtime.domain.refusals import AgentConfigError, RefusalError
 from services.workflow_runtime.domain.schemas import RunRequest
 from services.workflow_runtime.domain.transcript_compression import compress_tool_results
+from services.workflow_runtime.infrastructure.checkpointer import get_checkpointer
 from services.workflow_runtime.infrastructure.db import (
     conversation_owned_by,
     create_conversation,
@@ -47,6 +47,7 @@ from services.workflow_runtime.infrastructure.observability import (
     flush_langfuse,
     get_langchain_callback_handler,
 )
+from services.workflow_runtime.infrastructure.pending_reviews import put_pending_review
 from services.workflow_runtime.infrastructure.redis_cache import (
     cache_append_messages,
     cache_get_messages,
@@ -198,11 +199,8 @@ _graph_cache = _GraphCache(maxsize=_GRAPH_CACHE_MAXSIZE)
 _build_locks: dict[str, asyncio.Lock] = {}
 _default_graph = build_graph()
 
-# Shared checkpointer for workflows that have a human_approval node.
-_checkpointer = MemorySaver()
-
-# conv_id → {agent_id, query, interrupt_payload, suspended_at}
-_pending_reviews: dict[str, dict[str, Any]] = {}
+_checkpointer: Any = None
+_checkpointer_lock = asyncio.Lock()
 
 # asyncio only holds a weak reference to a task created via create_task — if
 # nothing else references it, it can be GC'd mid-execution. Keep a strong ref
@@ -214,6 +212,15 @@ def _fire_and_forget(coro: Coroutine[Any, Any, Any]) -> None:
     task = asyncio.create_task(coro)
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
+
+
+async def _get_checkpointer() -> Any:
+    global _checkpointer
+    if _checkpointer is None:
+        async with _checkpointer_lock:
+            if _checkpointer is None:
+                _checkpointer = await get_checkpointer()
+    return _checkpointer
 
 
 # doc §3.7 — Workflow Memory needs a task_type to filter on, but that's only
@@ -249,6 +256,26 @@ async def _get_or_build_graph(
             graph = build_graph(flow_nodes, flow_edges, checkpointer=checkpointer)
             _graph_cache.set(cache_key, graph)
     return graph
+
+
+async def get_graph_for_agent(agent_id: str, tenant_id: str) -> object:
+    """Rehydrate the graph used by a durable review after a pod restart."""
+    cfg = await load_agent_config(agent_id, tenant_id=tenant_id)
+    if not cfg:
+        return None
+    flow_nodes = cfg.get("flow_nodes") or []
+    if not flow_nodes:
+        return _default_graph
+    cache_key = f"{agent_id}:{cfg.get('workflow_version_id') or 'default'}"
+    needs_checkpointer = any(
+        n.get("data", {}).get("nodeType") == "human_approval" for n in flow_nodes
+    )
+    return await _get_or_build_graph(
+        cache_key,
+        flow_nodes,
+        cfg.get("flow_edges") or None,
+        checkpointer=await _get_checkpointer() if needs_checkpointer else None,
+    )
 
 
 def invalidate_graph_version(workflow_version_id: str) -> int:
@@ -355,7 +382,7 @@ async def run_conversation_stream(
         if graph is None:
             graph = await _get_or_build_graph(
                 cache_key, flow_nodes, flow_edges,
-                checkpointer=_checkpointer if needs_checkpointer else None,
+                checkpointer=await _get_checkpointer() if needs_checkpointer else None,
             )
     else:
         graph = _default_graph
@@ -567,7 +594,6 @@ async def run_conversation_stream(
                         **({"clarifications": detected_clarify} if detected_clarify else {}),
                         "responder_model": cfg.get("responder_model"),
                         **({"pending_options": responder_options} if responder_options else {}),
-                        **({"pending_approval": conv_id} if conv_id and conv_id in _pending_reviews else {}),
                         **({"citations": pending_citations} if pending_citations else {}),
                     },
                 )
@@ -683,7 +709,8 @@ async def run_conversation_stream(
         live = _LiveAnswer()
 
         kb_speculation: dict[str, Any] = {"enabled": kb_in_graph}
-        lg_config = {"callbacks": callbacks, "configurable": {"thread_id": conv_id, "kb_speculation": kb_speculation}}
+        thread_id = f"{tenant_id}:{conv_id}" if conv_id else f"{tenant_id}:{detail_id}"
+        lg_config = {"callbacks": callbacks, "configurable": {"thread_id": thread_id, "kb_speculation": kb_speculation}}
         abandoned = False
 
         try:
@@ -793,7 +820,7 @@ async def run_conversation_stream(
             # Detect interrupt (human_approval node đang chờ reviewer) — nếu có,
             # chưa tới lúc đánh giá output (chưa chắc đây là bản cuối).
             try:
-                snap = graph.get_state(lg_config)
+                snap = await graph.aget_state(lg_config)
                 if snap.next:
                     if guardrail_task and not guardrail_task.done():
                         guardrail_task.cancel()
@@ -802,14 +829,14 @@ async def run_conversation_stream(
                         for intr in getattr(task, "interrupts", []):
                             interrupt_payload = intr.value
                             break
-                    _pending_reviews[cast(str, conv_id)] = {
-                        # Only the same tenant may see or resume it (reviews router).
-                        "tenant_id":  tenant_id,
-                        "agent_id":   req.agent_id,
-                        "query":      req.query,
-                        "payload":    interrupt_payload,
-                        "suspended_at": time.monotonic(),
-                    }
+                    if conv_id:
+                        await put_pending_review(
+                            conversation_id=conv_id,
+                            tenant_id=tenant_id,
+                            agent_id=req.agent_id,
+                            query=req.query,
+                            payload=interrupt_payload,
+                        )
                     logger.info("human_approval | conv=%s suspended, waiting for review", conv_id)
                     if live.emitted:
                         yield _RESET_FRAME
