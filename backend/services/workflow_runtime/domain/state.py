@@ -81,6 +81,9 @@ class AgentState(TypedDict):
     judge_verdict: Optional[str]      # "PASS" | "FAIL"
     judge_error_type: Optional[str]   # "PLANNING_ERROR" | "DATA_QUALITY" | "GROUNDING_ERROR"
     judge_reason: Optional[str]
+    error_class: Optional[str]
+    error_class_history: List[str]
+    attempted_plans: List[str]
     # Kết quả 4 kiểm tra tất định (libs.indicator.verifier) — mỗi kiểm tra một
     # dòng, để UI hiện VerifierBadge và để đo được, thay vì gộp thành một điểm
     # không nói được cái nào đã sai.

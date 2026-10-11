@@ -10,7 +10,9 @@ from libs.indicator.numeric import readings
 from libs.indicator.verifier import EvidenceItem, Verdict, verify
 from libs.shared import untrusted
 from services.workflow_runtime.application import result_sets
+from services.workflow_runtime.application.judge_routing import ERROR_CLASSES, plan_signature
 from services.workflow_runtime.application.runtime_services import llm_call
+from services.workflow_runtime.domain.refusals import NoDataError, NoJoinPathError
 from services.workflow_runtime.domain.state import AgentState
 from services.workflow_runtime.prompts import PROMPTS_DIR
 
@@ -23,6 +25,11 @@ _VERDICT_PASS = "PASS"
 _VERDICT_FAIL = "FAIL"
 
 _ERROR_TYPES = frozenset({"DATA_QUALITY", "PLANNING_ERROR", "GROUNDING_ERROR"})
+_ERROR_CLASS_BY_TYPE = {
+    "PLANNING_ERROR": "PLAN_LOGIC",
+    "GROUNDING_ERROR": "EVIDENCE_INSUFFICIENT",
+    "DATA_QUALITY": "MATERIALIZATION",
+}
 
 _SYSTEM = open(os.path.join(PROMPTS_DIR, "judge_system.txt"), encoding="utf-8").read().strip()
 
@@ -85,7 +92,9 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
             for c in numeric_verdict.failures
         )
         logger.info("judge | deterministic verifier failed: %s", detail)
-        return _fail(iteration, "GROUNDING_ERROR", detail) | verifier_report
+        return _fail(
+            iteration, "GROUNDING_ERROR", detail, "EVIDENCE_INSUFFICIENT", state=state
+        ) | verifier_report
 
     tool_err_text = json.dumps(tool_errs, ensure_ascii=False) if tool_errs else "(không có lỗi)"
 
@@ -121,19 +130,27 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
 
     verdict    = data.get("verdict", _VERDICT_PASS)
     error_type = data.get("error_type") if verdict == _VERDICT_FAIL else None
+    error_class = data.get("error_class") if verdict == _VERDICT_FAIL else None
     reason     = data.get("reason", "")
 
     # Sanitize error_type
     if error_type and error_type not in _ERROR_TYPES:
         logger.warning("judge | unknown error_type=%r → PASS", error_type)
         verdict, error_type = _VERDICT_PASS, None
+    if error_class not in ERROR_CLASSES:
+        error_class = _ERROR_CLASS_BY_TYPE.get(error_type or "")
+
+    if error_class == "DATA_MISSING_DIRECT":
+        raise NoDataError("judge classified the direct query as missing data")
+    if error_class == "DATA_MISSING_INDIRECT":
+        raise NoJoinPathError("judge classified the indirect retrieval as missing a join path")
 
     latency = int((time.monotonic() - t0) * 1000)
     logger.info("judge | iteration=%d verdict=%s error_type=%s latency=%dms",
                 iteration, verdict, error_type, latency)
 
     if verdict == _VERDICT_FAIL:
-        return _fail(iteration, error_type, reason) | verifier_report
+        return _fail(iteration, error_type, reason, error_class, state=state) | verifier_report
 
     return _pass(iteration, reason=reason) | verifier_report
 
@@ -203,10 +220,18 @@ def _pass(iteration: int, reason: str = "") -> dict[str, Any]:
         "judge_error_type":  None,
         "judge_reason":      reason,
         "loop_iteration":    iteration,
+        "error_class":       None,
     }
 
 
-def _fail(iteration: int, error_type: str | None, reason: str) -> dict[str, Any]:
+def _fail(
+    iteration: int,
+    error_type: str | None,
+    reason: str,
+    error_class: str | None = None,
+    *,
+    state: AgentState | None = None,
+) -> dict[str, Any]:
     reset: dict[str, Any] = {"response": ""}
 
     if error_type == "PLANNING_ERROR":
@@ -220,10 +245,18 @@ def _fail(iteration: int, error_type: str | None, reason: str) -> dict[str, Any]
     # DATA_QUALITY: cũng chỉ reset response — hiếm gặp, không có recovery
     # action riêng, để planner/responder tự thấy judge_reason ở lần sau.
 
+    previous = state or {}
     return {
         "judge_verdict":    _VERDICT_FAIL,
         "judge_error_type": error_type,
         "judge_reason":     reason,
         "loop_iteration":   iteration + 1,
+        "error_class":       error_class,
+        "error_class_history": [*previous.get("error_class_history", []), error_class]
+        if error_class else list(previous.get("error_class_history", [])),
+        "attempted_plans": [
+            *previous.get("attempted_plans", []),
+            plan_signature(previous.get("tool_calls", [])),
+        ] if error_class else list(previous.get("attempted_plans", [])),
         **reset,
     }
