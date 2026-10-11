@@ -1,16 +1,20 @@
 """API-02 routes expose the implemented question, answer and query surfaces."""
 
+import pytest
+
 from services.api.app import create_app
 from services.api.config import Settings
-
-import pytest
 
 pytestmark = pytest.mark.unit
 
 
 def test_api02_core_routes_are_registered() -> None:
     app = create_app(Settings(), token_verifier=lambda: None)  # type: ignore[arg-type]
-    routes = {(next(iter(route.methods)), route.path) for route in app.routes if route.path.startswith("/v1/")}
+    routes = {
+        (next(iter(route.methods)), route.path)
+        for route in app.routes
+        if route.path.startswith("/v1/")
+    }
     assert {
         ("POST", "/v1/questions"),
         ("GET", "/v1/questions/{id}"),
@@ -29,7 +33,11 @@ def test_api02_core_routes_are_registered() -> None:
 
 def test_api03_workspace_core_routes_are_registered() -> None:
     app = create_app(Settings(), token_verifier=lambda: None)  # type: ignore[arg-type]
-    routes = {(next(iter(route.methods)), route.path) for route in app.routes if route.path.startswith("/v1/")}
+    routes = {
+        (next(iter(route.methods)), route.path)
+        for route in app.routes
+        if route.path.startswith("/v1/")
+    }
     assert {
         ("GET", "/v1/workspaces"),
         ("POST", "/v1/workspaces"),
@@ -52,7 +60,11 @@ def test_api03_workspace_core_routes_are_registered() -> None:
 
 def test_api04_inbox_and_eval_routes_are_registered() -> None:
     app = create_app(Settings(), token_verifier=lambda: None)  # type: ignore[arg-type]
-    routes = {(next(iter(route.methods)), route.path) for route in app.routes if route.path.startswith("/v1/")}
+    routes = {
+        (next(iter(route.methods)), route.path)
+        for route in app.routes
+        if route.path.startswith("/v1/")
+    }
     assert {
         ("GET", "/v1/inbox"),
         ("GET", "/v1/hitl-requests/{id}"),
@@ -75,17 +87,34 @@ def test_api04_inbox_and_eval_routes_are_registered() -> None:
 
 def test_api05_agent_routes_are_registered() -> None:
     app = create_app(Settings(), token_verifier=lambda: None)  # type: ignore[arg-type]
-    routes = {(next(iter(route.methods)), route.path) for route in app.routes if route.path.startswith("/v1/")}
+    routes = {
+        (next(iter(route.methods)), route.path)
+        for route in app.routes
+        if route.path.startswith("/v1/")
+    }
     assert {
-        ("GET", "/v1/agents"), ("POST", "/v1/agents"), ("POST", "/v1/agents:draft-from-text"),
-        ("GET", "/v1/agents/{id}"), ("GET", "/v1/agents/{id}/configs"), ("POST", "/v1/agents/{id}/configs"),
-        ("PUT", "/v1/agents/{id}/triggers"), ("POST", "/v1/agents/{id}/test-runs"),
-        ("POST", "/v1/agents/{id}/eval-runs"), ("POST", "/v1/agents/{id}/deployments"),
-        ("PATCH", "/v1/deployments/{id}"), ("POST", "/v1/deployments/{id}:rollback"),
-        ("GET", "/v1/runs"), ("GET", "/v1/runs/{id}"), ("GET", "/v1/runs/{id}/events"),
-        ("GET", "/v1/runs/{id}/children"), ("POST", "/v1/runs/{id}:pause"),
-        ("POST", "/v1/runs/{id}:resume"), ("POST", "/v1/runs/{id}:cancel"),
-        ("PUT", "/v1/runs/{id}/plan"), ("GET", "/v1/agents/{id}/memories"),
-        ("POST", "/v1/agents/{id}/memories"), ("PATCH", "/v1/memories/{id}"),
+        ("GET", "/v1/agents"),
+        ("POST", "/v1/agents"),
+        ("POST", "/v1/agents:draft-from-text"),
+        ("GET", "/v1/agents/{id}"),
+        ("GET", "/v1/agents/{id}/configs"),
+        ("POST", "/v1/agents/{id}/configs"),
+        ("PUT", "/v1/agents/{id}/triggers"),
+        ("POST", "/v1/agents/{id}/test-runs"),
+        ("POST", "/v1/agents/{id}/eval-runs"),
+        ("POST", "/v1/agents/{id}/deployments"),
+        ("PATCH", "/v1/deployments/{id}"),
+        ("POST", "/v1/deployments/{id}:rollback"),
+        ("GET", "/v1/runs"),
+        ("GET", "/v1/runs/{id}"),
+        ("GET", "/v1/runs/{id}/events"),
+        ("GET", "/v1/runs/{id}/children"),
+        ("POST", "/v1/runs/{id}:pause"),
+        ("POST", "/v1/runs/{id}:resume"),
+        ("POST", "/v1/runs/{id}:cancel"),
+        ("PUT", "/v1/runs/{id}/plan"),
+        ("GET", "/v1/agents/{id}/memories"),
+        ("POST", "/v1/agents/{id}/memories"),
+        ("PATCH", "/v1/memories/{id}"),
         ("DELETE", "/v1/memories/{id}"),
     } <= routes

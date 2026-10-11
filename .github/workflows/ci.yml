@@ -70,13 +70,21 @@ jobs:
             backend/services/auth_api backend/services/model_service \
             backend/services/sandbox_executor \
             backend/services/platform_workers \
-            backend/services/indicator_api \
-            backend/services/api; do
+            backend/services/indicator_api; do
             echo "== mypy strict: $target =="
             mypy --disallow-untyped-defs --disallow-any-generics \
                  --ignore-missing-imports --follow-imports=silent \
                  "$target"
           done
+      - name: Strict typecheck · api (BLOCKING)
+        # The V3 api is typed against FastAPI, Pydantic and SQLAlchemy themselves: without them
+        # installed every query result is Any and warn_return_any reports false positives. Installed
+        # here, after the loop above, so the legacy surfaces keep their own baseline.
+        run: |
+          pip install -r backend/services/api/requirements.txt
+          mypy --disallow-untyped-defs --disallow-any-generics \
+               --ignore-missing-imports --follow-imports=silent \
+               backend/services/api
 
   # One job per service suite, in that service's Python with only its own
   # requirements.txt: no single environment can import every service (the

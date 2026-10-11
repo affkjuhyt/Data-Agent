@@ -24,7 +24,9 @@ from typing import Any
 
 from services.api.catalogue import endpoints
 
-COMPLETE_GROUPS: frozenset[str] = frozenset({"Hỏi đáp", "Phiên làm việc", "Cần bạn và đánh giá", "Agent"})
+COMPLETE_GROUPS: frozenset[str] = frozenset(
+    {"Hỏi đáp", "Truy vấn", "Phiên làm việc", "Cần bạn và đánh giá", "Agent"}
+)
 
 # Served outside A2 on purpose: probes and the generated spec itself.
 NOT_API = frozenset({"/healthz", "/readyz", "/v1/openapi.json"})

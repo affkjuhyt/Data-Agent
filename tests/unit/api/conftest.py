@@ -92,7 +92,10 @@ def probe_router() -> APIRouter:
     async def crawl_sources(space: CurrentDataSpace) -> dict[str, str]:
         return {"space": str(space)}
 
-    @router.get("/v1/receipt-replays/{id}", **endpoint("GET", "/v1/receipt-replays/{id}", operation_id="getReceiptReplayProbe"))
+    @router.get(
+        "/v1/receipt-replays/{id}",
+        **endpoint("GET", "/v1/receipt-replays/{id}", operation_id="getReceiptReplayProbe"),
+    )
     async def boom(id: str) -> None:
         raise RuntimeError("boom")
 
@@ -106,7 +109,12 @@ def app() -> FastAPI:
         token_verifier=FakeVerifier(TOKENS),
         identity_resolver=FakeIdentities(USERS),
     )
-    app.include_router(probe_router())
+    probes = probe_router()
+    app.include_router(probes)
+    # The probes test the kernel through real A2 paths; once a module serves the same path its
+    # route would answer first. Put the probes in front so they always win.
+    n = len(probes.routes)
+    app.router.routes[:] = app.router.routes[-n:] + app.router.routes[:-n]
     return app
 
 

@@ -16,6 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.exc import DBAPIError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from services.api.kernel.tracing import current_trace_id
@@ -163,6 +164,51 @@ async def _on_http(_: Request, exc: Exception) -> JSONResponse:
     return problem_response(Problem(exc.status_code, None, detail, headers=dict(exc.headers or {})))
 
 
+# The database is where most business rules live (CHECKs and triggers of backend/schema, tab 3b
+# D4), so its refusals are the api's: SQLSTATE → A1.7 status and code.
+_SQLSTATE: dict[str, tuple[int, str]] = {
+    "23514": (422, "business_rule_violated"),  # CHECK or a trigger's RAISE ... check_violation
+    "23505": (409, "conflict"),  # unique
+    "23503": (422, "validation_failed"),  # a reference to a row that does not exist
+    "23502": (422, "validation_failed"),  # NOT NULL
+    "22P02": (400, "invalid_request"),  # malformed value
+    "42501": (403, "forbidden"),  # grant or row-level security
+    "40001": (409, "conflict"),  # serialisation failure: the client retries
+    "40P01": (409, "conflict"),  # deadlock victim
+}
+
+
+def _sqlstate(exc: DBAPIError) -> tuple[str | None, Any]:
+    """The SQLSTATE and the driver's exception, whichever adapter wraps it."""
+    orig = exc.orig
+    # asyncpg's own error (the adapter's __cause__) carries message, constraint_name, table_name.
+    for candidate in (getattr(orig, "__cause__", None), orig):
+        state = getattr(candidate, "sqlstate", None) or getattr(candidate, "pgcode", None)
+        if state:
+            return state, candidate
+    return None, orig
+
+
+async def _on_database(_: Request, exc: Exception) -> JSONResponse:
+    assert isinstance(exc, DBAPIError)
+    state, driver_error = _sqlstate(exc)
+    if state not in _SQLSTATE:
+        return await _on_unexpected(_, exc)
+    status, code = _SQLSTATE[state]
+    # A trigger's own message (RAISE EXCEPTION, no constraint) is written for people and cites
+    # its BR; a constraint's message names the table and constraint, which A1.7 keeps private.
+    raised = (
+        getattr(driver_error, "constraint_name", None) is None
+        and getattr(driver_error, "table_name", None) is None
+    )
+    message = str(getattr(driver_error, "message", "") or "").strip()
+    # PostgreSQL's own 42501 ("permission denied for table …", "new row violates row-level security
+    # policy for table …") names the table; only a trigger's message is passed on.
+    own = not message.startswith(("permission denied", "new row violates"))
+    detail = message if raised and own and message and state in ("23514", "42501") else None
+    return problem_response(Problem(status, code, detail))
+
+
 async def _on_unexpected(_: Request, exc: Exception) -> JSONResponse:
     logger.exception("unhandled error", exc_info=exc)
     return problem_response(
@@ -174,4 +220,5 @@ def install_problem_handlers(app: FastAPI) -> None:
     app.add_exception_handler(Problem, _on_problem)
     app.add_exception_handler(RequestValidationError, _on_validation)
     app.add_exception_handler(StarletteHTTPException, _on_http)
+    app.add_exception_handler(DBAPIError, _on_database)
     app.add_exception_handler(Exception, _on_unexpected)

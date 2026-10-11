@@ -262,6 +262,16 @@ def test_sealed_receipt_is_append_only(db):
         (str(receipt),),
     )
     assert (count, masked) == (2, 1) and len(sha) == 64
+    # The digest does not depend on the reader's TimeZone (a ?verify runs in another session).
+    run(db, "SET LOCAL TimeZone = 'Asia/Ho_Chi_Minh'")
+    assert (
+        one(
+            db,
+            "SELECT qa.receipt_digest(r) FROM qa.answer_receipt r WHERE r.id = %s",
+            (str(receipt),),
+        )
+        == sha
+    )
     # Figure after the seal, a second seal, any other column (column grant), editing a figure.
     fails(
         db,

@@ -91,6 +91,16 @@ async def list_conversations(
 - nhóm, `x-capability` hoặc `x-use-cases` lệch dòng A2;
 - thiếu endpoint của một nhóm đã khai báo ở `COMPLETE_GROUPS` (`catalogue/check.py`).
 
+`tests/unit/api/test_a3_contract.py` giữ hình dạng yêu cầu theo A3: với mọi thao tác của nhóm trong
+`COMPLETE_GROUPS`, thân yêu cầu có đúng các trường A3 ghi (trường `*` là bắt buộc) và nhận đủ tham số truy
+vấn `?tên` của A3; tham số lọc thêm theo A1.4 được phép. `catalogue/a3_contract.json` sinh từ bản xuất tab 4
+(`catalogue/source/tab4.md`) bằng `python services/api/catalogue/build_a3.py` (từ `backend`).
+
+Lỗi CSDL thành problem+json ở kernel (`kernel/problems.py`): SQLSTATE 23514 (CHECK, trigger) → 422
+`business_rule_violated` kèm câu của trigger; 23505 → 409 `conflict`; 42501 → 403 `forbidden`; 23503,
+23502 → 422 `validation_failed`. Thông điệp của PostgreSQL có tên bảng hoặc ràng buộc không đi ra ngoài
+(A1.7); module không cần tự kiểm lại luật CSDL đã giữ.
+
 A2 có 379 endpoint, làm dần theo nhóm: một nhóm vào `COMPLETE_GROUPS` trong commit phục vụ endpoint cuối
 của nhóm, từ đó bỏ một endpoint là lỗi. Thêm hoặc bỏ endpoint phải sửa tab 4 A2 và `a2_endpoints.json`
 trong cùng PR. Xem độ phủ: `python -m services.api.catalogue.check` trong image `api`.

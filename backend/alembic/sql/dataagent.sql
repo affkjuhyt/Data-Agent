@@ -9407,13 +9407,25 @@ CREATE POLICY answer_receipt_answer_visible ON qa.answer_receipt AS RESTRICTIVE 
 -- receipt is sealed once. After that nothing changes; only the retention job removes it once
 -- retain_until has passed. Writing the receipt in the answer's transaction and hiding numbers of an
 -- in-scope answer without a sealed receipt are Agent runtime rules.
+-- The receipt's SHA-256: the normalised JSON of the row (minus the hash and the retention columns)
+-- and its figures ordered by figure_key. jsonb prints keys in a fixed order, but a timestamptz in
+-- it is printed in the session's TimeZone, so the function pins TimeZone to UTC: the seal and a
+-- later ?verify (GET /v1/receipts/{no}) from another session must produce the same digest.
+CREATE FUNCTION qa.receipt_digest(r qa.answer_receipt) RETURNS text
+LANGUAGE sql STABLE SET TimeZone = 'UTC' AS $$
+  SELECT encode(sha256(convert_to(jsonb_build_object(
+    'receipt', to_jsonb(r) - ARRAY['receipt_sha256', 'sealed_at', 'retain_until', 'created_at'],
+    'figures', coalesce((SELECT jsonb_agg(to_jsonb(f) ORDER BY f.figure_key)
+                         FROM qa.answer_receipt_figure f WHERE f.receipt_id = r.id), '[]'::jsonb)
+  )::text, 'UTF8')), 'hex')
+$$;
+
 CREATE FUNCTION qa.answer_receipt_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   a_scope text;
   a_product uuid;
   prefix text;
   last_no integer;
-  body jsonb;
 BEGIN
   IF TG_OP = 'INSERT' THEN
     SELECT product_scope, data_product_id INTO a_scope, a_product FROM qa.answer WHERE id = NEW.answer_id;
@@ -9444,12 +9456,7 @@ BEGIN
     SELECT count(*), count(*) FILTER (WHERE display_state <> 'shown')
       INTO NEW.figure_count, NEW.masked_count
       FROM qa.answer_receipt_figure WHERE receipt_id = NEW.id;
-    -- jsonb prints keys in a fixed order, so its text is the normalised JSON the hash is taken of.
-    body := jsonb_build_object(
-      'receipt', to_jsonb(NEW) - ARRAY['receipt_sha256', 'sealed_at', 'retain_until', 'created_at'],
-      'figures', coalesce((SELECT jsonb_agg(to_jsonb(f) ORDER BY f.figure_key)
-                           FROM qa.answer_receipt_figure f WHERE f.receipt_id = NEW.id), '[]'::jsonb));
-    NEW.receipt_sha256 := encode(sha256(convert_to(body::text, 'UTF8')), 'hex');
+    NEW.receipt_sha256 := qa.receipt_digest(NEW);
     RETURN NEW;
   ELSE
     IF OLD.retain_until >= current_date THEN

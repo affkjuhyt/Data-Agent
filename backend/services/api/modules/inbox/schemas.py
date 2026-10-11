@@ -1,10 +1,30 @@
+"""Request and response shapes of the inbox module (tab 4 A3, group "Cần bạn và đánh giá").
+
+Responses are the table's columns minus org_id, created_by, updated_by (A3 "Trả về").
+"""
+
 from __future__ import annotations
 
 import datetime
+import decimal
 import uuid
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+HitlDecision = Literal["answer", "approve", "reject", "request_changes", "reassign"]
+ProposalDecisionKind = Literal["accept", "accept_with_edit", "reject", "request_changes"]
+
+
+class ApprovalStepView(BaseModel):
+    id: uuid.UUID
+    step: int
+    approver_role: str
+    approver_id: uuid.UUID | None
+    decision: str | None
+    note: str | None
+    decided_at: datetime.datetime | None
+    created_at: datetime.datetime
 
 
 class HitlView(BaseModel):
@@ -15,17 +35,52 @@ class HitlView(BaseModel):
     title: str
     context: Any
     options: Any
-    status: str
+    source_service: str
+    source_ref: uuid.UUID | None
+    parent_run_label: str | None
     assignee_id: uuid.UUID | None
+    assignee_group: str | None
     due_at: datetime.datetime | None
+    status: str
     response: Any
+    remember_as_rule: bool
+    resolved_by: uuid.UUID | None
+    resolved_at: datetime.datetime | None
+    channel_card_ids: list[uuid.UUID]
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+class HitlDetail(HitlView):
+    # The multi-step chain (UC-07-07 5a, BR-132); empty for a single-person request.
+    approval_steps: list[ApprovalStepView] = Field(default_factory=list)
 
 
 class HitlResolve(BaseModel):
-    status: Literal["answered", "approved", "rejected", "changes_requested", "reassigned"]
-    response: dict[str, Any] = Field(default_factory=dict)
+    decision: HitlDecision
+    option: str | None = Field(default=None, max_length=200)
+    note: str | None = Field(default=None, max_length=4_000)
+    reassign_to: uuid.UUID | None = None
     remember_as_rule: bool = False
-    assignee_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def _reassign_needs_a_person(self) -> HitlResolve:
+        if (self.decision == "reassign") != (self.reassign_to is not None):
+            raise ValueError("reassign_to is required with decision reassign, and only with it")
+        if self.decision == "request_changes" and not (self.note or "").strip():
+            # UC-07-07 6a: the agent revises its plan from this comment.
+            raise ValueError("decision request_changes needs a note")
+        return self
+
+
+class ProposalReviewView(BaseModel):
+    id: uuid.UUID
+    step: int
+    reviewer_id: uuid.UUID
+    decision: str
+    note: str | None
+    reviewed_regressions: bool
+    decided_at: datetime.datetime
 
 
 class ProposalView(BaseModel):
@@ -36,79 +91,57 @@ class ProposalView(BaseModel):
     target_ref: uuid.UUID | None
     title: str
     diff: Any
+    reason: str | None
     evidence: Any
     impact: Any
     impact_level: str
+    proposed_by: uuid.UUID
+    assignee_id: uuid.UUID | None
+    eval_run_id: uuid.UUID | None
+    requires_compliance: bool
     status: str
+    expires_at: datetime.datetime
+    applied_at: datetime.datetime | None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
 
 
-class ProposalDecision(BaseModel):
-    decision: Literal["accept", "accept_with_edit", "reject", "request_changes"]
-    note: str | None = Field(default=None, max_length=4_000)
-    diff: dict[str, Any] | None = None
-    reviewed_regressions: bool = False
-
-
-class EvalItemCreate(BaseModel):
-    category: Literal["correct_result", "ask_at_right_time", "respect_permission", "correct_format", "refusal"] = "correct_result"
-    input: dict[str, Any]
-    expected: dict[str, Any]
-    as_of: datetime.date | None = None
-    tolerance: float | None = None
-
-
-class EvalItemView(EvalItemCreate):
+class EvalRunSummary(BaseModel):
     id: uuid.UUID
-    eval_set_id: uuid.UUID
-    origin: str
     status: str
-
-
-class EvalRunView(BaseModel):
-    id: uuid.UUID
-    eval_set_id: uuid.UUID
-    subject_version: str
-    trigger: str
     item_count: int
     passed: int
     failed: int
-    pass_rate: float | None
+    pass_rate: decimal.Decimal | None
     regressions: int
-    status: str
-    started_at: datetime.datetime
+    baseline_run_id: uuid.UUID | None
     finished_at: datetime.datetime | None
 
 
-class ErrorBookCreate(BaseModel):
-    entry_no: str = Field(min_length=1, max_length=100)
-    data_space_id: uuid.UUID
-    source_kind: Literal["user_report", "number_check", "reviewer_reject", "replay_mismatch", "forecast_miss", "knowledge_lint"]
-    title: str = Field(min_length=1, max_length=2_000)
-    detail: dict[str, Any] = Field(default_factory=dict)
-    severity: Literal["low", "medium", "high"] = "medium"
-    feedback_id: uuid.UUID | None = None
-    answer_id: uuid.UUID | None = None
+class ChangedResult(BaseModel):
+    """An item whose result changed against the baseline run (BR-28)."""
+
+    eval_item_id: uuid.UUID
+    passed: bool
+    cause: str | None
+    actual: Any
+    reviewed_by: uuid.UUID | None
 
 
-class ErrorBookPatch(BaseModel):
-    error_kind: str | None = None
-    root_cause: str | None = None
-    assignee_id: uuid.UUID | None = None
-    severity: Literal["low", "medium", "high"] | None = None
+class ProposalDetail(ProposalView):
+    eval_run: EvalRunSummary | None = None
+    changed_results: list[ChangedResult] = Field(default_factory=list)
+    reviews: list[ProposalReviewView] = Field(default_factory=list)
 
 
-class ErrorBookView(BaseModel):
-    id: uuid.UUID
-    entry_no: str
-    data_space_id: uuid.UUID
-    source_kind: str
-    title: str
-    detail: Any
-    severity: str
-    error_kind: str | None
-    root_cause: str | None
-    assignee_id: uuid.UUID | None
-    fix_kind: str | None
-    fix_ref: str | None
-    status: str
-    pack_contribution: str
+class ProposalDecision(BaseModel):
+    decision: ProposalDecisionKind
+    note: str | None = Field(default=None, max_length=4_000)
+    reviewed_regressions: bool = False
+    edited_diff: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _edit_goes_with_accept_with_edit(self) -> ProposalDecision:
+        if (self.decision == "accept_with_edit") != (self.edited_diff is not None):
+            raise ValueError("edited_diff is required with accept_with_edit, and only with it")
+        return self
