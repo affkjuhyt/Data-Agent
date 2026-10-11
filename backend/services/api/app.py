@@ -10,30 +10,20 @@ modules/, one schema each; the OpenAPI this app generates is the contract
 from __future__ import annotations
 
 import logging
-import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
 
 from services.api.config import Settings
-from services.api.kernel.auth import CapabilityResolver, JwksTokenVerifier, TokenVerifier
-from services.api.kernel.db import Databases
+from services.api.kernel.auth import IdentityResolver, JwksTokenVerifier, TokenVerifier
 from services.api.kernel.problems import Problem, install_problem_handlers, problem_response
 from services.api.kernel.tracing import trace_middleware
 from services.api.modules import ROUTERS
+from services.api.modules.org import OrgIdentityResolver
 
 logger = logging.getLogger(__name__)
 
 API_VERSION = "1.0.0"
-
-
-class NoCapabilities:
-    """Fail closed until the org module resolves capabilities from
-    org.role.capabilities: a signed-in user can reach "—" endpoints only."""
-
-    async def capabilities(self, *, org_id: uuid.UUID, user_id: str) -> frozenset[str]:
-        return frozenset()
 
 
 class UnconfiguredVerifier:
@@ -47,16 +37,9 @@ def create_app(
     settings: Settings | None = None,
     *,
     token_verifier: TokenVerifier | None = None,
-    capability_resolver: CapabilityResolver | None = None,
-    databases: Databases | None = None,
+    identity_resolver: IdentityResolver | None = None,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
-    dbs = databases or Databases(settings.db_role_urls)
-
-    @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        yield
-        await dbs.dispose()
 
     app = FastAPI(
         title="Data Agent API",
@@ -67,7 +50,6 @@ def create_app(
         # One schema per model; the default splits a model used both ways into
         # "-Input" / "-Output", which the generated TypeScript client would carry.
         separate_input_output_schemas=False,
-        lifespan=lifespan,
     )
     if token_verifier is None:
         if settings.oidc_issuer:
@@ -82,8 +64,7 @@ def create_app(
             )
             token_verifier = UnconfiguredVerifier()
     app.state.token_verifier = token_verifier
-    app.state.capability_resolver = capability_resolver or NoCapabilities()
-    app.state.databases = dbs
+    app.state.identity_resolver = identity_resolver or OrgIdentityResolver()
 
     install_problem_handlers(app)
 

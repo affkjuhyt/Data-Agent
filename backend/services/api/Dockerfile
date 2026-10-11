@@ -5,8 +5,10 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/app
 WORKDIR /app
 COPY backend/services/api/requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
-# /app mirrors backend/: `services.api.*` resolves as a root package. libs/ is not
-# copied until a module imports it (the ORM package, libs/dataagent_db).
+# /app mirrors backend/: `libs.*` and `services.api.*` resolve as root packages.
+# Only the V3 ORM from libs/: the legacy libs carry dependencies the api never uses.
+COPY backend/libs/__init__.py ./libs/__init__.py
+COPY backend/libs/dataagent_db/ ./libs/dataagent_db/
 COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/api/ ./services/api/
 RUN addgroup --system app && adduser --system --ingroup app app

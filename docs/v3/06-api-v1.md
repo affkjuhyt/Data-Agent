@@ -24,24 +24,41 @@
 ```
 backend/services/api/
   app.py              create_app(): FastAPI, problem handlers, trace, router của các module
-  config.py           API_OIDC_ISSUER, API_OIDC_AUDIENCE, API_OIDC_JWKS_URL, DATAAGENT_DB_URL__SVC_<SCHEMA>
+  config.py           API_OIDC_ISSUER, API_OIDC_AUDIENCE, API_OIDC_JWKS_URL (URL CSDL do libs.dataagent_db đọc:
+                      DATAAGENT_DB_URL__SVC_<SCHEMA>)
   kernel/             dùng chung, không phụ thuộc module nào (.importlinter)
-    auth.py           Principal, kiểm token JWKS, require(*năng lực)
-    db.py             một engine mỗi vai trò, transaction(role, principal) đặt app.org_id
+    auth.py           Principal, kiểm token JWKS, IdentityResolver, require(*năng lực), CurrentDataSpace
+    db.py             transaction(role, principal): scoped_session của libs.dataagent_db gắn với người gọi
     problems.py       Problem → application/problem+json (A1.7)
     pagination.py     Page[T], page_request (A1.4)
     sse.py            event_stream, Last-Event-ID (A1.6)
     tracing.py        trace_id từ traceparent (ADR-40)
   catalogue/
-    a2_endpoints.json bản chụp A2: 378 endpoint, 22 nhóm, schema của từng nhóm
+    a2_endpoints.json bản chụp A2: 379 endpoint, 22 nhóm, schema của từng nhóm
     __init__.py       endpoint(method, path, operation_id=…) → kwargs của route + kiểm năng lực
     check.py          so OpenAPI sinh ra với A2
   modules/<schema>/   một package mỗi schema; đăng ký router ở modules/__init__.py
+    org/              danh tính, năng lực, GET /v1/data-spaces
 tests/unit/api/       suite `api` (make test-unit UNIT_SUITES=api:api)
+tests/integration/api/ suite `api` trên DDL thật, kết nối bằng vai trò svc_* (make test-integration INTEGRATION_SUITES=api:api)
 ```
 
-`kernel/db.py` là bản tạm. Khi `libs/dataagent_db` có `scoped_session(role, org_id, user_id)` với cùng
-ngữ nghĩa thì module dùng thư viện đó và xoá bản trong kernel.
+Engine, URL và việc đặt `app.*` theo giao dịch nằm ở `libs/dataagent_db` (dùng chung với worker); kernel chỉ
+gắn chúng với `Principal` của request.
+
+## 2b. Danh tính và năng lực
+
+Token chỉ mang `sub` (Keycloak) và `org_id`. Mỗi request, `OrgIdentityResolver` (module `org`, vai trò
+`svc_org`) đổi `sub` thành `org.app_user` đang `active` rồi gom năng lực:
+
+- toàn tổ chức: `role.capabilities` của `user_role` còn hạn (khẩn cấp hết hạn sau tối đa 24 giờ, BR-44)
+  cộng `group_mapping` đang `active`, không gắn Data Space, của các nhóm người dùng thuộc;
+- với header `X-Data-Space` (id hoặc mã): thêm vai trò của `data_space_member` còn hạn (BR-142) trong Data
+  Space đó, khớp theo người dùng hoặc nhóm. Không phải thành viên hiện hành thì trả 404 như Data Space không
+  tồn tại; vai trò toàn tổ chức, kể cả `admin`, không tự mở một Data Space.
+
+Đăng nhập Keycloak được nhưng không có `app_user` đang hoạt động: 403. Route của tài nguyên thuộc Data Space
+khai `CurrentDataSpace`: thiếu header thì 400 `data_space_required` (A1.2).
 
 ## 3. Viết một endpoint
 
@@ -74,7 +91,7 @@ async def list_conversations(
 - nhóm, `x-capability` hoặc `x-use-cases` lệch dòng A2;
 - thiếu endpoint của một nhóm đã khai báo ở `COMPLETE_GROUPS` (`catalogue/check.py`).
 
-A2 có 378 endpoint, làm dần theo nhóm: một nhóm vào `COMPLETE_GROUPS` trong commit phục vụ endpoint cuối
+A2 có 379 endpoint, làm dần theo nhóm: một nhóm vào `COMPLETE_GROUPS` trong commit phục vụ endpoint cuối
 của nhóm, từ đó bỏ một endpoint là lỗi. Thêm hoặc bỏ endpoint phải sửa tab 4 A2 và `a2_endpoints.json`
 trong cùng PR. Xem độ phủ: `python -m services.api.catalogue.check` trong image `api`.
 
@@ -83,12 +100,15 @@ trong cùng PR. Xem độ phủ: `python -m services.api.catalogue.check` trong 
 | Bước | Nhóm A2 (schema) | Vì sao |
 | --- | --- | --- |
 | API-00 | Khung `api`: kernel, cổng A2, suite, CI | Nền cho mọi module |
-| API-01 | Quản trị phần đọc của tôi + bộ giải năng lực (`org`) | Mọi route cần năng lực từ `org.role.capabilities` |
+| API-01 | Bộ giải danh tính và năng lực (`org`), `GET /v1/data-spaces`, `GET /v1/me` | Mọi route cần năng lực từ `org.role.capabilities` |
 | API-02 | Hỏi đáp (`qa`), Truy vấn (`query`) | Vòng lõi: câu hỏi, luồng SSE có `answer_id`, câu trả lời, biên nhận |
 | API-03 | Phiên làm việc (`workspace`) | Màn Phiên |
 | API-04 | Cần bạn và đánh giá (`inbox`, `eval`) | Màn Cần bạn, HITL |
 | API-05 | Agent (`agent`) | Lượt chạy, `/v1/runs/{id}/events` |
 | API-06 | Triển khai: manifest `deploy/k8s/*/api.yaml`, Ansible `service_workloads`, route `/v1` ở gateway, secret `DATAAGENT_DB_URL__*` từ OpenBao | Sau khi API-02 có dữ liệu thật |
+
+`GET /v1/me` được thêm vào A2 (nhóm Quản trị) ngày 11/10/2026; các `/v1/me/*` khác frontend đang gọi vẫn là
+PROPOSAL và đi theo nhóm của chúng.
 
 Frontend sinh client TypeScript từ `/v1/openapi.json` (tab 7 F3) và tắt `VITE_MOCK_V1` theo từng nhóm khi
 nhóm đó vào `COMPLETE_GROUPS`. Các nhóm còn lại đi theo thứ tự màn hình người dùng chạm trước.

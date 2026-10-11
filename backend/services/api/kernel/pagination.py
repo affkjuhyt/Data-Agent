@@ -49,13 +49,13 @@ def decode_page_token(token: str) -> dict[str, Any] | None:
         raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
         cursor = json.loads(raw)
     except (binascii.Error, ValueError) as exc:
-        raise _bad_token() from exc
+        raise invalid_page_token() from exc
     if not isinstance(cursor, dict):
-        raise _bad_token()
+        raise invalid_page_token()
     return cursor
 
 
-def _bad_token() -> Problem:
+def invalid_page_token() -> Problem:
     return Problem(
         400,
         "invalid_request",

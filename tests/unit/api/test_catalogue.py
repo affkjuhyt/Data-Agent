@@ -19,7 +19,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.contract]
 
 def test_snapshot_holds_all_of_a2() -> None:
     data = catalogue()
-    assert len(data["endpoints"]) == 378
+    assert len(data["endpoints"]) == 379
     assert len(data["groups"]) == 22
     assert {e["group"] for e in data["endpoints"]} == set(data["groups"])
 
@@ -69,9 +69,10 @@ def test_the_app_as_built_passes_the_check() -> None:
 
 
 def test_served_endpoints_count_as_implemented() -> None:
+    baseline = compare(_spec()).implemented
     report = compare(_spec(probe_router()))
     assert report.ok, report
-    assert report.implemented == 3
+    assert report.implemented == baseline + 3
 
 
 def test_route_not_in_a2_is_reported() -> None:

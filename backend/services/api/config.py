@@ -1,13 +1,12 @@
 """Settings, all from the environment (deploy-time values from Ansible, secrets
-from OpenBao through the deploy; nothing here has a production default)."""
+from OpenBao through the deploy; nothing here has a production default).
+Database URLs are read by libs.dataagent_db (DATAAGENT_DB_URL__SVC_<SCHEMA>)."""
 
 from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, field
-
-from services.api.kernel.db import role_urls_from_env
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -19,7 +18,6 @@ class Settings:
     # Defaults to the issuer's certs endpoint; set when the api reaches
     # Keycloak by an in-cluster address different from the public issuer.
     oidc_jwks_url: str | None = None
-    db_role_urls: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Settings:
@@ -28,5 +26,4 @@ class Settings:
             oidc_issuer=env.get("API_OIDC_ISSUER", ""),
             oidc_audience=env.get("API_OIDC_AUDIENCE", "dataagent-api"),
             oidc_jwks_url=env.get("API_OIDC_JWKS_URL") or None,
-            db_role_urls=role_urls_from_env(env),
         )

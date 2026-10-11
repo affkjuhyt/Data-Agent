@@ -37,7 +37,7 @@ DEFAULT_UNIT = (
 )
 DEFAULT_INTEGRATION = (
     "workflow_runtime:workflow_runtime auth_api:auth_api platform_workers:platform-workers "
-    "sandbox_executor:sandbox_executor"
+    "sandbox_executor:sandbox_executor api:api migrate:migrate"
 )
 
 # Which suites a change under backend/services/<service>/ can break: the suite of
@@ -46,7 +46,7 @@ DEFAULT_INTEGRATION = (
 # model_service and sandbox_executor modules; the workflow_runtime integration
 # suite runs sandbox_executor's app in-process).
 SERVICE_SUITES: dict[str, set[tuple[str, str]]] = {
-    "api": {("unit", "api")},
+    "api": {("unit", "api"), ("integration", "api")},
     "auth_api": {("unit", "auth_api"), ("unit", "workflow_runtime"), ("integration", "auth_api")},
     "kb_backend": {
         ("unit", "kb_backend"), ("unit", "kb_worker"), ("unit", "workflow_runtime"),

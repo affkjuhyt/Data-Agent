@@ -6,9 +6,12 @@ is verified against the realm's JWKS (signature, issuer, expiry, audience)
 on every request, and nothing is read from identity headers a caller could set.
 
 The organisation comes from the `org_id` claim (A1.2: never a request field).
-Capabilities are not in the token: they live in `org.role.capabilities` and
-change without a re-login, so the org module resolves them through
-`CapabilityResolver` once per request.
+Who the caller is inside it, and what they may do, is not in the token: the
+token's `sub` is the Keycloak id (`org.app_user.external_id`), and capabilities
+live in `org.role.capabilities` and change without a re-login. The org module
+resolves both through `IdentityResolver` once per request. With an
+`X-Data-Space` header (A1.2, id or code) the caller's roles in that Data Space
+join the organisation-wide ones.
 """
 
 from __future__ import annotations
@@ -49,17 +52,42 @@ CAPABILITIES = frozenset(
 )
 
 
+DATA_SPACE_HEADER = "X-Data-Space"
+
+
 @dataclass(frozen=True)
 class Principal:
-    user_id: str
+    # org.app_user.id: what app.user_id and every *_by column hold.
+    user_id: uuid.UUID
     org_id: uuid.UUID
+    # The token's `sub` (org.app_user.external_id).
+    external_id: str
     # Set when a client acts for a user (token exchange, UC-12-01): audit records both.
     client_id: str | None = None
     capabilities: frozenset[str] = field(default_factory=frozenset)
+    # The Data Space named by X-Data-Space, resolved to its id; None without the header.
+    data_space_id: uuid.UUID | None = None
 
 
-class CapabilityResolver(Protocol):
-    async def capabilities(self, *, org_id: uuid.UUID, user_id: str) -> frozenset[str]: ...
+@dataclass(frozen=True)
+class Identity:
+    user_id: uuid.UUID
+    capabilities: frozenset[str]
+    data_space_id: uuid.UUID | None = None
+
+
+class DataSpaceNotFound(Exception):
+    """The X-Data-Space header names no Data Space of the caller's organisation."""
+
+
+class IdentityResolver(Protocol):
+    async def resolve(
+        self, *, org_id: uuid.UUID, external_id: str, data_space: str | None
+    ) -> Identity | None:
+        """The active app_user behind `external_id` and its capabilities, or None
+        when the organisation has no such active user. Raises DataSpaceNotFound
+        when `data_space` names no Data Space the user is a current member of."""
+        ...
 
 
 class TokenVerifier(Protocol):
@@ -118,16 +146,28 @@ async def current_principal(
         # A token without an organisation cannot be scoped by RLS; refuse it
         # rather than run with app.org_id unset.
         raise Problem(403, "forbidden", "The token carries no organisation.") from exc
-    user_id = str(claims["sub"])
-    resolver: CapabilityResolver = request.app.state.capability_resolver
-    capabilities = await resolver.capabilities(org_id=org_id, user_id=user_id)
+    resolver: IdentityResolver = request.app.state.identity_resolver
+    try:
+        identity = await resolver.resolve(
+            org_id=org_id,
+            external_id=str(claims["sub"]),
+            data_space=request.headers.get(DATA_SPACE_HEADER) or None,
+        )
+    except DataSpaceNotFound as exc:
+        raise Problem(404, "not_found", f"{DATA_SPACE_HEADER} names no Data Space.") from exc
+    if identity is None:
+        # Signed in at Keycloak but not (or no longer) an active user of this
+        # organisation: directory sync has not run, or the account was disabled.
+        raise Problem(403, "forbidden", "No active account in this organisation.")
     actor = claims.get("act")
     client_id = str(actor.get("sub")) if isinstance(actor, dict) and actor.get("sub") else None
     return Principal(
-        user_id=user_id,
+        user_id=identity.user_id,
         org_id=org_id,
+        external_id=str(claims["sub"]),
         client_id=client_id,
-        capabilities=capabilities & CAPABILITIES,
+        capabilities=identity.capabilities & CAPABILITIES,
+        data_space_id=identity.data_space_id,
     )
 
 
@@ -147,3 +187,15 @@ def require(*any_of: str) -> Any:
         return principal
 
     return Depends(check)
+
+
+async def current_data_space(principal: CurrentPrincipal) -> uuid.UUID:
+    if principal.data_space_id is None:
+        raise Problem(
+            400, "data_space_required", f"This resource needs the {DATA_SPACE_HEADER} header."
+        )
+    return principal.data_space_id
+
+
+# For resources that belong to a Data Space (A1.2): 400 data_space_required without the header.
+CurrentDataSpace = Annotated[uuid.UUID, Depends(current_data_space)]

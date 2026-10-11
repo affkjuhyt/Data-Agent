@@ -211,6 +211,14 @@ jobs:
             python: "3.13"
             install: -r backend/services/kb_backend/requirements.txt
             apt: libpq-dev
+          # The api against the V3 DDL (backend/alembic/sql) as its svc_* roles.
+          - suite: api
+            python: "3.12"
+            install: -r backend/services/api/requirements.txt
+          # The V3 DDL (backend/alembic/sql) and the ORM that mirrors it, on PostgreSQL 16.
+          - suite: migrate
+            python: "3.11"
+            install: '"sqlalchemy[asyncio]==2.0.35"'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
