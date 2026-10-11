@@ -205,8 +205,9 @@ def _check_purpose(collection: doc.Collection, purpose: str | None) -> None:
 
 def _sees_personal_data(principal: Principal) -> bool:
     # BR-110 and UC-05-03 E1: personal data a keep_for_authorized collection keeps unmasked is
-    # for callers with view_detail; everyone else (agents included) reads masked text only.
-    return "view_detail" in principal.capabilities
+    # for a person with view_detail. A client or agent acting for that person (client_id set)
+    # reads masked text only: an agent never sees unmasked personal data (BR-46).
+    return "view_detail" in principal.capabilities and principal.client_id is None
 
 
 # --- collections --------------------------------------------------------------------------------

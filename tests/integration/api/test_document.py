@@ -277,7 +277,12 @@ class Tokens:
         self.ds = ds
 
     def claims(self, token: str) -> dict[str, Any]:
-        return {"sub": token, "org_id": str(self.ds.org)}
+        # "<user>#client": an API client or agent acting for that user (token exchange).
+        user, _, actor = token.partition("#")
+        out: dict[str, Any] = {"sub": user, "org_id": str(self.ds.org)}
+        if actor:
+            out["act"] = {"sub": actor}
+        return out
 
 
 def client(ds: Space) -> httpx.AsyncClient:
@@ -812,6 +817,14 @@ async def test_unmasked_personal_data_reaches_only_view_detail(ds: Space) -> Non
         assert [h["id"] for h in found.json()["items"]] == [str(masked)]
         found_all = await api.post("/v1/search/documents", json=query, headers=ds.headers("detail"))
         assert {h["id"] for h in found_all.json()["items"]} == {str(masked), str(raw)}
+
+        # The same person's rights through a client or an agent never reach unmasked data.
+        delegated = {**ds.headers("detail"), "Authorization": "Bearer kc-detail#mcp-client"}
+        via_client = await api.get(url, headers=delegated)
+        assert [c["id"] for c in via_client.json()["chunks"]] == [str(masked)]
+        assert "001099000123" not in via_client.text
+        via_search = await api.post("/v1/search/documents", json=query, headers=delegated)
+        assert [h["id"] for h in via_search.json()["items"]] == [str(masked)]
 
 
 # --- search -------------------------------------------------------------------------------------
