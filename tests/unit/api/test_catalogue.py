@@ -51,13 +51,19 @@ def test_data_products_needs_its_group() -> None:
 
 
 def test_one_route_can_serve_both_data_product_rows() -> None:
+    both = ("Lớp ngữ cảnh", "Biến đổi dữ liệu")
+    with pytest.raises(ValueError, match="variant_guard"):
+        endpoint("POST", "/v1/data-products", operation_id="createDataProduct", group=both)
+    check = object()
     kw = endpoint(
         "POST",
         "/v1/data-products",
         operation_id="createDataProduct",
-        group=("Lớp ngữ cảnh", "Biến đổi dữ liệu"),
+        group=both,
+        variant_guard=check,
     )
     assert kw["tags"] == ["Biến đổi dữ liệu", "Lớp ngữ cảnh"]
+    assert kw["dependencies"][-1] is check
 
 
 def test_channel_and_client_routes_need_their_own_authentication() -> None:

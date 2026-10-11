@@ -83,12 +83,17 @@ def endpoint(
     operation_id: str,
     group: str | tuple[str, ...] | None = None,
     authenticate: Any = None,
+    variant_guard: Any = None,
 ) -> dict[str, Any]:
     """Route kwargs for one A2 endpoint: `@router.post(path, **endpoint("POST", path, operation_id=…))`.
 
     `authenticate` is required for, and only accepted on, a `channel` or `client`
     endpoint: a FastAPI dependency (`Depends(...)`) that verifies the channel signature
-    or the api_client token. User tokens are no substitute for either."""
+    or the api_client token. User tokens are no substitute for either.
+
+    `variant_guard` is required when `group` names several rows served as one operation:
+    a dependency that reads the variant (e.g. `layer`) and enforces that row's capability.
+    The route gate alone only knows the caller holds some row's capability."""
     rows = endpoints().get((method.upper(), path))
     if not rows:
         raise LookupError(
@@ -102,13 +107,20 @@ def endpoint(
     elif len(rows) > 1:
         raise LookupError(f"{method.upper()} {path} is in several A2 groups; pass group=")
     ep = rows[0]
-    # Several rows served as one operation (decided duplicates, e.g. /v1/data-products):
-    # the caller needs a capability of any row; the handler narrows it per variant.
-    guard = (
-        _guard(ep, authenticate)
-        if len(rows) == 1
-        else require(*dict.fromkeys(c for r in rows for c in r.capability if c != ANY_USER))
-    )
+    # Several rows served as one operation (decided duplicates, e.g. /v1/data-products): the
+    # gate admits a capability of any row, so the variant's own check must come with it, or a
+    # caller holding one row's capability would reach the other variant.
+    if len(rows) == 1:
+        if variant_guard is not None:
+            raise ValueError(f"{method.upper()} {path}: variant_guard= is only for merged rows")
+        guards = [_guard(ep, authenticate)]
+    else:
+        caps = tuple(dict.fromkeys(c for r in rows for c in r.capability if c != ANY_USER))
+        if variant_guard is None or not caps or authenticate is not None:
+            raise ValueError(
+                f"{method.upper()} {path}: merged rows need variant_guard= and a capability per row"
+            )
+        guards = [require(*caps), variant_guard]
     return {
         "operation_id": operation_id,
         "tags": list(dict.fromkeys(r.group for r in rows)),
@@ -118,7 +130,7 @@ def endpoint(
             "x-use-cases": [f"UC-{u}" for u in ep.use_cases],
             "x-capability": list(ep.capability),
         },
-        "dependencies": [guard],
+        "dependencies": guards,
     }
 
 
