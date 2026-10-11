@@ -28,6 +28,7 @@ from libs.contracts.v1.plan import OutputContract, PlanIR
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import context, qa
 from services.worker_agent.events import Event, Handler
+from services.worker_agent.progress import publish
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ AGENT_NAME = "Agent Hỏi đáp"
 async def answer_question(event: Event) -> None:
     question_id = uuid.UUID(str(event.payload["question_id"]))
     user_id = event.payload.get("user_id")
+    await publish(str(question_id), "planning", {"question_id": str(question_id)})
     async with scoped_session(ROLE, event.org_id, user_id) as session:
         question = await session.scalar(
             select(qa.Question).where(qa.Question.id == question_id).with_for_update()
@@ -100,9 +102,10 @@ async def answer_question(event: Event) -> None:
             )
         )
         await session.flush()
+        answer_id = uuid7()
         session.add(
             qa.Answer(
-                id=uuid7(),
+                id=answer_id,
                 org_id=event.org_id,
                 question_id=question.id,
                 plan_id=plan_id,
@@ -117,6 +120,11 @@ async def answer_question(event: Event) -> None:
         question.status = "refused"
         question.answered_at = func.now()
     logger.info("question %s refused with %s", question_id, refusal.code)
+    await publish(
+        str(question_id),
+        "done",
+        {"question_id": str(question_id), "status": "refused", "answer_id": str(answer_id)},
+    )
 
 
 HANDLERS: dict[str, Handler] = {"question.received": answer_question}
