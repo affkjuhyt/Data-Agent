@@ -56,3 +56,12 @@ def test_model_provider_approval_requires_compliance(api: TestClient) -> None:
     )
     assert response.status_code == 403
     assert response.json()["code"] == "forbidden"
+
+
+def test_model_provider_test_requires_a_model_name(api: TestClient) -> None:
+    response = api.post(
+        "/v1/admin/model-providers/01920000-0000-7000-8000-000000000002:test",
+        headers={"Authorization": f"Bearer {ADMIN}"},
+        json={},
+    )
+    assert response.status_code == 422

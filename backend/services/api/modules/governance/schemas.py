@@ -69,6 +69,20 @@ class ModelRouteDecisionView(BaseModel):
 ModelRouteDecisionPage = Page[ModelRouteDecisionView]
 
 
+class ModelProviderTest(BaseModel):
+    model_name: str = Field(min_length=1, max_length=200)
+
+
+class ModelProviderTestResult(BaseModel):
+    provider_id: uuid.UUID
+    model_name: str
+    outcome: Literal["ok", "error"]
+    latency_ms: int
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    error: str | None = None
+
+
 class ModelProviderCreate(BaseModel):
     code: str = Field(min_length=1, max_length=100)
     display_name: str = Field(min_length=1, max_length=500)

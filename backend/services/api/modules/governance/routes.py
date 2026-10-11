@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import decimal
+import hashlib
+import json
+import os
+import time
+import urllib.error
+import urllib.request
 import uuid
 from collections.abc import Iterable
 from typing import Annotated
@@ -29,6 +36,8 @@ from services.api.modules.governance.schemas import (
     ModelProviderCreate,
     ModelProviderPage,
     ModelProviderPatch,
+    ModelProviderTest,
+    ModelProviderTestResult,
     ModelProviderView,
     ModelRouteDecisionPage,
     ModelRouteDecisionView,
@@ -36,6 +45,98 @@ from services.api.modules.governance.schemas import (
 
 router = APIRouter()
 ROLE = "svc_governance"
+TEST_PROMPT = "Reply with exactly the word OK."
+
+
+class _ProviderUnavailable(Exception):
+    pass
+
+
+def _secret_value(secret_ref: str | None) -> str | None:
+    if not secret_ref:
+        return None
+    token = os.environ.get("OPENBAO_TOKEN")
+    if not token:
+        raise _ProviderUnavailable("The API has no OpenBao resolver for this provider.")
+    ref = secret_ref.strip().strip("/")
+    parts = ref.split("/", 2)
+    if len(parts) == 3 and parts[1] == "data":
+        mount, path = parts[0], parts[2]
+    elif len(parts) >= 2:
+        mount, path = parts[0], "/".join(parts[1:])
+    else:
+        raise _ProviderUnavailable("The provider secret_ref is not a KV path.")
+    base = os.environ.get("OPENBAO_ADDR", "http://openbao:8200").rstrip("/")
+    request = urllib.request.Request(
+        f"{base}/v1/{mount}/data/{path}",
+        headers={"X-Vault-Token": token, "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read())
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        raise _ProviderUnavailable("The provider secret could not be read from OpenBao.") from exc
+    data = payload.get("data", {}).get("data", {})
+    if not isinstance(data, dict):
+        raise _ProviderUnavailable("The provider secret has an invalid KV payload.")
+    value = data.get("api_key") or data.get("token") or data.get("value")
+    if not isinstance(value, str) or not value:
+        raise _ProviderUnavailable("The provider secret has no supported credential field.")
+    return value
+
+
+def _probe_provider(
+    provider: governance.ModelProvider, model_name: str
+) -> tuple[int, int | None, int | None]:
+    secret = _secret_value(provider.secret_ref)
+    endpoint = provider.endpoint.rstrip("/")
+    if provider.api_style == "openai_compatible":
+        url = endpoint if endpoint.endswith("/chat/completions") else f"{endpoint}/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if secret:
+            headers["Authorization"] = f"Bearer {secret}"
+        payload = {
+            "model": model_name,
+            "messages": [{"role": "user", "content": TEST_PROMPT}],
+            "temperature": 0,
+            "max_tokens": 8,
+        }
+    elif provider.api_style == "anthropic_messages":
+        url = endpoint if endpoint.endswith("/messages") else f"{endpoint}/messages"
+        headers = {
+            "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01",
+        }
+        if secret:
+            headers["x-api-key"] = secret
+        payload = {
+            "model": model_name,
+            "messages": [{"role": "user", "content": TEST_PROMPT}],
+            "temperature": 0,
+            "max_tokens": 8,
+        }
+    else:
+        raise _ProviderUnavailable(f"Provider API style {provider.api_style} is not probeable yet.")
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers=headers,
+        method="POST",
+    )
+    started = time.perf_counter()
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            body = json.loads(response.read())
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        raise _ProviderUnavailable("The provider did not return a usable response.") from exc
+    usage = body.get("usage", {}) if isinstance(body, dict) else {}
+    input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
+    output_tokens = usage.get("completion_tokens", usage.get("output_tokens"))
+    return (
+        max(1, round((time.perf_counter() - started) * 1000)),
+        input_tokens if isinstance(input_tokens, int) else None,
+        output_tokens if isinstance(output_tokens, int) else None,
+    )
 
 
 def _month_start() -> datetime.datetime:
@@ -302,6 +403,94 @@ async def approve_model_provider(
         await session.flush()
         await session.refresh(row)
     return ModelProviderView.model_validate(row)
+
+
+@router.post(
+    "/v1/admin/model-providers/{id}:test",
+    response_model=ModelProviderTestResult,
+    **endpoint(
+        "POST",
+        "/v1/admin/model-providers/{id}:test",
+        operation_id="testModelProvider",
+    ),
+)
+async def test_model_provider(
+    body: ModelProviderTest,
+    provider_id: Annotated[uuid.UUID, Path(alias="id")],
+    principal: CurrentPrincipal,
+) -> ModelProviderTestResult:
+    async with transaction(ROLE, principal) as session:
+        provider = await session.scalar(
+            select(governance.ModelProvider).where(
+                governance.ModelProvider.id == provider_id,
+                governance.ModelProvider.org_id == principal.org_id,
+            )
+        )
+        if provider is None:
+            raise Problem(404, "not_found", "Model provider not found.")
+        prompt_hash = hashlib.sha256(TEST_PROMPT.encode()).hexdigest()
+        row = governance.ModelRouteDecision(
+            id=uuid7(),
+            org_id=principal.org_id,
+            data_space_id=None,
+            task="provider_test",
+            caller_kind="eval",
+            caller_id=None,
+            data_product_id=None,
+            product_scope="not_applicable",
+            context_labels=["public"],
+            max_classification="public",
+            contains_internal_data=False,
+            pii_redactions=0,
+            candidate_provider_id=provider.id if provider.kind == "frontier" else None,
+            decision="frontier_allowed" if provider.kind == "frontier" else "on_prem_default",
+            reasons=["allowed_public_only"] if provider.kind == "frontier" else [],
+            chosen_provider_id=provider.id,
+            model_name=body.model_name,
+            prompt_sha256=prompt_hash,
+        )
+        session.add(row)
+        await session.flush()
+        await session.refresh(row)
+        decision_id = row.id
+
+    try:
+        latency_ms, input_tokens, output_tokens = await asyncio.to_thread(
+            _probe_provider, provider, body.model_name
+        )
+    except _ProviderUnavailable as exc:
+        async with transaction(ROLE, principal) as session:
+            row = await session.scalar(
+                select(governance.ModelRouteDecision).where(
+                    governance.ModelRouteDecision.id == decision_id,
+                    governance.ModelRouteDecision.org_id == principal.org_id,
+                )
+            )
+            if row is not None:
+                row.outcome = "error"
+                await session.flush()
+        raise Problem(503, "model_unavailable", str(exc)) from exc
+
+    async with transaction(ROLE, principal) as session:
+        row = await session.scalar(
+            select(governance.ModelRouteDecision).where(
+                governance.ModelRouteDecision.id == decision_id,
+                governance.ModelRouteDecision.org_id == principal.org_id,
+            )
+        )
+        if row is not None:
+            row.input_tokens = input_tokens
+            row.output_tokens = output_tokens
+            row.outcome = "ok"
+            await session.flush()
+    return ModelProviderTestResult(
+        provider_id=provider.id,
+        model_name=body.model_name,
+        outcome="ok",
+        latency_ms=latency_ms,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
 
 
 @router.get(
