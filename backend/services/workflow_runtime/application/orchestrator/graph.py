@@ -16,6 +16,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from psycopg_pool import AsyncConnectionPool
 
+from libs.contracts.v1.plan import OutputContract, PlanIR, PlanNode, Port
 from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 from services.workflow_runtime.application.orchestrator import config
 from services.workflow_runtime.application.orchestrator.agent_catalog import fetch_published_agents
@@ -46,7 +47,9 @@ from services.workflow_runtime.application.orchestrator.summary import (
     summarize,
     synthesis_judge_check,
 )
+from services.workflow_runtime.application.plan import to_plan_ir, validate_plan
 from services.workflow_runtime.application.runtime_services.answer_ready import answer_ready_hook
+from services.workflow_runtime.domain.refusals import PlannerError
 from services.workflow_runtime.infrastructure.observability import get_langfuse_client
 
 logger = logging.getLogger(__name__)
@@ -156,6 +159,30 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
     query = state["query"]
     agent_id = state["agent_id"]
     assert agent_id, "_route_start/_route_mode send only turns with an agent_id here"
+
+    # Single-agent turns still publish the same validated plan frame as the
+    # multi-agent path.  This is deliberately before call_agent_stream(): a
+    # malformed capability must not start an external agent side effect.
+    plan_ir = PlanIR(
+        plan_id=f"single:{state['session_id']}",
+        output_contract=OutputContract(shape="text"),
+        nodes=[PlanNode(
+            id="single:0",
+            kind="AGENT",
+            capability=agent_id,
+            inputs={"question": query},
+            outputs=[Port(key="answer", type="text")],
+        )],
+    )
+    plan_issues = validate_plan(plan_ir, allowed_capabilities={agent_id})
+    if plan_issues:
+        refusal = PlannerError("; ".join(issue.message for issue in plan_issues)).refusal(
+            state["session_id"]
+        ).model_dump()
+        await adispatch_custom_event("refusal", refusal)
+        return {"plan_ir": plan_ir, "refused": True, "success": False, "target_results": []}
+    await adispatch_custom_event("plan", plan_ir.model_dump())
+    await adispatch_custom_event("step", {"node_id": "single:0", "status": "running"})
 
     # The clarification/rewrite check (input_refine) runs ALONGSIDE the agent
     # instead of in front of it, where it held every question for one LLM call.
@@ -337,6 +364,7 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
         # Outside the span and the stream handling: interrupt() raises to pause
         # the graph. On resume this node runs again with the answer merged in.
         logger.info("input_refine | clarification needed, questions=%d", len(questions))
+        await adispatch_custom_event("step", {"node_id": "single:0", "status": "clarifying"})
         interrupt(clarification_payload(questions))
 
     # Only an answer that fully arrived keeps its early suggestions; otherwise
@@ -358,8 +386,13 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
         citations=citations,
         latency_ms=latency_ms,
     )
+    await adispatch_custom_event(
+        "step",
+        {"node_id": "single:0", "status": "succeeded" if success else "failed", "latency_ms": latency_ms},
+    )
     return {
         "rewritten_query": query,
+        "plan_ir": plan_ir,
         "final_response": response_text,
         "refused": refused,
         "success": success,
@@ -419,9 +452,19 @@ async def tot_planner_node(state: OrchestratorState, config: RunnableConfig) -> 
     if cached is not None:
         discard_plan_speculation(speculation)
         process, plan, progress = cached
+        plan_ir = to_plan_ir(plan)
+        issues = validate_plan(plan_ir, allowed_capabilities={str(a["id"]) for a in state["agents"]})
+        if issues:
+            await adispatch_custom_event(
+                "refusal",
+                PlannerError("; ".join(issue.message for issue in issues)).refusal(session_id).model_dump(),
+            )
+            return {"plan": None, "plan_ir": plan_ir, "planner_ms": 0, "success": False, "refused": True}
+        await adispatch_custom_event("plan", plan_ir.model_dump())
         logger.info("tot_planner | resumed session=%s plan=%s", session_id, plan.plan_id)
         return {
             "plan": plan,
+            "plan_ir": plan_ir,
             "process": process,
             "completed_node_ids": progress.get("completed_node_ids", []),
             "planner_ms": 0,
@@ -441,9 +484,19 @@ async def tot_planner_node(state: OrchestratorState, config: RunnableConfig) -> 
         return {"plan": None, "planner_ms": planner_ms, "success": False}
 
     process, plan = plan_result
+    plan_ir = to_plan_ir(plan)
+    issues = validate_plan(plan_ir, allowed_capabilities={str(a["id"]) for a in state["agents"]})
+    if issues:
+        await adispatch_custom_event(
+            "refusal",
+            PlannerError("; ".join(issue.message for issue in issues)).refusal(session_id).model_dump(),
+        )
+        return {"plan": None, "plan_ir": plan_ir, "planner_ms": planner_ms, "success": False, "refused": True}
+    await adispatch_custom_event("plan", plan_ir.model_dump())
     await save_cached_plan(redis, tenant_id, session_id, query, process, plan, [])
     return {
         "plan": plan,
+        "plan_ir": plan_ir,
         "process": process,
         "completed_node_ids": [],
         "planner_ms": planner_ms,
@@ -490,6 +543,7 @@ async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict
             }
 
     plan = state["plan"]
+    plan_ir = state.get("plan_ir")
     process = state["process"]
     # tot_planner_node sets both together, and _route_after_planner only routes
     # here when it did.
@@ -507,6 +561,7 @@ async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict
     for attempt in range(_MAX_REPLAN + 1):
         result = await execute_plan(
             plan,
+            plan_ir=plan_ir,
             user_id=state["user_id"],
             user_roles=state.get("user_roles") or [],
             original_query=query,
@@ -527,6 +582,24 @@ async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict
             recovery = await report_node_failure(process, result.failed_node_id)
             if recovery.get("recovered") and recovery.get("plan"):
                 plan = recovery["plan"]
+                plan_ir = to_plan_ir(plan)
+                recovery_issues = validate_plan(
+                    plan_ir, allowed_capabilities={str(a["id"]) for a in state["agents"]}
+                )
+                if recovery_issues:
+                    refusal = PlannerError(
+                        "; ".join(issue.message for issue in recovery_issues)
+                    ).refusal(session_id).model_dump()
+                    await adispatch_custom_event("refusal", refusal)
+                    return {
+                        "plan": None,
+                        "plan_ir": plan_ir,
+                        "target_results": all_target_results,
+                        "success": False,
+                        "recovered": recovered,
+                        "executor_ms": round((time.monotonic() - t0) * 1000),
+                        "refused": True,
+                    }
                 recovered = True
                 await save_cached_plan(redis, tenant_id, session_id, query, process, plan, completed_node_ids)
                 continue
@@ -543,6 +616,7 @@ async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict
 
     return {
         "plan": plan,
+        "plan_ir": plan_ir,
         "target_results": deduped,
         "success": overall_success,
         "recovered": recovered,

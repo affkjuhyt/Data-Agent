@@ -57,6 +57,7 @@ from libs.contracts.v1.payloads import (
     MappingProposed,
     SourceSlaBreached,
 )
+from libs.contracts.v1.plan import OutputContract, PlanEdge, PlanIR, PlanNode, Port
 from libs.contracts.v1.refs import (
     ApiQueryRef,
     CapabilityRef,
@@ -159,9 +160,14 @@ __all__ = [
     "Observation",
     "ObservationCandidate",
     "Origin",
+    "OutputContract",
     "PageRef",
     "ParseError",
     "ParseErrorCode",
+    "PlanEdge",
+    "PlanIR",
+    "PlanNode",
+    "Port",
     "ProfileSummary",
     "PublicationTimeBasis",
     "Purpose",

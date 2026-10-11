@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -13,10 +13,11 @@ class TaskNode:
     title: str
     input: str          # nội dung cần xử lý (chỉ có ở task độc lập)
     agent_id: str       # agent_id được planner assign trực tiếp
+    node_id: str = ""   # stable PlanIR node id, surfaced in __step frames
     agent_name: str = ""
     depend_on: list[int] = field(default_factory=list)
-    output: Optional[str] = None
-    conversation_id: Optional[str] = None  # từ X-Conversation-Id header
+    output: str | None = None
+    conversation_id: str | None = None  # từ X-Conversation-Id header
     citations: list[dict[str, Any]] = field(default_factory=list)
     success: bool = False
     done: bool = False
@@ -24,7 +25,7 @@ class TaskNode:
     latency_ms: int = 0
 
 
-def build_nodes(tasks: list[dict[str, Any]]) -> list[TaskNode]:
+def build_nodes(tasks: list[dict[str, Any]], node_prefix: str = "") -> list[TaskNode]:
     """Nhận tasks[] từ 1 target, trả về TaskNode theo đúng thứ tự."""
     return [
         TaskNode(
@@ -32,6 +33,7 @@ def build_nodes(tasks: list[dict[str, Any]]) -> list[TaskNode]:
             title=t.get("title", f"task_{i}"),
             input=t.get("input", ""),
             agent_id=t.get("agent_id", ""),
+            node_id=f"{node_prefix}:task:{i}" if node_prefix else f"task:{i}",
             depend_on=[int(d) for d in (t.get("depend_on") or []) if str(d).lstrip('-').isdigit()],
         )
         for i, t in enumerate(tasks)
