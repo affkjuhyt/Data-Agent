@@ -221,3 +221,20 @@ async def test_protocol_errors_are_json_rpc_errors(seed: Seed) -> None:
     assert unknown.json()["error"]["code"] == -32601
     assert bad.json()["error"]["code"] == -32600
     assert note.status_code == 202
+
+
+async def test_own_identity_client_never_asks_for_its_owner(seed: Seed, audit_rows: Any) -> None:
+    w = build(seed)
+    # A grant written around the API's check: /mcp still drops the detail tools (BR-48).
+    seed.conn.cursor().execute(
+        "UPDATE integration.api_client SET identity_mode = 'own_identity' WHERE id = %s",
+        (str(w.client),),
+    )
+    async with mcp_client(w) as c:
+        listed = await c.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        asked = await c.post(
+            "/mcp", json=call("ask_question", data_space=str(w.space), question="x")
+        )
+    assert [t["name"] for t in listed.json()["result"]["tools"]] == ["get_metric_definition"]
+    assert asked.status_code == 403 and asked.json()["code"] == "policy_denied"
+    assert ("mcp.tools_call", "denied") in audit_rows(w.org)

@@ -149,12 +149,17 @@ async def mcp_client(
     if row is None or row.status != "active" or row.expires_at <= now:
         # Revoked, paused, expired or unknown: same answer, so the state does not leak.
         raise _unauthenticated("The client is not active.")
+    tools = frozenset(row.tools)
+    if row.identity_mode == "own_identity":
+        # BR-48: a client on its own identity never acts for its owner, so only the tools without
+        # detail data — enforced here too, not only when the grant is written.
+        tools &= rules.OWN_IDENTITY_TOOLS
     return McpClient(
         id=row.id,
         org_id=row.org_id,
         owner_user_id=row.owner_user_id,
         identity_mode=row.identity_mode,
-        tools=frozenset(row.tools),
+        tools=tools,
         data_space_ids=frozenset(row.data_space_ids),
         quota_per_minute=row.quota_per_minute,
         quota_per_day=row.quota_per_day,
