@@ -8,6 +8,7 @@ import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
 import { importPack, listPacks, type IndustryPack } from '../../lib/v1/packs';
 import { useV1 } from '../../lib/v1/useV1';
+import { CreatePackDialog } from './CreatePackDialog';
 
 /*
  * "P09 · Gói ngành · Danh sách" (2284:17173, UC-09-01, UC-09-04): the packs installed — version,
@@ -21,6 +22,7 @@ export default function PacksPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [creating, setCreating] = useState(false);
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
@@ -55,6 +57,7 @@ export default function PacksPage() {
               tabIndex={-1}
               onChange={(e) => onFile(e.target.files?.[0])}
             />
+            <Button onClick={() => setCreating(true)}>Tạo gói riêng</Button>
             <Button kind="primary" loading={busy} onClick={() => fileRef.current?.click()}>
               Cài gói
             </Button>
@@ -63,6 +66,14 @@ export default function PacksPage() {
       />
       <div className="flex flex-col gap-da-xl px-da-3xl pb-da-2xl pt-da-xl">
         {error && <Notice tone="error">Không nhập được gói: {error}</Notice>}
+        {creating && (
+          <CreatePackDialog
+            open
+            packs={packs.data?.items ?? []}
+            onClose={() => setCreating(false)}
+            onCreated={(draftId) => navigate('data', 'PACK_AUTHOR', draftId)}
+          />
+        )}
         <AsyncRegion state={packs} what="gói ngành">
           {(page) => (
             <>

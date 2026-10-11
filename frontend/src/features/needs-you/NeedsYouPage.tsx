@@ -51,6 +51,7 @@ export default function NeedsYouPage() {
 
   const pendingCount = (inbox.data?.items ?? []).filter((r) => !hidden.has(r.id)).length;
   const resolvedCount = resolved.data?.items.length ?? 0;
+  const autoCount = (resolved.data?.items ?? []).filter((r) => r.resolved_by !== 'me').length;
   const expiringCount = (inbox.data?.items ?? []).filter(
     (r) => !hidden.has(r.id) && isExpiringSoon(r),
   ).length;
@@ -141,7 +142,11 @@ export default function NeedsYouPage() {
             empty={
               <EmptyState
                 title="Không có việc nào cần bạn"
-                description="Các agent đang tự làm việc. Khi agent cần bạn quyết định, việc sẽ hiện ở đây và trên Teams."
+                description={
+                  autoCount > 0
+                    ? `Các agent đang tự làm việc. Tuần này ${autoCount} việc được tự xử lý nhờ quy tắc của bạn.`
+                    : 'Các agent đang tự làm việc. Khi agent cần bạn quyết định, việc sẽ hiện ở đây và trên Teams.'
+                }
                 action={
                   <Button onClick={() => navigate('agents', 'TEAM')}>Xem agent đang làm gì</Button>
                 }

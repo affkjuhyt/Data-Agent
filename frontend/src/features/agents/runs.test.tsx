@@ -106,6 +106,9 @@ describe('RunDetailPage', () => {
     routeId = 'run-427';
     wrap(<RunDetailPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Tạm dừng' }));
+    const pause = screen.getByRole('alertdialog', { name: 'Tạm dừng Agent Đối soát?' });
+    expect(within(pause).getByText(/dừng an toàn ở bước hiện tại/)).toBeInTheDocument();
+    fireEvent.click(within(pause).getByRole('button', { name: 'Tạm dừng' }));
     expect(await screen.findByRole('button', { name: 'Chạy tiếp' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Huỷ lượt chạy' }));
@@ -184,6 +187,9 @@ describe('run figures', () => {
   });
 });
 
+// The pause and lock flows chain three requests; the full suite in parallel can be slow.
+const SLOW = { timeout: 5000 };
+
 describe('AgentTeamPage', () => {
   it('opens what a busy agent is doing now, and its configuration', async () => {
     wrap(<AgentTeamPage />);
@@ -196,6 +202,32 @@ describe('AgentTeamPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Thao tác với Agent Chất lượng dữ liệu' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Cấu hình' }));
     expect(navigate).toHaveBeenCalledWith('agents', 'AGENT', 'agent-dq');
+  });
+
+  it('pauses a running agent’s run and locks the agent after confirmation', async () => {
+    wrap(<AgentTeamPage />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Thao tác với Agent Đối soát' }, SLOW),
+    );
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Tạm dừng lượt đang chạy' }));
+    const pause = await screen.findByRole(
+      'alertdialog',
+      { name: 'Tạm dừng Agent Đối soát?' },
+      SLOW,
+    );
+    fireEvent.click(within(pause).getByRole('button', { name: 'Tạm dừng' }));
+    expect(await screen.findByText(/^Đã tạm dừng/, {}, SLOW)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Thao tác với Agent Phân tích' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Khoá agent' }));
+    const lock = screen.getByRole('alertdialog', { name: 'Khoá Agent Phân tích?' });
+    expect(
+      within(lock).getByText(/1 yêu cầu HITL của agent chuyển cho chủ sở hữu/),
+    ).toBeInTheDocument();
+    fireEvent.click(within(lock).getByRole('button', { name: 'Khoá agent' }));
+    expect(await screen.findByText('Đã khoá Agent Phân tích', {}, SLOW)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Thao tác với Agent Phân tích' }));
+    expect(screen.getByRole('menuitem', { name: 'Mở khoá' })).toBeInTheDocument();
   });
 
   it('offers to create an agent or start from a pack template when there are none', async () => {

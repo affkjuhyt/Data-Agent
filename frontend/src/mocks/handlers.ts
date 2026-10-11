@@ -77,6 +77,7 @@ export function createHandlers() {
   let inbox: HitlRequest[] = inboxFixture();
   let proposals: Proposal[] = proposalsFixture();
   let runs: AgentRun[] = runsFixture();
+  let agents = agentsFixture();
 
   return [
     // First: these serve paths the handlers below also answer, with richer rows
@@ -194,7 +195,29 @@ export function createHandlers() {
       return HttpResponse.json(resolved);
     }),
 
-    http.get('*/v1/agents', () => page(agentsFixture())),
+    http.get('*/v1/agents', () => page(agents)),
+    // PROPOSAL :lock / :unlock (lib/v1/agentControl.ts): a locked agent runs nothing and its open
+    // HITL requests go to the owner.
+    http.post('*/v1/agents/:action', ({ params }) => {
+      const [id, verb] = String(params.action).split(':');
+      const agent = agents.find((a) => a.id === id);
+      if (!agent || (verb !== 'lock' && verb !== 'unlock'))
+        return new HttpResponse(null, { status: 404 });
+      const original = agentsFixture().find((a) => a.id === id)!;
+      const next =
+        verb === 'lock'
+          ? {
+              ...agent,
+              status: 'paused' as const,
+              paused_reason: 'locked',
+              runs_running: 0,
+              runs_waiting_human: 0,
+              now: { text: 'Đã khoá · không chạy lượt hay trigger nào', tone: 'normal' as const },
+            }
+          : original;
+      agents = agents.map((a) => (a.id === id ? next : a));
+      return HttpResponse.json(next);
+    }),
     http.get('*/v1/runs', ({ request }) => {
       const params = new URL(request.url).searchParams;
       const status = params.get('status');

@@ -476,21 +476,52 @@ export function createPackHandlers() {
   let override = overrideFixture();
   let upgrade = upgradeFixture();
   const draft = draftFixture();
+  // Drafts of the organisation's own packs (PROPOSAL POST /v1/packs), opened by Biên soạn gói.
+  const created: PackDraft[] = [];
+  const findDraft = (id: string) => (id === draft.id ? draft : created.find((d) => d.id === id));
   return [
     http.get('*/v1/packs', () => HttpResponse.json({ items: packs })),
+    http.post('*/v1/packs', async ({ request }) => {
+      const body = (await request.json()) as {
+        name: string;
+        based_on_version_id: string | null;
+        includes: string[];
+      };
+      if (!body.name?.trim()) return problem(422, 'validation_failed', 'Đặt tên gói.');
+      const base = packs.find((p) => p.latest.version_id === body.based_on_version_id);
+      const id = `pv-own-${created.length + 1}`;
+      created.push({
+        id,
+        pack_name: body.name.trim(),
+        version: '0.1',
+        base_version: base ? `${base.name} ${base.latest.version}` : 'mô hình hiện tại của tổ chức',
+        summary_text: `Gồm ${body.includes.join(', ')} · chưa sửa mục nào`,
+        sections: body.includes.map((label) => ({ label, changed: 0, total: 0 })),
+        test: null,
+        conditions: [{ text: 'Chạy kiểm tra trên dữ liệu mẫu', ok: false }],
+        after_text: 'Sau khi phát hành, gói xuất hiện trong Gói ngành của tổ chức.',
+      });
+      return HttpResponse.json(
+        { id: `pack-own-${created.length}`, draft_version_id: id },
+        { status: 201 },
+      );
+    }),
     http.post('*/v1/packs\\:import', () =>
       HttpResponse.json({ id: 'pv-life-2026-2' }, { status: 201 }),
     ),
     http.get('*/v1/pack-versions', () =>
       HttpResponse.json({
-        items: [{ id: draft.id, pack_name: draft.pack_name, version: draft.version }],
+        items: [draft, ...created].map((d) => ({
+          id: d.id,
+          pack_name: d.pack_name,
+          version: d.version,
+        })),
       }),
     ),
-    http.get('*/v1/pack-versions/:id/draft', ({ params }) =>
-      params.id === draft.id
-        ? HttpResponse.json(draft)
-        : problem(404, 'not_found', 'Không có bản nháp.'),
-    ),
+    http.get('*/v1/pack-versions/:id/draft', ({ params }) => {
+      const found = findDraft(String(params.id));
+      return found ? HttpResponse.json(found) : problem(404, 'not_found', 'Không có bản nháp.');
+    }),
     http.get('*/v1/pack-versions/:id', ({ params }) => {
       const version = versionFixture(String(params.id));
       return version
@@ -499,10 +530,11 @@ export function createPackHandlers() {
     }),
     http.post('*/v1/pack-versions/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
-      if (id !== draft.id) return problem(404, 'not_found', 'Không có bản nháp.');
+      const target = findDraft(id);
+      if (!target) return problem(404, 'not_found', 'Không có bản nháp.');
       if (verb === 'validate') return HttpResponse.json({ id: 'check-run' }, { status: 202 });
       if (verb === 'publish') {
-        if (draft.conditions.some((c) => !c.ok))
+        if (target.conditions.some((c) => !c.ok))
           return problem(409, 'invalid_state', 'Bản nháp chưa qua kiểm tra.');
         return HttpResponse.json({ id });
       }

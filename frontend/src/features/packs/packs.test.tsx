@@ -59,6 +59,21 @@ describe('PacksPage', () => {
   });
 });
 
+describe('CreatePackDialog', () => {
+  it('creates the organisation’s own pack and opens its first draft', async () => {
+    wrap(<PacksPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Tạo gói riêng' }));
+    const dialog = screen.getByRole('dialog', { name: 'Tạo gói domain riêng' });
+    const create = within(dialog).getByRole('button', { name: 'Tạo gói' });
+    expect(create).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.change(within(dialog).getByLabelText('Tên gói'), {
+      target: { value: 'Tín dụng tiêu dùng · nội bộ' },
+    });
+    fireEvent.click(create);
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('data', 'PACK_AUTHOR', 'pv-own-1'));
+  });
+});
+
 describe('PackInstallPage', () => {
   it('shows the checks and code conflicts, and installs into the ticked Data Spaces', async () => {
     routeId = 'pv-life-2026-2';

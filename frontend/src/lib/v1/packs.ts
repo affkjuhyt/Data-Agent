@@ -33,6 +33,19 @@ export interface IndustryPack {
 
 export const listPacks = async () => v1Get<{ items: IndustryPack[] }>('/packs');
 
+/**
+ * PROPOSAL: POST /v1/packs — the organisation's own domain pack ("Hộp thoại · createPack",
+ * 2095:8808), started from a pack version or from the organisation's current model. A2 only has
+ * POST /packs/{id}/versions, which needs a pack to exist; this creates the pack and its first
+ * draft version, opened in Biên soạn gói.
+ */
+export const createPack = async (body: {
+  name: string;
+  based_on_version_id: string | null;
+  includes: string[];
+  sharing: 'organisation' | 'invited_tenants';
+}) => v1Send<{ id: string; draft_version_id: string }>('POST', '/packs', body);
+
 /** A2: POST /v1/packs:import (multipart) — the signature is checked first (BR-128). */
 export const importPack = async (file: File) => {
   const form = new FormData();

@@ -75,6 +75,7 @@ function RunBody({
 }) {
   const toast = useToast();
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [confirmPause, setConfirmPause] = useState(false);
   const [editingPlan, setEditingPlan] = useState(false);
   const stopped = run.status === 'paused' || run.status === 'waiting_human';
   const canEditPlan = stopped && (run.plan ?? []).some((s) => s.state !== 'done');
@@ -116,6 +117,7 @@ function RunBody({
     } finally {
       setBusy(null);
       setConfirmCancel(false);
+      setConfirmPause(false);
     }
   };
 
@@ -149,7 +151,7 @@ function RunBody({
                   Chạy tiếp
                 </Button>
               ) : (
-                <Button loading={busy === 'pause'} onClick={() => act('pause')}>
+                <Button loading={busy === 'pause'} onClick={() => setConfirmPause(true)}>
                   Tạm dừng
                 </Button>
               )}
@@ -217,6 +219,18 @@ function RunBody({
           }}
         />
       )}
+      {/* "Xác nhận · pauseAgent" (2094:8319). */}
+      <ConfirmDialog
+        open={confirmPause}
+        title={`Tạm dừng ${run.agent_name}?`}
+        confirmLabel="Tạm dừng"
+        loading={busy === 'pause'}
+        onCancel={() => setConfirmPause(false)}
+        onConfirm={() => act('pause')}
+      >
+        Lượt {run.code} dừng an toàn ở bước hiện tại. Không có dữ liệu bị ghi dở. Có thể tiếp tục
+        bất cứ lúc nào.
+      </ConfirmDialog>
       <ConfirmDialog
         open={confirmCancel}
         title={`Huỷ lượt chạy ${run.code}?`}

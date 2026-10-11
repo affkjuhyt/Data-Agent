@@ -1,12 +1,15 @@
+import { isLocked } from '../../lib/v1/agentControl';
 import type { AgentDef } from '../../lib/v1/types';
 
 /*
  * One status per agent row ("Trạng thái" on "P13 · Đội agent"), most urgent first:
- * an error, then waiting on a person, paused, running, and otherwise waiting for its schedule.
+ * locked by its owner, an error, then waiting on a person, paused, running, and otherwise
+ * waiting for its schedule.
  */
 type Tone = 'error' | 'warning' | 'neutral' | 'success' | 'idle';
 
 export function agentStatus(agent: AgentDef): { label: string; tone: Tone } {
+  if (isLocked(agent)) return { label: 'Đã khoá', tone: 'neutral' };
   if (agent.now.tone === 'error') return { label: 'Lỗi', tone: 'error' };
   if (agent.now.tone === 'waiting' || agent.runs_waiting_human > 0)
     return { label: 'Chờ bạn', tone: 'warning' };

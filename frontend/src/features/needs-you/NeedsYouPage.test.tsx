@@ -86,6 +86,22 @@ describe('NeedsYouPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('counts what the viewer’s rules settled this week when nothing waits', async () => {
+    server.use(
+      // Only the open requests are empty; the week's resolved ones still come from the mock.
+      http.get('*/v1/inbox', ({ request }) =>
+        new URL(request.url).searchParams.get('status') === 'open'
+          ? HttpResponse.json({ items: [], next_page_token: '' })
+          : undefined,
+      ),
+      ...createHandlers(),
+    );
+    renderPage();
+    expect(
+      await screen.findByText(/Tuần này \d+ việc được tự xử lý nhờ quy tắc của bạn/),
+    ).toBeInTheDocument();
+  });
+
   it('keeps the page usable when the inbox fails to load', async () => {
     server.use(
       http.get('*/v1/inbox', () =>

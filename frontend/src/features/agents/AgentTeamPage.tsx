@@ -1,15 +1,19 @@
+import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
+import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Menu } from '../../design-system/Menu';
 import { StatusDot } from '../../design-system/StatusDot';
+import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { formatMoneyShort } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
-import { listAgents, listRuns } from '../../lib/v1/api';
-import type { AgentDef, RunStatus } from '../../lib/v1/types';
+import { isLocked, lockAgent, unlockAgent } from '../../lib/v1/agentControl';
+import { controlRun, listAgents, listRuns } from '../../lib/v1/api';
+import type { AgentDef, AgentRun, RunStatus } from '../../lib/v1/types';
 import { useV1 } from '../../lib/v1/useV1';
 import { agentStatus, sevenDaysText } from './agentStatus';
 
@@ -21,7 +25,8 @@ import { agentStatus, sevenDaysText } from './agentStatus';
  *
  * "Tạo agent" opens the existing agent builder until "P13 · Tạo agent từ mô tả" is built;
  * "Từ mẫu" waits for the template screen. A row's menu opens what the agent is doing now (its
- * live run), its configuration (P13 Cấu hình & trigger) or its runs.
+ * live run), its configuration (P13 Cấu hình & trigger) or its runs, pauses its running run
+ * ("Xác nhận · pauseAgent", 2094:8319) and locks it ("Xác nhận · lockAgent", 2094:8344).
  */
 const NOW_TONE = {
   normal: 'text-foreground',
@@ -41,10 +46,49 @@ async function liveRunOf(agentId: string): Promise<string | undefined> {
   return undefined;
 }
 
+/** The run "Tạm dừng" stops: one that is actually moving, not one already waiting or paused. */
+async function runningRunOf(agentId: string): Promise<AgentRun | undefined> {
+  const runs = (await listRuns({ agent_id: agentId })).items;
+  return runs.find((r) => r.status === 'running' || r.status === 'planning');
+}
+
 export default function AgentTeamPage() {
   const { tenant, navigate } = useAppState();
+  const toast = useToast();
   const agents = useV1(listAgents, []);
   const items = agents.data?.items ?? [];
+  const [pausing, setPausing] = useState<{ agent: AgentDef; run: AgentRun } | null>(null);
+  const [locking, setLocking] = useState<AgentDef | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+
+  const close = () => {
+    setPausing(null);
+    setLocking(null);
+    setError(undefined);
+  };
+  const run = async (action: () => Promise<unknown>, message: string) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await action();
+      close();
+      agents.reload();
+      toast({ tone: 'success', message });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const askPause = (agent: AgentDef) =>
+    runningRunOf(agent.id)
+      .then((r) =>
+        r
+          ? setPausing({ agent, run: r })
+          : toast({ tone: 'info', message: `${agent.name} không có lượt nào đang chạy` }),
+      )
+      .catch((e: Error) => toast({ tone: 'error', message: e.message }));
 
   const summary = (() => {
     if (!agents.data) return undefined;
@@ -126,6 +170,9 @@ export default function AgentTeamPage() {
                     key={agent.id}
                     agent={agent}
                     onRuns={() => navigate('agents', 'RUNS')}
+                    onPause={() => askPause(agent)}
+                    onLock={() => setLocking(agent)}
+                    onUnlock={() => run(() => unlockAgent(agent.id), `Đã mở khoá ${agent.name}`)}
                     onConfigure={() => navigate('agents', 'AGENT', agent.id)}
                     onLive={() =>
                       liveRunOf(agent.id)
@@ -146,6 +193,36 @@ export default function AgentTeamPage() {
           chạy.
         </p>
       </div>
+      <ConfirmDialog
+        open={pausing !== null}
+        title={`Tạm dừng ${pausing?.agent.name}?`}
+        confirmLabel="Tạm dừng"
+        loading={busy}
+        error={error}
+        onCancel={close}
+        onConfirm={() =>
+          pausing &&
+          run(() => controlRun(pausing.run.id, 'pause'), `Đã tạm dừng ${pausing.run.code}`)
+        }
+      >
+        Lượt {pausing?.run.code} dừng an toàn ở bước hiện tại. Không có dữ liệu bị ghi dở. Có thể
+        tiếp tục bất cứ lúc nào.
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={locking !== null}
+        title={`Khoá ${locking?.name}?`}
+        confirmLabel="Khoá agent"
+        loading={busy}
+        error={error}
+        onCancel={close}
+        onConfirm={() => locking && run(() => lockAgent(locking.id), `Đã khoá ${locking.name}`)}
+      >
+        Agent ngừng mọi lượt chạy và trigger.
+        {locking && locking.runs_waiting_human > 0
+          ? ` ${locking.runs_waiting_human} yêu cầu HITL của agent chuyển cho chủ sở hữu.`
+          : ''}{' '}
+        Có thể mở khoá sau.
+      </ConfirmDialog>
     </div>
   );
 }
@@ -155,11 +232,17 @@ function AgentRow({
   onRuns,
   onConfigure,
   onLive,
+  onPause,
+  onLock,
+  onUnlock,
 }: {
   agent: AgentDef;
   onRuns: () => void;
   onConfigure: () => void;
   onLive: () => void;
+  onPause: () => void;
+  onLock: () => void;
+  onUnlock: () => void;
 }) {
   const status = agentStatus(agent);
   const busy = agent.runs_running + agent.runs_waiting_human > 0;
@@ -193,6 +276,13 @@ function AgentRow({
             ...(busy ? [{ label: 'Đang làm gì', icon: 'eye' as const, onSelect: onLive }] : []),
             { label: 'Cấu hình', icon: 'settings', onSelect: onConfigure },
             { label: 'Xem lượt chạy', icon: 'play', onSelect: onRuns },
+            { kind: 'separator' as const },
+            ...(agent.runs_running > 0
+              ? [{ label: 'Tạm dừng lượt đang chạy', onSelect: onPause }]
+              : []),
+            isLocked(agent)
+              ? { label: 'Mở khoá', icon: 'lock' as const, onSelect: onUnlock }
+              : { label: 'Khoá agent', icon: 'lock' as const, danger: true, onSelect: onLock },
           ]}
         />
       </td>
