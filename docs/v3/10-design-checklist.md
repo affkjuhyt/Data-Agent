@@ -353,7 +353,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-95 | UC-03-04 | todo |  |
 | BR-96 | UC-03-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-97 | UC-03-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +4 |
-| BR-98 | UC-03-07 | todo | `backend/services/api/modules/skill/routes.py`, `backend/services/api/modules/skill/schemas.py`, `frontend/src/lib/v1/openapi.json` +1 |
+| BR-98 | UC-03-07 | todo | `backend/services/api/modules/skill/routes.py`, `backend/services/api/modules/skill/rules.py`, `backend/services/api/modules/skill/schemas.py` +2 |
 | BR-99 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-100 | UC-04-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/context.py` +7 |
 | BR-101 | UC-04-03 | todo |  |

@@ -12,10 +12,12 @@ from __future__ import annotations
 import datetime
 import os
 import uuid
+import warnings
 from collections.abc import Callable, Sequence
 from typing import Annotated, Any, TypeVar
 
 from fastapi import APIRouter, Depends, File, Form, Path, Query, Response, UploadFile
+from fastapi._compat import get_cached_model_fields
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -77,6 +79,15 @@ EDITABLE_UPLOAD = ("uploaded", "analyzed", "mapped")
 COMMITTABLE_UPLOAD = ("analyzed", "mapped")
 
 R = TypeVar("R")
+
+# FastAPI 0.115 rebuilds each field of a single JSON body model as Annotated[type, FieldInfo], and
+# pydantic 2.14 warns there that `alias` has no effect (UnsupportedFieldAttributeWarning), although
+# the model itself still reads "from". FastAPI caches that per model: build it once here, silenced,
+# so the first :backfill request does not raise it (an error under the suite's -W error). Drop this
+# when FastAPI stops rebuilding JSON body fields.
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    get_cached_model_fields(Backfill)
 
 
 def _now() -> datetime.datetime:

@@ -8,6 +8,7 @@ of validity (UC-05-05) is proposed, never applied here: the reviewer decides in 
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import decimal
 import hashlib
@@ -16,7 +17,7 @@ import os
 import uuid
 from collections.abc import Callable, Sequence
 from typing import Annotated, Any, TypeVar
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from fastapi import APIRouter, Depends, File, Form, Header, Path, Query, Response, UploadFile
 from sqlalchemy import ColumnElement, and_, case, exists, func, literal_column, or_, select, tuple_
@@ -186,11 +187,26 @@ async def _collection(
     return row
 
 
+def _purpose(header: str | None) -> str | None:
+    """The X-Purpose value as text. Purposes are Vietnamese and HTTP headers are latin-1, so a
+    client sends it percent-encoded (UTF-8); raw UTF-8 bytes, which arrive decoded as latin-1,
+    are accepted too. Without this no Vietnamese purpose could ever match its collection."""
+    if header is None:
+        return None
+    with contextlib.suppress(UnicodeEncodeError, UnicodeDecodeError):
+        header = header.encode("latin-1").decode("utf-8")
+    return unquote(header).strip()
+
+
 def _check_purpose(collection: doc.Collection, purpose: str | None) -> None:
-    if purpose is not None and purpose.strip() != collection.purpose:
-        raise Problem(
-            403, "purpose_mismatch", "The collection serves another purpose (BR-59)."
-        )
+    if purpose is not None and purpose != collection.purpose:
+        raise Problem(403, "purpose_mismatch", "The collection serves another purpose (BR-59).")
+
+
+def _sees_personal_data(principal: Principal) -> bool:
+    # BR-110 and UC-05-03 E1: personal data a keep_for_authorized collection keeps unmasked is
+    # for callers with view_detail; everyone else (agents included) reads masked text only.
+    return "view_detail" in principal.capabilities
 
 
 # --- collections --------------------------------------------------------------------------------
@@ -644,9 +660,10 @@ async def get_document_page(
     n: Annotated[int, Path(ge=1)],
     purpose: Purpose = None,
 ) -> DocumentPageView:
+    sees_personal = _sees_personal_data(principal)
     async with transaction(ROLE, principal) as session:
         row, collection = await _document(session, document_id, principal, data_space)
-        _check_purpose(collection, purpose)
+        _check_purpose(collection, _purpose(purpose))
         page = await session.scalar(
             select(doc.DocumentPage).where(
                 doc.DocumentPage.document_id == row.id, doc.DocumentPage.page_no == n
@@ -654,14 +671,17 @@ async def get_document_page(
         )
         if page is None:
             raise Problem(404, "not_found", "Page not found.")
+        on_page = [
+            doc.Chunk.document_id == row.id,
+            doc.Chunk.page_from <= n,
+            doc.Chunk.page_to >= n,
+        ]
+        if not sees_personal:
+            on_page.append(doc.Chunk.pii_masked.is_(True))
         chunks = (
             await session.scalars(
                 select(doc.Chunk)
-                .where(
-                    doc.Chunk.document_id == row.id,
-                    doc.Chunk.page_from <= n,
-                    doc.Chunk.page_to >= n,
-                )
+                .where(*on_page)
                 .order_by(doc.Chunk.page_from, doc.Chunk.created_at, doc.Chunk.id)
             )
         ).all()
@@ -675,8 +695,12 @@ async def get_document_page(
             # The text and chunks are still worth serving without the image.
             logger.warning("document | page image link unavailable: storage not configured")
     view = DocumentPageView.model_validate(page, from_attributes=True)
+    # The page text of a keep_for_authorized collection is not masked; there is no masked copy
+    # to serve instead, so a caller without view_detail gets the image and masked chunks only.
+    withheld = collection.pii_policy == "keep_for_authorized" and not sees_personal
     return view.model_copy(
         update={
+            "text": None if withheld else view.text,
             "image_url": image_url,
             "chunks": [ChunkView.model_validate(c, from_attributes=True) for c in chunks],
         }
@@ -741,6 +765,7 @@ async def search_documents(
     fused by reciprocal rank, over ready documents the caller may read, in force at as_of."""
     c, d, col = doc.Chunk, doc.Document, doc.Collection
     as_of = body.as_of or _now().date()
+    purpose = _purpose(purpose)
     async with transaction(ROLE, principal) as session:
         query = select(col).where(_in_space(principal, data_space))
         if body.collection_ids:
@@ -753,7 +778,7 @@ async def search_documents(
                 for collection in collections:
                     _check_purpose(collection, purpose)
             # BR-59: collections of another purpose are not searched at all.
-            collections = [x for x in collections if x.purpose == purpose.strip()]
+            collections = [x for x in collections if x.purpose == purpose]
         if not collections:
             return Page(items=[])
         starts = func.coalesce(c.effective_from, d.effective_from)
@@ -773,6 +798,8 @@ async def search_documents(
             # BR-19: a page below the OCR threshold is not used until reviewed.
             ~unusable_page,
         ]
+        if not _sees_personal_data(principal):
+            allowed.append(c.pii_masked.is_(True))
         if body.filters:
             if body.filters.document_ids:
                 allowed.append(c.document_id.in_(body.filters.document_ids))
