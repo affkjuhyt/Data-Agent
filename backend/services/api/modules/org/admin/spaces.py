@@ -11,7 +11,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Path
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -61,8 +61,13 @@ TRANSITIONS: dict[str, frozenset[str]] = {
 async def _calendar(session: AsyncSession, calendar_id: uuid.UUID | None) -> None:
     if calendar_id is None:
         return
-    if await session.scalar(select(org.WorkCalendar.id).where(org.WorkCalendar.id == calendar_id)) is None:
-        raise Problem(422, "validation_failed", "work_calendar_id names no calendar of this organisation.")
+    if (
+        await session.scalar(select(org.WorkCalendar.id).where(org.WorkCalendar.id == calendar_id))
+        is None
+    ):
+        raise Problem(
+            422, "validation_failed", "work_calendar_id names no calendar of this organisation."
+        )
 
 
 async def _steward_role(session: AsyncSession) -> org.Role | None:
@@ -70,7 +75,11 @@ async def _steward_role(session: AsyncSession) -> org.Role | None:
     smallest role carrying `steward` and nothing organisation-wide."""
     roles = [
         r
-        for r in (await session.scalars(select(org.Role).where(org.Role.capabilities.contains(["steward"])))).all()
+        for r in (
+            await session.scalars(
+                select(org.Role).where(literal("steward") == func.any(org.Role.capabilities))
+            )
+        ).all()
         if not org_only(r)
     ]
     if not roles:
@@ -133,7 +142,9 @@ def _view(space: org.DataSpace) -> DataSpaceView:
 )
 async def create_data_space(body: DataSpaceCreate, principal: CurrentPrincipal) -> DataSpaceView:
     if body.backup_steward_id is not None and body.backup_steward_id == body.steward_id:
-        raise Problem(422, "business_rule_violated", "BR-143: the backup steward is another person.")
+        raise Problem(
+            422, "business_rule_violated", "BR-143: the backup steward is another person."
+        )
     async with transaction(ROLE, principal) as session:
         await active_user(session, body.steward_id, "steward_id")
         if body.backup_steward_id:
@@ -147,7 +158,9 @@ async def create_data_space(body: DataSpaceCreate, principal: CurrentPrincipal) 
             description=body.description,
             steward_id=body.steward_id,
             backup_steward_id=body.backup_steward_id,
-            default_policy=body.default_policy.model_dump(exclude_none=True) if body.default_policy else {},
+            default_policy=body.default_policy.model_dump(exclude_none=True)
+            if body.default_policy
+            else {},
             work_calendar_id=body.work_calendar_id,
             status="draft",
             created_by=principal.user_id,
@@ -175,7 +188,11 @@ async def create_data_space(body: DataSpaceCreate, principal: CurrentPrincipal) 
             action="data_space.created",
             object_kind="data_space",
             object_id=space.id,
-            after={"code": space.code, "steward_id": space.steward_id, "backup_steward_id": space.backup_steward_id},
+            after={
+                "code": space.code,
+                "steward_id": space.steward_id,
+                "backup_steward_id": space.backup_steward_id,
+            },
         )
         await session.flush()
         await session.refresh(space)
@@ -187,14 +204,20 @@ async def create_data_space(body: DataSpaceCreate, principal: CurrentPrincipal) 
     response_model=DataSpaceView,
     **endpoint("PATCH", "/v1/data-spaces/{id}", operation_id="updateDataSpace"),
 )
-async def update_data_space(space_id: SpaceId, body: DataSpacePatch, principal: CurrentPrincipal) -> DataSpaceView:
+async def update_data_space(
+    space_id: SpaceId, body: DataSpacePatch, principal: CurrentPrincipal
+) -> DataSpaceView:
     fields = body.model_fields_set
     for required in ("name", "steward_id", "status", "default_policy"):
         if required in fields and getattr(body, required) is None:
             raise Problem(422, "validation_failed", f"{required} cannot be null.")
     async with transaction(ROLE, principal) as session:
         space = await live_data_space(session, space_id, lock=True)
-        before = {"status": space.status, "steward_id": space.steward_id, "backup_steward_id": space.backup_steward_id}
+        before = {
+            "status": space.status,
+            "steward_id": space.steward_id,
+            "backup_steward_id": space.backup_steward_id,
+        }
         if "steward_id" in fields and body.steward_id != space.steward_id:
             assert body.steward_id is not None
             await active_user(session, body.steward_id, "steward_id")
@@ -204,7 +227,9 @@ async def update_data_space(space_id: SpaceId, body: DataSpacePatch, principal: 
                 await active_user(session, body.backup_steward_id, "backup_steward_id")
             space.backup_steward_id = body.backup_steward_id
         if space.backup_steward_id is not None and space.backup_steward_id == space.steward_id:
-            raise Problem(422, "business_rule_violated", "BR-143: the backup steward is another person.")
+            raise Problem(
+                422, "business_rule_violated", "BR-143: the backup steward is another person."
+            )
         if "work_calendar_id" in fields:
             await _calendar(session, body.work_calendar_id)
             space.work_calendar_id = body.work_calendar_id
@@ -222,13 +247,21 @@ async def update_data_space(space_id: SpaceId, body: DataSpacePatch, principal: 
         if "status" in fields and body.status != space.status:
             assert body.status is not None
             if body.status not in TRANSITIONS[space.status]:
-                raise Problem(409, "invalid_state", f"A Data Space cannot go from {space.status} to {body.status}.")
+                raise Problem(
+                    409,
+                    "invalid_state",
+                    f"A Data Space cannot go from {space.status} to {body.status}.",
+                )
             space.status = body.status
             if body.status == "active" and space.opened_at is None:
                 space.opened_at = now()
         if space.status == "active" and space.backup_steward_id is None:
             # BR-143: an open space always has a steward and a backup.
-            raise Problem(422, "business_rule_violated", "BR-143: an active Data Space needs a backup steward.")
+            raise Problem(
+                422,
+                "business_rule_violated",
+                "BR-143: an active Data Space needs a backup steward.",
+            )
         space.updated_at = now()
         space.updated_by = principal.user_id
         await session.flush()
@@ -251,21 +284,29 @@ async def update_data_space(space_id: SpaceId, body: DataSpacePatch, principal: 
             object_kind="data_space",
             object_id=space.id,
             before=before,
-            after={"status": space.status, "steward_id": space.steward_id, "backup_steward_id": space.backup_steward_id},
+            after={
+                "status": space.status,
+                "steward_id": space.steward_id,
+                "backup_steward_id": space.backup_steward_id,
+            },
         )
         await session.flush()
         await session.refresh(space)
         return _view(space)
 
 
-async def _validate_members(session: AsyncSession, members: list[MemberIn]) -> dict[uuid.UUID, org.Role]:
+async def _validate_members(
+    session: AsyncSession, members: list[MemberIn]
+) -> dict[uuid.UUID, org.Role]:
     keys = [(m.principal_type, m.principal_id, m.role_id) for m in members]
     if len(set(keys)) != len(keys):
         raise Problem(422, "validation_failed", "A principal holds the same role twice in members.")
     stamp = now()
     for m in members:
         if m.valid_until is not None and (m.valid_until.tzinfo is None or m.valid_until <= stamp):
-            raise Problem(422, "validation_failed", "valid_until is a future time with a time zone.")
+            raise Problem(
+                422, "validation_failed", "valid_until is a future time with a time zone."
+            )
     users = {m.principal_id for m in members if m.principal_type == "user"}
     agents = {m.principal_id for m in members if m.principal_type == "agent"}
     groups = {m.principal_id for m in members if m.principal_type == "group"}
@@ -275,24 +316,38 @@ async def _validate_members(session: AsyncSession, members: list[MemberIn]) -> d
                 (
                     await session.scalars(
                         select(org.AppUser.id).where(
-                            org.AppUser.id.in_(ids), org.AppUser.kind.in_(kinds), org.AppUser.status == "active"
+                            org.AppUser.id.in_(ids),
+                            org.AppUser.kind.in_(kinds),
+                            org.AppUser.status == "active",
                         )
                     )
                 ).all()
             )
             if ids - found:
-                raise Problem(422, "validation_failed", "principal_id names no active user or agent of that type.")
+                raise Problem(
+                    422,
+                    "validation_failed",
+                    "principal_id names no active user or agent of that type.",
+                )
     if groups:
-        found = set((await session.scalars(select(org.UserGroup.id).where(org.UserGroup.id.in_(groups)))).all())
+        found = set(
+            (
+                await session.scalars(select(org.UserGroup.id).where(org.UserGroup.id.in_(groups)))
+            ).all()
+        )
         if groups - found:
-            raise Problem(422, "validation_failed", "principal_id names no group of this organisation.")
+            raise Problem(
+                422, "validation_failed", "principal_id names no group of this organisation."
+            )
     roles = await require_roles(session, {m.role_id for m in members})
     for role in roles.values():
         if org_only(role):
             # A steward hands out Data Space roles only (tab 3b D4.1: admin, compliance, audit_read,
             # exec_vault, pack_author are organisation-wide).
             raise Problem(
-                403, "policy_denied", f"Role {role.code} is organisation-wide and cannot be given in a Data Space."
+                403,
+                "policy_denied",
+                f"Role {role.code} is organisation-wide and cannot be given in a Data Space.",
             )
     return roles
 
@@ -301,7 +356,11 @@ def _members_query(space_id: uuid.UUID):  # type: ignore[no-untyped-def]
     return (
         select(org.DataSpaceMember)
         .where(org.DataSpaceMember.data_space_id == space_id)
-        .order_by(org.DataSpaceMember.principal_type, org.DataSpaceMember.principal_id, org.DataSpaceMember.id)
+        .order_by(
+            org.DataSpaceMember.principal_type,
+            org.DataSpaceMember.principal_id,
+            org.DataSpaceMember.id,
+        )
     )
 
 
@@ -350,8 +409,14 @@ async def put_members(
         new_roles = await _validate_members(session, body.members)
         existing = list((await session.scalars(_members_query(space_id))).all())
         valid = [r for r in existing if r.valid_until is None or r.valid_until > now()]
-        manual = {(r.principal_type, r.principal_id, r.role_id): r for r in existing if r.source == "manual"}
-        others = {(r.principal_type, r.principal_id, r.role_id) for r in existing if r.source != "manual"}
+        manual = {
+            (r.principal_type, r.principal_id, r.role_id): r
+            for r in existing
+            if r.source == "manual"
+        }
+        others = {
+            (r.principal_type, r.principal_id, r.role_id) for r in existing if r.source != "manual"
+        }
         wanted = {(m.principal_type, m.principal_id, m.role_id): m for m in body.members}
 
         before_rows = [(r.principal_type, r.principal_id, r.role_id) for r in valid]
@@ -361,18 +426,34 @@ async def put_members(
         roles = {**await roles_by_id(session, {h.role_id for h in before | after}), **new_roles}
         new_conflicts = grants.conflicts(after, roles) - grants.conflicts(before, roles)
         if new_conflicts:
-            raise Problem(403, "policy_denied", await grants.conflict_detail(session, new_conflicts))
+            raise Problem(
+                403, "policy_denied", await grants.conflict_detail(session, new_conflicts)
+            )
         # UC-11-08 E1: the space keeps someone who can steward it.
-        had_steward = any("steward" in roles[h.role_id].capabilities for h in before if h.data_space_id and h.role_id in roles)
-        has_steward = any("steward" in roles[h.role_id].capabilities for h in after if h.data_space_id and h.role_id in roles)
+        had_steward = any(
+            "steward" in roles[h.role_id].capabilities
+            for h in before
+            if h.data_space_id and h.role_id in roles
+        )
+        has_steward = any(
+            "steward" in roles[h.role_id].capabilities
+            for h in after
+            if h.data_space_id and h.role_id in roles
+        )
         if had_steward and not has_steward:
             raise Problem(
-                422, "business_rule_violated", "UC-11-08 E1: assign another steward before removing the last one."
+                422,
+                "business_rule_violated",
+                "UC-11-08 E1: assign another steward before removing the last one.",
             )
 
         removed = [r for k, r in manual.items() if k not in wanted]
         if removed:
-            await session.execute(delete(org.DataSpaceMember).where(org.DataSpaceMember.id.in_([r.id for r in removed])))
+            await session.execute(
+                delete(org.DataSpaceMember).where(
+                    org.DataSpaceMember.id.in_([r.id for r in removed])
+                )
+            )
         changes: list[tuple[str, org.DataSpaceMember]] = [("removed", r) for r in removed]
         stamp = now()
         for key, m in wanted.items():

@@ -10,7 +10,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Path
-from sqlalchemy import select
+from sqlalchemy import func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -20,7 +20,11 @@ from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal
 from services.api.kernel.db import transaction
 from services.api.kernel.problems import Problem
 from services.api.modules.org.admin.common import audit, emit, now, org_only
-from services.api.modules.org.admin.schemas import AccessDecision, AccessRequestCreate, AccessRequestView
+from services.api.modules.org.admin.schemas import (
+    AccessDecision,
+    AccessRequestCreate,
+    AccessRequestView,
+)
 from services.api.modules.org.identity import ROLE
 
 router = APIRouter()
@@ -44,12 +48,16 @@ STATUS = {"approve": "approved", "narrow": "narrowed", "reject": "rejected"}
     response_model=AccessRequestView,
     **endpoint("POST", "/v1/access-requests", operation_id="createAccessRequest"),
 )
-async def create_access_request(body: AccessRequestCreate, principal: CurrentPrincipal) -> AccessRequestView:
+async def create_access_request(
+    body: AccessRequestCreate, principal: CurrentPrincipal
+) -> AccessRequestView:
     today = now().date()
     if body.requested_until <= today:
         raise Problem(422, "validation_failed", "requested_until is a future date.")
     if body.requested_until > today + datetime.timedelta(days=MAX_DAYS):
-        raise Problem(422, "business_rule_violated", "BR-142: access through a request lasts at most 90 days.")
+        raise Problem(
+            422, "business_rule_violated", "BR-142: access through a request lasts at most 90 days."
+        )
     async with transaction(ROLE, principal) as session:
         space = await session.scalar(
             select(org.DataSpace).where(
@@ -112,7 +120,11 @@ async def _role_for(session: AsyncSession, capability: str) -> org.Role:
     wanted = GRANTED_AS[capability]
     roles = [
         r
-        for r in (await session.scalars(select(org.Role).where(org.Role.capabilities.contains([wanted])))).all()
+        for r in (
+            await session.scalars(
+                select(org.Role).where(literal(wanted) == func.any(org.Role.capabilities))
+            )
+        ).all()
         if not org_only(r)
     ]
     if not roles:
@@ -138,13 +150,17 @@ async def decide_access_request(
     async with transaction(ROLE, principal) as session:
         row = await session.scalar(
             select(org.AccessRequest)
-            .where(org.AccessRequest.id == request_id, org.AccessRequest.data_space_id == data_space)
+            .where(
+                org.AccessRequest.id == request_id, org.AccessRequest.data_space_id == data_space
+            )
             .with_for_update()
         )
         if row is None:
             raise Problem(404, "not_found", "Access request not found.")
         if row.requester_id == principal.user_id:
-            raise Problem(403, "forbidden", "A request is decided by someone other than its requester.")
+            raise Problem(
+                403, "forbidden", "A request is decided by someone other than its requester."
+            )
         if row.status != "pending":
             raise Problem(409, "invalid_state", f"The request is already {row.status}.")
         granting = body.decision != "reject"
@@ -230,7 +246,11 @@ async def decide_access_request(
             action=f"access_request.{row.status}",
             object_kind="access_request",
             object_id=row.id,
-            after={"status": row.status, "member_id": member_id, "granted_scope": row.granted_scope},
+            after={
+                "status": row.status,
+                "member_id": member_id,
+                "granted_scope": row.granted_scope,
+            },
         )
         await session.flush()
         await session.refresh(row)

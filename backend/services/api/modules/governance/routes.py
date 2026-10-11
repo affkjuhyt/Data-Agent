@@ -20,7 +20,7 @@ from collections.abc import Iterable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query
-from sqlalchemy import select, tuple_
+from sqlalchemy import func, literal, select, tuple_
 
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import governance
@@ -594,7 +594,7 @@ async def list_model_route_decisions(
     if decision:
         query = query.where(row_type.decision == decision)
     if reason:
-        query = query.where(row_type.reasons.contains([reason]))
+        query = query.where(literal(reason) == func.any(row_type.reasons))
     if provider_id:
         query = query.where(row_type.chosen_provider_id == provider_id)
     if caller_kind:
