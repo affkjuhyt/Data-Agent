@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
 import type { RunStatus } from './types';
 
 /*
@@ -76,8 +76,17 @@ export interface EvalCase extends NewEvalCase {
 }
 
 /** PROPOSAL: the agents with a version in canary, for opening the screen without an agent. */
-export const listRollouts = () =>
-  v1Get<Page<Rollout>>('/rollouts', { status: 'canary,held', page_size: 50 });
+export const listRollouts = async (): Promise<Page<Rollout>> => {
+  try {
+    return await v1Get<Page<Rollout>>('/rollouts', { status: 'canary,held', page_size: 50 });
+  } catch (error) {
+    // The rollout collection is a proposal until the API-05 deployment read model lands.
+    // A missing collection therefore means there is no candidate to show, not a broken page.
+    if (error instanceof V1Error && error.status === 404)
+      return { items: [], next_page_token: '' };
+    throw error;
+  }
+};
 
 export const getRollout = async (agentId: string) =>
   v1Get<Rollout>(`/agents/${pathId(agentId)}/rollout`);

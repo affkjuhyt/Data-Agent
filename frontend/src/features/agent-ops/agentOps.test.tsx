@@ -134,6 +134,14 @@ describe('EvaluatePage', () => {
     expect(await screen.findByText('Chưa có phiên bản nào đang thử')).toBeInTheDocument();
   });
 
+  it('treats an unimplemented rollout collection as no version being tried', async () => {
+    renderWith(
+      <EvaluatePage />,
+      http.get('*/v1/rollouts', () => HttpResponse.json({ detail: 'Not Found' }, { status: 404 })),
+    );
+    expect(await screen.findByText('Chưa có phiên bản nào đang thử')).toBeInTheDocument();
+  });
+
   it('refuses a crafted agent id from the URL without calling the API', async () => {
     routeId = '..%2Fadmin';
     renderWith(<EvaluatePage />);
