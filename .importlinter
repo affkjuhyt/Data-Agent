@@ -152,3 +152,20 @@ forbidden_modules =
     services.platform_workers
     services.sandbox_executor
     services.model_service
+
+# worker-agent (ADR-28): talks to the api only through the database and events, never by
+# importing it, and takes nothing from the legacy runtime it replaces.
+[importlinter:contract:worker-agent-is-independent]
+name = services.worker_agent must not import the api or the legacy services
+type = forbidden
+source_modules =
+    services.worker_agent
+forbidden_modules =
+    services.api
+    services.workflow_runtime
+    services.kb_backend
+    services.auth_api
+    services.indicator_api
+    services.platform_workers
+    services.sandbox_executor
+    services.model_service

@@ -122,3 +122,21 @@ PROPOSAL và đi theo nhóm của chúng.
 
 Frontend sinh client TypeScript từ `/v1/openapi.json` (tab 7 F3) và tắt `VITE_MOCK_V1` theo từng nhóm khi
 nhóm đó vào `COMPLETE_GROUPS`. Các nhóm còn lại đi theo thứ tự màn hình người dùng chạm trước.
+
+## 6. Ai trả lời câu hỏi: khối `worker-agent`
+
+`api` chỉ ghi câu hỏi và phát `question.received` vào `qa.outbox`; `backend/services/worker_agent` (khối thứ hai
+của ADR-28) trả lời. Bước G1 của [09](09-target-deploy-and-cleanup.md):
+
+- **Nhận sự kiện.** `events.OutboxTableSource` đọc `qa.outbox` bằng vai trò `svc_outbox_relay` (đọc mọi tổ chức,
+  chỉ được đóng dấu `published_at`), `FOR UPDATE SKIP LOCKED` để nhiều bản sao không lấy trùng, và chỉ đóng dấu khi
+  handler đã commit. Đây là nguồn tạm khi cụm chưa có Debezium (ADR-06/32); handler chỉ thấy `Event`, nên thay bằng
+  consumer Kafka là việc cục bộ của `events.py`.
+- **Trả lời.** `questions.answer_question` chạy như `svc_qa` trong tổ chức của sự kiện: ghi `qa.plan` (Plan IR của
+  R0-10), `qa.answer`, chuyển câu hỏi `received → refused/answered`; luồng `GET /v1/questions/{id}/stream` suy sự
+  kiện từ đó. Handler idempotent: nhận lại sự kiện thì không làm gì.
+- **Giới hạn hiện tại.** Bộ biên dịch ngữ nghĩa và bộ thực thi vẫn ở runtime cũ, nên câu hỏi kết thúc bằng lời từ
+  chối có mã (`INSUFFICIENT_EVIDENCE` khi Data Space chưa có data product đang hoạt động, `TOOL_UNAVAILABLE` khi đã
+  có), không bao giờ bằng con số không truy được (BR-171). Chuyển lõi agent sang đây là việc R1.
+
+Chạy: `python -m services.worker_agent.main`; suite `worker_agent` (unit + tích hợp trên DDL thật).

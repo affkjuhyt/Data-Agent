@@ -81,10 +81,10 @@ jobs:
         # installed every query result is Any and warn_return_any reports false positives. Installed
         # here, after the loop above, so the legacy surfaces keep their own baseline.
         run: |
-          pip install -r backend/services/api/requirements.txt
+          pip install -r backend/services/api/requirements.txt -r backend/services/worker_agent/requirements.txt
           mypy --disallow-untyped-defs --disallow-any-generics \
                --ignore-missing-imports --follow-imports=silent \
-               backend/services/api
+               backend/services/api backend/services/worker_agent
 
   # One job per service suite, in that service's Python with only its own
   # requirements.txt: no single environment can import every service (the
@@ -136,6 +136,10 @@ jobs:
           - suite: api
             python: "3.12"
             install: -r backend/services/api/requirements.txt
+          # The worker-agent block (ADR-28): the agent execution side of /v1/questions.
+          - suite: worker_agent
+            python: "3.12"
+            install: -r backend/services/worker_agent/requirements.txt
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -222,6 +226,9 @@ jobs:
             python: "3.12"
             install: -r backend/services/api/requirements.txt
           # The V3 DDL (backend/alembic/sql) and the ORM that mirrors it, on PostgreSQL 16.
+          - suite: worker_agent
+            python: "3.12"
+            install: -r backend/services/worker_agent/requirements.txt
           - suite: migrate
             python: "3.11"
             install: '"sqlalchemy[asyncio]==2.0.35"'

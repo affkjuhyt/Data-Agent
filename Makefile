@@ -5,9 +5,14 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 PY_IMAGE ?= localhost:5000/dataagent/workflow_runtime:latest
 DOCKER_RUN_PY = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(PY_IMAGE)
+# ruff, mypy and import-linter preinstalled (tests/dev-tools.Dockerfile): a cache hit after
+# the first build, so lint runs in seconds instead of re-installing tools from PyPI each time.
+DEV_TOOLS_IMAGE ?= dataagent/dev-tools:local
+DOCKER_RUN_DEV = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(DEV_TOOLS_IMAGE)
 
 .PHONY: help lint type test test-unit test-integration test-changed deadcode frontend-lint frontend-test ci e2e \
-        deploy fmt bench bench-gate bench-e2e mock-api contract-compat design-checklist design-audit api-types
+        deploy fmt bench bench-gate bench-e2e mock-api contract-compat design-checklist design-audit api-types dev-tools fmt-files \
+        type-v3 lint-imports
 
 help:  ## List targets
 	@grep -hE '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -15,14 +20,28 @@ help:  ## List targets
 # The tree is not ruff-clean, so lint fails only on findings added since the
 # merge-base with LINT_BASE (tests/ruff_ratchet.py), working-tree edits included.
 LINT_BASE ?= main
-lint:  ## ruff: no new findings or unformatted files since LINT_BASE (same as CI python-lint)
+dev-tools:  ## build the cached lint/type image (tests/dev-tools.Dockerfile); other targets call it
+	@docker build -q -f tests/dev-tools.Dockerfile -t $(DEV_TOOLS_IMAGE) . >/dev/null
+
+lint: dev-tools  ## ruff: no new findings or unformatted files since LINT_BASE (same as CI python-lint)
 	@base_dir=$$(mktemp -d) && trap 'rm -rf "$$base_dir"' EXIT && \
 	  git archive $$(git merge-base HEAD $(LINT_BASE)) -- pyproject.toml '*.py' | tar -x -C "$$base_dir" && \
-	  docker run --rm --user 0 -v "$(PWD):/src" -v "$$base_dir:/base:ro" -w /src $(PY_IMAGE) \
-	    sh -c "pip install -q ruff==0.6.9 && python tests/ruff_ratchet.py --base-dir /base"
+	  docker run --rm --user 0 -v "$(PWD):/src" -v "$$base_dir:/base:ro" -w /src $(DEV_TOOLS_IMAGE) \
+	    python tests/ruff_ratchet.py --base-dir /base
 
-fmt:  ## ruff format + autofix
-	$(DOCKER_RUN_PY) sh -c "pip install -q ruff==0.6.9 && ruff check --fix . && ruff format ."
+fmt: dev-tools  ## ruff format + autofix
+	$(DOCKER_RUN_DEV) sh -c "ruff check --fix . && ruff format ."
+
+# Format and check only the files given, e.g. FILES="backend/services/worker_agent tests/unit/worker_agent".
+fmt-files: dev-tools  ## ruff format + check on FILES only (fast, for the files you touched)
+	$(DOCKER_RUN_DEV) sh -c "ruff format $(FILES) && ruff check --fix $(FILES)"
+
+type-v3: dev-tools  ## strict mypy on the V3 blocks (api, worker_agent), as CI's blocking step
+	$(DOCKER_RUN_DEV) mypy --disallow-untyped-defs --disallow-any-generics \
+	  --ignore-missing-imports --follow-imports=silent backend/services/api backend/services/worker_agent
+
+lint-imports: dev-tools  ## import-linter contracts (.importlinter), as CI
+	docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend $(DEV_TOOLS_IMAGE) lint-imports
 
 type:  ## mypy strict on libs + services (same set as CI python-type)
 	$(DOCKER_RUN_PY) sh -c "pip install -q mypy==2.4.0 && mypy backend/libs backend/services"
@@ -33,9 +52,9 @@ type:  ## mypy strict on libs + services (same set as CI python-type)
 IMAGE_REGISTRY ?= localhost:5000
 UNIT_SUITES ?= workflow_runtime:workflow_runtime kb_backend:kb-backend platform_workers:platform-workers \
                sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker \
-               model_service:model_service contracts:kb-backend indicator_api:indicator-api api:api
+               model_service:model_service contracts:kb-backend indicator_api:indicator-api api:api worker_agent:worker-agent
 INTEGRATION_SUITES ?= workflow_runtime:workflow_runtime sandbox_executor:sandbox_executor \
-                      contracts:kb-backend api:api migrate:migrate
+                      contracts:kb-backend api:api migrate:migrate worker_agent:worker-agent
 # The integration sandbox tests start real sandbox-runner containers; the tag
 # differs per host (tests/integration/_sandbox.py), override it to match.
 SANDBOX_RUNNER_IMAGE ?= dataagent/sandbox-runner:latest
