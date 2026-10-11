@@ -7,7 +7,6 @@ import type {
   GpuLoad,
   Integration,
   IntegrationUsage,
-  Me,
   ModelRoute,
   NewIntegration,
   NewModel,
@@ -17,6 +16,7 @@ import type {
   RoutingLogEntry,
   SystemHealth,
 } from '../lib/v1/adminPlatform';
+import type { Me } from '../lib/v1/me';
 
 /*
  * MSW handlers for lib/v1/adminPlatform.ts. Data is the data drawn in the Figma frames
@@ -599,14 +599,24 @@ const usageFixture = (id: string): IntegrationUsage =>
 
 export function meFixture(): Me {
   return {
+    id: '01920000-0000-7000-8000-00000000a5c1',
+    username: 'yen.dh',
     display_name: 'Đỗ Hải Yến',
     email: 'yen.dh@bank.vn',
-    unit_text: 'Khối Quản lý rủi ro · Phòng Rủi ro tín dụng',
-    role_text: 'Chuyên viên phân tích (nhóm GRP-RISK-ANALYST)',
-    data_space_names: ['Rủi ro tín dụng', 'Kinh doanh bán lẻ'],
-    locale_label: 'Tiếng Việt',
-    format_text: '1.234,56 · ngày dd/mm/yyyy · giờ 24h',
-    timezone: 'Asia/Ho_Chi_Minh',
+    department: 'Khối Quản lý rủi ro · Phòng Rủi ro tín dụng',
+    kind: 'human',
+    default_data_space_id: null,
+    locale: 'vi-VN',
+    time_zone: 'Asia/Ho_Chi_Minh',
+    roles: [
+      {
+        role: { id: '01920000-0000-7000-8000-0000000000a1', code: 'AC01', name: 'Chuyên viên phân tích' },
+        source: 'group_mapping',
+        group_name: 'GRP-RISK-ANALYST',
+        valid_until: null,
+      },
+    ],
+    capabilities: ['ask', 'view_detail', 'run_agent'],
   };
 }
 

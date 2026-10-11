@@ -30,7 +30,7 @@ const fieldClass =
   'rounded-md border border-border-strong bg-card px-da-md py-da-sm text-foreground da-body-small';
 
 export default function ExamplesPage() {
-  const { tenant } = useAppState();
+  const { dataSpace } = useAppState();
   const examples = useV1(listExamples, []);
   const synonyms = useV1(listSynonyms, []);
   const toast = useToast();
@@ -41,7 +41,7 @@ export default function ExamplesPage() {
   const items = examples.data?.items ?? [];
   const selected =
     items.find((e) => e.id === selectedId) ?? items.find((e) => e.status === 'pending') ?? items[0];
-  const scope = tenant?.tenantName ?? 'Data Space này';
+  const scope = dataSpace?.name ?? 'Data Space này';
 
   const suggest = async () => {
     setSuggesting(true);

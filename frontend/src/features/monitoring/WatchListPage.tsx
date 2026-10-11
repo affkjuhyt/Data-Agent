@@ -60,7 +60,7 @@ const dayMonth = (iso: string) => {
 };
 
 export default function WatchListPage() {
-  const { navigate, tenant } = useAppState();
+  const { navigate, dataSpace } = useAppState();
   const monitors = useV1(listMonitors, []);
   const items = monitors.data?.items ?? [];
   const alerting = items.filter((m) => m.state === 'alerting').length;
@@ -78,7 +78,7 @@ export default function WatchListPage() {
         description={
           monitors.data
             ? [
-                `${items.length} theo dõi trong ${tenant?.tenantName ?? 'Data Space này'}`,
+                `${items.length} theo dõi trong ${dataSpace?.name ?? 'Data Space này'}`,
                 `${alerting} đang cảnh báo`,
                 lastCheck ? `kiểm tra gần nhất ${formatTime(lastCheck)}` : null,
               ]

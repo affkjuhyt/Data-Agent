@@ -278,7 +278,9 @@ describe('settings and channel rules', () => {
   it('shows the profile from the directory', async () => {
     renderPage(<ProfilePage />);
     expect(await screen.findByText('Đỗ Hải Yến')).toBeInTheDocument();
-    expect(screen.getByText('Rủi ro tín dụng, Kinh doanh bán lẻ')).toBeInTheDocument();
+    expect(screen.getByText('Khối Quản lý rủi ro · Phòng Rủi ro tín dụng')).toBeInTheDocument();
+    expect(screen.getByText('Chuyên viên phân tích (nhóm GRP-RISK-ANALYST)')).toBeInTheDocument();
+    expect(screen.getByText('1.234,56 · ngày dd/mm/yyyy · giờ 24h')).toBeInTheDocument();
   });
 
   it('lists the shortcuts', () => {

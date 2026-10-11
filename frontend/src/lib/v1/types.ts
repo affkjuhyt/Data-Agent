@@ -285,13 +285,18 @@ export interface GlossaryTerm {
 
 /* ─── Quản trị: org.data_space, org.app_user, governance.model_config ── */
 
+/** GET /v1/data-spaces (A3 · Quản trị): a space the caller is a member of, "kèm vai trò của người gọi". */
 export interface DataSpace {
   id: Uuid;
   code: string;
   name: string;
+  description: string | null;
   status: 'draft' | 'onboarding' | 'active' | 'read_only' | 'archived';
-  /** "kèm vai trò của người gọi" */
-  my_roles: string[];
+  steward_id: Uuid;
+  opened_at: string | null;
+  my_roles: { id: Uuid; code: string; name: string }[];
+  /** What those roles add inside the space, on top of the organisation-wide capabilities (GET /v1/me). */
+  my_capabilities: string[];
 }
 
 export interface AppUser {

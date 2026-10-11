@@ -672,10 +672,27 @@ export function dataSpacesFixture(): DataSpace[] {
       id: DS,
       code: 'RUI_RO_TIN_DUNG',
       name: 'Rủi ro tín dụng',
+      description: null,
       status: 'active',
-      my_roles: ['analyst', 'steward'],
+      steward_id: 'u-steward',
+      opened_at: '2026-09-01T08:00:00+07:00',
+      my_roles: [
+        { id: 'role-ac01', code: 'AC01', name: 'Chuyên viên phân tích' },
+        { id: 'role-ac03', code: 'AC03', name: 'Người phụ trách dữ liệu' },
+      ],
+      my_capabilities: ['ask', 'steward', 'view_detail'],
     },
-    { id: 'ds-ban-le', code: 'BAN_LE', name: 'Bán lẻ', status: 'active', my_roles: ['analyst'] },
+    {
+      id: 'ds-ban-le',
+      code: 'BAN_LE',
+      name: 'Bán lẻ',
+      description: null,
+      status: 'active',
+      steward_id: 'u-steward',
+      opened_at: '2026-09-15T08:00:00+07:00',
+      my_roles: [{ id: 'role-ac01', code: 'AC01', name: 'Chuyên viên phân tích' }],
+      my_capabilities: ['ask'],
+    },
   ];
 }
 

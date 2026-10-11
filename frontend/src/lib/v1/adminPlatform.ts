@@ -308,23 +308,6 @@ export const addIntegration = (body: NewIntegration) =>
 
 /* ─── Cài đặt cá nhân (UC-11-01, UC-08-07) ─────────────────────────────── */
 
-/** GET /v1/me. Identity comes from Active Directory; only the display format is the user's. */
-export interface Me {
-  display_name: string;
-  email: string;
-  /** PROPOSAL: "Khối Quản lý rủi ro · Phòng Rủi ro tín dụng" */
-  unit_text: string;
-  /** PROPOSAL: "Chuyên viên phân tích (nhóm GRP-RISK-ANALYST)" */
-  role_text: string;
-  data_space_names: string[];
-  locale_label: string;
-  /** PROPOSAL: "1.234,56 · ngày dd/mm/yyyy · giờ 24h" */
-  format_text: string;
-  timezone: string;
-}
-
-export const getMe = () => v1Get<Me>('/me');
-
 export type NotificationChannel = 'in_app' | 'teams' | 'zalo' | 'email' | 'digest';
 
 /** PROPOSAL: GET/PUT /v1/me/notification-preferences. */

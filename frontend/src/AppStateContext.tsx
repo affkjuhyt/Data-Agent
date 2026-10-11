@@ -1,15 +1,12 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import type { Role, TenantContext, User, Environment } from './types';
-import { apiGet } from './lib/apiClient';
+import type { DataSpaceRef, User } from './types';
 import { useAuth } from './lib/AuthProvider';
-import { pickTenant, type Tenant } from './lib/tenants';
+import { setDataSpace as setV1DataSpace } from './lib/v1/client';
 
 interface AppStateContextType {
-  tenant: TenantContext;
-  setTenant: (tenant: Partial<TenantContext>) => void;
-  /** Tenants the signed-in user belongs to (GET /api/auth/me/tenants). */
-  tenants: Tenant[];
-  tenantsLoading: boolean;
+  /** The Data Space chosen in the top bar; null = Toàn tổ chức (no X-Data-Space, A1.2). */
+  dataSpace: DataSpaceRef | null;
+  setDataSpace: (space: DataSpaceRef | null) => void;
   user: User;
 
   /* Navigation routing — single source of truth */
@@ -91,7 +88,7 @@ const REDIRECT_MAP: Record<string, Redirect> = {
 };
 
 /** Everyone lands on Trang chủ (v3.1): it is the start of every role's day. */
-export const landingFor = (_role: Role): { module: string; sub?: string } => ({ module: 'home' });
+export const landingFor = (): { module: string; sub?: string } => ({ module: 'home' });
 
 export const resolveRoute = (module: string, sub?: string): { module: string; sub?: string } => {
   const r = REDIRECT_MAP[module];
@@ -131,76 +128,23 @@ const writeRoute = (module: string, sub?: string, id?: string) => {
   }
 };
 
-/* ─── Tenant persistence ───────────────────────────────────────────── */
-const TENANT_KEY = 'app:tenantId';
-const ENV_KEY = 'app:environment';
-const ENV_VALUES: Environment[] = ['DEV', 'UAT', 'STAGING', 'PROD'];
-
-const readStorage = (key: string): string | null => {
-  try { return typeof window !== 'undefined' ? window.localStorage.getItem(key) : null; } catch { return null; }
-};
-const writeStorage = (key: string, value: string | null) => {
-  try {
-    if (typeof window === 'undefined') return;
-    if (value === null) window.localStorage.removeItem(key);
-    else window.localStorage.setItem(key, value);
-  } catch { /* storage unavailable — selection is session-only */ }
-};
-
-/** Environment pill choice survives reloads; defaults to PROD. */
-export const initialEnvironment = (stored: string | null): Environment =>
-  ENV_VALUES.includes(stored as Environment) ? (stored as Environment) : 'PROD';
-
 export const AppStateProvider = ({ children }: { children: ReactNode }) => {
-  const [tenant, setTenantState] = useState<TenantContext>(() => ({
-    tenantId: null,
-    tenantName: null,
-    slug: null,
-    environment: initialEnvironment(readStorage(ENV_KEY)),
-  }));
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [tenantsLoading, setTenantsLoading] = useState(false);
+  const [dataSpace, setDataSpaceState] = useState<DataSpaceRef | null>(null);
+  const setDataSpace = useCallback((space: DataSpaceRef | null) => {
+    // Every v1 call reads the header from the client, so it changes with the selection.
+    setV1DataSpace(space?.id ?? null);
+    setDataSpaceState(space);
+  }, []);
 
-  const { user: authUser } = useAuth();
+  const { user: authUser, me } = useAuth();
   const user: User = {
-    id:    authUser?.id    ?? 'u_anon',
-    name:  authUser?.name  ?? authUser?.email ?? 'User',
-    email: authUser?.email ?? '',
-    role:  (() => {
-      const normalized = authUser?.roles?.map(r => r.toUpperCase().replace(/-/g, '_')) ?? [];
-      if (normalized.includes('PLATFORM_ADMIN')) return 'PLATFORM_ADMIN';
-      if (normalized.includes('AI_ENGINEER')) return 'AI_ENGINEER';
-      if (normalized.includes('EXECUTIVE_VIEWER')) return 'EXECUTIVE';
-      return 'AI_ENGINEER';
-    })() as Role,
+    id:    me?.id ?? authUser?.id ?? 'u_anon',
+    name:  me?.display_name ?? authUser?.name ?? authUser?.email ?? 'User',
+    email: me?.email ?? authUser?.email ?? '',
   };
 
-  /* Tenants — loaded once the user is authenticated */
-  const authUserId = authUser?.id ?? null;
-  useEffect(() => {
-    if (!authUserId) return;
-    let cancelled = false;
-    setTenantsLoading(true);
-    apiGet<Tenant[]>('/api/auth/me/tenants')
-      .then(list => {
-        if (cancelled) return;
-        const safe = Array.isArray(list) ? list : [];
-        setTenants(safe);
-        const chosen = pickTenant(safe, readStorage(TENANT_KEY));
-        setTenantState(prev => ({
-          ...prev,
-          tenantId: chosen?.id ?? null,
-          tenantName: chosen?.name ?? null,
-          slug: chosen?.slug ?? null,
-        }));
-      })
-      .catch(() => { if (!cancelled) setTenants([]); })
-      .finally(() => { if (!cancelled) setTenantsLoading(false); });
-    return () => { cancelled = true; };
-  }, [authUserId]);
-
   /* Routing state — initialized from URL hash, else by role */
-  const initial = parseRoute(landingFor(user.role));
+  const initial = parseRoute(landingFor());
   const [activeModule, _setActiveModule] = useState<string>(initial.module);
   const [subTab, _setSubTabState] = useState<Record<string, string>>(
     initial.sub ? { [initial.module]: initial.sub } : {},
@@ -246,7 +190,7 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   /* Listen for back/forward navigation */
   useEffect(() => {
     const onRouteChange = () => {
-      const { module, sub, id } = parseRoute(landingFor(user.role));
+      const { module, sub, id } = parseRoute(landingFor());
       _setActiveModule(module);
       setRouteId(id);
       _setSubTabState(prev => {
@@ -264,19 +208,11 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  const setTenant = useCallback((newTenant: Partial<TenantContext>) => {
-    if (newTenant.tenantId !== undefined) writeStorage(TENANT_KEY, newTenant.tenantId);
-    if (newTenant.environment !== undefined) writeStorage(ENV_KEY, newTenant.environment);
-    setTenantState(prev => ({ ...prev, ...newTenant }));
-  }, []);
-
   return (
     <AppStateContext.Provider
       value={{
-        tenant,
-        setTenant,
-        tenants,
-        tenantsLoading,
+        dataSpace,
+        setDataSpace,
         user,
         activeModule,
         setActiveModule,

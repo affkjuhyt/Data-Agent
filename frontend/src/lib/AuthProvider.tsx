@@ -1,10 +1,10 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import keycloak from './keycloak';
-import { fetchMyStatus, submitProfile } from './useMicrosoftApprovals';
+import { V1Error } from './v1/client';
+import { getMe, type Me } from './v1/me';
 import { AuthScreen } from '../features/auth/AuthScreen';
 import { LoginPage } from '../features/auth/LoginPage';
-import { PendingApproval } from '../features/auth/PendingApproval';
-import { ProfileSetup } from '../features/auth/ProfileSetup';
+import { NoAccount } from '../features/auth/NoAccount';
 import { Button } from '../design-system/Button';
 import { Notice } from '../design-system/Notice';
 
@@ -12,19 +12,20 @@ interface AuthUser {
   id:    string;
   email: string;
   name:  string;
-  roles: string[];
   token: string;
 }
 
 interface AuthCtx {
   user:    AuthUser | null;
+  /** The user's account in the organisation (GET /v1/me); null before it loads. */
+  me:      Me | null;
   loading: boolean;
   logout:  () => void;
 }
 
-type ApprovalGateStatus = 'checking' | 'active' | 'needs_profile' | 'pending_approval' | 'rejected';
+type AccountState = 'checking' | 'active' | 'no_account';
 
-const Ctx = createContext<AuthCtx>({ user: null, loading: true, logout: () => {} });
+const Ctx = createContext<AuthCtx>({ user: null, me: null, loading: true, logout: () => {} });
 
 export const useAuth = () => useContext(Ctx);
 
@@ -35,7 +36,6 @@ const buildUser = (): AuthUser | null => {
     id:    p.sub,
     email: p.email ?? '',
     name:  p.name ?? p.preferred_username ?? '',
-    roles: p.realm_access?.roles ?? [],
     token: keycloak.token ?? '',
   };
 };
@@ -44,22 +44,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser]               = useState<AuthUser | null>(null);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState<string | null>(null);
-  const [gateStatus, setGateStatus]   = useState<ApprovalGateStatus>('checking');
-  const [gateSince, setGateSince]     = useState<string | undefined>(undefined);
+  const [account, setAccount]         = useState<AccountState>('checking');
+  const [me, setMe]                   = useState<Me | null>(null);
 
-  const checkApprovalGate = async () => {
+  // Roles and capabilities live in org.* and change without a re-login, so they come from the
+  // API, never from the token. 403 is "no active account here"; anything else is an outage the
+  // user can retry, never a reason to let them in without capabilities.
+  const loadAccount = async () => {
+    setAccount('checking');
     try {
-      const { status, since } = await fetchMyStatus();
-      setGateSince(since);
-      setGateStatus(status as ApprovalGateStatus);
+      setMe(await getMe());
+      setAccount('active');
+      setError(null);
     } catch (err) {
-      // The Microsoft-SSO approval API (auth_api, /api/auth/me) is optional: it is
-      // not part of the KB-only stacks (auth-lite / e2e), where Kong routes only
-      // /api/data, /api/knowledge, /api/fleet. If it is unreachable, fail OPEN —
-      // skip the approval gate rather than locking the whole app behind an error
-      // screen. When auth_api IS deployed and routed, the gate works as designed.
-      console.warn('Approval gate unavailable — skipping (auth_api not deployed?):', err);
-      setGateStatus('active');
+      if (err instanceof V1Error && err.status === 403) {
+        setAccount('no_account');
+        return;
+      }
+      setError(err instanceof Error ? err.message : 'Không tải được tài khoản.');
     }
   };
 
@@ -71,7 +73,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if ((keycloak as any).didInitialize) {
       const u = buildUser();
       setUser(u);
-      if (u) checkApprovalGate().finally(() => setLoading(false));
+      if (u) loadAccount().finally(() => setLoading(false));
       else setLoading(false);
       return;
     }
@@ -87,7 +89,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (authenticated) {
           const u = buildUser();
           setUser(u);
-          if (u) await checkApprovalGate();
+          if (u) await loadAccount();
         }
       })
       .catch(err => {
@@ -124,46 +126,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   if (!user) return <LoginPage />;
 
-  if (gateStatus === 'needs_profile') {
+  if (account === 'checking') {
     return (
-      <ProfileSetup
-        email={user.email}
-        onSubmit={async (role, tenantId) => {
-          await submitProfile(role, tenantId);
-          await checkApprovalGate();
-        }}
-      />
-    );
-  }
-
-  if (gateStatus === 'pending_approval') {
-    return (
-      <PendingApproval
-        email={user.email}
-        since={gateSince}
-        onRetry={() => {
-          setGateStatus('checking');
-          checkApprovalGate();
-        }}
-      />
-    );
-  }
-
-  if (gateStatus === 'rejected') {
-    return (
-      <AuthScreen icon="lock" title="Không được cấp quyền">
-        <p className="text-center text-muted-foreground da-body">
-          Quản trị đã từ chối yêu cầu truy cập của tài khoản Microsoft này.
-        </p>
-        <Button kind="secondary" onClick={() => keycloak.logout({ redirectUri: window.location.origin })}>
-          Đăng xuất
-        </Button>
+      <AuthScreen icon="lock" title="Đang đăng nhập…">
+        <p className="text-center text-muted-foreground da-body">Đang tải tài khoản của bạn.</p>
       </AuthScreen>
     );
   }
 
+  if (account === 'no_account') return <NoAccount email={user.email} onRetry={loadAccount} />;
+
   return (
-    <Ctx.Provider value={{ user, loading, logout }}>
+    <Ctx.Provider value={{ user, me, loading, logout }}>
       {children}
     </Ctx.Provider>
   );

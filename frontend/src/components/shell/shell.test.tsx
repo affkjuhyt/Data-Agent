@@ -143,7 +143,6 @@ describe('railFor', () => {
       { label: 'Riêng', items: [{ id: 'ONLY', label: 'Chỉ lãnh đạo', requires: 'exec_vault' }] },
     ];
     expect(railFor(groups, [])?.map((g) => g.items.map((i) => i.id))).toEqual([['ASK']]);
-    // Keycloak may spell the role with a hyphen.
-    expect(railFor(groups, ['EXEC-VAULT'])?.flatMap((g) => g.items.map((i) => i.id))).toEqual(['ASK', 'VAULT', 'ONLY']);
+    expect(railFor(groups, ['exec_vault'])?.flatMap((g) => g.items.map((i) => i.id))).toEqual(['ASK', 'VAULT', 'ONLY']);
   });
 });

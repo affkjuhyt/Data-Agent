@@ -20,6 +20,8 @@ import type {
   UserGroup,
 } from '../lib/v1/adminAccess';
 
+
+const STEWARD_ROLE = { id: 'role-ac03', code: 'AC03', name: 'Người phụ trách dữ liệu' };
 /*
  * MSW handlers for Quản trị · người, quyền và tuân thủ (lib/v1/adminAccess.ts), data taken from
  * the P11 frames of Figma. State lives in memory: deciding an access request removes it from
@@ -151,7 +153,10 @@ export function dataSpaceSummariesFixture(): DataSpaceSummary[] {
     code,
     name,
     status,
-    my_roles: ['steward'],
+    steward_id: `u-${code.toLowerCase()}`,
+    opened_at: status === 'active' ? '2026-09-01T08:00:00+07:00' : null,
+    my_roles: [STEWARD_ROLE],
+    my_capabilities: ['ask', 'steward'],
     description,
     steward_name: steward,
     member_count: members,
@@ -558,7 +563,10 @@ export function createAdminAccessHandlers() {
         code: body.name.trim().toUpperCase().replace(/\s+/g, '_'),
         name: body.name.trim(),
         status: body.status,
-        my_roles: ['steward'],
+        steward_id: body.steward_id,
+        opened_at: null,
+        my_roles: [STEWARD_ROLE],
+        my_capabilities: ['ask', 'steward'],
         description: body.description ?? null,
         steward_name: users.find((u) => u.id === body.steward_id)?.display_name ?? '—',
         member_count: 0,

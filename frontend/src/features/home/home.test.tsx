@@ -14,7 +14,7 @@ vi.mock('../../AppStateContext', () => ({
     navigate,
     routeId: '',
     user: { id: 'u-hy', name: 'Đỗ Hải Yến' },
-    tenant: { tenantName: 'Rủi ro tín dụng' },
+    dataSpace: { id: 'ds-rr', name: 'Rủi ro tín dụng' },
   }),
 }));
 

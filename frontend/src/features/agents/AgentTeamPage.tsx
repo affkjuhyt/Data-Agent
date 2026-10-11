@@ -53,7 +53,7 @@ async function runningRunOf(agentId: string): Promise<AgentRun | undefined> {
 }
 
 export default function AgentTeamPage() {
-  const { tenant, navigate } = useAppState();
+  const { dataSpace, navigate } = useAppState();
   const toast = useToast();
   const agents = useV1(listAgents, []);
   const items = agents.data?.items ?? [];
@@ -96,7 +96,7 @@ export default function AgentTeamPage() {
     const count = (label: string) => statuses.filter((s) => s.label === label).length;
     const spent = items.reduce((sum, a) => sum + Number(a.spent_this_month || 0), 0);
     return [
-      `${items.length} agent trong ${tenant.tenantName ?? 'Data Space này'}`,
+      `${items.length} agent trong ${dataSpace?.name ?? 'Data Space này'}`,
       `${count('Đang chạy')} đang chạy`,
       `${count('Chờ bạn')} chờ bạn`,
       `${count('Lỗi')} lỗi`,

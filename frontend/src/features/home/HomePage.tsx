@@ -35,7 +35,7 @@ function givenName(fullName: string): string {
 }
 
 export default function HomePage() {
-  const { user, tenant, navigate } = useAppState();
+  const { user, dataSpace, navigate } = useAppState();
   const inbox = useV1(() => listInbox({ status: 'open' }), []);
   const runs = useV1(() => listRuns(), []);
   const sources = useV1(listSources, []);
@@ -65,7 +65,7 @@ export default function HomePage() {
         <div className="flex min-w-0 flex-1 flex-col gap-[20px] max-[1279px]:w-full">
           <header className="flex flex-col gap-da-xs">
             <p className="uppercase text-muted-foreground da-overline">
-              {dateLine} · {tenant.tenantName ?? 'Toàn tổ chức'}
+              {dateLine} · {dataSpace?.name ?? 'Toàn tổ chức'}
             </p>
             <h1 className="text-foreground da-heading-1">
               {greetingFor(now.getHours())}, {givenName(user.name)}

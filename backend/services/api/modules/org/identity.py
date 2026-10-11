@@ -43,7 +43,9 @@ ROLE = "svc_org"
 
 # Capabilities only an organisation-wide role (user_role, or a group mapping
 # without a Data Space) can grant.
-ORG_ONLY_CAPABILITIES = frozenset({"admin", "compliance", "audit_read", "exec_vault", "pack_author"})
+ORG_ONLY_CAPABILITIES = frozenset(
+    {"admin", "compliance", "audit_read", "exec_vault", "pack_author"}
+)
 
 
 def still_valid(column: InstrumentedAttribute[datetime.datetime | None]) -> ColumnElement[bool]:

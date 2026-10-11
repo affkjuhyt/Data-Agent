@@ -16,7 +16,7 @@ import { runDuration, shortCost } from './runStatus';
 const navigate = vi.fn();
 let routeId = '';
 vi.mock('../../AppStateContext', () => ({
-  useAppState: () => ({ navigate, routeId, tenant: { tenantName: 'Rủi ro tín dụng' } }),
+  useAppState: () => ({ navigate, routeId, dataSpace: { id: 'ds-rr', name: 'Rủi ro tín dụng' } }),
 }));
 
 const server = setupServer();

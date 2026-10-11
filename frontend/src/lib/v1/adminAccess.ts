@@ -75,7 +75,6 @@ export const inviteUser = (body: Invitation) => v1Send<AdminUser>('POST', '/admi
 /* ─── Data Space, thành viên và quyền (UC-11-08) ─────────────────────── */
 
 export interface DataSpaceSummary extends DataSpace {
-  description: string | null;
   /** PROPOSAL: steward display name (steward_id is the column). */
   steward_name: string;
   /** PROPOSAL: members counted over people, groups' people and agents. */

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { AREA_RAILS, AREAS, firstPageOf, isRailPage, railItemOf } from '../../constants';
 import { AppTopBar } from './AppTopBar';
@@ -7,7 +7,6 @@ import { SideRail } from './SideRail';
 import type { AreaId, RailGroup } from './areas';
 import { useRailCounts } from './useRailCounts';
 import { useShellCounts } from './useShellCounts';
-import { setDataSpace } from '../../lib/v1/client';
 import { listDataSpaces } from '../../lib/v1/api';
 import { useV1 } from '../../lib/v1/useV1';
 import { MobileTabBar, mobileTabOf } from './MobileTabBar';
@@ -19,17 +18,18 @@ import { useAuth } from '../../lib/AuthProvider';
  * 208px rail stay fixed, only the main region scrolls. The rail shows on an area's rail pages;
  * landings and off-rail pages get the full width. ⌘K / Ctrl+K opens the command palette.
  */
-// "exec-vault" and "exec_vault" are the same capability, whichever way Keycloak spells it.
-const normalise = (role: string) => role.toLowerCase().replace(/-/g, '_');
-
-/** The rail groups the viewer may see: items needing a capability they lack are left out. */
-export function railFor(groups: RailGroup[] | undefined, roles: string[]): RailGroup[] | undefined {
+/**
+ * The rail groups the viewer may see: items needing a capability they lack are left out.
+ * Capabilities are A1.2's (`exec_vault`, `admin`, …): GET /v1/me's organisation-wide ones plus
+ * what the chosen Data Space adds. The rail only hides links; the API still refuses on its own.
+ */
+export function railFor(groups: RailGroup[] | undefined, capabilities: string[]): RailGroup[] | undefined {
   if (!groups) return undefined;
-  const held = new Set(roles.map(normalise));
+  const held = new Set(capabilities);
   return groups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => !item.requires || held.has(normalise(item.requires))),
+      items: group.items.filter((item) => !item.requires || held.has(item.requires)),
     }))
     .filter((group) => group.items.length > 0);
 }
@@ -42,12 +42,17 @@ export function AppShell({
   /** The space picked on "v3.1 · Chọn Data Space" before the shell opened; '' = Toàn tổ chức. */
   initialSpaceId?: string;
 }) {
-  const { activeModule, subTab, navigate, setSubTab, user } = useAppState();
-  const { logout, user: authUser } = useAuth();
+  const { activeModule, subTab, navigate, setSubTab, user, dataSpace, setDataSpace } = useAppState();
+  const { logout, me } = useAuth();
   const area = activeModule as AreaId;
   const page = subTab[area] ?? firstPageOf(area);
+  // The Data Space switcher ("v3.1 · Chọn Data Space"): the spaces the viewer belongs to
+  // (GET /v1/data-spaces). "Toàn tổ chức" sends no X-Data-Space; choosing a space sets the
+  // header for every v1 call and remounts the page so it reloads for that space.
+  const spaces = useV1(listDataSpaces, []);
+  const chosen = spaces.data?.items.find((ds) => ds.id === dataSpace?.id);
   const rail = isRailPage(area, page)
-    ? railFor(AREA_RAILS[area], authUser?.roles ?? [])
+    ? railFor(AREA_RAILS[area], [...(me?.capabilities ?? []), ...(chosen?.my_capabilities ?? [])])
     : undefined;
   // Only the area whose rail is on screen; a landing page draws no rail and loads no counts.
   const railCounts = useRailCounts(rail ? area : undefined);
@@ -55,23 +60,25 @@ export function AppShell({
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
-  // The Data Space switcher ("v3.1 · Chọn Data Space"): the spaces the viewer belongs to
-  // (GET /v1/data-spaces). "Toàn tổ chức" sends no X-Data-Space; choosing a space sets the
-  // header for every v1 call and remounts the page so it reloads for that space.
-  const spaces = useV1(listDataSpaces, []);
-  const [dataSpaceId, setDataSpaceId] = useState<string>(initialSpaceId);
+  const pickedBeforeShell = useRef(initialSpaceId);
   useEffect(() => {
-    setDataSpace(initialSpaceId || null);
-  }, [initialSpaceId]);
+    const id = pickedBeforeShell.current;
+    if (!id) return;
+    const ds = spaces.data?.items.find((s) => s.id === id);
+    if (ds) {
+      pickedBeforeShell.current = '';
+      setDataSpace({ id: ds.id, name: ds.name });
+    }
+  }, [spaces.data, setDataSpace]);
   const chooseSpace = (id: string) => {
-    setDataSpace(id || null);
-    setDataSpaceId(id);
+    const ds = spaces.data?.items.find((s) => s.id === id);
+    setDataSpace(ds ? { id: ds.id, name: ds.name } : null);
   };
   const spaceOptions = [
     { id: '', name: 'Toàn tổ chức' },
     ...(spaces.data?.items ?? []).map((ds) => ({ id: ds.id, name: ds.name })),
   ];
-  const spaceName = spaceOptions.find((o) => o.id === dataSpaceId)?.name ?? 'Toàn tổ chức';
+  const spaceName = dataSpace?.name ?? 'Toàn tổ chức';
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -113,7 +120,7 @@ export function AppShell({
         )}
         {/* Under 768px the bottom tab bar covers 57px plus the device inset; the page scrolls above it. */}
         <main
-          key={dataSpaceId}
+          key={dataSpace?.id ?? ''}
           className="min-w-0 flex-1 overflow-y-auto max-[767px]:pb-[calc(57px+env(safe-area-inset-bottom))]"
         >
           {children}

@@ -10,7 +10,7 @@ import { createExampleHandlers } from '../../mocks/examples';
 import ExamplesPage from './ExamplesPage';
 
 vi.mock('../../AppStateContext', () => ({
-  useAppState: () => ({ navigate: vi.fn(), tenant: { tenantName: 'Rủi ro tín dụng' } }),
+  useAppState: () => ({ navigate: vi.fn(), dataSpace: { id: 'ds-rr', name: 'Rủi ro tín dụng' } }),
 }));
 
 const server = setupServer();

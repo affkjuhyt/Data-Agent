@@ -44,9 +44,7 @@ describe('navigation', () => {
   });
 
   it('lands everyone on Trang chủ', () => {
-    expect(landingFor('EXECUTIVE')).toEqual({ module: 'home' });
-    expect(landingFor('AI_ENGINEER')).toEqual({ module: 'home' });
-    expect(landingFor('PLATFORM_ADMIN')).toEqual({ module: 'home' });
+    expect(landingFor()).toEqual({ module: 'home' });
   });
 
   it('opens Agents on Đội agent and the other areas on their landing', () => {
