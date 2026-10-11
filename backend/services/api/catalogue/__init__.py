@@ -21,6 +21,7 @@ from services.api.kernel.auth import CAPABILITIES, require
 from services.api.kernel.problems import ProblemBody
 
 CATALOGUE_FILE = Path(__file__).with_name("a2_endpoints.json")
+A3_FILE = Path(__file__).with_name("a3_contract.json")
 
 # "Quyền" values that name how the caller authenticates, not a capability (A1.2).
 ANY_USER = "—"
@@ -59,6 +60,27 @@ def catalogue() -> dict[str, Any]:
     with CATALOGUE_FILE.open(encoding="utf-8") as f:
         data: dict[str, Any] = json.load(f)
     return data
+
+
+@cache
+def a3_errors() -> dict[str, list[tuple[int, str]]]:
+    """ "METHOD path" → the errors A3 lists for it, as (status, code)."""
+    with A3_FILE.open(encoding="utf-8") as f:
+        data: dict[str, Any] = json.load(f)
+    return {
+        key: [(int(status), str(code)) for status, code in row["errors"]]
+        for key, row in data["endpoints"].items()
+    }
+
+
+def _responses(method: str, path: str) -> dict[int | str, dict[str, Any]]:
+    """The common problem responses plus the statuses A3 names for this endpoint (413, 423,
+    503, …), so the generated spec says what the route answers."""
+    out = dict(PROBLEM_RESPONSES)
+    for status, code in a3_errors().get(f"{method.upper()} {path}", []):
+        if status not in out:
+            out[status] = {**_PROBLEM, "description": code}
+    return out
 
 
 @cache
@@ -129,7 +151,7 @@ def endpoint(
         "operation_id": operation_id,
         "tags": list(dict.fromkeys(r.group for r in rows)),
         "summary": ep.summary,
-        "responses": PROBLEM_RESPONSES,
+        "responses": _responses(method, path),
         "openapi_extra": {
             "x-use-cases": [f"UC-{u}" for u in ep.use_cases],
             "x-capability": list(ep.capability),

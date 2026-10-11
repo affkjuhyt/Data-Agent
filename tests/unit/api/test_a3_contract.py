@@ -29,9 +29,16 @@ A3 = json.loads(
 
 
 def _resolve(schema: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any]:
-    while "$ref" in schema:
-        schema = spec["components"]["schemas"][schema["$ref"].rsplit("/", 1)[1]]
-    return schema
+    while True:
+        if "$ref" in schema:
+            schema = spec["components"]["schemas"][schema["$ref"].rsplit("/", 1)[1]]
+            continue
+        # An optional body (`Model | None = None`) is anyOf [the model, null].
+        options = [o for o in schema.get("anyOf", []) if o.get("type") != "null"]
+        if len(options) == 1:
+            schema = options[0]
+            continue
+        return schema
 
 
 def _body(op: dict[str, Any], spec: dict[str, Any]) -> tuple[set[str], set[str]]:
@@ -71,7 +78,9 @@ def contract_gaps(spec: dict[str, Any], groups: frozenset[str]) -> list[str]:
             gaps.append(f"{where}: query lacks {sorted(set(row['query']) - _query(op))}")
         want_statuses = {status for status, _ in row["errors"]}
         if want_statuses - _responses(op):
-            gaps.append(f"{where}: responses lack statuses {sorted(want_statuses - _responses(op))}")
+            gaps.append(
+                f"{where}: responses lack statuses {sorted(want_statuses - _responses(op))}"
+            )
     return gaps
 
 

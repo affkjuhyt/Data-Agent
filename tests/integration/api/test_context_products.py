@@ -594,3 +594,52 @@ async def test_data_product_reads_stay_in_the_data_space(ds: Space) -> None:
             f"/v1/data-products/{product}?version=2", headers=ds.headers("analyst")
         )
         assert wrong_version.status_code == 404
+
+
+async def test_the_creator_cannot_be_the_owner(ds: Space) -> None:
+    async with client(ds) as api:
+        mine = await api.post(
+            "/v1/data-products",
+            json=_body(ds, owner_id=str(ds.users["steward"]), steward_id=str(ds.users["owner"])),
+            headers=ds.headers("steward"),
+        )
+        assert mine.status_code == 422
+        assert mine.json()["errors"][0]["field"] == "owner_id"
+        product = (await _create(api, ds))["id"]
+        swap = await api.patch(
+            f"/v1/data-products/{product}",
+            json={"owner_id": str(ds.users["steward"]), "steward_id": str(ds.users["owner"])},
+            headers=ds.headers("steward"),
+        )
+        assert swap.status_code == 422
+
+
+async def test_personal_data_raises_the_product_classification(ds: Space) -> None:
+    ds.seed.row(
+        "catalog.column_meta",
+        org_id=ds.org,
+        dataset_id=ds.dataset,
+        dataset_version=1,
+        name="so_cccd",
+        ordinal=1,
+        data_type="text",
+        normalized_type="string",
+        pii_label="national_id",
+    )
+    async with client(ds) as api:
+        product = (await _create(api, ds))["id"]
+        added = await api.post(
+            f"/v1/data-products/{product}/members",
+            json={
+                "member_kind": "dataset",
+                "member_ref": str(ds.dataset),
+                "role": "primary",
+                "sla_kind": "max_age",
+                "sla_max_age": "P1D",
+            },
+            headers=ds.headers("steward"),
+        )
+        assert added.status_code == 201, added.text
+        assert added.json()["classification"] == "confidential"
+        fetched = await api.get(f"/v1/data-products/{product}", headers=ds.headers("analyst"))
+        assert fetched.json()["classification"] == "confidential"

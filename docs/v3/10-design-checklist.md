@@ -10,7 +10,7 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 0 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 93 có test nhắc mã AC | todo 778 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 94 có test nhắc mã AC | todo 778 |
 | Endpoint A2 (tab 4) | 378 (A2 ghi 379 dòng; POST /v1/data-products ở hai nhóm) | 364 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 219 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 158 có mã nhắc tới | todo 195 |
@@ -172,7 +172,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-12-01 | Cấp quyền cho client | todo | 2/2 | 1/1 | 0/5 |  |
+| UC-12-01 | Cấp quyền cho client | todo | 2/2 | 1/1 | 1/5 |  |
 | UC-12-02 | Gọi công cụ qua MCP | todo | 1/1 | 2/2 | 0/6 |  |
 | UC-12-03 | Nhận sự kiện qua webhook | todo | 2/2 | 2/2 | 1/5 |  |
 | UC-12-04 | Theo dõi sử dụng tích hợp | todo | 1/1 | 1/1 | 0/4 |  |
@@ -303,7 +303,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-45 | UC-11-02 | todo |  |
 | BR-46 | UC-11-02 | todo |  |
 | BR-47 | UC-11-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/sql/dataagent_audit.sql`, `backend/libs/dataagent_db/models/audit.py` +8 |
-| BR-48 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-48 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-49 | UC-12-02 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/integration/mcp.py` |
 | BR-50 | UC-12-02 | todo |  |
 | BR-51 | UC-02-06 | todo |  |
@@ -435,7 +435,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-177 | UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +14 |
 | BR-179 | UC-01-05, UC-07-14, UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/schema/csdl/definitions.json` +13 |
-| BR-180 | UC-01-01, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/governance.py` +11 |
+| BR-180 | UC-01-01, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/governance.py` +12 |
 | BR-181 | UC-01-07, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/qa.py` +8 |
 | BR-182 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-183 | UC-08-08, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/dataagent_db/models/monitor.py` +8 |
@@ -1715,13 +1715,13 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-12-01 Cấp quyền cho client · 0/6</summary>
+<details><summary>UC-12-01 Cấp quyền cho client · 1/6</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-12-01-01 | Chính | Cho trợ lý văn phòng đã được duyệt kết nối / Khi AC05 cấp client MCP chạy thay người dùng với ask_question và get_metric_definition, Data Space Tín dụng, hạn mức 60 lời gọi mỗi phút và 5.000 mỗi ngày, hết hạn 31/12/20… | API, CSDL, E2E | todo |  |
 | AC-12-01-02 | Thay thế | Cho client đang hoạt động / Khi AC05 xoay bí mật / Thì bí mật mới dùng được ngay, bí mật cũ còn lấy được token ở giờ thứ 23 và bị từ chối ở giờ thứ 25 | API | todo |  |
-| AC-12-01-03 | Ngoại lệ | Cho client đang có token còn hạn / Khi AC05 thu hồi khẩn / Thì api_client chuyển revoked và lời gọi kế tiếp bằng token đó nhận 401 | API, CSDL | todo |  |
+| AC-12-01-03 | Ngoại lệ | Cho client đang có token còn hạn / Khi AC05 thu hồi khẩn / Thì api_client chuyển revoked và lời gọi kế tiếp bằng token đó nhận 401 | API, CSDL | todo | `tests/integration/api/test_mcp.py` |
 | AC-12-01-04 | Quy tắc | Cho client chạy thay một AC01 chỉ có quyền chi nhánh Hà Nội / Khi gọi ask_question hỏi dư nợ toàn quốc / Thì kết quả chỉ có số của chi nhánh Hà Nội và query_run ghi danh tính người dùng đó | API, CSDL | todo |  |
 | AC-12-01-05 | Quy tắc | Cho client có identity_mode = own_identity / Khi AC05 cấp công cụ ask_question / Thì bị từ chối; cấp get_metric_definition thì được | API | todo |  |
 | AC-12-01-06 | Quy tắc | Cho api_client có expires_at 13 tháng sau ngày cấp / Khi ghi / Thì CHECK api_client_expires_at_created_at_check từ chối; client hết hạn 31/12/2026 thì AC05 nhận nhắc ngày 01/12/2026 và màn hiện “Sắp hết hạn” | CSDL, API | todo |  |

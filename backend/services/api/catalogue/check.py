@@ -37,6 +37,13 @@ COMPLETE_GROUPS: frozenset[str] = frozenset(
         "Xung đột",
         "Theo dõi, báo cáo, thông báo",
         "Dự báo",
+        "Nguồn và danh mục",
+        "Nạp dữ liệu",
+        "Tài liệu",
+        "Gói ngành",
+        "Kỳ chốt",
+        "Thu thập",
+        "Lớp riêng lãnh đạo",
     }
 )
 

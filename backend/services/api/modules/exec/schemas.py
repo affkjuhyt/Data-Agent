@@ -228,7 +228,8 @@ class MemoryItemCreate(BaseModel):
     kind: MemoryKind
     content_ct: Bytes
     wrapped_dek: Bytes
-    content_version: int = Field(default=1, ge=1, le=32_767)
+    # Part of the ciphertext's AAD, so the client states the version it encrypted (A3).
+    content_version: int = Field(ge=1, le=32_767)
     related_thesis_id: uuid.UUID | None = None
 
 

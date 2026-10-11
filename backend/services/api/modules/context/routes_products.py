@@ -155,9 +155,15 @@ def _rule(detail: str) -> Problem:
     return Problem(422, "business_rule_violated", detail)
 
 
-def _distinct_people(owner_id: uuid.UUID | None, steward_id: uuid.UUID | None) -> None:
+def _distinct_people(
+    owner_id: uuid.UUID | None, steward_id: uuid.UUID | None, creator: uuid.UUID | None
+) -> None:
     if owner_id is not None and owner_id == steward_id:
         raise field_error("steward_id", "Owner and steward are two different people (BR-175).")
+    # The owner approves activation and the approver is not the creator (BR-175): a creator
+    # naming themselves owner would leave the product with no one able to activate it.
+    if owner_id is not None and owner_id == creator:
+        raise field_error("owner_id", "The owner approves activation, so is not the creator.")
 
 
 def _jsonable(value: Any) -> Any:
@@ -359,7 +365,7 @@ async def create_data_product(
     for name in CONTEXT_REQUIRED:
         if getattr(body, name) is None:
             raise field_error(name, f"{name} is required for layer context.", "required")
-    _distinct_people(body.owner_id, body.steward_id)
+    _distinct_people(body.owner_id, body.steward_id, principal.user_id)
     if body.period_to is not None and body.period_from and body.period_to < body.period_from:
         raise field_error("period_to", "period_to is before period_from.")
     async with transaction(ROLE, principal) as session:
@@ -477,7 +483,7 @@ async def update_data_product(
         row = await _product(session, product_id, principal, data_space, lock=True)
         owner = changes.get("owner_id", row.owner_id)
         steward = changes.get("steward_id", row.steward_id)
-        _distinct_people(owner, steward)
+        _distinct_people(owner, steward, row.created_by)
         start = changes.get("period_from", row.period_from)
         end = changes.get("period_to", row.period_to)
         if end is not None and end < start:
@@ -576,7 +582,18 @@ async def _check_member(
             )
         if role == "primary" and sla_kind == "none":
             raise _rule("A primary dataset needs a freshness commitment (BR-175).")
-        return "internal"
+        # BR-180 routes models on the product's classification: a dataset with personal-data
+        # columns is never below confidential; `public` needs AC06's confirmation, not this route.
+        personal = await session.scalar(
+            select(func.count())
+            .select_from(catalog.ColumnMeta)
+            .where(
+                catalog.ColumnMeta.dataset_id == ref,
+                catalog.ColumnMeta.removed_in_version.is_(None),
+                catalog.ColumnMeta.pii_label.is_not(None),
+            )
+        )
+        return "confidential" if personal else "internal"
     if kind == "metric":
         metric = await session.scalar(
             select(context.Metric).where(
@@ -610,17 +627,18 @@ async def _check_member(
             raise field_error("member_ref", "Knowledge page not found in this Data Space.")
         return page.classification
     if kind == "document_collection":
-        found = await session.scalar(
-            select(document.Collection.id).where(
+        policy = await session.scalar(
+            select(document.Collection.pii_policy).where(
                 document.Collection.id == ref,
                 document.Collection.org_id == principal.org_id,
                 document.Collection.data_space_id == data_space,
                 document.Collection.deleted_at.is_(None),
             )
         )
-        if found is None:
+        if policy is None:
             raise field_error("member_ref", "Document collection not found in this Data Space.")
-        return "internal"
+        # A collection that keeps personal data for authorised readers holds it unmasked.
+        return "confidential" if policy == "keep_for_authorized" else "internal"
     if not await shared_product_usable(principal, data_space, ref):
         raise field_error(
             "member_ref", "No published shared product of or for this Data Space has that id."
