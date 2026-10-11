@@ -530,6 +530,23 @@ def test_the_key_log_cannot_be_forged(db):
     fails(db, *_log_row(org, vault, owner, "owner_device"), code="42501")
 
 
+def test_the_key_log_helpers_are_no_ownership_oracle(db):
+    org, owner, vault, _ = _setup(db)
+    # Called outside a trigger, the definer helpers answer false even for a true pair.
+    as_role(db, "svc_exec_worker", org, exec_workflow="on")
+    assert (
+        one(
+            db,
+            "SELECT exec.key_access_target_ok(%s, %s, %s, NULL)",
+            (str(org), str(vault), str(owner)),
+        )
+        is False
+    )
+    as_admin(db)
+    as_role(db, "svc_exec", org, new_id(), exec_admin="on")
+    assert one(db, "SELECT exec.vault_has_open_handover(%s, %s)", (str(org), str(vault))) is False
+
+
 # ─── exec.handover, exec.handover_item ───
 
 HANDOVER_SQL = (

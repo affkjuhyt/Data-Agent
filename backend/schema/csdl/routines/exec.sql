@@ -423,8 +423,10 @@ CREATE TRIGGER key_access_log_append_only BEFORE UPDATE OR DELETE ON exec.key_ac
 CREATE FUNCTION exec.key_access_target_ok(p_org uuid, p_vault uuid, p_owner uuid, p_thesis uuid)
 RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
-  -- Definer: the worker cannot read exec.vault or exec.thesis; it only learns yes or no.
-  SELECT EXISTS (SELECT 1 FROM exec.vault v
+  -- Definer: the worker cannot read exec.vault or exec.thesis. It answers only inside a trigger
+  -- (pg_trigger_depth() > 0); called directly it would tell anyone which leader owns which vault,
+  -- the very thing the owner-only policy hides.
+  SELECT pg_trigger_depth() > 0 AND EXISTS (SELECT 1 FROM exec.vault v
                  WHERE v.id = p_vault AND v.owner_id = p_owner AND v.org_id = p_org)
      AND (p_thesis IS NULL OR EXISTS (SELECT 1 FROM exec.thesis t
                                       WHERE t.id = p_thesis AND t.vault_id = p_vault
@@ -435,7 +437,8 @@ GRANT EXECUTE ON FUNCTION exec.key_access_target_ok(uuid, uuid, uuid, uuid) TO s
 
 CREATE FUNCTION exec.vault_has_open_handover(p_org uuid, p_vault uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
-  SELECT EXISTS (SELECT 1 FROM exec.handover h
+  -- Trigger-only, like exec.key_access_target_ok.
+  SELECT pg_trigger_depth() > 0 AND EXISTS (SELECT 1 FROM exec.handover h
                  WHERE h.vault_id = p_vault AND h.org_id = p_org AND h.status IN ('approved', 'in_progress'))
 $$;
 REVOKE EXECUTE ON FUNCTION exec.vault_has_open_handover(uuid, uuid) FROM PUBLIC;
