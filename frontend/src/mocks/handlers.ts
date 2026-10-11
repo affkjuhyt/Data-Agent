@@ -34,6 +34,7 @@ import { createAuthorityHandlers } from './authorities';
 import { createCollaborationHandlers } from './collaboration';
 import { createCrawlHandlers } from './crawl';
 import { createExampleHandlers } from './examples';
+import { createHomeHandlers } from './home';
 import { createInboxHandlers } from './inbox';
 import { createKnowledgeHandlers } from './knowledge';
 import { createMetricCatalogHandlers } from './metricCatalog';
@@ -112,6 +113,7 @@ export function createHandlers() {
     ...createSemanticLayerHandlers(),
     ...createCollaborationHandlers(),
     ...createInboxHandlers(),
+    ...createHomeHandlers(),
 
     http.get('*/v1/inbox', ({ request }) => {
       const status = new URL(request.url).searchParams.get('status') ?? 'open';

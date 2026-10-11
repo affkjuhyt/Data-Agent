@@ -44,14 +44,14 @@ export function AgentActivity({
               return (
                 <li
                   key={run.id}
-                  className="flex items-center gap-da-xl border-t border-border py-da-sm"
+                  className="flex items-center gap-da-xl border-t border-border py-da-sm max-[767px]:flex-wrap max-[767px]:gap-da-sm"
                 >
                   <AgentChip
                     name={run.agent_name}
                     status={waiting ? 'waiting' : 'running'}
                     className="w-[170px] shrink-0"
                   />
-                  <div className="flex min-w-0 flex-1 flex-col gap-da-sm">
+                  <div className="flex min-w-0 flex-1 flex-col gap-da-sm max-[767px]:order-last max-[767px]:basis-full">
                     <span className="text-foreground da-body">{sentence}</span>
                     {progress !== null && (
                       <span
