@@ -112,7 +112,7 @@ async def _role_for(session: AsyncSession, capability: str) -> org.Role:
     wanted = GRANTED_AS[capability]
     roles = [
         r
-        for r in (await session.scalars(select(org.Role).where(org.Role.capabilities.any(wanted)))).all()
+        for r in (await session.scalars(select(org.Role).where(org.Role.capabilities.contains([wanted])))).all()
         if not org_only(r)
     ]
     if not roles:

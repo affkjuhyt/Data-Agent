@@ -198,10 +198,13 @@ async def test_an_access_policy_is_simulated_before_it_is_switched_on(gov: Org) 
         )
         assert again.status_code == 409
 
-        listed = await api.get(
+        listed = await api.get("/v1/policies?type=access", headers=gov.headers("admin"))
+        assert [p["id"] for p in listed.json()] == [policy["id"]]
+        # Who sees what is not for every asker.
+        hidden = await api.get(
             "/v1/policies?type=access", headers=gov.headers("teller", space=True)
         )
-        assert [p["id"] for p in listed.json()] == [policy["id"]]
+        assert hidden.status_code == 403
 
 
 async def test_a_policy_names_real_columns_and_known_attributes(gov: Org) -> None:
@@ -458,7 +461,7 @@ async def test_a_model_change_is_evaluated_before_it_serves(gov: Org) -> None:
     async with client(gov) as api:
         changed = await api.put(
             "/v1/admin/models/sql_generation",
-            json={"model_name": "Qwen3-Coder-72B", "endpoint": "http://vllm-b:8000/v1"},
+            json={"model_name": "Qwen3-Coder-72B", "endpoint": "http://vllm:8000/v1"},
             headers=gov.headers("admin"),
         )
         assert changed.status_code == 202, changed.text
@@ -466,9 +469,15 @@ async def test_a_model_change_is_evaluated_before_it_serves(gov: Org) -> None:
         assert body["version"] == 2 and changed.headers["Location"] == f"/v1/eval-runs/{body['id']}"
         requested = dict(gov.events(body["model_config_id"]))["model_config.eval_requested"]
         assert requested["eval_run_id"] == body["id"]
+        elsewhere = await api.put(
+            "/v1/admin/models/answer_writing",
+            json={"model_name": "gpt", "endpoint": "https://api.example.com/v1"},
+            headers=gov.headers("admin"),
+        )
+        assert elsewhere.status_code == 422
         busy = await api.put(
             "/v1/admin/models/sql_generation",
-            json={"model_name": "X", "endpoint": "http://x"},
+            json={"model_name": "X", "endpoint": "http://vllm:8000/v1"},
             headers=gov.headers("admin"),
         )
         assert busy.status_code == 409

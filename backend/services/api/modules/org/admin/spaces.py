@@ -70,7 +70,7 @@ async def _steward_role(session: AsyncSession) -> org.Role | None:
     smallest role carrying `steward` and nothing organisation-wide."""
     roles = [
         r
-        for r in (await session.scalars(select(org.Role).where(org.Role.capabilities.any("steward")))).all()
+        for r in (await session.scalars(select(org.Role).where(org.Role.capabilities.contains(["steward"])))).all()
         if not org_only(r)
     ]
     if not roles:

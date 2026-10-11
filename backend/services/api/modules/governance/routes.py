@@ -460,28 +460,28 @@ async def test_model_provider(
         )
     except _ProviderUnavailable as exc:
         async with transaction(ROLE, principal) as session:
-            row = await session.scalar(
+            failed = await session.scalar(
                 select(governance.ModelRouteDecision).where(
                     governance.ModelRouteDecision.id == decision_id,
                     governance.ModelRouteDecision.org_id == principal.org_id,
                 )
             )
-            if row is not None:
-                row.outcome = "error"
+            if failed is not None:
+                failed.outcome = "error"
                 await session.flush()
         raise Problem(503, "model_unavailable", str(exc)) from exc
 
     async with transaction(ROLE, principal) as session:
-        row = await session.scalar(
+        decided = await session.scalar(
             select(governance.ModelRouteDecision).where(
                 governance.ModelRouteDecision.id == decision_id,
                 governance.ModelRouteDecision.org_id == principal.org_id,
             )
         )
-        if row is not None:
-            row.input_tokens = input_tokens
-            row.output_tokens = output_tokens
-            row.outcome = "ok"
+        if decided is not None:
+            decided.input_tokens = input_tokens
+            decided.output_tokens = output_tokens
+            decided.outcome = "ok"
             await session.flush()
     return ModelProviderTestResult(
         provider_id=provider.id,
@@ -518,7 +518,7 @@ async def list_model_route_decisions(
     if decision:
         query = query.where(row_type.decision == decision)
     if reason:
-        query = query.where(row_type.reasons.any(reason))
+        query = query.where(row_type.reasons.contains([reason]))
     if provider_id:
         query = query.where(row_type.chosen_provider_id == provider_id)
     if caller_kind:

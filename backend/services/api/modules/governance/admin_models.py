@@ -165,6 +165,16 @@ def _event(
     )
 
 
+def _same_origin(url: str, base: str) -> bool:
+    a, b = urllib.parse.urlsplit(url), urllib.parse.urlsplit(base)
+    return (
+        a.scheme in ("http", "https")
+        and (a.scheme, a.hostname, a.port) == (b.scheme, b.hostname, b.port)
+        and not a.username
+        and not a.password
+    )
+
+
 # ---------------------------------------------------------------- models per task
 
 
@@ -239,6 +249,13 @@ async def change_model(
         if provider is None:
             raise Problem(
                 422, "business_rule_violated", "No active on-prem model provider to serve it."
+            )
+        # An on-prem primary is served by the on-prem provider's own cluster: an endpoint
+        # elsewhere would send every call off the premises without BR-180's checks.
+        if not _same_origin(body.endpoint, provider.endpoint):
+            raise _invalid(
+                "endpoint",
+                f"The endpoint is served by the on-prem provider at {provider.endpoint}.",
             )
         versions = (
             await session.scalars(

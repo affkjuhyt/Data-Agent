@@ -325,6 +325,10 @@ async def list_policies(
     space = principal.data_space_id
     async with transaction(ROLE, principal) as session:
         if type == "access":
+            # Row conditions and the columns they hide say who sees what: the people who keep
+            # a Data Space's data read them, not every asker (UC-11-02 actors AC05, AC03).
+            if not principal.capabilities & {"admin", "steward"}:
+                raise Problem(403, "forbidden", "Access policies are read by admin or steward.")
             ap = governance.AccessPolicy
             query = select(ap).where(ap.org_id == principal.org_id)
             # A table's policies are its Data Space's: without the header, an admin sees all.

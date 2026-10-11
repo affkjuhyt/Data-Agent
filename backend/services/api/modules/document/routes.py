@@ -946,7 +946,7 @@ async def _apply_resolution(
 
 
 async def _issue_page(session: AsyncSession, row: doc.QualityIssue) -> doc.DocumentPage:
-    page = (
+    page: doc.DocumentPage | None = (
         await session.scalar(
             select(doc.DocumentPage)
             .where(

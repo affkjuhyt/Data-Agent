@@ -258,8 +258,8 @@ async def _materialise(session: AsyncSession, principal: CurrentPrincipal) -> No
     if stale:
         await session.execute(delete(member).where(member.id.in_(stale)))
     for (space, group, role), m in wanted_members.items():
-        row = taken.get((space, group, role))
-        if row is None:
+        held = taken.get((space, group, role))
+        if held is None:
             session.add(
                 member(
                     id=uuid7(),
@@ -275,10 +275,10 @@ async def _materialise(session: AsyncSession, principal: CurrentPrincipal) -> No
                     updated_by=principal.user_id,
                 )
             )
-        elif row.source == "group_mapping":
-            row.row_scope = m.row_scope
-            row.source_ref = m.id
-            row.updated_by = principal.user_id
+        elif held.source == "group_mapping":
+            held.row_scope = m.row_scope
+            held.source_ref = m.id
+            held.updated_by = principal.user_id
         # A manual or access-request row for the same group and role already grants it.
 
 

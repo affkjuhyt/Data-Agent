@@ -14,6 +14,10 @@ from typing import Any
 
 from services.api.kernel.problems import FieldError
 
+# skill.skill.category CHECK; a suggestion with another category becomes "custom".
+CATEGORIES = frozenset(
+    {"decomposition", "causal", "forecast", "reconciliation", "quality", "report", "custom"}
+)
 TYPES = ("string", "number", "integer", "boolean", "array", "object")
 KEYWORDS = frozenset(
     {

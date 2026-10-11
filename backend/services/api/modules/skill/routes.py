@@ -183,12 +183,13 @@ async def _version(
 
 
 async def _runnable(session: AsyncSession, skill_id: uuid.UUID) -> skill.SkillVersion | None:
-    return await session.scalar(
+    found: skill.SkillVersion | None = await session.scalar(
         select(skill.SkillVersion)
         .where(skill.SkillVersion.skill_id == skill_id, skill.SkillVersion.status.in_(RUNNABLE))
         .order_by(skill.SkillVersion.version.desc())
         .limit(1)
     )
+    return found
 
 
 # ---------------------------------------------------------------- library (UC-03-01, UC-03-03)
