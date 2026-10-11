@@ -55,6 +55,9 @@ class Org:
     id: uuid.UUID
     admin: uuid.UUID
     space: uuid.UUID
+    analyst: uuid.UUID
+    # A space the admin may ask in and the analyst is not a member of.
+    admin_only_space: uuid.UUID
 
 
 def build(seed: Seed) -> Org:
@@ -62,13 +65,24 @@ def build(seed: Seed) -> Org:
     admin = seed.row(
         "org.app_user", org_id=o, external_id="kc-ac05", username="ac05", display_name="Quản trị"
     )
-    seed.row(
+    analyst = seed.row(
         "org.app_user", org_id=o, external_id="kc-ac01", username="ac01", display_name="Phân tích"
     )
     role = seed.row("org.role", org_id=o, code="AC05", name="Quản trị", capabilities=["admin"])
     seed.row("org.user_role", org_id=o, user_id=admin, role_id=role, source="manual")
+    asker = seed.row("org.role", org_id=o, code="AC01", name="Phân tích", capabilities=["ask"])
     space = seed.row("org.data_space", org_id=o, code="DS-TD", name="Tín dụng", steward_id=admin)
-    return Org(o, admin, space)
+    other = seed.row("org.data_space", org_id=o, code="DS-TT", name="Thị trường", steward_id=admin)
+    for who, where in ((admin, space), (analyst, space), (admin, other)):
+        seed.row(
+            "org.data_space_member",
+            org_id=o,
+            data_space_id=where,
+            principal_type="user",
+            principal_id=who,
+            role_id=asker,
+        )
+    return Org(o, admin, space, analyst, other)
 
 
 class _Tokens:
@@ -290,3 +304,70 @@ async def test_revoking_a_client_pauses_its_webhooks(
         (hook["id"],),
     )
     assert cur.fetchone() == ("paused", "api_client revoked")
+
+
+async def test_br_48_a_client_granted_to_someone_else_waits_for_them(seed: Seed) -> None:
+    org, kc = build(seed), FakeKeycloak()
+    async with client(org, kc) as admin:
+        made = await admin.post(
+            "/v1/admin/clients", json=new_client(org, owner_user_id=str(org.analyst))
+        )
+        assert made.status_code == 201, made.text
+        pending = made.json()
+        assert (pending["status"], pending["owner_confirmed_at"]) == ("pending_owner", None)
+        # The admin cannot switch it on in the owner's place, nor confirm it.
+        forced = await admin.patch(f"/v1/admin/clients/{pending['id']}", json={"status": "active"})
+        assert forced.status_code == 409
+        assert (await admin.post(f"/v1/me/clients/{pending['id']}:confirm")).status_code == 404
+    async with client(org, kc, "kc-ac01") as owner:
+        mine = (await owner.get("/v1/me/clients", params={"status": "pending_owner"})).json()
+        assert [c["id"] for c in mine["items"]] == [pending["id"]]
+        confirmed = await owner.post(f"/v1/me/clients/{pending['id']}:confirm")
+        assert confirmed.status_code == 200, confirmed.text
+        assert confirmed.json()["status"] == "active" and confirmed.json()["owner_confirmed_at"]
+        again = await owner.post(f"/v1/me/clients/{pending['id']}:confirm")
+    assert again.status_code == 409 and again.json()["code"] == "invalid_state"
+
+
+async def test_br_48_own_client_is_active_at_once(seed: Seed) -> None:
+    org, kc = build(seed), FakeKeycloak()
+    async with client(org, kc) as c:
+        made = (await c.post("/v1/admin/clients", json=new_client(org))).json()
+    assert made["status"] == "active" and made["owner_confirmed_at"]
+
+
+async def test_br_48_owner_must_be_allowed_to_ask_in_every_space(seed: Seed) -> None:
+    org, kc = build(seed), FakeKeycloak()
+    body = new_client(
+        org,
+        owner_user_id=str(org.analyst),
+        data_space_ids=[str(org.space), str(org.admin_only_space)],
+    )
+    async with client(org, kc) as c:
+        r = await c.post("/v1/admin/clients", json=body)
+    assert r.status_code == 422 and r.json()["code"] == "business_rule_violated"
+    assert kc.created == []
+
+
+async def test_br_48_widening_by_someone_else_asks_the_owner_again(seed: Seed) -> None:
+    org, kc = build(seed), FakeKeycloak()
+    async with client(org, kc) as admin:
+        made = (
+            await admin.post(
+                "/v1/admin/clients",
+                json=new_client(org, owner_user_id=str(org.analyst), tools=["ask_question"]),
+            )
+        ).json()
+    async with client(org, kc, "kc-ac01") as owner:
+        await owner.post(f"/v1/me/clients/{made['id']}:confirm")
+    async with client(org, kc) as admin:
+        narrowed = await admin.patch(f"/v1/admin/clients/{made['id']}", json={"quota_per_day": 10})
+        widened = await admin.patch(
+            f"/v1/admin/clients/{made['id']}",
+            json={"tools": ["ask_question", "get_metric_definition"]},
+        )
+    assert narrowed.json()["status"] == "active"
+    assert (widened.json()["status"], widened.json()["owner_confirmed_at"]) == (
+        "pending_owner",
+        None,
+    )

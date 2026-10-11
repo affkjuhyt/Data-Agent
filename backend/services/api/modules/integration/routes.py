@@ -7,6 +7,11 @@ one response and nowhere else (A3). Revoking flips status in the same transactio
 the Keycloak client, and the MCP check reads that status on every call, so a token still in its
 lifetime is refused at once (AC-12-01-03).
 
+A client acts with its owner's rights (BR-48), so the owner agrees first: one granted to someone
+else waits in pending_owner until they confirm it (owners.py), and widening its tools or Data
+Spaces later, by anyone but the owner, sends it back there. The owner must also be allowed to ask
+in every Data Space the client gets.
+
 Deliveries are made by a worker; this group records subscriptions and asks for retries.
 POST /mcp lives in mcp.py.
 """
@@ -35,6 +40,7 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import Problem
+from services.api.modules import org as org_module
 from services.api.modules.integration import rules
 from services.api.modules.integration.ports import (
     ClientCredentials,
@@ -112,6 +118,19 @@ async def _check_owner(session: AsyncSession, owner_id: uuid.UUID) -> None:
         )
 
 
+async def _check_owner_may_ask(
+    principal: Principal, owner_id: uuid.UUID, spaces: list[uuid.UUID]
+) -> None:
+    for space in spaces:
+        capabilities = await org_module.capabilities_of(principal.org_id, owner_id, space)
+        if not capabilities or "ask" not in capabilities:
+            raise Problem(
+                422,
+                "business_rule_violated",
+                f"The owner may not ask in Data Space {space} (BR-48).",
+            )
+
+
 async def _check_spaces(session: AsyncSession, ids: list[uuid.UUID]) -> list[uuid.UUID]:
     wanted = sorted(set(ids))
     if not wanted:
@@ -146,6 +165,8 @@ async def create_api_client(
     async with transaction(ROLE, principal) as session:
         await _check_owner(session, body.owner_user_id)
         spaces = await _check_spaces(session, body.data_space_ids)
+        await _check_owner_may_ask(principal, body.owner_user_id, spaces)
+        confirmed = body.owner_user_id == principal.user_id
         # The Keycloak client exists before the row commits; if the insert then fails, the
         # orphan has no row and so no org, tools or status: the MCP check refuses its tokens.
         issued = await creds.create(org_id=principal.org_id, name=body.name.strip())
@@ -163,13 +184,24 @@ async def create_api_client(
             quota_per_minute=body.quota_per_minute,
             quota_per_day=body.quota_per_day,
             expires_at=expires_at,
+            status="active" if confirmed else "pending_owner",
+            owner_confirmed_at=now if confirmed else None,
             created_by=principal.user_id,
             updated_by=principal.user_id,
         )
         session.add(row)
         await session.flush()
         await session.refresh(row)
-        _emit(session, principal, "api_client", row.id, "api_client.created", kind=row.kind)
+        _emit(
+            session,
+            principal,
+            "api_client",
+            row.id,
+            "api_client.created",
+            kind=row.kind,
+            status=row.status,
+            owner_user_id=row.owner_user_id,
+        )
         view = ApiClientView.model_validate(row)
     return ApiClientIssued(**view.model_dump(), client_secret=issued.secret)
 
@@ -190,14 +222,25 @@ async def patch_api_client(
         row = await _client(session, client_id, lock=True)
         if row.status in ("revoked", "expired"):
             raise Problem(409, "invalid_state", f"A {row.status} client cannot be changed.")
+        if "status" in changes and row.status == "pending_owner":
+            # Only its owner takes a client out of pending_owner (POST /v1/me/clients/{id}:confirm).
+            raise Problem(409, "invalid_state", "A pending client waits for its owner.")
+        widened = False
         if "tools" in changes:
             changes["tools"] = rules.check_tools(changes["tools"], row.identity_mode)
+            widened |= bool(set(changes["tools"]) - set(row.tools))
         if "data_space_ids" in changes:
             changes["data_space_ids"] = await _check_spaces(session, changes["data_space_ids"])
+            added = sorted(set(changes["data_space_ids"]) - set(row.data_space_ids))
+            await _check_owner_may_ask(principal, row.owner_user_id, added)
+            widened |= bool(added)
         if "expires_at" in changes:
             rules.check_expiry(changes["expires_at"], _now(), granted_at=row.created_at)
         for field, value in changes.items():
             setattr(row, field, value)
+        if widened and principal.user_id != row.owner_user_id:
+            # The owner agreed to what the client could do then, not to more.
+            row.status, row.owner_confirmed_at = "pending_owner", None
         row.updated_by, row.updated_at = principal.user_id, _now()
         await session.flush()
         await session.refresh(row)
@@ -219,7 +262,7 @@ async def rotate_secret(
 ) -> ApiClientIssued:
     async with transaction(ROLE, principal) as session:
         row = await _client(session, client_id, lock=True)
-        if row.status not in ("active", "paused"):
+        if row.status not in ("pending_owner", "active", "paused"):
             raise Problem(409, "invalid_state", f"A {row.status} client has no secret to rotate.")
         secret = await creds.rotate(
             org_id=principal.org_id,

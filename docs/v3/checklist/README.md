@@ -2,7 +2,7 @@
 
 Nhiều agent và người cùng làm theo tài liệu thiết kế hệ thống, nên "đã làm được gì" phải đọc được từ repo chứ
 không nằm trong đầu ai. [`../10-design-checklist.md`](../10-design-checklist.md) trả lời câu đó cho từng hạng mục
-của tài liệu: 115 use case với 778 tiêu chí nghiệm thu (tab 8), 379 endpoint A2 (tab 4), các bảng (tab 3/3b),
+của tài liệu: 115 use case với 778 tiêu chí nghiệm thu (tab 8), 381 endpoint A2 (tab 4), các bảng (tab 3/3b),
 195 quy tắc nghiệp vụ, 75 màn hình (tab 2), 48 ADR (tab 6).
 
 ## Ba nguồn

@@ -68,6 +68,7 @@ def build(
         data_space_ids=f"{{{space},{other}}}",
         quota_per_minute=quota_per_minute,
         expires_at=NOW + datetime.timedelta(days=30),
+        owner_confirmed_at=NOW,
     )
     return World(o, owner, space, other, client, kc_id)
 
@@ -121,12 +122,21 @@ def _short_wait(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mcp, "ANSWER_WAIT_SECONDS", 0.2)
 
 
-async def test_unknown_or_revoked_client_is_401(seed: Seed) -> None:
+async def test_unknown_revoked_or_unconfirmed_client_is_401(seed: Seed) -> None:
     w = build(seed)
     async with mcp_client(w, "kc-nobody") as c:
         assert (
             await c.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
         ).status_code == 401
+    # BR-48: granted in the owner's name but not yet confirmed by them.
+    seed.conn.cursor().execute(
+        "UPDATE integration.api_client SET status = 'pending_owner', owner_confirmed_at = NULL "
+        "WHERE id = %s",
+        (str(w.client),),
+    )
+    async with mcp_client(w) as c:
+        r = await c.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    assert r.status_code == 401
     seed.conn.cursor().execute(
         "UPDATE integration.api_client SET status = 'revoked' WHERE id = %s", (str(w.client),)
     )

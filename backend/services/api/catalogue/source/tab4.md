@@ -1,6 +1,6 @@
 # Đặc tả API
 
-Tab này đặc tả giao diện lập trình của Data Agent V3: quy ước chung (A1), danh mục endpoint theo dịch vụ (A2), chi tiết request và response từng endpoint (A3), tệp OpenAPI (A4). Danh mục dựng lại từ 103 đặc tả use case và mục 9.2, đã chuẩn hoá tên và cách gọi; cột dữ liệu bám theo thiết kế cơ sở dữ liệu ở tab 3. Trạng thái (09/10/2026): xong A1 đến A4; 301 endpoint có đặc tả chi tiết, tệp OpenAPI 3.1 đã qua kiểm tra hợp lệ với 240 endpoint. Ngày 10/10/2026 thêm nhóm Thu thập và Dự báo (41 endpoint, P14, P15) và 2 endpoint chứng nhận dataset hợp nhất ở nhóm Nguồn và dữ liệu (BR-156); sau đó thêm 2 endpoint ở nhóm Thu thập (PATCH /v1/consolidation-specs/{id}, POST /v1/crawl-sources/{id}:legal-review) và 16 endpoint lớp tri thức ở nhóm Lớp ngữ cảnh. 61 endpoint này nằm ở hai tệp OpenAPI bổ sung đã qua kiểm tra hợp lệ, nay là bản tham khảo (A4, ADR-48). Lượt 4 thêm 77 endpoint: data product, biên nhận, Error Book, provider mô hình (29), dự báo theo công thức và sổ dự báo (12), lịch sự kiện ngoài (8), nhóm mới Lớp riêng lãnh đạo (28). Tổng hiện có (11/10/2026): 379 endpoint trong 22 nhóm (A2), gồm GET /v1/me thêm ngày 11/10/2026 ở nhóm Quản trị; OpenAPI của mọi endpoint, kể cả 77 endpoint lượt 4, sinh từ code FastAPI và được kiểm với A2 trong CI (A4, ADR-48).
+Tab này đặc tả giao diện lập trình của Data Agent V3: quy ước chung (A1), danh mục endpoint theo dịch vụ (A2), chi tiết request và response từng endpoint (A3), tệp OpenAPI (A4). Danh mục dựng lại từ 103 đặc tả use case và mục 9.2, đã chuẩn hoá tên và cách gọi; cột dữ liệu bám theo thiết kế cơ sở dữ liệu ở tab 3. Trạng thái (09/10/2026): xong A1 đến A4; 301 endpoint có đặc tả chi tiết, tệp OpenAPI 3.1 đã qua kiểm tra hợp lệ với 240 endpoint. Ngày 10/10/2026 thêm nhóm Thu thập và Dự báo (41 endpoint, P14, P15) và 2 endpoint chứng nhận dataset hợp nhất ở nhóm Nguồn và dữ liệu (BR-156); sau đó thêm 2 endpoint ở nhóm Thu thập (PATCH /v1/consolidation-specs/{id}, POST /v1/crawl-sources/{id}:legal-review) và 16 endpoint lớp tri thức ở nhóm Lớp ngữ cảnh. 61 endpoint này nằm ở hai tệp OpenAPI bổ sung đã qua kiểm tra hợp lệ, nay là bản tham khảo (A4, ADR-48). Lượt 4 thêm 77 endpoint: data product, biên nhận, Error Book, provider mô hình (29), dự báo theo công thức và sổ dự báo (12), lịch sự kiện ngoài (8), nhóm mới Lớp riêng lãnh đạo (28). Tổng hiện có (12/10/2026): 381 endpoint trong 22 nhóm (A2), gồm GET /v1/me thêm ngày 11/10/2026 ở nhóm Quản trị, GET /v1/me/clients và POST /v1/me/clients/{id}:confirm thêm ngày 12/10/2026 ở nhóm Tích hợp (người phụ trách xác nhận client, BR-48); OpenAPI của mọi endpoint, kể cả 77 endpoint lượt 4, sinh từ code FastAPI và được kiểm với A2 trong CI (A4, ADR-48).
 
 ## A1. Quy ước chung
 
@@ -471,6 +471,8 @@ Dịch vụ: Gateway, MCP server (integration). 9 endpoint.
 | POST | /v1/admin/clients/{id}:rotate-secret | Xoay bí mật | 12-01 | admin |
 | POST | /v1/admin/clients/{id}:revoke | Thu hồi khẩn | 12-01 | admin |
 | GET | /v1/admin/clients/{id}/usage | Sử dụng theo giờ, công cụ | 12-04 | admin |
+| GET | /v1/me/clients | Client tôi phụ trách, kể cả client chờ tôi xác nhận | 12-01 | — |
+| POST | /v1/me/clients/{id}:confirm | Người phụ trách đồng ý cho client hành động với quyền của mình (BR-48) | 12-01 | — |
 | POST | /v1/webhooks | Đăng ký webhook | 12-03 | admin |
 | GET | /v1/webhooks/{id}/deliveries | Lịch sử gửi | 12-03 | admin |
 | POST | /v1/webhook-deliveries/{id}:retry | Gửi lại | 12-03 | admin |
@@ -967,11 +969,13 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 
 | Endpoint | Gửi lên | Trả về | Lỗi riêng |
 | --- | --- | --- | --- |
-| POST /v1/admin/clients | name\*, kind\*, identity\_mode, owner\_user\_id\*, tools, data\_space\_ids, quota\_per\_minute, quota\_per\_day, expires\_at\* | ApiClient. Phản hồi kèm client\_secret một lần duy nhất | 422 business\_rule\_violated (hạn quá 12 tháng, BR-144; danh tính riêng với công cụ trả dữ liệu chi tiết, BR-48) |
+| POST /v1/admin/clients | name\*, kind\*, identity\_mode, owner\_user\_id\*, tools, data\_space\_ids, quota\_per\_minute, quota\_per\_day, expires\_at\* | ApiClient. Phản hồi kèm client\_secret một lần duy nhất; status pending\_owner khi owner\_user\_id khác người cấp, active khi chính họ (BR-48) | 422 business\_rule\_violated (hạn quá 12 tháng, BR-144; danh tính riêng với công cụ trả dữ liệu chi tiết, BR-48; người phụ trách không có quyền hỏi trong một Data Space được cấp, BR-48) |
 | PATCH /v1/admin/clients/{id} | tools, data\_space\_ids, quota\_per\_minute, quota\_per\_day, expires\_at, status | ApiClient | — |
 | POST /v1/admin/clients/{id}:rotate-secret | — | ApiClient. Trả bí mật mới một lần; bí mật cũ còn hiệu lực 24 giờ | — |
 | POST /v1/admin/clients/{id}:revoke | reason\* | ApiClient. Token đang dùng bị vô hiệu ngay | — |
 | GET /v1/admin/clients/{id}/usage | ?from, ?to, ?granularity, ?tool | Danh sách UsageCounter | — |
+| GET /v1/me/clients | ?status | Danh sách ApiClient có owner\_user\_id là người gọi | — |
+| POST /v1/me/clients/{id}:confirm | — | ApiClient, status active, owner\_confirmed\_at đặt; chỉ chính người phụ trách được gọi | 404 not\_found (không phải client của người gọi); 409 invalid\_state (client không ở pending\_owner) |
 | POST /v1/webhooks | api\_client\_id\*, event\_types\*, target\_url\* | WebhookSubscription. Phản hồi kèm khoá ký HMAC một lần | 422 business\_rule\_violated (địa chỉ không thuộc danh sách đích được phép) |
 | GET /v1/webhooks/{id}/deliveries | ?status, ?from, ?to | Danh sách WebhookDelivery | — |
 | POST /v1/webhook-deliveries/{id}:retry | — | 202, Location tới webhook\_delivery | — |

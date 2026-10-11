@@ -11,7 +11,7 @@
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 0 UC đủ tiêu chí bắt buộc | todo 115 |
 | Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 94 có test nhắc mã AC | todo 778 |
-| Endpoint A2 (tab 4) | 378 (A2 ghi 379 dòng; POST /v1/data-products ở hai nhóm) | 377 được `api` phục vụ | — |
+| Endpoint A2 (tab 4) | 380 (A2 ghi 381 dòng; POST /v1/data-products ở hai nhóm) | 379 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 219 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 159 có mã nhắc tới | todo 195 |
 | Màn hình (SCR) | 75 | 9 có mã nhắc tới | todo 75 |
@@ -246,7 +246,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | Kỳ chốt | 10/10 |  |
 | Quản trị | 27/27 |  |
 | Kiểm toán | 3/4 | `POST /v1/audit:export` |
-| Tích hợp | 9/9 |  |
+| Tích hợp | 11/11 |  |
 | Agent | 24/24 |  |
 | Thu thập | 28/28 |  |
 | Dự báo | 27/27 |  |
@@ -303,7 +303,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-45 | UC-11-02 | todo | `backend/services/api/modules/governance/policies.py` |
 | BR-46 | UC-11-02 | todo |  |
 | BR-47 | UC-11-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/sql/dataagent_audit.sql`, `backend/libs/dataagent_db/models/audit.py` +8 |
-| BR-48 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +8 |
+| BR-48 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/versions/v3_0005_client_owner_confirmation.py`, `backend/libs/dataagent_db/models/integration.py` +13 |
 | BR-49 | UC-12-02 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/integration/mcp.py` |
 | BR-50 | UC-12-02 | todo |  |
 | BR-51 | UC-02-06 | todo |  |

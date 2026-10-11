@@ -3928,7 +3928,18 @@
      "not_null": true,
      "default": "'active'",
      "unique": false,
-     "comment": "active, paused, revoked, expired",
+     "comment": "pending_owner, active, paused, revoked, expired; pending_owner khi người cấp không phải người phụ trách: client chưa gọi được cho tới khi người phụ trách xác nhận (BR-48)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "owner_confirmed_at",
+     "type": "timestamptz",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Lúc người phụ trách đồng ý để client hành động với quyền của mình (BR-48); bằng created_at khi người cấp chính là người phụ trách. Mở rộng tools hoặc data_space_ids bởi người khác đặt lại về rỗng và status về pending_owner",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -3975,7 +3986,11 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (status IN ('active','paused','revoked','expired'))"
+     "sql": "CHECK (status IN ('pending_owner','active','paused','revoked','expired'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (status NOT IN ('active','paused') OR owner_confirmed_at IS NOT NULL)"
     },
     {
      "kind": "check",

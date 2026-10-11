@@ -1,6 +1,6 @@
 {
- "source": "Data Agent V3 — Tài liệu phân tích thiết kế hệ thống, tab 4 · Đặc tả API, A2 (rev 96)",
- "as_of": "2026-10-11",
+ "source": "Data Agent V3 — Tài liệu phân tích thiết kế hệ thống, tab 4 · Đặc tả API, A2 (rev 98)",
+ "as_of": "2026-10-12",
  "note": "Snapshot of A2. ADR-48: OpenAPI is generated from code and checked against this list; adding or removing an endpoint updates A2 and this file in the same PR.",
  "groups": {
   "Hỏi đáp": {
@@ -3362,6 +3362,30 @@
    ],
    "capability": [
     "admin"
+   ]
+  },
+  {
+   "group": "Tích hợp",
+   "method": "GET",
+   "path": "/v1/me/clients",
+   "summary": "Client tôi phụ trách, kể cả client chờ tôi xác nhận",
+   "use_cases": [
+    "12-01"
+   ],
+   "capability": [
+    "—"
+   ]
+  },
+  {
+   "group": "Tích hợp",
+   "method": "POST",
+   "path": "/v1/me/clients/{id}:confirm",
+   "summary": "Người phụ trách đồng ý cho client hành động với quyền của mình (BR-48)",
+   "use_cases": [
+    "12-01"
+   ],
+   "capability": [
+    "—"
    ]
   },
   {

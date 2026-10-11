@@ -4530,7 +4530,7 @@
     "expires_at": true
    },
    "query": [],
-   "returns": "ApiClient. Phản hồi kèm client_secret một lần duy nhất",
+   "returns": "ApiClient. Phản hồi kèm client_secret một lần duy nhất; status pending_owner khi owner_user_id khác người cấp, active khi chính họ (BR-48)",
    "errors": [
     [
      422,
@@ -4596,6 +4596,39 @@
    "returns": "Danh sách UsageCounter",
    "errors": [],
    "request_text": "?from, ?to, ?granularity, ?tool"
+  },
+  "GET /v1/me/clients": {
+   "group": "Tích hợp",
+   "groups": [
+    "Tích hợp"
+   ],
+   "body": {},
+   "query": [
+    "status"
+   ],
+   "returns": "Danh sách ApiClient có owner_user_id là người gọi",
+   "errors": [],
+   "request_text": "?status"
+  },
+  "POST /v1/me/clients/{id}:confirm": {
+   "group": "Tích hợp",
+   "groups": [
+    "Tích hợp"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ApiClient, status active, owner_confirmed_at đặt; chỉ chính người phụ trách được gọi",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ],
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "—"
   },
   "POST /v1/webhooks": {
    "group": "Tích hợp",

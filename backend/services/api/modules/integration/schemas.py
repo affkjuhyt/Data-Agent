@@ -57,6 +57,7 @@ class ApiClientView(BaseModel):
     quota_per_day: int
     expires_at: datetime.datetime
     status: str
+    owner_confirmed_at: datetime.datetime | None
     secret_rotated_at: datetime.datetime | None
     revoked_at: datetime.datetime | None
     created_at: datetime.datetime

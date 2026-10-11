@@ -448,11 +448,12 @@ Client gọi Data Agent qua REST hoặc MCP; thông tin đăng ký trong Keycloa
 | quota\_per\_minute | integer, bắt buộc, mặc định 60 |  |
 | quota\_per\_day | integer, bắt buộc, mặc định 5000 |  |
 | expires\_at | timestamptz, bắt buộc | Tối đa 12 tháng kể từ khi cấp (BR-144); giao diện hiện “Sắp hết hạn” khi còn dưới 30 ngày |
-| status | text, bắt buộc, mặc định 'active' | active, paused, revoked, expired |
+| status | text, bắt buộc, mặc định 'active' | pending\_owner, active, paused, revoked, expired; pending\_owner khi người cấp không phải người phụ trách: client chưa gọi được cho tới khi người phụ trách xác nhận (BR-48) |
+| owner\_confirmed\_at | timestamptz | Lúc người phụ trách đồng ý để client hành động với quyền của mình (BR-48); bằng created\_at khi người cấp chính là người phụ trách. Mở rộng tools hoặc data\_space\_ids bởi người khác đặt lại về rỗng và status về pending\_owner |
 | secret\_rotated\_at | timestamptz | Bí mật cũ còn hiệu lực 24 giờ sau lần xoay |
 | revoked\_at | timestamptz |  |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('rest','mcp')); CHECK (identity\_mode IN ('on\_behalf\_of\_user','own\_identity')); CHECK (status IN ('active','paused','revoked','expired')); CHECK (expires\_at <= created\_at + interval '12 months'); UNIQUE (org\_id, keycloak\_client\_id). Chỉ mục: (expires\_at) WHERE status = 'active'.
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('rest','mcp')); CHECK (identity\_mode IN ('on\_behalf\_of\_user','own\_identity')); CHECK (status IN ('pending\_owner','active','paused','revoked','expired')); CHECK (status NOT IN ('active','paused') OR owner\_confirmed\_at IS NOT NULL); CHECK (expires\_at <= created\_at + interval '12 months'); UNIQUE (org\_id, keycloak\_client\_id). Chỉ mục: (expires\_at) WHERE status = 'active'.
 
 #### integration.webhook\_subscription
 

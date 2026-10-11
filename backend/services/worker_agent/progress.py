@@ -40,12 +40,13 @@ async def publish(question_id: str, event: str, data: dict[str, Any]) -> str | N
     if client is None:
         return None
     try:
-        return await client.xadd(
+        entry_id = await client.xadd(
             f"sse:{question_id}",
             {"event": event, "data": json.dumps(data, ensure_ascii=False, default=str)},
             maxlen=_MAX_EVENTS,
             approximate=True,
         )
+        return str(entry_id)
     except Exception:
         logger.warning("worker-agent | progress publish failed question=%s", question_id, exc_info=True)
         return None

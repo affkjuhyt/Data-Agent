@@ -967,6 +967,7 @@ CREATE TABLE integration.api_client (
   quota_per_day integer NOT NULL DEFAULT 5000,
   expires_at timestamptz NOT NULL,
   status text NOT NULL DEFAULT 'active',
+  owner_confirmed_at timestamptz,
   secret_rotated_at timestamptz,
   revoked_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -976,7 +977,8 @@ CREATE TABLE integration.api_client (
   CONSTRAINT api_client_pkey PRIMARY KEY (id),
   CHECK (kind IN ('rest','mcp')),
   CHECK (identity_mode IN ('on_behalf_of_user','own_identity')),
-  CHECK (status IN ('active','paused','revoked','expired')),
+  CHECK (status IN ('pending_owner','active','paused','revoked','expired')),
+  CHECK (status NOT IN ('active','paused') OR owner_confirmed_at IS NOT NULL),
   CHECK (expires_at <= created_at + interval '12 months'),
   UNIQUE (org_id, keycloak_client_id)
 );
@@ -989,7 +991,8 @@ COMMENT ON COLUMN integration.api_client.secret_ref IS 'Đường dẫn OpenBao;
 COMMENT ON COLUMN integration.api_client.tools IS 'Công cụ được gọi, ví dụ ask, get_metric, run_skill; hỗ trợ dấu * (hitl.*)';
 COMMENT ON COLUMN integration.api_client.data_space_ids IS 'Data Space được phép; logic → org.data_space';
 COMMENT ON COLUMN integration.api_client.expires_at IS 'Tối đa 12 tháng kể từ khi cấp (BR-144); giao diện hiện “Sắp hết hạn” khi còn dưới 30 ngày';
-COMMENT ON COLUMN integration.api_client.status IS 'active, paused, revoked, expired';
+COMMENT ON COLUMN integration.api_client.status IS 'pending_owner, active, paused, revoked, expired; pending_owner khi người cấp không phải người phụ trách: client chưa gọi được cho tới khi người phụ trách xác nhận (BR-48)';
+COMMENT ON COLUMN integration.api_client.owner_confirmed_at IS 'Lúc người phụ trách đồng ý để client hành động với quyền của mình (BR-48); bằng created_at khi người cấp chính là người phụ trách. Mở rộng tools hoặc data_space_ids bởi người khác đặt lại về rỗng và status về pending_owner';
 COMMENT ON COLUMN integration.api_client.secret_rotated_at IS 'Bí mật cũ còn hiệu lực 24 giờ sau lần xoay';
 
 CREATE TABLE integration.webhook_subscription (

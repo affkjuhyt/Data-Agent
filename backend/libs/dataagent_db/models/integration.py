@@ -70,7 +70,14 @@ class ApiClient(Base):
         comment="Tối đa 12 tháng kể từ khi cấp (BR-144); giao diện hiện “Sắp hết hạn” khi còn dưới 30 ngày",
     )
     status: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'active'"), comment="active, paused, revoked, expired"
+        Text,
+        server_default=sql_text("'active'"),
+        comment="pending_owner, active, paused, revoked, expired; pending_owner khi người cấp không phải người phụ trách: client chưa gọi được cho tới khi người phụ trách xác nhận (BR-48)",
+    )
+    owner_confirmed_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Lúc người phụ trách đồng ý để client hành động với quyền của mình (BR-48); bằng created_at khi người cấp chính là người phụ trách. Mở rộng tools hoặc data_space_ids bởi người khác đặt lại về rỗng và status về pending_owner",
     )
     secret_rotated_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, comment="Bí mật cũ còn hiệu lực 24 giờ sau lần xoay"
