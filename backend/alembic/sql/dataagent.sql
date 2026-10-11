@@ -10922,6 +10922,59 @@ END $$;
 CREATE TRIGGER key_access_log_append_only BEFORE UPDATE OR DELETE ON exec.key_access_log
   FOR EACH ROW EXECUTE FUNCTION exec.key_access_log_append_only();
 
+-- Each row says who touched which key: the vault and owner must be one pair (and the thesis theirs),
+-- the actor kind must be the caller's own, and `at` is the database's clock. Without this a caller
+-- could forge entries for another vault, pose as the workflow, or backdate `at` to slip past the
+-- 24-hour decrypt limit below (BR-192).
+CREATE FUNCTION exec.key_access_target_ok(p_org uuid, p_vault uuid, p_owner uuid, p_thesis uuid)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+  -- Definer: the worker cannot read exec.vault or exec.thesis; it only learns yes or no.
+  SELECT EXISTS (SELECT 1 FROM exec.vault v
+                 WHERE v.id = p_vault AND v.owner_id = p_owner AND v.org_id = p_org)
+     AND (p_thesis IS NULL OR EXISTS (SELECT 1 FROM exec.thesis t
+                                      WHERE t.id = p_thesis AND t.vault_id = p_vault
+                                        AND t.owner_id = p_owner AND t.org_id = p_org))
+$$;
+REVOKE EXECUTE ON FUNCTION exec.key_access_target_ok(uuid, uuid, uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION exec.key_access_target_ok(uuid, uuid, uuid, uuid) TO svc_exec, svc_exec_worker;
+
+CREATE FUNCTION exec.vault_has_open_handover(p_org uuid, p_vault uuid) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+  SELECT EXISTS (SELECT 1 FROM exec.handover h
+                 WHERE h.vault_id = p_vault AND h.org_id = p_org AND h.status IN ('approved', 'in_progress'))
+$$;
+REVOKE EXECUTE ON FUNCTION exec.vault_has_open_handover(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION exec.vault_has_open_handover(uuid, uuid) TO svc_exec;
+
+-- Invoker rights on purpose: current_user is the calling service role here.
+CREATE FUNCTION exec.key_access_log_check_actor() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.at := now();
+  IF NOT exec.key_access_target_ok(NEW.org_id, NEW.vault_id, NEW.owner_id, NEW.thesis_id) THEN
+    RAISE EXCEPTION 'Sổ truy cập khoá: kho, chủ kho và luận điểm không khớp nhau (BR-192)'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  IF current_user = 'svc_exec_worker' AND NEW.actor_kind <> 'workflow' THEN
+    RAISE EXCEPTION 'Workflow chỉ ghi dòng actor_kind = workflow (BR-192)' USING ERRCODE = 'insufficient_privilege';
+  ELSIF current_user = 'svc_exec' THEN
+    IF NEW.owner_id = NULLIF(current_setting('app.user_id', true), '')::uuid THEN
+      IF NEW.actor_kind <> 'owner_device' THEN
+        RAISE EXCEPTION 'Thiết bị của chủ kho chỉ ghi dòng owner_device (BR-192)' USING ERRCODE = 'insufficient_privilege';
+      END IF;
+    ELSIF NEW.actor_kind <> 'admin_request' OR NOT exec.vault_has_open_handover(NEW.org_id, NEW.vault_id) THEN
+      RAISE EXCEPTION 'Quản trị chỉ ghi dòng admin_request cho kho có yêu cầu rời vị trí đã duyệt (BR-192, BR-195)'
+        USING ERRCODE = 'insufficient_privilege';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$;
+-- Named to sort before key_access_log_decrypt_limit: BEFORE triggers fire in name order, and the
+-- limit must count against a row whose `at` is already the server's.
+CREATE TRIGGER key_access_log_check_actor BEFORE INSERT ON exec.key_access_log
+  FOR EACH ROW EXECUTE FUNCTION exec.key_access_log_check_actor();
+
 -- covers: exec.key_access_log#1
 -- The fourth decrypt of one condition in 24 hours is not written (RETURN NULL), so RETURNING is
 -- empty and the workflow never calls OpenBao; raising would roll back the event as well. Counted
@@ -10931,6 +10984,8 @@ CREATE TRIGGER key_access_log_append_only BEFORE UPDATE OR DELETE ON exec.key_ac
 CREATE FUNCTION exec.key_access_log_decrypt_limit() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 BEGIN
+  -- Two concurrent decrypts of one condition would both count two and both pass; serialise them.
+  PERFORM pg_advisory_xact_lock(hashtextextended('exec.decrypt:' || NEW.thesis_id::text, 0));
   IF (SELECT count(*) FROM exec.key_access_log l
       WHERE l.thesis_id = NEW.thesis_id AND l.action = 'decrypt_condition'
         AND l.at > now() - interval '24 hours') >= 3 THEN
@@ -10974,6 +11029,44 @@ BEGIN
 END $$;
 CREATE TRIGGER handover_admin_columns BEFORE UPDATE ON exec.handover
   FOR EACH ROW EXECUTE FUNCTION exec.handover_admin_columns();
+
+-- Two-person control (BR-195): requested_by and approved_by are the people acting, not values a
+-- caller may type. The requester is whoever inserts the row; approval is a second, separate act by
+-- whoever sets approved_by, once; the CHECK approved_by <> requested_by then means two people.
+CREATE FUNCTION exec.handover_actors() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+  actor uuid := NULLIF(current_setting('app.user_id', true), '')::uuid;
+BEGIN
+  IF current_user NOT IN ('svc_exec', 'svc_exec_worker') THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'INSERT' THEN
+    IF actor IS NULL OR NEW.requested_by IS DISTINCT FROM actor THEN
+      RAISE EXCEPTION 'Người yêu cầu phải là người đang thao tác (BR-195)' USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF NEW.approved_by IS NOT NULL OR NEW.approved_at IS NOT NULL THEN
+      RAISE EXCEPTION 'Duyệt là một bước riêng của người thứ hai, không ghi cùng yêu cầu (BR-195)'
+        USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF NEW.requested_by IS DISTINCT FROM OLD.requested_by THEN
+    RAISE EXCEPTION 'Không đổi được người yêu cầu (BR-195)' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NEW.approved_by IS DISTINCT FROM OLD.approved_by THEN
+    IF OLD.approved_by IS NOT NULL OR actor IS NULL OR NEW.approved_by IS DISTINCT FROM actor THEN
+      RAISE EXCEPTION 'Người duyệt phải là người đang thao tác và chỉ duyệt một lần (BR-195)'
+        USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    NEW.approved_at := now();
+  ELSIF NEW.approved_at IS DISTINCT FROM OLD.approved_at THEN
+    RAISE EXCEPTION 'approved_at do CSDL ghi khi duyệt (BR-195)' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER handover_actors BEFORE INSERT OR UPDATE ON exec.handover
+  FOR EACH ROW EXECUTE FUNCTION exec.handover_actors();
 
 -- A handover acts on one vault: its own owner's. Bound when the row is written, because the
 -- completion below runs as definer for an admin and must never reach another leader's vault.

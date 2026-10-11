@@ -479,6 +479,57 @@ def test_the_fourth_condition_decrypt_in_a_day_is_not_written(db):
     assert one(db, "SELECT count(*) FROM exec.key_access_log") == 0
 
 
+BACKDATED_LOG_SQL = LOG_SQL.replace(
+    "actor_ref, correlation_id)", "actor_ref, correlation_id, at)"
+).replace("gen_random_uuid() FROM", "gen_random_uuid(), now() - interval '2 days' FROM")
+
+
+def test_a_backdated_decrypt_still_counts_towards_the_limit(db):
+    org, _, _, _ = _setup(db)
+    as_role(db, "svc_exec_worker", org, exec_workflow="on")
+    for _ in range(3):
+        assert one(db, BACKDATED_LOG_SQL) is not None
+    # `at` is the server's clock, so the three rows above are today's and the fourth is refused.
+    assert one(db, BACKDATED_LOG_SQL) is None
+    as_admin(db)
+    assert one(db, "SELECT bool_and(at > now() - interval '1 minute') FROM exec.key_access_log")
+
+
+def _log_row(
+    org, vault, owner, actor_kind, action="unlock", key_kind="vault_key", purpose="unlock"
+):
+    return (
+        "INSERT INTO exec.key_access_log (id, org_id, vault_id, owner_id, key_kind, action, purpose, "
+        "actor_kind, actor_ref, correlation_id) VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, 'x', "
+        "gen_random_uuid())",
+        (str(org), str(vault), str(owner), key_kind, action, purpose, actor_kind),
+    )
+
+
+def test_the_key_log_cannot_be_forged(db):
+    org, owner, vault, _ = _setup(db)
+    other = new_id()
+    other_vault = _vault(db, org, other)
+    # The owner's device logs its own unlocks, and only as owner_device.
+    as_role(db, "svc_exec", org, owner)
+    _execute(db, *_log_row(org, vault, owner, "owner_device"))
+    fails(db, *_log_row(org, vault, owner, "workflow"), code="42501")
+    # A vault and an owner that are not one pair are refused, whoever writes.
+    fails(db, *_log_row(org, other_vault, owner, "owner_device"))
+    # An admin request needs an approved or running handover of that vault.
+    as_admin(db)
+    as_role(db, "svc_exec", org, new_id(), exec_admin="on")
+    fails(
+        db,
+        *_log_row(org, other_vault, other, "admin_request", "shred", "vault_key", "shred"),
+        code="42501",
+    )
+    # The workflow writes only workflow rows.
+    as_admin(db)
+    as_role(db, "svc_exec_worker", org, exec_workflow="on")
+    fails(db, *_log_row(org, vault, owner, "owner_device"), code="42501")
+
+
 # ─── exec.handover, exec.handover_item ───
 
 HANDOVER_SQL = (
@@ -528,6 +579,37 @@ def test_admin_completes_an_approved_shred_and_the_vault_keys_are_destroyed(db):
     # Without the admin flag the same person sees nothing.
     as_role(db, "svc_exec", org, ac06, exec_admin="")
     assert one(db, "SELECT count(*) FROM exec.handover") == 0
+
+
+def test_a_handover_needs_two_real_people(db):
+    org, owner, vault, _ = _setup(db)
+    ac05, ac06, someone, handover = new_id(), new_id(), new_id(), new_id()
+    as_role(db, "svc_exec", org, ac05, exec_admin="on")
+    row = [str(handover), str(org), str(vault), str(owner), "shred", "leave_position"]
+    # The requester is whoever inserts; a typed-in name and a pre-filled approval are refused.
+    fails(db, HANDOVER_SQL, (*row, str(someone), False, None, "requested", None), code="42501")
+    fails(db, HANDOVER_SQL, (*row, str(ac05), False, None, "requested", str(ac06)), code="42501")
+    _execute(db, HANDOVER_SQL, (*row, str(ac05), False, None, "requested", None))
+    # AC05 cannot approve its own request, nor sign it in AC06's name.
+    fails(
+        db,
+        "UPDATE exec.handover SET status = 'approved', approved_by = %s",
+        (str(ac05),),
+        code="23514",
+    )
+    fails(
+        db,
+        "UPDATE exec.handover SET status = 'approved', approved_by = %s",
+        (str(ac06),),
+        code="42501",
+    )
+    as_admin(db)
+    as_role(db, "svc_exec", org, ac06, exec_admin="on")
+    _execute(db, "UPDATE exec.handover SET status = 'approved', approved_by = %s", (str(ac06),))
+    # Approval happens once.
+    as_admin(db)
+    as_role(db, "svc_exec", org, someone, exec_admin="on")
+    fails(db, "UPDATE exec.handover SET approved_by = %s", (str(someone),), code="42501")
 
 
 def test_seal_handover_seals_the_vault(db):
