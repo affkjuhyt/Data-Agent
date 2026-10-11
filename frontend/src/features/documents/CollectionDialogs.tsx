@@ -13,6 +13,8 @@ import {
   suggestCollections,
   type CollectionSuggestion,
 } from '../../lib/v1/documents';
+import { formatNumber } from '../../lib/formatVN';
+import { cn } from '../../lib/utils';
 import { useV1 } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 
@@ -205,7 +207,7 @@ export function SuggestCollectionDialog({
       open={open}
       title="Agent đề xuất bộ sưu tập"
       description="Agent quét các nguồn tệp đã kết nối và gợi ý cách tổ chức."
-      submitLabel="Tạo bộ sưu tập đã chọn"
+      submitLabel={`Tạo ${formatNumber(picked.size)} bộ sưu tập`}
       submitting={busy}
       error={error}
       onClose={onClose}
@@ -216,8 +218,13 @@ export function SuggestCollectionDialog({
       ) : (
         (suggestions ?? []).map((s, i) => (
           <div key={s.id} className="flex flex-col gap-da-xs">
-            <span className="text-foreground da-label">Đề xuất {i + 1}</span>
-            <div className="flex h-9 items-center rounded-md border border-border-strong px-da-lg">
+            <span className="text-muted-foreground da-label">Đề xuất {i + 1}</span>
+            <div
+              className={cn(
+                'flex items-center rounded-md border px-da-md py-da-sm',
+                picked.has(s.id) ? 'border-primary' : 'border-border-strong',
+              )}
+            >
               <Checkbox checked={picked.has(s.id)} onChange={(on) => toggle(s.id, on)}>
                 {s.label}
               </Checkbox>
@@ -226,8 +233,8 @@ export function SuggestCollectionDialog({
         ))
       )}
       {note && (
-        <p className="flex items-start gap-da-md rounded-md border border-border px-da-lg py-da-md text-foreground da-body-small">
-          <Icon name="agent" className="mt-px shrink-0 text-primary" />
+        <p className="flex items-start gap-da-md rounded-md bg-info-subtle px-da-md py-da-sm text-foreground da-caption">
+          <Icon name="agent" className="shrink-0 text-info" />
           {note}
         </p>
       )}

@@ -168,7 +168,7 @@ describe('DocumentsPage', () => {
         'Agent Tài liệu phát hiện 1 tệp trùng với tệp đã có; sẽ bỏ qua.',
       ),
     ).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Nạp tệp' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Nạp' }));
     expect(
       await screen.findByText('Đã nhận 1 tệp, bỏ qua 1 tệp trùng. Agent Tài liệu đang tiền xử lý.'),
     ).toBeInTheDocument();
@@ -231,7 +231,8 @@ describe('ExtractionSchemaPage', () => {
     expect(screen.getByText('repayment_schedule')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Xuất bản v2' }));
     const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Xuất bản v2' }));
+    expect(within(dialog).getByText('Xuất bản lược đồ v2?')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Xuất bản' }));
     expect(await screen.findByText('Đã xuất bản Hồ sơ tín dụng · v2.')).toBeInTheDocument();
     expect(await screen.findByText('Đã xuất bản')).toBeInTheDocument();
   });
@@ -309,7 +310,7 @@ describe('Collection dialogs', () => {
       screen.getByText('Đề xuất 3 cần tách khỏi bộ sưu tập hiện có; lược đồ cũ vẫn dùng được.'),
     ).toBeInTheDocument();
     fireEvent.click(third);
-    fireEvent.click(screen.getByRole('button', { name: 'Tạo bộ sưu tập đã chọn' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo 2 bộ sưu tập' }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(2));
   });
 });

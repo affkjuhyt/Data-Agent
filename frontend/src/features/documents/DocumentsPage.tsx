@@ -53,10 +53,9 @@ export default function DocumentsPage() {
 
   return (
     <div className="flex min-h-full">
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col gap-da-lg px-da-2xl py-da-xl">
         <PageHeader
-          bordered
-          breadcrumb={['Dữ liệu', 'Tài liệu']}
+          breadcrumb={['Dữ liệu & tri thức › Tài liệu']}
           title="Tài liệu"
           description="Quy định, chính sách nội bộ, hợp đồng… Agent Tài liệu đọc, trích điều khoản, theo dõi hiệu lực và liên kết tới chỉ số liên quan."
           actions={
@@ -65,41 +64,39 @@ export default function DocumentsPage() {
             </Button>
           }
         />
-        <div className="flex flex-col gap-da-lg px-da-3xl pt-da-md">
-          <Tabs<Tab>
-            label="Lọc tài liệu"
-            value={tab}
-            onChange={setTab}
-            items={[
-              { value: 'all', label: label('Tất cả', counts.data?.all) },
-              { value: 'regulation', label: label('Quy định', counts.data?.regulation) },
-              { value: 'internal', label: label('Nội bộ', counts.data?.internal) },
-              { value: 'processing', label: label('Đang xử lý', counts.data?.processing) },
-            ]}
-          />
-          <div role="tabpanel">
-            <AsyncRegion
-              state={rows}
-              what="tài liệu"
-              skeletonRows={5}
-              isEmpty={(p) => p.items.length === 0}
-              empty={
-                <EmptyState
-                  icon="file"
-                  title={tab === 'processing' ? 'Không có tài liệu đang xử lý' : 'Chưa có tài liệu'}
-                  description="Tài liệu xuất hiện khi nguồn đồng bộ hoặc khi bạn nạp tệp."
-                />
-              }
-            >
-              {(p) =>
-                tab === 'processing' ? (
-                  <ProcessingTable rows={p.items} selected={shown} onSelect={setSelected} />
-                ) : (
-                  <LibraryTable rows={p.items} selected={shown} onSelect={setSelected} />
-                )
-              }
-            </AsyncRegion>
-          </div>
+        <Tabs<Tab>
+          label="Lọc tài liệu"
+          value={tab}
+          onChange={setTab}
+          items={[
+            { value: 'all', label: label('Tất cả', counts.data?.all) },
+            { value: 'regulation', label: label('Quy định', counts.data?.regulation) },
+            { value: 'internal', label: label('Nội bộ', counts.data?.internal) },
+            { value: 'processing', label: label('Đang xử lý', counts.data?.processing) },
+          ]}
+        />
+        <div role="tabpanel">
+          <AsyncRegion
+            state={rows}
+            what="tài liệu"
+            skeletonRows={5}
+            isEmpty={(p) => p.items.length === 0}
+            empty={
+              <EmptyState
+                icon="file"
+                title={tab === 'processing' ? 'Không có tài liệu đang xử lý' : 'Chưa có tài liệu'}
+                description="Tài liệu xuất hiện khi nguồn đồng bộ hoặc khi bạn nạp tệp."
+              />
+            }
+          >
+            {(p) =>
+              tab === 'processing' ? (
+                <ProcessingTable rows={p.items} selected={shown} onSelect={setSelected} />
+              ) : (
+                <LibraryTable rows={p.items} selected={shown} onSelect={setSelected} />
+              )
+            }
+          </AsyncRegion>
         </div>
       </div>
       {shown && <DocumentPanel key={shown} id={shown} />}
@@ -119,6 +116,10 @@ export default function DocumentsPage() {
     </div>
   );
 }
+
+/* The library table: 12px side padding, 8px between cells; the processing table: 8px and 12px. */
+const LIB_CELL = 'px-da-xs first:pl-da-lg last:pr-da-lg';
+const RUN_CELL = 'px-[6px] py-da-sm first:pl-da-md last:pr-da-md';
 
 function SelectableRow({
   row,
@@ -162,13 +163,13 @@ function LibraryTable({
       <table className="w-full table-fixed border-collapse">
         <thead>
           <tr className={HEAD_ROW}>
-            <th className="px-da-md py-da-sm font-medium">Tài liệu</th>
-            <th className="w-[96px] px-da-md py-da-sm font-medium">Loại</th>
-            <th className="w-[124px] px-da-md py-da-sm font-medium">Hiệu lực</th>
-            <th className="w-[80px] px-da-md py-da-sm font-medium max-[1279px]:hidden">
+            <th className={cn(LIB_CELL, 'py-da-sm font-medium')}>Tài liệu</th>
+            <th className={cn(LIB_CELL, 'w-[108px] py-da-sm font-medium')}>Loại</th>
+            <th className={cn(LIB_CELL, 'w-[128px] py-da-sm font-medium')}>Hiệu lực</th>
+            <th className={cn(LIB_CELL, 'w-[88px] py-da-sm font-medium max-[1279px]:hidden')}>
               Điều khoản
             </th>
-            <th className="w-[160px] px-da-md py-da-sm font-medium max-[1279px]:hidden">
+            <th className={cn(LIB_CELL, 'w-[166px] py-da-sm font-medium max-[1279px]:hidden')}>
               Liên kết
             </th>
           </tr>
@@ -181,13 +182,13 @@ function LibraryTable({
               selected={selected === row.id}
               onSelect={onSelect}
             >
-              <td className="truncate px-da-md py-da-sm text-foreground da-body-strong">
+              <td className={cn(LIB_CELL, 'truncate py-da-md text-foreground da-body-strong')}>
                 {row.title}
               </td>
-              <td className="px-da-md py-da-sm text-foreground da-body-small">
+              <td className={cn(LIB_CELL, 'py-da-md text-foreground da-body-small')}>
                 {row.category_label}
               </td>
-              <td className="px-da-md py-da-sm">
+              <td className={cn(LIB_CELL, 'py-da-md')}>
                 {!row.validity ? (
                   <span className="text-muted-foreground da-body-small">—</span>
                 ) : row.validity.ended ? (
@@ -198,10 +199,15 @@ function LibraryTable({
                   </StatusDot>
                 )}
               </td>
-              <td className="px-da-md py-da-sm text-foreground da-body-small max-[1279px]:hidden">
+              <td className={cn(LIB_CELL, 'py-da-md text-foreground da-mono max-[1279px]:hidden')}>
                 {row.clause_count ?? '—'}
               </td>
-              <td className="truncate px-da-md py-da-sm text-foreground da-body-small max-[1279px]:hidden">
+              <td
+                className={cn(
+                  LIB_CELL,
+                  'truncate py-da-md text-foreground da-body-small max-[1279px]:hidden',
+                )}
+              >
                 {row.links_text ?? '—'}
               </td>
             </SelectableRow>
@@ -222,14 +228,14 @@ function ProcessingTable({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="overflow-hidden rounded-md border border-border bg-card">
       <table className="w-full table-fixed border-collapse">
         <thead>
           <tr className={HEAD_ROW}>
-            <th className="px-da-md py-da-sm font-medium">Tài liệu</th>
-            <th className="w-[150px] px-da-md py-da-sm font-medium">Bước hiện tại</th>
-            <th className="w-[160px] px-da-md py-da-sm font-medium">Tiến độ</th>
-            <th className="w-[80px] px-da-md py-da-sm font-medium">Bắt đầu</th>
+            <th className={cn(RUN_CELL, 'font-medium')}>Tài liệu</th>
+            <th className={cn(RUN_CELL, 'w-[212px] font-medium')}>Bước hiện tại</th>
+            <th className={cn(RUN_CELL, 'w-[132px] font-medium')}>Tiến độ</th>
+            <th className={cn(RUN_CELL, 'w-[104px] font-medium')}>Bắt đầu</th>
           </tr>
         </thead>
         <tbody>
@@ -240,35 +246,27 @@ function ProcessingTable({
               selected={selected === row.id}
               onSelect={onSelect}
             >
-              <td className="truncate px-da-md py-da-sm text-foreground da-body-strong">
+              <td className={cn(RUN_CELL, 'truncate text-foreground da-body-strong')}>
                 {row.title}
               </td>
-              <td className="px-da-md py-da-sm text-foreground da-body-small">
+              <td className={cn(RUN_CELL, 'text-foreground da-body-small')}>
                 {row.processing?.step_text ?? '—'}
               </td>
-              <td className="px-da-md py-da-sm">
+              <td className={cn(RUN_CELL, 'text-foreground da-mono')}>
                 {row.processing && (
-                  <span className="flex items-center gap-da-sm">
-                    <span
-                      role="progressbar"
-                      aria-label={`Tiến độ ${row.title}`}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={Math.round(row.processing.progress * 100)}
-                      className="h-1.5 flex-1 overflow-hidden rounded-full bg-subtle"
-                    >
-                      <span
-                        className="block h-full rounded-full bg-primary"
-                        style={{ width: `${row.processing.progress * 100}%` }}
-                      />
-                    </span>
-                    <span className="w-[36px] text-right text-foreground da-caption">
-                      {formatPercent(row.processing.progress, 0)}
-                    </span>
+                  // Figma draws the progress as a plain percentage; the role keeps it a progress.
+                  <span
+                    role="progressbar"
+                    aria-label={`Tiến độ ${row.title}`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(row.processing.progress * 100)}
+                  >
+                    {formatPercent(row.processing.progress, 0)}
                   </span>
                 )}
               </td>
-              <td className="px-da-md py-da-sm text-muted-foreground da-mono">
+              <td className={cn(RUN_CELL, 'text-foreground da-mono')}>
                 {row.processing ? formatTime(row.processing.started_at) : '—'}
               </td>
             </SelectableRow>
@@ -298,10 +296,8 @@ function PanelBody({ doc }: { doc: DocumentView }) {
   const { navigate } = useAppState();
   return (
     <>
-      <div className="flex flex-col gap-da-xs">
-        <h2 className="text-foreground da-heading-2">{doc.title}</h2>
-        <p className="text-muted-foreground da-caption">{doc.origin_text}</p>
-      </div>
+      <h2 className="text-foreground da-heading-2">{doc.title}</h2>
+      <p className="text-muted-foreground da-caption">{doc.origin_text}</p>
       <section className="flex flex-col gap-da-xs">
         <h3 className="text-muted-foreground da-overline">Agent Tài liệu đã xử lý</h3>
         {doc.processing.map((step) => (

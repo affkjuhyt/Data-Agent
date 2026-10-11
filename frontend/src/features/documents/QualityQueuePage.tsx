@@ -125,17 +125,17 @@ function IssueView({
       <div className="grid flex-1 grid-cols-2 max-[1023px]:grid-cols-1">
         <section
           aria-label="Ảnh trang gốc"
-          className="flex flex-col gap-da-md bg-subtle px-da-3xl py-da-xl"
+          className="flex flex-col gap-da-md bg-background px-da-3xl py-da-xl"
         >
           <h2 className="text-muted-foreground da-caption">Ảnh trang gốc</h2>
           {issue.image_url ? (
             <img
               src={issue.image_url}
               alt={`Trang ${issue.page} của ${issue.document.title}`}
-              className="w-full rounded-lg border border-border bg-card"
+              className="w-full rounded-[4px] border border-border bg-card"
             />
           ) : (
-            <div className="flex flex-col gap-da-md rounded-lg border border-border bg-card px-da-2xl py-da-xl text-foreground da-body-small">
+            <div className="flex flex-col gap-[10px] rounded-[4px] border border-border bg-card px-[28px] py-da-2xl text-muted-foreground da-body">
               {issue.original_lines.map((line, i) => (
                 <p key={i}>{line}</p>
               ))}
@@ -151,10 +151,10 @@ function IssueView({
         </section>
         <section
           aria-label="Văn bản agent đọc được"
-          className="flex flex-col gap-da-md border-l border-border bg-card px-da-3xl py-da-xl"
+          className="flex flex-col gap-[10px] border-l border-border bg-card px-da-3xl py-da-xl"
         >
           <h2 className="text-muted-foreground da-caption">Văn bản agent đọc được</h2>
-          <div className="flex flex-col gap-da-sm rounded-lg border border-border px-da-lg py-da-md">
+          <div className="flex flex-col gap-da-md rounded-md border border-border px-da-xl py-[14px]">
             {issue.read.heading && (
               <p className="text-foreground da-body-strong">{issue.read.heading}</p>
             )}
@@ -176,14 +176,14 @@ function IssueView({
             {issue.unreadable.map((u) => (
               <p
                 key={u}
-                className="rounded-md bg-warning-subtle px-da-md py-da-sm text-foreground da-body-small"
+                className="rounded-sm bg-warning-subtle px-[10px] py-da-sm text-foreground da-body-small"
               >
                 {u}
               </p>
             ))}
           </div>
-          <h3 className="pt-da-xs text-foreground da-heading-3">Agent đã làm</h3>
-          <ul className="flex flex-col gap-da-md text-foreground da-caption">
+          <h3 className="text-foreground da-heading-3">Agent đã làm</h3>
+          <ul className="flex flex-col gap-[10px] text-foreground da-body-small">
             {issue.agent_actions.map((a) => (
               <li key={a}>· {a}</li>
             ))}

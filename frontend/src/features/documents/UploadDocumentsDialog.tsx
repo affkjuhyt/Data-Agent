@@ -128,14 +128,14 @@ export function UploadDocumentsDialog({
       open={open}
       title="Nạp tệp vào bộ sưu tập"
       description="Tệp đi qua pipeline: nhận dạng, trích trường, lập chỉ mục, che dữ liệu cá nhân."
-      submitLabel="Nạp tệp"
+      submitLabel="Nạp"
       submitting={busy}
       error={error}
       onClose={onClose}
       onSubmit={() => void submit()}
     >
       <div className="flex flex-col gap-da-xs">
-        <span className="text-foreground da-label">Tệp</span>
+        <span className="text-muted-foreground da-label">Tệp</span>
         <input
           ref={fileRef}
           type="file"
@@ -153,11 +153,10 @@ export function UploadDocumentsDialog({
           onDragOver={(e) => e.preventDefault()}
           onDrop={onDrop}
           className={cn(
-            'flex h-9 items-center gap-da-sm rounded-md border border-dashed border-border-strong px-da-lg text-left da-body-small',
+            'flex items-center rounded-md border border-dashed border-border-strong bg-subtle p-da-md text-left da-body-small',
             files.length ? 'text-foreground' : 'text-muted-foreground',
           )}
         >
-          <Icon name="upload" />
           {files.length
             ? `Kéo thả hoặc chọn · ${formatNumber(files.length)} tệp · ${sizeText(total)}`
             : 'Kéo thả hoặc chọn tệp'}
@@ -192,8 +191,8 @@ export function UploadDocumentsDialog({
         <Select<PiiPolicy> label="Dữ liệu cá nhân" options={PII} value={pii} onChange={setPii} />
       </Field>
       {note && (
-        <p className="flex items-start gap-da-md rounded-md border border-border px-da-lg py-da-md text-foreground da-body-small">
-          <Icon name="agent" className="mt-px shrink-0 text-primary" />
+        <p className="flex items-start gap-da-md rounded-md bg-info-subtle px-da-md py-da-sm text-foreground da-caption">
+          <Icon name="agent" className="shrink-0 text-info" />
           {note}
         </p>
       )}

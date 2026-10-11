@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
+import { Button } from '../../design-system/Button';
 import { Composer } from '../../design-system/Composer';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
+import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
 import { askDocuments, type Citation, type DocumentAnswer } from '../../lib/v1/documents';
 import { listCollections } from '../../lib/v1/sources';
@@ -17,6 +19,9 @@ import { ReportDialog } from '../ask/components/ReportDialog';
  * reader may read, each claim cited with document, clause, page and validity; the cited passage
  * shows on the right and "Mở đoạn gốc" opens it in the viewer. A superseded source is only cited
  * to say it was superseded, never as the basis.
+ *
+ * Figma draws "Chọn bộ sưu tập" as a ghost button; the design-system Menu only has an icon
+ * trigger, so the scope stays a Select. "Thêm vào phiên" has no session API yet: shown disabled.
  */
 const ALL_COLLECTIONS = '__all';
 
@@ -28,6 +33,15 @@ export default function DocumentAnswerPage() {
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [selected, setSelected] = useState<Citation | null>(null);
   const [reporting, setReporting] = useState<DocumentAnswer | null>(null);
+
+  const share = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      toast({ tone: 'success', message: 'Đã sao chép liên kết.' });
+    } catch {
+      toast({ tone: 'error', message: 'Không sao chép được liên kết.' });
+    }
+  };
 
   const ask = async (question: string) => {
     setPendingQuestion(question);
@@ -55,24 +69,30 @@ export default function DocumentAnswerPage() {
         breadcrumb={['Phân tích', 'Phiên', 'Hỏi đáp tài liệu']}
         title="Hỏi đáp tài liệu"
         actions={
-          <div className="w-60">
-            <Select
-              label="Chọn bộ sưu tập"
-              options={[
-                { value: ALL_COLLECTIONS, label: 'Mọi bộ sưu tập được đọc' },
-                ...(collections.data?.items ?? [])
-                  .filter((c) => !c.archived)
-                  .map((c) => ({ value: c.id, label: c.name })),
-              ]}
-              value={collection}
-              onChange={setCollection}
-            />
-          </div>
+          <>
+            <div className="w-60">
+              <Select
+                label="Chọn bộ sưu tập"
+                options={[
+                  { value: ALL_COLLECTIONS, label: 'Mọi bộ sưu tập được đọc' },
+                  ...(collections.data?.items ?? [])
+                    .filter((c) => !c.archived)
+                    .map((c) => ({ value: c.id, label: c.name })),
+                ]}
+                value={collection}
+                onChange={setCollection}
+              />
+            </div>
+            <Button onClick={() => void share()}>Chia sẻ</Button>
+          </>
         }
       />
       <div className="flex min-h-0 flex-1">
-        <section aria-label="Hội thoại" className="flex min-w-0 flex-1 flex-col px-da-4xl py-da-xl">
-          <div className="mx-auto flex w-full max-w-[680px] flex-1 flex-col gap-da-2xl">
+        <section
+          aria-label="Hội thoại"
+          className="flex min-w-0 flex-1 flex-col px-da-5xl pb-da-xl pt-da-2xl"
+        >
+          <div className="flex w-full flex-1 flex-col gap-da-2xl">
             {answers.length === 0 && !pendingQuestion && (
               <EmptyState
                 icon="file"
@@ -90,14 +110,14 @@ export default function DocumentAnswerPage() {
               />
             ))}
             {pendingQuestion && (
-              <div className="flex flex-col gap-da-md" aria-busy>
+              <div className="flex flex-col gap-[14px]" aria-busy>
                 <Question text={pendingQuestion} />
                 <StatusDot tone="info">Agent Tài liệu đang tìm trong các văn bản…</StatusDot>
               </div>
             )}
           </div>
           <Composer
-            className="mx-auto mt-da-xl w-full max-w-[680px]"
+            className="mt-da-xl w-full"
             placeholder="Hỏi về nội dung tài liệu…"
             sending={pendingQuestion !== null}
             onSubmit={(text) => void ask(text)}
@@ -124,7 +144,7 @@ export default function DocumentAnswerPage() {
 
 function Question({ text }: { text: string }) {
   return (
-    <p className="max-w-[80%] self-end rounded-lg bg-subtle px-da-lg py-da-md text-foreground da-body">
+    <p className="max-w-[80%] self-end rounded-md bg-subtle px-[14px] py-[10px] text-foreground da-body">
       {text}
     </p>
   );
@@ -144,50 +164,61 @@ function AnswerTurn({
   const { navigate } = useAppState();
   const open = selected && answer.citations.includes(selected) ? selected : answer.citations[0];
   return (
-    <article className="flex flex-col gap-da-md">
+    <article className="flex flex-col gap-[14px]">
       <Question text={answer.question} />
       <p className="text-muted-foreground da-caption">{answer.scope_text}</p>
-      <p className="text-foreground da-body">{answer.answer}</p>
-      {answer.citations.length > 0 && (
-        <ul className="flex flex-col gap-da-md">
-          {answer.citations.map((c) => (
-            <li key={c.n}>
-              <button
-                type="button"
-                aria-pressed={selected === c}
-                onClick={() => onSelect(c)}
-                className={cn(
-                  'flex w-full items-center gap-da-md rounded-md border px-da-lg py-da-md text-left hover:bg-subtle',
-                  selected === c ? 'border-border-strong' : 'border-border',
-                )}
-              >
-                <span className="shrink-0 text-muted-foreground da-mono">[{c.n}]</span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-foreground da-body-strong">{c.title}</span>
-                  <span className="text-muted-foreground da-caption">{c.locator}</span>
-                </span>
-                <StatusDot tone={c.validity.tone} className="shrink-0">
-                  {c.validity.text}
-                </StatusDot>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="flex flex-wrap items-center gap-da-lg">
-        <span className="flex-1 text-muted-foreground da-caption">{answer.meta_text}</span>
-        {open && (
+      <div className="flex flex-col gap-[10px]">
+        <p className="text-foreground da-reading">{answer.answer}</p>
+        {answer.citations.length > 0 && (
+          <ul className="flex flex-col gap-[10px]">
+            {answer.citations.map((c) => (
+              <li key={c.n}>
+                <button
+                  type="button"
+                  aria-pressed={selected === c}
+                  onClick={() => onSelect(c)}
+                  className={cn(
+                    'flex w-full items-center gap-[10px] rounded-sm border px-da-lg py-da-md text-left hover:bg-subtle',
+                    selected === c ? 'border-border-strong' : 'border-border',
+                  )}
+                >
+                  <span className="w-6 shrink-0 text-muted-foreground da-mono">[{c.n}]</span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
+                    <span className="text-foreground da-body-strong">{c.title}</span>
+                    <span className="text-muted-foreground da-caption">{c.locator}</span>
+                  </span>
+                  <StatusDot tone={c.validity.tone} className="shrink-0">
+                    {c.validity.text}
+                  </StatusDot>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex flex-wrap items-center gap-da-xl">
+          <span className="flex-1 text-muted-foreground da-caption">{answer.meta_text}</span>
+          {open && (
+            <button
+              type="button"
+              className="text-primary da-body-strong hover:underline"
+              onClick={() => navigate('data', 'DOCUMENT', open.document_id)}
+            >
+              Mở đoạn gốc
+            </button>
+          )}
+          <Tooltip content="Thêm vào phiên cần API Phiên làm việc.">
+            <button type="button" disabled className="text-primary opacity-50 da-body-strong">
+              Thêm vào phiên
+            </button>
+          </Tooltip>
           <button
             type="button"
-            className="text-primary da-label hover:underline"
-            onClick={() => navigate('data', 'DOCUMENT', open.document_id)}
+            className="text-primary da-body-strong hover:underline"
+            onClick={onReport}
           >
-            Mở đoạn gốc
+            Báo sai
           </button>
-        )}
-        <button type="button" className="text-primary da-label hover:underline" onClick={onReport}>
-          Báo sai
-        </button>
+        </div>
       </div>
     </article>
   );
@@ -197,14 +228,14 @@ function CitedPassage({ citation }: { citation: Citation | null }) {
   return (
     <aside
       aria-label="Đoạn gốc"
-      className="flex w-[420px] shrink-0 flex-col gap-da-md border-l border-border bg-subtle p-da-xl max-[1023px]:hidden"
+      className="flex w-[420px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pb-da-xl pt-[20px] max-[1023px]:hidden"
     >
       {citation ? (
         <>
           <h2 className="text-foreground da-heading-3">
             [{citation.n}] {citation.title} · {citation.locator.split(' · ')[0]}
           </h2>
-          <blockquote className="border-l-2 border-border-strong bg-card px-da-lg py-da-md text-foreground da-body">
+          <blockquote className="border-l-2 border-border bg-card px-[14px] py-[10px] text-foreground da-body">
             {citation.quote}
           </blockquote>
           {citation.superseded && (
@@ -212,7 +243,7 @@ function CitedPassage({ citation }: { citation: Citation | null }) {
               Văn bản đã bị thay thế: chỉ trích để nói điều đó, không dùng làm căn cứ.
             </p>
           )}
-          <p className="text-muted-foreground da-caption">
+          <p className="text-muted-foreground da-body-small">
             Đoạn được tô là phần agent dùng để trả lời. Bấm “Mở đoạn gốc” để xem trong trình xem tài
             liệu, đúng trang.
           </p>

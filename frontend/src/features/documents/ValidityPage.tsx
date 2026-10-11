@@ -92,7 +92,7 @@ function ValidityView({ v, onChanged }: { v: DocumentValidity; onChanged: () => 
           bordered
           breadcrumb={['Dữ liệu', 'Tài liệu', 'Hiệu lực văn bản']}
           title={
-            <span className="flex flex-wrap items-center gap-da-md">
+            <span className="flex flex-wrap items-center gap-[10px]">
               <button
                 type="button"
                 className="text-left hover:underline"
@@ -127,13 +127,13 @@ function ValidityView({ v, onChanged }: { v: DocumentValidity; onChanged: () => 
             )
           }
         />
-        <div className="flex flex-col gap-da-md px-da-3xl py-da-xl">
+        <div className="flex flex-col gap-da-xl pb-da-xl pl-da-3xl pr-da-2xl pt-[20px]">
           <h2 className="text-foreground da-heading-3">Dòng thời gian</h2>
           <ol className="flex flex-col">
             {v.timeline.map((e) => (
               <li
                 key={`${e.date_text}-${e.text}`}
-                className="flex items-center gap-da-lg border-b border-border px-da-md py-da-md"
+                className="flex items-start gap-[14px] border-b border-border py-[10px]"
               >
                 <span className="w-[100px] shrink-0 text-muted-foreground da-mono">
                   {e.date_text}
@@ -141,29 +141,29 @@ function ValidityView({ v, onChanged }: { v: DocumentValidity; onChanged: () => 
                 <span
                   aria-hidden
                   className={cn(
-                    'size-[7px] shrink-0 rounded-full',
+                    'mt-[4px] size-[7px] shrink-0 rounded-full',
                     e.change ? 'bg-warning' : 'bg-border-strong',
                   )}
                 />
-                <span className="text-foreground da-body-small">{e.text}</span>
+                <span className="min-w-0 flex-1 text-foreground da-body-small">{e.text}</span>
               </li>
             ))}
           </ol>
-          <h2 className="pt-da-md text-foreground da-heading-3">Ảnh hưởng tới câu trả lời</h2>
+          <h2 className="text-foreground da-heading-3">Ảnh hưởng tới câu trả lời</h2>
           <table className="w-full table-fixed border-collapse">
             <thead>
               <tr className={cn(HEAD_ROW, 'bg-transparent')}>
-                <th className="px-da-md py-da-sm font-normal">Đối tượng</th>
-                <th className="px-da-md py-da-sm font-normal">Ảnh hưởng</th>
+                <th className="px-da-lg py-da-md font-normal">Đối tượng</th>
+                <th className="w-[384px] px-da-lg py-da-md font-normal">Ảnh hưởng</th>
               </tr>
             </thead>
             <tbody>
               {v.impact.map((row) => (
                 <tr key={row.subject} className={cn(ROW, 'last:border-b')}>
-                  <td className="px-da-md py-da-md text-foreground da-body-strong">
+                  <td className="px-da-lg py-da-md text-foreground da-body-strong">
                     {row.subject}
                   </td>
-                  <td className="px-da-md py-da-md text-foreground da-body-small">{row.effect}</td>
+                  <td className="px-da-lg py-da-md text-foreground da-body-small">{row.effect}</td>
                 </tr>
               ))}
             </tbody>
@@ -171,7 +171,11 @@ function ValidityView({ v, onChanged }: { v: DocumentValidity; onChanged: () => 
         </div>
       </div>
       {v.finding && (
-        <SidePanel label="Agent phát hiện" width="w-[340px]">
+        <SidePanel
+          label="Agent phát hiện"
+          width="w-[340px]"
+          className="gap-[10px] bg-background px-da-2xl pt-[20px]"
+        >
           <h2 className="text-foreground da-heading-3">Agent phát hiện</h2>
           <p className="text-foreground da-body-small">{v.finding.text}</p>
           {!v.pending && <StatusDot tone="success">Đã xác nhận</StatusDot>}

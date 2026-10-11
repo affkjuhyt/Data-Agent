@@ -65,7 +65,7 @@ export function CallViewer({ doc, call }: { doc: DocumentView; call: CallRecordi
           </div>
         </header>
 
-        <div className="flex items-center gap-da-lg rounded-lg border border-border bg-card px-da-md py-da-sm">
+        <div className="flex items-center gap-da-md rounded-lg border border-border bg-card px-da-lg py-da-md">
           {call.audio_url ? (
             <>
               <audio
@@ -102,7 +102,7 @@ export function CallViewer({ doc, call }: { doc: DocumentView; call: CallRecordi
               const rect = e.currentTarget.getBoundingClientRect();
               if (rect.width > 0) seek(((e.clientX - rect.left) / rect.width) * call.duration_s);
             }}
-            className="flex h-[30px] min-w-0 flex-1 cursor-pointer items-center gap-[3px]"
+            className="flex h-[30px] min-w-0 flex-1 cursor-pointer items-center gap-da-xs overflow-hidden"
           >
             {call.waveform.map((h, i) => {
               const t = (i / bars) * call.duration_s;
@@ -112,7 +112,7 @@ export function CallViewer({ doc, call }: { doc: DocumentView; call: CallRecordi
                 <span
                   key={i}
                   className={cn(
-                    'w-[3px] shrink-0 rounded-full',
+                    'w-1 shrink-0 rounded-[2px]',
                     marked ? 'bg-warning' : t <= position ? 'bg-primary' : 'bg-border-strong',
                   )}
                   style={{ height: `${Math.max(0.15, h) * 100}%` }}
@@ -127,7 +127,7 @@ export function CallViewer({ doc, call }: { doc: DocumentView; call: CallRecordi
 
         <ol
           aria-label="Lời thoại"
-          className="flex flex-col rounded-lg border border-border bg-card p-da-lg"
+          className="flex flex-col gap-da-md rounded-lg border border-border bg-card px-da-xl py-da-lg"
         >
           {call.transcript.map((line) => (
             <li key={line.at_s}>
@@ -136,19 +136,20 @@ export function CallViewer({ doc, call }: { doc: DocumentView; call: CallRecordi
                 aria-current={line === current || undefined}
                 onClick={() => seek(line.at_s)}
                 className={cn(
-                  'flex w-full items-start gap-da-lg rounded-md px-da-lg py-da-md text-left hover:bg-subtle',
-                  line === current && 'bg-subtle',
+                  'flex w-full items-start gap-da-md rounded-md px-da-md py-da-sm text-left hover:bg-subtle',
+                  // Figma marks the line under the playhead with a rule below it.
+                  line === current && 'rounded-none border-b border-border',
                 )}
               >
                 <span className="w-[44px] shrink-0 text-muted-foreground da-mono">
                   {clock(line.at_s)}
                 </span>
-                <span className="flex min-w-0 flex-1 flex-col gap-da-xs">
+                <span className="flex min-w-0 flex-1 flex-col">
                   <span
                     className={
                       line.role === 'customer'
                         ? 'text-primary da-label'
-                        : 'text-muted-foreground da-caption'
+                        : 'text-muted-foreground da-label'
                     }
                   >
                     {line.speaker}
