@@ -109,22 +109,62 @@ COMMENT ON COLUMN audit.security_event.severity IS 'low, medium, high, critical'
 COMMENT ON COLUMN audit.security_event.source_ref IS 'Ví dụ chunk, agent_run, api_client';
 COMMENT ON COLUMN audit.security_event.status IS 'open, investigating, closed';
 
+CREATE TABLE audit.export_job (
+  id uuid NOT NULL,
+  org_id uuid NOT NULL,
+  filters jsonb NOT NULL DEFAULT '{}',
+  format text NOT NULL DEFAULT 'csv',
+  row_count bigint,
+  status text NOT NULL DEFAULT 'queued',
+  requested_by uuid NOT NULL,
+  approved_by uuid,
+  approved_at timestamptz,
+  hitl_request_id uuid,
+  object_key text,
+  signature text,
+  expires_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT export_job_pkey PRIMARY KEY (id),
+  CHECK (format IN ('csv','jsonl')),
+  CHECK (status IN ('queued','waiting_approval','running','ready','failed','expired')),
+  CHECK (approved_by IS NULL OR approved_by <> requested_by),
+  CHECK (status NOT IN ('running','ready') OR row_count <= 100000 OR approved_by IS NOT NULL),
+  CHECK (status <> 'ready' OR (object_key IS NOT NULL AND signature IS NOT NULL))
+);
+COMMENT ON TABLE audit.export_job IS 'Bản xuất nhật ký kiểm toán có chữ ký số: bộ lọc, số dòng, duyệt người thứ hai khi quá 100.000 dòng, tệp trong MinIO (BR-138); nằm trong CSDL dataagent_audit cùng các dòng nó xuất. Thêm 12/10/2026. Use case: UC-11-03.';
+COMMENT ON COLUMN audit.export_job.filters IS 'Bộ lọc của GET /v1/audit lúc yêu cầu';
+COMMENT ON COLUMN audit.export_job.format IS 'csv, jsonl';
+COMMENT ON COLUMN audit.export_job.row_count IS 'Số dòng sẽ xuất, đếm lúc tạo';
+COMMENT ON COLUMN audit.export_job.status IS 'queued, waiting_approval, running, ready, failed, expired';
+COMMENT ON COLUMN audit.export_job.requested_by IS 'logic → org.app_user';
+COMMENT ON COLUMN audit.export_job.approved_by IS 'logic → org.app_user; người thứ hai duyệt khi row_count quá 100.000, khác requested_by (BR-138)';
+COMMENT ON COLUMN audit.export_job.hitl_request_id IS 'logic → inbox.hitl_request khi chờ duyệt';
+COMMENT ON COLUMN audit.export_job.object_key IS 'Đường dẫn tệp trong MinIO';
+COMMENT ON COLUMN audit.export_job.signature IS 'Chữ ký số của hệ thống trên SHA-256 của tệp';
+COMMENT ON COLUMN audit.export_job.expires_at IS 'Hết hạn tải tệp';
+
 CREATE INDEX audit_log_actor_id_occurred_at_idx ON audit.audit_log (actor_id, occurred_at);
 CREATE INDEX audit_log_object_kind_object_id_idx ON audit.audit_log (object_kind, object_id);
 CREATE INDEX audit_log_org_id_seq_idx ON audit.audit_log (org_id, seq);
 CREATE INDEX security_event_severity_occurred_at_idx ON audit.security_event (severity, occurred_at) WHERE status <> 'closed';
+CREATE INDEX export_job_requested_by_created_at_idx ON audit.export_job (requested_by, created_at DESC);
 
 
 ALTER TABLE audit.audit_log ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON audit.audit_log USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 ALTER TABLE audit.security_event ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON audit.security_event USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+ALTER TABLE audit.export_job ENABLE ROW LEVEL SECURITY;
+CREATE POLICY org_isolation ON audit.export_job USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 
 GRANT USAGE ON SCHEMA audit TO svc_audit, audit_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON audit.audit_log TO svc_audit;
 GRANT SELECT ON audit.audit_log TO audit_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON audit.security_event TO svc_audit;
 GRANT SELECT ON audit.security_event TO audit_read;
+GRANT SELECT, INSERT, UPDATE, DELETE ON audit.export_job TO svc_audit;
+GRANT SELECT ON audit.export_job TO audit_read;
 
 -- ─── routines/audit.sql ───
 -- routines/audit.sql: the hash chain of audit.audit_log (tab 3 D5.3, BR-47) in the separate

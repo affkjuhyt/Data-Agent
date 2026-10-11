@@ -226,7 +226,8 @@ class DsrRequest(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     subject_hash: Mapped[str] = mapped_column(
-        Text, comment="SHA-256 của định danh đã chuẩn hoá; không lưu định danh gốc"
+        Text,
+        comment="HMAC-SHA256 của định danh đã chuẩn hoá, khoá theo tổ chức lưu trong OpenBao (băm trần của số CCCD dò ngược được); không lưu định danh gốc. Sửa 12/10/2026",
     )
     request_kind: Mapped[str] = mapped_column(Text, comment="access, copy, delete, correct")
     received_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True))

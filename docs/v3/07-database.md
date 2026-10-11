@@ -55,6 +55,10 @@ Mỗi routine ghi diễn giải của mình trong chú thích cạnh dấu `cove
 
 - Ghi `audit.audit_log` từ trigger: audit nằm ở CSDL riêng (D1.1), nên trigger phát sự kiện outbox
   `audit.requested`; Audit service ghi.
+- `audit.export_job` (thêm 12/10/2026, revision `v3_0006`) nằm trong CSDL audit cùng các dòng nó xuất; quá
+  100.000 dòng thì `approved_by` khác `requested_by` mới chạy được (CHECK, BR-138).
+- `governance.dsr_request.subject_hash` là HMAC-SHA256 theo tổ chức (khoá dẫn từ `DSR_SUBJECT_KEY`, deploy đọc từ
+  OpenBao), không phải SHA-256 trần: số CCCD 12 chữ số dò ngược được. Thiếu khoá thì `POST /v1/dsr` trả 503.
 - `exec`: mọi bảng FORCE RLS; hàm SECURITY DEFINER chạy dưới `da_owner` và vẫn bị `org_isolation` giới
   hạn. Yêu cầu rời vị trí chỉ trỏ được tới kho của chính chủ kho.
 - Không cấp được `audit_read` trên `governance.model_route_decision` từ `dataagent.sql`: vai trò này thuộc CSDL

@@ -49,7 +49,7 @@ Thiết kế này dựng lại cơ sở dữ liệu từ 88 đặc tả use case
 | period | Period service | Lịch chốt, kỳ chốt, tệp kỳ, đối soát, số đã công bố, hồi tố | P10 | 6 |
 | pipeline | Pipeline service | Pipeline, lượt chạy, dòng dữ liệu, data mart, sản phẩm dữ liệu, ghi ngược | P06 | 6 |
 | ingest | Ingestion service | Job nạp, lượt chạy, bản ghi lỗi, tải tệp, quy tắc và kết quả chất lượng | P04, P06 | 6 |
-| audit | Audit service (CSDL riêng) | Nhật ký kiểm toán chuỗi băm, sự kiện bảo mật | P11 | 2 |
+| audit | Audit service (CSDL riêng) | Nhật ký kiểm toán chuỗi băm, sự kiện bảo mật, bản xuất có chữ ký | P11 | 3 |
 | acquire | Acquisition service | Nguồn thu thập, phiên bản schema thu thập, lượt thu, trang gốc, bản ghi trích, quyết định duyệt, thay đổi cấu trúc, liên kết thực thể, danh mục thực thể chuẩn, đặc tả và lượt hợp nhất | P14 | 11 |
 | forecast | Forecast service | Việc dự báo, mô hình và phiên bản, backtest, kết quả dự báo, kịch bản, nhật ký độ chính xác, mô hình và tham số công thức, sổ dự báo | P15 | 10 |
 | exec | Exec vault service | Kho riêng lãnh đạo: kho và khoá bọc, luận điểm mã hoá, bằng chứng và điểm chấm niêm phong, bộ nhớ riêng, sổ truy cập khoá, bàn giao, bản công bố | P16 | 10 |
@@ -328,6 +328,7 @@ Mỗi bảng ghi mục đích, các use case đọc hoặc ghi nó (theo dòng �
 | --- | --- | --- | --- |
 | audit\_log | Nhật ký kiểm toán, chỉ ghi thêm | 01-01, 01-02, 01-06, 02-03, 04-01, 06-04, 07-07, 08-06, 10-02, 10-03, 11-01, 11-02, 11-03, 11-06, 11-08, 12-01, 12-02, 12-04 | Giữ; CSDL riêng, chuỗi băm, phân vùng theo tháng |
 | security\_event | Sự kiện bảo mật của bộ lọc AI (chèn lệnh, lộ dữ liệu) | 05-02, 11-03 | Đổi tên từ guard\_event (agent), chuyển sang CSDL audit |
+| export\_job | Bản xuất nhật ký kiểm toán có chữ ký số, duyệt người thứ hai khi quá 100.000 dòng (BR-138) | 11-03 | Thêm 12/10/2026; cùng CSDL audit với các dòng nó xuất |
 
 #### acquire · Acquisition service
 

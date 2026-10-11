@@ -1,7 +1,7 @@
 """Data subject requests (UC-11-06, BR-141): know, copy, delete or correct one person's data
 where Data Agent keeps it.
 
-Only the hash of the identifier is kept. Finding the person's data across chunks, session
+Only a keyed hash of the identifier is kept. Finding the person's data across chunks, session
 snapshots, derived tables, conversations and agent memory is a worker's job: it writes the
 dsr_item rows and moves the request to review. The handler then decides each item here; deleting
 is again the worker's, on the copies inside Data Agent only (E1: a source system is reported,
@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import hmac
+import os
 import unicodedata
 import uuid
 from typing import Annotated, Any, Literal
@@ -90,11 +92,21 @@ def _now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
 
-def subject_hash(identifier: str) -> str:
-    """SHA-256 of the normalised identifier (tab 3b dsr_request.subject_hash): the same person
-    written with other spacing, case or a full-width digit gives the same hash."""
+SUBJECT_KEY_ENV = "DSR_SUBJECT_KEY"
+
+
+def subject_hash(identifier: str, org_id: uuid.UUID) -> str:
+    """HMAC-SHA256 of the normalised identifier under the organisation's key (tab 3b
+    dsr_request.subject_hash, 12/10/2026): a plain SHA-256 of a 12-digit national id is reversed
+    by trying every id. The organisation's key is derived from DSR_SUBJECT_KEY, which the deploy
+    reads from OpenBao; the same person written with other spacing, case or full-width digits
+    gives the same hash."""
+    master = os.environ.get(SUBJECT_KEY_ENV, "")
+    if len(master) < 32:
+        raise Problem(503, "dsr_key_unavailable", "The data subject key is not configured.")
+    org_key = hmac.new(master.encode(), str(org_id).encode(), hashlib.sha256).digest()
     text = unicodedata.normalize("NFKC", identifier)
-    return hashlib.sha256("".join(text.split()).lower().encode()).hexdigest()
+    return hmac.new(org_key, "".join(text.split()).lower().encode(), hashlib.sha256).hexdigest()
 
 
 def _rule(detail: str) -> Problem:
@@ -153,7 +165,7 @@ async def create_dsr(
             "due_at is after received_at.",
             errors=[FieldError(field="due_at", code="invalid", message="after received_at")],
         )
-    digest = subject_hash(body.subject_identifier)
+    digest = subject_hash(body.subject_identifier, principal.org_id)
     stamp = _now()
     async with transaction(ROLE, principal) as session:
         row = governance.DsrRequest(

@@ -82,3 +82,24 @@ def test_a_cluster_with_audit_inside_dataagent_is_moved(admin):
         _one(_db(admin, "chain_old_audit"), "SELECT to_regclass('audit.audit_log') IS NOT NULL")
         is True
     )
+
+
+def test_an_existing_audit_database_gets_the_export_job(admin):
+    # A cluster upgraded before 12/10/2026 has the audit database without audit.export_job.
+    _fresh(admin, "chain_export", "chain_export_audit")
+    _alembic(_db(admin, "chain_export"), "upgrade", "v3_0005")
+    audit = _db(admin, "chain_export_audit")
+    conn = psycopg2.connect(audit)
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("DROP TABLE audit.export_job")
+    conn.close()
+    _alembic(_db(admin, "chain_export"), "upgrade", "head")
+    assert _one(audit, "SELECT to_regclass('audit.export_job') IS NOT NULL") is True
+    assert (
+        _one(audit, "SELECT relrowsecurity FROM pg_class WHERE oid = 'audit.export_job'::regclass")
+        is True
+    )
+    assert (
+        _one(audit, "SELECT has_table_privilege('svc_audit', 'audit.export_job', 'INSERT')") is True
+    )

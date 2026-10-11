@@ -63,3 +63,5 @@ $$;
 
 -- D5.2 (BR-47): svc_audit only SELECT, INSERT on audit_log.
 REVOKE UPDATE, DELETE ON audit.audit_log FROM svc_audit;
+
+-- covers: audit.export_job#0 (no DDL: org_isolation is generated; the file is written by the export worker from the masked before/after columns, which already hold no personal data, BR-138)

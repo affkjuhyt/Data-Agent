@@ -12,7 +12,7 @@
 | Use case (tab 8) | 115 | 0 UC đủ tiêu chí bắt buộc | todo 115 |
 | Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 94 có test nhắc mã AC | todo 778 |
 | Endpoint A2 (tab 4) | 380 (A2 ghi 381 dòng; POST /v1/data-products ở hai nhóm) | 379 được `api` phục vụ | — |
-| Bảng (tab 3/3b) | 219 trong DDL | DDL sinh từ thiết kế | — |
+| Bảng (tab 3/3b) | 220 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 159 có mã nhắc tới | todo 195 |
 | Màn hình (SCR) | 75 | 9 có mã nhắc tới | todo 75 |
 | ADR (tab 6) | 48 | — | todo 45, partial 2, done 1 |
@@ -393,7 +393,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-135 | UC-10-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-136 | UC-11-01 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/org/admin/grants.py` |
 | BR-137 | UC-11-02 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/governance/policies.py` |
-| BR-138 | UC-11-03 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/audit/schemas.py` |
+| BR-138 | UC-11-03 | todo | `backend/alembic/sql/dataagent_audit.sql`, `backend/alembic/versions/v3_0006_audit_export_job.py`, `backend/libs/dataagent_db/models/audit.py` +8 |
 | BR-139 | UC-11-04 | todo |  |
 | BR-140 | UC-11-05 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/governance/admin_models.py` |
 | BR-141 | UC-11-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/schema/csdl/definitions.json` +2 |

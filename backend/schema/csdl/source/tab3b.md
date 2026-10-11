@@ -287,7 +287,7 @@ Yêu cầu của chủ thể dữ liệu (biết, nhận bản sao, xoá, sửa)
 
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
-| subject\_hash | text, bắt buộc | SHA-256 của định danh đã chuẩn hoá; không lưu định danh gốc |
+| subject\_hash | text, bắt buộc | HMAC-SHA256 của định danh đã chuẩn hoá, khoá theo tổ chức lưu trong OpenBao (băm trần của số CCCD dò ngược được); không lưu định danh gốc. Sửa 12/10/2026 |
 | request\_kind | text, bắt buộc | access, copy, delete, correct |
 | received\_at | timestamptz, bắt buộc |  |
 | due\_at | timestamptz, bắt buộc | Hạn luật định; nhắc trước 5 ngày làm việc (BR-141) |
@@ -3304,6 +3304,28 @@ Sự kiện bảo mật: nghi chèn lệnh, lộ dữ liệu cá nhân, chuỗi 
 | handled\_by | uuid |  |
 
 Cột chung: id, org\_id. Ràng buộc: CHECK (kind IN ('prompt\_injection','pii\_leak\_blocked','hash\_chain\_broken','denied\_spike','signature\_invalid','egress\_blocked')); CHECK (severity IN ('low','medium','high','critical')); CHECK (status IN ('open','investigating','closed')). Chỉ mục: (severity, occurred\_at) WHERE status <> 'closed'.
+
+#### audit.export\_job
+
+Bản xuất nhật ký kiểm toán có chữ ký số: bộ lọc, số dòng, duyệt người thứ hai khi quá 100.000 dòng, tệp trong MinIO (BR-138); nằm trong CSDL dataagent\_audit cùng các dòng nó xuất. Thêm 12/10/2026. Use case: UC-11-03.
+
+| Cột | Kiểu | Ý nghĩa |
+| --- | --- | --- |
+| filters | jsonb, bắt buộc, mặc định '{}' | Bộ lọc của GET /v1/audit lúc yêu cầu |
+| format | text, bắt buộc, mặc định 'csv' | csv, jsonl |
+| row\_count | bigint | Số dòng sẽ xuất, đếm lúc tạo |
+| status | text, bắt buộc, mặc định 'queued' | queued, waiting\_approval, running, ready, failed, expired |
+| requested\_by | uuid, bắt buộc | logic → org.app\_user |
+| approved\_by | uuid | logic → org.app\_user; người thứ hai duyệt khi row\_count quá 100.000, khác requested\_by (BR-138) |
+| approved\_at | timestamptz |  |
+| hitl\_request\_id | uuid | logic → inbox.hitl\_request khi chờ duyệt |
+| object\_key | text | Đường dẫn tệp trong MinIO |
+| signature | text | Chữ ký số của hệ thống trên SHA-256 của tệp |
+| expires\_at | timestamptz | Hết hạn tải tệp |
+| created\_at | timestamptz, bắt buộc, mặc định now() |  |
+| updated\_at | timestamptz, bắt buộc, mặc định now() |  |
+
+Cột chung: id, org\_id. Ràng buộc: CHECK (format IN ('csv','jsonl')); CHECK (status IN ('queued','waiting\_approval','running','ready','failed','expired')); CHECK (approved\_by IS NULL OR approved\_by <> requested\_by); CHECK (status NOT IN ('running','ready') OR row\_count <= 100000 OR approved\_by IS NOT NULL); CHECK (status <> 'ready' OR (object\_key IS NOT NULL AND signature IS NOT NULL)). Chỉ mục: (requested\_by, created\_at DESC). RLS: org\_isolation. Tệp chỉ chứa dữ liệu đã che (BR-138).
 
 ### D4.22 Schema acquire
 

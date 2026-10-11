@@ -693,7 +693,7 @@ CREATE TABLE governance.dsr_request (
   CHECK (status IN ('open','searching','review','executing','done','rejected'))
 );
 COMMENT ON TABLE governance.dsr_request IS 'Yêu cầu của chủ thể dữ liệu (biết, nhận bản sao, xoá, sửa). Use case: UC-11-06.';
-COMMENT ON COLUMN governance.dsr_request.subject_hash IS 'SHA-256 của định danh đã chuẩn hoá; không lưu định danh gốc';
+COMMENT ON COLUMN governance.dsr_request.subject_hash IS 'HMAC-SHA256 của định danh đã chuẩn hoá, khoá theo tổ chức lưu trong OpenBao (băm trần của số CCCD dò ngược được); không lưu định danh gốc. Sửa 12/10/2026';
 COMMENT ON COLUMN governance.dsr_request.request_kind IS 'access, copy, delete, correct';
 COMMENT ON COLUMN governance.dsr_request.due_at IS 'Hạn luật định; nhắc trước 5 ngày làm việc (BR-141)';
 COMMENT ON COLUMN governance.dsr_request.status IS 'open, searching, review, executing, done, rejected';

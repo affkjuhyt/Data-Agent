@@ -5,6 +5,7 @@ system health (UC-11-05, UC-11-04)."""
 from __future__ import annotations
 
 import hashlib
+import hmac
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -331,7 +332,13 @@ async def test_behaviour_policy_and_backtest(gov: Org) -> None:
         assert outside.json() == []
 
 
-async def test_a_data_subject_request_keeps_only_the_hash(gov: Org) -> None:
+KEY = "k" * 40
+
+
+async def test_a_data_subject_request_keeps_only_the_hash(
+    gov: Org, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DSR_SUBJECT_KEY", KEY)
     async with client(gov) as api:
         opened = await api.post(
             "/v1/dsr",
@@ -347,7 +354,10 @@ async def test_a_data_subject_request_keeps_only_the_hash(gov: Org) -> None:
         dsr = opened.json()["id"]
         assert opened.headers["Location"] == f"/v1/dsr/{dsr}"
         stored = gov.one("SELECT subject_hash FROM governance.dsr_request WHERE id = %s", dsr)
-        assert stored == hashlib.sha256(b"001092001234").hexdigest()
+        org_key = hmac.new(KEY.encode(), str(gov.org).encode(), hashlib.sha256).digest()
+        assert stored == hmac.new(org_key, b"001092001234", hashlib.sha256).hexdigest()
+        # A plain SHA-256 of the id would be reversed by trying every 12-digit number.
+        assert stored != hashlib.sha256(b"001092001234").hexdigest()
         searched = dict(gov.events(dsr))["dsr.search_requested"]
         assert searched["subject_hash"] == stored and "0010" not in str(searched)
 
@@ -543,3 +553,19 @@ async def test_health_without_prometheus_is_no_data(
         monkeypatch.setenv("PROMETHEUS_URL", "file:///etc/passwd")
         local = await api.get("/v1/admin/system/health", headers=gov.headers("admin"))
         assert local.json()["status"] == "no_data"
+
+
+async def test_no_subject_key_no_request(gov: Org, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DSR_SUBJECT_KEY", raising=False)
+    async with client(gov) as api:
+        refused = await api.post(
+            "/v1/dsr",
+            json={
+                "request_kind": "access",
+                "received_at": "2026-10-01T09:00:00+07:00",
+                "due_at": "2026-10-31T17:00:00+07:00",
+                "subject_identifier": "001092001234",
+            },
+            headers=gov.headers("officer"),
+        )
+    assert refused.status_code == 503

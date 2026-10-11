@@ -184,9 +184,9 @@
   {
    "name": "audit",
    "owner_service": "Audit service (CSDL riêng)",
-   "content": "Nhật ký kiểm toán chuỗi băm, sự kiện bảo mật",
+   "content": "Nhật ký kiểm toán chuỗi băm, sự kiện bảo mật, bản xuất có chữ ký",
    "modules": "P11",
-   "table_count": 2,
+   "table_count": 3,
    "database": "dataagent_audit",
    "intro": ""
   },
@@ -2512,7 +2512,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "SHA-256 của định danh đã chuẩn hoá; không lưu định danh gốc",
+     "comment": "HMAC-SHA256 của định danh đã chuẩn hoá, khoá theo tổ chức lưu trong OpenBao (băm trần của số CCCD dò ngược được); không lưu định danh gốc. Sửa 12/10/2026",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -27626,6 +27626,200 @@
    "partition": null,
    "immutable": false,
    "notes": []
+  },
+  {
+   "schema": "audit",
+   "name": "export_job",
+   "qualified": "audit.export_job",
+   "description": "Bản xuất nhật ký kiểm toán có chữ ký số: bộ lọc, số dòng, duyệt người thứ hai khi quá 100.000 dòng, tệp trong MinIO (BR-138); nằm trong CSDL dataagent_audit cùng các dòng nó xuất. Thêm 12/10/2026. Use case: UC-11-03.",
+   "use_cases": [
+    "UC-11-03"
+   ],
+   "columns": [
+    {
+     "name": "filters",
+     "type": "jsonb",
+     "not_null": true,
+     "default": "'{}'",
+     "unique": false,
+     "comment": "Bộ lọc của GET /v1/audit lúc yêu cầu",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "format",
+     "type": "text",
+     "not_null": true,
+     "default": "'csv'",
+     "unique": false,
+     "comment": "csv, jsonl",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "row_count",
+     "type": "bigint",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Số dòng sẽ xuất, đếm lúc tạo",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "not_null": true,
+     "default": "'queued'",
+     "unique": false,
+     "comment": "queued, waiting_approval, running, ready, failed, expired",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "requested_by",
+     "type": "uuid",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "logic → org.app_user",
+     "fk": null,
+     "logic_ref": "org.app_user",
+     "pii": false
+    },
+    {
+     "name": "approved_by",
+     "type": "uuid",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "logic → org.app_user; người thứ hai duyệt khi row_count quá 100.000, khác requested_by (BR-138)",
+     "fk": null,
+     "logic_ref": "org.app_user",
+     "pii": false
+    },
+    {
+     "name": "approved_at",
+     "type": "timestamptz",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "hitl_request_id",
+     "type": "uuid",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "logic → inbox.hitl_request khi chờ duyệt",
+     "fk": null,
+     "logic_ref": "inbox.hitl_request",
+     "pii": false
+    },
+    {
+     "name": "object_key",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Đường dẫn tệp trong MinIO",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "signature",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Chữ ký số của hệ thống trên SHA-256 của tệp",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "expires_at",
+     "type": "timestamptz",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Hết hạn tải tệp",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "created_at",
+     "type": "timestamptz",
+     "not_null": true,
+     "default": "now()",
+     "unique": false,
+     "comment": "",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "updated_at",
+     "type": "timestamptz",
+     "not_null": true,
+     "default": "now()",
+     "unique": false,
+     "comment": "",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    }
+   ],
+   "common_columns": [
+    "id",
+    "org_id"
+   ],
+   "constraints": [
+    {
+     "kind": "check",
+     "sql": "CHECK (format IN ('csv','jsonl'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (status IN ('queued','waiting_approval','running','ready','failed','expired'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (approved_by IS NULL OR approved_by <> requested_by)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (status NOT IN ('running','ready') OR row_count <= 100000 OR approved_by IS NOT NULL)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (status <> 'ready' OR (object_key IS NOT NULL AND signature IS NOT NULL))"
+    }
+   ],
+   "indexes": [
+    {
+     "unique": false,
+     "method": "btree",
+     "expr": "requested_by, created_at DESC",
+     "where": null,
+     "comment": null
+    }
+   ],
+   "partition": null,
+   "immutable": false,
+   "notes": [
+    "RLS: org_isolation. Tệp chỉ chứa dữ liệu đã che (BR-138)."
+   ]
   },
   {
    "schema": "acquire",
