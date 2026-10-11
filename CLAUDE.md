@@ -111,7 +111,7 @@ from a literal.
 
 ```
 backend/libs        shared libraries (basemodel, database_connector, shared, ingestion,
-                    semantic, indicator)
+                    semantic, indicator; dataagent_db = generated V3 models + scoped_session)
 backend/services    one deployable per directory, Dockerfile inside. `api` is the V3 modular monolith
                     (ADR-28, docs/v3/06-api-v1.md): every /v1 module goes there, one package per schema,
                     and its routes take their metadata and capability check from the A2 snapshot
@@ -132,7 +132,9 @@ backend/services    one deployable per directory, Dockerfile inside. `api` is th
                     one — and its relay publishes it. Do not add a direct publish after a commit.
                     Concurrent writers of one aggregate lock the parent row (FOR UPDATE) and the
                     "at most one active/published" rules are partial unique indexes
-backend/alembic     Postgres migrations (the `migrate` image)
+backend/schema      the V3 database generator: design export → definitions.json → DDL and ORM, plus the
+                    hand-written routines/ (docs/v3/07-database.md)
+backend/alembic     Postgres migrations (the `migrate` image); alembic/sql holds the generated DDL
 frontend/src        React app (features/, components/, lib/)
 deploy/ansible      the deploy path (k8s-local inventory)
 deploy/k8s          manifests: dev/ and production/
