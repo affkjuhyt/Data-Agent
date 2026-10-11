@@ -12,8 +12,6 @@ from services.api.catalogue import catalogue, endpoint, endpoints
 from services.api.catalogue.check import compare
 from services.api.config import Settings
 
-from .conftest import probe_router
-
 pytestmark = [pytest.mark.unit, pytest.mark.contract]
 
 
@@ -89,11 +87,30 @@ def test_the_app_as_built_passes_the_check() -> None:
     assert report.ok, report
 
 
+def _unserved() -> tuple[str, str, str]:
+    """An A2 endpoint the app does not serve yet, with its group. Picked from the app as built,
+    so these tests keep working as groups land (a fixed path went stale with every module)."""
+    served = {(m.upper(), p) for p, item in _spec()["paths"].items() for m in item}
+    for (method, path), rows in sorted(endpoints().items()):
+        if (
+            (method, path) not in served
+            and len(rows) == 1
+            and not set(rows[0].capability) & {"channel", "client"}
+        ):
+            return method, path, rows[0].group
+    pytest.skip("every user-authenticated A2 endpoint is served")
+
+
 def test_served_endpoints_count_as_implemented() -> None:
+    method, path, _ = _unserved()
     baseline = compare(_spec()).implemented
-    report = compare(_spec(probe_router()))
+    probe = APIRouter()
+    probe.add_api_route(
+        path, lambda: None, methods=[method], **endpoint(method, path, operation_id="probe")
+    )
+    report = compare(_spec(probe))
     assert report.ok, report
-    assert report.implemented == baseline + 2
+    assert report.implemented == baseline + 1
 
 
 def test_route_not_in_a2_is_reported() -> None:
@@ -120,8 +137,9 @@ def test_drift_from_a2_is_reported() -> None:
 
 
 def test_missing_endpoint_fails_only_in_a_complete_group() -> None:
+    method, path, group = _unserved()
     spec = _spec()
     assert compare(spec).ok
-    report = compare(spec, complete_groups=frozenset({"Lớp ngữ cảnh"}))
+    report = compare(spec, complete_groups=frozenset({group}))
     assert not report.ok
-    assert "POST /v1/data-products (Lớp ngữ cảnh)" in report.missing_in_complete_groups
+    assert f"{method} {path} ({group})" in report.missing_in_complete_groups
