@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useState } from 'react';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
+import { Drawer } from '../../design-system/Drawer';
 import { EmptyState } from '../../design-system/EmptyState';
 import { FilterChips } from '../../design-system/FilterChips';
 import { Icon } from '../../design-system/Icon';
@@ -21,9 +22,9 @@ import { dayGroupOf, routeOf, type NotificationRoute } from './notificationRoute
 
 /*
  * "v3.1 · Chi tiết · Trung tâm thông báo" (2072:3821, UC-08-02): a 440px drawer from the right
- * over a 32% scrim, opened from the bell. Head, category filter, rows grouped by day (unread ones
- * outlined), and at the bottom where each kind of notification is delivered. Esc, the scrim and
- * ✕ close it; focus starts on ✕ and returns to the bell.
+ * on the shared Drawer, opened from the bell. Head, category filter, rows grouped by day (unread
+ * ones outlined), and pinned at the bottom where each kind of notification is delivered. Esc, the
+ * scrim and ✕ close it; focus returns to the bell.
  */
 type Filter = 'all' | NotificationCategory;
 
@@ -60,35 +61,6 @@ function DrawerBody({
   const [filter, setFilter] = useState<Filter>('all');
   // Rows opened in this sitting lose their unread outline at once, before the feed reloads.
   const [readHere, setReadHere] = useState<Set<string>>(new Set());
-  const panelRef = useRef<HTMLDivElement>(null);
-  const closeRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    closeRef.current?.focus();
-    return () => previous?.focus();
-  }, []);
-
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      event.stopPropagation();
-      onClose();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-    const focusable = panelRef.current?.querySelectorAll<HTMLElement>('button');
-    if (!focusable || focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
-
   const open = (item: AppNotification) => {
     if (!item.read_at && !readHere.has(item.id)) {
       setReadHere((ids) => new Set(ids).add(item.id));
@@ -106,41 +78,21 @@ function DrawerBody({
   const needsYou = items.filter((n) => n.category === 'needs_you').length;
 
   return (
-    <div className="fixed inset-0 z-[var(--z-drawer)]" onKeyDown={onKeyDown}>
-      <button
-        type="button"
-        tabIndex={-1}
-        aria-label="Đóng thông báo"
-        onClick={onClose}
-        className="absolute inset-0 bg-foreground opacity-[0.32]"
-      />
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="notification-title"
-        className="absolute inset-y-0 right-0 flex w-[440px] max-w-full flex-col gap-da-lg overflow-y-auto border border-border bg-card p-da-xl"
-      >
-        <div className="flex items-start gap-da-md">
-          <div className="flex min-w-0 flex-1 flex-col gap-da-xs">
-            <h2 id="notification-title" className="text-foreground da-heading-2">
-              Thông báo
-            </h2>
-            <p className="text-muted-foreground da-caption">
-              Từ agent, yêu cầu HITL và hệ thống. Chọn kênh nhận cho từng loại.
-            </p>
+    <Drawer
+      open
+      width="md"
+      title="Thông báo"
+      description="Từ agent, yêu cầu HITL và hệ thống. Chọn kênh nhận cho từng loại."
+      onClose={onClose}
+      footer={
+        preferences.data && (
+          <div className="w-full">
+            <ChannelSummary preferences={preferences.data} />
           </div>
-          <button
-            ref={closeRef}
-            type="button"
-            aria-label="Đóng"
-            onClick={onClose}
-            className="inline-flex shrink-0 rounded-sm text-foreground"
-          >
-            <Icon name="x" />
-          </button>
-        </div>
-
+        )
+      }
+    >
+      <div className="flex flex-col gap-da-lg">
         <FilterChips<Filter>
           label="Lọc thông báo"
           value={filter}
@@ -173,11 +125,8 @@ function DrawerBody({
             />
           )}
         </AsyncRegion>
-
-        <span className="flex-1" aria-hidden />
-        {preferences.data && <ChannelSummary preferences={preferences.data} />}
       </div>
-    </div>
+    </Drawer>
   );
 }
 
