@@ -19,6 +19,14 @@ import {
   listDsr,
 } from '../../lib/v1/adminAccess';
 import { listIntegrations } from '../../lib/v1/adminPlatform';
+import { listAlerts } from '../../lib/v1/alerts';
+import { listCrawlSources } from '../../lib/v1/crawl';
+import { listCatalogMetrics } from '../../lib/v1/metricCatalog';
+import { listMonitors } from '../../lib/v1/monitors';
+import { listPackInstalls, listPacks } from '../../lib/v1/packs';
+import { listOpenRetroChanges, listPeriods } from '../../lib/v1/periods';
+import { listReports } from '../../lib/v1/reports';
+import { listGlossary } from '../../lib/v1/semanticLayer';
 
 /*
  * The counts the Figma rails draw beside their items (Thư viện 38, Nguồn 12, Người dùng 412…).
@@ -28,7 +36,7 @@ import { listIntegrations } from '../../lib/v1/adminPlatform';
  */
 type Counter = () => Promise<number>;
 const count =
-  <T,>(load: () => Promise<{ items: T[] }>, keep: (item: T) => boolean = () => true): Counter =>
+  <T>(load: () => Promise<{ items: T[] }>, keep: (item: T) => boolean = () => true): Counter =>
   async () =>
     (await load()).items.filter(keep).length;
 
@@ -36,11 +44,17 @@ const COUNTERS: Partial<Record<AreaId, Record<string, Counter>>> = {
   agents: {
     SKILLS: count(() => listSkills()),
     SKILL_SUGGESTIONS: count(listSkillSuggestions),
-    SKILL_VERSIONS: count(() => listSkills(), (s) => Boolean(s.pending_version_id)),
+    SKILL_VERSIONS: count(
+      () => listSkills(),
+      (s) => Boolean(s.pending_version_id),
+    ),
     TOOLS: count(listTools),
   },
   analysis: {
     SESSIONS: count(listWorkspaces),
+    WATCH: count(listMonitors),
+    ALERTS: count(() => listAlerts('open')),
+    REPORTS: count(listReports),
   },
   data: {
     SOURCES: count(listSourceRows),
@@ -53,6 +67,13 @@ const COUNTERS: Partial<Record<AreaId, Record<string, Counter>>> = {
     DATA_PRODUCTS: count(listDataProducts),
     QUALITY: count(listQualityRules),
     WRITEBACK: count(listOpenWritebacks),
+    CRAWL: count(listCrawlSources),
+    PERIOD: count(listPeriods),
+    RETRO: count(listOpenRetroChanges),
+    METRIC_CATALOG: count(listCatalogMetrics),
+    GLOSSARY: count(listGlossary),
+    PACKS: count(listPacks, (p) => p.installed !== null),
+    PACK_ONBOARD: count(listPackInstalls),
   },
   admin: {
     USERS: count(listAdminUsers, (u) => u.kind === 'person'),
