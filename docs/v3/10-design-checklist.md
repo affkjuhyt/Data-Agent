@@ -10,7 +10,7 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 1 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 203 có test nhắc mã AC | todo 778 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 239 có test nhắc mã AC | todo 778 |
 | Endpoint A2 (tab 4) | 381 (A2 ghi 382 dòng; POST /v1/data-products ở hai nhóm) | 381 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 220 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 160 có mã nhắc tới | todo 195 |
@@ -49,7 +49,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC-02-01 | Tạo và tổ chức phiên | todo | 2/2 | 2/2 | 3/5 |  |
 | UC-02-02 | Làm mới dữ liệu phiên | todo | 1/1 | 3/3 | 1/6 |  |
 | UC-02-03 | Chia sẻ phiên | todo | 1/1 | 2/2 | 3/4 |  |
-| UC-02-04 | Chuyển phiên thành báo cáo định kỳ | todo | 2/2 | 2/2 | 0/5 |  |
+| UC-02-04 | Chuyển phiên thành báo cáo định kỳ | todo | 2/2 | 2/2 | 1/5 |  |
 | UC-02-05 | Bình luận và giao việc | todo | 2/2 | 2/2 | 2/5 |  |
 | UC-02-06 | Làm notebook cùng người và agent | todo | 2/2 | 3/3 | 1/6 |  |
 | UC-02-07 | Duyệt và phát hành báo cáo của phiên | todo | 2/2 | 2/2 | 2/6 |  |
@@ -128,7 +128,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | --- | --- | --- | --- | --- | --- | --- |
 | UC-08-01 | Đặt theo dõi chỉ số | todo | 2/2 | 1/1 | 2/4 |  |
 | UC-08-02 | Nhận và xử lý cảnh báo | todo | 2/2 | 2/2 | 2/4 |  |
-| UC-08-03 | Lập báo cáo định kỳ | todo | 2/2 | 2/2 | 0/4 |  |
+| UC-08-03 | Lập báo cáo định kỳ | todo | 2/2 | 2/2 | 1/4 |  |
 | UC-08-04 | Nhận bản tin lãnh đạo | todo | 2/2 | 2/2 | 0/5 |  |
 | UC-08-05 | Giao việc cho agent nền | todo | 2/2 | 1/1 | 0/4 |  |
 | UC-08-06 | Xử lý việc ngoài ứng dụng | todo | 2/2 | 3/3 | 0/5 |  |
@@ -159,14 +159,14 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-11-01 | Quản lý người dùng và vai trò | todo | 2/2 | 5/5 | 0/5 |  |
+| UC-11-01 | Quản lý người dùng và vai trò | todo | 2/2 | 5/5 | 2/5 |  |
 | UC-11-02 | Phân quyền dữ liệu | todo | 2/2 | 1/1 | 0/8 |  |
 | UC-11-03 | Tra cứu nhật ký kiểm toán | todo | 2/2 | 2/2 | 0/6 |  |
 | UC-11-04 | Giám sát hệ thống | todo | 1/1 | 1/1 | 0/5 |  |
 | UC-11-05 | Cấu hình mô hình và chính sách AI | todo | 8/8 | 4/4 | 0/8 |  |
 | UC-11-06 | Xử lý yêu cầu của chủ thể dữ liệu | todo | 2/2 | 2/2 | 0/5 |  |
-| UC-11-07 | Yêu cầu và cấp quyền | todo | 2/2 | 1/1 | 0/6 |  |
-| UC-11-08 | Quản lý thành viên Data Space | todo | 2/2 | 2/2 | 0/5 |  |
+| UC-11-07 | Yêu cầu và cấp quyền | todo | 2/2 | 1/1 | 5/6 |  |
+| UC-11-08 | Quản lý thành viên Data Space | todo | 2/2 | 2/2 | 4/5 |  |
 
 ### P12 Tích hợp MCP và API
 
@@ -205,14 +205,14 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-15-01 | Hỏi câu hỏi dự báo | todo | 4/4 | 5/5 | 0/7 |  |
+| UC-15-01 | Hỏi câu hỏi dự báo | todo | 4/4 | 5/5 | 2/7 |  |
 | UC-15-02 | Chuẩn bị dữ liệu dự báo | todo | 2/2 | 5/5 | 0/6 |  |
-| UC-15-03 | Huấn luyện và backtest mô hình | todo | 1/1 | 3/3 | 0/7 |  |
-| UC-15-04 | Duyệt và phát hành mô hình dự báo | todo | 3/3 | 4/4 | 0/5 |  |
-| UC-15-05 | Xem dự báo và chạy kịch bản | todo | 2/2 | 3/3 | 0/7 |  |
-| UC-15-06 | Theo dõi độ chính xác và huấn luyện lại | todo | 2/2 | 3/3 | 0/6 |  |
-| UC-15-07 | Dự báo giá điều hành theo công thức | todo | 8/8 | 8/8 | 0/8 |  |
-| UC-15-08 | Sổ dự báo và tự chấm | todo | 4/4 | 5/5 | 0/8 |  |
+| UC-15-03 | Huấn luyện và backtest mô hình | todo | 1/1 | 3/3 | 2/7 |  |
+| UC-15-04 | Duyệt và phát hành mô hình dự báo | todo | 3/3 | 4/4 | 4/5 |  |
+| UC-15-05 | Xem dự báo và chạy kịch bản | todo | 2/2 | 3/3 | 2/7 |  |
+| UC-15-06 | Theo dõi độ chính xác và huấn luyện lại | todo | 2/2 | 3/3 | 1/6 |  |
+| UC-15-07 | Dự báo giá điều hành theo công thức | todo | 8/8 | 8/8 | 1/8 |  |
+| UC-15-08 | Sổ dự báo và tự chấm | todo | 4/4 | 5/5 | 2/8 |  |
 
 ### P16 Lớp riêng lãnh đạo
 
@@ -289,7 +289,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-31 | UC-07-04 | todo | `backend/services/api/modules/conflict/routes.py`, `tests/integration/api/test_conflict.py` |
 | BR-32 | UC-08-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-33 | UC-08-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-34 | UC-08-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-34 | UC-08-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-35 | UC-08-03 | todo |  |
 | BR-36 | UC-09-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-37 | UC-09-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +2 |
@@ -391,14 +391,14 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-133 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-134 | UC-10-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +3 |
 | BR-135 | UC-10-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-136 | UC-11-01 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/org/admin/grants.py` |
+| BR-136 | UC-11-01 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/org/admin/grants.py`, `tests/integration/api/test_org_admin.py` |
 | BR-137 | UC-11-02 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/governance/policies.py` |
 | BR-138 | UC-11-03 | todo | `backend/alembic/sql/dataagent_audit.sql`, `backend/alembic/versions/v3_0006_audit_export_job.py`, `backend/libs/dataagent_db/models/audit.py` +12 |
 | BR-139 | UC-11-04 | todo |  |
 | BR-140 | UC-11-05 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/governance/admin_models.py` |
 | BR-141 | UC-11-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-142 | UC-11-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +9 |
-| BR-143 | UC-11-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-143 | UC-11-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-144 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-145 | UC-12-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-146 | UC-12-04 | todo |  |
@@ -412,9 +412,9 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-154 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-155 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-156 | UC-02-07, UC-10-02, UC-14-01, UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/libs/dataagent_db/models/catalog.py` +18 |
-| BR-157 | UC-15-01, UC-15-02, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +12 |
-| BR-158 | UC-15-03, UC-15-04, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +14 |
-| BR-159 | UC-15-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-157 | UC-15-01, UC-15-02, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +13 |
+| BR-158 | UC-15-03, UC-15-04, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +15 |
+| BR-159 | UC-15-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-160 | UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +12 |
 | BR-161 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-162 | UC-07-10, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/exec.py` +17 |
@@ -427,8 +427,8 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-169 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-170 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-171 | UC-01-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-172 | UC-15-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +4 |
-| BR-173 | UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-172 | UC-15-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-173 | UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-174 | UC-14-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +11 |
 | BR-175 | UC-01-01, UC-01-07, UC-07-13 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/qa.py` +14 |
 | BR-176 | UC-01-01, UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
@@ -437,12 +437,12 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-179 | UC-01-05, UC-07-14, UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/schema/csdl/definitions.json` +13 |
 | BR-180 | UC-01-01, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/governance.py` +13 |
 | BR-181 | UC-01-07, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/qa.py` +8 |
-| BR-182 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-182 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +10 |
 | BR-183 | UC-08-08, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/dataagent_db/models/monitor.py` +8 |
-| BR-184 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +9 |
-| BR-185 | UC-15-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +12 |
+| BR-184 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +10 |
+| BR-185 | UC-15-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +13 |
 | BR-186 | UC-07-14, UC-15-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/libs/dataagent_db/models/forecast.py` +5 |
-| BR-187 | UC-08-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-187 | UC-08-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-188 | UC-16-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-189 | UC-16-01, UC-16-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +14 |
 | BR-190 | UC-16-03, UC-16-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +5 |
@@ -732,11 +732,11 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-02-04 Chuyển phiên thành báo cáo định kỳ · 0/7</summary>
+<details><summary>UC-02-04 Chuyển phiên thành báo cáo định kỳ · 1/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-02-04-01 | Chính | Cho phiên có báo cáo đã phát hành / Khi lập lịch hằng tuần với 3 người nhận / Thì report_schedule active có lịch, lịch ngày làm việc, người nhận, kênh và Temporal có workflow theo lịch | API, CSDL | todo |  |
+| AC-02-04-01 | Chính | Cho phiên có báo cáo đã phát hành / Khi lập lịch hằng tuần với 3 người nhận / Thì report_schedule active có lịch, lịch ngày làm việc, người nhận, kênh và Temporal có workflow theo lịch | API, CSDL | todo | `tests/integration/api/test_monitor_reports.py` |
 | AC-02-04-02 | Chính | Cho lịch đến hạn / Khi workflow chạy / Thì phiên được làm mới với as_of theo lịch, qua 4 kiểm tra, có phiên bản báo cáo mới và mỗi người nhận nhận đúng kênh của mình | API, CSDL | todo |  |
 | AC-02-04-03 | Thay thế | Cho lượt có số lệch số đã nộp / Khi kiểm tra / Thì không gửi báo cáo và Cần bạn có yêu cầu review cho chủ báo cáo | CSDL | todo |  |
 | AC-02-04-04 | Thay thế | Cho 1 người nhận đã rời Data Space / Khi gửi / Thì người đó bị bỏ khỏi danh sách và chủ báo cáo nhận thông báo | CSDL | todo |  |
@@ -1377,15 +1377,15 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-08-03 Lập báo cáo định kỳ · 0/6</summary>
+<details><summary>UC-08-03 Lập báo cáo định kỳ · 2/6</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-08-03-01 | Chính | Cho report_schedule active với as_of_rule “cuối tháng trước” và người nhận thuộc 2 nhóm quyền / Khi đến lịch ngày 01/11/2026 / Thì report_run có as_of 31/10/2026, phần kết luận theo mẫu “điều gì đổi, vì sao, cần quyết… | API, CSDL | todo |  |
 | AC-08-03-02 | Thay thế | Cho một số trong lời văn không khớp bảng / Khi kiểm tra / Thì không gửi và chủ báo cáo có yêu cầu review | API, CSDL | todo |  |
-| AC-08-03-03 | Thay thế | Cho báo cáo định kỳ / Khi chủ báo cáo bấm “Chạy ngay” với ngày 15/10/2026 / Thì có report_run ngoài lịch với as_of 15/10/2026 | API | todo |  |
+| AC-08-03-03 | Thay thế | Cho báo cáo định kỳ / Khi chủ báo cáo bấm “Chạy ngay” với ngày 15/10/2026 / Thì có report_run ngoài lịch với as_of 15/10/2026 | API | todo | `tests/integration/api/test_monitor_reports.py` |
 | AC-08-03-04 | Ngoại lệ | Cho nhóm quyền thứ hai lỗi khi sinh bản / Khi chạy / Thì nhóm thứ nhất vẫn nhận báo cáo và nhóm thứ hai nhận thông báo trễ kèm lý do | API, CSDL | todo |  |
-| AC-08-03-05 | Quy tắc | Cho người nhận miền Bắc và miền Nam / Khi mở tệp của nhóm miền Bắc / Thì tệp không chứa dòng hay số nào của miền Nam | API | todo |  |
+| AC-08-03-05 | Quy tắc | Cho người nhận miền Bắc và miền Nam / Khi mở tệp của nhóm miền Bắc / Thì tệp không chứa dòng hay số nào của miền Nam | API | todo | `tests/integration/api/test_monitor_reports.py` |
 | AC-08-03-06 | Quy tắc | Cho báo cáo có bảng chi tiết chứa cột CCCD / Khi gửi qua email / Thì email không đính kèm bảng chi tiết đó | API | todo |  |
 
 </details>
@@ -1440,14 +1440,14 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-08-08 Nhận bản tin theo lịch sự kiện ngoài · 0/7</summary>
+<details><summary>UC-08-08 Nhận bản tin theo lịch sự kiện ngoài · 2/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-08-08-01 | Chính | Cho lịch “Kỳ điều hành giá xăng dầu” active và AC02 đã theo dõi / Khi đến 20:00 thứ Tư 08/07/2026 cho kỳ 09/07 / Thì AC02 nhận bản tin trước kỳ gồm giá kỳ trước (E5RON92 19.730 đ/lít), trung vị, khoảng 80%, P(tăng) từ… | API, CSDL | todo |  |
 | AC-08-08-02 | Chính | Cho Bộ Công Thương công bố giá lúc 15:30 thứ Năm / Khi external_event chuyển occurred / Thì AC02 nhận bản tin kết quả có giá công bố, sai số, trong khoảng hay không, phần lệch chính, liên kết SCR-71; có event_bulletin… | API, CSDL | todo |  |
-| AC-08-08-03 | Thay thế | Cho bản tin trước kỳ 09/07 đã gửi / Khi Bộ thông báo dời kỳ sang 10/07 / Thì event chuyển shifted, người theo dõi nhận “kỳ dời sang 10/07/2026”, giờ bản tin tính lại và dự báo trước kỳ mới chạy lại | API, CSDL | todo |  |
-| AC-08-08-04 | Thay thế | Cho người phụ trách lịch / Khi gọi :run-bulletin ngoài giờ / Thì có event_bulletin mới gửi tới người theo dõi | API | todo |  |
+| AC-08-08-03 | Thay thế | Cho bản tin trước kỳ 09/07 đã gửi / Khi Bộ thông báo dời kỳ sang 10/07 / Thì event chuyển shifted, người theo dõi nhận “kỳ dời sang 10/07/2026”, giờ bản tin tính lại và dự báo trước kỳ mới chạy lại | API, CSDL | todo | `tests/integration/api/test_monitor_calendars.py` |
+| AC-08-08-04 | Thay thế | Cho người phụ trách lịch / Khi gọi :run-bulletin ngoài giờ / Thì có event_bulletin mới gửi tới người theo dõi | API | todo | `tests/integration/api/test_monitor_calendars.py` |
 | AC-08-08-05 | Ngoại lệ | Cho cổng dự báo kỳ 09/07 không đạt / Khi đến 20:00 / Thì vẫn gửi đúng giờ bản tin “CHƯA CÓ dự báo kỳ 09/07/2026” kèm lý do, không có số dự báo cũ | API, Đánh giá agent | todo |  |
 | AC-08-08-06 | Ngoại lệ | Cho quá post_wait_max chưa có thông báo của Bộ / Khi hết thời gian chờ / Thì Cần bạn có yêu cầu cho người phụ trách và không có event_bulletin post | CSDL | todo |  |
 | AC-08-08-07 | Quy tắc | Cho bản tin trước kỳ của kỳ chưa xác nhận / Khi lưu event_bulletin / Thì mọi số trỏ ledger_entry hoặc dataset đã chứng nhận, có khoảng 80%, xác suất Quỹ, chỉ số hiệu chỉnh và nhãn “kỳ dự kiến”; thiếu một trong các phầ… | CSDL | todo |  |
@@ -1600,16 +1600,16 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-11-01 Quản lý người dùng và vai trò · 0/6</summary>
+<details><summary>UC-11-01 Quản lý người dùng và vai trò · 3/6</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-11-01-01 | Chính | Cho nhóm AD GG-RRTD-Analyst có 25 người chưa có quyền / Khi AC05 khai báo ánh xạ nhóm sang AC01 trong Data Space Rủi ro tín dụng, xem trước và xác nhận / Thì màn xem trước hiện 25 người sẽ được thêm, 0 người bị bớt; K… | API, CSDL, E2E | todo |  |
-| AC-11-01-02 | Thay thế | Cho AC05 cần cấp tài khoản khẩn cấp cho 1 người / Khi cấp hạn 24 giờ và người thứ hai duyệt / Thì user_role source = emergency có valid_until và approved_by, sau 24 giờ quyền tự thu hồi; xin hạn 25 giờ thì bị từ chối | API, CSDL | todo |  |
+| AC-11-01-01 | Chính | Cho nhóm AD GG-RRTD-Analyst có 25 người chưa có quyền / Khi AC05 khai báo ánh xạ nhóm sang AC01 trong Data Space Rủi ro tín dụng, xem trước và xác nhận / Thì màn xem trước hiện 25 người sẽ được thêm, 0 người bị bớt; K… | API, CSDL, E2E | todo | `tests/integration/api/test_org_admin.py` |
+| AC-11-01-02 | Thay thế | Cho AC05 cần cấp tài khoản khẩn cấp cho 1 người / Khi cấp hạn 24 giờ và người thứ hai duyệt / Thì user_role source = emergency có valid_until và approved_by, sau 24 giờ quyền tự thu hồi; xin hạn 25 giờ thì bị từ chối | API, CSDL | todo | `tests/integration/api/test_org_admin.py` |
 | AC-11-01-03 | Ngoại lệ | Cho một chuyên viên bị gỡ khỏi GG-RRTD-Analyst khi đang mở phiên / Khi lần đồng bộ kế tiếp chạy (chậm nhất 15 phút) / Thì user_role của người đó bị thu hồi, token đang dùng bị từ chối và phiên chuyển sang màn đăng nhập | API, E2E | todo |  |
 | AC-11-01-04 | Ngoại lệ | Cho mất kết nối AD / Khi đã mất 10 giờ và khi đã mất 25 giờ / Thì ở giờ thứ 10 quyền giữ theo lần đồng bộ cuối và AC05 đã nhận báo; ở giờ thứ 25 mọi người chỉ còn quyền đọc của vai trò thấp nhất | API | todo |  |
 | AC-11-01-05 | Quy tắc | Cho dòng user_role source = emergency thiếu valid_until hoặc approved_by / Khi ghi / Thì CHECK user_role_source_valid_until_check từ chối | CSDL | todo |  |
-| AC-11-01-06 | Quy tắc | Cho một người đã là AC03 trong Data Space Rủi ro tín dụng / Khi AC05 lưu ánh xạ làm người đó có thêm AC06 trong cùng Data Space / Thì PUT /v1/admin/group-mappings bị từ chối và nêu tên người xung đột | API | todo |  |
+| AC-11-01-06 | Quy tắc | Cho một người đã là AC03 trong Data Space Rủi ro tín dụng / Khi AC05 lưu ánh xạ làm người đó có thêm AC06 trong cùng Data Space / Thì PUT /v1/admin/group-mappings bị từ chối và nêu tên người xung đột | API | todo | `tests/integration/api/test_org_admin.py` |
 | — | Cần làm rõ | BR-44 cấm cấp tay ngoài tài khoản khẩn cấp, nhưng org.user_role.source vẫn cho giá trị manual. Cần nói manual dùng cho trường hợp nào hoặc bỏ giá trị này | | | |
 
 </details>
@@ -1688,30 +1688,30 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-11-07 Yêu cầu và cấp quyền · 0/7</summary>
+<details><summary>UC-11-07 Yêu cầu và cấp quyền · 5/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-11-07-01 | Chính | Cho AC01 thiếu quyền xem chi tiết Data Space Rủi ro tín dụng / Khi gửi yêu cầu view_detail kèm lý do, thời hạn 30 ngày và AC03 duyệt / Thì màn thiếu quyền nêu quyền còn thiếu, có hitl_request loại access kèm gợi ý phạ… | API, CSDL | todo |  |
-| AC-11-07-02 | Chính | Cho yêu cầu view_detail ở AC-11-07-01 / Khi AC03 thu hẹp còn view_aggregate chi nhánh Hà Nội / Thì access_request có status = narrowed và thành viên mới chỉ có phạm vi đã thu hẹp | API, CSDL | todo |  |
-| AC-11-07-03 | Chính | Cho yêu cầu đang chờ / Khi AC03 từ chối kèm lý do / Thì access_request rejected có approver_id và decided_at, không có data_space_member mới; ghi rejected thiếu approver_id thì CHECK access_request_status_approver_id_… | API, CSDL | todo |  |
+| AC-11-07-01 | Chính | Cho AC01 thiếu quyền xem chi tiết Data Space Rủi ro tín dụng / Khi gửi yêu cầu view_detail kèm lý do, thời hạn 30 ngày và AC03 duyệt / Thì màn thiếu quyền nêu quyền còn thiếu, có hitl_request loại access kèm gợi ý phạ… | API, CSDL | todo | `tests/integration/api/test_org_admin.py` |
+| AC-11-07-02 | Chính | Cho yêu cầu view_detail ở AC-11-07-01 / Khi AC03 thu hẹp còn view_aggregate chi nhánh Hà Nội / Thì access_request có status = narrowed và thành viên mới chỉ có phạm vi đã thu hẹp | API, CSDL | todo | `tests/integration/api/test_org_admin.py` |
+| AC-11-07-03 | Chính | Cho yêu cầu đang chờ / Khi AC03 từ chối kèm lý do / Thì access_request rejected có approver_id và decided_at, không có data_space_member mới; ghi rejected thiếu approver_id thì CHECK access_request_status_approver_id_… | API, CSDL | todo | `tests/integration/api/test_org_admin.py` |
 | AC-11-07-04 | Thay thế | Cho yêu cầu gửi thứ Hai 05/10/2026 chưa được trả lời / Khi hết thứ Năm 08/10/2026 (3 ngày làm việc) / Thì yêu cầu chuyển sang người dự phòng của chủ sở hữu | API | todo |  |
-| AC-11-07-05 | Ngoại lệ | Cho yêu cầu xem chi tiết bảng có cột dữ liệu cá nhân / Khi chỉ AC03 duyệt / Thì chưa có data_space_member mới cho tới khi AC06 duyệt thêm | API, CSDL | todo |  |
-| AC-11-07-06 | Quy tắc | Cho yêu cầu có requested_until 120 ngày sau ngày gửi / Khi gửi / Thì bị từ chối vì quá 90 ngày; data_space_member source = access_request thiếu valid_until thì CHECK data_space_member_source_valid_until_check từ chối | API, CSDL | todo |  |
+| AC-11-07-05 | Ngoại lệ | Cho yêu cầu xem chi tiết bảng có cột dữ liệu cá nhân / Khi chỉ AC03 duyệt / Thì chưa có data_space_member mới cho tới khi AC06 duyệt thêm | API, CSDL | todo | `tests/integration/api/test_org_admin.py` |
+| AC-11-07-06 | Quy tắc | Cho yêu cầu có requested_until 120 ngày sau ngày gửi / Khi gửi / Thì bị từ chối vì quá 90 ngày; data_space_member source = access_request thiếu valid_until thì CHECK data_space_member_source_valid_until_check từ chối | API, CSDL | todo | `tests/integration/api/test_org_admin.py` |
 | AC-11-07-07 | Quy tắc | Cho quyền cấp qua yêu cầu hết hạn ngày 31/10/2026 / Khi đến 24/10/2026 và khi qua 31/10/2026 / Thì ngày 24/10 người dùng nhận nhắc gia hạn, sau 31/10 quyền tự thu hồi và câu hỏi mới bị từ chối | API | todo |  |
 
 </details>
 
-<details><summary>UC-11-08 Quản lý thành viên Data Space · 0/6</summary>
+<details><summary>UC-11-08 Quản lý thành viên Data Space · 4/6</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-11-08-01 | Chính | Cho AC05 / Khi tạo Data Space Rủi ro tín dụng với người phụ trách, người dự phòng, nguồn, gói Ngân hàng 2026.3 và chính sách mặc định / Thì data_space có steward và backup_steward_id, audit_log ghi việc tạo | API, CSDL | todo |  |
-| AC-11-08-02 | Chính | Cho Data Space Rủi ro tín dụng / Khi AC03 thêm nhóm GG-RRTD-Analyst vai trò AC01, phạm vi dòng miền Bắc, hạn 31/12/2026, mô phỏng cùng bảng dưới hai vai trò rồi lưu / Thì mô phỏng hiện hai kết quả khác nhau, data_spac… | API, CSDL, E2E | todo |  |
+| AC-11-08-01 | Chính | Cho AC05 / Khi tạo Data Space Rủi ro tín dụng với người phụ trách, người dự phòng, nguồn, gói Ngân hàng 2026.3 và chính sách mặc định / Thì data_space có steward và backup_steward_id, audit_log ghi việc tạo | API, CSDL | todo | `tests/integration/api/test_org_admin.py` |
+| AC-11-08-02 | Chính | Cho Data Space Rủi ro tín dụng / Khi AC03 thêm nhóm GG-RRTD-Analyst vai trò AC01, phạm vi dòng miền Bắc, hạn 31/12/2026, mô phỏng cùng bảng dưới hai vai trò rồi lưu / Thì mô phỏng hiện hai kết quả khác nhau, data_spac… | API, CSDL, E2E | todo | `tests/integration/api/test_org_admin.py` |
 | AC-11-08-03 | Thay thế | Cho chủ sở hữu Agent Đối soát chỉ thấy miền Bắc / Khi thêm agent làm thành viên vai trò AC01 toàn quốc / Thì truy vấn của agent chỉ trả dòng miền Bắc (giao của hai quyền) | API | todo |  |
-| AC-11-08-04 | Ngoại lệ | Cho Data Space chỉ còn 1 người phụ trách dữ liệu / Khi gỡ người đó / Thì bị chặn và yêu cầu chỉ định người khác trước | API | todo |  |
+| AC-11-08-04 | Ngoại lệ | Cho Data Space chỉ còn 1 người phụ trách dữ liệu / Khi gỡ người đó / Thì bị chặn và yêu cầu chỉ định người khác trước | API | todo | `tests/integration/api/test_org_admin.py` |
 | AC-11-08-05 | Quy tắc | Cho người dự phòng của Data Space rời tổ chức / Khi đồng bộ AD chạy / Thì Data Space chuyển chỉ đọc: ghi dữ liệu, chạy agent bị từ chối cho tới khi có người dự phòng mới | API | todo |  |
-| AC-11-08-06 | Ngoại lệ | Cho AC03 không có vai trò Quản trị hệ thống / Khi gọi POST /v1/data-spaces / Thì nhận 403 và không có data_space mới | API | todo |  |
+| AC-11-08-06 | Ngoại lệ | Cho AC03 không có vai trò Quản trị hệ thống / Khi gọi POST /v1/data-spaces / Thì nhận 403 và không có data_space mới | API | todo | `tests/integration/api/test_org_admin.py` |
 
 </details>
 
@@ -1978,15 +1978,15 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-15-01 Hỏi câu hỏi dự báo · 0/10</summary>
+<details><summary>UC-15-01 Hỏi câu hỏi dự báo · 3/10</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-15-01-01 | Chính | Cho mô hình đã phát hành cho số dư huy động bán lẻ theo tháng và dự báo còn hiệu lực / Khi AC02 hỏi “Số dư huy động bán lẻ 3 tháng tới?” / Thì câu trả lời có ngay biểu đồ lịch sử và dự báo, số điểm, khoảng 80% và 95%,… | API, CSDL | todo |  |
-| AC-15-01-02 | Chính | Cho chưa có dự báo còn hiệu lực / Khi hỏi cùng câu / Thì có forecast_job, câu trả lời ngay là “Đang tổng hợp dự báo, dự kiến xong lúc HH:MM” kèm các bước sẽ làm, tiến độ hiện ở Đang làm gì; khi xong kết quả vào đúng h… | API, CSDL, E2E | todo |  |
+| AC-15-01-01 | Chính | Cho mô hình đã phát hành cho số dư huy động bán lẻ theo tháng và dự báo còn hiệu lực / Khi AC02 hỏi “Số dư huy động bán lẻ 3 tháng tới?” / Thì câu trả lời có ngay biểu đồ lịch sử và dự báo, số điểm, khoảng 80% và 95%,… | API, CSDL | todo | `tests/integration/api/test_forecast.py` |
+| AC-15-01-02 | Chính | Cho chưa có dự báo còn hiệu lực / Khi hỏi cùng câu / Thì có forecast_job, câu trả lời ngay là “Đang tổng hợp dự báo, dự kiến xong lúc HH:MM” kèm các bước sẽ làm, tiến độ hiện ở Đang làm gì; khi xong kết quả vào đúng h… | API, CSDL, E2E | todo | `tests/integration/api/test_forecast.py` |
 | AC-15-01-03 | Thay thế | Cho mô hình đã phát hành có dự báo gần nhất dùng dữ liệu đến 30/09/2026 / Khi người hỏi chỉ cần xu hướng / Thì câu trả lời dùng dự báo đó với nhãn “dự báo cũ, dữ liệu đến ngày 30/09/2026” và song song có forecast_job … | API, CSDL | todo |  |
 | AC-15-01-04 | Thay thế | Cho chỉ số chưa có mô hình đã duyệt / Khi kết quả xong và người hỏi đặt theo dõi trên dự báo đó / Thì kết quả gắn nhãn “thử nghiệm, chưa duyệt”, việc đặt theo dõi hoặc đưa vào báo cáo bị từ chối và mô hình được gửi du… | API | todo |  |
-| AC-15-01-05 | Thay thế | Cho forecast_job đang ở bước backtest / Khi người hỏi gọi :cancel / Thì việc dừng ở ranh giới bước và không có prediction nào được ghi sau đó | API, CSDL | todo |  |
+| AC-15-01-05 | Thay thế | Cho forecast_job đang ở bước backtest / Khi người hỏi gọi :cancel / Thì việc dừng ở ranh giới bước và không có prediction nào được ghi sau đó | API, CSDL | todo | `tests/integration/api/test_forecast.py` |
 | AC-15-01-06 | Ngoại lệ | Cho chuỗi tháng chỉ có 20 điểm / Khi hỏi dự báo / Thì không có số dự báo, câu trả lời giải thích chuỗi dưới 24 điểm và gợi ý tần suất khác | API, Đánh giá agent | todo |  |
 | AC-15-01-07 | Ngoại lệ | Cho câu hỏi dự báo NPL_RATIO theo vùng (chỉ số không cộng dồn) / Khi tính / Thì hệ thống dự báo tử số và mẫu số rồi tính lại tỷ lệ, không dự báo trực tiếp tỷ lệ | API, Đánh giá agent | todo |  |
 | AC-15-01-08 | Ngoại lệ | Cho forecast_job có eta_at 10:00 / Khi đến 10:12 (quá 20%) và khi quá thời gian dự kiến 2 lần / Thì ở 10:12 người hỏi thấy eta_at mới; khi quá 2 lần người hỏi nhận báo kèm lý do | API | todo |  |
@@ -2010,74 +2010,74 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-15-03 Huấn luyện và backtest mô hình · 0/8</summary>
+<details><summary>UC-15-03 Huấn luyện và backtest mô hình · 2/8</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-15-03-01 | Chính | Cho chuỗi tháng 72 điểm có 2 biến ngoại sinh / Khi Agent Dự báo huấn luyện / Thì backtest_run có đủ kiểu naive, seasonal naive, ETS, Theta, SARIMAX, LightGBM với 6 điểm cắt, mỗi điểm đủ tầm, có MASE, sMAPE, độ phủ 80%… | API, CSDL | todo |  |
 | AC-15-03-02 | Chính | Cho bước tầm 1 có 24 sai số backtest và bước tầm 3 chỉ có 12 sau khi gộp chuỗi con / Khi tạo khoảng / Thì bước 1 dùng conformal, bước 3 dùng khoảng tham số gắn nhãn “khoảng tham số”; kết quả có đóng góp từng biến | API, CSDL | todo |  |
 | AC-15-03-03 | Thay thế | Cho mô hình đã phát hành và chỉ có thêm số tháng 10/2026 / Khi cập nhật dự báo / Thì có prediction mới từ phiên bản đó và không có backtest_run mới | API, CSDL | todo |  |
-| AC-15-03-04 | Ngoại lệ | Cho mọi ứng viên có MASE từ 1 trở lên / Khi chọn mô hình / Thì kết quả là seasonal naive gắn nhãn “mô hình chuẩn” và :submit bị từ chối | API | todo |  |
+| AC-15-03-04 | Ngoại lệ | Cho mọi ứng viên có MASE từ 1 trở lên / Khi chọn mô hình / Thì kết quả là seasonal naive gắn nhãn “mô hình chuẩn” và :submit bị từ chối | API | todo | `tests/integration/api/test_forecast.py` |
 | AC-15-03-05 | Ngoại lệ | Cho độ phủ khoảng 95% trên backtest là 82% / Khi trả dự báo / Thì kết quả có cảnh báo “khoảng có thể hẹp hơn thực tế” | API | todo |  |
 | AC-15-03-06 | Quy tắc | Cho model_version và prediction / Khi phát hành phiên bản có MASE backtest 1,05, ghi dự báo từ phiên bản chưa duyệt mà không gắn is_experimental, hoặc ghi khoảng 80% rộng hơn khoảng 95% / Thì CSDL từ chối cả 3 | CSDL | todo |  |
-| AC-15-03-07 | Quy tắc | Cho model_version / Khi ghi LightGBM trên một chuỗi 40 điểm, SARIMAX 30 điểm với 3 biến ngoại sinh, chuỗi 20 điểm, hoặc phát hành khi MASE backtest gấp 3 lần MASE trong mẫu / Thì CSDL từ chối từng trường hợp; LightGBM… | CSDL | todo |  |
+| AC-15-03-07 | Quy tắc | Cho model_version / Khi ghi LightGBM trên một chuỗi 40 điểm, SARIMAX 30 điểm với 3 biến ngoại sinh, chuỗi 20 điểm, hoặc phát hành khi MASE backtest gấp 3 lần MASE trong mẫu / Thì CSDL từ chối từng trường hợp; LightGBM… | CSDL | todo | `tests/integration/api/test_forecast.py` |
 | AC-15-03-08 | Quy tắc | Cho dự báo số dư huy động của 5 vùng và toàn hàng / Khi điều hoà MinT / Thì tổng trung vị 5 vùng bằng trung vị toàn hàng ở mọi kỳ, sai không quá sai số làm tròn | API | todo |  |
 
 </details>
 
-<details><summary>UC-15-04 Duyệt và phát hành mô hình dự báo · 0/6</summary>
+<details><summary>UC-15-04 Duyệt và phát hành mô hình dự báo · 4/6</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-15-04-01 | Chính | Cho phiên bản mô hình MASE 0,82 đã gửi duyệt / Khi AC03 khác người tạo mở thẻ mô hình, xem backtest so với seasonal naive và bản đang phát hành rồi duyệt / Thì thẻ có mục tiêu, phạm vi, dữ liệu, thời gian huấn luyện, … | API, CSDL | todo |  |
-| AC-15-04-02 | Chính | Cho phiên bản đang chờ duyệt / Khi AC03 từ chối kèm lý do / Thì phiên bản không published, bản đang phát hành giữ nguyên và lý do lưu cùng quyết định | API, CSDL | todo |  |
+| AC-15-04-01 | Chính | Cho phiên bản mô hình MASE 0,82 đã gửi duyệt / Khi AC03 khác người tạo mở thẻ mô hình, xem backtest so với seasonal naive và bản đang phát hành rồi duyệt / Thì thẻ có mục tiêu, phạm vi, dữ liệu, thời gian huấn luyện, … | API, CSDL | todo | `tests/integration/api/test_forecast.py` |
+| AC-15-04-02 | Chính | Cho phiên bản đang chờ duyệt / Khi AC03 từ chối kèm lý do / Thì phiên bản không published, bản đang phát hành giữ nguyên và lý do lưu cùng quyết định | API, CSDL | todo | `tests/integration/api/test_forecast.py` |
 | AC-15-04-03 | Thay thế | Cho phiên bản đề nghị tầm 6 tháng / Khi AC03 duyệt có điều kiện tầm 3 tháng / Thì phiên bản published với tầm tối đa 3 tháng và dự báo tháng thứ 4 trở đi không dùng được cho báo cáo hay cảnh báo | API | todo |  |
-| AC-15-04-04 | Ngoại lệ | Cho phiên bản do AC03 tạo, hoặc người gọi là tài khoản agent / Khi gọi :approve / Thì bị từ chối ở API và CSDL từ chối người tạo tự duyệt | API, CSDL | todo |  |
+| AC-15-04-04 | Ngoại lệ | Cho phiên bản do AC03 tạo, hoặc người gọi là tài khoản agent / Khi gọi :approve / Thì bị từ chối ở API và CSDL từ chối người tạo tự duyệt | API, CSDL | todo | `tests/integration/api/test_forecast.py` |
 | AC-15-04-05 | Quy tắc | Cho model_version / Khi phát hành thiếu người duyệt, hoặc trỏ forecast_model.current_version tới phiên bản chưa phát hành / Thì CSDL từ chối cả hai | CSDL | todo |  |
-| AC-15-04-06 | Ngoại lệ | Cho phiên bản có MASE backtest 1,00 / Khi gọi :submit / Thì bị từ chối vì chưa tốt hơn seasonal naive | API | todo |  |
+| AC-15-04-06 | Ngoại lệ | Cho phiên bản có MASE backtest 1,00 / Khi gọi :submit / Thì bị từ chối vì chưa tốt hơn seasonal naive | API | todo | `tests/integration/api/test_forecast.py` |
 
 </details>
 
-<details><summary>UC-15-05 Xem dự báo và chạy kịch bản · 0/8</summary>
+<details><summary>UC-15-05 Xem dự báo và chạy kịch bản · 2/8</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-15-05-01 | Chính | Cho dự báo số dư huy động bán lẻ 3 tháng của mô hình đã duyệt / Khi AC02 mở SCR-63 / Thì màn có biểu đồ lịch sử và dự báo với dải 80% và 95%, bảng số theo kỳ, đóng góp biến, giả định và nhãn “đã duyệt” | E2E | todo |  |
-| AC-15-05-02 | Chính | Cho dự báo ở AC-15-05-01 / Khi AC02 đặt lãi suất điều hành tăng 0,5 điểm từ tháng 12/2026 / Thì kịch bản được tính bằng mô hình đã huấn luyện (không có backtest_run mới), hiện cạnh dự báo gốc kèm chênh lệch từng kỳ, p… | API, CSDL | todo |  |
+| AC-15-05-02 | Chính | Cho dự báo ở AC-15-05-01 / Khi AC02 đặt lãi suất điều hành tăng 0,5 điểm từ tháng 12/2026 / Thì kịch bản được tính bằng mô hình đã huấn luyện (không có backtest_run mới), hiện cạnh dự báo gốc kèm chênh lệch từng kỳ, p… | API, CSDL | todo | `tests/integration/api/test_forecast.py` |
 | AC-15-05-03 | Quy tắc | Cho kịch bản ở AC-15-05-02 / Khi hiện trên SCR-63, trong câu trả lời và trong tệp xuất / Thì cả 3 nơi có câu bắt buộc đã điền “Nếu lãi suất điều hành tăng 0,5 điểm từ tháng 12/2026 …”, không có nút tắt; dự báo gốc có … | E2E, API | todo |  |
 | AC-15-05-04 | Chính | Cho kịch bản đã tính / Khi AC02 lưu, thêm vào phiên và xuất / Thì có scenario và prediction của kịch bản, phiên có ô mới (UC-02-01) và tệp xuất (UC-01-06) | API, CSDL | todo |  |
 | AC-15-05-05 | Thay thế | Cho kịch bản +0,5 điểm đang mở / Khi hỏi tiếp “nếu lãi suất giữ nguyên thì sao” / Thì có kịch bản mới với lãi suất điều hành giữ mức hiện tại | API, Đánh giá agent | todo |  |
-| AC-15-05-06 | Ngoại lệ | Cho mô hình không dùng biến tỷ giá / Khi đặt kịch bản tỷ giá / Thì hệ thống báo kịch bản không áp dụng và không có prediction mới | API | todo |  |
+| AC-15-05-06 | Ngoại lệ | Cho mô hình không dùng biến tỷ giá / Khi đặt kịch bản tỷ giá / Thì hệ thống báo kịch bản không áp dụng và không có prediction mới | API | todo | `tests/integration/api/test_forecast.py` |
 | AC-15-05-07 | Ngoại lệ | Cho lãi suất điều hành trong dữ liệu huấn luyện nằm trong 3–6% / Khi đặt kịch bản 9% / Thì vẫn có kết quả kèm cảnh báo ngoại suy | API | todo |  |
 | AC-15-05-08 | Quy tắc | Cho forecast.prediction / Khi ghi dự báo theo kịch bản không có scenario_fixed, hoặc dự báo gốc có biến ngoại sinh mà khoảng không gồm sai số của biến / Thì CSDL từ chối cả hai; dự báo gốc ghi simulated thì được | CSDL | todo |  |
 | — | Cần làm rõ | Bước 3 nói kịch bản chạy lại “trong vài giây”, chưa có ngưỡng số (ví dụ p95). Cần số để có tiêu chí Phi chức năng | | | |
 
 </details>
 
-<details><summary>UC-15-06 Theo dõi độ chính xác và huấn luyện lại · 0/7</summary>
+<details><summary>UC-15-06 Theo dõi độ chính xác và huấn luyện lại · 2/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-15-06-01 | Chính | Cho mô hình đã phát hành dự báo tháng 10/2026 / Khi có số thực tế tháng 10/2026 / Thì accuracy_log có sai số chuẩn hoá, cờ trong khoảng 80% và 95%, MASE cuốn chiếu 6 kỳ và SCR-64 hiện MASE đó cạnh mức backtest | API, CSDL | todo |  |
+| AC-15-06-01 | Chính | Cho mô hình đã phát hành dự báo tháng 10/2026 / Khi có số thực tế tháng 10/2026 / Thì accuracy_log có sai số chuẩn hoá, cờ trong khoảng 80% và 95%, MASE cuốn chiếu 6 kỳ và SCR-64 hiện MASE đó cạnh mức backtest | API, CSDL | todo | `tests/integration/api/test_forecast.py` |
 | AC-15-06-02 | Quy tắc | Cho MASE backtest 0,80 / Khi MASE cuốn chiếu là 1,00 (trên 0,96) và khi là 0,95 / Thì ở 1,00 mô hình chuyển degraded, mọi dự báo của mô hình gắn nhãn, AC03 có yêu cầu, việc huấn luyện lại bắt đầu và có sự kiện forecas… | API, CSDL | todo |  |
 | AC-15-06-03 | Quy tắc | Cho số thực tế tháng 09/2026 và 10/2026 đều nằm ngoài khoảng 95% / Khi ghi accuracy_log tháng 10 / Thì mô hình chuyển degraded; nếu chỉ tháng 10 ngoài 95% thì không | API, CSDL | todo |  |
 | AC-15-06-04 | Chính | Cho mô hình chuỗi tháng và mô hình chuỗi ngày / Khi có kỳ dữ liệu tháng mới và khi qua 7 ngày / Thì mỗi mô hình có việc huấn luyện lại theo lịch, phiên bản mới chờ duyệt (UC-15-04) | API, CSDL | todo |  |
-| AC-15-06-05 | Thay thế | Cho mô hình đang hoạt động / Khi AC03 bấm “Huấn luyện lại” / Thì :retrain tạo forecast_job huấn luyện lại ngay | API, CSDL | todo |  |
+| AC-15-06-05 | Thay thế | Cho mô hình đang hoạt động / Khi AC03 bấm “Huấn luyện lại” / Thì :retrain tạo forecast_job huấn luyện lại ngay | API, CSDL | todo | `tests/integration/api/test_forecast.py` |
 | AC-15-06-06 | Ngoại lệ | Cho số thực tế tháng 09/2026 được điều chỉnh hồi tố (UC-10-04) / Khi có bản 2 / Thì accuracy_log có sai số theo bản 2 và dòng theo bản 1 vẫn còn trong lịch sử | CSDL | todo |  |
 | AC-15-06-07 | Quy tắc | Cho model_version / Khi chuyển phiên bản pending_approval sang degraded, hoặc đặt phiên bản degraded khi forecast_model vẫn active / Thì CSDL từ chối; chuyển cả phiên bản và mô hình sang degraded cùng lúc thì được | CSDL | todo |  |
 
 </details>
 
-<details><summary>UC-15-07 Dự báo giá điều hành theo công thức · 0/10</summary>
+<details><summary>UC-15-07 Dự báo giá điều hành theo công thức · 3/10</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-15-07-01 | Chính | Cho công thức giá cơ sở certified, mọi tham số có bản certified hiệu lực, bản tin kỳ 02/7/2026 đã vào dataset certified, giá dầu công khai và tỷ giá có số ngày làm việc gần nhất / Khi Agent Dự báo gọi forecast.formula… | API, CSDL | todo |  |
 | AC-15-07-02 | Chính | Cho giá E5RON92 kỳ 02/7/2026 là 19.730 đ/lít / Khi phân rã dự báo kỳ 09/7 / Thì các phần thế giới, tỷ giá, thuế phí, Quỹ và sai số quy đổi proxy cộng với 19.730 bằng giá kỳ vọng, sai không quá 1 đ/lít (ví dụ minh hoạ … | API, E2E | todo |  |
 | AC-15-07-03 | Chính | Cho dự báo kỳ 09/7 được phát hành qua bản tin trước kỳ / Khi ghi prediction / Thì có ledger_entry trước thời điểm kỳ và SCR-70 hiện kết quả cạnh sổ 5 kỳ gần nhất (kỳ 02/7: dự báo 19.850, công bố 19.730, sai 120, trong… | API, CSDL, E2E | todo |  |
-| AC-15-07-04 | Thay thế | Cho văn bản mới đổi mức thuế bảo vệ môi trường từ 16/07/2026 / Khi P05 nạp văn bản và AC03 khác người nhập chứng nhận qua Cần bạn (kind formula_component) / Thì có formula_component mới kèm số hiệu, link, ngày hiệu lự… | API, CSDL | todo |  |
-| AC-15-07-05 | Thay thế | Cho dự báo kỳ 09/7 / Khi người xem chạy kịch bản “Quỹ chi 500 đ/lít”, hoặc khi mô hình formula_mc chưa có bản phát hành / Thì kịch bản có exog_uncertainty = scenario_fixed và câu bắt buộc BR-173; kết quả chưa phát hàn… | API, CSDL | todo |  |
-| AC-15-07-06 | Ngoại lệ | Cho tham số thuế bảo vệ môi trường chưa có bản certified hiệu lực tại 09/7/2026, hoặc tỷ giá quá hạn độ tươi / Khi chạy / Thì không có prediction, kết quả là “CHƯA CÓ dự báo: thiếu {tham số hoặc nguồn}, cần {người} ch… | API, CSDL | todo |  |
+| AC-15-07-04 | Thay thế | Cho văn bản mới đổi mức thuế bảo vệ môi trường từ 16/07/2026 / Khi P05 nạp văn bản và AC03 khác người nhập chứng nhận qua Cần bạn (kind formula_component) / Thì có formula_component mới kèm số hiệu, link, ngày hiệu lự… | API, CSDL | todo | `tests/integration/api/test_forecast.py` |
+| AC-15-07-05 | Thay thế | Cho dự báo kỳ 09/7 / Khi người xem chạy kịch bản “Quỹ chi 500 đ/lít”, hoặc khi mô hình formula_mc chưa có bản phát hành / Thì kịch bản có exog_uncertainty = scenario_fixed và câu bắt buộc BR-173; kết quả chưa phát hàn… | API, CSDL | todo | `tests/integration/api/test_forecast.py` |
+| AC-15-07-06 | Ngoại lệ | Cho tham số thuế bảo vệ môi trường chưa có bản certified hiệu lực tại 09/7/2026, hoặc tỷ giá quá hạn độ tươi / Khi chạy / Thì không có prediction, kết quả là “CHƯA CÓ dự báo: thiếu {tham số hoặc nguồn}, cần {người} ch… | API, CSDL | todo | `tests/integration/api/test_forecast.py` |
 | AC-15-07-07 | Ngoại lệ | Cho kiểm tái tạo kỳ 02/7 lệch 12 đ/lít so với 19.730 / Khi chạy dự báo kỳ 09/7 / Thì mô hình chuyển degraded, dự báo chỉ hiện với nhãn “công thức cần xem lại” và không vào bản tin | API, CSDL | todo |  |
 | AC-15-07-08 | Quy tắc | Cho formula_component / Khi ghi tham số ở certified ngay khi nhập, người nhập tự chứng nhận, thuế suất 120%, link văn bản không phải http, sửa giá trị đã chứng nhận, hoặc bản mới có valid_from trước bản đang hiệu lực … | CSDL | todo |  |
 | AC-15-07-09 | Quy tắc | Cho formula_model và model_version / Khi gắn formula_model vào phiên bản ets, hoặc gửi duyệt phiên bản formula_mc chưa có formula_model / Thì trigger từ chối cả hai | CSDL | todo |  |
@@ -2085,17 +2085,17 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-15-08 Sổ dự báo và tự chấm · 0/10</summary>
+<details><summary>UC-15-08 Sổ dự báo và tự chấm · 3/10</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-15-08-01 | Chính | Cho bản tin trước kỳ 02/7/2026 phát hành lúc 20:00 ngày 01/7/2026 / Khi Forecast service ghi sổ / Thì ledger_entry E5RON92 có trung vị 19.850, khoảng 80% [19.560; 20.120], phân vị, xác suất Quỹ, phân rã, giá kỳ trước … | API, CSDL | todo |  |
 | AC-15-08-02 | Chính | Cho Bộ Công Thương công bố kỳ 02/7/2026: E5RON92 19.730 đ/lít (giảm 1.055), giá thế giới 98,166 USD/thùng, trích Quỹ 200, chi 0, và P14 đã chứng nhận dataset / Khi có sự kiện kỳ mới / Thì ledger_entry chuyển scored vớ… | API, CSDL | todo |  |
-| AC-15-08-03 | Chính | Cho mô hình có N = 20 kỳ đã chấm / Khi kỳ 02/7 được chấm / Thì độ phủ 80%, độ phủ 95%, MAE đ/lít, CRPS so naive và số kỳ miss được cập nhật và hiện cùng giá trị trên SCR-70, SCR-71, câu trả lời và bản tin dùng mô hình đó | API, E2E | todo |  |
+| AC-15-08-03 | Chính | Cho mô hình có N = 20 kỳ đã chấm / Khi kỳ 02/7 được chấm / Thì độ phủ 80%, độ phủ 95%, MAE đ/lít, CRPS so naive và số kỳ miss được cập nhật và hiện cùng giá trị trên SCR-70, SCR-71, câu trả lời và bản tin dùng mô hình đó | API, E2E | todo | `tests/integration/api/test_forecast.py` |
 | AC-15-08-04 | Quy tắc | Cho ngưỡng miss mặc định 300 đ/lít / Khi một kỳ có giá công bố ngoài khoảng 95% hoặc sai tuyệt đối 350 đ/lít / Thì miss = true, phát forecast.ledger.missed, Error Book có mục forecast_miss kèm phần lệch chính trong 15… | API, CSDL | todo |  |
 | AC-15-08-05 | Quy tắc | Cho ledger_entry đã chấm / Khi ghi miss = false cho giá ngoài 95%, đổi error_book_entry_id đã ghi, hoặc đưa dòng về open / Thì CSDL từ chối từng trường hợp | CSDL | todo |  |
-| AC-15-08-06 | Quy tắc | Cho ledger_entry của kỳ 09/7 / Khi ghi dòng sau thời điểm kỳ, sửa trung vị sau khi ghi, hoặc xoá dòng / Thì CSDL từ chối cả 3 (xoá báo permission denied) | CSDL | todo |  |
-| AC-15-08-07 | Thay thế | Cho Bộ đính chính bản tin kỳ 02/7 và dataset có phiên bản mới / Khi AC03 bấm Chấm lại / Thì có bản chấm mới theo phiên bản mới và bản chấm cũ còn trong lịch sử | API, CSDL | todo |  |
+| AC-15-08-06 | Quy tắc | Cho ledger_entry của kỳ 09/7 / Khi ghi dòng sau thời điểm kỳ, sửa trung vị sau khi ghi, hoặc xoá dòng / Thì CSDL từ chối cả 3 (xoá báo permission denied) | CSDL | todo | `tests/integration/api/test_forecast.py` |
+| AC-15-08-07 | Thay thế | Cho Bộ đính chính bản tin kỳ 02/7 và dataset có phiên bản mới / Khi AC03 bấm Chấm lại / Thì có bản chấm mới theo phiên bản mới và bản chấm cũ còn trong lịch sử | API, CSDL | todo | `tests/integration/api/test_forecast.py` |
 | AC-15-08-08 | Thay thế | Cho sổ có 20 kỳ của 5 mặt hàng / Khi lọc E5RON92, chỉ kỳ miss rồi mở một dòng / Thì bảng chỉ còn dòng E5RON92 có miss, xếp mới nhất trước, và ngăn chi tiết có bản tin đã gửi cùng kết quả | E2E | todo |  |
 | AC-15-08-09 | Ngoại lệ | Cho kỳ 09/7 bị huỷ và kỳ 02/7 đã có giá công bố / Khi chuyển dòng sang void / Thì dòng kỳ 09/7 void kèm lý do, dòng kỳ 02/7 bị từ chối | API, CSDL | todo |  |
 | AC-15-08-10 | Ngoại lệ | Cho kỳ 09/7 quá post_wait_max chưa có bản tin / Khi hết thời gian chờ / Thì dòng vẫn open, người phụ trách nhận báo và SCR-71 hiện “chưa có kết quả kỳ 09/07/2026” | API, E2E | todo |  |

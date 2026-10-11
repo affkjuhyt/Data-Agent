@@ -147,8 +147,10 @@ async def _skill(
     try:
         query = query.where(skill.Skill.id == uuid.UUID(ref))
     except ValueError:
+        # Every skill records the Data Space it was authored in, org-wide ones too, so "the
+        # Data Space's skill first" is "authored here first", not "data_space_id set first".
         query = query.where(skill.Skill.code == ref).order_by(
-            skill.Skill.data_space_id.is_(None), skill.Skill.created_at
+            (skill.Skill.data_space_id == data_space).desc().nulls_last(), skill.Skill.created_at
         )
     if lock:
         query = query.with_for_update()
@@ -222,7 +224,9 @@ async def list_skills(
     if scope:
         query = query.where(s.scope == scope)
     if q and q.strip():
-        pattern = "%" + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        pattern = (
+            "%" + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        )
         query = query.where(
             or_(s.name.ilike(pattern), s.code.ilike(pattern), s.description.ilike(pattern))
         )
@@ -334,7 +338,9 @@ async def create_run(
         errors = rules.param_errors(version.params_schema, body.params)
         if errors:
             raise Problem(
-                422, "validation_failed", "params do not match the skill's params_schema.",
+                422,
+                "validation_failed",
+                "params do not match the skill's params_schema.",
                 errors=errors,
             )
         run = skill.SkillRun(
@@ -516,7 +522,9 @@ async def update_version(
         if version.status != "draft":
             # BR-12: what was tested or published is not edited; a new version is.
             raise Problem(
-                409, "invalid_state", f"Only a draft version is edited; this one is {version.status}."
+                409,
+                "invalid_state",
+                f"Only a draft version is edited; this one is {version.status}.",
             )
         if body.params_schema is not None:
             version.params_schema = body.params_schema
@@ -678,13 +686,24 @@ async def publish_version(
     **endpoint("POST", "/v1/skill-versions/{id}:retire", operation_id="retireSkillVersion"),
 )
 async def retire_version(
-    version_id: RowId, body: RetireRequest, principal: CurrentPrincipal, data_space: CurrentDataSpace
+    version_id: RowId,
+    body: RetireRequest,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
 ) -> VersionView:
     async with transaction(ROLE, principal) as session:
         version, row = await _version(session, version_id, principal, data_space)
+        # UC-03-06 is the steward's of the Data Space the skill was authored in: an org-wide
+        # skill is visible from every Data Space, but another one's approver does not retire it.
+        if row.data_space_id is not None and row.data_space_id != data_space:
+            raise Problem(
+                403, "forbidden", "Only an approver of the skill's own Data Space retires it."
+            )
         if version.status not in RUNNABLE:
             raise Problem(
-                409, "invalid_state", f"Only a published version is retired; this one is {version.status}."
+                409,
+                "invalid_state",
+                f"Only a published version is retired; this one is {version.status}.",
             )
         if body.replaced_by_skill_id is not None:
             replacement = await session.scalar(
@@ -710,7 +729,7 @@ async def retire_version(
                     ],
                 )
             row.replaced_by_skill_id = replacement.id
-        now = _now()
+        now, previous = _now(), version.status
         version.status, version.retire_at = "retired", now + TRANSITION
         if row.current_version == version.version:
             row.current_version = None
@@ -740,7 +759,7 @@ async def retire_version(
             object_kind="skill_version",
             object_id=version.id,
             actor_id=principal.user_id,
-            before={"status": "published"},
+            before={"status": previous},
             after={
                 "status": "retired",
                 "retire_at": version.retire_at.isoformat(),
@@ -840,9 +859,14 @@ async def list_suggestions(
     async with transaction(ROLE, principal) as session:
         rows = list((await session.scalars(_keyset(query, s, page))).all())
     return Page(
-        items=[SuggestionView.model_validate(r) for r in rows[: page.page_size]],
+        items=[_suggestion_view(r) for r in rows[: page.page_size]],
         next_page_token=_page_token(rows, page),
     )
+
+
+def _suggestion_view(row: skill.SkillSuggestion) -> SuggestionView:
+    view = SuggestionView.model_validate(row)
+    return view.model_copy(update={"pattern": rules.structure_only(row.pattern)})
 
 
 async def _open_suggestion(
@@ -872,16 +896,15 @@ def _from_pattern(pattern: Any, key: str, default: Any, kind: type) -> Any:
 @router.post(
     "/v1/skill-suggestions/{id}:accept",
     response_model=SkillView,
-    **endpoint(
-        "POST", "/v1/skill-suggestions/{id}:accept", operation_id="acceptSkillSuggestion"
-    ),
+    **endpoint("POST", "/v1/skill-suggestions/{id}:accept", operation_id="acceptSkillSuggestion"),
 )
 async def accept_suggestion(
     suggestion_id: RowId, principal: CurrentPrincipal, data_space: CurrentDataSpace
 ) -> SkillView:
     async with transaction(ROLE, principal) as session:
         suggestion = await _open_suggestion(session, suggestion_id, principal, data_space)
-        pattern = suggestion.pattern
+        # The new skill belongs to the acceptor, who may not have written the sessions (BR-98).
+        pattern = rules.structure_only(suggestion.pattern)
         category = _from_pattern(pattern, "category", "custom", str)
         name = _from_pattern(pattern, "name", "", str).strip()
         params_schema = _from_pattern(
@@ -910,7 +933,9 @@ async def accept_suggestion(
             org_id=principal.org_id,
             skill_id=row.id,
             version=1,
-            params_schema=params_schema if not rules.schema_errors(params_schema) else {
+            params_schema=params_schema
+            if not rules.schema_errors(params_schema)
+            else {
                 "type": "object",
                 "properties": {},
             },
@@ -950,9 +975,7 @@ async def accept_suggestion(
 @router.post(
     "/v1/skill-suggestions/{id}:dismiss",
     response_model=SuggestionView,
-    **endpoint(
-        "POST", "/v1/skill-suggestions/{id}:dismiss", operation_id="dismissSkillSuggestion"
-    ),
+    **endpoint("POST", "/v1/skill-suggestions/{id}:dismiss", operation_id="dismissSkillSuggestion"),
 )
 async def dismiss_suggestion(
     suggestion_id: RowId, principal: CurrentPrincipal, data_space: CurrentDataSpace
@@ -975,4 +998,4 @@ async def dismiss_suggestion(
             status="dismissed",
         )
         await session.flush()
-        return SuggestionView.model_validate(suggestion)
+        return _suggestion_view(suggestion)

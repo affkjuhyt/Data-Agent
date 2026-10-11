@@ -36,6 +36,25 @@ KEYWORDS = frozenset(
         "$schema",
     }
 )
+# BR-98 / AC-03-07-05: a suggestion carries step kinds, metrics and operations, never what a
+# session produced. The nightly scan is meant to write structure only; these keys are dropped on
+# the way out in case it does not, since the viewer may not be the sessions' author.
+CONTENT_KEYS = frozenset(
+    {
+        "result",
+        "results",
+        "output",
+        "outputs",
+        "rows",
+        "data",
+        "values",
+        "cells",
+        "content",
+        "preview",
+        "sample",
+        "samples",
+    }
+)
 # Skill scopes from the narrowest; widening needs the review of UC-03-05 (BR-12, BR-96).
 SCOPE_RANK = {"personal": 0, "data_space": 1, "org": 2}
 
@@ -130,3 +149,17 @@ def widens(current: str, requested: str) -> bool:
 def approval_steps(scope: str) -> int:
     """BR-96: org-wide needs the system administrator's step after the steward's."""
     return 2 if scope == "org" else 1
+
+
+def structure_only(pattern: Any) -> Any:
+    """`pattern` without the session content BR-98 keeps from other people (CONTENT_KEYS).
+    A params_schema is kept whole: its property names are the parameters, not data."""
+    if isinstance(pattern, list):
+        return [structure_only(item) for item in pattern]
+    if not isinstance(pattern, dict):
+        return pattern
+    return {
+        key: value if key == "params_schema" else structure_only(value)
+        for key, value in pattern.items()
+        if key not in CONTENT_KEYS
+    }
