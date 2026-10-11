@@ -16,6 +16,11 @@ from fastapi import FastAPI, Request, Response
 
 from services.api.config import Settings
 from services.api.kernel.auth import IdentityResolver, JwksTokenVerifier, TokenVerifier
+from services.api.kernel.idempotency import (
+    ResponseStore,
+    idempotency_middleware,
+    response_store_from_env,
+)
 from services.api.kernel.problems import Problem, install_problem_handlers, problem_response
 from services.api.kernel.tracing import trace_middleware
 from services.api.modules import ROUTERS
@@ -38,6 +43,7 @@ def create_app(
     *,
     token_verifier: TokenVerifier | None = None,
     identity_resolver: IdentityResolver | None = None,
+    response_store: ResponseStore | None = None,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
 
@@ -67,6 +73,13 @@ def create_app(
     app.state.identity_resolver = identity_resolver or OrgIdentityResolver()
 
     install_problem_handlers(app)
+    store = response_store or response_store_from_env()
+
+    @app.middleware("http")
+    async def idempotency(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        return await idempotency_middleware(request, call_next, store)
 
     @app.middleware("http")
     async def trace_and_contain(

@@ -101,6 +101,13 @@ Lỗi CSDL thành problem+json ở kernel (`kernel/problems.py`): SQLSTATE 23514
 23502 → 422 `validation_failed`. Thông điệp của PostgreSQL có tên bảng hoặc ràng buộc không đi ra ngoài
 (A1.7); module không cần tự kiểm lại luật CSDL đã giữ.
 
+Idempotency-Key (A1.5) nằm ở kernel (`kernel/idempotency.py`), áp cho mọi POST dưới `/v1`, module không làm gì
+thêm. Khoá giữ trong `integration.idempotency_key` theo tổ chức và người gửi (suy từ `sub` của token), được ghi
+trước khi handler chạy nên bản gửi trùng lúc bản đầu còn chạy nhận 409. Phản hồi đầu (mã, Content-Type,
+Location, ETag, thân) lưu 24 giờ ở Redis (`REDIS_URL`); gửi lại trả đúng phản hồi đó kèm `Idempotent-Replayed:
+true`, cùng khoá khác thân trả 422 `idempotency_mismatch`, lỗi 5xx nhả khoá để gửi lại chạy lại. Thiếu
+`REDIS_URL` thì header bị bỏ qua (cảnh báo khi khởi động).
+
 A2 có 382 endpoint, làm dần theo nhóm: một nhóm vào `COMPLETE_GROUPS` trong commit phục vụ endpoint cuối
 của nhóm, từ đó bỏ một endpoint là lỗi. Thêm hoặc bỏ endpoint phải sửa tab 4 A2 và `a2_endpoints.json`
 trong cùng PR. Xem độ phủ: `python -m services.api.catalogue.check` trong image `api`.
@@ -120,8 +127,9 @@ trong cùng PR. Xem độ phủ: `python -m services.api.catalogue.check` trong 
 `GET /v1/me` được thêm vào A2 (nhóm Quản trị) ngày 11/10/2026; các `/v1/me/*` khác frontend đang gọi vẫn là
 PROPOSAL và đi theo nhóm của chúng.
 
-Frontend sinh client TypeScript từ `/v1/openapi.json` (tab 7 F3) và tắt `VITE_MOCK_V1` theo từng nhóm khi
-nhóm đó vào `COMPLETE_GROUPS`. Các nhóm còn lại đi theo thứ tự màn hình người dùng chạm trước.
+Frontend sinh client TypeScript từ `/v1/openapi.json` (tab 7 F3) và tắt mock theo từng nhóm A2 đã nối
+(`frontend/src/mocks/integrated.ts`, [05 §4](05-ui-v3.md)). Các nhóm còn lại đi theo thứ tự màn hình người dùng
+chạm trước.
 
 ## 6. Ai trả lời câu hỏi: khối `worker-agent`
 
