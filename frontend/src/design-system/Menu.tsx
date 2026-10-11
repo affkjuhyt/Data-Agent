@@ -20,10 +20,13 @@ type MenuEntry =
 
 export function Menu({
   trigger,
+  triggerKind = 'icon',
   items,
   label,
 }: {
   trigger?: ReactNode;
+  /** icon = the 28px "…" button; button = a ghost text button with a chevron ("Chọn bộ sưu tập"). */
+  triggerKind?: 'icon' | 'button';
   items: MenuEntry[];
   label: string;
 }) {
@@ -51,9 +54,20 @@ export function Menu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex size-7 items-center justify-center rounded-md text-foreground hover:bg-subtle"
+        className={
+          triggerKind === 'button'
+            ? 'inline-flex h-9 items-center gap-da-sm rounded-md px-da-lg text-foreground da-body-strong hover:bg-subtle'
+            : 'inline-flex size-7 items-center justify-center rounded-md text-foreground hover:bg-subtle'
+        }
       >
-        {trigger ?? <Icon name="more" />}
+        {triggerKind === 'button' ? (
+          <>
+            {trigger ?? label}
+            <Icon name="chevron-down" />
+          </>
+        ) : (
+          (trigger ?? <Icon name="more" />)
+        )}
       </button>
       {open && (
         <div

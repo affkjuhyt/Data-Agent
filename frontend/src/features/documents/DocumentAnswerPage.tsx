@@ -4,7 +4,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { Button } from '../../design-system/Button';
 import { Composer } from '../../design-system/Composer';
 import { EmptyState } from '../../design-system/EmptyState';
-import { Select } from '../../design-system/Select';
+import { Menu } from '../../design-system/Menu';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -20,8 +20,8 @@ import { ReportDialog } from '../ask/components/ReportDialog';
  * shows on the right and "Mở đoạn gốc" opens it in the viewer. A superseded source is only cited
  * to say it was superseded, never as the basis.
  *
- * Figma draws "Chọn bộ sưu tập" as a ghost button; the design-system Menu only has an icon
- * trigger, so the scope stays a Select. "Thêm vào phiên" has no session API yet: shown disabled.
+ * "Chọn bộ sưu tập" is the ghost menu button Figma draws. "Thêm vào phiên" has no session API yet:
+ * shown disabled.
  */
 const ALL_COLLECTIONS = '__all';
 
@@ -70,19 +70,21 @@ export default function DocumentAnswerPage() {
         title="Hỏi đáp tài liệu"
         actions={
           <>
-            <div className="w-60">
-              <Select
-                label="Chọn bộ sưu tập"
-                options={[
-                  { value: ALL_COLLECTIONS, label: 'Mọi bộ sưu tập được đọc' },
-                  ...(collections.data?.items ?? [])
-                    .filter((c) => !c.archived)
-                    .map((c) => ({ value: c.id, label: c.name })),
-                ]}
-                value={collection}
-                onChange={setCollection}
-              />
-            </div>
+            <Menu
+              label="Chọn bộ sưu tập"
+              triggerKind="button"
+              trigger={
+                collection === ALL_COLLECTIONS
+                  ? 'Chọn bộ sưu tập'
+                  : (collections.data?.items.find((c) => c.id === collection)?.name ?? 'Chọn bộ sưu tập')
+              }
+              items={[
+                { label: 'Mọi bộ sưu tập được đọc', onSelect: () => setCollection(ALL_COLLECTIONS) },
+                ...(collections.data?.items ?? [])
+                  .filter((c) => !c.archived)
+                  .map((c) => ({ label: c.name, onSelect: () => setCollection(c.id) })),
+              ]}
+            />
             <Button onClick={() => void share()}>Chia sẻ</Button>
           </>
         }
