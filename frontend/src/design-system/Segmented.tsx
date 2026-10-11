@@ -6,6 +6,8 @@ import { cn } from '../lib/utils';
  * 2px gaps; the chosen segment is a card with a border (radius-sm), the rest muted text.
  * `outline` is the view switch of "Lượt chạy · Đang làm gì" (2310:20090): a bordered strip
  * (radius-sm) split by lines, the chosen view on subtle in Body Strong.
+ * `chips` is the filter row of "P03 · Kỹ năng · Thư viện" (2293:17995): loose chips, no track,
+ * radius-sm, 10×5 padding, 8px apart; the chosen chip on subtle with a border in Body Strong.
  */
 interface Segment<V extends string> {
   value: V;
@@ -23,8 +25,34 @@ export function Segmented<V extends string>({
   value: V;
   onChange: (value: V) => void;
   label: string;
-  variant?: 'track' | 'outline';
+  variant?: 'track' | 'outline' | 'chips';
 }) {
+  if (variant === 'chips') {
+    return (
+      <div role="radiogroup" aria-label={label} className="flex items-center gap-da-md">
+        {items.map((item) => {
+          const active = item.value === value;
+          return (
+            <button
+              key={item.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => onChange(item.value)}
+              className={cn(
+                'whitespace-nowrap rounded-sm border px-[10px] py-[5px] transition-colors duration-[120ms] ease-out',
+                active
+                  ? 'border-border bg-subtle text-foreground da-body-strong'
+                  : 'border-transparent text-muted-foreground da-body-small hover:text-foreground',
+              )}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
   if (variant === 'outline') {
     return (
       <div

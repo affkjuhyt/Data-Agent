@@ -53,9 +53,9 @@ export default function SkillSuggestionsPage() {
             </ul>
           )}
         </AsyncRegion>
-        <section className="flex flex-col gap-da-md py-da-xl">
+        <section className="flex flex-col gap-da-md pb-da-xl pt-[20px]">
           <h2 className="text-foreground da-heading-3">Chia sẻ kỹ năng</h2>
-          <p className="text-foreground da-body">
+          <p className="text-foreground da-body-small">
             Kỹ năng đã chứng nhận có thể chia sẻ cho Data Space khác hoặc toàn tổ chức. Bên nhận
             thấy tên, mô tả, tham số và kết quả kiểm định; kỹ năng chạy theo quyền dữ liệu của người
             dùng bên nhận. Chia sẻ toàn tổ chức cần quản trị viên duyệt.
@@ -97,7 +97,7 @@ function SuggestionRow({
 
   return (
     <li className="flex flex-col gap-da-md border-b border-border py-da-xl">
-      <div className="flex items-start gap-da-lg">
+      <div className="flex items-start gap-[20px]">
         <div className="flex min-w-0 flex-1 flex-col gap-da-xs">
           <h2 className="text-foreground da-heading-3">{suggestion.title}</h2>
           <p className="text-muted-foreground da-caption">{suggestion.repeat_text}</p>

@@ -43,7 +43,7 @@ export function DataSpacePicker({
   return (
     <div className="flex min-h-screen flex-col items-center bg-card">
       <BrandBar>
-        <span className="text-muted-foreground da-caption">
+        <span className="text-muted-foreground da-label">
           {name} ·{' '}
           <button
             type="button"
@@ -54,14 +54,16 @@ export function DataSpacePicker({
           </button>
         </span>
       </BrandBar>
-      <main className="flex w-[880px] max-w-[calc(100vw-32px)] flex-col gap-da-lg pb-da-2xl pt-[56px]">
-        <div className="flex flex-col gap-da-md">
-          <h1 className="text-foreground da-heading-1">Chào {name}, chọn Data Space để bắt đầu</h1>
-          <p className="max-w-[580px] text-muted-foreground da-body-small">
-            Mỗi Data Space là một vùng dữ liệu riêng: nguồn, chỉ số, agent và quyền tách biệt. Bạn
-            có thể đổi Data Space bất cứ lúc nào ở góc trên bên trái.
-          </p>
-        </div>
+      {/* Figma draws the greeting at 24px and the card names at 15px, both semibold, without a
+          DA text style; no da-* class has those sizes, so they are set here. */}
+      <main className="flex w-[880px] max-w-[calc(100vw-32px)] flex-col gap-da-xl pb-da-2xl pt-da-5xl">
+        <h1 className="text-[24px] font-semibold text-foreground">
+          Chào {name}, chọn Data Space để bắt đầu
+        </h1>
+        <p className="max-w-[820px] text-muted-foreground da-body-small">
+          Mỗi Data Space là một vùng dữ liệu riêng: nguồn, chỉ số, agent và quyền tách biệt. Bạn có
+          thể đổi Data Space bất cứ lúc nào ở góc trên bên trái.
+        </p>
         <AsyncRegion
           state={spaces}
           what="Data Space của bạn"
@@ -126,15 +128,15 @@ function Choices({
 
   return (
     <>
-      <ul className="flex flex-col gap-da-lg">
+      <ul className="flex flex-col gap-da-xl">
         {data.items.map((space) => (
           <li
             key={space.id}
-            className="flex items-center gap-da-lg rounded-lg border border-border bg-card px-da-lg py-da-lg"
+            className="flex items-center gap-da-xl rounded-lg border border-border bg-card p-da-xl"
           >
             <div className="flex min-w-0 flex-1 flex-col gap-da-xs">
               <div className="flex flex-wrap items-center gap-da-md">
-                <h2 className="text-foreground da-heading-3">{space.name}</h2>
+                <h2 className="text-[15px] font-semibold text-foreground">{space.name}</h2>
                 {space.access === 'member' ? (
                   <StatusDot tone={TONE[space.role_kind ?? 'viewer']}>
                     {[space.role_label, space.scope_text].filter(Boolean).join(' · ')}

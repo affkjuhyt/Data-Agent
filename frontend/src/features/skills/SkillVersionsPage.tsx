@@ -148,7 +148,7 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
         bordered
         breadcrumb={['Agents', 'Kỹ năng', skill.name]}
         title={
-          <span className="flex items-center gap-da-md">
+          <span className="flex items-center gap-[10px]">
             {skill.name}
             {pending && (
               <StatusDot tone="warning" className="font-normal">
@@ -170,28 +170,26 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
         }
       />
       <div className="flex flex-1">
-        <div className="flex min-w-0 flex-1 flex-col gap-da-xl px-da-3xl py-da-xl">
-          <section className="flex flex-col gap-da-md">
+        <div className="flex min-w-0 flex-1 flex-col pl-da-3xl pr-da-2xl">
+          <section className="flex flex-col gap-[10px] border-b border-border py-da-xl">
             <h2 className="text-foreground da-heading-3">Phiên bản</h2>
             <table className="w-full table-fixed border-collapse">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="w-[72px] px-da-lg py-da-md font-normal">Bản</th>
-                  <th className="px-da-lg py-da-md font-normal">Thay đổi</th>
-                  <th className="w-[132px] px-da-lg py-da-md font-normal">Kiểm định</th>
-                  <th className="w-[202px] px-da-lg py-da-md font-normal">Trạng thái</th>
+                  <th className="w-[72px] py-da-md pl-da-lg font-normal">Bản</th>
+                  <th className="py-da-md pl-da-lg font-normal">Thay đổi</th>
+                  <th className="w-[132px] py-da-md pl-da-lg font-normal">Kiểm định</th>
+                  <th className="w-[214px] px-da-lg py-da-md font-normal">Trạng thái</th>
                 </tr>
               </thead>
               <tbody>
                 {versions.map((v) => (
                   <tr key={v.id} className="border-b border-border">
-                    <td className="px-da-lg py-[9px] text-foreground da-body-small">
-                      v{v.version}
-                    </td>
-                    <td className="px-da-lg py-[9px] text-foreground da-body-small">
+                    <td className="py-[9px] pl-da-lg text-foreground da-mono">v{v.version}</td>
+                    <td className="py-[9px] pl-da-lg text-foreground da-body-small">
                       {v.change_text}
                     </td>
-                    <td className="px-da-lg py-[9px] text-muted-foreground da-body-small">
+                    <td className="py-[9px] pl-da-lg text-muted-foreground da-body-small">
                       {v.eval_total > 0 ? `${v.eval_passed}/${v.eval_total} đạt` : '–'}
                     </td>
                     <td className="px-da-lg py-[9px]">
@@ -204,12 +202,12 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
           </section>
 
           {review && pending && current && (
-            <section className="flex flex-col gap-da-md border-t border-border pt-da-xl">
+            <section className="flex flex-col gap-[10px] border-b border-border py-da-xl">
               <h2 className="text-foreground da-heading-3">
                 Khi phát hành v{pending.version}, ngừng dùng v{current.version}?
               </h2>
               <div className="grid grid-cols-2 gap-da-lg">
-                <Field label={`Ngừng v${current.version} từ`}>
+                <Field label={`Ngừng v${current.version} từ`} labelTone="muted">
                   <Select
                     label={`Ngừng v${current.version} từ`}
                     options={review.deprecate_options}
@@ -217,7 +215,7 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
                     onChange={setStopAt}
                   />
                 </Field>
-                <Field label="Chuyển người dùng sang">
+                <Field label="Chuyển người dùng sang" labelTone="muted">
                   <Select
                     label="Chuyển người dùng sang"
                     options={review.replacement_options}
@@ -229,16 +227,16 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
               <table className="w-full table-fixed border-collapse">
                 <thead>
                   <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                    <th className="px-da-lg py-da-md font-normal">Đang dùng v{current.version}</th>
-                    <th className="w-[112px] px-da-lg py-da-md font-normal">Loại</th>
-                    <th className="w-[312px] px-da-lg py-da-md font-normal">Việc cần làm</th>
+                    <th className="py-da-md pl-da-lg font-normal">Đang dùng v{current.version}</th>
+                    <th className="w-[112px] py-da-md pl-da-lg font-normal">Loại</th>
+                    <th className="w-[324px] px-da-lg py-da-md font-normal">Việc cần làm</th>
                   </tr>
                 </thead>
                 <tbody>
                   {review.consumers.map((c) => (
                     <tr key={c.name} className="border-b border-border">
-                      <td className="px-da-lg py-[9px] text-foreground da-body-strong">{c.name}</td>
-                      <td className="px-da-lg py-[9px] text-muted-foreground da-body-small">
+                      <td className="py-[9px] pl-da-lg text-foreground da-body-strong">{c.name}</td>
+                      <td className="py-[9px] pl-da-lg text-muted-foreground da-body-small">
                         {c.kind === 'agent' ? 'Agent' : 'Phiên'}
                       </td>
                       <td className="px-da-lg py-[9px] text-foreground da-body-small">
@@ -253,9 +251,9 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
         </div>
 
         {review && (
-          <aside className="flex w-[340px] shrink-0 flex-col gap-da-md border-l border-border bg-background px-da-2xl py-da-xl max-[1279px]:hidden">
+          <aside className="flex w-[340px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pb-da-xl pt-[20px] max-[1279px]:hidden">
             <h2 className="text-foreground da-heading-3">Kiểm tra trước khi duyệt</h2>
-            <ul className="flex flex-col gap-da-md">
+            <ul className="flex flex-col gap-[10px]">
               {review.checks.map((c) => (
                 <li
                   key={c.text}
@@ -263,6 +261,7 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
                 >
                   <Icon
                     name={c.ok ? 'check' : 'alert'}
+                    size={14}
                     className={c.ok ? 'text-success' : 'text-error'}
                   />
                   <span>
@@ -279,7 +278,7 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
               value={scope}
               onChange={setScope}
             />
-            <p className="text-muted-foreground da-body-small">
+            <p className="text-foreground da-body-small">
               Agent không tự nâng phiên bản kỹ năng; chủ sở hữu từng agent nhận yêu cầu duyệt. Kết
               quả cũ luôn ghi rõ phiên bản đã dùng.
             </p>

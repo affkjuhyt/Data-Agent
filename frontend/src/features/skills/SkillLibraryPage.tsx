@@ -5,13 +5,13 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Menu } from '../../design-system/Menu';
-import { Segmented } from '../../design-system/Segmented';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { createSkill, listSkills, type Skill, type SkillScope } from '../../lib/v1/skills';
 import { useV1 } from '../../lib/v1/useV1';
 import { SKILL_TONE, runsText } from './labels';
 import { ShareSkillDialog } from './ShareSkillDialog';
+import { Segmented } from '../../design-system/Segmented';
 
 /*
  * "P03 · Kỹ năng · Thư viện" (2293:17995, UC-03-01, UC-03-07): every skill the viewer can use,
@@ -65,6 +65,7 @@ export default function SkillLibraryPage() {
       />
       <div className="flex flex-col gap-da-lg px-da-3xl pt-da-xl">
         <Segmented<Filter>
+          variant="chips"
           label="Nguồn kỹ năng"
           items={FILTERS.map((f) => ({
             value: f.value,
@@ -90,15 +91,15 @@ export default function SkillLibraryPage() {
             <table className="w-full table-fixed border-collapse">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="px-da-lg py-da-md font-normal">Kỹ năng</th>
-                  <th className="w-[102px] px-da-lg py-da-md font-normal">Phiên bản</th>
-                  <th className="w-[162px] px-da-lg py-da-md font-normal">Phạm vi</th>
-                  <th className="w-[182px] px-da-lg py-da-md font-normal">Trạng thái</th>
-                  <th className="w-[102px] px-da-lg py-da-md font-normal">30 ngày</th>
-                  <th className="w-[150px] px-da-lg py-da-md font-normal max-[1279px]:hidden">
+                  <th className="py-da-md pl-da-lg font-normal">Kỹ năng</th>
+                  <th className="w-[102px] py-da-md pl-da-lg font-normal">Phiên bản</th>
+                  <th className="w-[162px] py-da-md pl-da-lg font-normal">Phạm vi</th>
+                  <th className="w-[182px] py-da-md pl-da-lg font-normal">Trạng thái</th>
+                  <th className="w-[102px] py-da-md pl-da-lg font-normal">30 ngày</th>
+                  <th className="w-[152px] py-da-md pl-da-lg font-normal max-[1279px]:hidden">
                     Chủ sở hữu
                   </th>
-                  <th className="w-[44px] px-da-lg py-da-md">
+                  <th className="w-[40px] py-da-md pl-da-lg pr-da-lg">
                     <span className="sr-only">Thao tác</span>
                   </th>
                 </tr>
@@ -141,7 +142,7 @@ function SkillRow({
 }) {
   return (
     <tr className="border-b border-border align-middle">
-      <td className="px-da-lg py-[9px]">
+      <td className="py-[9px] pl-da-lg">
         <div className="flex min-w-0 flex-col items-start gap-[2px]">
           <button
             type="button"
@@ -153,18 +154,18 @@ function SkillRow({
           <span className="text-muted-foreground da-caption">{skill.description}</span>
         </div>
       </td>
-      <td className="px-da-lg py-[9px] text-foreground da-body-small">v{skill.version}</td>
-      <td className="px-da-lg py-[9px] text-foreground da-body-small">{skill.scope_label}</td>
-      <td className="px-da-lg py-[9px]">
+      <td className="py-[9px] pl-da-lg text-foreground da-mono">v{skill.version}</td>
+      <td className="py-[9px] pl-da-lg text-foreground da-body-small">{skill.scope_label}</td>
+      <td className="py-[9px] pl-da-lg">
         <StatusDot tone={SKILL_TONE[skill.status]}>{skill.status_text}</StatusDot>
       </td>
-      <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
+      <td className="py-[9px] pl-da-lg text-muted-foreground da-mono">
         {runsText(skill.runs_30d)}
       </td>
-      <td className="px-da-lg py-[9px] text-muted-foreground da-body-small max-[1279px]:hidden">
+      <td className="py-[9px] pl-da-lg text-muted-foreground da-body-small max-[1279px]:hidden">
         {skill.owner.name}
       </td>
-      <td className="px-da-xs py-[9px] text-right">
+      <td className="py-[9px] pl-da-lg pr-da-lg text-right">
         <Menu
           label={`Thao tác với ${skill.name}`}
           items={[
