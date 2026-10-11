@@ -192,7 +192,7 @@ async def _attributes(
     return list(rows.tuples().all())
 
 
-def _load_content(
+async def _load_content(
     session: AsyncSession,
     principal: Principal,
     version_id: uuid.UUID,
@@ -203,8 +203,8 @@ def _load_content(
     The DB keeps the rules of the content: one code per version, the data types, and a metric
     without legal basis must be internal (pack_metric CHECK, AC-09-05-05)."""
     org = principal.org_id
-    for entity in content.entities:
-        entity_id = uuid7()
+    entity_ids = [uuid7() for _ in content.entities]
+    for entity, entity_id in zip(content.entities, entity_ids, strict=True):
         session.add(
             pk.CanonicalEntity(
                 id=entity_id,
@@ -216,6 +216,10 @@ def _load_content(
                 key_attributes=entity.key_attributes,
             )
         )
+    # The models carry no relationship, so the unit of work does not order an attribute after
+    # its entity: the entities are written first.
+    await session.flush()
+    for entity, entity_id in zip(content.entities, entity_ids, strict=True):
         for attr in entity.attributes:
             session.add(
                 pk.CanonicalAttribute(
@@ -389,7 +393,7 @@ async def import_pack(
         )
         session.add(version)
         await session.flush()
-        _load_content(session, principal, version.id, manifest)
+        await _load_content(session, principal, version.id, manifest)
         released_at = version.released_at or now
         _emit(
             session,
@@ -559,7 +563,7 @@ async def create_pack_version(
         )
         session.add(version)
         await session.flush()
-        _load_content(session, principal, version.id, content)
+        await _load_content(session, principal, version.id, content)
         _emit(
             session,
             principal,

@@ -25,7 +25,19 @@ from typing import Any
 from services.api.catalogue import endpoints
 
 COMPLETE_GROUPS: frozenset[str] = frozenset(
-    {"Hỏi đáp", "Truy vấn", "Phiên làm việc", "Cần bạn và đánh giá", "Agent"}
+    {
+        "Hỏi đáp",
+        "Truy vấn",
+        "Phiên làm việc",
+        "Cần bạn và đánh giá",
+        "Agent",
+        "Kỹ năng",
+        "Biến đổi dữ liệu",
+        "Lớp ngữ cảnh",
+        "Xung đột",
+        "Theo dõi, báo cáo, thông báo",
+        "Dự báo",
+    }
 )
 
 # Served outside A2 on purpose: probes and the generated spec itself.

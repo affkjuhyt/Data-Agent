@@ -160,9 +160,7 @@ _SPACES = re.compile(r"\s+")
 def normalize(phrase: str) -> str:
     """phrase_norm / term_norm: no accents (đ → d), lower case, single spaces (tab 3b D4.5)."""
     text = phrase.replace("đ", "d").replace("Đ", "D")
-    text = "".join(
-        c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn"
-    )
+    text = "".join(c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn")
     return _SPACES.sub(" ", text).strip().lower()
 
 

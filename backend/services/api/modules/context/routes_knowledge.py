@@ -126,7 +126,9 @@ async def _version(
 ) -> tuple[context.KnowledgePageVersion, context.KnowledgePage]:
     query = (
         select(context.KnowledgePageVersion, context.KnowledgePage)
-        .join(context.KnowledgePage, context.KnowledgePage.id == context.KnowledgePageVersion.page_id)
+        .join(
+            context.KnowledgePage, context.KnowledgePage.id == context.KnowledgePageVersion.page_id
+        )
         .where(
             context.KnowledgePageVersion.id == version_id,
             context.KnowledgePage.org_id == principal.org_id,
@@ -172,9 +174,9 @@ async def knowledge_index(
     if q:
         document = func.to_tsvector("simple", page.title + " " + page.index_summary)
         terms = func.plainto_tsquery("simple", q)
-        query = query.where(
-            or_(document.op("@@")(terms), page.title.ilike(f"%{q}%"))
-        ).order_by(func.ts_rank(document, terms).desc(), page.updated_at.desc())
+        query = query.where(or_(document.op("@@")(terms), page.title.ilike(f"%{q}%"))).order_by(
+            func.ts_rank(document, terms).desc(), page.updated_at.desc()
+        )
     else:
         query = query.order_by(page.updated_at.desc())
     # Always as a reader: the planner reads for the person asking.
@@ -260,7 +262,12 @@ async def create_knowledge_page(
 
 async def _version_rows(
     session: AsyncSession, version_id: uuid.UUID
-) -> tuple[list[context.KnowledgeClaim], list[context.KnowledgeFigure], list[context.KnowledgeSourceLink], list[context.KnowledgeLink]]:
+) -> tuple[
+    list[context.KnowledgeClaim],
+    list[context.KnowledgeFigure],
+    list[context.KnowledgeSourceLink],
+    list[context.KnowledgeLink],
+]:
     claims = (
         await session.scalars(
             select(context.KnowledgeClaim)
@@ -382,7 +389,9 @@ async def get_knowledge_page(
 @router.get(
     "/v1/knowledge-pages/{id}/versions",
     response_model=Page[KnowledgeVersionView],
-    **endpoint("GET", "/v1/knowledge-pages/{id}/versions", operation_id="listKnowledgePageVersions"),
+    **endpoint(
+        "GET", "/v1/knowledge-pages/{id}/versions", operation_id="listKnowledgePageVersions"
+    ),
 )
 async def list_knowledge_page_versions(
     page_id: Annotated[uuid.UUID, Path(alias="id")],
@@ -493,7 +502,9 @@ async def _write_version(
             )
         )
         if run is None:
-            raise field_error("knowledge_run_id", "knowledge_run_id is not a run of this Data Space.")
+            raise field_error(
+                "knowledge_run_id", "knowledge_run_id is not a run of this Data Space."
+            )
     targets: list[tuple[uuid.UUID, str]] = []
     for i, link in enumerate(body.links or []):
         target_query = select(context.KnowledgePage.id).where(
@@ -602,7 +613,9 @@ async def _write_version(
     "/v1/knowledge-pages/{id}/versions",
     status_code=201,
     response_model=KnowledgeVersionView,
-    **endpoint("POST", "/v1/knowledge-pages/{id}/versions", operation_id="createKnowledgePageVersion"),
+    **endpoint(
+        "POST", "/v1/knowledge-pages/{id}/versions", operation_id="createKnowledgePageVersion"
+    ),
 )
 async def create_knowledge_page_version(
     body: KnowledgeVersionCreate,
@@ -696,7 +709,9 @@ async def certify_knowledge_page_version(
         version, page = await _version(session, version_id, principal, data_space, lock=True)
         if version.status != "reviewed":
             raise Problem(
-                409, "invalid_state", f"Only a reviewed version is certified; this one is {version.status}."
+                409,
+                "invalid_state",
+                f"Only a reviewed version is certified; this one is {version.status}.",
             )
         if principal.user_id in (version.created_by, version.reviewed_by):
             # BR-164: the certifier is a third person, neither the author nor the reviewer.
@@ -790,9 +805,10 @@ async def _reader_can_see(
     """The BR-163 test of one page for the caller, done in Python because this transaction
     writes (it is not a reader transaction)."""
     spaces = set(await readable_data_spaces(session, principal))
-    return set(page.required_data_space_ids) <= spaces and CLEARANCE.get(
-        page.classification, 99
-    ) <= DEFAULT_CLEARANCE
+    return (
+        set(page.required_data_space_ids) <= spaces
+        and CLEARANCE.get(page.classification, 99) <= DEFAULT_CLEARANCE
+    )
 
 
 @router.post(
@@ -839,7 +855,9 @@ async def save_answer_as_knowledge(
             reasons.append("a forecast answer is not saved as knowledge (BR-158)")
         if reasons:
             raise Problem(
-                422, "business_rule_violated", "The answer cannot be saved (BR-167): " + "; ".join(reasons) + "."
+                422,
+                "business_rule_violated",
+                "The answer cannot be saved (BR-167): " + "; ".join(reasons) + ".",
             )
         target: context.KnowledgePage | None = None
         if body.target_page_id is not None:
@@ -1177,7 +1195,9 @@ async def _draft_from_served(
 @router.post(
     "/v1/knowledge-findings/{id}:resolve",
     response_model=FindingView,
-    **endpoint("POST", "/v1/knowledge-findings/{id}:resolve", operation_id="resolveKnowledgeFinding"),
+    **endpoint(
+        "POST", "/v1/knowledge-findings/{id}:resolve", operation_id="resolveKnowledgeFinding"
+    ),
 )
 async def resolve_knowledge_finding(
     body: FindingResolve,
@@ -1233,7 +1253,9 @@ async def resolve_knowledge_finding(
             )
         else:
             if body.action == "propose_edit" and page is not None:
-                finding.page_version_id = await _draft_from_served(session, principal, page, finding)
+                finding.page_version_id = await _draft_from_served(
+                    session, principal, page, finding
+                )
             finding.status = "actioned"
         if body.action == "reassign":
             await require_active_users(session, principal, {"assignee_id": body.assignee_id})

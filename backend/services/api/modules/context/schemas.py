@@ -810,6 +810,12 @@ class DataProductDetail(DataProductView):
     open_error_book_entries: int | None = None
 
 
+class DataProductSubmitted(Accepted):
+    """202 of :submit: `id` is the eval run, named again as A3 asks."""
+
+    eval_run_id: uuid.UUID
+
+
 class SubmitBody(BaseModel):
     note: str | None = Field(default=None, max_length=2_000)
 

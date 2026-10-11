@@ -10,11 +10,11 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 0 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 68 có test nhắc mã AC | todo 778 |
-| Endpoint A2 (tab 4) | 378 (A2 ghi 379 dòng; POST /v1/data-products ở hai nhóm) | 78 được `api` phục vụ | — |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 93 có test nhắc mã AC | todo 778 |
+| Endpoint A2 (tab 4) | 378 (A2 ghi 379 dòng; POST /v1/data-products ở hai nhóm) | 364 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 219 trong DDL | DDL sinh từ thiết kế | — |
-| Quy tắc nghiệp vụ | 195 | 149 có mã nhắc tới | todo 195 |
-| Màn hình (SCR) | 75 | 6 có mã nhắc tới | todo 75 |
+| Quy tắc nghiệp vụ | 195 | 158 có mã nhắc tới | todo 195 |
+| Màn hình (SCR) | 75 | 9 có mã nhắc tới | todo 75 |
 | ADR (tab 6) | 48 | — | todo 45, partial 2, done 1 |
 
 ## Audit
@@ -49,7 +49,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC-02-01 | Tạo và tổ chức phiên | todo | 2/2 | 2/2 | 3/5 |  |
 | UC-02-02 | Làm mới dữ liệu phiên | todo | 1/1 | 3/3 | 1/6 |  |
 | UC-02-03 | Chia sẻ phiên | todo | 1/1 | 2/2 | 3/4 |  |
-| UC-02-04 | Chuyển phiên thành báo cáo định kỳ | todo | 0/2 | 2/2 | 0/5 |  |
+| UC-02-04 | Chuyển phiên thành báo cáo định kỳ | todo | 2/2 | 2/2 | 0/5 |  |
 | UC-02-05 | Bình luận và giao việc | todo | 2/2 | 2/2 | 2/5 |  |
 | UC-02-06 | Làm notebook cùng người và agent | todo | 2/2 | 3/3 | 1/6 |  |
 | UC-02-07 | Duyệt và phát hành báo cáo của phiên | todo | 2/2 | 2/2 | 2/6 |  |
@@ -58,124 +58,124 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-03-01 | Chạy kỹ năng | todo | 0/1 | 2/2 | 0/6 |  |
-| UC-03-02 | Tìm yếu tố bên ngoài | todo | 0/1 | 1/1 | 0/5 |  |
-| UC-03-03 | Tạo kỹ năng từ phiên phân tích | todo | 0/2 | 3/3 | 0/3 |  |
-| UC-03-04 | Kiểm định kỹ năng | todo | 0/2 | 3/3 | 0/4 |  |
-| UC-03-05 | Duyệt và phát hành kỹ năng | todo | 0/2 | 3/3 | 0/5 |  |
-| UC-03-06 | Ngừng dùng kỹ năng | todo | 0/1 | 1/1 | 0/3 |  |
-| UC-03-07 | Chia sẻ kỹ năng và nhận đề xuất kỹ năng | todo | 0/2 | 2/2 | 0/4 |  |
+| UC-03-01 | Chạy kỹ năng | todo | 1/1 | 2/2 | 0/6 |  |
+| UC-03-02 | Tìm yếu tố bên ngoài | todo | 1/1 | 1/1 | 0/5 |  |
+| UC-03-03 | Tạo kỹ năng từ phiên phân tích | todo | 2/2 | 3/3 | 0/3 |  |
+| UC-03-04 | Kiểm định kỹ năng | todo | 2/2 | 3/3 | 0/4 |  |
+| UC-03-05 | Duyệt và phát hành kỹ năng | todo | 2/2 | 3/3 | 0/5 |  |
+| UC-03-06 | Ngừng dùng kỹ năng | todo | 1/1 | 1/1 | 0/3 |  |
+| UC-03-07 | Chia sẻ kỹ năng và nhận đề xuất kỹ năng | todo | 2/2 | 2/2 | 0/4 |  |
 
 ### P04 Kết nối và khám phá dữ liệu nguồn
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-04-01 | Đăng ký kết nối nguồn | todo | 0/2 | 1/1 | 0/5 |  |
-| UC-04-02 | Quét schema và lập hồ sơ dữ liệu | todo | 0/1 | 3/3 | 0/6 |  |
-| UC-04-03 | Phát hiện thay đổi schema | todo | 0/1 | 2/2 | 0/5 |  |
-| UC-04-04 | Gán nguồn vào Data Space | todo | 0/2 | 2/2 | 0/3 |  |
-| UC-04-05 | Cấu hình lịch quét | todo | 0/1 | 3/3 | 0/3 |  |
-| UC-04-06 | Thiết lập job nạp dữ liệu | todo | 0/2 | 2/2 | 0/6 |  |
-| UC-04-07 | Xử lý bản ghi lỗi và nạp lại | todo | 0/2 | 2/2 | 0/4 |  |
-| UC-04-08 | Tải tệp CSV, Excel | todo | 0/2 | 1/1 | 0/6 |  |
-| UC-04-09 | Giám sát job nạp | todo | 0/2 | 1/1 | 0/3 |  |
+| UC-04-01 | Đăng ký kết nối nguồn | todo | 2/2 | 1/1 | 0/5 |  |
+| UC-04-02 | Quét schema và lập hồ sơ dữ liệu | todo | 1/1 | 3/3 | 0/6 |  |
+| UC-04-03 | Phát hiện thay đổi schema | todo | 1/1 | 2/2 | 0/5 |  |
+| UC-04-04 | Gán nguồn vào Data Space | todo | 2/2 | 2/2 | 0/3 |  |
+| UC-04-05 | Cấu hình lịch quét | todo | 1/1 | 3/3 | 0/3 |  |
+| UC-04-06 | Thiết lập job nạp dữ liệu | todo | 2/2 | 2/2 | 0/6 |  |
+| UC-04-07 | Xử lý bản ghi lỗi và nạp lại | todo | 2/2 | 2/2 | 0/4 |  |
+| UC-04-08 | Tải tệp CSV, Excel | todo | 2/2 | 1/1 | 0/6 |  |
+| UC-04-09 | Giám sát job nạp | todo | 2/2 | 1/1 | 0/3 |  |
 
 ### P05 Tài liệu và dữ liệu phi cấu trúc
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-05-01 | Nạp tài liệu | todo | 0/2 | 1/1 | 0/5 |  |
-| UC-05-02 | Tiền xử lý tài liệu | todo | 0/1 | 5/5 | 0/7 |  |
-| UC-05-03 | Xử lý hàng chờ chất lượng | todo | 0/1 | 2/2 | 0/3 |  |
-| UC-05-04 | Tìm và trích dẫn tài liệu | todo | 1/2 | 1/1 | 0/5 |  |
-| UC-05-05 | Quản lý hiệu lực văn bản | todo | 0/1 | 1/1 | 0/3 |  |
-| UC-05-06 | Tạo bộ sưu tập và lược đồ trích xuất | todo | 0/2 | 3/3 | 0/5 |  |
+| UC-05-01 | Nạp tài liệu | todo | 2/2 | 1/1 | 0/5 |  |
+| UC-05-02 | Tiền xử lý tài liệu | todo | 1/1 | 5/5 | 0/7 |  |
+| UC-05-03 | Xử lý hàng chờ chất lượng | todo | 1/1 | 2/2 | 0/3 |  |
+| UC-05-04 | Tìm và trích dẫn tài liệu | todo | 2/2 | 1/1 | 0/5 |  |
+| UC-05-05 | Quản lý hiệu lực văn bản | todo | 1/1 | 1/1 | 0/3 |  |
+| UC-05-06 | Tạo bộ sưu tập và lược đồ trích xuất | todo | 2/2 | 3/3 | 0/5 |  |
 
 ### P06 Chuẩn bị và biến đổi dữ liệu
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-06-01 | Làm sạch và chuẩn hoá bằng hội thoại | todo | 0/2 | 1/1 | 0/6 |  |
-| UC-06-02 | Tạo bảng dẫn xuất | todo | 0/1 | 4/4 | 0/3 |  |
-| UC-06-03 | Lên lịch pipeline | todo | 0/1 | 3/3 | 0/3 |  |
-| UC-06-04 | Ghi ngược về hệ thống nguồn | todo | 0/2 | 2/2 | 0/6 |  |
-| UC-06-05 | Xem dòng dữ liệu | todo | 0/1 | 1/1 | 0/3 |  |
-| UC-06-06 | Xây data mart và phát hành sản phẩm dữ liệu | todo | 0/2 | 2/2 | 0/4 |  |
-| UC-06-07 | Đặt quy tắc chất lượng dữ liệu | todo | 0/2 | 2/2 | 0/3 |  |
+| UC-06-01 | Làm sạch và chuẩn hoá bằng hội thoại | todo | 2/2 | 1/1 | 0/6 |  |
+| UC-06-02 | Tạo bảng dẫn xuất | todo | 1/1 | 4/4 | 0/3 |  |
+| UC-06-03 | Lên lịch pipeline | todo | 1/1 | 3/3 | 0/3 |  |
+| UC-06-04 | Ghi ngược về hệ thống nguồn | todo | 2/2 | 2/2 | 0/6 |  |
+| UC-06-05 | Xem dòng dữ liệu | todo | 1/1 | 1/1 | 0/3 |  |
+| UC-06-06 | Xây data mart và phát hành sản phẩm dữ liệu | todo | 2/2 | 2/2 | 0/4 |  |
+| UC-06-07 | Đặt quy tắc chất lượng dữ liệu | todo | 2/2 | 2/2 | 0/3 |  |
 
 ### P07 Lớp ngữ cảnh, Cần bạn và xung đột
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-07-01 | Định nghĩa chỉ số | todo | 0/2 | 3/3 | 0/6 |  |
-| UC-07-02 | Khai báo quan hệ, từ đồng nghĩa, ví dụ | todo | 0/2 | 4/4 | 0/4 |  |
+| UC-07-01 | Định nghĩa chỉ số | todo | 2/2 | 3/3 | 0/6 |  |
+| UC-07-02 | Khai báo quan hệ, từ đồng nghĩa, ví dụ | todo | 2/2 | 4/4 | 0/4 |  |
 | UC-07-03 | Duyệt đề xuất | todo | 1/1 | 3/3 | 3/6 |  |
-| UC-07-04 | Xử lý xung đột dữ liệu | todo | 0/2 | 3/3 | 0/6 |  |
-| UC-07-05 | Khai báo thẩm quyền nguồn | todo | 0/1 | 1/1 | 0/3 |  |
+| UC-07-04 | Xử lý xung đột dữ liệu | todo | 2/2 | 3/3 | 0/6 |  |
+| UC-07-05 | Khai báo thẩm quyền nguồn | todo | 1/1 | 1/1 | 0/3 |  |
 | UC-07-06 | Đánh giá lớp ngữ cảnh | todo | 2/2 | 2/2 | 0/5 |  |
 | UC-07-07 | Trả lời yêu cầu của agent | todo | 1/1 | 2/2 | 3/7 |  |
 | UC-07-08 | Biến quyết định thành quy tắc | todo | 1/2 | 2/2 | 0/4 |  |
-| UC-07-09 | Quản lý thuật ngữ và cách hiểu câu hỏi | todo | 0/2 | 3/3 | 0/3 |  |
-| UC-07-10 | Biên soạn và cập nhật trang tri thức | todo | 0/6 | 7/7 | 0/7 |  |
-| UC-07-11 | Rà soát tri thức định kỳ | todo | 0/4 | 5/5 | 0/5 |  |
-| UC-07-12 | Lưu câu trả lời thành tri thức | todo | 0/2 | 6/6 | 0/4 |  |
-| UC-07-13 | Quản lý data product | todo | 1/12 | 11/11 | 0/7 |  |
+| UC-07-09 | Quản lý thuật ngữ và cách hiểu câu hỏi | todo | 2/2 | 3/3 | 0/3 |  |
+| UC-07-10 | Biên soạn và cập nhật trang tri thức | todo | 6/6 | 7/7 | 0/7 |  |
+| UC-07-11 | Rà soát tri thức định kỳ | todo | 4/4 | 5/5 | 0/5 |  |
+| UC-07-12 | Lưu câu trả lời thành tri thức | todo | 2/2 | 6/6 | 0/4 |  |
+| UC-07-13 | Quản lý data product | todo | 12/12 | 11/11 | 2/7 |  |
 | UC-07-14 | Error Book | todo | 9/9 | 11/11 | 4/5 |  |
 
 ### P08 Theo dõi, cảnh báo, báo cáo và kênh ngoài
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-08-01 | Đặt theo dõi chỉ số | todo | 0/2 | 1/1 | 0/4 |  |
-| UC-08-02 | Nhận và xử lý cảnh báo | todo | 0/2 | 2/2 | 0/4 |  |
-| UC-08-03 | Lập báo cáo định kỳ | todo | 0/2 | 2/2 | 0/4 |  |
-| UC-08-04 | Nhận bản tin lãnh đạo | todo | 0/2 | 2/2 | 0/5 |  |
-| UC-08-05 | Giao việc cho agent nền | todo | 0/2 | 1/1 | 0/4 |  |
-| UC-08-06 | Xử lý việc ngoài ứng dụng | todo | 0/2 | 3/3 | 0/5 |  |
-| UC-08-07 | Cài đặt nhận thông báo | todo | 0/1 | 2/2 | 0/3 |  |
-| UC-08-08 | Nhận bản tin theo lịch sự kiện ngoài | todo | 0/8 | 7/7 | 0/5 |  |
+| UC-08-01 | Đặt theo dõi chỉ số | todo | 2/2 | 1/1 | 0/4 |  |
+| UC-08-02 | Nhận và xử lý cảnh báo | todo | 2/2 | 2/2 | 0/4 |  |
+| UC-08-03 | Lập báo cáo định kỳ | todo | 2/2 | 2/2 | 0/4 |  |
+| UC-08-04 | Nhận bản tin lãnh đạo | todo | 2/2 | 2/2 | 0/5 |  |
+| UC-08-05 | Giao việc cho agent nền | todo | 2/2 | 1/1 | 0/4 |  |
+| UC-08-06 | Xử lý việc ngoài ứng dụng | todo | 2/2 | 3/3 | 0/5 |  |
+| UC-08-07 | Cài đặt nhận thông báo | todo | 1/1 | 2/2 | 0/3 |  |
+| UC-08-08 | Nhận bản tin theo lịch sự kiện ngoài | todo | 8/8 | 7/7 | 0/5 |  |
 
 ### P09 Gói ngành
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-09-01 | Cài gói ngành | todo | 0/1 | 4/4 | 0/5 |  |
-| UC-09-02 | Đưa khách vào ngành | todo | 0/2 | 3/3 | 0/5 |  |
-| UC-09-03 | Hiệu chỉnh chỉ số theo khách | todo | 0/2 | 2/2 | 0/6 |  |
-| UC-09-04 | Nâng cấp gói | todo | 0/2 | 2/2 | 0/7 |  |
-| UC-09-05 | Biên soạn và phát hành gói | todo | 0/2 | 3/3 | 0/6 |  |
+| UC-09-01 | Cài gói ngành | todo | 1/1 | 4/4 | 4/5 |  |
+| UC-09-02 | Đưa khách vào ngành | todo | 2/2 | 3/3 | 3/5 |  |
+| UC-09-03 | Hiệu chỉnh chỉ số theo khách | todo | 2/2 | 2/2 | 2/6 |  |
+| UC-09-04 | Nâng cấp gói | todo | 2/2 | 2/2 | 3/7 |  |
+| UC-09-05 | Biên soạn và phát hành gói | todo | 2/2 | 3/3 | 4/6 |  |
 
 ### P10 Kỳ chốt và dữ liệu theo thời điểm
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
 | UC-10-01 | Hỏi theo thời điểm | todo | 1/1 | 1/1 | 0/6 |  |
-| UC-10-02 | Chốt kỳ | todo | 0/2 | 2/2 | 0/7 |  |
-| UC-10-03 | Đóng băng số đã công bố | todo | 0/1 | 1/1 | 0/5 |  |
-| UC-10-04 | Xử lý thay đổi hồi tố | todo | 0/1 | 2/2 | 0/6 |  |
-| UC-10-05 | So sánh hai bản hoặc hai thời điểm | todo | 0/2 | 3/3 | 0/5 |  |
+| UC-10-02 | Chốt kỳ | todo | 2/2 | 2/2 | 0/7 |  |
+| UC-10-03 | Đóng băng số đã công bố | todo | 1/1 | 1/1 | 0/5 |  |
+| UC-10-04 | Xử lý thay đổi hồi tố | todo | 1/1 | 2/2 | 0/6 |  |
+| UC-10-05 | So sánh hai bản hoặc hai thời điểm | todo | 2/2 | 3/3 | 0/5 |  |
 
 ### P11 Quản trị hệ thống và bảo mật
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-11-01 | Quản lý người dùng và vai trò | todo | 0/2 | 5/5 | 0/5 |  |
+| UC-11-01 | Quản lý người dùng và vai trò | todo | 2/2 | 5/5 | 0/5 |  |
 | UC-11-02 | Phân quyền dữ liệu | todo | 0/2 | 1/1 | 0/8 |  |
-| UC-11-03 | Tra cứu nhật ký kiểm toán | todo | 0/2 | 2/2 | 0/6 |  |
+| UC-11-03 | Tra cứu nhật ký kiểm toán | todo | 1/2 | 2/2 | 0/6 |  |
 | UC-11-04 | Giám sát hệ thống | todo | 0/1 | 1/1 | 0/5 |  |
-| UC-11-05 | Cấu hình mô hình và chính sách AI | todo | 0/8 | 4/4 | 0/8 |  |
+| UC-11-05 | Cấu hình mô hình và chính sách AI | todo | 6/8 | 4/4 | 0/8 |  |
 | UC-11-06 | Xử lý yêu cầu của chủ thể dữ liệu | todo | 0/2 | 2/2 | 0/5 |  |
-| UC-11-07 | Yêu cầu và cấp quyền | todo | 0/2 | 1/1 | 0/6 |  |
-| UC-11-08 | Quản lý thành viên Data Space | todo | 0/2 | 2/2 | 0/5 |  |
+| UC-11-07 | Yêu cầu và cấp quyền | todo | 2/2 | 1/1 | 0/6 |  |
+| UC-11-08 | Quản lý thành viên Data Space | todo | 1/2 | 2/2 | 0/5 |  |
 
 ### P12 Tích hợp MCP và API
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-12-01 | Cấp quyền cho client | todo | 0/2 | 1/1 | 0/5 |  |
-| UC-12-02 | Gọi công cụ qua MCP | todo | 0/1 | 2/2 | 0/6 |  |
-| UC-12-03 | Nhận sự kiện qua webhook | todo | 0/2 | 2/2 | 0/5 |  |
-| UC-12-04 | Theo dõi sử dụng tích hợp | todo | 0/1 | 1/1 | 0/4 |  |
+| UC-12-01 | Cấp quyền cho client | todo | 2/2 | 1/1 | 0/5 |  |
+| UC-12-02 | Gọi công cụ qua MCP | todo | 1/1 | 2/2 | 0/6 |  |
+| UC-12-03 | Nhận sự kiện qua webhook | todo | 2/2 | 2/2 | 1/5 |  |
+| UC-12-04 | Theo dõi sử dụng tích hợp | todo | 1/1 | 1/1 | 0/4 |  |
 
 ### P13 Quản lý agent
 
@@ -194,36 +194,36 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-14-01 | Đăng ký mục tiêu và nguồn thu thập | todo | 0/4 | 2/2 | 0/8 |  |
-| UC-14-02 | Suy ngược schema nguồn có cấu trúc | todo | 0/3 | 3/3 | 0/6 |  |
-| UC-14-03 | Xử lý thay đổi cấu trúc và hoàn tác schema | todo | 0/3 | 4/4 | 0/6 |  |
-| UC-14-04 | Duyệt dữ liệu thu thập | todo | 0/4 | 4/4 | 0/7 |  |
-| UC-14-05 | Hợp nhất và tổng quát hoá dữ liệu | todo | 0/9 | 7/7 | 0/8 |  |
-| UC-14-06 | Giám sát thu thập | todo | 0/5 | 3/3 | 0/5 |  |
+| UC-14-01 | Đăng ký mục tiêu và nguồn thu thập | todo | 4/4 | 2/2 | 0/8 |  |
+| UC-14-02 | Suy ngược schema nguồn có cấu trúc | todo | 3/3 | 3/3 | 0/6 |  |
+| UC-14-03 | Xử lý thay đổi cấu trúc và hoàn tác schema | todo | 3/3 | 4/4 | 0/6 |  |
+| UC-14-04 | Duyệt dữ liệu thu thập | todo | 4/4 | 4/4 | 0/7 |  |
+| UC-14-05 | Hợp nhất và tổng quát hoá dữ liệu | todo | 9/9 | 7/7 | 0/8 |  |
+| UC-14-06 | Giám sát thu thập | todo | 5/5 | 3/3 | 0/5 |  |
 
 ### P15 Dự báo
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-15-01 | Hỏi câu hỏi dự báo | todo | 0/4 | 5/5 | 0/7 |  |
-| UC-15-02 | Chuẩn bị dữ liệu dự báo | todo | 0/2 | 5/5 | 0/6 |  |
-| UC-15-03 | Huấn luyện và backtest mô hình | todo | 0/1 | 3/3 | 0/7 |  |
-| UC-15-04 | Duyệt và phát hành mô hình dự báo | todo | 0/3 | 4/4 | 0/5 |  |
-| UC-15-05 | Xem dự báo và chạy kịch bản | todo | 0/2 | 3/3 | 0/7 |  |
-| UC-15-06 | Theo dõi độ chính xác và huấn luyện lại | todo | 0/2 | 3/3 | 0/6 |  |
-| UC-15-07 | Dự báo giá điều hành theo công thức | todo | 0/8 | 8/8 | 0/8 |  |
-| UC-15-08 | Sổ dự báo và tự chấm | todo | 0/4 | 5/5 | 0/8 |  |
+| UC-15-01 | Hỏi câu hỏi dự báo | todo | 4/4 | 5/5 | 0/7 |  |
+| UC-15-02 | Chuẩn bị dữ liệu dự báo | todo | 2/2 | 5/5 | 0/6 |  |
+| UC-15-03 | Huấn luyện và backtest mô hình | todo | 1/1 | 3/3 | 0/7 |  |
+| UC-15-04 | Duyệt và phát hành mô hình dự báo | todo | 3/3 | 4/4 | 0/5 |  |
+| UC-15-05 | Xem dự báo và chạy kịch bản | todo | 2/2 | 3/3 | 0/7 |  |
+| UC-15-06 | Theo dõi độ chính xác và huấn luyện lại | todo | 2/2 | 3/3 | 0/6 |  |
+| UC-15-07 | Dự báo giá điều hành theo công thức | todo | 8/8 | 8/8 | 0/8 |  |
+| UC-15-08 | Sổ dự báo và tự chấm | todo | 4/4 | 5/5 | 0/8 |  |
 
 ### P16 Lớp riêng lãnh đạo
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-16-01 | Ghi luận điểm | todo | 0/9 | 4/4 | 0/7 |  |
-| UC-16-02 | Bộ nhớ riêng và hỏi riêng | todo | 0/5 | 3/3 | 0/8 |  |
-| UC-16-03 | Xem bằng chứng hai phía | todo | 0/3 | 4/4 | 0/7 |  |
-| UC-16-04 | Tự chấm và xem độ hiệu chỉnh | todo | 0/3 | 4/4 | 0/5 |  |
-| UC-16-05 | Công bố luận điểm thành giả thuyết | todo | 1/4 | 5/5 | 0/6 |  |
-| UC-16-06 | Niêm phong, bàn giao hoặc huỷ khoá khi rời vị trí | todo | 0/6 | 6/6 | 0/5 |  |
+| UC-16-01 | Ghi luận điểm | todo | 9/9 | 4/4 | 0/7 |  |
+| UC-16-02 | Bộ nhớ riêng và hỏi riêng | todo | 5/5 | 3/3 | 0/8 |  |
+| UC-16-03 | Xem bằng chứng hai phía | todo | 3/3 | 4/4 | 0/7 |  |
+| UC-16-04 | Tự chấm và xem độ hiệu chỉnh | todo | 3/3 | 4/4 | 0/5 |  |
+| UC-16-05 | Công bố luận điểm thành giả thuyết | todo | 4/4 | 5/5 | 0/6 |  |
+| UC-16-06 | Niêm phong, bàn giao hoặc huỷ khoá khi rời vị trí | todo | 6/6 | 6/6 | 0/5 |  |
 
 ## Endpoint A2 theo nhóm
 
@@ -232,25 +232,25 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | Hỏi đáp | 17/17 |  |
 | Truy vấn | 3/3 |  |
 | Phiên làm việc | 16/16 |  |
-| Kỹ năng | 0/14 | `GET /v1/skill-runs/{id}`, `GET /v1/skill-suggestions`, `GET /v1/skills`, `GET /v1/skills/{id}` +10 |
-| Nguồn và danh mục | 0/13 | `GET /v1/datasets`, `GET /v1/datasets/{id}`, `GET /v1/datasets/{id}/versions`, `GET /v1/scan-runs/{id}` +9 |
-| Nạp dữ liệu | 0/18 | `GET /v1/job-runs`, `GET /v1/jobs`, `GET /v1/jobs/{id}/dlq`, `GET /v1/quality-results` +14 |
-| Tài liệu | 0/15 | `GET /v1/collections`, `GET /v1/documents/{id}`, `GET /v1/documents/{id}/pages/{n}`, `GET /v1/documents/{id}/versions` +11 |
-| Biến đổi dữ liệu | 0/13 | `GET /v1/lineage`, `GET /v1/pipelines`, `PATCH /v1/pipelines/{id}`, `POST /v1/data-products` +9 |
-| Lớp ngữ cảnh | 0/39 | `DELETE /v1/data-products/{id}/members/{member_id}`, `GET /v1/data-products`, `GET /v1/data-products/index`, `GET /v1/data-products/{id}` +35 |
-| Xung đột | 0/6 | `GET /v1/conflicts`, `GET /v1/conflicts/{id}`, `GET /v1/source-authorities`, `POST /v1/conflicts/{id}:resolve` +2 |
+| Kỹ năng | 14/14 |  |
+| Nguồn và danh mục | 13/13 |  |
+| Nạp dữ liệu | 18/18 |  |
+| Tài liệu | 15/15 |  |
+| Biến đổi dữ liệu | 13/13 |  |
+| Lớp ngữ cảnh | 39/39 |  |
+| Xung đột | 6/6 |  |
 | Cần bạn và đánh giá | 16/16 |  |
 | Chính sách | 0/6 | `GET /v1/policies`, `POST /v1/permissions:simulate`, `POST /v1/policies`, `POST /v1/policies/{id}:activate` +2 |
-| Theo dõi, báo cáo, thông báo | 0/29 | `GET /v1/alerts`, `GET /v1/event-bulletins/{id}`, `GET /v1/external-calendars`, `GET /v1/external-calendars/{id}/events` +25 |
-| Gói ngành | 0/17 | `GET /v1/pack-versions/{id}`, `GET /v1/packs`, `POST /v1/metric-overrides`, `POST /v1/metric-overrides/{id}:approve` +13 |
-| Kỳ chốt | 0/10 | `GET /v1/periods`, `GET /v1/periods/compare`, `GET /v1/periods/compare/{id}/rows`, `GET /v1/periods/{id}` +6 |
-| Quản trị | 2/27 | `GET /v1/admin/model-providers`, `GET /v1/admin/model-route-decisions`, `GET /v1/admin/models`, `GET /v1/admin/system/health` +21 |
-| Kiểm toán | 0/4 | `GET /v1/audit`, `GET /v1/security-events`, `POST /v1/audit:export`, `POST /v1/audit:verify` |
-| Tích hợp | 0/9 | `GET /v1/admin/clients/{id}/usage`, `GET /v1/webhooks/{id}/deliveries`, `PATCH /v1/admin/clients/{id}`, `POST /mcp` +5 |
+| Theo dõi, báo cáo, thông báo | 29/29 |  |
+| Gói ngành | 17/17 |  |
+| Kỳ chốt | 10/10 |  |
+| Quản trị | 20/27 | `GET /v1/admin/models`, `GET /v1/admin/system/health`, `GET /v1/dsr/{id}`, `POST /v1/dsr` +3 |
+| Kiểm toán | 3/4 | `POST /v1/audit:export` |
+| Tích hợp | 9/9 |  |
 | Agent | 24/24 |  |
-| Thu thập | 0/28 | `GET /v1/consolidation-runs/{id}`, `GET /v1/consolidation-specs`, `GET /v1/crawl-runs`, `GET /v1/crawl-runs/{id}` +24 |
-| Dự báo | 0/27 | `GET /v1/forecast-ledger`, `GET /v1/forecast-ledger/{id}`, `GET /v1/forecast-model-versions/{id}`, `GET /v1/forecast-model-versions/{id}/backtest` +23 |
-| Lớp riêng lãnh đạo | 0/28 | `DELETE /v1/exec/vault/key-wraps/{id}`, `GET /v1/exec/handovers/{id}`, `GET /v1/exec/handovers/{id}/items`, `GET /v1/exec/key-access-log` +24 |
+| Thu thập | 28/28 |  |
+| Dự báo | 27/27 |  |
+| Lớp riêng lãnh đạo | 28/28 |  |
 
 ## Quy tắc nghiệp vụ
 
@@ -263,67 +263,67 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-05 | UC-01-03 | todo |  |
 | BR-06 | UC-02-01 | todo | `backend/services/api/modules/workspace/routes.py` |
 | BR-07 | UC-02-02, UC-02-03 | todo | `backend/services/api/modules/workspace/routes.py`, `tests/integration/api/test_workspace.py` |
-| BR-08 | UC-03-01 | todo |  |
+| BR-08 | UC-03-01 | todo | `backend/services/api/modules/skill/schemas.py` |
 | BR-09 | UC-03-01 | todo |  |
 | BR-10 | UC-03-01 | todo |  |
 | BR-11 | UC-03-02 | todo |  |
-| BR-12 | UC-03-05 | todo | `backend/services/api/catalogue/source/tab4.md` |
+| BR-12 | UC-03-05 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/skill/routes.py`, `backend/services/api/modules/skill/rules.py` |
 | BR-13 | UC-03-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-14 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-14 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-15 | UC-04-02 | todo |  |
 | BR-16 | UC-04-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/pack.py` +2 |
 | BR-17 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-18 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-19 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-18 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-19 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-20 | UC-05-04 | todo |  |
 | BR-21 | UC-05-04 | todo |  |
-| BR-22 | UC-06-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-23 | UC-06-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-24 | UC-06-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-25 | UC-06-04 | todo |  |
-| BR-26 | UC-07-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-22 | UC-06-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-23 | UC-06-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-24 | UC-06-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-25 | UC-06-04 | todo | `backend/services/api/modules/pipeline/routes.py` |
+| BR-26 | UC-07-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +3 |
 | BR-27 | UC-07-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-28 | UC-07-03, UC-07-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/libs/dataagent_db/models/inbox.py` +8 |
 | BR-29 | UC-07-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/inbox.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-30 | UC-07-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/conflict.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-31 | UC-07-04 | todo |  |
-| BR-32 | UC-08-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-30 | UC-07-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/conflict.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-31 | UC-07-04 | todo | `backend/services/api/modules/conflict/routes.py` |
+| BR-32 | UC-08-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-33 | UC-08-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-34 | UC-08-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-34 | UC-08-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-35 | UC-08-03 | todo |  |
-| BR-36 | UC-09-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-37 | UC-09-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-38 | UC-09-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-36 | UC-09-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-37 | UC-09-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-38 | UC-09-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-39 | UC-10-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-40 | UC-10-01 | todo |  |
-| BR-41 | UC-10-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-42 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-43 | UC-10-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-44 | UC-11-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +8 |
+| BR-41 | UC-10-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-42 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-43 | UC-10-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-44 | UC-11-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +10 |
 | BR-45 | UC-11-02 | todo |  |
 | BR-46 | UC-11-02 | todo |  |
-| BR-47 | UC-11-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/sql/dataagent_audit.sql`, `backend/libs/dataagent_db/models/audit.py` +6 |
-| BR-48 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +2 |
-| BR-49 | UC-12-02 | todo | `backend/services/api/catalogue/source/tab4.md` |
+| BR-47 | UC-11-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/sql/dataagent_audit.sql`, `backend/libs/dataagent_db/models/audit.py` +8 |
+| BR-48 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-49 | UC-12-02 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/integration/mcp.py` |
 | BR-50 | UC-12-02 | todo |  |
 | BR-51 | UC-02-06 | todo |  |
 | BR-52 | UC-02-06 | todo |  |
 | BR-53 | UC-02-04, UC-02-07 | todo | `backend/services/api/modules/workspace/routes.py` |
 | BR-54 | UC-02-07 | todo |  |
 | BR-55 | UC-04-06 | todo |  |
-| BR-56 | UC-04-06, UC-04-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/ingest.py` +2 |
+| BR-56 | UC-04-06, UC-04-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/ingest.py` +3 |
 | BR-57 | UC-04-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/ingest.py` +2 |
-| BR-58 | UC-04-08 | todo |  |
-| BR-59 | UC-05-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/libs/dataagent_db/models/qa.py` +3 |
-| BR-60 | UC-06-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-58 | UC-04-08 | todo | `backend/services/api/modules/ingest/routes.py` |
+| BR-59 | UC-05-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/libs/dataagent_db/models/qa.py` +4 |
+| BR-60 | UC-06-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-61 | UC-07-07 | todo |  |
-| BR-62 | UC-07-07 | todo | `backend/services/api/modules/inbox/routes.py`, `tests/integration/api/test_inbox_eval.py` |
+| BR-62 | UC-07-07 | todo | `backend/services/api/modules/inbox/routes.py`, `backend/services/api/modules/pack/routes.py`, `tests/integration/api/test_inbox_eval.py` |
 | BR-63 | UC-07-07 | todo |  |
 | BR-64 | UC-07-07 | todo |  |
 | BR-65 | UC-07-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-66 | UC-07-08 | todo |  |
-| BR-67 | UC-08-06 | todo |  |
-| BR-68 | UC-08-06 | todo |  |
+| BR-67 | UC-08-06 | todo | `backend/services/api/modules/notify/routes.py` |
+| BR-68 | UC-08-06 | todo | `backend/services/api/modules/notify/routes.py` |
 | BR-69 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-70 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +7 |
 | BR-71 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +1 |
@@ -349,108 +349,108 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-91 | UC-02-05 | todo |  |
 | BR-92 | UC-02-05 | todo |  |
 | BR-93 | UC-03-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-94 | UC-03-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-94 | UC-03-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-95 | UC-03-04 | todo |  |
-| BR-96 | UC-03-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-97 | UC-03-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-98 | UC-03-07 | todo |  |
-| BR-99 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +2 |
-| BR-100 | UC-04-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/context.py` +6 |
+| BR-96 | UC-03-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-97 | UC-03-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-98 | UC-03-07 | todo | `backend/services/api/modules/skill/routes.py`, `backend/services/api/modules/skill/schemas.py` |
+| BR-99 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-100 | UC-04-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/context.py` +7 |
 | BR-101 | UC-04-03 | todo |  |
-| BR-102 | UC-04-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +2 |
-| BR-103 | UC-04-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +4 |
-| BR-104 | UC-04-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/ingest.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-105 | UC-04-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/governance.py` +5 |
-| BR-106 | UC-04-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/ingest.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-107 | UC-05-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-108 | UC-05-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-109 | UC-05-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-110 | UC-05-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +2 |
-| BR-111 | UC-06-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/pipeline.py` +2 |
-| BR-112 | UC-06-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-113 | UC-06-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-102 | UC-04-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-103 | UC-04-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-104 | UC-04-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/ingest.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-105 | UC-04-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/governance.py` +6 |
+| BR-106 | UC-04-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/ingest.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-107 | UC-05-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-108 | UC-05-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-109 | UC-05-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-110 | UC-05-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-111 | UC-06-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/pipeline.py` +4 |
+| BR-112 | UC-06-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-113 | UC-06-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-114 | UC-06-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-115 | UC-06-06 | todo |  |
-| BR-116 | UC-06-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/ingest.py` +4 |
+| BR-116 | UC-06-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/ingest.py` +5 |
 | BR-117 | UC-07-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-118 | UC-07-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-118 | UC-07-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-119 | UC-07-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/inbox.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-120 | UC-07-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/conflict.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-121 | UC-07-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/conflict.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-122 | UC-07-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-123 | UC-07-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-124 | UC-08-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-120 | UC-07-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/conflict.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-121 | UC-07-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/conflict.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-122 | UC-07-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-123 | UC-07-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-124 | UC-08-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-125 | UC-08-04 | todo |  |
-| BR-126 | UC-08-05 | todo |  |
-| BR-127 | UC-08-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/libs/dataagent_db/models/notify.py` +5 |
-| BR-128 | UC-09-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-129 | UC-09-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/pack.py` +2 |
-| BR-130 | UC-09-04 | todo |  |
-| BR-131 | UC-09-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-132 | UC-10-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/inbox.py`, `backend/libs/dataagent_db/models/period.py` +7 |
-| BR-133 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +4 |
-| BR-134 | UC-10-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-126 | UC-08-05 | todo | `backend/services/api/modules/agent/tasks.py` |
+| BR-127 | UC-08-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/libs/dataagent_db/models/notify.py` +6 |
+| BR-128 | UC-09-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-129 | UC-09-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/pack.py` +4 |
+| BR-130 | UC-09-04 | todo | `backend/services/api/modules/pack/routes.py` |
+| BR-131 | UC-09-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-132 | UC-10-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/inbox.py`, `backend/libs/dataagent_db/models/period.py` +9 |
+| BR-133 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-134 | UC-10-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-135 | UC-10-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-136 | UC-11-01 | todo | `backend/services/api/catalogue/source/tab4.md` |
+| BR-136 | UC-11-01 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/org/admin/grants.py` |
 | BR-137 | UC-11-02 | todo | `backend/services/api/catalogue/source/tab4.md` |
-| BR-138 | UC-11-03 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md` |
+| BR-138 | UC-11-03 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/audit/schemas.py` |
 | BR-139 | UC-11-04 | todo |  |
 | BR-140 | UC-11-05 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md` |
 | BR-141 | UC-11-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-142 | UC-11-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-143 | UC-11-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +2 |
-| BR-144 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-142 | UC-11-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-143 | UC-11-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-144 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-145 | UC-12-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-146 | UC-12-04 | todo |  |
 | BR-147 | UC-13-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/libs/dataagent_db/models/org.py` +9 |
 | BR-148 | UC-13-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +2 |
-| BR-149 | UC-14-01, UC-14-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-150 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +6 |
-| BR-151 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +8 |
-| BR-152 | UC-14-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +9 |
-| BR-153 | UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-149 | UC-14-01, UC-14-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +10 |
+| BR-150 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +8 |
+| BR-151 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +10 |
+| BR-152 | UC-14-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +10 |
+| BR-153 | UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +10 |
 | BR-154 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-155 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-156 | UC-02-07, UC-10-02, UC-14-01, UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/libs/dataagent_db/models/catalog.py` +11 |
-| BR-157 | UC-15-01, UC-15-02, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-158 | UC-15-03, UC-15-04, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +10 |
-| BR-159 | UC-15-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-160 | UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +9 |
-| BR-161 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-162 | UC-07-10, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/exec.py` +12 |
-| BR-163 | UC-07-10, UC-07-11, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-164 | UC-07-10, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-165 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-166 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +8 |
-| BR-167 | UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +8 |
-| BR-168 | UC-14-03, UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-169 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-156 | UC-02-07, UC-10-02, UC-14-01, UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/libs/dataagent_db/models/catalog.py` +15 |
+| BR-157 | UC-15-01, UC-15-02, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +10 |
+| BR-158 | UC-15-03, UC-15-04, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +14 |
+| BR-159 | UC-15-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-160 | UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +12 |
+| BR-161 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-162 | UC-07-10, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/exec.py` +15 |
+| BR-163 | UC-07-10, UC-07-11, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-164 | UC-07-10, UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-165 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-166 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +10 |
+| BR-167 | UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-168 | UC-14-03, UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +8 |
+| BR-169 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-170 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-171 | UC-01-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-172 | UC-15-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +4 |
-| BR-173 | UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +4 |
-| BR-174 | UC-14-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +6 |
-| BR-175 | UC-01-01, UC-01-07, UC-07-13 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/qa.py` +12 |
+| BR-173 | UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-174 | UC-14-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-175 | UC-01-01, UC-01-07, UC-07-13 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/qa.py` +14 |
 | BR-176 | UC-01-01, UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-177 | UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +11 |
+| BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +14 |
 | BR-179 | UC-01-05, UC-07-14, UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/schema/csdl/definitions.json` +13 |
 | BR-180 | UC-01-01, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/governance.py` +11 |
 | BR-181 | UC-01-07, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/qa.py` +8 |
-| BR-182 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-183 | UC-08-08, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/dataagent_db/models/monitor.py` +6 |
-| BR-184 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +8 |
-| BR-185 | UC-15-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +8 |
+| BR-182 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-183 | UC-08-08, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/dataagent_db/models/monitor.py` +8 |
+| BR-184 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-185 | UC-15-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +12 |
 | BR-186 | UC-07-14, UC-15-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/libs/dataagent_db/models/forecast.py` +5 |
-| BR-187 | UC-08-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-188 | UC-16-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +8 |
-| BR-189 | UC-16-01, UC-16-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +10 |
+| BR-187 | UC-08-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-188 | UC-16-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-189 | UC-16-01, UC-16-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +13 |
 | BR-190 | UC-16-03, UC-16-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-191 | UC-16-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-192 | UC-16-03, UC-16-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +6 |
-| BR-193 | UC-16-02 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `frontend/src/lib/v1/exec.ts` |
-| BR-194 | UC-16-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +7 |
-| BR-195 | UC-16-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-192 | UC-16-03, UC-16-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-193 | UC-16-02 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/exec/ports.py` +2 |
+| BR-194 | UC-16-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +8 |
+| BR-195 | UC-16-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +7 |
 
 ## Màn hình
 
@@ -1321,18 +1321,18 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-07-13 Quản lý data product · 0/9</summary>
+<details><summary>UC-07-13 Quản lý data product · 4/9</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-07-13-01 | Chính | Cho steward tạo “Giá xăng dầu trong nước” với dataset gia_xang_dau_ky_dieu_hanh primary, 5 chỉ số certified, cam kết 16:30 ân hạn 30 phút và 10 câu mẫu / Khi gửi duyệt, bộ đánh giá đạt 10/10 và owner chấp nhận / Thì d… | E2E, CSDL | todo |  |
-| AC-07-13-02 | Thay thế | Cho chỉ số chưa certified hoặc dataset chỉ truy vấn tại chỗ không có lịch sử / Khi gắn thành phần / Thì bị từ chối; màn gợi mở UC-07-01 hoặc chuyển nguồn sang nạp về có phiên bản | API, E2E | todo |  |
-| AC-07-13-03 | Thay thế | Cho data product active version 1 / Khi đổi cam kết độ tươi sang 17:00 / Thì có version 2 chờ duyệt và version 1 vẫn phục vụ tới khi duyệt | API, CSDL | todo |  |
+| AC-07-13-02 | Thay thế | Cho chỉ số chưa certified hoặc dataset chỉ truy vấn tại chỗ không có lịch sử / Khi gắn thành phần / Thì bị từ chối; màn gợi mở UC-07-01 hoặc chuyển nguồn sang nạp về có phiên bản | API, E2E | todo | `tests/integration/api/test_context_products.py` |
+| AC-07-13-03 | Thay thế | Cho data product active version 1 / Khi đổi cam kết độ tươi sang 17:00 / Thì có version 2 chờ duyệt và version 1 vẫn phục vụ tới khi duyệt | API, CSDL | todo | `tests/integration/api/test_context_products.py` |
 | AC-07-13-04 | Ngoại lệ | Cho chỉ số gia_tran_ban_le mất chứng nhận / Khi sự kiện tới / Thì data product chuyển suspended có lý do, câu hỏi lúc đó mang nhãn ngoài phạm vi kèm “data product đang tạm ngưng”, steward và owner nhận thông báo | CSDL, E2E | todo |  |
-| AC-07-13-05 | Ngoại lệ | Cho bộ đánh giá đạt 9/10 (90%) hoặc chỉ có 9 câu mẫu / Khi gọi :submit / Thì bị từ chối và màn hiện câu trượt cùng cách hiểu sai | API | todo |  |
+| AC-07-13-05 | Ngoại lệ | Cho bộ đánh giá đạt 9/10 (90%) hoặc chỉ có 9 câu mẫu / Khi gọi :submit / Thì bị từ chối và màn hiện câu trượt cùng cách hiểu sai | API | todo | `tests/integration/api/test_context_products.py` |
 | AC-07-13-06 | Quy tắc | Cho owner trùng steward, hoặc người duyệt là người tạo / Khi kích hoạt / Thì CHECK hoặc trigger ở context.data_product từ chối | CSDL | todo |  |
 | AC-07-13-07 | Quy tắc | Cho câu hỏi có 1 chỉ số trong và 1 chỉ số ngoài data product / Khi trả lời / Thì qa.answer.product_scope = out_of_scope, có nhãn “Ngoài phạm vi data product, không có biên nhận” và nhãn theo số sang phiên, báo cáo, bả… | API, CSDL | todo |  |
-| AC-07-13-08 | Quy tắc | Cho dataset giá điều hành dừng ở kỳ 25/06 / Khi hỏi giá trần E5RON92 lúc 16:45 ngày 02/07/2026, và hỏi kỳ 09/07 vào ngày 06/07 / Thì câu đầu hiện “dữ liệu đến 25/06/2026, đã quá hạn cập nhật”, câu sau hiện “CHƯA CÓ”, … | Đánh giá agent, API | todo |  |
+| AC-07-13-08 | Quy tắc | Cho dataset giá điều hành dừng ở kỳ 25/06 / Khi hỏi giá trần E5RON92 lúc 16:45 ngày 02/07/2026, và hỏi kỳ 09/07 vào ngày 06/07 / Thì câu đầu hiện “dữ liệu đến 25/06/2026, đã quá hạn cập nhật”, câu sau hiện “CHƯA CÓ”, … | Đánh giá agent, API | todo | `tests/integration/api/test_context_products.py` |
 | AC-07-13-09 | Phi chức năng | Cho data product vừa kích hoạt / Khi hỏi câu trong phạm vi / Thì Understander nhận phạm vi mới trong tối đa 60 giây kể từ lúc kích hoạt | API | todo |  |
 
 </details>
@@ -1454,75 +1454,75 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-09-01 Cài gói ngành · 0/6</summary>
+<details><summary>UC-09-01 Cài gói ngành · 5/6</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-09-01-01 | Chính | Cho tệp gói “Ngân hàng 2026.3” ký bằng khoá nhà cung cấp đã cài / Khi AC05 nhập qua POST /v1/packs:import và xác nhận tóm tắt / Thì pack_version 2026.3 ở trạng thái available với signature_verified_at có giá trị; cano… | API, CSDL | todo |  |
-| AC-09-01-02 | Thay thế | Cho Data Space Tín dụng đang dùng gói Ngân hàng 2026.2 / Khi phiên bản 2026.3 chuyển available / Thì người phụ trách Data Space Tín dụng nhận thông báo có bản nâng cấp, mở thẳng UC-09-04 | API | todo |  |
-| AC-09-01-03 | Ngoại lệ | Cho tệp gói có 1 tài nguyên bị sửa sau khi ký (mã băm không khớp manifest) / Khi nhập / Thì hệ thống từ chối, không có dòng pack_version mới và nhật ký kiểm toán có cảnh báo bảo mật | API, CSDL | todo |  |
-| AC-09-01-04 | Ngoại lệ | Cho manifest có min_core_version cao hơn phiên bản lõi đang chạy / Khi nhập / Thì hệ thống từ chối và thông báo nêu đúng phiên bản lõi cần có | API | todo |  |
-| AC-09-01-05 | Quy tắc | Cho hai tệp gói, tệp A ký bằng khoá do khối kiến trúc ngân hàng tự cài, tệp B ký bằng khoá chưa cài / Khi nhập lần lượt / Thì tệp A được nhận, tệp B bị từ chối với lý do chữ ký không hợp lệ | API | todo |  |
+| AC-09-01-01 | Chính | Cho tệp gói “Ngân hàng 2026.3” ký bằng khoá nhà cung cấp đã cài / Khi AC05 nhập qua POST /v1/packs:import và xác nhận tóm tắt / Thì pack_version 2026.3 ở trạng thái available với signature_verified_at có giá trị; cano… | API, CSDL | todo | `tests/integration/api/test_pack.py`, `tests/unit/api/test_pack_routes.py` |
+| AC-09-01-02 | Thay thế | Cho Data Space Tín dụng đang dùng gói Ngân hàng 2026.2 / Khi phiên bản 2026.3 chuyển available / Thì người phụ trách Data Space Tín dụng nhận thông báo có bản nâng cấp, mở thẳng UC-09-04 | API | todo | `tests/integration/api/test_pack.py` |
+| AC-09-01-03 | Ngoại lệ | Cho tệp gói có 1 tài nguyên bị sửa sau khi ký (mã băm không khớp manifest) / Khi nhập / Thì hệ thống từ chối, không có dòng pack_version mới và nhật ký kiểm toán có cảnh báo bảo mật | API, CSDL | todo | `tests/integration/api/test_pack.py`, `tests/unit/api/test_pack_routes.py` |
+| AC-09-01-04 | Ngoại lệ | Cho manifest có min_core_version cao hơn phiên bản lõi đang chạy / Khi nhập / Thì hệ thống từ chối và thông báo nêu đúng phiên bản lõi cần có | API | todo | `tests/integration/api/test_pack.py`, `tests/unit/api/test_pack_routes.py` |
+| AC-09-01-05 | Quy tắc | Cho hai tệp gói, tệp A ký bằng khoá do khối kiến trúc ngân hàng tự cài, tệp B ký bằng khoá chưa cài / Khi nhập lần lượt / Thì tệp A được nhận, tệp B bị từ chối với lý do chữ ký không hợp lệ | API | todo | `tests/integration/api/test_pack.py`, `tests/unit/api/test_pack_routes.py` |
 | AC-09-01-06 | Quy tắc | Cho dòng pack_version có signature_verified_at rỗng / Khi cập nhật status = available / Thì CHECK pack_version_status_signature_verified_at_check từ chối | CSDL | todo |  |
 
 </details>
 
-<details><summary>UC-09-02 Đưa khách vào ngành · 0/7</summary>
+<details><summary>UC-09-02 Đưa khách vào ngành · 3/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-09-02-01 | Chính | Cho gói Ngân hàng 2026.3 đã cài và nguồn Core Banking đã quét xong schema, hồ sơ dữ liệu / Khi AC07 chọn gói cho Data Space Tín dụng, xác nhận ánh xạ, đối chiếu đạt và AC03 duyệt đề xuất kích hoạt / Thì pack_install c… | API, CSDL, E2E | todo |  |
+| AC-09-02-01 | Chính | Cho gói Ngân hàng 2026.3 đã cài và nguồn Core Banking đã quét xong schema, hồ sơ dữ liệu / Khi AC07 chọn gói cho Data Space Tín dụng, xác nhận ánh xạ, đối chiếu đạt và AC03 duyệt đề xuất kích hoạt / Thì pack_install c… | API, CSDL, E2E | todo | `tests/integration/api/test_pack.py` |
 | AC-09-02-02 | Chính | Cho :suggest-mappings đã chạy / Khi AC07 mở màn Đưa vào ngành · Ánh xạ / Thì mỗi đề xuất có độ tin, màn hiện tiến độ dạng 112/124 thuộc tính, cho xác nhận theo lô và khai báo bảng mã nhóm nợ của khách sang nhóm 1 đến … | E2E, CSDL | todo |  |
 | AC-09-02-03 | Thay thế | Cho chỉ số không thuộc báo cáo gửi cơ quan quản lý thiếu cột vì ngân hàng không có dữ liệu / Khi Semantic compiler biên dịch / Thì chỉ số bị đánh dấu không dùng được và :activate không bị chặn vì chỉ số đó | API | todo |  |
 | AC-09-02-04 | Thay thế | Cho NPL_RATIO tính ra lệch 0,05 điểm phần trăm so với số đã nộp kỳ gần nhất / Khi đối chiếu / Thì calibration_run ở trạng thái failed, màn hiện danh sách chỉ số lệch kèm nguyên nhân gợi ý và lối sửa ánh xạ hoặc hiệu c… | API, CSDL | todo |  |
 | AC-09-02-05 | Ngoại lệ | Cho kỳ 10/2026 của Data Space Tín dụng đang ở trạng thái Đang chốt / Khi AC03 duyệt kích hoạt / Thì pack_install chưa chuyển active; khi kỳ chốt xong thì kích hoạt tiếp mà không phải duyệt lại | API, CSDL | todo |  |
-| AC-09-02-06 | Quy tắc | Cho chỉ số trong báo cáo gửi cơ quan quản lý lệch 0,008 điểm phần trăm và chỉ số khác lệch 0,02 điểm phần trăm, chưa có hiệu chỉnh được duyệt / Khi gọi :activate với ngưỡng mặc định 0,01 / Thì kích hoạt bị từ chối và … | API, CSDL | todo |  |
-| AC-09-02-07 | Quy tắc | Cho entity_mapping có valid_to không lớn hơn valid_from / Khi ghi / Thì CHECK entity_mapping_valid_to_valid_from_check từ chối; ánh xạ đóng thời hiệu ngày 30/09/2026 không dùng cho câu hỏi as_of 15/10/2026 | CSDL | todo |  |
+| AC-09-02-06 | Quy tắc | Cho chỉ số trong báo cáo gửi cơ quan quản lý lệch 0,008 điểm phần trăm và chỉ số khác lệch 0,02 điểm phần trăm, chưa có hiệu chỉnh được duyệt / Khi gọi :activate với ngưỡng mặc định 0,01 / Thì kích hoạt bị từ chối và … | API, CSDL | todo | `tests/integration/api/test_pack.py` |
+| AC-09-02-07 | Quy tắc | Cho entity_mapping có valid_to không lớn hơn valid_from / Khi ghi / Thì CHECK entity_mapping_valid_to_valid_from_check từ chối; ánh xạ đóng thời hiệu ngày 30/09/2026 không dùng cho câu hỏi as_of 15/10/2026 | CSDL | todo | `tests/integration/api/test_pack.py` |
 | — | Cần làm rõ | Bước 3 nói “đề xuất có độ tin cao” được xác nhận theo lô nhưng chưa có ngưỡng độ tin. Cần số để kiểm | | | |
 | — | Cần làm rõ | Bước 5 đối chiếu với báo cáo đã nộp kỳ gần nhất, còn bảng luồng màn Đối chiếu số ghi 3 kỳ. Cần chốt số kỳ | | | |
 
 </details>
 
-<details><summary>UC-09-03 Hiệu chỉnh chỉ số theo khách · 0/7</summary>
+<details><summary>UC-09-03 Hiệu chỉnh chỉ số theo khách · 3/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-09-03-01 | Chính | Cho NPL_RATIO của gói có trong báo cáo gửi cơ quan quản lý / Khi AC07 nhập công thức loại trừ khoản vay nhân viên kèm lý do, gửi duyệt và AC03, AC06 cùng duyệt / Thì metric_override active có approved_by và compliance… | API, CSDL | todo |  |
+| AC-09-03-01 | Chính | Cho NPL_RATIO của gói có trong báo cáo gửi cơ quan quản lý / Khi AC07 nhập công thức loại trừ khoản vay nhân viên kèm lý do, gửi duyệt và AC03, AC06 cùng duyệt / Thì metric_override active có approved_by và compliance… | API, CSDL | todo | `tests/integration/api/test_pack.py` |
 | AC-09-03-02 | Chính | Cho hiệu chỉnh đang soạn / Khi chạy thử / Thì màn đặt số theo hiệu chỉnh cạnh số chuẩn và số đã nộp của kỳ gần nhất, cùng chi nhánh và kỳ | E2E | todo |  |
-| AC-09-03-03 | Thay thế | Cho hiệu chỉnh chỉ áp cho khối bán lẻ / Khi lưu và phát hành / Thì scope_condition ghi điều kiện khối bán lẻ; NPL_RATIO khối doanh nghiệp vẫn tính theo công thức chuẩn | API, CSDL | todo |  |
+| AC-09-03-03 | Thay thế | Cho hiệu chỉnh chỉ áp cho khối bán lẻ / Khi lưu và phát hành / Thì scope_condition ghi điều kiện khối bán lẻ; NPL_RATIO khối doanh nghiệp vẫn tính theo công thức chuẩn | API, CSDL | todo | `tests/integration/api/test_pack.py` |
 | AC-09-03-04 | Ngoại lệ | Cho hiệu chỉnh làm lệch so với số đã nộp tăng từ 0,02 lên 0,10 điểm phần trăm / Khi chạy thử / Thì có cảnh báo và không gửi duyệt được cho tới khi xác nhận lại lý do | API, E2E | todo |  |
 | AC-09-03-05 | Quy tắc | Cho NPL_RATIO có hiệu chỉnh active / Khi hiển thị trong câu trả lời, bảng điều khiển và báo cáo / Thì cả 3 chỗ ghi “theo hiệu chỉnh của ngân hàng” và liên kết tới lý do | E2E | todo |  |
 | AC-09-03-06 | Quy tắc | Cho metric_override có approved_by rỗng / Khi cập nhật status = active / Thì CHECK metric_override_status_approved_by_check từ chối | CSDL | todo |  |
-| AC-09-03-07 | Quy tắc | Cho chỉ số có trong báo cáo gửi cơ quan quản lý và AC03 đã duyệt / Khi AC06 chưa duyệt / Thì hiệu chỉnh chưa active và chưa có metric_version mới | API | todo |  |
+| AC-09-03-07 | Quy tắc | Cho chỉ số có trong báo cáo gửi cơ quan quản lý và AC03 đã duyệt / Khi AC06 chưa duyệt / Thì hiệu chỉnh chưa active và chưa có metric_version mới | API | todo | `tests/integration/api/test_pack.py` |
 | — | Cần làm rõ | Bước 3 chạy hiệu chỉnh trên kỳ gần nhất, còn bảng luồng màn Hiệu chỉnh ghi chạy thử 6 kỳ. Cần chốt số kỳ | | | |
 
 </details>
 
-<details><summary>UC-09-04 Nâng cấp gói · 0/8</summary>
+<details><summary>UC-09-04 Nâng cấp gói · 4/8</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-09-04-01 | Chính | Cho Data Space Tín dụng dùng gói 2026.2 có hiệu chỉnh NPL_RATIO và gói 2026.3 đã nhập / Khi AC05 gọi :upgrade, AC03 quyết mọi xung đột, chạy thử đạt và duyệt / Thì pack_upgrade applied với conflicts_open = 0, pack_ins… | API, CSDL | todo |  |
-| AC-09-04-02 | Chính | Cho chỉ số A khách không sửa mà gói đổi, chỉ số B khách đã sửa mà gói không đổi, chỉ số C cả hai cùng đổi / Khi gộp ba chiều / Thì A nhận bản mới, B giữ bản khách, C vào danh sách cần quyết với 3 phương án giữ hiệu ch… | API, E2E | todo |  |
+| AC-09-04-01 | Chính | Cho Data Space Tín dụng dùng gói 2026.2 có hiệu chỉnh NPL_RATIO và gói 2026.3 đã nhập / Khi AC05 gọi :upgrade, AC03 quyết mọi xung đột, chạy thử đạt và duyệt / Thì pack_upgrade applied với conflicts_open = 0, pack_ins… | API, CSDL | todo | `tests/integration/api/test_pack.py` |
+| AC-09-04-02 | Chính | Cho chỉ số A khách không sửa mà gói đổi, chỉ số B khách đã sửa mà gói không đổi, chỉ số C cả hai cùng đổi / Khi gộp ba chiều / Thì A nhận bản mới, B giữ bản khách, C vào danh sách cần quyết với 3 phương án giữ hiệu ch… | API, E2E | todo | `tests/integration/api/test_pack.py`, `tests/unit/api/test_pack_routes.py` |
 | AC-09-04-03 | Chính | Cho kỳ 09/2026 đã chốt / Khi nâng cấp được áp dụng / Thì số đã công bố kỳ 09/2026 giữ nguyên, chỉ kỳ sau tính theo 2026.3 | API, CSDL | todo |  |
-| AC-09-04-04 | Thay thế | Cho nâng cấp đã áp dụng 20 ngày / Khi gọi :rollback / Thì pack_install về 2026.2, metric_override giữ nguyên, pack_upgrade chuyển rolled_back; ở ngày thứ 31 thì :rollback bị từ chối | API, CSDL | todo |  |
+| AC-09-04-04 | Thay thế | Cho nâng cấp đã áp dụng 20 ngày / Khi gọi :rollback / Thì pack_install về 2026.2, metric_override giữ nguyên, pack_upgrade chuyển rolled_back; ở ngày thứ 31 thì :rollback bị từ chối | API, CSDL | todo | `tests/integration/api/test_pack.py` |
 | AC-09-04-05 | Ngoại lệ | Cho chạy thử lệch số đã nộp ở 1 trong 2 kỳ gần nhất / Khi chạy lại bộ kiểm tra / Thì pack_upgrade quay về needs_decision kèm danh sách chỉ số lệch, :apply bị từ chối | API, CSDL | todo |  |
-| AC-09-04-06 | Quy tắc | Cho kỳ 10/2026 đang ở trạng thái Đang chốt / Khi gọi :upgrade / Thì bị từ chối và nêu kỳ đang chốt | API | todo |  |
+| AC-09-04-06 | Quy tắc | Cho kỳ 10/2026 đang ở trạng thái Đang chốt / Khi gọi :upgrade / Thì bị từ chối và nêu kỳ đang chốt | API | todo | `tests/integration/api/test_pack.py` |
 | AC-09-04-07 | Quy tắc | Cho agent Báo cáo tín dụng dùng NPL_RATIO bị đổi do nâng cấp / Khi tạo pack_upgrade / Thì chủ agent được báo ít nhất 7 ngày trước ngày áp dụng và bộ thử của agent có kết quả chạy lại trước khi :apply | API | todo |  |
 | AC-09-04-08 | Quy tắc | Cho pack_upgrade có conflicts_open = 1 hoặc approved_by rỗng / Khi cập nhật status = applied / Thì CHECK pack_upgrade_status_conflicts_open_check từ chối | CSDL | todo |  |
 
 </details>
 
-<details><summary>UC-09-05 Biên soạn và phát hành gói · 0/7</summary>
+<details><summary>UC-09-05 Biên soạn và phát hành gói · 5/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-09-05-01 | Chính | Cho phiên bản 2026.3 tạo từ 2026.2 / Khi AC07 soạn thay đổi, :validate đạt trên 3 bộ dữ liệu mẫu và ký phát hành / Thì pack_version ở trạng thái released với chữ ký, pack_check_run passed = true, có tệp gói và ghi chú… | API, CSDL | todo |  |
-| AC-09-05-02 | Ngoại lệ | Cho một chỉ số lệch số kỳ vọng 0,02% trên 1 trong 3 bộ mẫu / Khi :validate / Thì pack_check_run passed = false, nút phát hành khoá, màn chỉ ra chỉ số và bộ mẫu lỗi, :publish bị từ chối | API, E2E | todo |  |
+| AC-09-05-01 | Chính | Cho phiên bản 2026.3 tạo từ 2026.2 / Khi AC07 soạn thay đổi, :validate đạt trên 3 bộ dữ liệu mẫu và ký phát hành / Thì pack_version ở trạng thái released với chữ ký, pack_check_run passed = true, có tệp gói và ghi chú… | API, CSDL | todo | `tests/integration/api/test_pack.py` |
+| AC-09-05-02 | Ngoại lệ | Cho một chỉ số lệch số kỳ vọng 0,02% trên 1 trong 3 bộ mẫu / Khi :validate / Thì pack_check_run passed = false, nút phát hành khoá, màn chỉ ra chỉ số và bộ mẫu lỗi, :publish bị từ chối | API, E2E | todo | `tests/integration/api/test_pack.py` |
 | AC-09-05-03 | Ngoại lệ | Cho bộ câu hỏi mẫu của 2026.3 đúng ít hơn 2026.2 một câu / Khi :validate / Thì kiểm tra không đạt và không phát hành được | API | todo |  |
-| AC-09-05-04 | Thay thế | Cho 2026.3 đổi mã một chỉ số / Khi phát hành mà ghi chú thiếu hướng dẫn chuyển đổi / Thì bị từ chối; có hướng dẫn thì phát hành và breaking_changes liệt kê thay đổi | API, CSDL | todo |  |
-| AC-09-05-05 | Quy tắc | Cho pack_metric có is_internal = false và legal_basis rỗng / Khi ghi / Thì CHECK pack_metric_is_internal_legal_basis_check từ chối | CSDL | todo |  |
-| AC-09-05-06 | Quy tắc | Cho mã NPL_RATIO đã phát hành ở 2026.2 / Khi 2026.3 dùng lại mã đó cho định nghĩa khác / Thì :validate báo lỗi tái sử dụng mã | API | todo |  |
+| AC-09-05-04 | Thay thế | Cho 2026.3 đổi mã một chỉ số / Khi phát hành mà ghi chú thiếu hướng dẫn chuyển đổi / Thì bị từ chối; có hướng dẫn thì phát hành và breaking_changes liệt kê thay đổi | API, CSDL | todo | `tests/integration/api/test_pack.py`, `tests/unit/api/test_pack_routes.py` |
+| AC-09-05-05 | Quy tắc | Cho pack_metric có is_internal = false và legal_basis rỗng / Khi ghi / Thì CHECK pack_metric_is_internal_legal_basis_check từ chối | CSDL | todo | `tests/integration/api/test_pack.py` |
+| AC-09-05-06 | Quy tắc | Cho mã NPL_RATIO đã phát hành ở 2026.2 / Khi 2026.3 dùng lại mã đó cho định nghĩa khác / Thì :validate báo lỗi tái sử dụng mã | API | todo | `tests/integration/api/test_pack.py`, `tests/unit/api/test_pack_routes.py` |
 | AC-09-05-07 | Quy tắc | Cho 2026.3 có thay đổi phá vỡ, phát hành ngày 01/11/2026 / Khi khách đang dùng gói nhập bản này / Thì khách được báo ngay khi nhập và thay đổi phá vỡ không áp dụng được trước 01/12/2026 | API | todo |  |
 | — | Cần làm rõ | BR-131 chưa nói “nghĩa khác” xác định bằng gì (đổi công thức, đơn vị hay căn cứ) và 30 ngày tính từ lúc phát hành hay lúc nhập ở khách vì gói giao ngoại tuyến | | | |
 
@@ -1743,7 +1743,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-12-03 Nhận sự kiện qua webhook · 0/7</summary>
+<details><summary>UC-12-03 Nhận sự kiện qua webhook · 1/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
@@ -1753,7 +1753,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | AC-12-03-04 | Thay thế | Cho một lần gửi failed / Khi AC05 gọi :retry / Thì đích nhận sự kiện với cùng mã sự kiện và webhook_delivery chuyển delivered | API, CSDL | todo |  |
 | AC-12-03-05 | Ngoại lệ | Cho đích lỗi liên tục / Khi hết 6 lần thử và khi có 3 lần gửi failed liên tiếp cùng đích / Thì mỗi lần gửi chuyển failed, phát webhook.delivery_failed, AC05 nhận báo; sau lần thứ 3 webhook_subscription chuyển paused | API, CSDL | todo |  |
 | AC-12-03-06 | Ngoại lệ | Cho URL dạng http:// hoặc không có trong danh sách đích của proxy / Khi đăng ký / Thì bị từ chối; ghi target_url http:// thì CHECK webhook_subscription_target_url_check từ chối | API, CSDL | todo |  |
-| AC-12-03-07 | Quy tắc | Cho sự kiện report.delivered của báo cáo có bảng chi tiết / Khi gửi webhook / Thì thân chỉ có mã đối tượng và tóm tắt, không có dòng dữ liệu hay giá trị chỉ số nào | API | todo |  |
+| AC-12-03-07 | Quy tắc | Cho sự kiện report.delivered của báo cáo có bảng chi tiết / Khi gửi webhook / Thì thân chỉ có mã đối tượng và tóm tắt, không có dòng dữ liệu hay giá trị chỉ số nào | API | todo | `tests/integration/api/test_integration_clients.py` |
 
 </details>
 

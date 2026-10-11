@@ -100,9 +100,7 @@ async def _metric(
     return row
 
 
-async def _metric_views(
-    session: AsyncSession, rows: list[context.Metric]
-) -> list[MetricView]:
+async def _metric_views(session: AsyncSession, rows: list[context.Metric]) -> list[MetricView]:
     if not rows:
         return []
     versions = (
@@ -148,7 +146,9 @@ async def list_metrics(
     certified: bool | None = None,
 ) -> Page[MetricView]:
     metric = context.Metric
-    query = select(metric).where(metric.org_id == principal.org_id, metric.data_space_id == data_space)
+    query = select(metric).where(
+        metric.org_id == principal.org_id, metric.data_space_id == data_space
+    )
     if status:
         query = query.where(metric.status == status)
     if certified is not None:
@@ -509,7 +509,9 @@ async def _make_ambiguous(
     }
     term = await session.scalar(
         select(context.GlossaryTerm)
-        .where(context.GlossaryTerm.data_space_id == data_space, context.GlossaryTerm.term_norm == norm)
+        .where(
+            context.GlossaryTerm.data_space_id == data_space, context.GlossaryTerm.term_norm == norm
+        )
         .with_for_update()
     )
     if term is None:
@@ -530,7 +532,9 @@ async def _make_ambiguous(
         event = "glossary_term.created"
     else:
         meanings = list(term.meanings or [])
-        known = {(m.get("target_kind"), m.get("target_id")) for m in meanings if isinstance(m, dict)}
+        known = {
+            (m.get("target_kind"), m.get("target_id")) for m in meanings if isinstance(m, dict)
+        }
         for meaning in (meaning_old, meaning_new):
             if (meaning["target_kind"], meaning["target_id"]) not in known:
                 meanings.append(meaning)
@@ -568,7 +572,9 @@ async def create_synonym(
         raise field_error("phrase", "phrase is empty once normalised.")
     async with transaction(ROLE, principal) as session:
         if not await _target_exists(session, body.target_kind, body.target_id, data_space):
-            raise field_error("target_id", "target_id names nothing of that kind in this Data Space.")
+            raise field_error(
+                "target_id", "target_id names nothing of that kind in this Data Space."
+            )
         same = await session.scalar(
             select(context.Synonym).where(
                 context.Synonym.data_space_id == data_space,
@@ -664,7 +670,9 @@ async def create_example(
                 ).all()
             )
             if set(metric_ids) - found:
-                raise field_error("metric_ids", "metric_ids names a metric outside this Data Space.")
+                raise field_error(
+                    "metric_ids", "metric_ids names a metric outside this Data Space."
+                )
         # BR-118: an example is a model sample only once reviewed and still running; it starts
         # as a draft the checker runs before it goes to review (AC-07-02-02).
         row = context.ExampleQuery(
@@ -843,7 +851,8 @@ async def put_term_preferences(
             term = terms.get(term_id)
             if term is None:
                 raise field_error(
-                    "preferences", "A preference names a term that is not active in this Data Space."
+                    "preferences",
+                    "A preference names a term that is not active in this Data Space.",
                 )
             if index >= len(term.meanings or []):
                 raise field_error("preferences", "meaning_index is not a meaning of that term.")

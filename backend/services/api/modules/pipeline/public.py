@@ -11,7 +11,7 @@ import uuid
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import select
+from sqlalchemy import func, literal, or_, select
 
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import pipeline as pl
@@ -117,3 +117,23 @@ async def create_published_product(
         view = DataProductView.model_validate(product)
     out: dict[str, Any] = jsonable_encoder(view)
     return out
+
+
+async def shared_product_usable(
+    principal: Principal, data_space: uuid.UUID, product_id: uuid.UUID
+) -> bool:
+    """A published P06 product the Data Space provides or has subscribed to, so a P07 data
+    product there may take it as a shared_product member (UC-07-13)."""
+    async with transaction(ROLE, principal) as session:
+        found = await session.scalar(
+            select(pl.DataProduct.id).where(
+                pl.DataProduct.id == product_id,
+                pl.DataProduct.org_id == principal.org_id,
+                pl.DataProduct.status == "published",
+                or_(
+                    pl.DataProduct.data_space_id == data_space,
+                    literal(data_space) == func.any(pl.DataProduct.consumers),
+                ),
+            )
+        )
+    return found is not None
