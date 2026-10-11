@@ -21,6 +21,8 @@ from typing import Any
 
 import httpx
 
+from libs.shared.service_identity import get_secret, mint_service_assertion
+
 SANDBOX_EXECUTOR_URL = os.environ.get("SANDBOX_EXECUTOR_URL", "http://localhost:8260")
 
 # A metric or schema query usually finishes in tens of ms; a 200 ms first wait
@@ -54,6 +56,7 @@ async def submit_and_poll(
     path: str,
     body: dict[str, Any],
     overall_timeout_s: float,
+    headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """POSTs to enqueue, then polls GET {path}/{job_id} with backoff until a
     terminal status or overall_timeout_s elapses. Returns the terminal response
@@ -61,7 +64,7 @@ async def submit_and_poll(
     503 (sandbox_executor overloaded, back off) apart from an ordinary handled
     failure (success: false) without re-deriving it.
     """
-    resp = await http.post(f"{SANDBOX_EXECUTOR_URL}{path}", json=body)
+    resp = await http.post(f"{SANDBOX_EXECUTOR_URL}{path}", json=body, headers=headers)
     if resp.status_code == 503:
         # Queue was already full (backend/services/sandbox_executor/ops/ mục i backpressure) — rejected
         # before a job_id was even minted, nothing to poll.
@@ -74,7 +77,7 @@ async def submit_and_poll(
     deadline = time.monotonic() + overall_timeout_s
     delay = _POLL_INITIAL_DELAY_S
     while True:
-        poll = await http.get(f"{SANDBOX_EXECUTOR_URL}{path}/{job_id}")
+        poll = await http.get(f"{SANDBOX_EXECUTOR_URL}{path}/{job_id}", headers=headers)
         data = poll.json()
         data["_http_status"] = poll.status_code
         if data.get("status") in ("queued", "running"):
@@ -88,3 +91,15 @@ async def submit_and_poll(
             delay = min(delay * 1.5, _POLL_MAX_DELAY_S)
             continue
         return data
+
+
+def service_assertion_headers(identity: dict[str, Any]) -> dict[str, str]:
+    """Create the short-lived assertion required by sandbox_executor."""
+    assertion = mint_service_assertion(
+        service="workflow_runtime",
+        tenant_id=str(identity.get("tenant_id") or ""),
+        user_id=str(identity.get("user_id") or "anonymous"),
+        roles=list(identity.get("user_roles") or []),
+        secret=get_secret(),
+    )
+    return {"X-Service-Assertion": assertion}

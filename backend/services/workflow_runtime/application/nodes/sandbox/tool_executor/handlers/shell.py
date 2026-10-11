@@ -25,6 +25,7 @@ import httpx
 from libs.shared import audit
 from services.workflow_runtime.application.nodes.sandbox.tool_executor._sandbox_http import (
     POLL_OVERHEAD_S,
+    service_assertion_headers,
     submit_and_poll,
 )
 from services.workflow_runtime.application.nodes.sandbox.tool_executor._utils import (
@@ -72,6 +73,7 @@ async def _bash_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict
         async with httpx.AsyncClient(timeout=10) as http:
             result = await submit_and_poll(
                 http, "/execute/shell", body, overall_timeout_s=timeout + POLL_OVERHEAD_S,
+                headers=service_assertion_headers(audit_ctx(cfg)),
             )
     except Exception as e:
         return None, {"tool_name": "bash", "error": f"sandbox_executor unreachable: {e}"}

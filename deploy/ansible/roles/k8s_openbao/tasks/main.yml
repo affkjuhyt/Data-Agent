@@ -82,8 +82,9 @@
   ansible.builtin.shell: |
     set -euo pipefail
     {{ kubectl }} exec -i -n {{ ns_database }} statefulset/openbao -- \
-      env BAO_TOKEN={{ bao_keys.root_token }} bao policy write workflow_runtime-read-policy - <<'POLICY'
+    env BAO_TOKEN={{ bao_keys.root_token }} bao policy write workflow_runtime-read-policy - <<'POLICY'
     path "secret/data/tenants/*" { capabilities = ["read"] }
+    path "secret/data/warehouse/*" { capabilities = ["read"] }
     POLICY
   args:
     executable: /bin/bash

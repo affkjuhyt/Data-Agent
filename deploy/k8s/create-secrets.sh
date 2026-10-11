@@ -82,7 +82,9 @@ kubectl -n dataagent-service create secret generic kb-structured-data-secrets \
 kubectl -n dataagent-service create secret generic sandbox-executor-secrets \
   --from-literal=MINIO_ACCESS_KEY="${MINIO_ROOT_USER}" \
   --from-literal=MINIO_SECRET_KEY="${MINIO_ROOT_PASSWORD}" \
-  --from-literal=SNOWFLAKE_PASSWORD="${SNOWFLAKE_CRAWLER_PASSWORD}" \
+  --from-literal=OPENBAO_ROLE_ID="${OPENBAO_ROLE_ID}" \
+  --from-literal=OPENBAO_SECRET_ID="${OPENBAO_SECRET_ID}" \
+  --from-literal=SERVICE_AUTH_SECRET="${SERVICE_AUTH_SECRET}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic platform-workers-audit-secrets \
@@ -100,9 +102,8 @@ kubectl -n dataagent-service create secret generic platform-workers-memory-secre
 kubectl -n dataagent-service create secret generic platform-workers-schema-crawler-secrets \
   --from-literal=DB_PASSWORD="${APP_USER_PASSWORD}" \
   --from-literal=KAFKA_SASL_PASSWORD="${SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD}" \
-  --from-literal=SNOWFLAKE_CRAWLER_PASSWORD="${SNOWFLAKE_CRAWLER_PASSWORD}" \
-  --from-literal=POSTGRES_CRAWLER_PASSWORD="${POSTGRES_CRAWLER_PASSWORD}" \
-  --from-literal=CLICKHOUSE_CRAWLER_PASSWORD="${CLICKHOUSE_CRAWLER_PASSWORD}" \
+  --from-literal=OPENBAO_ROLE_ID="${OPENBAO_ROLE_ID}" \
+  --from-literal=OPENBAO_SECRET_ID="${OPENBAO_SECRET_ID}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic platform-workers-web-crawler-secrets \

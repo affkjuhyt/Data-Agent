@@ -40,10 +40,11 @@ from api.schemas import (
     ExecuteShellRequest,
     ExecuteSQLRequest,
 )
+from auth import require_service_assertion
 from core.settings import load_settings
 from execution.code_executor import run_python_job, run_shell_job
 from execution.sql_executor import load_backend, run_sql_job
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header
 from fastapi.responses import JSONResponse, StreamingResponse
 from job_queue import Job, JobQueue
 from output import DEFAULT_MAX_OUTPUT_CHARS, truncate_output
@@ -58,6 +59,7 @@ from sandbox_runner_backend import (
 )
 from security_visitor import SecurityError, validate_python_code
 from sql_guard import SQLGuardError, validate_select_only
+from warehouse_secrets import resolve_connection_secret
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [sandbox_executor] %(levelname)s %(message)s")
 logger = logging.getLogger("sandbox_executor")
@@ -77,6 +79,12 @@ _CONNECTION_PARAMS = CONNECTION_PARAMS
 
 python_queue: JobQueue | None = None
 sql_queue: JobQueue | None = None
+
+
+def service_identity(
+    x_service_assertion: str = Header(default="", alias="X-Service-Assertion"),
+) -> dict[str, Any]:
+    return require_service_assertion(x_service_assertion)
 
 
 @asynccontextmanager
@@ -173,8 +181,16 @@ async def _run_execute_python(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _run_execute_sql(payload: dict[str, Any]) -> dict[str, Any]:
+    connection = dict(payload["connection"])
+    connection_ref = str(connection.pop("connection_ref", ""))
+    password = await asyncio.to_thread(
+        resolve_connection_secret, str(payload.get("tenant_id", "")), connection_ref,
+    )
+    if not password:
+        return {"success": False, "error": "warehouse connection secret unavailable"}
+    connection["password"] = password
     result: dict[str, Any] = await run_sql_job(
-        payload,
+        {**payload, "connection": connection},
         backend_loader=_load_backend,
         validate_select_only=validate_select_only,
         guard_error=SQLGuardError,
@@ -257,7 +273,10 @@ async def _sse_events(queue: JobQueue, job_id: str) -> AsyncIterator[str]:
 
 
 @app.post("/execute/python")
-async def execute_python(req: ExecutePythonRequest) -> JSONResponse:
+async def execute_python(
+    req: ExecutePythonRequest,
+    _claims: dict[str, Any] = Depends(service_identity),
+) -> JSONResponse:
     assert python_queue is not None  # set in lifespan() before requests are served
     return _submit(python_queue, {
         "kind": "python",
@@ -267,7 +286,10 @@ async def execute_python(req: ExecutePythonRequest) -> JSONResponse:
 
 
 @app.post("/execute/shell")
-async def execute_shell(req: ExecuteShellRequest) -> JSONResponse:
+async def execute_shell(
+    req: ExecuteShellRequest,
+    _claims: dict[str, Any] = Depends(service_identity),
+) -> JSONResponse:
     assert python_queue is not None  # set in lifespan() before requests are served
     return _submit(python_queue, {
         "kind": "shell", "command": req.command, "timeout_s": req.timeout_s, "workdir": req.workdir,
@@ -275,44 +297,51 @@ async def execute_shell(req: ExecuteShellRequest) -> JSONResponse:
 
 
 @app.get("/execute/shell/{job_id}")
-async def get_execute_shell(job_id: str) -> JSONResponse:
+async def get_execute_shell(job_id: str, _claims: dict[str, Any] = Depends(service_identity)) -> JSONResponse:
     assert python_queue is not None  # set in lifespan() before requests are served
     return _job_status_response(python_queue, job_id)
 
 
 @app.get("/execute/shell/{job_id}/stream")
-async def stream_execute_shell(job_id: str) -> StreamingResponse:
+async def stream_execute_shell(job_id: str, _claims: dict[str, Any] = Depends(service_identity)) -> StreamingResponse:
     assert python_queue is not None  # set in lifespan() before requests are served
     return StreamingResponse(_sse_events(python_queue, job_id), media_type="text/event-stream")
 
 
 @app.get("/execute/python/{job_id}")
-async def get_execute_python(job_id: str) -> JSONResponse:
+async def get_execute_python(job_id: str, _claims: dict[str, Any] = Depends(service_identity)) -> JSONResponse:
     assert python_queue is not None  # set in lifespan() before requests are served
     return _job_status_response(python_queue, job_id)
 
 
 @app.get("/execute/python/{job_id}/stream")
-async def stream_execute_python(job_id: str) -> StreamingResponse:
+async def stream_execute_python(job_id: str, _claims: dict[str, Any] = Depends(service_identity)) -> StreamingResponse:
     assert python_queue is not None  # set in lifespan() before requests are served
     return StreamingResponse(_sse_events(python_queue, job_id), media_type="text/event-stream")
 
 
 @app.post("/execute/sql")
-async def execute_sql(req: ExecuteSQLRequest) -> JSONResponse:
+async def execute_sql(
+    req: ExecuteSQLRequest,
+    claims: dict[str, Any] = Depends(service_identity),
+) -> JSONResponse:
     assert sql_queue is not None  # set in lifespan() before requests are served
     # req.connection is already the validated, backend-tagged dict the
     # field_validator produced — no second model_dump needed.
-    return _submit(sql_queue, {"sql": req.sql, "connection": req.connection})
+    return _submit(sql_queue, {
+        "sql": req.sql,
+        "connection": req.connection,
+        "tenant_id": claims["tid"],
+    })
 
 
 @app.get("/execute/sql/{job_id}")
-async def get_execute_sql(job_id: str) -> JSONResponse:
+async def get_execute_sql(job_id: str, _claims: dict[str, Any] = Depends(service_identity)) -> JSONResponse:
     assert sql_queue is not None  # set in lifespan() before requests are served
     return _job_status_response(sql_queue, job_id)
 
 
 @app.get("/execute/sql/{job_id}/stream")
-async def stream_execute_sql(job_id: str) -> StreamingResponse:
+async def stream_execute_sql(job_id: str, _claims: dict[str, Any] = Depends(service_identity)) -> StreamingResponse:
     assert sql_queue is not None  # set in lifespan() before requests are served
     return StreamingResponse(_sse_events(sql_queue, job_id), media_type="text/event-stream")

@@ -10,10 +10,13 @@ metadata module, one credential env var. That is why the Schema Catalog
 described one set of databases while the DB Connector queried another.
 """
 import logging
-import os
 from typing import Any
 
-from services.platform_workers.workers.schema_crawler.identifiers import UnsafeIdentifier, safe_identifier
+from services.platform_workers.workers.schema_crawler.identifiers import (
+    UnsafeIdentifier,
+    safe_identifier,
+)
+from services.platform_workers.workers.schema_crawler.secrets import resolve_openbao_secret
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +56,17 @@ def discover_and_describe(
     not obliged to carry all three.
     """
     if engine == SNOWFLAKE:
-        from services.platform_workers.workers.schema_crawler.snowflake_metadata import discover_and_describe as _run
+        from services.platform_workers.workers.schema_crawler.snowflake_metadata import (
+            discover_and_describe as _run,
+        )
     elif engine == POSTGRES:
-        from services.platform_workers.workers.schema_crawler.postgres_metadata import discover_and_describe as _run
+        from services.platform_workers.workers.schema_crawler.postgres_metadata import (
+            discover_and_describe as _run,
+        )
     elif engine == CLICKHOUSE:
-        from services.platform_workers.workers.schema_crawler.clickhouse_metadata import discover_and_describe as _run
+        from services.platform_workers.workers.schema_crawler.clickhouse_metadata import (
+            discover_and_describe as _run,
+        )
     else:
         raise ValueError(f"unsupported engine: {engine!r}")
 
@@ -93,11 +102,17 @@ def table_watermark(
             return None
 
     if engine == SNOWFLAKE:
-        from services.platform_workers.workers.schema_crawler.snowflake_metadata import max_timestamp as _run
+        from services.platform_workers.workers.schema_crawler.snowflake_metadata import (
+            max_timestamp as _run,
+        )
     elif engine == POSTGRES:
-        from services.platform_workers.workers.schema_crawler.postgres_metadata import max_timestamp as _run
+        from services.platform_workers.workers.schema_crawler.postgres_metadata import (
+            max_timestamp as _run,
+        )
     elif engine == CLICKHOUSE:
-        from services.platform_workers.workers.schema_crawler.clickhouse_metadata import max_timestamp as _run
+        from services.platform_workers.workers.schema_crawler.clickhouse_metadata import (
+            max_timestamp as _run,
+        )
     else:
         logger.warning("table_watermark | unsupported engine %r", engine)
         return None
@@ -113,27 +128,9 @@ def table_watermark(
 
 
 def _password(engine: str, warehouse_id: str) -> str | None:
-    """Crawler credential for one warehouse.
-
-    Mirrors the Snowflake convention the crawl loop already used rather than inventing a
-    scheme: a per-warehouse override, then a per-engine shared crawler account.
-    KBWarehouseConfig.config still never persists a password (see
-    select_warehouse_tables in warehouse_connect.py) — this remains the
-    documented gap, now spelled the same way for every engine instead of only
-    for Snowflake.
-
-    Env names cannot contain "-", and warehouse_id is a UUID.
-    """
-    env_warehouse_id = warehouse_id.replace("-", "_")
-    return (
-        os.environ.get(f"WAREHOUSE_PASSWORD__{env_warehouse_id}")
-        # Kept for compatibility with stacks configured before other engines
-        # existed; SNOWFLAKE_* still works for Snowflake warehouses.
-        or os.environ.get(f"SNOWFLAKE_PASSWORD__{env_warehouse_id}")
-        or os.environ.get(f"{engine.upper()}_CRAWLER_PASSWORD")
-        or os.environ.get("SNOWFLAKE_CRAWLER_PASSWORD" if engine == SNOWFLAKE else "")
-        or None
-    )
+    """Resolve the warehouse connection's OpenBao reference; never read env passwords."""
+    del engine
+    return None
 
 
 def _snowflake_params(conn: dict[str, Any], password: str) -> dict[str, Any] | None:
@@ -188,12 +185,13 @@ def connection_params(
     being refreshed.
     """
     conn = (config or {}).get("connection") or {}
-    password = _password(engine, warehouse_id)
+    connection = (config or {}).get("connection") or {}
+    secret_ref = str(connection.get("secret_ref") or (config or {}).get("secret_ref") or "").strip()
+    password = resolve_openbao_secret(secret_ref) if secret_ref else None
     if not password:
         logger.warning(
-            "connection_params | no password configured for %s warehouse=%s "
-            "(set WAREHOUSE_PASSWORD__<id> or %s_CRAWLER_PASSWORD), skipping",
-            engine, warehouse_id, engine.upper(),
+            "connection_params | no OpenBao secret_ref configured for %s warehouse=%s, skipping",
+            engine, warehouse_id,
         )
         return None
 
