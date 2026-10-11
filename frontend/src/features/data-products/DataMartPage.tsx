@@ -71,12 +71,16 @@ function MartView({ id }: { id: string }) {
         version: m.product_draft.version,
       });
       const done = await publishDataProduct(created.id);
+      // Figma Toast · published (2094:7831) and · certSent (2094:7844); "Xem" opens the product.
+      const view = { label: 'Xem', onClick: () => navigate('data', 'DATA_PRODUCTS', done.id) };
       toast(
         done.status === 'published'
-          ? // copy: provisional, Figma Toast · published (2094:7831) unread (rate limit)
-            { tone: 'success', message: `Đã phát hành ${done.name} v${done.version}` }
-          : // copy: provisional, Figma Toast · certSent (2094:7844) unread (rate limit)
-            { tone: 'info', message: `Đã gửi ${done.name} v${done.version} để duyệt phát hành` },
+          ? { tone: 'success', message: 'Đã xuất bản · người dùng nhận thông báo', action: view }
+          : {
+              tone: 'success',
+              message: `Đã gửi chứng nhận ${done.name} v${done.version} · chờ chủ sở hữu`,
+              action: view,
+            },
       );
     } catch (e) {
       toast({ tone: 'error', message: `Không phát hành được: ${(e as Error).message}` });

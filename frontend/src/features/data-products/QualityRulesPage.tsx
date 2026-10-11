@@ -103,8 +103,8 @@ export default function QualityRulesPage() {
         onClose={() => setAdding(false)}
         onAdded={(name) => {
           setAdding(false);
-          // copy: provisional, Figma Toast · created (2094:8224) unread (rate limit)
-          toast({ tone: 'success', message: `Đã thêm quy tắc “${name}”` });
+          // Figma Toast · created (2094:8224); the rule appears in the table, so no "Mở".
+          toast({ tone: 'success', message: `Đã tạo “${name}” · bạn là chủ sở hữu` });
           rules.reload();
         }}
       />

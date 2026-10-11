@@ -74,8 +74,7 @@ export function SuggestMartDialog({
       open={open}
       title="Agent đề xuất data mart"
       description="Từ các câu hỏi thường gặp và chỉ số đã chứng nhận."
-      // copy: provisional, Figma 2095:9342 unread (rate limit)
-      submitLabel="Thêm vào mart"
+      submitLabel="Áp dụng"
       submitting={sending}
       error={error}
       onSubmit={submit}

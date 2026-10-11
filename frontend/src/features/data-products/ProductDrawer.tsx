@@ -108,8 +108,8 @@ function ContractTab({
     setDrafting(true);
     try {
       await draftNextVersion(product.id);
-      // copy: provisional, Figma Toast · draft (2094:8183) unread (rate limit)
-      toast({ tone: 'success', message: `Đã tạo bản v${product.next_version} nháp` });
+      // Figma Toast · draft (2094:8183). The new draft is the product's next version, shown in its Phiên bản tab.
+      toast({ tone: 'success', message: 'Đã tạo bản nháp · mở để chỉnh sửa' });
       onChanged();
     } catch (e) {
       toast({ tone: 'error', message: `Không tạo được bản nháp: ${(e as Error).message}` });

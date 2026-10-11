@@ -65,7 +65,7 @@ describe('DataProductsPage', () => {
 
     fireEvent.click(within(drawer).getByRole('tab', { name: 'Contract' }));
     fireEvent.click(within(drawer).getByRole('button', { name: 'Tạo bản v3 nháp' }));
-    expect(await screen.findByText('Đã tạo bản v3 nháp')).toBeInTheDocument();
+    expect(await screen.findByText('Đã tạo bản nháp · mở để chỉnh sửa')).toBeInTheDocument();
     await waitFor(() =>
       expect(
         within(drawer).queryByRole('button', { name: 'Tạo bản v3 nháp' }),
@@ -83,7 +83,7 @@ describe('DataMartPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Phát hành sản phẩm dữ liệu' }));
     expect(
-      await screen.findByText('Đã gửi credit_risk_retail v2.0 để duyệt phát hành'),
+      await screen.findByText('Đã gửi chứng nhận credit_risk_retail v2.0 · chờ chủ sở hữu'),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Kiểm tra' }));
@@ -95,7 +95,7 @@ describe('DataMartPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: /dim_officer: chiều agent gợi ý/ }));
     const dialog = screen.getByRole('dialog', { name: 'Agent đề xuất data mart' });
     expect(within(dialog).getByLabelText('provision_rate · dùng trong COST_OF_RISK')).toBeChecked();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Thêm vào mart' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Áp dụng' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(await screen.findByText('cán bộ tín dụng')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /dim_officer/ })).not.toBeInTheDocument();
@@ -125,7 +125,7 @@ describe('QualityRulesPage', () => {
     });
     fireEvent.click(within(dialog).getByLabelText('Cảnh báo'));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Thêm quy tắc' }));
-    expect(await screen.findByText('Đã thêm quy tắc “Lãi suất > 0”')).toBeInTheDocument();
+    expect(await screen.findByText('Đã tạo “Lãi suất > 0” · bạn là chủ sở hữu')).toBeInTheDocument();
     expect(await screen.findByText('prep.loans_retail.rate')).toBeInTheDocument();
   });
 });
