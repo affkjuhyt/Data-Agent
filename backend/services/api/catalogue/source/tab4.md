@@ -694,7 +694,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/sources | ?status, ?kind | Danh sách Source | — |
 | POST /v1/sources | name\*, kind\*, host, port, database\_name, mode, authority\_level, freshness\_sla, max\_concurrency, query\_timeout\_s, scan\_schemas, scan\_window, work\_calendar\_id, credentials, writeback\_credentials | Source. credentials được lưu vào OpenBao, không lưu CSDL (BR-14) | 409 conflict (trùng tên trong Data Space); 422 business\_rule\_violated (mode = federated với nguồn không hỗ trợ) |
 | PATCH /v1/sources/{id} | name, authority\_level, freshness\_sla, max\_concurrency, query\_timeout\_s, scan\_schemas, scan\_window, status, credentials | Source | 412 precondition\_failed; 422 validation\_failed (giới hạn tải ngoài khoảng, BR-99) |
-| POST /v1/sources/{id}:test | — | JSON. Trả {reachable, db\_version, latency\_ms, privileges: \[select\_only, can\_write, can\_ddl\]}; tài khoản có quyền ghi bị cảnh báo | 503 source\_unavailable |
+| POST /v1/sources/{id}:test | — | 202, Location tới source. Connector worker mở kết nối bằng tài khoản ở secret\_ref (API không giữ mật khẩu kho), kiểm TLS, SELECT, quyền ghi, độ trễ, phiên bản rồi ghi status, status\_reason, db\_version, last\_checked\_at lên source; tài khoản có quyền ghi bị cảnh báo. Sửa 12/10/2026 | 409 invalid\_state (nguồn đã lưu trữ) |
 | PUT /v1/sources/{id}/scan-schedule | scan\_cron, profile\_cron, scan\_window, work\_calendar\_id | Source. Trả kèm 5 lần quét kế tiếp | — |
 | POST /v1/sources/{id}/scans | kind, tables | 202, Location tới scan\_run | 409 conflict (đang có lượt quét chạy, BR-103) |
 | GET /v1/scan-runs/{id} | — | ScanRun | — |
@@ -962,7 +962,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | --- | --- | --- | --- |
 | GET /v1/audit | ?actor\_id, ?on\_behalf\_of, ?object\_kind, ?object\_id, ?action, ?outcome, ?from, ?to, ?agent\_run\_id | Danh sách AuditLog. Giá trị trước và sau đã che dữ liệu cá nhân; việc tra cứu cũng được ghi nhật ký | — |
 | POST /v1/audit:verify | from\_seq | JSON. Trả {ok, broken\_at\_seq, checked\_rows}; đứt chuỗi tạo security\_event mức cao | — |
-| POST /v1/audit:export | filters\*, format | 202, Location tới export\_job. Tệp có chữ ký số; quá 100.000 dòng cần người thứ hai duyệt (BR-138) | — |
+| POST /v1/audit:export | filters\*, format | 202, Location tới audit.export\_job (CSDL dataagent\_audit). Tệp có chữ ký số; quá 100.000 dòng cần người thứ hai duyệt (BR-138) | — |
 | GET /v1/security-events | ?kind, ?severity, ?status | Danh sách SecurityEvent | — |
 
 ### A3 · Tích hợp

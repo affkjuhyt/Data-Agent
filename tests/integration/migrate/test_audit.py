@@ -64,3 +64,27 @@ def test_svc_audit_only_appends(audit_db):
     fails(audit_db, "UPDATE audit.audit_log SET action = 'x'", code="42501")
     fails(audit_db, "DELETE FROM audit.audit_log", code="42501")
     assert one(audit_db, "SELECT count(*) FROM audit.audit_log") == 1
+
+
+_JOB = (
+    "INSERT INTO audit.export_job (id, org_id, requested_by, row_count, status, approved_by)"
+    " VALUES (%s, %s, %s, %s, %s, %s)"
+)
+
+
+def test_a_big_export_runs_only_counted_and_approved_by_another(audit_db):
+    # BR-138: past 100,000 rows a second person approves; an uncounted job never runs.
+    org, requester, approver = new_id(), new_id(), new_id()
+    as_role(audit_db, "svc_audit", org)
+
+    def job(rows, status, approved_by=None):
+        approver_id = str(approved_by) if approved_by else None
+        return (str(new_id()), str(org), str(requester), rows, status, approver_id)
+
+    with audit_db.cursor() as cur:
+        cur.execute(_JOB, job(90_000, "running"))
+        cur.execute(_JOB, job(150_000, "running", approver))
+    fails(audit_db, _JOB, job(None, "running"), code="23514")
+    fails(audit_db, _JOB, job(150_000, "running"), code="23514")
+    fails(audit_db, _JOB, job(150_000, "queued", requester), code="23514")
+    fails(audit_db, _JOB, job(10, "ready"), code="23514")

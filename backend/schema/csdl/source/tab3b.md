@@ -3325,7 +3325,7 @@ Bản xuất nhật ký kiểm toán có chữ ký số: bộ lọc, số dòng,
 | created\_at | timestamptz, bắt buộc, mặc định now() |  |
 | updated\_at | timestamptz, bắt buộc, mặc định now() |  |
 
-Cột chung: id, org\_id. Ràng buộc: CHECK (format IN ('csv','jsonl')); CHECK (status IN ('queued','waiting\_approval','running','ready','failed','expired')); CHECK (approved\_by IS NULL OR approved\_by <> requested\_by); CHECK (status NOT IN ('running','ready') OR row\_count <= 100000 OR approved\_by IS NOT NULL); CHECK (status <> 'ready' OR (object\_key IS NOT NULL AND signature IS NOT NULL)). Chỉ mục: (requested\_by, created\_at DESC). RLS: org\_isolation. Tệp chỉ chứa dữ liệu đã che (BR-138).
+Cột chung: id, org\_id. Ràng buộc: CHECK (format IN ('csv','jsonl')); CHECK (status IN ('queued','waiting\_approval','running','ready','failed','expired')); CHECK (approved\_by IS NULL OR approved\_by <> requested\_by); CHECK (status NOT IN ('running','ready') OR (row\_count IS NOT NULL AND (row\_count <= 100000 OR approved\_by IS NOT NULL))); CHECK (status <> 'ready' OR (object\_key IS NOT NULL AND signature IS NOT NULL)). Chỉ mục: (requested\_by, created\_at DESC). RLS: org\_isolation. Tệp chỉ chứa dữ liệu đã che (BR-138).
 
 ### D4.22 Schema acquire
 

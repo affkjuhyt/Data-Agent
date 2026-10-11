@@ -955,11 +955,11 @@
    ],
    "body": {},
    "query": [],
-   "returns": "JSON. Trả {reachable, db_version, latency_ms, privileges: [select_only, can_write, can_ddl]}; tài khoản có quyền ghi bị cảnh báo",
+   "returns": "202, Location tới source. Connector worker mở kết nối bằng tài khoản ở secret_ref (API không giữ mật khẩu kho), kiểm TLS, SELECT, quyền ghi, độ trễ, phiên bản rồi ghi status, status_reason, db_version, last_checked_at lên source; tài khoản có quyền ghi bị cảnh báo. Sửa 12/10/2026",
    "errors": [
     [
-     503,
-     "source_unavailable"
+     409,
+     "invalid_state"
     ]
    ],
    "request_text": "—"
@@ -4494,7 +4494,7 @@
     "format": false
    },
    "query": [],
-   "returns": "202, Location tới export_job. Tệp có chữ ký số; quá 100.000 dòng cần người thứ hai duyệt (BR-138)",
+   "returns": "202, Location tới audit.export_job (CSDL dataagent_audit). Tệp có chữ ký số; quá 100.000 dòng cần người thứ hai duyệt (BR-138)",
    "errors": [],
    "request_text": "filters*, format"
   },

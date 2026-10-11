@@ -129,7 +129,7 @@ CREATE TABLE audit.export_job (
   CHECK (format IN ('csv','jsonl')),
   CHECK (status IN ('queued','waiting_approval','running','ready','failed','expired')),
   CHECK (approved_by IS NULL OR approved_by <> requested_by),
-  CHECK (status NOT IN ('running','ready') OR row_count <= 100000 OR approved_by IS NOT NULL),
+  CHECK (status NOT IN ('running','ready') OR (row_count IS NOT NULL AND (row_count <= 100000 OR approved_by IS NOT NULL))),
   CHECK (status <> 'ready' OR (object_key IS NOT NULL AND signature IS NOT NULL))
 );
 COMMENT ON TABLE audit.export_job IS 'Bản xuất nhật ký kiểm toán có chữ ký số: bộ lọc, số dòng, duyệt người thứ hai khi quá 100.000 dòng, tệp trong MinIO (BR-138); nằm trong CSDL dataagent_audit cùng các dòng nó xuất. Thêm 12/10/2026. Use case: UC-11-03.';
@@ -232,6 +232,8 @@ $$;
 
 -- D5.2 (BR-47): svc_audit only SELECT, INSERT on audit_log.
 REVOKE UPDATE, DELETE ON audit.audit_log FROM svc_audit;
+
+-- covers: audit.export_job#0 (no DDL: org_isolation is generated; the file is written by the export worker from the masked before/after columns, which already hold no personal data, BR-138)
 
 SELECT public.da_ensure_month_partitions(3);
 RESET ROLE;

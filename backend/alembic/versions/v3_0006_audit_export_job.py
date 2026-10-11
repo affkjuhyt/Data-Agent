@@ -41,7 +41,8 @@ CREATE TABLE audit.export_job (
   CHECK (format IN ('csv','jsonl')),
   CHECK (status IN ('queued','waiting_approval','running','ready','failed','expired')),
   CHECK (approved_by IS NULL OR approved_by <> requested_by),
-  CHECK (status NOT IN ('running','ready') OR row_count <= 100000 OR approved_by IS NOT NULL),
+  -- An uncounted job never runs: NULL would make the approval rule pass (BR-138).
+  CHECK (status NOT IN ('running','ready') OR (row_count IS NOT NULL AND (row_count <= 100000 OR approved_by IS NOT NULL))),
   CHECK (status <> 'ready' OR (object_key IS NOT NULL AND signature IS NOT NULL))
 );
 CREATE INDEX export_job_requested_by_created_at_idx

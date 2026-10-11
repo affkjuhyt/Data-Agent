@@ -27799,7 +27799,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (status NOT IN ('running','ready') OR row_count <= 100000 OR approved_by IS NOT NULL)"
+     "sql": "CHECK (status NOT IN ('running','ready') OR (row_count IS NOT NULL AND (row_count <= 100000 OR approved_by IS NOT NULL)))"
     },
     {
      "kind": "check",
