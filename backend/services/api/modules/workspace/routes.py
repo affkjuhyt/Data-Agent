@@ -666,6 +666,8 @@ async def _seat(
     response_model=Page[ShareView],
     **endpoint("PUT", "/v1/workspaces/{id}/shares", operation_id="shareWorkspace"),
 )
+# UC-02-03: the owner shares the workspace. An editor deciding who gets in could keep or extend
+# their own access past its expiry (BR-89) or remove other people's.
 async def share_workspace(
     body: SharesPut,
     workspace_id: PathId,
@@ -677,7 +679,7 @@ async def share_workspace(
         if grant.expires_at is not None and grant.expires_at <= now:
             raise _invalid(f"shares.{index}.expires_at", "expires_at must be in the future.")
     async with transaction(ROLE, principal) as session:
-        item, _ = await _open(session, principal, space, workspace_id, "edit", lock=True)
+        item, _ = await _open(session, principal, space, workspace_id, "owner", lock=True)
         for index, grant in enumerate(body.shares):
             if grant.principal_type == "user" and grant.principal_id == item.owner_id:
                 raise _invalid(
@@ -777,7 +779,7 @@ async def revoke_workspace_share(
     space: CurrentDataSpace,
 ) -> Response:
     async with transaction(ROLE, principal) as session:
-        item, _ = await _open(session, principal, space, workspace_id, "edit", lock=True)
+        item, _ = await _open(session, principal, space, workspace_id, "owner", lock=True)
         shares = (
             await session.scalars(
                 select(ws.WorkspaceShare).where(
@@ -822,7 +824,7 @@ async def add_participant(
     if (body.principal_type == "agent") != (body.role == "agent_helper"):
         raise _invalid("role", "An agent joins as agent_helper; a person as editor or viewer.")
     async with transaction(ROLE, principal) as session:
-        item, _ = await _open(session, principal, space, workspace_id, "edit")
+        item, _ = await _open(session, principal, space, workspace_id, "owner")
         _writable(item)
         participant = ws.WsParticipant(
             id=uuid7(),

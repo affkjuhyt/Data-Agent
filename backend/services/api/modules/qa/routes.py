@@ -34,6 +34,7 @@ from services.api.kernel.pagination import (
 from services.api.kernel.problems import FieldError, Problem
 from services.api.kernel.sse import Event, event_stream
 from services.api.kernel.sse import last_event_id as get_last_event_id
+from services.api.modules.eval.public import eval_set_accepts_items
 from services.api.modules.qa import scope
 from services.api.modules.qa.schemas import (
     AnswerView,
@@ -776,6 +777,10 @@ async def send_feedback_to_eval(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
 ) -> EvalItemAccepted:
+    # The event makes the Eval service add an item to this set: a set of another Data Space would
+    # carry this Data Space's question and answer into it.
+    if not await eval_set_accepts_items(principal, data_space, body.eval_set_id):
+        raise _invalid("eval_set_id", "No open eval set with this id in this Data Space.")
     async with transaction(ROLE, principal) as session:
         feedback = await _feedback(session, feedback_id, principal, data_space)
         if feedback.status != "confirmed":

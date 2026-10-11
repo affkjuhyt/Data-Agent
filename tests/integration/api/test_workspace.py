@@ -431,6 +431,47 @@ async def test_an_expired_share_no_longer_opens_the_workspace(team: Team, seed: 
         assert (await api.get("/v1/workspaces", headers=peer)).json()["items"] == []
 
 
+async def test_only_the_owner_decides_who_gets_in(team: Team, seed: Seed) -> None:
+    # UC-02-03: an editor who could rewrite the share list could lift their own expiry (BR-89),
+    # remove other people or seat new editors.
+    owner, peer = _as(team, "owner"), _as(team, "peer")
+    async with _api(team) as api:
+        workspace_id = await _workspace(api, team)
+        grant = {
+            "principal_type": "user",
+            "principal_id": str(team.peer),
+            "permission": "edit",
+            "expires_at": "2099-01-01T00:00:00Z",
+        }
+        shared = await api.put(
+            f"/v1/workspaces/{workspace_id}/shares", headers=owner, json={"shares": [grant]}
+        )
+        assert shared.status_code == 200, shared.text
+        lifted = await api.put(
+            f"/v1/workspaces/{workspace_id}/shares",
+            headers=peer,
+            json={"shares": [{**grant, "expires_at": None}]},
+        )
+        assert lifted.status_code == 403, lifted.text
+        removed = await api.delete(
+            f"/v1/workspaces/{workspace_id}/shares/{team.peer}", headers=peer
+        )
+        assert removed.status_code == 403, removed.text
+        seated = await api.post(
+            f"/v1/workspaces/{workspace_id}/participants",
+            headers=peer,
+            json={"principal_type": "user", "principal_id": str(uuid.uuid4()), "role": "editor"},
+        )
+        assert seated.status_code == 403, seated.text
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "SELECT expires_at FROM workspace.workspace_share WHERE principal_id = %s",
+            (str(team.peer),),
+        )
+        [(expires,)] = cur.fetchall()
+    assert expires is not None
+
+
 async def test_participants(team: Team, seed: Seed) -> None:
     owner = _as(team, "owner")
     agent = str(uuid.uuid4())

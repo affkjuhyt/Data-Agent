@@ -442,10 +442,27 @@ async def test_accepting_a_regression_needs_each_item_reviewed(team: Team) -> No
             },
         )
         assert accepted.status_code == 200, accepted.text
-        assert accepted.json()["status"] == "accepted"
+        # An edit is content nobody else has reviewed: it waits for another person (BR-62).
+        assert accepted.json()["status"] == "pending_review"
         assert accepted.json()["diff"] == {"add": ["xăng"]}
         assert accepted.json()["reviews"][0]["reviewed_regressions"] is True
-    [(event_type, payload)] = team.events("inbox", proposal)
+
+        own_edit = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            headers=team.headers("reviewer"),
+            json={"decision": "accept", "reviewed_regressions": True},
+        )
+        assert own_edit.status_code == 403, own_edit.text
+
+        final = await api.post(
+            f"/v1/proposals/{proposal}:decide",
+            headers=team.headers("controller"),
+            json={"decision": "accept", "reviewed_regressions": True},
+        )
+        assert final.status_code == 200, final.text
+        assert final.json()["status"] == "accepted"
+    [(edited, _), (event_type, payload)] = team.events("inbox", proposal)
+    assert edited == "proposal.step_decided"
     assert event_type == "proposal.decided"
     assert payload["status"] == "accepted"
     assert payload["target_service"] == "context"

@@ -176,8 +176,22 @@ async def test_three_thumbs_down_open_one_review(world: World, seed: Seed) -> No
 
 
 @pytest.mark.req("AC-01-05-06")
+def _eval_set(seed: Seed, world: World, space: uuid.UUID) -> str:
+    eval_set = uuid.uuid4()
+    sql(
+        seed,
+        "INSERT INTO eval.eval_set (id, org_id, data_space_id, subject_type, name) "
+        "VALUES (%s, %s, %s, 'context', 'Bộ câu hỏi chuẩn')",
+        eval_set,
+        world.org,
+        space,
+    )
+    return str(eval_set)
+
+
 async def test_only_confirmed_feedback_goes_to_eval_once(world: World, seed: Seed) -> None:
-    eval_set = str(uuid.uuid4())
+    eval_set = _eval_set(seed, world, world.space)
+    elsewhere = _eval_set(seed, world, world.other_space)
     async with api_for(world) as api:
         answer, _ = await answered(api, seed, world)
         created = await api.post(
@@ -192,6 +206,12 @@ async def test_only_confirmed_feedback_goes_to_eval_once(world: World, seed: See
         await api.patch(
             f"/v1/feedback/{feedback}", headers=as_(world, "reviewer"), json={"status": "confirmed"}
         )
+        # Another Data Space's eval set would receive this Data Space's question and answer.
+        crossed = await api.post(
+            url, headers=as_(world, "reviewer"), json={"eval_set_id": elsewhere}
+        )
+        assert crossed.status_code == 422, crossed.text
+        assert crossed.json()["code"] == "validation_failed"
         sent = await api.post(url, headers=as_(world, "reviewer"), json={"eval_set_id": eval_set})
         assert sent.status_code == 202, sent.text
         item = sent.json()["id"]

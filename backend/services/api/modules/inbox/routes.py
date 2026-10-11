@@ -488,10 +488,24 @@ async def decide_proposal(
                 )
             ).all()
         )
-        # The chain so far: the accepts since the last request_changes sent it back.
+        # The chain so far: the plain accepts since the last request_changes or edit. An edit
+        # (accept_with_edit) is new content nobody else has seen, so it restarts the chain, and the
+        # person who wrote it may not accept it: they are its author now (BR-62, BR-119).
         accepted_before: list[inbox.ProposalReview] = []
+        editors: set[uuid.UUID] = set()
         for review in reviews:
-            accepted_before = [*accepted_before, review] if review.decision in ACCEPT else []
+            if review.decision == "accept":
+                accepted_before = [*accepted_before, review]
+            else:
+                accepted_before = []
+                if review.decision == "accept_with_edit":
+                    editors.add(review.reviewer_id)
+                elif review.decision == "request_changes":
+                    editors = set()
+        if principal.user_id in editors:
+            raise Problem(
+                403, "forbidden", "Whoever edited the proposal cannot also accept the edit."
+            )
         chain_step = len(accepted_before) + 1
         if chain_step > 1:
             # BR-119 second step: the controller (AC06), another person than the first reviewer.
@@ -523,7 +537,11 @@ async def decide_proposal(
             # 4a: the owning service re-runs the evaluation on the edited diff before it publishes.
             row.diff = body.edited_diff
         row.updated_by, row.updated_at = principal.user_id, _now()
-        if accepting and row.requires_compliance and chain_step == 1:
+        if body.decision == "accept_with_edit":
+            # The edited diff waits for another reviewer; nothing is published on an edit.
+            row.status = "pending_review"
+            event_type = "proposal.step_decided"
+        elif accepting and row.requires_compliance and chain_step == 1:
             # BR-119: the change waits for the controller's step; nothing is published yet.
             row.status = "pending_review"
             event_type = "proposal.step_decided"
