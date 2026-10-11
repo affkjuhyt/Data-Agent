@@ -119,7 +119,7 @@ done
 # This block clears required actions on the seeded test users so the
 # password grant works. NOT appropriate for prod — those users should be
 # forced to set a real password via the UI.
-TEST_USERS=(platform-admin helios-admin ai-engineer executive-viewer)
+TEST_USERS=(platform-admin helios-admin helios-engineer helios-viewer ai-engineer executive-viewer)
 echo
 echo "🔧 Clearing required actions on seeded test users..."
 for username in "${TEST_USERS[@]}"; do
