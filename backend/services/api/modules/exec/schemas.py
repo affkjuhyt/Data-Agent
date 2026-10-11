@@ -369,9 +369,11 @@ class HandoverApprove(BaseModel):
 
 
 class HandoverAccepted(BaseModel):
-    """What the successor's :accept can report (see the routes module: the successor cannot read
-    exec.handover, so the handover row itself is not returned)."""
+    """What the successor's :accept can report: the successor cannot read exec.handover (owner
+    only), so the handover's status comes from exec.handover_accept, not the row itself."""
 
     handover_id: uuid.UUID
     items_imported: int
     items_pending: int
+    # completed once every item is imported (A3); otherwise the handover's state as it stands.
+    status: str

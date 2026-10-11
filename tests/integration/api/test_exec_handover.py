@@ -335,6 +335,10 @@ async def test_selective_handover_from_owner_to_successor(w: World) -> None:
         accepted = await api.post(f"{URL}/{row['id']}:accept", headers=w.headers("leader2"))
         assert accepted.status_code == 200, accepted.text
         assert accepted.json()["items_imported"] == 2 and accepted.json()["items_pending"] == 0
+        # A3: completed once every item is imported; the old vault ends sealed (UC-16-06).
+        assert accepted.json()["status"] == "completed"
+        assert w.one("SELECT status FROM exec.handover WHERE id = %s", row["id"]) == "completed"
+        assert w.one("SELECT status FROM exec.vault WHERE id = %s", vault["id"]) == "sealed"
         assert (
             w.one(
                 "SELECT count(*) FROM exec.handover_item WHERE handover_id = %s AND imported_at IS NOT NULL",
@@ -347,11 +351,30 @@ async def test_selective_handover_from_owner_to_successor(w: World) -> None:
         assert twice.status_code == 409 and twice.json()["code"] == "invalid_state"
 
 
-async def test_accept_completes_the_handover(w: World) -> None:
-    pytest.skip(
-        "needs a SECURITY DEFINER routine in routines/exec.sql: the successor can neither read nor "
-        "update exec.handover, so :accept cannot move it to completed as A3 says"
-    )
+async def test_a_successor_needs_an_active_vault(w: World) -> None:
+    # UC-16-06 precondition: items are sealed to the successor's own vault key.
+    async with client(w) as api:
+        await make_vault(api, w, "leader", exit_policy="selective_handover")
+        nowhere = await api.post(
+            URL,
+            json=handover("selective_handover", successor_id=str(w.users["leader2"])),
+            headers=w.headers("leader"),
+        )
+        assert nowhere.status_code == 422
+        assert nowhere.json()["code"] == "business_rule_violated"
+
+
+async def test_a_seal_keeps_the_owner_reading_for_the_contract_term(w: World) -> None:
+    # UC-16-06 step 3: read-only until sealed_read_until, 24 months unless the contract says.
+    async with client(w) as api:
+        vault = await make_vault(api, w, "leader")
+        sealed = await admin_asks(api, w, "admin", "leader", handover("seal"))
+        assert sealed.status_code == 201, sealed.text
+        assert w.one(
+            "SELECT sealed_read_until = (now() + interval '24 months')::date"
+            " FROM exec.vault WHERE id = %s",
+            vault["id"],
+        )
 
 
 async def test_selective_handover_follows_the_contract(w: World) -> None:

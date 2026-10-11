@@ -1280,6 +1280,13 @@ async def create_handover(
         _require(principal, "admin")
     settings = {"exec_admin": "on"} if by_admin else {}
     async with transaction(ROLE, principal, **settings) as session:
+        if body.successor_id is not None and not await session.scalar(
+            text("SELECT exec.successor_has_active_vault(:id)"), {"id": body.successor_id}
+        ):
+            # UC-16-06 precondition: items are sealed to the successor's own vault key.
+            raise Problem(
+                422, "business_rule_violated", "The successor has no active vault to receive items."
+            )
         if by_admin:
             assert owner_id is not None
             row = await _admin_handover(session, principal, owner_id, body)
@@ -1523,9 +1530,9 @@ async def accept_handover(handover_id: IdPath, principal: CurrentPrincipal) -> H
             .values(imported_at=func.now())
             .execution_options(synchronize_session=False)
         )
-        # The successor can neither read nor update exec.handover (owner or exec_admin only), so the
-        # handover is not completed here: that needs a SECURITY DEFINER routine in routines/exec.sql
-        # that completes it once every item is imported. Until then this event carries the fact.
+        # The successor can neither read nor update exec.handover (owner only): the definer routine
+        # completes it once nothing is left unimported, which seals the old vault (UC-16-06).
+        status = await session.scalar(text("SELECT exec.handover_accept(:id)"), {"id": handover_id})
         session.add(
             _event(
                 principal,
@@ -1535,7 +1542,13 @@ async def accept_handover(handover_id: IdPath, principal: CurrentPrincipal) -> H
                 handover_id=handover_id,
                 successor_id=principal.user_id,
                 items_imported=len(rows),
+                status=status,
             )
         )
         await session.flush()
-    return HandoverAccepted(handover_id=handover_id, items_imported=len(rows), items_pending=0)
+    return HandoverAccepted(
+        handover_id=handover_id,
+        items_imported=len(rows),
+        items_pending=0,
+        status=status or "in_progress",
+    )

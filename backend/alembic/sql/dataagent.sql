@@ -11198,8 +11198,12 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
   v exec.vault%ROWTYPE;
 BEGIN
-  IF NEW.kind = 'seal' THEN
-    UPDATE exec.vault SET status = 'sealed', sealed_at = now(),
+  IF NEW.kind IN ('seal', 'selective_handover') THEN
+    -- A selective handover ends sealed too (UC-16-06 postcondition). The owner reads the sealed
+    -- vault until sealed_read_until: the contract's term when the vault carries one, else the
+    -- default 24 months (UC-16-06 step 3); past it the worker shreds (reason sealed_expired).
+    UPDATE exec.vault SET status = 'sealed', sealed_at = coalesce(sealed_at, now()),
+      sealed_read_until = coalesce(sealed_read_until, (now() + interval '24 months')::date),
       contract_ref = coalesce(NEW.contract_ref, contract_ref)
     WHERE id = NEW.vault_id AND owner_id = NEW.owner_id AND org_id = NEW.org_id;
     IF NOT FOUND THEN
@@ -11223,6 +11227,47 @@ END $$;
 CREATE TRIGGER handover_complete AFTER UPDATE OF status ON exec.handover
   FOR EACH ROW WHEN (NEW.status = 'completed' AND OLD.status IS DISTINCT FROM 'completed')
   EXECUTE FUNCTION exec.handover_complete();
+
+-- The successor cannot read or change exec.handover (owner_only), yet A3 has :accept complete
+-- the handover once every item is imported. This is the one thing the successor may do to it:
+-- complete a selective handover addressed to them whose items are all imported (the daily cleanup
+-- may already have removed imported rows, so "none left unimported" is the test).
+CREATE FUNCTION exec.handover_accept(p_handover_id uuid) RETURNS text
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+DECLARE
+  me uuid := NULLIF(current_setting('app.user_id', true), '')::uuid;
+  org uuid := NULLIF(current_setting('app.org_id', true), '')::uuid;
+  h exec.handover%ROWTYPE;
+BEGIN
+  SELECT * INTO h FROM exec.handover
+   WHERE id = p_handover_id AND org_id = org AND successor_id = me
+     AND kind = 'selective_handover'
+   FOR UPDATE;
+  IF NOT FOUND OR me IS NULL THEN
+    RETURN NULL;
+  END IF;
+  IF h.status NOT IN ('approved', 'in_progress') OR h.items_total = 0
+     OR EXISTS (SELECT 1 FROM exec.handover_item i
+                 WHERE i.handover_id = h.id AND i.imported_at IS NULL) THEN
+    RETURN h.status;
+  END IF;
+  UPDATE exec.handover SET status = 'completed', completed_at = now(), updated_at = now()
+   WHERE id = h.id;
+  RETURN 'completed';
+END $$;
+REVOKE EXECUTE ON FUNCTION exec.handover_accept(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION exec.handover_accept(uuid) TO svc_exec;
+
+-- UC-16-06 precondition: the successor has an active vault. svc_exec sees only the caller's own
+-- vault, so this answers yes or no for one user of the caller's organisation, nothing more.
+CREATE FUNCTION exec.successor_has_active_vault(p_successor_id uuid) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+  SELECT EXISTS (SELECT 1 FROM exec.vault v
+                  WHERE v.owner_id = p_successor_id AND v.status = 'active'
+                    AND v.org_id = NULLIF(current_setting('app.org_id', true), '')::uuid)
+$$;
+REVOKE EXECUTE ON FUNCTION exec.successor_has_active_vault(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION exec.successor_has_active_vault(uuid) TO svc_exec;
 
 -- ─── exec.handover_item ───
 
