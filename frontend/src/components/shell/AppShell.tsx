@@ -10,6 +10,7 @@ import { useShellCounts } from './useShellCounts';
 import { setDataSpace } from '../../lib/v1/client';
 import { listDataSpaces } from '../../lib/v1/api';
 import { useV1 } from '../../lib/v1/useV1';
+import { MobileTabBar, mobileTabOf } from './MobileTabBar';
 import { NotificationDrawer } from '../../features/notifications/NotificationDrawer';
 import { useAuth } from '../../lib/AuthProvider';
 
@@ -93,10 +94,19 @@ export function AppShell({
             onSelect={(page) => setSubTab(area, page)}
           />
         )}
-        <main key={dataSpaceId} className="min-w-0 flex-1 overflow-y-auto">
+        {/* Under 768px the bottom tab bar covers 57px plus the device inset; the page scrolls above it. */}
+        <main
+          key={dataSpaceId}
+          className="min-w-0 flex-1 overflow-y-auto max-[767px]:pb-[calc(57px+env(safe-area-inset-bottom))]"
+        >
           {children}
         </main>
       </div>
+      <MobileTabBar
+        active={mobileTabOf(area, page)}
+        needsYouCount={counts.needsYou}
+        onSelect={(tab) => (tab === 'ask' ? navigate('analysis', 'ASK') : navigate(tab, firstPageOf(tab)))}
+      />
       <NotificationDrawer
         open={notificationsOpen}
         onClose={() => setNotificationsOpen(false)}

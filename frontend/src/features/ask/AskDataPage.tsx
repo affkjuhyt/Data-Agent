@@ -207,8 +207,12 @@ export default function AskDataPage() {
 
   return (
     <AnswerTheme mode="light" className="flex h-full min-h-0 flex-col">
+      {/* "v3.1 · Mobile · Hỏi đáp" (2231:14983): under 768px the page is titled "Hỏi" and the
+          agent picker, saved questions and breadcrumb give way to the conversation. */}
+      <h1 className="px-da-lg pb-da-xs pt-da-md text-foreground da-heading-1 min-[768px]:hidden">Hỏi</h1>
       <PageHeader
         bordered
+        className="max-[767px]:hidden"
         breadcrumb={['Phân tích', 'Hỏi đáp']}
         title={<span className="line-clamp-1 break-all">{title}</span>}
         description={description}
@@ -237,7 +241,7 @@ export default function AskDataPage() {
 
       <div className="flex min-h-0 flex-1">
         <section aria-label="Hội thoại" className="flex min-w-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto px-da-4xl pt-[20px]">
+          <div className="min-h-0 flex-1 overflow-y-auto px-da-4xl pt-[20px] max-[767px]:px-da-lg max-[767px]:pt-da-md">
             <div className="mx-auto flex max-w-[1136px] flex-col gap-da-xl pb-da-xl">
               {messages.length === 0 && (
                 <EmptyState
@@ -340,8 +344,8 @@ export default function AskDataPage() {
             </div>
           </div>
 
-          <div className="px-da-4xl pb-da-xl pt-da-md">
-            <div className="mx-auto flex max-w-[1136px] items-end gap-da-md rounded-md border border-border-strong bg-card py-[6px] pl-[14px] pr-da-sm focus-within:border-ring">
+          <div className="px-da-4xl pb-da-xl pt-da-md max-[767px]:border-t max-[767px]:border-border max-[767px]:p-[10px]">
+            <div className="mx-auto flex max-w-[1136px] items-end gap-da-md rounded-md border border-border-strong bg-card py-[6px] pl-[14px] pr-da-sm focus-within:border-ring max-[767px]:items-center max-[767px]:border-0 max-[767px]:p-0">
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -352,7 +356,7 @@ export default function AskDataPage() {
                 }}
                 placeholder={sending ? 'Đang trả lời… bạn vẫn gõ được câu tiếp theo' : messages.length ? 'Hỏi tiếp…' : 'Hỏi về dữ liệu của bạn…'}
                 aria-label="Câu hỏi"
-                className="max-h-[200px] min-h-8 flex-1 resize-none bg-transparent py-1.5 text-foreground outline-none da-body placeholder:text-muted-foreground focus-visible:shadow-none"
+                className="max-h-[200px] min-h-8 flex-1 resize-none bg-transparent py-1.5 text-foreground outline-none da-body placeholder:text-muted-foreground focus-visible:shadow-none max-[767px]:rounded-lg max-[767px]:bg-subtle max-[767px]:p-[10px] max-[767px]:text-[13px] max-[767px]:leading-[18px]"
               />
               {micAvailable && (
                 <button
@@ -374,9 +378,10 @@ export default function AskDataPage() {
                 onClick={() => ask()}
                 disabled={!input.trim() || sending}
                 aria-label="Gửi câu hỏi"
-                className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-subtle disabled:text-muted-foreground"
+                className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-subtle disabled:text-muted-foreground max-[767px]:h-9 max-[767px]:w-auto max-[767px]:px-da-lg max-[767px]:text-[13px] max-[767px]:font-medium"
               >
-                <Icon name="arrow-up" />
+                <Icon name="arrow-up" className="max-[767px]:hidden" />
+                <span className="min-[768px]:hidden">Gửi</span>
               </button>
             </div>
           </div>
@@ -385,7 +390,7 @@ export default function AskDataPage() {
         {panelOpen && (
           <aside
             aria-label="Cách tính"
-            className="w-[420px] max-w-[45%] shrink-0 overflow-y-auto border-l border-border bg-background px-da-2xl pb-da-2xl pt-[20px]"
+            className="w-[420px] max-w-[45%] shrink-0 overflow-y-auto border-l border-border bg-background px-da-2xl pb-da-2xl pt-[20px] max-[767px]:fixed max-[767px]:inset-0 max-[767px]:z-[var(--z-drawer)] max-[767px]:w-full max-[767px]:max-w-full max-[767px]:px-da-lg"
           >
             <EvidencePanel message={selected} onClose={() => setPanelOpen(false)} />
           </aside>

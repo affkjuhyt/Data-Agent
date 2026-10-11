@@ -42,7 +42,8 @@ beforeEach(() => {
 describe('AskDataPage', () => {
   it('starts empty with examples and asks what is typed', async () => {
     render(<AskDataPage />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Hỏi đáp');
+    // The desktop title; under 768px the page also carries the mobile title "Hỏi" (CSS picks one).
+    expect(screen.getByRole('heading', { level: 1, name: 'Hỏi đáp' })).toBeInTheDocument();
     expect(screen.getByText('Bắt đầu bằng một câu hỏi rõ ràng')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText(/hệ thống tự chọn agent trả lời/)).toBeInTheDocument());
 
@@ -57,7 +58,9 @@ describe('AskDataPage', () => {
   it('titles the page with the first question and labels the answer', () => {
     messages = conversation;
     render(<AskDataPage />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Nợ xấu bán lẻ tháng này tăng ở đâu?');
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Nợ xấu bán lẻ tháng này tăng ở đâu?' }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Phiên của Đỗ Hải Yến · 1 câu hỏi/)).toBeInTheDocument();
     expect(screen.getByTestId('trust-label')).toHaveTextContent('Có quản trị');
     expect(screen.getByLabelText('Câu hỏi')).toHaveAttribute('placeholder', 'Hỏi tiếp…');

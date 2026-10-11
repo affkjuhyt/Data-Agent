@@ -14,7 +14,9 @@ import type { AreaId, AreaDef } from './areas';
  * command bar, the running-agents pill, the bell and the user's avatar.
  *
  * Responsive ("Spec · Responsive"): from 1280 to 1439 the command bar shrinks to icon + ⌘K;
- * under 1280 every area except Trang chủ and Cần bạn moves into a "☰" menu.
+ * under 1280 every area except Trang chủ and Cần bạn moves into a "☰" menu. Under 768 (the
+ * "v3.1 · Mobile" frames) the areas move to the bottom tab bar (MobileTabBar) and the bar keeps
+ * only the Data Space, the bell and the avatar.
  */
 interface Workspace {
   id: string;
@@ -56,19 +58,19 @@ export function AppTopBar({
   const folded = shown.filter((a) => !a.pinnedOnNarrow);
 
   return (
-    <header className="sticky top-0 z-[var(--z-topbar)] flex h-14 shrink-0 items-center gap-da-lg border-b border-border bg-card px-da-xl">
-      <div className="flex shrink-0 items-center gap-da-md">
-        <span className="inline-flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
+    <header className="sticky top-0 z-[var(--z-topbar)] flex h-14 shrink-0 items-center gap-da-lg border-b border-border bg-card px-da-xl max-[767px]:h-12 max-[767px]:gap-da-md max-[767px]:px-da-lg">
+      <div className="flex shrink-0 items-center gap-da-md max-[767px]:min-w-0 max-[767px]:flex-1">
+        <span className="inline-flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground max-[767px]:hidden">
           <Icon name="agent" />
         </span>
-        <span className="text-foreground da-heading-3">Data Agent</span>
-        <span className="text-border-strong da-body" aria-hidden>
+        <span className="text-foreground da-heading-3 max-[767px]:hidden">Data Agent</span>
+        <span className="text-border-strong da-body max-[767px]:hidden" aria-hidden>
           /
         </span>
         <WorkspaceSwitcher name={workspaceName} workspaces={workspaces} onSelect={onWorkspace} />
       </div>
 
-      <nav aria-label="Khu vực" className="flex shrink-0 items-center gap-da-xs">
+      <nav aria-label="Khu vực" className="flex shrink-0 items-center gap-da-xs max-[767px]:hidden">
         {shown.map((area) => (
           <AreaLink
             key={area.id}
@@ -82,13 +84,13 @@ export function AppTopBar({
         <NarrowAreaMenu areas={folded} active={active} onNavigate={onNavigate} />
       </nav>
 
-      <span className="w-2.5 shrink-0" aria-hidden />
+      <span className="w-2.5 shrink-0 max-[767px]:hidden" aria-hidden />
 
       <button
         type="button"
         onClick={onOpenCommand}
         aria-label="Mở bảng lệnh (⌘K)"
-        className="flex h-8 w-[260px] shrink-0 items-center gap-da-sm rounded-md bg-subtle px-da-md text-left max-[1439px]:w-auto"
+        className="flex h-8 w-[260px] shrink-0 items-center gap-da-sm rounded-md bg-subtle px-da-md text-left max-[1439px]:w-auto max-[767px]:hidden"
       >
         <Icon name="search" className="text-muted-foreground" />
         <span className="flex-1 truncate text-muted-foreground da-body-small max-[1439px]:hidden">
@@ -100,7 +102,7 @@ export function AppTopBar({
       </button>
 
       {runningAgents !== undefined && runningAgents > 0 && (
-        <span className="inline-flex shrink-0 items-center gap-da-sm rounded-full bg-accent px-da-md py-da-xs text-primary da-label">
+        <span className="inline-flex shrink-0 items-center gap-da-sm rounded-full bg-accent px-da-md py-da-xs text-primary da-label max-[767px]:hidden">
           <span className="size-1.5 rounded-full bg-primary" aria-hidden />
           {runningAgents} agent đang chạy
         </span>
