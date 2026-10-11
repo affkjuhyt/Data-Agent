@@ -10,19 +10,15 @@
 > động đã xoá 06/10/2026 (lỗi thời, còn gọi `flow_builder`); ORM là nguồn sự thật của schema.
 > Cập nhật lần cuối: 28/09/2026.
 
-## Bắt đầu từ đâu (người mới và phiên Claude mới)
+## Bắt đầu từ đâu
 
-1. Đọc [00-architecture-v2.md](00-architecture-v2.md), nhất là **mục 0: mười hai bất biến**. Đây là
-   nguồn chuẩn; file nào mâu thuẫn với 00 thì sửa file đó.
-2. Mở [05-implementation-plan.md](05-implementation-plan.md), tìm ID đầu tiên có `TT = todo` trên
-   đường găng (mục 5) mà các ID phụ thuộc đã `done`. Không nhảy STEP: không làm planner/agent khi
-   effective data chưa có.
-3. Đọc đặc tả của use case liên quan trong [08-use-cases.md](08-use-cases.md) và phần thiết kế tương
-   ứng trong [03-target-design.md](03-target-design.md).
-4. Dùng dữ liệu thật ở [04-sources-oil-gold.md](04-sources-oil-gold.md) và `data/` để viết test.
-5. Làm xong: test + màn hình kiểm chứng + sửa cột `TT` thành `done <commit>` trong cùng commit. Khi
-   một câu hỏi ở [07](07-decisions-and-risks.md) được chốt: xoá nó khỏi bảng, ghi kết quả thành ADR
-   (kỹ thuật) hoặc vào 05 (người, hạn, phạm vi).
+Đây là tài liệu nền của Observation Engine, không còn là kế hoạch thực thi độc lập. Với product,
+agent-core, frontend và backlog hiện hành, đọc [docs/v3/README.md](../v3/README.md) trước; backlog
+đang chạy là [docs/v3/04-backlog.md](../v3/04-backlog.md).
+
+`00-architecture-v2.md`, `12-numeric-core.md`, `14-input-data-db.md` và dữ liệu trong `data/` vẫn là
+nguồn tham chiếu cho Observation Engine. Các mốc C1–C3, trạng thái `TT` và kế hoạch POC trong các
+file cũ bên dưới chỉ giữ để truy nguyên lịch sử.
 
 Ba quy tắc của nhóm không nằm trong kiến trúc nhưng bắt buộc (đã chốt 16/09/2026):
 
@@ -39,11 +35,11 @@ Quy tắc repo (lint/type/test trong container, so baseline, không commit secre
 | [00-architecture-v2.md](00-architecture-v2.md) | **Nguồn chuẩn.** Bất biến, các lớp, hai pipeline, object model, effective data, query path, capability, luồng chủ động, 14 UC, stack, 10 vấn đề, STEP 1–13, kịch bản 27 bước |
 | [03-target-design.md](03-target-design.md) | Hiện thực 00 trên repo: bảng, topic, service, màn hình |
 | [04-sources-oil-gold.md](04-sources-oil-gold.md) | Nghiên cứu dữ liệu dầu/vàng: benchmark, nguồn đã kiểm tra, trục thời gian, bối cảnh 2026, bẫy dữ liệu, licence |
-| [05-implementation-plan.md](05-implementation-plan.md) | Kế hoạch POC 1 tháng: đội, lịch, backlog Tier A/B có ID và trạng thái, thứ tự cắt, những gì không làm, năng lực, phương pháp forecast sau POC |
+| [05-implementation-plan.md](05-implementation-plan.md) | Kế hoạch POC lịch sử; không dùng để lấy việc mới |
 | [06-evaluation-plan.md](06-evaluation-plan.md) | Golden set, dung sai, hiện trạng `model/eval`, metric, cách dựng kịch bản 27 bước |
 | [07-decisions-and-risks.md](07-decisions-and-risks.md) | Câu hỏi còn chờ, ADR-V2-09…42, đầu vào nghiên cứu (LLM-Wiki, WFM, WikiSkill, Graph Engineering), rủi ro |
 | [08-use-cases.md](08-use-cases.md) | Đặc tả UC01–UC14 và bảng ánh xạ 27 bước → UC → ID |
-| [09-frontend.md](09-frontend.md) | Frontend V2: hiện trạng, nghiên cứu (AG-UI, A2UI, MCP Apps, WaitGPT, trust và duyệt), kiến trúc, catalog khối, đặc tả màn, kế hoạch 2 frontend |
+| [09-frontend.md](09-frontend.md) | Nghiên cứu frontend V2 lịch sử; giao diện hiện hành ở [docs/v3/05-ui-v3.md](../v3/05-ui-v3.md) |
 | [10-database-design.md](10-database-design.md) | Thiết kế database V2: hiện trạng các kho (đo 27/09), vấn đề theo bất biến, quy ước bắt buộc ADR-V2-26…35, bố cục schema và role, dọn dữ liệu cũ |
 | [11-ops.md](11-ops.md) | Vận hành: hiện trạng, GitOps, hạ tầng, backup/DR (P0-07), Kafka (P0-03), egress (P0-08), alert, MLOps, kế hoạch bỏ script |
 | [12-numeric-core.md](12-numeric-core.md) | Lõi số: NC-E1..E3, NC-T1..T18, rủi ro NC-R, NC-ADR-T |
@@ -53,7 +49,7 @@ Quy tắc repo (lint/type/test trong container, so baseline, không commit secre
 | [data/sources-oil-gold.yaml](data/sources-oil-gold.yaml) | 28 nguồn: 24 nhập qua Add Data → Bulk Import, 4 tải tay qua Document Hub |
 | [data/brent-5d-drop-episodes.csv](data/brent-5d-drop-episodes.csv) | 32 đợt Brent giảm ≥5%/5 phiên (2023–2026), có SHA-256 của release EIA gốc |
 | [data/cross-source-reference-2026-08.csv](data/cross-source-reference-2026-08.csv) | Đối chiếu đa nguồn có lớp conflict kỳ vọng |
-| [data/test-traceability.csv](data/test-traceability.csv) | Traceability 219 issue C1/C2/C3: UC, test level bắt buộc, suite QA, fixture, kết quả kỳ vọng, owner (15 mục 9) |
+| [data/test-traceability.csv](data/test-traceability.csv) | Traceability lịch sử của POC C1/C2/C3; không phải backlog hiện hành |
 
 ## Tình trạng tóm tắt
 
@@ -69,24 +65,16 @@ Quy tắc repo (lint/type/test trong container, so baseline, không commit secre
 - **Dữ liệu:** không có nguồn futures dầu và vàng thế giới theo ngày vừa miễn phí vừa sạch licence;
   EIA công bố giá spot theo tuần; 2026 là năm biến động mạnh (Brent 61–138 USD), rất hợp để kiểm
   conflict, alert và as-of.
-- **Đội, hạn, phạm vi (chốt 27/09):** tuyển thêm 2 senior; POC trong 1 tháng, nghiệm thu thứ Ba
-  27/10/2026; giá trong nước (xăng dầu, vàng, tỷ giá) **trong** POC để trình diễn cho người dùng
-  Việt Nam; thêm 1 frontend từ 05/10; giá vàng thế giới theo ngày crawl từ website LBMA, ghi trong
-  báo cáo (ADR-V2-25). Kế hoạch vẫn thiếu ~2,9 tuần-người, bù bằng thứ tự cắt. Forecast, skill, tin
-  tức ngoài POC.
+- **Đội, hạn, phạm vi (lịch sử 27/09):** POC dầu/vàng và các mốc nghiệm thu đã được dời khi chuyển
+  sang V3; Data Space tham chiếu, dữ liệu và ADR-V2-25 vẫn được giữ cho Observation Engine.
 - **Câu hỏi còn chờ:** không còn.
 
-## Mốc
+## Trạng thái kế hoạch
 
-| Mốc | Ngày | Kịch bản 27 bước | Kịch bản Việt Nam (06 mục 7) |
-| --- | --- | --- | --- |
-| C1 | Thứ Sáu 09/10/2026 | Bước 1–6 | Tỷ giá, vàng SJC/PNJ tự nạp |
-| C2 | Thứ Sáu 16/10/2026 | Bước 7–16 | Thông cáo Bộ Công Thương → duyệt → effective |
-| C3 | Thứ Năm 22/10/2026 | Bước 17–24 | Alert giá xăng, chênh vàng |
-| Tổng duyệt | Thứ Hai 26/10/2026 | 1–27 | 1–8 |
-| **Nghiệm thu** | **Thứ Ba 27/10/2026** | 1–27 + bảng điểm | 1–8 |
+Kế hoạch POC và các mốc C1–C3 đã kết thúc về mặt định hướng từ 06/10/2026. Không dùng các mốc,
+ngày nghiệm thu hoặc cột `TT` trong tài liệu này để điều phối công việc; dùng backlog V3.
 
-## Việc tuần này (28/09–02/10)
+## Việc tuần này (lịch sử)
 
 1. P0-09: hai senior chốt hợp đồng dữ liệu trong 3 ngày đầu.
 2. S1-01, S1-02: schema Postgres và ClickHouse `obs`; S2-02: artifact bất biến.

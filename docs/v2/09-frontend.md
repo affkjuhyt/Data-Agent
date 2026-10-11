@@ -1,10 +1,12 @@
-# 09. Frontend cho V2: hiện trạng, nghiên cứu, thiết kế, kế hoạch
+# 09. Frontend cho V2: hiện trạng và nghiên cứu (lịch sử)
 
 > Đối tượng: 2 frontend (FE1 hiện có, FE2 vào từ W2 theo D14), trưởng nhóm, senior làm hợp đồng dữ
 > liệu. Khảo sát mã ngày 27/09/2026 trên nhánh `feat/remove-redundant-service`. Nguyên tắc UI
 > ([13-ui-principles.md](13-ui-principles.md))
-> là nguồn cho nguyên tắc P1–P8; file này chọn phần nào làm trong POC 1 tháng, thêm
-> những gì V2 đòi hỏi mà v1 chưa có, và đối chiếu với nghiên cứu hiện nay.
+> là nguồn cho nguyên tắc P1–P8. **Giao diện và điều hướng hiện hành được đặc tả ở
+> [docs/v3/05-ui-v3.md](../v3/05-ui-v3.md); backlog hiện hành ở [docs/v3/04-backlog.md](../v3/04-backlog.md).**
+> Nội dung dưới đây chỉ giữ các nguyên tắc V2 còn dùng được cho Observation Engine và các quyết định
+> thiết kế trước khi chuyển sang V3.
 
 ## 0. Kết luận
 

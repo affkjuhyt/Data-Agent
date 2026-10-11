@@ -1,7 +1,9 @@
-# 05. Kế hoạch triển khai: POC trong 1 tháng
+# 05. Kế hoạch triển khai: POC trong 1 tháng (lịch sử)
 
 > Theo thứ tự STEP 1–13 của [00-architecture-v2.md](00-architecture-v2.md).
-> **Hạn: nghiệm thu thứ Ba 27/10/2026** (đúng 1 tháng từ 27/09/2026), tổng duyệt thứ Hai 26/10.
+> **Tài liệu lịch sử.** Kế hoạch POC này đã được thay bằng lộ trình V3 trong
+> [docs/v3/04-backlog.md](../v3/04-backlog.md). Các mốc, trạng thái `TT` và thứ tự cắt bên dưới
+> không còn là kế hoạch đang chạy; giữ lại để truy nguyên các quyết định của Observation Engine.
 > **Tiêu chí:** (1) kịch bản 27 bước (00 mục 15) chạy trọn trên dữ liệu thật + nguồn fixture (06 mục 6);
 > (2) **kịch bản Việt Nam 8 bước** (06 mục 7) trên dữ liệu thật: giá xăng dầu kỳ điều hành, vàng SJC,
 > chênh lệch trong nước – thế giới.

@@ -2,10 +2,9 @@
 
 ## 1. Quyết định còn chờ
 
-Bảng chỉ chứa câu **chưa** có câu trả lời. Câu nào được chốt thì xoá khỏi bảng trong cùng commit
-làm theo nó: kết quả là quyết định kỹ thuật thì ghi thành ADR ở mục 2; là việc quản lý (người, hạn,
-phạm vi) thì ghi vào [05](05-implementation-plan.md). Số hiệu D không đánh lại để các file khác
-không trỏ nhầm.
+Bảng dưới đây là lịch sử quyết định V2. Các quyết định sản phẩm và việc đang làm thuộc
+[docs/v3/README.md](../v3/README.md) và [docs/v3/04-backlog.md](../v3/04-backlog.md). Số hiệu D không
+đánh lại để các file khác không trỏ nhầm.
 
 Hiện không còn câu nào chờ.
 
