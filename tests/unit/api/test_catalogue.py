@@ -50,10 +50,25 @@ def test_data_products_needs_its_group() -> None:
     assert kw["openapi_extra"]["x-capability"] == ["steward"]
 
 
-def test_channel_and_client_routes_wait_for_their_authentication() -> None:
+def test_one_route_can_serve_both_data_product_rows() -> None:
+    kw = endpoint(
+        "POST",
+        "/v1/data-products",
+        operation_id="createDataProduct",
+        group=("Lớp ngữ cảnh", "Biến đổi dữ liệu"),
+    )
+    assert kw["tags"] == ["Biến đổi dữ liệu", "Lớp ngữ cảnh"]
+
+
+def test_channel_and_client_routes_need_their_own_authentication() -> None:
     channel = next(e for rows in endpoints().values() for e in rows if "channel" in e.capability)
     with pytest.raises(NotImplementedError):
         endpoint(channel.method, channel.path, operation_id="x")
+    check = object()
+    kw = endpoint(channel.method, channel.path, operation_id="x", authenticate=check)
+    assert kw["dependencies"] == [check]
+    with pytest.raises(ValueError, match="only for channel/client"):
+        endpoint("GET", "/v1/inbox", operation_id="x", authenticate=check)
 
 
 def _spec(*routers: APIRouter) -> dict[str, Any]:

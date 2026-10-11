@@ -14,10 +14,16 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "source" / "tab4.md"
 OUT = HERE / "a3_contract.json"
+
+# A2 rows decided to be one operation (docs/v3/06-api-v1.md §1), and the body field that tells
+# their variants apart. Their A3 bodies are merged: every field of any variant, required only
+# where every variant requires it; the handler checks the rest per variant.
+MERGED = {"POST /v1/data-products": "layer"}
 
 ROW = re.compile(r"^\|\s*(GET|POST|PUT|PATCH|DELETE)\s+(/v1/\S+)\s*\|")
 
@@ -91,8 +97,8 @@ def parse_errors(cell: str) -> list[list[object]]:
     ]
 
 
-def build(text: str) -> dict[str, dict[str, object]]:
-    endpoints: dict[str, dict[str, object]] = {}
+def build(text: str) -> dict[str, dict[str, Any]]:
+    endpoints: dict[str, dict[str, Any]] = {}
     group = None
     for line in text.splitlines():
         if line.startswith("### A3 · "):
@@ -107,14 +113,36 @@ def build(text: str) -> dict[str, dict[str, object]]:
             continue
         cells = _cells(line)
         method, path = cells[0].split(None, 1)
-        endpoints[f"{method} {path}"] = {
+        key = f"{method} {path}"
+        row: dict[str, Any] = {
             "group": group,
+            "groups": [group],
             **parse_request(cells[1]),
             "returns": cells[2],
             "errors": parse_errors(cells[3]) if len(cells) > 3 else [],
             "request_text": cells[1],
         }
+        if key in endpoints:
+            if key not in MERGED:
+                raise ValueError(f"{key} appears twice in A3 and is not a decided merge")
+            row = _merge(endpoints[key], row, MERGED[key])
+        endpoints[key] = row
     return endpoints
+
+
+def _merge(first: dict[str, Any], other: dict[str, Any], discriminator: str) -> dict[str, Any]:
+    names = list(dict.fromkeys([*first["body"], *other["body"]]))
+    body = {n: first["body"].get(n, False) and other["body"].get(n, False) for n in names}
+    body[discriminator] = False
+    return {
+        **first,
+        "groups": [*first["groups"], *other["groups"]],
+        "body": body,
+        "query": list(dict.fromkeys([*first["query"], *other["query"]])),
+        "returns": f"{first['returns']} | {other['returns']}",
+        "errors": first["errors"] + [e for e in other["errors"] if e not in first["errors"]],
+        "request_text": f"{first['request_text']} | {other['request_text']}",
+    }
 
 
 def main() -> int:

@@ -77,42 +77,64 @@ def endpoints() -> dict[tuple[str, str], list[Endpoint]]:
 
 
 def endpoint(
-    method: str, path: str, *, operation_id: str, group: str | None = None
+    method: str,
+    path: str,
+    *,
+    operation_id: str,
+    group: str | tuple[str, ...] | None = None,
+    authenticate: Any = None,
 ) -> dict[str, Any]:
-    """Route kwargs for one A2 endpoint: `@router.post(path, **endpoint("POST", path, operation_id=…))`."""
+    """Route kwargs for one A2 endpoint: `@router.post(path, **endpoint("POST", path, operation_id=…))`.
+
+    `authenticate` is required for, and only accepted on, a `channel` or `client`
+    endpoint: a FastAPI dependency (`Depends(...)`) that verifies the channel signature
+    or the api_client token. User tokens are no substitute for either."""
     rows = endpoints().get((method.upper(), path))
     if not rows:
         raise LookupError(
             f"{method.upper()} {path} is not in A2; add it to tab 4 and a2_endpoints.json first (ADR-48)"
         )
     if group is not None:
-        rows = [r for r in rows if r.group == group]
-        if not rows:
-            raise LookupError(f"{method.upper()} {path} is not in A2 group {group!r}")
-    if len(rows) > 1:
+        wanted = (group,) if isinstance(group, str) else tuple(group)
+        rows = [r for r in rows if r.group in wanted]
+        if len(rows) != len(wanted):
+            raise LookupError(f"{method.upper()} {path} is not in A2 group(s) {wanted!r}")
+    elif len(rows) > 1:
         raise LookupError(f"{method.upper()} {path} is in several A2 groups; pass group=")
     ep = rows[0]
+    # Several rows served as one operation (decided duplicates, e.g. /v1/data-products):
+    # the caller needs a capability of any row; the handler narrows it per variant.
+    guard = (
+        _guard(ep, authenticate)
+        if len(rows) == 1
+        else require(*dict.fromkeys(c for r in rows for c in r.capability if c != ANY_USER))
+    )
     return {
         "operation_id": operation_id,
-        "tags": [ep.group],
+        "tags": list(dict.fromkeys(r.group for r in rows)),
         "summary": ep.summary,
         "responses": PROBLEM_RESPONSES,
         "openapi_extra": {
             "x-use-cases": [f"UC-{u}" for u in ep.use_cases],
             "x-capability": list(ep.capability),
         },
-        "dependencies": [_guard(ep)],
+        "dependencies": [guard],
     }
 
 
-def _guard(ep: Endpoint) -> Any:
+def _guard(ep: Endpoint, authenticate: Any = None) -> Any:
     caps = tuple(c for c in ep.capability if c != ANY_USER)
     if any(c in (CHANNEL, CLIENT) for c in caps):
-        # Channel (HMAC) and client (api_client token) authentication arrive
-        # with the integration module; serving such a route before then would
-        # silently accept user tokens in their place.
-        raise NotImplementedError(
-            f"{ep.method} {ep.path}: {CHANNEL}/{CLIENT} authentication is not built yet"
+        # The module that owns the channel or client supplies its own check; without one,
+        # serving the route would silently accept user tokens in their place.
+        if authenticate is None:
+            raise NotImplementedError(
+                f"{ep.method} {ep.path}: a {CHANNEL}/{CLIENT} endpoint needs authenticate="
+            )
+        return authenticate
+    if authenticate is not None:
+        raise ValueError(
+            f"{ep.method} {ep.path}: authenticate= is only for {CHANNEL}/{CLIENT} endpoints"
         )
     unknown = set(caps) - CAPABILITIES
     if unknown:

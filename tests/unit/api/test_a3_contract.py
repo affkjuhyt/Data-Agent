@@ -51,7 +51,7 @@ def contract_gaps(spec: dict[str, Any], groups: frozenset[str]) -> list[str]:
     gaps = []
     for (method, path), op in sorted(operations(spec).items()):
         row = A3.get(f"{method} {path}")
-        if row is None or row["group"] not in groups:
+        if row is None or not set(row["groups"]) & groups:
             continue
         fields, required = _body(op, spec)
         want = set(row["body"])
