@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '../../design-system/Button';
+import { Drawer } from '../../design-system/Drawer';
 import { Icon } from '../../design-system/Icon';
 import { Menu } from '../../design-system/Menu';
 import { Notice } from '../../design-system/Notice';
@@ -68,8 +69,6 @@ export function PlanEditDrawer({
   const [estimate, setEstimate] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const panelRef = useRef<HTMLDivElement>(null);
-  const closeRef = useRef<HTMLButtonElement>(null);
 
   const agents = [...new Set(plan.map((s) => s.agent_name ?? run.agent_name))];
   const firstOpen = done.length + 1;
@@ -96,12 +95,6 @@ export function PlanEditDrawer({
     edit_note: note.trim() || undefined,
   };
   const editKey = JSON.stringify(edit);
-
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    closeRef.current?.focus();
-    return () => previous?.focus();
-  }, []);
 
   // The estimate follows the draft; a stale answer is dropped rather than shown over a newer one.
   useEffect(() => {
@@ -170,218 +163,20 @@ export function PlanEditDrawer({
     }
   };
 
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      event.stopPropagation();
-      onClose();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-    const focusable = panelRef.current?.querySelectorAll<HTMLElement>(
-      'button:not([tabindex="-1"]), input, textarea',
-    );
-    if (!focusable || focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-[var(--z-drawer)]" onKeyDown={onKeyDown}>
-      <button
-        type="button"
-        tabIndex={-1}
-        aria-label="Đóng"
-        onClick={onClose}
-        className="absolute inset-0 bg-foreground opacity-[0.32]"
-      />
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="plan-edit-title"
-        className="absolute inset-y-0 right-0 flex w-[560px] max-w-full flex-col border border-border bg-card"
-      >
-        <div className="flex min-h-0 flex-1 flex-col gap-da-md overflow-y-auto p-da-lg">
-          <div className="flex items-start gap-da-md">
-            <div className="flex min-w-0 flex-1 flex-col gap-da-xs">
-              <h2 id="plan-edit-title" className="text-foreground da-heading-2">
-                Can thiệp kế hoạch · lượt {run.code}
-              </h2>
-              <p className="text-muted-foreground da-caption">
-                Agent đang dừng an toàn ở bước {firstOpen}. Thay đổi áp dụng từ bước {firstOpen}
-                {done.length > 0 &&
-                  `; kết quả bước ${done.length > 1 ? `1–${done.length}` : '1'} được giữ`}
-                .
-              </p>
-            </div>
-            <button
-              ref={closeRef}
-              type="button"
-              aria-label="Đóng"
-              onClick={onClose}
-              className="inline-flex shrink-0 rounded-sm text-foreground"
-            >
-              <Icon name="x" />
-            </button>
-          </div>
-          {error && <Notice tone="error">Không áp dụng được: {error}</Notice>}
-          <ol aria-label="Các bước của kế hoạch" className="flex flex-col gap-[4px]">
-            {done.map((s, i) => (
-              <li
-                key={s.id ?? s.title}
-                className="flex min-h-[48px] items-center gap-da-sm rounded-md border border-border px-da-sm py-[6px]"
-              >
-                <Icon name="check" size={14} className="shrink-0 text-muted-foreground" />
-                <span className="w-4 shrink-0 text-center text-muted-foreground da-caption">
-                  {i + 1}
-                </span>
-                <StepText title={s.title} agent={s.agent_name ?? run.agent_name} />
-                <span className="shrink-0 rounded-full bg-subtle px-da-sm py-[2px] text-foreground da-caption">
-                  Giữ kết quả
-                </span>
-              </li>
-            ))}
-            {steps.map((s, i) => {
-              const tag = TAG[s.change];
-              const label = s.title || 'bước mới';
-              return (
-                <li
-                  key={s.key}
-                  aria-label={`Bước ${label}`}
-                  onDragOver={(e) => dragging && e.preventDefault()}
-                  onDrop={() => dragging && move(dragging, i)}
-                  className={cn(
-                    'flex min-h-[48px] items-center gap-da-sm rounded-md border px-da-sm py-[6px]',
-                    s.change === 'edited' || s.change === 'added'
-                      ? 'border-primary'
-                      : 'border-border',
-                    dragging === s.key && 'opacity-50',
-                  )}
-                >
-                  <span
-                    draggable
-                    aria-hidden
-                    onDragStart={() => setDragging(s.key)}
-                    onDragEnd={() => setDragging(undefined)}
-                    className="shrink-0 cursor-grab text-muted-foreground da-caption"
-                  >
-                    ⠿
-                  </span>
-                  <span className="w-4 shrink-0 text-center text-muted-foreground da-caption">
-                    {s.number ?? '+'}
-                  </span>
-                  {editing === s.key ? (
-                    <div className="flex min-w-0 flex-1 items-center gap-da-sm">
-                      <input
-                        autoFocus
-                        aria-label="Tên bước"
-                        value={s.title}
-                        onChange={(e) => update(s.key, { title: e.target.value })}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') setEditing(undefined);
-                        }}
-                        className="h-8 min-w-0 flex-1 rounded-sm border border-border-strong bg-card px-da-sm text-foreground da-body-small"
-                      />
-                      <div className="w-[170px] shrink-0">
-                        <Select
-                          label="Agent làm bước"
-                          value={s.agent_name}
-                          onChange={(v) => update(s.key, { agent_name: v })}
-                          options={agents.map((a) => ({ value: a, label: a }))}
-                        />
-                      </div>
-                      <Button size="sm" onClick={() => setEditing(undefined)}>
-                        Xong
-                      </Button>
-                    </div>
-                  ) : (
-                    <StepText title={label} agent={s.agent_name} muted={s.change === 'removed'} />
-                  )}
-                  {tag && editing !== s.key && <StatusDot tone={tag.tone}>{tag.label}</StatusDot>}
-                  {editing !== s.key && (
-                    <Menu
-                      label={`Thao tác với bước ${label}`}
-                      items={[
-                        ...(s.change === 'removed'
-                          ? [
-                              {
-                                label: 'Giữ lại bước',
-                                onSelect: () => update(s.key, { change: s.id ? 'kept' : 'added' }),
-                              },
-                            ]
-                          : [
-                              {
-                                label: 'Sửa bước',
-                                icon: 'edit' as const,
-                                onSelect: () => setEditing(s.key),
-                              },
-                            ]),
-                        ...(i > 0
-                          ? [{ label: 'Lên trên', onSelect: () => move(s.key, i - 1) }]
-                          : []),
-                        ...(i < steps.length - 1
-                          ? [{ label: 'Xuống dưới', onSelect: () => move(s.key, i + 1) }]
-                          : []),
-                        ...(s.change !== 'removed'
-                          ? [
-                              { kind: 'separator' as const },
-                              s.id
-                                ? {
-                                    label: 'Bỏ bước',
-                                    icon: 'trash' as const,
-                                    danger: true,
-                                    onSelect: () => update(s.key, { change: 'removed' }),
-                                  }
-                                : {
-                                    label: 'Xoá bước mới',
-                                    icon: 'trash' as const,
-                                    danger: true,
-                                    onSelect: () =>
-                                      setSteps((all) => all.filter((x) => x.key !== s.key)),
-                                  },
-                            ]
-                          : []),
-                      ]}
-                    />
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-          <div>
-            <Button kind="ghost" icon="plus" onClick={add}>
-              Thêm bước
-            </Button>
-          </div>
-          <label className="flex flex-col gap-da-xs">
-            <span className="text-foreground da-label">Ghi chú cho agent</span>
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={2}
-              placeholder="Điều agent cần biết khi chạy tiếp, ví dụ nguồn không được dùng"
-              className="rounded-md border border-border-strong bg-card px-da-md py-da-sm text-foreground da-body-small"
-            />
-          </label>
-          {estimate && (
-            <p
-              role="status"
-              className="flex items-center gap-da-sm rounded-md border border-border px-da-md py-da-sm text-foreground da-caption"
-            >
-              <Icon name="agent" size={16} className="shrink-0 text-info" />
-              {estimate}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-da-md px-da-lg py-da-md">
-          <p className="min-w-0 flex-1 text-muted-foreground da-caption">
+    <Drawer
+      open
+      width="lg"
+      title={`Can thiệp kế hoạch · lượt ${run.code}`}
+      description={`Agent đang dừng an toàn ở bước ${firstOpen}. Thay đổi áp dụng từ bước ${firstOpen}${
+        done.length > 0
+          ? `; kết quả bước ${done.length > 1 ? `1–${done.length}` : '1'} được giữ`
+          : ''
+      }.`}
+      onClose={onClose}
+      footer={
+        <>
+          <p className="min-w-0 flex-1 self-center text-muted-foreground da-caption">
             Lưu thành phiên bản kế hoạch {(run.plan_version ?? 1) + 1} · ghi vào nhật ký
           </p>
           <Button kind="ghost" onClick={onClose}>
@@ -390,9 +185,158 @@ export function PlanEditDrawer({
           <Button kind="primary" loading={busy} disabled={busy || !changed} onClick={apply}>
             Áp dụng và chạy tiếp
           </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-da-md">
+        {error && <Notice tone="error">Không áp dụng được: {error}</Notice>}
+        <ol aria-label="Các bước của kế hoạch" className="flex flex-col gap-[4px]">
+          {done.map((s, i) => (
+            <li
+              key={s.id ?? s.title}
+              className="flex min-h-[48px] items-center gap-da-sm rounded-md border border-border px-da-sm py-[6px]"
+            >
+              <Icon name="check" size={14} className="shrink-0 text-muted-foreground" />
+              <span className="w-4 shrink-0 text-center text-muted-foreground da-caption">
+                {i + 1}
+              </span>
+              <StepText title={s.title} agent={s.agent_name ?? run.agent_name} />
+              <span className="shrink-0 rounded-full bg-subtle px-da-sm py-[2px] text-foreground da-caption">
+                Giữ kết quả
+              </span>
+            </li>
+          ))}
+          {steps.map((s, i) => {
+            const tag = TAG[s.change];
+            const label = s.title || 'bước mới';
+            return (
+              <li
+                key={s.key}
+                aria-label={`Bước ${label}`}
+                onDragOver={(e) => dragging && e.preventDefault()}
+                onDrop={() => dragging && move(dragging, i)}
+                className={cn(
+                  'flex min-h-[48px] items-center gap-da-sm rounded-md border px-da-sm py-[6px]',
+                  s.change === 'edited' || s.change === 'added'
+                    ? 'border-primary'
+                    : 'border-border',
+                  dragging === s.key && 'opacity-50',
+                )}
+              >
+                <span
+                  draggable
+                  aria-hidden
+                  onDragStart={() => setDragging(s.key)}
+                  onDragEnd={() => setDragging(undefined)}
+                  className="shrink-0 cursor-grab text-muted-foreground da-caption"
+                >
+                  ⠿
+                </span>
+                <span className="w-4 shrink-0 text-center text-muted-foreground da-caption">
+                  {s.number ?? '+'}
+                </span>
+                {editing === s.key ? (
+                  <div className="flex min-w-0 flex-1 items-center gap-da-sm">
+                    <input
+                      autoFocus
+                      aria-label="Tên bước"
+                      value={s.title}
+                      onChange={(e) => update(s.key, { title: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') setEditing(undefined);
+                      }}
+                      className="h-8 min-w-0 flex-1 rounded-sm border border-border-strong bg-card px-da-sm text-foreground da-body-small"
+                    />
+                    <div className="w-[170px] shrink-0">
+                      <Select
+                        label="Agent làm bước"
+                        value={s.agent_name}
+                        onChange={(v) => update(s.key, { agent_name: v })}
+                        options={agents.map((a) => ({ value: a, label: a }))}
+                      />
+                    </div>
+                    <Button size="sm" onClick={() => setEditing(undefined)}>
+                      Xong
+                    </Button>
+                  </div>
+                ) : (
+                  <StepText title={label} agent={s.agent_name} muted={s.change === 'removed'} />
+                )}
+                {tag && editing !== s.key && <StatusDot tone={tag.tone}>{tag.label}</StatusDot>}
+                {editing !== s.key && (
+                  <Menu
+                    label={`Thao tác với bước ${label}`}
+                    items={[
+                      ...(s.change === 'removed'
+                        ? [
+                            {
+                              label: 'Giữ lại bước',
+                              onSelect: () => update(s.key, { change: s.id ? 'kept' : 'added' }),
+                            },
+                          ]
+                        : [
+                            {
+                              label: 'Sửa bước',
+                              icon: 'edit' as const,
+                              onSelect: () => setEditing(s.key),
+                            },
+                          ]),
+                      ...(i > 0 ? [{ label: 'Lên trên', onSelect: () => move(s.key, i - 1) }] : []),
+                      ...(i < steps.length - 1
+                        ? [{ label: 'Xuống dưới', onSelect: () => move(s.key, i + 1) }]
+                        : []),
+                      ...(s.change !== 'removed'
+                        ? [
+                            { kind: 'separator' as const },
+                            s.id
+                              ? {
+                                  label: 'Bỏ bước',
+                                  icon: 'trash' as const,
+                                  danger: true,
+                                  onSelect: () => update(s.key, { change: 'removed' }),
+                                }
+                              : {
+                                  label: 'Xoá bước mới',
+                                  icon: 'trash' as const,
+                                  danger: true,
+                                  onSelect: () =>
+                                    setSteps((all) => all.filter((x) => x.key !== s.key)),
+                                },
+                          ]
+                        : []),
+                    ]}
+                  />
+                )}
+              </li>
+            );
+          })}
+        </ol>
+        <div>
+          <Button kind="ghost" icon="plus" onClick={add}>
+            Thêm bước
+          </Button>
         </div>
+        <label className="flex flex-col gap-da-xs">
+          <span className="text-foreground da-label">Ghi chú cho agent</span>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            placeholder="Điều agent cần biết khi chạy tiếp, ví dụ nguồn không được dùng"
+            className="rounded-md border border-border-strong bg-card px-da-md py-da-sm text-foreground da-body-small"
+          />
+        </label>
+        {estimate && (
+          <p
+            role="status"
+            className="flex items-center gap-da-sm rounded-md border border-border px-da-md py-da-sm text-foreground da-caption"
+          >
+            <Icon name="agent" size={16} className="shrink-0 text-info" />
+            {estimate}
+          </p>
+        )}
       </div>
-    </div>
+    </Drawer>
   );
 }
 
