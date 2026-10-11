@@ -16,7 +16,7 @@ import uuid
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Path, Query, Response
-from sqlalchemy import func, or_, select, tuple_
+from sqlalchemy import func, literal, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -85,12 +85,21 @@ def _emit(
             aggregate_type=aggregate_type,
             aggregate_id=aggregate_id,
             event_type=event_type,
-            payload={
-                k: str(v) if isinstance(v, uuid.UUID | datetime.date | decimal.Decimal) else v
-                for k, v in payload.items()
-            },
+            payload=_json(payload),
         )
     )
+
+
+def _json(value: Any) -> Any:
+    """The payload as JSON, at any depth: ids, dates and amounts as strings (amounts stay exact,
+    which jsonable_encoder's float would not keep)."""
+    if isinstance(value, uuid.UUID | datetime.date | decimal.Decimal):
+        return str(value)
+    if isinstance(value, dict):
+        return {k: _json(v) for k, v in value.items()}
+    if isinstance(value, list | tuple | set):
+        return [_json(v) for v in value]
+    return value
 
 
 def _invalid(field: str, detail: str) -> Problem:
@@ -634,7 +643,8 @@ async def request_exception(
         data_space_id=data_space,
         kind="period_exception",
         risk="high",
-        status="requested",
+        # What the inbox opens it as (governance.hitl_request.status).
+        status="open",
         source_service="period",
         source_ref=item.id,
         approval_steps=EXCEPTION_STEPS,
@@ -652,7 +662,8 @@ async def _holds_compliance(session: AsyncSession, principal: Principal, user: u
             org.UserRole.org_id == principal.org_id,
             org.UserRole.user_id == user,
             org.AppUser.status == "active",
-            org.Role.capabilities.contains(["compliance"]),
+            # role.capabilities is the generic ARRAY type, which has no contains().
+            literal("compliance") == func.any(org.Role.capabilities),
             or_(org.UserRole.valid_until.is_(None), org.UserRole.valid_until > _now()),
         )
         .limit(1)
@@ -699,9 +710,13 @@ async def publish_period(
             certified = set(
                 (
                     await session.scalars(
-                        select(context.MetricVersion.id).where(
+                        select(context.MetricVersion.id)
+                        .join(context.Metric, context.Metric.id == context.MetricVersion.metric_id)
+                        .where(
                             context.MetricVersion.id.in_(seen),
                             context.MetricVersion.org_id == principal.org_id,
+                            # A metric of another Data Space is not one this period reports.
+                            context.Metric.data_space_id == data_space,
                             context.MetricVersion.status == "certified",
                         )
                     )

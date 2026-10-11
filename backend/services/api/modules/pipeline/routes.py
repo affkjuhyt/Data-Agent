@@ -15,7 +15,7 @@ import uuid
 from collections import Counter
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Path, Query, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Response
 from sqlalchemy import or_, select, tuple_
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -125,6 +125,22 @@ async def _pipeline(
     return row
 
 
+async def _name_free(
+    session: AsyncSession,
+    data_space: uuid.UUID,
+    name: str,
+    pipeline_id: uuid.UUID | None = None,
+) -> None:
+    """UNIQUE (data_space_id, name) holds deleted pipelines too; a clash is a 409, not a 500."""
+    query = select(pl.Pipeline.id).where(
+        pl.Pipeline.data_space_id == data_space, pl.Pipeline.name == name
+    )
+    if pipeline_id is not None:
+        query = query.where(pl.Pipeline.id != pipeline_id)
+    if await session.scalar(query.limit(1)) is not None:
+        raise Problem(409, "conflict", f"A pipeline named {name!r} already exists here.")
+
+
 async def _check_dependencies(
     session: AsyncSession,
     principal: Principal,
@@ -156,6 +172,22 @@ async def _check_dependencies(
         raise Problem(
             422, "business_rule_violated", "The pipeline dependencies would form a cycle."
         )
+
+
+def _etag(row: pl.Pipeline) -> str:
+    return f'"{row.updated_at.isoformat()}"'
+
+
+def _stale(if_match: str | None, row: pl.Pipeline) -> bool:
+    """A1: If-Match is optional on PATCH; when sent it is the updated_at the client saw, compared
+    as an instant (the JSON body spells UTC "Z", isoformat() "+00:00")."""
+    if if_match is None:
+        return False
+    try:
+        seen = datetime.datetime.fromisoformat(if_match.strip().removeprefix("W/").strip('"'))
+    except ValueError:
+        return True
+    return seen.tzinfo is None or seen != row.updated_at
 
 
 def _accepted(response: Response, location: str, accepted: Accepted) -> Accepted:
@@ -226,6 +258,7 @@ async def create_pipeline(
         await require_datasets(
             session, principal, data_space, body.input_dataset_ids, "input_dataset_ids"
         )
+        await _name_free(session, data_space, body.name)
         stamp = now()
         row = pl.Pipeline(
             id=uuid7(),
@@ -283,6 +316,8 @@ async def update_pipeline(
     pipeline_id: PathId,
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
+    response: Response,
+    if_match: Annotated[str | None, Header()] = None,
 ) -> PipelineView:
     changes = body.model_dump(exclude_unset=True)
     if not changes:
@@ -294,6 +329,10 @@ async def update_pipeline(
         _check_steps(body.steps)
     async with transaction(ROLE, principal) as session:
         row = await _pipeline(session, principal, data_space, pipeline_id, lock=True)
+        if _stale(if_match, row):
+            raise Problem(
+                412, "precondition_failed", "The pipeline changed since you read it (If-Match)."
+            )
         previous = row.status
         if body.status is not None and body.status != row.status:
             if body.status == "draft":
@@ -308,7 +347,8 @@ async def update_pipeline(
             deps = list(dict.fromkeys(body.depends_on_pipeline_ids))
             await _check_dependencies(session, principal, data_space, row.id, deps)
             row.depends_on_pipeline_ids = deps
-        if body.name is not None:
+        if body.name is not None and body.name != row.name:
+            await _name_free(session, data_space, body.name, row.id)
             row.name = body.name
         if body.scope is not None:
             row.scope = body.scope
@@ -330,6 +370,7 @@ async def update_pipeline(
             changed=sorted(changes),
         )
         await session.flush()
+        response.headers["ETag"] = _etag(row)
         return PipelineView.model_validate(row)
 
 
