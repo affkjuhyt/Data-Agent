@@ -90,7 +90,7 @@ của tài liệu thiết kế hệ thống; cổng A2 trong CI giữ mã khớp
 | API-03 | Phiên làm việc | API-01 | BE, FE | M | Như trên cho màn Phiên | done ad1168c0 |
 | API-04 | Cần bạn và đánh giá | API-01 | BE, FE | M | Như trên cho màn Cần bạn | done b35f6655 |
 | API-05 | Agent: lượt chạy, sự kiện SSE, tạm dừng/tiếp tục | API-02 | BE, FE | L | Như trên cho màn Agent | done b867d890 |
-| API-06 | Triển khai khối `api`: manifest, Ansible, route `/v1` ở gateway, secret từ OpenBao | API-02 | Ops | S | `make deploy` đưa `api` lên cụm dev; e2e gọi `/v1` qua gateway | todo |
+| API-06 | Triển khai khối `api`: manifest, Ansible, route `/v1` ở gateway, secret từ OpenBao | API-02 | Ops | S | `make deploy` đưa `api` lên cụm dev; e2e gọi `/v1` qua gateway | doing |
 
 ## 4. Quy tắc theo dõi
 

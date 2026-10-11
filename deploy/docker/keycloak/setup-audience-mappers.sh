@@ -27,7 +27,7 @@ ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
 # workflow_runtime và flow_builder từng thiếu ở đây: Kong đổi sang tên gạch dưới
 # ở đợt rename service, danh sách này thì không, nên mọi request tới hai route đó
 # trả 401 "Audience mismatch" — token vẫn hợp lệ, chỉ là không mang aud Kong chờ.
-AUDIENCES=(aeroflow-backend auth_api workflow_runtime flow_builder)
+AUDIENCES=(aeroflow-backend auth_api workflow_runtime flow_builder dataagent-api)
 
 # Client whose tokens get the audience extension.
 TARGET_CLIENT="aeroflow-frontend"

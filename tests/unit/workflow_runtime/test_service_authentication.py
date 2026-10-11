@@ -312,13 +312,13 @@ class TestGatewayConfigMatchesTheClosedPorts:
         """Closing a port without a route in front of it does not harden the
         service, it removes it."""
         setup = (REPO_ROOT / "deploy" / "docker" / "kong" / "kong-setup.sh").read_text(encoding="utf-8")
-        for service in ("workflow_runtime",):
+        for service in ("workflow_runtime", "api"):
             assert f"$KONG_ADMIN/services/{service}" in setup, f"{service} has no Kong service"
 
     def test_kong_defines_each_service_exactly_once(self):
         """Two PUTs of the same service is not an error at runtime — the second
         silently wins — so a duplicate would hide whichever config lost."""
         setup = (REPO_ROOT / "deploy" / "docker" / "kong" / "kong-setup.sh").read_text(encoding="utf-8")
-        for service in ("workflow_runtime",):
+        for service in ("workflow_runtime", "api"):
             creates = setup.count(f'-X PUT "$KONG_ADMIN/services/{service}"')
             assert creates == 1, f"{service} is created {creates} times in kong-setup.sh"

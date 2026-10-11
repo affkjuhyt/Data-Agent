@@ -38,7 +38,7 @@ MANIFEST_DIR = K8S_DIR / "production"
 
 # Deployments that reach Postgres through the ORM, and so must not serve traffic
 # on a schema older than their code.
-MIGRATION_GATED = {"workflow-runtime"}
+MIGRATION_GATED = {"workflow-runtime", "api"}
 GATE_CONTAINER = "wait-for-migrations"
 
 # Queue consumers and pollers: no inbound traffic, so no Service and no HTTP probe.
@@ -762,7 +762,7 @@ class TestCrossNamespaceHostnamesAreQualified:
                  "clickhouse", "openbao", "pgbouncer", "kong-admin",
                  "kong", "keycloak", "litellm", "langfuse", "jaeger", "prometheus",
                  "grafana", "auth-api", "kb-backend",
-                 "model-service", "workflow-runtime",
+                 "model-service", "workflow-runtime", "api",
                  "sandbox-executor", "llm-exporter", "frontend"]
         pattern = re.compile(
             r"(?<![\w.-])(" + "|".join(sorted(hosts, key=len, reverse=True)) + r"):\d{4}"

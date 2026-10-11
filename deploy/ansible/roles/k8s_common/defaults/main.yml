@@ -85,6 +85,8 @@ config_paths:
   - deploy/k8s/create-configmaps.sh
   - deploy/k8s/production/configmap.yaml
   - deploy/k8s/dev/configmap.yaml
+  - deploy/k8s/production/service/api.yaml
+  - deploy/k8s/dev/service/api.yaml
   - deploy/docker/sql
   - deploy/docker/keycloak
   - deploy/docker/kong
@@ -114,6 +116,7 @@ database_workloads:
   - clickhouse
 
 service_workloads:
+  - api
   - litellm
   - auth-api
   - workflow-runtime

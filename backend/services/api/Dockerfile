@@ -13,5 +13,3 @@ COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/api/ ./services/api/
 RUN addgroup --system app && adduser --system --ingroup app app
 USER app
-EXPOSE 8000
-CMD ["uvicorn", "services.api.app:app", "--host", "0.0.0.0", "--port", "8000"]

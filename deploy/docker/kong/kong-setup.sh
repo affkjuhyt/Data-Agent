@@ -32,6 +32,7 @@ WORKFLOW_RUNTIME_HOST="${WORKFLOW_RUNTIME_HOST:-workflow_runtime}"
 # service keeps the name `flow_builder`: its JWT audience, IP restriction and rate limit
 # are keyed on it (Keycloak audience mappers included), so only the upstream moved.
 AUTH_API_HOST="${AUTH_API_HOST:-auth_api}"
+API_HOST="${API_HOST:-api}"
 REALM="${KEYCLOAK_REALM:-aeroflow}"
 # Set SKIP_JWT=1 to skip JWT plugin registration (useful for dev with VITE_MOCK_AUTH=true)
 SKIP_JWT="${SKIP_JWT:-0}"
@@ -175,6 +176,26 @@ curl -sf -X PUT "$KONG_ADMIN/services/flow_builder/routes/builder-route" \
   -d '{
     "name": "builder-route",
     "paths": ["/api/agents", "/api/workflows", "/api/workflow-versions"],
+    "strip_path": false,
+    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
+  }' | json_field name | xargs -I{} echo "  → route: {}"
+
+echo "📡 Creating api service..."
+curl -sf -X PUT "$KONG_ADMIN/services/api" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "api",
+    "url": "http://'"$API_HOST"':8290",
+    "connect_timeout": 5000,
+    "read_timeout": 60000
+  }' | json_field name | xargs -I{} echo "  → service: {}"
+
+echo "🛣️  Creating api route (/v1)..."
+curl -sf -X PUT "$KONG_ADMIN/services/api/routes/api-v1-route" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "api-v1-route",
+    "paths": ["/v1"],
     "strip_path": false,
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
@@ -375,6 +396,11 @@ else
   echo "🔐 Enabling aeroflow-jwks plugin on auth_api (aud=auth_api)..."
   upsert_plugin "$KONG_ADMIN/services/auth_api/plugins" \
     "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"auth_api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
+    "aeroflow-jwks"
+
+  echo "🔐 Enabling aeroflow-jwks plugin on api (aud=dataagent-api)..."
+  upsert_plugin "$KONG_ADMIN/services/api/plugins" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"dataagent-api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
     "aeroflow-jwks"
 
 fi

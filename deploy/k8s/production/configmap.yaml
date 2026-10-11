@@ -77,6 +77,7 @@ data:
   # upstream) but the request 503s the moment Kong actually proxies it.
   WORKFLOW_RUNTIME_HOST: workflow-runtime
   AUTH_API_HOST: auth-api
+  API_HOST: api
 
   #Langfuse
   LANGFUSE_HOST: http://langfuse.dataagent-service.svc.cluster.local:8420
