@@ -124,7 +124,9 @@ async def replay_receipt(event: Event) -> None:
                 }
             )
             continue
-        replayed = _value(rerun, f.figure_key)
+        # A figure the answer masked (stale, not available) stays masked here: its value is never
+        # read back or stored, only the result's hash is compared.
+        replayed = _value(rerun, f.figure_key) if f.display_state == "shown" else None
         sql_match = (
             hashlib.sha256(first_run.sql_generated.encode()).hexdigest() == f.compiled_sql_sha256
         )

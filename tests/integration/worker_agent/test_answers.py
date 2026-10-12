@@ -606,3 +606,44 @@ async def test_g5_1_an_ambiguous_model_reading_asks_which(
     q = bank.ask("Tình hình tín dụng ra sao?")
     await drain()
     assert answer_of(seed, q)[:2] == ("clarifying", "clarification")
+
+
+async def test_br_178_a_masked_figure_stays_masked_on_replay(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from services.worker_agent import replay
+
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank, freshness="overdue")
+    q = bank.ask("Tỷ lệ nợ xấu tháng 9/2026")
+    await drain()
+    receipt = seed.one(
+        "SELECT r.id FROM qa.answer_receipt r JOIN qa.answer a ON a.id = r.answer_id "
+        "WHERE a.question_id = %s",
+        q,
+    )
+    rid = seed.row(
+        "qa.receipt_replay",
+        org_id=bank.org,
+        receipt_id=receipt,
+        requested_by=bank.user,
+        mode="figures_and_text",
+        compiler_version_used="v3-compiler-1",
+        status="running",
+    )
+    seed.row(
+        "qa.outbox",
+        org_id=bank.org,
+        aggregate_type="receipt_replay",
+        aggregate_id=rid,
+        event_type="receipt_replay.requested",
+        payload=json.dumps({"replay_id": str(rid), "requested_by": str(bank.user)}),
+    )
+    source = OutboxTableSource(schema="qa", event_types=frozenset(replay.HANDLERS))
+    while await run_once(source, replay.HANDLERS, batch=50):
+        pass
+    outcome, results, text = seed.one(
+        "SELECT outcome, figure_results, replay_text FROM qa.receipt_replay WHERE id = %s", rid
+    )
+    assert outcome == "identical" and results[0]["replay_value"] is None
+    assert "10" not in (text or "")
