@@ -6,10 +6,8 @@ import { readWorkspace, type Workspace } from './types';
  * Phiên làm việc (P02, UC-02-01…07): one workspace as a notebook of tiles, its comments and
  * assigned tasks, its sharing, and the report drafted from it.
  *
- * The api serves the workspace with its tiles, the tile and comment writes, the shares and the
- * report's create, check and publish (A2). A2 has no read for a tile's comments, a workspace's
- * shares or a session report, and no principal search: those calls stay PROPOSAL, answered by
- * the dev mock (docs/v3/05-ui-v3.md §4).
+ * The api serves the workspace with its tiles, comments, shares and report lifecycle. Display
+ * names and some activity counts remain optional because they are not columns in A2.
  */
 
 type Uuid = string;
@@ -238,9 +236,41 @@ export const decideTile = async (
 };
 
 /* Bình luận và giao việc */
-/** PROPOSAL: A2 writes comments but has no read for them. */
-export const getTileThread = async (workspaceId: string, tileId: string) =>
-  v1Get<TileThread>(`/workspaces/${pathId(workspaceId)}/tiles/${pathId(tileId)}/comments`);
+function readTileThread(raw: unknown): TileThread {
+  if (!raw || typeof raw !== 'object') return { items: [], tasks: [] };
+  const value = raw as { items?: unknown; tasks?: unknown };
+  if (Array.isArray(value.tasks)) {
+    return {
+      items: Array.isArray(value.items) ? (value.items as TileComment[]) : [],
+      tasks: value.tasks as TileTask[],
+    };
+  }
+  const page = raw as { items?: components['schemas']['CommentView'][] };
+  const items = (page.items ?? []).map((comment) => ({
+    id: comment.id,
+    tile_id: comment.tile_id ?? '',
+    author: { kind: 'person' as const, name: comment.author_id },
+    body: comment.body,
+    created_at: comment.created_at,
+  }));
+  const tasks = (page.items ?? [])
+    .filter((comment) => comment.assignee_id && comment.due_at)
+    .map((comment) => ({
+      id: comment.id,
+      tile_id: comment.tile_id ?? '',
+      title: comment.body,
+      assignee_name: comment.assignee_id ?? '',
+      due_at: comment.due_at as string,
+    }));
+  return { items, tasks };
+}
+
+export const getTileThread = async (_workspaceId: string, tileId: string) =>
+  readTileThread(
+    await v1Get<Page<components['schemas']['CommentView']>>(`/tiles/${pathId(tileId)}/comments`, {
+      page_size: 100,
+    }),
+  );
 
 export const addTileComment = async (tileId: string, body: string) =>
   v1Send<components['schemas']['CommentView']>('POST', `/tiles/${pathId(tileId)}/comments`, {
@@ -248,9 +278,25 @@ export const addTileComment = async (tileId: string, body: string) =>
   });
 
 /* Chia sẻ */
-/** PROPOSAL: A2 replaces the shares but has no read for them. */
+function readSharing(raw: unknown, workspaceId: string): WorkspaceSharing {
+  if (raw && typeof raw === 'object' && 'members' in raw) return raw as WorkspaceSharing;
+  const page = raw as { items?: components['schemas']['ShareView'][] };
+  const members = (page.items ?? []).map((share) => ({
+    principal_id: share.principal_id,
+    kind: share.principal_type as 'user' | 'group',
+    name: share.principal_id,
+    detail: '',
+    scope_limited: false,
+    role: share.permission === 'edit' ? ('editor' as const) : ('viewer' as const),
+  }));
+  return { members, preview: '', link: `/analysis/sessions/${workspaceId}` };
+}
+
 export const getSharing = async (id: string) =>
-  v1Get<WorkspaceSharing>(`/workspaces/${pathId(id)}/sharing`);
+  readSharing(
+    await v1Get<Page<components['schemas']['ShareView']>>(`/workspaces/${pathId(id)}/shares`),
+    id,
+  );
 
 export type SharingInput = { principal_id: string; kind: 'user' | 'group'; role: MemberRole }[];
 
@@ -269,9 +315,28 @@ export const saveSharing = async (id: string, members: SharingInput) =>
       })),
   } satisfies components['schemas']['SharesPut']);
 
-/** PROPOSAL: "Người nhận thấy gì" for members not saved yet, from each one's data scope. */
-export const previewSharing = async (id: string, members: SharingInput) =>
-  v1Send<{ preview: string }>('POST', `/workspaces/${pathId(id)}/sharing:preview`, { members });
+/** "Người nhận thấy gì" is computed by the API before the share is saved. */
+export const previewSharing = async (id: string, members: SharingInput) => {
+  const raw = await v1Send<Page<components['schemas']['RecipientPreview']> | { preview: string }>(
+    'POST',
+    `/workspaces/${pathId(id)}/shares:preview`,
+    {
+      shares: members.map((member) => ({
+        principal_type: member.kind,
+        principal_id: member.principal_id,
+        permission: member.role === 'editor' ? 'edit' : 'view',
+      })),
+    },
+  );
+  if ('preview' in raw) return raw;
+  const blocked = raw.items.filter((item) => !item.can_open).length;
+  return {
+    preview:
+      blocked === 0
+        ? 'Mỗi người nhận đều có thể mở phiên trong phạm vi quyền của mình.'
+        : `${blocked} người nhận không thể mở toàn bộ phiên theo quyền hiện có.`,
+  };
+};
 
 /** PROPOSAL: people and groups to share with. */
 export const searchPrincipals = (q: string) =>

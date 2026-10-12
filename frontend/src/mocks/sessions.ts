@@ -459,6 +459,14 @@ export function createSessionHandlers() {
       });
     }),
 
+    http.get('*/v1/tiles/:tileId/comments', ({ params }) =>
+      HttpResponse.json({
+        items: comments.filter((c) => c.tile_id === params.tileId),
+        tasks: tasks.filter((t) => t.tile_id === params.tileId),
+        next_page_token: '',
+      }),
+    ),
+
     http.post('*/v1/tiles/:tileId/comments', async ({ params, request }) => {
       const ws = workspaces.find((w) => w.tiles.some((t) => t.id === params.tileId));
       if (!ws) return problem(404, 'not_found', 'Không tìm thấy ô.');
@@ -507,6 +515,28 @@ export function createSessionHandlers() {
       });
     }),
 
+    http.get('*/v1/workspaces/:id/shares', ({ params }) => {
+      const ws = find(params.id);
+      if (!ws) return notFound();
+      return HttpResponse.json({
+        items: members.map((member, index) => ({
+          id: `share-${index}`,
+          workspace_id: ws.id,
+          principal_type: member.kind,
+          principal_id: member.principal_id,
+          permission: member.role === 'editor' ? 'edit' : 'view',
+          granted_by: 'u-yen',
+          expires_at: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+        next_page_token: '',
+        members,
+        preview: sharePreview(members),
+        link: `/analysis/sessions/${ws.id}`,
+      });
+    }),
+
     http.put('*/v1/workspaces/:id/shares', async ({ params, request }) => {
       const ws = find(params.id);
       if (!ws) return notFound();
@@ -535,6 +565,23 @@ export function createSessionHandlers() {
           updated_at: new Date().toISOString(),
         })),
       );
+    }),
+
+    http.post('*/v1/workspaces/:id/shares:preview', async ({ params, request }) => {
+      if (!find(params.id)) return notFound();
+      const body = (await request.json()) as {
+        shares: { principal_id: string; permission: 'view' | 'edit' }[];
+      };
+      return HttpResponse.json({
+        preview: sharePreview(
+          resolveMembers(
+            body.shares.map((share) => ({
+              principal_id: share.principal_id,
+              role: share.permission === 'edit' ? ('editor' as const) : ('viewer' as const),
+            })),
+          ),
+        ),
+      });
     }),
 
     http.post('*/v1/workspaces/:id/:action', async ({ params, request }) => {
