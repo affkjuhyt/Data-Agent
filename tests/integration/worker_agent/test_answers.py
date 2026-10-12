@@ -306,6 +306,7 @@ def activate(bank: Bank, *, freshness: str = "fresh") -> uuid.UUID:
 
 
 async def drain() -> None:
+    # question.received and plan.edited both come from qa.outbox.
     source = OutboxTableSource(schema="qa", event_types=frozenset(questions.HANDLERS))
     while await run_once(source, questions.HANDLERS, batch=50):
         pass
@@ -398,3 +399,81 @@ async def test_br_178_an_overdue_product_masks_its_figures(
         "JOIN qa.answer_receipt_figure f ON f.receipt_id = r.id WHERE r.answer_id = %s",
         answer,
     ) == ("masked_stale", None)
+
+
+def edit_plan(bank: Bank, question: uuid.UUID, chips: list[dict[str, Any]]) -> uuid.UUID:
+    """What PATCH /v1/questions/{id}/plan writes (qa/routes.py edit_question_plan)."""
+    seed = bank.seed
+    version = seed.one("SELECT max(version) + 1 FROM qa.plan WHERE question_id = %s", question)
+    plan = seed.row(
+        "qa.plan",
+        org_id=bank.org,
+        question_id=question,
+        version=version,
+        chips=json.dumps(chips),
+        steps=json.dumps([]),
+        edited_by_user=True,
+    )
+    with seed.conn.cursor() as cur:
+        cur.execute("UPDATE qa.question SET status = 'planning' WHERE id = %s", (str(question),))
+    seed.row(
+        "qa.outbox",
+        org_id=bank.org,
+        aggregate_type="plan",
+        aggregate_id=plan,
+        event_type="plan.edited",
+        payload=json.dumps(
+            {"plan_id": str(plan), "question_id": str(question), "version": version}
+        ),
+    )
+    return plan
+
+
+async def test_uc_01_03_the_picked_metric_is_answered_from_the_edited_chips(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    q = bank.ask("Dư nợ và tỷ lệ nợ xấu tháng 9/2026")
+    await drain()
+    assert answer_of(seed, q)[0] == "clarifying"
+    plan = edit_plan(
+        bank,
+        q,
+        [
+            {"kind": "metric", "value": "DU_NO", "label": "Dư nợ", "origin": "user"},
+            {"kind": "dimension", "value": "vung", "label": "vùng", "origin": "user"},
+            {"kind": "period", "value": "2026-09-01/2026-10-01", "label": "tháng 9/2026"},
+        ],
+    )
+    await drain()
+    await drain()  # a redelivery changes nothing: the plan already has its steps
+    assert seed.one("SELECT status FROM qa.question WHERE id = %s", q) == "answered"
+    kind, figures, plan_of_answer = seed.one(
+        "SELECT kind, figures, plan_id FROM qa.answer WHERE question_id = %s "
+        "ORDER BY created_at DESC LIMIT 1",
+        q,
+    )
+    assert kind == "data" and str(plan_of_answer) == str(plan)
+    # Dư nợ end of September by region, internal loans excluded: Bắc 2000, Nam 1000.
+    assert [(f["dimensions"]["vung"], float(f["value"])) for f in figures] == [
+        ("Miền Bắc", 2000.0),
+        ("Miền Nam", 1000.0),
+    ]
+    assert seed.one("SELECT steps->>'version' FROM qa.plan WHERE id = %s", plan) == "2"
+    assert seed.one("SELECT count(*) FROM qa.answer WHERE question_id = %s", q) == 2
+
+
+async def test_uc_01_03_a_chip_the_space_does_not_have_is_refused(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    q = bank.ask("Dư nợ và tỷ lệ nợ xấu tháng 9/2026")
+    await drain()
+    edit_plan(bank, q, [{"kind": "metric", "value": "KHONG_CO", "origin": "user"}])
+    await drain()
+    status, kind, text = seed.one(
+        "SELECT q.status, a.kind, a.text FROM qa.question q JOIN qa.answer a ON a.question_id = q.id "
+        "WHERE q.id = %s ORDER BY a.created_at DESC LIMIT 1",
+        q,
+    )
+    assert (status, kind) == ("refused", "refusal") and "KHONG_CO" in text

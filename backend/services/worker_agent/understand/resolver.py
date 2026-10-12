@@ -170,3 +170,61 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
     out.chips.insert(0, Chip("metric", top[0].code, top[0].name, "default", best))
     out.decision = "proceed"
     return out
+
+
+def from_chips(chips: list[dict[str, object]], vocab: Vocabulary) -> Understanding:
+    """The question as the person corrected it (UC-01-03, PATCH /v1/questions/{id}/plan): the
+    chips are taken as stated, never re-read from the text. A chip naming a metric, a dimension
+    or a value the Data Space does not have makes the whole edit `unknown` rather than being
+    dropped, so nothing is answered on a reading the person did not ask for."""
+    out = Understanding(decision="unknown")
+    metrics = {m.code: m for m in vocab.metrics}
+    dims = {d.code: d for d in vocab.dimensions}
+    values = {(v.dimension_code, v.value_code): v for v in vocab.values}
+    for chip in chips:
+        kind, value = str(chip.get("kind", "")), str(chip.get("value", ""))
+        source = "user_edit" if chip.get("origin") == "user" else str(chip.get("source", "default"))
+        if source not in ("default", "user_pref", "user_edit", "memory", "inherited"):
+            source = "default"
+        if kind == "metric":
+            if value not in metrics or out.metric is not None:
+                out.unmapped.append(value)
+                continue
+            out.metric = metrics[value]
+            out.chips.append(Chip("metric", value, metrics[value].name, source, 1.0))  # type: ignore[arg-type]
+        elif kind == "dimension":
+            if value not in dims:
+                out.unmapped.append(value)
+                continue
+            out.group_by.append(value)
+            out.chips.append(Chip("dimension", value, dims[value].name, source, 1.0))  # type: ignore[arg-type]
+        elif kind == "filter":
+            dim, _, member = value.partition("=")
+            if dim not in dims:
+                out.unmapped.append(value)
+                continue
+            # A member not in value_index is still a filter the person typed; its label is theirs.
+            label = (
+                values[(dim, member)].label
+                if (dim, member) in values
+                else str(chip.get("label") or member)
+            )
+            out.filters.setdefault(dim, []).append(member)
+            out.chips.append(Chip("filter", value, label, source, 1.0))  # type: ignore[arg-type]
+        elif kind == "period":
+            start, _, end = value.partition("/")
+            try:
+                found = FoundPeriod(
+                    datetime.date.fromisoformat(start),
+                    datetime.date.fromisoformat(end),
+                    str(chip.get("label") or value),
+                    "",
+                )
+            except ValueError:
+                out.unmapped.append(value)
+                continue
+            out.period = found
+            out.chips.append(Chip("period", value, found.label, source, 1.0))  # type: ignore[arg-type]
+    if out.metric is not None and not out.unmapped:
+        out.decision = "proceed"
+    return out

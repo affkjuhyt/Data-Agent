@@ -21,6 +21,7 @@ and documents are R1 S5. The handler is idempotent: a question past `received` i
 from __future__ import annotations
 
 import datetime
+import decimal
 import hashlib
 import logging
 import uuid
@@ -41,7 +42,7 @@ from services.worker_agent.query.guard import SqlRejected, dialect_of
 from services.worker_agent.query.secrets import SecretReader, StaticReader, reader_from_env
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import load
-from services.worker_agent.understand.resolver import Understanding, understand
+from services.worker_agent.understand.resolver import Understanding, from_chips, understand
 
 logger = logging.getLogger(__name__)
 
@@ -195,9 +196,22 @@ def _code(code: str) -> ErrorCode:
 
 
 async def answer_question(event: Event) -> None:
-    question_id = uuid.UUID(str(event.payload["question_id"]))
+    await _run(event, uuid.UUID(str(event.payload["question_id"])), edited_plan_id=None)
+
+
+async def answer_edited_plan(event: Event) -> None:
+    """UC-01-03: the person corrected the chips; the api wrote the new plan version without steps
+    and set the question back to planning. Re-answer from those chips."""
+    await _run(
+        event,
+        uuid.UUID(str(event.payload["question_id"])),
+        edited_plan_id=uuid.UUID(str(event.payload["plan_id"])),
+    )
+
+
+async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUID | None) -> None:
     await publish(str(question_id), "planning", {"question_id": str(question_id)})
-    prepared = await _understand_and_plan(event, question_id)
+    prepared = await _understand_and_plan(event, question_id, edited_plan_id)
     if prepared is None:
         return
     await publish(
@@ -248,12 +262,23 @@ async def answer_question(event: Event) -> None:
     await _answer(event, question_id, prepared, outcome)
 
 
-async def _understand_and_plan(event: Event, question_id: uuid.UUID) -> Prepared | None:
+async def _understand_and_plan(
+    event: Event, question_id: uuid.UUID, edited_plan_id: uuid.UUID | None
+) -> Prepared | None:
     async with scoped_session(ROLE, event.org_id, event.payload.get("user_id")) as session:
         question = await session.scalar(
             select(qa.Question).where(qa.Question.id == question_id).with_for_update()
         )
-        if question is None or question.status != "received":
+        edited: qa.Plan | None = None
+        if edited_plan_id is not None and question is not None and question.status == "planning":
+            edited = await session.get(qa.Plan, edited_plan_id)
+            latest = await session.scalar(
+                select(func.max(qa.Plan.version)).where(qa.Plan.question_id == question_id)
+            )
+            # Only the newest edit, and only once: a later edit or a redelivery finds steps set.
+            if edited is None or edited.version != latest or edited.steps:
+                edited = None
+        if question is None or (question.status != "received" and edited is None):
             logger.info("question %s: nothing to do (already handled or gone)", question_id)
             return None
         conversation = await session.get(qa.Conversation, question.conversation_id)
@@ -261,7 +286,11 @@ async def _understand_and_plan(event: Event, question_id: uuid.UUID) -> Prepared
         space_id, user_id = conversation.data_space_id, conversation.user_id
         today = question.as_of or datetime.date.today()
         layer = await load(session, space_id)
-        u = understand(question.text, layer.vocabulary, today=today)
+        u = (
+            from_chips(list(edited.chips or []), layer.vocabulary)
+            if edited is not None
+            else understand(question.text, layer.vocabulary, today=today)
+        )
 
         compiled: c.Compiled | None = None
         problem: Refusal | None = None
@@ -286,26 +315,32 @@ async def _understand_and_plan(event: Event, question_id: uuid.UUID) -> Prepared
                     detail_id=str(question.id),
                 )
 
-        plan_id = uuid7()
-        version_no = int(
-            await session.scalar(
-                select(func.coalesce(func.max(qa.Plan.version), 0) + 1).where(
-                    qa.Plan.question_id == question.id
+        if edited is not None:
+            # The person's chips stay as they wrote them; the plan gains its steps.
+            plan_id = edited.id
+            edited.steps = _plan_ir(u, compiled, question.as_of)
+            edited.confidence = decimal.Decimal(str(round(u.confidence, 4)))
+        else:
+            plan_id = uuid7()
+            version_no = int(
+                await session.scalar(
+                    select(func.coalesce(func.max(qa.Plan.version), 0) + 1).where(
+                        qa.Plan.question_id == question.id
+                    )
                 )
             )
-        )
-        session.add(
-            qa.Plan(
-                id=plan_id,
-                org_id=event.org_id,
-                question_id=question.id,
-                version=version_no,
-                chips=[chip.__dict__ for chip in u.chips]
-                + [{"kind": "option", "value": m.code, "label": m.name} for m in u.options],
-                steps=_plan_ir(u, compiled, question.as_of),
-                confidence=u.confidence,
+            session.add(
+                qa.Plan(
+                    id=plan_id,
+                    org_id=event.org_id,
+                    question_id=question.id,
+                    version=version_no,
+                    chips=[chip.__dict__ for chip in u.chips]
+                    + [{"kind": "option", "value": m.code, "label": m.name} for m in u.options],
+                    steps=_plan_ir(u, compiled, question.as_of),
+                    confidence=decimal.Decimal(str(round(u.confidence, 4))),
+                )
             )
-        )
         await session.flush()
 
         source: catalog.Source | None = None
@@ -376,6 +411,17 @@ async def _understand_and_plan(event: Event, question_id: uuid.UUID) -> Prepared
             str(question_id), "done", {"question_id": str(question_id), "status": "clarifying"}
         )
         return None
+    if problem is None and edited is not None:
+        problem = Refusal.of(
+            ErrorCode.UNRESOLVED_ENTITY,
+            message=(
+                "Có chip không khớp với chỉ số, chiều hoặc kỳ nào của Data Space: "
+                + ", ".join(u.unmapped or ["chưa chọn chỉ số"])
+                + ". Hãy chọn lại từ danh sách."
+            ),
+            next_action=NextAction.REPHRASE,
+            detail_id=str(question_id),
+        )
     if problem is None:
         problem = Refusal.of(
             ErrorCode.UNRESOLVED_ENTITY,
@@ -608,4 +654,7 @@ async def _seal_receipt(
     receipt.sealed_at = datetime.datetime.now(datetime.UTC)
 
 
-HANDLERS: dict[str, Handler] = {"question.received": answer_question}
+HANDLERS: dict[str, Handler] = {
+    "question.received": answer_question,
+    "plan.edited": answer_edited_plan,
+}
