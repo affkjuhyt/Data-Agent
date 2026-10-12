@@ -264,10 +264,10 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
         filters.append((code, values, str(f.get("op", "in")) in ("!=", "not_in", "<>")))
     filters += [(code, list(values), False) for code, values in request.filters.items()]
     for code, values, negated in filters:
-        dim = layer.dimensions.get(code)
-        if dim is None:
+        on = layer.dimensions.get(code)
+        if on is None:
             raise CompileError("CONTRACT_MISMATCH", f"filter on an unknown dimension {code}")
-        expr = _qualify(dim.expression, alias_for(dim))
+        expr = _qualify(on.expression, alias_for(on))
         cond: exp.Expression = exp.In(this=expr, expressions=[_literal(v) for v in values])
         conditions.append(exp.not_(cond) if negated else cond)
 
