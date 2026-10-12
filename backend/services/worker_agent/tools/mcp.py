@@ -62,6 +62,7 @@ class MCPRegistry:
         *,
         redis_client: Any | None = None,
         cache_ttl: float = 60.0,
+        tenant_id: str | None = None,
         token_resolver: TokenResolver | None = None,
         session_factory: SessionFactory = _streamable_client,
         client_session: Callable[[Any, Any], Any] = _client_session,
@@ -75,6 +76,7 @@ class MCPRegistry:
         else:
             self._redis = None
         self._cache_ttl = cache_ttl
+        self._tenant_id = tenant_id or "unknown"
         self._token_resolver = token_resolver
         self._session_factory = session_factory
         self._client_session = client_session
@@ -126,6 +128,11 @@ class MCPRegistry:
     async def _with_session(self, endpoint: dict[str, Any]) -> Any:
         endpoint_id = self._endpoint_id(endpoint)
         url = str(endpoint.get("url") or "")
+        protocol = str(endpoint.get("protocol") or "streamable_http")
+        if protocol not in {"streamable_http", "streamable-http"}:
+            raise MCPClientError("TOOL_UNAVAILABLE", "MCP endpoint protocol is not supported.")
+        if url.rstrip("/").endswith("/execute"):
+            raise MCPClientError("TOOL_UNAVAILABLE", "Legacy MCP endpoints are not supported.")
         if not endpoint_id or not url or not url.startswith(("http://", "https://")):
             raise MCPClientError("TOOL_UNAVAILABLE", "MCP endpoint is not configured.")
         headers = await self._headers(endpoint)
@@ -148,7 +155,7 @@ class MCPRegistry:
         endpoint_id = self._endpoint_id(endpoint)
         if not endpoint_id:
             raise MCPClientError("TOOL_UNAVAILABLE", "MCP endpoint is not configured.")
-        cache_key = f"mcp:tools:{endpoint_id}"
+        cache_key = f"mcp:tools:{self._tenant_id}:{endpoint_id}"
         cached = await self._cache_read(cache_key)
         if cached is not None:
             return cached
@@ -203,10 +210,16 @@ class MCPRegistry:
                 await self._close_session(transport, session)
             if getattr(result, "isError", False):
                 raise MCPClientError("TOOL_UNAVAILABLE", "MCP server returned a tool error.")
+            content = getattr(result, "content", [])
+            ignored = [
+                str(getattr(block, "type", "unknown"))
+                for block in content
+                if getattr(block, "type", None) != "text"
+            ]
+            if ignored:
+                logger.debug("worker-agent | ignored MCP content blocks: %s", ignored)
             return "\n".join(
-                str(block.text)
-                for block in getattr(result, "content", [])
-                if getattr(block, "type", None) == "text"
+                str(block.text) for block in content if getattr(block, "type", None) == "text"
             )
 
         try:

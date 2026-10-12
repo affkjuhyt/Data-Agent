@@ -7,6 +7,12 @@ from dataclasses import dataclass
 import pytest
 
 from services.worker_agent.tools.mcp import MCPClientError, MCPRegistry, execute_calls
+from services.worker_agent.tools.plan import (
+    MCPPlanError,
+    MCPTool,
+    prompt_section,
+    validate_tool_calls,
+)
 
 pytestmark = [pytest.mark.unit]
 
@@ -132,3 +138,32 @@ async def test_execute_calls_returns_safe_error_frame() -> None:
     )
     assert results == []
     assert errors == [{"code": "TOOL_UNAVAILABLE", "server": "missing", "tool": "lookup"}]
+
+
+def test_plan_rejects_unknown_tool_without_fallback() -> None:
+    with pytest.raises(MCPPlanError, match="not available"):
+        validate_tool_calls(
+            [{"server_id": "server-1", "tool": "legacy_execute", "arguments": {}}],
+            [MCPTool("server-1", "lookup", "Lookup", {"type": "object"})],
+        )
+
+
+def test_plan_prompt_contains_schema_but_not_credentials() -> None:
+    section = prompt_section(
+        [MCPTool("server-1", "lookup", "Lookup", {"type": "object"})]
+    )
+    assert "server-1/lookup" in section
+    assert "type" in section
+    assert "Bearer" not in section
+
+
+async def test_legacy_execute_endpoint_is_rejected() -> None:
+    registry = _registry()
+    with pytest.raises(MCPClientError, match="Legacy MCP"):
+        await registry.list_tools(
+            {
+                "server_id": "server-1",
+                "url": "https://mcp.example.test/execute",
+                "allowed_tools": ["lookup"],
+            }
+        )
