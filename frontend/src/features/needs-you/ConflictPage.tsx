@@ -21,6 +21,7 @@ import { detailRouteOf, dueOf } from './decision';
  * numbers with how each was read, the gap against the materiality threshold, what the agent
  * already checked, and the choices (the agent's suggestion preselected) with "remember as a
  * rule"; on the right what the choice changes and how similar conflicts were decided.
+ * `context` is jsonb its producer fills: each block is drawn only when the request carries it.
  */
 const MARK = { ok: '✓', warn: '!', unknown: '?' } as const;
 const PENDING_REASSIGN = 'Chọn người nhận việc đang được làm.';
@@ -51,7 +52,7 @@ export default function ConflictPage() {
 
 function ConflictBody({ request, onDone }: { request: HitlRequest; onDone: () => void }) {
   const toast = useToast();
-  const ctx = request.context as ConflictContext;
+  const ctx: Partial<ConflictContext> = request.context;
   const [option, setOption] = useState(
     () => request.options.find((o) => o.is_default)?.id ?? request.options[0]?.id ?? '',
   );
@@ -91,14 +92,14 @@ function ConflictBody({ request, onDone }: { request: HitlRequest; onDone: () =>
           </div>
           <h1 className="text-foreground da-heading-1">{request.title}</h1>
           <p className="text-muted-foreground da-caption">
-            {[ctx.subtitle, due?.text].filter(Boolean).join(' · ')}
+            {[ctx.subtitle ?? ctx.why, due?.text].filter(Boolean).join(' · ')}
           </p>
         </header>
 
         {!open && <Notice tone="info">Việc này đã được xử lý.</Notice>}
 
         <div className="flex gap-da-lg max-[1023px]:flex-col">
-          {ctx.sources.map((source) => (
+          {ctx.sources?.map((source) => (
             <section
               key={source.name}
               className="flex min-w-0 flex-1 flex-col gap-da-md rounded-md border border-border bg-card p-da-xl"
@@ -117,32 +118,36 @@ function ConflictBody({ request, onDone }: { request: HitlRequest; onDone: () =>
           ))}
         </div>
 
-        <div className="flex flex-wrap items-baseline gap-da-xl rounded-md border border-border p-[14px]">
-          <span className="text-error da-heading-3">{ctx.gap.headline}</span>
-          <span className="text-foreground da-caption">{ctx.gap.detail}</span>
-        </div>
+        {ctx.gap && (
+          <div className="flex flex-wrap items-baseline gap-da-xl rounded-md border border-border p-[14px]">
+            <span className="text-error da-heading-3">{ctx.gap.headline}</span>
+            <span className="text-foreground da-caption">{ctx.gap.detail}</span>
+          </div>
+        )}
 
-        <section className="flex flex-col gap-da-sm rounded-md border border-border bg-card p-da-xl">
-          <h2 className="text-foreground da-body-strong">Agent đã kiểm tra</h2>
-          {ctx.checks.map((check) => (
-            <p key={check.text} className="flex gap-da-md text-foreground da-caption">
-              <span
-                aria-hidden
-                className={cn(
-                  'w-3 shrink-0',
-                  check.mark === 'ok'
-                    ? 'text-success'
-                    : check.mark === 'warn'
-                      ? 'text-warning'
-                      : 'text-muted-foreground',
-                )}
-              >
-                {MARK[check.mark]}
-              </span>
-              {check.text}
-            </p>
-          ))}
-        </section>
+        {ctx.checks && ctx.checks.length > 0 && (
+          <section className="flex flex-col gap-da-sm rounded-md border border-border bg-card p-da-xl">
+            <h2 className="text-foreground da-body-strong">Agent đã kiểm tra</h2>
+            {ctx.checks.map((check) => (
+              <p key={check.text} className="flex gap-da-md text-foreground da-caption">
+                <span
+                  aria-hidden
+                  className={cn(
+                    'w-3 shrink-0',
+                    check.mark === 'ok'
+                      ? 'text-success'
+                      : check.mark === 'warn'
+                        ? 'text-warning'
+                        : 'text-muted-foreground',
+                  )}
+                >
+                  {MARK[check.mark]}
+                </span>
+                {check.text}
+              </p>
+            ))}
+          </section>
+        )}
 
         {open && (
           <fieldset className="flex flex-col gap-da-md rounded-md border border-border bg-card p-da-xl">
@@ -189,8 +194,8 @@ function ConflictBody({ request, onDone }: { request: HitlRequest; onDone: () =>
       </div>
 
       <aside className="flex w-[340px] shrink-0 flex-col gap-da-lg border-l border-border bg-card p-da-xl max-[1279px]:hidden">
-        <h2 className="text-muted-foreground da-overline">{ctx.impact_title}</h2>
-        {ctx.impact.map((item) => (
+        <h2 className="text-muted-foreground da-overline">{ctx.impact_title ?? 'Ảnh hưởng'}</h2>
+        {ctx.impact?.map((item) => (
           <div
             key={item.title}
             className="flex flex-col gap-[2px] rounded-sm border border-border p-[10px]"
@@ -199,10 +204,18 @@ function ConflictBody({ request, onDone }: { request: HitlRequest; onDone: () =>
             <span className="text-muted-foreground da-caption">{item.detail}</span>
           </div>
         ))}
-        <h2 className="text-muted-foreground da-overline">Thẩm quyền nguồn hiện có</h2>
-        <p className="text-foreground da-caption">{ctx.authority_note}</p>
-        <h2 className="text-muted-foreground da-overline">Xung đột tương tự</h2>
-        <p className="text-foreground da-caption">{ctx.similar_note}</p>
+        {ctx.authority_note && (
+          <>
+            <h2 className="text-muted-foreground da-overline">Thẩm quyền nguồn hiện có</h2>
+            <p className="text-foreground da-caption">{ctx.authority_note}</p>
+          </>
+        )}
+        {ctx.similar_note && (
+          <>
+            <h2 className="text-muted-foreground da-overline">Xung đột tương tự</h2>
+            <p className="text-foreground da-caption">{ctx.similar_note}</p>
+          </>
+        )}
       </aside>
     </>
   );

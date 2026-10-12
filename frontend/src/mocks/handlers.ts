@@ -1,5 +1,11 @@
 import { http, HttpResponse } from 'msw';
-import type { AgentRun, DecideProposal, HitlRequest, Proposal, ResolveHitl } from '../lib/v1/types';
+import type {
+  AgentRun,
+  DecideProposal,
+  HitlRequest,
+  ProposalWire,
+  ResolveHitl,
+} from '../lib/v1/types';
 import type { PlanEdit } from '../lib/v1/runPlan';
 import {
   agentsFixture,
@@ -76,7 +82,7 @@ const problem = (status: number, code: string, detail: string) =>
 
 export function createHandlers() {
   let inbox: HitlRequest[] = inboxFixture();
-  let proposals: Proposal[] = proposalsFixture();
+  let proposals: ProposalWire[] = proposalsFixture();
   let runs: AgentRun[] = runsFixture();
   let agents = agentsFixture();
 
@@ -164,7 +170,7 @@ export function createHandlers() {
           : body.decision === 'request_changes'
             ? 'changes_requested'
             : 'approved';
-      const decided: Proposal = { ...item, status: proposalStatus };
+      const decided: ProposalWire = { ...item, status: proposalStatus };
       proposals = proposals.map((entry) => (entry.id === id ? decided : entry));
       // The request that asked for this review leaves the inbox with it.
       inbox = inbox.map((entry) =>

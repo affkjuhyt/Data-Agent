@@ -2,7 +2,7 @@ import type {
   AgentDef,
   BehaviorPolicy,
   ConflictContext,
-  Proposal,
+  ProposalWire,
   AgentRun,
   AgentStep,
   AppUser,
@@ -30,9 +30,16 @@ export function inboxFixture(): HitlRequest[] {
   const base = {
     data_space_id: DS,
     source_service: 'agent',
+    parent_run_label: null,
     assignee_id: 'me',
+    assignee_group: null,
     status: 'open' as const,
+    response: null,
+    remember_as_rule: false,
+    resolved_by: null,
     resolved_at: null,
+    channel_card_ids: [],
+    updated_at: minutesFromNow(-1),
   };
   return [
     {
@@ -801,7 +808,24 @@ function conflictContext(): ConflictContext {
   };
 }
 
-export function proposalsFixture(): Proposal[] {
+/** The proposal columns the screens do not draw; no eval run, so accepting needs no review. */
+const proposalColumns = (targetService: string, targetRef: string) => ({
+  data_space_id: DS,
+  target_service: targetService,
+  target_ref: targetRef,
+  evidence: [],
+  proposed_by: 'agent-analysis',
+  assignee_id: 'me',
+  eval_run_id: null,
+  eval_run: null,
+  changed_results: [],
+  reviews: [],
+  applied_at: null,
+  created_at: minutesFromNow(-120),
+  updated_at: minutesFromNow(-120),
+});
+
+export function proposalsFixture(): ProposalWire[] {
   return [
     {
       id: 'pr-0318',
@@ -832,6 +856,7 @@ export function proposalsFixture(): Proposal[] {
       status: 'pending_review',
       expires_at: minutesFromNow(3 * 24 * 60),
       requires_compliance: true,
+      ...proposalColumns('metric', 'metric-npl-ratio'),
       checks: [
         { ok: true, text: 'Bộ câu hỏi chuẩn 96,8% (v4: 96,5%)' },
         { ok: true, text: 'Không làm hỏng chỉ số phụ thuộc' },
@@ -879,6 +904,7 @@ export function proposalsFixture(): Proposal[] {
       status: 'pending_review',
       expires_at: minutesFromNow(5 * 60),
       requires_compliance: false,
+      ...proposalColumns('dw', 'dataset-overdue-loans'),
       checks: [
         { ok: true, text: '214/214 khoản có bằng chứng từ Core banking' },
         { ok: true, text: 'Khớp số đã nộp ngày 05/10' },

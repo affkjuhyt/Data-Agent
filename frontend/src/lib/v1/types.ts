@@ -13,6 +13,12 @@ type Uuid = string;
 /** RFC 3339 with time zone (A1.1). */
 type Timestamp = string;
 
+/*
+ * openapi-typescript marks a field with a server default as required, right for a response and
+ * wrong for a request body: the server fills what the client leaves out.
+ */
+type RequestBody<T, Defaulted extends keyof T> = Omit<T, Defaulted> & Partial<Pick<T, Defaulted>>;
+
 /* ─── Cần bạn: inbox.hitl_request ─────────────────────────────────────── */
 
 export type HitlKind =
@@ -57,34 +63,32 @@ export interface HitlOption {
   is_default?: boolean;
 }
 
-export interface HitlRequest {
-  id: Uuid;
-  data_space_id: Uuid;
+/**
+ * GET /v1/inbox and /v1/hitl-requests/{id} as the api sends them: `context` and `options` are
+ * jsonb the producer fills. PROPOSAL: `agent`, the agent that asked, joined from source_ref.
+ */
+export type HitlWire = components['schemas']['HitlView'] & {
+  approval_steps?: components['schemas']['ApprovalStepView'][];
+  agent?: { id: Uuid; name: string } | null;
+};
+
+/** A HITL request as the screens read it; `readHitl` (lib/v1/api.ts) narrows the jsonb columns. */
+export type HitlRequest = Omit<
+  HitlWire,
+  'kind' | 'risk' | 'status' | 'context' | 'options' | 'agent'
+> & {
   kind: HitlKind;
   risk: 'low' | 'medium' | 'high';
-  title: string;
+  status: HitlStatus;
   /** "Dữ liệu để người quyết định". PROPOSAL: `why` carries the "Vì sao agent hỏi" sentence. */
   context: { why?: string } & Record<string, unknown>;
+  /** The options that have an id and a label; anything else in the column is dropped. */
   options: HitlOption[];
-  source_service: string;
-  source_ref: Uuid | null;
-  assignee_id: Uuid | null;
-  due_at: Timestamp | null;
-  status: HitlStatus;
-  created_at: Timestamp;
-  resolved_at: Timestamp | null;
-  /** PROPOSAL: the agent that asked, for the AgentChip, joined from source_ref. */
   agent: { id: Uuid; name: string } | null;
-}
+};
 
 /** POST /v1/hitl-requests/{id}:resolve */
-export interface ResolveHitl {
-  decision: 'answer' | 'approve' | 'reject' | 'reassign';
-  option?: string;
-  note?: string;
-  reassign_to?: Uuid;
-  remember_as_rule?: boolean;
-}
+export type ResolveHitl = RequestBody<components['schemas']['HitlResolve'], 'remember_as_rule'>;
 
 /* ─── Agents: agent.agent_def, agent.agent_run ────────────────────────── */
 
@@ -332,43 +336,63 @@ export type ProposalStatus =
   | 'expired'
   | 'withdrawn';
 
-export interface Proposal {
-  id: Uuid;
-  kind: string;
-  title: string;
-  /** PROPOSAL: the shape of `diff` for a definition change — the two versions side by side. */
-  diff: { before: { label: string; text: string }; after: { label: string; text: string } };
-  reason: string | null;
-  /**
-   * "Kèm diff, ảnh hưởng, kết quả eval_run". PROPOSAL: the shape — a backtest table over past
-   * periods and the consequence in one sentence.
-   */
-  impact: {
-    window_label: string;
-    columns: [string, string];
-    rows: { period: string; before: string; after: string; delta: string }[];
-    summary: string;
-  };
-  impact_level: 'low' | 'medium' | 'high';
-  status: ProposalStatus;
-  expires_at: Timestamp;
-  requires_compliance: boolean;
-  /** PROPOSAL: eval_run results in words, each passed or flagged. */
+/** PROPOSAL: the shape of `diff` for a definition change — the two versions side by side. */
+export interface ProposalDiff {
+  before: { label: string; text: string };
+  after: { label: string; text: string };
+}
+
+/**
+ * "Kèm diff, ảnh hưởng, kết quả eval_run". PROPOSAL: the shape of `impact` — a backtest table
+ * over past periods and the consequence in one sentence.
+ */
+export interface ProposalImpact {
+  window_label: string;
+  columns: [string, string];
+  rows: { period: string; before: string; after: string; delta: string }[];
+  summary: string;
+}
+
+/** PROPOSAL: display fields the api does not send yet (docs/v3/05-ui-v3.md §4); the mock does. */
+export interface ProposalDisplay {
+  /** eval_run results in words, each passed or flagged. */
   checks: { ok: boolean; text: string }[];
-  /** PROPOSAL: the approval chain (proposal_review steps) and why it has that many steps. */
+  /** The approval chain (proposal_review steps) and why it has that many steps. */
   approval: { reason: string; steps: { name: string; role: string }[]; note: string };
-  /** PROPOSAL: who proposed it and from where, "Agent Phân tích từ phiên “Nợ xấu bán lẻ T9”". */
+  /** Who proposed it and from where, "Agent Phân tích từ phiên “Nợ xấu bán lẻ T9”". */
   proposed_by_label: string;
-  /** PROPOSAL: a short code for the breadcrumb, "PR-0318". */
+  /** A short code for the breadcrumb, "PR-0318". */
   code: string;
 }
 
-/** POST /v1/proposals/{id}:decide — proposal_review.decision; `note` is required to reject. */
-export interface DecideProposal {
-  decision: 'accept' | 'accept_with_edit' | 'reject' | 'request_changes';
-  note?: string;
-  reviewed_regressions?: boolean;
-}
+/** GET /v1/proposals/{id} as the api sends it, plus the PROPOSAL fields when present. */
+export type ProposalWire = components['schemas']['ProposalDetail'] & Partial<ProposalDisplay>;
+
+/**
+ * A proposal as "P07 · Duyệt đề xuất" reads it; `readProposal` (lib/v1/api.ts) keeps `diff` and
+ * `impact` only when they have the drawn shape and derives `checks` from eval_run without them.
+ */
+export type Proposal = Omit<
+  ProposalWire,
+  'diff' | 'impact' | 'status' | 'impact_level' | keyof ProposalDisplay
+> & {
+  status: ProposalStatus;
+  impact_level: 'low' | 'medium' | 'high';
+  diff: ProposalDiff | null;
+  /** The column as sent, shown as is when it does not have the side-by-side shape. */
+  raw_diff: unknown;
+  impact: ProposalImpact | null;
+  checks: ProposalDisplay['checks'];
+  approval: ProposalDisplay['approval'] | null;
+  proposed_by_label: string | null;
+  code: string | null;
+};
+
+/** POST /v1/proposals/{id}:decide — `note` is required to reject (proposal_review). */
+export type DecideProposal = RequestBody<
+  components['schemas']['ProposalDecision'],
+  'reviewed_regressions'
+>;
 
 /* ─── So sánh hai nguồn: context of a `conflict` HITL request ─────────── */
 

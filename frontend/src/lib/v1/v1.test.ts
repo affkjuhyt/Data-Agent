@@ -19,8 +19,10 @@ import {
   listUsers,
   listWorkspaces,
   getProposal,
+  readHitl,
   resolveHitl,
 } from './api';
+import { inboxFixture } from '../../mocks/fixtures';
 import { V1Error, pathId, v1Get, v1Send } from './client';
 
 const server = setupServer(...createHandlers());
@@ -122,5 +124,28 @@ describe('paths built without pathId', () => {
       status: 'paused',
     });
     await expect(v1Get('/admin/users')).resolves.toHaveProperty('items');
+  });
+});
+
+describe('readHitl', () => {
+  it('keeps the options that have an id and drops the rest of the jsonb', () => {
+    const raw = {
+      ...inboxFixture()[0],
+      context: ['not', 'an', 'object'],
+      options: [
+        'Có',
+        { id: 'b', label: 'Không', consequence: 'dừng lượt' },
+        { label: 'thiếu id' },
+        3,
+      ],
+      agent: undefined,
+    };
+    const request = readHitl(raw);
+    expect(request.context).toEqual({});
+    expect(request.agent).toBeNull();
+    expect(request.options).toEqual([
+      { id: 'Có', label: 'Có', consequence: '' },
+      { id: 'b', label: 'Không', consequence: 'dừng lượt', is_default: false },
+    ]);
   });
 });

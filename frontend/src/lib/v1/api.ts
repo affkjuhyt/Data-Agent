@@ -3,7 +3,12 @@ import type {
   AgentDef,
   BehaviorPolicy,
   DecideProposal,
+  HitlOption,
+  HitlWire,
   Proposal,
+  ProposalDiff,
+  ProposalImpact,
+  ProposalWire,
   AgentRun,
   AppUser,
   DataSpace,
@@ -26,18 +31,116 @@ import type {
 const ALL = { page_size: 500 };
 
 /* Cần bạn và đánh giá */
-export const listInbox = (query: { kind?: string; status?: string } = {}) =>
-  v1Get<Page<HitlRequest>>('/inbox', { ...ALL, ...query });
 
-export const getHitl = async (id: string) => v1Get<HitlRequest>(`/hitl-requests/${pathId(id)}`);
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isText = (value: unknown): value is string => typeof value === 'string';
+
+/*
+ * `options`, `context`, `diff` and `impact` are jsonb that each producer fills (inbox.hitl_request,
+ * inbox.proposal), so the shapes the cards draw are read, not assumed: what does not have them is
+ * dropped or left null and the screen leaves that block out.
+ */
+function readOption(raw: unknown): HitlOption | null {
+  if (isText(raw)) return { id: raw, label: raw, consequence: '' };
+  if (!isRecord(raw) || !isText(raw.id)) return null;
+  return {
+    id: raw.id,
+    label: isText(raw.label) ? raw.label : raw.id,
+    consequence: isText(raw.consequence) ? raw.consequence : '',
+    is_default: raw.is_default === true,
+  };
+}
+
+export function readHitl(raw: HitlWire): HitlRequest {
+  return {
+    ...raw,
+    kind: raw.kind as HitlRequest['kind'],
+    risk: raw.risk as HitlRequest['risk'],
+    status: raw.status as HitlRequest['status'],
+    context: isRecord(raw.context) ? raw.context : {},
+    options: Array.isArray(raw.options)
+      ? raw.options.map(readOption).filter((o): o is HitlOption => o !== null)
+      : [],
+    agent: raw.agent ?? null,
+  };
+}
+
+const readSide = (raw: unknown, label: string) =>
+  isText(raw)
+    ? { label, text: raw }
+    : isRecord(raw) && isText(raw.text)
+      ? { label: isText(raw.label) ? raw.label : label, text: raw.text }
+      : null;
+
+function readDiff(raw: unknown): ProposalDiff | null {
+  if (!isRecord(raw)) return null;
+  const before = readSide(raw.before, 'Hiện tại');
+  const after = readSide(raw.after, 'Đề xuất');
+  return before && after ? { before, after } : null;
+}
+
+function readImpact(raw: unknown): ProposalImpact | null {
+  if (!isRecord(raw) || !Array.isArray(raw.rows) || !Array.isArray(raw.columns)) return null;
+  const [left, right] = raw.columns;
+  if (!isText(left) || !isText(right)) return null;
+  const rows = raw.rows.filter(
+    (row): row is ProposalImpact['rows'][number] =>
+      isRecord(row) && [row.period, row.before, row.after, row.delta].every(isText),
+  );
+  return {
+    window_label: isText(raw.window_label) ? raw.window_label : '',
+    columns: [left, right],
+    rows,
+    summary: isText(raw.summary) ? raw.summary : '',
+  };
+}
+
+/** Without the PROPOSAL `checks`, the eval run the proposal was tested with says the same. */
+function checksOf(raw: ProposalWire): Proposal['checks'] {
+  if (raw.checks) return raw.checks;
+  const run = raw.eval_run;
+  if (!run || run.item_count === 0) return [];
+  const checks = [
+    { ok: run.failed === 0, text: `${run.passed}/${run.item_count} câu đánh giá đạt` },
+  ];
+  if (run.regressions > 0)
+    checks.push({ ok: false, text: `${run.regressions} câu đổi kết quả so với bản trước` });
+  return checks;
+}
+
+function readProposal(raw: ProposalWire): Proposal {
+  return {
+    ...raw,
+    status: raw.status as Proposal['status'],
+    impact_level: raw.impact_level as Proposal['impact_level'],
+    diff: readDiff(raw.diff),
+    raw_diff: raw.diff,
+    impact: readImpact(raw.impact),
+    checks: checksOf(raw),
+    approval: raw.approval ?? null,
+    proposed_by_label: raw.proposed_by_label ?? null,
+    code: raw.code ?? null,
+  };
+}
+
+export const listInbox = async (query: { kind?: string; status?: string } = {}) => {
+  const page = await v1Get<Page<HitlWire>>('/inbox', { ...ALL, ...query });
+  return { ...page, items: page.items.map(readHitl) };
+};
+
+export const getHitl = async (id: string) =>
+  readHitl(await v1Get<HitlWire>(`/hitl-requests/${pathId(id)}`));
 
 export const resolveHitl = async (id: string, body: ResolveHitl) =>
-  v1Send<HitlRequest>('POST', `/hitl-requests/${pathId(id)}:resolve`, body);
+  readHitl(await v1Send<HitlWire>('POST', `/hitl-requests/${pathId(id)}:resolve`, body));
 
-export const getProposal = async (id: string) => v1Get<Proposal>(`/proposals/${pathId(id)}`);
+export const getProposal = async (id: string) =>
+  readProposal(await v1Get<ProposalWire>(`/proposals/${pathId(id)}`));
 
 export const decideProposal = async (id: string, body: DecideProposal) =>
-  v1Send<Proposal>('POST', `/proposals/${pathId(id)}:decide`, body);
+  readProposal(await v1Send<ProposalWire>('POST', `/proposals/${pathId(id)}:decide`, body));
 
 /* Agent */
 export const listAgents = () => v1Get<Page<AgentDef>>('/agents', ALL);
