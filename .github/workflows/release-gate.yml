@@ -47,12 +47,11 @@ jobs:
           cache: pip
 
       - name: Install eval deps
-        # ragas + the runtime's client libs: the intent scorer calls the real
-        # planner node, and the grounding scorer judges with RAGAS faithfulness.
+        # ragas + the V3 worker-agent client dependencies.
         run: |
           pip install sqlparse
           pip install -r model/eval/requirements.txt
-          pip install -r backend/services/workflow_runtime/requirements.txt
+          pip install -r backend/services/worker_agent/requirements.txt
 
       - name: Run both tiers
         # Never `|| true`: a run that could not reach the model must leave a
@@ -60,9 +59,10 @@ jobs:
         env:
           LITELLM_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
           LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
-          WORKFLOW_RUNTIME_URL: ${{ secrets.WORKFLOW_RUNTIME_URL }}
+          EVAL_AGENT_URL: ${{ secrets.EVAL_AGENT_URL }}
+          EVAL_ACCESS_TOKEN: ${{ secrets.EVAL_ACCESS_TOKEN }}
           AGENT_ID: ${{ inputs.agent_id || secrets.EVAL_AGENT_ID }}
-          EVAL_TENANT_ID: ${{ secrets.EVAL_TENANT_ID }}
+          EVAL_DATA_SPACE_ID: ${{ secrets.EVAL_DATA_SPACE_ID }}
         run: python -m model.eval.run --tier all --out eval-report.json
 
       - name: Gate the release (BLOCKING)

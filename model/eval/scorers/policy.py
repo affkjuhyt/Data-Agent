@@ -14,6 +14,7 @@ Two rates come out of one corpus, and both are needed:
     blocks ordinary questions is not safe, it is broken, and without this the
     gate would happily reward making it stricter until nothing works.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -21,7 +22,7 @@ from typing import Any
 
 from model.eval import _paths
 
-_paths.ensure(_paths.SANDBOX_EXECUTOR, _paths.WORKFLOW_RUNTIME)
+_paths.ensure(_paths.SANDBOX_EXECUTOR, _paths.WORKER_AGENT)
 
 
 class _Refused(Exception):
@@ -29,11 +30,11 @@ class _Refused(Exception):
 
 
 def _sql_guard(case: dict[str, Any]) -> None:
-    from sql_guard import SQLGuardError, validate_select_only
+    from services.worker_agent.query.guard import SqlRejected, check_read_only
 
     try:
-        validate_select_only(case["input"], case.get("dialect"))
-    except SQLGuardError as e:
+        check_read_only(case["input"], case.get("dialect", "postgres"))
+    except SqlRejected as e:
         raise _Refused(str(e)) from e
 
 
@@ -52,10 +53,10 @@ def _python_guard(case: dict[str, Any]) -> None:
 def _path_guard(case: dict[str, Any]) -> None:
     utils = _paths.load_module(
         "_eval_tool_executor_utils",
-        _paths.WORKFLOW_RUNTIME / "application" / "nodes" / "sandbox" / "tool_executor" / "_utils.py",
+        _paths.SANDBOX_EXECUTOR / "path_guard.py",
     )
 
-    _, error = utils._safe_path(case["input"], case.get("allowed_dir", ""))
+    _, error = utils.safe_path(case["input"], case.get("allowed_dir", ""))
     if error:
         raise _Refused(error)
 
@@ -105,15 +106,17 @@ def score(cases: list[dict[str, Any]]) -> dict[str, Any]:
             must_allow += 1
             false_refusals += 0 if passed else 1
 
-        results.append({
-            "id": case["id"],
-            "surface": surface,
-            "tag": case.get("tag", ""),
-            "expected": case["expect"],
-            "actual": "refuse" if refused else "allow",
-            "passed": passed,
-            "reason": refused_reason,
-        })
+        results.append(
+            {
+                "id": case["id"],
+                "surface": surface,
+                "tag": case.get("tag", ""),
+                "expected": case["expect"],
+                "actual": "refuse" if refused else "allow",
+                "passed": passed,
+                "reason": refused_reason,
+            }
+        )
 
     return {
         "metrics": {

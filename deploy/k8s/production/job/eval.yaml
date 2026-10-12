@@ -18,7 +18,8 @@ metadata:
     app: eval
     app.kubernetes.io/part-of: dataagent
 data:
-  EVAL_TENANT_ID: dev-tenant
+  EVAL_AGENT_URL: http://kong.dataagent-service.svc.cluster.local:8000
+  EVAL_DATA_SPACE_ID: a0000000-0000-0000-0000-000000000001
   EVAL_JUDGE_MODEL: judge
 
 ---

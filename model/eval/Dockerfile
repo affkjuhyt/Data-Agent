@@ -15,11 +15,9 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY model/eval/requirements.txt ./eval-requirements.txt
-COPY backend/services/workflow_runtime/requirements.txt ./runtime-requirements.txt
-# ragas + judge model client, then the runtime's own deps (litellm, pydantic)
-# so the intent scorer can call the planner node itself.
+# ragas + judge model client, then the worker-agent's shared V3 dependencies.
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r eval-requirements.txt \
-    && pip install -r runtime-requirements.txt \
+    && pip install -r backend/services/worker_agent/requirements.txt \
     && pip install sqlparse
 
 # Same layout as the checkout (backend/…) so model/eval/_paths.py resolves
@@ -27,7 +25,7 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install -r eval-requirements.
 COPY model ./model
 COPY backend/libs ./backend/libs
 COPY backend/services/sandbox_executor ./backend/services/sandbox_executor
-COPY backend/services/workflow_runtime ./backend/services/workflow_runtime
+COPY backend/services/worker_agent ./backend/services/worker_agent
 
 # Runs everything and gates on the result: a report with no verdict is a
 # dashboard, and this container exists to answer yes or no.

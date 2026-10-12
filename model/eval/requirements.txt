@@ -1,6 +1,6 @@
 # Online tier only (the offline tier needs just sqlparse): the grounding scorer
 # judges with RAGAS faithfulness through a LangChain OpenAI-compatible client,
-# and the agent client talks to workflow_runtime over httpx.
+# and the agent client talks to the V3 API over httpx.
 ragas>=0.2.0
 langchain-openai>=0.1.0
 datasets
