@@ -40,7 +40,7 @@ R0-6 → R0-5 → R0-3 → R0-4 → R0-2 → R0-12.
 | R0-6 | Sandbox xác thực service assertion; `connection_ref` thay mật khẩu; schema crawler đọc OpenBao; policy OpenBao qua Ansible; xoá env mật khẩu | | Ops | M | 401 không assertion; grep CI không còn `WAREHOUSE_PASSWORD__` | done feb47793 |
 | R0-9 | Đo model (D1): `make bench` + eval hai cấu hình, báo cáo một trang | | Ops, QA | S | Bảng điểm nộp anh Linh | todo |
 | R0-13 | Kịch bản kiểm thử và nghiệm thu đợt R0: kịch bản chạy trên cụm dev cho từng story R0, ghi lỗi theo mức, biên bản ký | R0-1…R0-12 | Quân | M | Biên bản nghiệm thu R0 ký | todo |
-| R0-12 | RUNBOOK: HITL bền, MCP, OpenBao policy; `docs/v3/05-ui-v3.md` ghi chú Workspace (D9) | R0-2, R0-3, R0-6 | Ops, FE1 | S | Docs cùng commit | doing |
+| R0-12 | RUNBOOK: HITL bền, MCP, OpenBao policy; `docs/v3/05-ui-v3.md` ghi chú Workspace (D9) | R0-2, R0-3, R0-6 | Ops, FE1 | S | Docs cùng commit | done ef5c2b6 |
 
 ## 2. R1 Hỏi đúng trên kho + ngữ cảnh
 
