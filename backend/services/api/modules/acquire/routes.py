@@ -18,7 +18,19 @@ import uuid
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Body, Depends, Path, Query, Response
-from sqlalchemy import ColumnElement, Select, and_, func, not_, or_, select, tuple_, update
+from sqlalchemy import (
+    ColumnElement,
+    Select,
+    and_,
+    any_,
+    func,
+    literal,
+    not_,
+    or_,
+    select,
+    tuple_,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -207,7 +219,11 @@ def _cut(rows: list[Any], page: PageRequest) -> tuple[list[Any], str]:
 
 
 def _status_changed(
-    session: AsyncSession, principal: Principal, source: acquire.CrawlSource, previous: str
+    session: AsyncSession,
+    principal: Principal,
+    source: acquire.CrawlSource,
+    previous: str,
+    reason: str | None = None,
 ) -> None:
     if source.status != previous:
         _emit(
@@ -222,6 +238,23 @@ def _status_changed(
             status=source.status,
             legal_status=source.legal_status,
         )
+        if reason:
+            # A person's words stay out of the domain event (consumers act on ids and states);
+            # no column keeps the reason, so the audit trail does (audit service, D1.1).
+            _emit(
+                session,
+                principal,
+                "crawl_source",
+                source.id,
+                "audit.requested",
+                action="crawl_source.status_changed",
+                object_kind="crawl_source",
+                object_id=source.id,
+                actor_id=principal.user_id,
+                client_id=principal.client_id,
+                before={"status": previous},
+                after={"status": source.status, "reason": reason},
+            )
 
 
 # ---------------------------------------------------------------- lookups (404 = missing or outside)
@@ -753,7 +786,7 @@ async def pause_crawl_source(
         row.updated_by, row.updated_at = principal.user_id, _now()
         await session.flush()
         await session.refresh(row)
-        _status_changed(session, principal, row, previous)
+        _status_changed(session, principal, row, previous, body.reason)
         return _source_view(row)
 
 
@@ -1055,6 +1088,8 @@ async def approve_schema(
     now = _now()
     async with transaction(ROLE, principal) as session:
         version, source = await _version(session, principal, space, version_id, lock=True)
+        if source.owner_id != principal.user_id:
+            raise Problem(403, "forbidden", "The source's owner approves its schema (BR-151).")
         if version.status not in rules.TESTABLE_SCHEMA:
             raise Problem(409, "invalid_state", f"The schema version is {version.status}.")
         if version.test_required_accuracy is None:
@@ -1066,8 +1101,6 @@ async def approve_schema(
                 f"{version.test_required_accuracy:.2%} of required fields extracted right; "
                 "95% is needed (BR-151).",
             )
-        if source.owner_id != principal.user_id:
-            raise Problem(403, "forbidden", "The source's owner approves its schema (BR-151).")
         superseded = None
         if source.active_schema_version_id is not None:
             superseded = await session.scalar(
@@ -1486,6 +1519,12 @@ def _review_reasons(values: list[str] | None) -> list[str]:
     return [v.strip() for value in values or [] for v in value.split(",") if v.strip()]
 
 
+def _has_any_reason(reasons: list[str]) -> ColumnElement[bool]:
+    # The generated model maps review_reasons with the generic ARRAY, which has no overlap();
+    # `reason = ANY(review_reasons)` per reason is the same test.
+    return or_(*(literal(r) == any_(E.review_reasons) for r in reasons))
+
+
 @router.get(
     "/v1/crawl-runs/{id}/records",
     response_model=Page[ExtractedRecordItem],
@@ -1511,7 +1550,7 @@ async def list_run_records(
         if status:
             query = query.where(E.status == status)
         if reasons:
-            query = query.where(E.review_reasons.overlap(reasons))
+            query = query.where(_has_any_reason(reasons))
         if is_random_sample is not None:
             query = query.where(E.is_random_sample.is_(is_random_sample))
         rows = list(
@@ -1656,7 +1695,7 @@ async def bulk_review(
             query = select(E).where(E.run_id == run.id, E.status.in_(("pending", "flagged")))
             reasons = _review_reasons(body.filter.review_reasons)
             if reasons:
-                query = query.where(E.review_reasons.overlap(reasons))
+                query = query.where(_has_any_reason(reasons))
             records = list((await session.scalars(query.order_by(E.id).with_for_update())).all())
         else:
             wanted = set(body.record_ids or [])
@@ -1735,6 +1774,14 @@ async def publish_run(
                 "business_rule_violated",
                 f"Random-sample accuracy {run.sample_accuracy:.0%} is under 90%; "
                 "fix the schema first (UC-14-04).",
+            )
+        if run.status == "quarantined" and await _open_major_drift(session, run.source_id):
+            # BR-152: a run quarantined by a major drift is released by settling the drift
+            # (:resolve or :revert), not published around it.
+            raise Problem(
+                422,
+                "business_rule_violated",
+                "A major schema drift of the source is still open (BR-152).",
             )
         source = await session.scalar(select(S).where(S.id == run.source_id))
         previous = run.status

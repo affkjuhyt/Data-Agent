@@ -10,8 +10,8 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 1 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 248 có test nhắc mã AC | todo 778 |
-| Endpoint A2 (tab 4) | 381 (A2 ghi 382 dòng; POST /v1/data-products ở hai nhóm) | 381 được `api` phục vụ | — |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 270 có test nhắc mã AC | todo 778 |
+| Endpoint A2 (tab 4) | 382 (A2 ghi 383 dòng; POST /v1/data-products ở hai nhóm) | 382 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 220 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 160 có mã nhắc tới | todo 195 |
 | Màn hình (SCR) | 75 | 9 có mã nhắc tới | todo 75 |
@@ -194,12 +194,12 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-14-01 | Đăng ký mục tiêu và nguồn thu thập | todo | 4/4 | 2/2 | 0/8 |  |
-| UC-14-02 | Suy ngược schema nguồn có cấu trúc | todo | 3/3 | 3/3 | 0/6 |  |
-| UC-14-03 | Xử lý thay đổi cấu trúc và hoàn tác schema | todo | 3/3 | 4/4 | 0/6 |  |
-| UC-14-04 | Duyệt dữ liệu thu thập | todo | 4/4 | 4/4 | 0/7 |  |
-| UC-14-05 | Hợp nhất và tổng quát hoá dữ liệu | todo | 9/9 | 7/7 | 2/8 |  |
-| UC-14-06 | Giám sát thu thập | todo | 5/5 | 3/3 | 0/5 |  |
+| UC-14-01 | Đăng ký mục tiêu và nguồn thu thập | todo | 4/4 | 2/2 | 4/8 |  |
+| UC-14-02 | Suy ngược schema nguồn có cấu trúc | todo | 3/3 | 3/3 | 4/6 |  |
+| UC-14-03 | Xử lý thay đổi cấu trúc và hoàn tác schema | todo | 3/3 | 4/4 | 2/6 |  |
+| UC-14-04 | Duyệt dữ liệu thu thập | todo | 4/4 | 4/4 | 4/7 |  |
+| UC-14-05 | Hợp nhất và tổng quát hoá dữ liệu | todo | 9/9 | 7/7 | 3/8 |  |
+| UC-14-06 | Giám sát thu thập | todo | 5/5 | 3/3 | 2/5 |  |
 
 ### P15 Dự báo
 
@@ -244,7 +244,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | Theo dõi, báo cáo, thông báo | 29/29 |  |
 | Gói ngành | 17/17 |  |
 | Kỳ chốt | 10/10 |  |
-| Quản trị | 27/27 |  |
+| Quản trị | 28/28 |  |
 | Kiểm toán | 5/5 |  |
 | Tích hợp | 11/11 |  |
 | Agent | 24/24 |  |
@@ -405,13 +405,13 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-147 | UC-13-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/libs/dataagent_db/models/org.py` +9 |
 | BR-148 | UC-13-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-149 | UC-14-01, UC-14-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +10 |
-| BR-150 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +10 |
-| BR-151 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +10 |
-| BR-152 | UC-14-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +10 |
-| BR-153 | UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +10 |
-| BR-154 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-150 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +11 |
+| BR-151 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +11 |
+| BR-152 | UC-14-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +11 |
+| BR-153 | UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +11 |
+| BR-154 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-155 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-156 | UC-02-07, UC-10-02, UC-14-01, UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/libs/dataagent_db/models/catalog.py` +18 |
+| BR-156 | UC-02-07, UC-10-02, UC-14-01, UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/libs/dataagent_db/models/catalog.py` +19 |
 | BR-157 | UC-15-01, UC-15-02, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +13 |
 | BR-158 | UC-15-03, UC-15-04, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +15 |
 | BR-159 | UC-15-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +8 |
@@ -423,13 +423,13 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-165 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-166 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +12 |
 | BR-167 | UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +11 |
-| BR-168 | UC-14-03, UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +8 |
-| BR-169 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +8 |
+| BR-168 | UC-14-03, UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-169 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-170 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-171 | UC-01-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-172 | UC-15-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-173 | UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +8 |
-| BR-174 | UC-14-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +11 |
+| BR-174 | UC-14-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +12 |
 | BR-175 | UC-01-01, UC-01-07, UC-07-13 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/qa.py` +14 |
 | BR-176 | UC-01-01, UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-177 | UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
@@ -1882,94 +1882,94 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-14-01 Đăng ký mục tiêu và nguồn thu thập · 0/10</summary>
+<details><summary>UC-14-01 Đăng ký mục tiêu và nguồn thu thập · 6/10</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-14-01-01 | Chính | Cho AC04 trong Data Space Thị trường và miền của ngân hàng A có trong danh sách egress / Khi giao “thu lãi suất huy động 12 tháng của các ngân hàng hằng ngày”, chọn nguồn ngân hàng A với độ sâu 3, lịch hằng ngày, 1 yê… | API, CSDL | todo |  |
-| AC-14-01-02 | Chính | Cho nguồn ngân hàng A draft / Khi AC06 khác người phụ trách nguồn duyệt pháp lý ngày 10/10/2026 đủ 4 mục (điều khoản, robots.txt, bản quyền, dữ liệu cá nhân) / Thì ảnh chụp trang điều khoản và robots.txt nằm trong Min… | API, CSDL | todo |  |
-| AC-14-01-03 | Thay thế | Cho nguồn là API có tài liệu OpenAPI / Khi đăng ký / Thì schema được đọc từ tài liệu và không có bước suy ngược từ mẫu | API | todo |  |
-| AC-14-01-04 | Thay thế | Cho AC04 nhập thẳng URL trang lãi suất của ngân hàng B / Khi lưu / Thì nguồn được tạo không qua đề xuất của agent và vẫn qua kiểm robots.txt, duyệt pháp lý | API | todo |  |
+| AC-14-01-01 | Chính | Cho AC04 trong Data Space Thị trường và miền của ngân hàng A có trong danh sách egress / Khi giao “thu lãi suất huy động 12 tháng của các ngân hàng hằng ngày”, chọn nguồn ngân hàng A với độ sâu 3, lịch hằng ngày, 1 yê… | API, CSDL | todo | `tests/integration/api/test_acquire.py` |
+| AC-14-01-02 | Chính | Cho nguồn ngân hàng A draft / Khi AC06 khác người phụ trách nguồn duyệt pháp lý ngày 10/10/2026 đủ 4 mục (điều khoản, robots.txt, bản quyền, dữ liệu cá nhân) / Thì ảnh chụp trang điều khoản và robots.txt nằm trong Min… | API, CSDL | todo | `tests/integration/api/test_acquire.py` |
+| AC-14-01-03 | Thay thế | Cho nguồn là API có tài liệu OpenAPI / Khi đăng ký / Thì schema được đọc từ tài liệu và không có bước suy ngược từ mẫu | API | todo | `tests/integration/api/test_acquire.py` |
+| AC-14-01-04 | Thay thế | Cho AC04 nhập thẳng URL trang lãi suất của ngân hàng B / Khi lưu / Thì nguồn được tạo không qua đề xuất của agent và vẫn qua kiểm robots.txt, duyệt pháp lý | API | todo | `tests/integration/api/test_acquire.py` |
 | AC-14-01-05 | Ngoại lệ | Cho robots.txt của nguồn cấm đường dẫn trang lãi suất, hoặc trang cần đăng nhập, captcha / Khi đăng ký / Thì nguồn bị chặn kèm lý do, có gợi ý xin dữ liệu qua API hoặc tệp, và không có lượt tải nào | API | todo |  |
 | AC-14-01-06 | Ngoại lệ | Cho miền chưa có trong danh sách egress / Khi đăng ký / Thì có yêu cầu mở miền gửi AC05 và nguồn chưa tải thử được | API | todo |  |
-| AC-14-01-07 | Ngoại lệ | Cho nguồn active đã duyệt pháp lý / Khi băm trang điều khoản ngày 15/10/2026 khác bản đã duyệt / Thì nguồn tự tạm ngưng, AC06 có yêu cầu Cần bạn loại legal_review và SCR-56 hiện “Cần duyệt lại pháp lý” kèm ngày 15/10/… | API, CSDL | todo |  |
-| AC-14-01-08 | Quy tắc | Cho crawl_source / Khi bật nguồn chưa duyệt pháp lý, người phụ trách nguồn tự duyệt, duyệt không có bằng chứng, đặt hạn xem lại 200 ngày, hoặc bắt đầu crawl_run khi duyệt đã hết hiệu lực / Thì CHECK hoặc trigger từ ch… | CSDL | todo |  |
+| AC-14-01-07 | Ngoại lệ | Cho nguồn active đã duyệt pháp lý / Khi băm trang điều khoản ngày 15/10/2026 khác bản đã duyệt / Thì nguồn tự tạm ngưng, AC06 có yêu cầu Cần bạn loại legal_review và SCR-56 hiện “Cần duyệt lại pháp lý” kèm ngày 15/10/… | API, CSDL | todo | `tests/integration/api/test_acquire.py` |
+| AC-14-01-08 | Quy tắc | Cho crawl_source / Khi bật nguồn chưa duyệt pháp lý, người phụ trách nguồn tự duyệt, duyệt không có bằng chứng, đặt hạn xem lại 200 ngày, hoặc bắt đầu crawl_run khi duyệt đã hết hiệu lực / Thì CHECK hoặc trigger từ ch… | CSDL | todo | `tests/integration/api/test_acquire.py` |
 | AC-14-01-09 | Quy tắc | Cho nguồn ngân hàng A có liên kết tới miền khác / Khi một lượt thu tải 100 trang / Thì log egress proxy không có yêu cầu ngoài miền đã khai, không giây nào có quá 1 yêu cầu tới cùng miền và không có lần gửi biểu mẫu đ… | API | todo |  |
 | AC-14-01-10 | Quy tắc | Cho số lãi suất lấy từ nguồn ngân hàng A mức tin cậy 0,9 / Khi xuất hiện trong câu trả lời / Thì số mang nhãn “nguồn ngoài” và mức tin cậy 0,9 | E2E, Đánh giá agent | todo |  |
 
 </details>
 
-<details><summary>UC-14-02 Suy ngược schema nguồn có cấu trúc · 0/8</summary>
+<details><summary>UC-14-02 Suy ngược schema nguồn có cấu trúc · 4/8</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-14-02-01 | Chính | Cho nguồn bảng lãi suất HTML của ngân hàng A ở draft / Khi Agent Thu thập suy ngược, chạy thử và AC04 duyệt / Thì có ít nhất 5 mẫu khác nhau được lưu bản gốc; bản đề xuất có trường, kiểu, đơn vị %/năm, bắt buộc, khoá,… | API, CSDL | todo |  |
+| AC-14-02-01 | Chính | Cho nguồn bảng lãi suất HTML của ngân hàng A ở draft / Khi Agent Thu thập suy ngược, chạy thử và AC04 duyệt / Thì có ít nhất 5 mẫu khác nhau được lưu bản gốc; bản đề xuất có trường, kiểu, đơn vị %/năm, bắt buộc, khoá,… | API, CSDL | todo | `tests/integration/api/test_acquire.py` |
 | AC-14-02-02 | Thay thế | Cho bộ chọn trích sai cột 6 tháng / Khi AC04 chọn đúng ô trên bản xem trước / Thì agent sinh lại bộ chọn từ ví dụ và chạy thử lại, kết quả cột 6 tháng đúng trên mẫu giữ lại | E2E, API | todo |  |
 | AC-14-02-03 | Thay thế | Cho nguồn có 2 mẫu trang (khách hàng cá nhân, doanh nghiệp) / Khi suy ngược / Thì có 2 phiên bản schema, mỗi bản có quy tắc chọn mẫu theo URL | API, CSDL | todo |  |
-| AC-14-02-04 | Ngoại lệ | Cho chạy thử đạt 93% trường bắt buộc đúng / Khi AC04 bấm duyệt / Thì bị từ chối, agent đề xuất sửa và chỉ ra các mẫu sai | API | todo |  |
+| AC-14-02-04 | Ngoại lệ | Cho chạy thử đạt 93% trường bắt buộc đúng / Khi AC04 bấm duyệt / Thì bị từ chối, agent đề xuất sửa và chỉ ra các mẫu sai | API | todo | `tests/integration/api/test_acquire.py` |
 | AC-14-02-05 | Ngoại lệ | Cho nguồn là trang tin không có vùng dữ liệu lặp / Khi suy ngược / Thì nguồn được chuyển sang bộ sưu tập tài liệu P05, không tạo crawl_schema_version | API, CSDL | todo |  |
-| AC-14-02-06 | Quy tắc | Cho crawl_schema_version / Khi đặt active với chạy thử 93% có người duyệt, 97% chưa có người duyệt, hoặc đặt crawl_source active khi không có schema active / Thì CSDL từ chối cả 3; 97% có người duyệt thì schema và ngu… | CSDL | todo |  |
-| AC-14-02-07 | Quy tắc | Cho một trang đã tải / Khi kiểm crawl_page và bucket da-raw-crawl / Thì bản gốc có trong bucket object lock kèm SHA-256 và thời điểm tải, xoá trước hạn bị từ chối, và mọi extracted_record của trang trỏ về crawl_page đó | CSDL, API | todo |  |
+| AC-14-02-06 | Quy tắc | Cho crawl_schema_version / Khi đặt active với chạy thử 93% có người duyệt, 97% chưa có người duyệt, hoặc đặt crawl_source active khi không có schema active / Thì CSDL từ chối cả 3; 97% có người duyệt thì schema và ngu… | CSDL | todo | `tests/integration/api/test_acquire.py` |
+| AC-14-02-07 | Quy tắc | Cho một trang đã tải / Khi kiểm crawl_page và bucket da-raw-crawl / Thì bản gốc có trong bucket object lock kèm SHA-256 và thời điểm tải, xoá trước hạn bị từ chối, và mọi extracted_record của trang trỏ về crawl_page đó | CSDL, API | todo | `tests/integration/api/test_acquire.py` |
 | AC-14-02-08 | Quy tắc | Cho schema có trường lãi suất phần trăm / Khi đặt active mà chưa khai value_constraints, hoặc khai min lớn hơn max / Thì bị từ chối; miền 0–15 %/năm thì được | CSDL | todo |  |
 
 </details>
 
-<details><summary>UC-14-03 Xử lý thay đổi cấu trúc và hoàn tác schema · 0/10</summary>
+<details><summary>UC-14-03 Xử lý thay đổi cấu trúc và hoàn tác schema · 3/10</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-14-03-01 | Chính | Cho ngân hàng A thêm cột lãi suất 36 tháng / Khi lượt thu chạy / Thì schema_drift mức nhẹ được ghi, có phiên bản schema nháp đã chạy thử chờ duyệt nhanh, và lượt vẫn trích các trường còn khớp bằng phiên bản cũ | API, CSDL | todo |  |
 | AC-14-03-02 | Chính | Cho trang mất cột kỳ hạn (trường khoá) hoặc tỷ lệ trích bắt buộc còn 70% / Khi lượt thu chạy / Thì nguồn tạm ngưng, dữ liệu lượt bị cách ly, Cần bạn có yêu cầu kèm phiên bản agent đề xuất và có sự kiện acquire.schema.… | API, CSDL | todo |  |
-| AC-14-03-03 | Chính | Cho thay đổi nặng ở AC-14-03-02 / Khi AC04 chọn hoàn tác / Thì schema quay về phiên bản đúng gần nhất, bản ghi trích bằng phiên bản lỗi chuyển superseded, dữ liệu được trích lại từ bản gốc và dataset hợp nhất có phiên… | API, CSDL | todo |  |
+| AC-14-03-03 | Chính | Cho thay đổi nặng ở AC-14-03-02 / Khi AC04 chọn hoàn tác / Thì schema quay về phiên bản đúng gần nhất, bản ghi trích bằng phiên bản lỗi chuyển superseded, dữ liệu được trích lại từ bản gốc và dataset hợp nhất có phiên… | API, CSDL | todo | `tests/integration/api/test_acquire.py` |
 | AC-14-03-04 | Thay thế | Cho sự cố thay đổi cấu trúc đang mở / Khi lượt sau nguồn trở lại cấu trúc cũ / Thì sự cố tự đóng và có resolution | CSDL | todo |  |
 | AC-14-03-05 | Thay thế | Cho 2 lượt đã phát hành bằng phiên bản lỗi và có 3 câu trả lời đã dùng số đó / Khi hoàn tác / Thì cả 2 lượt được hoàn tác và 3 câu trả lời được gắn nhãn như G5.4 | API, CSDL | todo |  |
 | AC-14-03-06 | Thay thế | Cho lãi suất 12 tháng của ngân hàng A từ 4,8 thành 48 ở nhiều bản ghi, cấu trúc và tỷ lệ trích vẫn đạt / Khi lượt chạy / Thì schema_drift có drift_kind = semantic, action = quarantine, lượt và mọi lượt sau của nguồn c… | API, CSDL | todo |  |
-| AC-14-03-07 | Thay thế | Cho lệch ngầm ở AC-14-03-06 / Khi người chọn false_alarm, hoặc chọn approved_new với quy đổi đơn vị / Thì với false_alarm lượt được phát hành; với approved_new các lượt cách ly được trích lại bằng phiên bản mới; SCR-5… | API, CSDL, E2E | todo |  |
-| AC-14-03-08 | Ngoại lệ | Cho 10 trang của lượt cần trích lại, 3 trang đã hết hạn lưu bản gốc / Khi hoàn tác / Thì 7 trang được trích lại, bản ghi của 3 trang còn lại được đánh dấu không kiểm chứng được | API, CSDL | todo |  |
+| AC-14-03-07 | Thay thế | Cho lệch ngầm ở AC-14-03-06 / Khi người chọn false_alarm, hoặc chọn approved_new với quy đổi đơn vị / Thì với false_alarm lượt được phát hành; với approved_new các lượt cách ly được trích lại bằng phiên bản mới; SCR-5… | API, CSDL, E2E | todo | `tests/integration/api/test_acquire.py` |
+| AC-14-03-08 | Ngoại lệ | Cho 10 trang của lượt cần trích lại, 3 trang đã hết hạn lưu bản gốc / Khi hoàn tác / Thì 7 trang được trích lại, bản ghi của 3 trang còn lại được đánh dấu không kiểm chứng được | API, CSDL | todo | `tests/integration/api/test_acquire.py` |
 | AC-14-03-09 | Quy tắc | Cho crawl_run / Khi phát hành lượt trích bằng phiên bản schema draft, hoặc ghi schema_drift mức nặng với cách xử lý tự ánh xạ lại / Thì CSDL từ chối cả hai | CSDL | todo |  |
 | AC-14-03-10 | Quy tắc | Cho lệch ngầm / Khi ghi action = paused, thiếu bằng chứng trong signals, ghi mức nhẹ, phát hành lượt khi lệch ngầm còn mở, đóng không ghi người quyết định, hoặc dùng false_alarm cho thay đổi cấu trúc / Thì CSDL từ chố… | CSDL | todo |  |
 
 </details>
 
-<details><summary>UC-14-04 Duyệt dữ liệu thu thập · 0/9</summary>
+<details><summary>UC-14-04 Duyệt dữ liệu thu thập · 5/9</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-14-04-01 | Chính | Cho lượt thu 30 ngân hàng có mục trong hàng duyệt / Khi AC04 xem từng bản ghi cạnh vùng gốc tô sáng, xác nhận, sửa hoặc bỏ hết rồi phát hành / Thì extracted_record ở approved, corrected hoặc rejected, bản ghi đã sửa c… | API, CSDL, E2E | todo |  |
+| AC-14-04-01 | Chính | Cho lượt thu 30 ngân hàng có mục trong hàng duyệt / Khi AC04 xem từng bản ghi cạnh vùng gốc tô sáng, xác nhận, sửa hoặc bỏ hết rồi phát hành / Thì extracted_record ở approved, corrected hoặc rejected, bản ghi đã sửa c… | API, CSDL, E2E | todo | `tests/integration/api/test_acquire.py` |
 | AC-14-04-02 | Chính | Cho bộ bản ghi mẫu có độ tin 0,80, thiếu trường bắt buộc, lệch 4 MAD so với trung vị các nguồn khác, giá trị phân loại mới, ánh xạ thực thể không chắc, 48%/năm khi miền 0–15, nhãn cột đổi, thuộc lệch ngầm / Khi trích … | API, CSDL | todo |  |
 | AC-14-04-03 | Chính | Cho lượt 520 bản ghi có 20 bản ghi gắn lý do, và lượt 120 bản ghi không bản ghi nào gắn lý do / Khi lấy mẫu ngẫu nhiên / Thì lượt đầu có 10 bản ghi mẫu (2% của 500), lượt sau có 5 (mức tối thiểu) | API, CSDL | todo |  |
-| AC-14-04-04 | Chính | Cho lãi suất 24 tháng thấp hơn 12 tháng 0,4 điểm / Khi trích / Thì bản ghi chỉ gắn relation_warning và không chặn phát hành lượt | API, CSDL | todo |  |
-| AC-14-04-05 | Thay thế | Cho 15 bản ghi cùng lý do và cùng mẫu trang / Khi duyệt hàng loạt, hoặc giao 5 mục cho người khác trong Data Space / Thì bulk-review cập nhật đủ 15 bản ghi trong 1 lần và người được giao thấy 5 mục trong hàng của mình | API, E2E | todo |  |
+| AC-14-04-04 | Chính | Cho lãi suất 24 tháng thấp hơn 12 tháng 0,4 điểm / Khi trích / Thì bản ghi chỉ gắn relation_warning và không chặn phát hành lượt | API, CSDL | todo | `tests/integration/api/test_acquire.py` |
+| AC-14-04-05 | Thay thế | Cho 15 bản ghi cùng lý do và cùng mẫu trang / Khi duyệt hàng loạt, hoặc giao 5 mục cho người khác trong Data Space / Thì bulk-review cập nhật đủ 15 bản ghi trong 1 lần và người được giao thấy 5 mục trong hàng của mình | API, E2E | todo | `tests/integration/api/test_acquire.py` |
 | AC-14-04-06 | Thay thế | Cho độ chính xác mẫu ngẫu nhiên 98%, 99%, 98%, 99% trong 4 lượt liên tiếp / Khi bật cổng tự động và lượt sau đạt 97% / Thì cổng bật được sau lượt thứ 4, tự tắt ở lượt 97%; trong lúc bật vẫn có mẫu ngẫu nhiên và mục bấ… | API, CSDL | todo |  |
 | AC-14-04-07 | Ngoại lệ | Cho lượt có mục chờ duyệt từ 08:00 ngày 12/10/2026 / Khi đến 08:00 ngày 14/10/2026 / Thì người duyệt nhận nhắc, mục chuyển người dự phòng và câu hỏi về lãi suất không dùng dữ liệu của lượt đó | API, Đánh giá agent | todo |  |
-| AC-14-04-08 | Ngoại lệ | Cho độ chính xác mẫu ngẫu nhiên của lượt là 88% / Khi phát hành / Thì bị từ chối, UC-14-02 mở lại để sửa schema và người phụ trách nguồn nhận báo | API, CSDL | todo |  |
-| AC-14-04-09 | Quy tắc | Cho crawl_run còn 1 bản ghi flagged / Khi phát hành lượt, bỏ bản ghi không ghi lý do, hoặc cho hợp nhất nhận lượt chưa phát hành / Thì CSDL từ chối cả 3; duyệt xong rồi phát hành thì được | CSDL | todo |  |
+| AC-14-04-08 | Ngoại lệ | Cho độ chính xác mẫu ngẫu nhiên của lượt là 88% / Khi phát hành / Thì bị từ chối, UC-14-02 mở lại để sửa schema và người phụ trách nguồn nhận báo | API, CSDL | todo | `tests/integration/api/test_acquire.py` |
+| AC-14-04-09 | Quy tắc | Cho crawl_run còn 1 bản ghi flagged / Khi phát hành lượt, bỏ bản ghi không ghi lý do, hoặc cho hợp nhất nhận lượt chưa phát hành / Thì CSDL từ chối cả 3; duyệt xong rồi phát hành thì được | CSDL | todo | `tests/integration/api/test_acquire.py` |
 
 </details>
 
-<details><summary>UC-14-05 Hợp nhất và tổng quát hoá dữ liệu · 3/10</summary>
+<details><summary>UC-14-05 Hợp nhất và tổng quát hoá dữ liệu · 5/10</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-14-05-01 | Chính | Cho đặc tả hợp nhất lãi suất huy động và lượt thu tuần 41 của 30 ngân hàng đã phát hành / Khi có sự kiện acquire.run.published / Thì consolidation_run published; dataset_version mới có origin consolidated, chưa chứng … | API, CSDL | todo |  |
 | AC-14-05-02 | Chính | Cho “LienVietPostBank” trên trang cũ, “LPBank” trên trang mới, một tên khớp mờ 0,96 có tên miền khớp, một tên khớp mờ 0,91 và một tên không khớp thực thể nào / Khi nhận diện thực thể / Thì hai tên đầu về cùng mã NHNN … | API, CSDL | todo |  |
 | AC-14-05-03 | Chính | Cho hai nguồn cùng ngân hàng, cùng kỳ lệch trên ngưỡng trọng yếu và một cặp lệch dưới ngưỡng / Khi đối chiếu / Thì cặp đầu tạo conflict theo G5.4, cặp sau lấy giá trị theo thứ tự ưu tiên nguồn của đặc tả và giá trị gh… | API, CSDL | todo |  |
-| AC-14-05-04 | Thay thế | Cho AC03 đổi ưu tiên nguồn qua PATCH /v1/consolidation-specs/{id}, rồi người khác đổi tên đặc tả / Khi lượt hợp nhất sau chạy / Thì last_edited_by là AC03 (đổi tên không ghi đè) và có phiên bản dataset mới với created… | API, CSDL | todo |  |
+| AC-14-05-04 | Thay thế | Cho AC03 đổi ưu tiên nguồn qua PATCH /v1/consolidation-specs/{id}, rồi người khác đổi tên đặc tả / Khi lượt hợp nhất sau chạy / Thì last_edited_by là AC03 (đổi tên không ghi đè) và có phiên bản dataset mới với created… | API, CSDL | todo | `tests/integration/api/test_acquire.py` |
 | AC-14-05-05 | Thay thế | Cho phiên bản tuần 41 đã chứng nhận và đang dùng trong 1 báo cáo định kỳ / Khi AC03 thu hồi chứng nhận kèm lý do “ngân hàng nguồn sửa số tuần 41” rồi chứng nhận lại / Thì phiên bản về chưa chứng nhận, có sự kiện catal… | API, CSDL | todo | `tests/integration/api/test_catalog.py` |
 | AC-14-05-06 | Ngoại lệ | Cho đặc tả có số nguồn tối thiểu 20 và không cho nội suy / Khi tuần 42 chỉ có 18 ngân hàng và ngân hàng B thiếu số / Thì bảng tổng hợp tuần 42 không phát hành, ô của ngân hàng B đánh dấu thiếu, không có giá trị nội suy | API, CSDL | todo |  |
 | AC-14-05-07 | Ngoại lệ | Cho phiên bản do lượt hợp nhất phát hành / Khi người sửa đặc tả gần nhất hoặc người không phải người phụ trách dữ liệu gọi :certify, hoặc thu hồi với lý do rỗng hay chỉ có khoảng trắng / Thì :certify trả 403 policy_de… | API, CSDL | todo | `tests/integration/api/test_catalog.py` |
 | AC-14-05-08 | Quy tắc | Cho phiên bản hợp nhất chưa chứng nhận / Khi báo cáo định kỳ có chỉ số gửi cơ quan quản lý dùng phiên bản đó, rồi AC03 khác người sửa đặc tả chứng nhận kèm ghi chú / Thì Semantic compiler chặn trước chứng nhận; sau ch… | API, CSDL | todo | `tests/integration/api/test_catalog.py` |
 | AC-14-05-09 | Quy tắc | Cho lượt hợp nhất tuần 41 đã phát hành / Khi kiểm Qdrant và lớp ngữ cảnh / Thì chỉ bảng tổng hợp, khẳng định và đoạn tóm tắt có vector; không extracted_record nào được nhúng | API, CSDL | todo |  |
-| AC-14-05-10 | Quy tắc | Cho reference_entity và entity_link / Khi ghi thực thể không có mã NHNN, SWIFT/BIC hay mã số thuế, mã SWIFT sai định dạng, thực thể nhập tay chưa xác minh, liên kết khớp mờ 0,91 tự xác nhận, hoặc liên kết xác nhận khô… | CSDL | todo |  |
+| AC-14-05-10 | Quy tắc | Cho reference_entity và entity_link / Khi ghi thực thể không có mã NHNN, SWIFT/BIC hay mã số thuế, mã SWIFT sai định dạng, thực thể nhập tay chưa xác minh, liên kết khớp mờ 0,91 tự xác nhận, hoặc liên kết xác nhận khô… | CSDL | todo | `tests/integration/api/test_acquire.py` |
 
 </details>
 
-<details><summary>UC-14-06 Giám sát thu thập · 0/6</summary>
+<details><summary>UC-14-06 Giám sát thu thập · 2/6</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-14-06-01 | Chính | Cho 30 nguồn active / Khi AC04 mở SCR-56, lọc nguồn có vấn đề và mở một lượt / Thì bảng nguồn có trạng thái, lần thu cuối, độ mới so với lịch, tỷ lệ trích đúng trên mẫu, số mục chờ duyệt, lỗi tải 403, 429, quá thời gi… | E2E, API | todo |  |
-| AC-14-06-02 | Chính | Cho nguồn ngân hàng A active / Khi tạm ngưng, chạy ngay rồi tiếp tục / Thì nguồn chuyển paused rồi active, và POST /v1/crawl-sources/{id}/runs tạo crawl_run ngay ngoài lịch | API, CSDL | todo |  |
+| AC-14-06-01 | Chính | Cho 30 nguồn active / Khi AC04 mở SCR-56, lọc nguồn có vấn đề và mở một lượt / Thì bảng nguồn có trạng thái, lần thu cuối, độ mới so với lịch, tỷ lệ trích đúng trên mẫu, số mục chờ duyệt, lỗi tải 403, 429, quá thời gi… | E2E, API | todo | `tests/integration/api/test_acquire.py` |
+| AC-14-06-02 | Chính | Cho nguồn ngân hàng A active / Khi tạm ngưng, chạy ngay rồi tiếp tục / Thì nguồn chuyển paused rồi active, và POST /v1/crawl-sources/{id}/runs tạo crawl_run ngay ngoài lịch | API, CSDL | todo | `tests/integration/api/test_acquire.py` |
 | AC-14-06-03 | Thay thế | Cho theo dõi chỉ số đặt trên dataset hợp nhất lãi suất (UC-08-01) / Khi dataset trễ quá lịch của đặc tả / Thì người theo dõi nhận cảnh báo độ mới | API | todo |  |
 | AC-14-06-04 | Ngoại lệ | Cho nguồn nhận 429 ở 3 lượt liên tiếp / Khi lượt thứ 3 kết thúc / Thì nguồn tự tạm ngưng, chủ sở hữu nhận báo; log egress proxy cho thấy cả 3 lượt dùng cùng địa chỉ ra và cùng User-Agent | API, CSDL | todo |  |
 | AC-14-06-05 | Quy tắc | Cho 3 nguồn khác nhau cùng một miền chạy cùng giờ / Khi cả 3 thu / Thì tổng số yêu cầu tới miền đó không quá 1 mỗi giây | API | todo |  |
