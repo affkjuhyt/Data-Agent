@@ -30,15 +30,12 @@ export interface Synonym {
   scope_label: string;
 }
 
-/** PROPOSAL: GET /v1/examples */
-export const listExamples = () => v1Get<Page<ExampleQuery>>('/examples', { page_size: 500 });
-
-/** PROPOSAL: GET /v1/synonyms */
-export const listSynonyms = () => v1Get<Page<Synonym>>('/synonyms', { page_size: 500 });
-
 /** POST /v1/examples answers ExampleView; the PROPOSAL display fields come along when sent. */
 export type ExampleWire = components['schemas']['ExampleView'] &
   Partial<Pick<ExampleQuery, 'usage_text' | 'source_label' | 'reason' | 'result_text'>>;
+
+export type SynonymWire = components['schemas']['SynonymView'] &
+  Partial<Pick<Synonym, 'target_text' | 'scope_label'>>;
 
 const readExample = (raw: ExampleWire): ExampleQuery => ({
   id: raw.id,
@@ -47,10 +44,30 @@ const readExample = (raw: ExampleWire): ExampleQuery => ({
   usage_text: raw.usage_text ?? '',
   source_label: raw.source_label ?? '',
   // Only an active example is in the standard set; draft and pending_review wait for a check.
-  status: raw.status === 'active' ? 'verified' : 'pending',
+  status: raw.status === 'active' || raw.status === 'verified' ? 'verified' : 'pending',
   reason: raw.reason ?? null,
   result_text: raw.result_text ?? null,
 });
+
+const readSynonym = (raw: SynonymWire): Synonym => {
+  if ('phrases' in raw) return raw as unknown as Synonym;
+  return {
+    id: raw.id,
+    phrases: [raw.phrase],
+    target_text: raw.target_value ? `${raw.target_kind} · ${raw.target_value}` : raw.target_kind,
+    scope_label: raw.status === 'active' ? 'Đã xác nhận' : raw.status,
+  };
+};
+
+export const listExamples = async () => {
+  const page = await v1Get<Page<ExampleWire>>('/examples', { page_size: 500 });
+  return { ...page, items: page.items.map(readExample) };
+};
+
+export const listSynonyms = async () => {
+  const page = await v1Get<Page<SynonymWire>>('/synonyms', { page_size: 500 });
+  return { ...page, items: page.items.map(readSynonym) };
+};
 
 /** A2: 422 validation_failed when the SQL does not run. */
 export const addExample = async (body: { question: string; sql: string }) =>
@@ -58,7 +75,7 @@ export const addExample = async (body: { question: string; sql: string }) =>
 
 /** PROPOSAL: PATCH /v1/examples/{id} — the SQL is run again before it is saved. */
 export const updateExampleSql = async (id: string, sql: string) =>
-  v1Send<ExampleQuery>('PATCH', `/examples/${pathId(id)}`, { sql });
+  readExample(await v1Send<ExampleWire>('PATCH', `/examples/${pathId(id)}`, { sql }));
 
 /** PROPOSAL: :verify marks an agent suggestion correct; it joins the standard question set. */
 export const verifyExample = async (id: string) =>
