@@ -85,9 +85,6 @@ const HELD_BACK: readonly string[] = [
   'getConsolidationRun',
   // Served since ea72b675 (the 48 endpoints of 12/10/2026) but not yet wired to their screens,
   // whose mocks still hold the old shapes; each leaves this list with its screen.
-  'lockAgent',
-  'retryRun',
-  'unlockAgent',
   'getDataMart',
   'getPipeline',
   'getWriteback',
