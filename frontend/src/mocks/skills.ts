@@ -418,6 +418,26 @@ const problem = (status: number, code: string, detail: string) =>
     { status, headers: { 'Content-Type': 'application/problem+json' } },
   );
 
+/** SkillView as the api sends it, with the screen's card under display. */
+const skillWire = (s: Skill) => ({
+  id: s.id,
+  code: s.id,
+  name: s.name,
+  description: s.description,
+  category: 'custom',
+  origin: s.scope === 'domain_pack' ? 'pack' : 'manual',
+  origin_ref: null,
+  scope: s.scope === 'organization' ? 'org' : 'data_space',
+  owner_id: s.owner.id,
+  current_version: s.status === 'draft' ? null : s.version,
+  replaced_by_skill_id: null,
+  run_count_30d: s.runs_30d ?? 0,
+  data_space_id: 'ds-rui-ro-tin-dung',
+  created_at: '2026-09-01T09:00:00+07:00',
+  updated_at: '2026-10-01T09:00:00+07:00',
+  display: s,
+});
+
 export function createSkillsHandlers() {
   const skills = skillsFixture();
   let versions = versionsFixture();
@@ -428,13 +448,11 @@ export function createSkillsHandlers() {
   let created = 0;
 
   return [
+    // SkillView, filtered by A2's scope (org, data_space); the screen's card under display.
     http.get('*/v1/skills', ({ request }) => {
-      const url = new URL(request.url);
-      const scope = url.searchParams.get('scope');
-      const status = url.searchParams.get('status');
-      return page(
-        skills.filter((s) => (!scope || s.scope === scope) && (!status || s.status === status)),
-      );
+      const scope = new URL(request.url).searchParams.get('scope');
+      const wanted = scope === 'org' ? 'organization' : scope;
+      return page(skills.filter((s) => !wanted || s.scope === wanted).map(skillWire));
     }),
     http.post('*/v1/skills', async ({ request }) => {
       const { name } = (await request.json()) as { name: string };
@@ -458,28 +476,28 @@ export function createSkillsHandlers() {
         pending_version_id: null,
       };
       skills.unshift(skill);
-      return HttpResponse.json(skill, { status: 201 });
+      return HttpResponse.json(skillWire(skill), { status: 201 });
     }),
-    // Sub-paths of one skill other than these belong to the authoring mock: fall through.
+    // SkillDetail with its versions (A2 has no GET /skills/{id}/versions); the screen's rows
+    // ride under display and display_versions. Other sub-paths fall through to authoring.
     http.get('*/v1/skills/:id', ({ params }) => {
       const skill = skills.find((s) => s.id === params.id);
-      return skill ? HttpResponse.json(skill) : undefined;
-    }),
-    http.get('*/v1/skills/:id/versions', ({ params }) => {
-      if (params.id === 'sk-segment') return page(versions);
-      const skill = skills.find((s) => s.id === params.id);
       if (!skill) return undefined;
-      return page<SkillVersion>([
-        {
-          id: `skv-${skill.id}-${skill.version}`,
-          version: skill.version,
-          change_text: 'Bản hiện tại',
-          eval_passed: 0,
-          eval_total: 0,
-          status: skill.status === 'certified' ? 'active' : 'draft',
-          status_text: skill.status_text,
-        },
-      ]);
+      const rows: SkillVersion[] =
+        skill.id === 'sk-segment'
+          ? versions
+          : [
+              {
+                id: `skv-${skill.id}-${skill.version}`,
+                version: skill.version,
+                change_text: 'Bản hiện tại',
+                eval_passed: 0,
+                eval_total: 0,
+                status: skill.status === 'certified' ? 'active' : 'draft',
+                status_text: skill.status_text,
+              },
+            ];
+      return HttpResponse.json({ ...skillWire(skill), versions: [], display_versions: rows });
     }),
     http.post('*/v1/skills/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
@@ -488,8 +506,10 @@ export function createSkillsHandlers() {
       if (!skill) return undefined;
       if (skill.status !== 'certified')
         return problem(409, 'invalid_state', 'Chỉ chia sẻ được kỹ năng đã chứng nhận.');
-      const { data_space_id } = (await request.json()) as { data_space_id: string | null };
-      return HttpResponse.json({ status: data_space_id ? 'shared' : 'pending_admin' });
+      // ShareRequest names the scope; org-wide waits for an administrator, so until then the
+      // skill keeps the Data Space scope it has.
+      await request.json();
+      return HttpResponse.json({ ...skillWire(skill), scope: 'data_space' });
     }),
     http.get('*/v1/skill-versions/:id/review', ({ params }) =>
       params.id === review.version_id
@@ -533,7 +553,23 @@ export function createSkillsHandlers() {
         });
       return HttpResponse.json(versions.find((v) => v.id === id));
     }),
-    http.get('*/v1/skill-suggestions', () => page(suggestions)),
+    http.get('*/v1/skill-suggestions', () =>
+      page(
+        suggestions.map((sg) => ({
+          id: sg.id,
+          pattern: { steps: sg.steps },
+          session_ids: sg.session_ids,
+          user_count: sg.used_by.length,
+          status: 'open',
+          accepted_skill_id: null,
+          dismissed_until: null,
+          data_space_id: 'ds-rui-ro-tin-dung',
+          created_at: '2026-10-01T09:00:00+07:00',
+          updated_at: '2026-10-01T09:00:00+07:00',
+          display: sg,
+        })),
+      ),
+    ),
     http.post('*/v1/skill-suggestions/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
       if (verb !== 'dismiss' || !suggestions.some((s) => s.id === id))

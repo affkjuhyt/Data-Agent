@@ -1,11 +1,17 @@
+import { listUsers } from './api';
 import { pathId, v1Get, v1Send, type Page } from './client';
+import type { components } from './schema';
+
+type Schemas = components['schemas'];
 
 /*
  * Skills and tools, the library side of P03 (UC-03-01, UC-03-05…07, UC-13-02): the skill
  * library, the versions of one skill with its review and deprecation, the agent's skill
  * suggestions and sharing, the tool registry by permission level and the MCP connections.
  * The authoring side (definition, tests, run) lives in skillAuthoring.ts and reads these
- * types. Fields marked PROPOSAL are what the screens need and the spec does not fix yet.
+ * types. Fields marked PROPOSAL are what the screens need and the spec does not fix yet. The
+ * api's rows are read below; the screen's richer row travels under `display` when the mock sends
+ * it and is said from the api's row otherwise.
  */
 export type SkillStatus = 'draft' | 'testing' | 'pending_review' | 'certified' | 'deprecated';
 export type SkillScope = 'data_space' | 'organization' | 'domain_pack';
@@ -38,16 +44,119 @@ export interface Skill {
   pending_version_id: string | null;
 }
 
-export const listSkills = (query: { scope?: SkillScope; status?: SkillStatus } = {}) =>
-  v1Get<Page<Skill>>('/skills', { ...query, page_size: 500 });
+type SkillWire = (Schemas['SkillView'] | Schemas['SkillDetail']) & { display?: Skill };
 
-export const getSkill = async (id: string) => v1Get<Skill>(`/skills/${pathId(id)}`);
+/** skill.scope personal, data_space, org; a pack's skill is the domain pack's. */
+const scopeOf = (raw: Schemas['SkillView']): SkillScope =>
+  raw.origin === 'pack' ? 'domain_pack' : raw.scope === 'org' ? 'organization' : 'data_space';
+
+const SCOPE_LABEL: Record<string, string> = {
+  personal: 'Cá nhân',
+  data_space: 'Data Space',
+  org: 'Toàn tổ chức',
+};
+
+/*
+ * The skill's status from its versions when the detail has them (a version waiting for review,
+ * none published yet), else from the row: replaced is deprecated, no version a draft.
+ */
+function statusOf(raw: SkillWire): { status: SkillStatus; pending: string | null } {
+  const versions = 'versions' in raw ? (raw.versions ?? []) : [];
+  const pending = versions.find((v) => v.status === 'pending_review') ?? null;
+  if (raw.replaced_by_skill_id) return { status: 'deprecated', pending: null };
+  if (pending) return { status: 'pending_review', pending: pending.id };
+  if (versions.some((v) => v.status === 'testing')) return { status: 'testing', pending: null };
+  if (raw.current_version === null) return { status: 'draft', pending: null };
+  return { status: 'certified', pending: null };
+}
+
+const STATUS_TEXT: Record<SkillStatus, string> = {
+  draft: 'Nháp',
+  testing: 'Đang kiểm định',
+  pending_review: 'Chờ duyệt',
+  certified: 'Đã chứng nhận',
+  deprecated: 'Đã ngừng',
+};
+
+function readSkill(raw: SkillWire, names: Map<string, string>): Skill {
+  if (raw.display) return raw.display;
+  const { status, pending } = statusOf(raw);
+  const owner = { id: raw.owner_id, name: names.get(raw.owner_id) ?? '' };
+  const steps = 'published_version' in raw ? raw.published_version?.steps : null;
+  return {
+    id: raw.id,
+    name: raw.name,
+    description: raw.description ?? '',
+    version: raw.current_version ?? 0,
+    status,
+    status_text: STATUS_TEXT[status],
+    scope: scopeOf(raw),
+    scope_label: SCOPE_LABEL[raw.scope] ?? raw.scope,
+    owner,
+    created_by: owner,
+    step_count: Array.isArray(steps) ? steps.length : 0,
+    agent_count: 0,
+    runs_30d: raw.run_count_30d || null,
+    pass_rate_pct: null,
+    pending_version_id: pending,
+  };
+}
+
+/** The owners' names come from the people the viewer may see; a failure leaves them empty. */
+const userNames = async () =>
+  new Map<string, string>(
+    (await listUsers().catch(() => null))?.items.map((u) => [u.id, u.display_name]) ?? [],
+  );
+
+/** A2 filters by scope and category; `status` is the screen's, applied to the page read. */
+export const listSkills = async (query: { scope?: SkillScope; status?: SkillStatus } = {}) => {
+  const [page, names] = await Promise.all([
+    v1Get<Page<SkillWire>>('/skills', {
+      scope:
+        query.scope === 'organization'
+          ? 'org'
+          : query.scope === 'data_space'
+            ? 'data_space'
+            : undefined,
+      page_size: 500,
+    }),
+    userNames(),
+  ]);
+  const items = page.items.map((s) => readSkill(s, names));
+  return { ...page, items: query.status ? items.filter((s) => s.status === query.status) : items };
+};
+
+export const getSkill = async (id: string) => {
+  const [raw, names] = await Promise.all([v1Get<SkillWire>(`/skills/${pathId(id)}`), userNames()]);
+  return readSkill(raw, names);
+};
+
+/** "Phân rã biến động" → "phan_ra_bien_dong" (skill.code). */
+const codeOf = (name: string) =>
+  name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60) || 'skill';
 
 /**
- * PROPOSAL: POST /v1/skills — an empty draft owned by the caller, opened in the editor
- * (skillAuthoring.ts fills its definition).
+ * POST /v1/skills (SkillCreate) — an empty draft owned by the caller, opened in the editor
+ * (skillAuthoring.ts fills its definition). It starts personal and custom; sharing widens it.
  */
-export const createSkill = (body: { name: string }) => v1Send<Skill>('POST', '/skills', body);
+export const createSkill = async (body: { name: string }) =>
+  readSkill(
+    await v1Send<SkillWire>('POST', '/skills', {
+      code: codeOf(body.name),
+      name: body.name,
+      category: 'custom',
+      origin: 'manual',
+      scope: 'personal',
+    } satisfies Schemas['SkillCreate']),
+    new Map(),
+  );
 
 /* ─── Phiên bản kỹ năng · Duyệt & ngừng (UC-03-05, UC-03-06) ───────────── */
 
@@ -71,8 +180,49 @@ export interface SkillVersion {
   status_text: string;
 }
 
-export const listSkillVersions = async (skillId: string) =>
-  v1Get<Page<SkillVersion>>(`/skills/${pathId(skillId)}/versions`);
+/** skill_version.status in the screen's words: published is in use, retired stopped. */
+const VERSION_STATUS: Record<string, SkillVersionStatus> = {
+  draft: 'draft',
+  testing: 'draft',
+  pending_review: 'pending_review',
+  needs_review: 'changes_requested',
+  published: 'active',
+  retired: 'deprecated',
+};
+
+const VERSION_TEXT: Record<SkillVersionStatus, string> = {
+  draft: 'Nháp',
+  pending_review: 'Chờ duyệt',
+  changes_requested: 'Cần sửa',
+  active: 'Đang dùng',
+  deprecated: 'Đã ngừng',
+};
+
+/**
+ * A2 has no GET /v1/skills/{id}/versions: the skill's detail carries its versions, newest first.
+ * The change note and the eval counts are PROPOSAL.
+ */
+export const listSkillVersions = async (skillId: string): Promise<Page<SkillVersion>> => {
+  const raw = await v1Get<Schemas['SkillDetail'] & { display_versions?: SkillVersion[] }>(
+    `/skills/${pathId(skillId)}`,
+  );
+  if (raw.display_versions) return { items: raw.display_versions, next_page_token: '' };
+  const items = [...(raw.versions ?? [])]
+    .sort((a, b) => b.version - a.version)
+    .map((v): SkillVersion => {
+      const status = VERSION_STATUS[v.status] ?? 'draft';
+      return {
+        id: v.id,
+        version: v.version,
+        change_text: '',
+        eval_passed: 0,
+        eval_total: 0,
+        status,
+        status_text: VERSION_TEXT[status],
+      };
+    });
+  return { items, next_page_token: '' };
+};
 
 interface Option {
   value: string;
@@ -132,22 +282,68 @@ export interface SkillSuggestion {
   occurrences: { at: string; where: string }[];
 }
 
-export const listSkillSuggestions = () =>
-  v1Get<Page<SkillSuggestion>>('/skill-suggestions', { page_size: 500 });
+type SuggestionWire = Schemas['services__api__modules__skill__schemas__SuggestionView'] & {
+  display?: SkillSuggestion;
+};
+
+/**
+ * `pattern` is the generalised chain (BR-98): step kinds and parameter names, no values. Each
+ * step reads as its name or kind; the steps may sit at the top or under `steps`.
+ */
+function stepsOf(pattern: unknown): string[] {
+  const list = Array.isArray(pattern)
+    ? pattern
+    : typeof pattern === 'object' &&
+        pattern !== null &&
+        Array.isArray((pattern as { steps?: unknown }).steps)
+      ? (pattern as { steps: unknown[] }).steps
+      : [];
+  return list.flatMap((s) => {
+    if (typeof s === 'string') return [s];
+    if (typeof s !== 'object' || s === null) return [];
+    const { name, kind } = s as { name?: unknown; kind?: unknown };
+    return typeof name === 'string' ? [name] : typeof kind === 'string' ? [kind] : [];
+  });
+}
+
+function readSuggestion(raw: SuggestionWire): SkillSuggestion {
+  if (raw.display) return raw.display;
+  const steps = stepsOf(raw.pattern);
+  const sessions = raw.session_ids.length;
+  return {
+    id: raw.id,
+    title: steps.length ? steps.join(' → ') : 'Chuỗi bước lặp lại',
+    repeat_text: `Lặp lại trong ${sessions} phiên của ${raw.user_count} người`,
+    count_text: `${sessions} phiên · ${raw.user_count} người`,
+    steps,
+    used_by: [],
+    session_ids: raw.session_ids,
+    occurrences: [],
+  };
+}
+
+export const listSkillSuggestions = async () => {
+  const page = await v1Get<Page<SuggestionWire>>('/skill-suggestions', { page_size: 500 });
+  return { ...page, items: page.items.map(readSuggestion) };
+};
 
 /** :dismiss — the agent does not suggest the same chain again for 90 days. */
 export const dismissSkillSuggestion = async (id: string) =>
   v1Send<void>('POST', `/skill-suggestions/${pathId(id)}:dismiss`, {});
 
 /**
- * PROPOSAL: :share — a certified skill to another Data Space or the whole organisation
- * (`data_space_id` null). The receiver runs it with its own data permissions; org-wide sharing
- * waits for an administrator.
+ * :share — a certified skill to its Data Space or the whole organisation (`data_space_id` null).
+ * A2's ShareRequest names the scope, not another Data Space: sharing to a space is the skill's
+ * own. The receiver runs it with its own data permissions; org-wide sharing waits for an
+ * administrator, which the skill's scope not yet being org says.
  */
-export const shareSkill = async (id: string, dataSpaceId: string | null) =>
-  v1Send<{ status: 'shared' | 'pending_admin' }>('POST', `/skills/${pathId(id)}:share`, {
-    data_space_id: dataSpaceId,
-  });
+export const shareSkill = async (id: string, dataSpaceId: string | null) => {
+  const scope = dataSpaceId === null ? 'org' : 'data_space';
+  const shared = await v1Send<Schemas['SkillView']>('POST', `/skills/${pathId(id)}:share`, {
+    scope,
+  } satisfies Schemas['ShareRequest']);
+  return { status: shared.scope === scope ? ('shared' as const) : ('pending_admin' as const) };
+};
 
 /* ─── Công cụ & kết nối MCP (UC-13-02) ────────────────────────────────── */
 
