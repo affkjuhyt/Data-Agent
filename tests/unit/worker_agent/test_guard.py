@@ -50,3 +50,8 @@ def test_anything_else_is_rejected(sql: str) -> None:
 def test_the_cap_wraps_the_query() -> None:
     sql = capped(check_read_only("SELECT a FROM t ORDER BY a", "postgres"), "postgres", 10001)
     assert sql.endswith("LIMIT 10001") and "_q" in sql
+
+
+def test_what_runs_is_checked_again() -> None:
+    sql = capped(check_read_only("SELECT 'it''s' AS a", "postgres"), "postgres", 5)
+    assert check_read_only(sql, "postgres").sql(dialect="postgres") == sql

@@ -143,13 +143,16 @@ def _measure_entity(metric: MetricVersion, layer: Layer) -> tuple[exp.Expression
         measure = layer.measures.get(column.name)
         if measure is None:
             raise CompileError(
-                "CONTRACT_MISMATCH", f"the metric names a measure that is not defined: {column.name}"
+                "CONTRACT_MISMATCH",
+                f"the metric names a measure that is not defined: {column.name}",
             )
         entities.add(measure.entity_id)
         try:
             measures[column.name] = parse_one(measure.expression)
         except ParseError as exc:
-            raise CompileError("CONTRACT_MISMATCH", f"measure {measure.code} does not parse") from exc
+            raise CompileError(
+                "CONTRACT_MISMATCH", f"measure {measure.code} does not parse"
+            ) from exc
     if not measures:
         raise CompileError("CONTRACT_MISMATCH", "the metric's expression names no measure")
     if len(entities) != 1:
@@ -218,12 +221,9 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
         dim = layer.dimensions.get(code)
         if dim is None:
             raise CompileError("UNRESOLVED_ENTITY", f"unknown dimension {code}")
-        if (
-            metric.allowed_dimension_ids
-            and dim.id not in metric.allowed_dimension_ids
-            and not dim.is_time
-        ):
-            # BR-81: a metric is cut only along the dimensions its owner allowed.
+        # BR-81: a question cuts or filters a metric only along the dimensions its owner allowed;
+        # none listed allows none. Time is the period's, always allowed.
+        if dim.id not in metric.allowed_dimension_ids and not dim.is_time:
             raise CompileError(
                 "CONTRACT_MISMATCH", f"{metric.display_name} is not cut by {dim.name}"
             )
@@ -256,7 +256,10 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
         select = select.join(_table(table, alias), on=on, join_type="left")
 
     conditions: list[exp.Expression] = []
+    # The metric's own default filters were set by its owner; the question's go through BR-81.
     filters: list[tuple[str, Sequence[object], bool]] = []
+    for code in request.filters:
+        dimension(code)
     for f in metric.filters:
         code = str(f.get("dimension") or f.get("column") or "")
         values = f.get("values", f.get("value"))

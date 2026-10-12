@@ -123,6 +123,15 @@ def check_read_only(sql: str, dialect: str) -> exp.Expression:
 
 def capped(tree: exp.Expression, dialect: str, limit: int) -> str:
     """The query wrapped so the source returns at most `limit` rows: one more than shown tells the
-    executor the result was truncated."""
+    executor the result was truncated.
+
+    What runs is this regenerated text, not the text that was checked, so it is checked again:
+    it must pass the guard itself and regenerate to exactly itself. A construct sqlglot reads one
+    way and writes another (a literal whose escaping it misreads) fails here instead of reaching
+    the source in a form nobody inspected."""
     wrapped = exp.select("*").from_(exp.Subquery(this=tree, alias="_q")).limit(limit)
-    return wrapped.sql(dialect=dialect)
+    sql = wrapped.sql(dialect=dialect)
+    again = check_read_only(sql, dialect)
+    if again.sql(dialect=dialect) != sql:
+        raise SqlRejected("the SQL does not read back as itself")
+    return sql

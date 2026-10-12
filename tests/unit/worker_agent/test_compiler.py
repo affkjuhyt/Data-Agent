@@ -107,6 +107,17 @@ def test_a_filter_value_is_quoted_never_spliced() -> None:
 @pytest.mark.parametrize(
     ("request_", "code"),
     [
+        # BR-81 holds for filters too, and an empty list allows no cut at all.
+        (
+            Request(
+                metric(allowed_dimension_ids=frozenset({PRODUCT.id})), filters={"vung": ["MB"]}
+            ),
+            "CONTRACT_MISMATCH",
+        ),
+        (
+            Request(metric(allowed_dimension_ids=frozenset()), group_by=["san_pham"]),
+            "CONTRACT_MISMATCH",
+        ),
         (
             Request(metric(allowed_dimension_ids=frozenset({PRODUCT.id})), group_by=["vung"]),
             "CONTRACT_MISMATCH",
