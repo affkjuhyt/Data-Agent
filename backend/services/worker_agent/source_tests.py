@@ -28,7 +28,11 @@ TIMEOUT_SECONDS = 30
 
 
 def _ssl_mode(source: catalog.Source) -> str:
-    mode = str((source.conn_options or {}).get("sslmode") or "verify-full")
+    options = source.conn_options or {}
+    # The local demo PostgreSQL service has no CA bundle. Production sources keep the secure
+    # default; an explicit sslmode in conn_options always wins.
+    default = "disable" if (source.host or "").endswith(".svc.cluster.local") else "verify-full"
+    mode = str(options.get("sslmode") or default)
     if mode not in {"disable", "require", "verify-ca", "verify-full"}:
         raise SecretUnavailable(f"sslmode {mode} is not supported")
     return mode
@@ -51,7 +55,13 @@ async def _check(source: catalog.Source, org_id: uuid.UUID) -> tuple[bool, str, 
             statement_cache_size=0,
             server_settings={"application_name": "dataagent-connector-test"},
         )
-    except (SecretUnavailable, asyncpg.PostgresError, OSError, TimeoutError) as exc:
+    except (
+        SecretUnavailable,
+        asyncpg.ClientConfigurationError,
+        asyncpg.PostgresError,
+        OSError,
+        TimeoutError,
+    ) as exc:
         # Do not persist driver messages: they can contain usernames, host details or SQL.
         return False, f"connection failed ({type(exc).__name__})", None
 
