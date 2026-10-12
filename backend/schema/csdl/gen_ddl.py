@@ -253,6 +253,9 @@ def build(d: dict, database: str) -> str:
     roles = ["da_owner"] + [f"svc_{s}" for s in schemas] + [f"{s}_read" for s in schemas]
     if "exec" in schemas:
         roles.append("svc_exec_worker")
+    if "audit" in schemas:
+        # worker-agent releases approved exports; it must not read or append the log (D5.2).
+        roles.append("svc_audit_worker")
     # Every schema has an outbox (tab 3 D1 item 13), audit's included since 12/10/2026.
     roles.append("svc_outbox_relay")
     out = [

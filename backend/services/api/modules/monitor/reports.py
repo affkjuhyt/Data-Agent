@@ -9,8 +9,8 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Path, Response
-from sqlalchemy import delete, or_, select
+from fastapi import APIRouter, Body, Depends, Path, Query, Response
+from sqlalchemy import delete, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -18,6 +18,15 @@ from libs.dataagent_db.models import context, monitor, org, workspace
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
+from services.api.kernel.pagination import (
+    Order,
+    Page,
+    PageRequest,
+    keyset,
+    next_page,
+    order_by,
+    page_request,
+)
 from services.api.kernel.problems import Problem
 from services.api.modules.monitor import rules
 from services.api.modules.monitor.schemas import (
@@ -28,6 +37,7 @@ from services.api.modules.monitor.schemas import (
     ReportCreate,
     ReportPatch,
     ReportRunView,
+    ReportScheduleDetail,
     ReportScheduleView,
     RunNow,
 )
@@ -202,6 +212,124 @@ def _schedule_event(
         status=row.status,
         **extra,
     )
+
+
+def _mine_or_received(principal: Principal) -> Any:
+    """The schedules the caller owns or receives, directly or through a group: a report's
+    recipients and outputs are not for every member of the Data Space (BR-34)."""
+    recipient = monitor.ReportRecipient
+    my_groups = select(org.UserGroupMember.group_id).where(
+        org.UserGroupMember.user_id == principal.user_id
+    )
+    received = exists().where(
+        recipient.report_schedule_id == monitor.ReportSchedule.id,
+        or_(
+            (recipient.principal_type == "user") & (recipient.principal_id == principal.user_id),
+            (recipient.principal_type == "group") & recipient.principal_id.in_(my_groups),
+        ),
+    )
+    return or_(monitor.ReportSchedule.owner_id == principal.user_id, received)
+
+
+@router.get(
+    "/v1/reports",
+    response_model=Page[ReportScheduleView],
+    **endpoint("GET", "/v1/reports", operation_id="listReportSchedules"),
+)
+async def list_reports(
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(order_by("created_at", "updated_at", "title", "status", default="created_at desc")),
+    ],
+    status: Annotated[str | None, Query(max_length=40)] = None,
+    kind: Annotated[str | None, Query(max_length=40)] = None,
+) -> Page[ReportScheduleView]:
+    rs = monitor.ReportSchedule
+    query = select(rs).where(
+        rs.org_id == principal.org_id,
+        rs.data_space_id == data_space,
+        rs.deleted_at.is_(None),
+        _mine_or_received(principal),
+    )
+    for column, value in ((rs.status, status), (rs.kind, kind)):
+        if value is not None:
+            query = query.where(column == value)
+    query = keyset(
+        query,
+        columns={
+            "created_at": rs.created_at,
+            "updated_at": rs.updated_at,
+            "title": rs.title,
+            "status": rs.status,
+        },
+        tiebreak=rs.id,
+        order=order,
+        page=page,
+    )
+    async with transaction(ROLE, principal) as session:
+        rows = list((await session.scalars(query)).all())
+        rows, token = next_page(rows, order=order, page=page)
+        items = [await _view(session, r) for r in rows]
+    return Page(items=items, next_page_token=token)
+
+
+async def _permission_groups(
+    session: AsyncSession, principal: Principal, schedule_id: uuid.UUID
+) -> set[str]:
+    """The permission groups the caller receives the schedule's outputs as."""
+    my_groups = select(org.UserGroupMember.group_id).where(
+        org.UserGroupMember.user_id == principal.user_id
+    )
+    return set(
+        (
+            await session.scalars(
+                select(monitor.ReportRecipient.permission_group).where(
+                    monitor.ReportRecipient.report_schedule_id == schedule_id,
+                    or_(
+                        (monitor.ReportRecipient.principal_type == "user")
+                        & (monitor.ReportRecipient.principal_id == principal.user_id),
+                        (monitor.ReportRecipient.principal_type == "group")
+                        & monitor.ReportRecipient.principal_id.in_(my_groups),
+                    ),
+                )
+            )
+        ).all()
+    )
+
+
+@router.get(
+    "/v1/reports/{id}",
+    response_model=ReportScheduleDetail,
+    **endpoint("GET", "/v1/reports/{id}", operation_id="getReportSchedule"),
+)
+async def get_report(
+    schedule_id: ReportId, principal: CurrentPrincipal, data_space: CurrentDataSpace
+) -> ReportScheduleDetail:
+    async with transaction(ROLE, principal) as session:
+        row = await _schedule(session, schedule_id, principal, data_space)
+        owner = row.owner_id == principal.user_id
+        groups = set() if owner else await _permission_groups(session, principal, row.id)
+        if not owner and not groups:
+            # Neither the owner nor a recipient: the schedule is not theirs to see (BR-34).
+            raise Problem(404, "not_found", "Report schedule not found.")
+        view = ReportScheduleDetail(**(await _view(session, row)).model_dump())
+        run = await session.scalar(
+            select(monitor.ReportRun)
+            .where(monitor.ReportRun.report_schedule_id == row.id)
+            .order_by(monitor.ReportRun.created_at.desc(), monitor.ReportRun.id.desc())
+            .limit(1)
+        )
+    if run is not None:
+        view.latest_run = ReportRunView.model_validate(
+            {
+                **{c: getattr(run, c) for c in ReportRunView.model_fields if c != "outputs"},
+                "outputs": rules.visible_outputs(run.outputs, owner=owner, groups=groups),
+            }
+        )
+    return view
 
 
 @router.post(

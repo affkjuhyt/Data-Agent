@@ -14,15 +14,15 @@ def test_object_counts_match_the_design(db):
         "WHERE c.relkind IN ('r','p') AND NOT c.relispartition "
         "AND n.nspname NOT IN ('pg_catalog','information_schema','public')",
     )
-    # 194 tables of 23 schemas plus one outbox per schema (D5.1).
-    assert tables == 194 + 23
+    # 195 tables of 23 schemas (agent.tool_def since 12/10/2026) plus one outbox per schema (D5.1).
+    assert tables == 195 + 23
     fks = one(
         db,
         "SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace "
         "WHERE c.contype = 'f' AND c.conparentid = 0 "
         "AND n.nspname NOT IN ('pg_catalog','information_schema','public')",
     )
-    assert fks == 203
+    assert fks == 205  # agent_run.retry_of, metric_override.calibration_run_id (12/10/2026)
 
 
 def test_rows_of_another_organisation_are_invisible(db):

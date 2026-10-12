@@ -11,7 +11,7 @@ import decimal
 import uuid
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 Classification = Literal["public", "internal", "confidential", "restricted"]
 SLUG = r"^[a-z0-9][a-z0-9-]{1,79}$"
@@ -135,6 +135,79 @@ class RelationshipCreate(BaseModel):
         return self
 
 
+# ---------------------------------------------------------------- entity model (UC-07-02)
+
+
+class DatasetRef(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+class EntityRelationship(BaseModel):
+    """A relationship of the entity's primary table; the entity at the other end, if one is
+    declared on that table, by its key."""
+
+    id: uuid.UUID
+    from_dataset_id: uuid.UUID
+    from_columns: list[str]
+    from_entity: str | None
+    to_dataset_id: uuid.UUID
+    to_columns: list[str]
+    to_entity: str | None
+    cardinality: str
+    origin: str
+    status: str
+
+
+class EntityView(View):
+    id: uuid.UUID
+    # The entity's code: unique in its Data Space, the {key} of GET /v1/entities/{key}.
+    key: str = Field(validation_alias=AliasChoices("key", "code"))
+    data_space_id: uuid.UUID
+    name: str
+    description: str | None
+    primary_dataset: DatasetRef | None = None
+    # The grain: one row of the primary table per value of these columns.
+    key_columns: list[str]
+    canonical_entity_id: uuid.UUID | None
+    status: str
+    relationships: list[EntityRelationship] = Field(default_factory=list)
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+class EntityPart(BaseModel):
+    id: uuid.UUID
+    code: str
+    name: str
+
+
+class EntityDimension(EntityPart):
+    expression: str
+    parent_dimension_id: uuid.UUID | None
+    is_time: bool
+
+
+class EntityMeasure(EntityPart):
+    aggregation: str
+    unit: str | None
+    additivity: str
+
+
+class EntityMetric(BaseModel):
+    id: uuid.UUID
+    code: str
+    display_name: str | None
+    status: str
+
+
+class EntityDetail(EntityView):
+    dimensions: list[EntityDimension] = Field(default_factory=list)
+    measures: list[EntityMeasure] = Field(default_factory=list)
+    # Metrics computed on the entity's table or broken down by one of its dimensions.
+    metrics: list[EntityMetric] = Field(default_factory=list)
+
+
 class RelationshipView(View):
     id: uuid.UUID
     data_space_id: uuid.UUID
@@ -187,6 +260,13 @@ class ExampleCreate(BaseModel):
     question: str = Field(min_length=1, max_length=2_000)
     sql: str = Field(min_length=1, max_length=20_000)
     metric_ids: list[uuid.UUID] | None = None
+
+
+class ExamplePatch(BaseModel):
+    question: str | None = Field(default=None, min_length=1, max_length=2_000)
+    sql: str | None = Field(default=None, min_length=1, max_length=20_000)
+    # active confirms the example into the standard set (BR-118); rejected drops a suggestion.
+    status: Literal["active", "rejected"] | None = None
 
 
 class ExampleView(View):

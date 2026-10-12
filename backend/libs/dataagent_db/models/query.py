@@ -37,7 +37,7 @@ class QueryRun(Base):
     data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     caller_kind: Mapped[str] = mapped_column(
         Text,
-        comment="question, tile, skill_run, agent_run, pipeline, period, eval, receipt_replay (UC-01-07)",
+        comment="question, tile, skill_run, agent_run, pipeline, period, eval, receipt_replay (UC-01-07), ad_hoc (SQL người dùng gửi qua POST /v1/query-runs, thêm 12/10/2026)",
     )
     caller_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     principal_id: Mapped[uuid.UUID] = mapped_column(

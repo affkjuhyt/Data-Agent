@@ -7,6 +7,7 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'da_owner') THEN CREATE ROLE da_owner NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_audit') THEN CREATE ROLE svc_audit NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'audit_read') THEN CREATE ROLE audit_read NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_audit_worker') THEN CREATE ROLE svc_audit_worker NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_outbox_relay') THEN CREATE ROLE svc_outbox_relay NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
 END $$;
 
@@ -255,6 +256,18 @@ $$;
 REVOKE UPDATE, DELETE ON audit.audit_log FROM svc_audit;
 
 -- covers: audit.export_job#0 (no DDL: org_isolation is generated; the file is written by the export worker from the masked before/after columns, which already hold no personal data, BR-138)
+
+-- D5.2 (12/10/2026): svc_audit_worker is worker-agent's role for releasing an approved export:
+-- it reads export_job and moves its state, nothing on audit_log, security_event or outbox.
+-- org_isolation applies to every role, so it stays inside the organisation it sets.
+GRANT USAGE ON SCHEMA audit TO svc_audit_worker;
+GRANT SELECT ON audit.export_job TO svc_audit_worker;
+GRANT UPDATE (status, approved_by, approved_at, updated_at) ON audit.export_job TO svc_audit_worker;
+-- The only change it makes is the approver's decision on a waiting export: approved (queued, with
+-- the approver; the table's CHECK keeps the approver apart from the requester) or rejected (failed).
+CREATE POLICY worker_decision_only ON audit.export_job AS RESTRICTIVE FOR UPDATE TO svc_audit_worker
+  USING (status = 'waiting_approval')
+  WITH CHECK ((status = 'queued' AND approved_by IS NOT NULL AND approved_at IS NOT NULL) OR status = 'failed');
 
 SELECT public.da_ensure_month_partitions(3);
 RESET ROLE;

@@ -36,7 +36,7 @@ Thiết kế này dựng lại cơ sở dữ liệu từ 88 đặc tả use case
 | context | Context service | Mô hình ngữ nghĩa, chỉ số và phiên bản, từ đồng nghĩa, ví dụ, thuật ngữ, trang tri thức và phiên bản, khẳng định, ràng buộc số, liên kết, lượt và phát hiện rà soát | P07 | 22 |
 | qa | Agent runtime (hỏi đáp) | Hội thoại, câu hỏi, kế hoạch, câu trả lời, phản hồi, xuất tệp | P01 | 9 |
 | query | Query engine | Lượt chạy SQL và kết quả rút gọn | P01, P02 | 2 |
-| agent | Agent runtime (quản lý agent) | Định nghĩa, cấu hình, công cụ, trigger, triển khai, lượt chạy, bước, bộ nhớ | P08, P13 | 10 |
+| agent | Agent runtime (quản lý agent) | Định nghĩa, cấu hình, công cụ, trigger, triển khai, lượt chạy, bước, bộ nhớ | P08, P13 | 11 |
 | eval | Eval service | Bộ đánh giá dùng chung cho lớp ngữ cảnh, kỹ năng, agent, gói ngành | P03, P07, P13 | 5 |
 | inbox | Inbox service | Đề xuất, quyết định duyệt, yêu cầu HITL, chuỗi duyệt | P07 | 4 |
 | workspace | Workspace service | Phiên, ô, kết quả lưu, chia sẻ, bình luận, báo cáo phiên | P02 | 8 |
@@ -431,6 +431,7 @@ Ngoại lệ chỉ ghi thêm: svc\_period không có UPDATE, DELETE trên period
 | svc\_org | — |
 | svc\_exec | — (chỉ schema exec; chính sách chủ kho, D4.24) |
 | svc\_exec\_worker | — (quyền cột trên exec.vault, exec.thesis và INSERT ba bảng chỉ ghi thêm khi app.exec\_workflow = 'on', D4.24) |
+| svc\_audit\_worker | — (CSDL dataagent\_audit: SELECT audit.export\_job và UPDATE các cột status, approved\_by, approved\_at, updated\_at; chính sách RLS hạn chế chỉ cho đổi waiting\_approval sang queued (kèm approved\_by, approved\_at) hoặc failed; không có quyền trên audit\_log, security\_event, outbox. worker-agent dùng để phát hành bản xuất đã duyệt, thay svc\_audit; thêm 12/10/2026) |
 
 Lý do đọc chéo của hai dịch vụ mới. svc\_acquire: catalog cho dataset đích origin = consolidated; context và pack cho thuộc tính chuẩn mà fields.canonical\_attr trỏ tới; governance cho retention\_policy (retain\_until) và chính sách dữ liệu nguồn ngoài; org cho Data Space và người phụ trách. svc\_forecast: acquire cho mức tin cậy và nhãn nguồn ngoài của chuỗi hợp nhất làm biến ngoại sinh (BR-156); skill cho external\_observation; catalog và query cho data\_snapshot\_refs; context cho metric\_code; org. Chưa dịch vụ cũ nào được cấp acquire\_read, forecast\_read.
 

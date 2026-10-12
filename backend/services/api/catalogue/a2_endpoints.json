@@ -1,5 +1,5 @@
 {
- "source": "Data Agent V3 — Tài liệu phân tích thiết kế hệ thống, tab 4 · Đặc tả API, A2 (rev 121)",
+ "source": "Data Agent V3 — Tài liệu phân tích thiết kế hệ thống, tab 4 · Đặc tả API, A2 (rev 130)",
  "as_of": "2026-10-12",
  "note": "Snapshot of A2. ADR-48: OpenAPI is generated from code and checked against this list; adding or removing an endpoint updates A2 and this file in the same PR.",
  "groups": {
@@ -362,6 +362,20 @@
    ]
   },
   {
+   "group": "Truy vấn",
+   "method": "POST",
+   "path": "/v1/query-runs",
+   "summary": "Chạy truy vấn chỉ đọc trên một bảng (lọc) hoặc SQL, theo quyền người gọi (thêm 12/10/2026)",
+   "use_cases": [
+    "04-02",
+    "06-01",
+    "06-02"
+   ],
+   "capability": [
+    "view_detail"
+   ]
+  },
+  {
    "group": "Phiên làm việc",
    "method": "GET",
    "path": "/v1/workspaces",
@@ -556,6 +570,66 @@
    ]
   },
   {
+   "group": "Phiên làm việc",
+   "method": "GET",
+   "path": "/v1/session-reports",
+   "summary": "Báo cáo của một phiên (thêm 12/10/2026)",
+   "use_cases": [
+    "02-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "GET",
+   "path": "/v1/session-reports/{id}",
+   "summary": "Một báo cáo của phiên: mục, căn cứ từng số, kết quả bốn kiểm tra (thêm 12/10/2026)",
+   "use_cases": [
+    "02-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "GET",
+   "path": "/v1/workspaces/{id}/shares",
+   "summary": "Danh sách chia sẻ hiện có của phiên (thêm 12/10/2026)",
+   "use_cases": [
+    "02-03"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "POST",
+   "path": "/v1/workspaces/{id}/shares:preview",
+   "summary": "Xem trước mỗi người nhận thấy gì theo quyền của họ, chưa lưu (thêm 12/10/2026)",
+   "use_cases": [
+    "02-03"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "GET",
+   "path": "/v1/tiles/{id}/comments",
+   "summary": "Bình luận và việc được giao của một ô (thêm 12/10/2026)",
+   "use_cases": [
+    "02-05"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
    "group": "Kỹ năng",
    "method": "GET",
    "path": "/v1/skills",
@@ -720,6 +794,32 @@
    "summary": "Bỏ đề xuất 90 ngày",
    "use_cases": [
     "03-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "POST",
+   "path": "/v1/skill-versions/{id}:try",
+   "summary": "Chạy thử một lần phiên bản nháp với tham số, không ghi kết quả (thêm 12/10/2026)",
+   "use_cases": [
+    "03-03",
+    "03-04"
+   ],
+   "capability": [
+    "create_skill"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "GET",
+   "path": "/v1/tools",
+   "summary": "Danh mục công cụ theo bốn mức quyền (thêm 12/10/2026)",
+   "use_cases": [
+    "03-01",
+    "13-02"
    ],
    "capability": [
     "ask"
@@ -1292,6 +1392,56 @@
    ]
   },
   {
+   "group": "Tài liệu",
+   "method": "GET",
+   "path": "/v1/documents",
+   "summary": "Tài liệu theo bộ sưu tập và trạng thái tiền xử lý (thêm 12/10/2026)",
+   "use_cases": [
+    "05-01",
+    "05-02",
+    "05-05"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "GET",
+   "path": "/v1/extraction-schemas",
+   "summary": "Lược đồ trích xuất của bộ sưu tập (thêm 12/10/2026)",
+   "use_cases": [
+    "05-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "GET",
+   "path": "/v1/extraction-schemas/{id}",
+   "summary": "Một lược đồ trích xuất: trường, kiểu, bắt buộc, độ chính xác trên mẫu, cột đích (thêm 12/10/2026)",
+   "use_cases": [
+    "05-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "GET",
+   "path": "/v1/document-sources",
+   "summary": "Nguồn đồng bộ tài liệu đã đăng ký (thêm 12/10/2026)",
+   "use_cases": [
+    "05-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
    "group": "Biến đổi dữ liệu",
    "method": "GET",
    "path": "/v1/pipelines",
@@ -1445,6 +1595,67 @@
    ],
    "capability": [
     "writeback"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "GET",
+   "path": "/v1/pipelines/{id}",
+   "summary": "Một pipeline: bước, lịch, lần chạy gần nhất (thêm 12/10/2026)",
+   "use_cases": [
+    "06-02",
+    "06-03"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "GET",
+   "path": "/v1/writebacks/{id}",
+   "summary": "Một yêu cầu ghi ngược: diff, mẫu trước sau, bước ghi, người duyệt, trạng thái (thêm 12/10/2026)",
+   "use_cases": [
+    "06-04"
+   ],
+   "capability": [
+    "writeback"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "GET",
+   "path": "/v1/marts",
+   "summary": "Danh sách data mart (thêm 12/10/2026)",
+   "use_cases": [
+    "06-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "GET",
+   "path": "/v1/marts/{id}",
+   "summary": "Một data mart: bảng sự kiện, chiều, quan hệ, kiểm tra, chiều agent gợi ý (thêm 12/10/2026)",
+   "use_cases": [
+    "06-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "PATCH",
+   "path": "/v1/marts/{id}",
+   "summary": "Sửa mart: thêm chiều, thước đo, quan hệ (kể cả nhận gợi ý của agent) (thêm 12/10/2026)",
+   "use_cases": [
+    "06-06"
+   ],
+   "capability": [
+    "admin_data"
    ]
   },
   {
@@ -1926,6 +2137,68 @@
    ]
   },
   {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/entities",
+   "summary": "Mô hình thực thể: thực thể, khoá, bảng nguồn, quan hệ kèm bản số (thêm 12/10/2026)",
+   "use_cases": [
+    "07-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/entities/{key}",
+   "summary": "Một thực thể: định nghĩa, khoá liên kết giữa nguồn, hạt dữ liệu, chỉ số dùng nó (thêm 12/10/2026)",
+   "use_cases": [
+    "07-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/examples",
+   "summary": "Câu hỏi mẫu (đã xác nhận và gợi ý) (thêm 12/10/2026)",
+   "use_cases": [
+    "07-02",
+    "07-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "PATCH",
+   "path": "/v1/examples/{id}",
+   "summary": "Sửa SQL hoặc xác nhận câu hỏi mẫu; SQL chạy lại trước khi lưu (thêm 12/10/2026)",
+   "use_cases": [
+    "07-02",
+    "07-06"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/synonyms",
+   "summary": "Từ đồng nghĩa (thêm 12/10/2026)",
+   "use_cases": [
+    "07-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
    "group": "Xung đột",
    "method": "GET",
    "path": "/v1/conflicts",
@@ -2197,6 +2470,31 @@
    ]
   },
   {
+   "group": "Cần bạn và đánh giá",
+   "method": "GET",
+   "path": "/v1/eval-sets",
+   "summary": "Bộ đánh giá theo loại và chủ thể (thêm 12/10/2026)",
+   "use_cases": [
+    "07-06",
+    "13-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "GET",
+   "path": "/v1/eval-sets/{id}",
+   "summary": "Một bộ đánh giá: số câu, lượt chạy, câu sai của lượt mới nhất (thêm 12/10/2026)",
+   "use_cases": [
+    "07-06"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
    "group": "Chính sách",
    "method": "GET",
    "path": "/v1/policies",
@@ -2266,6 +2564,32 @@
    "summary": "Xem một bảng dưới hai vai trò",
    "use_cases": [
     "11-08"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Chính sách",
+   "method": "GET",
+   "path": "/v1/policies/{id}",
+   "summary": "Một chính sách: điều kiện, hành động, ngoại lệ, backtest, hạn xem lại (thêm 12/10/2026)",
+   "use_cases": [
+    "11-02",
+    "07-08"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Chính sách",
+   "method": "POST",
+   "path": "/v1/policies/{id}:disable",
+   "summary": "Tắt chính sách đang bật hoặc bỏ bản nháp, bắt buộc lý do (thêm 12/10/2026)",
+   "use_cases": [
+    "11-02",
+    "07-08"
    ],
    "capability": [
     "admin"
@@ -2621,6 +2945,54 @@
    ]
   },
   {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "GET",
+   "path": "/v1/monitors",
+   "summary": "Danh sách theo dõi (thêm 12/10/2026)",
+   "use_cases": [
+    "08-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/alerts/{id}:reopen",
+   "summary": "Mở lại cảnh báo đã đóng (thêm 12/10/2026)",
+   "use_cases": [
+    "08-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "GET",
+   "path": "/v1/reports",
+   "summary": "Báo cáo định kỳ (thêm 12/10/2026)",
+   "use_cases": [
+    "08-03"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "GET",
+   "path": "/v1/reports/{id}",
+   "summary": "Một báo cáo định kỳ: lịch, người nhận, lần chạy gần nhất (thêm 12/10/2026)",
+   "use_cases": [
+    "08-03"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
    "group": "Gói ngành",
    "method": "GET",
    "path": "/v1/packs",
@@ -2822,6 +3194,78 @@
    ],
    "capability": [
     "admin"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "POST",
+   "path": "/v1/packs",
+   "summary": "Tạo gói riêng của tổ chức (thêm 12/10/2026)",
+   "use_cases": [
+    "09-05"
+   ],
+   "capability": [
+    "pack_author"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "GET",
+   "path": "/v1/pack-installs/{id}",
+   "summary": "Một lần cài gói: Data Space, tiến độ ánh xạ, trạng thái kích hoạt (thêm 12/10/2026)",
+   "use_cases": [
+    "09-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "GET",
+   "path": "/v1/pack-installs/{id}/mappings",
+   "summary": "Ánh xạ của một lần cài gói (thêm 12/10/2026)",
+   "use_cases": [
+    "09-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "GET",
+   "path": "/v1/calibration-runs/{id}",
+   "summary": "Kết quả đối chiếu số với số đã nộp và nguyên nhân lệch (thêm 12/10/2026)",
+   "use_cases": [
+    "09-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "GET",
+   "path": "/v1/metric-overrides/{id}",
+   "summary": "Một hiệu chỉnh chỉ số: công thức gốc và của tổ chức, lý do, chạy thử, trạng thái duyệt (thêm 12/10/2026)",
+   "use_cases": [
+    "09-03"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Gói ngành",
+   "method": "GET",
+   "path": "/v1/pack-upgrades/{id}",
+   "summary": "Một lần nâng cấp gói: xung đột gộp ba chiều, quyết định, chạy thử, trạng thái (thêm 12/10/2026)",
+   "use_cases": [
+    "09-04"
+   ],
+   "capability": [
+    "ask"
    ]
   },
   {
@@ -3282,6 +3726,96 @@
    ]
   },
   {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/principals",
+   "summary": "Tìm người, nhóm AD, agent để mời hoặc chia sẻ (thêm 12/10/2026)",
+   "use_cases": [
+    "02-03",
+    "11-08",
+    "11-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/admin/roles",
+   "summary": "Vai trò và năng lực của từng vai trò (thêm 12/10/2026)",
+   "use_cases": [
+    "11-01",
+    "11-08"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/data-spaces/{id}/members",
+   "summary": "Thành viên Data Space: vai trò, phạm vi dòng, hạn dùng (thêm 12/10/2026)",
+   "use_cases": [
+    "11-08"
+   ],
+   "capability": [
+    "steward"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/admin/ai-settings",
+   "summary": "Quy định AI hiện hành (thêm 12/10/2026)",
+   "use_cases": [
+    "11-05"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/admin/agent-usage",
+   "summary": "Vận hành agent theo ngày và theo agent: lượt chạy, cần người, lỗi, thời gian, chi phí so ngân sách (thêm 12/10/2026)",
+   "use_cases": [
+    "11-04",
+    "13-06"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/schedules:preview",
+   "summary": "Các lần chạy tới của một lịch chưa lưu, theo lịch làm việc và ngày nghỉ (thêm 12/10/2026)",
+   "use_cases": [
+    "06-03",
+    "04-05",
+    "02-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/dsr",
+   "summary": "Yêu cầu của chủ thể dữ liệu (thêm 12/10/2026)",
+   "use_cases": [
+    "11-06"
+   ],
+   "capability": [
+    "compliance"
+   ]
+  },
+  {
    "group": "Kiểm toán",
    "method": "GET",
    "path": "/v1/audit",
@@ -3471,6 +4005,19 @@
    ],
    "capability": [
     "client"
+   ]
+  },
+  {
+   "group": "Tích hợp",
+   "method": "GET",
+   "path": "/v1/admin/clients",
+   "summary": "Danh sách client REST, MCP kèm phạm vi, lượt gọi, hạn, trạng thái (thêm 12/10/2026)",
+   "use_cases": [
+    "12-01",
+    "12-04"
+   ],
+   "capability": [
+    "admin"
    ]
   },
   {
@@ -3759,6 +4306,44 @@
    ],
    "capability": [
     "create_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "POST",
+   "path": "/v1/agents/{id}:lock",
+   "summary": "Khoá agent: dừng mọi lượt chạy và trigger, chuyển yêu cầu HITL đang mở cho chủ sở hữu (thêm 12/10/2026)",
+   "use_cases": [
+    "13-06",
+    "13-02"
+   ],
+   "capability": [
+    "create_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "POST",
+   "path": "/v1/agents/{id}:unlock",
+   "summary": "Mở khoá agent (thêm 12/10/2026)",
+   "use_cases": [
+    "13-06",
+    "13-02"
+   ],
+   "capability": [
+    "create_agent"
+   ]
+  },
+  {
+   "group": "Agent",
+   "method": "POST",
+   "path": "/v1/runs/{id}:retry",
+   "summary": "Chạy lại lượt lỗi thành lượt mới cùng đầu vào và phiên bản cấu hình (thêm 12/10/2026)",
+   "use_cases": [
+    "13-06"
+   ],
+   "capability": [
+    "run_agent"
    ]
   },
   {
@@ -4123,6 +4708,19 @@
    "summary": "Xác nhận, bác liên kết thực thể",
    "use_cases": [
     "14-05"
+   ],
+   "capability": [
+    "admin_data",
+    "steward"
+   ]
+  },
+  {
+   "group": "Thu thập",
+   "method": "POST",
+   "path": "/v1/crawl-sources:suggest",
+   "summary": "Agent đề xuất nguồn thu thập từ mô tả mục tiêu, kèm kiểm robots.txt và điều khoản (thêm 12/10/2026)",
+   "use_cases": [
+    "14-01"
    ],
    "capability": [
     "admin_data",

@@ -40,6 +40,7 @@ from services.api.modules.agent import rules
 from services.api.modules.agent.schemas import (
     AgentCreate,
     AgentKind,
+    AgentLock,
     AgentSummary,
     AgentView,
     ConfigCreate,
@@ -1523,3 +1524,207 @@ async def delete_memory(
         )
         await session.delete(row)
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------- lock and retry (UC-13-06, 12/10/2026)
+
+LOCKED = "locked"
+# Runs a lock stops. A run waiting for a person is already holding still: its request goes to the
+# owner instead (A2), who decides it or cancels the run.
+_STOPPED_BY_LOCK = frozenset({"queued", "planning", "running", "paused"})
+
+
+@router.post(
+    "/v1/agents/{id}:lock",
+    response_model=AgentView,
+    **endpoint("POST", "/v1/agents/{id}:lock", operation_id="lockAgent"),
+)
+async def lock_agent(
+    agent_id: AgentId, body: AgentLock, principal: CurrentPrincipal, data_space: CurrentDataSpace
+) -> AgentView:
+    stamp = _now()
+    async with transaction(ROLE, principal) as session:
+        owner = await _owned_agent(session, agent_id, principal, data_space)
+        if owner.status == LOCKED:
+            raise Problem(409, "invalid_state", "The agent is already locked.")
+        if owner.status == "retired":
+            raise Problem(409, "invalid_state", "A retired agent is not locked.")
+        previous = owner.status
+        # In id order, so two requests that lock several runs never wait on each other in a cycle.
+        runs = (
+            await session.scalars(
+                select(agent.AgentRun)
+                .where(
+                    agent.AgentRun.agent_id == owner.id,
+                    agent.AgentRun.status.in_(_STOPPED_BY_LOCK | {"waiting_human"}),
+                )
+                .order_by(agent.AgentRun.id)
+                .with_for_update()
+            )
+        ).all()
+        stopped = [r for r in runs if r.status in _STOPPED_BY_LOCK]
+        for run in stopped:
+            before = run.status
+            run.status, run.stop_reason, run.finished_at = "cancelled", "user_cancelled", stamp
+            run.stop_detail = {
+                **(run.stop_detail or {}),
+                "cancelled_by": str(principal.user_id),
+                "reason": "agent_locked",
+            }
+            _status_changed(session, principal, run, before)
+        waiting = [r.id for r in runs if r.status == "waiting_human"]
+        open_requests = (
+            list(
+                (
+                    await session.scalars(
+                        select(agent.AgentCheckpointHit.hitl_request_id)
+                        .where(
+                            agent.AgentCheckpointHit.run_id.in_(waiting),
+                            agent.AgentCheckpointHit.resolved_at.is_(None),
+                        )
+                        .order_by(agent.AgentCheckpointHit.hitl_request_id)
+                    )
+                ).all()
+            )
+            if waiting
+            else []
+        )
+        triggers = (
+            await session.scalars(
+                select(agent.AgentTrigger)
+                .where(agent.AgentTrigger.agent_id == owner.id)
+                .order_by(agent.AgentTrigger.id)
+            )
+        ).all()
+        disabled = [t for t in triggers if t.enabled]
+        for trigger in disabled:
+            trigger.enabled = False
+            trigger.updated_at, trigger.updated_by = stamp, principal.user_id
+        # status_before_lock is what unlock restores; the CHECK ties it to status = 'locked'.
+        owner.status, owner.status_before_lock, owner.paused_reason = LOCKED, previous, body.reason
+        owner.updated_at, owner.updated_by = stamp, principal.user_id
+        await session.flush()
+        if disabled:
+            # The trigger worker re-registers schedules and consumers from this event (PUT
+            # triggers emits the same); disabled ones are dropped.
+            _emit(
+                session,
+                principal,
+                "agent_def",
+                owner.id,
+                "agent_trigger.replaced",
+                agent_id=owner.id,
+                trigger_ids=[str(t.id) for t in triggers],
+                kinds=[t.kind for t in triggers],
+            )
+        # The inbox hands the open requests to the owner from this event: the agent module never
+        # writes inbox.* (D1.2), and modules/inbox/public.py has no reassignment payload yet.
+        _emit(
+            session,
+            principal,
+            "agent_def",
+            owner.id,
+            "agent.locked",
+            agent_id=owner.id,
+            data_space_id=data_space,
+            previous_status=previous,
+            reason=body.reason,
+            locked_by=principal.user_id,
+            owner_user_id=owner.owner_user_id,
+            cancelled_run_ids=[str(r.id) for r in stopped],
+            disabled_trigger_ids=[str(t.id) for t in disabled],
+            hitl_request_ids=[str(i) for i in open_requests],
+            reassign_to=owner.owner_user_id,
+        )
+        await session.refresh(owner)
+        return await _agent_view(session, owner)
+
+
+@router.post(
+    "/v1/agents/{id}:unlock",
+    response_model=AgentView,
+    **endpoint("POST", "/v1/agents/{id}:unlock", operation_id="unlockAgent"),
+)
+async def unlock_agent(
+    agent_id: AgentId, principal: CurrentPrincipal, data_space: CurrentDataSpace
+) -> AgentView:
+    async with transaction(ROLE, principal) as session:
+        owner = await _owned_agent(session, agent_id, principal, data_space)
+        if owner.status != LOCKED:
+            raise Problem(409, "invalid_state", "The agent is not locked.")
+        # A3: the status from before the lock; triggers stay off until the owner turns them on.
+        owner.status = owner.status_before_lock or "paused"
+        owner.status_before_lock = None
+        owner.paused_reason = None
+        owner.updated_at, owner.updated_by = _now(), principal.user_id
+        await session.flush()
+        _emit(
+            session,
+            principal,
+            "agent_def",
+            owner.id,
+            "agent.unlocked",
+            agent_id=owner.id,
+            data_space_id=data_space,
+            status=owner.status,
+            unlocked_by=principal.user_id,
+        )
+        await session.refresh(owner)
+        return await _agent_view(session, owner)
+
+
+@router.post(
+    "/v1/runs/{id}:retry",
+    status_code=202,
+    response_model=RunAccepted,
+    **endpoint("POST", "/v1/runs/{id}:retry", operation_id="retryRun"),
+)
+async def retry_run(
+    run_id: Annotated[uuid.UUID, Path(alias="id")],
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    response: Response,
+) -> RunAccepted:
+    async with transaction(ROLE, principal) as session:
+        old = await _intervene(session, run_id, principal, data_space)
+        if old.status != "failed":
+            raise Problem(409, "invalid_state", f"A run in status {old.status} is not retried.")
+        owner = await _agent(session, old.agent_id, principal, data_space, lock=True)
+        if owner.status in (LOCKED, "retired"):
+            raise Problem(409, "invalid_state", f"The agent is {owner.status}.")
+        # BR-75: the same input and configuration version, so the retry reproduces the run; the
+        # person who asked for it is its initiator.
+        run = agent.AgentRun(
+            id=uuid7(),
+            org_id=principal.org_id,
+            agent_id=old.agent_id,
+            config_version=old.config_version,
+            data_space_id=old.data_space_id,
+            trigger_kind=old.trigger_kind,
+            trigger_ref=old.trigger_ref,
+            initiated_by=principal.user_id,
+            parent_run_id=old.parent_run_id,
+            depth=old.depth,
+            is_test=old.is_test,
+            as_of=old.as_of,
+            snapshot_refs=old.snapshot_refs,
+            retry_of=old.id,
+        )
+        session.add(run)
+        await session.flush()
+        await session.refresh(run)
+        _emit(
+            session,
+            principal,
+            "agent_run",
+            run.id,
+            "run.status_changed",
+            run_id=run.id,
+            agent_id=run.agent_id,
+            config_version=run.config_version,
+            is_test=run.is_test,
+            previous_status=None,
+            status=run.status,
+            retry_of=old.id,
+        )
+        return _accepted(response, f"/v1/runs/{run.id}", run.id, run.status)

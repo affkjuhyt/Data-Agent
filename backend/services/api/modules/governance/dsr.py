@@ -18,7 +18,7 @@ import unicodedata
 import uuid
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Path, Response
+from fastapi import APIRouter, Depends, Path, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +28,15 @@ from libs.dataagent_db.models import governance
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
+from services.api.kernel.pagination import (
+    Order,
+    Page,
+    PageRequest,
+    keyset,
+    next_page,
+    order_by,
+    page_request,
+)
 from services.api.kernel.problems import FieldError, Problem
 
 router = APIRouter()
@@ -80,6 +89,25 @@ class DsrRequestView(_View):
     created_at: datetime.datetime
     updated_at: datetime.datetime
     items: list[DsrItemView] = Field(default_factory=list)
+
+
+class DsrSummary(_View):
+    """A row of GET /v1/dsr. The keyed hash stands for the person (A3: no identifier, only the
+    hash); the identifier itself was never stored."""
+
+    id: uuid.UUID
+    subject_hash: str
+    request_kind: str
+    received_at: datetime.datetime
+    due_at: datetime.datetime
+    status: str
+    handler_id: uuid.UUID
+    closed_at: datetime.datetime | None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+DsrStatus = Literal["open", "searching", "review", "executing", "done", "rejected"]
 
 
 class DsrAccepted(BaseModel):
@@ -198,6 +226,42 @@ async def create_dsr(
         )
     response.headers["Location"] = f"/v1/dsr/{row.id}"
     return DsrAccepted(id=row.id, status=row.status, poll_after_ms=POLL_AFTER_MS)
+
+
+@router.get(
+    "/v1/dsr",
+    response_model=Page[DsrSummary],
+    **endpoint("GET", "/v1/dsr", operation_id="listDsr"),
+)
+async def list_dsr(
+    principal: CurrentPrincipal,
+    page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(order_by("created_at", "due_at", "received_at", default="created_at desc")),
+    ],
+    status: Annotated[DsrStatus | None, Query()] = None,
+) -> Page[DsrSummary]:
+    dsr = governance.DsrRequest
+    query = select(dsr).where(dsr.org_id == principal.org_id)
+    if status is not None:
+        query = query.where(dsr.status == status)
+    query = keyset(
+        query,
+        columns={
+            "created_at": dsr.created_at,
+            "due_at": dsr.due_at,
+            "received_at": dsr.received_at,
+        },
+        tiebreak=dsr.id,
+        order=order,
+        page=page,
+    )
+    async with transaction(ROLE, principal) as session:
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page[DsrSummary](
+        items=[DsrSummary.model_validate(r) for r in rows], next_page_token=token
+    )
 
 
 @router.get(

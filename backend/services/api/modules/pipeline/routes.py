@@ -16,7 +16,7 @@ from collections import Counter
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, Path, Query, Response
-from sqlalchemy import or_, select, tuple_
+from sqlalchemy import and_, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,8 +46,10 @@ from services.api.modules.pipeline.schemas import (
     LineageLink,
     LineageNode,
     MartCreate,
+    MartPatch,
     MaterializeRequest,
     PipelineCreate,
+    PipelineDetail,
     PipelinePatch,
     PipelineRunView,
     PipelineView,
@@ -304,6 +306,34 @@ async def create_pipeline(
             )
         await session.flush()
         return PipelineView.model_validate(row)
+
+
+@router.get(
+    "/v1/pipelines/{id}",
+    response_model=PipelineDetail,
+    **endpoint("GET", "/v1/pipelines/{id}", operation_id="getPipeline"),
+)
+async def get_pipeline(
+    pipeline_id: PathId,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    response: Response,
+) -> PipelineDetail:
+    async with transaction(ROLE, principal) as session:
+        row = await _pipeline(session, principal, data_space, pipeline_id)
+        last = await session.scalar(
+            select(pl.PipelineRun)
+            .where(pl.PipelineRun.pipeline_id == row.id)
+            .order_by(pl.PipelineRun.started_at.desc(), pl.PipelineRun.id.desc())
+            .limit(1)
+        )
+    # The same tag PATCH answers with, so If-Match from either read passes the kernel's check
+    # (which compares against this GET) and the route's own updated_at comparison alike.
+    response.headers["ETag"] = _etag(row)
+    return PipelineDetail(
+        **PipelineView.model_validate(row).model_dump(),
+        last_run=PipelineRunView.model_validate(last) if last is not None else None,
+    )
 
 
 @router.patch(
@@ -714,6 +744,9 @@ async def create_mart(
             dimensions=body.dimensions,
             relations=body.relations,
             checks=body.checks,
+            # Nothing proposes dimensions from the fact table's relations yet; the column stays
+            # null until something does, and the author picks from it into dimensions.
+            suggested_dimensions=None,
             # UC-06-06 step 2: the worker checks the relations; until then nothing publishes.
             relation_check_passed=False,
             status="draft",
@@ -733,6 +766,127 @@ async def create_mart(
             data_space_id=data_space,
             fact_dataset_id=body.fact_dataset_id,
             status=mart.status,
+        )
+        await session.flush()
+        return DataMartView.model_validate(mart)
+
+
+@router.get(
+    "/v1/marts",
+    response_model=Page[DataMartView],
+    **endpoint("GET", "/v1/marts", operation_id="listDataMarts"),
+)
+async def list_marts(
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(order_by("created_at", "updated_at", "name", "status", default="created_at desc")),
+    ],
+    status: Literal["draft", "active", "retired"] | None = None,
+) -> Page[DataMartView]:
+    m = pl.DataMart
+    query = select(m).where(m.org_id == principal.org_id, m.data_space_id == data_space)
+    if status:
+        query = query.where(m.status == status)
+    query = keyset(
+        query,
+        columns={
+            "created_at": m.created_at,
+            "updated_at": m.updated_at,
+            "name": m.name,
+            "status": m.status,
+        },
+        tiebreak=m.id,
+        order=order,
+        page=page,
+    )
+    async with transaction(ROLE, principal) as session:
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[DataMartView.model_validate(r) for r in rows], next_page_token=token)
+
+
+async def _mart(
+    session: AsyncSession,
+    principal: Principal,
+    data_space: uuid.UUID,
+    mart_id: uuid.UUID,
+    *,
+    lock: bool = False,
+) -> pl.DataMart:
+    query = select(pl.DataMart).where(
+        pl.DataMart.id == mart_id,
+        pl.DataMart.org_id == principal.org_id,
+        pl.DataMart.data_space_id == data_space,
+    )
+    if lock:
+        query = query.with_for_update()
+    row = await session.scalar(query)
+    if row is None:
+        raise Problem(404, "not_found", "Data mart not found.")
+    return row
+
+
+@router.get(
+    "/v1/marts/{id}",
+    response_model=DataMartView,
+    **endpoint("GET", "/v1/marts/{id}", operation_id="getDataMart"),
+)
+async def get_mart(
+    mart_id: PathId, principal: CurrentPrincipal, data_space: CurrentDataSpace
+) -> DataMartView:
+    async with transaction(ROLE, principal) as session:
+        return DataMartView.model_validate(await _mart(session, principal, data_space, mart_id))
+
+
+@router.patch(
+    "/v1/marts/{id}",
+    response_model=DataMartView,
+    **endpoint("PATCH", "/v1/marts/{id}", operation_id="updateDataMart"),
+)
+async def update_mart(
+    body: MartPatch, mart_id: PathId, principal: CurrentPrincipal, data_space: CurrentDataSpace
+) -> DataMartView:
+    changes = body.model_dump(exclude_unset=True)
+    if not changes:
+        raise invalid("body", "Nothing to change.")
+    for field, value in changes.items():
+        if value is None:
+            raise invalid(field, f"{field} cannot be null.")
+    if body.name is not None and not body.name.strip():
+        raise invalid("name", "name cannot be blank.")
+    async with transaction(ROLE, principal) as session:
+        mart = await _mart(session, principal, data_space, mart_id, lock=True)
+        if mart.status == "retired":
+            raise Problem(409, "invalid_state", "A retired data mart is not edited.")
+        if body.name is not None:
+            mart.name = body.name.strip()
+        for field in ("dimensions", "measures", "relations"):
+            if field in changes:
+                setattr(mart, field, changes[field])
+        previous = mart.status
+        recheck = bool({"dimensions", "measures", "relations"} & changes.keys())
+        if recheck:
+            # UC-06-06 step 2 / E1: the model changed, so the relation check it passed no longer
+            # holds; the worker runs it again and nothing publishes from the mart until it passes.
+            # An active mart needs a passed check (CHECK on data_mart), so it is a draft again.
+            mart.relation_check_passed = False
+            if mart.status == "active":
+                mart.status = "draft"
+        mart.updated_by, mart.updated_at = principal.user_id, now()
+        emit(
+            session,
+            principal,
+            "data_mart",
+            mart.id,
+            "data_mart.updated",
+            data_mart_id=mart.id,
+            data_space_id=data_space,
+            status=mart.status,
+            previous_status=previous,
+            changed=sorted(changes),
+            relation_check_requested=recheck,
         )
         await session.flush()
         return DataMartView.model_validate(mart)
@@ -892,6 +1046,86 @@ async def _writeback(
     if row is None:
         raise Problem(404, "not_found", "Writeback request not found.")
     return row
+
+
+async def _sensitive_columns(
+    session: AsyncSession, principal: Principal, row: pl.WritebackRequest
+) -> frozenset[str]:
+    """Columns labelled personal data (catalog column_meta.pii_label) of the table the write
+    reads from and of the target table, lower-cased: they never appear in a diff sample."""
+    ds = catalog.Dataset
+    datasets = [ds.id == row.from_dataset_id]
+    parts = row.target_table.split(".")
+    if len(parts) >= 2:
+        datasets.append(
+            and_(
+                ds.source_id == row.source_id,
+                ds.schema_name == parts[-2],
+                ds.table_name == parts[-1],
+            )
+        )
+    else:
+        datasets.append(and_(ds.source_id == row.source_id, ds.table_name == parts[-1]))
+    col = catalog.ColumnMeta
+    names = await session.scalars(
+        select(col.name)
+        .join(ds, ds.id == col.dataset_id)
+        .where(
+            ds.org_id == principal.org_id,
+            or_(*datasets),
+            col.pii_label.is_not(None),
+            col.removed_in_version.is_(None),
+        )
+    )
+    return frozenset(n.lower() for n in names)
+
+
+def _without_sensitive(value: Any, sensitive: frozenset[str], *, top: bool = False) -> Any:
+    """The diff summary minus every sample value of a sensitive column (BR-113, UC-06-04 step 2).
+    The worker already leaves them out; this keeps a mistake there from reaching a screen. Top
+    level keys are the counts, never column names, so they stay."""
+    if isinstance(value, list):
+        kept = []
+        for item in value:
+            # A sample may also be a list of {"column": name, "before": …, "after": …}.
+            column = item.get("column") if isinstance(item, dict) else None
+            if isinstance(column, str) and column.lower() in sensitive:
+                continue
+            kept.append(_without_sensitive(item, sensitive))
+        return kept
+    if isinstance(value, dict):
+        return {
+            k: _without_sensitive(v, sensitive)
+            for k, v in value.items()
+            if top or not (isinstance(k, str) and k.lower() in sensitive)
+        }
+    return value
+
+
+@router.get(
+    "/v1/writebacks/{id}",
+    response_model=WritebackView,
+    **endpoint("GET", "/v1/writebacks/{id}", operation_id="getWriteback"),
+)
+async def get_writeback(
+    writeback_id: PathId, principal: CurrentPrincipal, data_space: CurrentDataSpace
+) -> WritebackView:
+    """Where :undo's Location points: diff, before and after sample, status, approver."""
+    async with transaction(ROLE, principal) as session:
+        row = await session.scalar(
+            select(pl.WritebackRequest).where(
+                pl.WritebackRequest.id == writeback_id,
+                pl.WritebackRequest.org_id == principal.org_id,
+                pl.WritebackRequest.data_space_id == data_space,
+            )
+        )
+        if row is None:
+            raise Problem(404, "not_found", "Writeback request not found.")
+        sensitive = await _sensitive_columns(session, principal, row)
+    view = _writeback_view(row)
+    if sensitive:
+        view.diff_summary = _without_sensitive(view.diff_summary, sensitive, top=True)
+    return view
 
 
 @router.post(

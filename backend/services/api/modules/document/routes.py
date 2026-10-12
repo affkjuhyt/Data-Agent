@@ -59,6 +59,7 @@ from services.api.modules.document.schemas import (
     CollectionCreate,
     CollectionView,
     DocumentDetail,
+    DocumentListItem,
     DocumentPageView,
     DocumentPatch,
     DocumentSourceCreate,
@@ -68,6 +69,7 @@ from services.api.modules.document.schemas import (
     ExtractionSchemaCreate,
     ExtractionSchemaView,
     ExtractionTest,
+    PreprocessingStep,
     Progress,
     QualityIssueView,
     ResolveIssue,
@@ -375,6 +377,47 @@ async def create_document_source(
         return _source_view(row)
 
 
+@router.get(
+    "/v1/document-sources",
+    response_model=Page[DocumentSourceView],
+    **endpoint("GET", "/v1/document-sources", operation_id="listDocumentSources"),
+)
+async def list_document_sources(
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(order_by("created_at", "updated_at", "kind", "status", default="created_at desc")),
+    ],
+    collection_id: uuid.UUID | None = None,
+) -> Page[DocumentSourceView]:
+    src = doc.DocumentSource
+    query = (
+        select(src)
+        .join(doc.Collection, doc.Collection.id == src.collection_id)
+        .where(_in_space(principal, data_space))
+    )
+    if collection_id is not None:
+        query = query.where(src.collection_id == collection_id)
+    query = keyset(
+        query,
+        columns={
+            "created_at": src.created_at,
+            "updated_at": src.updated_at,
+            "kind": src.kind,
+            "status": src.status,
+        },
+        tiebreak=src.id,
+        order=order,
+        page=page,
+    )
+    async with transaction(ROLE, principal) as session:
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    # _source_view leaves secret_ref out: only whether credentials are stored.
+    return Page(items=[_source_view(r) for r in rows], next_page_token=token)
+
+
 @router.post(
     "/v1/document-sources/{id}:sync",
     response_model=Accepted,
@@ -542,6 +585,147 @@ async def _document(
 
 async def _count(session: AsyncSession, *where: ColumnElement[bool]) -> int:
     return int(await session.scalar(select(func.count()).where(*where)) or 0)
+
+
+async def _progress(
+    session: AsyncSession, document_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, tuple[int, int, int, int, bool]]:
+    """(pages read, usable, chunks, chunks indexed, blocking issue open) per document, in three
+    grouped reads for the whole page rather than five counts per row."""
+    out: dict[uuid.UUID, list[Any]] = {d: [0, 0, 0, 0, False] for d in document_ids}
+    if not document_ids:
+        return {}
+    page, chunk, issue = doc.DocumentPage, doc.Chunk, doc.QualityIssue
+    for document_id, read, usable in await session.execute(
+        select(
+            page.document_id,
+            func.count(),
+            func.count().filter(page.usable.is_(True)),
+        )
+        .where(page.document_id.in_(document_ids))
+        .group_by(page.document_id)
+    ):
+        out[document_id][0:2] = [read, usable]
+    for document_id, chunks, indexed in await session.execute(
+        select(
+            chunk.document_id,
+            func.count(),
+            func.count().filter(chunk.qdrant_point_id.is_not(None)),
+        )
+        .where(chunk.document_id.in_(document_ids))
+        .group_by(chunk.document_id)
+    ):
+        out[document_id][2:4] = [chunks, indexed]
+    for document_id in await session.scalars(
+        select(issue.document_id)
+        .where(
+            issue.document_id.in_(document_ids),
+            issue.status == "open",
+            issue.severity == "blocking",
+        )
+        .distinct()
+    ):
+        out[document_id][4] = True
+    return {d: (v[0], v[1], v[2], v[3], v[4]) for d, v in out.items()}
+
+
+def _step(row: doc.Document, read: int, chunks: int, blocking: bool) -> PreprocessingStep:
+    if row.status == "ready":
+        return "done"
+    if row.status == "failed":
+        return "failed"
+    if row.status == "removed":
+        return "removed"
+    if row.status == "received":
+        return "queued"
+    if row.status == "waiting_review" or blocking:
+        return "quality_review"
+    if row.page_count is None or read < row.page_count:
+        return "reading_pages"
+    # Every page read: passages next, then vectors until the worker marks the document ready.
+    return "chunking" if chunks == 0 else "indexing"
+
+
+@router.get(
+    "/v1/documents",
+    response_model=Page[DocumentListItem],
+    **endpoint("GET", "/v1/documents", operation_id="listDocuments"),
+)
+async def list_documents(
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at",
+                "updated_at",
+                "file_name",
+                "status",
+                "size_bytes",
+                default="created_at desc",
+            )
+        ),
+    ],
+    collection_id: uuid.UUID | None = None,
+    status: str | None = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
+) -> Page[DocumentListItem]:
+    d = doc.Document
+    query = (
+        select(d)
+        .join(doc.Collection, doc.Collection.id == d.collection_id)
+        .where(_in_space(principal, data_space), d.deleted_at.is_(None))
+    )
+    if collection_id is not None:
+        query = query.where(d.collection_id == collection_id)
+    if status:
+        query = query.where(d.status == status)
+    if q and q.strip():
+        # A literal substring of the name, title or document number, not a pattern.
+        needle = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{needle}%"
+        query = query.where(
+            or_(
+                d.file_name.ilike(like, escape="\\"),
+                d.title.ilike(like, escape="\\"),
+                d.doc_no.ilike(like, escape="\\"),
+            )
+        )
+    query = keyset(
+        query,
+        columns={
+            "created_at": d.created_at,
+            "updated_at": d.updated_at,
+            "file_name": d.file_name,
+            "status": d.status,
+            "size_bytes": d.size_bytes,
+        },
+        tiebreak=d.id,
+        order=order,
+        page=page,
+    )
+    async with transaction(ROLE, principal) as session:
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+        counts = await _progress(session, [r.id for r in rows])
+    items = []
+    for row in rows:
+        read, usable, chunks, indexed, blocking = counts[row.id]
+        items.append(
+            DocumentListItem(
+                **DocumentView.model_validate(row, from_attributes=True).model_dump(),
+                step=_step(row, read, chunks, blocking),
+                progress=Progress(
+                    pages_total=row.page_count,
+                    pages_read=read,
+                    pages_usable=usable,
+                    chunks=chunks,
+                    chunks_indexed=indexed,
+                ),
+            )
+        )
+    return Page(items=items, next_page_token=token)
 
 
 @router.get(
@@ -1070,17 +1254,79 @@ def _schema_view(row: doc.ExtractionSchema) -> ExtractionSchemaView:
 
 
 async def _schema(
-    session: AsyncSession, schema_id: uuid.UUID, principal: Principal, data_space: uuid.UUID
+    session: AsyncSession,
+    schema_id: uuid.UUID,
+    principal: Principal,
+    data_space: uuid.UUID,
+    *,
+    lock: bool = True,
 ) -> doc.ExtractionSchema:
-    row = await session.scalar(
+    query = (
         select(doc.ExtractionSchema)
         .join(doc.Collection, doc.Collection.id == doc.ExtractionSchema.collection_id)
         .where(doc.ExtractionSchema.id == schema_id, _in_space(principal, data_space))
-        .with_for_update(of=doc.ExtractionSchema)
     )
+    if lock:
+        query = query.with_for_update(of=doc.ExtractionSchema)
+    row = await session.scalar(query)
     if row is None:
         raise Problem(404, "not_found", "Extraction schema not found.")
     return row
+
+
+@router.get(
+    "/v1/extraction-schemas",
+    response_model=Page[ExtractionSchemaView],
+    **endpoint("GET", "/v1/extraction-schemas", operation_id="listExtractionSchemas"),
+)
+async def list_extraction_schemas(
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by("created_at", "updated_at", "version", "status", default="created_at desc")
+        ),
+    ],
+    collection_id: uuid.UUID | None = None,
+) -> Page[ExtractionSchemaView]:
+    es = doc.ExtractionSchema
+    query = (
+        select(es)
+        .join(doc.Collection, doc.Collection.id == es.collection_id)
+        .where(_in_space(principal, data_space))
+    )
+    if collection_id is not None:
+        query = query.where(es.collection_id == collection_id)
+    query = keyset(
+        query,
+        columns={
+            "created_at": es.created_at,
+            "updated_at": es.updated_at,
+            "version": es.version,
+            "status": es.status,
+        },
+        tiebreak=es.id,
+        order=order,
+        page=page,
+    )
+    async with transaction(ROLE, principal) as session:
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[_schema_view(r) for r in rows], next_page_token=token)
+
+
+@router.get(
+    "/v1/extraction-schemas/{id}",
+    response_model=ExtractionSchemaView,
+    **endpoint("GET", "/v1/extraction-schemas/{id}", operation_id="getExtractionSchema"),
+)
+async def get_extraction_schema(
+    schema_id: IdPath, principal: CurrentPrincipal, data_space: CurrentDataSpace
+) -> ExtractionSchemaView:
+    """Where :test's Location points: the fields and, once the run is done, sample_accuracy."""
+    async with transaction(ROLE, principal) as session:
+        return _schema_view(await _schema(session, schema_id, principal, data_space, lock=False))
 
 
 @router.post(

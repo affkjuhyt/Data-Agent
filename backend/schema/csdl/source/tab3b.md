@@ -1377,7 +1377,7 @@ Một lần chạy SQL: SQL đã viết lại theo chính sách, nguồn, thời
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
 | data\_space\_id | uuid, bắt buộc |  |
-| caller\_kind | text, bắt buộc | question, tile, skill\_run, agent\_run, pipeline, period, eval, receipt\_replay (UC-01-07) |
+| caller\_kind | text, bắt buộc | question, tile, skill\_run, agent\_run, pipeline, period, eval, receipt\_replay (UC-01-07), ad\_hoc (SQL người dùng gửi qua POST /v1/query-runs, thêm 12/10/2026) |
 | caller\_id | uuid, bắt buộc |  |
 | principal\_id | uuid, bắt buộc | Danh tính chạy truy vấn (người hoặc giao quyền của agent) |
 | source\_id | uuid | logic → catalog.source; null khi đọc kỳ chốt |
@@ -1396,7 +1396,7 @@ Một lần chạy SQL: SQL đã viết lại theo chính sách, nguồn, thời
 | error | text |  |
 | started\_at | timestamptz, bắt buộc, mặc định now() |  |
 
-Cột chung: id, org\_id. Phân vùng theo tháng trên started\_at. Ràng buộc: CHECK (caller\_kind IN ('question','tile','skill\_run','agent\_run','pipeline','period','eval','receipt\_replay')); CHECK (route IN ('live','history','period\_snapshot')); CHECK (route <> 'period\_snapshot' OR period\_close\_id IS NOT NULL); CHECK (status IN ('queued','running','succeeded','failed','cancelled','timeout')). Chỉ mục: (caller\_kind, caller\_id); (source\_id, started\_at) WHERE status = 'running'.
+Cột chung: id, org\_id. Phân vùng theo tháng trên started\_at. Ràng buộc: CHECK (caller\_kind IN ('question','tile','skill\_run','agent\_run','pipeline','period','eval','receipt\_replay','ad\_hoc')); CHECK (route IN ('live','history','period\_snapshot')); CHECK (route <> 'period\_snapshot' OR period\_close\_id IS NOT NULL); CHECK (status IN ('queued','running','succeeded','failed','cancelled','timeout')). Chỉ mục: (caller\_kind, caller\_id); (source\_id, started\_at) WHERE status = 'running'.
 
 #### query.query\_result
 
@@ -1428,13 +1428,14 @@ Agent: tên, loại, chủ sở hữu, tài khoản agent, trạng thái; cấu 
 | account\_user\_id | uuid, bắt buộc | Tài khoản agent (app\_user.kind = agent) |
 | template\_ref | uuid | logic → pack.pack\_skill nếu tạo từ agent mẫu |
 | current\_config\_version | integer |  |
-| status | text, bắt buộc, mặc định 'draft' | draft, testing, running, paused, retired |
+| status | text, bắt buộc, mặc định 'draft' | draft, testing, running, paused, retired, locked (khoá khẩn cấp qua POST /v1/agents/{id}:lock, thêm 12/10/2026) |
 | paused\_reason | text | Ví dụ chủ sở hữu rời tổ chức |
+| status\_before\_lock | text | Trạng thái trước khi khoá, mở khoá trả về trạng thái này; chỉ có giá trị khi locked (thêm 12/10/2026) |
 | monthly\_budget | numeric(14,2) | Ngân sách tháng (BR-71) |
 | spent\_this\_month | numeric(14,2), bắt buộc, mặc định 0 |  |
 | deleted\_at | timestamptz | Xoá mềm |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (data\_space\_id, code); CHECK (kind IN ('analysis','monitor','report','reconcile','data\_prep','data\_quality','document','custom')); CHECK (status IN ('draft','testing','running','paused','retired')).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (data\_space\_id, code); CHECK (kind IN ('analysis','monitor','report','reconcile','data\_prep','data\_quality','document','custom')); CHECK (status IN ('draft','testing','running','paused','retired','locked')); CHECK ((status = 'locked') = (status\_before\_lock IS NOT NULL)).
 
 #### agent.agent\_config
 
@@ -1471,6 +1472,28 @@ Công cụ một phiên bản cấu hình được dùng và mức quyền. Use 
 | allowed\_targets | uuid\[\] | Với agent.call: danh sách agent được gọi |
 
 Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (agent\_config\_id, tool); CHECK (permission\_level IN ('read','write\_derived','send\_external')); CHECK (permission\_level <> 'send\_external' OR requires\_checkpoint); FOREIGN KEY (agent\_config\_id) REFERENCES agent.agent\_config(id) ON DELETE CASCADE.
+
+#### agent.tool\_def
+
+Sổ công cụ của agent (tab 5 G2, G2.1): một dòng mỗi công cụ, là nguồn cho mô tả gửi mô hình, bộ công cụ theo ý định, quyền lộ ra MCP và bài kiểm phủ use case. Bảng dùng chung cho mọi tổ chức, nạp bằng migration cùng bản phát hành; không sửa qua API. Use case: UC-12-02, UC-13-01, UC-13-02.
+
+| Cột | Kiểu | Ý nghĩa |
+| --- | --- | --- |
+| code | text, bắt buộc | Mã công cụ, ví dụ query.semantic |
+| permission\_level | text, bắt buộc | read, write\_derived, send\_external |
+| owner\_service | text, bắt buộc | Dịch vụ sở hữu, ví dụ Context service |
+| endpoints | text\[\], bắt buộc | Endpoint ở tab 4 mà công cụ gọi, ví dụ {POST /v1/search/documents} |
+| model\_description | text, bắt buộc | Mô tả cho mô hình, viết tay: dùng khi nào, không dùng khi nào; tối đa 400 ký tự |
+| toolsets | text\[\], bắt buộc, mặc định '{}' | Bộ công cụ theo ý định của Planner kiểu A: metric\_lookup, explain\_change, document, forecast, provenance, explore\_sql |
+| execution\_kinds | text\[\], bắt buộc | interactive, plan, workflow |
+| restricted\_agent\_kinds | text\[\], bắt buộc, mặc định '{}' | Chỉ cấp cho các loại agent này; rỗng là không hạn chế |
+| mcp\_exposed | boolean, bắt buộc, mặc định false | Lộ ra cho client MCP có phạm vi phù hợp (UC-12-02) |
+| default\_checkpoint | text, bắt buộc | none, on\_condition, before, always |
+| use\_cases | text\[\], bắt buộc | UC dùng công cụ, khớp ma trận tab 2 mục 11.4 |
+| schema\_sha256 | text | Băm JSON Schema sinh từ OpenAPI ở lần build gần nhất (ADR-48) |
+| status | text, bắt buộc, mặc định 'active' | draft, active, deprecated |
+
+Cột chung: id, created\_at, updated\_at (không có org\_id). Ràng buộc: UNIQUE (code); CHECK (code \~ '^\[a-z\]+(\\.\[a-z\_\]+)+$'); CHECK (permission\_level IN ('read','write\_derived','send\_external')); CHECK (default\_checkpoint IN ('none','on\_condition','before','always')); CHECK (status IN ('draft','active','deprecated')); CHECK (execution\_kinds <@ ARRAY\['interactive','plan','workflow'\] AND cardinality(execution\_kinds) > 0); CHECK (char\_length(model\_description) <= 400); CHECK (permission\_level <> 'send\_external' OR (default\_checkpoint = 'always' AND NOT mcp\_exposed)); CHECK (status <> 'active' OR cardinality(use\_cases) > 0); CHECK (NOT mcp\_exposed OR code !\~ '^exec\\.'). Chỉ mục: GIN (toolsets); GIN (use\_cases). Quyền: mọi vai trò svc\_\* đọc; chỉ vai trò migration ghi. Dữ liệu khởi tạo: 59 dòng của tab 5 G2, gồm use\_cases lấy từ ma trận tab 2 mục 11.4.
 
 #### agent.agent\_trigger
 
@@ -1542,8 +1565,9 @@ Một lượt chạy của agent (màn Lượt chạy); lượt con của điề
 | stop\_reason | text | completed, loop\_detected, no\_progress, budget\_steps, budget\_tokens, budget\_cost, budget\_duration, user\_cancelled, waiting\_timeout, error; bắt buộc khi succeeded, failed, cancelled (BR-170) |
 | stop\_detail | jsonb, bắt buộc, mặc định '{}' | Chi tiết dừng: công cụ và call\_fingerprint lặp, số lần, bước cuối có tiến triển, ngân sách đã dùng so với trần |
 | snapshot\_refs | jsonb, bắt buộc, mặc định '\[\]' | Phiên bản kỹ năng, mô hình, bản chụp đã đọc để chạy lại cho cùng kết quả (BR-75) |
+| retry\_of | uuid | Lượt thất bại mà lượt này chạy lại với cùng đầu vào và phiên bản cấu hình (POST /v1/runs/{id}:retry, thêm 12/10/2026) |
 
-Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (trigger\_kind IN ('schedule','event','threshold','agent\_call','manual','test')); CHECK (status IN ('queued','planning','running','waiting\_human','paused','succeeded','failed','cancelled')); CHECK (depth BETWEEN 0 AND 3); CHECK ((parent\_run\_id IS NULL) = (depth = 0)); FOREIGN KEY (agent\_id) REFERENCES agent.agent\_def(id); FOREIGN KEY (parent\_run\_id) REFERENCES agent.agent\_run(id). Chỉ mục: (agent\_id) WHERE status IN ('queued','planning','running','waiting\_human','paused'); (parent\_run\_id) WHERE parent\_run\_id IS NOT NULL.
+Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (trigger\_kind IN ('schedule','event','threshold','agent\_call','manual','test')); CHECK (status IN ('queued','planning','running','waiting\_human','paused','succeeded','failed','cancelled')); CHECK (depth BETWEEN 0 AND 3); CHECK ((parent\_run\_id IS NULL) = (depth = 0)); FOREIGN KEY (agent\_id) REFERENCES agent.agent\_def(id); FOREIGN KEY (retry\_of) REFERENCES agent.agent\_run(id); FOREIGN KEY (parent\_run\_id) REFERENCES agent.agent\_run(id). Chỉ mục: (agent\_id) WHERE status IN ('queued','planning','running','waiting\_human','paused'); (parent\_run\_id) WHERE parent\_run\_id IS NOT NULL.
 
 Bổ sung 10/10/2026 (BR-170): CHECK (stop\_reason IS NULL OR stop\_reason IN ('completed','loop\_detected','no\_progress','budget\_steps','budget\_tokens','budget\_cost','budget\_duration','user\_cancelled','waiting\_timeout','error')); CHECK (status NOT IN ('succeeded','failed','cancelled') OR stop\_reason IS NOT NULL); chỉ mục (agent\_id, stop\_reason) WHERE stop\_reason IN ('loop\_detected','no\_progress'). DDL ở dataagent.sql (sinh bằng csdl/gen\_ddl.py, 10/10/2026). Trigger agent\_run\_depth\_guard (BR-77): lượt gốc depth = 0, lượt con depth = depth lượt cha + 1, giá trị dịch vụ gửi lên bị ghi đè; lượt cha khác tổ chức hoặc tầng thứ tư thì chặn.
 
@@ -2047,8 +2071,9 @@ Một lần chạy kỹ năng với tham số cụ thể. Use case: UC-03-01, UC
 | started\_at | timestamptz |  |
 | finished\_at | timestamptz |  |
 | error | text |  |
+| mode | text, bắt buộc, mặc định 'run' | run, try: try là chạy thử từ màn soạn kỹ năng (POST /v1/skill-versions/{id}:try), kết quả không dùng cho ô, cảnh báo hay agent (thêm 12/10/2026) |
 
-Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (caller\_kind IN ('user','tile','agent\_run','alert','eval')); CHECK (status IN ('queued','running','succeeded','failed','cancelled')); FOREIGN KEY (skill\_version\_id) REFERENCES skill.skill\_version(id). Chỉ mục: (skill\_version\_id, created\_at DESC).
+Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (caller\_kind IN ('user','tile','agent\_run','alert','eval')); CHECK (mode IN ('run','try')); CHECK (status IN ('queued','running','succeeded','failed','cancelled')); FOREIGN KEY (skill\_version\_id) REFERENCES skill.skill\_version(id). Chỉ mục: (skill\_version\_id, created\_at DESC).
 
 #### skill.skill\_run\_step
 
@@ -2773,10 +2798,11 @@ Gói ngành do nhà cung cấp hoặc khối kiến trúc phát hành. Use case:
 | name | text, bắt buộc |  |
 | industry\_code | text, bắt buộc |  |
 | publisher | text, bắt buộc | Nhà cung cấp hoặc khối kiến trúc của tổ chức |
-| publisher\_key\_id | text, bắt buộc | Khoá công khai dùng kiểm chữ ký (BR-128) |
+| publisher\_key\_id | text | Khoá công khai dùng kiểm chữ ký (BR-128); bắt buộc với gói vendor, gói của tổ chức có khoá khi phát hành phiên bản đầu (sửa 12/10/2026) |
+| origin | text, bắt buộc, mặc định 'vendor' | vendor, organisation: organisation là gói tổ chức tự soạn qua POST /v1/packs; industry\_code lấy theo organization.industry\_code (thêm 12/10/2026) |
 | description | text |  |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (org\_id, code).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (org\_id, code); CHECK (origin IN ('vendor','organisation')); CHECK (origin = 'organisation' OR publisher\_key\_id IS NOT NULL).
 
 #### pack.pack\_version
 
@@ -2938,8 +2964,9 @@ Hiệu chỉnh chỉ số ở lớp tổ chức kèm lý do; tham gia gộp ba c
 | status | text, bắt buộc, mặc định 'draft' | draft, pending\_review, active, superseded |
 | approved\_by | uuid |  |
 | compliance\_approved\_by | uuid | Chỉ số báo cáo cơ quan quản lý cần thêm AC06 |
+| calibration\_run\_id | uuid | FK calibration\_run; lần chạy thử công thức trên dữ liệu thật (UC-09-03 bước 3, thêm 12/10/2026) |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (status IN ('draft','pending\_review','active','superseded')); CHECK (status <> 'active' OR approved\_by IS NOT NULL); FOREIGN KEY (pack\_install\_id) REFERENCES pack.pack\_install(id). Chỉ mục: duy nhất (pack\_install\_id, pack\_metric\_code) WHERE status = 'active'.
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (status IN ('draft','pending\_review','active','superseded')); CHECK (status <> 'active' OR approved\_by IS NOT NULL); FOREIGN KEY (pack\_install\_id) REFERENCES pack.pack\_install(id); FOREIGN KEY (calibration\_run\_id) REFERENCES pack.calibration\_run(id). Chỉ mục: duy nhất (pack\_install\_id, pack\_metric\_code) WHERE status = 'active'.
 
 #### pack.calibration\_run
 
@@ -3086,6 +3113,7 @@ Data mart mô hình sao: bảng sự kiện, hạt, độ đo, chiều, kiểm t
 | dimensions | jsonb, bắt buộc |  |
 | relations | jsonb, bắt buộc |  |
 | checks | jsonb, bắt buộc, mặc định '\[\]' | Tổng khớp nguồn, độ mới, khoá chiều duy nhất |
+| suggested\_dimensions | jsonb | Chiều gợi ý từ quan hệ của bảng sự kiện, sinh khi tạo mart; người soạn chọn vào dimensions (UC-06-06, thêm 12/10/2026) |
 | relation\_check\_passed | boolean, bắt buộc, mặc định false | Thất bại thì không phát hành được |
 | status | text, bắt buộc, mặc định 'draft' | draft, active, retired |
 

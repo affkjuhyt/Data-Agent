@@ -274,6 +274,10 @@ class RunCancel(BaseModel):
     reason: str | None = Field(default=None, max_length=2_000)
 
 
+class AgentLock(BaseModel):
+    reason: str = Field(min_length=1, max_length=2_000)
+
+
 class PlanPut(BaseModel):
     steps: list[Any] = Field(min_length=1)
     edit_note: str | None = Field(default=None, max_length=4_000)

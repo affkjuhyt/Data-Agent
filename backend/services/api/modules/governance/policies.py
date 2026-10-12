@@ -89,6 +89,10 @@ class PolicyBacktestRequest(BaseModel):
     window_days: int = Field(default=7, ge=1, le=90)
 
 
+class PolicyDisable(BaseModel):
+    reason: str = Field(min_length=1, max_length=2_000)
+
+
 class PermissionSimulate(BaseModel):
     dataset_id: uuid.UUID
     role_ids: list[uuid.UUID] | None = Field(default=None, max_length=2)
@@ -138,6 +142,32 @@ class BehaviorPolicyView(_View):
 
 
 PolicyView = AccessPolicyView | BehaviorPolicyView
+
+
+class BacktestResultView(_View):
+    """The newest backtest of a policy; the counts are the worker's, zero until it has run.
+    detail_ref is a storage path and stays inside."""
+
+    id: uuid.UUID
+    window_from: datetime.datetime
+    window_to: datetime.datetime
+    matched_count: int
+    auto_handled_count: int
+    blocked_count: int
+    changed_result_count: int
+    affected_agent_ids: list[uuid.UUID]
+    created_at: datetime.datetime
+
+
+class AccessPolicyDetail(AccessPolicyView):
+    latest_backtest: BacktestResultView | None = None
+
+
+class BehaviorPolicyDetail(BehaviorPolicyView):
+    latest_backtest: BacktestResultView | None = None
+
+
+PolicyDetail = AccessPolicyDetail | BehaviorPolicyDetail
 
 
 class SimulationView(BaseModel):
@@ -208,10 +238,34 @@ def _event(
     )
 
 
+def _in_scope(
+    row: governance.AccessPolicy | governance.BehaviorPolicy, principal: Principal, *, write: bool
+) -> None:
+    """A Data Space's policy is reached only under that Data Space's header (an admin without a
+    header reaches every one); an organisation-wide policy is read by anyone allowed here but
+    changed only by an admin."""
+    if row.data_space_id is None:
+        if write and "admin" not in principal.capabilities:
+            raise Problem(403, "forbidden", "Organisation-wide policies are changed by an admin.")
+        return
+    space = principal.data_space_id
+    if row.data_space_id == space:
+        return
+    if space is None and "admin" in principal.capabilities:
+        return
+    raise Problem(404, "not_found", "Policy not found.")
+
+
 async def _policy(
-    session: AsyncSession, principal: Principal, policy_id: uuid.UUID, *, lock: bool = False
+    session: AsyncSession,
+    principal: Principal,
+    policy_id: uuid.UUID,
+    *,
+    lock: bool = False,
+    write: bool = True,
 ) -> governance.AccessPolicy | governance.BehaviorPolicy:
-    """The policy of either kind; ids are uuid7, so one id names one row."""
+    """The policy of either kind, in the caller's scope (_in_scope); ids are uuid7, so one id
+    names one row. Every route of a policy goes through here."""
     ap, bp = governance.AccessPolicy, governance.BehaviorPolicy
     access = select(ap).where(ap.id == policy_id, ap.org_id == principal.org_id)
     found: governance.AccessPolicy | governance.BehaviorPolicy | None = await session.scalar(
@@ -222,6 +276,7 @@ async def _policy(
         found = await session.scalar(behavior.with_for_update() if lock else behavior)
     if found is None:
         raise Problem(404, "not_found", "Policy not found.")
+    _in_scope(found, principal, write=write)
     return found
 
 
@@ -425,6 +480,106 @@ async def create_policy(body: PolicyCreate, principal: CurrentPrincipal) -> Poli
             policy_type=body.type,
             status=row.status,
         )
+        await session.refresh(row)
+        return _view(row)
+
+
+# ---------------------------------------------------------------- read one, disable
+
+
+def _readable(
+    row: governance.AccessPolicy | governance.BehaviorPolicy, principal: Principal
+) -> None:
+    """GET /v1/policies' rule for one row, on top of the scope: access policies say who sees
+    what, and are read by admin or steward."""
+    if isinstance(row, governance.AccessPolicy) and not principal.capabilities & {
+        "admin",
+        "steward",
+    }:
+        raise Problem(403, "forbidden", "Access policies are read by admin or steward.")
+
+
+@router.get(
+    "/v1/policies/{id}",
+    response_model=PolicyDetail,
+    **endpoint("GET", "/v1/policies/{id}", operation_id="getPolicy"),
+)
+async def get_policy(policy_id: PolicyId, principal: CurrentPrincipal) -> PolicyDetail:
+    async with transaction(ROLE, principal) as session:
+        row = await _policy(session, principal, policy_id, write=False)
+        _readable(row, principal)
+        backtest = await session.scalar(
+            select(governance.PolicyBacktest)
+            .where(
+                governance.PolicyBacktest.policy_id == row.id,
+                governance.PolicyBacktest.org_id == principal.org_id,
+            )
+            .order_by(
+                governance.PolicyBacktest.created_at.desc(), governance.PolicyBacktest.id.desc()
+            )
+            .limit(1)
+        )
+        latest = BacktestResultView.model_validate(backtest) if backtest else None
+        if isinstance(row, governance.AccessPolicy):
+            return AccessPolicyDetail.model_validate(row).model_copy(
+                update={"latest_backtest": latest}
+            )
+        return BehaviorPolicyDetail.model_validate(row).model_copy(
+            update={"latest_backtest": latest}
+        )
+
+
+@router.post(
+    "/v1/policies/{id}:disable",
+    response_model=PolicyView,
+    **endpoint("POST", "/v1/policies/{id}:disable", operation_id="disablePolicy"),
+)
+async def disable_policy(
+    policy_id: PolicyId, body: PolicyDisable, principal: CurrentPrincipal
+) -> PolicyView:
+    reason = body.reason.strip()
+    if not reason:
+        raise _invalid("reason", "reason is required.")
+    stamp = _now()
+    async with transaction(ROLE, principal) as session:
+        row = await _policy(session, principal, policy_id, lock=True)
+        # An active policy is switched off and a draft is dropped; both end disabled. One that is
+        # already disabled or has expired (BR-65) has nothing left to stop.
+        if row.status not in ("draft", "active"):
+            raise Problem(409, "invalid_state", f"The policy is already {row.status}.")
+        previous, row.status = row.status, "disabled"
+        row.updated_by, row.updated_at = principal.user_id, stamp
+        kind = "access" if isinstance(row, governance.AccessPolicy) else "behavior"
+        # The query path reloads policies on this event, as on policy.activated.
+        _event(
+            session,
+            principal,
+            row.__tablename__,
+            row.id,
+            "policy.disabled",
+            policy_id=row.id,
+            policy_type=kind,
+            dataset_id=getattr(row, "dataset_id", None),
+            data_space_id=row.data_space_id,
+            previous_status=previous,
+            status=row.status,
+        )
+        # The reason is the audit record's (A1.8), not part of the domain event.
+        _event(
+            session,
+            principal,
+            row.__tablename__,
+            row.id,
+            "audit.requested",
+            action="policy.disable",
+            object_kind=row.__tablename__,
+            object_id=row.id,
+            actor_id=principal.user_id,
+            client_id=principal.client_id,
+            before={"status": previous},
+            after={"status": row.status, "reason": reason},
+        )
+        await session.flush()
         await session.refresh(row)
         return _view(row)
 

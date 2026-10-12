@@ -1,5 +1,5 @@
-"""Semantic layer: metrics and their versions (UC-07-01), relationships, synonyms and examples
-(UC-07-02), the business glossary and personal readings (UC-07-09).
+"""Semantic layer: metrics and their versions (UC-07-01), the entity model, relationships, synonyms
+and examples (UC-07-02), the business glossary and personal readings (UC-07-09).
 Everything a steward declares starts unapproved (draft or pending_review) and becomes usable only
 through review (UC-07-03): the outbox event of each create is what the checker, the evaluation
 and the inbox act on. Compiling and running a metric is the semantic compiler's job; :preview
@@ -13,8 +13,10 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Path, Query, Response
-from sqlalchemy import delete, exists, func, or_, select
+from sqlalchemy import delete, exists, func, literal, or_, select
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog, context
@@ -36,7 +38,15 @@ from services.api.modules.context.common import (
 )
 from services.api.modules.context.schemas import (
     Accepted,
+    DatasetRef,
+    EntityDetail,
+    EntityDimension,
+    EntityMeasure,
+    EntityMetric,
+    EntityRelationship,
+    EntityView,
     ExampleCreate,
+    ExamplePatch,
     ExampleView,
     MetricCreate,
     MetricDetail,
@@ -405,6 +415,197 @@ async def preview_metric_version(
     return accepted(response, f"/v1/eval-runs/{eval_run_id}", eval_run_id, "queued")
 
 
+# ---------------------------------------------------------------- entity model (UC-07-02)
+
+
+def _dataset_name(row: catalog.Dataset) -> str:
+    return row.display_name or f"{row.schema_name}.{row.table_name}"
+
+
+async def _entity_views(
+    session: AsyncSession, rows: list[context.SemanticEntity], data_space: uuid.UUID
+) -> list[EntityView]:
+    """Each entity with its primary table and the relationships of that table, the other end
+    named by the entity declared on it (svc_context reads catalog through catalog_read)."""
+    if not rows:
+        return []
+    tables = {r.primary_dataset_id for r in rows}
+    relationships = (
+        await session.scalars(
+            select(context.Relationship)
+            .where(
+                context.Relationship.data_space_id == data_space,
+                context.Relationship.status != "rejected",
+                or_(
+                    context.Relationship.from_dataset_id.in_(tables),
+                    context.Relationship.to_dataset_id.in_(tables),
+                ),
+            )
+            .order_by(context.Relationship.created_at, context.Relationship.id)
+        )
+    ).all()
+    touched = tables | {r.from_dataset_id for r in relationships}
+    touched |= {r.to_dataset_id for r in relationships}
+    entity_of = dict(
+        (
+            await session.execute(
+                select(context.SemanticEntity.primary_dataset_id, context.SemanticEntity.code)
+                .where(
+                    context.SemanticEntity.data_space_id == data_space,
+                    context.SemanticEntity.primary_dataset_id.in_(touched),
+                    context.SemanticEntity.status != "retired",
+                )
+                .order_by(context.SemanticEntity.created_at)
+            )
+        )
+        .tuples()
+        .all()
+    )
+    datasets = {
+        d.id: d
+        for d in (
+            await session.scalars(
+                select(catalog.Dataset).where(
+                    catalog.Dataset.id.in_(tables),
+                    catalog.Dataset.data_space_id == data_space,
+                    catalog.Dataset.deleted_at.is_(None),
+                )
+            )
+        ).all()
+    }
+    views = []
+    for row in rows:
+        view = EntityView.model_validate(row)
+        table = datasets.get(row.primary_dataset_id)
+        view.primary_dataset = DatasetRef(id=table.id, name=_dataset_name(table)) if table else None
+        view.relationships = [
+            EntityRelationship(
+                id=r.id,
+                from_dataset_id=r.from_dataset_id,
+                from_columns=r.from_columns,
+                from_entity=entity_of.get(r.from_dataset_id),
+                to_dataset_id=r.to_dataset_id,
+                to_columns=r.to_columns,
+                to_entity=entity_of.get(r.to_dataset_id),
+                cardinality=r.cardinality,
+                origin=r.origin,
+                status=r.status,
+            )
+            for r in relationships
+            if row.primary_dataset_id in (r.from_dataset_id, r.to_dataset_id)
+        ]
+        views.append(view)
+    return views
+
+
+@router.get(
+    "/v1/entities",
+    response_model=Page[EntityView],
+    **endpoint("GET", "/v1/entities", operation_id="listEntities"),
+)
+async def list_entities(
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: ContextPage,
+    q: Annotated[str | None, Query(max_length=200)] = None,
+    status: Annotated[str | None, Query(max_length=40)] = None,
+) -> Page[EntityView]:
+    entity = context.SemanticEntity
+    query = select(entity).where(
+        entity.org_id == principal.org_id, entity.data_space_id == data_space
+    )
+    if status:
+        query = query.where(entity.status == status)
+    if q:
+        query = query.where(or_(entity.code.ilike(f"%{q}%"), entity.name.ilike(f"%{q}%")))
+    async with transaction(ROLE, principal) as session:
+        rows, token = await keyset_page(session, query, entity, page, lambda r: r)
+        items = await _entity_views(session, rows, data_space)
+    return Page(items=items, next_page_token=token)
+
+
+@router.get(
+    "/v1/entities/{key}",
+    response_model=EntityDetail,
+    **endpoint("GET", "/v1/entities/{key}", operation_id="getEntity"),
+)
+async def get_entity(
+    key: Annotated[str, Path(max_length=200)],
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> EntityDetail:
+    async with transaction(ROLE, principal) as session:
+        row = await session.scalar(
+            select(context.SemanticEntity).where(
+                context.SemanticEntity.org_id == principal.org_id,
+                context.SemanticEntity.data_space_id == data_space,
+                context.SemanticEntity.code == key,
+            )
+        )
+        if row is None:
+            raise Problem(404, "not_found", "Entity not found.")
+        (view,) = await _entity_views(session, [row], data_space)
+        dimensions = (
+            await session.scalars(
+                select(context.SemanticDimension)
+                .where(context.SemanticDimension.entity_id == row.id)
+                .order_by(context.SemanticDimension.code)
+            )
+        ).all()
+        measures = (
+            await session.scalars(
+                select(context.SemanticMeasure)
+                .where(context.SemanticMeasure.entity_id == row.id)
+                .order_by(context.SemanticMeasure.code)
+            )
+        ).all()
+        metric, version = context.Metric, context.MetricVersion
+        uses = [metric.canonical_dataset_id == row.primary_dataset_id]
+        if dimensions:
+            # A metric of another table that is broken down by one of the entity's dimensions
+            # (allowed_dimensions of its current version) uses the entity too.
+            # Its own alias: the outer query joins metric_version too, and would correlate it away.
+            current = aliased(context.MetricVersion)
+            uses.append(
+                exists().where(
+                    current.metric_id == metric.id,
+                    current.version == metric.current_version,
+                    or_(
+                        *(
+                            literal(d.id, UUID(as_uuid=True))
+                            == func.any(current.allowed_dimensions)
+                            for d in dimensions
+                        )
+                    ),
+                )
+            )
+        metrics = (
+            await session.execute(
+                select(metric.id, metric.code, version.display_name, metric.status)
+                .outerjoin(
+                    version,
+                    (version.metric_id == metric.id) & (version.version == metric.current_version),
+                )
+                .where(
+                    metric.org_id == principal.org_id,
+                    metric.data_space_id == data_space,
+                    metric.status != "retired",
+                    or_(*uses),
+                )
+                .order_by(metric.code)
+            )
+        ).all()
+    return EntityDetail(
+        **view.model_dump(),
+        dimensions=[EntityDimension.model_validate(d, from_attributes=True) for d in dimensions],
+        measures=[EntityMeasure.model_validate(m, from_attributes=True) for m in measures],
+        metrics=[
+            EntityMetric(id=m_id, code=code, display_name=name, status=status)
+            for m_id, code, name, status in metrics
+        ],
+    )
+
+
 # ---------------------------------------------------------------- relationships (UC-07-02)
 
 
@@ -558,6 +759,39 @@ async def _make_ambiguous(
     return term.id
 
 
+@router.get(
+    "/v1/synonyms",
+    response_model=Page[SynonymView],
+    **endpoint("GET", "/v1/synonyms", operation_id="listSynonyms"),
+)
+async def list_synonyms(
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: ContextPage,
+    q: Annotated[str | None, Query(max_length=200)] = None,
+    status: Annotated[str | None, Query(max_length=40)] = None,
+    target_kind: Annotated[str | None, Query(max_length=40)] = None,
+    target_id: uuid.UUID | None = None,
+) -> Page[SynonymView]:
+    synonym = context.Synonym
+    query = select(synonym).where(
+        synonym.org_id == principal.org_id, synonym.data_space_id == data_space
+    )
+    for column, value in (
+        (synonym.status, status),
+        (synonym.target_kind, target_kind),
+        (synonym.target_id, target_id),
+    ):
+        if value is not None:
+            query = query.where(column == value)
+    if q:
+        # Matched on the normalised phrase, as the planner matches a question (D4.5).
+        query = query.where(synonym.phrase_norm.contains(normalize(q)))
+    async with transaction(ROLE, principal) as session:
+        items, token = await keyset_page(session, query, synonym, page, SynonymView.model_validate)
+    return Page(items=items, next_page_token=token)
+
+
 @router.post(
     "/v1/synonyms",
     status_code=201,
@@ -644,6 +878,42 @@ _WRITES = re.compile(
 )
 
 
+def _read_only_sql(sql: str) -> str:
+    """The statement without its trailing semicolon; 422 unless it is one read-only SELECT
+    (BR-22)."""
+    sql = sql.strip().rstrip(";").strip()
+    if not _READ_ONLY.match(sql) or ";" in sql or _WRITES.search(sql):
+        raise field_error("sql", "sql must be one read-only SELECT statement.")
+    return sql
+
+
+@router.get(
+    "/v1/examples",
+    response_model=Page[ExampleView],
+    **endpoint("GET", "/v1/examples", operation_id="listExamples"),
+)
+async def list_examples(
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: ContextPage,
+    status: Annotated[str | None, Query(max_length=40)] = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
+    origin: Annotated[str | None, Query(max_length=40)] = None,
+) -> Page[ExampleView]:
+    example = context.ExampleQuery
+    query = select(example).where(
+        example.org_id == principal.org_id, example.data_space_id == data_space
+    )
+    for column, value in ((example.status, status), (example.origin, origin)):
+        if value is not None:
+            query = query.where(column == value)
+    if q:
+        query = query.where(example.question.ilike(f"%{q}%"))
+    async with transaction(ROLE, principal) as session:
+        items, token = await keyset_page(session, query, example, page, ExampleView.model_validate)
+    return Page(items=items, next_page_token=token)
+
+
 @router.post(
     "/v1/examples",
     status_code=201,
@@ -653,9 +923,7 @@ _WRITES = re.compile(
 async def create_example(
     body: ExampleCreate, principal: CurrentPrincipal, data_space: CurrentDataSpace
 ) -> ExampleView:
-    sql = body.sql.strip().rstrip(";").strip()
-    if not _READ_ONLY.match(sql) or ";" in sql or _WRITES.search(sql):
-        raise field_error("sql", "sql must be one read-only SELECT statement.")
+    sql = _read_only_sql(body.sql)
     metric_ids = list(dict.fromkeys(body.metric_ids or []))
     async with transaction(ROLE, principal) as session:
         if metric_ids:
@@ -697,6 +965,77 @@ async def create_example(
             example_query_id=row.id,
             data_space_id=data_space,
             status=row.status,
+        )
+        await session.flush()
+        await session.refresh(row)
+        return ExampleView.model_validate(row)
+
+
+# A confirmed example is one the checker has run (pending_review) or one already confirmed; a
+# draft has not been run yet and a stale one no longer runs (BR-118).
+_CONFIRMABLE = ("pending_review", "active")
+
+
+@router.patch(
+    "/v1/examples/{id}",
+    response_model=ExampleView,
+    **endpoint("PATCH", "/v1/examples/{id}", operation_id="updateExample"),
+)
+async def update_example(
+    body: ExamplePatch,
+    example_id: Annotated[uuid.UUID, Path(alias="id")],
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> ExampleView:
+    changes = body.model_dump(exclude_unset=True)
+    for name in ("question", "sql", "status"):
+        if name in changes and changes[name] is None:
+            raise field_error(name, f"{name} cannot be null.")
+    sql = _read_only_sql(body.sql) if body.sql is not None else None
+    async with transaction(ROLE, principal) as session:
+        row = await session.scalar(
+            select(context.ExampleQuery)
+            .where(
+                context.ExampleQuery.id == example_id,
+                context.ExampleQuery.org_id == principal.org_id,
+                context.ExampleQuery.data_space_id == data_space,
+            )
+            .with_for_update()
+        )
+        if row is None:
+            raise Problem(404, "not_found", "Example not found.")
+        previous = row.status
+        rerun = sql is not None and sql != row.sql
+        if rerun and body.status == "active":
+            # The api has no warehouse: a new SQL is run by the checker first, then confirmed.
+            raise field_error("status", "A changed SQL runs again before it is confirmed.")
+        if body.status == "active" and row.status not in _CONFIRMABLE:
+            raise Problem(
+                409,
+                "invalid_state",
+                f"The example is {row.status}; it is confirmed once the checker has run its SQL.",
+            )
+        if body.question is not None:
+            row.question = body.question
+        if sql is not None and rerun:
+            # Out of the standard set until the checker has run the new SQL (BR-118): it goes
+            # back to draft, as a new example does, and the checker acts on the event below.
+            row.sql, row.status, row.last_verified_at = sql, "draft", None
+        if body.status is not None:
+            row.status = body.status
+        row.updated_by, row.updated_at = principal.user_id, now()
+        emit(
+            session,
+            principal,
+            "example_query",
+            row.id,
+            "example_query.updated",
+            example_query_id=row.id,
+            data_space_id=data_space,
+            changed=sorted(changes),
+            previous_status=previous,
+            status=row.status,
+            rerun_sql=rerun,
         )
         await session.flush()
         await session.refresh(row)

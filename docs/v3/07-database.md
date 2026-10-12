@@ -13,6 +13,7 @@ Thiết kế CSDL ở tài liệu phân tích thiết kế (tab 3 “Thiết k�
 | DDL | `backend/schema/csdl/gen_ddl.py` → `backend/alembic/sql/dataagent.sql`, `dataagent_audit.sql` | Vai trò, schema, bảng, outbox, chỉ mục, FK, RLS, quyền, routines, phân vùng tháng |
 | ORM | `backend/schema/csdl/gen_orm.py` → `backend/libs/dataagent_db/models/<schema>.py` | Một module mỗi schema, một lớp mỗi bảng (PascalCase) và `Outbox` |
 | Migration | `backend/alembic/versions/` | Revision áp tệp SQL sinh ra |
+| Dữ liệu khởi tạo | `backend/alembic/seed/` | Dòng dùng chung cho mọi tổ chức mà thiết kế bảo nạp bằng migration, ví dụ `tool_def.json` (59 công cụ của tab 5 G2, nạp ở v3_0011) |
 | Kiểm thử | `tests/integration/migrate/` | Số lượng đối tượng, cách ly tổ chức, ORM khớp DDL, các phép thử D5.4 theo từng schema, `scoped_session` |
 
 Sinh lại sau khi thiết kế đổi (từ `backend/schema`):

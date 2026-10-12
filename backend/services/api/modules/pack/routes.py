@@ -13,7 +13,7 @@ from __future__ import annotations
 import datetime
 import json
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, File, Path, Query, Response, UploadFile
 from fastapi.encoders import jsonable_encoder
@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog
+from libs.dataagent_db.models import org as org_models
 from libs.dataagent_db.models import pack as pk
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
@@ -42,19 +43,29 @@ from services.api.modules.pack.schemas import (
     Accepted,
     ApplyRequest,
     CalibrateRequest,
+    CalibrationItemView,
+    CalibrationRunView,
+    CalibrationSummary,
     CanonicalAttributeView,
     CanonicalEntityView,
+    CodeMappingView,
     DecisionsPut,
     EntityMappingView,
+    EntityProgress,
     IndustryPackView,
     MappingsPut,
+    MappingView,
     MetricOverrideCreate,
+    MetricOverrideDetail,
     MetricOverrideView,
     PackCheckRunView,
+    PackCreate,
     PackInstallCreate,
+    PackInstallDetail,
     PackInstallView,
     PackMetricView,
     PackSkillView,
+    PackUpgradeDetail,
     PackUpgradeView,
     PackVersionCreate,
     PackVersionDetail,
@@ -150,21 +161,26 @@ async def _install(
 
 
 async def _upgrade(
-    session: AsyncSession, principal: Principal, space: uuid.UUID, upgrade_id: uuid.UUID
+    session: AsyncSession,
+    principal: Principal,
+    space: uuid.UUID,
+    upgrade_id: uuid.UUID,
+    *,
+    lock: bool = True,
 ) -> tuple[pk.PackUpgrade, pk.PackInstall]:
-    found = (
-        await session.execute(
-            select(pk.PackUpgrade, pk.PackInstall)
-            .join(pk.PackInstall, pk.PackInstall.id == pk.PackUpgrade.pack_install_id)
-            .where(
-                pk.PackUpgrade.id == upgrade_id,
-                pk.PackUpgrade.org_id == principal.org_id,
-                pk.PackInstall.data_space_id == space,
-            )
-            # The install changes with the upgrade (apply, rollback): lock both.
-            .with_for_update()
+    query = (
+        select(pk.PackUpgrade, pk.PackInstall)
+        .join(pk.PackInstall, pk.PackInstall.id == pk.PackUpgrade.pack_install_id)
+        .where(
+            pk.PackUpgrade.id == upgrade_id,
+            pk.PackUpgrade.org_id == principal.org_id,
+            pk.PackInstall.data_space_id == space,
         )
-    ).first()
+    )
+    if lock:
+        # The install changes with the upgrade (apply, rollback): lock both.
+        query = query.with_for_update()
+    found = (await session.execute(query)).first()
     if found is None:
         raise Problem(404, "not_found", "Pack upgrade not found.")
     return found[0], found[1]
@@ -316,6 +332,64 @@ async def list_packs(
     async with transaction(ROLE, principal) as session:
         rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(items=[IndustryPackView.model_validate(r) for r in rows], next_page_token=token)
+
+
+@router.post(
+    "/v1/packs",
+    response_model=IndustryPackView,
+    status_code=201,
+    **endpoint("POST", "/v1/packs", operation_id="createPack"),
+)
+async def create_pack(body: PackCreate, principal: CurrentPrincipal) -> IndustryPackView:
+    async with transaction(ROLE, principal) as session:
+        taken = await session.scalar(
+            select(pk.IndustryPack.id).where(
+                pk.IndustryPack.org_id == principal.org_id, pk.IndustryPack.code == body.code
+            )
+        )
+        if taken is not None:
+            raise Problem(409, "conflict", f"A pack with code {body.code} already exists.")
+        organisation = (
+            await session.execute(
+                select(org_models.Organization.name, org_models.Organization.industry_code).where(
+                    org_models.Organization.id == principal.org_id
+                )
+            )
+        ).first()
+        name, industry = (organisation[0], organisation[1]) if organisation else ("", None)
+        pack = pk.IndustryPack(
+            id=uuid7(),
+            org_id=principal.org_id,
+            code=body.code,
+            name=body.name,
+            # The organisation's own pack is of its industry; without one recorded, the pack
+            # names its own (org.organization.industry_code matches a pack code).
+            industry_code=industry or body.code,
+            publisher=name,
+            origin="organisation",
+            # Unsigned until a version is published: :publish signs with the author's key
+            # (OpenBao Transit) and the worker records the key id, as for signature.
+            publisher_key_id=None,
+            description=body.description,
+            created_by=principal.user_id,
+            updated_by=principal.user_id,
+        )
+        session.add(pack)
+        # A concurrent create of the same code hits UNIQUE (org_id, code): 409 conflict.
+        await session.flush()
+        _emit(
+            session,
+            principal,
+            "industry_pack",
+            pack.id,
+            "industry_pack.created",
+            pack_id=pack.id,
+            code=pack.code,
+            created_by=principal.user_id,
+        )
+        await session.flush()
+        await session.refresh(pack)
+        return IndustryPackView.model_validate(pack)
 
 
 async def _reject_import(principal: Principal, pack_code: str | None, reason: str) -> None:
@@ -782,6 +856,152 @@ async def create_pack_install(
         return PackInstallView.model_validate(install)
 
 
+async def _calibration_summary(
+    session: AsyncSession, run_id: uuid.UUID | None = None, install_id: uuid.UUID | None = None
+) -> CalibrationSummary | None:
+    """A run by id, or the latest of an install."""
+    query = select(pk.CalibrationRun)
+    if run_id is not None:
+        query = query.where(pk.CalibrationRun.id == run_id)
+    else:
+        query = query.where(pk.CalibrationRun.pack_install_id == install_id)
+    run = await session.scalar(
+        query.order_by(pk.CalibrationRun.created_at.desc(), pk.CalibrationRun.id.desc()).limit(1)
+    )
+    return CalibrationSummary.model_validate(run) if run else None
+
+
+@router.get(
+    "/v1/pack-installs/{id}",
+    response_model=PackInstallDetail,
+    **endpoint("GET", "/v1/pack-installs/{id}", operation_id="getPackInstall"),
+)
+async def get_pack_install(
+    install_id: PathId, principal: CurrentPrincipal, space: CurrentDataSpace
+) -> PackInstallDetail:
+    async with transaction(ROLE, principal) as session:
+        install = await _install(session, principal, space, install_id)
+        version = await _version(session, principal, install.pack_version_id)
+        pack = await session.scalar(
+            select(pk.IndustryPack).where(pk.IndustryPack.id == version.pack_id)
+        )
+        if pack is None:
+            raise Problem(404, "not_found", "Pack install not found.")
+        mapped_ids = set(
+            (
+                await session.scalars(
+                    select(pk.EntityMapping.attribute_id).where(
+                        pk.EntityMapping.pack_install_id == install.id,
+                        pk.EntityMapping.valid_to.is_(None),
+                    )
+                )
+            ).all()
+        )
+        entities = (
+            await session.scalars(
+                select(pk.CanonicalEntity)
+                .where(pk.CanonicalEntity.pack_version_id == version.id)
+                .order_by(pk.CanonicalEntity.code)
+            )
+        ).all()
+        by_entity: dict[uuid.UUID, list[pk.CanonicalAttribute]] = {}
+        for attr, _ in await _attributes(session, version.id):
+            by_entity.setdefault(attr.entity_id, []).append(attr)
+        progress = []
+        for e in entities:
+            attrs = by_entity.get(e.id, [])
+            required = [a for a in attrs if a.required]
+            progress.append(
+                EntityProgress(
+                    code=e.code,
+                    name=e.name,
+                    mapped=sum(1 for a in attrs if a.id in mapped_ids),
+                    total=len(attrs),
+                    required_mapped=sum(1 for a in required if a.id in mapped_ids),
+                    required_total=len(required),
+                )
+            )
+        return PackInstallDetail(
+            **PackInstallView.model_validate(install).model_dump(),
+            pack_id=pack.id,
+            pack_code=pack.code,
+            pack_name=pack.name,
+            version=version.version,
+            entities=progress,
+            mapped=sum(p.mapped for p in progress),
+            total=sum(p.total for p in progress),
+            latest_calibration_run=await _calibration_summary(session, install_id=install.id),
+        )
+
+
+@router.get(
+    "/v1/pack-installs/{id}/mappings",
+    response_model=Page[MappingView],
+    **endpoint("GET", "/v1/pack-installs/{id}/mappings", operation_id="listPackMappings"),
+)
+async def list_mappings(
+    install_id: PathId,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order, Depends(order_by("valid_from", "created_at", default="valid_from asc"))
+    ],
+    entity: Annotated[
+        str | None, Query(max_length=200, description="Canonical entity code")
+    ] = None,
+) -> Page[MappingView]:
+    m = pk.EntityMapping
+    async with transaction(ROLE, principal) as session:
+        install = await _install(session, principal, space, install_id)
+        attributes = {
+            a.id: (a, entity_code)
+            for a, entity_code in await _attributes(session, install.pack_version_id)
+        }
+        # The current mappings only: a closed one is history (BR-37), not what the install uses.
+        query = select(m).where(m.pack_install_id == install.id, m.valid_to.is_(None))
+        if entity:
+            query = query.where(
+                m.attribute_id.in_([a.id for a, code in attributes.values() if code == entity])
+            )
+        query = keyset(
+            query,
+            columns={"valid_from": m.valid_from, "created_at": m.created_at},
+            tiebreak=m.id,
+            order=order,
+            page=page,
+        )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+        codes: dict[uuid.UUID, list[CodeMappingView]] = {}
+        if rows:
+            for c in (
+                await session.scalars(
+                    select(pk.CodeMapping)
+                    .where(
+                        pk.CodeMapping.pack_install_id == install.id,
+                        pk.CodeMapping.valid_to.is_(None),
+                        pk.CodeMapping.attribute_id.in_({r.attribute_id for r in rows}),
+                    )
+                    .order_by(pk.CodeMapping.source_code)
+                )
+            ).all():
+                codes.setdefault(c.attribute_id, []).append(CodeMappingView.model_validate(c))
+        items = []
+        for r in rows:
+            attr, entity_code = attributes[r.attribute_id]
+            items.append(
+                MappingView(
+                    **EntityMappingView.model_validate(r).model_dump(),
+                    entity_code=entity_code,
+                    attribute_code=attr.code,
+                    attribute_name=attr.name,
+                    required=attr.required,
+                    code_mappings=codes.get(r.attribute_id, []),
+                )
+            )
+    return Page(items=items, next_page_token=token)
+
+
 @router.post(
     "/v1/pack-installs/{id}:suggest-mappings",
     status_code=202,
@@ -1052,9 +1272,48 @@ async def calibrate_install(
         )
     return _accepted(
         response,
-        f"/v1/pack-installs/{install_id}/mappings",
+        f"/v1/calibration-runs/{run.id}",
         Accepted(id=run.id, status="running", poll_after_ms=POLL_AFTER_MS),
     )
+
+
+@router.get(
+    "/v1/calibration-runs/{id}",
+    response_model=CalibrationRunView,
+    **endpoint("GET", "/v1/calibration-runs/{id}", operation_id="getCalibrationRun"),
+)
+async def get_calibration_run(
+    run_id: PathId, principal: CurrentPrincipal, space: CurrentDataSpace
+) -> CalibrationRunView:
+    async with transaction(ROLE, principal) as session:
+        # A run belongs to the Data Space of its install.
+        run = await session.scalar(
+            select(pk.CalibrationRun)
+            .join(pk.PackInstall, pk.PackInstall.id == pk.CalibrationRun.pack_install_id)
+            .where(
+                pk.CalibrationRun.id == run_id,
+                pk.CalibrationRun.org_id == principal.org_id,
+                pk.PackInstall.data_space_id == space,
+            )
+        )
+        if run is None:
+            raise Problem(404, "not_found", "Calibration run not found.")
+        items = (
+            await session.scalars(
+                select(pk.CalibrationItem)
+                .where(pk.CalibrationItem.calibration_run_id == run.id)
+                .order_by(
+                    pk.CalibrationItem.item_kind,
+                    pk.CalibrationItem.item_code,
+                    pk.CalibrationItem.period,
+                    pk.CalibrationItem.id,
+                )
+            )
+        ).all()
+        return CalibrationRunView(
+            **CalibrationRunView.model_validate(run).model_dump(exclude={"items"}),
+            items=[CalibrationItemView.model_validate(i) for i in items],
+        )
 
 
 @router.post(
@@ -1208,6 +1467,52 @@ async def create_metric_override(
         )
         await session.flush()
         return MetricOverrideView.model_validate(row)
+
+
+@router.get(
+    "/v1/metric-overrides/{id}",
+    response_model=MetricOverrideDetail,
+    **endpoint("GET", "/v1/metric-overrides/{id}", operation_id="getMetricOverride"),
+)
+async def get_metric_override(
+    override_id: PathId, principal: CurrentPrincipal, space: CurrentDataSpace
+) -> MetricOverrideDetail:
+    async with transaction(ROLE, principal) as session:
+        found = (
+            await session.execute(
+                select(pk.MetricOverride, pk.PackInstall)
+                .join(pk.PackInstall, pk.PackInstall.id == pk.MetricOverride.pack_install_id)
+                .where(
+                    pk.MetricOverride.id == override_id,
+                    pk.MetricOverride.org_id == principal.org_id,
+                    pk.PackInstall.data_space_id == space,
+                )
+            )
+        ).first()
+        if found is None:
+            raise Problem(404, "not_found", "Metric override not found.")
+        row, install = found[0], found[1]
+        # The pack's formula of the version installed now: what the override departs from.
+        metric = await session.scalar(
+            select(pk.PackMetric).where(
+                pk.PackMetric.pack_version_id == install.pack_version_id,
+                pk.PackMetric.code == row.pack_metric_code,
+            )
+        )
+        regulatory = bool(metric and metric.in_regulatory_report)
+        awaiting: Literal["approve", "compliance"] | None = None
+        if row.status == "pending_review":
+            awaiting = "approve" if row.approved_by is None else "compliance"
+        return MetricOverrideDetail(
+            **MetricOverrideView.model_validate(row).model_dump(),
+            metric_name=metric.name if metric else None,
+            base_expression=metric.expression if metric else None,
+            in_regulatory_report=regulatory,
+            awaiting=awaiting,
+            calibration_run=await _calibration_summary(session, run_id=row.calibration_run_id)
+            if row.calibration_run_id
+            else None,
+        )
 
 
 @router.post(
@@ -1461,6 +1766,28 @@ async def upgrade_install(
         await session.flush()
         response.status_code = 201
         return _upgrade_view(row)
+
+
+@router.get(
+    "/v1/pack-upgrades/{id}",
+    response_model=PackUpgradeDetail,
+    **endpoint("GET", "/v1/pack-upgrades/{id}", operation_id="getPackUpgrade"),
+)
+async def get_pack_upgrade(
+    upgrade_id: PathId, principal: CurrentPrincipal, space: CurrentDataSpace
+) -> PackUpgradeDetail:
+    async with transaction(ROLE, principal) as session:
+        row, _ = await _upgrade(session, principal, space, upgrade_id, lock=False)
+        items = list((row.merge_result or {}).get("items", []))
+        return PackUpgradeDetail(
+            **_upgrade_view(row).model_dump(),
+            conflicts=[i for i in items if i.get("outcome") == "conflict"],
+            decisions=[i for i in items if i.get("decision")],
+            # The test run of workflow pack_upgrade against the filed numbers (step 5).
+            calibration_run=await _calibration_summary(session, run_id=row.calibration_run_id)
+            if row.calibration_run_id
+            else None,
+        )
 
 
 @router.put(

@@ -391,6 +391,32 @@
    ],
    "request_text": "?cursor"
   },
+  "POST /v1/query-runs": {
+   "group": "Truy vấn",
+   "groups": [
+    "Truy vấn"
+   ],
+   "body": {
+    "dataset_id": false,
+    "sql": false,
+    "filters": false,
+    "limit": false,
+    "as_of": false
+   },
+   "query": [],
+   "returns": "202, Location tới query_run; dòng đọc qua GET /v1/query-runs/{id}/rows. SQL chỉ đọc, viết lại theo chính sách trước khi chạy (BR-45)",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ],
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "dataset_id hoặc sql, filters, limit, as_of"
+  },
   "GET /v1/workspaces": {
    "group": "Phiên làm việc",
    "groups": [
@@ -657,6 +683,89 @@
    ],
    "request_text": "recipients"
   },
+  "GET /v1/session-reports": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {},
+   "query": [
+    "workspace_id",
+    "status",
+    "cursor"
+   ],
+   "returns": "Danh sách SessionReport",
+   "errors": [],
+   "request_text": "?workspace_id, ?status, ?cursor"
+  },
+  "GET /v1/session-reports/{id}": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "SessionReport (nơi Location của :check trỏ tới)",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/workspaces/{id}/shares": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách WorkspaceShare",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/workspaces/{id}/shares:preview": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {
+    "shares": true
+   },
+   "query": [],
+   "returns": "Mỗi người nhận: ô thấy được, ô bị che và lý do (BR-89); không ghi gì",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "shares*"
+  },
+  "GET /v1/tiles/{id}/comments": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {},
+   "query": [
+    "cursor"
+   ],
+   "returns": "Danh sách Comment",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "?cursor"
+  },
   "GET /v1/skills": {
    "group": "Kỹ năng",
    "groups": [
@@ -867,6 +976,41 @@
    "returns": "SkillSuggestion. Không đề xuất lại trong 90 ngày",
    "errors": [],
    "request_text": "—"
+  },
+  "POST /v1/skill-versions/{id}:try": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {
+    "params": true
+   },
+   "query": [],
+   "returns": "202, Location tới skill_run (mode try; không cập nhật thư viện)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "params*"
+  },
+  "GET /v1/tools": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {},
+   "query": [
+    "level"
+   ],
+   "returns": "Danh sách Tool: mã, mô tả, mức (read, write_derived, external_send, system_action)",
+   "errors": [],
+   "request_text": "?level"
   },
   "GET /v1/sources": {
    "group": "Nguồn và danh mục",
@@ -1153,15 +1297,17 @@
     "freshness_sla": false,
     "dlq_retention_days": false
    },
-   "query": [],
-   "returns": "IngestionJob",
+   "query": [
+    "dry_run"
+   ],
+   "returns": "IngestionJob; ?dry_run=true chạy thử cấu hình trên 1.000 dòng, không ghi, trả mẫu và lỗi (thêm 12/10/2026)",
    "errors": [
     [
      422,
      "validation_failed"
     ]
    ],
-   "request_text": "name*, mode*, source_object*, target_dataset_id, cursor_column, schedule_cron, freshness_sla, dlq_retention_days"
+   "request_text": "name*, mode*, source_object*, target_dataset_id, cursor_column, schedule_cron, freshness_sla, dlq_retention_days, ?dry_run"
   },
   "GET /v1/jobs": {
    "group": "Nạp dữ liệu",
@@ -1668,6 +1814,65 @@
    ],
    "request_text": "—"
   },
+  "GET /v1/documents": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [
+    "collection_id",
+    "status",
+    "q",
+    "cursor"
+   ],
+   "returns": "Danh sách Document kèm bước tiền xử lý hiện tại",
+   "errors": [],
+   "request_text": "?collection_id, ?status, ?q, ?cursor"
+  },
+  "GET /v1/extraction-schemas": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [
+    "collection_id",
+    "cursor"
+   ],
+   "returns": "Danh sách ExtractionSchema",
+   "errors": [],
+   "request_text": "?collection_id, ?cursor"
+  },
+  "GET /v1/extraction-schemas/{id}": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ExtractionSchema (nơi Location của :test trỏ tới)",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/document-sources": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [
+    "collection_id"
+   ],
+   "returns": "Danh sách nguồn tài liệu, không có bí mật",
+   "errors": [],
+   "request_text": "?collection_id"
+  },
   "GET /v1/pipelines": {
    "group": "Biến đổi dữ liệu",
    "groups": [
@@ -1921,6 +2126,93 @@
     ]
    ],
    "request_text": "reason*"
+  },
+  "GET /v1/pipelines/{id}": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Pipeline",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/writebacks/{id}": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "WritebackRequest (nơi Location của :undo trỏ tới)",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/marts": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "cursor"
+   ],
+   "returns": "Danh sách DataMart",
+   "errors": [],
+   "request_text": "?status, ?cursor"
+  },
+  "GET /v1/marts/{id}": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "DataMart",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "PATCH /v1/marts/{id}": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {
+    "name": false,
+    "dimensions": false,
+    "measures": false,
+    "relations": false
+   },
+   "query": [],
+   "returns": "DataMart; kiểm quan hệ chạy lại (relation_check_passed)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "name, dimensions, measures, relations"
   },
   "GET /v1/metrics": {
    "group": "Lớp ngữ cảnh",
@@ -2634,6 +2926,88 @@
    "errors": [],
    "request_text": "?at, ?periods"
   },
+  "GET /v1/entities": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "q"
+   ],
+   "returns": "Danh sách Entity",
+   "errors": [],
+   "request_text": "?q"
+  },
+  "GET /v1/entities/{key}": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Entity",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/examples": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "q",
+    "cursor"
+   ],
+   "returns": "Danh sách Example",
+   "errors": [],
+   "request_text": "?status, ?q, ?cursor"
+  },
+  "PATCH /v1/examples/{id}": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "question": false,
+    "sql": false,
+    "status": false
+   },
+   "query": [],
+   "returns": "Example",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ],
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "question, sql, status"
+  },
+  "GET /v1/synonyms": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "q",
+    "cursor"
+   ],
+   "returns": "Danh sách Synonym",
+   "errors": [],
+   "request_text": "?q, ?cursor"
+  },
   "GET /v1/conflicts": {
    "group": "Xung đột",
    "groups": [
@@ -3036,6 +3410,37 @@
    ],
    "request_text": "pack_id*, summary*"
   },
+  "GET /v1/eval-sets": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {},
+   "query": [
+    "subject_type",
+    "subject_id",
+    "cursor"
+   ],
+   "returns": "Danh sách EvalSet",
+   "errors": [],
+   "request_text": "?subject_type, ?subject_id, ?cursor"
+  },
+  "GET /v1/eval-sets/{id}": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "EvalSet kèm lượt chạy gần nhất",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
   "GET /v1/policies": {
    "group": "Chính sách",
    "groups": [
@@ -3126,6 +3531,40 @@
    "returns": "JSON. Trả cùng một bảng dưới hai vai trò hoặc hai người",
    "errors": [],
    "request_text": "dataset_id*, role_ids, user_ids"
+  },
+  "GET /v1/policies/{id}": {
+   "group": "Chính sách",
+   "groups": [
+    "Chính sách"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "BehaviorPolicy hoặc AccessPolicy",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/policies/{id}:disable": {
+   "group": "Chính sách",
+   "groups": [
+    "Chính sách"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "BehaviorPolicy hoặc AccessPolicy (status = disabled); lý do vào nhật ký kiểm toán",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "reason*"
   },
   "POST /v1/monitors": {
    "group": "Theo dõi, báo cáo, thông báo",
@@ -3594,6 +4033,68 @@
    ],
    "request_text": "reason"
   },
+  "GET /v1/monitors": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "cursor"
+   ],
+   "returns": "Danh sách Monitor",
+   "errors": [],
+   "request_text": "?status, ?cursor"
+  },
+  "POST /v1/alerts/{id}:reopen": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "Alert (status = open)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "reason*"
+  },
+  "GET /v1/reports": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "cursor"
+   ],
+   "returns": "Danh sách Report",
+   "errors": [],
+   "request_text": "?status, ?cursor"
+  },
+  "GET /v1/reports/{id}": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Report",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
   "GET /v1/packs": {
    "group": "Gói ngành",
    "groups": [
@@ -3855,6 +4356,109 @@
     ]
    ],
    "request_text": "reason*"
+  },
+  "POST /v1/packs": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {
+    "code": true,
+    "name": true,
+    "description": false
+   },
+   "query": [],
+   "returns": "IndustryPack (riêng của tổ chức, chưa có phiên bản)",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ]
+   ],
+   "request_text": "code*, name*, description"
+  },
+  "GET /v1/pack-installs/{id}": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "PackInstall",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/pack-installs/{id}/mappings": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {},
+   "query": [
+    "entity",
+    "cursor"
+   ],
+   "returns": "Danh sách Mapping",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "?entity, ?cursor"
+  },
+  "GET /v1/calibration-runs/{id}": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "CalibrationRun (nơi Location của :calibrate trỏ tới)",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/metric-overrides/{id}": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "MetricOverride",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/pack-upgrades/{id}": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "PackUpgrade",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
   },
   "GET /v1/periods": {
    "group": "Kỳ chốt",
@@ -4490,6 +5094,110 @@
    "errors": [],
    "request_text": "?decision, ?reason, ?provider_id, ?caller_kind, ?caller_id, ?from, ?to, ?cursor"
   },
+  "GET /v1/principals": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [
+    "q",
+    "kind"
+   ],
+   "returns": "Danh sách Principal: id, kind (user, group, agent), tên hiển thị; không có thuộc tính cá nhân",
+   "errors": [],
+   "request_text": "?q*, ?kind"
+  },
+  "GET /v1/admin/roles": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách Role kèm capabilities",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/data-spaces/{id}/members": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [
+    "cursor"
+   ],
+   "returns": "Danh sách DataSpaceMember",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "?cursor"
+  },
+  "GET /v1/admin/ai-settings": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách AiSetting",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/admin/agent-usage": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [
+    "from",
+    "to",
+    "granularity"
+   ],
+   "returns": "Chuỗi tổng hợp theo ngày và theo agent",
+   "errors": [],
+   "request_text": "?from, ?to, ?granularity"
+  },
+  "POST /v1/schedules:preview": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "cron": true,
+    "work_calendar_id": false,
+    "timezone": false,
+    "count": false
+   },
+   "query": [],
+   "returns": "Danh sách thời điểm chạy kế tiếp; không ghi gì",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "cron*, work_calendar_id, timezone, count"
+  },
+  "GET /v1/dsr": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "cursor"
+   ],
+   "returns": "Danh sách DsrRequest (không có định danh, chỉ bản băm)",
+   "errors": [],
+   "request_text": "?status, ?cursor"
+  },
   "GET /v1/audit": {
    "group": "Kiểm toán",
    "groups": [
@@ -4735,6 +5443,20 @@
    "returns": "202, Location tới webhook_delivery",
    "errors": [],
    "request_text": "—"
+  },
+  "GET /v1/admin/clients": {
+   "group": "Tích hợp",
+   "groups": [
+    "Tích hợp"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "cursor"
+   ],
+   "returns": "Danh sách ApiClient, không có bí mật",
+   "errors": [],
+   "request_text": "?status, ?cursor"
   },
   "GET /v1/agents": {
    "group": "Agent",
@@ -5109,6 +5831,56 @@
    "query": [],
    "returns": "204",
    "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/agents/{id}:lock": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "Agent (status = locked)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "reason*"
+  },
+  "POST /v1/agents/{id}:unlock": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Agent (status như trước khi khoá; trigger không tự bật lại)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/runs/{id}:retry": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, Location tới run mới (retry_of = lượt cũ, BR-75)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
    "request_text": "—"
   },
   "GET /v1/crawl-sources": {
@@ -5648,6 +6420,20 @@
     ]
    ],
    "request_text": "status* (confirmed, rejected), reference_entity_id"
+  },
+  "POST /v1/crawl-sources:suggest": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "goal": true,
+    "examples": false
+   },
+   "query": [],
+   "returns": "202, Location tới agent_run; kết quả là danh sách nguồn đề xuất, chưa đăng ký nguồn nào",
+   "errors": [],
+   "request_text": "goal*, examples"
   },
   "POST /v1/forecasts": {
    "group": "Dự báo",

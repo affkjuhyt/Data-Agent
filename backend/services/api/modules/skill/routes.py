@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Path, Response
 from sqlalchemy import ColumnElement, and_, exists, func, not_, or_, select
@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from libs.dataagent_db import uuid7
-from libs.dataagent_db.models import context, skill
+from libs.dataagent_db.models import agent, context, skill
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
@@ -53,6 +53,8 @@ from services.api.modules.skill.schemas import (
     SkillView,
     SuggestionStatus,
     SuggestionView,
+    ToolView,
+    TryRequest,
     VersionCreate,
     VersionPatch,
     VersionSummary,
@@ -590,6 +592,70 @@ async def test_version(
     return Accepted(id=eval_run_id, status="queued", poll_after_ms=POLL_AFTER_MS)
 
 
+@router.post(
+    "/v1/skill-versions/{id}:try",
+    status_code=202,
+    response_model=Accepted,
+    **endpoint("POST", "/v1/skill-versions/{id}:try", operation_id="trySkillVersion"),
+)
+async def try_version(
+    version_id: RowId,
+    body: TryRequest,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    response: Response,
+) -> Accepted:
+    # SCR-33: the author previews a draft with other parameters before :test. The run is the
+    # author's own (caller_kind user, read back by its runner only); mode "try" on the row and
+    # the event tells the worker to leave the library alone: no run_count_30d, no
+    # current_version, no suggestion input.
+    async with transaction(ROLE, principal) as session:
+        version, row = await _version(session, version_id, principal, data_space)
+        _own(row, principal)
+        if version.status != "draft":
+            raise Problem(
+                409,
+                "invalid_state",
+                f"Only a draft is tried; this version is {version.status}. Use a run instead.",
+            )
+        errors = rules.param_errors(version.params_schema, body.params)
+        if errors:
+            raise Problem(
+                422,
+                "validation_failed",
+                "params do not match the version's params_schema.",
+                errors=errors,
+            )
+        run = skill.SkillRun(
+            id=uuid7(),
+            org_id=principal.org_id,
+            skill_version_id=version.id,
+            data_space_id=data_space,
+            caller_kind="user",
+            principal_id=principal.user_id,
+            params=body.params,
+            status="queued",
+            mode="try",
+        )
+        session.add(run)
+        _emit(
+            session,
+            principal,
+            "skill_run",
+            run.id,
+            "skill_run.requested",
+            skill_run_id=run.id,
+            skill_id=row.id,
+            skill_version_id=version.id,
+            version=version.version,
+            data_space_id=data_space,
+            mode="try",
+            status=run.status,
+        )
+    response.headers["Location"] = f"/v1/skill-runs/{run.id}"
+    return Accepted(id=run.id, status="queued", poll_after_ms=POLL_AFTER_MS)
+
+
 async def _retire_published(
     session: AsyncSession, principal: Principal, row: skill.Skill, keep: uuid.UUID
 ) -> None:
@@ -1033,3 +1099,53 @@ async def dismiss_suggestion(
         )
         await session.flush()
         return _suggestion_view(suggestion)
+
+
+# ---------------------------------------------------------------- tools (UC-03-01, UC-13-02)
+
+ToolLevel = Literal["read", "write_derived", "external_send", "system_action"]
+# A3 names the level external_send where tab 3b and agent.tool_def say send_external.
+_SEND_EXTERNAL = ("send_external", "external_send")
+
+
+@router.get(
+    "/v1/tools",
+    response_model=Page[ToolView],
+    **endpoint("GET", "/v1/tools", operation_id="listTools"),
+)
+async def list_tools(
+    principal: CurrentPrincipal,
+    level: ToolLevel | None = None,
+) -> Page[ToolView]:
+    # agent.tool_def is the system's register, the same for every organisation (G2.1, no org_id),
+    # loaded by migration: one page of the active tools, by code. A draft or deprecated tool is
+    # not one an agent may be given, so it is not listed.
+    if level == "system_action":
+        # No agent tool is system-level (tab 5 G2); tool_def's CHECK has no such level.
+        return Page(items=[])
+    t = agent.ToolDef
+    query = select(t).where(t.status == "active").order_by(t.code)
+    if level is not None:
+        query = query.where(
+            t.permission_level == (_SEND_EXTERNAL[0] if level == _SEND_EXTERNAL[1] else level)
+        )
+    async with transaction(ROLE, principal) as session:
+        rows = (await session.scalars(query)).all()
+    return Page(
+        items=[
+            ToolView.model_validate(
+                {
+                    "code": row.code,
+                    "level": _SEND_EXTERNAL[1]
+                    if row.permission_level == _SEND_EXTERNAL[0]
+                    else row.permission_level,
+                    "description": row.model_description,
+                    "executed_by": row.owner_service,
+                    "default_checkpoint": None
+                    if row.default_checkpoint == "none"
+                    else row.default_checkpoint,
+                }
+            )
+            for row in rows
+        ]
+    )

@@ -120,6 +120,37 @@ class EvalRunDetail(EvalRunView):
     baseline: BaselineComparison | None = None
 
 
+class EvalSetView(BaseModel):
+    id: uuid.UUID
+    data_space_id: uuid.UUID | None
+    subject_type: str
+    subject_id: uuid.UUID | None
+    name: str
+    pass_threshold: decimal.Decimal
+    min_items: int
+    status: str
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+    # Active items, and the newest run whatever its state (SCR Đánh giá lớp ngữ cảnh).
+    item_count: int = 0
+    latest_run: EvalRunView | None = None
+
+
+class EvalFailure(BaseModel):
+    """One item the run got wrong: what was asked, what was expected, what came back."""
+
+    item: EvalItemView
+    result: EvalResultView
+
+
+class EvalSetDetail(EvalSetView):
+    # Newest first; the failures are those of the newest completed run (failures_run_id), since
+    # a run still going has not judged every item.
+    runs: list[EvalRunView] = Field(default_factory=list)
+    failures_run_id: uuid.UUID | None = None
+    failures: list[EvalFailure] = Field(default_factory=list)
+
+
 # The reference each source must carry (BR-179); the CHECKs of eval.error_book_entry hold the
 # same rule, this answers it as A3's 422 validation_failed before the insert.
 REQUIRED_REFS: dict[str, tuple[str, ...]] = {

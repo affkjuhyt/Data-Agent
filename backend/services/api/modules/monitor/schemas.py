@@ -120,6 +120,10 @@ class AlertClose(BaseModel):
     close_note: str | None = Field(default=None, max_length=4_000)
 
 
+class AlertReopen(BaseModel):
+    reason: str = Field(min_length=1, max_length=2_000)
+
+
 # ---------------------------------------------------------------- reports (UC-02-04, UC-08-03/04)
 
 
@@ -212,6 +216,11 @@ class ReportRunView(BaseModel):
     status: str
     finished_at: datetime.datetime | None
     created_at: datetime.datetime
+
+
+class ReportScheduleDetail(ReportScheduleView):
+    # The newest run, with only the outputs the caller's permission group may open (BR-34).
+    latest_run: ReportRunView | None = None
 
 
 class DigestPut(BaseModel):

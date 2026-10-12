@@ -36,6 +36,7 @@ from services.api.modules.monitor import calendars, reports, rules
 from services.api.modules.monitor.schemas import (
     AlertAssign,
     AlertClose,
+    AlertReopen,
     AlertView,
     BacktestRequest,
     MonitorCreate,
@@ -107,6 +108,50 @@ async def _published_metric(
     )
     if found is None:
         raise invalid_field("metric_id", "No published metric with this id in the Data Space.")
+
+
+@router.get(
+    "/v1/monitors",
+    response_model=Page[MonitorView],
+    **endpoint("GET", "/v1/monitors", operation_id="listMonitors"),
+)
+async def list_monitors(
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by("created_at", "updated_at", "status", "rule_kind", default="created_at desc")
+        ),
+    ],
+    status: Annotated[str | None, Query(max_length=40)] = None,
+    metric_id: uuid.UUID | None = None,
+    owner_id: uuid.UUID | None = None,
+) -> Page[MonitorView]:
+    m = monitor.Monitor
+    query = select(m).where(
+        m.org_id == principal.org_id, m.data_space_id == data_space, m.deleted_at.is_(None)
+    )
+    for column, value in ((m.status, status), (m.metric_id, metric_id), (m.owner_id, owner_id)):
+        if value is not None:
+            query = query.where(column == value)
+    query = keyset(
+        query,
+        columns={
+            "created_at": m.created_at,
+            "updated_at": m.updated_at,
+            "status": m.status,
+            "rule_kind": m.rule_kind,
+        },
+        tiebreak=m.id,
+        order=order,
+        page=page,
+    )
+    async with transaction(ROLE, principal) as session:
+        rows = list((await session.scalars(query)).all())
+    rows, token = next_page(rows, order=order, page=page)
+    return Page(items=[_view(r) for r in rows], next_page_token=token)
 
 
 @router.post(
@@ -421,6 +466,61 @@ async def close_alert(
         row.status, row.close_note, row.closed_at = "closed", note, at
         row.updated_by, row.updated_at = principal.user_id, at
         _alert_event(session, principal, row, "alert.closed", previous, data_space)
+        await session.flush()
+        return AlertView.model_validate(row, from_attributes=True)
+
+
+@router.post(
+    "/v1/alerts/{id}:reopen",
+    response_model=AlertView,
+    **endpoint("POST", "/v1/alerts/{id}:reopen", operation_id="reopenAlert"),
+)
+async def reopen_alert(
+    body: AlertReopen, alert_id: AlertId, principal: CurrentPrincipal, data_space: CurrentDataSpace
+) -> AlertView:
+    reason = body.reason.strip()
+    if not reason:
+        raise invalid_field("reason", "reason is required.")
+    async with transaction(ROLE, principal) as session:
+        row = await _alert(session, alert_id, principal, data_space)
+        if row.status != "closed":
+            raise Problem(
+                409, "invalid_state", f"The alert is {row.status}; only a closed one is reopened."
+            )
+        # One alert per rule and period is open at a time (unique monitor_id, dedup_key while not
+        # closed): if the monitor has fired it again since, that alert is the one to work on.
+        again = await session.scalar(
+            select(monitor.Alert.id).where(
+                monitor.Alert.monitor_id == row.monitor_id,
+                monitor.Alert.dedup_key == row.dedup_key,
+                monitor.Alert.status != "closed",
+            )
+        )
+        if again is not None:
+            raise Problem(
+                409, "invalid_state", f"Alert {again} of the same rule and period is open."
+            )
+        previous, note = row.status, row.close_note
+        at = now()
+        # The close note belonged to the closing; it is kept in the audit record below.
+        row.status, row.close_note, row.closed_at = "open", None, None
+        row.updated_by, row.updated_at = principal.user_id, at
+        _alert_event(session, principal, row, "alert.reopened", previous, data_space)
+        # The reason is the audit record's (A1.8), not part of the domain event.
+        emit(
+            session,
+            principal,
+            "alert",
+            row.id,
+            "audit.requested",
+            action="alert.reopen",
+            object_kind="alert",
+            object_id=row.id,
+            actor_id=principal.user_id,
+            client_id=principal.client_id,
+            before={"status": previous, "close_note": note},
+            after={"status": row.status, "reason": reason},
+        )
         await session.flush()
         return AlertView.model_validate(row, from_attributes=True)
 

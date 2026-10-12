@@ -180,6 +180,11 @@ class DataMart(Base):
         server_default=sql_text("'[]'"),
         comment="Tổng khớp nguồn, độ mới, khoá chiều duy nhất",
     )
+    suggested_dimensions: Mapped[Any | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Chiều gợi ý từ quan hệ của bảng sự kiện, sinh khi tạo mart; người soạn chọn vào dimensions (UC-06-06, thêm 12/10/2026)",
+    )
     relation_check_passed: Mapped[bool] = mapped_column(
         Boolean, server_default=sql_text("false"), comment="Thất bại thì không phát hành được"
     )

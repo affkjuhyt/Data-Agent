@@ -124,6 +124,12 @@ class PipelineRunView(_View):
     created_at: datetime.datetime
 
 
+class PipelineDetail(PipelineView):
+    """GET /v1/pipelines/{id}: the pipeline with its latest run (UC-06-02, UC-06-03)."""
+
+    last_run: PipelineRunView | None = None
+
+
 class Accepted(BaseModel):
     """A1.6: the body of a 202; Location names where the result appears."""
 
@@ -174,6 +180,16 @@ class MartCreate(_Body):
     checks: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class MartPatch(_Body):
+    """A3: name, dimensions, measures, relations. A list sent replaces the mart's list, so
+    accepting an agent-suggested dimension is the current list plus that one (A1.3)."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    dimensions: list[dict[str, Any]] | None = None
+    measures: list[dict[str, Any]] | None = None
+    relations: list[dict[str, Any]] | None = None
+
+
 class DataMartView(_View):
     id: uuid.UUID
     data_space_id: uuid.UUID
@@ -184,6 +200,8 @@ class DataMartView(_View):
     dimensions: Any
     relations: Any
     checks: Any
+    # Dimensions proposed from the fact table's relations (UC-06-06); null until proposed.
+    suggested_dimensions: Any = None
     relation_check_passed: bool
     status: str
     created_at: datetime.datetime

@@ -162,6 +162,11 @@ class SkillRun(Base):
         DateTime(timezone=True), nullable=True
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mode: Mapped[str] = mapped_column(
+        Text,
+        server_default=sql_text("'run'"),
+        comment="run, try: try là chạy thử từ màn soạn kỹ năng (POST /v1/skill-versions/{id}:try), kết quả không dùng cho ô, cảnh báo hay agent (thêm 12/10/2026)",
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
