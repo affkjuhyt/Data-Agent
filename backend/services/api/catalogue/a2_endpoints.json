@@ -923,6 +923,19 @@
   },
   {
    "group": "Nguồn và danh mục",
+   "method": "POST",
+   "path": "/v1/sources/{id}:activate",
+   "summary": "Chọn bảng và kích hoạt nguồn",
+   "use_cases": [
+    "04-01",
+    "04-04"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
    "method": "PUT",
    "path": "/v1/sources/{id}/scan-schedule",
    "summary": "Đặt lịch quét",

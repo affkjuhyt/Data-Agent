@@ -166,7 +166,7 @@ Dịch vụ: Skill service (skill). 14 endpoint.
 
 ### Nguồn và danh mục
 
-Dịch vụ: Connector service (catalog). 16 endpoint. Hai endpoint chứng nhận dataset hợp nhất (thêm 10/10/2026, BR-156) nằm ở tệp OpenAPI bổ sung cho tới lần gộp (A4); chỉ người phụ trách dữ liệu (steward\_id hoặc backup\_steward\_id) của Data Space chứa dataset gọi được, ngoài năng lực steward.
+Dịch vụ: Connector service (catalog). 17 endpoint. Hai endpoint chứng nhận dataset hợp nhất (thêm 10/10/2026, BR-156) nằm ở tệp OpenAPI bổ sung cho tới lần gộp (A4); chỉ người phụ trách dữ liệu (steward\_id hoặc backup\_steward\_id) của Data Space chứa dataset gọi được, ngoài năng lực steward.
 
 | Phương thức | Đường dẫn | Chức năng | Use case | Quyền |
 | --- | --- | --- | --- | --- |
@@ -177,6 +177,7 @@ Dịch vụ: Connector service (catalog). 16 endpoint. Hai endpoint chứng nh�
 | POST | /v1/sources | Đăng ký nguồn | 04-01 | admin\_data |
 | PATCH | /v1/sources/{id} | Sửa nguồn, giới hạn tải | 04-01 | admin\_data |
 | POST | /v1/sources/{id}:test | Kiểm tra kết nối và quyền tài khoản | 04-01 | admin\_data |
+| POST | /v1/sources/{id}:activate | Chọn bảng và kích hoạt nguồn | 04-01, 04-04 | admin\_data |
 | PUT | /v1/sources/{id}/scan-schedule | Đặt lịch quét | 04-05 | admin\_data |
 | POST | /v1/sources/{id}/scans | Quét ngay; 202 | 04-02 | admin\_data |
 | GET | /v1/scan-runs/{id} | Tiến độ lượt quét | 04-02 | admin\_data |
