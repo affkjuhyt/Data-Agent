@@ -393,10 +393,90 @@ export interface Writeback {
   rollback_text: string;
 }
 
+export type WritebackWire = components['schemas']['WritebackView'];
+
+const objectOf = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+
+const textOf = (value: unknown, fallback = '') => (typeof value === 'string' ? value : fallback);
+
+const numberOf = (value: unknown, fallback = 0) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+const changesOf = (value: unknown): Writeback['changes'] => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const row = objectOf(item);
+    if (typeof row.subject !== 'string' || typeof row.after !== 'string') return [];
+    return [
+      {
+        subject: row.subject,
+        before: typeof row.before === 'string' ? row.before : null,
+        after: row.after,
+        reason: textOf(row.reason),
+      },
+    ];
+  });
+};
+
+const checksOf = (value: unknown): Writeback['checks'] => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const row = objectOf(item);
+    if (typeof row.ok !== 'boolean' || typeof row.text !== 'string') return [];
+    return [{ ok: row.ok, text: row.text }];
+  });
+};
+
+/** Adapt A3's auditable writeback request to the richer approval screen shape. */
+export function readWriteback(raw: WritebackWire): Writeback {
+  // Unit/demo handlers already return the screen shape; keep them usable while the API is enabled.
+  if ('code' in raw || 'title' in raw) return raw as unknown as Writeback;
+
+  const summary = objectOf(raw.diff_summary);
+  const checks = checksOf(summary.checks);
+  const totals = objectOf(raw.totals_check);
+  if (typeof totals.ok === 'boolean' && typeof totals.text === 'string') {
+    checks.push({ ok: totals.ok, text: totals.text });
+  }
+  const rowCount = numberOf(summary.row_count, numberOf(summary.rows, 0));
+  const status = raw.status as WritebackStatus;
+  return {
+    id: raw.id,
+    code: raw.id,
+    title: `Ghi ngược vào ${raw.target_table}`,
+    status: [
+      'pending_approval',
+      'changes_requested',
+      'rejected',
+      'approved',
+      'written',
+    ].includes(status)
+      ? status
+      : 'pending_approval',
+    summary_text: `Yêu cầu ghi ngược ${rowCount.toLocaleString('vi-VN')} dòng vào ${raw.target_table}.`,
+    target_table: raw.target_table,
+    row_count: rowCount,
+    changes: changesOf(summary.changes ?? summary.sample),
+    checks,
+    approvers: [],
+    can_decide: false,
+    after_approval_text: 'Yêu cầu sẽ được xử lý theo quy trình phê duyệt của tổ chức.',
+    rollback_text: raw.snapshot_ref
+      ? `Có thể khôi phục từ snapshot ${raw.snapshot_ref}.`
+      : 'Snapshot khôi phục chưa được cung cấp.',
+  };
+}
+
 export const listOpenWritebacks = () =>
   v1Get<Page<Writeback>>('/writebacks', { status: 'pending_approval', page_size: 50 });
 
-export const getWriteback = async (id: string) => v1Get<Writeback>(`/writebacks/${pathId(id)}`);
+export const getWriteback = async (id: string) => {
+  const raw = await v1Get<WritebackWire>(`/writebacks/${pathId(id)}`);
+  return readWriteback(raw);
+};
 
 /** A2: :approve — the caller's step; the second approval writes to the staging table. */
 export const approveWriteback = async (id: string) =>
