@@ -34,14 +34,6 @@ cm "$SVC" db-init-sql \
   --from-file=01-grants.sql=$K/sql/grant-roles.sql \
   --from-file=02-kb-seed.sql=$K/sql/kb-seed.sql
 
-# demo*.sql run only when the seed Job has SEED_DEMO=1 (Ansible: seed_demo).
-cm "$SVC" seed-sql \
-  --from-file=demo.sql=tests/e2e/seed.sql \
-  --from-file=demo-governance.sql=tests/e2e/seed-governance.sql
-
-cm "$SVC" seed-mongo \
-  --from-file=seed-flow.js=tests/e2e/seed-flow.js
-
 cm "$SVC" keycloak-realm   --from-file=$K/keycloak/realm-export.json
 cm "$SVC" keycloak-scripts --from-file=$K/keycloak/setup-audience-mappers.sh
 cm "$SVC" kong-scripts     --from-file=$K/kong/kong-setup.sh

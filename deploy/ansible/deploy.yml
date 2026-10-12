@@ -450,6 +450,14 @@
         - apply_services | bool
         - "'workflow-runtime' not in service_manifests"
 
+    - name: Remove the retired legacy seed Job
+      ansible.builtin.command: >-
+        {{ kubectl }} -n {{ ns_service }} delete
+        job/seed serviceaccount/seed configmap/seed-env configmap/seed-sql configmap/seed-mongo
+        --ignore-not-found=true
+      changed_when: false
+      when: apply_jobs | bool
+
     # After the service tier, whose manifests carry per-workload env ConfigMaps
     # of their own, so a change there is seen too.
     - name: Snapshot the service tier's Secrets and ConfigMaps after

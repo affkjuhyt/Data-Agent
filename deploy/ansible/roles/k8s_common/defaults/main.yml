@@ -160,7 +160,7 @@ service_workloads:
 service_manifests: []
 
 migration_jobs: [kong-migration, migrate]
-job_workloads: [db-init, minio-init, kafka-topics, seed]
+job_workloads: [db-init, minio-init, kafka-topics]
 # With apply_jobs, a Job reruns only when its own manifest
 # (deploy/k8s/<env>/job/<name>.yaml) or one of these changed: a path prefix,
 # `image:<name>` (that image is being rebuilt) or `job:<name>` (that Job
@@ -174,10 +174,6 @@ job_inputs:
   db-init: [deploy/docker/sql/grant-roles.sql, deploy/docker/sql/kb-seed.sql, "job:migrate"]
   minio-init: []
   kafka-topics: []
-  seed:
-    - tests/e2e/seed.sql
-    - tests/e2e/seed-governance.sql
-    - tests/e2e/seed-flow.js
 jobs_force: false
 seed_demo: false
 seed_demo_tenant: a0000000-0000-0000-0000-000000000001
