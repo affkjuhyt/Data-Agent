@@ -110,6 +110,7 @@ export interface Pipeline {
   status: PipelineStatus;
 }
 
+export type PipelineDetailWire = components['schemas']['PipelineDetail'];
 type PipelineWire = components['schemas']['PipelineView'] & { display?: Pipeline };
 type DatasetRow = components['schemas']['services__api__modules__catalog__schemas__DatasetView'];
 
@@ -139,6 +140,45 @@ function readPipeline(raw: PipelineWire, tables: Map<string, string>): Pipeline 
     schedule_text: scheduleOf(raw),
     last_run: null,
     status: raw.status as PipelineStatus,
+  };
+}
+
+const readPipelineSteps = (raw: PipelineDetailWire): PipelineStep[] =>
+  (Array.isArray(raw.steps) ? raw.steps : []).flatMap((value, index) => {
+    if (typeof value !== 'object' || value === null) return [];
+    const step = value as Record<string, unknown>;
+    const title = typeof step.description === 'string' ? step.description : `Bước ${index + 1}`;
+    const sql = typeof step.code === 'string' ? step.code : '';
+    return [
+      {
+        seq: index + 1,
+        title,
+        sql,
+        rows_in: 0,
+        rows_out: 0,
+        is_new: false,
+        kind_label: typeof step.kind === 'string' ? step.kind : null,
+      },
+    ];
+  });
+
+/** Adapt A3's PipelineDetail to the richer presentation shape used by the pipeline screens. */
+export function readPipelineDetail(
+  raw: PipelineDetailWire,
+  tables: Map<string, string>,
+): PipelineDetail {
+  // Unit/demo handlers already return the screen shape; keep them usable while the real API is
+  // switched on, but adapt A3's PipelineDetail below when input_dataset_ids is present.
+  if (!Array.isArray(raw.input_dataset_ids)) return raw as unknown as PipelineDetail;
+  const base = readPipeline(raw, tables);
+  const lastRun = raw.last_run ?? null;
+  return {
+    ...base,
+    input_table: raw.input_dataset_ids.map((id) => tables.get(id) ?? id).join(', '),
+    input_rows: lastRun?.rows_in ?? 0,
+    preview_sample: lastRun?.sample_rows ?? 10_000,
+    steps: readPipelineSteps(raw),
+    messages: [],
   };
 }
 
@@ -217,7 +257,14 @@ export interface StepPreview {
   rows: { key: string; before: string; after: string; note: string }[];
 }
 
-export const getPipeline = async (id: string) => v1Get<PipelineDetail>(`/pipelines/${pathId(id)}`);
+export const getPipeline = async (id: string): Promise<PipelineDetail> => {
+  const [raw, datasets] = await Promise.all([
+    v1Get<PipelineDetailWire>(`/pipelines/${pathId(id)}`),
+    v1Get<Page<DatasetRow>>('/datasets', { page_size: 500 }).catch(() => null),
+  ]);
+  const tables = new Map<string, string>(datasets?.items.map((d) => [d.id, tableName(d)]) ?? []);
+  return readPipelineDetail(raw, tables);
+};
 
 export const getStepPreview = async (id: string, seq: number) =>
   v1Get<StepPreview>(`/pipelines/${pathId(id)}/steps/${seq}/preview`);

@@ -88,7 +88,6 @@ const HELD_BACK: readonly string[] = [
   // Retry stays held back: the UI offers use_fallback, while A2's retry endpoint has no request body.
   'retryRun',
   'getDataMart',
-  'getPipeline',
   'getWriteback',
   'listDataMarts',
   'updateDataMart',
