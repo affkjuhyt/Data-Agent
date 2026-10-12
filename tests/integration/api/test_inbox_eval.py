@@ -825,5 +825,29 @@ async def test_an_org_wide_request_is_decided_on_org_level_capabilities(team: Te
     assert str(request) in [i["id"] for i in seen.json()["items"]]
     assert seen.json()["items"][0]["data_space_id"] is None
     assert str(request) not in [i["id"] for i in hidden.json()["items"]]
-    assert refused.status_code == 403
+    assert refused.status_code == 404  # not theirs to see, let alone decide
     assert done.status_code == 200 and done.json()["status"] == "approved"
+
+
+async def test_an_org_wide_request_is_hidden_from_those_it_does_not_concern(team: Team) -> None:
+    # An audit export carries its filters in context: no one outside the request may read it.
+    request = _hitl(
+        team,
+        kind="export",
+        risk="high",
+        data_space_id=None,
+        assignee_capability="compliance",
+        created_by=team.users["proposer"],
+    )
+    async with client(team) as api:
+        outsider = await api.get(f"/v1/hitl-requests/{request}", headers=team.headers("reviewer"))
+        by_id = await api.get(
+            "/v1/inbox",
+            params={"assignee": str(team.users["controller"])},
+            headers=team.headers("reviewer"),
+        )
+        requester = await api.get(f"/v1/hitl-requests/{request}", headers=team.headers("proposer"))
+        approver = await api.get(f"/v1/hitl-requests/{request}", headers=team.headers("controller"))
+    assert outsider.status_code == 404
+    assert str(request) not in [i["id"] for i in by_id.json()["items"]]
+    assert requester.status_code == approver.status_code == 200

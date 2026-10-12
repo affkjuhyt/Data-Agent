@@ -186,6 +186,15 @@ async def list_inbox(
         query = query.where(hitl.kind == kind)
     if risk:
         query = query.where(hitl.risk == risk)
+    # An org-wide request (an audit export with its filters, an emergency grant) is shown only to
+    # those it concerns, whatever `assignee` asks for; a space's requests follow the space.
+    query = query.where(
+        or_(
+            hitl.data_space_id.is_not(None),
+            _assigned_to(principal, org_caps),
+            hitl.created_by == principal.user_id,
+        )
+    )
     if assignee in (None, "me"):
         query = query.where(_assigned_to(principal, org_caps))
     else:
@@ -219,6 +228,7 @@ async def _hitl(
     request_id: uuid.UUID,
     principal: Principal,
     data_space: uuid.UUID,
+    org_caps: frozenset[str],
     *,
     lock: bool = False,
 ) -> inbox.HitlRequest:
@@ -231,9 +241,29 @@ async def _hitl(
         # E2 of UC-07-07: two answers at once, only the first is recorded.
         query = query.with_for_update()
     row = await session.scalar(query)
-    if row is None:
+    if row is None or not await _may_see(session, row, principal, org_caps):
+        # The same answer for one that exists but is not the caller's to see.
         raise Problem(404, "not_found", "HITL request not found.")
     return row
+
+
+async def _may_see(
+    session: AsyncSession,
+    row: inbox.HitlRequest,
+    principal: Principal,
+    org_caps: frozenset[str],
+) -> bool:
+    """A space's request is visible to the space; an org-wide one only to whom it concerns: its
+    requester, its assignee, and whoever holds or held a step of its chain."""
+    if row.data_space_id is not None or row.created_by == principal.user_id:
+        return True
+    if await _is_assignee(session, row, principal, org_caps):
+        return True
+    return any(
+        s.approver_id == principal.user_id
+        or (s.approver_id is None and s.approver_role in org_caps)
+        for s in await _steps(session, row.id)
+    )
 
 
 async def _steps(session: AsyncSession, request_id: uuid.UUID) -> list[inbox.HitlApprovalStep]:
@@ -264,9 +294,10 @@ async def get_hitl(
     request_id: Annotated[uuid.UUID, Path(alias="id")],
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
+    org_caps: OrgCapabilities,
 ) -> HitlDetail:
     async with transaction(ROLE, principal) as session:
-        row = await _hitl(session, request_id, principal, data_space)
+        row = await _hitl(session, request_id, principal, data_space, org_caps)
         steps = await _steps(session, row.id)
     return _detail(row, steps)
 
@@ -377,7 +408,7 @@ async def resolve_hitl(
 ) -> HitlDetail:
     note = (body.note or "").strip() or None
     async with transaction(ROLE, principal) as session:
-        row = await _hitl(session, request_id, principal, data_space, lock=True)
+        row = await _hitl(session, request_id, principal, data_space, org_caps, lock=True)
         if row.status not in PENDING:
             raise Problem(409, "invalid_state", f"The request is already {row.status}.")
         steps = await _steps(session, row.id)
