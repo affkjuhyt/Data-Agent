@@ -354,7 +354,6 @@ BACKEND = pathlib.Path(__file__).resolve().parents[3] / "backend"
 V2_PACKAGES = (
     "libs/indicator",
     "libs/ingestion/storage_boundary.py",
-    "services/indicator_api",
     "services/platform_workers/workers/series_extractor",
     "services/platform_workers/workers/semantic_extractor",
     "services/platform_workers/workers/detector",

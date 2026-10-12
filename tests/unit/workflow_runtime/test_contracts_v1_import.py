@@ -45,4 +45,3 @@ def test_an_envelope_round_trips() -> None:
 def test_the_contract_pulls_in_no_service() -> None:
     contract_modules = [m for m in sys.modules if m.startswith("libs.contracts")]
     assert contract_modules
-    assert not any(m.startswith("services.indicator_api") for m in sys.modules)

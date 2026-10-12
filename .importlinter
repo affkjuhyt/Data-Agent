@@ -45,8 +45,8 @@ forbidden_modules =
     libs.database_connector
     libs.ingestion
 
-# NOP-150. libs.contracts holds the wire shapes indicator-api, platform_workers,
-# workflow_runtime and kb_backend share; a service import here would make every
+# NOP-150. libs.contracts holds the wire shapes platform_workers, workflow_runtime,
+# kb_backend and worker_agent share; a service import here would make every
 # consumer import that service. libs.indicator (numeric core) is the only libs
 # package it may use; libs.semantic's v1 DTOs are not the V2 contract.
 [importlinter:contract:contracts-is-a-leaf]
@@ -64,8 +64,8 @@ forbidden_modules =
 
 # V2 data boundary (ADR-V2-38): V2 numbers never go through the v1 structured-KB
 # path, and V2 business data never lands in MongoDB (ADR-V2-09, ADR-V2-34).
-# Every new V2 package (services.indicator_api, the series_extractor /
-# semantic_extractor / detector workers) is added to source_modules in the same
+# Every new V2 package (the series_extractor / semantic_extractor / detector
+# workers) is added to source_modules in the same
 # commit that creates it. Topic names are strings import-linter cannot see; the
 # source scan in tests/unit/kb_backend/test_v2_storage_boundary.py covers those
 # (NOP-163, libs/shared/storage_ownership.py).
@@ -77,40 +77,11 @@ source_modules =
     libs.contracts
     libs.shared.storage_ownership
     libs.ingestion.storage_boundary
-    services.indicator_api
 forbidden_modules =
     services.kb_backend.workers.structured_data
     libs.database_connector.mongo_connector
     libs.ingestion.silver
     libs.ingestion.gold
-
-# NOP-162. indicator-api's domains/ is plain Python + Pydantic: routes live in
-# api/, I/O in adapters/. A domain module that imports the web framework or a
-# storage client breaks this contract and the CI step that runs it.
-[importlinter:contract:indicator-domains-are-pure]
-name = indicator_api.domains must not depend on FastAPI, storage clients, api/ or adapters/
-type = forbidden
-source_modules =
-    services.indicator_api.domains
-forbidden_modules =
-    fastapi
-    starlette
-    sqlalchemy
-    psycopg2
-    psycopg
-    asyncpg
-    clickhouse_connect
-    kafka
-    aiokafka
-    minio
-    boto3
-    redis
-    pymongo
-    motor
-    qdrant_client
-    services.indicator_api.api
-    services.indicator_api.adapters
-    libs.database_connector
 
 # workflow_runtime is layered (api > application > infrastructure > domain): a lower
 # layer never imports a higher one. application may use infrastructure directly (no
@@ -148,7 +119,6 @@ forbidden_modules =
     services.workflow_runtime
     services.kb_backend
     services.auth_api
-    services.indicator_api
     services.platform_workers
     services.sandbox_executor
     services.model_service
@@ -165,7 +135,6 @@ forbidden_modules =
     services.workflow_runtime
     services.kb_backend
     services.auth_api
-    services.indicator_api
     services.platform_workers
     services.sandbox_executor
     services.model_service

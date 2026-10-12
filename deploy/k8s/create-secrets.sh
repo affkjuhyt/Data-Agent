@@ -40,13 +40,6 @@ kubectl -n dataagent-service create secret generic kb-backend-secrets \
   --from-literal=SERVICE_AUTH_SECRET="${SERVICE_AUTH_SECRET}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# APP_DATABASE_URL until the V2 service roles get passwords (NOP-214).
-kubectl -n dataagent-service create secret generic indicator-api-secrets \
-  --from-literal=APP_DATABASE_URL="${APP_DATABASE_URL}" \
-  --from-literal=GATEWAY_KEY="${GATEWAY_KEY}" \
-  --from-literal=SERVICE_AUTH_SECRET="${SERVICE_AUTH_SECRET}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
 kubectl -n dataagent-service create secret generic workflow-runtime-secrets \
   --from-literal=RUNTIME_DB_URL="${RUNTIME_DB_URL}" \
   --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \

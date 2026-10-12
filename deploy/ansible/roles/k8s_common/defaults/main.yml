@@ -144,7 +144,6 @@ service_workloads:
   - kb-structured-data
   - model-service
   - sandbox-executor
-  - indicator-api
   - platform-workers-audit
   - platform-workers-memory
   - platform-workers-schema-crawler

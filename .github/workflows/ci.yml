@@ -69,8 +69,7 @@ jobs:
             backend/services/kb_backend backend/services/workflow_runtime \
             backend/services/auth_api backend/services/model_service \
             backend/services/sandbox_executor \
-            backend/services/platform_workers \
-            backend/services/indicator_api; do
+            backend/services/platform_workers; do
             echo "== mypy strict: $target =="
             mypy --disallow-untyped-defs --disallow-any-generics \
                  --ignore-missing-imports --follow-imports=silent \
@@ -129,9 +128,6 @@ jobs:
           - suite: model_service
             python: "3.11"
             install: -r backend/services/model_service/requirements.txt
-          - suite: indicator_api
-            python: "3.11"
-            install: -r backend/services/indicator_api/requirements.txt
           # The `api` block (ADR-28); its suite also holds the OpenAPI to tab 4 A2 (ADR-48).
           - suite: api
             python: "3.12"
