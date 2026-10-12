@@ -38,7 +38,7 @@ R0-6 → R0-5 → R0-3 → R0-4 → R0-2 → R0-12.
 | R0-4 | Canvas: registry là nguồn duy nhất (kèm style), xoá 7 loại node không chạy khỏi frontend, validate khi lưu (dry-run graph), một document/version, 409 khi đã publish, cache theo `canvas_hash` | | BE2, FE2 (0,5) | M | 03 §4 test; knip sạch | cut — thuộc `workflow_runtime` đã xoá; V3 hiện dùng AgentConfig/version, canvas authoring chuyển R4 |
 | R0-5 | `/run` công khai không nhận `memory_context`/`guardrail_cfg`/`orchestrated`; `InternalRunRequest` chỉ cho service `orchestrator` | | SR1 | S | 422 cho client; orchestrator qua assertion | done f83a6a95 |
 | R0-6 | Sandbox xác thực service assertion; `connection_ref` thay mật khẩu; schema crawler đọc OpenBao; policy OpenBao qua Ansible; xoá env mật khẩu | | Ops | M | 401 không assertion; grep CI không còn `WAREHOUSE_PASSWORD__` | done feb47793 |
-| R0-9 | Đo model (D1): `make bench` + eval hai cấu hình, báo cáo một trang | | Ops, QA | S | Bảng điểm nộp anh Linh | todo |
+| R0-9 | Đo model (D1): `make bench` + eval hai cấu hình, báo cáo một trang | | Ops, QA | S | Bảng điểm nộp anh Linh | done cad76a5 (baseline local; chưa có model đối chứng lớn hơn) |
 | R0-13 | Kịch bản kiểm thử và nghiệm thu đợt R0: kịch bản chạy trên cụm dev cho từng story R0, ghi lỗi theo mức, biên bản ký | R0-1…R0-12 | Quân | M | Biên bản nghiệm thu R0 ký | todo |
 | R0-12 | RUNBOOK: HITL bền, MCP, OpenBao policy; `docs/v3/05-ui-v3.md` ghi chú Workspace (D9) | R0-2, R0-3, R0-6 | Ops, FE1 | S | Docs cùng commit | done ef5c2b6 |
 
