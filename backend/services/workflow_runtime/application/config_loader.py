@@ -143,7 +143,7 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
             # 3. MCP endpoints
             mcp_rows = (
                 await session.execute(
-                    select(MCPORM.name, MCPORM.endpoint_url, MCPORM.api_key_ref, MCPORM.capabilities)
+                    select(MCPORM.id, MCPORM.name, MCPORM.endpoint_url, MCPORM.api_key_ref, MCPORM.capabilities)
                     .join(AgentMCPORM, AgentMCPORM.mcp_id == MCPORM.id)
                     .where(AgentMCPORM.version_id == row.agent_version_id)
                 )
@@ -151,13 +151,18 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
 
             mcp_endpoints = [
                 {
+                    "server_id": str(r.id),
                     "name":          r.name,
                     "url":           r.endpoint_url,
                     # api_key_ref is a secrets_vault id; _resolve_mcp_tokens
                     # swaps it for the token from OpenBao below.
                     "secret_id":     str(r.api_key_ref or ""),
                     "auth_token":    "",
-                    "allowed_tools": list(r.capabilities or []),
+                    "allowed_tools": (
+                        list(r.capabilities.get("allowed_tools") or [])
+                        if isinstance(r.capabilities, dict)
+                        else list(r.capabilities or [])
+                    ),
                 }
                 for r in mcp_rows
             ]

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import re
@@ -30,12 +31,13 @@ from services.workflow_runtime.application.nodes.sandbox.tool_executor import TO
 from services.workflow_runtime.application.runtime_services import llm_call
 from services.workflow_runtime.domain.refusals import PlannerError
 from services.workflow_runtime.domain.state import AgentState
+from services.workflow_runtime.infrastructure.mcp_client import MCPRegistry
 from services.workflow_runtime.prompts import PROMPTS_DIR
 
 
 class _ToolCall(BaseModel):
     type: str
-    query: str
+    query: str = ""
     # Defaults, not required: a model that omits `confidence` used to fail the
     # WHOLE plan validation, and the fallback threw away the slots it had
     # correctly extracted (metric, dimensions, period) — so the deterministic
@@ -44,6 +46,8 @@ class _ToolCall(BaseModel):
     reason: str = ""
     confidence: float = 0.5
     tool_name: str | None = None
+    server_id: str | None = None
+    tool: str | None = None
     arguments: dict[str, Any] = {}
     parallel: bool = True
     depends_on: list[int] = []
@@ -94,6 +98,7 @@ _LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:8500")
 _LITELLM_KEY = os.environ.get("LITELLM_API_KEY", "sk-dev")
 
 _SYSTEM = open(os.path.join(PROMPTS_DIR, "planner_system.txt"), encoding="utf-8").read()
+_MCP_REGISTRY = MCPRegistry()
 
 _CODE_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
@@ -153,6 +158,31 @@ async def planner_node(state: AgentState, config: RunnableConfig | None = None) 
             if defn:
                 lines.append(f"- {name}: {defn['description']}")
         system += "\n".join(lines)
+
+    mcp_tools = list(cfg.get("mcp_tools") or [])
+    if not mcp_tools and cfg.get("mcp_endpoints"):
+        async def _discover(endpoint: dict[str, Any]) -> list[dict[str, Any]]:
+            try:
+                return await _MCP_REGISTRY.list_tools(endpoint)
+            except Exception:
+                logger.warning("planner | MCP discovery failed for server=%s", endpoint.get("name"))
+                return []
+
+        mcp_tools = [
+            tool
+            for tools in await asyncio.gather(
+                *[_discover(endpoint) for endpoint in cfg["mcp_endpoints"]]
+            )
+            for tool in tools
+        ]
+    if mcp_tools:
+        system += "\n\nMCP TOOLS (use type=\"mcp\", server_id and tool exactly as listed):"
+        for tool in mcp_tools:
+            schema = str(tool.get("input_schema") or {})[:1200]
+            system += (
+                f"\n- {tool.get('server_name', tool.get('server_id'))}/"
+                f"{tool.get('tool')}: {tool.get('description', '')}; input_schema={schema}"
+            )
 
     # Inject judge feedback khi đang trong reflection loop
     judge_reason = state.get("judge_reason", "")
@@ -241,6 +271,18 @@ async def planner_node(state: AgentState, config: RunnableConfig | None = None) 
         raise PlannerError("planner returned no valid plan after one retry at temperature 0")
 
     tool_calls = parsed.model_dump()["tool_calls"]
+    mcp_allowlist = {
+        (str(tool.get("server_id")), str(tool.get("tool"))) for tool in mcp_tools
+    }
+    for tool_call in tool_calls:
+        if tool_call.get("type") != "mcp":
+            continue
+        identity = (str(tool_call.get("server_id")), str(tool_call.get("tool")))
+        if identity not in mcp_allowlist:
+            raise PlannerError(
+                f"MCP tool is not available: server={identity[0]} tool={identity[1]}",
+                message="Công cụ MCP không nằm trong danh sách được phép của agent.",
+            )
     intent = parsed.intent if parsed.intent in ("question", "task") else "question"
     analysis_type = parse_analysis_type(parsed.analysis_type)
     incoming_slots = AnalyticalSlots.from_dict(parsed.slots)
