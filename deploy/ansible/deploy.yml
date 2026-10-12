@@ -281,7 +281,7 @@
       vars:
         missing_db_roles: >-
           {{ v3_db_roles | reject('in', (vault_db_role_passwords | default({})).keys() | list) | list }}
-        v3_db_roles: [svc_acquire, svc_agent, svc_audit, svc_catalog, svc_conflict, svc_context, svc_document, svc_eval, svc_exec, svc_forecast, svc_governance, svc_inbox, svc_ingest, svc_integration, svc_monitor, svc_notify, svc_org, svc_outbox_relay, svc_pack, svc_period, svc_pipeline, svc_qa, svc_query, svc_skill, svc_workspace]
+        v3_db_roles: [svc_acquire, svc_agent, svc_audit, svc_audit_worker, svc_catalog, svc_conflict, svc_context, svc_document, svc_eval, svc_exec, svc_forecast, svc_governance, svc_inbox, svc_ingest, svc_integration, svc_monitor, svc_notify, svc_org, svc_outbox_relay, svc_pack, svc_period, svc_pipeline, svc_qa, svc_query, svc_skill, svc_workspace]
 
     - name: Render secrets.env from the vault
       ansible.builtin.template:

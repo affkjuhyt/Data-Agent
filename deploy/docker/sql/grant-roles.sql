@@ -58,5 +58,5 @@ LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog AS $$
 $$;
 REVOKE ALL ON FUNCTION public.pgbouncer_get_auth(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.pgbouncer_get_auth(TEXT) TO pgbouncer_auth;
-GRANT CONNECT ON DATABASE :"audit_db" TO svc_audit, svc_outbox_relay;
+GRANT CONNECT ON DATABASE :"audit_db" TO svc_audit, svc_audit_worker, svc_outbox_relay;
 \endif

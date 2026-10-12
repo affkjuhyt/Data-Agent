@@ -41,7 +41,9 @@ async def _audit_export(event: Event) -> None:
         if approved
         else {"status": "failed"}
     )
-    async with scoped_session("svc_audit", event.org_id) as session:
+    # svc_audit_worker may only move waiting_approval → queued/failed (v3_0011's policy), nothing
+    # else in the audit database.
+    async with scoped_session("svc_audit_worker", event.org_id) as session:
         done = await session.execute(
             update(audit.ExportJob)
             .where(

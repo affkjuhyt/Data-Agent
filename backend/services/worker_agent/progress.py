@@ -47,8 +47,10 @@ async def publish(question_id: str, event: str, data: dict[str, Any]) -> str | N
             approximate=True,
         )
         return str(entry_id)
-    except Exception:
-        logger.warning("worker-agent | progress publish failed question=%s", question_id, exc_info=True)
+    except Exception:  # noqa: BLE001 - fail open by design (docstring): Redis is not the record
+        logger.warning(
+            "worker-agent | progress publish failed question=%s", question_id, exc_info=True
+        )
         return None
 
 
