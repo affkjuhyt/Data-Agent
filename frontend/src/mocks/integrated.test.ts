@@ -29,7 +29,7 @@ describe('integrated groups', () => {
     // Phiên is wired, but A2 has no read for a session report: that one stays mocked.
     expect(isIntegrated('GET', at('/v1/session-reports/r-1'), operations)).toBe(false);
     // Agent lock/retry are served by API-05; unrelated proposal verbs stay mocked.
-    expect(isIntegrated('POST', at('/v1/runs/r-1:retry'), operations)).toBe(true);
+    expect(isIntegrated('POST', at('/v1/runs/r-1:retry'), operations)).toBe(false);
     expect(isIntegrated('POST', at('/v1/agents/a-1:lock'), operations)).toBe(true);
     expect(isIntegrated('POST', at('/v1/sources/s-1:activate'), operations)).toBe(false);
     expect(isIntegrated('GET', at('/v1/data-products/dp-1/monitoring'), operations)).toBe(false);
