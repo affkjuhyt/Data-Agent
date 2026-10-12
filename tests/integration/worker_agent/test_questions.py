@@ -55,7 +55,8 @@ async def drain() -> int:
     return total
 
 
-async def test_question_without_data_product_ends_in_a_coded_refusal(seed: Seed) -> None:
+async def test_a_question_naming_no_known_metric_ends_in_a_coded_refusal(seed: Seed) -> None:
+    # The Data Space has no semantic layer at all: nothing in the question can be placed.
     asked = ask(seed)
     assert await drain() >= 1
     assert seed.one("SELECT status FROM qa.question WHERE id = %s", asked.question) == "refused"
@@ -64,11 +65,12 @@ async def test_question_without_data_product_ends_in_a_coded_refusal(seed: Seed)
         "SELECT kind, product_scope, text FROM qa.answer WHERE question_id = %s", asked.question
     )
     assert (kind, scope) == ("refusal", "not_applicable")
-    assert "chưa có data product" in text
+    assert "Chưa nhận ra chỉ số" in text
     version, steps = seed.one(
         "SELECT version, steps FROM qa.plan WHERE question_id = %s", asked.question
     )
-    assert version == 1 and steps["output_contract"]["shape"] == "text"
+    # Plan IR v2 (tab 5 G3.1): the period was read, no step could be planned.
+    assert version == 1 and steps["version"] == 2 and steps["steps"] == []
     assert seed.one("SELECT published_at IS NOT NULL FROM qa.outbox WHERE id = %s", asked.outbox)
 
 

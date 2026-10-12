@@ -149,3 +149,10 @@ def test_no_approved_join_is_no_join_path() -> None:
     with pytest.raises(CompileError) as caught:
         compile_metric(Request(metric(), group_by=["vung"]), layer, dialect="postgres")
     assert caught.value.code == "NO_JOIN_PATH"
+
+
+def test_a_filter_on_another_tables_dimension_joins_it() -> None:
+    out = compile_metric(
+        Request(metric(), filters={"vung": ["Miền Bắc"]}), LAYER, dialect="postgres"
+    )
+    assert 'LEFT JOIN "dw"."branch" AS t1' in out.sql and "t1.region_name IN" in out.sql

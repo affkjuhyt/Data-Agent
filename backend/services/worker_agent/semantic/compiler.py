@@ -25,7 +25,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from sqlglot import exp, parse_one
@@ -110,7 +110,7 @@ class Period:
 class Request:
     metric: MetricVersion
     group_by: Sequence[str] = ()  # dimension codes
-    filters: dict[str, Sequence[str]] = field(default_factory=dict)  # dimension code → values
+    filters: Mapping[str, Sequence[str]] = field(default_factory=dict)  # dimension code → values
     period: Period | None = None
 
 
@@ -242,18 +242,6 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
         select = select.select(exp.alias_(expr, code, quoted=True))
         group.append(expr)
     select = select.select(exp.alias_(value_expr, "value", quoted=True))
-    select = select.from_(_table(base, "t0"))
-    for table, alias, join in joins:
-        on = exp.and_(
-            *(
-                exp.EQ(
-                    this=exp.column(fc, table="t0", quoted=True),
-                    expression=exp.column(tc, table=alias, quoted=True),
-                )
-                for fc, tc in zip(join.from_columns, join.to_columns, strict=True)
-            )
-        )
-        select = select.join(_table(table, alias), on=on, join_type="left")
 
     conditions: list[exp.Expression] = []
     # The metric's own default filters were set by its owner; the question's go through BR-81.
@@ -304,6 +292,19 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
         else:
             conditions.append(in_range)
 
+    # FROM and JOINs last: a filter on another table's dimension adds its join too.
+    select = select.from_(_table(base, "t0"))
+    for table, alias, join in joins:
+        on = exp.and_(
+            *(
+                exp.EQ(
+                    this=exp.column(fc, table="t0", quoted=True),
+                    expression=exp.column(tc, table=alias, quoted=True),
+                )
+                for fc, tc in zip(join.from_columns, join.to_columns, strict=True)
+            )
+        )
+        select = select.join(_table(table, alias), on=on, join_type="left")
     if conditions:
         select = select.where(exp.and_(*conditions))
     if group:
