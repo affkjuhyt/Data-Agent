@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import type { Alert } from '../lib/v1/alerts';
+import type { Alert, AlertWire } from '../lib/v1/alerts';
 
 /*
  * Cảnh báo (P08, UC-08-02) for the dev mock: "#A-2291" of "P08 · Cảnh báo · Chi tiết"
@@ -35,6 +35,7 @@ function alert(
 ): Alert {
   const points = series(2.32);
   return {
+    summary: a.title,
     status: 'open',
     close_kind: null,
     fired_at: at(0, 7, 15),
@@ -150,6 +151,22 @@ function alertsFixture(): Alert[] {
   ];
 }
 
+/** AlertView as the api sends it, with the screen's PROPOSAL detail alongside. */
+const wire = (a: Alert): AlertWire => ({
+  ...a,
+  kind: 'metric',
+  dedup_key: a.id,
+  value: null,
+  threshold_value: null,
+  period_label: null,
+  assigned_to: null,
+  skill_run_id: null,
+  close_note: a.closed?.note ?? null,
+  closed_at: a.closed?.at ?? null,
+  created_at: a.fired_at,
+  updated_at: a.fired_at,
+});
+
 export function createAlertHandlers() {
   let alerts = alertsFixture();
   const update = (id: string, patch: (a: Alert) => Alert) => {
@@ -163,13 +180,7 @@ export function createAlertHandlers() {
     http.get('*/v1/alerts', ({ request }) => {
       const status = new URL(request.url).searchParams.get('status');
       const items = alerts.filter((a) => !status || a.status === status);
-      return HttpResponse.json({ items, next_cursor: null, total: items.length });
-    }),
-    http.get('*/v1/alerts/:id', ({ params }) => {
-      const found = alerts.find((a) => a.id === params.id);
-      return found
-        ? HttpResponse.json(found)
-        : problem(404, 'not_found', 'Không tìm thấy cảnh báo.');
+      return HttpResponse.json({ items: items.map(wire), next_page_token: '' });
     }),
     http.post('*/v1/alerts/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
@@ -223,7 +234,7 @@ export function createAlertHandlers() {
           'Cảnh báo lặp hơn 2 lần cần ghi chú khi đóng (BR-124).',
         );
       return result
-        ? HttpResponse.json(result)
+        ? HttpResponse.json(wire(result))
         : problem(404, 'not_found', 'Không tìm thấy cảnh báo.');
     }),
   ];

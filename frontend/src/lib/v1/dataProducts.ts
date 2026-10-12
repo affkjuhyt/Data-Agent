@@ -1,4 +1,5 @@
 import { pathId, v1Get, v1Send, type Page } from './client';
+import { getMe } from './me';
 import type { components } from './schema';
 
 /*
@@ -143,14 +144,24 @@ const codeOf = (name: string) =>
     .replace(/^_+|_+$/g, '')
     .slice(0, 60) || 'data_product';
 
-/** A2: POST /v1/data-products with layer=published — a product made from a mart. */
-export const createDataProduct = (body: { mart_id: string; name: string; version: string }) =>
-  v1Send<{ id: string }>('POST', '/data-products', {
+/**
+ * A2: POST /v1/data-products with layer=published — a product made from a mart. A product has a
+ * named owner (decision of 12/10/2026): whoever publishes it from the mart, until reassigned.
+ */
+export const createDataProduct = async (body: {
+  mart_id: string;
+  name: string;
+  version: string;
+}) => {
+  const me = await getMe();
+  return v1Send<{ id: string }>('POST', '/data-products', {
     code: codeOf(body.name),
     name: body.name,
     layer: 'published',
     data_mart_id: body.mart_id,
+    owner_id: me.id,
   } satisfies components['schemas']['DataProductCreate']);
+};
 
 /** A2: POST /v1/data-products/{id}:publish — the product row, its version a number there. */
 export async function publishDataProduct(

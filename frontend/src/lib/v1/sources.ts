@@ -146,18 +146,14 @@ const readTable = (raw: DatasetWire & Partial<SourceTable>): SourceTable => {
   };
 };
 
-/**
- * A2 has no GET /v1/sources/{id}: the source is its row in the list, and its tables are the
- * datasets read from it.
- */
+/** GET /v1/sources/{id} (A2 since 12/10/2026), with its tables: the datasets read from it. */
 export const getSource = async (id: string): Promise<SourceDetail> => {
-  const [rows, tables] = await Promise.all([
-    listSourceRows(),
+  const [raw, tables, spaces] = await Promise.all([
+    v1Get<SourceWire & Partial<SourceRowExtras>>(`/sources/${pathId(id)}`),
     v1Get<Page<DatasetWire>>('/datasets', { ...ALL, source_id: pathId(id) }),
+    spaceRefs(),
   ]);
-  const row = rows.items.find((r) => r.id === id);
-  if (!row) throw new V1Error(404, 'not_found', 'Không tìm thấy nguồn.');
-  return { ...row, tables: tables.items.map(readTable) };
+  return { ...readSourceRow(raw, spaces), tables: tables.items.map(readTable) };
 };
 
 /* ─── Hồ sơ bảng: the profile of one table ────────────────────────────── */

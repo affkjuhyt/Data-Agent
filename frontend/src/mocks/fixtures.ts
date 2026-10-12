@@ -34,6 +34,7 @@ export function inboxFixture(): HitlRequest[] {
     parent_run_label: null,
     assignee_id: 'me',
     assignee_group: null,
+    assignee_capability: null,
     status: 'open' as const,
     response: null,
     remember_as_rule: false,

@@ -1268,6 +1268,12 @@ export function createSourcesHandlers() {
 
   return [
     http.get('*/v1/sources', () => page(sources)),
+    http.get('*/v1/sources/:id', ({ params }) => {
+      const source = sources.find((s) => s.id === params.id);
+      return source
+        ? HttpResponse.json(source)
+        : problem(404, 'not_found', 'Không tìm thấy nguồn.');
+    }),
     // A source's tables are its datasets (A2 has no GET /v1/sources/{id}); without source_id the
     // dataset list of handlers.ts answers.
     http.get('*/v1/datasets', ({ request }) => {

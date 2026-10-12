@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import type { AppNotification } from '../lib/v1/notifications';
+import type { AppNotification, NotificationWire } from '../lib/v1/notifications';
 
 /*
  * The notification feed of "Trung tâm thông báo" (2072:3821), timed relative to now so the
@@ -74,9 +74,24 @@ function notificationsFixture(): AppNotification[] {
 export function createNotificationHandlers() {
   let notifications = notificationsFixture();
   return [
+    // NotificationView as the api sends it, with the screen's fields alongside.
     http.get('*/v1/me/notifications', () =>
       HttpResponse.json({
-        items: [...notifications].sort((a, b) => b.created_at.localeCompare(a.created_at)),
+        items: [...notifications]
+          .sort((a, b) => b.created_at.localeCompare(a.created_at))
+          .map(
+            (n): NotificationWire => ({
+              ...n,
+              kind: n.category === 'needs_you' ? 'hitl' : 'system',
+              title: n.text,
+              body: null,
+              link: null,
+              priority: 'normal',
+              source_ref: n.target?.id ?? null,
+              data_space_id: null,
+              batched_into: null,
+            }),
+          ),
         next_page_token: '',
       }),
     ),

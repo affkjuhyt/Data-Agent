@@ -9483,16 +9483,9 @@
       "title": "Out Of Scope Note"
      },
      "owner_id": {
-      "anyOf": [
-       {
-        "format": "uuid",
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Owner Id"
+      "format": "uuid",
+      "title": "Owner Id",
+      "type": "string"
      },
      "pack_version_id": {
       "anyOf": [
@@ -9594,7 +9587,8 @@
     },
     "required": [
      "code",
-     "name"
+     "name",
+     "owner_id"
     ],
     "title": "DataProductCreate",
     "type": "object"
@@ -18602,6 +18596,17 @@
       "title": "Approval Steps",
       "type": "array"
      },
+     "assignee_capability": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Assignee Capability"
+     },
      "assignee_group": {
       "anyOf": [
        {
@@ -18642,9 +18647,16 @@
       "type": "string"
      },
      "data_space_id": {
-      "format": "uuid",
-      "title": "Data Space Id",
-      "type": "string"
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Data Space Id"
      },
      "due_at": {
       "anyOf": [
@@ -18759,6 +18771,7 @@
      "parent_run_label",
      "assignee_id",
      "assignee_group",
+     "assignee_capability",
      "due_at",
      "status",
      "response",
@@ -18899,6 +18912,17 @@
    },
    "HitlView": {
     "properties": {
+     "assignee_capability": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Assignee Capability"
+     },
      "assignee_group": {
       "anyOf": [
        {
@@ -18939,9 +18963,16 @@
       "type": "string"
      },
      "data_space_id": {
-      "format": "uuid",
-      "title": "Data Space Id",
-      "type": "string"
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Data Space Id"
      },
      "due_at": {
       "anyOf": [
@@ -19056,6 +19087,7 @@
      "parent_run_label",
      "assignee_id",
      "assignee_group",
+     "assignee_capability",
      "due_at",
      "status",
      "response",
@@ -29893,6 +29925,11 @@
       "title": "Name",
       "type": "string"
      },
+     "owner_id": {
+      "format": "uuid",
+      "title": "Owner Id",
+      "type": "string"
+     },
      "retire_after": {
       "anyOf": [
        {
@@ -29926,6 +29963,7 @@
      "name",
      "version",
      "status",
+     "owner_id",
      "created_at",
      "updated_at"
     ],
@@ -30085,6 +30123,18 @@
    },
    "QualityResultView": {
     "properties": {
+     "acknowledged_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Acknowledged At"
+     },
      "acknowledged_by": {
       "anyOf": [
        {
@@ -30096,6 +30146,17 @@
        }
       ],
       "title": "Acknowledged By"
+     },
+     "acknowledged_note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Acknowledged Note"
      },
      "checked_at": {
       "format": "date-time",
@@ -36170,6 +36231,22 @@
        }
       ],
       "title": "Status"
+     },
+     "writeback_tables": {
+      "anyOf": [
+       {
+        "items": {
+         "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$",
+         "type": "string"
+        },
+        "maxItems": 500,
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Writeback Tables"
      }
     },
     "title": "SourcePatch",
@@ -36388,6 +36465,13 @@
        }
       ],
       "title": "Work Calendar Id"
+     },
+     "writeback_tables": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Writeback Tables",
+      "type": "array"
      }
     },
     "required": [
@@ -40678,6 +40762,13 @@
        }
       ],
       "title": "Work Calendar Id"
+     },
+     "writeback_tables": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Writeback Tables",
+      "type": "array"
      }
     },
     "required": [
@@ -42401,6 +42492,11 @@
       "title": "Name",
       "type": "string"
      },
+     "owner_id": {
+      "format": "uuid",
+      "title": "Owner Id",
+      "type": "string"
+     },
      "retire_after": {
       "anyOf": [
        {
@@ -42440,6 +42536,7 @@
      "status",
      "breaking_notice_at",
      "retire_after",
+     "owner_id",
      "approved_by",
      "created_at",
      "updated_at"
@@ -91452,7 +91549,8 @@
      "Tài liệu"
     ],
     "x-capability": [
-     "admin_data"
+     "admin_data",
+     "steward"
     ],
     "x-use-cases": [
      "UC-05-03"
@@ -100692,6 +100790,147 @@
    }
   },
   "/v1/sources/{id}": {
+   "get": {
+    "operationId": "getSource",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/services__api__modules__catalog__schemas__SourceView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Một nguồn: chế độ, kết quả kiểm tra, giới hạn tải, lịch quét; không có bí mật (thêm 12/10/2026)",
+    "tags": [
+     "Nguồn và danh mục"
+    ],
+    "x-capability": [
+     "admin_data"
+    ],
+    "x-use-cases": [
+     "UC-04-01"
+    ]
+   },
    "patch": {
     "operationId": "updateSource",
     "parameters": [

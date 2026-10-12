@@ -1,6 +1,6 @@
 /**
  * Sources as the api sends them (catalog SourceView, DatasetView): the list rows derive what the
- * PROPOSAL fields would say, a source's detail is its row plus its datasets, the connect form is
+ * PROPOSAL fields would say, a source's detail is GET /sources/{id} plus its datasets, the connect form is
  * sent as SourceCreate and the connection test is read back from the source after the 202.
  */
 import { http, HttpResponse } from 'msw';
@@ -41,6 +41,15 @@ const source = (extra: object = {}) => ({
 let rows = [source()];
 const server = setupServer(
   http.get('*/v1/sources', () => HttpResponse.json({ items: rows, next_page_token: '' })),
+  http.get('*/v1/sources/:id', ({ params }) => {
+    const row = rows.find((r) => r.id === params.id);
+    return row
+      ? HttpResponse.json(row)
+      : HttpResponse.json(
+          { status: 404, code: 'not_found', detail: 'Không tìm thấy nguồn.' },
+          { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
+        );
+  }),
   http.get('*/v1/data-spaces', () =>
     HttpResponse.json({ items: [{ id: 'ds-1', name: 'Rủi ro tín dụng' }], next_page_token: '' }),
   ),

@@ -217,15 +217,26 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
               )}
             </section>
           )}
-          <section className="flex flex-col gap-da-md border-b border-border py-da-xl">
-            <div className="flex items-baseline gap-da-md">
-              <h2 className="text-foreground da-heading-3">Giá trị 30 ngày</h2>
-              <span className="ml-auto text-muted-foreground da-caption">
-                {alert.chart.metric_label} · {alert.chart.cutoff_text}
-              </span>
-            </div>
-            <AlertChart alert={alert} />
-          </section>
+          {/* PROPOSAL: the series behind the alert; without it the api's summary says what changed. */}
+          {alert.chart ? (
+            <section className="flex flex-col gap-da-md border-b border-border py-da-xl">
+              <div className="flex items-baseline gap-da-md">
+                <h2 className="text-foreground da-heading-3">Giá trị 30 ngày</h2>
+                <span className="ml-auto text-muted-foreground da-caption">
+                  {alert.chart.metric_label} · {alert.chart.cutoff_text}
+                </span>
+              </div>
+              <AlertChart chart={alert.chart} />
+            </section>
+          ) : (
+            !alert.analysis &&
+            alert.summary && (
+              <section className="flex flex-col gap-da-md border-b border-border py-da-xl">
+                <h2 className="text-foreground da-heading-3">Tóm tắt</h2>
+                <p className="whitespace-pre-line text-foreground da-body">{alert.summary}</p>
+              </section>
+            )
+          )}
           {alert.analysis && (
             <section className="flex flex-col gap-da-md border-b border-border py-da-xl">
               <div className="flex items-baseline gap-da-md">
@@ -422,8 +433,8 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
   );
 }
 
-function AlertChart({ alert }: { alert: Alert }) {
-  const { series, threshold, breach_from, unit } = alert.chart;
+function AlertChart({ chart }: { chart: NonNullable<Alert['chart']> }) {
+  const { series, threshold, breach_from, unit } = chart;
   const last = series[series.length - 1]?.date;
   return (
     <div

@@ -18,9 +18,24 @@ const INTEGRATED_GROUPS: readonly string[] = [
   'Agent',
   'Nguồn và danh mục',
   'Lớp ngữ cảnh',
+  'Theo dõi, báo cáo, thông báo',
 ];
 
 const IDENTITY_OPERATIONS: readonly string[] = ['getMe', 'listMyDataSpaces'];
+
+/*
+ * Served operations of an integrated group that stay on the mock with their screen: A2 has the
+ * write but no read the screen loads first (GET /v1/monitors, /v1/reports, /v1/reports/{id},
+ * /v1/me/digests are not in A2). Sending them to the api would act on the mock's ids.
+ */
+const HELD_BACK: readonly string[] = [
+  'createMonitor',
+  'updateMonitor',
+  'updateReportSchedule',
+  'pauseReportSchedule',
+  'runReportNow',
+  'getReportRun',
+];
 
 interface Operation {
   method: string;
@@ -42,7 +57,9 @@ export function integratedOperations(
     );
     for (const [method, operation] of Object.entries(methods)) {
       const group = operation.tags?.[0] ?? '';
-      if (groups.includes(group) || IDENTITY_OPERATIONS.includes(operation.operationId ?? ''))
+      const id = operation.operationId ?? '';
+      if (HELD_BACK.includes(id)) continue;
+      if (groups.includes(group) || IDENTITY_OPERATIONS.includes(id))
         operations.push({ method: method.toUpperCase(), pattern });
     }
   }

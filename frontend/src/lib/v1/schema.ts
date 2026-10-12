@@ -5440,7 +5440,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Một nguồn: chế độ, kết quả kiểm tra, giới hạn tải, lịch quét; không có bí mật (thêm 12/10/2026) */
+        get: operations["getSource"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9093,8 +9094,11 @@ export interface components {
             name: string;
             /** Out Of Scope Note */
             out_of_scope_note?: string | null;
-            /** Owner Id */
-            owner_id?: string | null;
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
             /** Pack Version Id */
             pack_version_id?: string | null;
             /** Period From */
@@ -12273,6 +12277,8 @@ export interface components {
         HitlDetail: {
             /** Approval Steps */
             approval_steps?: components["schemas"]["ApprovalStepView"][];
+            /** Assignee Capability */
+            assignee_capability: string | null;
             /** Assignee Group */
             assignee_group: string | null;
             /** Assignee Id */
@@ -12286,11 +12292,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            /**
-             * Data Space Id
-             * Format: uuid
-             */
-            data_space_id: string;
+            /** Data Space Id */
+            data_space_id: string | null;
             /** Due At */
             due_at: string | null;
             /**
@@ -12382,6 +12385,8 @@ export interface components {
         };
         /** HitlView */
         HitlView: {
+            /** Assignee Capability */
+            assignee_capability: string | null;
             /** Assignee Group */
             assignee_group: string | null;
             /** Assignee Id */
@@ -12395,11 +12400,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            /**
-             * Data Space Id
-             * Format: uuid
-             */
-            data_space_id: string;
+            /** Data Space Id */
+            data_space_id: string | null;
             /** Due At */
             due_at: string | null;
             /**
@@ -16354,6 +16356,11 @@ export interface components {
             layer: "published";
             /** Name */
             name: string;
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
             /** Retire After */
             retire_after?: string | null;
             /** Status */
@@ -16415,8 +16422,12 @@ export interface components {
         };
         /** QualityResultView */
         QualityResultView: {
+            /** Acknowledged At */
+            acknowledged_at?: string | null;
             /** Acknowledged By */
             acknowledged_by: string | null;
+            /** Acknowledged Note */
+            acknowledged_note?: string | null;
             /**
              * Checked At
              * Format: date-time
@@ -18566,6 +18577,8 @@ export interface components {
             scan_window?: Record<string, never> | null;
             /** Status */
             status?: ("active" | "paused" | "archived") | null;
+            /** Writeback Tables */
+            writeback_tables?: string[] | null;
         };
         /**
          * SourceSchedule
@@ -18648,6 +18661,8 @@ export interface components {
             updated_at: string;
             /** Work Calendar Id */
             work_calendar_id: string | null;
+            /** Writeback Tables */
+            writeback_tables?: string[];
         };
         /** SourcesPut */
         SourcesPut: {
@@ -20258,6 +20273,8 @@ export interface components {
             updated_at: string;
             /** Work Calendar Id */
             work_calendar_id: string | null;
+            /** Writeback Tables */
+            writeback_tables?: string[];
         };
         /** ClaimView */
         services__api__modules__conflict__schemas__ClaimView: {
@@ -20972,6 +20989,11 @@ export interface components {
             layer: "published";
             /** Name */
             name: string;
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
             /** Retire After */
             retire_after: string | null;
             /** Status */
@@ -61167,6 +61189,118 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["services__api__modules__catalog__schemas__SourceView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    getSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
