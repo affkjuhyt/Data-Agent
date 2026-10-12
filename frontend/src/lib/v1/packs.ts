@@ -306,8 +306,27 @@ export interface MetricOverride {
   trial_note: string | null;
 }
 
+export type MetricOverrideWire = components['schemas']['MetricOverrideDetail'];
+
+export function readMetricOverride(raw: MetricOverrideWire): MetricOverride {
+  if ('metric_code' in raw) return raw as unknown as MetricOverride;
+  const status = raw.status === 'pending_review' ? 'submitted' : raw.status === 'approved' ? 'certified' : 'draft';
+  return {
+    id: raw.id,
+    metric_code: raw.pack_metric_code,
+    status,
+    summary_text: `${raw.metric_name ?? raw.pack_metric_code} · ${raw.reason}`,
+    base_expression: raw.base_expression ?? 'Chưa có công thức gốc',
+    org_expression: raw.expression,
+    changes: [{ change: raw.scope_condition ? 'Điều kiện phạm vi' : 'Công thức tổ chức', reason: raw.reason }],
+    upgrade_note: 'Hiệu chỉnh vẫn liên kết với công thức gốc của gói; xung đột sẽ được xử lý khi nâng cấp.',
+    trial: null,
+    trial_note: raw.calibration_run ? `Đã có lượt đối chiếu ${raw.calibration_run.id}.` : null,
+  };
+}
+
 export const getMetricOverride = async (id: string) =>
-  v1Get<MetricOverride>(`/metric-overrides/${pathId(id)}`);
+  readMetricOverride(await v1Get<MetricOverrideWire>(`/metric-overrides/${pathId(id)}`));
 
 /** PROPOSAL: compute both expressions on the last 6 periods. */
 export const trialMetricOverride = async (id: string) =>
