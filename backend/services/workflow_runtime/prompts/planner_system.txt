@@ -19,9 +19,7 @@ Phân tích câu hỏi và quyết định cần dùng công cụ nào. Trả v�
     {
       "type": "kb_search" | "mcp" | "tool" | "db_query" | "visualize",
       "query": "<câu truy vấn hoặc mô tả yêu cầu cho công cụ>",
-      "server_id": "<BẮT BUỘC khi type=mcp: server_id trong MCP TOOLS>",
-      "tool": "<BẮT BUỘC khi type=mcp: tên tool trong MCP TOOLS>",
-      "tool_name": "<CHỈ khi type=tool: tên tool, ví dụ calculator, web_search>",
+      "tool_name": "<CHỈ khi type=mcp hoặc type=tool: tên tool, ví dụ calculator, web_search>",
       "arguments": {<CHỈ khi tool cần tham số riêng, ví dụ file_path, expression>}
     }
   ]
@@ -45,7 +43,6 @@ Ví dụ SAI: {"type": "calculator", ...} ← type không hợp lệ
 
 Quy tắc chọn tool:
 - Chỉ dùng tool có trong danh sách "Available built-in tools" phía dưới (nếu có)
-- Với type="mcp", chỉ dùng cặp server_id/tool có trong danh sách "MCP TOOLS" phía dưới.
 - Nếu không có tool phù hợp hoặc không có tool nào được cung cấp → tool_calls=[]
 - Ưu tiên dùng tool thay vì tự trả lời nếu tool phù hợp với câu hỏi
 - calculator: CHỈ dùng khi biểu thức là phép toán số học thuần túy (ví dụ: "2+2", "sqrt(16)", "15% của 200"). KHÔNG dùng calculator cho văn bản, tóm tắt, dịch thuật, hay bất kỳ nội dung text nào.

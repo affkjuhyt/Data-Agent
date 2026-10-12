@@ -14,7 +14,6 @@ psycopg[binary,pool]>=3.1,<4.0
 litellm==1.59.9
 python-dotenv>=1.0
 httpx==0.27.2
-mcp>=1.0,<2.0
 tenacity>=8.2
 cachetools>=5  # orchestrator/agent_catalog.py guardrail-config TTL cache
 # Langfuse v3 — OTEL-based, thay cho v2 (callback + StatefulSpanClient nội bộ không ổn định).
