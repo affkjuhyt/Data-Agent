@@ -569,7 +569,9 @@ async def test_g5_1_the_model_reads_what_the_rules_could_not(
     q = bank.ask("Khoản vay khó đòi chiếm bao nhiêu phần trăm ở mỗi miền, tháng 9/2026?")
     await drain()
     status, kind, _text, figures, scope, answer = answer_of(seed, q)
-    assert (status, kind, scope) == ("answered", "data", "in_scope") and fake.calls == ["planner"]
+    # The planner read it; the responder got no "text" back twice, so the template wrote it.
+    assert (status, kind, scope) == ("answered", "data", "in_scope")
+    assert fake.calls == ["planner", "responder", "responder"]
     assert [f["dimensions"]["vung"] for f in figures] == ["Miền Bắc", "Miền Nam"]
     # The plan says the reading is the model's, at the proceed threshold, and the receipt names it.
     assert seed.one(
