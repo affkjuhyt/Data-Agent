@@ -6,11 +6,13 @@ import asyncio
 import datetime
 import decimal
 import hashlib
+import http.client
 import ipaddress
 import json
 import os
 import re
 import socket
+import ssl
 import time
 import urllib.error
 import urllib.parse
@@ -78,21 +80,58 @@ def _tenant_secret_ref(ref: str, org_id: uuid.UUID) -> str:
     return ref
 
 
-def _public_https(url: str) -> bool:
-    """A frontier endpoint is an https host on the public internet: never a loopback,
-    private, link-local or reserved address, which would turn the probe into a way in."""
+def _public_address(url: str) -> str | None:
+    """The address a frontier endpoint is reached at, when it is an https host whose every
+    address is on the public internet (never loopback, private, link-local or reserved, which
+    would turn the probe into a way in); None otherwise."""
     parts = urllib.parse.urlsplit(url)
     if parts.scheme != "https" or not parts.hostname or parts.username or parts.password:
-        return False
+        return None
     try:
         infos = socket.getaddrinfo(parts.hostname, parts.port or 443, proto=socket.IPPROTO_TCP)
     except OSError:
-        return False
-    for info in infos:
-        address = ipaddress.ip_address(info[4][0])
-        if not address.is_global:
-            return False
-    return True
+        return None
+    addresses = [str(info[4][0]) for info in infos]
+    if not addresses or not all(ipaddress.ip_address(a).is_global for a in addresses):
+        return None
+    return addresses[0]
+
+
+def _public_https(url: str) -> bool:
+    return _public_address(url) is not None
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS to an address checked beforehand, with TLS and SNI still for the host name.
+
+    Resolving again at connect time would let a DNS answer that changed since the check (DNS
+    rebinding) send the provider key to an internal address."""
+
+    def __init__(self, host: str, address: str, port: int | None, timeout: float) -> None:
+        super().__init__(host, port, timeout=timeout, context=ssl.create_default_context())
+        self._address = address
+
+    def connect(self) -> None:
+        sock = socket.create_connection((self._address, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)  # type: ignore[attr-defined]
+
+
+def _post_pinned(url: str, address: str, body: bytes, headers: dict[str, str]) -> Any:
+    parts = urllib.parse.urlsplit(url)
+    assert parts.hostname is not None
+    conn = _PinnedHTTPSConnection(parts.hostname, address, parts.port, timeout=15)
+    try:
+        path = parts.path or "/"
+        if parts.query:
+            path += "?" + parts.query
+        conn.request("POST", path, body=body, headers=headers)
+        response = conn.getresponse()
+        # No redirect is followed: it would carry the key to a host nobody approved.
+        if response.status >= 300:
+            raise ValueError(f"provider answered {response.status}")
+        return json.loads(response.read())
+    finally:
+        conn.close()
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -147,8 +186,11 @@ def _probe_provider(
             raise _ProviderUnavailable(
                 "The provider secret_ref is outside the organisation."
             ) from exc
-    if provider.kind == "frontier" and not _public_https(provider.endpoint):
-        raise _ProviderUnavailable("A frontier endpoint must be a public https host.")
+    pinned: str | None = None
+    if provider.kind == "frontier":
+        pinned = _public_address(provider.endpoint)
+        if pinned is None:
+            raise _ProviderUnavailable("A frontier endpoint must be a public https host.")
     secret = _secret_value(provider.secret_ref)
     endpoint = provider.endpoint.rstrip("/")
     if provider.api_style == "openai_compatible":
@@ -186,9 +228,13 @@ def _probe_provider(
     )
     started = time.perf_counter()
     try:
-        with _OPENER.open(request, timeout=15) as response:
-            body = json.loads(response.read())
-    except (OSError, ValueError, urllib.error.URLError) as exc:
+        if pinned is not None:
+            body = _post_pinned(url, pinned, json.dumps(payload).encode(), headers)
+        else:
+            # On-prem endpoints are internal by design and carry no frontier key.
+            with _OPENER.open(request, timeout=15) as response:
+                body = json.loads(response.read())
+    except (OSError, ValueError, urllib.error.URLError, http.client.HTTPException) as exc:
         raise _ProviderUnavailable("The provider did not return a usable response.") from exc
     usage = body.get("usage", {}) if isinstance(body, dict) else {}
     input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
