@@ -15670,10 +15670,10 @@
     {
      "name": "data_space_id",
      "type": "uuid",
-     "not_null": true,
+     "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "",
+     "comment": "Rỗng với yêu cầu toàn tổ chức (bản xuất nhật ký kiểm toán, quyền khẩn cấp); khi đó năng lực của người duyệt xét ở cấp tổ chức. Sửa 12/10/2026",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -15789,6 +15789,17 @@
      "pii": false
     },
     {
+     "name": "assignee_capability",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Năng lực của người duyệt (steward, compliance, audit_read…): ai có năng lực này trong Data Space của yêu cầu, hoặc ở cấp tổ chức khi data_space_id rỗng, thấy và duyệt được. Thêm 12/10/2026",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "due_at",
      "type": "timestamptz",
      "not_null": false,
@@ -15893,7 +15904,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (assignee_id IS NOT NULL OR assignee_group IS NOT NULL)"
+     "sql": "CHECK (assignee_id IS NOT NULL OR assignee_group IS NOT NULL OR assignee_capability IS NOT NULL)"
     }
    ],
    "indexes": [
@@ -15954,7 +15965,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "Ví dụ AC03, AC06",
+     "comment": "Năng lực người duyệt bước này phải có, ví dụ steward, compliance; mỗi bước một người khác (BR-132)",
      "fk": null,
      "logic_ref": null,
      "pii": false

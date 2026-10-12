@@ -1,5 +1,11 @@
 """API-04 "Cần bạn": HITL requests and proposal decisions (UC-07-03, UC-07-07, UC-07-08).
 
+A request goes to a person, a user group, or a capability (assignee_capability, decided
+12/10/2026): whoever holds it in the request's Data Space, or at the organisation level when the
+request belongs to no space (an audit export, an emergency grant). The caller's inbox shows the
+requests of the space they named plus the org-wide ones. Each step of an approval chain names the
+capability its approver must hold, and no one decides two steps (BR-132).
+
 Every status change writes its event to inbox.outbox in the same transaction (D1 rule 8);
 the agent runtime, channel gateway and the service that owns a proposal's object act on
 hitl.resolved and proposal.decided, never on a write from here into their schema.
@@ -11,7 +17,7 @@ import datetime
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Request
 from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -96,15 +102,53 @@ def _my_groups(principal: Principal) -> Select[tuple[str]]:
     )
 
 
-def _assigned_to(principal: Principal) -> Any:
-    """The caller is the assignee, or the request went to a group the caller belongs to."""
+async def org_capabilities(request: Request, principal: CurrentPrincipal) -> frozenset[str]:
+    """The caller's capabilities at the organisation level, without the space roles that the
+    X-Data-Space header adds: an org-wide request is decided on these alone."""
+    identity = await request.app.state.identity_resolver.resolve(
+        org_id=principal.org_id, external_id=principal.external_id, data_space=None
+    )
+    return frozenset(identity.capabilities) if identity is not None else frozenset()
+
+
+OrgCapabilities = Annotated[frozenset[str], Depends(org_capabilities)]
+
+
+def _in_scope(data_space: uuid.UUID) -> Any:
+    """Requests of the named space, and the org-wide ones."""
     return or_(
-        inbox.HitlRequest.assignee_id == principal.user_id,
+        inbox.HitlRequest.data_space_id == data_space, inbox.HitlRequest.data_space_id.is_(None)
+    )
+
+
+def _assigned_to(principal: Principal, org_caps: frozenset[str]) -> Any:
+    """The caller is the assignee, belongs to the assigned group, or holds the assigned capability
+    where the request lives (its space, or the organisation for an org-wide one)."""
+    hitl = inbox.HitlRequest
+    return or_(
+        hitl.assignee_id == principal.user_id,
+        and_(hitl.assignee_id.is_(None), hitl.assignee_group.in_(_my_groups(principal))),
         and_(
-            inbox.HitlRequest.assignee_id.is_(None),
-            inbox.HitlRequest.assignee_group.in_(_my_groups(principal)),
+            hitl.assignee_id.is_(None),
+            hitl.assignee_group.is_(None),
+            or_(
+                and_(
+                    hitl.data_space_id.is_not(None),
+                    hitl.assignee_capability.in_(sorted(principal.capabilities)),
+                ),
+                and_(
+                    hitl.data_space_id.is_(None),
+                    hitl.assignee_capability.in_(sorted(org_caps)),
+                ),
+            ),
         ),
     )
+
+
+def _capabilities_for(
+    row: inbox.HitlRequest, principal: Principal, org_caps: frozenset[str]
+) -> frozenset[str]:
+    return principal.capabilities if row.data_space_id is not None else org_caps
 
 
 @router.get(
@@ -115,6 +159,7 @@ def _assigned_to(principal: Principal) -> Any:
 async def list_inbox(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
+    org_caps: OrgCapabilities,
     page: Annotated[PageRequest, Depends(page_request)],
     order: Annotated[
         Order,
@@ -135,14 +180,14 @@ async def list_inbox(
     ] = None,
 ) -> Page[HitlView]:
     hitl = inbox.HitlRequest
-    query = select(hitl).where(hitl.org_id == principal.org_id, hitl.data_space_id == data_space)
+    query = select(hitl).where(hitl.org_id == principal.org_id, _in_scope(data_space))
     query = query.where(hitl.status == status) if status else query.where(hitl.status.in_(PENDING))
     if kind:
         query = query.where(hitl.kind == kind)
     if risk:
         query = query.where(hitl.risk == risk)
     if assignee in (None, "me"):
-        query = query.where(_assigned_to(principal))
+        query = query.where(_assigned_to(principal, org_caps))
     else:
         try:
             query = query.where(hitl.assignee_id == uuid.UUID(assignee))
@@ -180,7 +225,7 @@ async def _hitl(
     query = select(inbox.HitlRequest).where(
         inbox.HitlRequest.id == request_id,
         inbox.HitlRequest.org_id == principal.org_id,
-        inbox.HitlRequest.data_space_id == data_space,
+        _in_scope(data_space),
     )
     if lock:
         # E2 of UC-07-07: two answers at once, only the first is recorded.
@@ -226,14 +271,23 @@ async def get_hitl(
     return _detail(row, steps)
 
 
-async def _is_assignee(session: AsyncSession, row: inbox.HitlRequest, principal: Principal) -> bool:
+async def _is_assignee(
+    session: AsyncSession,
+    row: inbox.HitlRequest,
+    principal: Principal,
+    org_caps: frozenset[str],
+) -> bool:
     if row.assignee_id is not None:
         return row.assignee_id == principal.user_id
-    return bool(
-        await session.scalar(
-            select(_my_groups(principal).where(org.UserGroup.name == row.assignee_group).exists())
+    if row.assignee_group is not None:
+        return bool(
+            await session.scalar(
+                select(
+                    _my_groups(principal).where(org.UserGroup.name == row.assignee_group).exists()
+                )
+            )
         )
-    )
+    return row.assignee_capability in _capabilities_for(row, principal, org_caps)
 
 
 def _check_option(row: inbox.HitlRequest, option: str | None) -> None:
@@ -256,6 +310,7 @@ async def _decide_step(
     steps: list[inbox.HitlApprovalStep],
     body: HitlResolve,
     principal: Principal,
+    org_caps: frozenset[str],
 ) -> bool:
     """Records the caller's decision on the current step of a chain; True when the chain is done."""
     if body.decision not in ("approve", "reject"):
@@ -272,6 +327,12 @@ async def _decide_step(
             "business_rule_violated",
             "Each approval step must be decided by a different person (BR-132).",
         )
+    if current.approver_id is None and current.approver_role not in _capabilities_for(
+        row, principal, org_caps
+    ):
+        raise Problem(
+            403, "forbidden", f"This step is decided by someone holding {current.approver_role}."
+        )
     current.approver_id = principal.user_id
     current.decision = body.decision
     current.note = body.note
@@ -281,6 +342,9 @@ async def _decide_step(
         # The next step opens now (UC-07-07 5a); its approver, when named, becomes the assignee.
         if remaining[0].approver_id is not None:
             row.assignee_id = remaining[0].approver_id
+        elif row.assignee_capability is not None:
+            # A chain routed by capability moves to the next step's holders.
+            row.assignee_capability = remaining[0].approver_role
         session.add(
             _event(
                 principal,
@@ -309,6 +373,7 @@ async def resolve_hitl(
     request_id: Annotated[uuid.UUID, Path(alias="id")],
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
+    org_caps: OrgCapabilities,
 ) -> HitlDetail:
     note = (body.note or "").strip() or None
     async with transaction(ROLE, principal) as session:
@@ -322,7 +387,7 @@ async def resolve_hitl(
             chained
             and next(s for s in steps if s.decision is None).approver_id == principal.user_id
         )
-        if not step_approver and not await _is_assignee(session, row, principal):
+        if not step_approver and not await _is_assignee(session, row, principal, org_caps):
             raise Problem(403, "forbidden", "Only the assignee can resolve this request.")
         if body.decision == "approve" and row.created_by == principal.user_id:
             # BR-62: whoever raised the change does not approve it.
@@ -357,7 +422,7 @@ async def resolve_hitl(
             )
             await session.flush()
             return _detail(row, steps)
-        if chained and not await _decide_step(session, row, steps, body, principal):
+        if chained and not await _decide_step(session, row, steps, body, principal, org_caps):
             await session.flush()
             return _detail(row, steps)
         row.status = HITL_STATUS[body.decision]

@@ -3324,7 +3324,7 @@ COMMENT ON COLUMN inbox.proposal_review.reviewed_regressions IS 'Đã xem từng
 CREATE TABLE inbox.hitl_request (
   id uuid NOT NULL,
   org_id uuid NOT NULL,
-  data_space_id uuid NOT NULL,
+  data_space_id uuid,
   kind text NOT NULL,
   risk text NOT NULL DEFAULT 'medium',
   title text NOT NULL,
@@ -3335,6 +3335,7 @@ CREATE TABLE inbox.hitl_request (
   parent_run_label text,
   assignee_id uuid,
   assignee_group text,
+  assignee_capability text,
   due_at timestamptz,
   status text NOT NULL DEFAULT 'open',
   response jsonb,
@@ -3351,15 +3352,17 @@ CREATE TABLE inbox.hitl_request (
   CHECK (risk IN ('low','medium','high')),
   CHECK (status IN ('open','answered','approved','rejected','changes_requested','reassigned','expired','cancelled')),
   CHECK (status IN ('open','reassigned') OR resolved_at IS NOT NULL),
-  CHECK (assignee_id IS NOT NULL OR assignee_group IS NOT NULL)
+  CHECK (assignee_id IS NOT NULL OR assignee_group IS NOT NULL OR assignee_capability IS NOT NULL)
 );
 COMMENT ON TABLE inbox.hitl_request IS 'Yêu cầu người quyết định trong Cần bạn; mọi dịch vụ tạo yêu cầu qua đây. Use case: UC-01-05, UC-01-06, UC-02-07, UC-03-05, UC-04-07, UC-06-04, UC-07-03, UC-07-04, UC-07-07, UC-07-08, UC-08-04, UC-08-06, UC-10-02, UC-10-04, UC-11-07, UC-13-05, UC-13-07, UC-13-08.';
+COMMENT ON COLUMN inbox.hitl_request.data_space_id IS 'Rỗng với yêu cầu toàn tổ chức (bản xuất nhật ký kiểm toán, quyền khẩn cấp); khi đó năng lực của người duyệt xét ở cấp tổ chức. Sửa 12/10/2026';
 COMMENT ON COLUMN inbox.hitl_request.kind IS 'approve_proposal, conflict, clarification, checkpoint, budget, access, export, writeback, period_exception, retro_change, deploy, memory_share, schema_drift, report_publish, data_review, entity_match, forecast_assumption, forecast_model, legal_review, knowledge_finding';
 COMMENT ON COLUMN inbox.hitl_request.risk IS 'low, medium, high';
 COMMENT ON COLUMN inbox.hitl_request.context IS 'Dữ liệu để người quyết định, ví dụ hai nguồn và mức lệch';
 COMMENT ON COLUMN inbox.hitl_request.options IS 'Các phương án';
 COMMENT ON COLUMN inbox.hitl_request.source_ref IS 'Ví dụ agent_run, proposal, conflict';
 COMMENT ON COLUMN inbox.hitl_request.parent_run_label IS 'Tên lượt chạy cha khi từ lượt con (BR-77)';
+COMMENT ON COLUMN inbox.hitl_request.assignee_capability IS 'Năng lực của người duyệt (steward, compliance, audit_read…): ai có năng lực này trong Data Space của yêu cầu, hoặc ở cấp tổ chức khi data_space_id rỗng, thấy và duyệt được. Thêm 12/10/2026';
 COMMENT ON COLUMN inbox.hitl_request.status IS 'open, answered, approved, rejected, changes_requested, reassigned, expired, cancelled';
 COMMENT ON COLUMN inbox.hitl_request.response IS 'Phương án chọn và ghi chú';
 COMMENT ON COLUMN inbox.hitl_request.remember_as_rule IS 'Bật “Ghi nhớ thành quy tắc” (UC-07-08)';
@@ -3383,7 +3386,7 @@ CREATE TABLE inbox.hitl_approval_step (
 );
 COMMENT ON TABLE inbox.hitl_approval_step IS 'Một bước trong chuỗi duyệt nhiều người, ví dụ ngoại lệ kỳ chốt cần hai người (BR-132). Use case: UC-07-07, UC-10-02.';
 COMMENT ON COLUMN inbox.hitl_approval_step.hitl_request_id IS 'FK hitl_request';
-COMMENT ON COLUMN inbox.hitl_approval_step.approver_role IS 'Ví dụ AC03, AC06';
+COMMENT ON COLUMN inbox.hitl_approval_step.approver_role IS 'Năng lực người duyệt bước này phải có, ví dụ steward, compliance; mỗi bước một người khác (BR-132)';
 COMMENT ON COLUMN inbox.hitl_approval_step.decision IS 'approve, reject';
 
 CREATE TABLE inbox.outbox (

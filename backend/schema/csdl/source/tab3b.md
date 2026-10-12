@@ -1796,7 +1796,7 @@ Yêu cầu người quyết định trong Cần bạn; mọi dịch vụ tạo y
 
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
-| data\_space\_id | uuid, bắt buộc |  |
+| data\_space\_id | uuid | Rỗng với yêu cầu toàn tổ chức (bản xuất nhật ký kiểm toán, quyền khẩn cấp); khi đó năng lực của người duyệt xét ở cấp tổ chức. Sửa 12/10/2026 |
 | kind | text, bắt buộc | approve\_proposal, conflict, clarification, checkpoint, budget, access, export, writeback, period\_exception, retro\_change, deploy, memory\_share, schema\_drift, report\_publish, data\_review, entity\_match, forecast\_assumption, forecast\_model, legal\_review, knowledge\_finding |
 | risk | text, bắt buộc, mặc định 'medium' | low, medium, high |
 | title | text, bắt buộc |  |
@@ -1807,6 +1807,7 @@ Yêu cầu người quyết định trong Cần bạn; mọi dịch vụ tạo y
 | parent\_run\_label | text | Tên lượt chạy cha khi từ lượt con (BR-77) |
 | assignee\_id | uuid |  |
 | assignee\_group | text |  |
+| assignee\_capability | text | Năng lực của người duyệt (steward, compliance, audit\_read…): ai có năng lực này trong Data Space của yêu cầu, hoặc ở cấp tổ chức khi data\_space\_id rỗng, thấy và duyệt được. Thêm 12/10/2026 |
 | due\_at | timestamptz |  |
 | status | text, bắt buộc, mặc định 'open' | open, answered, approved, rejected, changes\_requested, reassigned, expired, cancelled |
 | response | jsonb | Phương án chọn và ghi chú |
@@ -1815,7 +1816,7 @@ Yêu cầu người quyết định trong Cần bạn; mọi dịch vụ tạo y
 | resolved\_at | timestamptz |  |
 | channel\_card\_ids | uuid\[\], bắt buộc, mặc định '{}' | logic → notify.channel\_delivery |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('approve\_proposal','conflict','clarification','checkpoint','budget','access','export','writeback','period\_exception','retro\_change','deploy','memory\_share','schema\_drift','report\_publish','data\_review','entity\_match','forecast\_assumption','forecast\_model','legal\_review','knowledge\_finding','formula\_component')); CHECK (risk IN ('low','medium','high')); CHECK (status IN ('open','answered','approved','rejected','changes\_requested','reassigned','expired','cancelled')); CHECK (status IN ('open','reassigned') OR resolved\_at IS NOT NULL); CHECK (assignee\_id IS NOT NULL OR assignee\_group IS NOT NULL). Chỉ mục: (assignee\_id, status, due\_at) WHERE status = 'open'; (source\_service, source\_ref).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('approve\_proposal','conflict','clarification','checkpoint','budget','access','export','writeback','period\_exception','retro\_change','deploy','memory\_share','schema\_drift','report\_publish','data\_review','entity\_match','forecast\_assumption','forecast\_model','legal\_review','knowledge\_finding','formula\_component')); CHECK (risk IN ('low','medium','high')); CHECK (status IN ('open','answered','approved','rejected','changes\_requested','reassigned','expired','cancelled')); CHECK (status IN ('open','reassigned') OR resolved\_at IS NOT NULL); CHECK (assignee\_id IS NOT NULL OR assignee\_group IS NOT NULL OR assignee\_capability IS NOT NULL). Chỉ mục: (assignee\_id, status, due\_at) WHERE status = 'open'; (source\_service, source\_ref).
 
 #### inbox.hitl\_approval\_step
 
@@ -1825,7 +1826,7 @@ Một bước trong chuỗi duyệt nhiều người, ví dụ ngoại lệ kỳ
 | --- | --- | --- |
 | hitl\_request\_id | uuid, bắt buộc | FK hitl\_request |
 | step | smallint, bắt buộc |  |
-| approver\_role | text, bắt buộc | Ví dụ AC03, AC06 |
+| approver\_role | text, bắt buộc | Năng lực người duyệt bước này phải có, ví dụ steward, compliance; mỗi bước một người khác (BR-132) |
 | approver\_id | uuid |  |
 | decision | text | approve, reject |
 | note | text |  |
