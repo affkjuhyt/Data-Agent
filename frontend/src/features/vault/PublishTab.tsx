@@ -9,7 +9,6 @@ import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { Radio } from '../../design-system/Radio';
 import { Select } from '../../design-system/Select';
-import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { formatDate, formatDateTime, formatNumber } from '../../lib/formatVN';
 import {
@@ -18,6 +17,7 @@ import {
   listPublishTargets,
   publishThesis,
   requestHandover,
+  type HandoverReason,
   type Vault,
 } from '../../lib/v1/exec';
 import { useV1 } from '../../lib/v1/useV1';
@@ -83,7 +83,7 @@ function PublishForm({
   });
   const [title, setTitle] = useState(defaults(thesis).title);
   const [statement, setStatement] = useState(defaults(thesis).statement);
-  const [attribution, setAttribution] = useState<'name' | 'title'>('title');
+  const [attribution, setAttribution] = useState<'named' | 'role_only'>('role_only');
   const [showConfidence, setShowConfidence] = useState(false);
   const [showRationale, setShowRationale] = useState(false);
   const [target, setTarget] = useState<string | null>(null);
@@ -93,7 +93,7 @@ function PublishForm({
 
   const space = targets.data?.items.find((t) => t.id === (target ?? targets.data?.items[0]?.id));
   const signer =
-    attribution === 'name'
+    attribution === 'named'
       ? user.name
       : (targets.data?.attribution_title ?? 'Thành viên Ban điều hành');
   const thresholdShown = c ? `${formatNumber(c.threshold)}` : '';
@@ -116,7 +116,7 @@ function PublishForm({
     setSending(true);
     setError(undefined);
     try {
-      const result = await publishThesis(thesis.id, {
+      await publishThesis(thesis.id, {
         title: title.trim(),
         statement_public: statement.trim(),
         target_data_space_id: space.id,
@@ -134,9 +134,10 @@ function PublishForm({
         threshold: c.threshold,
         unit: c.unit,
       });
-      setSent(result.reviewer_name);
+      // A3 answers 202 with the publication's id; who reviews it is the target's (PROPOSAL list).
+      setSent(space.reviewer_name);
       theses.reload();
-      toast({ tone: 'success', message: `Đã gửi ${result.reviewer_name} duyệt` });
+      toast({ tone: 'success', message: `Đã gửi ${space.reviewer_name} duyệt` });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -241,17 +242,17 @@ function PublishForm({
               <div role="radiogroup" aria-label="Ghi tên" className="flex flex-wrap gap-da-xl">
                 <Radio
                   name="attribution"
-                  value="name"
-                  checked={attribution === 'name'}
-                  onChange={() => setAttribution('name')}
+                  value="named"
+                  checked={attribution === 'named'}
+                  onChange={() => setAttribution('named')}
                 >
                   {user.name}
                 </Radio>
                 <Radio
                   name="attribution"
-                  value="title"
-                  checked={attribution === 'title'}
-                  onChange={() => setAttribution('title')}
+                  value="role_only"
+                  checked={attribution === 'role_only'}
+                  onChange={() => setAttribution('role_only')}
                 >
                   {targets.data?.attribution_title ?? 'Chức danh'}
                 </Radio>
@@ -330,12 +331,19 @@ const EXIT: { value: Vault['exit_policy']; label: string; hint: string }[] = [
   },
 ];
 
+// A3 keeps the reason as one of these, not as the leader's words (nothing about them is stored).
+const REASONS: { value: HandoverReason; label: string }[] = [
+  { value: 'leave_position', label: 'Rời vị trí' },
+  { value: 'contract_end', label: 'Hết hợp đồng' },
+  { value: 'owner_request', label: 'Theo yêu cầu của tôi' },
+];
+
 function LeaveCard() {
   const { vault } = useVault();
   const toast = useToast();
   const [kind, setKind] = useState<Vault['exit_policy']>(vault.exit_policy);
   const [asking, setAsking] = useState(false);
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState<HandoverReason | null>(null);
   const [successor, setSuccessor] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -346,7 +354,7 @@ function LeaveCard() {
     try {
       await requestHandover({
         kind,
-        reason: reason.trim(),
+        reason: reason as HandoverReason,
         ...(kind === 'selective_handover' && successor.trim()
           ? { successor_id: successor.trim() }
           : {}),
@@ -399,14 +407,18 @@ function LeaveCard() {
         tone={kind === 'shred' ? 'danger' : 'primary'}
         loading={busy}
         error={error}
-        onConfirm={() => reason.trim() && void confirm()}
+        onConfirm={() => reason && void confirm()}
         onCancel={() => setAsking(false)}
       >
         <div className="flex flex-col gap-da-lg">
           <span>{EXIT.find((e) => e.value === kind)!.hint}.</span>
-          <Field label="Lý do">
-            <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} />
-          </Field>
+          <Select<HandoverReason>
+            label="Lý do"
+            value={reason}
+            placeholder="Chọn lý do"
+            onChange={setReason}
+            options={REASONS}
+          />
           {kind === 'selective_handover' && (
             <Field
               label="Người kế nhiệm"

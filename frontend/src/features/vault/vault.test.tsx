@@ -97,6 +97,19 @@ describe('VaultPage', () => {
     expect(screen.getByText('Khoá bọc · 3')).toBeInTheDocument();
   }, 30_000);
 
+  it('asks to leave with one of the reasons the api keeps', async () => {
+    await unlock();
+    await screen.findByText('Giá trần E5RON92 kỳ 22/10/2026 ≥ 20.000 đ/lít', {}, SLOW);
+    fireEvent.click(screen.getByRole('tab', { name: 'Công bố & khoá' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Rời vị trí…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Niêm phong' }));
+    expect(screen.queryByText('Đã niêm phong kho')).toBeNull();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Lý do' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Hết hợp đồng' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Niêm phong' }));
+    expect(await screen.findByText('Đã niêm phong kho')).toBeInTheDocument();
+  }, 30_000);
+
   it('creates a vault only once both paper codes are typed back', async () => {
     server.use(
       http.get('*/v1/exec/vault', () =>

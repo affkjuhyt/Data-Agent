@@ -113,11 +113,12 @@ describe('vault crypto', () => {
     expect(uuidv7(Date.UTC(2026, 9, 11))).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
-    expect(parseKdf('argon2id;t=3;m=268435456')).toEqual({
+    expect(parseKdf('argon2id')).toEqual({
       kind: 'argon2id',
       opsLimit: 3,
       memLimit: 268435456,
     });
-    expect(parseKdf('prf-hkdf-sha256')).toEqual({ kind: 'prf-hkdf' });
+    expect(parseKdf('hkdf_sha256')).toEqual({ kind: 'prf-hkdf' });
+    expect(() => parseKdf('argon2id;t=3;m=268435456')).toThrow();
   });
 });

@@ -338,8 +338,10 @@ const PURPOSE: Record<
   scoring: { label: 'Chấm', tone: 'accent' },
   evidence_refresh: { label: 'Bằng chứng', tone: 'info' },
   validate: { label: 'Kiểm', tone: 'neutral' },
-  publish_validate: { label: 'Công bố', tone: 'neutral' },
   unlock: { label: 'Mở kho', tone: 'neutral' },
+  handover: { label: 'Bàn giao', tone: 'neutral' },
+  rotation: { label: 'Xoay khoá', tone: 'neutral' },
+  shred: { label: 'Huỷ khoá', tone: 'neutral' },
 };
 
 /** The key's access log (A2 GET /exec/key-access-log), optionally for one thesis. */

@@ -1,4 +1,7 @@
 import { pathId, v1Events, v1Get, v1Send, type Page } from './client';
+import type { components } from './schema';
+
+type Schemas = components['schemas'];
 
 /*
  * The executive vault API (P16, UC-16-01…06, A2 "/v1/exec/*"). Everything that carries the
@@ -7,7 +10,7 @@ import { pathId, v1Events, v1Get, v1Send, type Page } from './client';
  * are PROPOSALs (docs/v3/05-ui-v3.md §4).
  */
 
-export type WrapKind = 'passkey' | 'hardware_key' | 'recovery_code';
+export type WrapKind = Schemas['KeyWrapCreate']['kind'];
 
 /** A2: VaultKeyWrap. A paper code and a hardware key are offline; a passkey on a phone is not. */
 export interface VaultKeyWrap {
@@ -15,7 +18,8 @@ export interface VaultKeyWrap {
   kind: WrapKind;
   credential_id: string | null;
   label: string;
-  kdf: string;
+  /** hkdf_sha256 with PRF or hmac-secret, argon2id with the paper code; parameters are the spec's. */
+  kdf: Schemas['KeyWrapCreate']['kdf'];
   kdf_salt: string;
   wrapped_vmk: string;
   last_used_at: string | null;
@@ -34,19 +38,45 @@ export interface Vault {
   key_wraps: VaultKeyWrap[];
 }
 
-export const isOffline = (kind: WrapKind) => kind !== 'passkey';
+export const isOffline = (kind: WrapKind) => kind !== 'passkey_prf';
 
-export const getVault = async () => v1Get<Vault>('/exec/vault');
+const readWrap = (raw: Schemas['KeyWrapView']): VaultKeyWrap => ({
+  id: raw.id,
+  kind: raw.kind as WrapKind,
+  credential_id: raw.credential_id,
+  label: raw.label,
+  kdf: raw.kdf as VaultKeyWrap['kdf'],
+  kdf_salt: raw.kdf_salt,
+  wrapped_vmk: raw.wrapped_vmk,
+  last_used_at: raw.last_used_at,
+  created_at: raw.created_at,
+});
+
+/** A revoked wrap stays as a row (its history) but no longer opens the vault. */
+export const getVault = async (): Promise<Vault> => {
+  const raw = await v1Get<Schemas['VaultDetail']>('/exec/vault');
+  return {
+    id: raw.id,
+    owner_id: raw.owner_id,
+    status: raw.status as Vault['status'],
+    box_public_key: raw.box_public_key,
+    box_private_key_ct: raw.box_private_key_ct,
+    exit_policy: raw.exit_policy as Vault['exit_policy'],
+    contract_ref: raw.contract_ref,
+    sealed_read_until: raw.sealed_read_until,
+    key_wraps: (raw.key_wraps ?? []).filter((w) => !w.revoked_at).map(readWrap),
+  };
+};
 
 export const createVault = async (body: {
   box_public_key: string;
   box_private_key_ct: string;
   key_wraps: Omit<VaultKeyWrap, 'id' | 'last_used_at' | 'created_at'>[];
   exit_policy?: Vault['exit_policy'];
-}) => v1Send<Vault & { transit_public_key: string }>('POST', '/exec/vault', body);
+}) => v1Send<Schemas['VaultDetail']>('POST', '/exec/vault', body);
 
 export const addKeyWrap = async (body: Omit<VaultKeyWrap, 'id' | 'last_used_at' | 'created_at'>) =>
-  v1Send<VaultKeyWrap>('POST', '/exec/vault/key-wraps', body);
+  v1Send<Schemas['KeyWrapView']>('POST', '/exec/vault/key-wraps', body);
 
 export const getTransitKey = async () =>
   v1Get<{ public_key_pem: string; key_version: number; algorithm: 'RSA-OAEP-SHA256' }>(
@@ -76,12 +106,40 @@ export interface Thesis {
   evidence_state: 'two_sided' | 'one_sided' | 'insufficient' | null;
   /** PROPOSAL: counts per side of the latest batch, operational and content-free. */
   evidence_counts: { support: number; oppose: number } | null;
+  /** PROPOSAL on the list: only GET /v1/exec/theses/{id} carries it. */
   publication_id: string | null;
   withdrawn_at: string | null;
 }
 
-export const listTheses = async () => v1Get<Page<Thesis>>('/exec/theses', { limit: 500 });
+type ThesisWire = (Schemas['ThesisView'] | Schemas['ThesisDetail']) &
+  Partial<Pick<Thesis, 'evidence_counts' | 'publication_id'>>;
 
+const readThesis = (raw: ThesisWire): Thesis => ({
+  id: raw.id,
+  status: raw.status as ThesisStatus,
+  content_ct: raw.content_ct,
+  wrapped_dek: raw.wrapped_dek,
+  content_version: raw.content_version,
+  cond_key_version: raw.cond_key_version,
+  due_at: raw.due_at,
+  supersedes_id: raw.supersedes_id,
+  committed_at: raw.committed_at,
+  evidence_state: (raw.evidence_state || null) as Thesis['evidence_state'],
+  evidence_counts: raw.evidence_counts ?? null,
+  publication_id: raw.publication_id ?? null,
+  withdrawn_at: raw.withdrawn_at,
+});
+
+export const listTheses = async (): Promise<Page<Thesis>> => {
+  const page = await v1Get<Page<ThesisWire>>('/exec/theses', { page_size: 500 });
+  return { ...page, items: page.items.map(readThesis) };
+};
+
+/**
+ * The content's AAD is id ‖ owner_id ‖ content_version (tab 3b), so the device makes the id
+ * before it encrypts. PROPOSAL: `id` in the body. A3's ThesisCreate has none: the api makes its
+ * own id and ignores this one, and the content would not open under the api's id.
+ */
 export const createThesis = async (body: {
   id: string;
   content_ct: string;
@@ -91,10 +149,10 @@ export const createThesis = async (body: {
   cond_key_version: number;
   due_at: string;
   supersedes_id?: string;
-}) => v1Send<Thesis>('POST', '/exec/theses', body);
+}) => v1Send<Schemas['ThesisView']>('POST', '/exec/theses', body);
 
 export const withdrawThesis = async (id: string) =>
-  v1Send<Thesis>('POST', `/exec/theses/${pathId(id)}:withdraw`);
+  v1Send<Schemas['ThesisView']>('POST', `/exec/theses/${pathId(id)}:withdraw`);
 
 /* ─── Evidence, scores, access log ──────────────────────────────────── */
 
@@ -109,17 +167,51 @@ export interface EvidenceRow {
   sealed_ct: string;
 }
 
-/** A2 returns the latest batch and the one before; the batch times are PROPOSAL. */
+/**
+ * A2 returns the latest batch and the one before, newest first. A batch's time is its latest
+ * item's recorded_at; PROPOSAL: how many items the agent dropped as untraceable (null here).
+ */
 export interface EvidenceBatches {
-  batches: { batch_no: number; ran_at: string; dropped_untraceable: number }[];
+  batches: { batch_no: number; ran_at: string; dropped_untraceable: number | null }[];
   items: EvidenceRow[];
 }
 
-export const getEvidence = async (thesisId: string) =>
-  v1Get<EvidenceBatches>(`/exec/theses/${pathId(thesisId)}/evidence`);
+type EvidenceWire = Schemas['EvidenceView'] & { display?: never };
 
+export const getEvidence = async (thesisId: string): Promise<EvidenceBatches> => {
+  const page = await v1Get<Page<EvidenceWire> & { batches?: EvidenceBatches['batches'] }>(
+    `/exec/theses/${pathId(thesisId)}/evidence`,
+    { page_size: 500 },
+  );
+  const ranAt = new Map<number, string>();
+  for (const e of page.items) {
+    const seen = ranAt.get(e.batch_no);
+    if (!seen || e.recorded_at > seen) ranAt.set(e.batch_no, e.recorded_at);
+  }
+  return {
+    batches:
+      page.batches ??
+      [...ranAt.entries()]
+        .sort(([a], [b]) => b - a)
+        .map(([batch_no, ran_at]) => ({ batch_no, ran_at, dropped_untraceable: null })),
+    items: page.items.map((e) => ({
+      id: e.id,
+      batch_no: e.batch_no,
+      side: e.side as EvidenceRow['side'],
+      item_kind: e.item_kind as EvidenceRow['item_kind'],
+      strength: e.strength as EvidenceRow['strength'],
+      freshness_ok: e.freshness_ok,
+      sealed_ct: e.sealed_ct,
+    })),
+  };
+};
+
+/** A2: 202 — the agent run that gathers the next batch. */
 export const refreshEvidence = async (thesisId: string) =>
-  v1Send<{ agent_run_id: string }>('POST', `/exec/theses/${pathId(thesisId)}/evidence:refresh`);
+  v1Send<Schemas['services__api__modules__exec__schemas__Accepted']>(
+    'POST',
+    `/exec/theses/${pathId(thesisId)}/evidence:refresh`,
+  );
 
 export interface ThesisScore {
   id: string;
@@ -132,20 +224,50 @@ export interface ThesisScore {
   sealed_ct: string;
 }
 
-export const listScores = async () => v1Get<Page<ThesisScore>>('/exec/scores');
+export const listScores = async () => v1Get<Page<ThesisScore>>('/exec/scores', { page_size: 500 });
 
 export interface KeyAccessEntry {
   id: string;
   at: string;
-  purpose: 'validate' | 'evidence_refresh' | 'scoring' | 'publish_validate' | 'unlock';
-  workflow: string;
+  purpose:
+    | 'validate'
+    | 'evidence_refresh'
+    | 'scoring'
+    | 'unlock'
+    | 'handover'
+    | 'rotation'
+    | 'shred';
   /** "ExecThesisWorkflow · score_thesis", "Thiết bị · iPhone passkey" */
   actor_text: string;
   correlation_id: string | null;
   thesis_id: string | null;
 }
 
-export const listKeyAccess = async () => v1Get<Page<KeyAccessEntry>>('/exec/key-access-log');
+/** actor_ref is the workflow and activity, the wrap's label, or the handover (tab 3b). */
+const ACTOR: Record<string, string> = {
+  owner_device: 'Thiết bị',
+  admin_request: 'Yêu cầu quản trị',
+};
+
+export const listKeyAccess = async (): Promise<Page<KeyAccessEntry>> => {
+  const page = await v1Get<Page<Schemas['KeyAccessView'] & { actor_text?: string }>>(
+    '/exec/key-access-log',
+    { page_size: 500 },
+  );
+  return {
+    ...page,
+    items: page.items.map((e) => ({
+      id: e.id,
+      at: e.at,
+      purpose: e.purpose as KeyAccessEntry['purpose'],
+      actor_text:
+        e.actor_text ??
+        (ACTOR[e.actor_kind] ? `${ACTOR[e.actor_kind]} · ${e.actor_ref}` : e.actor_ref),
+      correlation_id: e.correlation_id || null,
+      thesis_id: e.thesis_id,
+    })),
+  };
+};
 
 /* ─── Memory ────────────────────────────────────────────────────────── */
 
@@ -163,8 +285,9 @@ export interface MemoryItem {
 }
 
 export const listMemoryItems = async () =>
-  v1Get<Page<MemoryItem>>('/exec/memory-items', { limit: 5000 });
+  v1Get<Page<MemoryItem>>('/exec/memory-items', { page_size: 500 });
 
+/** The same AAD as a thesis: PROPOSAL `id` in the body, which A3's MemoryItemCreate lacks. */
 export const createMemoryItem = async (body: {
   id: string;
   kind: MemoryKind;
@@ -174,12 +297,22 @@ export const createMemoryItem = async (body: {
   related_thesis_id?: string;
 }) => v1Send<MemoryItem>('POST', '/exec/memory-items', body);
 
-/** A2: 202 with the stream; the local model only, nothing logged (BR-193). */
+/**
+ * A2: 202 with the stream; the local model only, nothing logged (BR-193). The model cannot open
+ * the vault, so the device sends the items it decrypted and chose to attach, at most eight.
+ */
+export const PRIVATE_CONTEXT_MAX = 8;
+
 export const askPrivately = async (body: {
   text: string;
-  context_items: string[];
+  context_items: { memory_item_id: string; text: string }[];
   as_of?: string;
-}) => v1Send<{ id: string }>('POST', '/exec/private-questions', body);
+}) =>
+  v1Send<Schemas['services__api__modules__exec__schemas__Accepted']>(
+    'POST',
+    '/exec/private-questions',
+    body,
+  );
 
 export interface PrivateAnswer {
   text: string;
@@ -202,8 +335,10 @@ export async function privateAnswer(id: string): Promise<PrivateAnswer> {
 interface PublicationRequest {
   title: string;
   statement_public: string;
+  /** The Data Space the request is sent in (X-Data-Space); the api refuses any other. */
   target_data_space_id: string;
-  attribution: 'name' | 'title';
+  /** named: signed with the name; role_only: with the title only. */
+  attribution: 'named' | 'role_only';
   attribution_label: string;
   confidence_public?: number;
   rationale_public?: string;
@@ -217,18 +352,22 @@ interface PublicationRequest {
   unit: string;
 }
 
+/** A2: 202 — the publication waits for the reviewer of the target Data Space. */
 export const publishThesis = async (thesisId: string, body: PublicationRequest) =>
-  v1Send<{ id: string; status: string; reviewer_name: string }>(
+  v1Send<Schemas['services__api__modules__exec__schemas__Accepted']>(
     'POST',
     `/exec/theses/${pathId(thesisId)}/publications`,
     body,
   );
 
+export type HandoverReason = Exclude<Schemas['HandoverCreate']['reason'], 'sealed_expired'>;
+
+/** sealed_expired is the system's, when the sealed read window ends. */
 export const requestHandover = async (body: {
   kind: 'seal' | 'selective_handover' | 'shred';
-  reason: string;
+  reason: HandoverReason;
   successor_id?: string;
-}) => v1Send<{ id: string; status: string; kind: string }>('POST', '/exec/handovers', body);
+}) => v1Send<Schemas['HandoverView']>('POST', '/exec/handovers', body);
 
 /**
  * PROPOSAL: Data Spaces a hypothesis can be published to, with who reviews there, and the title
