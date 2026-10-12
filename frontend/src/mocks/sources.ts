@@ -1456,6 +1456,64 @@ export function createSourcesHandlers() {
       });
     }),
 
+    http.get('*/v1/datasets/:id', ({ params }) => {
+      const found = findTable(String(params.id));
+      if (!found) return problem(404, 'not_found', 'Không tìm thấy bảng.');
+      const profile = profileOf(found.table, found.source);
+      return HttpResponse.json({
+        id: found.table.id,
+        source_id: found.source.id,
+        data_space_id: found.source.data_space_id,
+        origin: 'source',
+        schema_name: 'dbo',
+        table_name: found.table.name,
+        object_kind: 'table',
+        display_name: found.table.name,
+        column_count: found.table.column_count,
+        profile_review: profile.review,
+        description: found.table.description,
+        description_status: 'none',
+        row_estimate: found.table.row_count,
+        history_kind: 'none',
+        business_date_col: null,
+        knowledge_time_col: null,
+        enabled: true,
+        steward_id: null,
+        scope: 'data_space',
+        expires_at: null,
+        current_version: 1,
+        quality_state: 'unknown',
+        created_at: at(8, 0),
+        updated_at: at(8, 0),
+        columns: profile.columns.map((column, ordinal) => ({
+          id: `${found.table.id}-column-${ordinal}`,
+          dataset_version: 1,
+          name: column.name,
+          ordinal,
+          data_type: column.data_type,
+          normalized_type: 'string',
+          is_nullable: true,
+          is_key: false,
+          display_name: null,
+          description: column.note,
+          description_status: 'none',
+          unit: null,
+          pii_label: column.histogram_note === 'che' ? 'other' : null,
+          pii_confirmed: false,
+          profile: {
+            scan_run_id: 'scan-1',
+            sample_rows: found.table.row_count ?? 0,
+            null_ratio: column.null_ratio,
+            distinct_est: typeof column.distinct === 'number' ? column.distinct : null,
+            min_value: null,
+            max_value: null,
+            top_values: null,
+            pattern_hint: null,
+            created_at: profile.refreshed_at ?? at(8, 0),
+          },
+        })),
+      });
+    }),
     http.get('*/v1/datasets/:id/profile', ({ params }) => {
       const found = findTable(String(params.id));
       return found

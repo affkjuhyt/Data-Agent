@@ -174,7 +174,11 @@ export interface ColumnProfile {
   warn: boolean;
 }
 
-/** PROPOSAL: GET /v1/datasets/{id}/profile (catalog.dataset + column profile + agent review). */
+/**
+ * The A3 dataset detail already contains the current columns and their latest profiles. Keep
+ * the UI's table-profile shape as a client-side projection instead of calling the old proposal
+ * endpoint `/datasets/{id}/profile`, which is intentionally not part of V3.
+ */
 export interface TableProfile {
   id: Uuid;
   name: string;
@@ -189,8 +193,59 @@ export interface TableProfile {
   review: { agent_name: string; remarks: string[]; footnote: string } | null;
 }
 
-export const getTableProfile = async (id: string) =>
-  v1Get<TableProfile>(`/datasets/${pathId(id)}/profile`);
+type DatasetDetailWire = components['schemas']['DatasetDetail'] & {
+  // Kept optional for richer fixtures; the canonical API derives this from `columns`.
+  column_count?: number;
+  profile_review?: TableProfile['review'];
+};
+
+const histogramFrom = (topValues: unknown): number[] | null => {
+  if (!Array.isArray(topValues) || topValues.length === 0) return null;
+  const counts = topValues.map((item) =>
+    item && typeof item === 'object' && 'count' in item && typeof item.count === 'number'
+      ? item.count
+      : 0,
+  );
+  const max = Math.max(...counts);
+  return max > 0 ? counts.map((count) => count / max) : null;
+};
+
+export const getTableProfile = async (id: string): Promise<TableProfile> => {
+  const dataset = await v1Get<DatasetDetailWire>(`/datasets/${pathId(id)}`);
+  const source = dataset.source_id
+    ? await v1Get<SourceWire>(`/sources/${pathId(dataset.source_id)}`)
+    : null;
+  const columns = dataset.columns ?? [];
+  const refreshedAt = columns
+    .map((column) => column.profile?.created_at ?? null)
+    .filter((value): value is string => value !== null)
+    .sort()
+    .at(-1) ?? null;
+
+  return {
+    id: dataset.id,
+    name: dataset.display_name ?? dataset.table_name,
+    source: { id: dataset.source_id ?? '', name: source?.name ?? 'Nguồn dữ liệu' },
+    row_count: dataset.row_estimate ?? 0,
+    column_count: dataset.column_count ?? columns.length,
+    refreshed_at: refreshedAt,
+    profiled_text: source?.profile_cron ?? 'Chưa lập hồ sơ',
+    columns: columns.map((column) => {
+      const profile = column.profile;
+      return {
+        name: column.name,
+        data_type: column.data_type,
+        null_ratio: profile?.null_ratio == null ? null : Number(profile.null_ratio),
+        distinct: profile?.distinct_est ?? null,
+        histogram: histogramFrom(profile?.top_values),
+        histogram_note: column.pii_label ? 'che' : null,
+        note: column.description,
+        warn: profile?.null_ratio != null && Number(profile.null_ratio) >= 0.5,
+      };
+    }),
+    review: dataset.profile_review ?? null,
+  };
+};
 
 /** PROPOSAL: POST /v1/datasets/{id}:profile — profile again now. */
 export const reprofileTable = async (id: string) =>
