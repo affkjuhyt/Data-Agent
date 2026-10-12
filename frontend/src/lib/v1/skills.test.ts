@@ -11,6 +11,7 @@ import {
   listSkillSuggestions,
   listSkillVersions,
   listSkills,
+  listTools,
   shareSkill,
 } from './skills';
 
@@ -79,6 +80,20 @@ const server = setupServer(
       next_page_token: '',
     }),
   ),
+  http.get('*/v1/tools', () =>
+    HttpResponse.json({
+      items: [
+        {
+          code: 'notify.send',
+          level: 'external_send',
+          description: 'Gửi Teams',
+          executed_by: 'mcp-ticket',
+          default_checkpoint: 'approval',
+        },
+      ],
+      next_page_token: '',
+    }),
+  ),
 );
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 afterEach(() => {
@@ -88,6 +103,22 @@ afterEach(() => {
 afterAll(() => server.close());
 
 describe('skills from the api', () => {
+  it('adapts the tool registry levels to the tools screen', async () => {
+    expect(await listTools()).toMatchObject({
+      items: [
+        {
+          id: 'notify.send',
+          name: 'notify.send',
+          level: 'external',
+          description: 'Gửi Teams',
+          mcp_server_id: 'mcp-ticket',
+          agent_count: 0,
+          calls_30d: 0,
+        },
+      ],
+    });
+  });
+
   it('says a skill’s status, scope and owner', async () => {
     const [org, personal] = (await listSkills()).items;
     expect(org).toMatchObject({

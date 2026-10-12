@@ -96,7 +96,6 @@ const HELD_BACK: readonly string[] = [
   'getPackInstall',
   'getPackUpgrade',
   'listPackMappings',
-  'listTools',
   'trySkillVersion',
   'getEntity',
   'listEntities',

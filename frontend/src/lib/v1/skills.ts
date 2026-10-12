@@ -361,7 +361,32 @@ export interface Tool {
   calls_30d: number;
 }
 
-export const listTools = () => v1Get<Page<Tool>>('/tools', { page_size: 500 });
+type ToolWire = Schemas['services__api__modules__skill__schemas__ToolView'];
+
+const readTool = (raw: ToolWire): Tool => {
+  // Unit/demo handlers already return the screen shape.
+  if ('name' in raw) return raw as unknown as Tool;
+  const level: ToolLevel =
+    raw.level === 'external_send'
+      ? 'external'
+      : raw.level === 'system_action'
+        ? 'system'
+        : raw.level;
+  return {
+    id: raw.code,
+    name: raw.code,
+    level,
+    description: raw.description,
+    mcp_server_id: raw.executed_by || null,
+    agent_count: 0,
+    calls_30d: 0,
+  };
+};
+
+export const listTools = async () => {
+  const page = await v1Get<Page<ToolWire>>('/tools', { page_size: 500 });
+  return { ...page, items: page.items.map(readTool) };
+};
 
 export const registerTool = (body: {
   name: string;
