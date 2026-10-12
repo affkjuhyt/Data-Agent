@@ -27,6 +27,7 @@ const INTEGRATED_GROUPS: readonly string[] = [
   'Tài liệu',
   'Kỹ năng',
   'Biến đổi dữ liệu',
+  'Dự báo',
 ];
 
 const IDENTITY_OPERATIONS: readonly string[] = ['getMe', 'listMyDataSpaces'];
@@ -62,6 +63,8 @@ const HELD_BACK: readonly string[] = [
   'getLineage',
   'createDataProduct',
   'publishDataProduct',
+  // Dự báo: a forecast is reached from the PROPOSAL list GET /v1/forecasts.
+  'getForecast',
 ];
 
 interface Operation {

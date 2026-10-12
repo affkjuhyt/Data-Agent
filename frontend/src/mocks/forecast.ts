@@ -840,6 +840,22 @@ function fuelHandlers() {
   ];
 }
 
+/** ForecastModelDetail as the api sends it, with the screen's model under display. */
+const modelWire = (m: ForecastModel) => ({
+  id: m.id,
+  metric_code: m.metric_name,
+  frequency: 'month',
+  status: 'active',
+  scope: {},
+  owner_id: 'u-long',
+  current_version_id: m.candidate?.version_id ?? null,
+  retrain_cron: null,
+  data_space_id: 'ds-nang-luong',
+  created_at: '2026-09-01T09:00:00+07:00',
+  updated_at: '2026-10-06T09:00:00+07:00',
+  display: m,
+});
+
 export function createForecastHandlers() {
   let currentJob = job();
   let polls = 0;
@@ -953,12 +969,13 @@ export function createForecastHandlers() {
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),
 
+    // ForecastModelView/Detail with the screen's model under display.
     http.get('*/v1/forecast-models', () =>
-      HttpResponse.json({ items: [currentModel], next_page_token: '' }),
+      HttpResponse.json({ items: [modelWire(currentModel)], next_page_token: '' }),
     ),
     http.get('*/v1/forecast-models/:id', ({ params }) =>
       params.id === MODEL_ID
-        ? HttpResponse.json(currentModel)
+        ? HttpResponse.json(modelWire(currentModel))
         : problem(404, 'not_found', 'Không tìm thấy mô hình.'),
     ),
     http.post('*/v1/forecast-model-versions/:action', async ({ params, request }) => {
@@ -982,7 +999,7 @@ export function createForecastHandlers() {
           can_approve: { allowed: false, reason: 'Phiên bản đã được duyệt.' },
           monitoring: currentModel.monitoring && { ...currentModel.monitoring, status: 'retired' },
         };
-        return HttpResponse.json(currentModel);
+        return HttpResponse.json({ id: candidate.version_id, status: 'published' });
       }
       if (verb === 'reject') {
         const { reason = '' } = (await request.json()) as { reason?: string };
@@ -993,7 +1010,7 @@ export function createForecastHandlers() {
           candidate: { ...candidate, status: 'rejected', rejection_reason: reason.trim() },
           can_approve: { allowed: false, reason: 'Phiên bản đã bị từ chối.' },
         };
-        return HttpResponse.json(currentModel);
+        return HttpResponse.json({ id: candidate.version_id, status: 'rejected' });
       }
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),

@@ -1,4 +1,7 @@
 import { pathId, v1Get, v1Send, type Page } from './client';
+import type { components } from './schema';
+
+type Schemas = components['schemas'];
 
 /*
  * P15 Dự báo (UC-15-01…06): a forecast question answered asynchronously, the forecast with its
@@ -253,20 +256,118 @@ export interface ForecastModel {
   } | null;
 }
 
-export const listForecastModels = () =>
-  v1Get<Page<ForecastModel>>('/forecast-models', { page_size: 50 });
+type ModelWire = (Schemas['ForecastModelView'] | Schemas['ForecastModelDetail']) & {
+  display?: ForecastModel;
+};
+type VersionView = Schemas['ModelVersionView'];
+
+const FREQUENCY: Record<string, string> = {
+  day: 'ngày',
+  week: 'tuần',
+  month: 'tháng',
+  quarter: 'quý',
+};
+
+/** model_card is jsonb: its scalar entries become the card's lines, as written. */
+const cardOf = (version: VersionView): { label: string; value: string }[] => {
+  const entries =
+    typeof version.model_card === 'object' && version.model_card !== null
+      ? Object.entries(version.model_card as Record<string, unknown>).filter(
+          ([, v]) => typeof v === 'string' || typeof v === 'number',
+        )
+      : [];
+  return [
+    { label: 'Thuật toán', value: version.algorithm },
+    { label: 'Dữ liệu huấn luyện', value: `${version.training_from} – ${version.training_to}` },
+    ...entries.map(([label, value]) => ({ label, value: String(value) })),
+  ];
+};
+
+const CANDIDATE_STATUS: Record<string, 'pending_review' | 'published' | 'rejected'> = {
+  pending_approval: 'pending_review',
+  published: 'published',
+  degraded: 'published',
+  rejected: 'rejected',
+};
+
+/*
+ * The model as "Mô hình dự báo" reads it. The candidate is the current version when it waits for
+ * approval or was decided; its horizons and the monitoring rows are PROPOSAL (A2 serves them as
+ * backtest and accuracy reads), so the figures are the model's rolling and backtest MASE.
+ */
+function readModel(raw: ModelWire): ForecastModel {
+  if (raw.display) return raw.display;
+  const version = 'current_version' in raw ? (raw.current_version ?? null) : null;
+  const candidateStatus = version ? CANDIDATE_STATUS[version.status] : undefined;
+  const degraded = 'degraded' in raw && raw.degraded === true;
+  const mase = (v: number | string | null | undefined) =>
+    v === null || v === undefined ? '—' : String(Number(v).toFixed(2)).replace('.', ',');
+  return {
+    id: raw.id,
+    metric_name: raw.metric_code,
+    frequency_label: FREQUENCY[raw.frequency] ?? raw.frequency,
+    status_text: [
+      version &&
+        `v${version.version} ${candidateStatus === 'pending_review' ? 'chờ duyệt' : 'đang dùng'}`,
+      degraded && 'suy giảm',
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    candidate:
+      version && candidateStatus
+        ? {
+            version_id: version.id,
+            version_label: `v${version.version}`,
+            status: candidateStatus,
+            card: cardOf(version),
+            horizons: [],
+            limitation: '',
+            rejection_reason: null,
+          }
+        : null,
+    // BR-158 is the server's: the creator cannot decide, the call says so with 403.
+    can_approve: { allowed: candidateStatus === 'pending_review', reason: null },
+    monitoring: version
+      ? {
+          version_label: `v${version.version}`,
+          status: degraded ? 'degraded' : raw.status === 'retired' ? 'retired' : 'published',
+          stats: [
+            {
+              label: 'MASE gần đây',
+              value: mase('rolling_mase' in raw ? raw.rolling_mase : null),
+              note: degraded ? 'đã suy giảm (BR-160)' : '',
+              tone: degraded ? 'warning' : 'default',
+            },
+            {
+              label: 'MASE kiểm định',
+              value: mase('backtest_mase' in raw ? raw.backtest_mase : null),
+              note: '',
+              tone: 'default',
+            },
+          ],
+          rows: [],
+          note: '',
+        }
+      : null,
+  };
+}
+
+export const listForecastModels = async () => {
+  const page = await v1Get<Page<ModelWire>>('/forecast-models', { page_size: 50 });
+  return { ...page, items: page.items.map(readModel) };
+};
 
 export const getForecastModel = async (id: string) =>
-  v1Get<ForecastModel>(`/forecast-models/${pathId(id)}`);
+  readModel(await v1Get<ModelWire>(`/forecast-models/${pathId(id)}`));
 
 /** Publishes the candidate; the published version before it is retired. */
 export const approveModelVersion = async (versionId: string) =>
-  v1Send<ForecastModel>('POST', `/forecast-model-versions/${pathId(versionId)}:approve`);
+  v1Send<VersionView>('POST', `/forecast-model-versions/${pathId(versionId)}:approve`, {});
 
 export const rejectModelVersion = async (versionId: string, reason: string) =>
-  v1Send<ForecastModel>('POST', `/forecast-model-versions/${pathId(versionId)}:reject`, {
+  v1Send<VersionView>('POST', `/forecast-model-versions/${pathId(versionId)}:reject`, {
     reason,
-  });
+  } satisfies Schemas['VersionReject']);
 
 /* ─── Giá xăng dầu: phân phối, phân rã và sổ dự báo (UC-15-07, UC-15-08) ─ */
 
