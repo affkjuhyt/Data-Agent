@@ -91,7 +91,6 @@ const HELD_BACK: readonly string[] = [
   'disablePolicy',
   'getPolicy',
   'createPack',
-  'getCalibrationRun',
   'getMetricOverride',
   'trySkillVersion',
   'getSessionReport',

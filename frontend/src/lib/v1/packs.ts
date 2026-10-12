@@ -229,8 +229,51 @@ export interface Calibration {
   after_text: string;
 }
 
-export const getCalibration = async (installId: string) =>
-  v1Get<Calibration>(`/pack-installs/${pathId(installId)}/calibration`);
+export type CalibrationRunWire = components['schemas']['CalibrationRunView'];
+
+export function readCalibrationRun(raw: CalibrationRunWire, installTitle: string): Calibration {
+  if ('install_title' in raw) return raw as unknown as Calibration;
+  const passed = raw.passed;
+  const total = raw.passed + raw.failed;
+  return {
+    install_title: installTitle,
+    matched: passed,
+    total,
+    tolerance_text: `Sai số cho phép ±${raw.tolerance_pp} điểm phần trăm`,
+    rows: (raw.items ?? []).map((item) => ({
+      id: item.id,
+      metric: item.item_code,
+      period: item.period ?? '—',
+      computed: item.computed_value === null ? '—' : String(item.computed_value),
+      reported: item.filed_value === null ? '—' : String(item.filed_value),
+      diff: item.delta === null ? '—' : String(item.delta),
+      ok: item.passed,
+      accepted_note: null,
+    })),
+    findings: (raw.items ?? [])
+      .filter((item) => !item.passed)
+      .map((item) => ({
+        row_id: item.id,
+        title: item.item_code,
+        text: item.suggested_cause ?? 'Cần kiểm tra lại số liệu đối chiếu.',
+        fix: null,
+      })),
+    after_text: raw.status === 'passed'
+      ? 'Mọi chỉ số đã khớp trong ngưỡng cho phép.'
+      : 'Xử lý các dòng lệch hoặc ghi nhận lý do trước khi kích hoạt.',
+  };
+}
+
+export const getCalibration = async (installId: string) => {
+  const rawInstall = await v1Get<PackInstallWire>(`/pack-installs/${pathId(installId)}`);
+  if ('title' in rawInstall) {
+    return v1Get<Calibration>(`/pack-installs/${pathId(installId)}/calibration`);
+  }
+  const runId = rawInstall.latest_calibration_run?.id;
+  if (!runId) throw new Error('Chưa có lượt đối chiếu số cho lượt đưa vào ngành.');
+  const run = await v1Get<CalibrationRunWire>(`/calibration-runs/${pathId(runId)}`);
+  return readCalibrationRun(run, `${rawInstall.pack_name} · ${rawInstall.version}`);
+};
 
 /** PROPOSAL: apply the fix the agent found; the server runs A2's :calibrate again. */
 export const applyCalibrationFix = async (installId: string, fixId: string) =>
