@@ -331,16 +331,17 @@ export function createDataProductsHandlers() {
         : problem(404, 'not_found', 'Không tìm thấy sản phẩm dữ liệu.');
     }),
     http.post('*/v1/data-products', async ({ request }) => {
-      const body = (await request.json()) as { mart_id: string; name: string; version: string };
-      if (body.mart_id !== mart.id)
+      // DataProductCreate (layer=published); the version is the mart's draft one.
+      const body = (await request.json()) as { data_mart_id: string; name: string; code: string };
+      if (body.data_mart_id !== mart.id)
         return problem(422, 'validation_failed', 'Data mart không tồn tại.');
       const id = `dp-${body.name.replace(/_/g, '-')}`;
       const created: DataProductDetail = {
         ...productsFixture()[4],
         id,
         name: body.name,
-        code: body.name,
-        version: body.version,
+        code: body.code,
+        version: mart.product_draft.version,
         description: mart.name,
         used_by_spaces: null,
         quality_pct: null,

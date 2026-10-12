@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import type { CatalogMetric, MetricProfile } from '../lib/v1/metricCatalog';
+import type { CatalogMetric, CatalogMetricWire, MetricProfile } from '../lib/v1/metricCatalog';
 
 /*
  * "Dữ liệu & tri thức" (2056:1150, tabs 2099:11054, 2099:11344, 2099:11632) for the dev mock: six
@@ -163,7 +163,27 @@ export function createMetricCatalogHandlers() {
   return [
     http.get('*/v1/metrics', ({ request }) => {
       if (new URL(request.url).searchParams.get('view') !== 'catalog') return undefined;
-      const items = catalogFixture();
+      // MetricView as the api sends it, with the PROPOSAL catalog fields.
+      const items: CatalogMetricWire[] = catalogFixture().map((m) => ({
+        id: m.id,
+        code: m.code,
+        display_name: m.name,
+        name: m.name,
+        version: m.version,
+        domain: m.domain,
+        usage_text: m.usage_text,
+        status: 'active',
+        certified: m.status === 'certified',
+        current_version: m.version,
+        data_space_id: 'ds-rui-ro-tin-dung',
+        owner_id: 'u-long',
+        canonical_dataset_id: null,
+        consumer_group: null,
+        in_filed_report: false,
+        pack_metric_id: null,
+        created_at: '2026-01-05T09:00:00+07:00',
+        updated_at: '2026-10-08T09:00:00+07:00',
+      }));
       return HttpResponse.json({ items, next_page_token: '' });
     }),
     http.get('*/v1/metrics/:id/profile', ({ params }) => {

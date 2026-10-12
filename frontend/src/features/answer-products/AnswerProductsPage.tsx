@@ -56,7 +56,8 @@ const FRESH: Record<FreshnessState, { label: string; tone: 'success' | 'error' |
   overdue: { label: 'Quá hạn', tone: 'error' },
   missing: { label: 'Chưa có dữ liệu', tone: 'idle' },
 };
-const pct = (n: number) => `${String(n).replace('.', ',')}%`;
+/** A share in Vietnamese notation; "—" while the api does not send it (PROPOSAL). */
+const pct = (n: number | null) => (n === null ? '—' : `${String(n).replace('.', ',')}%`);
 const dueText = (iso: string) => {
   const d = new Date(iso);
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -315,13 +316,18 @@ function ProductBody({ product, onChanged }: { product: AnswerProduct; onChanged
             label="Bị che do quá hạn"
             value={pct(product.stats.masked_pct)}
             note={product.stats.masked_note}
-            tone={product.stats.masked_pct > 0 ? 'warning' : 'muted'}
+            tone={(product.stats.masked_pct ?? 0) > 0 ? 'warning' : 'muted'}
           />
           <Kpi
             label="Error Book mở"
-            value={String(product.stats.error_book_open.length)}
-            note={product.stats.error_book_open.map((e) => e.code).join(', ') || 'không có'}
-            tone={product.stats.error_book_open.length ? 'error' : 'muted'}
+            value={String(product.stats.error_book_count)}
+            note={
+              product.stats.error_book_open.map((e) => e.code).join(', ') ||
+              (product.stats.error_book_count
+                ? `${product.stats.error_book_count} mục mở`
+                : 'không có')
+            }
+            tone={product.stats.error_book_count ? 'error' : 'muted'}
             onClick={
               product.stats.error_book_open.length
                 ? () => navigate('data', 'ERROR_BOOK', product.stats.error_book_open[0].id)

@@ -1,4 +1,5 @@
 import { pathId, v1Get, v1Send, type Page } from './client';
+import type { components } from './schema';
 
 /*
  * The semantic layer screens of P07 (UC-07-02, UC-07-06, UC-07-09): the entity model and its
@@ -90,10 +91,54 @@ export interface GlossaryEntry {
   usage_text: string;
 }
 
-export const listGlossary = async () =>
-  v1Get<Page<GlossaryEntry>>('/terms', { view: 'glossary', limit: 200 });
+/** GET /v1/terms as the api sends it (TermView), with the PROPOSAL reading fields. */
+export type GlossaryWire = components['schemas']['TermView'] &
+  Partial<
+    Pick<
+      GlossaryEntry,
+      'maps_to' | 'synonyms' | 'data_space_text' | 'ambiguity_rule' | 'owner_name' | 'usage_text'
+    >
+  >;
 
-/** PROPOSAL: GET /v1/terms/unknown — phrases the agent did not understand in 30 days. */
+/** `meanings` is jsonb: the entries with a label are kept, `default_meaning` marks one. */
+const readMeanings = (raw: GlossaryWire): GlossaryEntry['meanings'] =>
+  (Array.isArray(raw.meanings) ? raw.meanings : []).flatMap((m: unknown, i: number) => {
+    if (typeof m !== 'object' || m === null) return [];
+    const { label, expression } = m as { label?: unknown; expression?: unknown };
+    if (typeof label !== 'string') return [];
+    return [
+      {
+        label,
+        expression: typeof expression === 'string' ? expression : '',
+        default: raw.default_meaning === i,
+      },
+    ];
+  });
+
+/** An active term with more than one meaning is ambiguous; one not yet approved is a draft. */
+function readGlossary(raw: GlossaryWire): GlossaryEntry {
+  const meanings = readMeanings(raw);
+  return {
+    id: raw.id,
+    term: raw.term,
+    maps_to: raw.maps_to ?? raw.definition,
+    synonyms: raw.synonyms ?? '',
+    data_space_text: raw.data_space_text ?? '',
+    status: raw.status !== 'active' ? 'draft' : meanings.length > 1 ? 'ambiguous' : 'certified',
+    meanings,
+    ambiguity_rule: raw.ambiguity_rule ?? null,
+    owner_name: raw.owner_name ?? '',
+    usage_text: raw.usage_text ?? '',
+  };
+}
+
+/** `view=glossary` (PROPOSAL) asks for the reading fields; the api sends TermView. */
+export const listGlossary = async () => {
+  const page = await v1Get<Page<GlossaryWire>>('/terms', { view: 'glossary', page_size: 500 });
+  return { ...page, items: page.items.map(readGlossary) };
+};
+
+/** GET /v1/unmapped-phrases: what the agent did not understand, the most asked first (UC-07-09). */
 export interface UnknownPhrase {
   id: string;
   phrase: string;
@@ -103,11 +148,35 @@ export interface UnknownPhrase {
   draft: { term: string; definition: string };
 }
 
-export const listUnknownPhrases = async () => v1Get<Page<UnknownPhrase>>('/terms/unknown');
+/** PROPOSAL: the suggestion in words and the draft "Thêm" sends; the mock sends them. */
+export type UnknownPhraseWire = components['schemas']['UnmappedPhraseView'] &
+  Partial<Pick<UnknownPhrase, 'suggestion' | 'draft'>>;
 
-/** A2: POST /v1/terms */
+/** suggested_target is jsonb: a sentence, or the target's label or code. */
+const suggestionOf = (target: unknown): string => {
+  if (typeof target === 'string') return target;
+  if (typeof target !== 'object' || target === null) return '';
+  const { label, code } = target as { label?: unknown; code?: unknown };
+  const text = typeof label === 'string' ? label : typeof code === 'string' ? code : '';
+  return text ? `Đề xuất: ${text}` : '';
+};
+
+const readUnknown = (raw: UnknownPhraseWire): UnknownPhrase => ({
+  id: raw.id,
+  phrase: raw.phrase_norm,
+  count: raw.ask_count,
+  suggestion: raw.suggestion ?? suggestionOf(raw.suggested_target),
+  draft: raw.draft ?? { term: raw.phrase_norm, definition: '' },
+});
+
+export const listUnknownPhrases = async () => {
+  const page = await v1Get<Page<UnknownPhraseWire>>('/unmapped-phrases', { page_size: 500 });
+  return { ...page, items: page.items.map(readUnknown) };
+};
+
+/** A2: POST /v1/terms — a new term waits for review (pending_review). */
 export const createTerm = async (body: { term: string; definition: string }) =>
-  v1Send<GlossaryEntry>('POST', '/terms', body);
+  readGlossary(await v1Send<GlossaryWire>('POST', '/terms', body));
 
 /* ─── Đánh giá lớp ngữ cảnh ─────────────────────────────────────────── */
 

@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import type { MetricDetail, MetricVersion } from '../lib/v1/metrics';
+import type { MetricVersion, MetricWire, VersionWire } from '../lib/v1/metrics';
 
 /*
  * NPL_RATIO as "P07 · Chỉ số · Định nghĩa" (2301:19011) shows it: v4 certified and in use, v3
@@ -18,9 +18,20 @@ function version(
   status: MetricVersion['status'],
   note: string,
   at: string,
-): MetricVersion {
+): VersionWire {
   return {
     id: `mv-npl-v${v}`,
+    metric_id: 'metric-npl-ratio',
+    additivity: 'none',
+    allowed_dimensions: ['region', 'branch', 'product', 'segment', 'period'],
+    filters: [],
+    description: null,
+    legal_basis: null,
+    override_id: null,
+    proposal_id: null,
+    valid_from: null,
+    valid_to: null,
+    certified_by: status === 'certified' ? 'u-long' : null,
     version: v,
     display_name: 'Nợ xấu (%)',
     expression: EXPRESSION,
@@ -38,11 +49,21 @@ function version(
   };
 }
 
-function metricsFixture(): MetricDetail[] {
+function metricsFixture(): MetricWire[] {
   return [
     {
       id: 'metric-npl-ratio',
       code: 'NPL_RATIO',
+      display_name: 'Nợ xấu (%)',
+      data_space_id: 'ds-rui-ro-tin-dung',
+      owner_id: 'u-long',
+      canonical_dataset_id: null,
+      consumer_group: null,
+      in_filed_report: true,
+      certified: true,
+      pack_metric_id: null,
+      created_at: '2026-01-05T09:00:00+07:00',
+      updated_at: '2026-10-08T09:00:00+07:00',
       status: 'active',
       current_version: 4,
       versions: [
@@ -50,7 +71,8 @@ function metricsFixture(): MetricDetail[] {
         version(3, 'superseded', 'Thêm phân khúc', '2026-03-02T09:00:00+07:00'),
         version(5, 'draft', 'Khoản cơ cấu lần 2 vào nhóm 3', '2026-10-08T09:00:00+07:00'),
       ],
-      usage: { artifacts: 23, agents: 5, reports: 2 },
+      usage: { data_product_ids: [], knowledge_page_ids: [] },
+      usage_counts: { artifacts: 23, agents: 5, reports: 2 },
       stewardship: [
         { role: 'Chủ sở hữu', who: 'Phạm Đức Long', note: 'Duyệt mọi thay đổi định nghĩa' },
         {
@@ -104,9 +126,9 @@ export function createMetricHandlers() {
       const metric = metrics.find((m) => m.id === params.id);
       if (!metric) return undefined;
       const body = (await request.json()) as Partial<MetricVersion>;
-      const next = Math.max(...metric.versions.map((v) => v.version)) + 1;
-      const draft: MetricVersion = {
-        ...metric.versions.find((v) => v.status === 'certified')!,
+      const next = Math.max(...metric.versions!.map((v) => v.version)) + 1;
+      const draft: VersionWire = {
+        ...metric.versions!.find((v) => v.status === 'certified')!,
         ...body,
         id: `mv-${metric.code.toLowerCase()}-v${next}`,
         version: next,
@@ -116,19 +138,19 @@ export function createMetricHandlers() {
         created_at: new Date().toISOString(),
       };
       metrics = metrics.map((m) =>
-        m.id === metric.id ? { ...m, versions: [...m.versions, draft] } : m,
+        m.id === metric.id ? { ...m, versions: [...m.versions!, draft] } : m,
       );
       return HttpResponse.json(draft, { status: 201 });
     }),
     http.post('*/v1/metric-versions/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
-      const owned = metrics.some((m) => m.versions.some((v) => v.id === id));
+      const owned = metrics.some((m) => m.versions!.some((v) => v.id === id));
       if (!owned || verb !== 'preview') return undefined;
       metrics = metrics.map((m) => ({
         ...m,
-        versions: m.versions.map((v) => (v.id === id ? { ...v, status: 'testing' } : v)),
+        versions: m.versions!.map((v) => (v.id === id ? { ...v, status: 'testing' } : v)),
       }));
-      return HttpResponse.json({ status: 'queued' }, { status: 202 });
+      return HttpResponse.json({ id, status: 'queued', poll_after_ms: 1000 }, { status: 202 });
     }),
   ];
 }

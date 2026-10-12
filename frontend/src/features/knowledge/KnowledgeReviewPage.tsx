@@ -34,6 +34,8 @@ const KIND: Record<FindingKind, string> = {
   orphan: 'Mồ côi',
   metric_without_page: 'Chỉ số chưa có trang',
   undefined_term: 'Thuật ngữ chưa định nghĩa',
+  stale_condition: 'Điều kiện đã cũ',
+  policy_drift: 'Quyền đọc đã đổi',
 };
 const KIND_ORDER: FindingKind[] = [
   'contradiction',
@@ -42,6 +44,8 @@ const KIND_ORDER: FindingKind[] = [
   'orphan',
   'metric_without_page',
   'undefined_term',
+  'stale_condition',
+  'policy_drift',
 ];
 
 const SEVERITY = {
@@ -107,12 +111,15 @@ export default function KnowledgeReviewPage() {
         description={
           latest
             ? [
-                `Lượt gần nhất ${formatDate(latest.finished_at)} ${formatTime(latest.finished_at)}`,
+                latest.finished_at &&
+                  `Lượt gần nhất ${formatDate(latest.finished_at)} ${formatTime(latest.finished_at)}`,
                 `${latest.page_count} trang`,
                 `${items.length} phát hiện mở`,
                 `${latest.skipped_source_pct}% nguồn bỏ qua nhờ mã băm`,
                 latest.schedule_text,
-              ].join(' · ')
+              ]
+                .filter(Boolean)
+                .join(' · ')
             : undefined
         }
         actions={
@@ -135,11 +142,14 @@ export default function KnowledgeReviewPage() {
               note={`${items.filter((f) => f.severity === 'high').length} mức cao`}
               tone="error"
             />
-            <Stat
-              label="Trang cũ"
-              value={`${((latest.stale_pages / latest.page_count) * 100).toFixed(1).replace('.', ',')}%`}
-              note={`${latest.stale_pages} / ${latest.page_count} trang`}
-            />
+            {/* PROPOSAL: the api's run does not count stale pages; the figure waits for it. */}
+            {latest.stale_pages !== null && latest.page_count > 0 && (
+              <Stat
+                label="Trang cũ"
+                value={`${((latest.stale_pages / latest.page_count) * 100).toFixed(1).replace('.', ',')}%`}
+                note={`${latest.stale_pages} / ${latest.page_count} trang`}
+              />
+            )}
             <Stat
               label="Nguồn bỏ qua nhờ mã băm"
               value={`${latest.skipped_source_pct}%`}
@@ -148,7 +158,7 @@ export default function KnowledgeReviewPage() {
             />
             <Stat
               label="Thời gian lượt"
-              value={`${latest.duration_minutes} phút`}
+              value={latest.duration_minutes === null ? '—' : `${latest.duration_minutes} phút`}
               note={latest.limits_text}
             />
           </div>

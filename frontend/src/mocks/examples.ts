@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import type { ExampleQuery, Synonym } from '../lib/v1/examples';
+import type { ExampleQuery, ExampleWire, Synonym } from '../lib/v1/examples';
 
 /* The examples and synonyms of "P07 · Câu hỏi mẫu & đồng nghĩa" (2301:19194). */
 function examplesFixture(): ExampleQuery[] {
@@ -108,7 +108,18 @@ export function createExampleHandlers() {
         result_text: null,
       };
       examples = [...examples, created];
-      return HttpResponse.json(created, { status: 201 });
+      // ExampleView as the api sends it, with the PROPOSAL display fields.
+      const wire: ExampleWire = {
+        ...created,
+        status: 'active',
+        origin: 'manual',
+        metric_ids: [],
+        data_space_id: 'ds-rui-ro-tin-dung',
+        last_verified_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      return HttpResponse.json(wire, { status: 201 });
     }),
     http.patch('*/v1/examples/:id', async ({ params, request }) => {
       const item = examples.find((e) => e.id === params.id);

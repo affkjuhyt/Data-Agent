@@ -1,4 +1,5 @@
 import { pathId, v1Get, type Page } from './client';
+import type { components } from './schema';
 
 /*
  * "v3.1 · Dữ liệu & tri thức" (2056:1150 and its tabs, UC-07-01): metrics as a catalog — browse
@@ -22,8 +23,28 @@ export interface CatalogMetric {
   usage_text: string;
 }
 
-export const listCatalogMetrics = async () =>
-  v1Get<Page<CatalogMetric>>('/metrics', { view: 'catalog', limit: 200 });
+/** GET /v1/metrics as the api sends it (MetricView), with the PROPOSAL catalog fields. */
+export type CatalogMetricWire = components['schemas']['MetricView'] &
+  Partial<Pick<CatalogMetric, 'version' | 'name' | 'domain' | 'usage_text'>>;
+
+const readCatalogMetric = (raw: CatalogMetricWire): CatalogMetric => ({
+  id: raw.id,
+  code: raw.code,
+  version: raw.version ?? raw.current_version ?? 0,
+  name: raw.name ?? raw.display_name ?? raw.code,
+  status: raw.certified ? 'certified' : 'draft',
+  domain: raw.domain ?? '',
+  usage_text: raw.usage_text ?? '',
+});
+
+/** `view=catalog` (PROPOSAL) asks for the catalog fields; the api ignores it and sends MetricView. */
+export const listCatalogMetrics = async () => {
+  const page = await v1Get<Page<CatalogMetricWire>>('/metrics', {
+    view: 'catalog',
+    page_size: 500,
+  });
+  return { ...page, items: page.items.map(readCatalogMetric) };
+};
 
 /** PROPOSAL: GET /v1/metrics/{id}/profile */
 export interface MetricProfile {

@@ -1,5 +1,11 @@
 import { http, HttpResponse } from 'msw';
-import type { AnswerProduct, ProductFreshness, ProductMonitoring } from '../lib/v1/answerProducts';
+import type {
+  AnswerProduct,
+  ProductDetailWire,
+  ProductFreshness,
+  ProductMonitoring,
+  ProductSummaryWire,
+} from '../lib/v1/answerProducts';
 
 /*
  * Data product of the context layer (P07, "P07 · Data product" 2418:14958) for the dev mock: the
@@ -88,6 +94,7 @@ function productsFixture(): AnswerProduct[] {
       stats: {
         in_scope_pct: 82,
         masked_pct: 1.4,
+        error_book_count: 2,
         masked_note: '8 kỳ trễ từ 01/2024',
         error_book_open: [
           { id: 'eb-0043', code: 'EB-0043' },
@@ -137,6 +144,7 @@ function productsFixture(): AnswerProduct[] {
       stats: {
         in_scope_pct: 0,
         masked_pct: 0,
+        error_book_count: 0,
         masked_note: 'chưa kích hoạt',
         error_book_open: [],
         eval: null,
@@ -182,6 +190,55 @@ function monitoringFixture(): ProductMonitoring {
   };
 }
 
+/*
+ * Products are kept in the screen's shape and answered in the api's (DataProductView,
+ * DataProductDetail, FreshnessReport); what only the screen draws goes under `display`.
+ */
+const AT = '2026-07-01T09:00:00+07:00';
+
+const row = (p: AnswerProduct): ProductSummaryWire => ({
+  id: p.id,
+  code: p.code,
+  name: p.name,
+  status: p.status,
+  version: p.version,
+  layer: 'context',
+  description: p.description,
+  freshness_statement: p.freshness_statement,
+  freshness_state: p.freshness_state,
+  out_of_scope_note: p.out_of_scope_note,
+  sample_questions: p.sample_questions.map((q) => ({ text: q.question })),
+  scope_entities: [],
+  classification: 'internal',
+  data_space_id: 'ds-nang-luong',
+  owner_id: 'u-owner',
+  steward_id: 'u-steward',
+  eval_set_id: null,
+  pack_version_id: null,
+  proposal_id: null,
+  period_from: '2024-01-01',
+  period_to: null,
+  period_grain: 'week',
+  suspended_reason: null,
+  activated_at: p.status === 'active' ? AT : null,
+  activated_by: null,
+  created_at: AT,
+  updated_at: AT,
+  owner_name: p.owner_name,
+  steward_name: p.steward_name,
+  next_due_at: p.next_due_at,
+  readiness_text: p.readiness_text,
+});
+
+const detail = (p: AnswerProduct): ProductDetailWire => ({
+  ...row(p),
+  members: [],
+  freshness: [],
+  latest_eval_run: null,
+  open_error_book_entries: p.stats.error_book_count,
+  display: p,
+});
+
 export function createAnswerProductHandlers() {
   let products = productsFixture();
   const find = (id: unknown) => products.find((p) => p.id === id);
@@ -190,39 +247,18 @@ export function createAnswerProductHandlers() {
       const params = new URL(request.url).searchParams;
       if (params.get('layer') !== 'context') return undefined;
       const status = params.get('status');
-      const items = products
-        .filter((p) => !status || p.status === status)
-        .map(
-          ({
-            id,
-            code,
-            name,
-            status: s,
-            version,
-            owner_name,
-            steward_name,
-            freshness_statement,
-            freshness_state,
-            next_due_at,
-            readiness_text,
-          }) => ({
-            id,
-            code,
-            name,
-            status: s,
-            version,
-            owner_name,
-            steward_name,
-            freshness_statement,
-            freshness_state,
-            next_due_at,
-            readiness_text,
-          }),
-        );
+      const items = products.filter((p) => !status || p.status === status).map(row);
       return HttpResponse.json({ items, next_page_token: '' });
     }),
     http.get('*/v1/data-products/:id/freshness', ({ params }) =>
-      ours(params.id) ? HttpResponse.json(freshnessFixture()) : undefined,
+      ours(params.id)
+        ? HttpResponse.json({
+            at: AT,
+            data_product_id: String(params.id),
+            datasets: [],
+            display: freshnessFixture(),
+          })
+        : undefined,
     ),
     http.get('*/v1/data-products/:id/monitoring', ({ params }) =>
       ours(params.id) ? HttpResponse.json(monitoringFixture()) : undefined,
@@ -230,7 +266,9 @@ export function createAnswerProductHandlers() {
     http.get('*/v1/data-products/:id', ({ params }) => {
       if (!ours(params.id)) return undefined;
       const p = find(params.id);
-      return p ? HttpResponse.json(p) : problem(404, 'not_found', 'Không tìm thấy data product.');
+      return p
+        ? HttpResponse.json(detail(p))
+        : problem(404, 'not_found', 'Không tìm thấy data product.');
     }),
     http.patch('*/v1/data-products/:id', ({ params }) => {
       if (!ours(params.id)) return undefined;
@@ -241,7 +279,7 @@ export function createAnswerProductHandlers() {
         draft_version: p.status === 'active' ? p.version + 1 : p.draft_version,
       };
       products = products.map((x) => (x.id === p.id ? updated : x));
-      return HttpResponse.json(updated);
+      return HttpResponse.json(row(updated));
     }),
     http.delete('*/v1/data-products/:id/members/:memberId', ({ params }) => {
       if (!ours(params.id)) return undefined;
@@ -280,7 +318,7 @@ export function createAnswerProductHandlers() {
           );
         products = products.map((x) => (x.id === id ? { ...x, status: 'pending_review' } : x));
         return HttpResponse.json(
-          { eval_run_id: 'er-dp-1', proposal_id: 'pr-dp-1' },
+          { id, eval_run_id: 'er-dp-1', status: 'evaluating', poll_after_ms: 1000 },
           { status: 202 },
         );
       }

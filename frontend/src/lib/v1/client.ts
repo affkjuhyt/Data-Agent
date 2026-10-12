@@ -97,6 +97,9 @@ export function setDataSpace(id: string | null) {
   dataSpace = id;
 }
 
+/** The Data Space set above, for the bodies that carry data_space_id as well as the header. */
+export const currentDataSpace = () => dataSpace;
+
 type Query = Record<string, string | number | boolean | undefined | null>;
 
 function headers(extra?: Record<string, string>): Record<string, string> {

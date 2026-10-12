@@ -1,4 +1,5 @@
 import { pathId, v1Get, v1Send, type Page } from './client';
+import type { components } from './schema';
 
 /*
  * P06 Chuẩn bị dữ liệu, second half: data marts and data products (UC-06-06) and quality rules
@@ -111,8 +112,15 @@ export interface DataProductDetail extends DataProduct {
   agent_note: { text: string; action_label: string } | null;
 }
 
-/** PROPOSAL: GET /v1/data-products (A2 only creates and publishes). */
-export const listDataProducts = () => v1Get<Page<DataProduct>>('/data-products');
+/**
+ * PROPOSAL: the published products' list. The api's GET /v1/data-products serves the context
+ * layer (P07, lib/v1/answerProducts.ts) and has no read for published ones yet, so its context
+ * rows are left out here and the list is empty until A2 adds one.
+ */
+export const listDataProducts = async () => {
+  const page = await v1Get<Page<DataProduct & { layer?: string }>>('/data-products');
+  return { ...page, items: page.items.filter((p) => p.layer !== 'context') };
+};
 
 /** PROPOSAL: GET /v1/data-products/{id}. */
 export async function getDataProduct(id: string) {
@@ -124,13 +132,40 @@ export async function draftNextVersion(id: string) {
   return v1Send<DataProductDetail>('POST', `/data-products/${pathId(id)}:draft-version`);
 }
 
-/** A2: POST /v1/data-products — a product made from a mart (`mart_id` is PROPOSAL). */
-export const createDataProduct = (body: { mart_id: string; name: string; version: string }) =>
-  v1Send<DataProduct>('POST', '/data-products', body);
+/** "Biên LN theo ngành hàng" → "bien_ln_theo_nganh_hang" */
+const codeOf = (name: string) =>
+  name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60) || 'data_product';
 
-/** A2: POST /v1/data-products/{id}:publish. */
-export async function publishDataProduct(id: string) {
-  return v1Send<DataProduct>('POST', `/data-products/${pathId(id)}:publish`);
+/** A2: POST /v1/data-products with layer=published — a product made from a mart. */
+export const createDataProduct = (body: { mart_id: string; name: string; version: string }) =>
+  v1Send<{ id: string }>('POST', '/data-products', {
+    code: codeOf(body.name),
+    name: body.name,
+    layer: 'published',
+    data_mart_id: body.mart_id,
+  } satisfies components['schemas']['DataProductCreate']);
+
+/** A2: POST /v1/data-products/{id}:publish — the product row, its version a number there. */
+export async function publishDataProduct(
+  id: string,
+): Promise<Pick<DataProduct, 'id' | 'name' | 'status' | 'version'>> {
+  const raw = await v1Send<{ id: string; name: string; status: string; version: number | string }>(
+    'POST',
+    `/data-products/${pathId(id)}:publish`,
+  );
+  return {
+    id: raw.id,
+    name: raw.name,
+    status: raw.status as DataProduct['status'],
+    version: String(raw.version),
+  };
 }
 
 /* ─── Catalog: products of other Data Spaces ("Hộp thoại · importCatalog" 2095:9055) ─── */

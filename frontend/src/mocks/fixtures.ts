@@ -739,13 +739,35 @@ export function metricsFixture(): Metric[] {
     // NPL_RATIO shares its id with the detail mock (mocks/metrics.ts).
     id: i === 0 ? 'metric-npl-ratio' : `metric-${i}`,
     code: i === 0 ? 'NPL_RATIO' : i === 1 ? 'LOAN_BALANCE' : `METRIC_${i}`,
-    status: 'active' as const,
+    display_name: null,
+    status: 'active',
     current_version: 1,
+    certified: i < 120,
+    data_space_id: DS,
+    owner_id: 'u-long',
+    canonical_dataset_id: null,
+    consumer_group: null,
+    in_filed_report: i === 0,
+    pack_metric_id: null,
+    created_at: minutesFromNow(-90 * 24 * 60),
+    updated_at: minutesFromNow(-24 * 60),
   }));
 }
 
 export function termsFixture(): GlossaryTerm[] {
-  return Array.from({ length: 612 }, (_, i) => ({ id: `term-${i}`, term: `Thuật ngữ ${i}` }));
+  return Array.from({ length: 612 }, (_, i) => ({
+    id: `term-${i}`,
+    term: `Thuật ngữ ${i}`,
+    term_norm: `thuat ngu ${i}`,
+    definition: '',
+    meanings: [],
+    default_meaning: null,
+    legal_basis: null,
+    status: 'active',
+    data_space_id: DS,
+    created_at: minutesFromNow(-90 * 24 * 60),
+    updated_at: minutesFromNow(-24 * 60),
+  }));
 }
 
 export function dataSpacesFixture(): DataSpace[] {

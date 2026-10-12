@@ -4,9 +4,52 @@ import type {
   EntityDetail,
   EntityModel,
   GlossaryEntry,
+  GlossaryWire,
   RelationshipSuggestion,
   UnknownPhrase,
+  UnknownPhraseWire,
 } from '../lib/v1/semanticLayer';
+
+const AT = '2026-10-01T09:00:00+07:00';
+
+/*
+ * The glossary and the unknown phrases are kept in the screen's shape and answered in the api's
+ * (TermView, UnmappedPhraseView) with the PROPOSAL reading fields alongside.
+ */
+const termWire = (e: GlossaryEntry): GlossaryWire => ({
+  id: e.id,
+  term: e.term,
+  term_norm: e.term.toLowerCase(),
+  definition: e.maps_to,
+  meanings: e.meanings.map((m) => ({ label: m.label, expression: m.expression })),
+  default_meaning:
+    e.meanings.findIndex((m) => m.default) >= 0 ? e.meanings.findIndex((m) => m.default) : null,
+  legal_basis: null,
+  status: e.status === 'draft' ? 'pending_review' : 'active',
+  data_space_id: 'ds-rui-ro-tin-dung',
+  created_at: AT,
+  updated_at: AT,
+  maps_to: e.maps_to,
+  synonyms: e.synonyms,
+  data_space_text: e.data_space_text,
+  ambiguity_rule: e.ambiguity_rule,
+  owner_name: e.owner_name,
+  usage_text: e.usage_text,
+});
+
+const unknownWire = (u: UnknownPhrase): UnknownPhraseWire => ({
+  id: u.id,
+  phrase_norm: u.phrase,
+  ask_count: u.count,
+  sample_questions: [],
+  suggested_target: null,
+  status: 'open',
+  data_space_id: 'ds-rui-ro-tin-dung',
+  first_seen_at: AT,
+  last_seen_at: AT,
+  suggestion: u.suggestion,
+  draft: u.draft,
+});
 
 /*
  * The semantic layer of P07 for the dev mock: the retail-bank entity model of "Semantic · Mô hình
@@ -361,9 +404,11 @@ export function createSemanticLayerHandlers() {
     http.post('*/v1/relationships', () =>
       HttpResponse.json({ id: `rel-${Date.now()}`, status: 'pending_review' }, { status: 201 }),
     ),
-    http.get('*/v1/terms/unknown', () => page(unknown)),
+    http.get('*/v1/unmapped-phrases', () => page(unknown.map(unknownWire))),
     http.get('*/v1/terms', ({ request }) =>
-      new URL(request.url).searchParams.get('view') === 'glossary' ? page(glossary) : undefined,
+      new URL(request.url).searchParams.get('view') === 'glossary'
+        ? page(glossary.map(termWire))
+        : undefined,
     ),
     http.post('*/v1/terms', async ({ request }) => {
       const body = (await request.json()) as { term: string; definition: string };
@@ -383,7 +428,7 @@ export function createSemanticLayerHandlers() {
       };
       glossary = [...glossary, created];
       unknown = unknown.filter((u) => u.draft.term !== body.term);
-      return HttpResponse.json(created, { status: 201 });
+      return HttpResponse.json(termWire(created), { status: 201 });
     }),
     http.get('*/v1/eval-sets', () =>
       page([{ id: 'eval-credit-risk', data_space_name: 'Rủi ro tín dụng' }]),

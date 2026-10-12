@@ -340,17 +340,11 @@ export const readDataset = (raw: DatasetWire): Dataset => ({
   certified: raw.certified ?? null,
 });
 
-export interface Metric {
-  id: Uuid;
-  code: string;
-  status: 'draft' | 'active' | 'retired';
-  current_version: number | null;
-}
+/** GET /v1/metrics (context MetricView). */
+export type Metric = components['schemas']['MetricView'];
 
-export interface GlossaryTerm {
-  id: Uuid;
-  term: string;
-}
+/** GET /v1/terms (context TermView). */
+export type GlossaryTerm = components['schemas']['TermView'];
 
 /* ─── Quản trị: org.data_space, org.app_user, governance.model_config ── */
 

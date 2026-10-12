@@ -6,6 +6,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
+import { setDataSpace } from '../../lib/v1/client';
 import { createHandlers } from '../../mocks/handlers';
 import KnowledgePageView from './KnowledgePageView';
 
@@ -61,10 +62,20 @@ describe('KnowledgePageView', () => {
   });
 
   it('lists versions and recompiles on request', async () => {
+    // A run belongs to a Data Space (KnowledgeRunCreate.data_space_id): the chosen one is sent.
+    setDataSpace('ds-thi-truong');
     page();
     fireEvent.click(await screen.findByRole('tab', { name: /Phiên bản/ }));
     expect(await screen.findByText(/Biểu phí tháng 10/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Biên soạn lại' }));
     expect(await screen.findByText(/Đang biên soạn lại/)).toBeInTheDocument();
+    setDataSpace(null);
+  });
+
+  it('asks for a Data Space before recompiling from the whole organisation', async () => {
+    setDataSpace(null);
+    page();
+    fireEvent.click(await screen.findByRole('button', { name: 'Biên soạn lại' }));
+    expect(await screen.findByText(/Chọn một Data Space trước/)).toBeInTheDocument();
   });
 });

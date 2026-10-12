@@ -1,4 +1,5 @@
 import { pathId, v1Get, v1Send, type Page } from './client';
+import type { components } from './schema';
 
 /*
  * Example questions and synonyms of the context layer, for "P07 · Câu hỏi mẫu & đồng nghĩa"
@@ -35,9 +36,25 @@ export const listExamples = () => v1Get<Page<ExampleQuery>>('/examples', { page_
 /** PROPOSAL: GET /v1/synonyms */
 export const listSynonyms = () => v1Get<Page<Synonym>>('/synonyms', { page_size: 500 });
 
+/** POST /v1/examples answers ExampleView; the PROPOSAL display fields come along when sent. */
+export type ExampleWire = components['schemas']['ExampleView'] &
+  Partial<Pick<ExampleQuery, 'usage_text' | 'source_label' | 'reason' | 'result_text'>>;
+
+const readExample = (raw: ExampleWire): ExampleQuery => ({
+  id: raw.id,
+  question: raw.question,
+  sql: raw.sql,
+  usage_text: raw.usage_text ?? '',
+  source_label: raw.source_label ?? '',
+  // Only an active example is in the standard set; draft and pending_review wait for a check.
+  status: raw.status === 'active' ? 'verified' : 'pending',
+  reason: raw.reason ?? null,
+  result_text: raw.result_text ?? null,
+});
+
 /** A2: 422 validation_failed when the SQL does not run. */
-export const addExample = (body: { question: string; sql: string }) =>
-  v1Send<ExampleQuery>('POST', '/examples', body);
+export const addExample = async (body: { question: string; sql: string }) =>
+  readExample(await v1Send<ExampleWire>('POST', '/examples', body));
 
 /** PROPOSAL: PATCH /v1/examples/{id} — the SQL is run again before it is saved. */
 export const updateExampleSql = async (id: string, sql: string) =>
