@@ -37,6 +37,9 @@ def test_a_read_only_query_passes(sql: str) -> None:
         "SELECT set_config('role', 'postgres', false)",
         "COPY loans TO '/tmp/x'",
         "SELEC broken",
+        "SELECT pg_catalog.pg_ls_waldir()",
+        "SELECT * FROM dblink('host=x', 'select 1') AS t(a int)",
+        "SELECT my_schema.custom_writer(1)",
     ],
 )
 def test_anything_else_is_rejected(sql: str) -> None:

@@ -39,6 +39,7 @@ ROLE = "svc_query"
 MAX_ROWS = 10_000  # BR-03
 STORED_ROWS = 1_000  # query.query_result keeps at most this many (D4)
 RESULT_DAYS = 30
+SSL_MODES = ("disable", "require", "verify-ca", "verify-full")
 
 CallerKind = Literal[
     "question",
@@ -99,13 +100,18 @@ async def _run_postgres(
     source: catalog.Source, user: str, password: str, sql: str, timeout_s: int
 ) -> tuple[list[dict[str, str]], list[list[Any]]]:
     options = source.conn_options or {}
+    # Encrypted and verified unless the source says otherwise: the credentials and the rows cross
+    # the network. A source on a private network without TLS states sslmode=disable explicitly.
+    sslmode = str(options.get("sslmode") or "verify-full")
+    if sslmode not in SSL_MODES:
+        raise SecretUnavailable(f"sslmode {sslmode} is not one of {', '.join(SSL_MODES)}")
     conn = await asyncpg.connect(
         host=source.host,
         port=source.port or 5432,
         database=source.database_name,
         user=user,
         password=password,
-        ssl=options.get("sslmode") or None,
+        ssl=sslmode,
         timeout=min(timeout_s, 30),
         statement_cache_size=0,
         server_settings={"application_name": "dataagent-worker-agent"},

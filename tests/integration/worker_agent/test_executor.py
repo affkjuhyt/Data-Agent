@@ -62,7 +62,8 @@ def _source(
         host=warehouse["host"],
         port=warehouse["port"],
         database_name=warehouse["database"],
-        conn_options={"schema": "dw"},
+        # The test server has no TLS; a real source would leave sslmode to its verify-full default.
+        conn_options={"schema": "dw", "sslmode": "disable"},
         secret_ref=ref,
         max_concurrency=2,
         query_timeout_s=over.get("timeout", 5),

@@ -46,8 +46,9 @@ _WRITES: tuple[type[exp.Expression], ...] = (
     exp.Rollback,
 )
 
-# Functions with an effect outside the result: reading files, sleeping, opening other
-# connections, changing settings, large objects, advisory locks. Lower-case names.
+# Only functions sqlglot models are admitted (aggregates, arithmetic, strings, dates); an unknown
+# one is refused outright. These are refused even when modelled: an effect outside the result
+# (files, sleeps, other connections, settings, large objects, locks). Lower-case names.
 _DENIED_FUNCTIONS = frozenset(
     {
         "pg_sleep",
@@ -109,10 +110,12 @@ def check_read_only(sql: str, dialect: str) -> exp.Expression:
     for node in tree.walk():
         if isinstance(node, _WRITES):
             raise SqlRejected(f"{node.key.upper()} is not allowed in a read-only query")
-        if isinstance(node, exp.Func):
-            name = (node.name if isinstance(node, exp.Anonymous) else node.sql_name()).lower()
-            if name in _DENIED_FUNCTIONS:
-                raise SqlRejected(f"function {name} is not allowed")
+        if isinstance(node, exp.Anonymous):
+            # A function sqlglot does not model (pg_*, dblink, an extension's, a user-defined
+            # one) is refused whatever its name: a list of bad names is never complete.
+            raise SqlRejected(f"function {node.name.lower()} is not allowed")
+        if isinstance(node, exp.Func) and node.sql_name().lower() in _DENIED_FUNCTIONS:
+            raise SqlRejected(f"function {node.sql_name().lower()} is not allowed")
         if isinstance(node, exp.Select) and node.args.get("locks"):
             raise SqlRejected("FOR UPDATE/SHARE is not allowed")
     return tree
