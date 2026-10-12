@@ -82,7 +82,7 @@
   ansible.builtin.shell: |
     set -euo pipefail
     {{ kubectl }} exec -i -n {{ ns_database }} statefulset/openbao -- \
-    env BAO_TOKEN={{ bao_keys.root_token }} bao policy write workflow_runtime-read-policy - <<'POLICY'
+    env BAO_TOKEN={{ bao_keys.root_token }} bao policy write dataagent-secret-read-policy - <<'POLICY'
     path "secret/data/tenants/*" { capabilities = ["read"] }
     path "secret/data/warehouse/*" { capabilities = ["read"] }
     POLICY
@@ -115,23 +115,7 @@
   changed_when: true
   no_log: true
 
-- name: Write approle
-  ansible.builtin.command: >
-    {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
-    bao write auth/approle/role/workflow_runtime
-    token_policies=workflow_runtime-read-policy token_ttl=1h token_max_ttl=4h
-  changed_when: false
-  no_log: true
-
-- name: Get role id
-  ansible.builtin.command: >
-    {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
-    bao read -field=role_id auth/approle/role/workflow_runtime/role-id
-  register: bao_role_id
-  changed_when: false
-  no_log: true
-
-- name: Look for a previously minted secret id
+- name: Look for previously minted workload secret ids
   ansible.builtin.stat:
     path: "{{ openbao_env_file }}"
   register: openbao_env_stat
@@ -149,25 +133,53 @@
   no_log: true
   # Not read from openbao_env: deploy.yml set_fact's that before this role
   # runs, and set_fact outranks include_vars. Reading it there would make every
-  # run look like a first run and mint a fresh secret id, invalidating the
-  # login workflow-runtime is currently using.
+  # run look like a first run and mint fresh secret ids, invalidating workload
+  # logins.
 
-- name: Mint secret id
+- name: Write workload AppRoles
   ansible.builtin.command: >
     {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
-    bao write -f -field=secret_id auth/approle/role/workflow_runtime/secret-id
-  register: bao_secret_id
+    bao write auth/approle/role/{{ item.role }}
+    token_policies=dataagent-secret-read-policy token_ttl=1h token_max_ttl=4h
+  loop:
+    - {role: worker_agent, prefix: WORKER_AGENT}
+    - {role: sandbox_executor, prefix: SANDBOX_EXECUTOR}
+    - {role: platform_workers, prefix: PLATFORM_WORKERS}
+  changed_when: false
+  no_log: true
+
+- name: Get workload AppRole ids
+  ansible.builtin.command: >
+    {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
+    bao read -field=role_id auth/approle/role/{{ item.role }}/role-id
+  loop:
+    - {role: worker_agent, prefix: WORKER_AGENT}
+    - {role: sandbox_executor, prefix: SANDBOX_EXECUTOR}
+    - {role: platform_workers, prefix: PLATFORM_WORKERS}
+  register: bao_role_ids
+  changed_when: false
+  no_log: true
+
+- name: Mint workload AppRole secret ids
+  ansible.builtin.command: >
+    {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
+    bao write -f -field=secret_id auth/approle/role/{{ item.role }}/secret-id
+  loop:
+    - {role: worker_agent, prefix: WORKER_AGENT}
+    - {role: sandbox_executor, prefix: SANDBOX_EXECUTOR}
+    - {role: platform_workers, prefix: PLATFORM_WORKERS}
+  register: bao_secret_ids
   when: >-
-    (openbao_prev.OPENBAO_SECRET_ID | default('') | length) == 0
+    (openbao_prev[item.prefix ~ '_OPENBAO_SECRET_ID'] | default('') | length) == 0
     or (openbao_rotate_approle | bool)
   changed_when: true
   no_log: true
 
-- name: Record whether the AppRole moved
+- name: Record whether an AppRole moved
   ansible.builtin.set_fact:
-    openbao_minted: "{{ bao_secret_id is not skipped }}"
-  # deploy.yml re-renders and reapplies the Secrets only when this is true --
-  # a fresh cluster, or an explicit rotation.
+    openbao_minted: "{{ bao_secret_ids.results | selectattr('skipped', 'undefined') | list | length > 0 }}"
+  # deploy.yml re-renders and reapplies the Secrets only when a fresh or
+  # explicitly rotated workload credential was minted.
 
 - name: Record the OpenBao credentials
   ansible.builtin.copy:
@@ -175,20 +187,24 @@
     mode: "0600"
     content: |
       # Minted by the k8s_openbao role against the running OpenBao. Read back
-      # by deploy.yml, which folds these three into secrets.env; kept out of
+      # by deploy.yml, which folds these credentials into secrets.env; kept out of
       # the repo and out of the vault because they only exist once a cluster
       # does. Delete this file (and openbao-keys.json) only if you are also
       # resetting the OpenBao volume.
       openbao_env:
         OPENBAO_TOKEN: "{{ bao_keys.root_token }}"
-        OPENBAO_ROLE_ID: "{{ bao_role_id.stdout | trim }}"
-        OPENBAO_SECRET_ID: "{{ bao_secret_id.stdout | default(openbao_prev.OPENBAO_SECRET_ID | default(''), true) | trim }}"
+        WORKER_AGENT_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[0].stdout | trim }}"
+        WORKER_AGENT_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[0].stdout | default(openbao_prev.WORKER_AGENT_OPENBAO_SECRET_ID | default(''), true) | trim }}"
+        SANDBOX_EXECUTOR_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[1].stdout | trim }}"
+        SANDBOX_EXECUTOR_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[1].stdout | default(openbao_prev.SANDBOX_EXECUTOR_OPENBAO_SECRET_ID | default(''), true) | trim }}"
+        PLATFORM_WORKERS_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[2].stdout | trim }}"
+        PLATFORM_WORKERS_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[2].stdout | default(openbao_prev.PLATFORM_WORKERS_OPENBAO_SECRET_ID | default(''), true) | trim }}"
   no_log: true
-  # A skipped mint keeps the existing secret id rather than blanking it: a
-  # rerun that does not rotate must not invalidate workflow-runtime's login.
+  # A skipped mint keeps each existing secret id rather than blanking it: a
+  # rerun that does not rotate must not invalidate a workload's login.
 
 - name: Report openbao
   ansible.builtin.debug:
     msg: >-
       initialised={{ bao_status.initialized }} sealed_before={{ bao_status.sealed }}
-      keys={{ bao_keys_file }} approle={{ 'minted' if bao_secret_id is not skipped else 'unchanged' }}
+      keys={{ bao_keys_file }} approle={{ 'minted' if openbao_minted else 'unchanged' }}

@@ -123,7 +123,7 @@ outside the server fail with "Connecting to Keycloak…" and
 | `images_only=eval` | build an on-demand image (`images_on_demand`) — before applying the online-eval Job |
 | `deploy_full=true` | treat everything as changed: rebuild **all** images, reapply all Secrets and ConfigMaps, rerun Jobs (with `apply_jobs`). Images whose digest comes out unchanged are neither pushed nor restarted. Needs tens of GB of free disk — check `df -h /data` first |
 | `seed_demo=false` | run the `seed` Job without demo data |
-| `openbao_rotate_approle=true` | mint a new AppRole secret-id and reapply the Secrets that carry it; restart `workflow-runtime` and `auth-api` afterwards |
+| `openbao_rotate_approle=true` | mint new workload AppRole secret-ids and reapply the Secrets that carry them; restart worker-agent, sandbox-executor and platform workers afterwards |
 | `openbao_allow_reset=true` | allow re-initialising OpenBao when the keys file is missing. **Destroys every secret in the vault** — throwaway clusters only |
 | `git_sync_enabled=true` | pull before deploying (see step 2) |
 
@@ -150,8 +150,8 @@ outside the server fail with "Connecting to Keycloak…" and
   roles (`app_user`, `runtime_writer`, `sandbox_reader`, `kb_backend`,
   `pgbouncer_auth`, `kb_ingestion_worker`) are different: the `db-init` Job sets
   their passwords on every run.
-- `OPENBAO_TOKEN` / `OPENBAO_ROLE_ID` / `OPENBAO_SECRET_ID` are not in the vault;
-  `k8s_openbao` writes them to `deploy/k8s/dev/.openbao-env.yml`.
+- OpenBao's root token and the three workload AppRole credential pairs are not in
+  the vault; `k8s_openbao` writes them to `deploy/k8s/dev/.openbao-env.yml`.
 - `.secrets/secrets.env.vault` is a leftover from the previous pipeline. Nothing reads it.
 - Do not run `create-secrets.sh` by hand from some other env file. Every Secret
   is overwritten from that file; if it came from a different generation, the

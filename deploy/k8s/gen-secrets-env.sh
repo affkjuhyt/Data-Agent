@@ -3,9 +3,8 @@
 # with random values, once. Re-running never rotates an existing value — same
 # "generate once, persist" pattern.
 #
-# OPENBAO_TOKEN / OPENBAO_ROLE_ID / OPENBAO_SECRET_ID are left blank here —
-# bootstrap-openbao.sh mints them after OpenBao is actually running and
-# rewrites just those three lines in place.
+# OpenBao credentials are left blank here — bootstrap-openbao.sh mints them
+# after OpenBao is actually running and rewrites these lines in place.
 #
 #   bash deploy/k8s/gen-secrets-env.sh
 #   set -a; . deploy/k8s/secrets.env; set +a
@@ -86,9 +85,13 @@ MINIO_URL=http://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@minio.dataagent-database.
 # unauthenticated server. Real auth needs that connector fixed first.
 NEO4J_AUTH=none
 OPENAI_API_KEY=
-OPENBAO_ROLE_ID=
-OPENBAO_SECRET_ID=
 OPENBAO_TOKEN=
+WORKER_AGENT_OPENBAO_ROLE_ID=
+WORKER_AGENT_OPENBAO_SECRET_ID=
+SANDBOX_EXECUTOR_OPENBAO_ROLE_ID=
+SANDBOX_EXECUTOR_OPENBAO_SECRET_ID=
+PLATFORM_WORKERS_OPENBAO_ROLE_ID=
+PLATFORM_WORKERS_OPENBAO_SECRET_ID=
 PGPASSWORD=$POSTGRES_PASSWORD
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 PUBLIC_API_URL=$PUBLIC_API_URL

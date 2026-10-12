@@ -55,8 +55,8 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_AUDIT_WORKER="${DATAAGENT_DB_URL__SVC_AUDIT_WORKER}" \
   --from-literal=DATAAGENT_DB_URL__SVC_OUTBOX_RELAY_AUDIT="${DATAAGENT_DB_URL__SVC_OUTBOX_RELAY_AUDIT}" \
   --from-literal=DATAAGENT_DB_URL__SVC_QUERY="${DATAAGENT_DB_URL__SVC_QUERY}" \
-  --from-literal=OPENBAO_ROLE_ID="${OPENBAO_ROLE_ID}" \
-  --from-literal=OPENBAO_SECRET_ID="${OPENBAO_SECRET_ID}" \
+  --from-literal=OPENBAO_ROLE_ID="${WORKER_AGENT_OPENBAO_ROLE_ID}" \
+  --from-literal=OPENBAO_SECRET_ID="${WORKER_AGENT_OPENBAO_SECRET_ID}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic kb-backend-secrets \
@@ -93,8 +93,8 @@ kubectl -n dataagent-service create secret generic kb-structured-data-secrets \
 kubectl -n dataagent-service create secret generic sandbox-executor-secrets \
   --from-literal=MINIO_ACCESS_KEY="${MINIO_ROOT_USER}" \
   --from-literal=MINIO_SECRET_KEY="${MINIO_ROOT_PASSWORD}" \
-  --from-literal=OPENBAO_ROLE_ID="${OPENBAO_ROLE_ID}" \
-  --from-literal=OPENBAO_SECRET_ID="${OPENBAO_SECRET_ID}" \
+  --from-literal=OPENBAO_ROLE_ID="${SANDBOX_EXECUTOR_OPENBAO_ROLE_ID}" \
+  --from-literal=OPENBAO_SECRET_ID="${SANDBOX_EXECUTOR_OPENBAO_SECRET_ID}" \
   --from-literal=SERVICE_AUTH_SECRET="${SERVICE_AUTH_SECRET}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
@@ -113,8 +113,8 @@ kubectl -n dataagent-service create secret generic platform-workers-memory-secre
 kubectl -n dataagent-service create secret generic platform-workers-schema-crawler-secrets \
   --from-literal=DB_PASSWORD="${APP_USER_PASSWORD}" \
   --from-literal=KAFKA_SASL_PASSWORD="${SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD}" \
-  --from-literal=OPENBAO_ROLE_ID="${OPENBAO_ROLE_ID}" \
-  --from-literal=OPENBAO_SECRET_ID="${OPENBAO_SECRET_ID}" \
+  --from-literal=OPENBAO_ROLE_ID="${PLATFORM_WORKERS_OPENBAO_ROLE_ID}" \
+  --from-literal=OPENBAO_SECRET_ID="${PLATFORM_WORKERS_OPENBAO_SECRET_ID}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic platform-workers-web-crawler-secrets \
@@ -122,8 +122,8 @@ kubectl -n dataagent-service create secret generic platform-workers-web-crawler-
   --from-literal=INGEST_DB_PASSWORD="${CRAWLER_SVC_PASSWORD}" \
   --from-literal=MINIO_URL="${MINIO_URL}" \
   --from-literal=KAFKA_SASL_PASSWORD="${WEB_CRAWLER_WORKER_KAFKA_PASSWORD}" \
-  --from-literal=OPENBAO_ROLE_ID="${OPENBAO_ROLE_ID}" \
-  --from-literal=OPENBAO_SECRET_ID="${OPENBAO_SECRET_ID}" \
+  --from-literal=OPENBAO_ROLE_ID="${PLATFORM_WORKERS_OPENBAO_ROLE_ID}" \
+  --from-literal=OPENBAO_SECRET_ID="${PLATFORM_WORKERS_OPENBAO_SECRET_ID}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic frontend-secrets \

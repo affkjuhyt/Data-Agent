@@ -267,7 +267,10 @@
     - name: Default the OpenBao credentials
       ansible.builtin.set_fact:
         openbao_env: >-
-          {{ {'OPENBAO_TOKEN': '', 'OPENBAO_ROLE_ID': '', 'OPENBAO_SECRET_ID': ''}
+          {{ {'OPENBAO_TOKEN': '',
+              'WORKER_AGENT_OPENBAO_ROLE_ID': '', 'WORKER_AGENT_OPENBAO_SECRET_ID': '',
+              'SANDBOX_EXECUTOR_OPENBAO_ROLE_ID': '', 'SANDBOX_EXECUTOR_OPENBAO_SECRET_ID': '',
+              'PLATFORM_WORKERS_OPENBAO_ROLE_ID': '', 'PLATFORM_WORKERS_OPENBAO_SECRET_ID': ''}
              | combine((openbao_state | default({}, true)).openbao_env | default({}, true)) }}
       no_log: true
 
