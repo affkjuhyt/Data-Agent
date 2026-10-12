@@ -356,6 +356,32 @@ export const testSource = async (id: string): Promise<ConnectionTest> => {
   throw new V1Error(504, 'timeout', 'Kiểm tra kết nối chưa có kết quả, hãy thử lại sau.');
 };
 
+export type ScanRun = {
+  id: string;
+  source_id: string;
+  kind: string;
+  trigger: string;
+  workflow_id: string | null;
+  status: string;
+  tables_total: number | null;
+  tables_scanned: number;
+  tables_skipped: unknown;
+  resume_from: string | null;
+  started_at: string;
+  finished_at: string | null;
+  created_at: string;
+};
+
+export const startSourceScan = (id: string) =>
+  v1Send<components['schemas']['services__api__modules__catalog__schemas__Accepted']>(
+    'POST',
+    `/sources/${pathId(id)}/scans`,
+    { kind: 'schema' },
+  );
+
+export const getScanRun = (id: string) =>
+  v1Get<ScanRun>(`/scan-runs/${pathId(id)}`);
+
 export interface ActivateSource {
   tables: { name: string; data_space_id: string; owner_id: string }[];
   schema_scan: string;

@@ -13,12 +13,14 @@ import { Select } from '../../design-system/Select';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber, formatTime } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
-import { listDataSpaces, listUsers } from '../../lib/v1/api';
+import { listDataSpaces, listSourceDatasets, listUsers } from '../../lib/v1/api';
 import {
   activateSource,
   createSource,
   listConnectors,
   listSecretRefs,
+  getScanRun,
+  startSourceScan,
   testSource,
   updateSource,
   type ActivateSource,
@@ -144,6 +146,31 @@ function ConnectFlow({ connector }: { connector: Connector }) {
       setStep(3);
     });
 
+  const chooseTables = () =>
+    run(async () => {
+      if (!sourceId || !test) return;
+      const accepted = await startSourceScan(sourceId);
+      let scan = await getScanRun(accepted.id);
+      for (let attempt = 0; scan.status === 'running' && attempt < 30; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, accepted.poll_after_ms ?? 2000));
+        scan = await getScanRun(accepted.id);
+      }
+      if (scan.status !== 'succeeded') throw new Error('Quét cấu trúc nguồn chưa hoàn tất.');
+      const datasets = (await listSourceDatasets(sourceId)).items;
+      setTest({
+        ...test,
+        schema: datasets[0]?.schema_name ?? '',
+        table_count: datasets.length,
+        tables: datasets.map((dataset) => ({
+          name: `${dataset.schema_name}.${dataset.table_name}`,
+          description: dataset.description,
+          personal_data: null,
+          estimated_rows: dataset.row_estimate ?? 0,
+        })),
+      });
+      setStep(4);
+    });
+
   const save = () =>
     run(async () => {
       if (!sourceId || !test) return;
@@ -175,7 +202,7 @@ function ConnectFlow({ connector }: { connector: Connector }) {
         <Button loading={busy} onClick={() => sourceId && void runTest(sourceId)}>
           Kiểm tra lại
         </Button>
-        <Button kind="primary" disabled={!passed} onClick={() => setStep(4)}>
+        <Button kind="primary" loading={busy} disabled={!passed} onClick={() => void chooseTables()}>
           Tiếp: chọn dữ liệu
         </Button>
       </>

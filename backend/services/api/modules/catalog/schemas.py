@@ -103,6 +103,19 @@ class ScanRequest(BaseModel):
     tables: list[str] | None = Field(default=None, max_length=10_000)
 
 
+class ActivateTable(BaseModel):
+    name: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$")
+    data_space_id: uuid.UUID
+    owner_id: uuid.UUID
+
+
+class ActivateRequest(BaseModel):
+    tables: list[ActivateTable] = Field(default_factory=list, max_length=10_000)
+    schema_scan: str = Field(default="daily_0200", max_length=200)
+    profiling: str = Field(default="weekly_sun_0300", max_length=200)
+    on_schema_change: Literal["pause_and_ask", "continue_and_notify"] = "pause_and_ask"
+
+
 class Accepted(BaseModel):
     """A1.6: the body of a 202; Location names where the result appears."""
 

@@ -39,6 +39,7 @@ from services.api.kernel.problems import FieldError, Problem
 from services.api.modules.catalog import rules
 from services.api.modules.catalog.schemas import (
     Accepted,
+    ActivateRequest,
     CertificationView,
     CertifiedVersion,
     CertifyRequest,
@@ -525,6 +526,63 @@ async def test_source(
         )
     response.headers["Location"] = f"/v1/sources/{row.id}"
     return Accepted(id=row.id, status=row.status, poll_after_ms=POLL_AFTER_MS)
+
+
+@router.post(
+    "/v1/sources/{id}:activate",
+    response_model=SourceView,
+    **endpoint("POST", "/v1/sources/{id}:activate", operation_id="activateSource"),
+)
+async def activate_source(
+    body: ActivateRequest,
+    source_id: PathId,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+) -> SourceView:
+    """Enable the tables selected after the initial structure scan."""
+    async with transaction(ROLE, principal) as session:
+        source = await _source(session, principal, space, source_id, lock=True)
+        if source.status not in SCANNABLE:
+            raise Problem(409, "invalid_state", "The source must pass its connection test first.")
+        names = {item.name for item in body.tables}
+        datasets = (
+            await session.scalars(
+                select(catalog.Dataset).where(
+                    catalog.Dataset.org_id == principal.org_id,
+                    catalog.Dataset.source_id == source.id,
+                    catalog.Dataset.data_space_id == space,
+                    catalog.Dataset.deleted_at.is_(None),
+                ).with_for_update()
+            )
+        ).all()
+        for dataset in datasets:
+            selected = f"{dataset.schema_name}.{dataset.table_name}" in names
+            assignment = next(
+                (item for item in body.tables if item.name == f"{dataset.schema_name}.{dataset.table_name}"),
+                None,
+            )
+            dataset.enabled = selected
+            if selected and assignment is not None:
+                dataset.data_space_id = assignment.data_space_id
+                dataset.steward_id = assignment.owner_id
+                dataset.updated_by = principal.user_id
+        source.scan_cron = body.schema_scan
+        source.profile_cron = body.profiling
+        source.updated_at, source.updated_by = _now(), principal.user_id
+        session.add(
+            _event(
+                principal,
+                "source",
+                source.id,
+                "source.activated",
+                source_id=source.id,
+                data_space_id=source.data_space_id,
+                tables=sorted(names),
+            )
+        )
+        await session.flush()
+        await session.refresh(source)
+        return SourceView.of(source)
 
 
 async def _skip_days(

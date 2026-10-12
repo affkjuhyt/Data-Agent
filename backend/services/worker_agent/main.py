@@ -24,7 +24,7 @@ from collections.abc import Mapping
 from sqlalchemy import text
 
 from libs.dataagent_db import unscoped_session
-from services.worker_agent import hitl, questions, replay, resolutions, source_tests
+from services.worker_agent import hitl, questions, replay, resolutions, schema_scans, source_tests
 from services.worker_agent.events import EventSource, Handler, OutboxTableSource
 
 logger = logging.getLogger(__name__)
@@ -49,6 +49,7 @@ HANDLERS: dict[str, Handler] = {
     **hitl.HANDLERS,
     **resolutions.HANDLERS,
     **source_tests.HANDLERS,
+    **schema_scans.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -76,7 +77,7 @@ async def sources() -> list[EventSource]:
             # until Debezium gives each consumer its own group (ADR-06).
             types |= set(resolutions.HANDLERS)
         if schema == "catalog":
-            types |= set(source_tests.HANDLERS)
+            types |= set(source_tests.HANDLERS) | set(schema_scans.HANDLERS)
         found.append(OutboxTableSource(schema=schema, event_types=frozenset(types)))
     try:
         audit = await _outbox_schemas(AUDIT_RELAY)

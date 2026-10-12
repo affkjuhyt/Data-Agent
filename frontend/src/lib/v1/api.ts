@@ -307,6 +307,13 @@ export const listDatasets = async (): Promise<Page<Dataset>> => {
   const page = await v1Get<Page<DatasetWire>>('/datasets', { ...ALL, enabled: true });
   return { ...page, items: page.items.map(readDataset) };
 };
+export const listSourceDatasets = async (sourceId: string): Promise<Page<Dataset>> => {
+  const page = await v1Get<Page<DatasetWire>>('/datasets', {
+    ...ALL,
+    source_id: sourceId,
+  });
+  return { ...page, items: page.items.map(readDataset) };
+};
 export const listMetrics = () => v1Get<Page<Metric>>('/metrics', ALL);
 export const listTerms = () => v1Get<Page<GlossaryTerm>>('/terms', ALL);
 
