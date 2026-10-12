@@ -122,6 +122,9 @@ async def _set_views(session: AsyncSession, rows: list[evaluation.EvalSet]) -> l
     ids = [r.id for r in rows]
     if not ids:
         return []
+    # eval_run has no Data Space: a run of an organisation-wide set (a pack's) ran on some Data
+    # Space's data, maybe another's, so only runs of the caller's own Data Space's sets are shown.
+    own = [r.id for r in rows if r.data_space_id is not None]
     counts = dict(
         (
             await session.execute(
@@ -141,7 +144,7 @@ async def _set_views(session: AsyncSession, rows: list[evaluation.EvalSet]) -> l
         for run in (
             await session.scalars(
                 select(evaluation.EvalRun)
-                .where(evaluation.EvalRun.eval_set_id.in_(ids))
+                .where(evaluation.EvalRun.eval_set_id.in_(own))
                 .order_by(
                     evaluation.EvalRun.eval_set_id,
                     evaluation.EvalRun.started_at.desc(),
@@ -223,14 +226,19 @@ async def get_eval_set(
         if row is None:
             raise Problem(404, "not_found", "Eval set not found.")
         (view,) = await _set_views(session, [row])
+        # Runs of an organisation-wide set are not told apart by Data Space (see _set_views).
         runs = (
-            await session.scalars(
-                select(evaluation.EvalRun)
-                .where(evaluation.EvalRun.eval_set_id == row.id)
-                .order_by(evaluation.EvalRun.started_at.desc(), evaluation.EvalRun.id.desc())
-                .limit(RECENT_RUNS)
-            )
-        ).all()
+            (
+                await session.scalars(
+                    select(evaluation.EvalRun)
+                    .where(evaluation.EvalRun.eval_set_id == row.id)
+                    .order_by(evaluation.EvalRun.started_at.desc(), evaluation.EvalRun.id.desc())
+                    .limit(RECENT_RUNS)
+                )
+            ).all()
+            if row.data_space_id is not None
+            else []
+        )
         judged = next((r for r in runs if r.status == "completed"), None)
         failures: list[EvalFailure] = []
         if judged is not None:
