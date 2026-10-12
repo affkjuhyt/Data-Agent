@@ -113,9 +113,10 @@ describe('CrawlSchemaPage', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Schema · v1 đang dùng' }),
     ).toBeInTheDocument();
+    // A3 approves with a note only: the choice is recorded there, the field stays as inferred.
     expect(
-      within(screen.getByRole('row', { name: /^channel/ })).getByText('Kênh giao dịch'),
-    ).toBeInTheDocument();
+      screen.queryByRole('combobox', { name: 'Thuộc tính chuẩn của channel' }),
+    ).not.toBeInTheDocument();
   });
 });
 

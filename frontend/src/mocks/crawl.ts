@@ -430,6 +430,7 @@ function recordsFixture(): ExtractedRecord[] {
     reason_text,
     blocking,
     status: 'pending',
+    source_url: null,
     raw: raw([['12 tháng', value_text.replace('%', '')]], 0, null, 'Bản gốc'),
     values: [{ field: 'rate', value: value_text, confidence: 0.9 }],
     evidence: null,
@@ -567,6 +568,42 @@ function consolidationFixture(): ConsolidationRun {
   };
 }
 
+/*
+ * The served reads answer in their api shape with the screen's view under `display`, which the
+ * readers in lib/v1/crawl.ts take as is; the api-shaped path is tested in crawl.test.ts.
+ */
+const sourceWire = (v: CrawlSource) => ({
+  id: v.id,
+  name: v.name,
+  kind: v.kind,
+  status:
+    v.health === 'paused' ? 'paused' : v.health === 'drift_quarantined' ? 'quarantined' : 'active',
+  review_gate: v.review_gate,
+  pending_review: v.pending_review,
+  display: v,
+});
+const schemaWire = (sourceId: string, v: CrawlSchemaVersion) => ({
+  id: v.id,
+  source_id: sourceId,
+  version: v.version,
+  status: v.status,
+  fields: [],
+  display: v,
+});
+const runWire = (v: CrawlRun) => ({
+  id: v.id,
+  source_id: v.source_id,
+  status: v.status === 'published' ? 'published' : 'in_review',
+  records_extracted: v.record_count,
+  display: v,
+});
+const recordWire = (v: ExtractedRecord) => ({
+  id: v.id,
+  status: v.status === 'confirmed' ? 'approved' : v.status,
+  review_reasons: v.reasons,
+  display: v,
+});
+
 const problem = (status: number, code: string, detail: string) =>
   HttpResponse.json(
     { title: code, status, code, detail },
@@ -635,13 +672,19 @@ export function createCrawlHandlers() {
     }),
     http.get('*/v1/crawl-runs/:id/records', ({ params }) =>
       params.id === run.id
-        ? HttpResponse.json({ items: pending(), next_page_token: '' })
+        ? HttpResponse.json({ items: records.map(recordWire), next_page_token: '' })
         : problem(404, 'not_found', 'Không tìm thấy lượt.'),
     ),
     http.get('*/v1/crawl-runs/:id', ({ params }) =>
       params.id === run.id
-        ? HttpResponse.json(run)
+        ? HttpResponse.json(runWire(run))
         : problem(404, 'not_found', 'Không tìm thấy lượt.'),
+    ),
+    http.get('*/v1/crawl-runs', () =>
+      HttpResponse.json({
+        items: run.status === 'published' ? [] : [runWire(run)],
+        next_page_token: '',
+      }),
     ),
     http.post('*/v1/crawl-runs/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
@@ -654,24 +697,27 @@ export function createCrawlHandlers() {
           `Còn ${run.blocking_count} mục chặn trong hàng duyệt (BR-153).`,
         );
       run = { ...run, status: 'published' };
-      return HttpResponse.json(run);
+      return HttpResponse.json(runWire(run));
     }),
     http.post('*/v1/extracted-records\\:bulk-review', async ({ request }) => {
       const body = (await request.json()) as {
-        review_reasons: string[];
         decision: string;
+        filter: { run_id: string; review_reasons: string[] };
         reason: string;
       };
       if (run.status === 'published') return problem(409, 'invalid_state', 'Lượt đã phát hành.');
       let updated = 0;
       records = records.map((x) => {
-        if (x.status !== 'pending' || !x.reasons.some((rr) => body.review_reasons.includes(rr)))
+        if (
+          x.status !== 'pending' ||
+          !x.reasons.some((rr) => body.filter.review_reasons.includes(rr))
+        )
           return x;
         updated += 1;
         return { ...x, status: body.decision === 'reject' ? 'rejected' : 'confirmed' };
       });
       recount();
-      return HttpResponse.json({ updated });
+      return HttpResponse.json({ updated, by_status: {} });
     }),
     http.post('*/v1/extracted-records/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
@@ -693,7 +739,7 @@ export function createCrawlHandlers() {
       const done: ExtractedRecord = { ...rec, status };
       records = records.map((x) => (x.id === id ? done : x));
       recount();
-      return HttpResponse.json(done);
+      return HttpResponse.json({ decision: body.decision, record: recordWire(done) });
     }),
     http.get('*/v1/schema-drifts', () =>
       HttpResponse.json({ items: drift.resolution ? [] : [drift], next_page_token: '' }),
@@ -726,7 +772,10 @@ export function createCrawlHandlers() {
     http.get('*/v1/crawl-sources/:id/schemas', ({ params }) => {
       const source = sources.find((x) => x.id === params.id);
       if (!source) return problem(404, 'not_found', 'Không tìm thấy nguồn.');
-      return HttpResponse.json({ items: [schemaOf(source.id)], next_page_token: '' });
+      return HttpResponse.json({
+        items: [schemaWire(source.id, schemaOf(source.id))],
+        next_page_token: '',
+      });
     }),
     http.get('*/v1/crawl-sources/:id', ({ params }) => {
       const source = sources.find((x) => x.id === params.id);
@@ -745,31 +794,18 @@ export function createCrawlHandlers() {
       if (!schema.test) return problem(409, 'invalid_state', 'Chưa chạy thử.');
       if (schema.test.required_correct_pct < 95)
         return problem(422, 'business_rule_violated', 'Dưới 95% trường bắt buộc đúng (BR-151).');
-      const { field_mappings } = (await request.json()) as {
-        field_mappings: Record<string, string>;
-      };
-      const unresolved = schema.fields.filter((x) => !x.canonical && !field_mappings?.[x.name]);
-      if (unresolved.length)
-        return problem(
-          422,
-          'validation_failed',
-          `Chọn thuộc tính chuẩn cho ${unresolved.map((x) => x.name).join(', ')}.`,
-        );
-      const approved: CrawlSchemaVersion = {
-        ...schema,
-        status: 'active',
-        fields: schema.fields.map((x) => ({
-          ...x,
-          canonical: x.canonical ?? field_mappings[x.name],
-        })),
-      };
+      // A3's SchemaApproveRequest is {note}: the choices travel in it, the fields stay as inferred.
+      const body = (await request.json()) as Record<string, unknown>;
+      if (Object.keys(body).some((k) => k !== 'note'))
+        return problem(422, 'validation_failed', 'Chỉ nhận ghi chú.');
+      const approved: CrawlSchemaVersion = { ...schema, status: 'active' };
       schemas.set(sourceId, approved);
       const source = sources.find((x) => x.id === sourceId);
       if (source && source.health === 'pending_schema') {
         source.health = 'on_schedule';
         source.health_text = 'Đúng lịch';
       }
-      return HttpResponse.json(approved);
+      return HttpResponse.json(schemaWire(sourceId, approved));
     }),
     http.post('*/v1/crawl-sources\\:suggest', async ({ request }) => {
       const { goal } = (await request.json()) as { goal: string };
@@ -814,7 +850,7 @@ export function createCrawlHandlers() {
       HttpResponse.json({ id: 'arun-infer-' + Date.now() }, { status: 202 }),
     ),
     http.get('*/v1/crawl-sources', () =>
-      HttpResponse.json({ items: sources, next_page_token: '' }),
+      HttpResponse.json({ items: sources.map(sourceWire), next_page_token: '' }),
     ),
     http.get('*/v1/acquire/summary', () => HttpResponse.json(SUMMARY)),
     http.post('*/v1/crawl-sources/:id/runs', ({ params }) => {

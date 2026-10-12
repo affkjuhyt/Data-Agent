@@ -29,6 +29,7 @@ const INTEGRATED_GROUPS: readonly string[] = [
   'Biến đổi dữ liệu',
   'Dự báo',
   'Gói ngành',
+  'Thu thập',
 ];
 
 const IDENTITY_OPERATIONS: readonly string[] = ['getMe', 'listMyDataSpaces'];
@@ -76,6 +77,12 @@ const HELD_BACK: readonly string[] = [
   'applyPackUpgrade',
   'validatePackVersion',
   'publishPackVersion',
+  // Thu thập: a drift's screen reads GET /v1/schema-drifts/{id}, and the consolidation run is
+  // reached from GET /v1/acquire/summary; neither is in A2. The connected sources' drifts
+  // (Nguồn và danh mục) read the same list, which holds only crawl sources' drifts.
+  'listSchemaDrifts',
+  'resolveSchemaDrift',
+  'getConsolidationRun',
 ];
 
 interface Operation {

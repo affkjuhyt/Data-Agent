@@ -17,6 +17,7 @@ import {
   getCrawlRun,
   listRunRecords,
   publishCrawlRun,
+  REVIEW_REASON_LABEL,
   reviewRecord,
   type CrawlRun,
   type ExtractedRecord,
@@ -34,14 +35,7 @@ import { useV1 } from '../../lib/v1/useV1';
  * bulk. The run publishes only when nothing blocking is left (BR-153); corrections become
  * examples for the extractor.
  */
-const REASON: Record<ReviewReason, string> = {
-  low_confidence: 'Độ tin thấp',
-  cross_source_anomaly: 'Bất thường chéo nguồn',
-  source_anomaly: 'Bất thường theo nguồn',
-  missing_required: 'Thiếu trường bắt buộc',
-  new_value: 'Giá trị mới',
-  random_sample: 'Mẫu ngẫu nhiên',
-};
+const REASON = REVIEW_REASON_LABEL;
 const FILTERS: ReviewReason[] = [
   'low_confidence',
   'cross_source_anomaly',
@@ -223,7 +217,11 @@ function ReviewBody({
                     : `${String(run.accuracy.sample_accuracy_pct).replace('.', ',')}%`
                 }
                 note={
-                  run.accuracy.recent_runs_ok ? '4 lượt gần nhất ≥ 98%' : 'chưa đủ 4 lượt ≥ 98%'
+                  run.accuracy.recent_runs_ok === null
+                    ? ''
+                    : run.accuracy.recent_runs_ok
+                      ? '4 lượt gần nhất ≥ 98%'
+                      : 'chưa đủ 4 lượt ≥ 98%'
                 }
                 tone={run.accuracy.recent_runs_ok ? 'success' : undefined}
               />
@@ -321,37 +319,45 @@ function RecordCard({
       </h2>
       <div className="flex items-start gap-da-xl max-[1279px]:flex-col">
         <div className="flex w-[340px] shrink-0 flex-col gap-da-md rounded-sm bg-subtle p-da-lg max-[1279px]:w-full">
-          <p className="text-muted-foreground da-mono">{record.raw.caption}</p>
-          <table className="w-full border-collapse overflow-hidden rounded-md border border-border bg-card da-body-small">
-            <thead>
-              <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                {record.raw.columns.map((c) => (
-                  <th key={c} className="px-da-lg py-da-md font-normal">
-                    {c}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {record.raw.rows.map((row, i) => (
-                <tr
-                  key={row.join('|')}
-                  className={cn(
-                    'border-b border-border last:border-b-0 text-foreground',
-                    i === record.raw.highlighted_row && 'bg-accent',
-                  )}
-                >
-                  {row.map((cell, j) => (
-                    <td key={j} className="px-da-lg py-[10px]">
-                      {cell}
-                    </td>
+          {record.raw ? (
+            <>
+              <p className="text-muted-foreground da-mono">{record.raw.caption}</p>
+              <table className="w-full border-collapse overflow-hidden rounded-md border border-border bg-card da-body-small">
+                <thead>
+                  <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
+                    {record.raw.columns.map((c) => (
+                      <th key={c} className="px-da-lg py-da-md font-normal">
+                        {c}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {record.raw.rows.map((row, i) => (
+                    <tr
+                      key={row.join('|')}
+                      className={cn(
+                        'border-b border-border last:border-b-0 text-foreground',
+                        i === record.raw?.highlighted_row && 'bg-accent',
+                      )}
+                    >
+                      {row.map((cell, j) => (
+                        <td key={j} className="px-da-lg py-[10px]">
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {record.raw.footnote && (
-            <p className="text-muted-foreground da-caption">{record.raw.footnote}</p>
+                </tbody>
+              </table>
+              {record.raw.footnote && (
+                <p className="text-muted-foreground da-caption">{record.raw.footnote}</p>
+              )}
+            </>
+          ) : (
+            <p className="break-all text-muted-foreground da-mono">
+              Bản gốc · {record.source_url ?? '—'}
+            </p>
           )}
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-[10px]">
