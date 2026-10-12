@@ -1,40 +1,65 @@
-/**
- * Gói ngành as the api sends it: IndustryPackView names the pack and its publisher; what is
- * installed and the latest version are PROPOSAL, so without them the pack is listed, not opened.
- */
-import { http, HttpResponse } from 'msw';
-import { setupServer } from 'msw/node';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { listPacks } from './packs';
+import { describe, expect, it } from 'vitest';
+import { readEntityMappings, readPackInstall, type MappingWire, type PackInstallWire } from './packs';
 
-const server = setupServer(
-  http.get('*/v1/packs', () =>
-    HttpResponse.json({
-      items: [
-        {
-          id: 'p-1',
-          code: 'banking',
-          name: 'Ngân hàng Việt Nam',
-          publisher: 'Data Agent',
-          industry_code: 'banking',
-        },
-      ],
-    }),
-  ),
-);
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
-afterAll(() => server.close());
+describe('pack adapters', () => {
+  it('adapts install progress and mapping rows from the API', () => {
+    const install = readPackInstall({
+      id: 'install-1',
+      data_space_id: 'space-1',
+      pack_version_id: 'version-1',
+      previous_pack_version_id: null,
+      status: 'onboarding',
+      activated_at: null,
+      activated_by: null,
+      proposal_id: null,
+      created_at: '2026-10-13T00:00:00Z',
+      updated_at: '2026-10-13T00:00:00Z',
+      pack_id: 'pack-1',
+      pack_code: 'banking',
+      pack_name: 'Ngân hàng Việt Nam',
+      version: '2.0',
+      entities: [{ code: 'customer', name: 'Khách hàng', mapped: 2, total: 3, required_mapped: 1, required_total: 1 }],
+      mapped: 2,
+      total: 3,
+      latest_calibration_run: null,
+    } as PackInstallWire);
+    expect(install).toMatchObject({
+      title: 'Ngân hàng Việt Nam · 2.0',
+      entities: [{ key: 'customer', mapped: 2, total: 3 }],
+    });
 
-describe('packs from the api', () => {
-  it('lists a pack with no version to open', async () => {
-    expect((await listPacks()).items).toEqual([
+    const mappings = readEntityMappings(
       {
-        id: 'p-1',
-        name: 'Ngân hàng Việt Nam',
-        publisher: 'Data Agent',
-        installed: null,
-        latest: null,
-      },
-    ]);
+        items: [
+          {
+            id: 'mapping-1',
+            pack_install_id: 'install-1',
+            attribute_id: 'attr-1',
+            dataset_id: 'dataset-1',
+            column_expr: 'crm.customers.cif',
+            confidence: 0.98,
+            origin: 'confirmed',
+            valid_from: '2026-10-13T00:00:00Z',
+            valid_to: null,
+            confirmed_by: 'user-1',
+            created_at: '2026-10-13T00:00:00Z',
+            updated_at: '2026-10-13T00:00:00Z',
+            entity_code: 'customer',
+            attribute_code: 'customer_id',
+            attribute_name: 'Mã khách hàng',
+            required: true,
+            code_mappings: [],
+          },
+        ],
+        next_page_token: '',
+      } as { items: MappingWire[]; next_page_token: string },
+      'customer',
+    );
+    expect(mappings.rows[0]).toMatchObject({
+      attr: 'customer_id',
+      column: 'crm.customers.cif',
+      approved: true,
+      unsure: false,
+    });
   });
 });

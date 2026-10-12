@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, v1Upload } from './client';
+import { pathId, v1Get, v1Send, v1Upload, type Page } from './client';
 import type { components } from './schema';
 
 /*
@@ -118,8 +118,26 @@ export interface PackInstall {
   entities: { key: string; name: string; mapped: number; total: number }[];
 }
 
+export type PackInstallWire = components['schemas']['PackInstallDetail'];
+export type MappingWire = components['schemas']['MappingView'];
+
+export function readPackInstall(raw: PackInstallWire): PackInstall {
+  if ('title' in raw) return raw as unknown as PackInstall;
+  return {
+    id: raw.id,
+    title: `${raw.pack_name} · ${raw.version}`,
+    summary_text: `${raw.mapped}/${raw.total} thuộc tính đã ánh xạ`,
+    entities: (raw.entities ?? []).map((entity) => ({
+      key: entity.code,
+      name: entity.name,
+      mapped: entity.mapped,
+      total: entity.total,
+    })),
+  };
+}
+
 export const getPackInstall = async (id: string) =>
-  v1Get<PackInstall>(`/pack-installs/${pathId(id)}`);
+  readPackInstall(await v1Get<PackInstallWire>(`/pack-installs/${pathId(id)}`));
 
 export const listPackInstalls = async () =>
   v1Get<{ items: PackInstall[] }>('/pack-installs', { status: 'onboarding' });
@@ -148,8 +166,34 @@ export interface EntityMappings {
 
 export const NOT_APPLICABLE = '__not_applicable__';
 
-export const getEntityMappings = async (installId: string, entity: string) =>
-  v1Get<EntityMappings>(`/pack-installs/${pathId(installId)}/mappings`, { entity });
+export function readEntityMappings(raw: Page<MappingWire> | EntityMappings, entity: string): EntityMappings {
+  if ('rows' in raw) return raw;
+  const items = raw.items.filter((item) => item.entity_code === entity);
+  return {
+    entity,
+    name: entity,
+    main_table: items[0]?.column_expr.split('.')[0] ?? '—',
+    rows: items.map((item) => ({
+      attr: item.attribute_code,
+      required: item.required,
+      column: item.column_expr || null,
+      options: item.column_expr ? [item.column_expr] : [],
+      confidence: item.confidence === null ? null : Number(item.confidence),
+      note: item.origin === 'confirmed' ? 'Đã xác nhận' : 'Đề xuất từ agent',
+      unsure: item.confidence !== null && Number(item.confidence) < 0.9,
+      approved: item.origin === 'confirmed' && item.confirmed_by !== null,
+    })),
+    decisions: [],
+  };
+}
+
+export const getEntityMappings = async (installId: string, entity: string) => {
+  const raw = await v1Get<Page<MappingWire> | EntityMappings>(
+    `/pack-installs/${pathId(installId)}/mappings`,
+    { entity },
+  );
+  return readEntityMappings(raw, entity);
+};
 
 /** A2: PUT /v1/pack-installs/{id}/mappings */
 export const saveMappings = async (
