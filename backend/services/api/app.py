@@ -15,6 +15,7 @@ from collections.abc import Awaitable, Callable
 from fastapi import FastAPI, Request, Response
 
 from services.api.config import Settings
+from services.api.kernel.access_log import access_log_middleware
 from services.api.kernel.auth import IdentityResolver, JwksTokenVerifier, TokenVerifier
 from services.api.kernel.etag import etag_middleware
 from services.api.kernel.idempotency import (
@@ -25,6 +26,12 @@ from services.api.kernel.idempotency import (
     response_store_from_env,
 )
 from services.api.kernel.problems import Problem, install_problem_handlers, problem_response
+from services.api.kernel.ratelimit import (
+    CounterStore,
+    counter_store_from_env,
+    per_minute,
+    rate_limit_middleware,
+)
 from services.api.kernel.tracing import trace_middleware
 from services.api.modules import ROUTERS
 from services.api.modules.org import OrgIdentityResolver
@@ -47,6 +54,8 @@ def create_app(
     token_verifier: TokenVerifier | None = None,
     identity_resolver: IdentityResolver | None = None,
     response_store: ResponseStore | None = None,
+    counter_store: CounterStore | None = None,
+    rate_limit: int | None = None,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
 
@@ -87,6 +96,19 @@ def create_app(
 
     # Outside the idempotency check: a stale If-Match answers 412 before a key is claimed.
     app.middleware("http")(etag_middleware)
+
+    counters = counter_store or counter_store_from_env()
+    limit = rate_limit or per_minute()
+
+    # Outside ETag and idempotency: a caller over the limit claims nothing and reads nothing.
+    @app.middleware("http")
+    async def rate_limited(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        return await rate_limit_middleware(request, call_next, counters, limit)
+
+    # Outermost but tracing: it logs the status every inner layer settled on, 429 and 412 too.
+    app.middleware("http")(access_log_middleware)
 
     @app.middleware("http")
     async def trace_and_contain(

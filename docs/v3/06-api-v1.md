@@ -123,6 +123,14 @@ giới hạn trang; trường ngoài danh sách trả 422, page_token cấp cho 
 `GET /v1/me/clients`, `GET /v1/webhooks/{id}/deliveries`, `GET /v1/security-events`; các danh sách khác chuyển dần
 sang cùng helper.
 
+Hạn mức và nhật ký (A1.8) cũng ở kernel. `kernel/ratelimit.py`: mỗi người (tổ chức + `sub` của token) tối đa
+`API_RATE_LIMIT_PER_MINUTE` lời gọi mỗi phút (mặc định 120), đếm theo cửa sổ một phút ở Redis; mọi phản hồi `/v1`
+có `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, vượt thì 429 `rate_limited` kèm `Retry-After`.
+Client gọi `/mcp` dùng hạn mức riêng của `api_client`. `kernel/access_log.py`: mọi lời gọi `/v1` thêm một dòng
+`audit.audit_log` sau khi có mã phản hồi (`action` = `api.<operation_id>`, đối tượng là `{id}` của đường dẫn,
+`outcome` ok / denied cho 401, 403, 429 / error); không ghi thân. Ghi lỗi thì chỉ ghi log ứng dụng, vì lời gọi đã
+xảy ra; việc bắt buộc phải có nhật ký trước khi làm (Kiểm toán, `/mcp`) tự ghi trong chính thao tác.
+
 A2 có 383 endpoint, làm dần theo nhóm: một nhóm vào `COMPLETE_GROUPS` trong commit phục vụ endpoint cuối
 của nhóm, từ đó bỏ một endpoint là lỗi. Thêm hoặc bỏ endpoint phải sửa tab 4 A2 và `a2_endpoints.json`
 trong cùng PR. Xem độ phủ: `python -m services.api.catalogue.check` trong image `api`.
