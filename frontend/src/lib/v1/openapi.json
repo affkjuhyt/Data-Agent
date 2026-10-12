@@ -7826,6 +7826,120 @@
     "title": "ConflictView",
     "type": "object"
    },
+   "ConnectorForm": {
+    "properties": {
+     "database_label": {
+      "title": "Database Label",
+      "type": "string"
+     },
+     "default_port": {
+      "title": "Default Port",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "database_label",
+     "default_port"
+    ],
+    "title": "ConnectorForm",
+    "type": "object"
+   },
+   "ConnectorView": {
+    "description": "A connector the connection wizard may offer; no credentials are included.",
+    "properties": {
+     "badge": {
+      "anyOf": [
+       {
+        "enum": [
+         "new",
+         "upload",
+         "engineering"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Badge"
+     },
+     "category": {
+      "enum": [
+       "database",
+       "warehouse",
+       "app",
+       "file",
+       "document"
+      ],
+      "title": "Category",
+      "type": "string"
+     },
+     "code": {
+      "title": "Code",
+      "type": "string"
+     },
+     "connected_count": {
+      "title": "Connected Count",
+      "type": "integer"
+     },
+     "form": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ConnectorForm"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "prep_notes": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Prep Notes",
+      "type": "array"
+     },
+     "sample_sql": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sample Sql"
+     },
+     "subtitle": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Subtitle"
+     }
+    },
+    "required": [
+     "code",
+     "name",
+     "category",
+     "subtitle",
+     "connected_count",
+     "badge",
+     "form",
+     "prep_notes",
+     "sample_sql"
+    ],
+    "title": "ConnectorView",
+    "type": "object"
+   },
    "ConsolidationRunCreate": {
     "additionalProperties": false,
     "properties": {
@@ -29542,6 +29656,27 @@
     "title": "Page[ConflictView]",
     "type": "object"
    },
+   "Page_ConnectorView_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ConnectorView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "next_page_token": {
+      "default": "",
+      "title": "Next Page Token",
+      "type": "string"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "Page[ConnectorView]",
+    "type": "object"
+   },
    "Page_ConsolidationSpecView_": {
     "properties": {
      "items": {
@@ -30905,6 +31040,27 @@
      "items"
     ],
     "title": "Page[ScoreWithThesis]",
+    "type": "object"
+   },
+   "Page_SecretRefView_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/SecretRefView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "next_page_token": {
+      "default": "",
+      "title": "Next Page Token",
+      "type": "string"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "Page[SecretRefView]",
     "type": "object"
    },
    "Page_SecurityEventView_": {
@@ -39257,6 +39413,25 @@
      "query"
     ],
     "title": "SearchRequest",
+    "type": "object"
+   },
+   "SecretRefView": {
+    "description": "A labelled OpenBao reference already used in this Data Space, never its value.",
+    "properties": {
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "ref": {
+      "title": "Ref",
+      "type": "string"
+     }
+    },
+    "required": [
+     "ref",
+     "label"
+    ],
+    "title": "SecretRefView",
     "type": "object"
    },
    "SecretReference": {
@@ -58141,6 +58316,138 @@
     ],
     "x-use-cases": [
      "UC-07-04"
+    ]
+   }
+  },
+  "/v1/connectors": {
+   "get": {
+    "description": "Return the safe connector catalogue and counts for this organisation.",
+    "operationId": "listConnectors",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_ConnectorView_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Danh mục connector cho màn Kết nối dữ liệu",
+    "tags": [
+     "Nguồn và danh mục"
+    ],
+    "x-capability": [
+     "admin_data"
+    ],
+    "x-use-cases": [
+     "UC-04-01"
     ]
    }
   },
@@ -108645,6 +108952,138 @@
     ],
     "x-use-cases": [
      "UC-05-04"
+    ]
+   }
+  },
+  "/v1/secret-refs": {
+   "get": {
+    "description": "List labels for references already used in the selected Data Space.\n\nOpenBao is deliberately not queried here: the API only exposes a reference that can be\nselected by the connection form, never credentials or arbitrary vault paths.",
+    "operationId": "listSecretRefs",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_SecretRefView_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Các reference OpenBao đã dùng trong Data Space, không trả bí mật",
+    "tags": [
+     "Nguồn và danh mục"
+    ],
+    "x-capability": [
+     "admin_data"
+    ],
+    "x-use-cases": [
+     "UC-04-01"
     ]
    }
   },

@@ -1002,6 +1002,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/connectors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Danh mục connector cho màn Kết nối dữ liệu
+         * @description Return the safe connector catalogue and counts for this organisation.
+         */
+        get: operations["listConnectors"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/consolidation-runs/{id}": {
         parameters: {
             query?: never;
@@ -5556,6 +5576,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/secret-refs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Các reference OpenBao đã dùng trong Data Space, không trả bí mật
+         * @description List labels for references already used in the selected Data Space.
+         *
+         *     OpenBao is deliberately not queried here: the API only exposes a reference that can be
+         *     selected by the connection form, never credentials or arbitrary vault paths.
+         */
+        get: operations["listSecretRefs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/security-events": {
         parameters: {
             query?: never;
@@ -9224,6 +9267,39 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** ConnectorForm */
+        ConnectorForm: {
+            /** Database Label */
+            database_label: string;
+            /** Default Port */
+            default_port: number;
+        };
+        /**
+         * ConnectorView
+         * @description A connector the connection wizard may offer; no credentials are included.
+         */
+        ConnectorView: {
+            /** Badge */
+            badge: ("new" | "upload" | "engineering") | null;
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "database" | "warehouse" | "app" | "file" | "document";
+            /** Code */
+            code: string;
+            /** Connected Count */
+            connected_count: number;
+            form: components["schemas"]["ConnectorForm"] | null;
+            /** Name */
+            name: string;
+            /** Prep Notes */
+            prep_notes: string[];
+            /** Sample Sql */
+            sample_sql: string | null;
+            /** Subtitle */
+            subtitle: string | null;
         };
         /** ConsolidationRunCreate */
         ConsolidationRunCreate: {
@@ -16732,6 +16808,16 @@ export interface components {
              */
             next_page_token: string;
         };
+        /** Page[ConnectorView] */
+        Page_ConnectorView_: {
+            /** Items */
+            items: components["schemas"]["ConnectorView"][];
+            /**
+             * Next Page Token
+             * @default
+             */
+            next_page_token: string;
+        };
         /** Page[ConsolidationSpecView] */
         Page_ConsolidationSpecView_: {
             /** Items */
@@ -17376,6 +17462,16 @@ export interface components {
         Page_ScoreWithThesis_: {
             /** Items */
             items: components["schemas"]["ScoreWithThesis"][];
+            /**
+             * Next Page Token
+             * @default
+             */
+            next_page_token: string;
+        };
+        /** Page[SecretRefView] */
+        Page_SecretRefView_: {
+            /** Items */
+            items: components["schemas"]["SecretRefView"][];
             /**
              * Next Page Token
              * @default
@@ -20402,6 +20498,16 @@ export interface components {
              * @default 12
              */
             top_k: number;
+        };
+        /**
+         * SecretRefView
+         * @description A labelled OpenBao reference already used in this Data Space, never its value.
+         */
+        SecretRefView: {
+            /** Label */
+            label: string;
+            /** Ref */
+            ref: string;
         };
         /**
          * SecretReference
@@ -30817,6 +30923,116 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConflictView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    listConnectors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_ConnectorView_"];
                 };
             };
             /** @description Invalid request */
@@ -65657,6 +65873,116 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_ChunkHit_"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    listSecretRefs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_SecretRefView_"];
                 };
             };
             /** @description Invalid request */

@@ -166,10 +166,12 @@ Dịch vụ: Skill service (skill). 14 endpoint.
 
 ### Nguồn và danh mục
 
-Dịch vụ: Connector service (catalog). 14 endpoint. Hai endpoint chứng nhận dataset hợp nhất (thêm 10/10/2026, BR-156) nằm ở tệp OpenAPI bổ sung cho tới lần gộp (A4); chỉ người phụ trách dữ liệu (steward\_id hoặc backup\_steward\_id) của Data Space chứa dataset gọi được, ngoài năng lực steward.
+Dịch vụ: Connector service (catalog). 16 endpoint. Hai endpoint chứng nhận dataset hợp nhất (thêm 10/10/2026, BR-156) nằm ở tệp OpenAPI bổ sung cho tới lần gộp (A4); chỉ người phụ trách dữ liệu (steward\_id hoặc backup\_steward\_id) của Data Space chứa dataset gọi được, ngoài năng lực steward.
 
 | Phương thức | Đường dẫn | Chức năng | Use case | Quyền |
 | --- | --- | --- | --- | --- |
+| GET | /v1/connectors | Danh mục connector cho màn Kết nối dữ liệu | 04-01 | admin\_data |
+| GET | /v1/secret-refs | Các reference OpenBao đã dùng trong Data Space, không trả bí mật | 04-01 | admin\_data |
 | GET | /v1/sources | Danh sách nguồn | 04-01 | admin\_data |
 | GET | /v1/sources/{id} | Một nguồn: chế độ, kết quả kiểm tra, giới hạn tải, lịch quét; không có bí mật (thêm 12/10/2026) | 04-01 | admin\_data |
 | POST | /v1/sources | Đăng ký nguồn | 04-01 | admin\_data |

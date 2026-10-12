@@ -18,7 +18,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.contract]
 
 def test_snapshot_holds_all_of_a2() -> None:
     data = catalogue()
-    assert len(data["endpoints"]) == 433
+    assert len(data["endpoints"]) == 435
     assert len(data["groups"]) == 22
     assert {e["group"] for e in data["endpoints"]} == set(data["groups"])
 

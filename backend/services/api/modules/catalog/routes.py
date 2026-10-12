@@ -16,7 +16,7 @@ import zoneinfo
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Response
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -44,6 +44,8 @@ from services.api.modules.catalog.schemas import (
     CertifyRequest,
     ColumnProfileView,
     ColumnView,
+    ConnectorForm,
+    ConnectorView,
     DatasetDetail,
     DatasetPatch,
     DatasetVersionView,
@@ -53,6 +55,7 @@ from services.api.modules.catalog.schemas import (
     ScanRunView,
     ScheduleUpdate,
     SecretReference,
+    SecretRefView,
     SourceCreate,
     SourcePatch,
     SourceSchedule,
@@ -69,9 +72,129 @@ DEFAULT_ZONE = "Asia/Ho_Chi_Minh"
 # A source is scanned while it can be read (UC-04-02 precondition: the source is active).
 SCANNABLE = ("active", "needs_fix")
 
+CONNECTORS: tuple[ConnectorView, ...] = (
+    ConnectorView(
+        code="postgresql",
+        name="PostgreSQL",
+        category="database",
+        subtitle="Cơ sở dữ liệu quan hệ",
+        connected_count=0,
+        badge=None,
+        form=ConnectorForm(database_label="Database", default_port=5432),
+        prep_notes=["Tài khoản đọc chỉ cần quyền CONNECT và SELECT."],
+        sample_sql="GRANT CONNECT ON DATABASE <db> TO <user>;",
+    ),
+    ConnectorView(
+        code="clickhouse",
+        name="ClickHouse",
+        category="warehouse",
+        subtitle="Kho phân tích cột",
+        connected_count=0,
+        badge=None,
+        form=ConnectorForm(database_label="Database", default_port=8123),
+        prep_notes=["Tài khoản chỉ đọc trên database cần dùng."],
+        sample_sql="GRANT SELECT ON <database>.* TO <user>;",
+    ),
+    ConnectorView(
+        code="snowflake",
+        name="Snowflake",
+        category="warehouse",
+        subtitle="Kho dữ liệu đám mây",
+        connected_count=0,
+        badge=None,
+        form=ConnectorForm(database_label="Warehouse / database", default_port=443),
+        prep_notes=["Dùng role chỉ đọc và warehouse có resource monitor."],
+        sample_sql=None,
+    ),
+    ConnectorView(
+        code="rest_api",
+        name="REST API",
+        category="app",
+        subtitle="Bằng HTTP hoặc MCP",
+        connected_count=0,
+        badge="new",
+        form=None,
+        prep_notes=["Lưu API key trong OpenBao; không nhập secret trực tiếp vào Data Agent."],
+        sample_sql=None,
+    ),
+    ConnectorView(
+        code="file",
+        name="Tệp CSV / thư mục",
+        category="file",
+        subtitle="Tải tệp theo lịch",
+        connected_count=0,
+        badge="upload",
+        form=None,
+        prep_notes=["Chọn thư mục hoặc tải tệp ở bước tiếp theo."],
+        sample_sql=None,
+    ),
+)
+
 
 def _now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
+
+
+@router.get(
+    "/v1/connectors",
+    response_model=Page[ConnectorView],
+    **endpoint("GET", "/v1/connectors", operation_id="listConnectors"),
+)
+async def list_connectors(principal: CurrentPrincipal) -> Page[ConnectorView]:
+    """Return the safe connector catalogue and counts for this organisation."""
+    source = catalog.Source
+    async with transaction(ROLE, principal) as session:
+        counts = dict(
+            (
+                kind,
+                count,
+            )
+            for kind, count in (
+                await session.execute(
+                    select(source.kind, func.count(source.id))
+                    .where(source.org_id == principal.org_id, source.deleted_at.is_(None))
+                    .group_by(source.kind)
+                )
+            ).all()
+        )
+    return Page(
+        items=[item.model_copy(update={"connected_count": counts.get(item.code, 0)}) for item in CONNECTORS],
+        next_page_token="",
+    )
+
+
+@router.get(
+    "/v1/secret-refs",
+    response_model=Page[SecretRefView],
+    **endpoint("GET", "/v1/secret-refs", operation_id="listSecretRefs"),
+)
+async def list_secret_refs(
+    principal: CurrentPrincipal, space: CurrentDataSpace
+) -> Page[SecretRefView]:
+    """List labels for references already used in the selected Data Space.
+
+    OpenBao is deliberately not queried here: the API only exposes a reference that can be
+    selected by the connection form, never credentials or arbitrary vault paths.
+    """
+    source = catalog.Source
+    async with transaction(ROLE, principal) as session:
+        rows = (
+            await session.execute(
+                select(source.secret_ref, func.min(source.name))
+                .where(
+                    source.org_id == principal.org_id,
+                    source.data_space_id == space,
+                    source.deleted_at.is_(None),
+                    source.secret_ref != "",
+                )
+                .group_by(source.secret_ref)
+                .order_by(source.secret_ref)
+            )
+        ).all()
+    return Page(
+        items=[SecretRefView(ref=ref, label=str(label)) for ref, label in rows],
+        next_page_token="",
+    )
 
 
 def _event(

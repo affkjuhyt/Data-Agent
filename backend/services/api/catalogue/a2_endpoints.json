@@ -840,6 +840,30 @@
   {
    "group": "Nguồn và danh mục",
    "method": "GET",
+   "path": "/v1/connectors",
+   "summary": "Danh mục connector cho màn Kết nối dữ liệu",
+   "use_cases": [
+    "04-01"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "GET",
+   "path": "/v1/secret-refs",
+   "summary": "Các reference OpenBao đã dùng trong Data Space, không trả bí mật",
+   "use_cases": [
+    "04-01"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "GET",
    "path": "/v1/sources",
    "summary": "Danh sách nguồn",
    "use_cases": [

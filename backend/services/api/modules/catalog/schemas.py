@@ -151,6 +151,32 @@ class SourceView(BaseModel):
         return view
 
 
+class ConnectorForm(BaseModel):
+    database_label: str
+    default_port: int
+
+
+class ConnectorView(BaseModel):
+    """A connector the connection wizard may offer; no credentials are included."""
+
+    code: str
+    name: str
+    category: Literal["database", "warehouse", "app", "file", "document"]
+    subtitle: str | None
+    connected_count: int
+    badge: Literal["new", "upload", "engineering"] | None
+    form: ConnectorForm | None
+    prep_notes: list[str]
+    sample_sql: str | None
+
+
+class SecretRefView(BaseModel):
+    """A labelled OpenBao reference already used in this Data Space, never its value."""
+
+    ref: str
+    label: str
+
+
 class SourceSchedule(SourceView):
     """The source and its next five scans of each kind (UC-04-05 step 3)."""
 
