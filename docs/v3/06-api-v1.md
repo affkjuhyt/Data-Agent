@@ -166,7 +166,7 @@ của ADR-28) trả lời. Bước G1 của [09](09-target-deploy-and-cleanup.md
 - **Trả lời.** `questions.answer_question` chạy như `svc_qa` trong tổ chức của sự kiện: ghi `qa.plan` (Plan IR của
   R0-10), `qa.answer`, chuyển câu hỏi `received → refused/answered`; luồng `GET /v1/questions/{id}/stream` suy sự
   kiện từ đó. Handler idempotent: nhận lại sự kiện thì không làm gì.
-- **Yêu cầu duyệt.** `hitl.handle` mở `inbox.hitl_request` từ sự kiện `hitl.requested` mà mọi module ghi vào
+- **Yêu cầu duyệt.** `hitl.open_request` mở `inbox.hitl_request` từ sự kiện `hitl.requested` mà mọi module ghi vào
   outbox của mình (payload từ `inbox.public.hitl_requested`), đọc cả outbox của CSDL audit qua khoá kết nối
   `svc_outbox_relay_audit`; `resolutions` xử lý `hitl.resolved` (bản xuất kiểm toán được duyệt thì chuyển `queued`).
   Worker cần `DATAAGENT_DB_URL__SVC_QA`, `__SVC_INBOX`, `__SVC_AUDIT`, `__SVC_OUTBOX_RELAY`,
