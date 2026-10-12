@@ -197,10 +197,56 @@ export interface ContextEval {
   misses: { question: string; expected: string; understood: string; cause: string }[];
 }
 
-export const getContextEval = async (id: string) => v1Get<ContextEval>(`/eval-sets/${pathId(id)}`);
+export type EvalSetWire = components['schemas']['EvalSetDetail'];
+
+/** Adapt A3's eval-set detail into the context evaluation screen's presentation model. */
+export function readContextEval(raw: EvalSetWire): ContextEval {
+  if ('data_space_name' in raw || 'kpis' in raw) return raw as unknown as ContextEval;
+  const runs = raw.runs ?? [];
+  const latest = raw.latest_run ?? runs[0];
+  const passed = latest?.passed ?? 0;
+  const failed = latest?.failed ?? 0;
+  const total = latest?.item_count ?? passed + failed;
+  return {
+    id: raw.id,
+    data_space_name: raw.name,
+    kpis: [
+      { label: 'Bộ câu hỏi chuẩn', value: `${raw.item_count} câu`, note: raw.subject_type, tone: 'neutral' },
+      { label: 'Trả lời đúng', value: `${passed} / ${total}`, note: `Tỷ lệ ${latest?.pass_rate ?? 0}%`, tone: 'success' },
+      { label: 'Trả lời sai', value: `${failed}`, note: 'Theo lượt gần nhất', tone: failed ? 'error' : 'neutral' },
+      { label: 'Từ chối đúng', value: `${latest?.correct_refusals ?? 0}`, note: 'Thiếu quyền hoặc dữ liệu', tone: 'neutral' },
+    ],
+    runs: runs.map((run) => ({
+      id: run.id,
+      label: `#${run.id.slice(0, 8)}`,
+      change: run.subject_version,
+      correct: run.passed,
+      delta: run.baseline_run_id ? run.regressions * -1 : 0,
+      result: run.status === 'completed' && run.regressions === 0 ? 'published' : run.status === 'completed' ? 'released' : 'blocked',
+    })),
+    latest_run_label: latest ? `#${latest.id.slice(0, 8)}` : '—',
+    misses: (raw.failures ?? []).map((failure) => ({
+      question: textFrom(failure.item.input),
+      expected: textFrom(failure.item.expected),
+      understood: textFrom(failure.result.actual),
+      cause: failure.result.cause ?? 'Không có mô tả',
+    })),
+  };
+}
+
+const textFrom = (value: unknown) =>
+  typeof value === 'string' ? value : JSON.stringify(value) ?? '—';
+
+export const getContextEval = async (id: string) => {
+  const raw = await v1Get<EvalSetWire>(`/eval-sets/${pathId(id)}`);
+  return readContextEval(raw);
+};
 
 export const listEvalSets = async () =>
-  v1Get<Page<{ id: string; data_space_name: string }>>('/eval-sets', { kind: 'context' });
+  v1Get<Page<EvalSetWire>>('/eval-sets', { subject_type: 'context' }).then((page) => ({
+    ...page,
+    items: page.items.map((item) => ({ id: item.id, data_space_name: item.name })),
+  }));
 
 /** A2: POST /v1/eval-sets/{id}/runs (202) */
 export const runContextEval = async (id: string) =>

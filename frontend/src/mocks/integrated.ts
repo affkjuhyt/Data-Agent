@@ -90,8 +90,6 @@ const HELD_BACK: readonly string[] = [
   'updateDataMart',
   'disablePolicy',
   'getPolicy',
-  'getEvalSet',
-  'listEvalSets',
   'createPack',
   'getCalibrationRun',
   'getMetricOverride',
