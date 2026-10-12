@@ -188,19 +188,21 @@ bench-e2e:  ## per-stage latency of one real question against a deployed agent (
 	  -e PYTHONPATH=/src/backend:/src $(E2E_ENV) $(PY_IMAGE) \
 	  python -m model.bench.e2e $(E2E_ARGS)
 
-# The e2e suite (pytest -m e2e) drives the deployed dev cluster through its LAN
-# NodePorts (deploy/k8s/dev: Kong 30100, Keycloak 30110, workflow-runtime 30240),
+# The e2e suite (pytest -m e2e) drives the deployed V3 dev cluster through its LAN
+# NodePorts (deploy/k8s/dev: Kong 30100, Keycloak 30110). It exercises api + worker-agent,
 # so it needs the cluster up and seeded with seed_demo, not testcontainers. It
 # logs in and runs real agent turns: every run writes conversations, so point it
 # only at a cluster where that is acceptable. Override a URL to target another
 # cluster. The account credentials (E2E_USER/E2E_PASS, E2E_ADMIN_*, E2E_T2_ADMIN_*,
 # tests/README.md) are forwarded by name, like bench-e2e's secrets.
-E2E_KONG_URL ?= http://10.10.55.101:30100
-E2E_KEYCLOAK_URL ?= http://10.10.55.101:30110
-E2E_RUNTIME_URL ?= http://10.10.55.101:30240
-E2E_TESTS ?= $(wildcard tests/integration/test_*.py)
+# The default inventory is k8s-local on OrbStack. Override these for the shared
+# LAN cluster or another deployed environment.
+E2E_KONG_URL ?= http://localhost:30100
+E2E_KEYCLOAK_URL ?= http://localhost:30110
+E2E_DATA_SPACE ?= a0000000-0000-0000-0000-000000000001
+E2E_TESTS ?= tests/integration/test_v3_question_e2e.py
 E2E_FORWARD_VARS = E2E_USER E2E_PASS E2E_ADMIN_USER E2E_ADMIN_PASS E2E_T2_ADMIN_USER E2E_T2_ADMIN_PASS \
-                   E2E_AGENT_ID E2E_STRICT E2E_TURN_TIMEOUT
+                   E2E_DATA_SPACE E2E_STRICT E2E_TURN_TIMEOUT
 E2E_FORWARD = $(foreach v,$(E2E_FORWARD_VARS),$(if $($(v)),-e $(v)))
 
 export $(E2E_FORWARD_VARS)
@@ -208,12 +210,12 @@ export $(E2E_FORWARD_VARS)
 # --no-showlocals: a failing e2e test would otherwise print the passwords and tokens
 # in its frames (pyproject sets --showlocals for every suite).
 # The turn test writes its frames to tests/e2e/out/ as root; hand them back.
-e2e:  ## pytest -m e2e against the deployed dev cluster (LAN NodePorts; URLs overridable, credentials from env)
-	@docker build -q --build-arg BASE=$(IMAGE_REGISTRY)/dataagent/workflow_runtime:latest --build-arg SUITE=workflow_runtime \
-	  -f tests/test-image.Dockerfile -t dataagent-test/workflow_runtime:latest . >/dev/null
+e2e:  ## pytest -m e2e against the deployed V3 dev cluster (LAN NodePorts; URLs overridable, credentials from env)
+	@docker build -q --build-arg BASE=$(IMAGE_REGISTRY)/dataagent/worker-agent:latest --build-arg SUITE=worker_agent \
+	  -f tests/test-image.Dockerfile -t dataagent-test/worker_agent:latest . >/dev/null
 	@$(DOCKER_RUN_SUITE) --network host -e LIVE_STACK=1 -e LIVE_KONG_URL=$(E2E_KONG_URL) \
-	  -e LIVE_KEYCLOAK_URL=$(E2E_KEYCLOAK_URL) -e WORKFLOW_RUNTIME_URL=$(E2E_RUNTIME_URL) $(E2E_FORWARD) \
-	  dataagent-test/workflow_runtime:latest sh -c \
+	  -e LIVE_KEYCLOAK_URL=$(E2E_KEYCLOAK_URL) $(E2E_FORWARD) \
+	  dataagent-test/worker_agent:latest sh -c \
 	  "python -m pytest -q -p no:cacheprovider --no-showlocals -m e2e $(PYTEST_ARGS) $(E2E_TESTS); \
 	   rc=\$$?; chown -R $$(id -u):$$(id -g) tests/e2e/out 2>/dev/null; exit \$$rc"
 
