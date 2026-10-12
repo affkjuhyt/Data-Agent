@@ -224,6 +224,12 @@ async def export_audit_log(
         ).one()
         # BR-138 counts what one person takes out, not one request: exports split under the
         # threshold add up over a day, so cutting a large export into pieces still needs approval.
+        # One requester's exports are judged one at a time, or parallel requests would each see
+        # the day's total before the others commit.
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
+            {"k": f"audit.export:{principal.org_id}:{principal.user_id}"},
+        )
         taken_today = await session.scalar(
             select(func.coalesce(func.sum(audit.ExportJob.row_count), 0)).where(
                 audit.ExportJob.requested_by == principal.user_id,

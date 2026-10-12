@@ -261,3 +261,21 @@ async def test_br_138_exports_cut_under_the_threshold_still_add_up(
         "queued",
         "waiting_approval",
     ]
+
+
+async def test_br_138_parallel_exports_cannot_all_slip_under_the_threshold(
+    seed: Seed, audit_db: AuditDb, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from services.api.modules.audit import routes
+
+    monkeypatch.setattr(routes, "APPROVAL_ROWS", 2)
+    org = build(seed)
+    audit_db.log(org.id, "a.one", org.controller)
+    async with client(org) as c:
+        answers = await asyncio.gather(
+            *(c.post("/v1/audit:export", json={"filters": {"action": "a.one"}}) for _ in range(4))
+        )
+    # 1 row each: at most two fit under 2 rows a day, whatever the interleaving.
+    assert sorted(r.json()["status"] for r in answers).count("queued") == 2
