@@ -107,3 +107,23 @@ async def test_a1_8_over_the_limit_is_429_with_rate_limit_headers(
     assert over.status_code == 429 and over.json()["code"] == "rate_limited"
     assert over.headers["Retry-After"] == over.headers["RateLimit-Reset"]
     assert audit_rows(org)[-1][1:] == ("denied", None, "429")
+
+
+async def test_a1_8_a_forged_forwarded_for_neither_lands_nor_drops_the_row(
+    seed: Seed, audit_rows: Any, ddl_server: dict[str, str]
+) -> None:
+    org, _ = build(seed)
+    async with client(org, "kc-ac06") as c:
+        await c.get("/v1/security-events", headers={"X-Forwarded-For": "6.6.6.6, 10.0.0.7"})
+        await c.get("/v1/security-events", headers={"X-Forwarded-For": "not-an-ip"})
+    conn = psycopg2.connect(ddl_server["dataagent_audit"])
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT host(ip) FROM audit.audit_log WHERE org_id = %s AND action LIKE 'api.%%' "
+            "ORDER BY seq",
+            (str(org),),
+        )
+        ips = [r[0] for r in cur.fetchall()]
+    conn.close()
+    # The gateway's own hop is kept, the client's claim is not; a junk value is dropped, the row is not.
+    assert ips == ["10.0.0.7", None]

@@ -15,6 +15,7 @@ and does not fail the call, which has already happened: the modules that must no
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
@@ -49,10 +50,22 @@ def _object_id(request: Request) -> uuid.UUID | None:
 
 
 def _ip(request: Request) -> str | None:
+    """The caller's address as the gateway saw it.
+
+    Kong appends the peer it accepted the connection from to X-Forwarded-For, so the last entry
+    is the one a client cannot forge; anything before it is whatever the client sent. A value that
+    is not an address is dropped rather than written: inet would refuse it, and a refused insert
+    would lose the row."""
     forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip() or None
-    return request.client.host if request.client else None
+    candidate = (
+        forwarded.split(",")[-1].strip()
+        if forwarded
+        else (request.client.host if request.client else None)
+    )
+    try:
+        return str(ipaddress.ip_address(candidate)) if candidate else None
+    except ValueError:
+        return None
 
 
 async def access_log_middleware(
@@ -76,7 +89,9 @@ async def access_log_middleware(
             return response
         actor_id, actor_kind, data_space_id = None, "user", None
     route = request.scope.get("route")
-    operation = getattr(route, "operation_id", None) or f"{request.method} {request.url.path}"
+    # Only names the api chose: a path that matched no route is the caller's own text, which must
+    # not reach the action column or the application log.
+    operation = getattr(route, "operation_id", None) or "unmatched"
     try:
         async with scoped_session(ROLE, org_id, actor_id) as session:
             session.add(
