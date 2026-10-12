@@ -37,13 +37,14 @@ def worker_database(ddl_server: dict[str, str]) -> Iterator[str]:  # noqa: F811
     conn.autocommit = True
     with conn.cursor() as cur:
         # Roles are cluster-wide: one password serves both databases.
-        for role in ("svc_qa", "svc_inbox", "svc_outbox_relay"):
+        for role in ("svc_qa", "svc_inbox", "svc_outbox_relay", "svc_audit"):
             cur.execute(f"ALTER ROLE {role} WITH LOGIN PASSWORD %s", (PASSWORD,))
     conn.close()
     mp = pytest.MonkeyPatch()
     for role in ("svc_qa", "svc_inbox", "svc_outbox_relay"):
         mp.setenv(f"DATAAGENT_DB_URL__{role.upper()}", _login_url(dsn, role))
     # The audit database's outbox, read by the same relay role through its own connection key.
+    mp.setenv("DATAAGENT_DB_URL__SVC_AUDIT", _login_url(ddl_server["dataagent_audit"], "svc_audit"))
     mp.setenv(
         "DATAAGENT_DB_URL__SVC_OUTBOX_RELAY_AUDIT",
         _login_url(ddl_server["dataagent_audit"], "svc_outbox_relay"),

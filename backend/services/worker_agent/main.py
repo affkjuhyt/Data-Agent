@@ -6,7 +6,8 @@ Polls its event source, hands each event to the handler of its type, and acknowl
 batch only when every handler returned; a failing event is logged and left for the next
 claim (handlers are idempotent).
 
-It handles `question.received` from qa.outbox and `hitl.requested` from the outbox of every
+It handles `question.received` from qa.outbox, `hitl.resolved` from inbox.outbox, and
+`hitl.requested` from the outbox of every
 schema that has one, in the main database and in the audit database (whose outbox is read
 through its own connection key, svc_outbox_relay_audit).
 """
@@ -23,7 +24,7 @@ from collections.abc import Mapping
 from sqlalchemy import text
 
 from libs.dataagent_db import unscoped_session
-from services.worker_agent import hitl, questions
+from services.worker_agent import hitl, questions, resolutions
 from services.worker_agent.events import EventSource, Handler, OutboxTableSource
 
 logger = logging.getLogger(__name__)
@@ -42,7 +43,7 @@ async def run_once(source: EventSource, handlers: Mapping[str, Handler], batch: 
         return len(events)
 
 
-HANDLERS: dict[str, Handler] = {**questions.HANDLERS, **hitl.HANDLERS}
+HANDLERS: dict[str, Handler] = {**questions.HANDLERS, **hitl.HANDLERS, **resolutions.HANDLERS}
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
 
@@ -61,7 +62,13 @@ async def _outbox_schemas(role: str) -> list[str]:
 async def sources() -> list[EventSource]:
     found: list[EventSource] = []
     for schema in await _outbox_schemas("svc_outbox_relay"):
-        types = {hitl.EVENT_TYPE} | (set(questions.HANDLERS) if schema == "qa" else set())
+        types = {hitl.EVENT_TYPE}
+        if schema == "qa":
+            types |= set(questions.HANDLERS)
+        if schema == "inbox":
+            # Claiming stamps published_at, so this worker is the one consumer of hitl.resolved
+            # until Debezium gives each consumer its own group (ADR-06).
+            types |= set(resolutions.HANDLERS)
         found.append(OutboxTableSource(schema=schema, event_types=frozenset(types)))
     try:
         audit = await _outbox_schemas(AUDIT_RELAY)
