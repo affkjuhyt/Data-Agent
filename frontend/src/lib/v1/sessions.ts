@@ -338,9 +338,27 @@ export const previewSharing = async (id: string, members: SharingInput) => {
   };
 };
 
-/** PROPOSAL: people and groups to share with. */
-export const searchPrincipals = (q: string) =>
-  v1Get<Page<Principal>>('/principals', { q, page_size: 20 });
+/** The directory exposes only the fields needed by the share picker. */
+export const searchPrincipals = async (q: string) => {
+  const page = await v1Get<Page<components['schemas']['PrincipalRef']> | Page<Principal>>(
+    '/principals',
+    { q, page_size: 20 },
+  );
+  return {
+    ...page,
+    items: page.items.map((item) => {
+      const principal = item as components['schemas']['PrincipalRef'] & Partial<Principal>;
+      const legacy = item as Partial<Principal>;
+      return {
+        id: principal.id,
+        kind: principal.kind as 'user' | 'group',
+        name: principal.display_name ?? legacy.name ?? '',
+        detail: legacy.detail ?? '',
+        scope_limited: legacy.scope_limited ?? false,
+      };
+    }),
+  };
+};
 
 /* Báo cáo của phiên */
 
