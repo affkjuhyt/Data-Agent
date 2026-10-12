@@ -851,3 +851,20 @@ async def test_an_org_wide_request_is_hidden_from_those_it_does_not_concern(team
     assert outsider.status_code == 404
     assert str(request) not in [i["id"] for i in by_id.json()["items"]]
     assert requester.status_code == approver.status_code == 200
+
+
+async def test_an_excluded_approver_cannot_even_reassign(team: Team) -> None:
+    request = _hitl(
+        team,
+        kind="export",
+        data_space_id=None,
+        assignee_capability="compliance",
+        context=Json({"excluded_approver_ids": [str(team.users["controller"])]}),
+    )
+    async with client(team) as api:
+        r = await api.post(
+            f"/v1/hitl-requests/{request}:resolve",
+            headers=team.headers("controller"),
+            json={"decision": "reassign", "reassign_to": str(team.users["reviewer"])},
+        )
+    assert r.status_code == 403

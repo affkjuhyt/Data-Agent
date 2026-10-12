@@ -222,8 +222,17 @@ async def export_audit_log(
                 )
             )
         ).one()
+        # BR-138 counts what one person takes out, not one request: exports split under the
+        # threshold add up over a day, so cutting a large export into pieces still needs approval.
+        taken_today = await session.scalar(
+            select(func.coalesce(func.sum(audit.ExportJob.row_count), 0)).where(
+                audit.ExportJob.requested_by == principal.user_id,
+                audit.ExportJob.created_at >= func.now() - text("interval '24 hours'"),
+                audit.ExportJob.status.not_in(("failed", "expired")),
+            )
+        )
         status: Literal["queued", "waiting_approval"] = (
-            "waiting_approval" if row_count > APPROVAL_ROWS else "queued"
+            "waiting_approval" if int(taken_today or 0) + row_count > APPROVAL_ROWS else "queued"
         )
         job = audit.ExportJob(
             id=uuid7(),
