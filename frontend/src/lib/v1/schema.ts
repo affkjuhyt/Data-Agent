@@ -5607,6 +5607,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/session-reports/{id}/document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Đọc nội dung markdown của báo cáo */
+        get: operations["getSessionReportDocument"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/session-reports/{id}:check": {
         parameters: {
             query?: never;
@@ -19293,6 +19310,27 @@ export interface components {
             started_at: string;
             /** Status */
             status: string;
+        };
+        /**
+         * ReportDocumentView
+         * @description The report worker's immutable markdown artifact, read through the API.
+         */
+        ReportDocumentView: {
+            /** Body Ref */
+            body_ref: string;
+            /**
+             * Content Type
+             * @constant
+             * @enum {string}
+             */
+            content_type: "text/markdown";
+            /** Markdown */
+            markdown: string;
+            /**
+             * Report Id
+             * Format: uuid
+             */
+            report_id: string;
         };
         /** ReportPatch */
         ReportPatch: {
@@ -66052,6 +66090,128 @@ export interface operations {
             };
             /** @description Rate limited */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    getSessionReportDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportDocumentView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description source_unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

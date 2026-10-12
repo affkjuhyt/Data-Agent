@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { pathId, v1Get, v1Send, V1Error, type Page } from './client';
 import type { components } from './schema';
 import { readWorkspace, type Workspace } from './types';
 
@@ -209,6 +209,9 @@ export interface SessionReport {
   recipients_text: string;
 }
 
+/** The immutable markdown artifact returned by GET /v1/session-reports/{id}/document. */
+export type SessionReportDocument = components['schemas']['ReportDocumentView'];
+
 /* Phiên */
 export const getWorkspace = async (id: string) =>
   readWorkspaceDetail(await v1Get<WorkspaceDetailWire>(`/workspaces/${pathId(id)}`));
@@ -406,10 +409,7 @@ function readReportChecks(raw: unknown): ReportCheck[] {
   });
 }
 
-/**
- * The API returns the report row only. `body_ref` is an object-store reference, not report text,
- * so keep the preview empty until a document endpoint exists instead of showing fabricated data.
- */
+/** The API row carries metadata; the document endpoint supplies the immutable report body. */
 export function readSessionReport(raw: components['schemas']['ReportView']): SessionReport {
   // MSW keeps the richer design fixture beside the wire row; the real API simply omits it until
   // the report-document contract is shipped. Reading it here keeps mock and live adapters on one
@@ -440,6 +440,49 @@ export function readSessionReport(raw: components['schemas']['ReportView']): Ses
   };
 }
 
+/**
+ * Read the deliberately small report-markdown contract. Unknown markdown is ignored rather than
+ * guessed: the review screen must never turn prose into an apparently grounded number.
+ */
+export function readReportDocument(markdown: string): SessionReport['document'] {
+  const lines = markdown.replaceAll('\r\n', '\n').split('\n');
+  let heading = '';
+  let section: 'summary' | 'figures' | 'recommendation' = 'summary';
+  const summary: string[] = [];
+  const figures: ReportFigure[] = [];
+  const recommendation: string[] = [];
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith('# ')) {
+      if (!heading) heading = line.slice(2).trim();
+      continue;
+    }
+    if (line.startsWith('## ')) {
+      const name = line.slice(3).trim().toLowerCase();
+      if (name.includes('figure') || name.includes('số')) section = 'figures';
+      else if (name.includes('recommend') || name.includes('khuyến')) section = 'recommendation';
+      else section = 'summary';
+      continue;
+    }
+    if (section === 'figures') {
+      const match = line.match(/^[-*]\s+(.+?)\s*\|\s*(grounded|ungrounded|pass|true|false)$/i);
+      if (match) {
+        figures.push({ value: match[1].trim(), grounded: /^(grounded|pass|true)$/i.test(match[2]) });
+        continue;
+      }
+    }
+    if (section === 'recommendation') recommendation.push(line.replace(/^[-*]\s+/, ''));
+    else if (section === 'summary') summary.push(line.replace(/^[-*]\s+/, ''));
+  }
+  return {
+    heading,
+    summary: summary.join('\n\n'),
+    figures,
+    recommendation: recommendation.join('\n\n'),
+  };
+}
+
 /** The API filters the report list by workspace_id; there is no nested collection route. */
 export const listSessionReports = async (workspaceId: string) => {
   const page = await v1Get<Page<components['schemas']['ReportView']>>('/session-reports', {
@@ -459,10 +502,21 @@ export const createSessionReport = async (workspaceId: string, title: string) =>
     },
   );
 
-export const getSessionReport = async (id: string) =>
-  readSessionReport(
+export const getSessionReport = async (id: string) => {
+  const report = readSessionReport(
     await v1Get<components['schemas']['ReportView']>(`/session-reports/${pathId(id)}`),
   );
+  try {
+    const document = await v1Get<SessionReportDocument>(
+      `/session-reports/${pathId(id)}/document`,
+    );
+    return { ...report, document: readReportDocument(document.markdown) };
+  } catch (error) {
+    // A report row remains useful while its worker artifact is not available yet.
+    if (error instanceof V1Error && (error.status === 404 || error.status === 503)) return report;
+    throw error;
+  }
+};
 
 /**
  * Publish needs every check to pass and a reviewer other than the author (409 otherwise). The

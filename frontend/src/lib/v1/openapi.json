@@ -36236,6 +36236,40 @@
     "title": "ReplayView",
     "type": "object"
    },
+   "ReportDocumentView": {
+    "description": "The report worker's immutable markdown artifact, read through the API.",
+    "properties": {
+     "body_ref": {
+      "title": "Body Ref",
+      "type": "string"
+     },
+     "content_type": {
+      "const": "text/markdown",
+      "enum": [
+       "text/markdown"
+      ],
+      "title": "Content Type",
+      "type": "string"
+     },
+     "markdown": {
+      "title": "Markdown",
+      "type": "string"
+     },
+     "report_id": {
+      "format": "uuid",
+      "title": "Report Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "report_id",
+     "body_ref",
+     "content_type",
+     "markdown"
+    ],
+    "title": "ReportDocumentView",
+    "type": "object"
+   },
    "ReportPatch": {
     "properties": {
      "as_of_rule": {
@@ -109224,6 +109258,160 @@
      }
     ],
     "summary": "Một báo cáo của phiên: mục, căn cứ từng số, kết quả bốn kiểm tra (thêm 12/10/2026)",
+    "tags": [
+     "Phiên làm việc"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-02-07"
+    ]
+   }
+  },
+  "/v1/session-reports/{id}/document": {
+   "get": {
+    "operationId": "getSessionReportDocument",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ReportDocumentView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     },
+     "503": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "source_unavailable"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Đọc nội dung markdown của báo cáo",
     "tags": [
      "Phiên làm việc"
     ],

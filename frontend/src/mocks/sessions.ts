@@ -623,6 +623,27 @@ export function createSessionHandlers() {
         : problem(404, 'not_found', 'Không tìm thấy báo cáo.');
     }),
 
+    http.get('*/v1/session-reports/:id/document', ({ params }) => {
+      const report = reports.find((r) => r.id === params.id);
+      if (!report) return problem(404, 'not_found', 'Không tìm thấy báo cáo.');
+      const figures = report.document.figures
+        .map((figure) => `- ${figure.value} | ${figure.grounded ? 'grounded' : 'ungrounded'}`)
+        .join('\n');
+      return HttpResponse.json({
+        report_id: report.id,
+        body_ref: `s3://reports/${report.id}.md`,
+        content_type: 'text/markdown',
+        markdown: [
+          `# ${report.document.heading}`,
+          report.document.summary,
+          '## Figures',
+          figures,
+          '## Recommendation',
+          report.document.recommendation,
+        ].filter(Boolean).join('\n\n'),
+      });
+    }),
+
     http.post('*/v1/session-reports/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
       const report = reports.find((r) => r.id === id);
