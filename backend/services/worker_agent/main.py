@@ -4,7 +4,11 @@ Run: `python -m services.worker_agent.main` with backend/ on PYTHONPATH.
 
 Polls its event source, hands each event to the handler of its type, and acknowledges the
 batch only when every handler returned; a failing event is logged and left for the next
-claim (handlers are idempotent). G1 handles `question.received` only.
+claim (handlers are idempotent).
+
+It handles `question.received` from qa.outbox and `hitl.requested` from the outbox of every
+schema that has one, in the main database and in the audit database (whose outbox is read
+through its own connection key, svc_outbox_relay_audit).
 """
 
 from __future__ import annotations
@@ -16,8 +20,11 @@ import os
 import signal
 from collections.abc import Mapping
 
+from sqlalchemy import text
+
+from libs.dataagent_db import unscoped_session
+from services.worker_agent import hitl, questions
 from services.worker_agent.events import EventSource, Handler, OutboxTableSource
-from services.worker_agent.questions import HANDLERS
 
 logger = logging.getLogger(__name__)
 
@@ -35,14 +42,49 @@ async def run_once(source: EventSource, handlers: Mapping[str, Handler], batch: 
         return len(events)
 
 
+HANDLERS: dict[str, Handler] = {**questions.HANDLERS, **hitl.HANDLERS}
+AUDIT_RELAY = "svc_outbox_relay_audit"
+
+
+async def _outbox_schemas(role: str) -> list[str]:
+    """The schemas whose outbox this connection may claim from (its grants decide)."""
+    async with unscoped_session(role) as session:
+        rows = await session.execute(
+            text(
+                "SELECT table_schema FROM information_schema.tables "
+                "WHERE table_name = 'outbox' ORDER BY table_schema"
+            )
+        )
+        return [r[0] for r in rows]
+
+
+async def sources() -> list[EventSource]:
+    found: list[EventSource] = []
+    for schema in await _outbox_schemas("svc_outbox_relay"):
+        types = {hitl.EVENT_TYPE} | (set(questions.HANDLERS) if schema == "qa" else set())
+        found.append(OutboxTableSource(schema=schema, event_types=frozenset(types)))
+    try:
+        audit = await _outbox_schemas(AUDIT_RELAY)
+    except RuntimeError:
+        # No URL for the audit database: requests raised by the audit module wait until it is set.
+        logger.warning("worker-agent | DATAAGENT_DB_URL__%s is not set", AUDIT_RELAY.upper())
+        audit = []
+    found += [
+        OutboxTableSource(schema=s, event_types=frozenset({hitl.EVENT_TYPE}), role=AUDIT_RELAY)
+        for s in audit
+    ]
+    return found
+
+
 async def run(stop: asyncio.Event) -> None:
-    source = OutboxTableSource(schema="qa", event_types=frozenset(HANDLERS))
+    claimed_from = await sources()
     while not stop.is_set():
-        try:
-            handled = await run_once(source, HANDLERS)
-        except Exception:
-            logger.exception("worker-agent | batch failed; retrying after a pause")
-            handled = 0
+        handled = 0
+        for source in claimed_from:
+            try:
+                handled += await run_once(source, HANDLERS)
+            except Exception:
+                logger.exception("worker-agent | batch failed; retrying after a pause")
         if not handled:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=POLL_SECONDS)

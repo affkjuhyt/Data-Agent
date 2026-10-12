@@ -37,6 +37,8 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
+from services.api.modules.inbox.public import EVENT_TYPE as HITL_REQUESTED
+from services.api.modules.inbox.public import hitl_requested
 from services.api.modules.period.schemas import (
     Accepted,
     ApprovalStepPlan,
@@ -641,6 +643,32 @@ async def request_exception(
             # The approvers decide on this justification; it is the request itself.
             reason=body.reason.strip(),
         )
+        _emit(
+            session,
+            principal,
+            "period_reconciliation",
+            item.id,
+            HITL_REQUESTED,
+            **hitl_requested(
+                hitl_request_id=hitl_id,
+                data_space_id=data_space,
+                kind="period_exception",
+                risk="high",
+                title=f"Ngoại lệ đối soát {item.item_code}",
+                source_service="period",
+                source_ref=item.id,
+                created_by=principal.user_id,
+                context={
+                    "period_close_id": str(period.id),
+                    "item_code": item.item_code,
+                    "delta": str(item.delta),
+                    "tolerance": str(item.tolerance),
+                    "reason": body.reason.strip(),
+                },
+                approval_steps=[s.approver_role for s in EXCEPTION_STEPS],
+                excluded_approver_ids=excluded,
+            ),
+        )
     response.headers["Location"] = f"/v1/hitl-requests/{hitl_id}"
     return HitlRequestRef(
         id=hitl_id,
@@ -796,6 +824,31 @@ async def publish_period(
                 metric_version_id=o.metric_version_id,
                 reported_value=str(o.reported_value),
                 requested_by=principal.user_id,
+            )
+            _emit(
+                session,
+                principal,
+                "period_close",
+                row.id,
+                HITL_REQUESTED,
+                **hitl_requested(
+                    hitl_request_id=approval_ids[o.metric_version_id],
+                    data_space_id=data_space,
+                    kind="period_exception",
+                    risk="high",
+                    title="Duyệt số nộp khác số tính",
+                    source_service="period",
+                    source_ref=row.id,
+                    created_by=principal.user_id,
+                    context={
+                        "period_close_id": str(row.id),
+                        "metric_version_id": str(o.metric_version_id),
+                        "reported_value": str(o.reported_value),
+                        "override_reason": o.override_reason.strip(),
+                    },
+                    assignee_id=o.approver_id,
+                    excluded_approver_ids=[principal.user_id],
+                ),
             )
         await session.flush()
         return PeriodCloseView.model_validate(row)

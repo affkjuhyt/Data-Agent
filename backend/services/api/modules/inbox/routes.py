@@ -420,6 +420,10 @@ async def resolve_hitl(
         )
         if not step_approver and not await _is_assignee(session, row, principal, org_caps):
             raise Problem(403, "forbidden", "Only the assignee can resolve this request.")
+        excluded = (row.context or {}).get("excluded_approver_ids") or []
+        if body.decision != "reassign" and str(principal.user_id) in excluded:
+            # Named by the module that asked (the filer, the closer of the period).
+            raise Problem(403, "forbidden", "You may not decide this request.")
         if body.decision == "approve" and row.created_by == principal.user_id:
             # BR-62: whoever raised the change does not approve it.
             raise Problem(403, "forbidden", "The requester cannot approve their own request.")

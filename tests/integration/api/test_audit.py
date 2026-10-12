@@ -214,3 +214,29 @@ async def test_export_needs_audit_read_and_stays_in_its_organisation(
         assert (await c.post("/v1/audit:export", json={"filters": {}})).status_code == 403
     async with client(mine) as c:
         assert (await c.get(made.headers["Location"])).status_code == 404
+
+
+async def test_br_138_a_large_export_asks_a_second_person_in_the_inbox(
+    seed: Seed, audit_db: AuditDb, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from services.api.modules.audit import routes
+
+    monkeypatch.setattr(routes, "APPROVAL_ROWS", 0)
+    org = build(seed)
+    audit_db.log(org.id, "query.executed", org.controller)
+    async with client(org) as c:
+        r = await c.post("/v1/audit:export", json={"filters": {}})
+    job = r.json()["id"]
+    hitl_id, event = audit_db.one(
+        "SELECT j.hitl_request_id::text, o.payload FROM audit.export_job j "
+        "JOIN audit.outbox o ON o.aggregate_id = j.id AND o.event_type = 'hitl.requested' "
+        "WHERE j.id = %s",
+        job,
+    )
+    assert event["hitl_request_id"] == hitl_id
+    assert (event["data_space_id"], event["assignee_capability"], event["kind"]) == (
+        None,
+        "audit_read",
+        "export",
+    )
+    assert event["excluded_approver_ids"] == [str(org.controller)]
