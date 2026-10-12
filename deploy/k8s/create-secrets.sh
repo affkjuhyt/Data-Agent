@@ -42,6 +42,7 @@ kubectl -n dataagent-service create secret generic api-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_PIPELINE="${DATAAGENT_DB_URL__SVC_PIPELINE}" \
   --from-literal=DATAAGENT_DB_URL__SVC_SKILL="${DATAAGENT_DB_URL__SVC_SKILL}" \
   --from-literal=DATAAGENT_DB_URL__SVC_AUDIT="${DATAAGENT_DB_URL__SVC_AUDIT}" \
+  --from-literal=MINIO_URL="${MINIO_URL}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # worker-agent: answers as svc_qa, opens HITL requests as svc_inbox, releases approved audit exports
