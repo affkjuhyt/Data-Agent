@@ -302,8 +302,61 @@ export interface PackUpgrade {
   status: 'dry_run' | 'applied';
 }
 
+export type PackUpgradeWire = components['schemas']['PackUpgradeDetail'];
+
+export function readPackUpgrade(raw: PackUpgradeWire): PackUpgrade {
+  if ('pack_name' in raw) return raw as unknown as PackUpgrade;
+  const merge = raw.merge_result && typeof raw.merge_result === 'object' ? raw.merge_result : {};
+  const items = Array.isArray((merge as { items?: unknown }).items)
+    ? ((merge as { items: unknown[] }).items ?? [])
+    : [];
+  const row = (value: unknown) =>
+    typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
+  const conflicts = items.flatMap((value) => {
+    const item = row(value);
+    if (item.outcome !== 'conflict') return [];
+    const code = String(item.code ?? '—');
+    const options = Array.isArray(item.options)
+      ? item.options.map((option) => ({ value: String(option), label: String(option) }))
+      : [];
+    return [{
+      id: code,
+      element: code,
+      old: 'Bản đang dùng',
+      new: 'Bản gói mới',
+      org: 'Tuỳ chỉnh của tổ chức',
+      options,
+      suggested: options[0]?.value ?? 'defer',
+    }];
+  });
+  const skipped = items.flatMap((value) => {
+    const item = row(value);
+    return item.outcome === 'removed'
+      ? [{ element: String(item.code ?? '—'), reason: 'Gói mới đã bỏ thành phần này' }]
+      : [];
+  });
+  const auto = items.flatMap((value) => {
+    const item = row(value);
+    return item.outcome && item.outcome !== 'conflict' && item.outcome !== 'removed'
+      ? [{ element: String(item.code ?? '—'), text: String(item.outcome) }]
+      : [];
+  });
+  return {
+    id: raw.id,
+    pack_name: 'Gói ngành',
+    from_version: raw.from_version_id,
+    to_version: raw.to_version_id,
+    summary_text: `${auto.length} tự gộp · ${conflicts.length} cần chọn · ${skipped.length} bị bỏ qua`,
+    conflicts,
+    auto,
+    skipped,
+    benchmark_pct: null,
+    status: raw.status === 'applied' ? 'applied' : 'dry_run',
+  };
+}
+
 export const getPackUpgrade = async (id: string) =>
-  v1Get<PackUpgrade>(`/pack-upgrades/${pathId(id)}`);
+  readPackUpgrade(await v1Get<PackUpgradeWire>(`/pack-upgrades/${pathId(id)}`));
 
 /** PROPOSAL: run the pack's benchmark questions against the merged result. */
 export const benchmarkPackUpgrade = async (id: string) =>
