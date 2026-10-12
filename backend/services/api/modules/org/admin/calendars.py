@@ -68,13 +68,17 @@ async def list_calendars(
         days: dict[uuid.UUID, list[org.WorkCalendarDay]] = defaultdict(list)
         if rows:
             for d in await session.scalars(
-                select(org.WorkCalendarDay).where(org.WorkCalendarDay.calendar_id.in_([r.id for r in rows]))
+                select(org.WorkCalendarDay).where(
+                    org.WorkCalendarDay.calendar_id.in_([r.id for r in rows])
+                )
             ):
                 days[d.calendar_id].append(d)
     last = rows[-1] if more else None
     return Page[CalendarView](
         items=[_view(r, days[r.id]) for r in rows],
-        next_page_token=encode_page_token({"code": last.code, "id": str(last.id)} if last else None),
+        next_page_token=encode_page_token(
+            {"code": last.code, "id": str(last.id)} if last else None
+        ),
     )
 
 
@@ -103,7 +107,9 @@ def _check(body: CalendarPut) -> None:
     **endpoint("PUT", "/v1/calendars/{id}", operation_id="putCalendar"),
 )
 async def put_calendar(
-    calendar_id: Annotated[uuid.UUID, Path(alias="id")], body: CalendarPut, principal: CurrentPrincipal
+    calendar_id: Annotated[uuid.UUID, Path(alias="id")],
+    body: CalendarPut,
+    principal: CurrentPrincipal,
 ) -> CalendarView:
     _check(body)
     async with transaction(ROLE, principal) as session:
@@ -172,7 +178,9 @@ async def put_calendar(
         days = list(
             (
                 await session.scalars(
-                    select(org.WorkCalendarDay).where(org.WorkCalendarDay.calendar_id == calendar.id)
+                    select(org.WorkCalendarDay).where(
+                        org.WorkCalendarDay.calendar_id == calendar.id
+                    )
                 )
             ).all()
         )

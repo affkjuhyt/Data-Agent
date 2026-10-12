@@ -55,7 +55,9 @@ router = APIRouter()
 EMERGENCY_MAX = datetime.timedelta(hours=24)
 
 
-def _summary(user: org.AppUser, granted: list[GrantOrigin], codes: dict[uuid.UUID, str]) -> AdminUser:
+def _summary(
+    user: org.AppUser, granted: list[GrantOrigin], codes: dict[uuid.UUID, str]
+) -> AdminUser:
     org_roles: dict[uuid.UUID, RoleRef] = {}
     by_space: dict[uuid.UUID, dict[uuid.UUID, RoleRef]] = defaultdict(dict)
     for g in granted:
@@ -79,12 +81,17 @@ def _summary(user: org.AppUser, granted: list[GrantOrigin], codes: dict[uuid.UUI
     return view
 
 
-async def _space_codes(session: AsyncSession, granted: dict[uuid.UUID, list[GrantOrigin]]) -> dict[uuid.UUID, str]:
+async def _space_codes(
+    session: AsyncSession, granted: dict[uuid.UUID, list[GrantOrigin]]
+) -> dict[uuid.UUID, str]:
     spaces = {g.data_space_id for gs in granted.values() for g in gs if g.data_space_id}
     if not spaces:
         return {}
-    rows = await session.execute(select(org.DataSpace.id, org.DataSpace.code).where(org.DataSpace.id.in_(spaces)))
-    return dict(rows.tuples())
+    rows = await session.execute(
+        select(org.DataSpace.id, org.DataSpace.code).where(org.DataSpace.id.in_(spaces))
+    )
+    # dict(result) would take Result.keys() for a mapping's and fail: the rows are a list first.
+    return dict(rows.tuples().all())
 
 
 @router.get(
@@ -139,7 +146,9 @@ async def list_users(
     last = rows[-1] if more else None
     return Page[AdminUser](
         items=[_summary(r, granted[r.id], codes) for r in rows],
-        next_page_token=encode_page_token({"username": last.username, "id": str(last.id)} if last else None),
+        next_page_token=encode_page_token(
+            {"username": last.username, "id": str(last.id)} if last else None
+        ),
     )
 
 
@@ -153,7 +162,9 @@ async def get_user(
 ) -> AdminUserDetail:
     async with transaction(ROLE, principal) as session:
         user = await session.scalar(
-            select(org.AppUser).where(org.AppUser.id == user_id, org.AppUser.org_id == principal.org_id)
+            select(org.AppUser).where(
+                org.AppUser.id == user_id, org.AppUser.org_id == principal.org_id
+            )
         )
         if user is None:
             raise Problem(404, "not_found", "User not found.")
@@ -176,24 +187,34 @@ def _key(m: GroupMappingIn | org.GroupMapping) -> tuple[uuid.UUID, uuid.UUID, uu
     return (m.group_id, m.role_id, m.data_space_id)
 
 
-async def _validate_mappings(session: AsyncSession, mappings: list[GroupMappingIn]) -> dict[uuid.UUID, org.Role]:
+async def _validate_mappings(
+    session: AsyncSession, mappings: list[GroupMappingIn]
+) -> dict[uuid.UUID, org.Role]:
     keys = [_key(m) for m in mappings]
     if len(set(keys)) != len(keys):
-        raise Problem(422, "validation_failed", "A group, role and Data Space appear twice in mappings.")
+        raise Problem(
+            422, "validation_failed", "A group, role and Data Space appear twice in mappings."
+        )
     groups = {m.group_id for m in mappings}
-    found = set((await session.scalars(select(org.UserGroup.id).where(org.UserGroup.id.in_(groups)))).all())
+    found = set(
+        (await session.scalars(select(org.UserGroup.id).where(org.UserGroup.id.in_(groups)))).all()
+    )
     if groups - found:
         raise Problem(422, "validation_failed", "group_id names no group of this organisation.")
     spaces = {m.data_space_id for m in mappings if m.data_space_id}
     found = set(
         (
             await session.scalars(
-                select(org.DataSpace.id).where(org.DataSpace.id.in_(spaces), org.DataSpace.deleted_at.is_(None))
+                select(org.DataSpace.id).where(
+                    org.DataSpace.id.in_(spaces), org.DataSpace.deleted_at.is_(None)
+                )
             )
         ).all()
     )
     if spaces - found:
-        raise Problem(422, "validation_failed", "data_space_id names no Data Space of this organisation.")
+        raise Problem(
+            422, "validation_failed", "data_space_id names no Data Space of this organisation."
+        )
     roles = await require_roles(session, {m.role_id for m in mappings})
     for m in mappings:
         if m.data_space_id is not None and org_only(roles[m.role_id]):
@@ -211,7 +232,11 @@ async def _materialise(session: AsyncSession, principal: CurrentPrincipal) -> No
     """Keep user_role (org-wide) and data_space_member (per space) rows of source group_mapping
     equal to what the active mappings grant: AC-11-01-01 expects one user_role row per member."""
     mappings = list(
-        (await session.scalars(select(org.GroupMapping).where(org.GroupMapping.status == "active"))).all()
+        (
+            await session.scalars(
+                select(org.GroupMapping).where(org.GroupMapping.status == "active")
+            )
+        ).all()
     )
     members = await grants.group_members(session, {m.group_id for m in mappings})
     wanted_roles: dict[tuple[uuid.UUID, uuid.UUID], uuid.UUID] = {}
@@ -224,7 +249,11 @@ async def _materialise(session: AsyncSession, principal: CurrentPrincipal) -> No
             wanted_members[(m.data_space_id, m.group_id, m.role_id)] = m
 
     existing = list(
-        (await session.scalars(select(org.UserRole).where(org.UserRole.source == "group_mapping"))).all()
+        (
+            await session.scalars(
+                select(org.UserRole).where(org.UserRole.source == "group_mapping")
+            )
+        ).all()
     )
     have = {(r.user_id, r.role_id): r for r in existing}
     stale = [r.id for k, r in have.items() if k not in wanted_roles]
@@ -250,7 +279,9 @@ async def _materialise(session: AsyncSession, principal: CurrentPrincipal) -> No
             row.updated_by = principal.user_id
 
     member = org.DataSpaceMember
-    rows = list((await session.scalars(select(member).where(member.principal_type == "group"))).all())
+    rows = list(
+        (await session.scalars(select(member).where(member.principal_type == "group"))).all()
+    )
     taken = {(r.data_space_id, r.principal_id, r.role_id): r for r in rows}
     stale = [
         r.id for k, r in taken.items() if r.source == "group_mapping" and k not in wanted_members
@@ -287,14 +318,14 @@ async def _materialise(session: AsyncSession, principal: CurrentPrincipal) -> No
     response_model=GroupMappingSet,
     **endpoint("PUT", "/v1/admin/group-mappings", operation_id="putGroupMappings"),
 )
-async def put_group_mappings(body: GroupMappingsPut, principal: CurrentPrincipal) -> GroupMappingSet:
+async def put_group_mappings(
+    body: GroupMappingsPut, principal: CurrentPrincipal
+) -> GroupMappingSet:
     async with transaction(ROLE, principal) as session:
         await _validate_mappings(session, body.mappings)
         current = {
             _key(m): m
-            for m in (
-                await session.scalars(select(org.GroupMapping).with_for_update())
-            ).all()
+            for m in (await session.scalars(select(org.GroupMapping).with_for_update())).all()
         }
         before_active = await grants.active_mappings(session)
         after_active = {_key(m) for m in body.mappings if m.status == "active"}
@@ -305,7 +336,9 @@ async def put_group_mappings(body: GroupMappingsPut, principal: CurrentPrincipal
         roles = await roles_by_id(session, {h.role_id for h in before | after})
         new_conflicts = grants.conflicts(after, roles) - grants.conflicts(before, roles)
         if new_conflicts:
-            raise Problem(422, "business_rule_violated", await grants.conflict_detail(session, new_conflicts))
+            raise Problem(
+                422, "business_rule_violated", await grants.conflict_detail(session, new_conflicts)
+            )
         added = sorted({h.user_id for h in after - before})
         removed = sorted({h.user_id for h in before - after})
         if body.preview:
@@ -379,13 +412,20 @@ async def put_group_mappings(body: GroupMappingsPut, principal: CurrentPrincipal
                 action="group_mapping.changed",
                 object_kind="group_mapping",
                 object_id=row.id,
-                after={"group_id": row.group_id, "role_id": row.role_id, "data_space_id": row.data_space_id, "status": row.status},
+                after={
+                    "group_id": row.group_id,
+                    "role_id": row.role_id,
+                    "data_space_id": row.data_space_id,
+                    "status": row.status,
+                },
             )
         await session.flush()
         rows = list(
             (
                 await session.scalars(
-                    select(org.GroupMapping).order_by(org.GroupMapping.created_at, org.GroupMapping.id)
+                    select(org.GroupMapping).order_by(
+                        org.GroupMapping.created_at, org.GroupMapping.id
+                    )
                 )
             ).all()
         )
@@ -406,16 +446,22 @@ async def put_group_mappings(body: GroupMappingsPut, principal: CurrentPrincipal
     response_model=UserRoleView,
     **endpoint("POST", "/v1/admin/emergency-access", operation_id="grantEmergencyAccess"),
 )
-async def grant_emergency_access(body: EmergencyAccessIn, principal: CurrentPrincipal) -> UserRoleView:
+async def grant_emergency_access(
+    body: EmergencyAccessIn, principal: CurrentPrincipal
+) -> UserRoleView:
     start = now()
     valid_until = body.valid_until or start + EMERGENCY_MAX
     if valid_until.tzinfo is None:
         raise Problem(422, "validation_failed", "valid_until needs a time zone.")
     if valid_until <= start or valid_until > start + EMERGENCY_MAX + datetime.timedelta(minutes=1):
-        raise Problem(422, "business_rule_violated", "BR-44: emergency access lasts at most 24 hours.")
+        raise Problem(
+            422, "business_rule_violated", "BR-44: emergency access lasts at most 24 hours."
+        )
     if body.second_approver_id in (principal.user_id, body.user_id):
         raise Problem(
-            422, "business_rule_violated", "BR-44: the second approver is neither the grantor nor the grantee."
+            422,
+            "business_rule_violated",
+            "BR-44: the second approver is neither the grantor nor the grantee.",
         )
     async with transaction(ROLE, principal) as session:
         await active_user(session, body.user_id, "user_id", kinds=("human", "service"))

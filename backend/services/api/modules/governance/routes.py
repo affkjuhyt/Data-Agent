@@ -206,7 +206,10 @@ def _month_start() -> datetime.datetime:
 def _provider_cost(
     provider: governance.ModelProvider, usage: Iterable[governance.ModelUsage]
 ) -> decimal.Decimal:
-    """Price usage without exposing provider secrets or making the client derive totals."""
+    """Price usage without exposing provider secrets or making the client derive totals.
+
+    `price` is VND per million tokens (tab 3b model_provider.price, as the budget trigger reads
+    it in routines/governance.sql)."""
     total = decimal.Decimal("0")
     price = provider.price if isinstance(provider.price, dict) else {}
     for row in usage:
@@ -219,7 +222,7 @@ def _provider_cost(
         total += decimal.Decimal(str(row.output_tokens or 0)) * decimal.Decimal(
             str(rates.get("output", 0))
         )
-    return total
+    return total / decimal.Decimal(1_000_000)
 
 
 @router.get(
@@ -353,8 +356,11 @@ async def patch_model_provider(
         if row is None:
             raise Problem(404, "not_found", "Model provider not found.")
 
-        changed_contract = bool(
-            {"endpoint", "secret_ref", "data_region", "zero_retention"} & body.model_fields_set
+        # Resending the same value is not a change: like the reapproval trigger, only a value
+        # that differs switches the provider off and clears its approval.
+        changed_contract = any(
+            field in body.model_fields_set and getattr(body, field) != getattr(row, field)
+            for field in ("endpoint", "secret_ref", "data_region", "zero_retention")
         )
         for field in (
             "display_name",

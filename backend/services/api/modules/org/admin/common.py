@@ -91,7 +91,9 @@ async def roles_by_id(session: AsyncSession, ids: Iterable[uuid.UUID]) -> dict[u
     return {r.id: r for r in rows}
 
 
-async def require_roles(session: AsyncSession, ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, org.Role]:
+async def require_roles(
+    session: AsyncSession, ids: Iterable[uuid.UUID]
+) -> dict[uuid.UUID, org.Role]:
     wanted = set(ids)
     found = await roles_by_id(session, wanted)
     if wanted - set(found):

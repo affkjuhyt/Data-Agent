@@ -40,6 +40,14 @@ GRANTED_AS = {
     "run_agent": "run_agent",
 }
 STATUS = {"approve": "approved", "narrow": "narrowed", "reject": "rejected"}
+# What a request for each capability may be narrowed to (UC-11-07 step 4). Narrowing never
+# widens: a view_aggregate request "narrowed" to view_detail would skip the AC06 approval (E1).
+NARROWER = {
+    "view_aggregate": frozenset({"view_aggregate", "ask"}),
+    "ask": frozenset({"ask", "view_aggregate"}),
+    "view_detail": frozenset({"view_detail", "view_aggregate", "ask"}),
+    "run_agent": frozenset({"run_agent", "view_aggregate", "ask"}),
+}
 
 
 @router.post(
@@ -178,14 +186,20 @@ async def decide_access_request(
         if granting:
             scope = body.granted_scope
             capability = (scope.capability if scope else None) or row.capability
+            if capability not in NARROWER[row.capability]:
+                raise Problem(
+                    422,
+                    "business_rule_violated",
+                    f"A request for {row.capability} cannot be narrowed to {capability}.",
+                )
             row_scope = scope.row_scope if scope else None
             if scope is not None:
                 row.granted_scope = scope.model_dump(exclude_none=True)
             role = await _role_for(session, capability)
-            # Valid through the last requested day (BR-142); the expiry job revokes it after.
-            valid_until = datetime.datetime.combine(
-                row.requested_until + datetime.timedelta(days=1), datetime.time(), datetime.UTC
-            )
+            # AC-11-07-01: the grant lasts the period asked for, counted from the approval
+            # (a request decided late still gets its 30 days); BR-142 caps it at 90.
+            asked = (row.requested_until - row.created_at.date()).days
+            valid_until = stamp + datetime.timedelta(days=min(max(asked, 1), MAX_DAYS))
             member = await session.scalar(
                 select(org.DataSpaceMember).where(
                     org.DataSpaceMember.data_space_id == row.data_space_id,

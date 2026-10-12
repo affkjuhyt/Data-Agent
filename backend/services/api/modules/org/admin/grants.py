@@ -55,7 +55,9 @@ def from_mappings(
     }
 
 
-async def base_holdings(session: AsyncSession, members: dict[uuid.UUID, set[uuid.UUID]]) -> set[Holding]:
+async def base_holdings(
+    session: AsyncSession, members: dict[uuid.UUID, set[uuid.UUID]]
+) -> set[Holding]:
     """Everything held in the organisation except through group mappings."""
     out: set[Holding] = set()
     direct = await session.execute(
@@ -81,16 +83,20 @@ async def base_holdings(session: AsyncSession, members: dict[uuid.UUID, set[uuid
     return out
 
 
-async def active_mappings(session: AsyncSession) -> set[tuple[uuid.UUID, uuid.UUID, uuid.UUID | None]]:
+async def active_mappings(
+    session: AsyncSession,
+) -> set[tuple[uuid.UUID, uuid.UUID, uuid.UUID | None]]:
     rows = await session.execute(
-        select(org.GroupMapping.group_id, org.GroupMapping.role_id, org.GroupMapping.data_space_id).where(
-            org.GroupMapping.status == "active"
-        )
+        select(
+            org.GroupMapping.group_id, org.GroupMapping.role_id, org.GroupMapping.data_space_id
+        ).where(org.GroupMapping.status == "active")
     )
     return set(rows.tuples())
 
 
-def conflicts(holdings: Iterable[Holding], roles: dict[uuid.UUID, org.Role]) -> set[tuple[uuid.UUID, uuid.UUID]]:
+def conflicts(
+    holdings: Iterable[Holding], roles: dict[uuid.UUID, org.Role]
+) -> set[tuple[uuid.UUID, uuid.UUID]]:
     """(user, Data Space) pairs breaking BR-136: an approving role (approve without compliance)
     in the space, and a control role (compliance) there or across the organisation."""
     org_control: set[uuid.UUID] = set()
@@ -116,17 +122,32 @@ async def conflict_detail(session: AsyncSession, pairs: set[tuple[uuid.UUID, uui
     """AC-11-01-06: the refusal names who would be in conflict, and where."""
     users = {u for u, _ in pairs}
     spaces = {s for _, s in pairs}
-    names = dict(
-        (await session.execute(select(org.AppUser.id, org.AppUser.username).where(org.AppUser.id.in_(users)))).tuples()
+    # dict(result) would take Result.keys() for a mapping's and fail: the rows are a list first.
+    names: dict[uuid.UUID, str] = dict(
+        (
+            await session.execute(
+                select(org.AppUser.id, org.AppUser.username).where(org.AppUser.id.in_(users))
+            )
+        )
+        .tuples()
+        .all()
     )
-    codes = dict(
-        (await session.execute(select(org.DataSpace.id, org.DataSpace.code).where(org.DataSpace.id.in_(spaces)))).tuples()
+    codes: dict[uuid.UUID, str] = dict(
+        (
+            await session.execute(
+                select(org.DataSpace.id, org.DataSpace.code).where(org.DataSpace.id.in_(spaces))
+            )
+        )
+        .tuples()
+        .all()
     )
     listed = ", ".join(sorted(f"{names.get(u, u)} in {codes.get(s, s)}" for u, s in pairs))
     return f"BR-136: one person cannot both approve and control in the same Data Space ({listed})."
 
 
-async def grants_for(session: AsyncSession, user_ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, list[GrantOrigin]]:
+async def grants_for(
+    session: AsyncSession, user_ids: Iterable[uuid.UUID]
+) -> dict[uuid.UUID, list[GrantOrigin]]:
     """Every role each user holds now, with where it comes from."""
     ids = set(user_ids)
     out: dict[uuid.UUID, list[GrantOrigin]] = defaultdict(list)
@@ -207,7 +228,11 @@ async def grants_for(session: AsyncSession, user_ids: Iterable[uuid.UUID]) -> di
         )
     )
     for row, role in in_spaces.tuples():
-        holders = users_of_group[row.principal_id] if row.principal_type == "group" else {row.principal_id}
+        holders = (
+            users_of_group[row.principal_id]
+            if row.principal_type == "group"
+            else {row.principal_id}
+        )
         for user in holders:
             out[user].append(
                 GrantOrigin(
@@ -226,7 +251,12 @@ async def grants_for(session: AsyncSession, user_ids: Iterable[uuid.UUID]) -> di
             )
     for user in ids:
         out[user].sort(
-            key=lambda g: (str(g.data_space_id or ""), g.role.code, g.source, g.group.name if g.group else "")
+            key=lambda g: (
+                str(g.data_space_id or ""),
+                g.role.code,
+                g.source,
+                g.group.name if g.group else "",
+            )
         )
     return out
 
