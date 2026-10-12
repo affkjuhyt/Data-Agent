@@ -388,6 +388,28 @@ const SQL_RESULT: SqlResult = {
   masked_columns: ['customer_id'],
 };
 
+/** PipelineView as the api sends it, with the screen's row under display. */
+const pipelineWire = (p: Pipeline) => ({
+  id: p.id,
+  name: p.name,
+  steps: [],
+  input_dataset_ids: [],
+  target_dataset_id: null,
+  status: p.status === 'draft' ? 'draft' : 'active',
+  scope: 'data_space',
+  cron: null,
+  depends_on_pipeline_ids: [],
+  trigger_on_job_id: null,
+  no_overlap: true,
+  on_failure: 'notify',
+  owner_id: 'me',
+  work_calendar_id: null,
+  data_space_id: 'ds-rui-ro-tin-dung',
+  created_at: '2026-10-01T09:00:00+07:00',
+  updated_at: '2026-10-01T09:00:00+07:00',
+  display: p,
+});
+
 export function createDataPrepHandlers() {
   const pipelines = pipelinesFixture();
   const details = new Map<string, PipelineDetail>([
@@ -471,22 +493,31 @@ export function createDataPrepHandlers() {
     }),
 
     /* Pipelines */
-    http.get('*/v1/pipelines', () => page(pipelines)),
+    // PipelineView with the screen's row under display.
+    http.get('*/v1/pipelines', () => page(pipelines.map(pipelineWire))),
+    // The table the create dialog names, found by GET /v1/datasets?q= (the catalog's search);
+    // any other dataset list falls through to the catalog mock.
+    http.get('*/v1/datasets', ({ request }) => {
+      const q = new URL(request.url).searchParams.get('q');
+      if (!q) return undefined;
+      return page([{ id: `dataset-${q}`, schema_name: 'raw', table_name: q }]);
+    }),
+    // PipelineCreate: the name and the input dataset ids.
     http.post('*/v1/pipelines', async ({ request }) => {
-      const body = (await request.json()) as { name: string; input_table: string };
+      const body = (await request.json()) as { name: string; input_dataset_ids: string[] };
       const created: Pipeline = {
         id: `pl-new-${++seq}`,
         name: body.name,
         owner_name: 'Bạn',
         step_count: 0,
-        inputs: [body.input_table],
+        inputs: body.input_dataset_ids.map((id) => `raw.${id.replace(/^dataset-/, '')}`),
         output_table: null,
         schedule_text: 'Thủ công',
         last_run: null,
         status: 'draft',
       };
       pipelines.push(created);
-      return HttpResponse.json(created, { status: 201 });
+      return HttpResponse.json(pipelineWire(created), { status: 201 });
     }),
     http.post('*/v1/pipelines/:id/runs', ({ params }) => {
       const p = pipelines.find((x) => x.id === params.id);

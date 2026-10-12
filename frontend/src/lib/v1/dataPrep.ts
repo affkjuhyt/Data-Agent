@@ -1,4 +1,5 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
+import type { components } from './schema';
 
 /*
  * Data preparation (P06, UC-06-01…05): the SQL editor and its derived datasets, transformation
@@ -79,7 +80,18 @@ export const createDerivedTable = (body: {
 
 /* ─── Pipeline (UC-06-01, UC-06-03) ───────────────────────────────────── */
 
-export type PipelineStatus = 'succeeded' | 'failed' | 'running' | 'waiting_input' | 'draft';
+/**
+ * The last run's outcome when the PROPOSAL run summary says it; otherwise the pipeline's own
+ * state in A2 (draft, active, paused).
+ */
+export type PipelineStatus =
+  | 'succeeded'
+  | 'failed'
+  | 'running'
+  | 'waiting_input'
+  | 'draft'
+  | 'active'
+  | 'paused';
 
 /** GET /v1/pipelines — one row of "P06 · Pipeline · Danh sách". */
 export interface Pipeline {
@@ -98,11 +110,68 @@ export interface Pipeline {
   status: PipelineStatus;
 }
 
-export const listPipelines = () => v1Get<Page<Pipeline>>('/pipelines', { page_size: 500 });
+type PipelineWire = components['schemas']['PipelineView'] & { display?: Pipeline };
+type DatasetRow = components['schemas']['services__api__modules__catalog__schemas__DatasetView'];
 
-/** A2: POST /v1/pipelines — a draft on one input; the conversation starts empty. */
-export const createPipeline = (body: { name: string; input_table: string }) =>
-  v1Send<Pipeline>('POST', '/pipelines', body);
+/** The schedule in words from cron, the job it follows, or the pipelines it waits for. */
+const scheduleOf = (raw: components['schemas']['PipelineView']) =>
+  raw.trigger_on_job_id
+    ? 'Sau job nạp'
+    : raw.depends_on_pipeline_ids.length
+      ? `Sau ${raw.depends_on_pipeline_ids.length} pipeline`
+      : raw.cron
+        ? `Theo lịch ${raw.cron}`
+        : 'Chạy tay';
+
+/*
+ * PipelineView names its inputs by dataset id and says nothing of the last run (PROPOSAL): the
+ * inputs are named from the datasets, the status is the pipeline's own.
+ */
+function readPipeline(raw: PipelineWire, tables: Map<string, string>): Pipeline {
+  if (raw.display) return raw.display;
+  return {
+    id: raw.id,
+    name: raw.name,
+    owner_name: '',
+    step_count: Array.isArray(raw.steps) ? raw.steps.length : 0,
+    inputs: raw.input_dataset_ids.map((id) => tables.get(id) ?? id),
+    output_table: raw.target_dataset_id ? (tables.get(raw.target_dataset_id) ?? null) : null,
+    schedule_text: scheduleOf(raw),
+    last_run: null,
+    status: raw.status as PipelineStatus,
+  };
+}
+
+const tableName = (d: DatasetRow) => `${d.schema_name}.${d.table_name}`;
+
+export const listPipelines = async (): Promise<Page<Pipeline>> => {
+  const [page, datasets] = await Promise.all([
+    v1Get<Page<PipelineWire>>('/pipelines', { page_size: 500 }),
+    v1Get<Page<DatasetRow>>('/datasets', { page_size: 500 }).catch(() => null),
+  ]);
+  const tables = new Map<string, string>(datasets?.items.map((d) => [d.id, tableName(d)]) ?? []);
+  return { ...page, items: page.items.map((p) => readPipeline(p, tables)) };
+};
+
+/**
+ * A2: POST /v1/pipelines (PipelineCreate) — a draft on its input datasets; the conversation starts
+ * empty. The screen names the input table ("raw.ld_loans"), so it is found among the datasets
+ * first; 422 when no dataset has that name.
+ */
+export const createPipeline = async (body: { name: string; input_table: string }) => {
+  const wanted = body.input_table.trim();
+  const found = await v1Get<Page<DatasetRow>>('/datasets', {
+    q: wanted.split('.').pop(),
+    page_size: 50,
+  });
+  const dataset = found.items.find((d) => tableName(d) === wanted || d.table_name === wanted);
+  if (!dataset) throw new V1Error(422, 'validation_failed', `Không tìm thấy bảng ${wanted}.`);
+  const created = await v1Send<PipelineWire>('POST', '/pipelines', {
+    name: body.name,
+    input_dataset_ids: [dataset.id],
+  } satisfies Omit<components['schemas']['PipelineCreate'], 'scope'>);
+  return readPipeline(created, new Map([[dataset.id, tableName(dataset)]]));
+};
 
 /** A2: POST /v1/pipelines/{id}/runs (202); 409 while a run is going (no overlapping runs). */
 export const runPipeline = async (id: string) =>

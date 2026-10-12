@@ -26,6 +26,7 @@ const INTEGRATED_GROUPS: readonly string[] = [
   'Kỳ chốt',
   'Tài liệu',
   'Kỹ năng',
+  'Biến đổi dữ liệu',
 ];
 
 const IDENTITY_OPERATIONS: readonly string[] = ['getMe', 'listMyDataSpaces'];
@@ -56,6 +57,11 @@ const HELD_BACK: readonly string[] = [
   'activateExtractionSchema',
   'listDocumentVersions',
   'updateDocument',
+  // Biến đổi dữ liệu: no read of one pipeline, of the marts or of lineage targets in A2.
+  'schedulePipeline',
+  'getLineage',
+  'createDataProduct',
+  'publishDataProduct',
 ];
 
 interface Operation {
