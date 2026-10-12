@@ -1048,6 +1048,38 @@ const SUGGESTIONS: CollectionSuggestion[] = [
 
 /* ─── Handlers ─────────────────────────────────────────────────────────── */
 
+const AT = '2026-10-08T08:00:00+07:00';
+
+/**
+ * GET /v1/documents/{id} as the api sends it (DocumentDetail), with the screen's row under
+ * `display`; the collection page's mock uses it too.
+ */
+export const documentApi = (id: string, title: string, display: unknown) => ({
+  id,
+  collection_id: 'col-mock',
+  file_name: title,
+  title,
+  media: 'pdf',
+  status: 'ready',
+  progress: { chunks: 0, chunks_indexed: 0, pages_read: 0, pages_total: null, pages_usable: 0 },
+  blocking_quality_issues: 0,
+  open_quality_issues: 0,
+  sha256: '',
+  size_bytes: 0,
+  page_count: null,
+  doc_no: null,
+  document_source_id: null,
+  effective_from: null,
+  effective_to: null,
+  error: null,
+  issued_on: null,
+  parent_document_id: null,
+  supersedes_id: null,
+  created_at: AT,
+  updated_at: AT,
+  display,
+});
+
 export function createDocumentHandlers() {
   let library = libraryFixture();
   const mails = mailRows();
@@ -1092,15 +1124,12 @@ export function createDocumentHandlers() {
           : null,
       });
     }),
-    http.post('*/v1/documents', async ({ request }) => {
-      const body = (await request.json()) as {
-        collection_id?: string;
-        files?: { file_name: string }[];
-      };
-      if (!body.collection_id) return problem(422, 'validation_failed', 'Chọn bộ sưu tập.');
-      if (!body.files?.length) return problem(422, 'validation_failed', 'Chọn ít nhất một tệp.');
-      const known = new Set(views.map((v) => v.file_name));
-      const fresh = body.files.filter((x) => !known.has(x.file_name));
+    // Multipart, one file per request (A2). The body is not read: under MSW in the jsdom unit
+    // tests a multipart body never settles, so the mock accepts each file; duplicates are what
+    // the precheck warns about, and the real api answers them 200 with the document it holds.
+    http.post('*/v1/documents', () => {
+      const file = `tệp ${library.length + 1}`;
+      const fresh = [{ file_name: file }];
       library = [
         ...fresh.map(
           (x, i): DocumentRow => ({
@@ -1121,10 +1150,7 @@ export function createDocumentHandlers() {
         ),
         ...library,
       ];
-      return HttpResponse.json(
-        { accepted: fresh.length, skipped: body.files.length - fresh.length },
-        { status: 202 },
-      );
+      return HttpResponse.json({ id: library[0].id, status: 'received' }, { status: 202 });
     }),
     http.get('*/v1/documents/:id/pages/:n', ({ params }) => {
       const doc = findView(String(params.id));
@@ -1132,7 +1158,20 @@ export function createDocumentHandlers() {
       if (!doc) return problem(404, 'not_found', 'Không tìm thấy tài liệu.');
       if (!Number.isInteger(n) || n < 1 || n > doc.page_count)
         return problem(404, 'not_found', 'Không có trang này.');
-      return HttpResponse.json(pageOf(doc, n));
+      return HttpResponse.json({
+        id: `page-${doc.id}-${n}`,
+        document_id: doc.id,
+        page_no: n,
+        text: null,
+        text_layer: true,
+        usable: true,
+        human_corrected: false,
+        ocr_conf: null,
+        page_hash: '',
+        created_at: AT,
+        updated_at: AT,
+        display: pageOf(doc, n),
+      });
     }),
     http.get('*/v1/documents/:id/chunks', ({ params }) =>
       findView(String(params.id))
@@ -1180,18 +1219,52 @@ export function createDocumentHandlers() {
     // Ids this mock does not hold fall through to mocks/sources.ts.
     http.get('*/v1/documents/:id', ({ params }) => {
       const doc = findView(String(params.id));
-      return doc ? HttpResponse.json(doc) : undefined;
+      return doc ? HttpResponse.json(documentApi(doc.id, doc.title, doc)) : undefined;
     }),
 
-    http.get('*/v1/quality-issues', () => page(issues)),
+    // QualityIssueView with the side-by-side review under display.
+    http.get('*/v1/quality-issues', () =>
+      page(
+        issues.map((i) => ({
+          id: i.id,
+          document_id: i.document.id,
+          page_no: i.page,
+          kind: 'low_ocr',
+          severity: 'blocking',
+          status: 'open',
+          detail: i.reason_text,
+          old_value: null,
+          chunk_id: null,
+          extracted_record_id: null,
+          requires_role: null,
+          resolution: null,
+          resolved_at: null,
+          resolved_by: null,
+          created_at: AT,
+          updated_at: AT,
+          display: i,
+        })),
+      ),
+    ),
     http.post('*/v1/quality-issues/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
       if (verb !== 'resolve') return problem(404, 'not_found', 'Không có thao tác này.');
       const issue = issues.find((i) => i.id === id);
       if (!issue) return problem(404, 'not_found', 'Vấn đề đã được xử lý.');
-      const body = (await request.json()) as ResolveIssue;
-      if (body.action === 'drop' && !body.reason?.trim())
-        return problem(422, 'validation_failed', 'Ghi lý do bỏ trang.');
+      // A2's resolution, or the screen's PROPOSAL keep_and_conflict.
+      const raw = (await request.json()) as
+        | { resolution: string; corrected_text?: string }
+        | { action: 'keep_and_conflict' };
+      const body: ResolveIssue =
+        'action' in raw
+          ? raw
+          : raw.resolution === 'corrected'
+            ? { action: 'edit', text: raw.corrected_text ?? '' }
+            : raw.resolution === 'value_fixed'
+              ? { action: 'correct', value: raw.corrected_text ?? '' }
+              : raw.resolution === 'page_dropped'
+                ? { action: 'drop', reason: '' }
+                : { action: 'confirm' };
       if (body.action === 'edit' && !body.text?.trim())
         return problem(422, 'validation_failed', 'Văn bản sửa không được trống.');
       issues = issues.filter((i) => i.id !== id);
@@ -1259,13 +1332,14 @@ export function createDocumentHandlers() {
         note: 'Đề xuất 3 cần tách khỏi bộ sưu tập hiện có; lược đồ cũ vẫn dùng được.',
       }),
     ),
+    // CollectionCreate: code, name, purpose and the media kinds.
     http.post('*/v1/collections', async ({ request }) => {
-      const body = (await request.json()) as NewCollection;
+      const body = (await request.json()) as { code: string; name: string; purpose: string };
       if (!body.name?.trim()) return problem(422, 'validation_failed', 'Đặt tên bộ sưu tập.');
-      if (!body.source_id) return problem(422, 'validation_failed', 'Chọn nguồn nạp.');
+      if (!body.code || !body.purpose) return problem(422, 'validation_failed', 'Thiếu mã hoặc mục đích.');
       const item = { id: `col-new-${created.length + 1}`, name: body.name.trim() };
       created.push(item);
-      return HttpResponse.json(item, { status: 201 });
+      return HttpResponse.json({ ...item, code: body.code, purpose: body.purpose }, { status: 201 });
     }),
 
     // The thread's review is answered with the ordinary HITL :resolve; other ids fall through.

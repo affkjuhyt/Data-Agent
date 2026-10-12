@@ -498,13 +498,114 @@ export interface DocumentDetail extends CollectionDocument {
   impact_text: string | null;
 }
 
-export const listCollections = () => v1Get<Page<Collection>>('/collections', ALL);
+type CollectionWire = components['schemas']['CollectionView'] & { display?: Collection };
+
+const MEDIA_LABEL: Record<string, string> = {
+  pdf: 'PDF',
+  image: 'ảnh',
+  docx: 'Word',
+  email: 'thư điện tử',
+  audio: 'ghi âm',
+  html: 'trang web',
+};
+
+/** A collection of mail or recordings gets their icon; files otherwise. */
+function readCollection(raw: CollectionWire): Collection {
+  if (raw.display) return raw.display;
+  const kinds = raw.media_kinds;
+  return {
+    id: raw.id,
+    name: raw.name,
+    icon:
+      kinds.length === 1 && kinds[0] === 'email'
+        ? 'mail'
+        : kinds.length === 1 && kinds[0] === 'audio'
+          ? 'phone'
+          : 'file',
+    content_text: kinds.length ? kinds.map((k) => MEDIA_LABEL[k] ?? k).join(', ') : 'mọi loại tệp',
+    extraction_text: raw.extraction_schema_id ? 'Có lược đồ trích' : 'Chưa có lược đồ trích',
+    status:
+      raw.status === 'archived'
+        ? null
+        : raw.status === 'reindexing'
+          ? { tone: 'info', text: 'Đang lập lại chỉ mục' }
+          : { tone: 'success', text: 'Đang hoạt động' },
+    archived: raw.status === 'archived',
+  };
+}
+
+export const listCollections = async (): Promise<Page<Collection>> => {
+  const page = await v1Get<Page<CollectionWire>>('/collections', ALL);
+  return { ...page, items: page.items.map(readCollection) };
+};
 export const getCollectionsSummary = () => v1Get<CollectionsSummary>('/document-pipeline');
 export const getCollection = async (id: string) =>
   v1Get<CollectionDetail>(`/collections/${pathId(id)}`);
 export const listDocuments = async (collectionId: string) =>
   v1Get<Page<CollectionDocument>>(`/collections/${pathId(collectionId)}/documents`, ALL);
-export const getDocument = async (id: string) => v1Get<DocumentDetail>(`/documents/${pathId(id)}`);
+type DocumentApi = components['schemas']['DocumentDetail'];
+
+const STATUS: Record<string, { tone: Tone; text: string }> = {
+  received: { tone: 'idle', text: 'Đã nhận' },
+  processing: { tone: 'info', text: 'Đang xử lý' },
+  waiting_review: { tone: 'warning', text: 'Chờ người xem' },
+  ready: { tone: 'success', text: 'Sẵn sàng' },
+  failed: { tone: 'error', text: 'Lỗi' },
+  removed: { tone: 'idle', text: 'Đã gỡ' },
+};
+
+/*
+ * The eight pre-processing steps (UC-05-02) said from the document's status and progress: all
+ * done when ready, the review step waiting while a person must look, the first one in error
+ * when it failed, and as far as the pages and chunks read while it runs.
+ */
+function stepsOf(raw: DocumentApi): StepState[] {
+  const all = (s: StepState) => Array<StepState>(8).fill(s);
+  if (raw.status === 'ready') return all('done');
+  if (raw.status === 'failed') return ['error', ...Array<StepState>(7).fill('todo')];
+  if (raw.status === 'received') return all('todo');
+  const p = raw.progress;
+  const done = p.chunks_indexed > 0 ? 6 : p.chunks > 0 ? 4 : p.pages_read > 0 ? 2 : 1;
+  return Array.from(
+    { length: 8 },
+    (_, i): StepState =>
+      i < done ? 'done' : raw.status === 'waiting_review' && i === done ? 'warn' : 'todo',
+  );
+}
+
+const day = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
+
+/** GET /v1/documents/{id} as the collection page reads it (shared with the P05 viewer). */
+export function readCollectionDocument(raw: DocumentApi): DocumentDetail {
+  const ended =
+    raw.effective_to !== null && raw.effective_to < new Date().toISOString().slice(0, 10);
+  return {
+    id: raw.id,
+    title: raw.title ?? raw.file_name,
+    type_text: [MEDIA_LABEL[raw.media] ?? raw.media, raw.page_count && `${raw.page_count} trang`]
+      .filter(Boolean)
+      .join(' · '),
+    steps: stepsOf(raw),
+    validity: raw.effective_to
+      ? { text: `${ended ? 'Hết hiệu lực' : 'Hiệu lực tới'} ${day(raw.effective_to)}`, warn: ended }
+      : raw.effective_from
+        ? { text: `Từ ${day(raw.effective_from)}`, warn: false }
+        : null,
+    status: STATUS[raw.status] ?? { tone: 'idle', text: raw.status },
+    origin_text: `Nạp ${day(raw.created_at)}`,
+    processing: [],
+    excerpt: null,
+    effective_text: raw.effective_from ? `Hiệu lực từ ${day(raw.effective_from)}` : null,
+    impact_text: null,
+  };
+}
+
+type DocumentWire = DocumentApi & { display?: DocumentDetail };
+
+export const getDocument = async (id: string) => {
+  const raw = await v1Get<DocumentWire>(`/documents/${pathId(id)}`);
+  return raw.display ?? readCollectionDocument(raw);
+};
 
 /** PROPOSAL: POST /v1/collections/{id}/documents registers a file; it then runs the 8 steps. */
 export const addDocument = async (

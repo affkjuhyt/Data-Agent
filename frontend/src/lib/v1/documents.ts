@@ -1,5 +1,8 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
-import type { DocumentDetail, Tone } from './sources';
+import { pathId, v1Get, v1Send, v1Upload, type Page } from './client';
+import type { components } from './schema';
+import { listCollections, readCollectionDocument, type DocumentDetail, type Tone } from './sources';
+
+type Schemas = components['schemas'];
 
 /*
  * P05 Tài liệu phi cấu trúc beyond the collection list (which lives in sources.ts): the document
@@ -8,13 +11,14 @@ import type { DocumentDetail, Tone } from './sources';
  * /v1/documents, /v1/documents/{id}/pages/{n}, /v1/documents/{id}/versions, /v1/quality-issues,
  * /v1/extraction-schemas, /v1/collections. Everything the screens need beyond those rows is
  * marked PROPOSAL, as in types.ts, and served by mocks/documents.ts until the backend has it.
+ * Where A2 serves the resource its shape is read below; the screen's richer row travels under
+ * `display` when the mock sends it, and is said from the api's row otherwise.
  */
 
 type Uuid = string;
 type Timestamp = string;
 
 const ALL = { page_size: 500 };
-
 
 /* ─── Tệp & tài liệu: the document library ────────────────────────────── */
 
@@ -174,8 +178,58 @@ export interface DocumentView extends DocumentDetail {
   call: CallRecording | null;
 }
 
-export const getDocumentView = async (id: string) =>
-  v1Get<DocumentView>(`/documents/${pathId(id)}`);
+/** GET /v1/documents/{id} as the api sends it, with the viewer's row under `display`. */
+type DocumentWire = Schemas['DocumentDetail'] & { display?: DocumentView };
+
+const KIND: Record<string, DocumentKind> = { email: 'email', audio: 'call' };
+
+/** What the pre-processing says so far, as the viewer's signals. */
+function signalsOf(raw: Schemas['DocumentDetail']): DocumentView['signals'] {
+  const p = raw.progress;
+  const signals: DocumentView['signals'] = [];
+  if (raw.status === 'failed') signals.push({ tone: 'error', text: raw.error ?? 'Xử lý lỗi' });
+  if (p.pages_total)
+    signals.push({ tone: 'info', text: `Đọc ${p.pages_read}/${p.pages_total} trang` });
+  if (raw.blocking_quality_issues > 0)
+    signals.push({ tone: 'warning', text: `${raw.blocking_quality_issues} vấn đề chặn` });
+  return signals;
+}
+
+/*
+ * The viewer's PROPOSAL parts (the agent's summary, fields, thread, call) are absent without
+ * `display`: the page shows the document's state, its pages and its index coverage.
+ */
+function readDocumentView(raw: DocumentWire, collections: Map<string, string>): DocumentView {
+  if (raw.display) return raw.display;
+  const p = raw.progress;
+  return {
+    ...readCollectionDocument(raw),
+    kind: KIND[raw.media] ?? 'file',
+    file_name: raw.file_name,
+    collection: { id: raw.collection_id, name: collections.get(raw.collection_id) ?? '' },
+    page_count: raw.page_count ?? 0,
+    focus_page: 1,
+    summary_text: null,
+    type_label: raw.media.toUpperCase(),
+    signals: signalsOf(raw),
+    fields: [],
+    issue: null,
+    index_text: p.chunks ? `${p.chunks_indexed}/${p.chunks} đoạn đã lập chỉ mục` : null,
+    email: null,
+    call: null,
+  };
+}
+
+export const getDocumentView = async (id: string) => {
+  const [raw, collections] = await Promise.all([
+    v1Get<DocumentWire>(`/documents/${pathId(id)}`),
+    listCollections().catch(() => null),
+  ]);
+  return readDocumentView(
+    raw,
+    new Map<string, string>(collections?.items.map((c) => [c.id, c.name]) ?? []),
+  );
+};
 
 /** PROPOSAL: POST /v1/documents/{id}:investigate — Agent Phân tích looks for a systemic cause. */
 export const investigateDocument = async (id: string) =>
@@ -203,8 +257,23 @@ export interface DocumentPage {
   text: string;
 }
 
-export const getDocumentPage = async (id: string, n: number) =>
-  v1Get<DocumentPage>(`/documents/${pathId(id)}/pages/${pathId(String(n))}`);
+type PageWire = Schemas['DocumentPageView'] & { display?: DocumentPage };
+
+/** Without the PROPOSAL layout the page is its image and text on an A4 sheet (595 × 842 pt). */
+export const getDocumentPage = async (id: string, n: number): Promise<DocumentPage> => {
+  const raw = await v1Get<PageWire>(`/documents/${pathId(id)}/pages/${pathId(String(n))}`);
+  return (
+    raw.display ?? {
+      number: raw.page_no,
+      width: 595,
+      height: 842,
+      image_url: raw.image_url ?? null,
+      blocks: [],
+      highlights: [],
+      text: raw.text ?? '',
+    }
+  );
+};
 
 export interface DocumentChunk {
   id: Uuid;
@@ -267,12 +336,85 @@ export type ResolveIssue =
   | { action: 'correct'; value: string }
   | { action: 'keep_and_conflict' };
 
-export const listQualityIssues = () =>
-  v1Get<Page<QualityIssue>>('/quality-issues', { ...ALL, status: 'open' });
+type IssueWire = Schemas['QualityIssueView'] & { display?: QualityIssue };
 
-/** POST /v1/quality-issues/{id}:resolve. PROPOSAL: the body. */
-export const resolveQualityIssue = async (id: string, body: ResolveIssue) =>
-  v1Send<{ status: 'resolved' }>('POST', `/quality-issues/${pathId(id)}:resolve`, body);
+/** quality_issue.kind in words. */
+const ISSUE_KIND: Record<string, string> = {
+  low_ocr: 'Nhận dạng chữ độ tin thấp',
+  pii_unmasked: 'Có dữ liệu cá nhân chưa che',
+  garbled_text: 'Chữ bị lỗi mã',
+  empty_chunk: 'Đoạn rỗng',
+  low_confidence_field: 'Trường trích độ tin thấp',
+  field_mismatch: 'Trường lệch với hệ thống gốc',
+};
+
+/** `detail` is jsonb: a sentence, or an object whose text or message says it. */
+const detailText = (detail: unknown): string => {
+  if (typeof detail === 'string') return detail;
+  if (typeof detail === 'object' && detail !== null) {
+    const { text, message } = detail as { text?: unknown; message?: unknown };
+    if (typeof text === 'string') return text;
+    if (typeof message === 'string') return message;
+  }
+  return '';
+};
+
+function readIssue(raw: IssueWire, titles: Map<string, string>): QualityIssue {
+  if (raw.display) return raw.display;
+  const detail = detailText(raw.detail);
+  return {
+    id: raw.id,
+    document: { id: raw.document_id, title: titles.get(raw.document_id) ?? '' },
+    page: raw.page_no ?? 1,
+    reason_text: [ISSUE_KIND[raw.kind] ?? raw.kind, detail].filter(Boolean).join(' · '),
+    image_url: null,
+    original_lines: raw.old_value ? raw.old_value.split('\n') : [],
+    read: { heading: null, paragraphs: detail ? [detail] : [] },
+    unreadable: [],
+    agent_actions: [],
+  };
+}
+
+/** The open issues, each named by its document (A2 has no list of documents to join with). */
+export const listQualityIssues = async (): Promise<Page<QualityIssue>> => {
+  const page = await v1Get<Page<IssueWire>>('/quality-issues', { ...ALL, status: 'open' });
+  const ids = [...new Set(page.items.filter((i) => !i.display).map((i) => i.document_id))];
+  const docs = await Promise.all(
+    ids.map((id) => v1Get<DocumentWire>(`/documents/${pathId(id)}`).catch(() => null)),
+  );
+  const titles = new Map<string, string>(
+    docs.flatMap((d) => (d ? [[d.id, d.title ?? d.file_name] as [string, string]] : [])),
+  );
+  return { ...page, items: page.items.map((i) => readIssue(i, titles)) };
+};
+
+/*
+ * The screen's five choices as A2's resolutions: confirm (the masking or the reading is right),
+ * edit and correct (write the text or value), drop the page. Keeping the read value and opening
+ * a conflict has no resolution in A2 (PROPOSAL).
+ */
+function resolutionOf(body: ResolveIssue): Schemas['ResolveIssue'] | null {
+  switch (body.action) {
+    case 'confirm':
+      return { resolution: 'confirmed_mask' };
+    case 'edit':
+      return { resolution: 'corrected', corrected_text: body.text };
+    case 'drop':
+      return { resolution: 'page_dropped' };
+    case 'correct':
+      return { resolution: 'value_fixed', corrected_text: body.value };
+    default:
+      return null;
+  }
+}
+
+/** POST /v1/quality-issues/{id}:resolve. */
+export const resolveQualityIssue = async (id: string, body: ResolveIssue) => {
+  const resolution = resolutionOf(body);
+  // PROPOSAL: keep_and_conflict travels as the screen wrote it; the mock knows it.
+  await v1Send('POST', `/quality-issues/${pathId(id)}:resolve`, resolution ?? body);
+  return { status: 'resolved' as const };
+};
 
 /* ─── Hiệu lực văn bản (UC-05-05) ─────────────────────────────────────── */
 
@@ -403,8 +545,49 @@ export interface NewCollection {
   owner_id?: string;
 }
 
-export const createCollection = (body: NewCollection) =>
-  v1Send<{ id: Uuid; name: string }>('POST', '/collections', body);
+/** "Hợp đồng tín dụng" → "hop_dong_tin_dung" (document.collection.code). */
+const codeOf = (name: string) =>
+  name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60) || 'collection';
+
+type MediaKind = NonNullable<Schemas['CollectionCreate']['media_kinds']>[number];
+const MEDIA: MediaKind[] = ['pdf', 'image', 'docx', 'email', 'audio', 'html'];
+
+/** The kinds named in "PDF, ảnh, Word" as media kinds; none named takes every kind. */
+const mediaOf = (fileTypes: string): MediaKind[] => {
+  const text = fileTypes.toLowerCase();
+  const words: Record<MediaKind, string[]> = {
+    pdf: ['pdf'],
+    image: ['ảnh', 'image', 'jpg', 'png', 'scan'],
+    docx: ['word', 'docx', 'doc'],
+    email: ['email', 'thư', 'mail'],
+    audio: ['ghi âm', 'audio', 'cuộc gọi', 'mp3', 'wav'],
+    html: ['html', 'web'],
+  };
+  return MEDIA.filter((m) => words[m].some((w) => text.includes(w)));
+};
+
+/**
+ * POST /v1/collections (CollectionCreate): the purpose is the name until the screen asks for
+ * one. The source binding and the schema are PROPOSAL (A2 binds sources with
+ * POST /v1/document-sources and sets the schema on the collection afterwards).
+ */
+export const createCollection = async (body: NewCollection) => {
+  const media = mediaOf(body.file_types);
+  const created = await v1Send<Schemas['CollectionView']>('POST', '/collections', {
+    code: codeOf(body.name),
+    name: body.name,
+    purpose: body.name,
+    ...(media.length ? { media_kinds: media } : {}),
+  } satisfies Schemas['CollectionCreate']);
+  return { id: created.id, name: created.name };
+};
 
 export interface CollectionSuggestion {
   id: Uuid;
@@ -430,12 +613,27 @@ export const precheckUpload = (body: {
 }) => v1Send<{ duplicates: number; note: string | null }>('POST', '/documents:precheck', body);
 
 /**
- * POST /v1/documents (spec: multipart, 202). PROPOSAL: registered as JSON like /v1/uploads,
- * the bytes then go to the presigned URLs it returns; the mock skips that step.
+ * POST /v1/documents: multipart, one file per request (A2). A file already in the collection
+ * answers with that document instead of 202 — its status is not "received" — and counts as
+ * skipped. The schema and the PII policy belong to the collection, not to the upload.
  */
-export const uploadDocuments = (body: {
+export const uploadDocuments = async (body: {
   collection_id: string;
   schema_id: string | null;
   pii: PiiPolicy;
-  files: { file_name: string; size_bytes: number }[];
-}) => v1Send<{ accepted: number; skipped: number }>('POST', '/documents', body);
+  files: File[];
+}) => {
+  const results = await Promise.all(
+    body.files.map((file) => {
+      const form = new FormData();
+      form.append('collection_id', body.collection_id);
+      form.append('file', file, file.name);
+      return v1Upload<Schemas['services__api__modules__document__schemas__Accepted']>(
+        '/documents',
+        form,
+      );
+    }),
+  );
+  const accepted = results.filter((r) => r.status === 'received').length;
+  return { accepted, skipped: results.length - accepted };
+};

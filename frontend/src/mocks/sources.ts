@@ -1,4 +1,5 @@
 import { http, HttpResponse } from 'msw';
+import { documentApi } from './documents';
 import type {
   ActivateSource,
   ApiFieldMapping,
@@ -1556,7 +1557,28 @@ export function createSourcesHandlers() {
       return HttpResponse.json({ table: upload.target.table });
     }),
 
-    http.get('*/v1/collections', () => page(collections)),
+    // CollectionView with the screen's card under display.
+    http.get('*/v1/collections', () =>
+      page(
+        collections.map((c) => ({
+          id: c.id,
+          code: c.id,
+          name: c.name,
+          purpose: c.name,
+          media_kinds: [],
+          status: c.archived ? 'archived' : 'active',
+          extraction_schema_id: null,
+          pii_policy: 'mask',
+          embed_model: 'bge-m3',
+          qdrant_collection: c.id,
+          retention_days: null,
+          data_space_id: 'ds-rui-ro-tin-dung',
+          created_at: '2026-09-01T09:00:00+07:00',
+          updated_at: '2026-10-01T09:00:00+07:00',
+          display: c,
+        })),
+      ),
+    ),
     http.get('*/v1/document-pipeline', () => HttpResponse.json(SUMMARY)),
     http.get('*/v1/collections/:id', ({ params }) => {
       const collection = collections.find((c) => c.id === params.id);
@@ -1609,7 +1631,9 @@ export function createSourcesHandlers() {
       const doc = Object.values(documents)
         .flat()
         .find((d) => d.id === params.id);
-      return doc ? HttpResponse.json(doc) : problem(404, 'not_found', 'Không tìm thấy tài liệu.');
+      return doc
+        ? HttpResponse.json(documentApi(doc.id, doc.title, doc))
+        : problem(404, 'not_found', 'Không tìm thấy tài liệu.');
     }),
 
     // Schema drifts of connected sources. P14's mock serves the same paths for crawled sources:

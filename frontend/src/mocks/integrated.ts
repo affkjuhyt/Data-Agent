@@ -24,6 +24,7 @@ const INTEGRATED_GROUPS: readonly string[] = [
   'Kiểm toán',
   'Xung đột',
   'Kỳ chốt',
+  'Tài liệu',
 ];
 
 const IDENTITY_OPERATIONS: readonly string[] = ['getMe', 'listMyDataSpaces'];
@@ -49,6 +50,11 @@ const HELD_BACK: readonly string[] = [
   'executeDsr',
   // Chính sách: the matrix it runs beside (GET /v1/data-spaces/{id}/permissions) is not in A2.
   'simulatePermissions',
+  // Tài liệu: no list of extraction schemas in A2; the validity page's shape is PROPOSAL.
+  'testExtractionSchema',
+  'activateExtractionSchema',
+  'listDocumentVersions',
+  'updateDocument',
 ];
 
 interface Operation {

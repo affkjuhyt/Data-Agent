@@ -170,7 +170,8 @@ describe('DocumentsPage', () => {
     ).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Nạp' }));
     expect(
-      await screen.findByText('Đã nhận 1 tệp, bỏ qua 1 tệp trùng. Agent Tài liệu đang tiền xử lý.'),
+      // One request per file (A2); the mock accepts each, the precheck above named the duplicate.
+      await screen.findByText('Đã nhận 2 tệp. Agent Tài liệu đang tiền xử lý.'),
     ).toBeInTheDocument();
   });
 });

@@ -111,7 +111,7 @@ export function UploadDocumentsDialog({
         collection_id: collection,
         schema_id: schema === NO_SCHEMA ? null : schema,
         pii,
-        files: files.map((f) => ({ file_name: f.name, size_bytes: f.size })),
+        files,
       });
       onUploaded(result);
     } catch (e) {
