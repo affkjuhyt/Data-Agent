@@ -13,14 +13,19 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Response
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db.models import forecast as fc
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
-from services.api.kernel.pagination import PageRequest, page_request
+from services.api.kernel.pagination import (
+    PageRequest,
+    encode_page_token,
+    invalid_page_token,
+    page_request,
+)
 from services.api.kernel.problems import Problem
 from services.api.modules.forecast import rules, store
 from services.api.modules.forecast.schemas import (
@@ -119,14 +124,26 @@ async def list_ledger(
         query = query.where(entry.status == status)
     if miss is not None:
         query = query.where(entry.miss.is_(miss))
+    if page.cursor:
+        try:
+            after = (
+                datetime.date.fromisoformat(page.cursor["period"]),
+                datetime.datetime.fromisoformat(page.cursor["created_at"]),
+                uuid.UUID(page.cursor["id"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise invalid_page_token() from exc
+        # The cursor follows the sort: on (created_at, id) alone, a later page would skip lines of
+        # an older period issued after the last line shown.
+        query = query.where(tuple_(entry.period, entry.created_at, entry.id) < after)
     async with transaction(ROLE, principal) as session:
         # Newest first (SCR-71): by period, then issue time.
         rows = list(
             (
                 await session.scalars(
-                    store.keyset(
-                        query.order_by(entry.period.desc()), page, entry.created_at, entry.id
-                    )
+                    query.order_by(
+                        entry.period.desc(), entry.created_at.desc(), entry.id.desc()
+                    ).limit(page.page_size + 1)
                 )
             ).all()
         )
@@ -137,7 +154,16 @@ async def list_ledger(
             calibration = await _calibration(
                 session, principal, forecast_model_id, product_code, DEFAULT_LAST_N
             )
-    token = store.page_token(rows, page)
+    token = ""
+    if len(rows) > page.page_size:
+        last = rows[page.page_size - 1]
+        token = encode_page_token(
+            {
+                "period": last.period.isoformat(),
+                "created_at": last.created_at.isoformat(),
+                "id": str(last.id),
+            }
+        )
     return LedgerPage(
         items=[LedgerEntryView.model_validate(r) for r in rows[: page.page_size]],
         next_page_token=token,

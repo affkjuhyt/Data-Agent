@@ -72,13 +72,27 @@ class Org:
         with self.seed.conn.cursor() as cur:
             cur.execute(sql, [str(p) if isinstance(p, uuid.UUID) else p for p in params])
 
-    def passed(self, version_id: object) -> None:
-        """What the eval-result consumer writes when the version's tests pass (UC-03-04)."""
-        self.run(
-            "UPDATE skill.skill_version SET eval_run_id = %s WHERE id = %s",
-            uuid.uuid4(),
-            version_id,
+    def passed(self, version_id: object, cases: int = 3) -> None:
+        """What the eval-result consumer writes when the version's tests pass (UC-03-04): a
+        completed eval run with `cases` passing cases, recorded on the version."""
+        eval_set = self.seed.row(
+            "eval.eval_set",
+            org_id=self.org,
+            subject_type="skill",
+            subject_id=uuid.uuid4(),
+            name="Ca kiểm thử kỹ năng",
         )
+        run = self.seed.row(
+            "eval.eval_run",
+            org_id=self.org,
+            eval_set_id=eval_set,
+            subject_version="skill v1",
+            trigger="manual",
+            item_count=cases,
+            passed=cases,
+            status="completed",
+        )
+        self.run("UPDATE skill.skill_version SET eval_run_id = %s WHERE id = %s", run, version_id)
 
     def approve(self, version_id: object) -> None:
         """What accepting the skill_publish proposal does (inbox → skill consumer, UC-03-05)."""
@@ -543,10 +557,23 @@ async def test_a_shared_scope_goes_to_review(sk: Org, scope: str, steps: int) ->
 
 # AC-03-05-04
 async def test_a_data_space_skill_needs_three_passing_cases(sk: Org) -> None:
-    pytest.skip(
-        "needs a DB grant: BR-12 counts the passing cases of eval.eval_run (passed >= 3), which"
-        " svc_skill cannot read (no eval_read)"
-    )
+    # BR-12: scope data_space or wider needs 3 passing cases; personal needs no review.
+    async with client(sk) as api:
+        made = await _skill(api, sk, scope="data_space")
+        version = await _version(api, sk, made["id"])
+        await api.post(f"/v1/skill-versions/{version['id']}:test", headers=sk.headers("author"))
+        sk.passed(version["id"], cases=2)
+        url = f"/v1/skill-versions/{version['id']}:publish"
+        two = await api.post(url, headers=sk.headers("author"))
+        assert two.status_code == 422 and two.json()["code"] == "business_rule_violated"
+        assert "BR-12" in two.json()["detail"]
+        sk.passed(version["id"], cases=3)
+        three = await api.post(url, headers=sk.headers("author"))
+        assert three.status_code == 200, three.text
+        assert three.json()["status"] == "pending_review"
+
+        personal, _ = await _published(api, sk, "ca-nhan-it-ca", scope="personal")
+        assert personal["id"]
 
 
 # ---------------------------------------------------------------- runs

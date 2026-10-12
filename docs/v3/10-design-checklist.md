@@ -10,7 +10,7 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 1 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 239 có test nhắc mã AC | todo 778 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 248 có test nhắc mã AC | todo 778 |
 | Endpoint A2 (tab 4) | 381 (A2 ghi 382 dòng; POST /v1/data-products ở hai nhóm) | 381 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 220 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 160 có mã nhắc tới | todo 195 |
@@ -63,7 +63,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC-03-03 | Tạo kỹ năng từ phiên phân tích | todo | 2/2 | 3/3 | 0/3 |  |
 | UC-03-04 | Kiểm định kỹ năng | todo | 2/2 | 3/3 | 0/4 |  |
 | UC-03-05 | Duyệt và phát hành kỹ năng | todo | 2/2 | 3/3 | 1/5 |  |
-| UC-03-06 | Ngừng dùng kỹ năng | todo | 1/1 | 1/1 | 0/3 |  |
+| UC-03-06 | Ngừng dùng kỹ năng | todo | 1/1 | 1/1 | 1/3 |  |
 | UC-03-07 | Chia sẻ kỹ năng và nhận đề xuất kỹ năng | todo | 2/2 | 2/2 | 2/4 |  |
 
 ### P04 Kết nối và khám phá dữ liệu nguồn
@@ -130,9 +130,9 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC-08-02 | Nhận và xử lý cảnh báo | todo | 2/2 | 2/2 | 2/4 |  |
 | UC-08-03 | Lập báo cáo định kỳ | todo | 2/2 | 2/2 | 1/4 |  |
 | UC-08-04 | Nhận bản tin lãnh đạo | todo | 2/2 | 2/2 | 0/5 |  |
-| UC-08-05 | Giao việc cho agent nền | todo | 2/2 | 1/1 | 0/4 |  |
-| UC-08-06 | Xử lý việc ngoài ứng dụng | todo | 2/2 | 3/3 | 0/5 |  |
-| UC-08-07 | Cài đặt nhận thông báo | todo | 1/1 | 2/2 | 0/3 |  |
+| UC-08-05 | Giao việc cho agent nền | todo | 2/2 | 1/1 | 1/4 |  |
+| UC-08-06 | Xử lý việc ngoài ứng dụng | todo | 2/2 | 3/3 | 2/5 |  |
+| UC-08-07 | Cài đặt nhận thông báo | todo | 1/1 | 2/2 | 2/3 |  |
 | UC-08-08 | Nhận bản tin theo lịch sự kiện ngoài | todo | 8/8 | 7/7 | 0/5 |  |
 
 ### P09 Gói ngành
@@ -163,7 +163,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC-11-02 | Phân quyền dữ liệu | todo | 2/2 | 1/1 | 0/8 |  |
 | UC-11-03 | Tra cứu nhật ký kiểm toán | todo | 2/2 | 2/2 | 0/6 |  |
 | UC-11-04 | Giám sát hệ thống | todo | 1/1 | 1/1 | 0/5 |  |
-| UC-11-05 | Cấu hình mô hình và chính sách AI | todo | 8/8 | 4/4 | 0/8 |  |
+| UC-11-05 | Cấu hình mô hình và chính sách AI | todo | 8/8 | 4/4 | 1/8 |  |
 | UC-11-06 | Xử lý yêu cầu của chủ thể dữ liệu | todo | 2/2 | 2/2 | 0/5 |  |
 | UC-11-07 | Yêu cầu và cấp quyền | todo | 2/2 | 1/1 | 5/6 |  |
 | UC-11-08 | Quản lý thành viên Data Space | todo | 2/2 | 2/2 | 4/5 |  |
@@ -322,7 +322,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-64 | UC-07-07 | todo |  |
 | BR-65 | UC-07-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-66 | UC-07-08 | todo |  |
-| BR-67 | UC-08-06 | todo | `backend/services/api/modules/notify/routes.py` |
+| BR-67 | UC-08-06 | todo | `backend/services/api/modules/notify/routes.py`, `tests/integration/api/test_notify.py` |
 | BR-68 | UC-08-06 | todo | `backend/services/api/modules/notify/routes.py` |
 | BR-69 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-70 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +7 |
@@ -352,7 +352,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-94 | UC-03-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-95 | UC-03-04 | todo |  |
 | BR-96 | UC-03-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +6 |
-| BR-97 | UC-03-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-97 | UC-03-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/versions/v3_0008_skill_version_keep_if_run.py`, `backend/libs/dataagent_db/models/skill.py` +8 |
 | BR-98 | UC-03-07 | todo | `backend/services/api/modules/skill/routes.py`, `backend/services/api/modules/skill/rules.py`, `backend/services/api/modules/skill/schemas.py` +2 |
 | BR-99 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-100 | UC-04-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/context.py` +7 |
@@ -381,8 +381,8 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-123 | UC-07-09 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-124 | UC-08-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +10 |
 | BR-125 | UC-08-04 | todo |  |
-| BR-126 | UC-08-05 | todo | `backend/services/api/modules/agent/tasks.py` |
-| BR-127 | UC-08-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/libs/dataagent_db/models/notify.py` +6 |
+| BR-126 | UC-08-05 | todo | `backend/services/api/modules/agent/tasks.py`, `tests/integration/api/test_agent_tasks.py` |
+| BR-127 | UC-08-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/libs/dataagent_db/models/notify.py` +7 |
 | BR-128 | UC-09-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +7 |
 | BR-129 | UC-09-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/pack.py` +4 |
 | BR-130 | UC-09-04 | todo | `backend/services/api/modules/pack/routes.py` |
@@ -435,8 +435,8 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-177 | UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +14 |
 | BR-179 | UC-01-05, UC-07-14, UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/schema/csdl/definitions.json` +13 |
-| BR-180 | UC-01-01, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/governance.py` +13 |
-| BR-181 | UC-01-07, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/qa.py` +8 |
+| BR-180 | UC-01-01, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/governance.py` +14 |
+| BR-181 | UC-01-07, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/qa.py` +9 |
 | BR-182 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +10 |
 | BR-183 | UC-08-08, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/libs/dataagent_db/models/monitor.py` +8 |
 | BR-184 | UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +10 |
@@ -854,14 +854,14 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-03-06 Ngừng dùng kỹ năng · 0/4</summary>
+<details><summary>UC-03-06 Ngừng dùng kỹ năng · 1/4</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-03-06-01 | Chính | Cho bản 1 đang dùng bởi 1 agent và 1 báo cáo định kỳ, bản 2 tương thích tham số / Khi AC03 ngừng bản 1 và chọn bản 2 / Thì giao diện liệt kê 2 nơi dùng, cả hai chuyển sang bản 2, chủ nhận thông báo, agent không đề xuấ… | E2E, CSDL | todo |  |
 | AC-03-06-02 | Thay thế | Cho một nơi dùng có tham số không tương thích / Khi ngừng / Thì nơi đó không tự chuyển, chủ nhận yêu cầu sửa trong Cần bạn, bản cũ còn chạy cho nơi đó tới ngày thứ 30 và bị chặn từ ngày 31 | CSDL, API | todo |  |
 | AC-03-06-03 | Ngoại lệ | Cho một lượt đang chạy bản 1 / Khi ngừng bản 1 / Thì lượt đó hoàn tất bằng bản 1 | API | todo |  |
-| AC-03-06-04 | Quy tắc | Cho skill_version đã từng chạy / Khi gọi xoá hoặc DELETE trực tiếp / Thì bị chặn; bản ngừng dùng bị ẩn khỏi thư viện và skill_run cũ vẫn truy được cách tính | CSDL, API | todo |  |
+| AC-03-06-04 | Quy tắc | Cho skill_version đã từng chạy / Khi gọi xoá hoặc DELETE trực tiếp / Thì bị chặn; bản ngừng dùng bị ẩn khỏi thư viện và skill_run cũ vẫn truy được cách tính | CSDL, API | todo | `tests/integration/migrate/test_core.py` |
 
 </details>
 
@@ -1403,39 +1403,39 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-08-05 Giao việc cho agent nền · 0/5</summary>
+<details><summary>UC-08-05 Giao việc cho agent nền · 1/5</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-08-05-01 | Chính | Cho AC01 có quyền chạy agent / Khi giao “rà toàn bộ hồ sơ vay T9 có tài sản đảm bảo định giá quá 12 tháng” / Thì có background_task và agent_run, tiến độ hiện trên SCR-21, kết quả vào ô hoặc artifact và AC01 nhận thôn… | E2E, CSDL | todo |  |
-| AC-08-05-02 | Chính | Cho việc ước tính 45 phút / Khi agent lập kế hoạch / Thì lượt chờ AC01 xác nhận kế hoạch trước khi chạy; việc ước tính 20 phút trong ngân sách thì chạy ngay | API | todo |  |
+| AC-08-05-02 | Chính | Cho việc ước tính 45 phút / Khi agent lập kế hoạch / Thì lượt chờ AC01 xác nhận kế hoạch trước khi chạy; việc ước tính 20 phút trong ngân sách thì chạy ngay | API | todo | `tests/integration/api/test_agent_tasks.py` |
 | AC-08-05-03 | Thay thế | Cho lượt chạy chạm checkpoint ghi bản derived / Khi đang chạy / Thì Cần bạn có yêu cầu và agent_run ở trạng thái chờ người | CSDL | todo |  |
 | AC-08-05-04 | Ngoại lệ | Cho lượt chạy vượt ngân sách agent / Khi chạm giới hạn / Thì có hitl_request loại ngân sách và lượt không chạy tiếp trước khi có trả lời | CSDL | todo |  |
 | AC-08-05-05 | Quy tắc | Cho việc nền đang chạy / Khi AC01 bị gỡ khỏi Data Space / Thì việc bị huỷ; trong lúc chạy mọi truy vấn chỉ trả dữ liệu thuộc giao của quyền AC01 và quyền agent | CSDL, API | todo |  |
 
 </details>
 
-<details><summary>UC-08-06 Xử lý việc ngoài ứng dụng · 0/6</summary>
+<details><summary>UC-08-06 Xử lý việc ngoài ứng dụng · 3/6</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-08-06-01 | Chính | Cho yêu cầu làm rõ rủi ro thấp gửi tới Teams và di động / Khi AC01 bấm phương án trên Teams và đăng nhập lại SSO / Thì quyết định ghi vào hitl_request kèm tên kênh Teams, channel_delivery của bản trên di động chuyển “… | E2E, CSDL | todo |  |
-| AC-08-06-02 | Thay thế | Cho yêu cầu rủi ro cao / Khi dựng thẻ cho Teams, Zalo, email, di động / Thì mọi thẻ chỉ có liên kết mở ứng dụng, không có nút phương án | E2E, API | todo |  |
+| AC-08-06-01 | Chính | Cho yêu cầu làm rõ rủi ro thấp gửi tới Teams và di động / Khi AC01 bấm phương án trên Teams và đăng nhập lại SSO / Thì quyết định ghi vào hitl_request kèm tên kênh Teams, channel_delivery của bản trên di động chuyển “… | E2E, CSDL | todo | `tests/integration/api/test_notify.py` |
+| AC-08-06-02 | Thay thế | Cho yêu cầu rủi ro cao / Khi dựng thẻ cho Teams, Zalo, email, di động / Thì mọi thẻ chỉ có liên kết mở ứng dụng, không có nút phương án | E2E, API | todo | `tests/integration/api/test_notify.py` |
 | AC-08-06-03 | Ngoại lệ | Cho kênh Teams lỗi / Khi gửi thẻ / Thì thẻ được gửi qua kênh dự phòng và vẫn có trong Trung tâm thông báo | API, CSDL | todo |  |
-| AC-08-06-04 | Quy tắc | Cho yêu cầu duyệt rủi ro thấp / Khi gửi qua email và Zalo / Thì email chỉ có liên kết; Zalo có nút duyệt và đòi nhập OTP trước khi ghi | E2E | todo |  |
+| AC-08-06-04 | Quy tắc | Cho yêu cầu duyệt rủi ro thấp / Khi gửi qua email và Zalo / Thì email chỉ có liên kết; Zalo có nút duyệt và đòi nhập OTP trước khi ghi | E2E | todo | `tests/integration/api/test_notify.py` |
 | AC-08-06-05 | Quy tắc | Cho cảnh báo liên quan khoản vay của một khách / Khi dựng thẻ kênh ngoài / Thì thẻ không có tên, CCCD hay số tài khoản; mọi thao tác từ kênh ngoài có dòng audit_log kèm tên kênh | API, CSDL | todo |  |
 | AC-08-06-06 | Phi chức năng | Cho 200 thẻ HITL trong 1 giờ / Khi gửi tới kênh ngoài / Thì p95 da_hitl_channel_delivery_seconds ≤ 10 giây | Tải | todo |  |
 | — | Cần làm rõ | Bước 5 nói bản sao thẻ chuyển “Đã xử lý” “trong vài giây”, chưa có số. Cần ngưỡng (ví dụ p95) để có tiêu chí Phi chức năng | | | |
 
 </details>
 
-<details><summary>UC-08-07 Cài đặt nhận thông báo · 0/4</summary>
+<details><summary>UC-08-07 Cài đặt nhận thông báo · 2/4</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-08-07-01 | Chính | Cho AC01 đã liên kết Teams / Khi bật ô cảnh báo × Teams, đặt giờ yên lặng 22:00–06:00 và gộp mỗi 15 phút / Thì notification_pref cập nhật cho kind đó và AC01 nhận 1 thông báo thử trên Teams | E2E, CSDL | todo |  |
+| AC-08-07-01 | Chính | Cho AC01 đã liên kết Teams / Khi bật ô cảnh báo × Teams, đặt giờ yên lặng 22:00–06:00 và gộp mỗi 15 phút / Thì notification_pref cập nhật cho kind đó và AC01 nhận 1 thông báo thử trên Teams | E2E, CSDL | todo | `tests/integration/api/test_notify.py` |
 | AC-08-07-02 | Thay thế | Cho Zalo chưa liên kết / Khi bật ô Zalo / Thì giao diện hiện hướng dẫn liên kết có bước xác nhận số điện thoại công ty | E2E | todo |  |
-| AC-08-07-03 | Ngoại lệ | Cho cài đặt yêu cầu HITL / Khi tắt mọi kênh kể cả trong ứng dụng / Thì PUT /v1/me/notification-prefs bị từ chối và ô trong ứng dụng luôn bật | API, E2E | todo |  |
+| AC-08-07-03 | Ngoại lệ | Cho cài đặt yêu cầu HITL / Khi tắt mọi kênh kể cả trong ứng dụng / Thì PUT /v1/me/notification-prefs bị từ chối và ô trong ứng dụng luôn bật | API, E2E | todo | `tests/integration/api/test_notify.py` |
 | AC-08-07-04 | Quy tắc | Cho giờ yên lặng 22:00–06:00 / Khi lúc 23:00 có 1 cảnh báo và 1 yêu cầu rủi ro cao còn 30 phút tới hạn / Thì chỉ yêu cầu rủi ro cao được gửi ngay, cảnh báo được gửi lúc 06:00 | API, CSDL | todo |  |
 
 </details>
@@ -1657,18 +1657,18 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-11-05 Cấu hình mô hình và chính sách AI · 0/10</summary>
+<details><summary>UC-11-05 Cấu hình mô hình và chính sách AI · 2/10</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-11-05-01 | Chính | Cho tác vụ sql_generation đang dùng mô hình A / Khi AC05 chọn mô hình B, dự phòng A, giới hạn token và bộ câu hỏi chuẩn mọi Data Space không giảm câu đúng / Thì màn đặt số câu đúng, độ trễ, chi phí token cạnh cấu hình… | API, CSDL | todo |  |
 | AC-11-05-02 | Thay thế | Cho cấu hình mới đạt / Khi chọn chuyển dần / Thì model_config có rollout_pct = 10, khoảng 10% lượt hỏi trong 24 giờ dùng mô hình mới (sai lệch không quá 2 điểm phần trăm trên 1.000 lượt), sau 24 giờ chuyển 100% | API, CSDL | todo |  |
-| AC-11-05-03 | Thay thế | Cho AC05 khai báo provider frontier đủ mã, endpoint https, đường dẫn khoá OpenBao, vùng dữ liệu, hợp đồng không lưu dữ liệu, ngân sách tháng / Khi gọi thử đạt và AC06 khác người bật duyệt / Thì model_provider enabled;… | API, CSDL | todo |  |
+| AC-11-05-03 | Thay thế | Cho AC05 khai báo provider frontier đủ mã, endpoint https, đường dẫn khoá OpenBao, vùng dữ liệu, hợp đồng không lưu dữ liệu, ngân sách tháng / Khi gọi thử đạt và AC06 khác người bật duyệt / Thì model_provider enabled;… | API, CSDL | todo | `tests/integration/api/test_model_providers.py` |
 | AC-11-05-04 | Ngoại lệ | Cho mô hình chính của answer_writing ngừng phản hồi / Khi có câu hỏi mới / Thì câu trả lời được viết bằng mô hình dự phòng và AC05 nhận báo | API | todo |  |
 | AC-11-05-05 | Quy tắc | Cho cấu hình mới làm tỷ lệ đúng của Data Space Tín dụng giảm từ 92% xuống 90% / Khi áp dụng / Thì bị từ chối; chỉ áp dụng được sau khi người phụ trách Data Space đó đồng ý trong Cần bạn | API | todo |  |
 | AC-11-05-06 | Quy tắc | Cho frontier_routing bật cho answer_writing và provider frontier đã duyệt / Khi hỏi “Tóm tắt Nghị định 80/2023/NĐ-CP” và “dư nợ xấu chi nhánh Hà Nội quý 3” / Thì câu đầu có model_route_decision frontier_allowed, câu s… | Đánh giá agent, CSDL | todo |  |
 | AC-11-05-07 | Quy tắc | Cho frontier_routing chưa bật cho tác vụ, hoặc provider có max_classification khác public, hoặc model_config route_role = frontier_candidate với task sql_generation / Khi ghi dòng tương ứng / Thì trigger model_route_d… | CSDL | todo |  |
-| AC-11-05-08 | Quy tắc | Cho provider frontier đang bật / Khi đổi endpoint, secret_ref, data_region hoặc zero_retention / Thì trigger đặt enabled = false, xoá approved_by và có sự kiện governance.model_provider.changed | CSDL | todo |  |
+| AC-11-05-08 | Quy tắc | Cho provider frontier đang bật / Khi đổi endpoint, secret_ref, data_region hoặc zero_retention / Thì trigger đặt enabled = false, xoá approved_by và có sự kiện governance.model_provider.changed | CSDL | todo | `tests/integration/api/test_model_providers.py` |
 | AC-11-05-09 | Quy tắc | Cho một lời gọi frontier thành công / Khi lượt kết thúc / Thì model_route_decision ghi trước khi gọi với prompt_sha256, được điền token một lần; có dòng audit_log; answer_receipt.frontier_used = true; câu trả lời hiện… | API, CSDL | todo |  |
 | AC-11-05-10 | Quy tắc | Cho khoá API của provider frontier trong OpenBao / Khi quét CSDL, log ứng dụng và Langfuse sau 100 lời gọi / Thì chuỗi khoá không xuất hiện ở đâu | CSDL, API | todo |  |
 

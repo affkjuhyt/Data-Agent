@@ -1807,3 +1807,30 @@ def test_consolidated_dataset_is_an_accepted_origin(db):
         schema_name="s",
         table_name="t",
     )
+
+
+# AC-03-06-04, BR-97
+def test_a_skill_version_that_has_run_is_kept(db):
+    org, space, owner = new_id(), new_id(), new_id()
+    skill, ran, unused = new_id(), new_id(), new_id()
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO skill.skill (id, org_id, data_space_id, code, name, category, owner_id)"
+            " VALUES (%s, %s, %s, 'tach-chenh-lech', 'Tách chênh lệch', 'decomposition', %s)",
+            (str(skill), str(org), str(space), str(owner)),
+        )
+        for version, number in ((ran, 1), (unused, 2)):
+            cur.execute(
+                "INSERT INTO skill.skill_version (id, org_id, skill_id, version, params_schema, steps)"
+                " VALUES (%s, %s, %s, %s, '{}', '[]')",
+                (str(version), str(org), str(skill), number),
+            )
+        cur.execute(
+            "INSERT INTO skill.skill_run (id, org_id, skill_version_id, data_space_id, caller_kind,"
+            " principal_id, params) VALUES (%s, %s, %s, %s, 'user', %s, '{}')",
+            (str(new_id()), str(org), str(ran), str(space), str(owner)),
+        )
+    fails(db, "DELETE FROM skill.skill_version WHERE id = %s", (str(ran),), code="23514")
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM skill.skill_version WHERE id = %s", (str(unused),))
+        assert cur.rowcount == 1

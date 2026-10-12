@@ -34,6 +34,7 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
+from services.api.modules.eval import eval_runs
 from services.api.modules.skill import rules
 from services.api.modules.skill.schemas import (
     Accepted,
@@ -57,6 +58,8 @@ from services.api.modules.skill.schemas import (
 )
 
 router = APIRouter()
+# BR-12: passing test cases a skill shared beyond its author needs.
+MIN_PASSING_CASES = 3
 ROLE = "svc_skill"
 POLL_AFTER_MS = 1_000
 # BR-97 / UC-03-06 3a: a retired version still serves the places that use it for 30 days.
@@ -634,6 +637,18 @@ async def publish_version(
                 "The version has not passed its tests yet (UC-03-04); run :test and wait for it.",
             )
         steps = rules.approval_steps(row.scope)
+        if row.scope != "personal":
+            # BR-12: Data Space scope and wider needs at least 3 passing cases; the eval module
+            # holds the run and answers on its own connection (svc_skill reads no eval table).
+            run = (await eval_runs(principal, [version.eval_run_id])).get(version.eval_run_id)
+            passed = int(run["passed"]) if run else 0
+            if passed < MIN_PASSING_CASES:
+                raise Problem(
+                    422,
+                    "business_rule_violated",
+                    f"{passed} passing test cases; a {row.scope} skill needs at least "
+                    f"{MIN_PASSING_CASES} (BR-12).",
+                )
         if row.scope == "personal":
             # BR-12: a personal skill needs no review; its owner answers for it.
             await _retire_published(session, principal, row, version.id)
