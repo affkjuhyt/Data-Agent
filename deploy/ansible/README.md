@@ -184,7 +184,6 @@ Commit, then run. If you cannot commit yet:
 | --- | --- |
 | `-e deploy_full=true` | rebuilds every image — slow and disk-heavy |
 | `-e secrets_changed=true -e config_changed=true` | reapplies every Secret and file-backed ConfigMap, restarts the Deployments whose Secret/ConfigMap content changed; builds nothing |
-| add `-e '{"changed_paths": ["deploy/k8s/dev/job/seed.yaml"]}'` (with `apply_jobs=true`) | also lets the Jobs rerun |
 
 These overrides work because `-e` outranks the diff result. The checkpoint
 still advances to `HEAD`, so the next run will not see those files as changed

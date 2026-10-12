@@ -103,12 +103,6 @@ config_paths:
   - deploy/docker/kong
   - deploy/docker/litellm
   - deploy/docker/monitoring
-  # The seed files only feed the seed-sql / seed-mongo ConfigMaps, which only
-  # the seed Job mounts. They stay here so those ConfigMaps are refreshed; no
-  # Deployment reads them, so changing one no longer restarts anything.
-  - tests/e2e/seed.sql
-  - tests/e2e/seed-governance.sql
-  - tests/e2e/seed-flow.js
 
 apply_databases: true
 apply_jobs: false
