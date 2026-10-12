@@ -103,6 +103,17 @@
   # agent's db_connector resolves it here. sandbox_reader's password is the one
   # the db-init Job sets, so both come from the same vault value.
 
+- name: Write the demo PostgreSQL source credentials
+  ansible.builtin.command: >
+    {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
+    bao kv put -mount=secret tenants/{{ seed_demo_tenant }}/demo-postgres
+    user=app_user password={{ vault_app_user_password }}
+  when: seed_demo | bool
+  changed_when: false
+  no_log: true
+  # The V3 source wizard reads this path through the worker-agent. The password
+  # remains in OpenBao and is the same app_user credential created by db-init.
+
 - name: List auth methods
   ansible.builtin.command: "{{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }} bao auth list -format=json"
   register: bao_auth
