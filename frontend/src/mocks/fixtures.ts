@@ -1,10 +1,11 @@
 import type {
-  AgentDef,
+  AgentWire,
   BehaviorPolicy,
   ConflictContext,
   ProposalWire,
   AgentRun,
   AgentStep,
+  RunWire,
   AppUser,
   DataSpace,
   Dataset,
@@ -154,13 +155,19 @@ const sevenDays = (count: number, needs_approval_pct = 0, errors = 0) => ({
   errors,
 });
 
-export function agentsFixture(): AgentDef[] {
+export function agentsFixture(): AgentWire[] {
   const base = {
     data_space_id: DS,
+    account_user_id: 'u-agent',
+    owner_user_id: 'u-yen',
+    current_config_version: 5,
+    template_ref: null,
+    created_at: minutesFromNow(-30 * 24 * 60),
+    updated_at: minutesFromNow(-60),
     paused_reason: null,
     monthly_budget: '2000000',
-    runs_running: 0,
-    runs_waiting_human: 0,
+    active_runs: 0,
+    waiting_runs: 0,
   };
   return [
     {
@@ -171,7 +178,7 @@ export function agentsFixture(): AgentDef[] {
       kind: 'reconcile',
       status: 'running',
       spent_this_month: '412000',
-      runs_running: 1,
+      active_runs: 1,
       goal: 'So số nội bộ với báo cáo đã nộp',
       now: { text: 'Đang so dư nợ T9 · còn ~2 phút', tone: 'normal' },
       trigger_text: 'Khi khoá sổ · thứ Hai 07:00',
@@ -186,7 +193,7 @@ export function agentsFixture(): AgentDef[] {
       kind: 'analysis',
       status: 'running',
       spent_this_month: '386000',
-      runs_waiting_human: 1,
+      waiting_runs: 1,
       goal: 'Điều tra biến động khi có cảnh báo',
       now: { text: 'Chờ bạn chọn định nghĩa nợ xấu', tone: 'waiting' },
       trigger_text: 'Khi có cảnh báo',
@@ -201,7 +208,7 @@ export function agentsFixture(): AgentDef[] {
       kind: 'monitor',
       status: 'running',
       spent_this_month: '158000',
-      runs_running: 1,
+      active_runs: 1,
       goal: 'Theo dõi 14 chỉ số rủi ro',
       now: { text: 'Kiểm tra lúc 11:00', tone: 'normal' },
       trigger_text: 'Mỗi giờ',
@@ -216,7 +223,7 @@ export function agentsFixture(): AgentDef[] {
       kind: 'data_quality',
       status: 'running',
       spent_this_month: '97000',
-      runs_waiting_human: 1,
+      waiting_runs: 1,
       goal: 'Kiểm tra dữ liệu sau mỗi lần nạp',
       now: { text: 'Dừng: không kết nối DWH bán lẻ', tone: 'error' },
       trigger_text: 'Sau mỗi job nạp',
@@ -240,7 +247,7 @@ export function agentsFixture(): AgentDef[] {
   ];
 }
 
-export function runsFixture(): AgentRun[] {
+export function runsFixture(): RunWire[] {
   type Spec = {
     id: string;
     code: string;
@@ -258,10 +265,19 @@ export function runsFixture(): AgentRun[] {
     eta?: string;
     error?: string;
   };
-  const run = (r: Spec): AgentRun => {
+  const run = (r: Spec): RunWire => {
     const finished = ['succeeded', 'failed', 'cancelled'].includes(r.status);
     return {
       id: r.id,
+      data_space_id: DS,
+      as_of: null,
+      depth: 0,
+      initiated_by: null,
+      is_test: r.trigger_kind === 'test',
+      parent_run_id: null,
+      tokens: 0,
+      trigger_ref: null,
+      created_at: minutesFromNow(-r.minutes - (finished ? 60 : 0)),
       code: r.code,
       agent_id: r.agent_id,
       agent_name: r.agent_name,
@@ -272,8 +288,8 @@ export function runsFixture(): AgentRun[] {
       trigger_text: r.initiated_label.toLowerCase(),
       trigger_kind: r.trigger_kind,
       current_step: r.step?.[0] ?? null,
-      total_steps: r.step?.[1] ?? null,
-      eta_text: r.eta ?? null,
+      total_steps: r.step?.[1],
+      eta_text: r.eta,
       narrative: r.now ? [{ at: minutesFromNow(-2), text: r.now, state: 'now' }] : [],
       cost: String(r.cost),
       hitl_count: r.hitl,

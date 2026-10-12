@@ -42,8 +42,8 @@ export function runDuration(run: AgentRun, now = Date.now()): string {
   return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
 }
 
-/** "8k": the short cost of the table; costs are decimal strings in đồng. */
-export function shortCost(cost: string): string {
+/** "8k": the short cost of the table; costs are decimals in đồng (a string in JSON). */
+export function shortCost(cost: number | string): string {
   const n = Number(cost);
   if (!Number.isFinite(n)) return '—';
   return n >= 1000 ? `${Math.round(n / 1000)}k` : `${Math.round(n)}`;

@@ -1,7 +1,11 @@
 import { pathId, v1Get, v1Send, type Page } from './client';
+import type { components } from './schema';
 import type {
   AgentDef,
+  AgentStep,
+  AgentWire,
   BehaviorPolicy,
+  NarrativeEvent,
   DecideProposal,
   HitlOption,
   HitlWire,
@@ -19,6 +23,7 @@ import type {
   ModelConfig,
   ResolveHitl,
   RunStatus,
+  RunWire,
   Source,
   Workspace,
   WorkspaceWire,
@@ -145,13 +150,119 @@ export const decideProposal = async (id: string, body: DecideProposal) =>
   readProposal(await v1Send<ProposalWire>('POST', `/proposals/${pathId(id)}:decide`, body));
 
 /* Agent */
-export const listAgents = () => v1Get<Page<AgentDef>>('/agents', ALL);
 
-export const listRuns = (query: { status?: RunStatus; agent_id?: string } = {}) =>
-  v1Get<Page<AgentRun>>('/runs', { ...ALL, ...query });
+export const readAgent = (raw: AgentWire): AgentDef => ({
+  ...raw,
+  kind: raw.kind as AgentDef['kind'],
+  status: raw.status as AgentDef['status'],
+  active_runs: raw.active_runs ?? 0,
+  waiting_runs: raw.waiting_runs ?? 0,
+  goal: raw.goal ?? null,
+  now: raw.now ?? null,
+  trigger_text: raw.trigger_text ?? null,
+  permission_text: raw.permission_text ?? null,
+  runs_7d: raw.runs_7d ?? null,
+});
 
-export const getRun = async (id: string, view: 'simple' | 'technical' = 'simple') =>
-  v1Get<AgentRun>(`/runs/${pathId(id)}`, { view });
+/*
+ * agent_run.narrative is the run's event log (jsonb). The story screens draw the entries that
+ * read as a sentence ({at, text}); the plan edits the api records are said in words; other
+ * events are the worker's and are left out.
+ */
+function readNarrative(raw: unknown): NarrativeEvent[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry): NarrativeEvent[] => {
+    if (!isRecord(entry)) return [];
+    const at = isText(entry.at) ? entry.at : isText(entry.created_at) ? entry.created_at : '';
+    if (isText(entry.text)) {
+      const state = entry.state === 'now' || entry.state === 'next' ? entry.state : 'done';
+      const progress = typeof entry.progress === 'number' ? entry.progress : undefined;
+      return [{ at, text: entry.text, state, ...(progress === undefined ? {} : { progress }) }];
+    }
+    if (entry.event === 'plan.edited')
+      return [
+        { at, text: `Kế hoạch được sửa (bản ${String(entry.plan_version ?? '')})`, state: 'done' },
+      ];
+    return [];
+  });
+}
+
+/** A step as the api sends it (StepView) gets the trace fields it lacks as unknown. */
+function readStep(raw: components['schemas']['StepView'] | AgentStep): AgentStep {
+  if ('actor' in raw) return raw;
+  const input = isRecord(raw.input) ? raw.input : {};
+  return {
+    seq: raw.seq,
+    kind: raw.kind as AgentStep['kind'],
+    name: raw.name,
+    summary: raw.summary,
+    status: raw.status as AgentStep['status'],
+    duration_ms: raw.duration_ms,
+    parent_seq: null,
+    started_at: raw.started_at,
+    actor: raw.kind,
+    metric_text: null,
+    run_as_text: null,
+    rows_text: null,
+    sql: isText(input.sql) ? input.sql : null,
+  };
+}
+
+function readRun(raw: RunWire): AgentRun {
+  return {
+    ...raw,
+    status: raw.status as AgentRun['status'],
+    trigger_kind: raw.trigger_kind as AgentRun['trigger_kind'],
+    narrative: readNarrative(raw.narrative),
+    error: raw.error ?? null,
+    agent_name: raw.agent_name ?? 'Agent',
+    total_steps: raw.total_steps ?? null,
+    eta_text: raw.eta_text ?? null,
+    code: raw.code ?? `#${raw.id.slice(0, 8)}`,
+    title: raw.title ?? '',
+    initiated_label: raw.initiated_label ?? null,
+    trigger_text: raw.trigger_text ?? null,
+    hitl_count: raw.hitl_count ?? null,
+    steps: raw.steps ? raw.steps.map(readStep) : undefined,
+  };
+}
+
+/**
+ * Runs carry the agent's id only; its name comes from the agents the viewer can see, and names
+ * the run when the PROPOSAL title is missing.
+ */
+function named(run: AgentRun, agents: AgentDef[]): AgentRun {
+  const name = agents.find((a) => a.id === run.agent_id)?.name ?? run.agent_name;
+  return { ...run, agent_name: name, title: run.title || `Lượt chạy của ${name}` };
+}
+
+export const listAgents = async (): Promise<Page<AgentDef>> => {
+  const page = await v1Get<Page<AgentWire>>('/agents', ALL);
+  return { ...page, items: page.items.map(readAgent) };
+};
+
+export const listRuns = async (
+  query: { status?: RunStatus; agent_id?: string } = {},
+): Promise<Page<AgentRun>> => {
+  const [page, agents] = await Promise.all([
+    v1Get<Page<RunWire>>('/runs', { ...ALL, ...query }),
+    listAgents().catch(() => null),
+  ]);
+  return {
+    ...page,
+    items: page.items.map((r) =>
+      r.agent_name ? readRun(r) : named(readRun(r), agents?.items ?? []),
+    ),
+  };
+};
+
+export const getRun = async (id: string, view: 'simple' | 'technical' = 'simple') => {
+  const raw = await v1Get<RunWire>(`/runs/${pathId(id)}`, { view });
+  const run = readRun(raw);
+  if (raw.agent_name) return run;
+  const agent = await v1Get<AgentWire>(`/agents/${pathId(run.agent_id)}`).catch(() => null);
+  return named(run, agent ? [readAgent(agent)] : []);
+};
 
 /** Pause stops safely at a step boundary; resume continues; cancel keeps partial results 30 days. */
 export const controlRun = async (
@@ -159,10 +270,12 @@ export const controlRun = async (
   verb: 'pause' | 'resume' | 'cancel',
   reason?: string,
 ) =>
-  v1Send<AgentRun>(
-    'POST',
-    `/runs/${pathId(id)}:${verb}`,
-    verb === 'cancel' ? { reason } : undefined,
+  readRun(
+    await v1Send<RunWire>(
+      'POST',
+      `/runs/${pathId(id)}:${verb}`,
+      verb === 'cancel' ? { reason } : undefined,
+    ),
   );
 
 /**
@@ -170,7 +283,9 @@ export const controlRun = async (
  * reads the agent's fallback source instead of the one that failed. The spec has no retry yet.
  */
 export const retryRun = async (id: string, useFallback = false) =>
-  v1Send<AgentRun>('POST', `/runs/${pathId(id)}:retry`, { use_fallback: useFallback });
+  readRun(
+    await v1Send<RunWire>('POST', `/runs/${pathId(id)}:retry`, { use_fallback: useFallback }),
+  );
 
 /* Phiên làm việc */
 export const listWorkspaces = async (): Promise<Page<Workspace>> => {

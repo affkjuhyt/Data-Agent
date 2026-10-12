@@ -94,11 +94,28 @@ export type ResolveHitl = RequestBody<components['schemas']['HitlResolve'], 'rem
 
 export type AgentStatusV1 = 'draft' | 'testing' | 'running' | 'paused' | 'retired';
 
-export interface AgentDef {
-  id: Uuid;
-  data_space_id: Uuid;
-  code: string;
-  name: string;
+/** PROPOSAL, for the "Đội agent" table: fields the api does not send yet. */
+interface AgentDisplay {
+  /** The goal of the running config version. */
+  goal: string;
+  /** What it is doing now, one sentence, and its tone. */
+  now: { text: string; tone: 'normal' | 'waiting' | 'error' };
+  /** The triggers in words, "Khi khoá sổ · thứ Hai 07:00". */
+  trigger_text: string;
+  /** What it may do, "Đọc · đề xuất". */
+  permission_text: string;
+  /** Last 7 days, "12 lượt · 58% cần duyệt". */
+  runs_7d: { count: number; needs_approval_pct: number; errors: number };
+}
+
+/** GET /v1/agents as the api sends it, plus the PROPOSAL fields when present. */
+export type AgentWire = components['schemas']['AgentSummary'] & Partial<AgentDisplay>;
+
+/** An agent as the screens read it; `readAgent` (lib/v1/api.ts) leaves a missing PROPOSAL field null. */
+export type AgentDef = Omit<
+  AgentWire,
+  'kind' | 'status' | 'active_runs' | 'waiting_runs' | keyof AgentDisplay
+> & {
   kind:
     | 'analysis'
     | 'monitor'
@@ -109,23 +126,15 @@ export interface AgentDef {
     | 'document'
     | 'custom';
   status: AgentStatusV1;
-  paused_reason: string | null;
-  monthly_budget: string | null;
-  spent_this_month: string;
-  /** GET /v1/agents: "Kèm số lượt chạy đang chạy, chờ người, chi phí tháng". */
-  runs_running: number;
-  runs_waiting_human: number;
-  /** PROPOSAL, for the "Đội agent" table: the goal of the running config version. */
-  goal: string;
-  /** PROPOSAL: what it is doing now, one sentence, and its tone. */
-  now: { text: string; tone: 'normal' | 'waiting' | 'error' };
-  /** PROPOSAL: the triggers in words, "Khi khoá sổ · thứ Hai 07:00". */
-  trigger_text: string;
-  /** PROPOSAL: what it may do, "Đọc · đề xuất". */
-  permission_text: string;
-  /** PROPOSAL: last 7 days, "12 lượt · 58% cần duyệt". */
-  runs_7d: { count: number; needs_approval_pct: number; errors: number };
-}
+  /** "Kèm số lượt chạy đang chạy, chờ người, chi phí tháng". */
+  active_runs: number;
+  waiting_runs: number;
+  goal: string | null;
+  now: AgentDisplay['now'] | null;
+  trigger_text: string | null;
+  permission_text: string | null;
+  runs_7d: AgentDisplay['runs_7d'] | null;
+};
 
 export type RunStatus =
   | 'queued'
@@ -191,49 +200,68 @@ export interface AgentStep {
   sql: string | null;
 }
 
-export interface AgentRun {
-  id: Uuid;
-  agent_id: Uuid;
-  config_version: number;
-  status: RunStatus;
-  trigger_kind: 'schedule' | 'event' | 'threshold' | 'agent_call' | 'manual' | 'test';
-  current_step: number | null;
-  /** "Diễn biến kể thành câu cho màn Đang làm gì". */
-  narrative: NarrativeEvent[];
-  cost: string;
-  waiting_since: Timestamp | null;
-  started_at: Timestamp | null;
-  finished_at: Timestamp | null;
-  error: string | null;
-  stop_reason: string | null;
-  /** PROPOSAL: joined agent name, step count and ETA for the progress rows. */
+/** PROPOSAL: run fields the screens need and the api does not send yet. */
+interface RunDisplay {
+  /** Joined agent name, step count and ETA for the progress rows. */
   agent_name: string;
-  total_steps: number | null;
-  eta_text: string | null;
-  /** PROPOSAL, for "Lượt chạy": a short code, the goal in words, who or what started it, HITL count. */
+  total_steps: number;
+  eta_text: string;
+  /** For "Lượt chạy": a short code, the goal in words, who or what started it, HITL count. */
   code: string;
   title: string;
   initiated_label: string;
   trigger_text: string;
   hitl_count: number;
-  /** PROPOSAL: the plan beside the story, on GET /v1/runs/{id}. */
-  plan?: RunPlanStep[];
-  /** PROPOSAL: qa.plan.version of `plan`; editing it saves version + 1. */
-  plan_version?: number;
+  /** The plan beside the story. */
+  plan: RunPlanStep[];
+  /** qa.plan.version of `plan`; editing it saves version + 1. */
+  plan_version: number;
   /**
-   * PROPOSAL, for "v3.1 · Trạng thái · Lượt chạy lỗi" (2076:5030): a failed run's error in words
-   * and as the system gave it, what the agent did to stay safe, and the fallback source it can
-   * rerun against (null when there is none).
+   * For "v3.1 · Trạng thái · Lượt chạy lỗi" (2076:5030): a failed run's error in words and as
+   * the system gave it, what the agent did to stay safe, and the fallback source it can rerun
+   * against (null when there is none).
    */
-  failure?: {
-    title: string;
-    detail: string;
-    safety: string[];
-    fallback_source: string | null;
-  };
+  failure: { title: string; detail: string; safety: string[]; fallback_source: string | null };
+}
+
+type RunView = components['schemas']['RunView'];
+
+/**
+ * GET /v1/runs (RunSummary) and GET /v1/runs/{id} (RunView) as the api sends them, plus the
+ * PROPOSAL fields when present (the mock sends them).
+ */
+export type RunWire = components['schemas']['RunSummary'] &
+  Partial<Omit<RunView, keyof components['schemas']['RunSummary'] | 'steps'>> & {
+    steps?: (components['schemas']['StepView'] | AgentStep)[] | null;
+  } & Partial<RunDisplay>;
+
+/** A run as the screens read it; `readRun` (lib/v1/api.ts) leaves a missing PROPOSAL field null. */
+export type AgentRun = Omit<
+  RunWire,
+  'status' | 'trigger_kind' | 'narrative' | 'steps' | 'error' | keyof RunDisplay
+> & {
+  status: RunStatus;
+  trigger_kind: 'schedule' | 'event' | 'threshold' | 'agent_call' | 'manual' | 'test';
+  /** "Diễn biến kể thành câu cho màn Đang làm gì": the entries that read as a sentence. */
+  narrative: NarrativeEvent[];
+  error: string | null;
+  /** The agent's name; "Agent" when it cannot be joined. */
+  agent_name: string;
+  total_steps: number | null;
+  eta_text: string | null;
+  /** A short code; the start of the id without the PROPOSAL field. */
+  code: string;
+  /** The goal in words; "Lượt chạy của <agent>" without the PROPOSAL field. */
+  title: string;
+  initiated_label: string | null;
+  trigger_text: string | null;
+  hitl_count: number | null;
+  plan?: RunPlanStep[];
+  plan_version?: number;
+  failure?: RunDisplay['failure'];
   /** view=technical only. */
   steps?: AgentStep[];
-}
+};
 
 /* ─── Phân tích: workspace.workspace ──────────────────────────────────── */
 

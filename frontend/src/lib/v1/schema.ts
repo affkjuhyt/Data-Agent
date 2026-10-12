@@ -694,6 +694,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/audit/exports/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Trạng thái một bản xuất nhật ký */
+        get: operations["getAuditExport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/audit:export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Xuất CSV có chữ ký; quá 100.000 dòng cần duyệt */
+        post: operations["exportAuditLog"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/audit:verify": {
         parameters: {
             query?: never;
@@ -6729,6 +6763,30 @@ export interface components {
             value?: number | string | null;
         };
         /**
+         * AuditFilters
+         * @description The filters of GET /v1/audit, also the `filters` of an export.
+         */
+        AuditFilters: {
+            /** Action */
+            action?: string | null;
+            /** Actor Id */
+            actor_id?: string | null;
+            /** Agent Run Id */
+            agent_run_id?: string | null;
+            /** From */
+            from?: string | null;
+            /** Object Id */
+            object_id?: string | null;
+            /** Object Kind */
+            object_kind?: string | null;
+            /** On Behalf Of */
+            on_behalf_of?: string | null;
+            /** Outcome */
+            outcome?: ("ok" | "denied" | "error") | null;
+            /** To */
+            to?: string | null;
+        };
+        /**
          * AuditLogView
          * @description One audit_log row; before/after were masked of personal data when written (BR-138).
          */
@@ -10916,6 +10974,29 @@ export interface components {
             /** Metric Ids */
             metric_ids: string[];
         };
+        /**
+         * ExportAccepted
+         * @description A1.6: the export is built and signed by a worker; poll Location.
+         */
+        ExportAccepted: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Poll After Ms
+             * @default 2000
+             */
+            poll_after_ms: number;
+            /** Row Count */
+            row_count: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "waiting_approval";
+        };
         /** ExportCreate */
         ExportCreate: {
             /**
@@ -10928,6 +11009,58 @@ export interface components {
              * @default false
              */
             include_detail_rows: boolean;
+        };
+        /** ExportIn */
+        ExportIn: {
+            filters: components["schemas"]["AuditFilters"];
+            /**
+             * Format
+             * @default csv
+             * @enum {string}
+             */
+            format: "csv" | "jsonl";
+        };
+        /**
+         * ExportJobView
+         * @description ExportJob (A3). object_key stays inside: the file is fetched by a signed link, not a path.
+         */
+        ExportJobView: {
+            /** Approved At */
+            approved_at: string | null;
+            /** Approved By */
+            approved_by: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Expires At */
+            expires_at: string | null;
+            /** Filters */
+            filters: Record<string, never>;
+            /** Format */
+            format: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Requested By
+             * Format: uuid
+             */
+            requested_by: string;
+            /** Row Count */
+            row_count: number | null;
+            /** Signature */
+            signature: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** ExportView */
         ExportView: {
@@ -11937,8 +12070,8 @@ export interface components {
         };
         /**
          * HandoverAccepted
-         * @description What the successor's :accept can report (see the routes module: the successor cannot read
-         *     exec.handover, so the handover row itself is not returned).
+         * @description What the successor's :accept can report: the successor cannot read exec.handover (owner
+         *     only), so the handover's status comes from exec.handover_accept, not the row itself.
          */
         HandoverAccepted: {
             /**
@@ -11950,6 +12083,8 @@ export interface components {
             items_imported: number;
             /** Items Pending */
             items_pending: number;
+            /** Status */
+            status: string;
         };
         /** HandoverApprove */
         HandoverApprove: {
@@ -18428,6 +18563,16 @@ export interface components {
             db_version: string | null;
             /** Freshness Sla */
             freshness_sla: string | null;
+            /**
+             * Has Credentials
+             * @default false
+             */
+            has_credentials: boolean;
+            /**
+             * Has Writeback Credentials
+             * @default false
+             */
+            has_writeback_credentials: boolean;
             /** Host */
             host: string | null;
             /**
@@ -18461,8 +18606,6 @@ export interface components {
             scan_schemas: string[];
             /** Scan Window */
             scan_window: unknown;
-            /** Secret Ref */
-            secret_ref: string;
             /** Status */
             status: string;
             /** Status Reason */
@@ -18474,8 +18617,6 @@ export interface components {
             updated_at: string;
             /** Work Calendar Id */
             work_calendar_id: string | null;
-            /** Writeback Secret Ref */
-            writeback_secret_ref: string | null;
         };
         /** SourcesPut */
         SourcesPut: {
@@ -20036,6 +20177,16 @@ export interface components {
             db_version: string | null;
             /** Freshness Sla */
             freshness_sla: string | null;
+            /**
+             * Has Credentials
+             * @default false
+             */
+            has_credentials: boolean;
+            /**
+             * Has Writeback Credentials
+             * @default false
+             */
+            has_writeback_credentials: boolean;
             /** Host */
             host: string | null;
             /**
@@ -20065,8 +20216,6 @@ export interface components {
             scan_schemas: string[];
             /** Scan Window */
             scan_window: unknown;
-            /** Secret Ref */
-            secret_ref: string;
             /** Status */
             status: string;
             /** Status Reason */
@@ -20078,8 +20227,6 @@ export interface components {
             updated_at: string;
             /** Work Calendar Id */
             work_calendar_id: string | null;
-            /** Writeback Secret Ref */
-            writeback_secret_ref: string | null;
         };
         /** ClaimView */
         services__api__modules__conflict__schemas__ClaimView: {
@@ -26011,6 +26158,232 @@ export interface operations {
             };
         };
     };
+    getAuditExport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportJobView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    exportAuditLog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportAccepted"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
     verifyAuditChain: {
         parameters: {
             query?: never;
@@ -26478,6 +26851,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -26826,6 +27200,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -27747,6 +28122,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -32019,6 +32395,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -36057,6 +36434,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path: {
@@ -36522,6 +36900,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -36640,6 +37019,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -37567,6 +37947,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -37909,6 +38290,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path: {
@@ -38254,6 +38636,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path: {
@@ -41809,6 +42192,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -42040,6 +42424,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path: {
@@ -43660,6 +44045,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path: {
@@ -44242,6 +44628,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -44361,6 +44748,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -44478,6 +44866,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -44711,6 +45100,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path: {
@@ -47478,6 +47868,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -51035,6 +51426,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -51957,6 +52349,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path: {
@@ -52074,6 +52467,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path: {
@@ -52545,6 +52939,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -52770,7 +53165,9 @@ export interface operations {
     updatePipeline: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
             path: {
                 id: string;
             };
@@ -54513,6 +54910,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -58297,6 +58695,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -58753,6 +59152,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -59551,6 +59951,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -60245,6 +60646,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -60476,6 +60878,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;
@@ -63006,6 +63409,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path: {
@@ -63126,6 +63530,7 @@ export interface operations {
                 page_token?: string;
                 /** @description A3's name for page_token */
                 cursor?: string | null;
+                order_by?: string | null;
             };
             header?: never;
             path?: never;

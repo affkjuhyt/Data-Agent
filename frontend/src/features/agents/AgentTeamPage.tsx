@@ -15,7 +15,7 @@ import { isLocked, lockAgent, unlockAgent } from '../../lib/v1/agentControl';
 import { controlRun, listAgents, listRuns } from '../../lib/v1/api';
 import type { AgentDef, AgentRun, RunStatus } from '../../lib/v1/types';
 import { useV1 } from '../../lib/v1/useV1';
-import { agentStatus, sevenDaysText } from './agentStatus';
+import { agentStatus, nowOf, sevenDaysText } from './agentStatus';
 
 /*
  * "P13 · Đội agent" (2309:19811, UC-13-01): every agent of the Data Space in one dense table.
@@ -218,8 +218,8 @@ export default function AgentTeamPage() {
         onConfirm={() => locking && run(() => lockAgent(locking.id), `Đã khoá ${locking.name}`)}
       >
         Agent ngừng mọi lượt chạy và trigger.
-        {locking && locking.runs_waiting_human > 0
-          ? ` ${locking.runs_waiting_human} yêu cầu HITL của agent chuyển cho chủ sở hữu.`
+        {locking && locking.waiting_runs > 0
+          ? ` ${locking.waiting_runs} yêu cầu HITL của agent chuyển cho chủ sở hữu.`
           : ''}{' '}
         Có thể mở khoá sau.
       </ConfirmDialog>
@@ -245,7 +245,7 @@ function AgentRow({
   onUnlock: () => void;
 }) {
   const status = agentStatus(agent);
-  const busy = agent.runs_running + agent.runs_waiting_human > 0;
+  const busy = agent.active_runs + agent.waiting_runs > 0;
   return (
     <tr className="border-b border-border align-middle">
       <td className="px-da-lg py-[9px]">
@@ -254,8 +254,8 @@ function AgentRow({
           <span className="truncate text-muted-foreground da-caption">{agent.goal}</span>
         </div>
       </td>
-      <td className={cn('px-da-lg py-[9px] da-body-small', NOW_TONE[agent.now.tone])}>
-        {agent.now.text}
+      <td className={cn('px-da-lg py-[9px] da-body-small', NOW_TONE[nowOf(agent).tone])}>
+        {nowOf(agent).text}
       </td>
       <td className="px-da-lg py-[9px] text-muted-foreground da-body-small max-[1439px]:hidden">
         {agent.trigger_text}
@@ -277,7 +277,7 @@ function AgentRow({
             { label: 'Cấu hình', icon: 'settings', onSelect: onConfigure },
             { label: 'Xem lượt chạy', icon: 'play', onSelect: onRuns },
             { kind: 'separator' as const },
-            ...(agent.runs_running > 0
+            ...(agent.active_runs > 0
               ? [{ label: 'Tạm dừng lượt đang chạy', onSelect: onPause }]
               : []),
             isLocked(agent)

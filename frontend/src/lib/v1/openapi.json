@@ -2261,6 +2261,124 @@
     "title": "Assumption",
     "type": "object"
    },
+   "AuditFilters": {
+    "additionalProperties": false,
+    "description": "The filters of GET /v1/audit, also the `filters` of an export.",
+    "properties": {
+     "action": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Action"
+     },
+     "actor_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Actor Id"
+     },
+     "agent_run_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Agent Run Id"
+     },
+     "from": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "From"
+     },
+     "object_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Object Id"
+     },
+     "object_kind": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Object Kind"
+     },
+     "on_behalf_of": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "On Behalf Of"
+     },
+     "outcome": {
+      "anyOf": [
+       {
+        "enum": [
+         "ok",
+         "denied",
+         "error"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Outcome"
+     },
+     "to": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "To"
+     }
+    },
+    "title": "AuditFilters",
+    "type": "object"
+   },
    "AuditLogView": {
     "description": "One audit_log row; before/after were masked of personal data when written (BR-138).",
     "properties": {
@@ -15174,6 +15292,40 @@
     "title": "ExploreQueryCreate",
     "type": "object"
    },
+   "ExportAccepted": {
+    "description": "A1.6: the export is built and signed by a worker; poll Location.",
+    "properties": {
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "poll_after_ms": {
+      "default": 2000,
+      "title": "Poll After Ms",
+      "type": "integer"
+     },
+     "row_count": {
+      "title": "Row Count",
+      "type": "integer"
+     },
+     "status": {
+      "enum": [
+       "queued",
+       "waiting_approval"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "status",
+     "row_count"
+    ],
+    "title": "ExportAccepted",
+    "type": "object"
+   },
    "ExportCreate": {
     "additionalProperties": false,
     "properties": {
@@ -15197,6 +15349,138 @@
      "format"
     ],
     "title": "ExportCreate",
+    "type": "object"
+   },
+   "ExportIn": {
+    "properties": {
+     "filters": {
+      "$ref": "#/components/schemas/AuditFilters"
+     },
+     "format": {
+      "default": "csv",
+      "enum": [
+       "csv",
+       "jsonl"
+      ],
+      "title": "Format",
+      "type": "string"
+     }
+    },
+    "required": [
+     "filters"
+    ],
+    "title": "ExportIn",
+    "type": "object"
+   },
+   "ExportJobView": {
+    "description": "ExportJob (A3). object_key stays inside: the file is fetched by a signed link, not a path.",
+    "properties": {
+     "approved_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Approved At"
+     },
+     "approved_by": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Approved By"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "expires_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Expires At"
+     },
+     "filters": {
+      "title": "Filters",
+      "type": "object"
+     },
+     "format": {
+      "title": "Format",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "requested_by": {
+      "format": "uuid",
+      "title": "Requested By",
+      "type": "string"
+     },
+     "row_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Row Count"
+     },
+     "signature": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Signature"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     },
+     "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "filters",
+     "format",
+     "row_count",
+     "status",
+     "requested_by",
+     "approved_by",
+     "approved_at",
+     "signature",
+     "expires_at",
+     "created_at",
+     "updated_at"
+    ],
+    "title": "ExportJobView",
     "type": "object"
    },
    "ExportView": {
@@ -17874,7 +18158,7 @@
     "type": "object"
    },
    "HandoverAccepted": {
-    "description": "What the successor's :accept can report (see the routes module: the successor cannot read\nexec.handover, so the handover row itself is not returned).",
+    "description": "What the successor's :accept can report: the successor cannot read exec.handover (owner\nonly), so the handover's status comes from exec.handover_accept, not the row itself.",
     "properties": {
      "handover_id": {
       "format": "uuid",
@@ -17888,12 +18172,17 @@
      "items_pending": {
       "title": "Items Pending",
       "type": "integer"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
      }
     },
     "required": [
      "handover_id",
      "items_imported",
-     "items_pending"
+     "items_pending",
+     "status"
     ],
     "title": "HandoverAccepted",
     "type": "object"
@@ -35900,6 +36189,16 @@
       ],
       "title": "Freshness Sla"
      },
+     "has_credentials": {
+      "default": false,
+      "title": "Has Credentials",
+      "type": "boolean"
+     },
+     "has_writeback_credentials": {
+      "default": false,
+      "title": "Has Writeback Credentials",
+      "type": "boolean"
+     },
      "host": {
       "anyOf": [
        {
@@ -36007,10 +36306,6 @@
      "scan_window": {
       "title": "Scan Window"
      },
-     "secret_ref": {
-      "title": "Secret Ref",
-      "type": "string"
-     },
      "status": {
       "title": "Status",
       "type": "string"
@@ -36042,17 +36337,6 @@
        }
       ],
       "title": "Work Calendar Id"
-     },
-     "writeback_secret_ref": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Writeback Secret Ref"
      }
     },
     "required": [
@@ -36065,8 +36349,6 @@
      "port",
      "database_name",
      "conn_options",
-     "secret_ref",
-     "writeback_secret_ref",
      "mode",
      "authority_level",
      "freshness_sla",
@@ -40213,6 +40495,16 @@
       ],
       "title": "Freshness Sla"
      },
+     "has_credentials": {
+      "default": false,
+      "title": "Has Credentials",
+      "type": "boolean"
+     },
+     "has_writeback_credentials": {
+      "default": false,
+      "title": "Has Writeback Credentials",
+      "type": "boolean"
+     },
      "host": {
       "anyOf": [
        {
@@ -40304,10 +40596,6 @@
      "scan_window": {
       "title": "Scan Window"
      },
-     "secret_ref": {
-      "title": "Secret Ref",
-      "type": "string"
-     },
      "status": {
       "title": "Status",
       "type": "string"
@@ -40339,17 +40627,6 @@
        }
       ],
       "title": "Work Calendar Id"
-     },
-     "writeback_secret_ref": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Writeback Secret Ref"
      }
     },
     "required": [
@@ -40362,8 +40639,6 @@
      "port",
      "database_name",
      "conn_options",
-     "secret_ref",
-     "writeback_secret_ref",
      "mode",
      "authority_level",
      "freshness_sla",
@@ -49749,6 +50024,290 @@
     ]
    }
   },
+  "/v1/audit/exports/{id}": {
+   "get": {
+    "operationId": "getAuditExport",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ExportJobView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Trạng thái một bản xuất nhật ký",
+    "tags": [
+     "Kiểm toán"
+    ],
+    "x-capability": [
+     "audit_read"
+    ],
+    "x-use-cases": [
+     "UC-11-03"
+    ]
+   }
+  },
+  "/v1/audit:export": {
+   "post": {
+    "operationId": "exportAuditLog",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ExportIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ExportAccepted"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Xuất CSV có chữ ký; quá 100.000 dòng cần duyệt",
+    "tags": [
+     "Kiểm toán"
+    ],
+    "x-capability": [
+     "audit_read"
+    ],
+    "x-use-cases": [
+     "UC-11-03"
+    ]
+   }
+  },
   "/v1/audit:verify": {
    "post": {
     "operationId": "verifyAuditChain",
@@ -50419,6 +50978,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -50933,6 +51510,24 @@
        ],
        "description": "A3's name for page_token",
        "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
       }
      }
     ],
@@ -52267,6 +52862,24 @@
        ],
        "description": "A3's name for page_token",
        "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
       }
      }
     ],
@@ -58507,6 +59120,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -64009,6 +64640,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -64711,6 +65360,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -64944,6 +65611,24 @@
        ],
        "description": "A3's name for page_token",
        "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
       }
      }
     ],
@@ -66275,6 +66960,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -66761,6 +67464,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -67241,6 +67962,24 @@
        ],
        "description": "A3's name for page_token",
        "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
       }
      }
     ],
@@ -72120,6 +72859,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -72501,6 +73258,24 @@
        ],
        "description": "A3's name for page_token",
        "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
       }
      }
     ],
@@ -74899,6 +75674,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -75742,6 +76535,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -75985,6 +76796,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -76199,6 +77028,24 @@
        ],
        "description": "A3's name for page_token",
        "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
       }
      }
     ],
@@ -76569,6 +77416,24 @@
        ],
        "description": "A3's name for page_token",
        "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
       }
      }
     ],
@@ -80628,6 +81493,24 @@
        ],
        "description": "A3's name for page_token",
        "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
       }
      }
     ],
@@ -85392,6 +86275,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -86756,6 +87657,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -86940,6 +87859,24 @@
        ],
        "description": "A3's name for page_token",
        "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
       }
      }
     ],
@@ -87605,6 +88542,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -87886,6 +88841,22 @@
        "format": "uuid",
        "title": "Id",
        "type": "string"
+      }
+     },
+     {
+      "in": "header",
+      "name": "if-match",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "If-Match"
       }
      }
     ],
@@ -90500,6 +91471,24 @@
        ],
        "description": "A3's name for page_token",
        "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
       }
      }
     ],
@@ -95761,6 +96750,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -96392,6 +97399,24 @@
        ],
        "description": "A3's name for page_token",
        "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
       }
      }
     ],
@@ -97508,6 +98533,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -98445,6 +99488,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -98790,6 +99851,24 @@
        ],
        "description": "A3's name for page_token",
        "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
       }
      }
     ],
@@ -102228,6 +103307,24 @@
        "description": "A3's name for page_token",
        "title": "Cursor"
       }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
      }
     ],
     "responses": {
@@ -102448,6 +103545,24 @@
        ],
        "description": "A3's name for page_token",
        "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
       }
      }
     ],

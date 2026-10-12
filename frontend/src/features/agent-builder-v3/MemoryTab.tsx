@@ -218,7 +218,7 @@ function MemoryDialog({
     setError(undefined);
     try {
       const saved = editing
-        ? await updateMemory(memory.id, { content: content.trim(), scope, expiry })
+        ? await updateMemory(memory.id, { content: content.trim(), expiry })
         : await addMemory(agentId, { scope, kind, content: content.trim(), expiry });
       toast({
         tone: 'success',
@@ -271,9 +271,16 @@ function MemoryDialog({
           <Select<AgentMemory['kind']> label="Loại" options={KINDS} value={kind} onChange={setKind} />
         </Field>
       )}
-      <Field label="Phạm vi" labelTone="muted">
-        <Select<MemoryScope> label="Phạm vi" options={SCOPES} value={scope} onChange={setScope} />
-      </Field>
+      {/* The scope is fixed once the memory exists (MemoryPatch has no scope). */}
+      {editing ? (
+        <Field label="Phạm vi" labelTone="muted">
+          <span className="text-foreground da-body-small">{memory?.scope_text}</span>
+        </Field>
+      ) : (
+        <Field label="Phạm vi" labelTone="muted">
+          <Select<MemoryScope> label="Phạm vi" options={SCOPES} value={scope} onChange={setScope} />
+        </Field>
+      )}
       <Field label="Hạn" labelTone="muted">
         <Select<MemoryExpiry> label="Hạn" options={EXPIRIES} value={expiry} onChange={setExpiry} />
       </Field>

@@ -1,5 +1,7 @@
+import { readAgent } from './api';
 import { pathId, v1Get, v1Send, type Page } from './client';
-import type { AgentDef, AgentRun } from './types';
+import type { components } from './schema';
+import type { AgentDef, AgentRun, AgentWire } from './types';
 
 /*
  * P13 agent authoring on the v1 API ("Đặc tả API" A2/A3, group Agent; tables agent.agent_config,
@@ -7,8 +9,15 @@ import type { AgentDef, AgentRun } from './types';
  * config versions and triggers (UC-13-02/03), test-run a version (UC-13-04), deploy it
  * (UC-13-05) and manage the agent's memory (UC-13-07).
  *
- * Fields marked PROPOSAL are what the screens need and the spec does not have yet.
+ * Fields marked PROPOSAL are what the screens need and the spec does not have yet. The api's
+ * shapes (schema.ts) are read into the screens' here; a missing PROPOSAL field gets a value
+ * derived from what the api sent, or is left empty.
  */
+
+type Schemas = components['schemas'];
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 type Uuid = string;
 type Timestamp = string;
@@ -71,7 +80,7 @@ export interface AgentTrigger {
 /** GET /v1/agents/{id}: AgentDef with its running config and triggers. */
 export interface AgentDetail extends AgentDef {
   /** "Kèm phiên bản cấu hình đang chạy": the latest version, the one the page edits. */
-  config: AgentConfig;
+  config: AgentConfig | null;
   /** PROPOSAL: the spec has PUT /triggers but no read; the detail carries them. */
   triggers: AgentTrigger[];
   /** PROPOSAL: whose permissions the agent runs under (BR-147: the owner). */
@@ -213,47 +222,300 @@ export interface NewMemory {
   expiry?: MemoryExpiry;
 }
 
-/** PROPOSAL: the fields "Hộp thoại · editMemory" (2095:8961) changes. */
-export type MemoryPatch = Pick<AgentMemory, 'content' | 'scope' | 'expiry'>;
+/** What "Hộp thoại · editMemory" (2095:8961) changes; the api keeps the scope (MemoryPatch). */
+export type MemoryPatch = Pick<AgentMemory, 'content' | 'expiry'>;
+
+/* ─── Reading the api's shapes ───────────────────────────────────────── */
+
+/** agent_config.checkpoints is free jsonb: a sentence, or {id, text, enabled}. */
+const readCheckpoints = (raw: unknown): Checkpoint[] =>
+  (Array.isArray(raw) ? raw : []).flatMap((c, i): Checkpoint[] =>
+    typeof c === 'string'
+      ? [{ id: `cp-${i}`, text: c, enabled: true }]
+      : isRecord(c) && typeof c.text === 'string'
+        ? [
+            {
+              id: typeof c.id === 'string' ? c.id : `cp-${i}`,
+              text: c.text,
+              enabled: c.enabled !== false,
+            },
+          ]
+        : [],
+  );
+
+/** The data scope in words when the PROPOSAL `data_scope_text` is missing: its keys and values. */
+const scopeText = (scope: Record<string, unknown>) =>
+  Object.entries(scope)
+    .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`)
+    .join(' · ');
+
+type ConfigWire = (Schemas['ConfigView'] | Schemas['ConfigDraft']) & { data_scope_text?: string };
+
+function readConfigFields(raw: ConfigWire) {
+  const scope = isRecord(raw.data_scope) ? raw.data_scope : {};
+  return {
+    goal: raw.goal,
+    data_scope: scope,
+    data_scope_text: raw.data_scope_text ?? scopeText(scope),
+    skill_ids: raw.skill_ids,
+    autonomy: raw.autonomy as Autonomy,
+    checkpoints: readCheckpoints(raw.checkpoints),
+    denied_actions: raw.denied_actions,
+    limits: (isRecord(raw.limits) ? raw.limits : {}) as Record<string, number>,
+    tools: (raw.tools ?? []).map((t) => ({
+      tool: t.tool,
+      permission_level: t.permission_level as AgentTool['permission_level'],
+      requires_checkpoint: t.requires_checkpoint ?? false,
+    })),
+  };
+}
+
+const readConfig = (raw: Schemas['ConfigView'] & { data_scope_text?: string }): AgentConfig => ({
+  ...readConfigFields(raw),
+  id: raw.id,
+  agent_id: raw.agent_id,
+  version: raw.version,
+  change_note: raw.change_note,
+  status: raw.status as ConfigStatus,
+  created_at: raw.created_at,
+});
+
+const readTrigger = (raw: Schemas['TriggerView'] & { description?: string }): AgentTrigger => ({
+  id: raw.id,
+  kind: raw.kind as TriggerKind,
+  cron: raw.cron,
+  event_type: raw.event_type,
+  condition: isRecord(raw.condition) ? raw.condition : {},
+  enabled: raw.enabled,
+  description: raw.description ?? raw.cron ?? raw.event_type ?? raw.kind,
+});
+
+/** PROPOSAL: the triggers and the owner's name come with the detail; the api has neither read. */
+type AgentDetailWire = Schemas['AgentView'] &
+  Pick<AgentWire, 'goal' | 'now' | 'trigger_text' | 'permission_text' | 'runs_7d'> & {
+    current_config?: (Schemas['ConfigView'] & { data_scope_text?: string }) | null;
+    triggers?: Schemas['TriggerView'][];
+    owner?: { id: Uuid; name: string };
+  };
+
+const readAgentDetail = (raw: AgentDetailWire): AgentDetail => ({
+  ...readAgent(raw),
+  config: raw.current_config ? readConfig(raw.current_config) : null,
+  triggers: (raw.triggers ?? []).map(readTrigger),
+  owner: raw.owner ?? { id: raw.owner_user_id, name: '' },
+});
+
+const LINE_LABEL: Record<DraftField, string> = {
+  name: 'Tên',
+  goal: 'Mục tiêu',
+  trigger: 'Khi nào chạy',
+  data: 'Dữ liệu',
+  skills: 'Kỹ năng',
+  recipients: 'Gửi cho',
+  allowed: 'Được làm',
+  checkpoints: 'Dừng và hỏi khi',
+};
+
+const PERMISSION_TEXT: Record<AgentTool['permission_level'], string> = {
+  read: 'đọc',
+  write_derived: 'ghi bảng dẫn xuất',
+  send_external: 'gửi ra ngoài',
+};
+
+/** A code from the name: ASCII capitals and underscores, "Đối soát dư nợ" → "DOI_SOAT_DU_NO". */
+const codeOf = (name: string) =>
+  name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[đĐ]/g, 'D')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60) || 'AGENT';
+
+type DraftWire = Schemas['ConfigDraft'] &
+  Partial<Pick<AgentDraft, 'name' | 'code' | 'kind' | 'lines' | 'warning'>> & {
+    triggers?: AgentDraft['triggers'];
+    data_scope_text?: string;
+  };
+
+/**
+ * The api drafts the config only (ConfigDraft). The name, code and kind of the new agent and the
+ * "Agent hiểu như sau" lines are PROPOSAL; without them they come from the description and the
+ * drafted config, and what lies outside the owner's rights becomes the warning.
+ */
+function readDraft(raw: DraftWire, description: string): AgentDraft {
+  const config = { ...readConfigFields(raw), change_note: null };
+  const name = raw.name ?? description.trim().split(/[.\n]/)[0].slice(0, 80);
+  const line = (field: DraftField, text: string): DraftLine => ({
+    field,
+    label: LINE_LABEL[field],
+    text,
+    flag: null,
+  });
+  const lines =
+    raw.lines ??
+    [
+      line('goal', config.goal),
+      line('data', config.data_scope_text),
+      line(
+        'allowed',
+        config.tools.map((t) => `${t.tool} (${PERMISSION_TEXT[t.permission_level]})`).join(', '),
+      ),
+      line('checkpoints', config.checkpoints.map((c) => c.text).join('; ')),
+    ].filter((l) => l.text);
+  return {
+    name,
+    code: raw.code ?? codeOf(name),
+    kind: raw.kind ?? 'custom',
+    config,
+    triggers: raw.triggers ?? [],
+    lines,
+    warning:
+      raw.warning ??
+      (raw.out_of_scope.length > 0 ? `Ngoài quyền của bạn: ${raw.out_of_scope.join(', ')}.` : null),
+  };
+}
+
+type TestRunWire = Schemas['RunView'] &
+  Partial<Pick<TestRun, 'agent_name' | 'test_steps' | 'test_report'>>;
+
+/** PROPOSAL: the drawer's steps and report; without them it shows the run's status only. */
+const readTestRun = (raw: TestRunWire): TestRun => ({
+  id: raw.id,
+  agent_id: raw.agent_id,
+  config_version: raw.config_version,
+  status: raw.status as TestRun['status'],
+  cost: raw.cost,
+  started_at: raw.started_at,
+  finished_at: raw.finished_at,
+  is_test: true,
+  agent_name: raw.agent_name ?? '',
+  test_steps: raw.test_steps ?? [],
+  test_report: raw.test_report ?? null,
+});
+
+const DAY = 86_400_000;
+
+/** The PROPOSAL expiry as the api stores it: a date, or none ("until wrong twice" is not stored). */
+const expiresAt = (expiry: MemoryExpiry | undefined) =>
+  expiry === 'days_30'
+    ? new Date(Date.now() + 30 * DAY).toISOString()
+    : expiry === 'never' || expiry === 'until_wrong_2'
+      ? null
+      : new Date(Date.now() + 90 * DAY).toISOString();
+
+const SCOPE_TEXT: Record<MemoryScope, string> = {
+  agent: 'Riêng agent này',
+  user: 'Riêng một người',
+  data_space: 'Cả Data Space',
+};
+
+type MemoryWire = Schemas['MemoryView'] &
+  Partial<Pick<AgentMemory, 'source_text' | 'scope_text' | 'last_used_at' | 'expiry'>>;
+
+function readMemory(raw: MemoryWire): AgentMemory {
+  const days = raw.expires_at
+    ? (new Date(raw.expires_at).getTime() - new Date(raw.created_at).getTime()) / DAY
+    : null;
+  return {
+    id: raw.id,
+    agent_id: raw.agent_id,
+    scope: raw.scope as MemoryScope,
+    user_id: raw.user_id,
+    kind: raw.kind as AgentMemory['kind'],
+    content: raw.content,
+    source_kind: raw.source_kind as AgentMemory['source_kind'],
+    status: raw.status as AgentMemory['status'],
+    use_count: raw.use_count,
+    created_at: raw.created_at,
+    source_text: raw.source_text ?? '',
+    scope_text: raw.scope_text ?? SCOPE_TEXT[raw.scope as MemoryScope] ?? raw.scope,
+    last_used_at: raw.last_used_at ?? null,
+    expiry: raw.expiry ?? (days === null ? 'never' : days <= 45 ? 'days_30' : 'days_90'),
+  };
+}
 
 /* ─── Endpoints ───────────────────────────────────────────────────────── */
 
-export const listTemplates = () => v1Get<Page<AgentTemplate>>('/agent-templates', { page_size: 50 });
+/** PROPOSAL: A2 has template_ref but no list of templates. */
+export const listTemplates = () =>
+  v1Get<Page<AgentTemplate>>('/agent-templates', { page_size: 50 });
 
-export const draftAgent = (body: DraftRequest) =>
-  v1Send<AgentDraft>('POST', '/agents:draft-from-text', body);
+export const draftAgent = async (body: DraftRequest) =>
+  readDraft(await v1Send<DraftWire>('POST', '/agents:draft-from-text', body), body.description);
 
-/** POST /v1/agents: owner is the caller (BR-147); the agent starts as a draft. */
-export const createAgent = (draft: AgentDraft, templateRef?: string) =>
-  v1Send<AgentDetail>('POST', '/agents', {
+/*
+ * The config fields of ConfigCreate; the api ignores the rest, so only these are sent. Not typed
+ * as ConfigCreate: openapi-typescript reads its dict[str, Any] columns as Record<string, never>.
+ */
+const configBody = (config: ConfigInput) => ({
+  goal: config.goal,
+  autonomy: config.autonomy,
+  checkpoints: config.checkpoints,
+  denied_actions: config.denied_actions,
+  tools: config.tools,
+  ...(config.data_scope ? { data_scope: config.data_scope } : {}),
+  ...(config.skill_ids ? { skill_ids: config.skill_ids } : {}),
+  ...(config.limits ? { limits: config.limits } : {}),
+  ...(config.change_note ? { change_note: config.change_note } : {}),
+});
+
+/**
+ * POST /v1/agents: owner is the caller (BR-147); the agent starts as a draft. AgentCreate has no
+ * triggers, so they follow in PUT /triggers.
+ */
+export const createAgent = async (draft: AgentDraft, templateRef?: string) => {
+  const created = await v1Send<AgentDetailWire>('POST', '/agents', {
     code: draft.code,
     name: draft.name,
     kind: draft.kind,
     template_ref: templateRef,
-    config: draft.config,
-    // PROPOSAL: the triggers in the same call, so a new agent is one request.
-    triggers: draft.triggers,
+    config: configBody(draft.config),
   });
-
-export const getAgent = async (id: string) => v1Get<AgentDetail>(`/agents/${pathId(id)}`);
-
-export const listConfigs = async (id: string) => v1Get<Page<AgentConfig>>(`/agents/${pathId(id)}/configs`);
-
-export type ConfigInput = Pick<AgentConfig, 'goal' | 'autonomy' | 'checkpoints' | 'denied_actions' | 'tools'> & {
-  change_note?: string;
+  if (draft.triggers.length > 0) await putTriggers(created.id, draft.triggers);
+  return readAgentDetail(created);
 };
 
+export const getAgent = async (id: string) =>
+  readAgentDetail(await v1Get<AgentDetailWire>(`/agents/${pathId(id)}`));
+
+export const listConfigs = async (id: string) => {
+  const page = await v1Get<Page<Schemas['ConfigView']>>(`/agents/${pathId(id)}/configs`);
+  return { ...page, items: page.items.map(readConfig) };
+};
+
+export type ConfigInput = Pick<
+  AgentConfig,
+  'goal' | 'autonomy' | 'checkpoints' | 'denied_actions' | 'tools'
+> &
+  Partial<Pick<AgentConfig, 'data_scope' | 'skill_ids' | 'limits'>> & {
+    change_note?: string | null;
+  };
+
 export const saveConfig = async (id: string, body: ConfigInput) =>
-  v1Send<AgentConfig>('POST', `/agents/${pathId(id)}/configs`, body);
+  readConfig(
+    await v1Send<Schemas['ConfigView']>('POST', `/agents/${pathId(id)}/configs`, configBody(body)),
+  );
 
-export const putTriggers = async (id: string, triggers: AgentTrigger[]) =>
-  v1Send<AgentTrigger[]>('PUT', `/agents/${pathId(id)}/triggers`, { triggers });
+/** PUT replaces the whole set (A1.3); the PROPOSAL description travels for the server to parse. */
+export const putTriggers = async (id: string, triggers: Omit<AgentTrigger, 'id'>[]) => {
+  const page = await v1Send<Page<Schemas['TriggerView']>>('PUT', `/agents/${pathId(id)}/triggers`, {
+    triggers,
+  });
+  return page.items.map(readTrigger);
+};
 
-/** 202 with the run; the spec gives a Location, the mock and (PROPOSAL) the backend the body too. */
-export const startTestRun = async (id: string, configVersion: number) =>
-  v1Send<TestRun>('POST', `/agents/${pathId(id)}/test-runs`, { config_version: configVersion });
+/** 202 with the run's id (RunAccepted); the drawer then reads the run. */
+export const startTestRun = async (id: string, configVersion: number) => {
+  const accepted = await v1Send<Schemas['RunAccepted']>('POST', `/agents/${pathId(id)}/test-runs`, {
+    config_version: configVersion,
+  });
+  return getTestRun(accepted.id);
+};
 
-export const getTestRun = async (runId: string) => v1Get<TestRun>(`/runs/${pathId(runId)}`);
+export const getTestRun = async (runId: string) =>
+  readTestRun(await v1Get<TestRunWire>(`/runs/${pathId(runId)}`));
 
 /** "Kích hoạt": full traffic, which waits for the data owner's approval. */
 export const activateAgent = async (id: string, configVersion: number) =>
@@ -262,14 +524,33 @@ export const activateAgent = async (id: string, configVersion: number) =>
     traffic_pct: 100,
   });
 
-export const listMemories = async (id: string) =>
-  v1Get<Page<AgentMemory>>(`/agents/${pathId(id)}/memories`, { page_size: 500 });
+export const listMemories = async (id: string) => {
+  const page = await v1Get<Page<MemoryWire>>(`/agents/${pathId(id)}/memories`, { page_size: 500 });
+  return { ...page, items: page.items.map(readMemory) };
+};
 
 export const addMemory = async (id: string, body: NewMemory) =>
-  v1Send<AgentMemory>('POST', `/agents/${pathId(id)}/memories`, body);
+  readMemory(
+    await v1Send<MemoryWire>('POST', `/agents/${pathId(id)}/memories`, {
+      scope: body.scope,
+      kind: body.kind,
+      content: body.content,
+      user_id: body.user_id,
+      expires_at: expiresAt(body.expiry),
+    } satisfies Schemas['MemoryCreate']),
+  );
 
-/** PROPOSAL: PATCH /v1/memories/{id}; applies from the next run (a data_space scope re-enters review). */
+/**
+ * Applies from the next run (a data_space scope re-enters review). MemoryPatch changes the content
+ * and the expiry; the scope is fixed once the memory exists.
+ */
 export const updateMemory = async (memoryId: string, body: MemoryPatch) =>
-  v1Send<AgentMemory>('PATCH', `/memories/${pathId(memoryId)}`, body);
+  readMemory(
+    await v1Send<MemoryWire>('PATCH', `/memories/${pathId(memoryId)}`, {
+      content: body.content,
+      expires_at: expiresAt(body.expiry),
+    } satisfies Schemas['MemoryPatch']),
+  );
 
-export const forgetMemory = async (memoryId: string) => v1Send<void>('DELETE', `/memories/${pathId(memoryId)}`);
+export const forgetMemory = async (memoryId: string) =>
+  v1Send<void>('DELETE', `/memories/${pathId(memoryId)}`);

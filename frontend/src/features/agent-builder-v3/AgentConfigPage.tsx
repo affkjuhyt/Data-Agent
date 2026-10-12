@@ -18,6 +18,7 @@ import {
   getAgent,
   putTriggers,
   saveConfig,
+  type AgentConfig,
   type AgentDetail,
   type AgentTrigger,
   type Autonomy,
@@ -74,12 +75,31 @@ export default function AgentConfigPage() {
   if (forbidden) return <AccessDenied access={forbidden} />;
   return (
     <AsyncRegion state={agent} what="agent">
-      {(detail) => <AgentBody key={detail.config.id} agent={detail} onSaved={agent.reload} />}
+      {(detail) =>
+        detail.config ? (
+          <AgentBody
+            key={detail.config.id}
+            agent={{ ...detail, config: detail.config }}
+            onSaved={agent.reload}
+          />
+        ) : (
+          <EmptyState
+            title={`${detail.name} chưa có cấu hình`}
+            description="Agent chưa có phiên bản cấu hình nào để xem hay chạy thử."
+          />
+        )
+      }
     </AsyncRegion>
   );
 }
 
-function AgentBody({ agent, onSaved }: { agent: AgentDetail; onSaved: () => void }) {
+function AgentBody({
+  agent,
+  onSaved,
+}: {
+  agent: AgentDetail & { config: AgentConfig };
+  onSaved: () => void;
+}) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [tab, setTab] = useState<Tab>('config');

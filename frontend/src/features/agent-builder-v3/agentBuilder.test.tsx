@@ -147,15 +147,14 @@ describe('AgentConfigPage', () => {
     expect(within(dialog).queryByRole('combobox', { name: 'Loại' })).not.toBeInTheDocument();
     expect(within(dialog).getByRole('combobox', { name: 'Hạn' })).toHaveTextContent('Tới khi sai 2 lần');
 
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Phạm vi' }));
-    fireEvent.click(within(dialog).getByRole('option', { name: 'Riêng agent này' }));
+    // The api keeps a memory's scope; the dialog shows it without a picker.
+    expect(within(dialog).queryByRole('combobox', { name: 'Phạm vi' })).not.toBeInTheDocument();
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Nội dung' }), {
       target: { value: 'Khi giải thích nợ xấu, tách riêng khoản tái cơ cấu' },
     });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Lưu' }));
     expect(await screen.findByText('Đã lưu ghi nhớ')).toBeInTheDocument();
     expect(await screen.findByText('Khi giải thích nợ xấu, tách riêng khoản tái cơ cấu')).toBeInTheDocument();
-    expect(screen.getByText('Agent này')).toBeInTheDocument();
   });
 
   it('asks before leaving the config tab with unsaved changes', async () => {

@@ -12,7 +12,8 @@ import type {
   NewMemory,
   TestRun,
 } from '../lib/v1/agentBuilder';
-import type { AgentDef } from '../lib/v1/types';
+import { readAgent } from '../lib/v1/api';
+import type { AgentWire } from '../lib/v1/types';
 import { agentsFixture } from './fixtures';
 
 /*
@@ -21,7 +22,9 @@ import { agentsFixture } from './fixtures';
  * State lives in memory: a created agent, a saved version or a forgotten memory stays until reload.
  *
  * GET /v1/runs/:id answers only the test runs made here and falls through otherwise, so the run
- * handlers of handlers.ts keep the other runs; spread these handlers before those.
+ * handlers of handlers.ts keep the other runs; spread these handlers before those. State is kept
+ * in the screens' shapes and answered in the api's (`wire`): the config as current_config,
+ * triggers and memories as pages, a test run as 202 RunAccepted.
  */
 const page = <T>(items: T[]) => HttpResponse.json({ items, next_page_token: '' });
 
@@ -100,13 +103,13 @@ function draftFixture(): AgentDraft {
 }
 
 /** "P13 · Agent · Cấu hình & trigger" (2309:20146): Agent Đối soát at v5, saving makes v6. */
-function reconcileSetup(agent: AgentDef): Pick<AgentDetail, 'config' | 'triggers'> {
+function reconcileSetup(agent: AgentWire): Pick<AgentDetail, 'config' | 'triggers'> {
   return {
     config: {
       id: 'cfg-reconcile-5',
       agent_id: agent.id,
       version: 5,
-      goal: agent.goal,
+      goal: agent.goal ?? '',
       data_scope: { tables: ['mart.credit_risk'], sources: ['core-banking'] },
       data_scope_text: 'mart.credit_risk, Core banking (chỉ đọc)',
       skill_ids: [],
@@ -146,13 +149,13 @@ function reconcileSetup(agent: AgentDef): Pick<AgentDetail, 'config' | 'triggers
   };
 }
 
-function genericSetup(agent: AgentDef): Pick<AgentDetail, 'config' | 'triggers'> {
+function genericSetup(agent: AgentWire): Pick<AgentDetail, 'config' | 'triggers'> {
   return {
     config: {
       id: `cfg-${agent.id}-3`,
       agent_id: agent.id,
       version: 3,
-      goal: agent.goal,
+      goal: agent.goal ?? '',
       data_scope: {},
       data_scope_text: 'mart.credit_risk (chỉ đọc)',
       skill_ids: [],
@@ -165,7 +168,7 @@ function genericSetup(agent: AgentDef): Pick<AgentDetail, 'config' | 'triggers'>
       tools: [{ tool: 'query', permission_level: 'read', requires_checkpoint: false }],
       created_at: '2026-09-20T02:00:00Z',
     },
-    triggers: [{ id: `trg-${agent.id}`, kind: 'schedule', cron: null, event_type: null, condition: {}, enabled: true, description: agent.trigger_text }],
+    triggers: [{ id: `trg-${agent.id}`, kind: 'schedule', cron: null, event_type: null, condition: {}, enabled: true, description: agent.trigger_text ?? '' }],
   };
 }
 
@@ -274,15 +277,28 @@ function finishedTestRun(run: TestRun): TestRun {
   };
 }
 
+/** The api stores a date; the mock keeps the screen's choice (30 or 90 days, or never). */
+const expiryOf = (expiresAt: string | null): AgentMemory['expiry'] => {
+  if (!expiresAt) return 'never';
+  const days = (new Date(expiresAt).getTime() - Date.now()) / 86_400_000;
+  return days <= 45 ? 'days_30' : 'days_90';
+};
+
 export function createAgentBuilderHandlers() {
   const team = agentsFixture();
   const agents = new Map<string, AgentDetail>(
     team.map((agent) => [
       agent.id,
-      { ...agent, ...(agent.id === 'agent-reconcile' ? reconcileSetup(agent) : genericSetup(agent)), owner: OWNER },
+      {
+        ...readAgent(agent),
+        ...(agent.id === 'agent-reconcile' ? reconcileSetup(agent) : genericSetup(agent)),
+        owner: OWNER,
+      },
     ]),
   );
   let memories = memoriesFixture();
+  /** GET /v1/agents/{id} as the api sends it (AgentView), with the PROPOSAL triggers and owner. */
+  const wire = (agent: AgentDetail) => ({ ...agent, current_config: agent.config });
   const testRuns = new Map<string, TestRun>();
   let seq = 0;
 
@@ -306,13 +322,22 @@ export function createAgentBuilderHandlers() {
     }),
 
     http.post('*/v1/agents', async ({ request }) => {
-      const body = (await request.json()) as AgentDraft & { triggers: AgentDraft['triggers'] };
+      const body = (await request.json()) as Pick<AgentDraft, 'code' | 'name' | 'kind'> & {
+        config: ConfigInput;
+      };
       if ([...agents.values()].some((a) => a.code === body.code))
         return problem(409, 'conflict', `Mã ${body.code} đã có agent khác dùng.`);
       const id = `agent-new-${++seq}`;
+      const now = new Date().toISOString();
       const detail: AgentDetail = {
         id,
         data_space_id: team[0].data_space_id,
+        account_user_id: `u-${id}`,
+        owner_user_id: OWNER.id,
+        current_config_version: 1,
+        template_ref: null,
+        created_at: now,
+        updated_at: now,
         code: body.code,
         name: body.name,
         kind: body.kind,
@@ -320,24 +345,37 @@ export function createAgentBuilderHandlers() {
         paused_reason: null,
         monthly_budget: null,
         spent_this_month: '0',
-        runs_running: 0,
-        runs_waiting_human: 0,
+        active_runs: 0,
+        waiting_runs: 0,
         goal: body.config.goal,
         now: { text: 'Chưa kích hoạt', tone: 'normal' },
-        trigger_text: body.triggers.map((t) => t.description).join(' · '),
+        trigger_text: null,
         permission_text: 'Đọc · đề xuất',
         runs_7d: { count: 0, needs_approval_pct: 0, errors: 0 },
-        config: { ...body.config, id: `cfg-${id}-1`, agent_id: id, version: 1, status: 'draft', created_at: new Date().toISOString() },
-        triggers: body.triggers.map((t, i) => ({ ...t, id: `trg-${id}-${i}` })),
+        config: {
+          data_scope: {},
+          data_scope_text: '',
+          skill_ids: [],
+          limits: {},
+          ...body.config,
+          change_note: body.config.change_note ?? null,
+          id: `cfg-${id}-1`,
+          agent_id: id,
+          version: 1,
+          status: 'draft',
+          created_at: now,
+        },
+        // AgentCreate has no triggers; they come in the PUT that follows.
+        triggers: [],
         owner: OWNER,
       };
       agents.set(id, detail);
-      return HttpResponse.json(detail, { status: 201 });
+      return HttpResponse.json(wire(detail), { status: 201 });
     }),
 
     http.get('*/v1/agents/:id', ({ params }) => {
       const agent = agents.get(String(params.id));
-      return agent ? HttpResponse.json(agent) : problem(404, 'not_found', 'Không tìm thấy agent.');
+      return agent ? HttpResponse.json(wire(agent)) : problem(404, 'not_found', 'Không tìm thấy agent.');
     }),
 
     http.post('*/v1/agents/:id/configs', async ({ params, request }) => {
@@ -350,6 +388,7 @@ export function createAgentBuilderHandlers() {
           'business_rule_violated',
           'Mức “Tự làm, báo sau” cần bộ đánh giá đạt từ 95% và chủ sở hữu Data Space duyệt.',
         );
+      if (!agent.config) return problem(409, 'invalid_state', 'Agent chưa có cấu hình.');
       const config: AgentConfig = {
         ...agent.config,
         ...body,
@@ -366,9 +405,10 @@ export function createAgentBuilderHandlers() {
     http.put('*/v1/agents/:id/triggers', async ({ params, request }) => {
       const agent = agents.get(String(params.id));
       if (!agent) return problem(404, 'not_found', 'Không tìm thấy agent.');
-      const { triggers } = (await request.json()) as { triggers: AgentTrigger[] };
-      agents.set(agent.id, { ...agent, triggers });
-      return HttpResponse.json(triggers);
+      const body = (await request.json()) as { triggers: Omit<AgentTrigger, 'id'>[] };
+      const triggers = body.triggers.map((t, i) => ({ ...t, id: `trg-${agent.id}-${i}` }));
+      agents.set(agent.id, { ...agent, triggers, trigger_text: triggers.map((t) => t.description).join(' · ') });
+      return page(triggers);
     }),
 
     http.post('*/v1/agents/:id/test-runs', async ({ params, request }) => {
@@ -389,7 +429,10 @@ export function createAgentBuilderHandlers() {
         test_report: null,
       };
       testRuns.set(run.id, run);
-      return HttpResponse.json(run, { status: 202, headers: { Location: `/v1/runs/${run.id}` } });
+      return HttpResponse.json(
+        { id: run.id, status: run.status, poll_after_ms: 1000 },
+        { status: 202, headers: { Location: `/v1/runs/${run.id}` } },
+      );
     }),
 
     // Test runs only; any other id falls through to the run handlers of handlers.ts.
@@ -416,7 +459,7 @@ export function createAgentBuilderHandlers() {
     ),
 
     http.post('*/v1/agents/:id/memories', async ({ params, request }) => {
-      const body = (await request.json()) as NewMemory;
+      const body = (await request.json()) as Omit<NewMemory, 'expiry'> & { expires_at: string | null };
       if (!body.content?.trim()) return problem(422, 'validation_failed', 'Ghi nhớ không được để trống.');
       // BR-76: no personal data; a long digit run stands in for an account or ID number.
       if (/\d{9,}/.test(body.content))
@@ -436,7 +479,7 @@ export function createAgentBuilderHandlers() {
         source_text: `${OWNER.name}, vừa thêm`,
         scope_text: { agent: 'Agent này', user: `Riêng ${OWNER.name}`, data_space: 'Data Space' }[body.scope],
         last_used_at: null,
-        expiry: body.expiry ?? 'days_90',
+        expiry: expiryOf(body.expires_at),
       };
       memories = [memory, ...memories];
       return HttpResponse.json(memory, { status: 201 });
@@ -445,22 +488,11 @@ export function createAgentBuilderHandlers() {
     http.patch('*/v1/memories/:id', async ({ params, request }) => {
       const found = memories.find((m) => m.id === params.id);
       if (!found) return problem(404, 'not_found', 'Không tìm thấy ghi nhớ.');
-      const body = (await request.json()) as MemoryPatch;
+      const body = (await request.json()) as { content: string; expires_at: string | null };
       if (!body.content?.trim()) return problem(422, 'validation_failed', 'Ghi nhớ không được để trống.');
       if (/\d{9,}/.test(body.content))
         return problem(422, 'business_rule_violated', 'Ghi nhớ không được chứa dữ liệu cá nhân như số tài khoản.');
-      const updated: AgentMemory = {
-        ...found,
-        content: body.content.trim(),
-        scope: body.scope,
-        expiry: body.expiry,
-        // Widening to the Data Space goes back to the owner, as a new one would.
-        status: body.scope === 'data_space' && found.scope !== 'data_space' ? 'pending_review' : found.status,
-        scope_text:
-          body.scope === found.scope
-            ? found.scope_text
-            : { agent: 'Agent này', user: `Riêng ${OWNER.name}`, data_space: 'Data Space' }[body.scope],
-      };
+      const updated: AgentMemory = { ...found, content: body.content.trim(), expiry: expiryOf(body.expires_at) };
       memories = memories.map((m) => (m.id === found.id ? updated : m));
       return HttpResponse.json(updated);
     }),

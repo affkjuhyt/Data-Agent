@@ -1,6 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import type {
   AgentRun,
+  RunWire,
   DecideProposal,
   HitlRequest,
   ProposalWire,
@@ -83,7 +84,7 @@ const problem = (status: number, code: string, detail: string) =>
 export function createHandlers() {
   let inbox: HitlRequest[] = inboxFixture();
   let proposals: ProposalWire[] = proposalsFixture();
-  let runs: AgentRun[] = runsFixture();
+  let runs: RunWire[] = runsFixture();
   let agents = agentsFixture();
 
   return [
@@ -218,8 +219,8 @@ export function createHandlers() {
               ...agent,
               status: 'paused' as const,
               paused_reason: 'locked',
-              runs_running: 0,
-              runs_waiting_human: 0,
+              active_runs: 0,
+              waiting_runs: 0,
               now: { text: 'Đã khoá · không chạy lượt hay trigger nào', tone: 'normal' as const },
             }
           : original;
@@ -252,7 +253,7 @@ export function createHandlers() {
       const done = (run.plan ?? []).filter((s) => s.state === 'done');
       const ahead = edit.steps.filter((s) => !s.removed && !done.some((d) => d.id === s.id));
       const version = (run.plan_version ?? 1) + 1;
-      const updated: AgentRun = {
+      const updated: RunWire = {
         ...run,
         status: 'running',
         plan_version: version,
@@ -269,7 +270,13 @@ export function createHandlers() {
         ],
       };
       runs = runs.map((r) => (r.id === run.id ? updated : r));
-      return HttpResponse.json({ id: `plan-${run.id}-v${version}`, version });
+      return HttpResponse.json({
+        run_id: run.id,
+        version,
+        steps: edit.steps,
+        edit_note: edit.edit_note ?? null,
+        edited_by_user: true,
+      });
     }),
     http.post('*/v1/runs/:id/:action', async ({ params, request }) => {
       if (params.action !== 'plan:estimate')
@@ -302,7 +309,7 @@ export function createHandlers() {
       if (verb === 'retry') {
         if (run.status !== 'failed')
           return problem(409, 'invalid_state', 'Chỉ chạy lại được lượt chạy lỗi.');
-        const retried: AgentRun = {
+        const retried: RunWire = {
           ...run,
           id: `${run.id}-retry-${runs.length}`,
           code: `#${430 + runs.length}`,
@@ -320,7 +327,7 @@ export function createHandlers() {
       if (!rule) return problem(404, 'not_found', 'Không có thao tác này.');
       if (!rule.from.includes(run.status))
         return problem(409, 'invalid_state', 'Lượt chạy không ở trạng thái cho phép thao tác này.');
-      const updated: AgentRun = {
+      const updated: RunWire = {
         ...run,
         status: rule.to,
         finished_at: rule.to === 'cancelled' ? new Date().toISOString() : run.finished_at,
