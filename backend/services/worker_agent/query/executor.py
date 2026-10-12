@@ -9,8 +9,8 @@ source's own statement timeout (query_timeout_s, AC-01-01-03), after the guard a
 at most BR-03's 10 000 rows come back, flagged `truncated` when there were more. The number of
 runs per source in this process is capped by source.max_concurrency.
 
-Only PostgreSQL sources are wired; another kind ends the run `failed` with a message saying so,
-never by trying a driver that is not there.
+PostgreSQL, MySQL and SQL Server sources are wired. The latter two use synchronous DB-API drivers
+inside a bounded worker thread: neither driver has to run on the worker-agent event loop.
 """
 
 from __future__ import annotations
@@ -78,6 +78,10 @@ class QueryOutcome:
         return self.status == "succeeded"
 
 
+class SourceDriverError(RuntimeError):
+    """A source driver failed without exposing credentials or source SQL."""
+
+
 def _plain(value: Any) -> Any:
     """A JSON value that keeps the source's precision: amounts as decimal strings (A1.1)."""
     if isinstance(value, decimal.Decimal):
@@ -131,6 +135,114 @@ async def _run_postgres(
     return columns, [[_plain(v) for v in r] for r in records]
 
 
+def _rows(cursor: Any) -> tuple[list[dict[str, str]], list[list[Any]]]:
+    description = cursor.description or ()
+    columns = [{"name": str(item[0]), "type": str(item[1] or "unknown")} for item in description]
+    return columns, [[_plain(value) for value in row] for row in cursor.fetchall()]
+
+
+def _mysql_sync(
+    source: catalog.Source, user: str, password: str, sql: str, timeout_s: int
+) -> tuple[list[dict[str, str]], list[list[Any]]]:
+    try:
+        import pymysql
+
+        options = source.conn_options or {}
+        connect_options: dict[str, Any] = {
+            "host": source.host,
+            "port": source.port or 3306,
+            "user": user,
+            "password": password,
+            "database": source.database_name,
+            "connect_timeout": min(timeout_s, 30),
+            "read_timeout": timeout_s,
+            "write_timeout": timeout_s,
+            "charset": str(options.get("charset") or "utf8mb4"),
+        }
+        if options.get("sslmode") not in (None, "disable"):
+            ca = options.get("ssl_ca")
+            if not ca:
+                raise SourceDriverError("mysql TLS requires conn_options.ssl_ca")
+            connect_options["ssl"] = {
+                "ca": str(ca),
+                "check_hostname": options["sslmode"] == "verify-full",
+            }
+        conn = pymysql.connect(**connect_options)
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SET SESSION TRANSACTION READ ONLY")
+                cursor.execute("START TRANSACTION READ ONLY")
+                if options.get("schema"):
+                    cursor.execute(f"USE `{str(options['schema']).replace('`', '``')}`")
+                cursor.execute(sql)
+                result = _rows(cursor)
+            conn.rollback()
+            return result
+        finally:
+            conn.close()
+    except SourceDriverError:
+        raise
+    except Exception as exc:
+        raise SourceDriverError(f"mysql query failed ({type(exc).__name__})") from exc
+
+
+async def _run_mysql(
+    source: catalog.Source, user: str, password: str, sql: str, timeout_s: int
+) -> tuple[list[dict[str, str]], list[list[Any]]]:
+    return await asyncio.to_thread(_mysql_sync, source, user, password, sql, timeout_s)
+
+
+def _sqlserver_sync(
+    source: catalog.Source, user: str, password: str, sql: str, timeout_s: int
+) -> tuple[list[dict[str, str]], list[list[Any]]]:
+    try:
+        import pymssql
+
+        options = source.conn_options or {}
+        conn = pymssql.connect(
+            server=str(source.host),
+            port=int(source.port or 1433),
+            user=user,
+            password=password,
+            database=source.database_name or "master",
+            login_timeout=min(timeout_s, 30),
+            timeout=timeout_s,
+            appname="dataagent-worker-agent",
+            tds_version=str(options.get("tds_version") or "7.4"),
+        )
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("BEGIN TRANSACTION")
+                cursor.execute(sql)
+                result = _rows(cursor)
+            conn.rollback()
+            return result
+        finally:
+            conn.close()
+    except SourceDriverError:
+        raise
+    except Exception as exc:
+        raise SourceDriverError(f"sqlserver query failed ({type(exc).__name__})") from exc
+
+
+async def _run_sqlserver(
+    source: catalog.Source, user: str, password: str, sql: str, timeout_s: int
+) -> tuple[list[dict[str, str]], list[list[Any]]]:
+    return await asyncio.to_thread(_sqlserver_sync, source, user, password, sql, timeout_s)
+
+
+def driver_for(kind: str) -> Any:
+    drivers = {
+        "postgresql": _run_postgres,
+        "mysql": _run_mysql,
+        "sqlserver": _run_sqlserver,
+    }
+    try:
+        return drivers[kind]
+    except KeyError as exc:
+        raise SecretUnavailable(f"queries on a {kind} source are not wired yet") from exc
+
+
 async def run_query(
     *,
     org_id: uuid.UUID,
@@ -177,12 +289,12 @@ async def run_query(
 
     timeout_s = int(source.query_timeout_s or 120)
     try:
-        if source.kind != "postgresql":
-            raise SecretUnavailable(f"queries on a {source.kind} source are not wired yet")
         credentials = await secrets.read(org_id, source.secret_ref)
         async with _slot(source):
             columns, rows = await asyncio.wait_for(
-                _run_postgres(source, credentials.user, credentials.password, executed, timeout_s),
+                driver_for(source.kind)(
+                    source, credentials.user, credentials.password, executed, timeout_s
+                ),
                 timeout=timeout_s + 5,
             )
         outcome.truncated = len(rows) > MAX_ROWS
@@ -194,6 +306,8 @@ async def run_query(
         outcome.status = "timeout"
         outcome.error = f"the query ran longer than the source allows ({timeout_s} s)"
     except SecretUnavailable as exc:
+        outcome.error = str(exc)
+    except SourceDriverError as exc:
         outcome.error = str(exc)
     except (asyncpg.PostgresError, OSError) as exc:
         # The source's own message, without the SQL text or values it may quote.

@@ -118,6 +118,10 @@ def check_read_only(sql: str, dialect: str) -> exp.Expression:
             raise SqlRejected(f"function {node.sql_name().lower()} is not allowed")
         if isinstance(node, exp.Select) and node.args.get("locks"):
             raise SqlRejected("FOR UPDATE/SHARE is not allowed")
+        if isinstance(node, exp.WithTableHint):
+            # SQL Server table hints can request update/exclusive locks even though the statement
+            # itself is a SELECT. Read-only callers do not get to alter source locking semantics.
+            raise SqlRejected("table locking hints are not allowed")
     return tree
 
 

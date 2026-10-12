@@ -64,6 +64,11 @@ _gateway: Gateway | None = None
 _gateway_read = False
 
 
+def dialect_for_source(source_kind: str) -> str:
+    """Return the SQL compiler dialect used by a catalog source kind."""
+    return dialect_of(source_kind)
+
+
 def secrets() -> SecretReader:
     global _secrets
     if _secrets is None:
@@ -318,19 +323,22 @@ async def _understand_and_plan(
 
         compiled: c.Compiled | None = None
         problem: Refusal | None = None
+        compile_request: c.Request | None = None
         if u.decision == "proceed" and u.metric is not None:
             version = layer.versions[u.metric.metric_id]
+            compile_request = c.Request(
+                version,
+                group_by=u.group_by,
+                filters=u.filters,
+                period=c.Period(u.period.start, u.period.end) if u.period else None,
+            )
             try:
-                # Only PostgreSQL sources are queried in place yet (query/executor.py).
+                # Compile once to discover the dataset/source, then regenerate in that source's
+                # dialect after the source policy checks below.
                 compiled = c.compile_metric(
-                    c.Request(
-                        version,
-                        group_by=u.group_by,
-                        filters=u.filters,
-                        period=c.Period(u.period.start, u.period.end) if u.period else None,
-                    ),
+                    compile_request,
                     layer.layer,
-                    dialect=dialect_of("postgresql"),
+                    dialect="postgres",
                 )
             except (c.CompileError, SqlRejected) as exc:
                 problem = Refusal.of(
@@ -377,12 +385,19 @@ async def _understand_and_plan(
                     message="Bảng của chỉ số này nằm trên một nguồn chưa được phép truy vấn tại chỗ.",
                     detail_id=str(question.id),
                 )
-            elif source.kind != "postgresql":
-                problem = Refusal.of(
-                    ErrorCode.TOOL_UNAVAILABLE,
-                    message=f"Truy vấn tại chỗ trên nguồn loại {source.kind} chưa được hỗ trợ.",
-                    detail_id=str(question.id),
-                )
+            elif compile_request is not None:
+                try:
+                    compiled = c.compile_metric(
+                        compile_request,
+                        layer.layer,
+                        dialect=dialect_for_source(source.kind),
+                    )
+                except (c.CompileError, SqlRejected) as exc:
+                    problem = Refusal.of(
+                        _code(getattr(exc, "code", "CONTRACT_MISMATCH")),
+                        message=str(exc),
+                        detail_id=str(question.id),
+                    )
         if (
             u.decision == "proceed"
             and problem is None

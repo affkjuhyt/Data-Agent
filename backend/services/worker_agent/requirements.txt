@@ -2,6 +2,8 @@
 pydantic==2.9.2
 sqlalchemy[asyncio]==2.0.35
 asyncpg==0.29.0
+PyMySQL==1.1.1
+pymssql==2.3.7
 redis>=5.0
 # The read-only guard parses SQL per source dialect; OpenBao is read over HTTP (query/).
 sqlglot==25.24.5
