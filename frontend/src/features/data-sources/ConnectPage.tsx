@@ -379,14 +379,30 @@ function ConnectionForm({
             </Field>
           </div>
           <div className="min-w-0 flex-1">
-            <Field labelTone="muted" label="Mật khẩu" hint="Không lưu mật khẩu trong Data Agent.">
-              <Select
-                label="Mật khẩu"
-                placeholder="Chọn khoá trong kho bí mật"
-                value={form.secret_ref || null}
-                onChange={set('secret_ref')}
-                options={(secrets.data?.items ?? []).map((s) => ({ value: s.ref, label: s.label }))}
-              />
+            <Field
+              labelTone="muted"
+              label="Mật khẩu"
+              hint="Không lưu mật khẩu trong Data Agent; nhập đường dẫn OpenBao do quản trị cấp."
+            >
+              {(secrets.data?.items ?? []).length > 0 ? (
+                <Select
+                  label="Mật khẩu"
+                  placeholder="Chọn khoá trong kho bí mật"
+                  value={form.secret_ref || null}
+                  onChange={set('secret_ref')}
+                  options={(secrets.data?.items ?? []).map((s) => ({
+                    value: s.ref,
+                    label: s.label,
+                  }))}
+                />
+              ) : (
+                <Input
+                  aria-label="Đường dẫn OpenBao"
+                  value={form.secret_ref}
+                  placeholder="secret/tenants/<org-id>/demo-postgres"
+                  onChange={(e) => set('secret_ref')(e.target.value)}
+                />
+              )}
             </Field>
           </div>
         </div>
