@@ -752,6 +752,8 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 
 | Endpoint | Gửi lên | Trả về | Lỗi riêng |
 | --- | --- | --- | --- |
+| GET /v1/connectors | — | Danh mục connector an toàn cho màn Kết nối dữ liệu; không có credential | — |
+| GET /v1/secret-refs | — | Các reference OpenBao đã dùng trong Data Space; không trả secret | — |
 | GET /v1/sources | ?status, ?kind | Danh sách Source | — |
 | GET /v1/sources/{id} | — | Source như trong danh sách: status, status\_reason, db\_version, last\_checked\_at, has\_credentials, has\_writeback\_credentials, writeback\_tables; không có secret\_ref | 404 not\_found |
 | POST /v1/sources | name\*, kind\*, host, port, database\_name, mode, authority\_level, freshness\_sla, max\_concurrency, query\_timeout\_s, scan\_schemas, scan\_window, work\_calendar\_id, credentials, writeback\_credentials | Source. credentials được lưu vào OpenBao, không lưu CSDL (BR-14) | 409 conflict (trùng tên trong Data Space); 422 business\_rule\_violated (mode = federated với nguồn không hỗ trợ) |

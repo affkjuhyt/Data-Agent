@@ -721,15 +721,11 @@
    ],
    "body": {},
    "query": [],
-   "returns": "ReportDocumentView (markdown từ MinIO, theo quyền của phiên)",
+   "returns": "Nội dung markdown của SessionReport, qua quyền của phiên",
    "errors": [
     [
      404,
      "not_found"
-    ],
-    [
-     503,
-     "source_unavailable"
     ]
    ],
    "request_text": "—"
@@ -1031,6 +1027,28 @@
    "returns": "Danh sách Tool: mã, mô tả, mức (read, write_derived, external_send, system_action)",
    "errors": [],
    "request_text": "?level"
+  },
+  "GET /v1/connectors": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh mục connector an toàn cho màn Kết nối dữ liệu; không có credential",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/secret-refs": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Các reference OpenBao đã dùng trong Data Space; không trả secret",
+   "errors": [],
+   "request_text": "—"
   },
   "GET /v1/sources": {
    "group": "Nguồn và danh mục",
