@@ -246,3 +246,12 @@ class ReportView(_View):
     hitl_request_id: uuid.UUID | None
     created_at: datetime.datetime
     updated_at: datetime.datetime
+
+
+class ReportDocumentView(BaseModel):
+    """The report worker's immutable markdown artifact, read through the API."""
+
+    report_id: uuid.UUID
+    body_ref: str
+    content_type: Literal["text/markdown"]
+    markdown: str

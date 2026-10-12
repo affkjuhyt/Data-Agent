@@ -596,6 +596,18 @@
   {
    "group": "Phiên làm việc",
    "method": "GET",
+   "path": "/v1/session-reports/{id}/document",
+   "summary": "Đọc nội dung markdown của báo cáo",
+   "use_cases": [
+    "02-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "GET",
    "path": "/v1/workspaces/{id}/shares",
    "summary": "Danh sách chia sẻ hiện có của phiên (thêm 12/10/2026)",
    "use_cases": [

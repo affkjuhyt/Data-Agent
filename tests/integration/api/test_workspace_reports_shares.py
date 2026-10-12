@@ -16,6 +16,7 @@ import pytest
 
 from services.api.app import create_app
 from services.api.config import Settings
+from services.api.modules.workspace.report_storage import report_store
 
 from .conftest import Seed
 
@@ -122,8 +123,10 @@ def team(seed: Seed) -> Team:
 
 
 @asynccontextmanager
-async def _api(team: Team) -> AsyncIterator[httpx.AsyncClient]:
+async def _api(team: Team, store: Any | None = None) -> AsyncIterator[httpx.AsyncClient]:
     app = create_app(Settings(), token_verifier=Tokens(team.org))
+    if store is not None:
+        app.dependency_overrides[report_store] = lambda: store
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://api"
     ) as api:
@@ -231,6 +234,31 @@ async def test_session_reports_list_and_read(team: Team) -> None:
         assert [r["id"] for r in checking.json()["items"]] == [reports[0]["id"]]
         bad = await api.get("/v1/session-reports?status=nope", headers=_as(team, "owner"))
         assert bad.status_code == 422
+
+
+async def test_session_report_document_is_read_through_the_authorized_api(team: Team) -> None:
+    class Store:
+        async def download(self, bucket: str, key: str) -> bytes:
+            assert bucket == "da-results"
+            assert key.endswith(".md")
+            return b"# NPL T9\n\n1,84%\n"
+
+    async with _api(team, Store()) as api:
+        workspace_id = await _workspace(api, team)
+        made = await api.post(
+            f"/v1/workspaces/{workspace_id}/reports",
+            headers=_as(team, "owner"),
+            json={"title": "Bản NPL T9"},
+        )
+        assert made.status_code == 201, made.text
+        report_id = made.json()["id"]
+        document = await api.get(
+            f"/v1/session-reports/{report_id}/document", headers=_as(team, "owner")
+        )
+        assert document.status_code == 200, document.text
+        assert document.json()["report_id"] == report_id
+        assert document.json()["content_type"] == "text/markdown"
+        assert document.json()["markdown"] == "# NPL T9\n\n1,84%\n"
 
 
 async def test_session_reports_follow_the_workspace_rights(team: Team) -> None:

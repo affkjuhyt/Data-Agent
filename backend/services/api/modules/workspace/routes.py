@@ -36,6 +36,7 @@ from services.api.kernel.pagination import (
 from services.api.kernel.problems import FieldError, Problem
 from services.api.modules.org import capabilities_of
 from services.api.modules.workspace import rules
+from services.api.modules.workspace.report_storage import REPORT_BUCKET, ReportStore, report_store
 from services.api.modules.workspace.schemas import (
     Accepted,
     CommentCreate,
@@ -49,6 +50,7 @@ from services.api.modules.workspace.schemas import (
     RecipientPreview,
     RefreshRequest,
     ReportCreate,
+    ReportDocumentView,
     ReportView,
     ShareGrant,
     SharesPut,
@@ -1502,3 +1504,48 @@ async def get_session_report(
         if report is None:
             raise Problem(404, "not_found", "Session report not found.")
         return ReportView.model_validate(report)
+
+
+@router.get(
+    "/v1/session-reports/{id}/document",
+    response_model=ReportDocumentView,
+    **endpoint(
+        "GET",
+        "/v1/session-reports/{id}/document",
+        operation_id="getSessionReportDocument",
+    ),
+)
+async def get_session_report_document(
+    report_id: PathId,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+    store: Annotated[ReportStore, Depends(report_store)],
+) -> ReportDocumentView:
+    r = ws.SessionReport
+    async with transaction(ROLE, principal) as session:
+        report = await session.scalar(
+            select(r).where(
+                r.id == report_id,
+                r.org_id == principal.org_id,
+                _readable_reports(principal, space),
+            )
+        )
+        if report is None:
+            raise Problem(404, "not_found", "Session report not found.")
+        body_ref = report.body_ref
+    if not body_ref or body_ref.startswith("/") or ".." in body_ref.split("/"):
+        raise Problem(500, "internal_error", "The report document reference is invalid.")
+    try:
+        content = await store.download(REPORT_BUCKET, body_ref)
+    except FileNotFoundError as exc:
+        raise Problem(404, "not_found", "The report document is not available yet.") from exc
+    try:
+        markdown = content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise Problem(500, "internal_error", "The report document is not valid UTF-8.") from exc
+    return ReportDocumentView(
+        report_id=report.id,
+        body_ref=body_ref,
+        content_type="text/markdown",
+        markdown=markdown,
+    )

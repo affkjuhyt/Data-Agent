@@ -720,6 +720,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/session-reports/{id}:publish | recipients | SessionReport | 409 invalid\_state (chưa qua kiểm tra); 422 business\_rule\_violated (có số không căn cứ) |
 | GET /v1/session-reports | ?workspace\_id, ?status, ?cursor | Danh sách SessionReport | — |
 | GET /v1/session-reports/{id} | — | SessionReport (nơi Location của :check trỏ tới) | 404 not\_found |
+| GET /v1/session-reports/{id}/document | — | Nội dung markdown của SessionReport, qua quyền của phiên | 404 not\_found, 503 source\_unavailable |
 | GET /v1/workspaces/{id}/shares | — | Danh sách WorkspaceShare | 404 not\_found |
 | POST /v1/workspaces/{id}/shares:preview | shares\* | Mỗi người nhận: ô thấy được, ô bị che và lý do (BR-89); không ghi gì | 404 not\_found |
 | GET /v1/tiles/{id}/comments | ?cursor | Danh sách Comment | 404 not\_found |

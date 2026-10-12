@@ -18,7 +18,7 @@ metadata:
     app: minio-init
     app.kubernetes.io/part-of: dataagent
 data:
-  MINIO_BUCKETS: knowledge-base langfuse sandbox-audit
+  MINIO_BUCKETS: knowledge-base langfuse sandbox-audit da-results
   # Raw is immutable (S2-02, ADR-V2-21): object lock, settable only at bucket creation.
   # COMPLIANCE: no one, root included, deletes an object before its retention ends.
   RAW_RETENTION_MODE: COMPLIANCE

@@ -714,6 +714,26 @@
    ],
    "request_text": "—"
   },
+  "GET /v1/session-reports/{id}/document": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ReportDocumentView (markdown từ MinIO, theo quyền của phiên)",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ],
+    [
+     503,
+     "source_unavailable"
+    ]
+   ],
+   "request_text": "—"
+  },
   "GET /v1/workspaces/{id}/shares": {
    "group": "Phiên làm việc",
    "groups": [
