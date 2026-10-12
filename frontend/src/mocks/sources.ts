@@ -1516,8 +1516,24 @@ export function createSourcesHandlers() {
       page(new URL(request.url).searchParams.get('kind') === 'api' ? API_SECRET_REFS : SECRET_REFS),
     ),
 
-    http.get('*/v1/ingestion-jobs', () => page(jobs)),
-    http.post('*/v1/ingestion-jobs/:action', ({ params }) => {
+    http.get('*/v1/jobs', () =>
+      page(
+        jobs.map((job) => ({
+          id: job.id,
+          name: job.source_name,
+          mode: job.method === 'cdc' ? 'cdc' : job.method === 'incremental' ? 'incremental' : 'full',
+          source_object: job.table_name,
+          status: job.status === 'error' ? 'failed' : job.status,
+          paused_reason: job.status_reason,
+          lag_seconds: job.lag_seconds,
+          last_run: {
+            status: job.hours.at(-1) === 'error' ? 'failed' : job.hours.at(-1) === 'none' ? null : 'succeeded',
+            rows_loaded: job.rows_today,
+          },
+        })),
+      ),
+    ),
+    http.post('*/v1/jobs/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
       const job = jobs.find((j) => j.id === id);
       if (!job) return problem(404, 'not_found', 'Không tìm thấy job.');
@@ -1542,10 +1558,10 @@ export function createSourcesHandlers() {
     }),
 
     http.post('*/v1/uploads', async ({ request }) => {
-      const body = (await request.json()) as { file_name: string; size_bytes: number };
-      if (!/\.(xlsx|xls|csv)$/i.test(body.file_name ?? ''))
+      const fileName = request.headers.get('X-Upload-Filename') ?? '';
+      if (!/\.(xlsx|xls|csv)$/i.test(fileName))
         return problem(415, 'unsupported_media_type', 'Chỉ nhận tệp CSV hoặc Excel.');
-      const analysis = uploadAnalysis(body.file_name);
+      const analysis = uploadAnalysis(fileName);
       uploads[analysis.id] = analysis;
       return HttpResponse.json(analysis, { status: 201 });
     }),

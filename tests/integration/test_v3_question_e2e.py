@@ -14,7 +14,7 @@ from tests.conftest import live_token
 
 pytestmark = pytest.mark.e2e
 
-DATA_SPACE = os.environ.get("E2E_DATA_SPACE", "a0000000-0000-0000-0000-000000000001")
+DATA_SPACE = os.environ.get("E2E_DATA_SPACE", "DS-DEMO")
 QUESTION_TIMEOUT = float(os.environ.get("E2E_TURN_TIMEOUT", "240"))
 
 

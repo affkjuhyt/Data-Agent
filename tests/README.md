@@ -130,16 +130,19 @@ carry `@pytest.mark.xdist_group("<resource>")` so it never runs beside its twin.
 ### Python — e2e (deployed dev cluster)
 
 ```bash
-read -rsp 'helios-engineer password: ' E2E_PASS; export E2E_PASS          # agent turns, load
+read -r -s 'E2E_PASS?helios-engineer password: '; export E2E_PASS        # zsh/bash
+# V3 question E2E uses the local `DS-DEMO` Data Space by default; override with
+# `E2E_DATA_SPACE=<id-or-code>` when testing another active Data Space.
 read -rsp 'platform-admin password: ' E2E_ADMIN_PASS; export E2E_ADMIN_PASS # tenant 1, JWT audience
 read -rsp 'helios-admin password: ' E2E_T2_ADMIN_PASS; export E2E_T2_ADMIN_PASS # tenant 2
 make e2e                                                    # every tests/integration/test_*.py
 make e2e E2E_TESTS=tests/integration/test_agent_answer_e2e.py PYTEST_ARGS="-v -s"
 ```
 
-`make e2e` runs `pytest -m e2e` in the `workflow_runtime` image against the dev
-cluster's LAN NodePorts (Kong 30100, Keycloak 30110, workflow-runtime 30240);
-override `E2E_KONG_URL` / `E2E_KEYCLOAK_URL` / `E2E_RUNTIME_URL` to target
+`make e2e` runs `pytest -m e2e` in the `workflow_runtime` image against the local
+OrbStack/k8s NodePorts by default (Kong `http://localhost:30100`, Keycloak
+`http://localhost:30110`, workflow-runtime `http://localhost:30240`). Override
+`E2E_KONG_URL` / `E2E_KEYCLOAK_URL` / `E2E_RUNTIME_URL` to target a shared or
 another cluster. Credentials come from the environment, never from a file
 (`tests/conftest.py` `LIVE_ACCOUNTS`): each account's password variable is required
 — a test fails naming the one that is unset — and its username defaults to the demo

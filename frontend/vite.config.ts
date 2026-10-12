@@ -49,7 +49,7 @@ export default defineConfig(({ mode }) => {
         ? { clientPort: Number(env.VITE_HMR_CLIENT_PORT) || undefined }
         : false,
       watch: process.env.DISABLE_HMR === "true" ? null : {},
-      // Everything goes through Kong (VITE_API_URL, default :8100), which
+      // Everything goes through Kong (VITE_API_URL, default :30100), which
       // verifies the Keycloak JWT and injects the identity headers itself.
       //
       // This used to be the dev substitute for Kong: it proxied /api/orchestrate
@@ -60,7 +60,7 @@ export default defineConfig(({ mode }) => {
       // bypass the gateway exists to prevent. Kong already has routes for both
       // (deploy/docker/kong/kong-setup.sh: runtime-route, orchestrator-route).
       proxy: (() => {
-        const gateway = { target: env.VITE_API_URL || "http://localhost:8100", changeOrigin: true };
+        const gateway = { target: env.VITE_API_URL || "http://localhost:30100", changeOrigin: true };
         return {
           // auth_api validates the real Bearer token itself, but it also sits
           // behind Kong — one gateway, one identity path, no exceptions.

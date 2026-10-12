@@ -26,10 +26,8 @@ describe('integrated groups', () => {
   it('keeps the other groups and the PROPOSAL endpoints on the mock', () => {
     expect(isIntegrated('GET', at('/v1/exec/theses'), operations)).toBe(false);
     expect(isIntegrated('GET', at('/v1/proposals/p-1/collaboration'), operations)).toBe(false);
-    // Phiên is wired, but A2 has no read for a session report: that one stays mocked.
-    expect(isIntegrated('GET', at('/v1/session-reports/r-1'), operations)).toBe(false);
-    // Agent lock/retry are served by API-05; unrelated proposal verbs stay mocked.
-    expect(isIntegrated('POST', at('/v1/runs/r-1:retry'), operations)).toBe(false);
+    expect(isIntegrated('GET', at('/v1/session-reports/r-1'), operations)).toBe(true);
+    expect(isIntegrated('POST', at('/v1/runs/r-1:retry'), operations)).toBe(true);
     expect(isIntegrated('POST', at('/v1/agents/a-1:lock'), operations)).toBe(true);
     expect(isIntegrated('POST', at('/v1/sources/s-1:activate'), operations)).toBe(false);
     expect(isIntegrated('GET', at('/v1/data-products/dp-1/monitoring'), operations)).toBe(false);
@@ -42,13 +40,16 @@ describe('integrated groups', () => {
     expect(isIntegrated('GET', 'https://gw.example/api/v1/inbox', operations)).toBe(true);
   });
 
-  it('holds back the writes whose screen has no read in A2', () => {
+  it('passes every A2 operation of an integrated group to the api', () => {
     expect(isIntegrated('GET', at('/v1/alerts'), operations)).toBe(true);
-    expect(isIntegrated('POST', at('/v1/reports/r-1:pause'), operations)).toBe(false);
-    expect(isIntegrated('PATCH', at('/v1/monitors/m-1'), operations)).toBe(false);
-    expect(isIntegrated('GET', at('/v1/report-runs/rr-1'), operations)).toBe(false);
+    expect(isIntegrated('POST', at('/v1/reports/r-1:pause'), operations)).toBe(true);
+    expect(isIntegrated('PATCH', at('/v1/monitors/m-1'), operations)).toBe(true);
+    expect(isIntegrated('GET', at('/v1/report-runs/rr-1'), operations)).toBe(true);
     expect(isIntegrated('GET', at('/v1/admin/model-providers'), operations)).toBe(true);
-    expect(isIntegrated('PUT', at('/v1/data-spaces/ds-1/members'), operations)).toBe(false);
-    expect(isIntegrated('POST', at('/v1/dsr'), operations)).toBe(false);
+    expect(isIntegrated('POST', at('/v1/admin/clients'), operations)).toBe(true);
+    expect(isIntegrated('PUT', at('/v1/data-spaces/ds-1/members'), operations)).toBe(true);
+    expect(isIntegrated('POST', at('/v1/dsr'), operations)).toBe(true);
+    expect(isIntegrated('POST', at('/v1/packs:import'), operations)).toBe(true);
+    expect(isIntegrated('GET', at('/v1/documents'), operations)).toBe(true);
   });
 });

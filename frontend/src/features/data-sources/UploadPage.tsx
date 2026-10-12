@@ -46,7 +46,7 @@ export default function UploadPage() {
     setBusy(true);
     setError(null);
     try {
-      const result = await createUpload({ file_name: file.name, size_bytes: file.size });
+      const result = await createUpload(file);
       setAnalysis(result);
       setColumns(result.columns);
     } catch (e) {

@@ -199,7 +199,7 @@ bench-e2e:  ## per-stage latency of one real question against a deployed agent (
 # LAN cluster or another deployed environment.
 E2E_KONG_URL ?= http://localhost:30100
 E2E_KEYCLOAK_URL ?= http://localhost:30110
-E2E_DATA_SPACE ?= a0000000-0000-0000-0000-000000000001
+E2E_DATA_SPACE ?= DS-DEMO
 E2E_TESTS ?= tests/integration/test_v3_question_e2e.py
 E2E_FORWARD_VARS = E2E_USER E2E_PASS E2E_ADMIN_USER E2E_ADMIN_PASS E2E_T2_ADMIN_USER E2E_T2_ADMIN_PASS \
                    E2E_DATA_SPACE E2E_STRICT E2E_TURN_TIMEOUT
