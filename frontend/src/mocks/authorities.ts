@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import type { RankedSource, SourceAuthority } from '../lib/v1/authorities';
+import { materialityText } from '../lib/v1/authorities';
 
 /* The ranking of "P07 · Thẩm quyền nguồn" (2302:19178). */
 const src = (
@@ -81,17 +82,33 @@ const problem = (status: number, code: string, detail: string) =>
     { status, headers: { 'Content-Type': 'application/problem+json' } },
   );
 
+const wire = (a: SourceAuthority) => ({
+  id: a.id,
+  data_kind: a.data_kind,
+  ranking: a.ranking.map((s) => s.source_id),
+  materiality: null,
+  status: a.status,
+  backtest: null,
+  approved_at: null,
+  approved_by: null,
+  data_space_id: 'ds-rui-ro-tin-dung',
+  created_at: '2026-09-01T09:00:00+07:00',
+  updated_at: '2026-10-01T09:00:00+07:00',
+  display: a,
+});
+
 export function createAuthorityHandlers() {
   let authorities = authoritiesFixture();
   return [
+    // SourceAuthorityView with the screen's row under display.
     http.get('*/v1/source-authorities', () =>
-      HttpResponse.json({ items: authorities, next_page_token: '' }),
+      HttpResponse.json({ items: authorities.map(wire), next_page_token: '' }),
     ),
     http.put('*/v1/source-authorities', async ({ request }) => {
       const body = (await request.json()) as {
         data_kind: string;
         ranking: string[];
-        materiality: string | null;
+        materiality: { amount_pct: number; count: number } | null;
       };
       const current = authorities.find((a) => a.data_kind === body.data_kind);
       if (!current) return problem(404, 'not_found', 'Không có loại dữ liệu này.');
@@ -111,11 +128,11 @@ export function createAuthorityHandlers() {
       const saved: SourceAuthority = {
         ...current,
         ranking,
-        materiality: body.materiality,
+        materiality: materialityText(body.materiality),
         status: 'draft',
       };
       authorities = authorities.map((a) => (a.id === saved.id ? saved : a));
-      return HttpResponse.json(saved);
+      return HttpResponse.json(wire(saved));
     }),
   ];
 }
