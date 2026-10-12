@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+
 from fastapi import APIRouter
 from sqlalchemy import select
 
@@ -10,8 +12,14 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentPrincipal
 from services.api.kernel.db import transaction
 from services.api.kernel.problems import Problem
-from services.api.modules.org.identity import ROLE, my_groups, user_role_in_force
-from services.api.modules.org.schemas import Me, RoleGrant, RoleRef
+from services.api.modules.org.identity import ROLE, memberships, my_groups, user_role_in_force
+from services.api.modules.org.schemas import (
+    DataSpacePreferencePut,
+    DataSpacePreferenceView,
+    Me,
+    RoleGrant,
+    RoleRef,
+)
 
 router = APIRouter()
 
@@ -69,3 +77,44 @@ async def get_me(principal: CurrentPrincipal) -> Me:
         roles=grants,
         capabilities=sorted(principal.capabilities),
     )
+
+
+@router.put(
+    "/v1/me/data-space-preference",
+    response_model=DataSpacePreferenceView,
+    **endpoint(
+        "PUT",
+        "/v1/me/data-space-preference",
+        operation_id="putMyDataSpacePreference",
+    ),
+)
+async def put_data_space_preference(
+    body: DataSpacePreferencePut, principal: CurrentPrincipal
+) -> DataSpacePreferenceView:
+    async with transaction(ROLE, principal) as session:
+        user = await session.get(org.AppUser, principal.user_id, with_for_update=True)
+        if user is None:
+            raise Problem(403, "forbidden", "No active account in this organisation.")
+        if not body.open_last_used:
+            user.default_data_space_id = None
+        elif body.data_space_id is not None:
+            mine = memberships(principal.user_id).subquery()
+            membership = await session.scalar(
+                select(org.DataSpace.id)
+                .where(
+                    org.DataSpace.id.in_(select(mine.c.data_space_id)),
+                )
+                .where(
+                    org.DataSpace.id == body.data_space_id,
+                    org.DataSpace.org_id == principal.org_id,
+                    org.DataSpace.deleted_at.is_(None),
+                    org.DataSpace.status != "archived",
+                )
+            )
+            if membership is None:
+                raise Problem(404, "not_found", "Data Space not found for this user.")
+            user.default_data_space_id = body.data_space_id
+        user.updated_at = datetime.datetime.now(datetime.UTC)
+        await session.flush()
+        selected = user.default_data_space_id
+    return DataSpacePreferenceView(open_last_used=selected is not None, data_space_id=selected)

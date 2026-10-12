@@ -4072,6 +4072,25 @@
    ],
    "request_text": "—"
   },
+  "PUT /v1/me/data-space-preference": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "open_last_used": true,
+    "data_space_id": false
+   },
+   "query": [],
+   "returns": "Lựa chọn Data Space mở lần sau",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "open_last_used*, data_space_id"
+  },
   "POST /v1/data-spaces": {
    "group": "Quản trị",
    "groups": [

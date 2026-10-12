@@ -1,6 +1,7 @@
 import type { Page } from './client';
 import { pathId, v1Get, v1Send } from './client';
 import type { DataSpace } from './types';
+import { getMe } from './me';
 
 /*
  * Khám phá (UC-01-04), the full-screen artifact (UC-01-01) and the global first-visit screens
@@ -253,7 +254,11 @@ export interface MyDataSpaces {
 }
 
 export const getMyDataSpaces = async (): Promise<MyDataSpaces> => {
-  const page = await v1Get<Page<DataSpace>>('/data-spaces', { page_size: 500 });
+  const [page, me] = await Promise.all([
+    v1Get<Page<DataSpace>>('/data-spaces', { page_size: 500 }),
+    getMe(),
+  ]);
+  const defaultId = me.default_data_space_id;
   return {
     items: page.items.map((space) => ({
       id: space.id,
@@ -265,18 +270,19 @@ export const getMyDataSpaces = async (): Promise<MyDataSpaces> => {
       source_count: 0,
       metric_count: 0,
       agent_count: 0,
-      last_used_text: null,
+      last_used_text: space.id === defaultId ? 'gần đây' : null,
       owner_name: null,
       request_pending: false,
     })),
-    open_last_used: false,
+    open_last_used: defaultId !== null,
   };
 };
 
-/** PROPOSAL: PUT /v1/me/data-space-preference */
-export const setOpenLastUsed = (openLastUsed: boolean) =>
+/** PUT /v1/me/data-space-preference */
+export const setOpenLastUsed = (openLastUsed: boolean, dataSpaceId?: string) =>
   v1Send<{ open_last_used: boolean }>('PUT', '/me/data-space-preference', {
     open_last_used: openLastUsed,
+    ...(dataSpaceId ? { data_space_id: dataSpaceId } : {}),
   });
 
 /* ─── Onboarding lần đầu ─────────────────────────────────────────────── */

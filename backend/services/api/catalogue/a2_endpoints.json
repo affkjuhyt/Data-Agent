@@ -3005,6 +3005,18 @@
   },
   {
    "group": "Quản trị",
+   "method": "PUT",
+   "path": "/v1/me/data-space-preference",
+   "summary": "Chọn Data Space mở lần sau",
+   "use_cases": [
+    "11-08"
+   ],
+   "capability": [
+    "—"
+   ]
+  },
+  {
+   "group": "Quản trị",
    "method": "POST",
    "path": "/v1/data-spaces",
    "summary": "Tạo Data Space",

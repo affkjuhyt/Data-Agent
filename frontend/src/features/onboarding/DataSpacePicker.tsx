@@ -97,6 +97,20 @@ function Choices({
   );
   const recent = data.items.find((s) => s.access === 'member' && s.last_used_text)?.id;
 
+  const open = async (space: { id: string; name: string }) => {
+    if (openLast) {
+      try {
+        await setOpenLastUsed(true, space.id);
+      } catch (e) {
+        toast({
+          tone: 'error',
+          message: `Không lưu được Data Space gần nhất: ${(e as Error).message}`,
+        });
+      }
+    }
+    onOpen(space);
+  };
+
   const toggle = async (value: boolean) => {
     setOpenLast(value);
     try {
@@ -157,7 +171,7 @@ function Choices({
               <Button
                 kind={space.id === recent ? 'primary' : 'secondary'}
                 aria-label={`Mở ${space.name}`}
-                onClick={() => onOpen({ id: space.id, name: space.name })}
+                onClick={() => void open({ id: space.id, name: space.name })}
               >
                 Mở
               </Button>

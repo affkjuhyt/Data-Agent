@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RoleRef(BaseModel):
@@ -58,3 +58,13 @@ class Me(BaseModel):
     time_zone: str
     roles: list[RoleGrant]
     capabilities: list[str]
+
+
+class DataSpacePreferencePut(BaseModel):
+    open_last_used: bool
+    data_space_id: uuid.UUID | None = Field(default=None)
+
+
+class DataSpacePreferenceView(BaseModel):
+    open_last_used: bool
+    data_space_id: uuid.UUID | None
