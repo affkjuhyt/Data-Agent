@@ -21,7 +21,15 @@ from libs.dataagent_db.models import monitor
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
-from services.api.kernel.pagination import Page, PageRequest, page_request
+from services.api.kernel.pagination import (
+    Order,
+    Page,
+    PageRequest,
+    keyset,
+    next_page,
+    order_by,
+    page_request,
+)
 from services.api.kernel.problems import Problem
 from services.api.modules.monitor.schemas import (
     Accepted,
@@ -46,8 +54,6 @@ from services.api.modules.monitor.support import (
     check_work_calendar,
     emit,
     invalid_field,
-    keyset,
-    next_token,
     now,
 )
 
@@ -132,15 +138,35 @@ async def list_calendars(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at", "updated_at", "code", "name", "status", default="created_at desc"
+            )
+        ),
+    ],
     status: CalendarStatus | None = None,
 ) -> Page[CalendarSummary]:
     cal = monitor.ExternalCalendar
     query = select(cal).where(cal.org_id == principal.org_id, cal.data_space_id == data_space)
     if status:
         query = query.where(cal.status == status)
-    query = keyset(query, cal.created_at, cal.id, page)
+    query = keyset(
+        query,
+        columns={
+            "created_at": cal.created_at,
+            "updated_at": cal.updated_at,
+            "code": cal.code,
+            "name": cal.name,
+            "status": cal.status,
+        },
+        tiebreak=cal.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows, token = next_token(list((await session.scalars(query)).all()), page, "created_at")
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
         ids = [r.id for r in rows]
         counts = dict(
             (
@@ -277,6 +303,19 @@ async def list_events(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "expected_at",
+                "created_at",
+                "updated_at",
+                "period_label",
+                "status",
+                default="expected_at asc",
+            )
+        ),
+    ],
     from_: Annotated[datetime.datetime | None, Query(alias="from")] = None,
     to: datetime.datetime | None = None,
     status: str | None = None,
@@ -291,8 +330,20 @@ async def list_events(
             query = query.where(ev.expected_at < to)
         if status:
             query = query.where(ev.status == status)
-        query = keyset(query, ev.expected_at, ev.id, page, descending=False)
-        rows, token = next_token(list((await session.scalars(query)).all()), page, "expected_at")
+        query = keyset(
+            query,
+            columns={
+                "expected_at": ev.expected_at,
+                "created_at": ev.created_at,
+                "updated_at": ev.updated_at,
+                "period_label": ev.period_label,
+                "status": ev.status,
+            },
+            tiebreak=ev.id,
+            order=order,
+            page=page,
+        )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
         bulletins = (
             await session.scalars(
                 select(monitor.EventBulletin).where(

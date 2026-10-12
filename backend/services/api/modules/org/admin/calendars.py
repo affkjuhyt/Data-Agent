@@ -8,7 +8,7 @@ from collections import defaultdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path
-from sqlalchemy import delete, select, tuple_, update
+from sqlalchemy import delete, select, update
 
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import org
@@ -16,10 +16,12 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentPrincipal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
-    encode_page_token,
-    invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import Problem
@@ -50,21 +52,28 @@ def _view(calendar: org.WorkCalendar, days: list[org.WorkCalendarDay]) -> Calend
     **endpoint("GET", "/v1/calendars", operation_id="listCalendars"),
 )
 async def list_calendars(
-    principal: CurrentPrincipal, page: Annotated[PageRequest, Depends(page_request)]
+    principal: CurrentPrincipal,
+    page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(order_by("code", "name", "created_at", "updated_at", default="code asc")),
+    ],
 ) -> Page[CalendarView]:
     calendar = org.WorkCalendar
-    query = select(calendar).where(calendar.org_id == principal.org_id)
-    if page.cursor:
-        try:
-            after = (str(page.cursor["code"]), uuid.UUID(str(page.cursor["id"])))
-        except (KeyError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(tuple_(calendar.code, calendar.id) > after)
-    query = query.order_by(calendar.code, calendar.id).limit(page.page_size + 1)
+    query = keyset(
+        select(calendar).where(calendar.org_id == principal.org_id),
+        columns={
+            "code": calendar.code,
+            "name": calendar.name,
+            "created_at": calendar.created_at,
+            "updated_at": calendar.updated_at,
+        },
+        tiebreak=calendar.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(query)).all())
-        more = len(rows) > page.page_size
-        rows = rows[: page.page_size]
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
         days: dict[uuid.UUID, list[org.WorkCalendarDay]] = defaultdict(list)
         if rows:
             for d in await session.scalars(
@@ -73,13 +82,7 @@ async def list_calendars(
                 )
             ):
                 days[d.calendar_id].append(d)
-    last = rows[-1] if more else None
-    return Page[CalendarView](
-        items=[_view(r, days[r.id]) for r in rows],
-        next_page_token=encode_page_token(
-            {"code": last.code, "id": str(last.id)} if last else None
-        ),
-    )
+    return Page[CalendarView](items=[_view(r, days[r.id]) for r in rows], next_page_token=token)
 
 
 def _check(body: CalendarPut) -> None:

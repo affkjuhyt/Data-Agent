@@ -22,7 +22,15 @@ from libs.dataagent_db.models import context, monitor
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
-from services.api.kernel.pagination import Page, PageRequest, page_request
+from services.api.kernel.pagination import (
+    Order,
+    Page,
+    PageRequest,
+    keyset,
+    next_page,
+    order_by,
+    page_request,
+)
 from services.api.kernel.problems import Problem
 from services.api.modules.monitor import calendars, reports, rules
 from services.api.modules.monitor.schemas import (
@@ -40,8 +48,6 @@ from services.api.modules.monitor.support import (
     emit,
     in_data_space,
     invalid_field,
-    keyset,
-    next_token,
     now,
 )
 
@@ -240,6 +246,20 @@ async def list_alerts(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "fired_at",
+                "created_at",
+                "updated_at",
+                "status",
+                "kind",
+                "occurrences",
+                default="fired_at desc",
+            )
+        ),
+    ],
     status: str | None = None,
     monitor_id: uuid.UUID | None = None,
     from_: Annotated[datetime.datetime | None, Query(alias="from")] = None,
@@ -259,10 +279,23 @@ async def list_alerts(
         query = query.where(alert.fired_at >= from_)
     if to:
         query = query.where(alert.fired_at < to)
-    query = keyset(query, alert.fired_at, alert.id, page)
+    query = keyset(
+        query,
+        columns={
+            "fired_at": alert.fired_at,
+            "created_at": alert.created_at,
+            "updated_at": alert.updated_at,
+            "status": alert.status,
+            "kind": alert.kind,
+            "occurrences": alert.occurrences,
+        },
+        tiebreak=alert.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
         rows = list((await session.scalars(query)).all())
-    rows, token = next_token(rows, page, "fired_at")
+    rows, token = next_page(rows, order=order, page=page)
     return Page(
         items=[AlertView.model_validate(r, from_attributes=True) for r in rows],
         next_page_token=token,

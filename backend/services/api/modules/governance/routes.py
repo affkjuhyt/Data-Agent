@@ -20,7 +20,7 @@ from collections.abc import Iterable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query
-from sqlalchemy import func, literal, select, tuple_
+from sqlalchemy import func, literal, select
 
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import governance
@@ -28,10 +28,12 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentPrincipal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
-    encode_page_token,
-    invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
@@ -233,6 +235,20 @@ def _provider_cost(
 async def list_model_providers(
     principal: CurrentPrincipal,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "code",
+                "display_name",
+                "kind",
+                "status",
+                "created_at",
+                "updated_at",
+                default="code asc",
+            )
+        ),
+    ],
     kind: Annotated[str | None, Query(max_length=30)] = None,
     enabled: bool | None = None,
 ) -> ModelProviderPage:
@@ -242,18 +258,23 @@ async def list_model_providers(
         query = query.where(provider.kind == kind)
     if enabled is not None:
         query = query.where(provider.enabled.is_(enabled))
-    if page.cursor:
-        try:
-            after = (str(page.cursor["code"]), uuid.UUID(str(page.cursor["id"])))
-        except (KeyError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(tuple_(provider.code, provider.id) > after)
-    query = query.order_by(provider.code, provider.id).limit(page.page_size + 1)
+    query = keyset(
+        query,
+        columns={
+            "code": provider.code,
+            "display_name": provider.display_name,
+            "kind": provider.kind,
+            "status": provider.status,
+            "created_at": provider.created_at,
+            "updated_at": provider.updated_at,
+        },
+        tiebreak=provider.id,
+        order=order,
+        page=page,
+    )
 
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(query)).all())
-        more = len(rows) > page.page_size
-        rows = rows[: page.page_size]
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
         usage_by_provider: dict[uuid.UUID, list[governance.ModelUsage]] = {
             row.id: [] for row in rows
         }
@@ -269,7 +290,6 @@ async def list_model_providers(
                 if usage.provider_id in usage_by_provider:
                     usage_by_provider[usage.provider_id].append(usage)
 
-    last = rows[-1] if more else None
     return Page[ModelProviderView](
         items=[
             ModelProviderView.model_validate(row).model_copy(
@@ -277,9 +297,7 @@ async def list_model_providers(
             )
             for row in rows
         ],
-        next_page_token=encode_page_token(
-            {"code": last.code, "id": str(last.id)} if last else None
-        ),
+        next_page_token=token,
     )
 
 
@@ -587,6 +605,20 @@ async def test_model_provider(
 async def list_model_route_decisions(
     principal: CurrentPrincipal,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "decided_at",
+                "decision",
+                "caller_kind",
+                "task",
+                "model_name",
+                "outcome",
+                default="decided_at desc",
+            )
+        ),
+    ],
     decision: str | None = Query(default=None, max_length=40),
     reason: str | None = Query(default=None, max_length=80),
     provider_id: uuid.UUID | None = None,
@@ -611,25 +643,24 @@ async def list_model_route_decisions(
         query = query.where(row_type.decided_at >= from_)
     if to:
         query = query.where(row_type.decided_at < to)
-    if page.cursor:
-        try:
-            after = (
-                datetime.datetime.fromisoformat(str(page.cursor["k"])),
-                uuid.UUID(str(page.cursor["id"])),
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(tuple_(row_type.decided_at, row_type.id) < after)
-    query = query.order_by(row_type.decided_at.desc(), row_type.id.desc()).limit(page.page_size + 1)
+    query = keyset(
+        query,
+        columns={
+            "decided_at": row_type.decided_at,
+            "decision": row_type.decision,
+            "caller_kind": row_type.caller_kind,
+            "task": row_type.task,
+            "model_name": row_type.model_name,
+            "outcome": row_type.outcome,
+        },
+        tiebreak=row_type.id,
+        order=order,
+        page=page,
+    )
 
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(query)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    last = rows[-1] if more else None
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return ModelRouteDecisionPage(
         items=[ModelRouteDecisionView.model_validate(row) for row in rows],
-        next_page_token=encode_page_token(
-            {"k": last.decided_at.isoformat(), "id": str(last.id)} if last else None
-        ),
+        next_page_token=token,
     )

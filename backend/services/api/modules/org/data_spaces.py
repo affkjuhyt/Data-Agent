@@ -7,17 +7,19 @@ from collections import defaultdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, tuple_
+from sqlalchemy import select
 
 from libs.dataagent_db.models import org
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentPrincipal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
-    encode_page_token,
-    invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.modules.org.identity import ORG_ONLY_CAPABILITIES, ROLE, memberships
@@ -32,25 +34,30 @@ router = APIRouter()
 async def list_my_data_spaces(
     principal: CurrentPrincipal,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(order_by("code", "name", "status", "created_at", "updated_at", default="code asc")),
+    ],
 ) -> Page[DataSpaceSummary]:
     mine = memberships(principal.user_id).subquery()
     space = org.DataSpace
-    query = (
-        select(space)
-        .where(space.id.in_(select(mine.c.data_space_id)), space.deleted_at.is_(None))
-        .order_by(space.code, space.id)
-        .limit(page.page_size + 1)
+    query = keyset(
+        select(space).where(space.id.in_(select(mine.c.data_space_id)), space.deleted_at.is_(None)),
+        columns={
+            "code": space.code,
+            "name": space.name,
+            "status": space.status,
+            "created_at": space.created_at,
+            "updated_at": space.updated_at,
+        },
+        tiebreak=space.id,
+        order=order,
+        page=page,
     )
-    if page.cursor:
-        try:
-            after = (str(page.cursor["code"]), uuid.UUID(str(page.cursor["id"])))
-        except (KeyError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(tuple_(space.code, space.id) > after)
     async with transaction(ROLE, principal) as session:
-        spaces = list((await session.scalars(query)).all())
-        more = len(spaces) > page.page_size
-        spaces = spaces[: page.page_size]
+        spaces, token = next_page(
+            list((await session.scalars(query)).all()), order=order, page=page
+        )
         roles: dict[uuid.UUID, dict[uuid.UUID, org.Role]] = defaultdict(dict)
         if spaces:
             rows = await session.execute(
@@ -79,10 +86,4 @@ async def list_my_data_spaces(
         )
         for s in spaces
     ]
-    last = spaces[-1] if more else None
-    return Page[DataSpaceSummary](
-        items=items,
-        next_page_token=encode_page_token(
-            {"code": last.code, "id": str(last.id)} if last else None
-        ),
-    )
+    return Page[DataSpaceSummary](items=items, next_page_token=token)

@@ -1,4 +1,4 @@
-"""What the monitor module's route files share: its role, the outbox writer, keyset paging."""
+"""What the monitor module's route files share: its role, the outbox writer, membership checks."""
 
 from __future__ import annotations
 
@@ -7,13 +7,12 @@ import decimal
 import uuid
 from typing import Any
 
-from sqlalchemy import Select, and_, func, or_, select, tuple_
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import monitor, org
 from services.api.kernel.auth import Principal
-from services.api.kernel.pagination import PageRequest, encode_page_token, invalid_page_token
 from services.api.kernel.problems import FieldError, Problem
 
 ROLE = "svc_monitor"
@@ -53,35 +52,6 @@ def emit(
             payload={k: _plain(v) for k, v in payload.items()},
         )
     )
-
-
-def keyset(
-    query: Select[Any], column: Any, id_column: Any, page: PageRequest, *, descending: bool = True
-) -> Select[Any]:
-    """Ordered by (column, id), the cursor being that pair of the last row served (A1.4)."""
-    if descending:
-        query = query.order_by(column.desc(), id_column.desc())
-    else:
-        query = query.order_by(column.asc(), id_column.asc())
-    query = query.limit(page.page_size + 1)
-    if not page.cursor:
-        return query
-    try:
-        at = datetime.datetime.fromisoformat(page.cursor["at"])
-        last = uuid.UUID(page.cursor["id"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise invalid_page_token() from exc
-    pair = tuple_(column, id_column)
-    return query.where(pair < (at, last) if descending else pair > (at, last))
-
-
-def next_token(rows: list[Any], page: PageRequest, column: str) -> tuple[list[Any], str]:
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    if not more:
-        return rows, ""
-    last = rows[-1]
-    return rows, encode_page_token({"at": getattr(last, column).isoformat(), "id": str(last.id)})
 
 
 async def active_user(session: AsyncSession, principal: Principal, user_id: uuid.UUID) -> bool:

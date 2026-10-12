@@ -17,7 +17,7 @@ from collections.abc import AsyncIterator, Iterable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, Path, Query, Response
-from sqlalchemy import Select, delete, func, select, tuple_
+from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -26,10 +26,12 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
-    encode_page_token,
-    invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
@@ -108,26 +110,6 @@ def _emit(
             },
         )
     )
-
-
-def _keyset(query: Select[Any], model: Any, page: PageRequest) -> Select[Any]:
-    """Newest first, the cursor being the (created_at, id) of the last row served (A1.4)."""
-    query = query.order_by(model.created_at.desc(), model.id.desc()).limit(page.page_size + 1)
-    if not page.cursor:
-        return query
-    try:
-        at = datetime.datetime.fromisoformat(page.cursor["created_at"])
-        last = uuid.UUID(page.cursor["id"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise invalid_page_token() from exc
-    return query.where(tuple_(model.created_at, model.id) < (at, last))
-
-
-def _page_token(rows: list[Any], page: PageRequest) -> str:
-    if len(rows) <= page.page_size:
-        return ""
-    last = rows[page.page_size - 1]
-    return encode_page_token({"created_at": last.created_at.isoformat(), "id": str(last.id)})
 
 
 async def _agent(
@@ -345,6 +327,20 @@ async def list_agents(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at",
+                "updated_at",
+                "name",
+                "code",
+                "kind",
+                "status",
+                default="created_at desc",
+            )
+        ),
+    ],
     status: Annotated[str | None, Query(max_length=50)] = None,
     kind: Annotated[AgentKind | None, Query()] = None,
     owner: Annotated[uuid.UUID | None, Query()] = None,
@@ -360,14 +356,29 @@ async def list_agents(
         query = query.where(agent.AgentDef.kind == kind)
     if owner:
         query = query.where(agent.AgentDef.owner_user_id == owner)
+    query = keyset(
+        query,
+        columns={
+            "created_at": agent.AgentDef.created_at,
+            "updated_at": agent.AgentDef.updated_at,
+            "name": agent.AgentDef.name,
+            "code": agent.AgentDef.code,
+            "kind": agent.AgentDef.kind,
+            "status": agent.AgentDef.status,
+        },
+        tiebreak=agent.AgentDef.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(_keyset(query, agent.AgentDef, page))).all())
-        served = rows[: page.page_size]
+        served, token = next_page(
+            list((await session.scalars(query)).all()), order=order, page=page
+        )
         items = [AgentSummary.model_validate(r) for r in served]
         counts = await _run_counts(session, [r.id for r in served])
         for item in items:
             item.active_runs, item.waiting_runs = counts.get(item.id, (0, 0))
-    return Page(items=items, next_page_token=_page_token(rows, page))
+    return Page(items=items, next_page_token=token)
 
 
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n")
@@ -477,13 +488,27 @@ async def list_configs(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(order_by("created_at", "version", "status", default="created_at desc")),
+    ],
 ) -> Page[ConfigView]:
-    query = select(agent.AgentConfig).where(agent.AgentConfig.agent_id == agent_id)
+    query = keyset(
+        select(agent.AgentConfig).where(agent.AgentConfig.agent_id == agent_id),
+        columns={
+            "created_at": agent.AgentConfig.created_at,
+            "version": agent.AgentConfig.version,
+            "status": agent.AgentConfig.status,
+        },
+        tiebreak=agent.AgentConfig.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
         await _agent(session, agent_id, principal, data_space)
-        rows = list((await session.scalars(_keyset(query, agent.AgentConfig, page))).all())
-        items = [await _config_view(session, r) for r in rows[: page.page_size]]
-    return Page(items=items, next_page_token=_page_token(rows, page))
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+        items = [await _config_view(session, r) for r in rows]
+    return Page(items=items, next_page_token=token)
 
 
 @router.post(
@@ -907,6 +932,26 @@ async def rollback_deployment(
 # ---------------------------------------------------------------- runs (UC-13-06, UC-13-08)
 
 
+# /v1/runs and /v1/runs/{id}/children list the same rows, so they sort on the same fields.
+_RUN_ORDER = ("created_at", "status", "cost", "tokens")
+
+
+def _run_keyset(query: Select[Any], order: Order, page: PageRequest) -> Select[Any]:
+    run = agent.AgentRun
+    return keyset(
+        query,
+        columns={
+            "created_at": run.created_at,
+            "status": run.status,
+            "cost": run.cost,
+            "tokens": run.tokens,
+        },
+        tiebreak=run.id,
+        order=order,
+        page=page,
+    )
+
+
 @router.get(
     "/v1/runs",
     response_model=Page[RunSummary],
@@ -916,6 +961,10 @@ async def list_runs(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(order_by(*_RUN_ORDER, default="created_at desc")),
+    ],
     agent_id: Annotated[uuid.UUID | None, Query()] = None,
     status: Annotated[RunStatus | None, Query()] = None,
     from_: Annotated[datetime.datetime | None, Query(alias="from")] = None,
@@ -935,12 +984,10 @@ async def list_runs(
         query = query.where(agent.AgentRun.created_at < to)
     if parent_run_id:
         query = query.where(agent.AgentRun.parent_run_id == parent_run_id)
+    query = _run_keyset(query, order, page)
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(_keyset(query, agent.AgentRun, page))).all())
-    return Page(
-        items=[RunSummary.model_validate(r) for r in rows[: page.page_size]],
-        next_page_token=_page_token(rows, page),
-    )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[RunSummary.model_validate(r) for r in rows], next_page_token=token)
 
 
 async def _steps(session: AsyncSession, run_id: uuid.UUID) -> list[agent.AgentStep]:
@@ -1031,17 +1078,22 @@ async def list_children(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(order_by(*_RUN_ORDER, default="created_at desc")),
+    ],
 ) -> Page[RunSummary]:
-    query = select(agent.AgentRun).where(
-        agent.AgentRun.parent_run_id == run_id, agent.AgentRun.org_id == principal.org_id
+    query = _run_keyset(
+        select(agent.AgentRun).where(
+            agent.AgentRun.parent_run_id == run_id, agent.AgentRun.org_id == principal.org_id
+        ),
+        order,
+        page,
     )
     async with transaction(ROLE, principal) as session:
         await _run(session, run_id, principal, data_space)
-        rows = list((await session.scalars(_keyset(query, agent.AgentRun, page))).all())
-    return Page(
-        items=[RunSummary.model_validate(r) for r in rows[: page.page_size]],
-        next_page_token=_page_token(rows, page),
-    )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[RunSummary.model_validate(r) for r in rows], next_page_token=token)
 
 
 async def _intervene(
@@ -1249,6 +1301,20 @@ async def list_memories(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at",
+                "updated_at",
+                "kind",
+                "scope",
+                "status",
+                "use_count",
+                default="created_at desc",
+            )
+        ),
+    ],
     kind: Annotated[MemoryKind | None, Query()] = None,
     scope: Annotated[MemoryScope | None, Query()] = None,
     status: Annotated[MemoryStatus | None, Query()] = None,
@@ -1275,11 +1341,22 @@ async def list_memories(
             if owner.owner_user_id == principal.user_id:
                 visible = visible | (agent.AgentMemory.scope == "agent")
             query = query.where(visible)
-        rows = list((await session.scalars(_keyset(query, agent.AgentMemory, page))).all())
-    return Page(
-        items=[MemoryView.model_validate(r) for r in rows[: page.page_size]],
-        next_page_token=_page_token(rows, page),
-    )
+        query = keyset(
+            query,
+            columns={
+                "created_at": agent.AgentMemory.created_at,
+                "updated_at": agent.AgentMemory.updated_at,
+                "kind": agent.AgentMemory.kind,
+                "scope": agent.AgentMemory.scope,
+                "status": agent.AgentMemory.status,
+                "use_count": agent.AgentMemory.use_count,
+            },
+            tiebreak=agent.AgentMemory.id,
+            order=order,
+            page=page,
+        )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[MemoryView.model_validate(r) for r in rows], next_page_token=token)
 
 
 @router.post(

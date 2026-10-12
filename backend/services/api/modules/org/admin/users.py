@@ -8,7 +8,7 @@ from collections import defaultdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query
-from sqlalchemy import delete, or_, select, tuple_
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -17,10 +17,12 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentPrincipal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
-    encode_page_token,
-    invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import Problem
@@ -102,6 +104,20 @@ async def _space_codes(
 async def list_users(
     principal: CurrentPrincipal,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "username",
+                "display_name",
+                "kind",
+                "status",
+                "created_at",
+                "updated_at",
+                default="username asc",
+            )
+        ),
+    ],
     q: str | None = None,
     kind: str | None = None,
     status: str | None = None,
@@ -130,25 +146,26 @@ async def list_users(
                 .where(by)
             )
         )
-    if page.cursor:
-        try:
-            after = (str(page.cursor["username"]), uuid.UUID(str(page.cursor["id"])))
-        except (KeyError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(tuple_(user.username, user.id) > after)
-    query = query.order_by(user.username, user.id).limit(page.page_size + 1)
+    query = keyset(
+        query,
+        columns={
+            "username": user.username,
+            "display_name": user.display_name,
+            "kind": user.kind,
+            "status": user.status,
+            "created_at": user.created_at,
+            "updated_at": user.updated_at,
+        },
+        tiebreak=user.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(query)).all())
-        more = len(rows) > page.page_size
-        rows = rows[: page.page_size]
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
         granted = await grants.grants_for(session, [r.id for r in rows])
         codes = await _space_codes(session, granted)
-    last = rows[-1] if more else None
     return Page[AdminUser](
-        items=[_summary(r, granted[r.id], codes) for r in rows],
-        next_page_token=encode_page_token(
-            {"username": last.username, "id": str(last.id)} if last else None
-        ),
+        items=[_summary(r, granted[r.id], codes) for r in rows], next_page_token=token
     )
 
 

@@ -39,10 +39,14 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
     encode_page_token,
     invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import Problem
@@ -207,15 +211,6 @@ def _keyset(
         query = query.where(key < after if newest_first else key > after)
     order = (created.desc(), ident.desc()) if newest_first else (created.asc(), ident.asc())
     return query.order_by(*order).limit(page.page_size + 1)
-
-
-def _cut(rows: list[Any], page: PageRequest) -> tuple[list[Any], str]:
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    if not more:
-        return rows, ""
-    last = rows[-1]
-    return rows, encode_page_token({"created_at": last.created_at.isoformat(), "id": str(last.id)})
 
 
 def _status_changed(
@@ -528,6 +523,20 @@ async def list_crawl_sources(
     principal: CurrentPrincipal,
     space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at",
+                "updated_at",
+                "name",
+                "kind",
+                "status",
+                "trust_level",
+                default="created_at desc",
+            )
+        ),
+    ],
     status: Literal["draft", "active", "paused", "quarantined", "retired"] | None = None,
     kind: Literal["web_page", "web_listing", "public_api", "feed", "file_drop"] | None = None,
     owner_id: uuid.UUID | None = None,
@@ -542,9 +551,22 @@ async def list_crawl_sources(
         query = query.where(S.owner_id == owner_id)
     if has_issue is not None:
         query = query.where(_issue() if has_issue else not_(_issue()))
+    query = keyset(
+        query,
+        columns={
+            "created_at": S.created_at,
+            "updated_at": S.updated_at,
+            "name": S.name,
+            "kind": S.kind,
+            "status": S.status,
+            "trust_level": S.trust_level,
+        },
+        tiebreak=S.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(_keyset(query, page, S.created_at, S.id))).all())
-        rows, token = _cut(rows, page)
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
         items = await _summaries(session, rows)
     return Page(items=items, next_page_token=token)
 
@@ -888,6 +910,19 @@ async def list_crawl_runs(
     principal: CurrentPrincipal,
     space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at",
+                "status",
+                "pages_fetched",
+                "records_extracted",
+                "records_flagged",
+                default="created_at desc",
+            )
+        ),
+    ],
     source_id: uuid.UUID | None = None,
     status: Literal[
         "queued", "fetching", "extracting", "in_review", "published", "quarantined", "failed"
@@ -909,9 +944,21 @@ async def list_crawl_runs(
         query = query.where(R.created_at >= from_)
     if to:
         query = query.where(R.created_at < to)
+    query = keyset(
+        query,
+        columns={
+            "created_at": R.created_at,
+            "status": R.status,
+            "pages_fetched": R.pages_fetched,
+            "records_extracted": R.records_extracted,
+            "records_flagged": R.records_flagged,
+        },
+        tiebreak=R.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(_keyset(query, page, R.created_at, R.id))).all())
-    rows, token = _cut(rows, page)
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(items=[CrawlRunView.model_validate(r) for r in rows], next_page_token=token)
 
 
@@ -1005,15 +1052,36 @@ async def list_crawl_schemas(
     principal: CurrentPrincipal,
     space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at",
+                "version",
+                "status",
+                default="created_at desc",
+            )
+        ),
+    ],
     status: Literal["draft", "testing", "active", "superseded", "rejected"] | None = None,
 ) -> Page[CrawlSchemaVersionView]:
     query = select(V).where(V.source_id == source_id)
     if status:
         query = query.where(V.status == status)
+    query = keyset(
+        query,
+        columns={
+            "created_at": V.created_at,
+            "version": V.version,
+            "status": V.status,
+        },
+        tiebreak=V.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
         await _source(session, principal, space, source_id)
-        rows = list((await session.scalars(_keyset(query, page, V.created_at, V.id))).all())
-    rows, token = _cut(rows, page)
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(
         items=[CrawlSchemaVersionView.model_validate(r) for r in rows], next_page_token=token
     )
@@ -1307,6 +1375,17 @@ async def list_schema_drifts(
     principal: CurrentPrincipal,
     space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at",
+                "severity",
+                "drift_kind",
+                default="created_at desc",
+            )
+        ),
+    ],
     source_id: uuid.UUID | None = None,
     drift_kind: Literal["structural", "semantic"] | None = None,
     severity: Literal["minor", "major"] | None = None,
@@ -1330,9 +1409,19 @@ async def list_schema_drifts(
         query = query.where(D.resolution.is_(None))
     elif resolution:
         query = query.where(D.resolution == resolution)
+    query = keyset(
+        query,
+        columns={
+            "created_at": D.created_at,
+            "severity": D.severity,
+            "drift_kind": D.drift_kind,
+        },
+        tiebreak=D.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(_keyset(query, page, D.created_at, D.id))).all())
-        rows, token = _cut(rows, page)
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
         proposed_ids = {r.proposed_version_id for r in rows if r.proposed_version_id}
         proposed = {
             v.id: v
@@ -1876,6 +1965,19 @@ async def list_consolidation_specs(
     principal: CurrentPrincipal,
     space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at",
+                "updated_at",
+                "name",
+                "entity_type",
+                "status",
+                default="created_at desc",
+            )
+        ),
+    ],
     entity_type: str | None = None,
     status: Literal["draft", "active", "retired"] | None = None,
 ) -> Page[ConsolidationSpecView]:
@@ -1884,9 +1986,21 @@ async def list_consolidation_specs(
         query = query.where(C.entity_type == entity_type)
     if status:
         query = query.where(C.status == status)
+    query = keyset(
+        query,
+        columns={
+            "created_at": C.created_at,
+            "updated_at": C.updated_at,
+            "name": C.name,
+            "entity_type": C.entity_type,
+            "status": C.status,
+        },
+        tiebreak=C.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(_keyset(query, page, C.created_at, C.id))).all())
-    rows, token = _cut(rows, page)
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(
         items=[ConsolidationSpecView.model_validate(r) for r in rows], next_page_token=token
     )
@@ -2120,6 +2234,19 @@ async def list_entity_links(
     principal: CurrentPrincipal,
     space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at",
+                "updated_at",
+                "entity_type",
+                "canonical_key",
+                "source_key",
+                default="created_at desc",
+            )
+        ),
+    ],
     entity_type: str | None = None,
     status: Annotated[
         Literal["pending", "confirmed", "rejected"],
@@ -2134,9 +2261,21 @@ async def list_entity_links(
         query = query.where(L.entity_type == entity_type)
     if source_id:
         query = query.where(L.source_id == source_id)
+    query = keyset(
+        query,
+        columns={
+            "created_at": L.created_at,
+            "updated_at": L.updated_at,
+            "entity_type": L.entity_type,
+            "canonical_key": L.canonical_key,
+            "source_key": L.source_key,
+        },
+        tiebreak=L.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(_keyset(query, page, L.created_at, L.id))).all())
-    rows, token = _cut(rows, page)
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(items=[EntityLinkView.model_validate(r) for r in rows], next_page_token=token)
 
 

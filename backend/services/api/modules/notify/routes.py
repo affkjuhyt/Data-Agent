@@ -14,7 +14,7 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Response
-from sqlalchemy import delete, select, tuple_
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import scoped_session, uuid7
@@ -23,10 +23,12 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
-    encode_page_token,
-    invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
@@ -100,6 +102,9 @@ def _invalid(
 async def list_notifications(
     principal: CurrentPrincipal,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order, Depends(order_by("created_at", "kind", "priority", default="created_at desc"))
+    ],
     unread: bool | None = None,
     kind: str | None = None,
 ) -> Page[NotificationView]:
@@ -111,24 +116,18 @@ async def list_notifications(
         query = query.where(n.read_at.is_not(None))
     if kind:
         query = query.where(n.kind == kind)
-    if page.cursor:
-        try:
-            after = (
-                datetime.datetime.fromisoformat(page.cursor["at"]),
-                uuid.UUID(page.cursor["id"]),
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(tuple_(n.created_at, n.id) < after)
-    query = query.order_by(n.created_at.desc(), n.id.desc()).limit(page.page_size + 1)
+    query = keyset(
+        query,
+        columns={"created_at": n.created_at, "kind": n.kind, "priority": n.priority},
+        tiebreak=n.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(query)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    token = {"at": rows[-1].created_at.isoformat(), "id": str(rows[-1].id)} if more else None
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(
         items=[NotificationView.model_validate(r, from_attributes=True) for r in rows],
-        next_page_token=encode_page_token(token),
+        next_page_token=token,
     )
 
 
