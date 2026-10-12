@@ -159,9 +159,14 @@ def run_suite(suite: Suite, registry: str, pytest_args: str, log_dir: Path) -> t
             return suite, 1, time.monotonic() - start, log
         # --user 0, no bytecode, no pytest cache: the checkout is mounted, and a run
         # must not leave root-owned files in it.
+        python_path = "/src/backend:/src"
+        if suite.name == "sandbox_executor":
+            # The sandbox image exposes api/auth as service-local top-level modules.
+            # Keep the normal repo path first, then add that service root for its tests.
+            python_path = "/src/backend:/src/backend/services/sandbox_executor:/src"
         cmd = [
             "docker", "run", "--rm", "--user", "0", "-v", f"{REPO_ROOT}:/src", "-w", "/src",
-            "-e", "PYTHONPATH=/src/backend:/src", "-e", "PYTHONDONTWRITEBYTECODE=1",
+            "-e", f"PYTHONPATH={python_path}", "-e", "PYTHONDONTWRITEBYTECODE=1",
             "-e", "OTEL_SDK_DISABLED=true",
         ]
         if suite.kind == "integration":

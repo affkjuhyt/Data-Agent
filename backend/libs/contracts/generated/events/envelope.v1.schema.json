@@ -26,9 +26,6 @@
     "envelope_version": {
       "const": 1,
       "default": 1,
-      "enum": [
-        1
-      ],
       "title": "Envelope Version",
       "type": "integer"
     },
@@ -58,6 +55,7 @@
       "type": "string"
     },
     "payload": {
+      "additionalProperties": true,
       "title": "Payload",
       "type": "object"
     },

@@ -8,13 +8,11 @@
           "kind": {
             "const": "api_query",
             "default": "api_query",
-            "enum": [
-              "api_query"
-            ],
             "title": "Kind",
             "type": "string"
           },
           "params": {
+            "additionalProperties": true,
             "title": "Params",
             "type": "object"
           },
@@ -170,8 +168,8 @@
             "type": "string"
           },
           "null_ratio": {
-            "maximum": 1.0,
-            "minimum": 0.0,
+            "maximum": 1,
+            "minimum": 0,
             "title": "Null Ratio",
             "type": "number"
           },
@@ -328,9 +326,6 @@
           },
           "kind": {
             "const": "csv",
-            "enum": [
-              "csv"
-            ],
             "title": "Kind",
             "type": "string"
           },
@@ -388,9 +383,6 @@
         "properties": {
           "kind": {
             "const": "daily_lag",
-            "enum": [
-              "daily_lag"
-            ],
             "title": "Kind",
             "type": "string"
           },
@@ -747,6 +739,7 @@
             "title": "Current Version"
           },
           "details": {
+            "additionalProperties": true,
             "title": "Details",
             "type": "object"
           },
@@ -789,9 +782,6 @@
           "envelope_version": {
             "const": 1,
             "default": 1,
-            "enum": [
-              1
-            ],
             "title": "Envelope Version",
             "type": "integer"
           },
@@ -821,6 +811,7 @@
             "type": "string"
           },
           "payload": {
+            "additionalProperties": true,
             "title": "Payload",
             "type": "object"
           },
@@ -1000,9 +991,6 @@
         "properties": {
           "from": {
             "const": "fetch_time",
-            "enum": [
-              "fetch_time"
-            ],
             "title": "From",
             "type": "string"
           }
@@ -1035,9 +1023,6 @@
           },
           "from": {
             "const": "html_regex",
-            "enum": [
-              "html_regex"
-            ],
             "title": "From",
             "type": "string"
           },
@@ -1085,9 +1070,6 @@
           },
           "kind": {
             "const": "html_table",
-            "enum": [
-              "html_table"
-            ],
             "title": "Kind",
             "type": "string"
           },
@@ -1182,9 +1164,6 @@
           },
           "from": {
             "const": "json_max_date",
-            "enum": [
-              "json_max_date"
-            ],
             "title": "From",
             "type": "string"
           },
@@ -1230,9 +1209,6 @@
         "properties": {
           "kind": {
             "const": "json_path",
-            "enum": [
-              "json_path"
-            ],
             "title": "Kind",
             "type": "string"
           },
@@ -1297,9 +1273,6 @@
           "kind": {
             "const": "json_path",
             "default": "json_path",
-            "enum": [
-              "json_path"
-            ],
             "title": "Kind",
             "type": "string"
           },
@@ -1412,9 +1385,6 @@
           },
           "kind": {
             "const": "monthly_day",
-            "enum": [
-              "monthly_day"
-            ],
             "title": "Kind",
             "type": "string"
           },
@@ -1457,9 +1427,6 @@
         "properties": {
           "kind": {
             "const": "none",
-            "enum": [
-              "none"
-            ],
             "title": "Kind",
             "type": "string"
           }
@@ -1867,9 +1834,6 @@
           "kind": {
             "const": "page",
             "default": "page",
-            "enum": [
-              "page"
-            ],
             "title": "Kind",
             "type": "string"
           },
@@ -1878,7 +1842,7 @@
             "type": "number"
           },
           "page_height": {
-            "exclusiveMinimum": 0.0,
+            "exclusiveMinimum": 0,
             "title": "Page Height",
             "type": "number"
           },
@@ -1888,7 +1852,7 @@
             "type": "integer"
           },
           "page_width": {
-            "exclusiveMinimum": 0.0,
+            "exclusiveMinimum": 0,
             "title": "Page Width",
             "type": "number"
           },
@@ -2364,6 +2328,7 @@
           "aggregation": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -2391,6 +2356,7 @@
           "freshness": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -2406,6 +2372,7 @@
           "metric": {
             "anyOf": [
               {
+                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -2595,6 +2562,7 @@
           },
           "rows_preview": {
             "items": {
+              "additionalProperties": true,
               "type": "object"
             },
             "maxItems": 50,
@@ -2771,9 +2739,6 @@
           },
           "from": {
             "const": "sdmx_dataset_attr",
-            "enum": [
-              "sdmx_dataset_attr"
-            ],
             "title": "From",
             "type": "string"
           }
@@ -2799,9 +2764,6 @@
         "properties": {
           "kind": {
             "const": "sdmx",
-            "enum": [
-              "sdmx"
-            ],
             "title": "Kind",
             "type": "string"
           },
@@ -3182,9 +3144,6 @@
           "kind": {
             "const": "cell",
             "default": "cell",
-            "enum": [
-              "cell"
-            ],
             "title": "Kind",
             "type": "string"
           },
@@ -3295,9 +3254,6 @@
             "anyOf": [
               {
                 "const": "release_publication_time",
-                "enum": [
-                  "release_publication_time"
-                ],
                 "type": "string"
               },
               {
@@ -3332,9 +3288,6 @@
             "anyOf": [
               {
                 "const": "fetch_time",
-                "enum": [
-                  "fetch_time"
-                ],
                 "type": "string"
               },
               {
@@ -3530,9 +3483,6 @@
         "properties": {
           "kind": {
             "const": "weekly_after",
-            "enum": [
-              "weekly_after"
-            ],
             "title": "Kind",
             "type": "string"
           },
@@ -3568,9 +3518,6 @@
           "kind": {
             "const": "xpath",
             "default": "xpath",
-            "enum": [
-              "xpath"
-            ],
             "title": "Kind",
             "type": "string"
           },
@@ -3593,9 +3540,6 @@
         "properties": {
           "from": {
             "const": "xls_cell",
-            "enum": [
-              "xls_cell"
-            ],
             "title": "From",
             "type": "string"
           },
@@ -3689,9 +3633,6 @@
           },
           "kind": {
             "const": "xlsx_table",
-            "enum": [
-              "xlsx_table"
-            ],
             "title": "Kind",
             "type": "string"
           },
@@ -3768,9 +3709,6 @@
         "properties": {
           "kind": {
             "const": "xml_path",
-            "enum": [
-              "xml_path"
-            ],
             "title": "Kind",
             "type": "string"
           },
@@ -3839,9 +3777,6 @@
           },
           "from": {
             "const": "xml_text",
-            "enum": [
-              "xml_text"
-            ],
             "title": "From",
             "type": "string"
           },
