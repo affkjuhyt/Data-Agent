@@ -54,6 +54,7 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_INBOX="${DATAAGENT_DB_URL__SVC_INBOX}" \
   --from-literal=DATAAGENT_DB_URL__SVC_AUDIT_WORKER="${DATAAGENT_DB_URL__SVC_AUDIT_WORKER}" \
   --from-literal=DATAAGENT_DB_URL__SVC_OUTBOX_RELAY_AUDIT="${DATAAGENT_DB_URL__SVC_OUTBOX_RELAY_AUDIT}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_CATALOG="${DATAAGENT_DB_URL__SVC_CATALOG}" \
   --from-literal=DATAAGENT_DB_URL__SVC_QUERY="${DATAAGENT_DB_URL__SVC_QUERY}" \
   --from-literal=OPENBAO_ROLE_ID="${WORKER_AGENT_OPENBAO_ROLE_ID}" \
   --from-literal=OPENBAO_SECRET_ID="${WORKER_AGENT_OPENBAO_SECRET_ID}" \
