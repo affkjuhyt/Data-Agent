@@ -7,15 +7,17 @@ from services.workflow_runtime.application.runtime_services import platform_quer
 from services.workflow_runtime.application.runtime_services.conversation_runner import (
     run_conversation_stream,
 )
-from services.workflow_runtime.domain.schemas import RunRequest
+from services.workflow_runtime.domain.schemas import InternalRunRequest, RunRequest
 
 router = APIRouter()
 
 
 @router.post("/api/conversations/run", response_model=None)
 async def run_conversation(
-    req: RunRequest, request: Request, caller: dict[str, Any] = Depends(get_current_user),
+    payload: dict[str, Any], request: Request, caller: dict[str, Any] = Depends(get_current_user),
 ) -> Any:
+    request_model = InternalRunRequest if caller.get("auth_source") == "service:orchestrator" else RunRequest
+    req = request_model.model_validate(payload)
     return await run_conversation_stream(req, request, caller)
 
 

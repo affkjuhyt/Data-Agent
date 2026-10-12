@@ -1,27 +1,37 @@
 /**
- * "Hỏi dữ liệu" — the front door for business users.
+ * Phân tích › Hỏi đáp — "P01 · Hỏi đáp" (2296:18429, UC-01-01/03/04, UC-10-01).
  *
- * Three columns: scope + saved questions + history on the left, the
- * conversation in the middle, and "where did this number come from" on the
- * right. Everything shown comes from the backend frames the Playground
- * already received; the only client-side state is per-viewer convenience
- * (saved questions, history) in localStorage.
+ * Bordered page header, then the conversation: the question right-aligned on subtle, each answer
+ * with "Hệ thống hiểu là", the text, chart and tables, the trust label and its links, follow-up
+ * chips, and the "Hỏi tiếp…" box under it. "Cách tính" opens the 420px panel on the right
+ * (2296:18631, UC-01-02); "Xuất" and "Báo sai" open their dialogs (UC-01-06, UC-01-05).
+ *
+ * Questions go to POST /v1/questions and are followed on their stream (useQuestionStream); the
+ * agent that answers is chosen by the system, so the Figma picker "Agent trả lời" is not drawn
+ * (A3 has no agent field). The only client-side state is per-viewer convenience (saved and
+ * recent questions) in localStorage.
+ *
+ * Not drawn, no backend yet: "Mở dạng notebook", "Chia sẻ", "Thêm vào phiên" (no session API on
+ * this stream), editing a "Hệ thống hiểu là" chip to ask again (UC-01-03), per-number lineage.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import {
-  Bookmark, Bot, Brain, ChevronRight, History, Mic, MicOff, PanelRightClose, PanelRightOpen,
-  Send, ShieldCheck, Square, Trash2, User,
-} from 'lucide-react';
 import { useAppState } from '../../AppStateContext';
+import { PageHeader } from '../../components/shell/PageHeader';
+import { Button } from '../../design-system/Button';
+import { EmptyState } from '../../design-system/EmptyState';
+import { Icon } from '../../design-system/Icon';
+import { Menu } from '../../design-system/Menu';
+import { SuggestionChip } from '../../design-system/SuggestionChip';
 import { cn } from '../../lib/utils';
-import { formatRelative } from '../../lib/formatVN';
-import { fetchAgents } from './api';
-import { useAgentStream } from './hooks/useAgentStream';
+import type { Feedback } from '../../lib/v1/answerReports';
+import { useQuestionStream } from './hooks/useQuestionStream';
 import { AnswerBlock } from './components/AnswerBlock';
 import { AnswerTheme } from './components/AnswerTheme';
 import { EvidencePanel } from './components/EvidencePanel';
-import type { AgentOption, AskMessage } from './types';
+import { ReportDialog } from './components/ReportDialog';
+import { SaveToKnowledgeDialog } from '../knowledge/SaveToKnowledgeDialog';
+import { ReceiptDrawer } from '../answer-receipt/AnswerReceiptPage';
+import type { AskMessage } from './types';
 
 /* ─── per-viewer convenience storage ─────────────────────────────── */
 
@@ -55,43 +65,34 @@ function speechRecognition(): (new () => Recognition) | null {
 }
 
 const EXAMPLES = [
-  'Net revenue this month by region',
-  'Compare order count this quarter to last quarter',
-  'Top 10 customers by revenue this year',
+  'Doanh thu thuần tháng này theo vùng',
+  'So sánh số đơn hàng quý này với quý trước',
+  'Top 10 khách hàng theo doanh thu năm nay',
 ];
+
 
 /* ─── page ────────────────────────────────────────────────────────── */
 
 export default function AskDataPage() {
   const { user } = useAppState();
-  const [agents, setAgents] = useState<AgentOption[]>([]);
-  const [agentsLoading, setAgentsLoading] = useState(true);
-  const [scope, setScope] = useState<string>('auto');
   const [input, setInput] = useState('');
   const [saved, setSaved] = useState<StoredQuestion[]>(() => readList(SAVED_KEY));
   const [history, setHistory] = useState<StoredQuestion[]>(() => readList(HISTORY_KEY));
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [reportFor, setReportFor] = useState<AskMessage | null>(null);
+  const [receiptFor, setReceiptFor] = useState<string | null>(null);
+  const [knowledgeFor, setKnowledgeFor] = useState<string | null>(null);
+  const [reported, setReported] = useState<Record<string, Feedback>>({});
   const [listening, setListening] = useState(false);
   const recogRef = useRef<Recognition | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const { messages, sending, send, answerClarification, stop } = useAgentStream({
-    userId: user.id,
-    agentId: scope === 'auto' ? null : scope,
-  });
+  // The agent that answers is chosen by the system: POST /v1/questions has no agent field (A3).
+  const { messages, sending, send, answerClarification, confirmUnderstanding, stop } = useQuestionStream();
 
-  useEffect(() => {
-    let alive = true;
-    fetchAgents()
-      .then(list => { if (alive) setAgents(list); })
-      .catch(() => { /* backend not reachable — scope stays "auto" */ })
-      .finally(() => { if (alive) setAgentsLoading(false); });
-    return () => { alive = false; };
-  }, []);
-
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  useEffect(() => { bottomRef.current?.scrollIntoView?.({ behavior: 'smooth' }); }, [messages]);
 
   const lastAssistant = useMemo(() => [...messages].reverse().find(m => m.role === 'assistant') ?? null, [messages]);
   const selected: AskMessage | null = useMemo(
@@ -133,12 +134,27 @@ export default function AskDataPage() {
     void send(q);
   };
 
+  // A question handed over from elsewhere (Trang chủ's question bar, ⌘K) arrives as ?q=.
+  // It is asked once, then dropped from the URL so a reload does not ask it again.
+  const handedOver = useRef(false);
+  useEffect(() => {
+    if (handedOver.current) return;
+    handedOver.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('q');
+    if (!q) return;
+    params.delete('q');
+    const rest = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`);
+    ask(q);
+  }, []);
+
   const toggleMic = () => {
     const SR = speechRecognition();
     if (!SR) return;
     if (listening) { recogRef.current?.stop(); return; }
     const r = new SR();
-    r.lang = 'en-US'; r.interimResults = false; r.continuous = false;
+    r.lang = 'vi-VN'; r.interimResults = false; r.continuous = false;
     r.onresult = e => {
       const t = Array.from({ length: e.results.length }, (_, i) => e.results[i][0]?.transcript ?? '').join(' ').trim();
       if (t) setInput(prev => (prev ? `${prev} ${t}` : t));
@@ -155,217 +171,218 @@ export default function AskDataPage() {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   };
 
-  const scopeLabel = scope === 'auto' ? 'Automatic — orchestrator picks the agent' : agents.find(a => a.id === scope)?.label ?? scope;
+  const questions = messages.filter(m => m.role === 'user');
+  const title = questions[0]?.content ?? 'Hỏi đáp';
+  const description = [
+    `Phiên của ${user.name}`,
+    `${questions.length} câu hỏi`,
+    'hệ thống tự chọn agent trả lời',
+  ].join(' · ');
 
   return (
-    <AnswerTheme mode="light" className="ask-workspace">
-      <div className="ask-shell">
-        {/* left: scope · saved · history */}
-        <aside className="ask-sidebar">
-          <section className="ask-side-section">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-[#5F5F5F] mb-2">Scope</div>
-            <div className="space-y-0.5">
-              <button type="button" onClick={() => setScope('auto')} className={cn('subnav-item', scope === 'auto' && 'active')}>
-                <Brain className="subnav-icon w-3.5 h-3.5" /><span className="flex-1 truncate">Automatic</span>
-              </button>
-              {agentsLoading && <div className="text-[11px] text-[#5F5F5F] px-3 py-1">Loading agents…</div>}
-              {agents.map(a => (
-                <button key={a.id} type="button" onClick={() => setScope(a.id)} className={cn('subnav-item', scope === a.id && 'active')} title={a.description}>
-                  <Bot className="subnav-icon w-3.5 h-3.5" /><span className="flex-1 truncate">{a.label}</span>
-                </button>
-              ))}
-              {!agentsLoading && agents.length === 0 && (
-                <div className="text-[11px] text-[#5F5F5F] px-3 py-1 leading-relaxed">Could not load the agent list — questions will be routed automatically.</div>
-              )}
-            </div>
-          </section>
-
-          <section className="ask-side-section">
-            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#5F5F5F] mb-2"><Bookmark size={11} /> Saved questions</div>
-            {saved.length === 0 ? (
-              <div className="text-[11px] text-[#5F5F5F] leading-relaxed">Click "Save question" under an answer to pin it here.</div>
-            ) : (
-              <ul className="space-y-1 m-0 p-0 list-none">
-                {saved.map(s => (
-                  <li key={s.q} className="group flex items-start gap-1">
-                    <button type="button" onClick={() => ask(s.q)} disabled={sending} className="flex-1 text-left text-[12px] text-[#2A2A2A] hover:text-[#8A5A00] leading-snug" title="Ask again">
-                      {s.q}
-                    </button>
-                    <button type="button" onClick={() => removeSaved(s.q)} aria-label="Unsave" className="opacity-0 group-hover:opacity-100 text-[#5F5F5F] hover:text-[#A83A32] shrink-0 mt-0.5"><Trash2 size={11} /></button>
-                  </li>
-                ))}
-              </ul>
+    <AnswerTheme mode="light" className="flex h-full min-h-0 flex-col">
+      {/* "v3.1 · Mobile · Hỏi đáp" (2231:14983): under 768px the page is titled "Hỏi" and the
+          agent picker, saved questions and breadcrumb give way to the conversation. */}
+      <h1 className="px-da-lg pb-da-xs pt-da-md text-foreground da-heading-1 min-[768px]:hidden">Hỏi</h1>
+      <PageHeader
+        bordered
+        className="max-[767px]:hidden"
+        breadcrumb={['Phân tích', 'Hỏi đáp']}
+        title={<span className="line-clamp-1 break-all">{title}</span>}
+        description={description}
+        actions={
+          <>
+            {sending && <Button kind="ghost" icon="x" onClick={stop}>Dừng</Button>}
+            {saved.length > 0 && (
+              <Menu
+                label="Câu hỏi đã lưu"
+                trigger={<Icon name="bookmark" label="Câu hỏi đã lưu" />}
+                items={saved.slice(0, 12).map(s => ({ label: s.q, onSelect: () => ask(s.q) }))}
+              />
             )}
-          </section>
+          </>
+        }
+      />
 
-          <section className="ask-side-section">
-            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#5F5F5F] mb-2"><History size={11} /> History</div>
-            {history.length === 0 ? (
-              <div className="text-[11px] text-[#5F5F5F]">No questions yet.</div>
-            ) : (
-              <ul className="space-y-1.5 m-0 p-0 list-none">
-                {history.slice(0, 12).map(h => (
-                  <li key={h.q}>
-                    <button type="button" onClick={() => setInput(h.q)} className="w-full text-left" title="Put in the input box">
-                      <div className="text-[12px] text-[#2A2A2A] hover:text-[#8A5A00] leading-snug truncate">{h.q}</div>
-                      <div className="text-[10px] text-[#5F5F5F]">{formatRelative(h.at)}</div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        </aside>
-
-        {/* middle: conversation */}
-        <section className="ask-chat-card">
-          <div className="ask-chat-header">
-            <div className="ask-chat-title">
-              <div className="ask-chat-icon"><ShieldCheck size={16} /></div>
-              <div className="min-w-0">
-                <h2>Ask your data</h2>
-                <p>{scopeLabel}</p>
-              </div>
-            </div>
-            <div className="ask-chat-actions">
-              <button type="button" className="ab-btn" onClick={() => setPanelOpen(v => !v)} aria-pressed={panelOpen}>
-                {panelOpen ? <PanelRightClose size={12} /> : <PanelRightOpen size={12} />} {panelOpen ? 'Hide evidence' : 'Show evidence'}
-              </button>
-              {sending && (
-                <button type="button" className="ab-btn" onClick={stop}><Square size={10} /> Stop</button>
-              )}
-            </div>
-          </div>
-          <div className="ask-scope-row xl:hidden">
-            <button type="button" onClick={() => setScope('auto')} className={cn('ask-scope-pill', scope === 'auto' && 'active')}>
-              <Brain size={12} /> Automatic
-            </button>
-            {agents.map(a => (
-              <button key={a.id} type="button" onClick={() => setScope(a.id)} className={cn('ask-scope-pill', scope === a.id && 'active')} title={a.description}>
-                <Bot size={12} /> {a.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="ask-scroll">
-            {messages.length === 0 && (
-              <div className="ask-empty">
-                <div className="ask-empty-icon">
-                  <ShieldCheck className="w-6 h-6" />
-                </div>
-                <h3>Start with a clear question</h3>
-                <p>The system will ask back when a period, metric, or data scope is missing before it runs a query.</p>
-                <div className="flex flex-wrap justify-center gap-2">
-                  {EXAMPLES.map(e => (
-                    <button key={e} type="button" className="ab-chip-btn" onClick={() => setInput(e)}>{e}</button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <AnimatePresence initial={false}>
-              {messages.map(msg => (
-                <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={cn('ask-message-row', msg.role === 'user' && 'user')}>
-                  <div className={cn('ask-avatar', msg.role === 'user' ? 'user' : 'assistant')}>
-                    {msg.role === 'user' ? <User size={13} /> : <Bot size={13} />}
-                  </div>
-                  {msg.role === 'user' ? (
-                    <div className="ask-user-bubble">
-                      {msg.content}
+      <div className="flex min-h-0 flex-1">
+        <section aria-label="Hội thoại" className="flex min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto px-da-4xl pt-[20px] max-[767px]:px-da-lg max-[767px]:pt-da-md">
+            <div className="mx-auto flex max-w-[1136px] flex-col gap-da-xl pb-da-xl">
+              {messages.length === 0 && (
+                <EmptyState
+                  icon="chat"
+                  title="Bắt đầu bằng một câu hỏi rõ ràng"
+                  description="Thiếu kỳ, chỉ số hoặc phạm vi dữ liệu thì hệ thống hỏi lại trước khi chạy truy vấn."
+                  action={
+                    <div className="flex flex-wrap justify-center gap-da-md">
+                      {EXAMPLES.map(e => (
+                        <SuggestionChip key={e} label={e} onSelect={() => { setInput(e); textareaRef.current?.focus(); }} />
+                      ))}
                     </div>
-                  ) : (
-                    <div
-                      onClick={() => setSelectedId(msg.id)}
-                      className={cn('ask-assistant-bubble', selected?.id === msg.id && panelOpen && 'selected')}
-                    >
-                      <AnswerBlock
-                        msg={msg}
-                        question={questionFor(msg.id)}
-                        busy={sending}
-                        onSuggestion={ask}
-                        onAnswerClarification={answer => void answerClarification(msg.id, answer)}
-                        onSave={() => { const q = questionFor(msg.id); if (q) saveQuestion(q); }}
-                        onOpenEvidence={() => { setSelectedId(msg.id); setPanelOpen(true); }}
-                        showEvidenceStrip={!panelOpen || selected?.id !== msg.id}
-                        onRetry={() => ask(questionFor(msg.id))}
-                        onRephrase={() => {
-                          setInput(questionFor(msg.id));
-                          textareaRef.current?.focus();
-                        }}
-                      />
-                    </div>
+                  }
+                />
+              )}
+
+              {messages.length === 0 && (saved.length > 0 || history.length > 0) && (
+                <div className="grid gap-da-2xl md:grid-cols-2">
+                  {saved.length > 0 && (
+                    <section aria-label="Câu hỏi đã lưu" className="flex flex-col gap-da-sm">
+                      <h2 className="m-0 text-muted-foreground da-overline uppercase">Câu hỏi đã lưu</h2>
+                      <ul className="m-0 flex list-none flex-col p-0">
+                        {saved.map(s => (
+                          <li key={s.q} className="group flex items-center gap-da-sm rounded-sm px-da-md py-[5px] hover:bg-subtle">
+                            <button type="button" onClick={() => ask(s.q)} disabled={sending} title="Hỏi lại" className="min-w-0 flex-1 truncate text-left text-foreground da-body-small">
+                              {s.q}
+                            </button>
+                            <button type="button" onClick={() => removeSaved(s.q)} aria-label={`Bỏ lưu: ${s.q}`} className="text-muted-foreground opacity-0 hover:text-error focus-visible:opacity-100 group-hover:opacity-100">
+                              <Icon name="trash" size={14} />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
                   )}
-                </motion.div>
+                  {history.length > 0 && (
+                    <section aria-label="Hỏi gần đây" className="flex flex-col gap-da-sm">
+                      <h2 className="m-0 text-muted-foreground da-overline uppercase">Hỏi gần đây</h2>
+                      <ul className="m-0 flex list-none flex-col p-0">
+                        {history.slice(0, 8).map(h => (
+                          <li key={h.q}>
+                            <button
+                              type="button"
+                              onClick={() => { setInput(h.q); textareaRef.current?.focus(); }}
+                              title="Đưa vào ô hỏi"
+                              className="w-full truncate rounded-sm px-da-md py-[5px] text-left text-muted-foreground da-body-small hover:bg-subtle hover:text-foreground"
+                            >
+                              {h.q}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+                </div>
+              )}
+
+              {messages.map(msg => msg.role === 'user' ? (
+                <div key={msg.id} className="flex justify-end">
+                  <p className="m-0 max-w-[80%] whitespace-pre-wrap rounded-md bg-subtle px-[14px] py-[10px] text-foreground da-body">
+                    {msg.content}
+                  </p>
+                </div>
+              ) : (
+                <article
+                  key={msg.id}
+                  aria-label="Câu trả lời"
+                  className={cn(
+                    'rounded-md',
+                    panelOpen && selected?.id === msg.id && 'outline-2 outline-offset-8 outline-accent',
+                  )}
+                >
+                  <AnswerBlock
+                    msg={msg}
+                    question={questionFor(msg.id)}
+                    busy={sending}
+                    onSuggestion={ask}
+                    onAnswerClarification={answer => void answerClarification(msg.id, answer)}
+                    onSave={() => { const q = questionFor(msg.id); if (q) saveQuestion(q); }}
+                    onOpenEvidence={() => { setSelectedId(msg.id); setPanelOpen(true); }}
+                    showEvidenceStrip={!panelOpen || selected?.id !== msg.id}
+                    onRetry={() => ask(questionFor(msg.id))}
+                    onRephrase={() => {
+                      setInput(questionFor(msg.id));
+                      textareaRef.current?.focus();
+                    }}
+                    onReport={msg.answerId && msg.content ? () => setReportFor(msg) : undefined}
+                    onSaveKnowledge={msg.answerId && msg.content ? () => setKnowledgeFor(msg.answerId!) : undefined}
+                    /* The stream gives no server answer id yet (docs/v3/05-ui-v3.md §4), so this is the
+                       client message id: the receipt page shows "chưa có biên nhận" until it does. */
+                    onOpenReceipt={msg.answerId && msg.content ? () => setReceiptFor(msg.answerId!) : undefined}
+                    reported={!!(msg.answerId && reported[msg.answerId])}
+                    onStop={msg.status === 'streaming' ? stop : undefined}
+                    onConfirmUnderstanding={choice => void confirmUnderstanding(msg.id, choice)}
+                    onEditUnderstanding={() => {
+                      setInput(questionFor(msg.id));
+                      textareaRef.current?.focus();
+                    }}
+                  />
+                </article>
               ))}
-            </AnimatePresence>
-            <div ref={bottomRef} />
+              <div ref={bottomRef} />
+            </div>
           </div>
 
-          <div className="ask-composer-wrap">
-            <div className="ask-composer">
+          <div className="px-da-4xl pb-da-xl pt-da-md max-[767px]:border-t max-[767px]:border-border max-[767px]:p-[10px]">
+            <div className="mx-auto flex max-w-[1136px] items-end gap-da-md rounded-md border border-border-strong bg-card py-[6px] pl-[14px] pr-da-sm focus-within:border-ring max-[767px]:items-center max-[767px]:border-0 max-[767px]:p-0">
               <textarea
                 ref={textareaRef}
                 value={input}
                 rows={1}
                 onChange={e => { setInput(e.target.value); adjustHeight(); }}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } }}
-                placeholder={sending ? 'Answering… (you can still type your next question)' : 'Ask about your data…'}
-                aria-label="Question"
-                className="ask-input"
-                style={{ maxHeight: 140 }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); ask(); }
+                }}
+                placeholder={sending ? 'Đang trả lời… bạn vẫn gõ được câu tiếp theo' : messages.length ? 'Hỏi tiếp…' : 'Hỏi về dữ liệu của bạn…'}
+                aria-label="Câu hỏi"
+                className="max-h-[200px] min-h-8 flex-1 resize-none bg-transparent py-1.5 text-foreground outline-none da-body placeholder:text-muted-foreground focus-visible:shadow-none max-[767px]:rounded-lg max-[767px]:bg-subtle max-[767px]:p-[10px] max-[767px]:text-[13px] max-[767px]:leading-[18px]"
               />
               {micAvailable && (
                 <button
                   type="button"
                   onClick={toggleMic}
                   aria-pressed={listening}
-                  aria-label={listening ? 'Stop recording' : 'Speak your question'}
-                  title={listening ? 'Stop recording' : 'Speak your question'}
-                  className={cn('ask-icon-button', listening && 'listening')}
+                  aria-label={listening ? 'Dừng ghi âm' : 'Nói câu hỏi'}
+                  title={listening ? 'Dừng ghi âm' : 'Nói câu hỏi'}
+                  className={cn(
+                    'inline-flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-subtle',
+                    listening ? 'bg-error-subtle text-error' : 'text-muted-foreground',
+                  )}
                 >
-                  {listening ? <MicOff size={15} /> : <Mic size={15} />}
+                  <Icon name="mic" />
                 </button>
               )}
               <button
                 type="button"
                 onClick={() => ask()}
                 disabled={!input.trim() || sending}
-                aria-label="Send question"
-                className="ask-send-button"
+                aria-label="Gửi câu hỏi"
+                className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-subtle disabled:text-muted-foreground max-[767px]:h-9 max-[767px]:w-auto max-[767px]:px-da-lg max-[767px]:text-[13px] max-[767px]:font-medium"
               >
-                <Send size={15} />
+                <Icon name="arrow-up" className="max-[767px]:hidden" />
+                <span className="min-[768px]:hidden">Gửi</span>
               </button>
             </div>
           </div>
         </section>
 
-        {/* right: evidence */}
-        <AnimatePresence initial={false}>
-          {panelOpen && (
-            <motion.aside
-              key="evidence"
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 340, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              className="hidden lg:flex content-card"
-              style={{ flexDirection: 'column', flexShrink: 0, padding: 0, overflow: 'hidden' }}
-            >
-              <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#BFA66A] shrink-0">
-                <ShieldCheck size={13} className="text-[#B88719]" />
-                <span className="text-[12px] font-semibold text-[#111111]">Where is the number</span>
-                <ChevronRight size={12} className="text-[#5F5F5F] ml-auto" />
-              </div>
-              <div style={{ flex: 1, overflowY: 'auto', padding: 14, width: 340 }}>
-                <EvidencePanel message={selected} />
-              </div>
-            </motion.aside>
-          )}
-        </AnimatePresence>
+        {panelOpen && (
+          <aside
+            aria-label="Cách tính"
+            className="w-[420px] max-w-[45%] shrink-0 overflow-y-auto border-l border-border bg-background px-da-2xl pb-da-2xl pt-[20px] max-[767px]:fixed max-[767px]:inset-0 max-[767px]:z-[var(--z-drawer)] max-[767px]:w-full max-[767px]:max-w-full max-[767px]:px-da-lg"
+          >
+            <EvidencePanel message={selected} onClose={() => setPanelOpen(false)} />
+          </aside>
+        )}
       </div>
+
+      {/* The receipt opens over the conversation (Figma 2420:15098), so the turns stay. */}
+      <ReceiptDrawer answerId={receiptFor} onClose={() => setReceiptFor(null)} />
+      {knowledgeFor && (
+        <SaveToKnowledgeDialog answerId={knowledgeFor} onClose={() => setKnowledgeFor(null)} />
+      )}
+      <ReportDialog
+        open={!!reportFor}
+        target={reportFor?.answerId ? {
+          answerId: reportFor.answerId,
+          question: questionFor(reportFor.id),
+          answer: reportFor.content,
+        } : null}
+        onClose={() => setReportFor(null)}
+        onReported={feedback => setReported(prev => ({ ...prev, [feedback.answer_id]: feedback }))}
+      />
     </AnswerTheme>
   );
 }

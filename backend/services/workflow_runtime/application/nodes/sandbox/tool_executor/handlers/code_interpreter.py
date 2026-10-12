@@ -29,6 +29,7 @@ import httpx
 from libs.shared import audit
 from services.workflow_runtime.application.nodes.sandbox.tool_executor._sandbox_http import (
     POLL_OVERHEAD_S,
+    service_assertion_headers,
     submit_and_poll,
 )
 from services.workflow_runtime.application.nodes.sandbox.tool_executor._utils import audit_ctx
@@ -72,7 +73,8 @@ async def _execute_python_handler(call: dict[str, Any], cfg: dict[str, Any]) -> 
     try:
         async with httpx.AsyncClient(timeout=10) as http:
             result = await submit_and_poll(
-                http, "/execute/python", request_body, overall_timeout_s=timeout_s + _POLL_OVERHEAD_S
+                http, "/execute/python", request_body, overall_timeout_s=timeout_s + _POLL_OVERHEAD_S,
+                headers=service_assertion_headers(audit_ctx(cfg)),
             )
     except Exception as e:
         return None, {"tool_name": "execute_python", "error": f"sandbox_executor unreachable: {e}"}
@@ -134,7 +136,12 @@ async def _execute_sql_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tup
     try:
         async with httpx.AsyncClient(timeout=10) as http:
             result = await submit_and_poll(
-                http, "/execute/sql", {"sql": sql, "connection": connection}, overall_timeout_s=60 + _POLL_OVERHEAD_S
+                http, "/execute/sql", {"sql": sql, "connection": {
+                    **{key: value for key, value in connection.items() if key != "password"},
+                    "connection_ref": connection.get("connection_ref") or connection.get("secret_ref")
+                    or connection.get("secretId", ""),
+                }}, overall_timeout_s=60 + _POLL_OVERHEAD_S,
+                headers=service_assertion_headers(audit_ctx(cfg)),
             )
     except Exception as e:
         _record(audit.DECISION_ERROR, None, f"sandbox_executor unreachable: {e}")

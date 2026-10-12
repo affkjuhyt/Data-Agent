@@ -56,6 +56,8 @@ spec:
   # from 2 replicas on the same node) — pin to 1 until clustering is
   # actually fixed.
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: keycloak

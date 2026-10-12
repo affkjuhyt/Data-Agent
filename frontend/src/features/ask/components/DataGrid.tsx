@@ -2,9 +2,13 @@
  * The data table under an answer. Users finish an analysis in a table — a
  * number without its rows cannot be checked. Sortable, paged in place
  * ("show more"), numeric columns right-aligned, values through formatVN.
+ * Drawn as the bordered block of the v3.1 screens: card, border, radius-md, DA/Table rows.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Download, FileSpreadsheet, Table2 } from 'lucide-react';
+import { Button } from '../../../design-system/Button';
+import { Icon } from '../../../design-system/Icon';
+import { Segmented } from '../../../design-system/Segmented';
+import { cn } from '../../../lib/utils';
 import { formatCell, formatNumber, isNumericColumn, toNumber } from '../../../lib/formatVN';
 import { TRUNCATION_LABELS } from '../labels';
 import type { Truncation } from '../types';
@@ -47,7 +51,7 @@ function compare(a: unknown, b: unknown): number {
   return String(a).localeCompare(String(b), 'en');
 }
 
-export function DataGrid({ columns, columnUnits, rows, rowCount, capped, truncation, pageSize = 10, title = 'Data table', onExport, fullResult }: DataGridProps) {
+export function DataGrid({ columns, columnUnits, rows, rowCount, capped, truncation, pageSize = 10, title = 'Bảng dữ liệu', onExport, fullResult }: DataGridProps) {
   const [sort, setSort] = useState<Sort>(null);
   const [visible, setVisible] = useState(pageSize);
   const [mode, setMode] = useState<Mode>('preview');
@@ -87,7 +91,7 @@ export function DataGrid({ columns, columnUnits, rows, rowCount, capped, truncat
       setFullTotal(page.total);
       setFullHasMore(page.has_more);
     }).catch(e => {
-      if (!cancelled) setFullError(e instanceof Error ? e.message : 'Could not load the full result');
+      if (!cancelled) setFullError(e instanceof Error ? e.message : 'Không tải được toàn bộ kết quả');
     }).finally(() => {
       if (!cancelled) setFullLoading(false);
     });
@@ -125,80 +129,64 @@ export function DataGrid({ columns, columnUnits, rows, rowCount, capped, truncat
   const truncNote = truncation?.reason
     ? truncation.reason === 'row_limit' && truncation.rows_returned
       ? `Kết quả bị cắt ở ${formatNumber(truncation.rows_returned)} dòng`
-      : TRUNCATION_LABELS[truncation.reason] ?? `result truncated (${truncation.reason})`
+      : TRUNCATION_LABELS[truncation.reason] ?? `kết quả bị cắt (${truncation.reason})`
     : null;
 
+  const linkClass = 'inline-flex items-center gap-da-xs text-primary hover:underline da-body-strong';
+
   return (
-    <div data-testid="data-grid" style={{ marginTop: 10, border: '1px solid var(--ab-border)', borderRadius: 10, overflow: 'hidden', background: 'var(--ab-bg)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderBottom: '1px solid var(--ab-border)' }}>
-        <Table2 size={12} style={{ color: 'var(--ab-accent)' }} />
-        <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--ab-muted)' }}>
-          {title} · {formatNumber(total)} rows
+    <div data-testid="data-grid" className="flex flex-col overflow-hidden rounded-md border border-border bg-card">
+      <div className="flex flex-wrap items-center gap-da-md border-b border-border px-da-lg py-da-sm">
+        <Icon name="table" size={14} className="text-muted-foreground" />
+        <span className="text-foreground da-body-strong">
+          {title} · {formatNumber(total)} dòng
         </span>
+        <span className="flex-1" />
         {fullResult?.loadRows && (
-          <div style={{ display: 'flex', gap: 3, padding: 2, border: '1px solid var(--ab-border)', borderRadius: 8, marginLeft: 'auto' }}>
-            {(['preview', 'full'] as Mode[]).map(m => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => { setMode(m); setFullOffset(0); }}
-                className="ab-btn"
-                style={{ border: 0, background: mode === m ? 'var(--ab-accent)' : 'transparent', color: mode === m ? '#fff' : 'var(--ab-fg-2)' }}
-              >
-                {m === 'preview' ? 'Preview' : 'Full result'}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            variant="outline"
+            label="Phạm vi bảng"
+            value={mode}
+            onChange={m => { setMode(m); setFullOffset(0); }}
+            items={[{ value: 'preview', label: 'Xem trước' }, { value: 'full', label: 'Toàn bộ' }]}
+          />
         )}
         {onExport && (
-          <button
-            type="button"
-            onClick={onExport}
-            className="ab-btn"
-            style={{ marginLeft: fullResult?.loadRows ? 0 : 'auto' }}
-            title="Download this table as CSV (opens in Excel)"
-          >
-            <Download size={11} /> CSV preview
-          </button>
+          <Button kind="ghost" size="sm" icon="download" onClick={onExport} title="Tải bảng này dạng CSV (mở được bằng Excel)">
+            CSV xem trước
+          </Button>
         )}
         {fullResult?.onExportXlsx && (
-          <button
-            type="button"
-            onClick={exportXlsx}
-            className="ab-btn"
-            disabled={xlsxLoading}
-            title="Download Excel with Data and Source sheets"
-          >
-            <FileSpreadsheet size={11} /> {xlsxLoading ? 'Generating…' : 'Excel + Source'}
-          </button>
+          <Button kind="ghost" size="sm" icon="sheet" onClick={exportXlsx} loading={xlsxLoading} title="Tải Excel gồm trang Dữ liệu và Nguồn">
+            {xlsxLoading ? 'Đang tạo…' : 'Excel kèm nguồn'}
+          </Button>
         )}
       </div>
       {fullError && (
-        <div style={{ padding: '6px 10px', color: 'var(--ab-bad)', fontSize: 11, borderBottom: '1px solid var(--ab-border)' }}>
-          {fullError}
-        </div>
+        <p role="alert" className="m-0 border-b border-border px-da-lg py-da-sm text-error da-caption">{fullError}</p>
       )}
-      <div style={{ overflowX: 'auto', opacity: fullLoading ? 0.55 : 1 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+      <div className={cn('overflow-x-auto', fullLoading && 'opacity-55')}>
+        <table className="w-full border-collapse da-table">
           <thead>
             <tr>
               {activeColumns.map(c => {
                 const active = sort?.column === c;
-                const Icon = active ? (sort!.dir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
                 return (
                   <th
                     key={c}
                     onClick={() => toggleSort(c)}
                     aria-sort={active ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-                    style={{
-                      padding: '6px 10px', textAlign: numeric[c] ? 'right' : 'left', whiteSpace: 'nowrap',
-                      fontSize: 10.5, fontWeight: 700, letterSpacing: '0.03em', color: active ? 'var(--ab-accent)' : 'var(--ab-muted)',
-                      background: 'var(--ab-bg-2)', borderBottom: '1px solid var(--ab-border)', cursor: 'pointer', userSelect: 'none',
-                    }}
+                    className={cn(
+                      'cursor-pointer select-none whitespace-nowrap border-b border-border bg-background px-da-lg py-da-sm da-label',
+                      numeric[c] ? 'text-right' : 'text-left',
+                      active ? 'text-foreground' : 'text-muted-foreground',
+                    )}
                   >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexDirection: numeric[c] ? 'row-reverse' : 'row' }}>
+                    <span className={cn('inline-flex items-center gap-da-xs', numeric[c] && 'flex-row-reverse')}>
                       {c}{columnUnits?.[c] ? ` (${columnUnits[c]})` : ''}
-                      <Icon size={10} style={{ opacity: active ? 1 : 0.4 }} />
+                      <span aria-hidden className={active ? 'opacity-100' : 'opacity-40'}>
+                        {active ? (sort!.dir === 'asc' ? '↑' : '↓') : '↕'}
+                      </span>
                     </span>
                   </th>
                 );
@@ -208,21 +196,19 @@ export function DataGrid({ columns, columnUnits, rows, rowCount, capped, truncat
           <tbody>
             {shown.length === 0 ? (
               <tr>
-                <td colSpan={Math.max(1, activeColumns.length)} style={{ padding: '18px 10px', textAlign: 'center', color: 'var(--ab-muted)' }}>
+                <td colSpan={Math.max(1, activeColumns.length)} className="px-da-lg py-da-xl text-center text-muted-foreground">
                   Không có dòng nào khớp điều kiện
                 </td>
               </tr>
             ) : shown.map((row, i) => (
-              <tr key={i} style={{ borderBottom: '1px solid var(--ab-border)' }}>
+              <tr key={i} className="border-b border-border last:border-b-0">
                 {activeColumns.map(c => (
                   <td
                     key={c}
-                    style={{
-                      padding: '5px 10px', whiteSpace: 'nowrap', color: 'var(--ab-fg-2)',
-                      textAlign: numeric[c] ? 'right' : 'left',
-                      fontFamily: numeric[c] ? 'var(--font-mono)' : undefined,
-                      fontVariantNumeric: 'tabular-nums',
-                    }}
+                    className={cn(
+                      'whitespace-nowrap px-da-lg py-da-sm text-foreground tabular-nums',
+                      numeric[c] ? 'text-right da-mono' : 'text-left',
+                    )}
                   >
                     {formatCell(row[c])}
                   </td>
@@ -232,30 +218,30 @@ export function DataGrid({ columns, columnUnits, rows, rowCount, capped, truncat
           </tbody>
         </table>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', fontSize: 10.5, color: 'var(--ab-muted)', flexWrap: 'wrap' }}>
+      <div className="flex flex-wrap items-center gap-da-lg border-t border-border px-da-lg py-da-sm text-muted-foreground da-caption">
         <span>
           {mode === 'full'
-            ? `Full result ${formatNumber(shown.length ? fullOffset + 1 : 0)}-${formatNumber(fullOffset + shown.length)} / ${formatNumber(fullTotal)} rows`
-            : `Preview ${formatNumber(shown.length)} / ${formatNumber(rows.length)} rows${capped ? ' (preview)' : ''}`}
+            ? `Toàn bộ ${formatNumber(shown.length ? fullOffset + 1 : 0)}-${formatNumber(fullOffset + shown.length)} / ${formatNumber(fullTotal)} dòng`
+            : `Xem trước ${formatNumber(shown.length)} / ${formatNumber(rows.length)} dòng${capped ? ' (bản xem trước)' : ''}`}
         </span>
-        {fullLoading && <span>Loading full result…</span>}
-        {truncNote && <span style={{ color: 'var(--ab-warn)' }}>{truncNote}</span>}
+        {fullLoading && <span>Đang tải toàn bộ kết quả…</span>}
+        {truncNote && <span className="text-warning">{truncNote}</span>}
         {mode === 'preview' && visible < sorted.length && (
-          <button type="button" className="ab-link" onClick={() => setVisible(v => v + pageSize * 2)}>
-            Show {formatNumber(Math.min(pageSize * 2, sorted.length - visible))} more rows
+          <button type="button" className={linkClass} onClick={() => setVisible(v => v + pageSize * 2)}>
+            Xem thêm {formatNumber(Math.min(pageSize * 2, sorted.length - visible))} dòng
           </button>
         )}
         {mode === 'preview' && visible > pageSize && sorted.length > pageSize && (
-          <button type="button" className="ab-link" onClick={() => setVisible(pageSize)}>Collapse</button>
+          <button type="button" className={linkClass} onClick={() => setVisible(pageSize)}>Thu gọn</button>
         )}
         {mode === 'full' && fullOffset > 0 && (
-          <button type="button" className="ab-link" onClick={() => setFullOffset(Math.max(0, fullOffset - fullPageSize))}>
-            <ArrowLeft size={10} /> Previous page
+          <button type="button" className={linkClass} onClick={() => setFullOffset(Math.max(0, fullOffset - fullPageSize))}>
+            ← Trang trước
           </button>
         )}
         {mode === 'full' && fullHasMore && (
-          <button type="button" className="ab-link" onClick={() => setFullOffset(fullOffset + fullPageSize)}>
-            Next page <ArrowRight size={10} />
+          <button type="button" className={linkClass} onClick={() => setFullOffset(fullOffset + fullPageSize)}>
+            Trang sau →
           </button>
         )}
       </div>

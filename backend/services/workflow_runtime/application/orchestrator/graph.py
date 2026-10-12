@@ -2,20 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import re
 import time
 from contextlib import nullcontext, suppress
 from typing import Any
 
 from langchain_core.callbacks.manager import adispatch_custom_event
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
-from psycopg_pool import AsyncConnectionPool
 
+from libs.contracts.v1.plan import OutputContract, PlanIR, PlanNode, Port
 from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 from services.workflow_runtime.application.orchestrator import config
 from services.workflow_runtime.application.orchestrator.agent_catalog import fetch_published_agents
@@ -46,84 +42,18 @@ from services.workflow_runtime.application.orchestrator.summary import (
     summarize,
     synthesis_judge_check,
 )
+from services.workflow_runtime.application.plan import to_plan_ir, validate_plan
 from services.workflow_runtime.application.runtime_services.answer_ready import answer_ready_hook
+from services.workflow_runtime.domain.refusals import PlannerError
+from services.workflow_runtime.infrastructure.checkpointer import get_checkpointer
 from services.workflow_runtime.infrastructure.observability import get_langfuse_client
 
 logger = logging.getLogger(__name__)
 
 _MAX_REPLAN = 2
 
-# ── Checkpointer ──────────────────────────────────────────────────────────────
-# Postgres-backed rather than the in-process MemorySaver it replaced: this
-# service runs multiple replicas behind a plain ClusterIP Service (no session
-# affinity), so a /resume call for a pending clarification can land on a pod
-# that never saw /stream open that session — MemorySaver made that a 404
-# ("Session không tồn tại hoặc đã hoàn thành") even though the session was
-# genuinely still open, just on a different pod. Any replica can now see any
-# session's state.
-#
-# psycopg (v3), not this codebase's usual asyncpg — that's the driver
-# langgraph-checkpoint-postgres is built on. The checkpoint tables it creates
-# (checkpoints/checkpoint_blobs/checkpoint_writes) have no tenant_id column,
-# so they're outside anything a1b2c3d4e5f6_enable_tenant_rls.py's
-# tenant_id-column scan would have found — no RLS policy applies to them,
-# same as any other non-tenant-scoped table, and thread_id (the session/trace
-# id) is already the effective partition key.
-#
-# The state holds a live PlanningProcess (needed for report_node_failure) which
-# the default msgpack serde can't encode — checkpoint writes crashed the
-# multi-agent turn after the answer already streamed. pickle_fallback pickles
-# such objects; kept identically for the Postgres saver.
-_CHECKPOINTER_SERDE = JsonPlusSerializer(pickle_fallback=True)
-_ASYNC_DRIVER_RE = re.compile(r"^postgresql\+\w+://")
-
-# The saver's tables live in their own schema. runtime_writer has no CREATE on
-# public (Postgres 15+ default, and deploy/docker/sql/grant-roles.sql keeps it
-# that way), but setup() issues CREATE TABLE IF NOT EXISTS on every start, so it
-# gets CREATE on this schema instead. The saver's SQL is unqualified, so
-# search_path is enough. A pooler in transaction mode would drop the `options`
-# startup parameter; set search_path on the role there instead.
-_CHECKPOINTER_SCHEMA = "langgraph"
-
-
-def _checkpointer_dsn() -> str:
-    url = os.environ.get("RUNTIME_DB_URL") or ""
-    if not url:
-        raise RuntimeError(
-            "RUNTIME_DB_URL not set — cannot open the shared "
-            "LangGraph checkpointer (Postgres)."
-        )
-    # This codebase's URLs are SQLAlchemy-style ("postgresql+asyncpg://...");
-    # psycopg wants the plain scheme.
-    return _ASYNC_DRIVER_RE.sub("postgresql://", url)
-
-
 _graph_lock = asyncio.Lock()
 _compiled_graph: Any = None
-_checkpoint_pool: AsyncConnectionPool | None = None
-
-
-async def _open_checkpointer() -> AsyncPostgresSaver:
-    global _checkpoint_pool
-    _checkpoint_pool = AsyncConnectionPool(
-        conninfo=_checkpointer_dsn(),
-        max_size=10,
-        open=False,
-        # autocommit: AsyncPostgresSaver manages its own transactions per call.
-        # prepare_threshold=None: disables server-side prepared statements —
-        # harmless direct-to-Postgres, and required if a pooler (e.g.
-        # PgBouncer, provisioned elsewhere in this cluster) ever sits in front
-        # of this DSN in transaction-pooling mode.
-        kwargs={
-            "autocommit": True,
-            "prepare_threshold": None,
-            "options": f"-c search_path={_CHECKPOINTER_SCHEMA}",
-        },
-    )
-    await _checkpoint_pool.open()
-    saver = AsyncPostgresSaver(_checkpoint_pool, serde=_CHECKPOINTER_SERDE)
-    await saver.setup()
-    return saver
 
 
 # ── Route ─────────────────────────────────────────────────────────────────────
@@ -156,6 +86,30 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
     query = state["query"]
     agent_id = state["agent_id"]
     assert agent_id, "_route_start/_route_mode send only turns with an agent_id here"
+
+    # Single-agent turns still publish the same validated plan frame as the
+    # multi-agent path.  This is deliberately before call_agent_stream(): a
+    # malformed capability must not start an external agent side effect.
+    plan_ir = PlanIR(
+        plan_id=f"single:{state['session_id']}",
+        output_contract=OutputContract(shape="text"),
+        nodes=[PlanNode(
+            id="single:0",
+            kind="AGENT",
+            capability=agent_id,
+            inputs={"question": query},
+            outputs=[Port(key="answer", type="text")],
+        )],
+    )
+    plan_issues = validate_plan(plan_ir, allowed_capabilities={agent_id})
+    if plan_issues:
+        refusal = PlannerError("; ".join(issue.message for issue in plan_issues)).refusal(
+            state["session_id"]
+        ).model_dump()
+        await adispatch_custom_event("refusal", refusal)
+        return {"plan_ir": plan_ir, "refused": True, "success": False, "target_results": []}
+    await adispatch_custom_event("plan", plan_ir.model_dump())
+    await adispatch_custom_event("step", {"node_id": "single:0", "status": "running"})
 
     # The clarification/rewrite check (input_refine) runs ALONGSIDE the agent
     # instead of in front of it, where it held every question for one LLM call.
@@ -303,6 +257,8 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
                             await adispatch_custom_event("options", data)
                         elif event_type == "evidence":
                             await adispatch_custom_event("evidence", data)
+                        elif event_type == "verification":
+                            await adispatch_custom_event("verification", data)
                         elif event_type == "result_set":
                             await adispatch_custom_event("result_set", data)
                         elif event_type == "refusal":
@@ -337,6 +293,7 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
         # Outside the span and the stream handling: interrupt() raises to pause
         # the graph. On resume this node runs again with the answer merged in.
         logger.info("input_refine | clarification needed, questions=%d", len(questions))
+        await adispatch_custom_event("step", {"node_id": "single:0", "status": "clarifying"})
         interrupt(clarification_payload(questions))
 
     # Only an answer that fully arrived keeps its early suggestions; otherwise
@@ -358,8 +315,13 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
         citations=citations,
         latency_ms=latency_ms,
     )
+    await adispatch_custom_event(
+        "step",
+        {"node_id": "single:0", "status": "succeeded" if success else "failed", "latency_ms": latency_ms},
+    )
     return {
         "rewritten_query": query,
+        "plan_ir": plan_ir,
         "final_response": response_text,
         "refused": refused,
         "success": success,
@@ -419,9 +381,19 @@ async def tot_planner_node(state: OrchestratorState, config: RunnableConfig) -> 
     if cached is not None:
         discard_plan_speculation(speculation)
         process, plan, progress = cached
+        plan_ir = to_plan_ir(plan)
+        issues = validate_plan(plan_ir, allowed_capabilities={str(a["id"]) for a in state["agents"]})
+        if issues:
+            await adispatch_custom_event(
+                "refusal",
+                PlannerError("; ".join(issue.message for issue in issues)).refusal(session_id).model_dump(),
+            )
+            return {"plan": None, "plan_ir": plan_ir, "planner_ms": 0, "success": False, "refused": True}
+        await adispatch_custom_event("plan", plan_ir.model_dump())
         logger.info("tot_planner | resumed session=%s plan=%s", session_id, plan.plan_id)
         return {
             "plan": plan,
+            "plan_ir": plan_ir,
             "process": process,
             "completed_node_ids": progress.get("completed_node_ids", []),
             "planner_ms": 0,
@@ -441,9 +413,19 @@ async def tot_planner_node(state: OrchestratorState, config: RunnableConfig) -> 
         return {"plan": None, "planner_ms": planner_ms, "success": False}
 
     process, plan = plan_result
+    plan_ir = to_plan_ir(plan)
+    issues = validate_plan(plan_ir, allowed_capabilities={str(a["id"]) for a in state["agents"]})
+    if issues:
+        await adispatch_custom_event(
+            "refusal",
+            PlannerError("; ".join(issue.message for issue in issues)).refusal(session_id).model_dump(),
+        )
+        return {"plan": None, "plan_ir": plan_ir, "planner_ms": planner_ms, "success": False, "refused": True}
+    await adispatch_custom_event("plan", plan_ir.model_dump())
     await save_cached_plan(redis, tenant_id, session_id, query, process, plan, [])
     return {
         "plan": plan,
+        "plan_ir": plan_ir,
         "process": process,
         "completed_node_ids": [],
         "planner_ms": planner_ms,
@@ -490,6 +472,7 @@ async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict
             }
 
     plan = state["plan"]
+    plan_ir = state.get("plan_ir")
     process = state["process"]
     # tot_planner_node sets both together, and _route_after_planner only routes
     # here when it did.
@@ -507,6 +490,7 @@ async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict
     for attempt in range(_MAX_REPLAN + 1):
         result = await execute_plan(
             plan,
+            plan_ir=plan_ir,
             user_id=state["user_id"],
             user_roles=state.get("user_roles") or [],
             original_query=query,
@@ -527,6 +511,24 @@ async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict
             recovery = await report_node_failure(process, result.failed_node_id)
             if recovery.get("recovered") and recovery.get("plan"):
                 plan = recovery["plan"]
+                plan_ir = to_plan_ir(plan)
+                recovery_issues = validate_plan(
+                    plan_ir, allowed_capabilities={str(a["id"]) for a in state["agents"]}
+                )
+                if recovery_issues:
+                    refusal = PlannerError(
+                        "; ".join(issue.message for issue in recovery_issues)
+                    ).refusal(session_id).model_dump()
+                    await adispatch_custom_event("refusal", refusal)
+                    return {
+                        "plan": None,
+                        "plan_ir": plan_ir,
+                        "target_results": all_target_results,
+                        "success": False,
+                        "recovered": recovered,
+                        "executor_ms": round((time.monotonic() - t0) * 1000),
+                        "refused": True,
+                    }
                 recovered = True
                 await save_cached_plan(redis, tenant_id, session_id, query, process, plan, completed_node_ids)
                 continue
@@ -543,6 +545,7 @@ async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict
 
     return {
         "plan": plan,
+        "plan_ir": plan_ir,
         "target_results": deduped,
         "success": overall_success,
         "recovered": recovered,
@@ -733,6 +736,6 @@ async def get_graph() -> Any:
     if _compiled_graph is None:
         async with _graph_lock:
             if _compiled_graph is None:
-                checkpointer = await _open_checkpointer()
+                checkpointer = await get_checkpointer()
                 _compiled_graph = build_graph(checkpointer)
     return _compiled_graph

@@ -35,6 +35,7 @@ data:
   SANDBOX_BREAKER_COOLDOWN_S: '30'
   SANDBOX_RUNTIME: ''
   SANDBOX_DOCKER_HOST: ''
+  SANDBOX_ALLOWED_SERVICES: workflow_runtime
 
 ---
 apiVersion: apps/v1

@@ -1,0 +1,10 @@
+<!doctype html>
+<html>
+  <body>
+    <script>
+      // keycloak-js check-sso: Keycloak answers into this hidden iframe, so an anonymous visit
+      // shows the app's own login page instead of a full redirect through Keycloak.
+      parent.postMessage(location.href, location.origin);
+    </script>
+  </body>
+</html>

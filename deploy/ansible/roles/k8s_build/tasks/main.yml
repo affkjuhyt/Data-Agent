@@ -12,7 +12,8 @@
 # One task, not a loop: a loop builds one image at a time, and a cold run
 # was ~25 min end to end with the torch images alone taking ~4 min each.
 # xargs keeps build_parallelism builds going; each writes its own log and
-# prints one `built <name> <id before> <id after> <seconds>` line.
+# prints one `built <name> <id before> <id after> <seconds>` line. Use NUL
+# delimiters because local checkout paths may contain spaces.
 - name: Build the images, {{ build_parallelism }} at a time
   ansible.builtin.shell:
     cmd: |
@@ -32,8 +33,8 @@
         fi
       }
       export -f build_one
-      printf '%s %s %s\n' {% for i in images %}{{ i.name | quote }} {{ (project_dir ~ '/' ~ i.dir ~ '/' ~ i.dockerfile) | quote }} {{ (project_dir ~ '/' ~ i.context) | quote }} {% endfor %} \
-        | xargs -P {{ build_parallelism | int }} -L 1 bash -c 'build_one "$@"' _ \
+      printf '%s\0' {% for i in images %}{{ i.name | quote }} {{ (project_dir ~ '/' ~ i.dir ~ '/' ~ i.dockerfile) | quote }} {{ (project_dir ~ '/' ~ i.context) | quote }} {% endfor %} \
+        | xargs -0 -P {{ build_parallelism | int }} -n 3 bash -c 'build_one "$@"' _ \
         | tee "$BUILD_LOGS/results.txt"
       rc=$?
       if [ "$rc" -ne 0 ]; then
@@ -88,8 +89,8 @@
       }
       export -f push_one
       export BUILD_LOGS={{ build_log_dir | quote }}
-      printf '%s %s\n' {% for name, r in built.items() %}{{ name | quote }} {{ r.after | quote }} {% endfor %} \
-        | xargs -P {{ build_parallelism | int }} -L 1 bash -c 'push_one "$@"' _
+      printf '%s\0' {% for name, r in built.items() %}{{ name | quote }} {{ r.after | quote }} {% endfor %} \
+        | xargs -0 -P {{ build_parallelism | int }} -n 2 bash -c 'push_one "$@"' _
     executable: /bin/bash
   register: push
   when: (image_push | bool) and (built | length) > 0

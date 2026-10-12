@@ -45,3 +45,11 @@ class AgentConfigError(RefusalError):
 
 class PlannerError(RefusalError):
     code = ErrorCode.PLANNER_ERROR
+
+
+class NoDataError(RefusalError):
+    code = ErrorCode.NO_DATA_FOR_PERIOD
+
+
+class NoJoinPathError(RefusalError):
+    code = ErrorCode.NO_JOIN_PATH

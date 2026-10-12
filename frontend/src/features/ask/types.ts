@@ -185,6 +185,19 @@ export interface Evidence {
   warnings: Array<{ kind: string; detail: string; expression?: string; reason?: string }>;
 }
 
+export interface VerificationCheck {
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface VerificationFrame {
+  checks: VerificationCheck[];
+  verdict: 'PASS' | 'FAIL';
+  iteration: number;
+  confidence: number | null;
+}
+
 /**
  * Why a turn ended without an answer — the `__refusal` frame, shape of
  * backend/libs/contracts/v1/errors.py `Refusal`. Screens branch on `code` and
@@ -236,8 +249,41 @@ export interface PendingReviewInfo {
   payload: { title?: string; description?: string; detail?: unknown } | null;
 }
 
+/**
+ * PROPOSAL, A1 question stream event `progress` ("v3.1 · Trạng thái · Agent đang chạy",
+ * 2076:5351): the agent at work, its steps so far, and a result still arriving. Sent as
+ * `{"__progress": {...}}` on the legacy stream; absent, the answer streams as before.
+ */
+export interface AgentProgress {
+  agent: string;
+  steps: { title: string; detail?: string; state: 'done' | 'running' | 'waiting'; duration?: string }[];
+  /** A result card still filling in: its title, meta line, the step behind it and how far it got. */
+  partial?: { title: string; meta: string; step_title: string; step_detail: string; received: string };
+}
+
+/**
+ * PROPOSAL, A1 question stream event `understood` ("v3.1 · Semantic · Agent hiểu câu hỏi",
+ * 2088:7584): how the question was read — the sentence with its pieces marked, each slot with the
+ * value chosen, where it came from and how sure the agent is, an ambiguous term's readings and the
+ * plan. Sent as `{"__understood": {...}}`; with `check_required` the turn waits for the person.
+ */
+export interface Understanding {
+  session_id: string;
+  agent: string;
+  parts: { text: string; kind?: 'metric' | 'filter' | 'ambiguous' | 'period' }[];
+  slots: { slot: string; value: string; source: string; confidence: number | null; divider?: boolean }[];
+  ambiguity: { term: string; options: { key: string; label: string }[]; selected: string } | null;
+  plan: string;
+  check_required: boolean;
+}
+
 export interface AskMessage {
+  /** client id of the bubble */
   id: string;
+  /** the server's question (POST /v1/questions) behind an assistant turn */
+  questionId?: string;
+  /** the server's answer: what Báo sai, Lưu tri thức and Biên nhận act on */
+  answerId?: string;
   role: 'user' | 'assistant';
   content: string;
   /** ISO timestamp */
@@ -249,10 +295,15 @@ export interface AskMessage {
   resultSets?: ResultSet[];
   citations?: Citation[];
   evidence?: Evidence;
+  verification?: VerificationFrame;
   clarification?: Clarification;
   pendingReview?: PendingReviewInfo;
   /** set instead of an answer: the turn was refused with a code */
   refusal?: Refusal;
+  /** while streaming: what the agent is doing (cleared from view once the answer is done) */
+  progress?: AgentProgress;
+  /** the agent's reading of the question; waits for a check when `check_required` */
+  understanding?: Understanding;
   latencyMs?: number;
 }
 

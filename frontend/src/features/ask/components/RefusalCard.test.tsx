@@ -70,6 +70,6 @@ describe('RefusalCard', () => {
 
     expect(screen.getByTestId('refusal-card')).toBeTruthy();
     expect(screen.queryByText('Doanh thu tháng trước')).toBeNull();
-    expect(screen.queryByRole('button', { name: /Copy answer/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Sao chép/ })).toBeNull();
   });
 });

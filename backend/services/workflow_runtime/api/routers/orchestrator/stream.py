@@ -227,8 +227,14 @@ async def _stream_graph(
                         yield _sse({"__options": event["data"]})
                     elif name == "evidence":
                         yield _sse({"__evidence": event["data"]})
+                    elif name == "verification":
+                        yield _sse({"__verification": event["data"]})
                     elif name == "result_set":
                         yield _sse({"__result_set": event["data"]})
+                    elif name == "plan":
+                        yield _sse({"__plan": event["data"]})
+                    elif name == "step":
+                        yield _sse({"__step": event["data"]})
                     elif name == "refusal":
                         yield _sse({"__refusal": event["data"]})
 
@@ -284,7 +290,7 @@ async def _stream_graph(
     # conv_ids giữ lại cho mục đích hiển thị (agent_name/title mỗi task) và để
     # frontend nối tiếp conversation của agent ở lượt sau — KHÔNG còn cần
     # thiết để fetch trace nữa (frontend fetch 1 lần theo __session_id ở trên,
-    # xem AgentPlayground.tsx).
+    # xem frontend/src/features/ask/sse.ts).
     target_results = final_state.get("target_results", [])
     conv_infos = [
         {

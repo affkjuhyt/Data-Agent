@@ -25,6 +25,11 @@ deploy_full: false
 image_prefix: dataagent
 image_tag: latest
 images_only: ""
+# Optional hard boundary for a staged cutover. When set, the planner never
+# builds or pushes an image outside this allowlist, even if its inputs changed.
+# The local V3 target uses this so legacy Dockerfiles cannot turn a small deploy
+# into a full-stack rebuild.
+deploy_image_allowlist: []
 
 image_push: true
 image_import: ""
@@ -32,8 +37,14 @@ image_import: ""
 image_registry: ""
 image_deploy_prefix: "{{ (image_registry ~ '/') if (image_registry | length) > 0 else '' }}{{ image_prefix }}"
 
-manifest_sed_rewrite: 'sed -e "s|image: {{ image_prefix }}/\([a-z0-9_-]*\):{{ image_tag }}|image: {{ image_deploy_prefix }}/\1:{{ image_tag }}|g" -e "s|imagePullPolicy: IfNotPresent|imagePullPolicy: Always|g"'
-manifest_sed: "{{ manifest_sed_rewrite if (image_registry | length) > 0 else 'cat' }}"
+manifest_sed_rewrite: >-
+  sed
+  -e "s|image: {{ image_prefix }}/\([a-z0-9_-]*\):{{ image_tag }}|image: {{ image_deploy_prefix }}/\1:{{ image_tag }}|g"
+  -e "s|image: localhost:5000/{{ image_prefix }}/\([a-z0-9_-]*\):{{ image_tag }}|image: {{ image_deploy_prefix }}/\1:{{ image_tag }}|g"
+  -e "s|imagePullPolicy: IfNotPresent|imagePullPolicy: Always|g"
+manifest_sed: >-
+  {{ manifest_sed_rewrite if (image_registry | length) > 0
+     else 'sed -e "s|localhost:5000/dataagent/|dataagent/|g" -e "s|imagePullPolicy: Always|imagePullPolicy: IfNotPresent|g"' }}
 
 # Built only when images_only names them (k8s_plan): images no Deployment and no
 # deploy-run Job uses. eval is the online-eval Job, applied by hand (model/eval/README.md).
@@ -85,6 +96,8 @@ config_paths:
   - deploy/k8s/create-configmaps.sh
   - deploy/k8s/production/configmap.yaml
   - deploy/k8s/dev/configmap.yaml
+  - deploy/k8s/production/service/api.yaml
+  - deploy/k8s/dev/service/api.yaml
   - deploy/docker/sql
   - deploy/docker/keycloak
   - deploy/docker/kong
@@ -102,6 +115,7 @@ apply_databases: true
 apply_jobs: false
 apply_services: false
 apply_setup: false
+apply_maintenance_jobs: true
 
 database_workloads:
   - redis
@@ -113,7 +127,13 @@ database_workloads:
   - neo4j
   - clickhouse
 
+# Empty applies every database manifest. A staged V3 deployment can limit this
+# to the stores it actually needs, e.g. postgres, pgbouncer and openbao.
+database_manifests: []
+
 service_workloads:
+  - api
+  - worker-agent
   - litellm
   - auth-api
   - workflow-runtime
@@ -136,6 +156,11 @@ service_workloads:
   - prometheus
   - grafana
   - frontend
+
+# Empty means apply every manifest under service/ (the existing full-stack
+# behaviour). A cutover or local V3 deployment can name only the manifests it
+# is ready to run, without deleting the legacy files from the repository.
+service_manifests: []
 
 migration_jobs: [kong-migration, migrate]
 job_workloads: [db-init, minio-init, kafka-topics, seed]

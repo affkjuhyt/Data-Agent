@@ -45,18 +45,13 @@ spec:
       enableServiceLinks: false
       containers:
       - name: minio-init
-        # minio/mc is no longer pullable from Docker Hub; the server image
-        # (database/minio.yaml) ships the same mc client. quay.io now answers
-        # 401 to anonymous pulls, and `:latest` defaults to pullPolicy Always,
-        # so reuse the copy the MinIO server already pulled onto the node.
-        # Never, not IfNotPresent: deploy.yml's manifest_sed rewrites every
-        # IfNotPresent to Always (k8s_common defaults) before applying.
-        image: quay.io/minio/minio:latest
-        imagePullPolicy: Never
+        image: bitnamilegacy/minio:2024.12.18-debian-12-r0
+        imagePullPolicy: IfNotPresent
         command:
         - sh
         - -c
         - |
+          export PATH="/opt/bitnami/minio-client/bin:$PATH"
           until mc alias set local http://minio.dataagent-database.svc.cluster.local:8360 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do echo waiting for minio; sleep 2; done
           for b in $MINIO_BUCKETS; do mc mb --ignore-existing "local/$b"; done
           mc mb --ignore-existing --with-lock local/raw

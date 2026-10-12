@@ -1,26 +1,31 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import keycloak from './keycloak';
-import { fetchMyStatus, submitProfile } from './useMicrosoftApprovals';
-import { PendingApproval } from '../components/PendingApproval';
-import { ProfileSetup } from '../components/ProfileSetup';
+import { V1Error } from './v1/client';
+import { getMe, type Me } from './v1/me';
+import { AuthScreen } from '../features/auth/AuthScreen';
+import { LoginPage } from '../features/auth/LoginPage';
+import { NoAccount } from '../features/auth/NoAccount';
+import { Button } from '../design-system/Button';
+import { Notice } from '../design-system/Notice';
 
 interface AuthUser {
   id:    string;
   email: string;
   name:  string;
-  roles: string[];
   token: string;
 }
 
 interface AuthCtx {
   user:    AuthUser | null;
+  /** The user's account in the organisation (GET /v1/me); null before it loads. */
+  me:      Me | null;
   loading: boolean;
   logout:  () => void;
 }
 
-type ApprovalGateStatus = 'checking' | 'active' | 'needs_profile' | 'pending_approval' | 'rejected';
+type AccountState = 'checking' | 'active' | 'no_account';
 
-const Ctx = createContext<AuthCtx>({ user: null, loading: true, logout: () => {} });
+const Ctx = createContext<AuthCtx>({ user: null, me: null, loading: true, logout: () => {} });
 
 export const useAuth = () => useContext(Ctx);
 
@@ -31,7 +36,6 @@ const buildUser = (): AuthUser | null => {
     id:    p.sub,
     email: p.email ?? '',
     name:  p.name ?? p.preferred_username ?? '',
-    roles: p.realm_access?.roles ?? [],
     token: keycloak.token ?? '',
   };
 };
@@ -40,39 +44,48 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser]               = useState<AuthUser | null>(null);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState<string | null>(null);
-  const [gateStatus, setGateStatus]   = useState<ApprovalGateStatus>('checking');
-  const [gateSince, setGateSince]     = useState<string | undefined>(undefined);
+  const [account, setAccount]         = useState<AccountState>('checking');
+  const [me, setMe]                   = useState<Me | null>(null);
 
-  const checkApprovalGate = async () => {
+  // Roles and capabilities live in org.* and change without a re-login, so they come from the
+  // API, never from the token. 403 is "no active account here"; anything else is an outage the
+  // user can retry, never a reason to let them in without capabilities.
+  const loadAccount = async () => {
+    setAccount('checking');
     try {
-      const { status, since } = await fetchMyStatus();
-      setGateSince(since);
-      setGateStatus(status as ApprovalGateStatus);
+      setMe(await getMe());
+      setAccount('active');
+      setError(null);
     } catch (err) {
-      // The Microsoft-SSO approval API (auth_api, /api/auth/me) is optional: it is
-      // not part of the KB-only stacks (auth-lite / e2e), where Kong routes only
-      // /api/data, /api/knowledge, /api/fleet. If it is unreachable, fail OPEN —
-      // skip the approval gate rather than locking the whole app behind an error
-      // screen. When auth_api IS deployed and routed, the gate works as designed.
-      console.warn('Approval gate unavailable — skipping (auth_api not deployed?):', err);
-      setGateStatus('active');
+      if (err instanceof V1Error && err.status === 403) {
+        setAccount('no_account');
+        return;
+      }
+      setError(err instanceof Error ? err.message : 'Không tải được tài khoản.');
     }
   };
 
   useEffect(() => {
     // No mock/demo bypass: the app always authenticates against Keycloak and
     // talks to the backend through Kong. There is no offline/demo mode.
+    // check-sso, not login-required: an anonymous visit gets the app's own login page
+    // (Figma "v3.1 · Đăng nhập"), which sends the user to Keycloak or straight to the IdP.
     if ((keycloak as any).didInitialize) {
       const u = buildUser();
       setUser(u);
-      if (u) checkApprovalGate().finally(() => setLoading(false));
+      if (u) loadAccount().finally(() => setLoading(false));
       else setLoading(false);
       return;
     }
 
     keycloak
       .init({
-        onLoad:           'login-required',
+        onLoad:           'check-sso',
+        // The dev/prod frontend and Keycloak normally have different origins
+        // (for example localhost:30280 and 10.10.55.101:30110). Chrome blocks
+        // the silent third-party iframe in that arrangement, leaving keycloak-js
+        // waiting forever for the postMessage. The redirect check is one short
+        // round-trip and works with the same client redirect allow-list.
         checkLoginIframe: false,
         pkceMethod:       'S256',
       })
@@ -80,15 +93,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (authenticated) {
           const u = buildUser();
           setUser(u);
-          if (u) await checkApprovalGate();
-        } else {
-          keycloak?.login();
+          if (u) await loadAccount();
         }
       })
       .catch(err => {
         const msg = err instanceof Error ? err.message : JSON.stringify(err);
         console.error('Keycloak init failed:', err);
-        setError(msg || 'Cannot reach authentication server.');
+        setError(msg || 'Không kết nối được máy chủ xác thực.');
       })
       .finally(() => setLoading(false));
 
@@ -100,81 +111,37 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   if (loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#FAF6ED]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-[#B88719] border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm text-[#5A5A5A]">Connecting to Keycloak…</span>
-        </div>
-      </div>
+      <AuthScreen icon="lock" title="Đang đăng nhập…">
+        <p className="text-center text-muted-foreground da-body">Đang kết nối tới máy chủ xác thực.</p>
+      </AuthScreen>
     );
   }
 
   if (error) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#FAF6ED]">
-        <div className="flex flex-col items-center gap-4 max-w-sm text-center p-6">
-          <div className="text-2xl">⚠️</div>
-          <p className="text-sm text-[#5A5A5A] font-mono break-all">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-[#B88719] text-white rounded-lg text-sm"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
+      <AuthScreen icon="alert" title="Không đăng nhập được">
+        <Notice tone="error">{error}</Notice>
+        <Button icon="refresh" onClick={() => window.location.reload()}>
+          Thử lại
+        </Button>
+      </AuthScreen>
     );
   }
 
-  if (!user) return null;
+  if (!user) return <LoginPage />;
 
-  if (gateStatus === 'needs_profile') {
+  if (account === 'checking') {
     return (
-      <ProfileSetup
-        email={user.email}
-        onSubmit={async (role, tenantId) => {
-          await submitProfile(role, tenantId);
-          await checkApprovalGate();
-        }}
-      />
+      <AuthScreen icon="lock" title="Đang đăng nhập…">
+        <p className="text-center text-muted-foreground da-body">Đang tải tài khoản của bạn.</p>
+      </AuthScreen>
     );
   }
 
-  if (gateStatus === 'pending_approval') {
-    return (
-      <PendingApproval
-        email={user.email}
-        since={gateSince}
-        onRetry={() => {
-          setGateStatus('checking');
-          checkApprovalGate();
-        }}
-      />
-    );
-  }
-
-  if (gateStatus === 'rejected') {
-    return (
-      <div className="h-screen flex items-center justify-center bg-[#FAF6ED]">
-        <div className="flex flex-col items-center gap-4 max-w-sm text-center p-6">
-          <div className="text-2xl">🚫</div>
-          <p className="text-sm font-semibold text-[#111]">Access denied</p>
-          <p className="text-sm text-[#5A5A5A]">
-            Your Microsoft account access request was rejected by an administrator.
-          </p>
-          <button
-            onClick={() => keycloak.logout({ redirectUri: window.location.origin })}
-            className="px-4 py-2 bg-[#111111] text-white rounded-lg text-sm"
-          >
-            Sign out
-          </button>
-        </div>
-      </div>
-    );
-  }
+  if (account === 'no_account') return <NoAccount email={user.email} onRetry={loadAccount} />;
 
   return (
-    <Ctx.Provider value={{ user, loading, logout }}>
+    <Ctx.Provider value={{ user, me, loading, logout }}>
       {children}
     </Ctx.Provider>
   );

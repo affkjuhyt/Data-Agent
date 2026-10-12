@@ -1,8 +1,8 @@
 """The k8s manifests, checked the way the migrations are checked.
 
-`tests/integration/workflow_runtime/test_alembic_migrations.py` exists because a migration that
-only gets exercised by a deploy is a migration whose failures land in
-production. The manifests had the same shape of problem and no equivalent test:
+`tests/integration/migrate/` exists because a migration that only gets exercised by a deploy is a
+migration whose failures land in production. The manifests had the same shape of problem and no
+equivalent test:
 a misspelled field is not an error to the API server, it is a field that
 silently does not exist, and the first symptom is a pod that starts without the
 setting you thought you gave it.
@@ -38,7 +38,7 @@ MANIFEST_DIR = K8S_DIR / "production"
 
 # Deployments that reach Postgres through the ORM, and so must not serve traffic
 # on a schema older than their code.
-MIGRATION_GATED = {"workflow-runtime"}
+MIGRATION_GATED = {"workflow-runtime", "api", "worker-agent"}
 GATE_CONTAINER = "wait-for-migrations"
 
 # Queue consumers and pollers: no inbound traffic, so no Service and no HTTP probe.
@@ -52,6 +52,7 @@ HEADLESS_WORKERS = {
     "platform-workers-memory",
     "platform-workers-schema-crawler",
     "platform-workers-web-crawler",
+    "worker-agent",
 }
 
 
@@ -762,7 +763,7 @@ class TestCrossNamespaceHostnamesAreQualified:
                  "clickhouse", "openbao", "pgbouncer", "kong-admin",
                  "kong", "keycloak", "litellm", "langfuse", "jaeger", "prometheus",
                  "grafana", "auth-api", "kb-backend",
-                 "model-service", "workflow-runtime",
+                 "model-service", "workflow-runtime", "api",
                  "sandbox-executor", "llm-exporter", "frontend"]
         pattern = re.compile(
             r"(?<![\w.-])(" + "|".join(sorted(hosts, key=len, reverse=True)) + r"):\d{4}"
@@ -870,7 +871,7 @@ class TestImageReferencesAreIntact:
     KNOWN = {
         "postgres:16-alpine", "mongo:7.0", "redis:7-alpine", "qdrant/qdrant:v1.13.6",
         "neo4j:5.20", "apache/kafka:3.7.0",
-        "quay.io/minio/minio:latest",
+        "bitnamilegacy/minio:2024.12.18-debian-12-r0",
         "docker.io/clickhouse/clickhouse-server",
         # Pinned: 2.7 dropped the file storage backend this deployment uses.
         "openbao/openbao:2.6.3", "edoburu/pgbouncer:latest",

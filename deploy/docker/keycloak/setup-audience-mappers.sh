@@ -27,7 +27,7 @@ ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
 # workflow_runtime và flow_builder từng thiếu ở đây: Kong đổi sang tên gạch dưới
 # ở đợt rename service, danh sách này thì không, nên mọi request tới hai route đó
 # trả 401 "Audience mismatch" — token vẫn hợp lệ, chỉ là không mang aud Kong chờ.
-AUDIENCES=(aeroflow-backend auth_api workflow_runtime flow_builder)
+AUDIENCES=(aeroflow-backend auth_api workflow_runtime flow_builder dataagent-api)
 
 # Client whose tokens get the audience extension.
 TARGET_CLIENT="aeroflow-frontend"
@@ -69,7 +69,41 @@ echo "  → client $TARGET_CLIENT id=$CLIENT_ID"
 EXISTING=$(curl -sf -H "Authorization: Bearer $TOKEN" \
     "$KC_BASE/admin/realms/$REALM/clients/$CLIENT_ID/protocol-mappers/models")
 
-# ── 4. Add audience mapper per service (skip if name already exists) ────
+# ── 4. Add the V3 organisation claim (skip if already present) ─────────
+# V3 authorisation is tenant-bound at the API boundary.  The seeded users
+# carry the organisation in `tenant_id`; expose the same value as `org_id`
+# because the API deliberately does not accept organisation identity from a
+# request header or body.
+if ! echo "$EXISTING" | python3 -c "
+import sys, json
+existing = json.load(sys.stdin)
+raise SystemExit(0 if any(m['name'] == 'org_id' for m in existing) else 1)
+"; then
+    curl -sf -X POST \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{
+  "name": "org_id",
+  "protocol": "openid-connect",
+  "protocolMapper": "oidc-usermodel-attribute-mapper",
+  "consentRequired": false,
+  "config": {
+    "userinfo.token.claim": "true",
+    "user.attribute": "tenant_id",
+    "id.token.claim": "true",
+    "access.token.claim": "true",
+    "claim.name": "org_id",
+    "jsonType.label": "String"
+  }
+}' \
+        "$KC_BASE/admin/realms/$REALM/clients/$CLIENT_ID/protocol-mappers/models" \
+        > /dev/null
+    echo "  → added org_id mapper from tenant_id"
+else
+    echo "  → org_id mapper already present, skipping"
+fi
+
+# ── 5. Add audience mapper per service (skip if name already exists) ────
 for aud in "${AUDIENCES[@]}"; do
     mapper_name="audience-$aud"
 
@@ -108,7 +142,7 @@ EOF
     echo "  → added $mapper_name"
 done
 
-# ── 5. Clear required actions on seeded test users ─────────────────────
+# ── 6. Clear required actions on seeded test users ─────────────────────
 # Realm-export.json seeds users with `requiredActions: ["UPDATE_PASSWORD"]`
 # (or similar). For a normal UI login that's correct — the user must reset
 # their password on first login. But Direct Access Grant (password flow)
@@ -119,7 +153,7 @@ done
 # This block clears required actions on the seeded test users so the
 # password grant works. NOT appropriate for prod — those users should be
 # forced to set a real password via the UI.
-TEST_USERS=(platform-admin helios-admin ai-engineer executive-viewer)
+TEST_USERS=(platform-admin helios-admin helios-engineer helios-viewer ai-engineer executive-viewer)
 echo
 echo "🔧 Clearing required actions on seeded test users..."
 for username in "${TEST_USERS[@]}"; do
@@ -140,6 +174,38 @@ for username in "${TEST_USERS[@]}"; do
         > /dev/null
     echo "  → cleared $username (id=$user_id)"
 done
+
+# ── 7. Login theme ─────────────────────────────────────────────────────
+# The realm import only applies to a new realm, so a running one gets the Data Agent theme
+# (themes/data-agent, baked into the keycloak image) and Vietnamese here. Idempotent: a PUT
+# of a partial realm changes only these fields.
+echo
+echo "🎨 Login theme data-agent, locale vi..."
+curl -sf -X PUT \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"loginTheme":"data-agent","internationalizationEnabled":true,"supportedLocales":["vi"],"defaultLocale":"vi"}' \
+    "$KC_BASE/admin/realms/$REALM" \
+    > /dev/null
+echo "  → realm $REALM uses the data-agent login theme"
+
+# ── 8. Realm roles added after the first import ────────────────────────
+# The realm import only applies to a new realm; a running one gets roles added later here.
+# exec_vault gates P16 Kho riêng (frontend rail item + the vault API); it is only created,
+# never granted: an admin assigns it per person.
+echo
+echo "🔐 Realm role exec_vault..."
+if curl -sf -H "Authorization: Bearer $TOKEN" "$KC_BASE/admin/realms/$REALM/roles/exec_vault" > /dev/null; then
+    echo "  → exec_vault already present"
+else
+    curl -sf -X POST \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"name":"exec_vault","description":"P16 Kho riêng lãnh đạo. Granted per person by an admin, never by default."}' \
+        "$KC_BASE/admin/realms/$REALM/roles" \
+        > /dev/null
+    echo "  → created exec_vault"
+fi
 
 echo
 echo "✅ Audience mappers configured + test users unblocked. Tokens from"

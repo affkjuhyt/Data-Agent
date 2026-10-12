@@ -44,6 +44,7 @@ spec:
       containers:
       - name: frontend
         image: localhost:5000/dataagent/frontend:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8280
           name: http

@@ -6,9 +6,8 @@ import base64
 import os
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 from input_names import validate_input_name
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ExecutePythonRequest(BaseModel):
@@ -53,7 +52,7 @@ class SnowflakeConnectionParams(BaseModel):
 
     account: str
     user: str
-    password: str
+    password: str | None = None
     warehouse: str | None = None
     database: str | None = None
     schema_name: str | None = Field(default=None, alias="schema")
@@ -64,7 +63,7 @@ class PostgresConnectionParams(BaseModel):
     host: str
     port: int = 5432
     user: str
-    password: str
+    password: str | None = None
     dbname: str
 
 
@@ -72,7 +71,7 @@ class ClickHouseConnectionParams(BaseModel):
     host: str
     port: int = 8123
     user: str
-    password: str
+    password: str | None = None
     database: str
 
 
@@ -100,10 +99,20 @@ class ExecuteSQLRequest(BaseModel):
                 f"(expected one of {sorted(CONNECTION_PARAMS)})"
             )
 
+        if "password" in value:
+            raise ValueError("connection_ref is required; plaintext password is not accepted")
+        connection_ref = str(value.get("connection_ref") or "").strip()
+        if not connection_ref:
+            raise ValueError("connection_ref is required")
+
         params = params_model.model_validate(
-            {key: item for key, item in value.items() if key != "type"}
+            {key: item for key, item in value.items() if key not in {"type", "connection_ref"}}
         )
-        return {"type": backend, **params.model_dump(by_alias=True)}
+        return {
+            "type": backend,
+            "connection_ref": connection_ref,
+            **params.model_dump(by_alias=True, exclude_none=True),
+        }
 
 
 __all__ = [
@@ -115,4 +124,3 @@ __all__ = [
     "PostgresConnectionParams",
     "SnowflakeConnectionParams",
 ]
-

@@ -1,0 +1,5 @@
+# worker-agent (ADR-28): the api's stack (ADR-29) without the web server.
+pydantic==2.9.2
+sqlalchemy[asyncio]==2.0.35
+asyncpg==0.29.0
+redis>=5.0

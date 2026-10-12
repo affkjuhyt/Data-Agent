@@ -11,7 +11,8 @@
  * is what a builder quotes to whoever operates the platform. The Ask screen
  * keeps them out of the way of the person who asked.
  */
-import { AlertTriangle, PenLine, RotateCcw, UserRound } from 'lucide-react';
+import { Button } from '../../../design-system/Button';
+import { Icon } from '../../../design-system/Icon';
 import type { Refusal } from '../types';
 import { CopyButton } from './EvidenceStrip';
 
@@ -36,50 +37,47 @@ export function RefusalCard({ refusal, onRetry, onRephrase, showDetail, disabled
     <div
       data-testid="refusal-card"
       role="alert"
-      style={{
-        borderRadius: 10, border: '1px solid var(--ab-warn)', background: 'var(--ab-warn-bg)',
-        padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8,
-      }}
+      className="flex flex-col gap-da-md rounded-lg border border-border bg-warning-subtle px-da-lg py-da-md"
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-        <AlertTriangle size={14} style={{ color: 'var(--ab-warn)', flexShrink: 0, marginTop: 2 }} />
-        <div style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--ab-fg)' }}>
+      <div className="flex items-start gap-[10px]">
+        <Icon name="alert" className="mt-0.5 text-warning" />
+        <p className="m-0 min-w-0 flex-1 text-foreground da-body">
           {refusal.message || 'Hệ thống chưa trả lời được câu hỏi này.'}
-        </div>
+        </p>
       </div>
 
       {!!refusal.issues?.length && (
-        <ul style={{ margin: '0 0 0 22px', padding: 0, fontSize: 12, color: 'var(--ab-fg-2)', lineHeight: 1.5 }}>
+        <ul className="m-0 ml-[26px] list-disc pl-da-lg text-foreground da-body-small">
           {refusal.issues.map((issue, i) => <li key={i}>{issue}</li>)}
         </ul>
       )}
 
       {hint && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 22, fontSize: 12, color: 'var(--ab-fg-2)' }}>
-          {action === 'contact_steward' && <UserRound size={12} style={{ color: 'var(--ab-muted)' }} />}
+        <div className="ml-[26px] flex items-center gap-da-sm text-muted-foreground da-body-small">
+          {action === 'contact_steward' && <Icon name="users" size={14} />}
           {hint}
         </div>
       )}
 
       {((action === 'retry' && onRetry) || (action === 'rephrase' && onRephrase) || showDetail) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 22, flexWrap: 'wrap' }}>
+        <div className="ml-[26px] flex flex-wrap items-center gap-da-sm">
           {action === 'retry' && onRetry && (
-            <button type="button" className="ab-btn ab-btn-primary" onClick={onRetry} disabled={disabled}>
-              <RotateCcw size={11} /> Thử lại
-            </button>
+            <Button kind="primary" size="sm" icon="refresh" onClick={onRetry} disabled={disabled}>
+              Thử lại
+            </Button>
           )}
           {action === 'rephrase' && onRephrase && (
-            <button type="button" className="ab-btn" onClick={onRephrase} disabled={disabled}>
-              <PenLine size={11} /> Diễn đạt lại
-            </button>
+            <Button size="sm" icon="edit" onClick={onRephrase} disabled={disabled}>
+              Diễn đạt lại
+            </Button>
           )}
           {showDetail && (
-            <span data-testid="refusal-detail" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 'auto', fontSize: 10.5, color: 'var(--ab-muted)' }}>
-              <span style={{ fontFamily: 'var(--font-mono)' }}>{refusal.code}</span>
+            <span data-testid="refusal-detail" className="ml-auto inline-flex items-center gap-da-sm text-muted-foreground da-caption">
+              <span className="da-mono">{refusal.code}</span>
               {refusal.detail_id && (
                 <>
                   <span>· Mã tra cứu</span>
-                  <span style={{ fontFamily: 'var(--font-mono)' }}>{refusal.detail_id}</span>
+                  <span className="da-mono">{refusal.detail_id}</span>
                   <CopyButton text={refusal.detail_id} label="Sao chép" />
                 </>
               )}

@@ -10,22 +10,13 @@
  * fallback for the rows already present in the chat stream.
  */
 
+import { csvCell } from '../../lib/csv';
+
 const BOM = '﻿';
 
-function csvField(value: unknown): string {
-  if (value === null || value === undefined) return '""';
-  let s: string;
-  if (typeof value === 'object') {
-    try { s = JSON.stringify(value); } catch { s = String(value); }
-  } else {
-    s = String(value);
-  }
-  return `"${s.replace(/"/g, '""')}"`;
-}
-
 export function toCsv(columns: string[], rows: Record<string, unknown>[]): string {
-  const lines = [columns.map(csvField).join(',')];
-  for (const row of rows) lines.push(columns.map(c => csvField(row[c])).join(','));
+  const lines = [columns.map(csvCell).join(',')];
+  for (const row of rows) lines.push(columns.map(c => csvCell(row[c])).join(','));
   return BOM + lines.join('\r\n') + '\r\n';
 }
 

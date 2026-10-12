@@ -7,7 +7,7 @@ and another tenant's reads as missing.
 
 from __future__ import annotations
 
-import time
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import HTTPException
@@ -28,15 +28,25 @@ def _caller(tenant: str) -> dict[str, object]:
 def pending(monkeypatch: pytest.MonkeyPatch) -> None:
     entries = {
         f"conv-{name}": {
+            "conversation_id": f"conv-{name}",
             "tenant_id": tenant,
             "agent_id": "agent",
             "query": "q",
             "payload": None,
-            "suspended_at": time.monotonic(),
+            "suspended_at": datetime.now(UTC),
         }
         for name, tenant in (("a", TENANT_A), ("b", TENANT_B))
     }
-    monkeypatch.setattr(reviews, "_pending_reviews", entries)
+
+    async def list_reviews(tenant_id: str) -> list[dict[str, object]]:
+        return [v for v in entries.values() if v["tenant_id"] == tenant_id]
+
+    async def get_review(conv_id: str, tenant_id: str) -> dict[str, object] | None:
+        entry = entries.get(conv_id)
+        return entry if entry and entry["tenant_id"] == tenant_id else None
+
+    monkeypatch.setattr(reviews, "list_pending_reviews", list_reviews)
+    monkeypatch.setattr(reviews, "get_pending_review", get_review)
 
 
 async def test_a_tenant_lists_only_its_own_reviews(pending: None) -> None:
@@ -54,4 +64,3 @@ async def test_another_tenants_review_cannot_be_read_or_resumed(pending: None) -
         )
 
     assert read.value.status_code == resume.value.status_code == 404
-    assert "conv-b" in reviews._pending_reviews

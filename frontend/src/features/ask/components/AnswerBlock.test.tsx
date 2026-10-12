@@ -67,13 +67,13 @@ describe('AnswerBlock', () => {
 
     expect(screen.getAllByTestId('data-grid')).toHaveLength(3);
     expect(screen.getAllByRole('columnheader', { name: /revenue \(VND\)/ })).toHaveLength(2);
-    expect(screen.getByText(/Query result 1/)).toBeInTheDocument();
-    expect(screen.getAllByText(/1\.200 rows/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Preview 10 \/ 50 rows/)).toHaveLength(2);
+    expect(screen.getByText(/Kết quả truy vấn 1/)).toBeInTheDocument();
+    expect(screen.getAllByText(/1\.200 dòng/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Xem trước 10 \/ 50 dòng/)).toHaveLength(2);
     expect(screen.getByText('Không có dòng nào khớp điều kiện')).toBeInTheDocument();
     expect(screen.getByText('Kết quả bị cắt ở 10.000 dòng')).toBeInTheDocument();
-    expect(screen.getAllByText('Model-generated SQL').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('EXPLORATORY').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('SQL do mô hình viết').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Khám phá').length).toBeGreaterThan(0);
   });
 
   it('shows answer, table, evidence strip with metric + SQL toggle, and suggestions', () => {
@@ -82,17 +82,17 @@ describe('AnswerBlock', () => {
     expect(screen.getByText(/Net revenue for June 2026/)).toBeInTheDocument();
 
     const grid = screen.getByTestId('data-grid');
-    expect(within(grid).getByText(/1\.204 rows/)).toBeInTheDocument();
+    expect(within(grid).getByText(/1\.204 dòng/)).toBeInTheDocument();
     // US number formatting of a numeric string from Postgres
     expect(within(grid).getByText('612.000.000')).toBeInTheDocument();
 
     const strip = screen.getByTestId('evidence-strip');
-    expect(within(strip).getByText(/Approved metric · net_revenue v3/)).toBeInTheDocument();
-    expect(within(strip).getByText('2 tables')).toBeInTheDocument();
-    expect(within(strip).getByText(/Fresh data/)).toBeInTheDocument();
+    expect(within(strip).getByText(/Chỉ số đã duyệt · net_revenue v3/)).toBeInTheDocument();
+    expect(within(strip).getByText('2 bảng')).toBeInTheDocument();
+    expect(within(strip).getByText(/Dữ liệu mới/)).toBeInTheDocument();
 
     expect(screen.queryByTestId('sql-block')).not.toBeInTheDocument();
-    fireEvent.click(within(strip).getByRole('button', { name: /View SQL/ }));
+    fireEvent.click(within(strip).getByRole('button', { name: /Xem SQL/ }));
     expect(screen.getByTestId('sql-block')).toHaveTextContent('SELECT region, SUM(amount)');
 
     expect(screen.getByRole('button', { name: /Compare to May/ })).toBeInTheDocument();
@@ -101,8 +101,8 @@ describe('AnswerBlock', () => {
   it('labels model-written SQL honestly', () => {
     const llmRun: EvidenceRun = { ...run, generated_by: 'llm', metric: null, aggregation: { findings: [{ kind: 'fan_out', detail: 'join may duplicate rows' }], structurally_safe: false, aggregates: ['SUM'], joins: 1 } };
     const chips = runChips(llmRun).map(c => c.label);
-    expect(chips).toContain('Model-generated SQL');
-    expect(chips).toContain('Aggregation risk');
+    expect(chips).toContain('SQL do mô hình viết');
+    expect(chips).toContain('Rủi ro cộng gộp');
   });
 
   it('renders the clarification card and forwards the chosen option', () => {
@@ -121,10 +121,10 @@ describe('AnswerBlock', () => {
     wrap(<AnswerBlock msg={asking} onAnswerClarification={onAnswer} />);
 
     const card = screen.getByTestId('clarification-card');
-    expect(within(card).getByText('Missing time range')).toBeInTheDocument();
-    fireEvent.click(within(card).getByRole('button', { name: 'Last quarter' }));
+    expect(within(card).getByText('Thiếu kỳ thời gian')).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole('button', { name: 'Quý trước' }));
     expect(onAnswer).toHaveBeenCalledWith({
-      text: 'Last quarter',
+      text: 'Quý trước',
       answers: [{ reason: 'missing_time_range', value: 'last_quarter' }],
     });
   });
@@ -138,7 +138,7 @@ describe('AnswerBlock', () => {
       },
     };
     wrap(<AnswerBlock msg={assumed} />);
-    expect(within(screen.getByTestId('evidence-strip')).getByTestId('assumption')).toHaveTextContent('Assumed: No time range chosen');
+    expect(within(screen.getByTestId('evidence-strip')).getByTestId('assumption')).toHaveTextContent('Giả định: No time range chosen');
   });
 
   it('shows typing dots while streaming with no text', () => {
@@ -152,8 +152,8 @@ describe('ClarificationCard', () => {
   it('accepts a free-text answer on Enter', () => {
     const onAnswer = vi.fn();
     wrap(<ClarificationCard clarification={{ kind: 'resume', sessionId: 's1', questions: [{ text: 'Which period?' }] }} onAnswer={onAnswer} />);
-    expect(screen.getByText('Waiting for your answer')).toBeInTheDocument();
-    const input = screen.getByLabelText('Custom answer');
+    expect(screen.getByText('Đang chờ bạn trả lời')).toBeInTheDocument();
+    const input = screen.getByLabelText('Câu trả lời khác');
     fireEvent.change(input, { target: { value: 'from 06/01 to 06/15' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onAnswer).toHaveBeenCalledWith({ text: 'from 06/01 to 06/15', answers: [] });
@@ -178,10 +178,10 @@ describe('ClarificationCard', () => {
     expect(onAnswer).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Doanh thu thuần' })).toHaveAttribute('aria-pressed', 'true');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Last month' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tháng trước' }));
     expect(onAnswer).toHaveBeenCalledTimes(1);
     expect(onAnswer).toHaveBeenCalledWith({
-      text: 'Doanh thu thuần, Last month',
+      text: 'Doanh thu thuần, Tháng trước',
       answers: [
         { reason: 'ambiguous_metric', value: 'Doanh thu thuần' },
         { reason: 'missing_time_range', value: 'last_month' },
@@ -198,9 +198,9 @@ describe('ClarificationCard', () => {
       />,
     );
 
-    expect(screen.queryByLabelText('Custom answer')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Other/ }));
-    const input = screen.getByLabelText('Custom answer');
+    expect(screen.queryByLabelText('Câu trả lời khác')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Khác/ }));
+    const input = screen.getByLabelText('Câu trả lời khác');
     fireEvent.change(input, { target: { value: 'the last 45 days' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
@@ -225,10 +225,10 @@ describe('ClarificationCard', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'TP.HCM' }));
-    fireEvent.click(screen.getAllByRole('button', { name: /Other/ })[1]);
-    const input = screen.getByLabelText('Custom answer 2');
+    fireEvent.click(screen.getAllByRole('button', { name: /Khác/ })[1]);
+    const input = screen.getByLabelText('Câu trả lời khác 2');
     fireEvent.change(input, { target: { value: 'June 2026' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send answer 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Gửi câu trả lời 2' }));
 
     expect(onAnswer).toHaveBeenCalledWith({ text: 'Which branch? → TP.HCM; Which period? → June 2026', answers: [] });
   });
@@ -247,7 +247,7 @@ describe('DataGrid', () => {
   it('pages in place and sorts on header click', () => {
     wrap(<DataGrid columns={['id', 'amount']} rows={rows} pageSize={10} />);
     expect(screen.getAllByRole('row')).toHaveLength(11); // header + 10
-    fireEvent.click(screen.getByRole('button', { name: /more rows/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Xem thêm .* dòng/ }));
     expect(screen.getAllByRole('row')).toHaveLength(26); // all 25 rows + header
 
     const amountHeader = screen.getByRole('columnheader', { name: /amount/ });
@@ -280,11 +280,90 @@ describe('DataGrid', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Full result' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Toàn bộ' }));
 
     await waitFor(() => expect(loadRows).toHaveBeenCalledWith({ offset: 0, limit: 500, sort: undefined, dir: undefined }));
     expect(screen.getByText('SO-501')).toBeInTheDocument();
-    expect(screen.getByText(/Full result 1-1 \/ 1\.200 rows/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Excel \+ Source/ })).toBeInTheDocument();
+    expect(screen.getByText(/Toàn bộ 1-1 \/ 1\.200 dòng/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Excel kèm nguồn/ })).toBeInTheDocument();
   });
 });
+
+describe('AnswerBlock · Agent đang chạy', () => {
+  const progress = {
+    agent: 'Agent Phân tích',
+    steps: [
+      { title: 'Hiểu câu hỏi · chọn NPL_RATIO v4', state: 'done' as const, duration: '0:02' },
+      { title: 'Truy vấn NPL theo vùng', detail: 'Core banking · 7/7 vùng', state: 'running' as const },
+      { title: 'Phân rã theo sản phẩm', state: 'waiting' as const },
+    ],
+    partial: {
+      title: 'Đóng góp vào mức giảm biên LN · theo ngành hàng',
+      meta: 'Kỳ: T8 → T9/2026',
+      step_title: 'Đối chiếu với tài liệu giá',
+      step_detail: 'Agent tài liệu · đang đọc PL02',
+      received: '2/5 nhóm hàng',
+    },
+  };
+
+  it('shows the steps and the result still arriving while streaming, and stops it', () => {
+    const onStop = vi.fn();
+    render(
+      <AnswerBlock
+        msg={{ id: 'p1', role: 'assistant', content: 'Mức tăng tập trung ở Duyên hải Bắc Bộ.', timestamp: '2026-10-11T08:00:00', status: 'streaming', progress }}
+        onStop={onStop}
+      />,
+    );
+    const steps = screen.getByRole('region', { name: 'Agent Phân tích đang chạy' });
+    expect(within(steps).getByText('Truy vấn NPL theo vùng')).toBeInTheDocument();
+    expect(within(steps).getByText('Chưa chạy')).toBeInTheDocument();
+    expect(screen.getByText('Đang nhận kết quả… 2/5 nhóm hàng')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Dừng' }));
+    expect(onStop).toHaveBeenCalled();
+    expect(screen.queryByTestId('trust-label')).not.toBeInTheDocument();
+  });
+
+  it('leaves the finished answer as before: no steps, the trust label shown', () => {
+    render(<AnswerBlock msg={{ ...msg, progress }} />);
+    expect(screen.queryByRole('region', { name: 'Agent Phân tích đang chạy' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Đang nhận kết quả/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('trust-label')).toBeInTheDocument();
+  });
+});
+
+describe('AnswerBlock · Agent hiểu câu hỏi', () => {
+  const understanding = {
+    session_id: 's9',
+    agent: 'Agent Phân tích',
+    parts: [{ text: 'So sánh' }, { text: 'nợ xấu', kind: 'metric' as const }, { text: 'miền Bắc', kind: 'ambiguous' as const }],
+    slots: [
+      { slot: 'Chỉ số', value: 'NPL_RATIO v4', source: '“nợ xấu”', confidence: 0.98 },
+      { slot: 'Lọc', value: 'region ∈ 4 vùng phía Bắc', source: '“miền Bắc”', confidence: 0.62 },
+    ],
+    ambiguity: {
+      term: 'miền Bắc',
+      options: [{ key: 'geo', label: 'Địa lý · 4 vùng' }, { key: 'org', label: 'Khối miền Bắc' }],
+      selected: 'geo',
+    },
+    plan: 'metric: NPL_RATIO@v4',
+    check_required: true,
+  };
+
+  it('asks to check an unsure reading, and confirms the meaning picked and whether to remember it', () => {
+    const onConfirm = vi.fn();
+    render(
+      <AnswerBlock
+        msg={{ id: 'u1', role: 'assistant', content: '', timestamp: '2026-10-11T08:00:00', status: 'done', understanding }}
+        onConfirmUnderstanding={onConfirm}
+      />,
+    );
+    const card = screen.getByRole('region', { name: 'Kiểm tra cách hiểu' });
+    expect(within(card).getByText('0,62')).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole('radio', { name: 'Khối miền Bắc' }));
+    fireEvent.click(within(card).getByRole('checkbox', { name: /Lưu “miền Bắc = khối miền bắc” cho tôi/ }));
+    fireEvent.click(within(card).getByRole('button', { name: 'Đúng rồi, chạy' }));
+    expect(onConfirm).toHaveBeenCalledWith({ meaning: 'org', remember: true });
+    expect(screen.queryByTestId('trust-label')).not.toBeInTheDocument();
+  });
+});
+

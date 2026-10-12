@@ -1,0 +1,11 @@
+# Stack of ADR-29: FastAPI + Pydantic v2, SQLAlchemy 2 over asyncpg.
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+sqlalchemy[asyncio]==2.0.35
+asyncpg==0.29.0
+redis>=5.0
+# Token verification against the Keycloak realm's JWKS (ADR-30); [crypto] for RS256/ES256.
+pyjwt[crypto]==2.9.0
+# Multipart bodies (A3 uploads: /v1/uploads, /v1/documents, /v1/packs:import); FastAPI needs it for UploadFile/Form.
+python-multipart==0.0.9

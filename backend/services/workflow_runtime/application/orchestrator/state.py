@@ -34,6 +34,7 @@ class OrchestratorState(TypedDict):
     # Execution
     agents: list[dict[str, Any]]            # published agents từ catalog
     plan: Optional[Any]           # Plan object từ ToT planner
+    plan_ir: Optional[Any]        # validated PlanIR, published before execution
     process: Optional[Any]        # PlanningProcess sống — cần cho report_node_failure()
                                    # và để session_cache lưu/khôi phục khi client retry
     completed_node_ids: list[str] # node đã chạy thành công (resume tránh gọi lại agent)

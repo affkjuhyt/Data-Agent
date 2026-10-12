@@ -7,4 +7,7 @@
 # COPY — the realm and mappers are mounted from ConfigMaps at runtime
 # (keycloak.yaml), same as the stock image.
 FROM quay.io/keycloak/keycloak:24.0
+# The realm export currently uses Keycloak's stock login theme. Keep theme assets out of the
+# image until the repository contains the corresponding `themes/` tree; a COPY of a missing
+# directory makes every local and CI build fail before the realm can be imported.
 RUN /opt/keycloak/bin/kc.sh build --db=postgres --health-enabled=true --cache=ispn --cache-stack=kubernetes

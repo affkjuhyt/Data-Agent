@@ -33,11 +33,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # Pass-through of the Makefile defaults so `python3 tests/run_suites.py …` works alone.
 DEFAULT_UNIT = (
     "workflow_runtime:workflow_runtime kb_backend:kb-backend platform_workers:platform-workers "
-    "sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker model_service:model_service"
+    "sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker model_service:model_service api:api worker_agent:worker-agent"
 )
 DEFAULT_INTEGRATION = (
-    "workflow_runtime:workflow_runtime auth_api:auth_api platform_workers:platform-workers "
-    "sandbox_executor:sandbox_executor"
+    "workflow_runtime:workflow_runtime sandbox_executor:sandbox_executor api:api migrate:migrate "
+    "worker_agent:worker-agent"
 )
 
 # Which suites a change under backend/services/<service>/ can break: the suite of
@@ -46,15 +46,15 @@ DEFAULT_INTEGRATION = (
 # model_service and sandbox_executor modules; the workflow_runtime integration
 # suite runs sandbox_executor's app in-process).
 SERVICE_SUITES: dict[str, set[tuple[str, str]]] = {
-    "auth_api": {("unit", "auth_api"), ("unit", "workflow_runtime"), ("integration", "auth_api")},
+    "api": {("unit", "api"), ("integration", "api")},
+    "worker_agent": {("unit", "worker_agent"), ("integration", "worker_agent")},
+    "auth_api": {("unit", "auth_api"), ("unit", "workflow_runtime")},
     "kb_backend": {
         ("unit", "kb_backend"), ("unit", "kb_worker"), ("unit", "workflow_runtime"),
         ("integration", "workflow_runtime"),
     },
     "model_service": {("unit", "model_service"), ("unit", "workflow_runtime")},
-    "platform_workers": {
-        ("unit", "platform_workers"), ("unit", "kb_backend"), ("integration", "platform_workers"),
-    },
+    "platform_workers": {("unit", "platform_workers"), ("unit", "kb_backend")},
     "sandbox_executor": {
         ("unit", "sandbox_executor"), ("unit", "workflow_runtime"),
         ("integration", "sandbox_executor"), ("integration", "workflow_runtime"),

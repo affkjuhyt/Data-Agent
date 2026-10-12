@@ -1,22 +1,13 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { Role, Industry, TenantContext, User, Environment, KnowledgeDocument, PagedResponse } from './types';
-import { apiGet } from './lib/apiClient';
+import type { DataSpaceRef, User } from './types';
 import { useAuth } from './lib/AuthProvider';
-import { pickTenant, type Tenant } from './lib/platformApi';
+import { setDataSpace as setV1DataSpace } from './lib/v1/client';
 
 interface AppStateContextType {
-  role: Role;
-  setRole: (role: Role) => void;
-  industry: Industry;
-  setIndustry: (industry: Industry) => void;
-  tenant: TenantContext;
-  setTenant: (tenant: Partial<TenantContext>) => void;
-  /** Tenants the signed-in user belongs to (GET /api/auth/me/tenants). */
-  tenants: Tenant[];
-  tenantsLoading: boolean;
+  /** The Data Space chosen in the top bar; null = Toàn tổ chức (no X-Data-Space, A1.2). */
+  dataSpace: DataSpaceRef | null;
+  setDataSpace: (space: DataSpaceRef | null) => void;
   user: User;
-  isExpertMode: boolean;
-  setIsExpertMode: (val: boolean) => void;
 
   /* Navigation routing — single source of truth */
   activeModule: string;
@@ -26,176 +17,146 @@ interface AppStateContextType {
   getSubTab: (moduleId: string, fallback?: string) => string | undefined;
 
   /* Navigation imperatives */
-  navigate: (moduleId: string, subId?: string) => void;
-
-  /* Documents — loaded on mount, mutated in-place */
-  documents: KnowledgeDocument[];
-  docsLoading: boolean;
-  addDocument: (doc: KnowledgeDocument) => void;
-  updateDocument: (id: string, patch: Partial<KnowledgeDocument>) => void;
-  deleteDocument: (id: string) => void;
-
-  /* Wizard trigger — sidebar action buttons */
-  pendingAction: string | null;
-  setPendingAction: (action: string | null) => void;
+  navigate: (moduleId: string, subId?: string, id?: string) => void;
+  /** The record a detail page shows: the third URL segment, /needs-you/proposal/<id>. */
+  routeId: string | undefined;
 }
 
 const AppStateContext = createContext<AppStateContextType | undefined>(undefined);
 
 /* ─── URL route helpers ────────────────────────────────────────────── */
-/* Old module IDs → current IA. Applied in parseRoute + navigate so existing
- * links/bookmarks keep working and the URL stays canonical. The 2026-08 IA
- * change (Build/Test/Release/Monitor → Hỏi dữ liệu/Tri thức/Xây dựng/Vận hành)
- * is expressed here too, with a sub-tab map so "#monitor/TRACES" still lands
- * on the traces screen rather than the module's first item. */
-const REDIRECT_MAP: Record<string, { module: string; sub: string; subs?: Record<string, string> }> = {
-  'dashboard':           { module: 'ops',      sub: 'ANALYTICS' },
-  'knowledge-ops':       { module: 'knowledge', sub: '' },
-  'ai-runtime':          { module: 'build',    sub: 'AGENTS' },
-  'operations-center':   { module: 'ops',      sub: 'TRACES' },
-  'release-management':  { module: 'build',    sub: 'AGENTS' },
-  'governance':          { module: 'settings', sub: 'SECURITY' },
-  'national-ops':        { module: 'ops',      sub: 'ANALYTICS' },
-  // previous 5-module IA
-  'test':                { module: 'build',    sub: 'PLAYGROUND', subs: { PLAYGROUND: 'PLAYGROUND' } },
-  'release':             { module: 'build',    sub: 'AGENTS' },
-  'monitor':             { module: 'ops',      sub: 'CONVERSATIONS', subs: { CONVERSATIONS: 'CONVERSATIONS', TRACES: 'TRACES', ANALYTICS: 'ANALYTICS' } },
-};
-// "#build/KNOWLEDGE" (old) → the knowledge module. The Versions screen (release
-// management) was removed with its backend; its links land on Agents.
-const BUILD_SUB_REDIRECTS: Record<string, { module: string; sub?: string }> = {
-  KNOWLEDGE: { module: 'knowledge' },
-  VERSIONS: { module: 'build', sub: 'AGENTS' },
-};
-// Settings sub-tabs before the nested sidebar was folded into the module nav.
-const SETTINGS_SUB_REDIRECTS: Record<string, string> = {
-  TEAM: 'IAM',
-  PROVIDERS: 'AI_PROVIDERS',
-  AUDIT: 'SECURITY',
+/* Module ids of earlier IAs → the six v3.1 areas (Trang chủ · Cần bạn · Agents · Phân tích ·
+ * Dữ liệu · Quản trị). Applied in parseRoute + navigate so existing links and bookmarks keep
+ * working and the URL stays canonical. `subs` maps an old page to its new one; a missing
+ * entry lands on `sub`, or on the area's first page when `sub` is empty. */
+type Redirect = { module: string; sub: string; subs?: Record<string, { module: string; sub: string }> };
+
+const REDIRECT_MAP: Record<string, Redirect> = {
+  // V3.0 IA (ask / knowledge / build / ops / settings)
+  ask:       { module: 'analysis', sub: 'ASK' },
+  knowledge: { module: 'data', sub: 'SOURCES' },
+  build: {
+    module: 'agents', sub: 'TEAM',
+    subs: {
+      AGENTS:     { module: 'agents', sub: 'TEAM' },
+      WORKFLOWS:  { module: 'agents', sub: 'ORCHESTRATION' },
+      PLAYGROUND: { module: 'agents', sub: 'EVALUATE' },
+      KNOWLEDGE:  { module: 'data', sub: 'SOURCES' },
+      VERSIONS:   { module: 'agents', sub: 'TEAM' },
+    },
+  },
+  ops: {
+    module: 'analysis', sub: 'SESSIONS',
+    subs: {
+      CONVERSATIONS: { module: 'analysis', sub: 'SESSIONS' },
+      TRACES:        { module: 'agents', sub: 'RUNS' },
+      REVIEWS:       { module: 'needs-you', sub: '' },
+      ANALYTICS:     { module: 'analysis', sub: 'DASHBOARD' },
+    },
+  },
+  settings: {
+    module: 'admin', sub: '',
+    subs: {
+      TEAM:           { module: 'admin', sub: 'USERS' },
+      IAM:            { module: 'admin', sub: 'USERS' },
+      PROVIDERS:      { module: 'admin', sub: 'MODELS' },
+      AI_PROVIDERS:   { module: 'admin', sub: 'MODELS' },
+      API:            { module: 'admin', sub: 'INTEGRATIONS' },
+      INFRASTRUCTURE: { module: 'admin', sub: 'MONITORING' },
+      AUDIT:          { module: 'admin', sub: 'AUDIT' },
+      SECURITY:       { module: 'admin', sub: 'AUDIT' },
+      BILLING:        { module: 'agents', sub: 'OPERATIONS' },
+    },
+  },
+  // Older IAs
+  'dashboard':          { module: 'analysis', sub: 'DASHBOARD' },
+  'national-ops':       { module: 'analysis', sub: 'DASHBOARD' },
+  'knowledge-ops':      { module: 'data', sub: 'SOURCES' },
+  'ai-runtime':         { module: 'agents', sub: 'TEAM' },
+  'release-management': { module: 'agents', sub: 'TEAM' },
+  'release':            { module: 'agents', sub: 'TEAM' },
+  'operations-center':  { module: 'agents', sub: 'RUNS' },
+  'governance':         { module: 'admin', sub: 'AUDIT' },
+  'test':               { module: 'agents', sub: 'EVALUATE' },
+  'monitor': {
+    module: 'analysis', sub: 'SESSIONS',
+    subs: {
+      TRACES:    { module: 'agents', sub: 'RUNS' },
+      ANALYTICS: { module: 'analysis', sub: 'DASHBOARD' },
+    },
+  },
 };
 
-/** Where a user lands with no hash: business users ask, engineers build. */
-export const landingFor = (role: Role): { module: string; sub?: string } =>
-  role === 'AI_ENGINEER' || role === 'PLATFORM_ADMIN' ? { module: 'build', sub: 'AGENTS' } : { module: 'ask' };
+/** Everyone lands on Trang chủ (v3.1): it is the start of every role's day. */
+export const landingFor = (): { module: string; sub?: string } => ({ module: 'home' });
 
 export const resolveRoute = (module: string, sub?: string): { module: string; sub?: string } => {
   const r = REDIRECT_MAP[module];
-  if (r) {
-    const mapped = sub && r.subs?.[sub];
-    return { module: r.module, sub: mapped || r.sub || undefined };
-  }
-  if (module === 'build' && sub && BUILD_SUB_REDIRECTS[sub]) return BUILD_SUB_REDIRECTS[sub];
-  if (module === 'settings' && sub && SETTINGS_SUB_REDIRECTS[sub]) return { module, sub: SETTINGS_SUB_REDIRECTS[sub] };
-  return { module, sub };
+  if (!r) return { module, sub };
+  const mapped = sub ? r.subs?.[sub] : undefined;
+  if (mapped) return { module: mapped.module, sub: mapped.sub || undefined };
+  return { module: r.module, sub: r.sub || undefined };
 };
 
 // Sub-tab keys are uppercase internally (ROUTE_MAP, REDIRECT_MAP, ...) but the
 // URL renders them lowercase — /build/workflows reads better than
 // /build/WORKFLOWS. parseRoute upper-cases whatever it reads back so both
 // case forms of a link (including ones bookmarked before this change) resolve.
-const routePath = (module: string, sub?: string) => `/${module}${sub ? `/${sub.toLowerCase()}` : ''}`;
+const routePath = (module: string, sub?: string, id?: string) =>
+  `/${module}${sub ? `/${sub.toLowerCase()}` : ''}${sub && id ? `/${encodeURIComponent(id)}` : ''}`;
 
-const parseRoute = (fallback: { module: string; sub?: string }): { module: string; sub?: string } => {
+const parseRoute = (fallback: { module: string; sub?: string }): { module: string; sub?: string; id?: string } => {
   if (typeof window === 'undefined') return fallback;
   const legacyHash = window.location.hash.replace(/^#\/?/, '');
   const raw = legacyHash || window.location.pathname.replace(/^\/+/, '');
   if (!raw) return fallback;
-  const [module, sub] = raw.split('/');
-  return resolveRoute(module || fallback.module, sub ? sub.toUpperCase() : undefined);
+  const [module, sub, id] = raw.split('/');
+  const resolved = resolveRoute(module || fallback.module, sub ? sub.toUpperCase() : undefined);
+  // Ids keep their case; they only survive when the page is not redirected elsewhere.
+  return id && resolved.sub === sub?.toUpperCase() ? { ...resolved, id: decodeURIComponent(id) } : resolved;
 };
 
-const writeRoute = (module: string, sub?: string) => {
+const writeRoute = (module: string, sub?: string, id?: string) => {
   if (typeof window === 'undefined') return;
-  const next = routePath(module, sub);
+  const next = routePath(module, sub, id);
   if (window.location.pathname !== next || window.location.hash) {
-    // Preserve query params so Keycloak can read ?code=&state= on auth redirect
-    window.history.replaceState(null, '', `${next}${window.location.search}`);
+    // Preserve query params so Keycloak can read ?code=&state= on auth redirect.
+    // A new page is a history entry, so Back returns from a detail page to its list;
+    // rewriting a legacy hash (or the first URL) replaces instead.
+    const replace = window.location.hash !== '' || !window.history.state?.app;
+    window.history[replace ? 'replaceState' : 'pushState']({ app: true }, '', `${next}${window.location.search}`);
   }
 };
 
-/* ─── Tenant persistence ───────────────────────────────────────────── */
-const TENANT_KEY = 'app:tenantId';
-const ENV_KEY = 'app:environment';
-const ENV_VALUES: Environment[] = ['DEV', 'UAT', 'STAGING', 'PROD'];
-
-const readStorage = (key: string): string | null => {
-  try { return typeof window !== 'undefined' ? window.localStorage.getItem(key) : null; } catch { return null; }
-};
-const writeStorage = (key: string, value: string | null) => {
-  try {
-    if (typeof window === 'undefined') return;
-    if (value === null) window.localStorage.removeItem(key);
-    else window.localStorage.setItem(key, value);
-  } catch { /* storage unavailable — selection is session-only */ }
-};
-
-/** Environment pill choice survives reloads; defaults to PROD. */
-export const initialEnvironment = (stored: string | null): Environment =>
-  ENV_VALUES.includes(stored as Environment) ? (stored as Environment) : 'PROD';
-
 export const AppStateProvider = ({ children }: { children: ReactNode }) => {
-  const [role, setRole] = useState<Role>('AI_ENGINEER');
-  const [industry, setIndustry] = useState<Industry>('GENERAL');
-  const [isExpertMode, setIsExpertMode] = useState(false);
-  const [tenant, setTenantState] = useState<TenantContext>(() => ({
-    tenantId: null,
-    tenantName: null,
-    slug: null,
-    environment: initialEnvironment(readStorage(ENV_KEY)),
-  }));
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [tenantsLoading, setTenantsLoading] = useState(false);
+  const [dataSpace, setDataSpaceState] = useState<DataSpaceRef | null>(null);
+  const setDataSpace = useCallback((space: DataSpaceRef | null) => {
+    // Every v1 call reads the header from the client, so it changes with the selection.
+    setV1DataSpace(space?.id ?? null);
+    setDataSpaceState(space);
+  }, []);
 
-  const { user: authUser } = useAuth();
+  const { user: authUser, me } = useAuth();
   const user: User = {
-    id:    authUser?.id    ?? 'u_anon',
-    name:  authUser?.name  ?? authUser?.email ?? 'User',
-    email: authUser?.email ?? '',
-    role:  (() => {
-      const normalized = authUser?.roles?.map(r => r.toUpperCase().replace(/-/g, '_')) ?? [];
-      if (normalized.includes('PLATFORM_ADMIN')) return 'PLATFORM_ADMIN';
-      if (normalized.includes('AI_ENGINEER')) return 'AI_ENGINEER';
-      if (normalized.includes('EXECUTIVE_VIEWER')) return 'EXECUTIVE';
-      return 'AI_ENGINEER';
-    })() as Role,
+    id:    me?.id ?? authUser?.id ?? 'u_anon',
+    name:  me?.display_name ?? authUser?.name ?? authUser?.email ?? 'User',
+    email: me?.email ?? authUser?.email ?? '',
   };
 
-  /* Tenants — loaded once the user is authenticated */
-  const authUserId = authUser?.id ?? null;
-  useEffect(() => {
-    if (!authUserId) return;
-    let cancelled = false;
-    setTenantsLoading(true);
-    apiGet<Tenant[]>('/api/auth/me/tenants')
-      .then(list => {
-        if (cancelled) return;
-        const safe = Array.isArray(list) ? list : [];
-        setTenants(safe);
-        const chosen = pickTenant(safe, readStorage(TENANT_KEY));
-        setTenantState(prev => ({
-          ...prev,
-          tenantId: chosen?.id ?? null,
-          tenantName: chosen?.name ?? null,
-          slug: chosen?.slug ?? null,
-        }));
-      })
-      .catch(() => { if (!cancelled) setTenants([]); })
-      .finally(() => { if (!cancelled) setTenantsLoading(false); });
-    return () => { cancelled = true; };
-  }, [authUserId]);
-
   /* Routing state — initialized from URL hash, else by role */
-  const initial = parseRoute(landingFor(user.role));
+  const initial = parseRoute(landingFor());
   const [activeModule, _setActiveModule] = useState<string>(initial.module);
   const [subTab, _setSubTabState] = useState<Record<string, string>>(
     initial.sub ? { [initial.module]: initial.sub } : {},
   );
+  const [routeId, setRouteId] = useState<string | undefined>(initial.id);
 
   const setActiveModule = useCallback((id: string) => {
     _setActiveModule(id);
   }, []);
 
   const setSubTab = useCallback((moduleId: string, subId: string) => {
+    setRouteId(undefined);
     _setSubTabState(prev => ({ ...prev, [moduleId]: subId }));
   }, []);
 
@@ -204,28 +165,40 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     [subTab],
   );
 
-  const navigate = useCallback((moduleId: string, subId?: string) => {
+  const navigate = useCallback((moduleId: string, subId?: string, id?: string) => {
     /* Honor redirect map if a caller still uses an old module id */
     const resolved = resolveRoute(moduleId, subId);
     moduleId = resolved.module;
     subId = resolved.sub;
     _setActiveModule(moduleId);
-    if (subId) {
-      _setSubTabState(prev => ({ ...prev, [moduleId]: subId }));
-    }
+    setRouteId(subId ? id : undefined);
+    // No page means the area's own start (its landing, or its first rail page).
+    const page = subId;
+    _setSubTabState(prev => {
+      const next = { ...prev };
+      if (page) next[moduleId] = page;
+      else delete next[moduleId];
+      return next;
+    });
   }, []);
 
   /* Keep URL path in sync with state */
   useEffect(() => {
-    writeRoute(activeModule, subTab[activeModule]);
-  }, [activeModule, subTab]);
+    writeRoute(activeModule, subTab[activeModule], routeId);
+  }, [activeModule, subTab, routeId]);
 
   /* Listen for back/forward navigation */
   useEffect(() => {
     const onRouteChange = () => {
-      const { module, sub } = parseRoute(landingFor(user.role));
+      const { module, sub, id } = parseRoute(landingFor());
       _setActiveModule(module);
-      if (sub) _setSubTabState(prev => ({ ...prev, [module]: sub }));
+      setRouteId(id);
+      _setSubTabState(prev => {
+        const next = { ...prev };
+        if (sub) next[module] = sub;
+        else delete next[module];
+        return next;
+      });
     };
     window.addEventListener('popstate', onRouteChange);
     window.addEventListener('hashchange', onRouteChange);
@@ -235,73 +208,19 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  const setTenant = useCallback((newTenant: Partial<TenantContext>) => {
-    if (newTenant.tenantId !== undefined) writeStorage(TENANT_KEY, newTenant.tenantId);
-    if (newTenant.environment !== undefined) writeStorage(ENV_KEY, newTenant.environment);
-    setTenantState(prev => ({ ...prev, ...newTenant }));
-  }, []);
-
-  /* Documents */
-  const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
-  const [docsLoading, setDocsLoading] = useState(true);
-
-  useEffect(() => {
-    apiGet<PagedResponse<KnowledgeDocument> | KnowledgeDocument[]>('/api/data/documents')
-      .then(data => {
-        const items = Array.isArray(data) ? data : (data as PagedResponse<KnowledgeDocument>).items ?? [];
-        setDocuments(items);
-      })
-      .catch(() => setDocuments([]))
-      .finally(() => setDocsLoading(false));
-  }, []);
-
-  const addDocument = useCallback((doc: KnowledgeDocument) => {
-    setDocuments(prev => [doc, ...prev]);
-  }, []);
-
-  const updateDocument = useCallback((data_id: string, patch: Partial<KnowledgeDocument>) => {
-    setDocuments(prev => prev.map(d => {
-      if (d.data_id !== data_id) return d;
-      const updated = { ...d, ...patch };
-      if (patch.metadata) updated.metadata = { ...d.metadata, ...patch.metadata };
-      return updated;
-    }));
-  }, []);
-
-  const deleteDocument = useCallback((data_id: string) => {
-    setDocuments(prev => prev.filter(d => d.data_id !== data_id));
-  }, []);
-
-  /* Wizard trigger */
-  const [pendingAction, setPendingAction] = useState<string | null>(null);
-
   return (
     <AppStateContext.Provider
       value={{
-        role,
-        setRole,
-        industry,
-        setIndustry,
-        tenant,
-        setTenant,
-        tenants,
-        tenantsLoading,
+        dataSpace,
+        setDataSpace,
         user,
-        isExpertMode,
-        setIsExpertMode,
         activeModule,
         setActiveModule,
         subTab,
         setSubTab,
         getSubTab,
         navigate,
-        documents,
-        docsLoading,
-        addDocument,
-        updateDocument,
-        deleteDocument,
-        pendingAction,
-        setPendingAction,
+        routeId,
       }}
     >
       {children}

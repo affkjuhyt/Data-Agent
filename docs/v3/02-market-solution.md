@@ -230,7 +230,7 @@ connector và acceptance (v1.0 §13.2).
 | --- | --- | --- |
 | D3 (nhắc lại) | Khách thiết kế đầu tiên | Chọn trong nhóm cấm egress, có dữ liệu phân tán, có owner metric; không chọn khách đã chuẩn hoá trên BigQuery/Fabric |
 | D8 | Gói Publisher | Hoãn; giữ 2 object trong mô hình; mở khi có khách là nhà cung cấp dữ liệu |
-| D9 | Workspace thay Thread/Notebook/Report | Đồng ý; FE1/FE2 xem lại 09-frontend V2 theo bố cục cây artifact |
+| D9 | Workspace thay Thread/Notebook/Report | Đồng ý; FE1/FE2 dùng bố cục cây artifact trong [05-ui-v3.md](05-ui-v3.md) |
 | D10 | Kênh C-level | Zalo/Teams/email trước; mobile sau khi có ≥ 2 khách trả tiền |
 | D11 | Giá theo kết quả cho ingestion | Thử ở pilot: tính phí asset publish đạt hard check; đo tỷ lệ ngoại lệ cần người |
 | D12 | Có phơi Data Space qua MCP cho coding agent ngay R2 không | Có; chi phí thấp (Capability Registry → MCP), giá trị sớm cho analyst |

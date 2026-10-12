@@ -20,7 +20,6 @@ data:
   PGHOST: postgres.dataagent-database.svc.cluster.local
   PGUSER: admin
   PGDATABASE: dataagent
-  WAIT_FOR_TABLE: Agents
   PGPORT: '8300'
 ---
 apiVersion: batch/v1
@@ -49,20 +48,21 @@ spec:
         - sh
         - -c
         - |
-          until psql -tAc "SELECT 1 FROM information_schema.tables WHERE table_name = 'Agents'" 2>/dev/null | grep -q 1; do
+          # The migrate Job applies the V3 baseline; org.organization is its first table.
+          until psql -tAc "SELECT to_regclass('org.organization') IS NOT NULL" 2>/dev/null | grep -q t; do
             echo waiting for migrations; sleep 3
           done
           for f in /sql/*.sql; do echo applying $f; psql -v ON_ERROR_STOP=1 -f "$f"; done
           echo setting role passwords
-          psql -v ON_ERROR_STOP=1             -v app_user_password="$APP_USER_PASSWORD"             -v runtime_writer_password="$RUNTIME_WRITER_PASSWORD"             -v sandbox_reader_password="$SANDBOX_READER_PASSWORD"             -v kb_backend_password="$KB_BACKEND_PASSWORD"             -v pgbouncer_auth_password="$PGBOUNCER_AUTH_PASSWORD"             -v kb_ingestion_worker_password="$KB_INGESTION_WORKER_PASSWORD"             -v crawler_ro_password="$POSTGRES_CRAWLER_PASSWORD"             -v crawler_svc_password="$CRAWLER_SVC_PASSWORD" <<'SQL'
-          ALTER ROLE app_user       WITH LOGIN PASSWORD :'app_user_password';
-          ALTER ROLE runtime_writer WITH LOGIN PASSWORD :'runtime_writer_password';
-          ALTER ROLE sandbox_reader WITH LOGIN PASSWORD :'sandbox_reader_password';
-          ALTER ROLE kb_backend     WITH LOGIN PASSWORD :'kb_backend_password';
+          # DB_ROLE_PASSWORDS is a JSON object {"svc_qa": "...", ...} from the vault; each role
+          # named there becomes a login with that password (design tab 3 D5.1).
+          psql -v ON_ERROR_STOP=1 -v passwords="$DB_ROLE_PASSWORDS" \
+            -v pgbouncer_auth_password="$PGBOUNCER_AUTH_PASSWORD" <<'SQL'
           ALTER ROLE pgbouncer_auth WITH LOGIN PASSWORD :'pgbouncer_auth_password';
-          ALTER ROLE kb_ingestion_worker WITH LOGIN PASSWORD :'kb_ingestion_worker_password';
-          ALTER ROLE crawler_ro WITH LOGIN PASSWORD :'crawler_ro_password';
-          ALTER ROLE crawler_svc WITH LOGIN PASSWORD :'crawler_svc_password';
+          SELECT format('ALTER ROLE %I WITH LOGIN PASSWORD %L', key, value)
+          FROM jsonb_each_text(:'passwords'::jsonb)
+          WHERE key LIKE 'svc\_%'
+          \gexec
           SQL
         resources:
           requests:

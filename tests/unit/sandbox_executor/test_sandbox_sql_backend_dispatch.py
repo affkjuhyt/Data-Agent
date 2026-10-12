@@ -71,7 +71,9 @@ def _load_main(monkeypatch, backend: str = "snowflake"):
                  "api", "api.responses", "api.schemas"):
         monkeypatch.delitem(sys.modules, name, raising=False)
 
-    return load_module_from_path("main", _SVC_DIR / "main.py", extra_syspath=[_SVC_DIR])
+    main = load_module_from_path("main", _SVC_DIR / "main.py", extra_syspath=[_SVC_DIR])
+    monkeypatch.setattr(main, "resolve_connection_secret", lambda tenant_id, connection_ref: "pw")
+    return main
 
 
 def _install_backend(main, monkeypatch, name: str, *, execute=None, error_type=None):
@@ -88,7 +90,7 @@ class TestConnectionValidation:
 
         req = main.ExecuteSQLRequest(
             sql="SELECT 1",
-            connection={"type": "postgres", "host": "h", "user": "u", "password": "p", "dbname": "d"},
+            connection={"type": "postgres", "host": "h", "user": "u", "connection_ref": "ref", "dbname": "d"},
         )
 
         assert req.connection["type"] == "postgres"
@@ -101,7 +103,7 @@ class TestConnectionValidation:
         main = _load_main(monkeypatch, backend="snowflake")
 
         req = main.ExecuteSQLRequest(
-            sql="SELECT 1", connection={"account": "a", "user": "u", "password": "p"},
+            sql="SELECT 1", connection={"account": "a", "user": "u", "connection_ref": "ref"},
         )
 
         assert req.connection["type"] == "snowflake"
@@ -111,7 +113,7 @@ class TestConnectionValidation:
         main = _load_main(monkeypatch, backend="postgres")
 
         req = main.ExecuteSQLRequest(
-            sql="SELECT 1", connection={"host": "h", "user": "u", "password": "p", "dbname": "d"},
+            sql="SELECT 1", connection={"host": "h", "user": "u", "connection_ref": "ref", "dbname": "d"},
         )
 
         assert req.connection["type"] == "postgres"
@@ -121,7 +123,7 @@ class TestConnectionValidation:
 
         req = main.ExecuteSQLRequest(
             sql="SELECT 1",
-            connection={"type": "clickhouse", "host": "h", "user": "u", "password": "p", "database": "d"},
+            connection={"type": "clickhouse", "host": "h", "user": "u", "connection_ref": "ref", "database": "d"},
         )
 
         assert req.connection["port"] == 8123
@@ -133,7 +135,7 @@ class TestConnectionValidation:
 
         req = main.ExecuteSQLRequest(
             sql="SELECT 1",
-            connection={"account": "a", "user": "u", "password": "p", "schema": "PUBLIC"},
+            connection={"account": "a", "user": "u", "connection_ref": "ref", "schema": "PUBLIC"},
         )
 
         assert req.connection["schema"] == "PUBLIC"
@@ -146,7 +148,7 @@ class TestConnectionValidation:
         main = _load_main(monkeypatch, backend="snowflake")
 
         with pytest.raises(ValidationError):
-            main.ExecuteSQLRequest(sql="SELECT 1", connection={"user": "u", "password": "p"})
+            main.ExecuteSQLRequest(sql="SELECT 1", connection={"user": "u"})
 
     def test_unknown_type_is_a_validation_error(self, monkeypatch):
         from pydantic import ValidationError
@@ -170,7 +172,7 @@ class TestRunExecuteSQL:
 
         result = await main._run_execute_sql({
             "sql": "SELECT 1", "job_id": "j1",
-            "connection": {"type": "postgres", "host": "h", "user": "u", "password": "p", "dbname": "d"},
+            "connection": {"type": "postgres", "host": "h", "user": "u", "connection_ref": "ref", "dbname": "d"},
         })
 
         assert result["success"] is True
@@ -185,7 +187,7 @@ class TestRunExecuteSQL:
 
         result = await main._run_execute_sql({
             "sql": "DROP TABLE orders", "job_id": "j1",
-            "connection": {"type": "postgres", "host": "h", "user": "u", "password": "p", "dbname": "d"},
+            "connection": {"type": "postgres", "host": "h", "user": "u", "connection_ref": "ref", "dbname": "d"},
         })
 
         assert result["success"] is False
@@ -198,7 +200,7 @@ class TestRunExecuteSQL:
 
         result = await main._run_execute_sql({
             "sql": "SELECT 1; DROP TABLE orders", "job_id": "j1",
-            "connection": {"type": "postgres", "host": "h", "user": "u", "password": "p", "dbname": "d"},
+            "connection": {"type": "postgres", "host": "h", "user": "u", "connection_ref": "ref", "dbname": "d"},
         })
 
         assert result["rejected_by_guard"] is True
@@ -210,7 +212,7 @@ class TestRunExecuteSQL:
 
         result = await main._run_execute_sql({
             "sql": "WITH t AS (SELECT 1 AS n) SELECT n FROM t", "job_id": "j1",
-            "connection": {"type": "postgres", "host": "h", "user": "u", "password": "p", "dbname": "d"},
+            "connection": {"type": "postgres", "host": "h", "user": "u", "connection_ref": "ref", "dbname": "d"},
         })
 
         assert result["success"] is True
@@ -229,7 +231,7 @@ class TestRunExecuteSQL:
 
         result = await main._run_execute_sql({
             "sql": "SELECT nope FROM orders", "job_id": "j1",
-            "connection": {"type": "postgres", "host": "h", "user": "u", "password": "p", "dbname": "d"},
+            "connection": {"type": "postgres", "host": "h", "user": "u", "connection_ref": "ref", "dbname": "d"},
         })
 
         assert result["success"] is False
@@ -248,7 +250,7 @@ class TestRunExecuteSQL:
 
         result = await main._run_execute_sql({
             "sql": "SELECT 1", "job_id": "j1",
-            "connection": {"type": "clickhouse", "host": "h", "user": "u", "password": "p", "database": "d"},
+            "connection": {"type": "clickhouse", "host": "h", "user": "u", "connection_ref": "ref", "database": "d"},
         })
 
         assert result["success"] is False

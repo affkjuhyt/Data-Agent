@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import fs from "fs";
 import path from "path";
 import { defineConfig, loadEnv } from "vite";
 
@@ -10,35 +11,22 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ENV_DIR, "");
   return {
     envDir: ENV_DIR,
-    plugins: [react(), tailwindcss()],
-    define: {
-      "process.env.GEMINI_API_KEY": JSON.stringify(env.GEMINI_API_KEY),
-    },
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        // public/mockServiceWorker.js serves the dev-only v1 mock (src/mocks, VITE_MOCK_V1=1);
+        // production must not ship it.
+        name: "drop-mock-service-worker",
+        apply: "build",
+        closeBundle() {
+          fs.rmSync(path.resolve(__dirname, "dist/mockServiceWorker.js"), { force: true });
+        },
+      },
+    ],
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "."),
-      },
-    },
-    optimizeDeps: {
-      // Without this, Vite only discovers `motion`/`framer-motion` the first
-      // time a component using them renders, after the initial page load
-      // has already pre-bundled react/react-dom. That late discovery
-      // triggers a second, separate optimize pass that re-bundles react
-      // under a new dep hash, so the page ends up with two different react
-      // module instances and hooks break with "Cannot read properties of
-      // null (reading 'useState'/'useContext')". Listing them here forces
-      // both into the same cold-start scan as react itself.
-      include: ["motion", "motion/react", "framer-motion"],
-    },
-    build: {
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-            if (!id.includes("node_modules")) return undefined;
-            if (id.includes("lucide-react")) return "vendor-icons";
-            if (id.includes("xlsx")) return "vendor-xlsx";
-          },
-        },
       },
     },
     preview: {

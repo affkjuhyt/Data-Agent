@@ -4,13 +4,12 @@ import logging
 import re
 import time
 import uuid
-from collections.abc import AsyncIterator
-from typing import Any, Coroutine, cast
+from collections.abc import AsyncIterator, Coroutine
+from typing import Any
 
 from cachetools import LRUCache
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from langgraph.checkpoint.memory import MemorySaver
 
 from libs.contracts.v1 import ErrorCode, NextAction, Refusal
 from libs.shared.auth import require_tenant
@@ -23,9 +22,11 @@ from services.workflow_runtime.application.nodes.model_harness.responder import 
 )
 from services.workflow_runtime.application.nodes.sandbox.kb_search import discard_speculative_search
 from services.workflow_runtime.application.runtime_services.answer_ready import notify_answer_ready
+from services.workflow_runtime.application.verification import build_verification_frame
 from services.workflow_runtime.domain.refusals import AgentConfigError, RefusalError
 from services.workflow_runtime.domain.schemas import RunRequest
 from services.workflow_runtime.domain.transcript_compression import compress_tool_results
+from services.workflow_runtime.infrastructure.checkpointer import get_checkpointer
 from services.workflow_runtime.infrastructure.db import (
     conversation_owned_by,
     create_conversation,
@@ -46,6 +47,7 @@ from services.workflow_runtime.infrastructure.observability import (
     flush_langfuse,
     get_langchain_callback_handler,
 )
+from services.workflow_runtime.infrastructure.pending_reviews import put_pending_review
 from services.workflow_runtime.infrastructure.redis_cache import (
     cache_append_messages,
     cache_get_messages,
@@ -197,11 +199,8 @@ _graph_cache = _GraphCache(maxsize=_GRAPH_CACHE_MAXSIZE)
 _build_locks: dict[str, asyncio.Lock] = {}
 _default_graph = build_graph()
 
-# Shared checkpointer for workflows that have a human_approval node.
-_checkpointer = MemorySaver()
-
-# conv_id → {agent_id, query, interrupt_payload, suspended_at}
-_pending_reviews: dict[str, dict[str, Any]] = {}
+_checkpointer: Any = None
+_checkpointer_lock = asyncio.Lock()
 
 # asyncio only holds a weak reference to a task created via create_task — if
 # nothing else references it, it can be GC'd mid-execution. Keep a strong ref
@@ -213,6 +212,15 @@ def _fire_and_forget(coro: Coroutine[Any, Any, Any]) -> None:
     task = asyncio.create_task(coro)
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
+
+
+async def _get_checkpointer() -> Any:
+    global _checkpointer
+    if _checkpointer is None:
+        async with _checkpointer_lock:
+            if _checkpointer is None:
+                _checkpointer = await get_checkpointer()
+    return _checkpointer
 
 
 # doc §3.7 — Workflow Memory needs a task_type to filter on, but that's only
@@ -248,6 +256,26 @@ async def _get_or_build_graph(
             graph = build_graph(flow_nodes, flow_edges, checkpointer=checkpointer)
             _graph_cache.set(cache_key, graph)
     return graph
+
+
+async def get_graph_for_agent(agent_id: str, tenant_id: str) -> object:
+    """Rehydrate the graph used by a durable review after a pod restart."""
+    cfg = await load_agent_config(agent_id, tenant_id=tenant_id)
+    if not cfg:
+        return None
+    flow_nodes = cfg.get("flow_nodes") or []
+    if not flow_nodes:
+        return _default_graph
+    cache_key = f"{agent_id}:{cfg.get('workflow_version_id') or 'default'}"
+    needs_checkpointer = any(
+        n.get("data", {}).get("nodeType") == "human_approval" for n in flow_nodes
+    )
+    return await _get_or_build_graph(
+        cache_key,
+        flow_nodes,
+        cfg.get("flow_edges") or None,
+        checkpointer=await _get_checkpointer() if needs_checkpointer else None,
+    )
 
 
 def invalidate_graph_version(workflow_version_id: str) -> int:
@@ -354,7 +382,7 @@ async def run_conversation_stream(
         if graph is None:
             graph = await _get_or_build_graph(
                 cache_key, flow_nodes, flow_edges,
-                checkpointer=_checkpointer if needs_checkpointer else None,
+                checkpointer=await _get_checkpointer() if needs_checkpointer else None,
             )
     else:
         graph = _default_graph
@@ -398,8 +426,9 @@ async def run_conversation_stream(
 
     # orchestrated=True: orchestrator đã fetch memory và pass xuống, dùng luôn
     # orchestrated=False: single agent mode, tự fetch memory như bình thường
-    if req.orchestrated:
-        memory_context = list(req.memory_context)
+    orchestrated = bool(getattr(req, "orchestrated", False))
+    if orchestrated:
+        memory_context = list(getattr(req, "memory_context", []))
         workflow_memory_context: list[dict[str, Any]] = []
     else:
         memory_context = []
@@ -484,6 +513,9 @@ async def run_conversation_stream(
         "judge_error_type": None,
         "judge_reason": None,
         "judge_phase1_error": None,
+        "error_class": None,
+        "error_class_history": [],
+        "attempted_plans": [],
         "human_approved": None,
         "human_note": None,
         "rrf_results": [],
@@ -516,7 +548,8 @@ async def run_conversation_stream(
     handler = get_langchain_callback_handler(conv_id=conv_id)
     callbacks = [handler] if handler else []
 
-    guardrail_cfg = req.guardrail_cfg.model_dump() if req.guardrail_cfg else {}
+    request_guardrail_cfg = getattr(req, "guardrail_cfg", None)
+    guardrail_cfg = request_guardrail_cfg.model_dump() if request_guardrail_cfg else {}
 
     async def _persist_turn(
         *,
@@ -561,7 +594,6 @@ async def run_conversation_stream(
                         **({"clarifications": detected_clarify} if detected_clarify else {}),
                         "responder_model": cfg.get("responder_model"),
                         **({"pending_options": responder_options} if responder_options else {}),
-                        **({"pending_approval": conv_id} if conv_id and conv_id in _pending_reviews else {}),
                         **({"citations": pending_citations} if pending_citations else {}),
                     },
                 )
@@ -608,7 +640,7 @@ async def run_conversation_stream(
                         )
 
             # orchestrated=True: orchestrator sẽ ghi memory sau synthesize, agent không ghi
-            if not req.orchestrated and cfg.get("memory_enabled") and conv_id:
+            if not orchestrated and cfg.get("memory_enabled") and conv_id:
                 await request_memory_extraction(
                     agent_id, tenant_id, user_ref,
                     conversation_id=conv_id, message_id=assistant_msg_id,
@@ -618,7 +650,7 @@ async def run_conversation_stream(
         finally:
             await asyncio.to_thread(flush_langfuse)
 
-        for nt in (node_traces if cfg.get("memory_enabled") and not req.orchestrated else []):
+        for nt in (node_traces if cfg.get("memory_enabled") and not orchestrated else []):
             if not nt["tool_name"].startswith("tool/"):
                 continue
             task_type = _DATA_TOOL_TASK_TYPE.get(nt["tool_name"][len("tool/"):])
@@ -665,6 +697,10 @@ async def run_conversation_stream(
         pending_evidence: dict[str, Any] | None = None
         last_responder_result_sets: list[dict[str, Any]] = []
         pending_result_sets: list[dict[str, Any]] = []
+        last_verifier: dict[str, Any] | None = None
+        last_judge_verdict: str | None = None
+        last_judge_iteration = 0
+        pending_verification: dict[str, Any] | None = None
         guardrail_task: asyncio.Task[Any] | None = None
         # The answer shown while the responder writes it. The judge and the
         # output guardrail still decide on the finished text; a rejected one is
@@ -673,7 +709,8 @@ async def run_conversation_stream(
         live = _LiveAnswer()
 
         kb_speculation: dict[str, Any] = {"enabled": kb_in_graph}
-        lg_config = {"callbacks": callbacks, "configurable": {"thread_id": conv_id, "kb_speculation": kb_speculation}}
+        thread_id = f"{tenant_id}:{conv_id}" if conv_id else f"{tenant_id}:{detail_id}"
+        lg_config = {"callbacks": callbacks, "configurable": {"thread_id": thread_id, "kb_speculation": kb_speculation}}
         abandoned = False
 
         try:
@@ -682,7 +719,7 @@ async def run_conversation_stream(
                 node = event.get("metadata", {}).get("langgraph_node", "")
 
                 if kind == "on_custom_event" and event.get("name") == RESPONDER_TOKEN_EVENT:
-                    if not req.orchestrated:
+                    if not orchestrated:
                         piece = live.feed(event["data"])
                         if piece:
                             yield f"data: {json.dumps(piece)}\n\n"
@@ -761,6 +798,12 @@ async def run_conversation_stream(
                                 for i, rs in enumerate(state_result_sets or [], 1)
                                 if isinstance(rs, dict)
                             ]
+                    elif node == "judge":
+                        out = event["data"].get("output", {})
+                        if isinstance(out, dict):
+                            last_verifier = out.get("verifier")
+                            last_judge_verdict = out.get("judge_verdict")
+                            last_judge_iteration = int(out.get("loop_iteration", 0) or 0)
                         # Bản trước (nếu có) sắp lỗi thời — Judge vừa cho responder
                         # chạy lại, huỷ kết quả check dở dang của bản cũ.
                         if guardrail_task and not guardrail_task.done():
@@ -777,7 +820,7 @@ async def run_conversation_stream(
             # Detect interrupt (human_approval node đang chờ reviewer) — nếu có,
             # chưa tới lúc đánh giá output (chưa chắc đây là bản cuối).
             try:
-                snap = graph.get_state(lg_config)
+                snap = await graph.aget_state(lg_config)
                 if snap.next:
                     if guardrail_task and not guardrail_task.done():
                         guardrail_task.cancel()
@@ -786,14 +829,14 @@ async def run_conversation_stream(
                         for intr in getattr(task, "interrupts", []):
                             interrupt_payload = intr.value
                             break
-                    _pending_reviews[cast(str, conv_id)] = {
-                        # Only the same tenant may see or resume it (reviews router).
-                        "tenant_id":  tenant_id,
-                        "agent_id":   req.agent_id,
-                        "query":      req.query,
-                        "payload":    interrupt_payload,
-                        "suspended_at": time.monotonic(),
-                    }
+                    if conv_id:
+                        await put_pending_review(
+                            conversation_id=conv_id,
+                            tenant_id=tenant_id,
+                            agent_id=req.agent_id,
+                            query=req.query,
+                            payload=interrupt_payload,
+                        )
                     logger.info("human_approval | conv=%s suspended, waiting for review", conv_id)
                     if live.emitted:
                         yield _RESET_FRAME
@@ -827,6 +870,11 @@ async def run_conversation_stream(
                     # turn must not leak the rows the guardrail just blocked.
                     pending_evidence = last_responder_evidence or None
                     pending_result_sets = last_responder_result_sets
+                    pending_verification = build_verification_frame(
+                        last_verifier,
+                        judge_verdict=last_judge_verdict,
+                        iteration=last_judge_iteration,
+                    )
                     # Ghép câu nhắc "có chart" KHÔNG qua LLM — Responder chạy song song với
                     # Visualization nên tự nó không biết chart có vẽ được hay không lúc sinh
                     # văn bản; đây là điểm DUY NHẤT đã biết chắc cả 2 nhánh đều xong.
@@ -859,6 +907,9 @@ async def run_conversation_stream(
             # indistinguishable from a broken wire.
             if pending_evidence is not None:
                 yield f"data: {json.dumps({'__evidence': pending_evidence}, ensure_ascii=False, default=str)}\n\n"
+
+            if pending_verification is not None:
+                yield f"data: {json.dumps({'__verification': pending_verification}, ensure_ascii=False, default=str)}\n\n"
 
             if responder_options:
                 yield f"data: {json.dumps({'__options': responder_options})}\n\n"

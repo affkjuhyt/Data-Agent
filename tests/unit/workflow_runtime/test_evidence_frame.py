@@ -206,6 +206,7 @@ class TestOrchestratorForwardsEvidenceAndOptions:
             'data: {"__result_set": {"result_id": "abc"}}',
             'data: {"__refusal": {"code": "PLANNER_ERROR"}}',
             'data: {"__evidence": {"runs": [{"sql": "SELECT 1"}]}}',
+            'data: {"__verification": {"checks": [], "verdict": "PASS", "iteration": 1}}',
             'data: {"__options": ["Tháng này", "Tháng trước"]}',
             'data: {"__suggestions": ["x"]}',
             "data: [DONE]",
@@ -232,6 +233,7 @@ class TestOrchestratorForwardsEvidenceAndOptions:
         assert ("result_set", {"result_id": "abc"}) in events
         assert ("refusal", {"code": "PLANNER_ERROR"}) in events
         assert ("evidence", {"runs": [{"sql": "SELECT 1"}]}) in events
+        assert ("verification", {"checks": [], "verdict": "PASS", "iteration": 1}) in events
         assert ("options", ["Tháng này", "Tháng trước"]) in events
         # suggestions are the orchestrator's own job — still not forwarded
         assert not any(e[0] == "suggestions" for e in events)
@@ -264,11 +266,11 @@ class TestOrchestratorForwardsEvidenceAndOptions:
     def test_single_agent_node_and_sse_route_pass_them_through(self):
         graph_src = (pathlib.Path(_ORCH_DIR) / "graph.py").read_text(encoding="utf-8")
         stream_src = (pathlib.Path(_ORCH_DIR).parents[1] / "api" / "routers" / "orchestrator" / "stream.py").read_text(encoding="utf-8")
-        for name in ("options", "evidence", "result_set", "refusal"):
+        for name in ("options", "evidence", "result_set", "verification", "refusal"):
             assert f'adispatch_custom_event("{name}", data)' in graph_src
             assert f'"__{name}": event["data"]' in stream_src
 
     def test_docstring_declares_the_new_events(self, agent_client):
         ac = agent_client
         doc = inspect.getdoc(ac.call_agent_stream) or ""
-        assert '("options"' in doc and '("evidence"' in doc and '("result_set"' in doc and '("refusal"' in doc
+        assert '("options"' in doc and '("evidence"' in doc and '("result_set"' in doc and '("verification"' in doc and '("refusal"' in doc

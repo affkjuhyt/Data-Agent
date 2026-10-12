@@ -3,11 +3,16 @@
 # .github/workflows/ci.yml does, so a green `make ci` means a green pipeline.
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-PY_IMAGE ?= localhost:5000/dataagent/workflow_runtime:latest
+PY_IMAGE ?= localhost:5001/dataagent/workflow_runtime:latest
 DOCKER_RUN_PY = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(PY_IMAGE)
+# ruff, mypy and import-linter preinstalled (tests/dev-tools.Dockerfile): a cache hit after
+# the first build, so lint runs in seconds instead of re-installing tools from PyPI each time.
+DEV_TOOLS_IMAGE ?= dataagent/dev-tools:local
+DOCKER_RUN_DEV = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(DEV_TOOLS_IMAGE)
 
 .PHONY: help lint type test test-unit test-integration test-changed deadcode frontend-lint frontend-test ci e2e \
-        deploy fmt bench bench-gate bench-e2e mock-api contract-compat
+        deploy deploy-local fmt bench bench-gate bench-e2e mock-api contract-compat design-checklist design-audit api-types dev-tools fmt-files \
+        type-v3 lint-imports
 
 help:  ## List targets
 	@grep -hE '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -15,14 +20,28 @@ help:  ## List targets
 # The tree is not ruff-clean, so lint fails only on findings added since the
 # merge-base with LINT_BASE (tests/ruff_ratchet.py), working-tree edits included.
 LINT_BASE ?= main
-lint:  ## ruff: no new findings or unformatted files since LINT_BASE (same as CI python-lint)
+dev-tools:  ## build the cached lint/type image (tests/dev-tools.Dockerfile); other targets call it
+	@docker build -q -f tests/dev-tools.Dockerfile -t $(DEV_TOOLS_IMAGE) . >/dev/null
+
+lint: dev-tools  ## ruff: no new findings or unformatted files since LINT_BASE (same as CI python-lint)
 	@base_dir=$$(mktemp -d) && trap 'rm -rf "$$base_dir"' EXIT && \
 	  git archive $$(git merge-base HEAD $(LINT_BASE)) -- pyproject.toml '*.py' | tar -x -C "$$base_dir" && \
-	  docker run --rm --user 0 -v "$(PWD):/src" -v "$$base_dir:/base:ro" -w /src $(PY_IMAGE) \
-	    sh -c "pip install -q ruff==0.6.9 && python tests/ruff_ratchet.py --base-dir /base"
+	  docker run --rm --user 0 -v "$(PWD):/src" -v "$$base_dir:/base:ro" -w /src $(DEV_TOOLS_IMAGE) \
+	    python tests/ruff_ratchet.py --base-dir /base
 
-fmt:  ## ruff format + autofix
-	$(DOCKER_RUN_PY) sh -c "pip install -q ruff==0.6.9 && ruff check --fix . && ruff format ."
+fmt: dev-tools  ## ruff format + autofix
+	$(DOCKER_RUN_DEV) sh -c "ruff check --fix . && ruff format ."
+
+# Format and check only the files given, e.g. FILES="backend/services/worker_agent tests/unit/worker_agent".
+fmt-files: dev-tools  ## ruff format + check on FILES only (fast, for the files you touched)
+	$(DOCKER_RUN_DEV) sh -c "ruff format $(FILES) && ruff check --fix $(FILES)"
+
+type-v3: dev-tools  ## strict mypy on the V3 blocks (api, worker_agent), as CI's blocking step
+	$(DOCKER_RUN_DEV) mypy --disallow-untyped-defs --disallow-any-generics \
+	  --ignore-missing-imports --follow-imports=silent backend/services/api backend/services/worker_agent
+
+lint-imports: dev-tools  ## import-linter contracts (.importlinter), as CI
+	docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend $(DEV_TOOLS_IMAGE) lint-imports
 
 type:  ## mypy strict on libs + services (same set as CI python-type)
 	$(DOCKER_RUN_PY) sh -c "pip install -q mypy==2.4.0 && mypy backend/libs backend/services"
@@ -30,12 +49,12 @@ type:  ## mypy strict on libs + services (same set as CI python-type)
 # One suite per service, each run in that service's own image: no single image
 # can import every service (their OTel/boto3 pins conflict). suite:image pairs;
 # tests/unit/<suite> and tests/integration/<suite> are the directories.
-IMAGE_REGISTRY ?= localhost:5000
+IMAGE_REGISTRY ?= localhost:5001
 UNIT_SUITES ?= workflow_runtime:workflow_runtime kb_backend:kb-backend platform_workers:platform-workers \
                sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker \
-               model_service:model_service contracts:kb-backend indicator_api:indicator-api
-INTEGRATION_SUITES ?= workflow_runtime:workflow_runtime auth_api:auth_api platform_workers:platform-workers \
-                      sandbox_executor:sandbox_executor contracts:kb-backend
+               model_service:model_service contracts:kb-backend indicator_api:indicator-api api:api worker_agent:worker-agent
+INTEGRATION_SUITES ?= workflow_runtime:workflow_runtime sandbox_executor:sandbox_executor \
+                      contracts:kb-backend api:api migrate:migrate worker_agent:worker-agent
 # The integration sandbox tests start real sandbox-runner containers; the tag
 # differs per host (tests/integration/_sandbox.py), override it to match.
 SANDBOX_RUNNER_IMAGE ?= dataagent/sandbox-runner:latest
@@ -65,6 +84,21 @@ test:  ## unit + integration suites, all at once (same suites as CI python-test 
 test-changed:  ## only the suites the changes since CHANGED_BASE (default main) can affect
 	@$(RUN_SUITES) changed --base $(CHANGED_BASE)
 
+# Tab 7 F3: the frontend's types come from the api's own OpenAPI (ADR-48), never written by hand.
+# The api image has the dependencies; backend/ is mounted so the dump reflects the working tree.
+api-types:  ## dump the api OpenAPI to frontend/src/lib/v1/openapi.json and generate schema.ts from it
+	docker run --rm -v "$(PWD)/backend:/app:ro" -e API_OIDC_ISSUER=http://unused $(IMAGE_REGISTRY)/dataagent/api:latest \
+	  python -c "import json, sys; from services.api.app import app; json.dump(app.openapi(), sys.stdout, ensure_ascii=False, indent=1, sort_keys=True)" \
+	  > frontend/src/lib/v1/openapi.json
+	npm --workspace frontend exec -- openapi-typescript src/lib/v1/openapi.json -o src/lib/v1/schema.ts
+
+# Stdlib only and reads files, like tests/run_suites.py, so it runs on the host interpreter.
+design-checklist:  ## rewrite docs/v3/10-design-checklist.md: design coverage from code evidence + status.tsv
+	python3 tests/design_checklist.py
+
+design-audit:  ## fail when 10-design-checklist.md is stale or a declared status contradicts the evidence
+	python3 tests/design_checklist.py --check
+
 deadcode:  ## vulture (python) + knip (frontend)
 	$(DOCKER_RUN_PY) sh -c "pip install -q vulture && vulture"
 	npm --workspace frontend run deadcode
@@ -75,7 +109,7 @@ frontend-lint:  ## tsc --noEmit
 frontend-test:  ## vitest
 	npm --workspace frontend run test
 
-ci: lint type test frontend-lint frontend-test contract-compat  ## everything CI runs, locally
+ci: lint type test frontend-lint frontend-test contract-compat design-audit  ## everything CI runs, locally
 
 # Same check as the CI contract-compat job (NOP-152). Locally HEAD is a branch, not
 # a merge commit, so the agreed contract is the one at the merge-base. Exit 2 (the
@@ -186,3 +220,7 @@ e2e:  ## pytest -m e2e against the deployed dev cluster (LAN NodePorts; URLs ove
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml
 
+deploy-local:  ## deploy the V3 local slice (api, worker-agent, web, migrate, gateway)
+	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml \
+		-e apply_jobs=true -e image_registry=$(IMAGE_REGISTRY) -e image_push=true \
+		-e '{"deploy_image_allowlist":["api","worker-agent","migrate","frontend","kong","keycloak"],"service_manifests":["api","worker-agent","frontend","kong","keycloak"],"service_workloads":["api","worker-agent","frontend","kong","keycloak"]}'

@@ -3,7 +3,8 @@
 > Đối tượng: Ops (0,5 người trong POC), DevOps/SRE, trưởng nhóm backend, hai senior làm S1-02.
 > Đo ngày 27/09/2026 trên d63d896 (nhánh `feat/remove-redundant-service`) và cụm dev `10.10.55.101`;
 > cập nhật 28/09 sau khi gỡ release management và stack Docker Compose.
-> Phần nào mâu thuẫn với [00](00-architecture-v2.md) thì 00 thắng. Việc có ID nằm ở [05](05-implementation-plan.md) (P0-03,
+> Phần nào mâu thuẫn với [00](00-architecture-v2.md) thì 00 thắng. Việc đang làm hiện nằm ở
+> [docs/v3/04-backlog.md](../v3/04-backlog.md); các ID P0-03,
 > P0-07, P0-08); quy ước database ở [10](10-database-design.md). Sơ đồ PlantUML đã xoá 06/10/2026.
 
 ## 0. Kết luận

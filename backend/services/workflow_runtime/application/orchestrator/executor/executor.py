@@ -7,6 +7,8 @@ from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Any
 
+from langchain_core.callbacks.manager import adispatch_custom_event
+
 from services.workflow_runtime.application.orchestrator.planner.dpts.plan import Plan, Target
 from services.workflow_runtime.application.orchestrator.schemas import TargetResult, TaskResult
 from services.workflow_runtime.infrastructure.observability import get_langfuse_client
@@ -15,6 +17,17 @@ from .agent_client import call_agent
 from .task_queue import TaskNode, build_nodes, collect_context
 
 logger = logging.getLogger(__name__)
+
+
+async def _dispatch_step(node: TaskNode, status: str, **extra: Any) -> None:
+    """Publish executor progress without breaking direct/background executions."""
+    payload = {"node_id": node.node_id, "status": status, **extra}
+    try:
+        await adispatch_custom_event("step", payload)
+    except RuntimeError:
+        # LangChain only has a callback context while the graph is streamed.
+        # Unit jobs and resumed background work can execute without one.
+        logger.debug("executor | no callback context for step=%s", payload)
 
 
 @dataclass
@@ -38,6 +51,7 @@ async def _run_task(
 ) -> TaskNode:
     node.start_ms = round((time.monotonic() - executor_start) * 1000)
     t0 = time.monotonic()
+    await _dispatch_step(node, "running", started_at=node.start_ms)
 
     # Span thủ công cho task — execute_plan() không phải LangChain runnable
     # nên CallbackHandler không tự tạo span; đây là parent của mọi span
@@ -71,6 +85,13 @@ async def _run_task(
             node.success = False
         node.latency_ms = round((time.monotonic() - t0) * 1000)
         node.done = True
+        await _dispatch_step(
+            node,
+            "succeeded" if node.success else "failed",
+            started_at=node.start_ms,
+            ended_at=node.start_ms + node.latency_ms,
+            error_code=None if node.success else "AGENT_EXECUTION_ERROR",
+        )
         if span is not None:
             span.update(
                 output=node.output[:2000] if node.output else "",
@@ -105,7 +126,7 @@ async def _execute_target(
     ) if lf else nullcontext()
 
     with ctx:
-        nodes = build_nodes([t.model_dump() for t in target.tasks])
+        nodes = build_nodes([t.model_dump() for t in target.tasks], node_prefix=target.node_id)
         by_index = {n.index: n for n in nodes}
         pending = [n.index for n in nodes]
         finished: set[int] = set()
@@ -211,6 +232,7 @@ async def _execute_target(
 
 async def execute_plan(
     plan: Plan,
+    plan_ir: Any | None = None,
     user_id: str = "orchestrator",
     original_query: str = "",
     tenant_id: str = "",
@@ -224,6 +246,8 @@ async def execute_plan(
     Vòng lặp chính: targets tuần tự, tasks trong mỗi target song song theo depend_on.
     """
     result = ExecutionResult(plan_id=plan.plan_id)
+    if plan_ir is not None:
+        logger.debug("executor | executing validated PlanIR plan=%s", plan_ir.plan_id)
     prior_context = ""
     agent_name_map = {a["id"]: a["name"] for a in (agents or [])}
     executor_start = time.monotonic()

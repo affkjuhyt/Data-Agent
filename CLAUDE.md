@@ -11,6 +11,7 @@ so a green `make ci` is a green pipeline.
 | Task | Command | Notes |
 | --- | --- | --- |
 | Lint / format | `make lint`, `make fmt` | ruff 0.6.9 (pinned in `pyproject.toml`), run inside the service image. `make lint` and CI's `python-lint` are a **ratchet** (`tests/ruff_ratchet.py`): they fail only on findings, per file and rule, that the change adds against its base (`LINT_BASE`, default `main`), and on files it leaves unformatted that were formatted before or are new. `make fmt` rewrites the whole tree — do not commit its output with a behaviour change. Import sorting (`I001`) is on and `combine-as-imports` is off, so ruff writes one `from x import (y as z,)` statement per alias — that is its output, not churn; do not hand-collapse it |
+| Fast lint / types on V3 code | `make fmt-files FILES="…"`, `make type-v3`, `make lint-imports` | run in the cached `dataagent/dev-tools:local` image (`tests/dev-tools.Dockerfile`: ruff, mypy, import-linter and the V3 services' requirements, pinned), built once by `make dev-tools`; seconds per run instead of a PyPI install per run. `make lint` and `make fmt` use the same image |
 | Types | `make type` | mypy 2.4.0 (pinned; `pyproject.toml` config, not strict) on the whole of `backend/libs` + `backend/services` — red, see below. CI's blocking step is the strict per-surface list in `.github/workflows/ci.yml` |
 | Tests | `make test-changed`, `make test-unit`, `make test-integration`, `make test` | one pytest suite per service (`tests/unit/<service>/`, `tests/integration/<service>/`), each run in **that service's image** (plus the cached test tooling, `tests/test-image.Dockerfile`) — no single image can import every service. Suites run in parallel (`TEST_JOBS=1` to serialise); `make test-changed` runs only the suites the changes since `main` can affect — use it while iterating, `make test` before a merge. **Host Python is 3.10, the code targets 3.11**: never run tests with the host interpreter (`tests/run_suites.py` only drives docker). One suite: `make test-unit UNIT_SUITES=kb_backend:kb-backend` |
 | Dead code | `make deadcode` | vulture (python, `min_confidence = 60`, vetted exceptions in `backend/.vulture_whitelist.py`, both set in `pyproject.toml`) + knip (frontend) |
@@ -19,6 +20,8 @@ so a green `make ci` is a green pipeline.
 | Serving benchmark | `make bench` | TTFT / decode / throughput per LLM role against the GPU tiers (`model/bench/`). Needs `LLM_MAIN_BASE_URL` + `LLM_FAST_BASE_URL` reachable; pass args with `BENCH_ARGS="…"`. Measures cost, not quality — `model/eval` owns quality |
 | Serving gate | `make bench-gate` | judges a bench report against `model/bench/thresholds.json`. Exit 0 pass / 1 fail / **2 inconclusive** — 2 means a budget could not be judged (shared GPU, missing metrics), re-run rather than widen |
 | Agent e2e latency | `make bench-e2e` | per-stage breakdown of one real question against a deployed agent. Needs `BENCH_AGENT_URL`, `BENCH_AGENT_ID`, `BENCH_TENANT_ID`, `GATEWAY_KEY` exported — never read from `.env` |
+| Frontend API types | `make api-types` | dumps the api's OpenAPI to `frontend/src/lib/v1/openapi.json` and generates `schema.ts` (openapi-typescript); rerun when an api schema changes, never edit either file |
+| Design coverage | `make design-checklist`, `make design-audit` | what of the V3 system design exists: `docs/v3/10-design-checklist.md`, generated from the design snapshot, code evidence and `docs/v3/checklist/status.tsv`. Tag a test with the acceptance criterion it proves (`pytest.mark.req("AC-01-01-04")`), declare what code cannot show in `status.tsv`, regenerate in the same commit; CI fails a stale file or a status the evidence contradicts (`docs/v3/checklist/README.md`) |
 | Deploy | `make deploy` | Ansible is the only deploy path; it deploys **committed** changes only |
 
 ### Gates that are currently red
@@ -65,7 +68,7 @@ commented-out code is not allowed to stay.
 | Python modules, packages, functions, vars | `snake_case` | `warehouse_secrets.py`, `run_input_refine` |
 | Python classes | `PascalCase` | `AnalyticalSlots` |
 | Private helpers | leading `_`, module-local; do **not** re-export them from `__init__.py` | `_parse_source` |
-| React components | `PascalCase.tsx`, one component per file | `AgentPlayground.tsx` |
+| React components | `PascalCase.tsx`, one component per file | `AgentTeamPage.tsx` |
 | Hooks | `useThing.ts` | `useAgentStream.ts` |
 | Other TS modules | `camelCase.ts` | `apiClient.ts`, `formatVN.ts` |
 | Kubernetes manifests, k8s objects, Kafka topics | `kebab-case` | `workflow-runtime.yaml`, `observation.published` |
@@ -111,10 +114,13 @@ from a literal.
 
 ```
 backend/libs        shared libraries (basemodel, database_connector, shared, ingestion,
-                    semantic, indicator)
-backend/services    one deployable per directory, Dockerfile inside. kb_backend also holds the four KB
-                    Kafka workers (workers/*), built as the `kb-worker` image (deploy/docker/kb-worker);
-                    llm-exporter is a platform_workers worker. Add a worker, not a service, for a new
+                    semantic, indicator; dataagent_db = generated V3 models + scoped_session)
+backend/services    one deployable per directory, Dockerfile inside. `api` is the V3 modular monolith
+                    (ADR-28, docs/v3/06-api-v1.md): every /v1 module goes there, one package per schema,
+                    and its routes take their metadata and capability check from the A2 snapshot
+                    (catalogue/). The other directories are the legacy services it replaces.
+                    kb_backend also holds the four KB Kafka workers (workers/*), built as the
+                    `kb-worker` image (deploy/docker/kb-worker); llm-exporter is a platform_workers worker. Add a worker, not a service, for a new
                     queue consumer
 
                     workflow_runtime is layered: api/ (routers, auth, app factory) > application/
@@ -129,7 +135,9 @@ backend/services    one deployable per directory, Dockerfile inside. kb_backend 
                     one — and its relay publishes it. Do not add a direct publish after a commit.
                     Concurrent writers of one aggregate lock the parent row (FOR UPDATE) and the
                     "at most one active/published" rules are partial unique indexes
-backend/alembic     Postgres migrations (the `migrate` image)
+backend/schema      the V3 database generator: design export → definitions.json → DDL and ORM, plus the
+                    hand-written routines/ (docs/v3/07-database.md)
+backend/alembic     Postgres migrations (the `migrate` image); alembic/sql holds the generated DDL
 frontend/src        React app (features/, components/, lib/)
 deploy/ansible      the deploy path (k8s-local inventory)
 deploy/k8s          manifests: dev/ and production/

@@ -29,6 +29,7 @@ spec:
       containers:
       - name: migrate
         image: localhost:5000/dataagent/migrate:latest
+        imagePullPolicy: IfNotPresent
         command:
         - alembic
         - -c

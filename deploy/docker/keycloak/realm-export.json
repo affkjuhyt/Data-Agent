@@ -2,6 +2,7 @@
   "id": "53471ee8-bae0-42c1-b2f4-89cdde7272aa",
   "realm": "aeroflow",
   "displayName": "AeroFlow Platform",
+  "loginTheme": "data-agent",
   "notBefore": 0,
   "defaultSignatureAlgorithm": "RS256",
   "revokeRefreshToken": false,
@@ -108,6 +109,14 @@
         "id": "89a3608d-d543-403a-9ffe-520810612c21",
         "name": "platform-admin",
         "description": "Full platform sovereignty",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "53471ee8-bae0-42c1-b2f4-89cdde7272aa",
+        "attributes": {}
+      },
+      {
+        "name": "exec_vault",
+        "description": "P16 Kho riêng lãnh đạo: private theses, end-to-end encrypted in the browser. Granted per person by an admin, never by default.",
         "composite": false,
         "clientRole": false,
         "containerId": "53471ee8-bae0-42c1-b2f4-89cdde7272aa",
@@ -883,6 +892,20 @@
             "id.token.claim": "true",
             "access.token.claim": "true",
             "claim.name": "tenant_id",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "org_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "tenant_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "org_id",
             "jsonType.label": "String"
           }
         },
@@ -1992,8 +2015,9 @@
       }
     ]
   },
-  "internationalizationEnabled": false,
-  "supportedLocales": [],
+  "internationalizationEnabled": true,
+  "supportedLocales": ["vi"],
+  "defaultLocale": "vi",
   "authenticationFlows": [
     {
       "id": "afe31e4d-52b8-43c7-a4cc-33136a84787b",

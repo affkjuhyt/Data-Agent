@@ -29,18 +29,18 @@ R0-6 → R0-5 → R0-3 → R0-4 → R0-2 → R0-12.
 | ID | Việc | Phụ thuộc | Vai | Cỡ | Xong khi | TT |
 | --- | --- | --- | --- | --- | --- | --- |
 | R0-1 | Kênh result set: contract `ResultSet`, state `result_sets`, không vào rrf/reranker, responder + judge + visualization đọc trực tiếp, frame `__result_set`, lưu MinIO | | SR1 | M | 03 §1 test 1–4 xanh; `db_results` không còn | done 2bfd519 |
-| R0-10 | Plan IR + validator tĩnh; orchestrator validate trước executor; `runtime.task_run`; frame `__plan`, `__step` | | BE2 | M | 03 §9 test; plan sai không chạy node nào | todo |
+| R0-10 | Plan IR + validator tĩnh; orchestrator validate trước executor; `runtime.task_run`; frame `__plan`, `__step` | | BE2 | M | 03 §9 test; plan sai không chạy node nào | done 84e857bc |
 | R0-7 | Mã lỗi hợp nhất `libs/contracts/v1/errors.py`; bỏ `DEV_CONFIG` fallback và planner fallback; frame `__refusal`; RefusalCard | | BE2, FE1 (0,25) | S | DB lỗi → `AGENT_CONFIG_ERROR`, không trả lời bằng agent khác | done ec8def5 |
-| R0-8 | Frame `__verification`; VerifierBadge | R0-1, R0-7 | SR1, FE1 (0,25) | S | Frame phát đúng một lần/câu trả lời | todo |
-| R0-11 | Lớp lỗi trong judge và bảng định tuyến tất định; dừng khi lặp lớp | R0-8 | SR1 | S | 03 §10 test | todo |
+| R0-8 | Frame `__verification`; VerifierBadge | R0-1, R0-7 | SR1, FE1 (0,25) | S | Frame phát đúng một lần/câu trả lời | done c3d6d461 |
+| R0-11 | Lớp lỗi trong judge và bảng định tuyến tất định; dừng khi lặp lớp | R0-8 | SR1 | S | 03 §10 test | done 3d24905b |
 | R0-2 | MCP chuẩn: SDK `mcp`, `infrastructure/mcp_client.py`, planner thấy tool + schema, `mcp.py` gọi `call_tool`, `MCP.protocol`, từ chối legacy khi publish | R0-6 (api_key_ref) | BE2 | M | FastMCP test in-process; không còn `"/execute"` | todo |
-| R0-3 | Checkpointer Postgres cho agent đơn; bảng `runtime.pending_review` có RLS; resume sau restart | | Ops + BE2 (0,25) | S | Integration resume xanh; `MemorySaver` không còn | todo |
+| R0-3 | Checkpointer Postgres cho agent đơn; bảng `runtime.pending_review` có RLS; resume sau restart | | Ops + BE2 (0,25) | S | Integration resume xanh; `MemorySaver` không còn | doing 35be3a5b |
 | R0-4 | Canvas: registry là nguồn duy nhất (kèm style), xoá 7 loại node không chạy khỏi frontend, validate khi lưu (dry-run graph), một document/version, 409 khi đã publish, cache theo `canvas_hash` | | BE2, FE2 (0,5) | M | 03 §4 test; knip sạch | todo |
-| R0-5 | `/run` công khai không nhận `memory_context`/`guardrail_cfg`/`orchestrated`; `InternalRunRequest` chỉ cho service `orchestrator` | | SR1 | S | 422 cho client; orchestrator qua assertion | todo |
-| R0-6 | Sandbox xác thực service assertion; `connection_ref` thay mật khẩu; schema crawler đọc OpenBao; policy OpenBao qua Ansible; xoá env mật khẩu | | Ops | M | 401 không assertion; grep CI không còn `WAREHOUSE_PASSWORD__` | todo |
+| R0-5 | `/run` công khai không nhận `memory_context`/`guardrail_cfg`/`orchestrated`; `InternalRunRequest` chỉ cho service `orchestrator` | | SR1 | S | 422 cho client; orchestrator qua assertion | done f83a6a95 |
+| R0-6 | Sandbox xác thực service assertion; `connection_ref` thay mật khẩu; schema crawler đọc OpenBao; policy OpenBao qua Ansible; xoá env mật khẩu | | Ops | M | 401 không assertion; grep CI không còn `WAREHOUSE_PASSWORD__` | done feb47793 |
 | R0-9 | Đo model (D1): `make bench` + eval hai cấu hình, báo cáo một trang | | Ops, QA | S | Bảng điểm nộp anh Linh | todo |
 | R0-13 | Kịch bản kiểm thử và nghiệm thu đợt R0: kịch bản chạy trên cụm dev cho từng story R0, ghi lỗi theo mức, biên bản ký | R0-1…R0-12 | Quân | M | Biên bản nghiệm thu R0 ký | todo |
-| R0-12 | RUNBOOK: HITL bền, MCP, OpenBao policy; `docs/v2/09-frontend.md` ghi chú Workspace (D9) | R0-2, R0-3, R0-6 | Ops, FE1 | S | Docs cùng commit | todo |
+| R0-12 | RUNBOOK: HITL bền, MCP, OpenBao policy; `docs/v3/05-ui-v3.md` ghi chú Workspace (D9) | R0-2, R0-3, R0-6 | Ops, FE1 | S | Docs cùng commit | todo |
 
 ## 2. R1 Hỏi đúng trên kho + ngữ cảnh
 
@@ -76,6 +76,21 @@ Ra R1 khi: Eval Set pilot ≥ 0,95 trên VERIFIED/GOVERNED, `unsupported_number_
 | R2 | R2-01…R2-10 | Capability Registry bảng (gộp `TOOL_REGISTRY`, node registry, `/capabilities`); supervisor chọn capability/chuyên gia; `libs/analytics` (contribution, driver decomposition, anomaly MAD/STL, forecast baseline); Deep analysis; Workspace đầy đủ (cây artifact, plan canvas, inspector, chạy lại xuôi dòng); ReconciliationNote; Report builder; Dashboard; hybrid số + tài liệu qua catalog/graph; MCP server phơi Data Space (D12); cache theo dependency |
 | R3 | R3-01…R3-08 | Scheduler; Monitor vùng an toàn (lõi `detector` V2); alert gom nhóm + kênh Zalo/Teams/email (D10); proposal/action có duyệt; correction memory + Context Studio theo lớp lỗi; SOP có duyệt; gợi ý chủ động; forecast baseline nhãn experimental |
 | R4 | R4-01…R4-07 | Agent Studio (T2: từ mô tả + Data Space, eval trước publish); skill có cổng (T3); danh tính agent; PII masking result set; giới hạn chi phí; A2A; HA/restore/security eval; Publisher chỉ khi D8 mở lại |
+
+## 3b. API /v1 (khối `api`, thiết kế ở [06](06-api-v1.md))
+
+Thêm 11/10/2026 khi giao diện v3.1 đã đủ màn và bắt đầu thay mock MSW bằng API thật. Nguồn đặc tả là tab 4
+của tài liệu thiết kế hệ thống; cổng A2 trong CI giữ mã khớp đặc tả.
+
+| ID | Việc | Phụ thuộc | Vai | Cỡ | Tiêu chí | TT |
+| --- | --- | --- | --- | --- | --- | --- |
+| API-00 | Khung `backend/services/api`: kernel (token JWKS, `app.org_id` mỗi giao dịch, problem+json, con trỏ, SSE), bản chụp A2 và cổng so OpenAPI, suite `api`, CI, import-linter | | BE | S | `make test-unit UNIT_SUITES=api:api` xanh; route ngoài A2 lỗi khi import | done 543d7be0 |
+| API-01 | Bộ giải danh tính và năng lực từ `org.*` (toàn tổ chức + Data Space qua `X-Data-Space`), `GET /v1/data-spaces`, `GET /v1/me` (thêm vào A2) | API-00, ORM `libs/dataagent_db` | BE | S | Test tích hợp trên DDL thật: năng lực theo vai trò, hết hạn, nhóm, cô lập tổ chức, không vào Data Space khi không là thành viên | done dc268b2b |
+| API-02 | Hỏi đáp + Truy vấn: câu hỏi 202, luồng SSE có `answer_id`, câu trả lời, phản hồi, biên nhận | API-01 | BE, FE | L | Nhóm vào `COMPLETE_GROUPS`; màn Hỏi đáp chạy không cần mock | done afffb02d |
+| API-03 | Phiên làm việc | API-01 | BE, FE | M | Như trên cho màn Phiên | done ad1168c0 |
+| API-04 | Cần bạn và đánh giá | API-01 | BE, FE | M | Như trên cho màn Cần bạn | done b35f6655 |
+| API-05 | Agent: lượt chạy, sự kiện SSE, tạm dừng/tiếp tục | API-02 | BE, FE | L | Như trên cho màn Agent | done b867d890 |
+| API-06 | Triển khai khối `api`: manifest, Ansible, route `/v1` ở gateway, secret từ OpenBao | API-02 | Ops | S | `make deploy` đưa `api` lên cụm dev; e2e gọi `/v1` qua gateway | done 61563359 |
 
 ## 4. Quy tắc theo dõi
 

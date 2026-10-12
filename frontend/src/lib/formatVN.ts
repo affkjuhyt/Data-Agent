@@ -153,6 +153,37 @@ export function formatDuration(ms: Numeric): string {
   return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
+/**
+ * Money in the short form of the v3 screens: 1_200_000 → "1,2 triệu đ", 3_500_000_000 → "3,5 tỷ đ",
+ * 8000 → "8.000 đ". Amounts arrive as decimal strings (A1.1).
+ */
+export function formatMoneyShort(value: Numeric): string {
+  const n = toNumber(value);
+  if (n === null) return DASH;
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return `${formatNumber(n / 1e9, { maxFractionDigits: 1 })} tỷ đ`;
+  if (abs >= 1e6) return `${formatNumber(n / 1e6, { maxFractionDigits: 1 })} triệu đ`;
+  return `${formatNumber(Math.round(n))} đ`;
+}
+
+/**
+ * How long something has waited, in the words of the v3 screens: 30 → "vừa xong",
+ * 360 → "6 phút", 7500 → "2 giờ 05 phút", 270000 → "3 ngày".
+ */
+export function formatElapsed(seconds: Numeric): string {
+  const n = toNumber(seconds);
+  if (n === null || n < 0) return DASH;
+  if (n < 60) return 'vừa xong';
+  const minutes = Math.floor(n / 60);
+  if (minutes < 60) return `${minutes} phút`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const rest = minutes % 60;
+    return rest ? `${hours} giờ ${String(rest).padStart(2, '0')} phút` : `${hours} giờ`;
+  }
+  return `${Math.floor(hours / 24)} ngày`;
+}
+
 /** "2h ago", "just now" — for timestamps in lists. */
 export function formatRelative(value: DateInput, now: Date = new Date()): string {
   const d = toDate(value);

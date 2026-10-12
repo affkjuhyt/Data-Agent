@@ -62,7 +62,10 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 # suites run in separate images); tests/req_coverage.py merges them.
 _LEVELS = ("unit", "integration", "e2e")
 _KINDS = ("contract", "security", "resilience", "performance", "ai_eval")
-_REQ_ID = re.compile(r"UC\d{2}|NOP-\d+|SC27-\d{2}|SCVN-\d|[A-Z][A-Z0-9]*-\d{2}[a-z]?")
+# AC-01-01-04: an acceptance criterion of the design doc (tab 8), see docs/v3/checklist/README.md.
+_REQ_ID = re.compile(
+    r"UC\d{2}|NOP-\d+|SC27-\d{2}|SCVN-\d|AC-\d{2}-\d{2}-\d{2}|[A-Z][A-Z0-9]*-\d{2}[a-z]?"
+)
 _REQ_ROWS = pytest.StashKey[dict[str, dict]]()
 
 

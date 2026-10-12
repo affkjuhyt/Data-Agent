@@ -46,16 +46,14 @@ def _sys_path():
 _EMPTY = {"kb_chunks": [], "mcp_results": [], "tool_results": [], "tool_errors": []}
 
 
-async def test_an_empty_result_is_answered_not_retried():
-    """An empty knowledge base: the planner chose kb_search and nothing matched.
-    Asking the planner again returns the same plan — answer "not found" instead."""
+async def test_an_empty_result_is_refused_without_retry():
+    """An empty knowledge base is a deterministic NO_JOIN_PATH refusal."""
     import graph as graph_mod
 
-    result = await graph_mod.judge_phase1_node({
-        "tool_calls": [{"type": "kb_search", "query": "test"}], **_EMPTY, "result_sets": [],
-    })
-
-    assert result == {"judge_phase1_error": None}
+    with pytest.raises(graph_mod.NoJoinPathError):
+        await graph_mod.judge_phase1_node({
+            "tool_calls": [{"type": "kb_search", "query": "test"}], **_EMPTY, "result_sets": [],
+        })
 
 
 async def test_a_tool_error_is_answered_not_retried():
@@ -69,7 +67,8 @@ async def test_a_tool_error_is_answered_not_retried():
         "tool_errors": [], "db_error": "failed after 3 attempts: connection refused",
     })
 
-    assert result == {"judge_phase1_error": None}
+    assert result["judge_phase1_error"] is None
+    assert result["error_class"] == "TOOL_GRAMMAR"
 
 
 async def test_passes_when_tool_calls_empty_even_if_everything_else_empty():
@@ -82,7 +81,7 @@ async def test_passes_when_tool_calls_empty_even_if_everything_else_empty():
 
     result = await graph_mod.judge_phase1_node({"tool_calls": [], **_EMPTY})
 
-    assert result == {"judge_phase1_error": None}
+    assert result == {"judge_phase1_error": None, "error_class": None, "error_class_history": []}
 
 
 def test_route_after_phase1_blocks_to_planner_on_error():

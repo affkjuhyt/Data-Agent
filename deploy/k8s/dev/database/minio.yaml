@@ -32,14 +32,12 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
       - name: minio
-        image: quay.io/minio/minio:latest
-        args:
-        - server
-        - /data
-        - --address
-        - :8360
-        - --console-address
-        - :8361
+        # The upstream Community images were removed from the public registries.
+        # Keep the dev deployment on the archived, reproducible Bitnami image.
+        image: bitnamilegacy/minio:2024.12.18-debian-12-r0
+        imagePullPolicy: IfNotPresent
+        command:
+        - /opt/bitnami/scripts/minio/run.sh
         ports:
         - containerPort: 8360
           name: api
@@ -68,12 +66,17 @@ spec:
           failureThreshold: 6
         volumeMounts:
         - name: data
-          mountPath: /data
+          mountPath: /bitnami/minio/data
         - name: tmp
           mountPath: /tmp
         envFrom:
         - secretRef:
             name: minio-secrets
+        env:
+        - name: MINIO_API_PORT_NUMBER
+          value: "8360"
+        - name: MINIO_CONSOLE_PORT_NUMBER
+          value: "8361"
       volumes:
       - name: tmp
         emptyDir: {}

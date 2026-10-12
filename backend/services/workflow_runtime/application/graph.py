@@ -4,6 +4,10 @@ from typing import Any, Callable
 
 from langgraph.graph import END, START, StateGraph
 
+from services.workflow_runtime.application.judge_routing import (
+    classify_phase1_error,
+    route_error_class,
+)
 from services.workflow_runtime.application.nodes.context.metadata_injector import (
     metadata_injector_node,
 )
@@ -24,6 +28,7 @@ from services.workflow_runtime.application.nodes.sandbox.db_connector import db_
 from services.workflow_runtime.application.nodes.sandbox.kb_search import kb_search_node
 from services.workflow_runtime.application.nodes.sandbox.mcp import mcp_node
 from services.workflow_runtime.application.nodes.sandbox.tool_executor import tool_executor_node
+from services.workflow_runtime.domain.refusals import NoDataError, NoJoinPathError, PlannerError
 from services.workflow_runtime.domain.state import AgentState
 from services.workflow_runtime.infrastructure.observability import get_langfuse_client
 
@@ -124,17 +129,39 @@ async def judge_phase1_node(state: AgentState) -> dict[str, Any]:
     if lf:
         lf.update_current_span(level="DEBUG")
 
+    error_class = classify_phase1_error(state)
+    if error_class == "DATA_MISSING_DIRECT":
+        raise NoDataError("no rows returned for a direct data query")
+    if error_class == "DATA_MISSING_INDIRECT":
+        raise NoJoinPathError("retrieval returned no evidence for an indirect query")
     if state.get("tool_calls"):
         if state.get("tool_errors") or state.get("db_error"):
             logger.info("judge_phase1 | TOOL_ERROR on a decided plan → answer from what came back")
         elif not (state.get("kb_chunks") or state.get("mcp_results") or state.get("tool_results")
                   or state.get("result_sets")):
             logger.info("judge_phase1 | RETRIEVAL_ERROR on a decided plan → answer from what came back")
-    return {"judge_phase1_error": None}
+    return {
+        "judge_phase1_error": None,
+        "error_class": error_class,
+        "error_class_history": [*state.get("error_class_history", []), error_class]
+        if error_class else list(state.get("error_class_history", [])),
+    }
 
 
-def _make_route_after_phase1(after_targets: list[str]) -> Callable[[AgentState], list[str]]:
+def _make_route_after_phase1(
+    after_targets: list[str], available: set[str] | None = None,
+) -> Callable[[AgentState], list[str]]:
     def route_after_phase1(state: AgentState) -> list[str]:
+        error_class = state.get("error_class")
+        if error_class:
+            decision = route_error_class(
+                error_class,
+                available=available or set(after_targets) | {"planner"},
+                history=state.get("error_class_history", []),
+            )
+            if decision.refusal_code:
+                raise PlannerError(f"repeated judge error class: {error_class}")
+            return [decision.target] if decision.target in (available or set(after_targets)) else ["planner"]
         return ["planner"] if state.get("judge_phase1_error") else after_targets
     return route_after_phase1
 
@@ -152,6 +179,16 @@ def _make_route_after_judge(available: frozenset[str]) -> Callable[[AgentState],
             return "end"
         if state.get("judge_verdict") != "FAIL":
             return "end"
+        error_class = state.get("error_class")
+        if error_class:
+            decision = route_error_class(
+                error_class,
+                available=set(available),
+                history=state.get("error_class_history", []),
+            )
+            if decision.refusal_code:
+                raise PlannerError(f"repeated judge error class: {error_class}")
+            return decision.target if decision.target in available else "end"
         error_type = state.get("judge_error_type", "")
         if error_type == "PLANNING_ERROR" and "planner" in available:
             return "planner"
@@ -251,8 +288,8 @@ def _build_dynamic_graph(flow_nodes: list[dict[str, Any]], flow_edges: list[dict
             builder.add_edge("join_retrieval", _JUDGE_PHASE1_NODE)
             builder.add_conditional_edges(
                 _JUDGE_PHASE1_NODE,
-                _make_route_after_phase1(after_retrieval),
-                after_retrieval + ["planner"],
+                _make_route_after_phase1(after_retrieval, set(node_types)),
+                after_retrieval + ["planner"] + (["tool_executor"] if "tool_executor" in node_types else []),
             )
     elif len(retrieval_nodes) == 1:
         # 1 retrieval node → dùng conditional để planner quyết định runtime
@@ -264,8 +301,8 @@ def _build_dynamic_graph(flow_nodes: list[dict[str, Any]], flow_edges: list[dict
             builder.add_edge(single_rn, _JUDGE_PHASE1_NODE)
             builder.add_conditional_edges(
                 _JUDGE_PHASE1_NODE,
-                _make_route_after_phase1(after_retrieval),
-                after_retrieval + ["planner"],
+                _make_route_after_phase1(after_retrieval, set(node_types)),
+                after_retrieval + ["planner"] + (["tool_executor"] if "tool_executor" in node_types else []),
             )
     elif non_retrieval_planner_targets:
         for tgt in non_retrieval_planner_targets:

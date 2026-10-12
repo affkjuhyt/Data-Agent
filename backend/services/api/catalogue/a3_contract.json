@@ -1,0 +1,6598 @@
+{
+ "source": "Data Agent V3 — Tài liệu phân tích thiết kế hệ thống, tab 4 · Đặc tả API, A3",
+ "endpoints": {
+  "POST /v1/questions": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {
+    "text": true,
+    "as_of": false,
+    "knowledge_mode": false,
+    "knowledge_at": false,
+    "purpose": false,
+    "parent_question_id": false,
+    "conversation_id": false,
+    "stream": false
+   },
+   "query": [],
+   "returns": "202, Location tới question",
+   "errors": [
+    [
+     400,
+     "data_space_required"
+    ],
+    [
+     403,
+     "policy_denied"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ],
+    [
+     429,
+     "rate_limited"
+    ]
+   ],
+   "request_text": "text*, as_of, knowledge_mode, knowledge_at, purpose, parent_question_id, conversation_id, stream"
+  },
+  "GET /v1/questions/{id}": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Question. Kèm plan hiện hành và answer_id khi đã trả lời",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/questions/{id}/stream": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Luồng SSE. Sự kiện understood, progress, clarification, answer, error, done",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "PATCH /v1/questions/{id}/plan": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {
+    "chips": true,
+    "edit_note": false
+   },
+   "query": [],
+   "returns": "202, Location tới plan. Tạo phiên bản plan mới và chạy lại; mỗi chip ghi nguồn gốc người sửa",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "chips*, edit_note"
+  },
+  "GET /v1/conversations": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {},
+   "query": [
+    "q",
+    "from",
+    "to"
+   ],
+   "returns": "Danh sách Conversation",
+   "errors": [],
+   "request_text": "?q, ?from, ?to"
+  },
+  "GET /v1/answers/{id}": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Answer. figures kèm query_run_id, metric_version_id; số ngoài quyền đã bị che theo chính sách",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/answers/{id}/lineage": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {},
+   "query": [
+    "figure"
+   ],
+   "returns": "JSON. Cây truy nguồn: chỉ số và phiên bản, bảng, cột, bộ lọc, lượt chạy SQL, kỳ chốt, mã băm (UC-01-02)",
+   "errors": [
+    [
+     403,
+     "policy_denied"
+    ]
+   ],
+   "request_text": "?figure"
+  },
+  "POST /v1/answers/{id}/feedback": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {
+    "rating": true,
+    "error_kind": false,
+    "expected_value": false,
+    "comment": false
+   },
+   "query": [],
+   "returns": "Feedback",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "rating*, error_kind, expected_value, comment"
+  },
+  "PATCH /v1/feedback/{id}": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {
+    "status": true,
+    "reason": false
+   },
+   "query": [],
+   "returns": "Feedback",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     412,
+     "precondition_failed"
+    ]
+   ],
+   "request_text": "status*, reason"
+  },
+  "POST /v1/feedback/{id}:to-eval": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {
+    "eval_set_id": true
+   },
+   "query": [],
+   "returns": "EvalItem",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "eval_set_id*"
+  },
+  "POST /v1/answers/{id}/exports": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {
+    "format": true,
+    "include_detail_rows": false
+   },
+   "query": [],
+   "returns": "202, Location tới export_job. Có dòng chi tiết chứa dữ liệu cá nhân thì chuyển waiting_approval và tạo yêu cầu duyệt (BR-85)",
+   "errors": [
+    [
+     403,
+     "policy_denied"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "format*, include_detail_rows"
+  },
+  "GET /v1/exports/{id}": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ExportJob. Khi ready trả kèm download_url ký có hạn 15 phút; liên kết hết hạn sau 24 giờ",
+   "errors": [
+    [
+     410,
+     "gone"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/explore/queries": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {
+    "metric_ids": true,
+    "dimensions": false,
+    "filters": false,
+    "as_of": false,
+    "compare": false
+   },
+   "query": [],
+   "returns": "QueryRun. Khám phá theo chỉ số không qua mô hình ngôn ngữ; semantic compiler sinh SQL trực tiếp",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "metric_ids*, dimensions, filters, as_of, compare"
+  },
+  "GET /v1/answers/{id}/receipt": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "AnswerReceipt: receipt_no, data product và phiên bản, answered_at, compiler_version, runtime_version, models, frontier_used, freshness, receipt_sha256, figures (AnswerReceiptFigure, số che theo quyền người xem)",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/receipts/{receipt_no}": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {},
+   "query": [
+    "verify"
+   ],
+   "returns": "AnswerReceipt; ?verify=true tính lại SHA-256 và trả hash_match",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ],
+    [
+     409,
+     "conflict"
+    ]
+   ],
+   "request_text": "?verify"
+  },
+  "POST /v1/receipts/{id}:replay": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {
+    "mode": false,
+    "reason": false
+   },
+   "query": [],
+   "returns": "202, Location tới receipt-replays/{id}; chạy với quyền người gọi, knowledge_at = answered_at (BR-177)",
+   "errors": [
+    [
+     403,
+     "policy_denied"
+    ],
+    [
+     410,
+     "gone"
+    ]
+   ],
+   "request_text": "mode (figures | figures_and_text), reason"
+  },
+  "GET /v1/receipt-replays/{id}": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ReceiptReplay: status, outcome (identical, differs_explained, differs, not_reproducible), figure_results, cause_summary, replay_text kèm nhãn câu chữ có thể khác, error_book_entry_id",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/query-runs/{id}": {
+   "group": "Truy vấn",
+   "groups": [
+    "Truy vấn"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "QueryRun",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/query-runs/{id}/sql": {
+   "group": "Truy vấn",
+   "groups": [
+    "Truy vấn"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "JSON. Trả {sql_executed, policies_applied}; sql_generated chỉ trả cho vai trò có view_detail",
+   "errors": [
+    [
+     403,
+     "forbidden"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/query-runs/{id}/rows": {
+   "group": "Truy vấn",
+   "groups": [
+    "Truy vấn"
+   ],
+   "body": {},
+   "query": [
+    "cursor"
+   ],
+   "returns": "Danh sách JSON. Tối đa 10.000 dòng mỗi lượt chạy; đã che theo chính sách người gọi",
+   "errors": [
+    [
+     403,
+     "forbidden"
+    ],
+    [
+     410,
+     "gone"
+    ]
+   ],
+   "request_text": "?cursor"
+  },
+  "GET /v1/workspaces": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {},
+   "query": [
+    "owner",
+    "status"
+   ],
+   "returns": "Danh sách Workspace",
+   "errors": [],
+   "request_text": "?owner, ?status"
+  },
+  "POST /v1/workspaces": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {
+    "title": true,
+    "description": false,
+    "params": false,
+    "created_from": false,
+    "created_from_ref": false,
+    "template_of_skill_id": false
+   },
+   "query": [],
+   "returns": "Workspace",
+   "errors": [],
+   "request_text": "title*, description, params, created_from, created_from_ref, template_of_skill_id"
+  },
+  "GET /v1/workspaces/{id}": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Workspace. Kèm danh sách tile, participants, quyền của người gọi",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "PATCH /v1/workspaces/{id}": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {
+    "title": false,
+    "description": false,
+    "params": false,
+    "status": false
+   },
+   "query": [],
+   "returns": "Workspace",
+   "errors": [
+    [
+     412,
+     "precondition_failed"
+    ]
+   ],
+   "request_text": "title, description, params, status"
+  },
+  "POST /v1/workspaces/{id}/tiles": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {
+    "kind": true,
+    "title": false,
+    "spec": true,
+    "depends_on": false,
+    "position": false
+   },
+   "query": [],
+   "returns": "Tile",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "kind*, title, spec*, depends_on, position"
+  },
+  "PATCH /v1/tiles/{id}": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {
+    "title": false,
+    "spec": false,
+    "depends_on": false,
+    "position": false,
+    "agent_suggestion_state": false
+   },
+   "query": [],
+   "returns": "Tile",
+   "errors": [
+    [
+     412,
+     "precondition_failed"
+    ]
+   ],
+   "request_text": "title, spec, depends_on, position, agent_suggestion_state"
+  },
+  "POST /v1/tiles/{id}:run": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, Location tới tile_snapshot",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/workspaces/{id}:refresh": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {
+    "as_of": false
+   },
+   "query": [],
+   "returns": "202, Location tới tile_snapshot. Chạy theo thứ tự depends_on; ô lỗi không chặn ô độc lập",
+   "errors": [],
+   "request_text": "as_of"
+  },
+  "PUT /v1/workspaces/{id}/shares": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {
+    "shares": true
+   },
+   "query": [],
+   "returns": "Danh sách WorkspaceShare. Người xem thấy số theo quyền của chính họ (BR-89)",
+   "errors": [],
+   "request_text": "shares*"
+  },
+  "DELETE /v1/workspaces/{id}/shares/{principal_id}": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "204",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/workspaces/{id}/participants": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {
+    "principal_type": true,
+    "principal_id": true,
+    "role": true
+   },
+   "query": [],
+   "returns": "WsParticipant",
+   "errors": [
+    [
+     403,
+     "policy_denied"
+    ]
+   ],
+   "request_text": "principal_type*, principal_id*, role*"
+  },
+  "POST /v1/tiles/{id}/comments": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {
+    "body": true,
+    "parent_id": false,
+    "mentions": false,
+    "assignee_id": false,
+    "due_at": false
+   },
+   "query": [],
+   "returns": "WsComment. Nhắc agent trong mentions tạo lượt chạy",
+   "errors": [],
+   "request_text": "body*, parent_id, mentions, assignee_id, due_at"
+  },
+  "PATCH /v1/comments/{id}": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {
+    "body": false,
+    "status": false,
+    "assignee_id": false,
+    "due_at": false
+   },
+   "query": [],
+   "returns": "WsComment",
+   "errors": [
+    [
+     403,
+     "forbidden"
+    ]
+   ],
+   "request_text": "body, status, assignee_id, due_at"
+  },
+  "POST /v1/workspaces/{id}/reports": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {
+    "title": true,
+    "tile_ids": false
+   },
+   "query": [],
+   "returns": "SessionReport",
+   "errors": [],
+   "request_text": "title*, tile_ids"
+  },
+  "POST /v1/session-reports/{id}:check": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, Location tới session_report. Bốn kiểm tra: số có căn cứ, khớp số đã nộp, quyền người nhận, dữ liệu cá nhân",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/session-reports/{id}:publish": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {
+    "recipients": false
+   },
+   "query": [],
+   "returns": "SessionReport",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "recipients"
+  },
+  "GET /v1/skills": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {},
+   "query": [
+    "category",
+    "scope",
+    "q"
+   ],
+   "returns": "Danh sách Skill",
+   "errors": [],
+   "request_text": "?category, ?scope, ?q"
+  },
+  "POST /v1/skills": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {
+    "code": true,
+    "name": true,
+    "description": false,
+    "category": true,
+    "scope": false,
+    "origin": false,
+    "origin_ref": false
+   },
+   "query": [],
+   "returns": "Skill",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ]
+   ],
+   "request_text": "code*, name*, description, category*, scope, origin, origin_ref"
+  },
+  "GET /v1/skills/{id}": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Skill. Kèm phiên bản đang phát hành và params_schema",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/skills/{id}/runs": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {
+    "params": true,
+    "as_of": false
+   },
+   "query": [],
+   "returns": "202, Location tới skill_run",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ],
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "params*, as_of"
+  },
+  "GET /v1/skill-runs/{id}": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "SkillRun. Kèm các bước skill_run_step",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/skills/{id}/versions": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {
+    "params_schema": true,
+    "steps": true,
+    "template_md": false,
+    "metric_version_ids": false,
+    "sandbox_limits": false
+   },
+   "query": [],
+   "returns": "SkillVersion",
+   "errors": [],
+   "request_text": "params_schema*, steps*, template_md, metric_version_ids, sandbox_limits"
+  },
+  "PATCH /v1/skill-versions/{id}": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {
+    "params_schema": false,
+    "steps": false,
+    "template_md": false,
+    "sandbox_limits": false
+   },
+   "query": [],
+   "returns": "SkillVersion",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "params_schema, steps, template_md, sandbox_limits"
+  },
+  "POST /v1/skill-versions/{id}:test": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, Location tới eval_run",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/skill-versions/{id}:publish": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "SkillVersion. Tạo đề xuất skill_publish trong Cần bạn; phạm vi toàn tổ chức cần duyệt hai bước (BR-96)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/skill-versions/{id}:retire": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {
+    "replaced_by_skill_id": false,
+    "reason": true
+   },
+   "query": [],
+   "returns": "SkillVersion. Ngừng sau 30 ngày chuyển tiếp (BR-97)",
+   "errors": [],
+   "request_text": "replaced_by_skill_id, reason*"
+  },
+  "POST /v1/skills/{id}:share": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {
+    "scope": true
+   },
+   "query": [],
+   "returns": "Skill",
+   "errors": [],
+   "request_text": "scope*"
+  },
+  "GET /v1/skill-suggestions": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {},
+   "query": [
+    "status"
+   ],
+   "returns": "Danh sách SkillSuggestion",
+   "errors": [],
+   "request_text": "?status"
+  },
+  "POST /v1/skill-suggestions/{id}:accept": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Skill",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/skill-suggestions/{id}:dismiss": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "SkillSuggestion. Không đề xuất lại trong 90 ngày",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/sources": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "kind"
+   ],
+   "returns": "Danh sách Source",
+   "errors": [],
+   "request_text": "?status, ?kind"
+  },
+  "POST /v1/sources": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {
+    "name": true,
+    "kind": true,
+    "host": false,
+    "port": false,
+    "database_name": false,
+    "mode": false,
+    "authority_level": false,
+    "freshness_sla": false,
+    "max_concurrency": false,
+    "query_timeout_s": false,
+    "scan_schemas": false,
+    "scan_window": false,
+    "work_calendar_id": false,
+    "credentials": false,
+    "writeback_credentials": false
+   },
+   "query": [],
+   "returns": "Source. credentials được lưu vào OpenBao, không lưu CSDL (BR-14)",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "name*, kind*, host, port, database_name, mode, authority_level, freshness_sla, max_concurrency, query_timeout_s, scan_schemas, scan_window, work_calendar_id, credentials, writeback_credentials"
+  },
+  "PATCH /v1/sources/{id}": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {
+    "name": false,
+    "authority_level": false,
+    "freshness_sla": false,
+    "max_concurrency": false,
+    "query_timeout_s": false,
+    "scan_schemas": false,
+    "scan_window": false,
+    "status": false,
+    "credentials": false
+   },
+   "query": [],
+   "returns": "Source",
+   "errors": [
+    [
+     412,
+     "precondition_failed"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "name, authority_level, freshness_sla, max_concurrency, query_timeout_s, scan_schemas, scan_window, status, credentials"
+  },
+  "POST /v1/sources/{id}:test": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, Location tới source. Connector worker mở kết nối bằng tài khoản ở secret_ref (API không giữ mật khẩu kho), kiểm TLS, SELECT, quyền ghi, độ trễ, phiên bản rồi ghi status, status_reason, db_version, last_checked_at lên source; tài khoản có quyền ghi bị cảnh báo. Sửa 12/10/2026",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "PUT /v1/sources/{id}/scan-schedule": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {
+    "scan_cron": false,
+    "profile_cron": false,
+    "scan_window": false,
+    "work_calendar_id": false
+   },
+   "query": [],
+   "returns": "Source. Trả kèm 5 lần quét kế tiếp",
+   "errors": [],
+   "request_text": "scan_cron, profile_cron, scan_window, work_calendar_id"
+  },
+  "POST /v1/sources/{id}/scans": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {
+    "kind": false,
+    "tables": false
+   },
+   "query": [],
+   "returns": "202, Location tới scan_run",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ]
+   ],
+   "request_text": "kind, tables"
+  },
+  "GET /v1/scan-runs/{id}": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ScanRun",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/datasets": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {},
+   "query": [
+    "source_id",
+    "enabled",
+    "q",
+    "origin"
+   ],
+   "returns": "Danh sách Dataset",
+   "errors": [],
+   "request_text": "?source_id, ?enabled, ?q, ?origin"
+  },
+  "GET /v1/datasets/{id}": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Dataset. Kèm column_meta hiện hành và column_profile mới nhất; giá trị phổ biến của cột cá nhân đã che",
+   "errors": [],
+   "request_text": "—"
+  },
+  "PATCH /v1/datasets/{id}": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {
+    "enabled": false,
+    "steward_id": false,
+    "display_name": false,
+    "description": false,
+    "description_status": false,
+    "business_date_col": false,
+    "knowledge_time_col": false,
+    "columns": false
+   },
+   "query": [],
+   "returns": "Dataset",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "enabled, steward_id, display_name, description, description_status, business_date_col, knowledge_time_col, columns"
+  },
+  "GET /v1/datasets/{id}/versions": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách DatasetVersion",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/dataset-versions/{id}:certify": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {
+    "note": false
+   },
+   "query": [],
+   "returns": "DatasetVersion (certified_at, certified_by điền), kèm DatasetVersionCertification vừa ghi; sự kiện catalog.dataset_version.certified. Từ đây phiên bản dùng được cho số báo cáo cơ quan quản lý (BR-156)",
+   "errors": [
+    [
+     403,
+     "policy_denied"
+    ],
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "note"
+  },
+  "POST /v1/dataset-versions/{id}:revoke-certification": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "DatasetVersion (certified_at, certified_by về null), kèm DatasetVersionCertification vừa ghi; sự kiện catalog.dataset_version.certification_revoked: báo cáo cơ quan quản lý, báo cáo phát hành và tệp kỳ chốt đang dùng phiên bản bị gắn cờ cần xem lại (BR-156)",
+   "errors": [
+    [
+     403,
+     "policy_denied"
+    ],
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "reason*"
+  },
+  "POST /v1/sources/{id}/jobs": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {
+    "name": true,
+    "mode": true,
+    "source_object": true,
+    "target_dataset_id": false,
+    "cursor_column": false,
+    "schedule_cron": false,
+    "freshness_sla": false,
+    "dlq_retention_days": false
+   },
+   "query": [],
+   "returns": "IngestionJob",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "name*, mode*, source_object*, target_dataset_id, cursor_column, schedule_cron, freshness_sla, dlq_retention_days"
+  },
+  "GET /v1/jobs": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "source_id"
+   ],
+   "returns": "Danh sách IngestionJob. Kèm lượt chạy gần nhất, độ trễ, số bản ghi lỗi",
+   "errors": [],
+   "request_text": "?status, ?source_id"
+  },
+  "PATCH /v1/jobs/{id}": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {
+    "name": false,
+    "schedule_cron": false,
+    "freshness_sla": false,
+    "dlq_retention_days": false
+   },
+   "query": [],
+   "returns": "IngestionJob",
+   "errors": [],
+   "request_text": "name, schedule_cron, freshness_sla, dlq_retention_days"
+  },
+  "POST /v1/jobs/{id}:pause": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "IngestionJob. BR-106",
+   "errors": [],
+   "request_text": "reason*"
+  },
+  "POST /v1/jobs/{id}:resume": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "IngestionJob",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/jobs/{id}:backfill": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {
+    "from": true,
+    "to": true
+   },
+   "query": [],
+   "returns": "202, Location tới job_run",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "from*, to*"
+  },
+  "GET /v1/job-runs": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {},
+   "query": [
+    "job_id",
+    "status",
+    "from",
+    "to"
+   ],
+   "returns": "Danh sách JobRun",
+   "errors": [],
+   "request_text": "?job_id, ?status, ?from, ?to"
+  },
+  "GET /v1/jobs/{id}/dlq": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "error_kind"
+   ],
+   "returns": "Danh sách DlqRecord",
+   "errors": [],
+   "request_text": "?status, ?error_kind"
+  },
+  "POST /v1/dlq/{id}:replay": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, Location tới dlq_record",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/dlq/{id}:discard": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "DlqRecord. BR-104",
+   "errors": [],
+   "request_text": "reason*"
+  },
+  "POST /v1/uploads": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {
+    "file": true,
+    "sheet": false
+   },
+   "query": [],
+   "returns": "FileUpload. multipart/form-data; trả kết quả nhận dạng cấu trúc và kiểm tra",
+   "errors": [
+    [
+     413,
+     "payload_too_large"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "file*, sheet"
+  },
+  "PATCH /v1/uploads/{id}": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {
+    "sheet": false,
+    "header_row": false,
+    "encoding": false,
+    "decimal_sep": false,
+    "column_map": false,
+    "target_dataset_id": false,
+    "replace_mode": false
+   },
+   "query": [],
+   "returns": "FileUpload",
+   "errors": [],
+   "request_text": "sheet, header_row, encoding, decimal_sep, column_map, target_dataset_id, replace_mode"
+  },
+  "POST /v1/uploads/{id}:commit": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Dataset. Bảng tải tay hết hạn sau 90 ngày (BR-105)",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/quality-rules": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {},
+   "query": [
+    "dataset_id",
+    "severity"
+   ],
+   "returns": "Danh sách QualityRule",
+   "errors": [],
+   "request_text": "?dataset_id, ?severity"
+  },
+  "POST /v1/quality-rules": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {
+    "dataset_id": true,
+    "column_name": false,
+    "kind": true,
+    "params": false,
+    "severity": false
+   },
+   "query": [],
+   "returns": "QualityRule",
+   "errors": [],
+   "request_text": "dataset_id*, column_name, kind*, params, severity"
+  },
+  "PATCH /v1/quality-rules/{id}": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {
+    "params": false,
+    "severity": false,
+    "status": false
+   },
+   "query": [],
+   "returns": "QualityRule",
+   "errors": [],
+   "request_text": "params, severity, status"
+  },
+  "GET /v1/quality-results": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {},
+   "query": [
+    "dataset_id",
+    "passed",
+    "from",
+    "to"
+   ],
+   "returns": "Danh sách QualityResult",
+   "errors": [],
+   "request_text": "?dataset_id, ?passed, ?from, ?to"
+  },
+  "POST /v1/quality-results/{id}:acknowledge": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {
+    "note": true
+   },
+   "query": [],
+   "returns": "QualityResult. Cho phép dùng tiếp dữ liệu vi phạm mức cao trong báo cáo (BR-116)",
+   "errors": [],
+   "request_text": "note*"
+  },
+  "GET /v1/collections": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách Collection",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/collections": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {
+    "code": true,
+    "name": true,
+    "media_kinds": false,
+    "purpose": true,
+    "pii_policy": false,
+    "retention_days": false
+   },
+   "query": [],
+   "returns": "Collection",
+   "errors": [],
+   "request_text": "code*, name*, media_kinds, purpose*, pii_policy, retention_days"
+  },
+  "POST /v1/document-sources": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {
+    "collection_id": true,
+    "kind": true,
+    "location": true,
+    "sync_cron": true,
+    "credentials": false
+   },
+   "query": [],
+   "returns": "DocumentSource",
+   "errors": [],
+   "request_text": "collection_id*, kind*, location*, sync_cron*, credentials"
+  },
+  "POST /v1/document-sources/{id}:sync": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, Location tới document_source",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/documents": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {
+    "file": true,
+    "collection_id": true,
+    "doc_no": false,
+    "effective_from": false
+   },
+   "query": [],
+   "returns": "202, Location tới document. multipart/form-data; trùng mã băm trong bộ sưu tập trả lại tài liệu đã có",
+   "errors": [
+    [
+     413,
+     "payload_too_large"
+    ]
+   ],
+   "request_text": "file*, collection_id*, doc_no, effective_from"
+  },
+  "GET /v1/documents/{id}": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Document. Kèm tiến độ từng bước tiền xử lý và số vấn đề chất lượng đang mở",
+   "errors": [],
+   "request_text": "—"
+  },
+  "PATCH /v1/documents/{id}": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {
+    "title": false,
+    "doc_no": false,
+    "issued_on": false,
+    "effective_from": false,
+    "effective_to": false,
+    "supersedes_id": false
+   },
+   "query": [],
+   "returns": "Document. Đổi hiệu lực hoặc văn bản thay thế tạo đề xuất document_validity (UC-05-05)",
+   "errors": [],
+   "request_text": "title, doc_no, issued_on, effective_from, effective_to, supersedes_id"
+  },
+  "GET /v1/documents/{id}/pages/{n}": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "DocumentPage. Kèm image_url ký có hạn và các đoạn của trang",
+   "errors": [
+    [
+     403,
+     "purpose_mismatch"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/documents/{id}/versions": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách Document",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/search/documents": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {
+    "query": true,
+    "collection_ids": false,
+    "as_of": false,
+    "top_k": false,
+    "filters": false
+   },
+   "query": [],
+   "returns": "Danh sách Chunk. Kết hợp Qdrant và Postgres FTS, xếp hạng lại; chỉ đoạn còn hiệu lực tại as_of; trả kèm điểm và vị trí trang",
+   "errors": [
+    [
+     403,
+     "purpose_mismatch"
+    ]
+   ],
+   "request_text": "query*, collection_ids, as_of, top_k, filters"
+  },
+  "GET /v1/quality-issues": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [
+    "kind",
+    "severity",
+    "status"
+   ],
+   "returns": "Danh sách QualityIssue",
+   "errors": [],
+   "request_text": "?kind, ?severity, ?status"
+  },
+  "POST /v1/quality-issues/{id}:resolve": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {
+    "resolution": true,
+    "corrected_text": false
+   },
+   "query": [],
+   "returns": "QualityIssue",
+   "errors": [
+    [
+     403,
+     "forbidden"
+    ]
+   ],
+   "request_text": "resolution*, corrected_text"
+  },
+  "POST /v1/extraction-schemas": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {
+    "collection_id": true,
+    "fields": true,
+    "target_dataset_id": false,
+    "join_key": false
+   },
+   "query": [],
+   "returns": "ExtractionSchema",
+   "errors": [],
+   "request_text": "collection_id*, fields*, target_dataset_id, join_key"
+  },
+  "POST /v1/extraction-schemas/{id}:test": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {
+    "sample_document_ids": false
+   },
+   "query": [],
+   "returns": "202, Location tới extraction_schema",
+   "errors": [],
+   "request_text": "sample_document_ids"
+  },
+  "POST /v1/extraction-schemas/{id}:activate": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ExtractionSchema",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/pipelines": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [
+    "scope",
+    "status"
+   ],
+   "returns": "Danh sách Pipeline",
+   "errors": [],
+   "request_text": "?scope, ?status"
+  },
+  "POST /v1/pipelines": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {
+    "name": true,
+    "input_dataset_ids": true,
+    "steps": false,
+    "scope": false,
+    "instruction": false
+   },
+   "query": [],
+   "returns": "Pipeline. instruction là mô tả bằng lời để agent đề xuất các bước",
+   "errors": [],
+   "request_text": "name*, input_dataset_ids*, steps, scope, instruction"
+  },
+  "PATCH /v1/pipelines/{id}": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {
+    "name": false,
+    "steps": false,
+    "scope": false,
+    "status": false,
+    "on_failure": false,
+    "depends_on_pipeline_ids": false
+   },
+   "query": [],
+   "returns": "Pipeline",
+   "errors": [
+    [
+     412,
+     "precondition_failed"
+    ]
+   ],
+   "request_text": "name, steps, scope, status, on_failure, depends_on_pipeline_ids"
+  },
+  "POST /v1/pipelines/{id}:preview": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {
+    "sample_rows": false
+   },
+   "query": [],
+   "returns": "PipelineRun. Chạy trên 10.000 dòng; trả số dòng bị loại từng bước và kiểm tra tổng",
+   "errors": [],
+   "request_text": "sample_rows"
+  },
+  "POST /v1/pipelines/{id}:materialize": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {
+    "table_name": true,
+    "scope": false
+   },
+   "query": [],
+   "returns": "202, Location tới pipeline_run",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "table_name*, scope"
+  },
+  "PUT /v1/pipelines/{id}/schedule": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {
+    "cron": false,
+    "work_calendar_id": false,
+    "trigger_on_job_id": false,
+    "depends_on_pipeline_ids": false,
+    "no_overlap": false,
+    "on_failure": false
+   },
+   "query": [],
+   "returns": "Pipeline",
+   "errors": [],
+   "request_text": "cron, work_calendar_id, trigger_on_job_id, depends_on_pipeline_ids, no_overlap, on_failure"
+  },
+  "GET /v1/lineage": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [
+    "object_kind",
+    "object_id",
+    "direction",
+    "depth"
+   ],
+   "returns": "JSON. Đồ thị nút và cạnh từ lineage_edge; nút ngoài quyền hiện ẩn danh",
+   "errors": [],
+   "request_text": "?object_kind, ?object_id, ?direction, ?depth"
+  },
+  "POST /v1/marts": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {
+    "name": true,
+    "fact_dataset_id": true,
+    "grain": true,
+    "measures": false,
+    "dimensions": false,
+    "relations": false,
+    "checks": false
+   },
+   "query": [],
+   "returns": "DataMart",
+   "errors": [],
+   "request_text": "name*, fact_dataset_id*, grain*, measures, dimensions, relations, checks"
+  },
+  "POST /v1/data-products": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu",
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "code": true,
+    "name": true,
+    "dataset_id": false,
+    "data_mart_id": false,
+    "contract": false,
+    "description": false,
+    "sample_questions": false,
+    "scope_entities": false,
+    "period_grain": false,
+    "period_from": false,
+    "period_to": false,
+    "out_of_scope_note": false,
+    "owner_id": false,
+    "steward_id": false,
+    "freshness_statement": false,
+    "pack_version_id": false,
+    "layer": false
+   },
+   "query": [],
+   "returns": "DataProduct | DataProduct ở draft; tạo eval_set context nếu chưa có",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "code*, name*, dataset_id, data_mart_id, contract* | code*, name*, description*, sample_questions, scope_entities, period_grain*, period_from*, period_to, out_of_scope_note, owner_id*, steward_id*, freshness_statement*, pack_version_id"
+  },
+  "POST /v1/data-products/{id}:publish": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "DataProduct",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/writebacks": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {
+    "source_id": true,
+    "target_table": true,
+    "from_dataset_id": true,
+    "write_window": false
+   },
+   "query": [
+    "dry_run"
+   ],
+   "returns": "WritebackRequest",
+   "errors": [
+    [
+     403,
+     "forbidden"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "source_id*, target_table*, from_dataset_id*, write_window; ?dry_run"
+  },
+  "POST /v1/writebacks/{id}:submit": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "WritebackRequest. Tạo đề xuất writeback; người duyệt phải khác người yêu cầu (BR-24)",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/writebacks/{id}:undo": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "202, Location tới writeback_request",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "reason*"
+  },
+  "GET /v1/metrics": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "q",
+    "status",
+    "certified"
+   ],
+   "returns": "Danh sách Metric",
+   "errors": [],
+   "request_text": "?q, ?status, ?certified"
+  },
+  "POST /v1/metrics": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "code": true,
+    "owner_id": true,
+    "consumer_group": false,
+    "canonical_dataset_id": false,
+    "definition": false
+   },
+   "query": [],
+   "returns": "Metric",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ]
+   ],
+   "request_text": "code*, owner_id*, consumer_group, canonical_dataset_id, definition"
+  },
+  "GET /v1/metrics/{id}": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Metric. Kèm danh sách phiên bản và nơi đang dùng (artifact, agent, báo cáo)",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/metrics/{id}/versions": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "display_name": true,
+    "description": false,
+    "expression": true,
+    "filters": false,
+    "unit": false,
+    "decimals": false,
+    "direction": false,
+    "period_semantics": true,
+    "time_grain": false,
+    "allowed_dimensions": false,
+    "additivity": false,
+    "legal_basis": false,
+    "change_note": false
+   },
+   "query": [],
+   "returns": "MetricVersion",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "display_name*, description, expression*, filters, unit, decimals, direction, period_semantics*, time_grain, allowed_dimensions, additivity, legal_basis, change_note"
+  },
+  "POST /v1/metric-versions/{id}:preview": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "periods": false
+   },
+   "query": [],
+   "returns": "202, Location tới eval_run. Chạy trên 6 kỳ, so với bản đang dùng và số đã nộp; tạo đề xuất metric_change khi gửi duyệt",
+   "errors": [],
+   "request_text": "periods"
+  },
+  "POST /v1/relationships": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "from_dataset_id": true,
+    "from_columns": true,
+    "to_dataset_id": true,
+    "to_columns": true,
+    "cardinality": true
+   },
+   "query": [],
+   "returns": "Relationship. Tạo ở trạng thái pending_review (BR-100)",
+   "errors": [],
+   "request_text": "from_dataset_id*, from_columns*, to_dataset_id*, to_columns*, cardinality*"
+  },
+  "POST /v1/synonyms": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "phrase": true,
+    "target_kind": true,
+    "target_id": true,
+    "target_value": false
+   },
+   "query": [],
+   "returns": "Synonym",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ]
+   ],
+   "request_text": "phrase*, target_kind*, target_id*, target_value"
+  },
+  "POST /v1/examples": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "question": true,
+    "sql": true,
+    "metric_ids": false
+   },
+   "query": [],
+   "returns": "ExampleQuery",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "question*, sql*, metric_ids"
+  },
+  "GET /v1/terms": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "q"
+   ],
+   "returns": "Danh sách GlossaryTerm",
+   "errors": [],
+   "request_text": "?q"
+  },
+  "POST /v1/terms": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "term": true,
+    "definition": true,
+    "meanings": false,
+    "default_meaning": false,
+    "legal_basis": false
+   },
+   "query": [],
+   "returns": "GlossaryTerm",
+   "errors": [],
+   "request_text": "term*, definition*, meanings, default_meaning, legal_basis"
+  },
+  "GET /v1/unmapped-phrases": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "min_count"
+   ],
+   "returns": "Danh sách UnmappedPhrase",
+   "errors": [],
+   "request_text": "?status, ?min_count"
+  },
+  "PUT /v1/me/term-preferences": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "preferences": true
+   },
+   "query": [],
+   "returns": "Danh sách UserTermPref. Không áp cho báo cáo phát hành (BR-123)",
+   "errors": [],
+   "request_text": "preferences*"
+  },
+  "GET /v1/knowledge/index": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "q",
+    "kind",
+    "metric_code",
+    "entity_key",
+    "limit"
+   ],
+   "returns": "Danh sách KnowledgeIndexEntry, tối đa 20, xếp theo RRF của FTS và vector Qdrant knowledge_index; chỉ trang người hỏi đủ quyền (BR-163)",
+   "errors": [],
+   "request_text": "?q, ?kind, ?metric_code, ?entity_key, ?limit"
+  },
+  "GET /v1/knowledge-pages": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "kind",
+    "owner_id",
+    "q",
+    "cursor"
+   ],
+   "returns": "Danh sách KnowledgePage",
+   "errors": [],
+   "request_text": "?status, ?kind, ?owner_id, ?q, ?cursor"
+  },
+  "POST /v1/knowledge-pages": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "kind": true,
+    "subject_kind": true,
+    "subject_ref": false,
+    "slug": true,
+    "title": true,
+    "index_summary": false,
+    "tags": false,
+    "owner_id": true
+   },
+   "query": [],
+   "returns": "KnowledgePage ở trạng thái draft",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "kind*, subject_kind*, subject_ref, slug*, title*, index_summary, tags, owner_id*"
+  },
+  "GET /v1/knowledge-pages/{id}": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "as_of",
+    "render"
+   ],
+   "returns": "RenderedKnowledgePage: phiên bản đang phục vụ, khẳng định còn hiệu lực tại as_of, số điền qua query.semantic theo quyền người đọc kèm query_run_id, nguồn, nhãn",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "?as_of, ?render"
+  },
+  "GET /v1/knowledge-pages/{id}/versions": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "cursor"
+   ],
+   "returns": "Danh sách KnowledgePageVersion",
+   "errors": [],
+   "request_text": "?status, ?cursor"
+  },
+  "GET /v1/knowledge-page-versions/{id}": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "render",
+    "diff"
+   ],
+   "returns": "RenderedKnowledgePage của đúng phiên bản; ?diff=parent kèm khác biệt",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "?render, ?diff"
+  },
+  "POST /v1/knowledge-pages/{id}/versions": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "body": true,
+    "summary": false,
+    "change_note": false,
+    "change_size": false,
+    "origin": false,
+    "knowledge_run_id": false,
+    "sources": true,
+    "claims": true,
+    "figures": false,
+    "links": false
+   },
+   "query": [],
+   "returns": "KnowledgePageVersion draft; sources, claims, figures nối bằng source_key",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "body*, summary, change_note, change_size, origin, knowledge_run_id, sources*, claims*, figures, links"
+  },
+  "POST /v1/knowledge-page-versions/{id}:submit": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "KnowledgePageVersion pending_review kèm proposal_id (kind knowledge_page); duyệt qua POST /v1/proposals/{id}:decide",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/knowledge-page-versions/{id}:certify": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "note": false
+   },
+   "query": [],
+   "returns": "KnowledgePageVersion certified",
+   "errors": [
+    [
+     403,
+     "policy_denied"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "note"
+  },
+  "POST /v1/knowledge-pages/{id}:retire": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "KnowledgePage retired",
+   "errors": [],
+   "request_text": "reason*"
+  },
+  "POST /v1/knowledge-pages:from-answer": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "answer_id": true,
+    "mode": false,
+    "target_page_id": false,
+    "title": false,
+    "note": false
+   },
+   "query": [],
+   "returns": "KnowledgePageVersion origin saveback, đã gửi duyệt",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ],
+    [
+     403,
+     "policy_denied"
+    ]
+   ],
+   "request_text": "answer_id*, mode, target_page_id, title, note"
+  },
+  "POST /v1/knowledge-runs": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "kind": true,
+    "data_space_id": true,
+    "source_kind": false,
+    "source_ref": false,
+    "page_limit": false
+   },
+   "query": [],
+   "returns": "202, Location tới knowledge-runs/{id}",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ]
+   ],
+   "request_text": "kind*, data_space_id*, source_kind, source_ref, page_limit"
+  },
+  "GET /v1/knowledge-runs": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "kind",
+    "status",
+    "cursor"
+   ],
+   "returns": "Danh sách KnowledgeRun",
+   "errors": [],
+   "request_text": "?kind, ?status, ?cursor"
+  },
+  "GET /v1/knowledge-runs/{id}": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "KnowledgeRun",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/knowledge-findings": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "run_id",
+    "status",
+    "kind",
+    "severity",
+    "page_id",
+    "cursor"
+   ],
+   "returns": "Danh sách KnowledgeLintFinding",
+   "errors": [],
+   "request_text": "?run_id, ?status, ?kind, ?severity, ?page_id, ?cursor"
+  },
+  "POST /v1/knowledge-findings/{id}:resolve": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "action": true,
+    "reason": false,
+    "assignee_id": false
+   },
+   "query": [],
+   "returns": "KnowledgeLintFinding sau hành động; propose_edit trả kèm page_version_id bản nháp",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "action*, reason, assignee_id"
+  },
+  "GET /v1/data-products/index": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "metric_codes",
+    "dimension_values",
+    "period",
+    "q"
+   ],
+   "returns": "Danh sách DataProductScope của data product active: code, version, chỉ số, thực thể, kỳ, ngoài phạm vi; kèm match {data_product_id, in_scope, reasons} khi có metric_codes",
+   "errors": [],
+   "request_text": "?metric_codes, ?dimension_values, ?period, ?q"
+  },
+  "GET /v1/data-products": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "owner_id",
+    "steward_id",
+    "q",
+    "cursor"
+   ],
+   "returns": "Danh sách DataProduct kèm freshness_state tổng",
+   "errors": [],
+   "request_text": "?status, ?owner_id, ?steward_id, ?q, ?cursor"
+  },
+  "GET /v1/data-products/{id}": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "version"
+   ],
+   "returns": "DataProduct kèm members, freshness từng dataset primary, kết quả bộ đánh giá gần nhất, số mục Error Book đang mở",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "?version"
+  },
+  "PATCH /v1/data-products/{id}": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "name": false,
+    "description": false,
+    "sample_questions": false,
+    "scope_entities": false,
+    "period_from": false,
+    "period_to": false,
+    "out_of_scope_note": false,
+    "owner_id": false,
+    "steward_id": false,
+    "freshness_statement": false
+   },
+   "query": [],
+   "returns": "DataProduct; với bản active trả bản nháp version + 1, bản cũ phục vụ đến khi duyệt",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "name, description, sample_questions, scope_entities, period_from, period_to, out_of_scope_note, owner_id, steward_id, freshness_statement"
+  },
+  "POST /v1/data-products/{id}/members": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "member_kind": true,
+    "member_ref": true,
+    "role": false,
+    "sla_kind": false,
+    "sla_cron": false,
+    "sla_event_calendar_code": false,
+    "sla_timezone": false,
+    "sla_work_calendar_id": false,
+    "sla_max_age": false,
+    "sla_grace": false,
+    "as_of_col": false
+   },
+   "query": [],
+   "returns": "DataProductMember kèm next_due_at, freshness_state tính ngay",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ],
+    [
+     409,
+     "conflict"
+    ]
+   ],
+   "request_text": "member_kind*, member_ref*, role, sla_kind, sla_cron, sla_event_calendar_code, sla_timezone, sla_work_calendar_id, sla_max_age, sla_grace, as_of_col"
+  },
+  "DELETE /v1/data-products/{id}/members/{member_id}": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "204",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/data-products/{id}:submit": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "note": false
+   },
+   "query": [],
+   "returns": "202 kèm eval_run_id; đạt thì DataProduct pending_review và proposal_id (kind data_product), duyệt qua POST /v1/proposals/{id}:decide",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "note"
+  },
+  "POST /v1/data-products/{id}:suspend": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "DataProduct suspended",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ]
+   ],
+   "request_text": "reason*"
+  },
+  "POST /v1/data-products/{id}:retire": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "DataProduct retired",
+   "errors": [],
+   "request_text": "reason*"
+  },
+  "GET /v1/data-products/{id}/freshness": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "at",
+    "periods"
+   ],
+   "returns": "Mỗi dataset primary: last_as_of, last_loaded_at, expected_as_of, due_at, next_due_at, state (fresh, overdue, missing); với ?periods trả trạng thái từng kỳ (shown, masked_stale, not_available) theo BR-178",
+   "errors": [],
+   "request_text": "?at, ?periods"
+  },
+  "GET /v1/conflicts": {
+   "group": "Xung đột",
+   "groups": [
+    "Xung đột"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "kind",
+    "material"
+   ],
+   "returns": "Danh sách Conflict",
+   "errors": [],
+   "request_text": "?status, ?kind, ?material"
+  },
+  "GET /v1/conflicts/{id}": {
+   "group": "Xung đột",
+   "groups": [
+    "Xung đột"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Conflict. Kèm các claim tham gia, nguồn, thẩm quyền, gợi ý phương án",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/conflicts/{id}:resolve": {
+   "group": "Xung đột",
+   "groups": [
+    "Xung đột"
+   ],
+   "body": {
+    "chosen_claim_id": false,
+    "outcome": true,
+    "note": false,
+    "remember_as_rule": false
+   },
+   "query": [],
+   "returns": "Conflict. remember_as_rule tạo resolution_rule và behavior_policy nguồn hitl",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "chosen_claim_id, outcome*, note, remember_as_rule"
+  },
+  "GET /v1/source-authorities": {
+   "group": "Xung đột",
+   "groups": [
+    "Xung đột"
+   ],
+   "body": {},
+   "query": [
+    "data_kind"
+   ],
+   "returns": "Danh sách SourceAuthority",
+   "errors": [],
+   "request_text": "?data_kind"
+  },
+  "PUT /v1/source-authorities": {
+   "group": "Xung đột",
+   "groups": [
+    "Xung đột"
+   ],
+   "body": {
+    "data_kind": true,
+    "ranking": true,
+    "materiality": false
+   },
+   "query": [],
+   "returns": "SourceAuthority. Tạo bản nháp và chạy thử trên xung đột 90 ngày; có hiệu lực sau duyệt",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "data_kind*, ranking*, materiality"
+  },
+  "POST /v1/resolution-rules": {
+   "group": "Xung đột",
+   "groups": [
+    "Xung đột"
+   ],
+   "body": {
+    "data_kind": true,
+    "condition": true,
+    "action": true
+   },
+   "query": [],
+   "returns": "ResolutionRule",
+   "errors": [],
+   "request_text": "data_kind*, condition*, action*"
+  },
+  "GET /v1/inbox": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {},
+   "query": [
+    "kind",
+    "risk",
+    "status",
+    "assignee"
+   ],
+   "returns": "Danh sách HitlRequest. Gồm hitl_request và proposal đang chờ người gọi",
+   "errors": [],
+   "request_text": "?kind, ?risk, ?status, ?assignee"
+  },
+  "GET /v1/hitl-requests/{id}": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "HitlRequest",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/hitl-requests/{id}:resolve": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {
+    "decision": true,
+    "option": false,
+    "note": false,
+    "reassign_to": false,
+    "remember_as_rule": false
+   },
+   "query": [],
+   "returns": "HitlRequest",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     403,
+     "forbidden"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "decision*, option, note, reassign_to, remember_as_rule"
+  },
+  "GET /v1/proposals/{id}": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Proposal. Kèm diff, ảnh hưởng, kết quả eval_run và các mục đổi kết quả",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/proposals/{id}:decide": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {
+    "decision": true,
+    "note": false,
+    "reviewed_regressions": false,
+    "edited_diff": false
+   },
+   "query": [],
+   "returns": "Proposal",
+   "errors": [
+    [
+     403,
+     "forbidden"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "decision*, note, reviewed_regressions, edited_diff"
+  },
+  "POST /v1/eval-sets/{id}/items": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {
+    "category": false,
+    "input": true,
+    "as_of": false,
+    "expected": true,
+    "tolerance": false
+   },
+   "query": [],
+   "returns": "EvalItem",
+   "errors": [],
+   "request_text": "category, input*, as_of, expected*, tolerance"
+  },
+  "POST /v1/eval-sets/{id}/runs": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {
+    "subject_version": false
+   },
+   "query": [],
+   "returns": "202, Location tới eval_run",
+   "errors": [],
+   "request_text": "subject_version"
+  },
+  "GET /v1/eval-runs/{id}": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "EvalRun. Kèm eval_result từng mục và so sánh với lần chạy nền",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/error-book-entries": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "error_kind",
+    "source_kind",
+    "data_product_id",
+    "metric_code",
+    "assignee_id",
+    "cursor"
+   ],
+   "returns": "Danh sách ErrorBookEntry, mới nhất trước",
+   "errors": [],
+   "request_text": "?status, ?error_kind, ?source_kind, ?data_product_id, ?metric_code, ?assignee_id, ?cursor"
+  },
+  "POST /v1/error-book-entries": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {
+    "source_kind": true,
+    "data_space_id": true,
+    "data_product_id": false,
+    "feedback_id": false,
+    "answer_id": false,
+    "receipt_id": false,
+    "hitl_request_id": false,
+    "replay_id": false,
+    "accuracy_log_id": false,
+    "forecast_detail": false,
+    "lint_finding_id": false,
+    "title": true,
+    "detail": false,
+    "severity": false
+   },
+   "query": [],
+   "returns": "ErrorBookEntry open; cùng nguồn đã có mục thì trả 200 với mục có sẵn (idempotent theo feedback_id, accuracy_log_id, replay_id)",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "source_kind*, data_space_id*, data_product_id, feedback_id, answer_id, receipt_id, hitl_request_id, replay_id, accuracy_log_id, forecast_detail, lint_finding_id, title*, detail, severity"
+  },
+  "GET /v1/error-book-entries/{id}": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ErrorBookEntry kèm tóm tắt biên nhận, lần chạy lại, đề xuất sửa và trạng thái, eval_item và kết quả CI gần nhất",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "PATCH /v1/error-book-entries/{id}": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {
+    "error_kind": false,
+    "root_cause": false,
+    "assignee_id": false,
+    "severity": false,
+    "title": false
+   },
+   "query": [],
+   "returns": "ErrorBookEntry",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ]
+   ],
+   "request_text": "error_kind, root_cause, assignee_id, severity, title"
+  },
+  "POST /v1/error-book-entries/{id}:mark-fixed": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {
+    "fix_kind": true,
+    "fix_proposal_id": false,
+    "fix_ref": false,
+    "note": false
+   },
+   "query": [],
+   "returns": "ErrorBookEntry fixed; tự tạo ca hồi quy như :add-regression",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "fix_kind*, fix_proposal_id, fix_ref, note"
+  },
+  "POST /v1/error-book-entries/{id}:add-regression": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {
+    "eval_set_id": false,
+    "input": false,
+    "expected": false,
+    "tolerance": false,
+    "as_of": false
+   },
+   "query": [],
+   "returns": "eval_item_id (origin error_book, origin_ref = id); mục sang regression_added khi lần chạy CI kế tiếp đạt",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "eval_set_id, input, expected, tolerance, as_of"
+  },
+  "POST /v1/error-book-entries/{id}:dismiss": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {
+    "reason": false,
+    "duplicate_of_id": false
+   },
+   "query": [],
+   "returns": "ErrorBookEntry dismissed",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ]
+   ],
+   "request_text": "reason, duplicate_of_id (một trong hai bắt buộc)"
+  },
+  "POST /v1/error-book-entries/{id}:propose-to-pack": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {
+    "pack_id": true,
+    "summary": true
+   },
+   "query": [],
+   "returns": "pack_contribution proposed, pack_proposal_ref; nội dung gửi đi chỉ gồm cách sửa và ca kiểm thử đã bỏ dữ liệu khách",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ]
+   ],
+   "request_text": "pack_id*, summary*"
+  },
+  "GET /v1/policies": {
+   "group": "Chính sách",
+   "groups": [
+    "Chính sách"
+   ],
+   "body": {},
+   "query": [
+    "type",
+    "scope",
+    "status"
+   ],
+   "returns": "Danh sách BehaviorPolicy. type = access trả AccessPolicy",
+   "errors": [],
+   "request_text": "?type, ?scope, ?status"
+  },
+  "POST /v1/policies": {
+   "group": "Chính sách",
+   "groups": [
+    "Chính sách"
+   ],
+   "body": {
+    "type": true,
+    "definition": true
+   },
+   "query": [],
+   "returns": "BehaviorPolicy. Tạo ở trạng thái draft",
+   "errors": [],
+   "request_text": "type*, definition*"
+  },
+  "POST /v1/policies/{id}:simulate": {
+   "group": "Chính sách",
+   "groups": [
+    "Chính sách"
+   ],
+   "body": {
+    "as_user_id": true,
+    "sample_sql": false
+   },
+   "query": [],
+   "returns": "JSON. Trả kết quả trước và sau khi áp chính sách dưới danh tính người dùng thử",
+   "errors": [],
+   "request_text": "as_user_id*, sample_sql"
+  },
+  "POST /v1/policies/{id}:backtest": {
+   "group": "Chính sách",
+   "groups": [
+    "Chính sách"
+   ],
+   "body": {
+    "window_days": false
+   },
+   "query": [],
+   "returns": "202, Location tới policy_backtest",
+   "errors": [],
+   "request_text": "window_days"
+  },
+  "POST /v1/policies/{id}:activate": {
+   "group": "Chính sách",
+   "groups": [
+    "Chính sách"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "BehaviorPolicy",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/permissions:simulate": {
+   "group": "Chính sách",
+   "groups": [
+    "Chính sách"
+   ],
+   "body": {
+    "dataset_id": true,
+    "role_ids": false,
+    "user_ids": false
+   },
+   "query": [],
+   "returns": "JSON. Trả cùng một bảng dưới hai vai trò hoặc hai người",
+   "errors": [],
+   "request_text": "dataset_id*, role_ids, user_ids"
+  },
+  "POST /v1/monitors": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "metric_id": true,
+    "scope_filter": false,
+    "rule_kind": true,
+    "rule": true,
+    "schedule_cron": true,
+    "notify_mode": false,
+    "recipients": false
+   },
+   "query": [],
+   "returns": "Monitor. Trả kèm backtest; báo trên 30% số kỳ thì cảnh báo nhiễu (BR-32)",
+   "errors": [],
+   "request_text": "metric_id*, scope_filter, rule_kind*, rule*, schedule_cron*, notify_mode, recipients"
+  },
+  "PATCH /v1/monitors/{id}": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "scope_filter": false,
+    "rule": false,
+    "schedule_cron": false,
+    "notify_mode": false,
+    "recipients": false,
+    "status": false
+   },
+   "query": [],
+   "returns": "Monitor",
+   "errors": [],
+   "request_text": "scope_filter, rule, schedule_cron, notify_mode, recipients, status"
+  },
+  "POST /v1/monitors/{id}:backtest": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "periods": false
+   },
+   "query": [],
+   "returns": "Monitor",
+   "errors": [],
+   "request_text": "periods"
+  },
+  "GET /v1/alerts": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "monitor_id",
+    "from",
+    "to"
+   ],
+   "returns": "Danh sách Alert",
+   "errors": [],
+   "request_text": "?status, ?monitor_id, ?from, ?to"
+  },
+  "POST /v1/alerts/{id}:ack": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Alert",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/alerts/{id}:assign": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "assignee_id": true
+   },
+   "query": [],
+   "returns": "Alert",
+   "errors": [],
+   "request_text": "assignee_id*"
+  },
+  "POST /v1/alerts/{id}:close": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "close_note": false
+   },
+   "query": [],
+   "returns": "Alert",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "close_note"
+  },
+  "POST /v1/reports": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "kind": false,
+    "workspace_id": false,
+    "title": true,
+    "cron": true,
+    "work_calendar_id": false,
+    "cutoff_time": false,
+    "as_of_rule": true,
+    "formats": false,
+    "require_publish_check": false,
+    "recipients": false
+   },
+   "query": [],
+   "returns": "ReportSchedule",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "kind, workspace_id, title*, cron*, work_calendar_id, cutoff_time, as_of_rule*, formats, require_publish_check, recipients"
+  },
+  "PATCH /v1/reports/{id}": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "title": false,
+    "cron": false,
+    "work_calendar_id": false,
+    "cutoff_time": false,
+    "as_of_rule": false,
+    "formats": false,
+    "status": false,
+    "recipients": false
+   },
+   "query": [],
+   "returns": "ReportSchedule",
+   "errors": [],
+   "request_text": "title, cron, work_calendar_id, cutoff_time, as_of_rule, formats, status, recipients"
+  },
+  "POST /v1/reports/{id}:pause": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ReportSchedule",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/reports/{id}:run-now": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "as_of": false
+   },
+   "query": [],
+   "returns": "202, Location tới report_run",
+   "errors": [],
+   "request_text": "as_of"
+  },
+  "GET /v1/report-runs/{id}": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ReportRun. Mỗi nhóm quyền một tệp; liên kết tải ký có hạn",
+   "errors": [],
+   "request_text": "—"
+  },
+  "PUT /v1/me/digest": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "enabled": false,
+    "schedule": false,
+    "metrics": false
+   },
+   "query": [],
+   "returns": "ReportSchedule",
+   "errors": [],
+   "request_text": "enabled, schedule, metrics"
+  },
+  "GET /v1/me/notifications": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [
+    "unread"
+   ],
+   "returns": "Danh sách Notification",
+   "errors": [],
+   "request_text": "?unread"
+  },
+  "GET /v1/me/notification-prefs": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách NotificationPref",
+   "errors": [],
+   "request_text": "—"
+  },
+  "PUT /v1/me/notification-prefs": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "prefs": true
+   },
+   "query": [],
+   "returns": "Danh sách NotificationPref",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "prefs*"
+  },
+  "PUT /v1/me/channels/{channel}": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "external_address": false,
+    "verification_code": false
+   },
+   "query": [],
+   "returns": "ChannelBinding. Lần đầu gửi mã xác nhận; lần hai kèm verification_code để kích hoạt",
+   "errors": [],
+   "request_text": "external_address, verification_code"
+  },
+  "POST /v1/channels/{kind}/callback": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "payload": false
+   },
+   "query": [],
+   "returns": "204. Xác thực bằng chữ ký HMAC của kênh; ghi channel_delivery.action_taken rồi gọi hitl:resolve thay người dùng đã liên kết",
+   "errors": [
+    [
+     401,
+     "unauthenticated"
+    ]
+   ],
+   "request_text": "payload"
+  },
+  "POST /v1/tasks": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "agent_id": false,
+    "description": true,
+    "due_at": false,
+    "workspace_id": false
+   },
+   "query": [],
+   "returns": "202, Location tới background_task. Agent xác nhận lại cách hiểu trước khi chạy (pending_confirmation)",
+   "errors": [],
+   "request_text": "agent_id, description*, due_at, workspace_id"
+  },
+  "GET /v1/tasks/{id}": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "BackgroundTask",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/tasks/{id}:cancel": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "BackgroundTask",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/external-calendars": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [
+    "status"
+   ],
+   "returns": "Danh sách ExternalCalendar kèm kỳ tới và số người theo dõi",
+   "errors": [],
+   "request_text": "?status"
+  },
+  "POST /v1/external-calendars": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "code": true,
+    "name": true,
+    "legal_basis": false,
+    "recurrence_hint": false,
+    "default_local_time": false,
+    "timezone": false,
+    "work_calendar_id": false,
+    "detection_source_id": false,
+    "forecast_model_ids": false,
+    "pre_bulletin_days_before": false,
+    "pre_bulletin_local_time": false,
+    "forecast_lead": false,
+    "post_bulletin": false,
+    "post_wait_max": false
+   },
+   "query": [],
+   "returns": "ExternalCalendar; tạo Schedule dự kiến kỳ (ADR-33)",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "code*, name*, legal_basis, recurrence_hint, default_local_time, timezone, work_calendar_id, detection_source_id, forecast_model_ids, pre_bulletin_days_before, pre_bulletin_local_time, forecast_lead, post_bulletin, post_wait_max"
+  },
+  "PATCH /v1/external-calendars/{id}": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "name": false,
+    "recurrence_hint": false,
+    "default_local_time": false,
+    "detection_source_id": false,
+    "forecast_model_ids": false,
+    "pre_bulletin_local_time": false,
+    "forecast_lead": false,
+    "post_bulletin": false,
+    "post_wait_max": false,
+    "status": false
+   },
+   "query": [],
+   "returns": "ExternalCalendar; kỳ chưa diễn ra được tính lại pre_bulletin_at",
+   "errors": [],
+   "request_text": "name, recurrence_hint, default_local_time, detection_source_id, forecast_model_ids, pre_bulletin_local_time, forecast_lead, post_bulletin, post_wait_max, status"
+  },
+  "GET /v1/external-calendars/{id}/events": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [
+    "from",
+    "to",
+    "status"
+   ],
+   "returns": "Danh sách ExternalEvent kèm evidence và trạng thái hai bản tin",
+   "errors": [],
+   "request_text": "?from, ?to, ?status"
+  },
+  "POST /v1/external-events/{id}:confirm": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "action": true,
+    "expected_at": false,
+    "note": false
+   },
+   "query": [],
+   "returns": "ExternalEvent; shift ghi shifted_from và tính lại giờ bản tin; sự kiện monitor.external_event.changed",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "action* (confirm, shift, cancel), expected_at, note"
+  },
+  "PUT /v1/external-calendars/{id}/subscription": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "kinds": true,
+    "channels": true,
+    "status": false
+   },
+   "query": [],
+   "returns": "EventSubscription",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "kinds*, channels*, status"
+  },
+  "GET /v1/event-bulletins/{id}": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "EventBulletin kèm gate_result, content, web_link, liên kết LedgerEntry",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/external-events/{id}:run-bulletin": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {
+    "reason": false
+   },
+   "query": [],
+   "returns": "202, Location tới event_bulletin kind = pre; ghi LedgerEntry mới (issued_via = bulletin)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "reason"
+  },
+  "GET /v1/packs": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách IndustryPack",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/packs:import": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {
+    "file": true
+   },
+   "query": [],
+   "returns": "PackVersion. multipart/form-data; kiểm chữ ký trước khi nhận (BR-128)",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "file*"
+  },
+  "GET /v1/pack-versions/{id}": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "PackVersion. Kèm thực thể chuẩn, chỉ số chuẩn, luật kiểm tra, kỹ năng mẫu",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/packs/{id}/versions": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {
+    "version": true,
+    "manifest": true,
+    "min_core_version": true,
+    "release_notes": false,
+    "breaking_changes": false
+   },
+   "query": [],
+   "returns": "PackVersion",
+   "errors": [],
+   "request_text": "version*, manifest*, min_core_version*, release_notes, breaking_changes"
+  },
+  "POST /v1/pack-versions/{id}:validate": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, Location tới pack_check_run",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/pack-versions/{id}:publish": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "PackVersion",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/pack-installs": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {
+    "pack_version_id": true
+   },
+   "query": [],
+   "returns": "PackInstall",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ]
+   ],
+   "request_text": "pack_version_id*"
+  },
+  "POST /v1/pack-installs/{id}:suggest-mappings": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, Location tới entity_mapping",
+   "errors": [],
+   "request_text": "—"
+  },
+  "PUT /v1/pack-installs/{id}/mappings": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {
+    "entity_mappings": true,
+    "code_mappings": false
+   },
+   "query": [],
+   "returns": "Danh sách EntityMapping",
+   "errors": [],
+   "request_text": "entity_mappings*, code_mappings"
+  },
+  "POST /v1/pack-installs/{id}:calibrate": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {
+    "periods": false
+   },
+   "query": [],
+   "returns": "202, Location tới calibration_run",
+   "errors": [],
+   "request_text": "periods"
+  },
+  "POST /v1/pack-installs/{id}:activate": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "PackInstall. Tạo đề xuất pack_activate",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/metric-overrides": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {
+    "pack_install_id": true,
+    "pack_metric_code": true,
+    "expression": true,
+    "scope_condition": false,
+    "reason": true
+   },
+   "query": [],
+   "returns": "MetricOverride",
+   "errors": [],
+   "request_text": "pack_install_id*, pack_metric_code*, expression*, scope_condition, reason*"
+  },
+  "POST /v1/metric-overrides/{id}:approve": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "MetricOverride",
+   "errors": [
+    [
+     403,
+     "forbidden"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/pack-installs/{id}:upgrade": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {
+    "to_version_id": true
+   },
+   "query": [
+    "dry_run"
+   ],
+   "returns": "PackUpgrade",
+   "errors": [
+    [
+     423,
+     "period_locked"
+    ]
+   ],
+   "request_text": "to_version_id*; ?dry_run"
+  },
+  "PUT /v1/pack-upgrades/{id}/decisions": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {
+    "decisions": true
+   },
+   "query": [],
+   "returns": "PackUpgrade",
+   "errors": [],
+   "request_text": "decisions*"
+  },
+  "POST /v1/pack-upgrades/{id}:apply": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {
+    "apply_from_period": false
+   },
+   "query": [],
+   "returns": "PackUpgrade",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "apply_from_period"
+  },
+  "POST /v1/pack-upgrades/{id}:rollback": {
+   "group": "Gói ngành",
+   "groups": [
+    "Gói ngành"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "PackUpgrade",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "reason*"
+  },
+  "GET /v1/periods": {
+   "group": "Kỳ chốt",
+   "groups": [
+    "Kỳ chốt"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "from",
+    "to"
+   ],
+   "returns": "Danh sách PeriodClose",
+   "errors": [],
+   "request_text": "?status, ?from, ?to"
+  },
+  "GET /v1/periods/{id}": {
+   "group": "Kỳ chốt",
+   "groups": [
+    "Kỳ chốt"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "PeriodClose. Kèm các bản (version), tệp bản chụp, trạng thái đối soát",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/periods/{id}:close": {
+   "group": "Kỳ chốt",
+   "groups": [
+    "Kỳ chốt"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, Location tới period_close",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     423,
+     "period_locked"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/periods/{id}/reconciliation": {
+   "group": "Kỳ chốt",
+   "groups": [
+    "Kỳ chốt"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách PeriodReconciliation",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/periods/{id}/exceptions": {
+   "group": "Kỳ chốt",
+   "groups": [
+    "Kỳ chốt"
+   ],
+   "body": {
+    "item_code": true,
+    "reason": true
+   },
+   "query": [],
+   "returns": "HitlRequest. Ngoại lệ cần hai người duyệt (BR-132)",
+   "errors": [],
+   "request_text": "item_code*, reason*"
+  },
+  "POST /v1/periods/{id}:publish": {
+   "group": "Kỳ chốt",
+   "groups": [
+    "Kỳ chốt"
+   ],
+   "body": {
+    "report_code": true,
+    "filed_at": true,
+    "overrides": false
+   },
+   "query": [],
+   "returns": "PeriodClose",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "report_code*, filed_at*, overrides"
+  },
+  "GET /v1/periods/{id}/retro-changes": {
+   "group": "Kỳ chốt",
+   "groups": [
+    "Kỳ chốt"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách RetroChange",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/retro-changes/{id}:decide": {
+   "group": "Kỳ chốt",
+   "groups": [
+    "Kỳ chốt"
+   ],
+   "body": {
+    "decision": true,
+    "decision_note": true
+   },
+   "query": [],
+   "returns": "RetroChange. decision = new_version tạo bản chốt mới; bản cũ giữ nguyên (BR-43)",
+   "errors": [],
+   "request_text": "decision*, decision_note*"
+  },
+  "GET /v1/periods/compare": {
+   "group": "Kỳ chốt",
+   "groups": [
+    "Kỳ chốt"
+   ],
+   "body": {},
+   "query": [
+    "a",
+    "b",
+    "metric"
+   ],
+   "returns": "JSON. Trả chênh lệch theo chỉ số, nguyên nhân (hồi tố, đổi định nghĩa, đổi ánh xạ)",
+   "errors": [],
+   "request_text": "?a, ?b, ?metric"
+  },
+  "GET /v1/periods/compare/{id}/rows": {
+   "group": "Kỳ chốt",
+   "groups": [
+    "Kỳ chốt"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách JSON. Dòng gây chênh; đã che theo chính sách",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/admin/users": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [
+    "q",
+    "kind",
+    "status",
+    "group"
+   ],
+   "returns": "Danh sách AppUser. Kèm vai trò hiệu lực theo từng Data Space",
+   "errors": [],
+   "request_text": "?q, ?kind, ?status, ?group"
+  },
+  "GET /v1/admin/users/{id}": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "AppUser. Kèm nguồn gốc từng quyền: nhóm, khẩn cấp, yêu cầu quyền, thủ công",
+   "errors": [],
+   "request_text": "—"
+  },
+  "PUT /v1/admin/group-mappings": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "mappings": true,
+    "preview": false
+   },
+   "query": [],
+   "returns": "Danh sách GroupMapping",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "mappings*, preview"
+  },
+  "POST /v1/admin/emergency-access": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "user_id": true,
+    "role_id": true,
+    "reason": true,
+    "valid_until": false,
+    "second_approver_id": true
+   },
+   "query": [],
+   "returns": "UserRole",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "user_id*, role_id*, reason*, valid_until, second_approver_id*"
+  },
+  "GET /v1/data-spaces": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách DataSpace. Chỉ các Data Space người gọi là thành viên; kèm vai trò của người gọi",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/me": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "AppUser của người gọi (id, username, display_name, email, department, kind, default_data_space_id) kèm locale, time_zone của tổ chức; vai trò toàn tổ chức với nguồn (group_mapping, emergency, manual) và hạn; năng lực toàn tổ chức. Vai trò theo Data Space lấy ở GET /v1/data-spaces",
+   "errors": [
+    [
+     403,
+     "forbidden"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "PUT /v1/me/data-space-preference": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "open_last_used": true,
+    "data_space_id": false
+   },
+   "query": [],
+   "returns": "Lựa chọn Data Space mở lần sau",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "open_last_used*, data_space_id"
+  },
+  "POST /v1/data-spaces": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "code": true,
+    "name": true,
+    "description": false,
+    "steward_id": true,
+    "backup_steward_id": false,
+    "default_policy": false,
+    "work_calendar_id": false
+   },
+   "query": [],
+   "returns": "DataSpace",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ]
+   ],
+   "request_text": "code*, name*, description, steward_id*, backup_steward_id, default_policy, work_calendar_id"
+  },
+  "PATCH /v1/data-spaces/{id}": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "name": false,
+    "description": false,
+    "steward_id": false,
+    "backup_steward_id": false,
+    "default_policy": false,
+    "status": false,
+    "work_calendar_id": false
+   },
+   "query": [],
+   "returns": "DataSpace",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "name, description, steward_id, backup_steward_id, default_policy, status, work_calendar_id"
+  },
+  "PUT /v1/data-spaces/{id}/members": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "members": true
+   },
+   "query": [],
+   "returns": "Danh sách DataSpaceMember",
+   "errors": [
+    [
+     403,
+     "policy_denied"
+    ]
+   ],
+   "request_text": "members*"
+  },
+  "PUT /v1/data-spaces/{id}/sources": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "source_ids": true
+   },
+   "query": [],
+   "returns": "DataSpace",
+   "errors": [],
+   "request_text": "source_ids*"
+  },
+  "POST /v1/access-requests": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "data_space_id": true,
+    "capability": true,
+    "reason": true,
+    "requested_until": true
+   },
+   "query": [],
+   "returns": "AccessRequest",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "data_space_id*, capability*, reason*, requested_until*"
+  },
+  "POST /v1/access-requests/{id}:decide": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "decision": true,
+    "granted_scope": false,
+    "note": false
+   },
+   "query": [],
+   "returns": "AccessRequest",
+   "errors": [
+    [
+     403,
+     "forbidden"
+    ],
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "decision*, granted_scope, note"
+  },
+  "GET /v1/admin/models": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách ModelConfig. Kèm độ trễ p95 và kết quả bộ đánh giá gần nhất",
+   "errors": [],
+   "request_text": "—"
+  },
+  "PUT /v1/admin/models/{task}": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "model_name": true,
+    "endpoint": true,
+    "fallback_model": false,
+    "limits": false,
+    "rollout_pct": false
+   },
+   "query": [],
+   "returns": "202, Location tới eval_run. Tạo phiên bản testing và chạy bộ đánh giá của mọi Data Space; tự kích hoạt khi không giảm (BR-140)",
+   "errors": [],
+   "request_text": "model_name*, endpoint*, fallback_model, limits, rollout_pct"
+  },
+  "PUT /v1/admin/ai-settings/{key}": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "value": true
+   },
+   "query": [],
+   "returns": "AiSetting",
+   "errors": [],
+   "request_text": "value*"
+  },
+  "GET /v1/admin/system/health": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "JSON. Lấy từ Prometheus: dịch vụ, mô hình, GPU, hàng đợi, sao lưu, DR; trả trạng thái no_data khi không truy cập được",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/calendars": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách WorkCalendar",
+   "errors": [],
+   "request_text": "—"
+  },
+  "PUT /v1/calendars/{id}": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "name": false,
+    "time_zone": false,
+    "weekend_days": false,
+    "is_default": false,
+    "days": false
+   },
+   "query": [],
+   "returns": "WorkCalendar",
+   "errors": [],
+   "request_text": "name, time_zone, weekend_days, is_default, days"
+  },
+  "POST /v1/dsr": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "request_kind": true,
+    "received_at": true,
+    "due_at": true,
+    "subject_identifier": false
+   },
+   "query": [],
+   "returns": "202, Location tới dsr_request. subject_identifier chỉ dùng để tính băm, không lưu; hệ thống tìm vị trí dữ liệu rồi chuyển sang review",
+   "errors": [],
+   "request_text": "request_kind*, received_at*, due_at*, subject_identifier"
+  },
+  "GET /v1/dsr/{id}": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "DsrRequest. Kèm dsr_item: vị trí, hành động đề xuất, căn cứ",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/dsr/{id}:execute": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "items": true
+   },
+   "query": [],
+   "returns": "202, Location tới dsr_request",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "items*"
+  },
+  "GET /v1/admin/model-providers": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [
+    "kind",
+    "enabled"
+   ],
+   "returns": "Danh sách ModelProvider kèm chi phí tháng hiện tại; không bao giờ trả khoá",
+   "errors": [],
+   "request_text": "?kind, ?enabled"
+  },
+  "POST /v1/admin/model-providers": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "code": true,
+    "display_name": true,
+    "kind": true,
+    "api_style": false,
+    "endpoint": true,
+    "secret_ref": false,
+    "data_region": false,
+    "zero_retention": false,
+    "contract_ref": false,
+    "price": false,
+    "monthly_budget_vnd": false
+   },
+   "query": [],
+   "returns": "ModelProvider; frontier tạo ở enabled = false, max_classification = public",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "code*, display_name*, kind*, api_style, endpoint*, secret_ref, data_region, zero_retention, contract_ref, price, monthly_budget_vnd"
+  },
+  "PATCH /v1/admin/model-providers/{id}": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "display_name": false,
+    "endpoint": false,
+    "secret_ref": false,
+    "data_region": false,
+    "zero_retention": false,
+    "contract_ref": false,
+    "price": false,
+    "monthly_budget_vnd": false,
+    "enabled": false,
+    "status": false
+   },
+   "query": [],
+   "returns": "ModelProvider; đổi endpoint, secret_ref, data_region, zero_retention thì tự tắt và xoá duyệt",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "display_name, endpoint, secret_ref, data_region, zero_retention, contract_ref, price, monthly_budget_vnd, enabled, status"
+  },
+  "POST /v1/admin/model-providers/{id}:approve": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "note": true
+   },
+   "query": [],
+   "returns": "ModelProvider có approved_by, approved_at",
+   "errors": [
+    [
+     403,
+     "policy_denied"
+    ]
+   ],
+   "request_text": "note*"
+  },
+  "POST /v1/admin/model-providers/{id}:test": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "model_name": true
+   },
+   "query": [],
+   "returns": "Kết quả gọi thử: độ trễ, số token, lỗi; prompt mẫu cố định nhãn public; ghi model_route_decision caller_kind eval",
+   "errors": [
+    [
+     503,
+     "model_unavailable"
+    ]
+   ],
+   "request_text": "model_name*"
+  },
+  "GET /v1/admin/model-route-decisions": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [
+    "decision",
+    "reason",
+    "provider_id",
+    "caller_kind",
+    "caller_id",
+    "from",
+    "to",
+    "cursor"
+   ],
+   "returns": "Danh sách ModelRouteDecision (không có nội dung prompt, chỉ SHA-256)",
+   "errors": [],
+   "request_text": "?decision, ?reason, ?provider_id, ?caller_kind, ?caller_id, ?from, ?to, ?cursor"
+  },
+  "GET /v1/audit": {
+   "group": "Kiểm toán",
+   "groups": [
+    "Kiểm toán"
+   ],
+   "body": {},
+   "query": [
+    "actor_id",
+    "on_behalf_of",
+    "object_kind",
+    "object_id",
+    "action",
+    "outcome",
+    "from",
+    "to",
+    "agent_run_id"
+   ],
+   "returns": "Danh sách AuditLog. Giá trị trước và sau đã che dữ liệu cá nhân; việc tra cứu cũng được ghi nhật ký",
+   "errors": [],
+   "request_text": "?actor_id, ?on_behalf_of, ?object_kind, ?object_id, ?action, ?outcome, ?from, ?to, ?agent_run_id"
+  },
+  "POST /v1/audit:verify": {
+   "group": "Kiểm toán",
+   "groups": [
+    "Kiểm toán"
+   ],
+   "body": {
+    "from_seq": false
+   },
+   "query": [],
+   "returns": "JSON. Trả {ok, broken_at_seq, checked_rows}; đứt chuỗi tạo security_event mức cao",
+   "errors": [],
+   "request_text": "from_seq"
+  },
+  "POST /v1/audit:export": {
+   "group": "Kiểm toán",
+   "groups": [
+    "Kiểm toán"
+   ],
+   "body": {
+    "filters": true,
+    "format": false
+   },
+   "query": [],
+   "returns": "202, Location tới /v1/audit/exports/{id} (audit.export_job, CSDL dataagent_audit). Tệp có chữ ký số; quá 100.000 dòng cần người thứ hai duyệt (BR-138)",
+   "errors": [],
+   "request_text": "filters*, format"
+  },
+  "GET /v1/audit/exports/{id}": {
+   "group": "Kiểm toán",
+   "groups": [
+    "Kiểm toán"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ExportJob (status, row_count, format, approved_by, expires_at); không trả object_key",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/security-events": {
+   "group": "Kiểm toán",
+   "groups": [
+    "Kiểm toán"
+   ],
+   "body": {},
+   "query": [
+    "kind",
+    "severity",
+    "status"
+   ],
+   "returns": "Danh sách SecurityEvent",
+   "errors": [],
+   "request_text": "?kind, ?severity, ?status"
+  },
+  "POST /v1/admin/clients": {
+   "group": "Tích hợp",
+   "groups": [
+    "Tích hợp"
+   ],
+   "body": {
+    "name": true,
+    "kind": true,
+    "identity_mode": false,
+    "owner_user_id": true,
+    "tools": false,
+    "data_space_ids": false,
+    "quota_per_minute": false,
+    "quota_per_day": false,
+    "expires_at": true
+   },
+   "query": [],
+   "returns": "ApiClient. Phản hồi kèm client_secret một lần duy nhất; status pending_owner khi owner_user_id khác người cấp, active khi chính họ (BR-48)",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "name*, kind*, identity_mode, owner_user_id*, tools, data_space_ids, quota_per_minute, quota_per_day, expires_at*"
+  },
+  "PATCH /v1/admin/clients/{id}": {
+   "group": "Tích hợp",
+   "groups": [
+    "Tích hợp"
+   ],
+   "body": {
+    "tools": false,
+    "data_space_ids": false,
+    "quota_per_minute": false,
+    "quota_per_day": false,
+    "expires_at": false,
+    "status": false
+   },
+   "query": [],
+   "returns": "ApiClient",
+   "errors": [],
+   "request_text": "tools, data_space_ids, quota_per_minute, quota_per_day, expires_at, status"
+  },
+  "POST /v1/admin/clients/{id}:rotate-secret": {
+   "group": "Tích hợp",
+   "groups": [
+    "Tích hợp"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ApiClient. Trả bí mật mới một lần; bí mật cũ còn hiệu lực 24 giờ",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/admin/clients/{id}:revoke": {
+   "group": "Tích hợp",
+   "groups": [
+    "Tích hợp"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "ApiClient. Token đang dùng bị vô hiệu ngay",
+   "errors": [],
+   "request_text": "reason*"
+  },
+  "GET /v1/admin/clients/{id}/usage": {
+   "group": "Tích hợp",
+   "groups": [
+    "Tích hợp"
+   ],
+   "body": {},
+   "query": [
+    "from",
+    "to",
+    "granularity",
+    "tool"
+   ],
+   "returns": "Danh sách UsageCounter",
+   "errors": [],
+   "request_text": "?from, ?to, ?granularity, ?tool"
+  },
+  "GET /v1/me/clients": {
+   "group": "Tích hợp",
+   "groups": [
+    "Tích hợp"
+   ],
+   "body": {},
+   "query": [
+    "status"
+   ],
+   "returns": "Danh sách ApiClient có owner_user_id là người gọi",
+   "errors": [],
+   "request_text": "?status"
+  },
+  "POST /v1/me/clients/{id}:confirm": {
+   "group": "Tích hợp",
+   "groups": [
+    "Tích hợp"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ApiClient, status active, owner_confirmed_at đặt; chỉ chính người phụ trách được gọi. If-Match bắt buộc (ETag của client như người phụ trách đã xem), để họ không đồng ý một phạm vi đã bị sửa sau khi xem",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ],
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     412,
+     "precondition_failed"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/webhooks": {
+   "group": "Tích hợp",
+   "groups": [
+    "Tích hợp"
+   ],
+   "body": {
+    "api_client_id": true,
+    "event_types": true,
+    "target_url": true
+   },
+   "query": [],
+   "returns": "WebhookSubscription. Phản hồi kèm khoá ký HMAC một lần",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "api_client_id*, event_types*, target_url*"
+  },
+  "GET /v1/webhooks/{id}/deliveries": {
+   "group": "Tích hợp",
+   "groups": [
+    "Tích hợp"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "from",
+    "to"
+   ],
+   "returns": "Danh sách WebhookDelivery",
+   "errors": [],
+   "request_text": "?status, ?from, ?to"
+  },
+  "POST /v1/webhook-deliveries/{id}:retry": {
+   "group": "Tích hợp",
+   "groups": [
+    "Tích hợp"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, Location tới webhook_delivery",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/agents": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "kind",
+    "owner"
+   ],
+   "returns": "Danh sách AgentDef. Kèm số lượt chạy đang chạy, chờ người, chi phí tháng",
+   "errors": [],
+   "request_text": "?status, ?kind, ?owner"
+  },
+  "POST /v1/agents:draft-from-text": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {
+    "description": true,
+    "template_ref": false
+   },
+   "query": [],
+   "returns": "AgentConfig. Trả cấu hình đề xuất (chưa lưu); phần vượt quyền chủ sở hữu được đánh dấu",
+   "errors": [],
+   "request_text": "description*, template_ref"
+  },
+  "POST /v1/agents": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {
+    "code": true,
+    "name": true,
+    "kind": true,
+    "template_ref": false,
+    "monthly_budget": false,
+    "config": false
+   },
+   "query": [],
+   "returns": "AgentDef. Tạo tài khoản agent với chủ sở hữu là người gọi (BR-147)",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ],
+    [
+     403,
+     "policy_denied"
+    ]
+   ],
+   "request_text": "code*, name*, kind*, template_ref, monthly_budget, config"
+  },
+  "GET /v1/agents/{id}": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "AgentDef. Kèm phiên bản cấu hình đang chạy và triển khai đang diễn ra",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/agents/{id}/configs": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách AgentConfig",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/agents/{id}/configs": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {
+    "goal": true,
+    "data_scope": false,
+    "skill_ids": false,
+    "autonomy": false,
+    "checkpoints": false,
+    "denied_actions": false,
+    "limits": false,
+    "model_by_task": false,
+    "change_note": false,
+    "tools": false
+   },
+   "query": [],
+   "returns": "AgentConfig",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "goal*, data_scope, skill_ids, autonomy, checkpoints, denied_actions, limits, model_by_task, change_note, tools"
+  },
+  "PUT /v1/agents/{id}/triggers": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {
+    "triggers": true
+   },
+   "query": [],
+   "returns": "Danh sách AgentTrigger. Trả kèm 5 lần chạy kế tiếp hoặc số lần khớp trong 30 ngày; khớp quá 50 lần một ngày thì cảnh báo",
+   "errors": [],
+   "request_text": "triggers*"
+  },
+  "POST /v1/agents/{id}/test-runs": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {
+    "config_version": false,
+    "as_of": false
+   },
+   "query": [],
+   "returns": "202, Location tới agent_run. is_test = true; công cụ ghi và gửi chạy giả lập",
+   "errors": [],
+   "request_text": "config_version, as_of"
+  },
+  "POST /v1/agents/{id}/eval-runs": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {
+    "config_version": false
+   },
+   "query": [],
+   "returns": "202, Location tới eval_run",
+   "errors": [],
+   "request_text": "config_version"
+  },
+  "POST /v1/agents/{id}/deployments": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {
+    "config_version": true,
+    "traffic_pct": false,
+    "gates": false
+   },
+   "query": [],
+   "returns": "AgentDeployment",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ],
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "config_version*, traffic_pct, gates"
+  },
+  "PATCH /v1/deployments/{id}": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {
+    "traffic_pct": true
+   },
+   "query": [],
+   "returns": "AgentDeployment",
+   "errors": [],
+   "request_text": "traffic_pct*"
+  },
+  "POST /v1/deployments/{id}:rollback": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {
+    "reason": true,
+    "to_version": false
+   },
+   "query": [],
+   "returns": "AgentDeployment",
+   "errors": [],
+   "request_text": "reason*, to_version"
+  },
+  "GET /v1/runs": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {},
+   "query": [
+    "agent_id",
+    "status",
+    "from",
+    "to",
+    "parent_run_id"
+   ],
+   "returns": "Danh sách AgentRun",
+   "errors": [],
+   "request_text": "?agent_id, ?status, ?from, ?to, ?parent_run_id"
+  },
+  "GET /v1/runs/{id}": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {},
+   "query": [
+    "view"
+   ],
+   "returns": "AgentRun. view = simple trả diễn biến kể thành câu, technical trả các bước",
+   "errors": [],
+   "request_text": "?view"
+  },
+  "GET /v1/runs/{id}/events": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Luồng SSE. Sự kiện step_started, step_finished, checkpoint, narrative, cost, done",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/runs/{id}/children": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách AgentRun",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/runs/{id}:pause": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "AgentRun. Dừng an toàn ở ranh giới bước",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/runs/{id}:resume": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "AgentRun",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/runs/{id}:cancel": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {
+    "reason": false
+   },
+   "query": [],
+   "returns": "AgentRun. Kết quả trung gian giữ 30 ngày",
+   "errors": [],
+   "request_text": "reason"
+  },
+  "PUT /v1/runs/{id}/plan": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {
+    "steps": true,
+    "edit_note": false
+   },
+   "query": [],
+   "returns": "Plan. Tạo phiên bản kế hoạch mới; chạy lại từ bước bị sửa",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "steps*, edit_note"
+  },
+  "GET /v1/agents/{id}/memories": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {},
+   "query": [
+    "kind",
+    "scope",
+    "status"
+   ],
+   "returns": "Danh sách AgentMemory",
+   "errors": [],
+   "request_text": "?kind, ?scope, ?status"
+  },
+  "POST /v1/agents/{id}/memories": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {
+    "scope": true,
+    "user_id": false,
+    "kind": true,
+    "content": true,
+    "expires_at": false
+   },
+   "query": [],
+   "returns": "AgentMemory. scope = data_space tạo yêu cầu duyệt cho chủ sở hữu Data Space",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "scope*, user_id, kind*, content*, expires_at"
+  },
+  "PATCH /v1/memories/{id}": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {
+    "content": false,
+    "expires_at": false,
+    "status": false
+   },
+   "query": [],
+   "returns": "AgentMemory",
+   "errors": [],
+   "request_text": "content, expires_at, status"
+  },
+  "DELETE /v1/memories/{id}": {
+   "group": "Agent",
+   "groups": [
+    "Agent"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "204",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/crawl-sources": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "kind",
+    "owner_id",
+    "has_issue"
+   ],
+   "returns": "Danh sách CrawlSource. Kèm lần thu cuối, độ mới so với lịch, tỷ lệ trích đúng, số mục chờ duyệt, lỗi tải gần nhất",
+   "errors": [],
+   "request_text": "?status, ?kind, ?owner_id, ?has_issue"
+  },
+  "POST /v1/crawl-sources": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "name": true,
+    "goal": true,
+    "kind": true,
+    "seed_urls": true,
+    "allowed_domains": true,
+    "max_depth": false,
+    "schedule_cron": false,
+    "rate_limit_rps": false,
+    "auth_mode": false,
+    "secret_ref": false,
+    "review_gate": false,
+    "trust_level": false,
+    "openapi_url": false,
+    "terms_url": false
+   },
+   "query": [],
+   "returns": "CrawlSource (status = draft). Kiểm robots.txt, điều khoản và thử tải 1 trang trước khi lưu; sự kiện acquire.source.created. Dữ liệu mang nhãn nguồn ngoài (BR-149, BR-156)",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "name*, goal*, kind*, seed_urls*, allowed_domains*, max_depth, schedule_cron, rate_limit_rps, auth_mode, secret_ref, review_gate, trust_level, openapi_url, terms_url"
+  },
+  "GET /v1/crawl-sources/{id}": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "CrawlSource. Kèm phiên bản schema active và 5 lượt gần nhất",
+   "errors": [],
+   "request_text": "—"
+  },
+  "PATCH /v1/crawl-sources/{id}": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "name": false,
+    "goal": false,
+    "allowed_domains": false,
+    "max_depth": false,
+    "schedule_cron": false,
+    "rate_limit_rps": false,
+    "review_gate": false,
+    "trust_level": false,
+    "owner_id": false
+   },
+   "query": [],
+   "returns": "CrawlSource",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "name, goal, allowed_domains, max_depth, schedule_cron, rate_limit_rps, review_gate, trust_level, owner_id"
+  },
+  "POST /v1/crawl-sources/{id}:legal-review": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "legal_status": true,
+    "terms_url": true,
+    "legal_checklist": true,
+    "legal_evidence": true,
+    "legal_review_due_at": false,
+    "note": false
+   },
+   "query": [],
+   "returns": "CrawlSource. Ghi terms_sha256 từ bản điều khoản vừa chụp, legal_reviewed_by, legal_reviewed_at; hạn xem lại mặc định 6 tháng; đóng yêu cầu Cần bạn kind = legal_review; sự kiện acquire.source.legal_reviewed (BR-174)",
+   "errors": [
+    [
+     403,
+     "policy_denied"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "legal_status* (approved, rejected), terms_url*, legal_checklist*, legal_evidence*, legal_review_due_at, note"
+  },
+  "POST /v1/crawl-sources/{id}:pause": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "CrawlSource (status = paused)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "reason*"
+  },
+  "POST /v1/crawl-sources/{id}:resume": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "CrawlSource (status = active)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/crawl-sources/{id}/runs": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, Location tới crawl_run. trigger = manual; xong lượt phát acquire.run.completed. Bản gốc lưu MinIO da-raw-crawl kèm SHA-256 (BR-150)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/crawl-runs": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {},
+   "query": [
+    "source_id",
+    "status",
+    "from",
+    "to"
+   ],
+   "returns": "Danh sách CrawlRun",
+   "errors": [],
+   "request_text": "?source_id, ?status, ?from, ?to"
+  },
+  "GET /v1/crawl-runs/{id}": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "CrawlRun. Kèm danh sách CrawlPage (http_status, sha256, changed), sample_accuracy, drift_score, cost",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/crawl-sources/{id}/schema-inference": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "sample_urls": false,
+    "hints": false
+   },
+   "query": [],
+   "returns": "202, Location tới agent_run. Agent Thu thập tải tối thiểu 5 mẫu, tạo CrawlSchemaVersion status = draft",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "sample_urls, hints"
+  },
+  "GET /v1/crawl-sources/{id}/schemas": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {},
+   "query": [
+    "status"
+   ],
+   "returns": "Danh sách CrawlSchemaVersion",
+   "errors": [],
+   "request_text": "?status"
+  },
+  "POST /v1/crawl-schemas/{id}:test": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "sample_page_ids": false
+   },
+   "query": [],
+   "returns": "202, Location tới agent_run. Kết quả: tỷ lệ trường bắt buộc đúng, độ tin từng trường, bảng trước sau trên mẫu giữ lại (tối thiểu 20 trang)",
+   "errors": [],
+   "request_text": "sample_page_ids"
+  },
+  "POST /v1/crawl-schemas/{id}:approve": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "note": false
+   },
+   "query": [],
+   "returns": "CrawlSchemaVersion (status = active); phiên bản trước chuyển superseded; nguồn active (BR-151)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "note"
+  },
+  "POST /v1/crawl-schemas/{id}:revert": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "202, Location tới crawl_run. Quay về phiên bản đúng gần nhất; bản ghi trích bằng phiên bản lỗi chuyển superseded; trích lại từ bản gốc; dataset hợp nhất phát hành phiên bản mới (BR-152). Trang hết hạn lưu bản gốc được liệt kê",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "reason*"
+  },
+  "GET /v1/schema-drifts": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {},
+   "query": [
+    "source_id",
+    "drift_kind",
+    "severity",
+    "resolution"
+   ],
+   "returns": "Danh sách SchemaDrift. Kèm signals và phiên bản đề xuất; sự cố tạo tự động mỗi lượt (sự kiện acquire.schema.drift_detected)",
+   "errors": [],
+   "request_text": "?source_id, ?drift_kind, ?severity, ?resolution"
+  },
+  "POST /v1/schema-drifts/{id}:resolve": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "resolution": true,
+    "proposed_version_id": false,
+    "note": false
+   },
+   "query": [],
+   "returns": "SchemaDrift. Đóng yêu cầu Cần bạn kind = schema_drift; nguồn chạy tiếp. Lệch ngầm (drift_kind = semantic) đóng bằng false_alarm thì lượt cách ly được phát hành; bằng approved_new hoặc manual_fix thì trích lại các lượt cách ly bằng phiên bản mới (BR-168)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "resolution* (approved_new, manual_fix, reverted, false_alarm), proposed_version_id, note"
+  },
+  "GET /v1/crawl-runs/{id}/records": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "review_reasons",
+    "is_random_sample"
+   ],
+   "returns": "Danh sách ExtractedRecord. Kèm vùng gốc (object_key, vị trí trích) để tô sáng trên bản chụp",
+   "errors": [],
+   "request_text": "?status, ?review_reasons, ?is_random_sample"
+  },
+  "POST /v1/extracted-records/{id}:review": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "decision": true,
+    "corrected_values": false,
+    "reason": false
+   },
+   "query": [],
+   "returns": "ExtractedRecord, ReviewDecision. Bản sửa giữ làm ví dụ cho bộ trích (BR-153)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "decision* (confirm, correct, reject), corrected_values, reason"
+  },
+  "POST /v1/extracted-records:bulk-review": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "record_ids": false,
+    "filter": false,
+    "decision": true,
+    "reason": false
+   },
+   "query": [],
+   "returns": "Số bản ghi theo kết quả",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "record_ids hoặc filter (run_id, review_reasons), decision*, reason"
+  },
+  "POST /v1/crawl-runs/{id}:publish": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "CrawlRun (status = published); sự kiện acquire.run.published, kích hoạt hợp nhất",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/consolidation-specs": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {},
+   "query": [
+    "entity_type",
+    "status"
+   ],
+   "returns": "Danh sách ConsolidationSpec",
+   "errors": [],
+   "request_text": "?entity_type, ?status"
+  },
+  "POST /v1/consolidation-specs": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "name": true,
+    "entity_type": true,
+    "grain": true,
+    "source_ids": true,
+    "normalization": false,
+    "source_priority": false,
+    "aggregates": false,
+    "summary_template": false,
+    "allow_interpolation": false,
+    "target_dataset_id": false
+   },
+   "query": [],
+   "returns": "ConsolidationSpec",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "name*, entity_type*, grain*, source_ids*, normalization, source_priority, aggregates, summary_template, allow_interpolation, target_dataset_id"
+  },
+  "PATCH /v1/consolidation-specs/{id}": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "name": false,
+    "entity_type": false,
+    "grain": false,
+    "source_ids": false,
+    "normalization": false,
+    "source_priority": false,
+    "aggregates": false,
+    "summary_template": false,
+    "allow_interpolation": false,
+    "target_dataset_id": false,
+    "owner_id": false,
+    "status": false
+   },
+   "query": [],
+   "returns": "ConsolidationSpec. Đổi một trong entity_type, grain, source_ids, normalization, source_priority, aggregates, summary_template, allow_interpolation, target_dataset_id thì trigger ghi last_edited_by = người gọi, last_edited_at = now(); đổi name, owner_id, status chỉ đổi updated_by. Lượt hợp nhất sau chép last_edited_by làm người tạo phiên bản dataset (BR-156). Sự kiện acquire.spec.updated",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "name, entity_type, grain, source_ids, normalization, source_priority, aggregates, summary_template, allow_interpolation, target_dataset_id, owner_id, status (active, retired)"
+  },
+  "POST /v1/consolidation-specs/{id}/runs": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "input_run_ids": false
+   },
+   "query": [],
+   "returns": "202, Location tới consolidation_run. Chỉ bảng tổng hợp, khẳng định, đoạn tóm tắt được nhúng vector (BR-154); lệch trên ngưỡng trọng yếu mở xung đột (BR-155)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "input_run_ids"
+  },
+  "GET /v1/consolidation-runs/{id}": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ConsolidationRun. Kèm dataset_version_id, conflicts_opened, claims_created, chunks_embedded; phát hành thì phát acquire.dataset.published",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/entity-links": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {},
+   "query": [
+    "entity_type",
+    "status",
+    "source_id"
+   ],
+   "returns": "Danh sách EntityLink",
+   "errors": [],
+   "request_text": "?entity_type, ?status, ?source_id"
+  },
+  "POST /v1/entity-links/{id}:decide": {
+   "group": "Thu thập",
+   "groups": [
+    "Thu thập"
+   ],
+   "body": {
+    "status": true,
+    "reference_entity_id": false
+   },
+   "query": [],
+   "returns": "EntityLink (method = human); canonical_key chép từ thực thể chuẩn (BR-169)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "status* (confirmed, rejected), reference_entity_id"
+  },
+  "POST /v1/forecasts": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {
+    "metric_code": true,
+    "frequency": true,
+    "horizon": true,
+    "scope": false,
+    "question_id": false,
+    "assumptions": false,
+    "notify_channels": false
+   },
+   "query": [],
+   "returns": "Có dự báo còn hiệu lực: 200, ForecastJob (status = ready) kèm Prediction. Chưa có: 202, Location tới forecast_job, thân thêm eta_at. Chỉ dùng dữ liệu biết trước cutoff_at (BR-157, BR-159)",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "metric_code*, frequency*, horizon*, scope, question_id, assumptions, notify_channels"
+  },
+  "GET /v1/forecasts/{id}": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ForecastJob. Kèm progress, eta_at; khi ready kèm Prediction (point, lo80, hi80, lo95, hi95), giả định, ngày dữ liệu và nhãn (đã duyệt, thử nghiệm, mô hình chuẩn)",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/forecasts/{id}/events": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Luồng SSE. Sự kiện progress, waiting_human, eta_changed, result, error, done; nối lại bằng Last-Event-ID. Kafka: forecast.job.state_changed, forecast.job.completed",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/forecasts/{id}:cancel": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {
+    "reason": false
+   },
+   "query": [],
+   "returns": "ForecastJob (status = cancelled)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "reason"
+  },
+  "GET /v1/forecast-models": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [
+    "metric_code",
+    "frequency",
+    "status"
+   ],
+   "returns": "Danh sách ForecastModel. Kèm MASE cuốn chiếu và nhãn suy giảm",
+   "errors": [],
+   "request_text": "?metric_code, ?frequency, ?status"
+  },
+  "GET /v1/forecast-models/{id}": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ForecastModel. Kèm phiên bản đang phát hành và lịch huấn luyện lại",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/forecast-model-versions/{id}": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ModelVersion. Kèm model_card, features và future_assumption từng biến",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/forecast-model-versions/{id}/backtest": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "BacktestRun. metrics theo từng tầm so với baseline_metrics (seasonal naive), candidates",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/forecast-model-versions/{id}:submit": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {
+    "note": false
+   },
+   "query": [],
+   "returns": "ModelVersion (status = pending_approval); tạo yêu cầu Cần bạn kind = forecast_model",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "note"
+  },
+  "POST /v1/forecast-model-versions/{id}:approve": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {
+    "note": false
+   },
+   "query": [],
+   "returns": "ModelVersion (status = published); phiên bản cũ chuyển retired, dự báo tính lại; sự kiện forecast.model.published (BR-158)",
+   "errors": [
+    [
+     403,
+     "policy_denied"
+    ],
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "note"
+  },
+  "POST /v1/forecast-model-versions/{id}:reject": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "ModelVersion (status = rejected)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "reason*"
+  },
+  "POST /v1/forecast-models/{id}:retrain": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {
+    "reason": false,
+    "training_to": false
+   },
+   "query": [],
+   "returns": "202, Location tới forecast_job. Phiên bản mới qua backtest và duyệt (UC-15-04)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "reason, training_to"
+  },
+  "POST /v1/forecast-models/{id}/scenarios": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {
+    "name": true,
+    "assumptions": true
+   },
+   "query": [],
+   "returns": "Scenario kèm Prediction theo kịch bản và chênh lệch so với kịch bản gốc",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "name*, assumptions*"
+  },
+  "GET /v1/forecast-models/{id}/predictions": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [
+    "scenario_id",
+    "model_version_id",
+    "from",
+    "to"
+   ],
+   "returns": "Danh sách Prediction (point, lo80, hi80, lo95, hi95, contributions). Luôn kèm giả định và nhãn mô hình (BR-158, BR-160)",
+   "errors": [],
+   "request_text": "?scenario_id, ?model_version_id, ?from, ?to"
+  },
+  "GET /v1/forecast-models/{id}/accuracy": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [
+    "from",
+    "to"
+   ],
+   "returns": "Danh sách AccuracyLog. Kèm rolling_mase, tỷ lệ nằm trong khoảng 80% và 95%; suy giảm thì phát forecast.model.degraded (BR-160)",
+   "errors": [],
+   "request_text": "?from, ?to"
+  },
+  "GET /v1/formula-models": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [
+    "metric_code",
+    "product_code",
+    "status"
+   ],
+   "returns": "Danh sách FormulaModel kèm trạng thái phiên bản (published, degraded) và reconstruction_mae",
+   "errors": [],
+   "request_text": "?metric_code, ?product_code, ?status"
+  },
+  "POST /v1/formula-models": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {
+    "model_id": true,
+    "metric_version_id": true,
+    "product_code": true,
+    "formula": true,
+    "window_rule": true,
+    "input_series": true,
+    "nowcast_method": false,
+    "n_draws": false,
+    "miss_abs_threshold": false,
+    "rounding": false
+   },
+   "query": [],
+   "returns": "FormulaModel kèm ModelVersion draft algorithm = formula_mc",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "model_id*, metric_version_id*, product_code*, formula*, window_rule*, input_series*, nowcast_method, n_draws, miss_abs_threshold, rounding"
+  },
+  "GET /v1/formula-models/{id}": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "FormulaModel. Kèm fund_model (method, log_score so với mốc), input_series, owner",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/formula-models/{id}/components": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [
+    "at",
+    "status"
+   ],
+   "returns": "Danh sách FormulaComponent của các mã mà formula tham chiếu; ?at trả giá trị hiệu lực tại thời điểm",
+   "errors": [],
+   "request_text": "?at, ?status"
+  },
+  "POST /v1/formula-models/{id}/components": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {
+    "code": true,
+    "product_code": true,
+    "value": true,
+    "unit": true,
+    "valid_from": true,
+    "valid_to": false,
+    "legal_doc_number": true,
+    "legal_doc_url": true,
+    "document_id": false,
+    "extracted_record_id": false,
+    "note": false
+   },
+   "query": [],
+   "returns": "FormulaComponent (status = pending_review); tạo yêu cầu Cần bạn kind = formula_component",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "code*, product_code*, value*, unit*, valid_from*, valid_to, legal_doc_number*, legal_doc_url*, document_id, extracted_record_id, note"
+  },
+  "POST /v1/formula-components/{id}:certify": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {
+    "note": false
+   },
+   "query": [],
+   "returns": "FormulaComponent (status = certified); bản cũ được đặt valid_to; sự kiện forecast.formula_component.certified",
+   "errors": [
+    [
+     403,
+     "policy_denied"
+    ],
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "note"
+  },
+  "POST /v1/formula-models/{id}/runs": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {
+    "period": true,
+    "product_codes": false,
+    "event_id": false,
+    "issue": false
+   },
+   "query": [],
+   "returns": "202, Location tới forecast_job; khi ready kèm Prediction (interval_method = monte_carlo) và LedgerEntry nếu issue khác none",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "period*, product_codes, event_id, issue (none, bulletin, answer)"
+  },
+  "GET /v1/forecasts/{id}/distribution": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [
+    "product_code"
+   ],
+   "returns": "quantiles, prob_up, fund_probs, contributions {world, fx, tax, fund, proxy_error} kèm source_refs, histogram 50 khoảng; câu bắt buộc về Quỹ (BR-184)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "?product_code"
+  },
+  "GET /v1/forecast-ledger": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [
+    "forecast_model_id",
+    "product_code",
+    "from",
+    "to",
+    "status",
+    "miss"
+   ],
+   "returns": "Danh sách LedgerEntry mới nhất trước; kèm chỉ số hiệu chỉnh N kỳ (BR-185)",
+   "errors": [],
+   "request_text": "?forecast_model_id, ?product_code, ?from, ?to, ?status, ?miss"
+  },
+  "GET /v1/forecast-ledger/{id}": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "LedgerEntry kèm bản tin đã gửi (EventBulletin), actual_components, miss_attribution, error_book_entry_id",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/forecast-ledger/{id}:score": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {
+    "reason": true
+   },
+   "query": [],
+   "returns": "202, Location tới việc chấm; bản chấm cũ giữ trong accuracy_log",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "reason*"
+  },
+  "GET /v1/forecast-models/{id}/calibration": {
+   "group": "Dự báo",
+   "groups": [
+    "Dự báo"
+   ],
+   "body": {},
+   "query": [
+    "last_n",
+    "product_code"
+   ],
+   "returns": "coverage80, coverage95, mae, crps, crps_naive, miss_count, n_scored; dưới 10 kỳ đã chấm trả insufficient = true",
+   "errors": [],
+   "request_text": "?last_n, ?product_code"
+  },
+  "GET /v1/exec/vault": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Vault kèm danh sách VaultKeyWrap (kind, label, kdf, kdf_salt, wrapped_vmk, last_used_at); box_private_key_ct là bản mã, thiết bị mở bằng VMK",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/exec/vault": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {
+    "box_public_key": true,
+    "box_private_key_ct": true,
+    "key_wraps": true,
+    "exit_policy": false,
+    "contract_ref": false
+   },
+   "query": [],
+   "returns": "Vault. Exec service tạo khoá Transit RSA-4096 riêng của kho trong OpenBao và trả transit_public_key (BR-189)",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "box_public_key*, box_private_key_ct*, key_wraps* (ít nhất 2, một ngoại tuyến), exit_policy, contract_ref"
+  },
+  "POST /v1/exec/vault/key-wraps": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {
+    "kind": true,
+    "credential_id": false,
+    "label": true,
+    "kdf": true,
+    "kdf_salt": true,
+    "wrapped_vmk": true
+   },
+   "query": [],
+   "returns": "VaultKeyWrap",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "kind*, credential_id, label*, kdf*, kdf_salt*, wrapped_vmk*"
+  },
+  "DELETE /v1/exec/vault/key-wraps/{id}": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "204",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/exec/transit-key": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "JSON. public_key_pem, key_version, algorithm = RSA-OAEP-SHA256",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/exec/theses": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "due_from",
+    "due_to"
+   ],
+   "returns": "Danh sách Thesis (cột vận hành và bản mã nội dung); không trả cond_ct",
+   "errors": [],
+   "request_text": "?status, ?due_from, ?due_to"
+  },
+  "POST /v1/exec/theses": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {
+    "content_ct": true,
+    "wrapped_dek": true,
+    "content_version": true,
+    "cond_ct": true,
+    "cond_key_version": true,
+    "due_at": true,
+    "supersedes_id": false
+   },
+   "query": [],
+   "returns": "201, Thesis (status = open); khởi chạy ExecThesisWorkflow; sự kiện exec.thesis.committed không nội dung (BR-188)",
+   "errors": [
+    [
+     409,
+     "conflict"
+    ],
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "content_ct*, wrapped_dek*, content_version*, cond_ct*, cond_key_version*, due_at*, supersedes_id"
+  },
+  "GET /v1/exec/theses/{id}": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Thesis kèm evidence_state, số lô bằng chứng, publication_id",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/exec/theses/{id}:withdraw": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Thesis (status = withdrawn); workflow dừng",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/exec/theses/{id}/evidence": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [
+    "batch_no"
+   ],
+   "returns": "Danh sách ThesisEvidence theo lô (side, item_kind, strength, freshness_ok, sealed_ct); mặc định lô mới nhất và lô liền trước",
+   "errors": [],
+   "request_text": "?batch_no"
+  },
+  "POST /v1/exec/theses/{id}/evidence:refresh": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, Location tới agent_run. Gộp vào lô kế tiếp nếu đã có yêu cầu trong 1 giờ (BR-192)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     429,
+     "rate_limited"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "GET /v1/exec/theses/{id}/scores": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách ThesisScore (final, restatement)",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/exec/scores": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [
+    "from",
+    "to"
+   ],
+   "returns": "Danh sách ThesisScore của chủ kho kèm thesis_id, committed_at; thiết bị ghép với mức tự tin đã giải mã để tính Brier (tab 5 G10.5)",
+   "errors": [],
+   "request_text": "?from, ?to"
+  },
+  "GET /v1/exec/key-access-log": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [
+    "thesis_id",
+    "from",
+    "to",
+    "action"
+   ],
+   "returns": "Danh sách KeyAccessLog kèm correlation_id để đối chiếu nhật ký audit OpenBao",
+   "errors": [],
+   "request_text": "?thesis_id, ?from, ?to, ?action"
+  },
+  "GET /v1/exec/memory-items": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [
+    "kind",
+    "from",
+    "to"
+   ],
+   "returns": "Danh sách MemoryItem (bản mã); thiết bị tải hết để dựng chỉ mục tìm kiếm cục bộ (tab 5 G10.7)",
+   "errors": [],
+   "request_text": "?kind, ?from, ?to"
+  },
+  "POST /v1/exec/memory-items": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {
+    "kind": true,
+    "content_ct": true,
+    "wrapped_dek": true,
+    "content_version": true,
+    "related_thesis_id": false
+   },
+   "query": [],
+   "returns": "201, MemoryItem",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "kind*, content_ct*, wrapped_dek*, content_version*, related_thesis_id"
+  },
+  "POST /v1/exec/memory-items/{id}:shred": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "MemoryItem (content_ct, wrapped_dek null, shredded_at)",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/exec/private-questions": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {
+    "text": true,
+    "context_items": false,
+    "as_of": false
+   },
+   "query": [],
+   "returns": "202, Location tới luồng SSE. Không tạo qa.question; Model gateway chỉ dùng mô hình tại chỗ, không ghi prompt log (BR-193)",
+   "errors": [
+    [
+     503,
+     "model_unavailable"
+    ]
+   ],
+   "request_text": "text*, context_items (tối đa 8 mục đã giải mã, tối đa 4.000 token), as_of"
+  },
+  "GET /v1/exec/private-questions/{id}/stream": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Luồng SSE. Sự kiện understood, progress, answer (văn bản, figures kèm query_run_id), done; trạng thái tạm xoá sau 15 phút",
+   "errors": [
+    [
+     410,
+     "gone"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/exec/theses/{id}/publications": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {
+    "title": true,
+    "statement_public": true,
+    "target_data_space_id": true,
+    "attribution": true,
+    "attribution_label": true,
+    "confidence_public": false,
+    "rationale_public": false,
+    "ref_kind": true,
+    "metric_ref": true,
+    "scope": false,
+    "period_label": true,
+    "comparator": true,
+    "threshold": true,
+    "threshold_hi": false,
+    "unit": true
+   },
+   "query": [],
+   "returns": "202, Location tới publication. Workflow giải mã cond_ct để đối chiếu điều kiện công bố (ghi sổ, purpose validate); Context service tạo trang kind hypothesis bản nháp và đề xuất knowledge_page giao người phụ trách Data Space đích (BR-194)",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ],
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "title*, statement_public*, target_data_space_id*, attribution*, attribution_label*, confidence_public, rationale_public, ref_kind*, metric_ref*, scope, period_label*, comparator*, threshold*, threshold_hi, unit*"
+  },
+  "GET /v1/exec/publications/{id}": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Publication kèm knowledge_page_id, trạng thái duyệt",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/exec/publications/{id}:withdraw": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {
+    "reason": false
+   },
+   "query": [],
+   "returns": "Publication (status = withdrawn); trang chuyển retired",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "reason"
+  },
+  "POST /v1/exec/handovers": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {
+    "kind": true,
+    "reason": true,
+    "successor_id": false,
+    "contract_ref": false
+   },
+   "query": [],
+   "returns": "201, Handover. Chủ kho gửi thì owner_participates = true sau xác nhận passkey; AC05 gửi thì chỉ seal hoặc shred theo exit_policy (BR-195)",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ],
+    [
+     409,
+     "conflict"
+    ]
+   ],
+   "request_text": "kind*, reason*, successor_id, contract_ref"
+  },
+  "GET /v1/exec/handovers/{id}": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Handover; AC05, AC06 thấy cùng nội dung (bảng không có bản mã)",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/exec/handovers/{id}/items": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {
+    "items": true
+   },
+   "query": [],
+   "returns": "Danh sách HandoverItem; tăng items_total",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "items* [{source_kind, source_id, payload_sealed}]"
+  },
+  "GET /v1/exec/handovers/{id}/items": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách HandoverItem của người nhận",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "POST /v1/exec/handovers/{id}:approve": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {
+    "note": false
+   },
+   "query": [],
+   "returns": "Handover (status = approved); shred chạy worker huỷ khoá, trả certificate_sha256 khi completed",
+   "errors": [
+    [
+     403,
+     "policy_denied"
+    ],
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "note"
+  },
+  "POST /v1/exec/handovers/{id}:accept": {
+   "group": "Lớp riêng lãnh đạo",
+   "groups": [
+    "Lớp riêng lãnh đạo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Handover (status = completed khi mọi mục đã nhập); dòng trung chuyển xoá theo lịch",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "—"
+  }
+ }
+}

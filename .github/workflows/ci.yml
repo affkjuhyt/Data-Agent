@@ -30,6 +30,10 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ruff-base"
           git archive HEAD^1 -- pyproject.toml '*.py' | tar -x -C "$RUNNER_TEMP/ruff-base"
           python tests/ruff_ratchet.py --base-dir "$RUNNER_TEMP/ruff-base"
+      # docs/v3/checklist/README.md: the design checklist is regenerated with every change it
+      # reflects, and no declared status may contradict what the code shows.
+      - name: design checklist · current and consistent (BLOCKING)
+        run: python tests/design_checklist.py --check
 
   python-type:
     name: Python · mypy
@@ -72,6 +76,15 @@ jobs:
                  --ignore-missing-imports --follow-imports=silent \
                  "$target"
           done
+      - name: Strict typecheck · api (BLOCKING)
+        # The V3 api is typed against FastAPI, Pydantic and SQLAlchemy themselves: without them
+        # installed every query result is Any and warn_return_any reports false positives. Installed
+        # here, after the loop above, so the legacy surfaces keep their own baseline.
+        run: |
+          pip install -r backend/services/api/requirements.txt -r backend/services/worker_agent/requirements.txt
+          mypy --disallow-untyped-defs --disallow-any-generics \
+               --ignore-missing-imports --follow-imports=silent \
+               backend/services/api backend/services/worker_agent
 
   # One job per service suite, in that service's Python with only its own
   # requirements.txt: no single environment can import every service (the
@@ -119,6 +132,14 @@ jobs:
           - suite: indicator_api
             python: "3.11"
             install: -r backend/services/indicator_api/requirements.txt
+          # The `api` block (ADR-28); its suite also holds the OpenAPI to tab 4 A2 (ADR-48).
+          - suite: api
+            python: "3.12"
+            install: -r backend/services/api/requirements.txt
+          # The worker-agent block (ADR-28): the agent execution side of /v1/questions.
+          - suite: worker_agent
+            python: "3.12"
+            install: -r backend/services/worker_agent/requirements.txt
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -188,12 +209,6 @@ jobs:
             python: "3.11"
             install: -r backend/services/workflow_runtime/requirements.txt -r tests/integration/workflow_runtime/requirements.txt
             sandbox: true
-          - suite: auth_api
-            python: "3.12"
-            install: -r backend/services/auth_api/requirements.txt
-          - suite: platform_workers
-            python: "3.12"
-            install: -r backend/services/platform_workers/requirements.txt
           - suite: sandbox_executor
             python: "3.11"
             install: -r backend/services/sandbox_executor/requirements.txt
@@ -206,6 +221,17 @@ jobs:
             python: "3.13"
             install: -r backend/services/kb_backend/requirements.txt
             apt: libpq-dev
+          # The api against the V3 DDL (backend/alembic/sql) as its svc_* roles.
+          - suite: api
+            python: "3.12"
+            install: -r backend/services/api/requirements.txt
+          # The V3 DDL (backend/alembic/sql) and the ORM that mirrors it, on PostgreSQL 16.
+          - suite: worker_agent
+            python: "3.12"
+            install: -r backend/services/worker_agent/requirements.txt
+          - suite: migrate
+            python: "3.11"
+            install: '"sqlalchemy[asyncio]==2.0.35"'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

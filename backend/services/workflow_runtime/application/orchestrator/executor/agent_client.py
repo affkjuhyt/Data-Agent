@@ -73,9 +73,9 @@ async def _run_agent(payload: dict[str, Any], caller: dict[str, Any]) -> Any:
     from services.workflow_runtime.application.runtime_services.conversation_runner import (
         run_conversation_stream,
     )
-    from services.workflow_runtime.domain.schemas import RunRequest
+    from services.workflow_runtime.domain.schemas import InternalRunRequest
 
-    req = RunRequest(**payload)
+    req = InternalRunRequest(**payload)
     # _InProcessRequest stands in for starlette's Request (only .headers is read).
     return await run_conversation_stream(req, _InProcessRequest(), caller)  # type: ignore[arg-type,unused-ignore]
 
@@ -196,6 +196,7 @@ async def call_agent_stream(
       ("options", list[str])   — lựa chọn trả lời khi agent hỏi lại (responder <OPTIONS>)
       ("evidence", dict)       — SQL đã chạy, metric contract, provenance, rows preview
       ("result_set", dict)     — một bảng kết quả (libs.contracts.v1.ResultSet) + citation_index
+      ("verification", dict)   — kết quả các kiểm tra tất định và verdict của judge
       ("refusal", dict)        — lượt kết thúc không có câu trả lời (libs.contracts.v1.Refusal)
       ("reset", None)          — bỏ toàn bộ token đã nhận; câu trả lời thay thế theo sau
     """
@@ -249,6 +250,8 @@ async def call_agent_stream(
                 yield ("options", parsed["__options"])
             elif "__evidence" in parsed:
                 yield ("evidence", parsed["__evidence"])
+            elif "__verification" in parsed:
+                yield ("verification", parsed["__verification"])
             elif "__result_set" in parsed:
                 yield ("result_set", parsed["__result_set"])
             elif "__refusal" in parsed:

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds every image deploy/k8s/ references. Manual escape hatch; the normal
+# Builds the V3 image slice. Manual escape hatch; the normal
 # path is `ansible-playbook deploy.yml --tags images`, which builds only what
 # changed. Run from anywhere.
 #
@@ -7,36 +7,26 @@
 # `dataagent/<name>:latest`, no registry -- so a build here is immediately
 # usable by the manifests. Set REGISTRY to also tag and push a mirror copy:
 #
-#   REGISTRY=localhost:5000 bash deploy/k8s/build-push-images.sh
+#   REGISTRY=localhost:5001 bash deploy/k8s/build-push-images.sh
 #
 # With REGISTRY unset nothing is pushed: on a single-node cluster the image is
 # already in the daemon's store, and `imagePullPolicy: IfNotPresent` finds it.
 #
-# Image name : Dockerfile : build context — kept exactly as deploy/k8s/*.yaml
-# spells "dataagent/<name>" after REGISTRY/, since a couple of services use a
-# hyphen (kb-backend, kb-worker, platform-workers) while most use
-# the underscored Python package name.
+# Legacy service images are intentionally not listed here. Their manifests and
+# source remain during the gated cutover, but they must not be pulled into a
+# V3 deploy just because a shared path changed.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 REGISTRY="${REGISTRY:-}"
 
 declare -A IMAGES=(
-  [auth_api]="backend/services/auth_api/Dockerfile|."
-  [kb-backend]="backend/services/kb_backend/Dockerfile|."
-  [kb-worker]="deploy/docker/kb-worker/Dockerfile|."
-  [llm_exporter]="backend/services/llm_exporter/Dockerfile|."
-  [model_service]="backend/services/model_service/Dockerfile|backend/services/model_service"
-  [platform-workers]="backend/services/platform_workers/Dockerfile|."
-  [sandbox_executor]="backend/services/sandbox_executor/Dockerfile|backend/services/sandbox_executor"
-  [workflow_runtime]="backend/services/workflow_runtime/Dockerfile|."
+  [api]="backend/services/api/Dockerfile|."
+  [worker-agent]="backend/services/worker_agent/Dockerfile|."
   [migrate]="backend/alembic/Dockerfile|."
   [kong]="deploy/docker/kong/Dockerfile|."
   [keycloak]="deploy/docker/keycloak/Dockerfile|."
-  [setup]="deploy/docker/setup/Dockerfile|."
-  [sandbox-runner]="backend/services/sandbox_executor/sandbox_runner/Dockerfile|backend/services/sandbox_executor/sandbox_runner"
   [frontend]="frontend/Dockerfile.dev|frontend"
-  [eval]="model/eval/Dockerfile|."
 )
 
 only="${1:-}"

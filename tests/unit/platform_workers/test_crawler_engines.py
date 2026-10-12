@@ -72,54 +72,44 @@ class TestEngineNormalisation:
 
 class TestCredentialResolution:
     def test_per_warehouse_override_wins(self, monkeypatch):
-        monkeypatch.setenv("WAREHOUSE_PASSWORD__abc_123", "specific")
-        monkeypatch.setenv("POSTGRES_CRAWLER_PASSWORD", "shared")
+        monkeypatch.setattr(_metadata(), "resolve_openbao_secret", lambda ref: "specific")
 
         params = _metadata().connection_params(
-            "postgres", {"connection": {"host": "h", "database": "d"}}, "abc-123",
+            "postgres", {"connection": {"host": "h", "database": "d", "secret_ref": "warehouse/specific"}}, "abc-123",
         )
 
         assert params["password"] == "specific"
 
-    def test_uuid_hyphens_become_underscores(self, monkeypatch):
-        """Env names cannot contain "-", and warehouse_id is a UUID."""
-        monkeypatch.setenv("WAREHOUSE_PASSWORD__a_b_c", "ok")
+    def test_secret_reference_is_independent_of_warehouse_uuid(self, monkeypatch):
+        monkeypatch.setattr(_metadata(), "resolve_openbao_secret", lambda ref: "ok")
 
         params = _metadata().connection_params(
-            "postgres", {"connection": {"host": "h", "database": "d"}}, "a-b-c",
+            "postgres", {"connection": {"host": "h", "database": "d", "secret_ref": "warehouse/ref"}}, "a-b-c",
         )
 
         assert params["password"] == "ok"
 
     def test_per_engine_shared_account_is_the_fallback(self, monkeypatch):
-        monkeypatch.delenv("WAREHOUSE_PASSWORD__w1", raising=False)
-        monkeypatch.setenv("CLICKHOUSE_CRAWLER_PASSWORD", "shared")
+        monkeypatch.setattr(_metadata(), "resolve_openbao_secret", lambda ref: "shared")
 
         params = _metadata().connection_params(
-            "clickhouse", {"connection": {"host": "h"}}, "w1",
+            "clickhouse", {"connection": {"host": "h", "secret_ref": "warehouse/shared"}}, "w1",
         )
 
         assert params["password"] == "shared"
 
-    def test_the_legacy_snowflake_variables_still_work(self, monkeypatch):
-        """A stack configured before other engines existed must keep crawling."""
-        monkeypatch.delenv("WAREHOUSE_PASSWORD__w1", raising=False)
-        monkeypatch.delenv("SNOWFLAKE_PASSWORD__w1", raising=False)
-        monkeypatch.setenv("SNOWFLAKE_CRAWLER_PASSWORD", "legacy")
+    def test_snowflake_uses_openbao_reference(self, monkeypatch):
+        monkeypatch.setattr(_metadata(), "resolve_openbao_secret", lambda ref: "resolved")
 
         params = _metadata().connection_params(
-            "snowflake", {"connection": {"account": "a"}}, "w1",
+            "snowflake", {"connection": {"account": "a", "secret_ref": "warehouse/snowflake"}}, "w1",
         )
 
-        assert params["password"] == "legacy"
+        assert params["password"] == "resolved"
 
     def test_no_password_skips_the_warehouse(self, monkeypatch):
         """One misconfigured warehouse must not stop every other tenant's
         catalog from refreshing."""
-        for var in ("WAREHOUSE_PASSWORD__w1", "SNOWFLAKE_PASSWORD__w1",
-                    "POSTGRES_CRAWLER_PASSWORD", "SNOWFLAKE_CRAWLER_PASSWORD"):
-            monkeypatch.delenv(var, raising=False)
-
         assert _metadata().connection_params(
             "postgres", {"connection": {"host": "h", "database": "d"}}, "w1",
         ) is None
@@ -127,10 +117,6 @@ class TestCredentialResolution:
     def test_a_snowflake_shared_password_does_not_leak_to_other_engines(self, monkeypatch):
         """Different engines mean different accounts; falling back across them
         would send Snowflake credentials to a Postgres host."""
-        for var in ("WAREHOUSE_PASSWORD__w1", "SNOWFLAKE_PASSWORD__w1", "POSTGRES_CRAWLER_PASSWORD"):
-            monkeypatch.delenv(var, raising=False)
-        monkeypatch.setenv("SNOWFLAKE_CRAWLER_PASSWORD", "snowflake-only")
-
         assert _metadata().connection_params(
             "postgres", {"connection": {"host": "h", "database": "d"}}, "w1",
         ) is None
@@ -139,11 +125,11 @@ class TestCredentialResolution:
 class TestConnectionParams:
     @pytest.fixture(autouse=True)
     def _password(self, monkeypatch):
-        monkeypatch.setenv("WAREHOUSE_PASSWORD__w1", "pw")
+        monkeypatch.setattr(_metadata(), "resolve_openbao_secret", lambda ref: "pw")
 
     def test_postgres_defaults_port_and_schema(self):
         params = _metadata().connection_params(
-            "postgres", {"connection": {"host": "h", "database": "d", "username": "u"}}, "w1",
+            "postgres", {"connection": {"host": "h", "database": "d", "username": "u", "secret_ref": "warehouse/w1"}}, "w1",
         )
 
         assert params["port"] == 5432
@@ -151,7 +137,7 @@ class TestConnectionParams:
         assert params["user"] == "u"
 
     def test_clickhouse_defaults_port_and_database(self):
-        params = _metadata().connection_params("clickhouse", {"connection": {"host": "h"}}, "w1")
+        params = _metadata().connection_params("clickhouse", {"connection": {"host": "h", "secret_ref": "warehouse/w1"}}, "w1")
 
         assert params["port"] == 8123
         assert params["database"] == "default"
@@ -160,7 +146,7 @@ class TestConnectionParams:
         params = _metadata().connection_params(
             "snowflake",
             {"connection": {"account": "a", "username": "u", "warehouse": "wh",
-                            "database": "db", "schema": "s", "role": "r"}},
+                            "database": "db", "schema": "s", "role": "r", "secret_ref": "warehouse/w1"}},
             "w1",
         )
 

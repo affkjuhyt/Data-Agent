@@ -1,0 +1,525 @@
+import { useState } from 'react';
+import { useAppState } from '../../AppStateContext';
+import { AsyncRegion } from '../../design-system/AsyncRegion';
+import { Badge } from '../../design-system/Badge';
+import { Button } from '../../design-system/Button';
+import { EmptyState } from '../../design-system/EmptyState';
+import { Icon } from '../../design-system/Icon';
+import { Notice } from '../../design-system/Notice';
+import { Segmented } from '../../design-system/Segmented';
+import { StatusDot } from '../../design-system/StatusDot';
+import { Tabs } from '../../design-system/Tabs';
+import { useToast } from '../../design-system/Toast';
+import { formatNumber } from '../../lib/formatVN';
+import { cn } from '../../lib/utils';
+import {
+  getDocumentPage,
+  getDocumentView,
+  listActivity,
+  listChunks,
+  listLinks,
+  resolveQualityIssue,
+  type DocumentPage,
+  type DocumentView,
+  type ExtractedField,
+  type FieldIssue,
+  type PageBox,
+} from '../../lib/v1/documents';
+import { useV1 } from '../../lib/v1/useV1';
+import { CallViewer } from './CallViewer';
+import { EmailViewer } from './EmailViewer';
+import { HEAD_ROW, ROW } from './parts';
+import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
+
+/*
+ * "v3.1 · Phi cấu trúc · Trình xem tài liệu" (2069:3041, UC-05-04, UC-05-05) at /data/document/<id>:
+ * the page on the left with the extracted fields outlined on it (or its OCR text), and on the
+ * right what the agent made of it in four tabs — Trường (2069:3169), Đoạn văn (2101:12453),
+ * Liên kết (2101:12637), Lịch sử (2101:12848). An email opens "Trình xem email" (2075:5236) and a
+ * recording "Trình xem ghi âm" (2075:5061) at the same address.
+ */
+export default function DocumentViewerPage() {
+  const { routeId } = useAppState();
+  const doc = useV1(routeId ? () => getDocumentView(routeId) : null, [routeId]);
+  // A doc in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
+  const forbidden = forbiddenOf(doc.error);
+  if (forbidden) return <AccessDenied access={forbidden} />;
+  if (!routeId)
+    return (
+      <EmptyState
+        className="m-da-3xl"
+        icon="file"
+        title="Chưa chọn tài liệu"
+        description="Mở một tài liệu từ bộ sưu tập hoặc danh sách tài liệu."
+      />
+    );
+  return (
+    <AsyncRegion state={doc} what="tài liệu" skeletonRows={6}>
+      {(data) => {
+        const view = normalize(data);
+        if (view.kind === 'email' && view.email)
+          return <EmailViewer doc={view} thread={view.email} onChanged={doc.reload} />;
+        if (view.kind === 'call' && view.call) return <CallViewer doc={view} call={view.call} />;
+        return <FileViewer key={view.id} doc={view} onChanged={doc.reload} />;
+      }}
+    </AsyncRegion>
+  );
+}
+
+/*
+ * GET /v1/documents/{id} may come from a server (or mock) that only knows the pre-processing
+ * shape of the collection screen; the viewer fields then default to an empty reading.
+ */
+function normalize(doc: DocumentView): DocumentView {
+  return {
+    ...doc,
+    kind: doc.kind ?? 'file',
+    file_name: doc.file_name ?? doc.title,
+    collection: doc.collection ?? null,
+    page_count: doc.page_count ?? 1,
+    focus_page: doc.focus_page ?? 1,
+    summary_text: doc.summary_text ?? null,
+    type_label: doc.type_label ?? doc.title,
+    signals: doc.signals ?? [],
+    fields: doc.fields ?? [],
+    issue: doc.issue ?? null,
+    index_text: doc.index_text ?? null,
+  };
+}
+
+type Tab = 'fields' | 'chunks' | 'links' | 'history';
+type Mode = 'original' | 'ocr';
+
+function FileViewer({ doc, onChanged }: { doc: DocumentView; onChanged: () => void }) {
+  const { navigate } = useAppState();
+  const [pageNo, setPageNo] = useState(Math.min(Math.max(doc.focus_page, 1), doc.page_count));
+  const [mode, setMode] = useState<Mode>('original');
+  const [tab, setTab] = useState<Tab>('fields');
+  const page = useV1(() => getDocumentPage(doc.id, pageNo), [doc.id, pageNo]);
+  const collection = doc.collection;
+
+  return (
+    <div className="flex min-h-full">
+      <section
+        aria-label="Trang tài liệu"
+        className="flex min-w-0 flex-1 flex-col items-center bg-subtle pb-da-3xl"
+      >
+        {doc.summary_text && <Notice tone="info">{doc.summary_text}</Notice>}
+        <div className="flex w-full flex-wrap items-center gap-da-md border-b border-border bg-card px-da-xl py-da-md">
+          <span className="whitespace-nowrap text-muted-foreground da-caption">
+            Phi cấu trúc ›{' '}
+            {collection ? (
+              <button
+                type="button"
+                className="hover:text-foreground hover:underline"
+                onClick={() => navigate('data', 'COLLECTION', collection.id)}
+              >
+                {collection.name}
+              </button>
+            ) : null}{' '}
+            ›
+          </span>
+          <span className="truncate text-foreground da-mono">{doc.file_name}</span>
+          <span className="flex-1" />
+          <span className="flex items-center gap-da-xs">
+            <PageButton
+              label="Trang trước"
+              disabled={pageNo <= 1}
+              onClick={() => setPageNo((n) => n - 1)}
+              flip
+            />
+            <span
+              className="whitespace-nowrap text-muted-foreground da-body-small"
+              aria-live="polite"
+            >
+              Trang {pageNo} / {doc.page_count}
+            </span>
+            <PageButton
+              label="Trang sau"
+              disabled={pageNo >= doc.page_count}
+              onClick={() => setPageNo((n) => n + 1)}
+            />
+          </span>
+          <Segmented<Mode>
+            label="Cách xem trang"
+            value={mode}
+            onChange={setMode}
+            items={[
+              { value: 'original', label: 'Bản gốc' },
+              { value: 'ocr', label: 'Văn bản OCR' },
+            ]}
+          />
+        </div>
+        <div className="h-da-2xl shrink-0" />
+        <AsyncRegion state={page} what="trang" skeletonRows={8}>
+          {(p) => (mode === 'original' ? <PageImage page={p} /> : <PageText page={p} />)}
+        </AsyncRegion>
+      </section>
+
+      <aside
+        aria-label="Agent đã đọc"
+        className="flex w-[460px] shrink-0 flex-col gap-da-lg border-l border-border bg-card p-da-xl max-[1023px]:hidden"
+      >
+        <div className="flex flex-col gap-da-xs">
+          <h1 className="text-foreground da-heading-2">{doc.type_label}</h1>
+          {doc.signals.length > 0 && (
+            <div className="flex flex-wrap gap-x-da-sm gap-y-da-xs">
+              {doc.signals.map((s) => (
+                <StatusDot key={s.text} tone={s.tone}>
+                  {s.text}
+                </StatusDot>
+              ))}
+            </div>
+          )}
+        </div>
+        <Tabs<Tab>
+          label="Nội dung agent đọc"
+          value={tab}
+          onChange={setTab}
+          items={[
+            { value: 'fields', label: `Trường · ${formatNumber(doc.fields.length)}` },
+            { value: 'chunks', label: 'Đoạn văn' },
+            { value: 'links', label: 'Liên kết' },
+            { value: 'history', label: 'Lịch sử' },
+          ]}
+        />
+        <div role="tabpanel" className="flex flex-col gap-da-lg">
+          {tab === 'fields' && <FieldsTab doc={doc} onJump={setPageNo} onChanged={onChanged} />}
+          {tab === 'chunks' && <ChunksTab doc={doc} onJump={setPageNo} />}
+          {tab === 'links' && <LinksTab id={doc.id} />}
+          {tab === 'history' && <HistoryTab id={doc.id} />}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function PageButton({
+  label,
+  disabled,
+  onClick,
+  flip = false,
+}: {
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+  flip?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-disabled={disabled || undefined}
+      onClick={disabled ? undefined : onClick}
+      className={cn(
+        'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground',
+        disabled ? 'cursor-not-allowed opacity-50' : 'hover:bg-subtle hover:text-foreground',
+      )}
+    >
+      <Icon name="chevron-right" className={flip ? 'rotate-180' : undefined} />
+    </button>
+  );
+}
+
+/* The page at 560px wide: its image when the server keeps one, else its layout boxes. */
+function PageImage({ page }: { page: DocumentPage }) {
+  const at = (box: PageBox) => ({
+    left: `${(box.x / page.width) * 100}%`,
+    top: `${(box.y / page.height) * 100}%`,
+    width: `${(box.w / page.width) * 100}%`,
+    height: `${(box.h / page.height) * 100}%`,
+  });
+  return (
+    <div
+      role="img"
+      aria-label={`Trang ${page.number}${page.highlights.length ? `, đánh dấu: ${page.highlights.map((h) => h.label).join(', ')}` : ''}`}
+      className="relative w-[560px] max-w-full shrink-0 overflow-hidden border border-border bg-card"
+      style={{ aspectRatio: `${page.width} / ${page.height}` }}
+    >
+      {page.image_url ? (
+        <img src={page.image_url} alt="" className="absolute inset-0 size-full object-contain" />
+      ) : (
+        page.blocks.map((b, i) =>
+          b.kind === 'title' ? (
+            <span
+              key={i}
+              className="absolute whitespace-nowrap text-center text-foreground da-heading-3"
+              style={at(b.box)}
+            >
+              {b.text}
+            </span>
+          ) : (
+            <span
+              key={i}
+              className={cn(
+                'absolute rounded-[2px]',
+                b.kind === 'heading' ? 'bg-border-strong' : 'bg-subtle',
+              )}
+              style={at(b.box)}
+            />
+          ),
+        )
+      )}
+      {page.highlights.map((h) => (
+        <span key={h.field}>
+          <span
+            className={cn(
+              'absolute rounded-[3px] border-2',
+              h.review ? 'border-warning' : 'border-primary',
+            )}
+            style={at(h.box)}
+          />
+          <span
+            className={cn(
+              'absolute whitespace-nowrap rounded-sm px-da-sm py-da-xs text-primary-foreground da-label',
+              h.review ? 'bg-warning' : 'bg-primary',
+            )}
+            style={{
+              right: `${((page.width - h.box.x - h.box.w) / page.width) * 100}%`,
+              top: `${((h.box.y - 26) / page.height) * 100}%`,
+            }}
+          >
+            {h.label}
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function PageText({ page }: { page: DocumentPage }) {
+  return (
+    <div className="w-[560px] max-w-full shrink-0 whitespace-pre-line border border-border bg-card p-da-3xl text-foreground da-body">
+      {page.text}
+    </div>
+  );
+}
+
+function FieldsTab({
+  doc,
+  onJump,
+  onChanged,
+}: {
+  doc: DocumentView;
+  onJump: (page: number) => void;
+  onChanged: () => void;
+}) {
+  if (doc.fields.length === 0)
+    return (
+      <p className="text-muted-foreground da-body-small">
+        Tài liệu này chưa có lược đồ trích xuất; agent chỉ chia đoạn để tìm kiếm.
+      </p>
+    );
+  return (
+    <>
+      <ul className="flex flex-col gap-da-xs">
+        {doc.fields.map((field) => (
+          <FieldRow key={field.name} field={field} onJump={onJump} />
+        ))}
+      </ul>
+      {doc.issue && <IssueBox issue={doc.issue} onChanged={onChanged} />}
+    </>
+  );
+}
+
+function FieldRow({ field, onJump }: { field: ExtractedField; onJump: (page: number) => void }) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onJump(field.page)}
+        aria-label={`${field.name}: ${field.value}, trang ${field.page}, độ tin ${field.confidence.toFixed(2).replace('.', ',')}`}
+        className={cn(
+          'flex w-full items-center gap-da-md rounded-md px-da-md py-da-sm text-left hover:bg-subtle',
+          field.review ? 'border border-border' : 'border-b border-border',
+        )}
+      >
+        <span className="w-[110px] shrink-0 truncate text-muted-foreground da-mono">
+          {field.name}
+        </span>
+        <span className="min-w-0 flex-1 text-foreground da-body-strong">{field.value}</span>
+        <span className="shrink-0 text-muted-foreground da-caption">tr.{field.page}</span>
+        <StatusDot tone={field.review ? 'warning' : 'success'}>
+          {field.confidence.toFixed(2).replace('.', ',')}
+        </StatusDot>
+      </button>
+    </li>
+  );
+}
+
+function IssueBox({ issue, onChanged }: { issue: FieldIssue; onChanged: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState<'correct' | 'keep' | null>(null);
+  const resolve = async (action: 'correct' | 'keep') => {
+    setBusy(action);
+    try {
+      await resolveQualityIssue(
+        issue.quality_issue_id,
+        action === 'correct'
+          ? { action: 'correct', value: issue.suggested_value }
+          : { action: 'keep_and_conflict' },
+      );
+      toast({
+        tone: 'success',
+        message:
+          action === 'correct'
+            ? `Đã sửa ${issue.field} thành ${issue.suggested_value}.`
+            : 'Đã giữ giá trị đọc được và mở yêu cầu xung đột.',
+      });
+      onChanged();
+    } catch (e) {
+      toast({ tone: 'error', message: `Không lưu được. ${(e as Error).message}` });
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-da-sm rounded-md border border-warning px-da-lg py-da-md">
+      <p className="text-foreground da-body-strong">{issue.title}</p>
+      <p className="text-muted-foreground da-caption">{issue.detail}</p>
+      <div className="flex flex-wrap gap-x-da-sm gap-y-da-md">
+        <Button
+          loading={busy === 'correct'}
+          disabled={busy !== null && busy !== 'correct'}
+          onClick={() => void resolve('correct')}
+        >
+          Sửa thành {issue.suggested_value}
+        </Button>
+        <Button
+          kind="ghost"
+          loading={busy === 'keep'}
+          disabled={busy !== null && busy !== 'keep'}
+          onClick={() => void resolve('keep')}
+        >
+          Giữ {issue.current_value} · báo xung đột
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ChunksTab({ doc, onJump }: { doc: DocumentView; onJump: (page: number) => void }) {
+  const chunks = useV1(() => listChunks(doc.id), [doc.id]);
+  return (
+    <AsyncRegion
+      state={chunks}
+      what="đoạn văn"
+      skeletonRows={3}
+      isEmpty={(p) => p.items.length === 0}
+      empty={<p className="text-muted-foreground da-body-small">Tài liệu chưa được chia đoạn.</p>}
+    >
+      {(p) => (
+        <div className="flex flex-col gap-da-lg">
+          <ul className="flex flex-col gap-da-lg">
+            {p.items.map((c) => (
+              <li key={c.id}>
+                <button
+                  type="button"
+                  onClick={() => onJump(c.page)}
+                  className="flex w-full flex-col gap-da-xs rounded-md border border-border px-da-md py-da-sm text-left hover:bg-subtle"
+                >
+                  <span className="text-muted-foreground da-mono">
+                    tr.{c.page} · đoạn {c.ordinal}
+                  </span>
+                  <span className="text-foreground da-body-small">{c.text}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {doc.index_text && <p className="text-muted-foreground da-caption">{doc.index_text}</p>}
+        </div>
+      )}
+    </AsyncRegion>
+  );
+}
+
+function LinksTab({ id }: { id: string }) {
+  const { navigate } = useAppState();
+  const links = useV1(() => listLinks(id), [id]);
+  return (
+    <AsyncRegion
+      state={links}
+      what="liên kết"
+      skeletonRows={4}
+      isEmpty={(p) => p.items.length === 0}
+      empty={
+        <p className="text-muted-foreground da-body-small">
+          Tài liệu chưa liên kết với bản ghi nào.
+        </p>
+      }
+    >
+      {(p) => (
+        <div className="overflow-hidden rounded-md border border-border bg-card">
+          <table className="w-full table-fixed border-collapse">
+            <thead>
+              <tr className={HEAD_ROW}>
+                <th className="px-da-md py-da-sm font-medium">Liên kết tới</th>
+                <th className="w-[100px] px-da-md py-da-sm font-medium">Loại</th>
+                <th className="w-[122px] px-da-md py-da-sm font-medium">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody>
+              {p.items.map((link) => (
+                <tr key={link.id} className={ROW}>
+                  <td className="px-da-md py-da-sm">
+                    {link.target_document_id ? (
+                      <button
+                        type="button"
+                        className="text-left text-foreground da-body-strong hover:underline"
+                        onClick={() => navigate('data', 'DOCUMENT', link.target_document_id!)}
+                      >
+                        {link.target_label}
+                      </button>
+                    ) : (
+                      <span
+                        className={cn(
+                          'text-foreground',
+                          link.target_is_code ? 'da-mono' : 'da-body-strong',
+                        )}
+                      >
+                        {link.target_label}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-da-md py-da-sm text-foreground da-body-small">
+                    {link.kind_label}
+                  </td>
+                  <td className="px-da-md py-da-sm">
+                    {link.state ? (
+                      <StatusDot tone={link.state.tone}>{link.state.text}</StatusDot>
+                    ) : (
+                      <Badge>Tham chiếu</Badge>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </AsyncRegion>
+  );
+}
+
+function HistoryTab({ id }: { id: string }) {
+  const activity = useV1(() => listActivity(id), [id]);
+  return (
+    <AsyncRegion
+      state={activity}
+      what="lịch sử"
+      skeletonRows={4}
+      isEmpty={(p) => p.items.length === 0}
+      empty={<p className="text-muted-foreground da-body-small">Chưa có hoạt động nào.</p>}
+    >
+      {(p) => (
+        <ul className="flex flex-col gap-da-lg">
+          {p.items.map((a) => (
+            <li key={a.id} className="text-foreground da-body-small">
+              {a.when_text} · {a.text}
+            </li>
+          ))}
+        </ul>
+      )}
+    </AsyncRegion>
+  );
+}

@@ -14,6 +14,7 @@ import litellm
 from libs.shared import aggregation_check, audit
 from services.workflow_runtime.application.nodes.sandbox.tool_executor._sandbox_http import (
     POLL_OVERHEAD_S,
+    service_assertion_headers,
     shared_client,
     submit_and_poll,
 )
@@ -116,7 +117,7 @@ def _sandbox_connection(conn_cfg: dict[str, Any]) -> dict[str, Any]:
         "type":     db_type,
         "host":     conn_cfg.get("host", ""),
         "user":     conn_cfg.get("user", ""),
-        "password": conn_cfg.get("password", "") or "",
+        "connection_ref": conn_cfg.get("connection_ref") or conn_cfg.get("secret_ref") or conn_cfg.get("secretId", ""),
     }
     if db_type == "clickhouse":
         return {**common, "port": int(conn_cfg.get("port") or 8123), "database": conn_cfg.get("database", "")}
@@ -186,6 +187,7 @@ async def _sandbox_sql(
             shared_client(10), "/execute/sql",
             {"sql": sql, "connection": _sandbox_connection(conn_cfg)},
             overall_timeout_s=timeout_s + POLL_OVERHEAD_S,
+            headers=service_assertion_headers(audit_ctx or {}),
         )
     except Exception as e:
         _record(audit.DECISION_ERROR, None, f"sandbox_executor unreachable: {e}")
@@ -1000,6 +1002,7 @@ async def _text_to_pandas_handler(call: dict[str, Any], cfg: dict[str, Any]) -> 
                     "files": {sandbox_name: base64.b64encode(raw).decode("ascii")},
                 },
                 overall_timeout_s=timeout_s + POLL_OVERHEAD_S,
+                headers=service_assertion_headers(_audit_ctx(cfg)),
             )
     except Exception as e:
         return None, {"tool_name": "text_to_pandas", "error": f"sandbox_executor unreachable: {e}", "code": code}
