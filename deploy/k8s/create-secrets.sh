@@ -25,12 +25,33 @@ kubectl -n dataagent-service create secret generic api-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_INBOX="${DATAAGENT_DB_URL__SVC_INBOX}" \
   --from-literal=DATAAGENT_DB_URL__SVC_EVAL="${DATAAGENT_DB_URL__SVC_EVAL}" \
   --from-literal=DATAAGENT_DB_URL__SVC_AGENT="${DATAAGENT_DB_URL__SVC_AGENT}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_ACQUIRE="${DATAAGENT_DB_URL__SVC_ACQUIRE}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_CATALOG="${DATAAGENT_DB_URL__SVC_CATALOG}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_CONFLICT="${DATAAGENT_DB_URL__SVC_CONFLICT}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_CONTEXT="${DATAAGENT_DB_URL__SVC_CONTEXT}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_DOCUMENT="${DATAAGENT_DB_URL__SVC_DOCUMENT}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_EXEC="${DATAAGENT_DB_URL__SVC_EXEC}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_FORECAST="${DATAAGENT_DB_URL__SVC_FORECAST}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_GOVERNANCE="${DATAAGENT_DB_URL__SVC_GOVERNANCE}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_INGEST="${DATAAGENT_DB_URL__SVC_INGEST}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_INTEGRATION="${DATAAGENT_DB_URL__SVC_INTEGRATION}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_MONITOR="${DATAAGENT_DB_URL__SVC_MONITOR}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_NOTIFY="${DATAAGENT_DB_URL__SVC_NOTIFY}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_PACK="${DATAAGENT_DB_URL__SVC_PACK}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_PERIOD="${DATAAGENT_DB_URL__SVC_PERIOD}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_PIPELINE="${DATAAGENT_DB_URL__SVC_PIPELINE}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_SKILL="${DATAAGENT_DB_URL__SVC_SKILL}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_AUDIT="${DATAAGENT_DB_URL__SVC_AUDIT}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# worker-agent: answers as svc_qa, claims outbox rows as svc_outbox_relay (docs/v3/06-api-v1.md §6).
+# worker-agent: answers as svc_qa, opens HITL requests as svc_inbox, releases approved audit exports
+# as svc_audit, claims outbox rows as svc_outbox_relay in both databases (docs/v3/06-api-v1.md §6).
 kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_QA="${DATAAGENT_DB_URL__SVC_QA}" \
   --from-literal=DATAAGENT_DB_URL__SVC_OUTBOX_RELAY="${DATAAGENT_DB_URL__SVC_OUTBOX_RELAY}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_INBOX="${DATAAGENT_DB_URL__SVC_INBOX}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_AUDIT="${DATAAGENT_DB_URL__SVC_AUDIT}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_OUTBOX_RELAY_AUDIT="${DATAAGENT_DB_URL__SVC_OUTBOX_RELAY_AUDIT}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic kb-backend-secrets \

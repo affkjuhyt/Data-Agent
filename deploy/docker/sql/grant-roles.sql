@@ -42,3 +42,21 @@ BEGIN
   END LOOP;
 END
 $$;
+
+-- The audit log lives in its own database, <db>_audit (v3_0002, design tab 3 D1 item 1). PgBouncer
+-- runs its auth_query in the database a client asks for, so that database needs the same lookup,
+-- and svc_audit (the api's audit module) plus the outbox relay (worker-agent) must reach it.
+SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = current_database() || '_audit') AS has_audit_db,
+       current_database() || '_audit' AS audit_db \gset
+\if :has_audit_db
+\connect :audit_db
+GRANT CONNECT ON DATABASE :"audit_db" TO pgbouncer_auth;
+CREATE OR REPLACE FUNCTION public.pgbouncer_get_auth(p_usename TEXT)
+RETURNS TABLE(usename NAME, passwd TEXT)
+LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog AS $$
+  SELECT usename, passwd FROM pg_shadow WHERE usename = p_usename;
+$$;
+REVOKE ALL ON FUNCTION public.pgbouncer_get_auth(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.pgbouncer_get_auth(TEXT) TO pgbouncer_auth;
+GRANT CONNECT ON DATABASE :"audit_db" TO svc_audit, svc_outbox_relay;
+\endif

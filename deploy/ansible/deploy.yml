@@ -271,6 +271,18 @@
              | combine((openbao_state | default({}, true)).openbao_env | default({}, true)) }}
       no_log: true
 
+    # Every role the api and worker-agent connect as needs its password in the vault: a missing
+    # one renders a URL with an empty password, and the module fails only when first called.
+    - name: Check the vault holds a password for every V3 service role
+      ansible.builtin.assert:
+        that: missing_db_roles | length == 0
+        fail_msg: "vault_db_role_passwords lacks: {{ missing_db_roles | join(', ') }}"
+        quiet: true
+      vars:
+        missing_db_roles: >-
+          {{ v3_db_roles | reject('in', (vault_db_role_passwords | default({})).keys() | list) | list }}
+        v3_db_roles: [svc_acquire, svc_agent, svc_audit, svc_catalog, svc_conflict, svc_context, svc_document, svc_eval, svc_exec, svc_forecast, svc_governance, svc_inbox, svc_ingest, svc_integration, svc_monitor, svc_notify, svc_org, svc_outbox_relay, svc_pack, svc_period, svc_pipeline, svc_qa, svc_query, svc_skill, svc_workspace]
+
     - name: Render secrets.env from the vault
       ansible.builtin.template:
         src: templates/secrets.env.j2

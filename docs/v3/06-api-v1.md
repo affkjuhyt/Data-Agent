@@ -34,7 +34,7 @@ backend/services/api/
     sse.py            event_stream, Last-Event-ID (A1.6)
     tracing.py        trace_id từ traceparent (ADR-40)
   catalogue/
-    a2_endpoints.json bản chụp A2: 384 dòng (383 endpoint, POST /v1/data-products ở hai nhóm), 22 nhóm, schema của từng nhóm
+    a2_endpoints.json bản chụp A2: 432 dòng (431 endpoint, POST /v1/data-products ở hai nhóm), 22 nhóm, schema của từng nhóm
     __init__.py       endpoint(method, path, operation_id=…) → kwargs của route + kiểm năng lực
     check.py          so OpenAPI sinh ra với A2
   modules/<schema>/   một package mỗi schema; đăng ký router ở modules/__init__.py
@@ -131,7 +131,7 @@ Client gọi `/mcp` dùng hạn mức riêng của `api_client`. `kernel/access_
 `outcome` ok / denied cho 401, 403, 429 / error); không ghi thân. Ghi lỗi thì chỉ ghi log ứng dụng, vì lời gọi đã
 xảy ra; việc bắt buộc phải có nhật ký trước khi làm (Kiểm toán, `/mcp`) tự ghi trong chính thao tác.
 
-A2 có 383 endpoint, làm dần theo nhóm: một nhóm vào `COMPLETE_GROUPS` trong commit phục vụ endpoint cuối
+A2 có 431 endpoint (48 thêm ngày 12/10/2026), làm dần theo nhóm: một nhóm vào `COMPLETE_GROUPS` trong commit phục vụ endpoint cuối
 của nhóm, từ đó bỏ một endpoint là lỗi. Thêm hoặc bỏ endpoint phải sửa tab 4 A2 và `a2_endpoints.json`
 trong cùng PR. Xem độ phủ: `python -m services.api.catalogue.check` trong image `api`.
 
@@ -166,6 +166,11 @@ của ADR-28) trả lời. Bước G1 của [09](09-target-deploy-and-cleanup.md
 - **Trả lời.** `questions.answer_question` chạy như `svc_qa` trong tổ chức của sự kiện: ghi `qa.plan` (Plan IR của
   R0-10), `qa.answer`, chuyển câu hỏi `received → refused/answered`; luồng `GET /v1/questions/{id}/stream` suy sự
   kiện từ đó. Handler idempotent: nhận lại sự kiện thì không làm gì.
+- **Yêu cầu duyệt.** `hitl.handle` mở `inbox.hitl_request` từ sự kiện `hitl.requested` mà mọi module ghi vào
+  outbox của mình (payload từ `inbox.public.hitl_requested`), đọc cả outbox của CSDL audit qua khoá kết nối
+  `svc_outbox_relay_audit`; `resolutions` xử lý `hitl.resolved` (bản xuất kiểm toán được duyệt thì chuyển `queued`).
+  Worker cần `DATAAGENT_DB_URL__SVC_QA`, `__SVC_INBOX`, `__SVC_AUDIT`, `__SVC_OUTBOX_RELAY`,
+  `__SVC_OUTBOX_RELAY_AUDIT`; api cần một URL cho mỗi `svc_<schema>` nó dùng và `__SVC_AUDIT` (CSDL `<db>_audit`).
 - **Giới hạn hiện tại.** Bộ biên dịch ngữ nghĩa và bộ thực thi vẫn ở runtime cũ, nên câu hỏi kết thúc bằng lời từ
   chối có mã (`INSUFFICIENT_EVIDENCE` khi Data Space chưa có data product đang hoạt động, `TOOL_UNAVAILABLE` khi đã
   có), không bao giờ bằng con số không truy được (BR-171). Chuyển lõi agent sang đây là việc R1.
