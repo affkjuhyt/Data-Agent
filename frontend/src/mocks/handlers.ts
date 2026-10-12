@@ -342,7 +342,27 @@ export function createHandlers() {
     http.get('*/v1/datasets', () => page(datasetsFixture())),
     http.get('*/v1/metrics', () => page(metricsFixture())),
     http.get('*/v1/terms', () => page(termsFixture())),
-    http.get('*/v1/policies', () => page(myRulesFixture())),
+    // "Quy tắc của bạn": BehaviorPolicyView as an array, as the api answers GET /v1/policies.
+    http.get('*/v1/policies', () =>
+      HttpResponse.json(
+        myRulesFixture().map((r) => ({
+          ...r,
+          type: 'behavior',
+          data_space_id: null,
+          subject_id: 'me',
+          condition: {},
+          action: {},
+          exceptions: [],
+          origin_ref: null,
+          override_count: r.applied_this_week,
+          review_at: null,
+          approved_at: null,
+          approved_by: null,
+          created_at: '2026-09-01T09:00:00+07:00',
+          updated_at: '2026-09-01T09:00:00+07:00',
+        })),
+      ),
+    ),
     http.get('*/v1/data-spaces', () => page(dataSpacesFixture())),
     http.get('*/v1/admin/users', () => page(usersFixture().map(userWire))),
     http.get('*/v1/admin/models', () => HttpResponse.json(modelsFixture().map(modelWire))),

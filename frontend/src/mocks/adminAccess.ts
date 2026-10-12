@@ -30,7 +30,8 @@ const STEWARD_ROLE = { id: 'role-ac03', code: 'AC03', name: 'Người phụ trá
  *
  * GET /v1/admin/users and GET /v1/data-spaces return a superset of AppUser / DataSpace, so
  * these handlers must be registered before createHandlers() to answer for the whole app.
- * GET /v1/policies is answered only for `family=access`; anything else falls through.
+ * GET /v1/policies is answered only for `type=access` (an array, as the api answers); anything else
+ * falls through.
  */
 const page = <T>(items: T[]) => HttpResponse.json({ items, next_page_token: '' });
 
@@ -683,15 +684,22 @@ export function createAdminAccessHandlers() {
       return HttpResponse.json(decided);
     }),
 
-    /* Chính sách dữ liệu: behaviour policies (no family=access) fall through to createHandlers. */
+    /* Chính sách dữ liệu: behaviour policies (type=behavior) fall through to the rules mocks. */
     http.get('*/v1/policies', ({ request }) => {
-      if (new URL(request.url).searchParams.get('family') !== 'access') return undefined;
-      return page(policies);
-    }),
-    http.get('*/v1/policies/:id', ({ params }) => {
-      // Ids this mock does not hold (behaviour rules) fall through to the rules mock.
-      const item = policies.find((p) => p.id === params.id);
-      return item ? HttpResponse.json(item) : undefined;
+      if (new URL(request.url).searchParams.get('type') !== 'access') return undefined;
+      // AccessPolicyView with the screen's display fields alongside.
+      return HttpResponse.json(
+        policies.map((p) => ({
+          ...p,
+          type: 'access',
+          dataset_id: 'dataset-0',
+          applies_to: null,
+          mask_method: null,
+          activated_by: null,
+          created_at: '2026-09-01T09:00:00+07:00',
+          updated_at: '2026-10-01T09:00:00+07:00',
+        })),
+      );
     }),
     http.patch('*/v1/policies/:id', async ({ params, request }) => {
       const item = policies.find((p) => p.id === params.id);
@@ -707,10 +715,16 @@ export function createAdminAccessHandlers() {
       const item = policies.find((p) => p.id === id);
       if (!item) return undefined;
       if (verb === 'simulate') {
-        const body = (await request.json()) as { user_id: string; question: string };
-        const scoped = users.find((u) => u.id === body.user_id)?.row_scope_limited ?? false;
+        const body = (await request.json()) as { as_user_id: string };
+        const scoped = users.find((u) => u.id === body.as_user_id)?.row_scope_limited ?? false;
+        // SimulationView, with the screen's comparison table under display.
         return HttpResponse.json({
-          question: body.question,
+          policy_id: item.id,
+          as_user_id: body.as_user_id,
+          applies: true,
+          reason: scoped ? 'phạm vi dòng của người dùng' : 'không giới hạn dòng',
+          display: {
+          question: item.sample_question,
           rows: [
             { label: 'Số chi nhánh thấy được', without: '184', with: scoped ? '3' : '184' },
             { label: 'Số dòng khách hàng', without: '1.102.311', with: scoped ? '18.420' : '1.102.311' },
@@ -721,6 +735,7 @@ export function createAdminAccessHandlers() {
               with: scoped ? 'số 3 chi nhánh Hà Nội, ghi rõ “trong phạm vi của bạn”' : 'số toàn hàng',
             },
           ],
+          },
         });
       }
       if (verb === 'backtest') {
@@ -744,22 +759,29 @@ export function createAdminAccessHandlers() {
     }),
 
     /* Kiểm toán */
-    http.get('*/v1/audit', ({ request }) => {
-      const url = new URL(request.url);
-      const q = url.searchParams.get('q')?.toLowerCase();
-      const kind = url.searchParams.get('actor_kind');
-      const channel = url.searchParams.get('channel');
-      return page(
-        auditFixture().filter(
-          (e) =>
-            (!q || `${e.actor_label} ${e.action_text} ${e.data_text}`.toLowerCase().includes(q)) &&
-            (!kind || e.actor_kind === kind) &&
-            (!channel || e.channel === channel),
-        ),
-      );
-    }),
+    // AuditLogView with the screen's row under display; the client filters the page itself.
+    http.get('*/v1/audit', () =>
+      page(
+        auditFixture().map((e, i) => ({
+          id: e.id,
+          seq: i + 1,
+          occurred_at: e.at,
+          actor_kind: e.actor_kind === 'person' ? 'user' : e.actor_kind,
+          actor_id: null,
+          on_behalf_of: null,
+          action: e.action_text,
+          object_kind: null,
+          object_id: null,
+          outcome: e.outcome === 'ok' ? 'ok' : 'denied',
+          service: 'api',
+          hash: '',
+          prev_hash: '',
+          display: e,
+        })),
+      ),
+    ),
     http.post(/\/v1\/audit:export$/, () =>
-      HttpResponse.json({ status: 'accepted', needs_approval: false }, { status: 202 }),
+      HttpResponse.json({ id: 'exp-1', status: 'queued', row_count: 1240 }, { status: 202 }),
     ),
 
     /* Yêu cầu của chủ thể dữ liệu */

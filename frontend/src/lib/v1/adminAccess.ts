@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
 import type { components } from './schema';
 import type { AppUser, DataSpace } from './types';
 
@@ -403,19 +403,83 @@ export interface PolicySimulation {
   rows: { label: string; without: string; with: string }[];
 }
 
-/*
- * A2 serves data and behaviour policies from one GET /v1/policies. PROPOSAL: `family=access`
- * selects governance.access_policy so the two shapes do not mix in one list.
- */
-export const listAccessPolicies = () =>
-  v1Get<Page<AccessPolicy>>('/policies', { ...ALL, family: 'access' });
-/** PROPOSAL: GET /v1/policies/{id} */
-export const getAccessPolicy = async (id: string) => v1Get<AccessPolicy>(`/policies/${pathId(id)}`);
+type AccessPolicyWire = Schemas['AccessPolicyView'] &
+  Partial<Omit<AccessPolicy, keyof Schemas['AccessPolicyView']>>;
+
+/** The rule in the lines the screen edits: who it applies to, the row condition, the columns. */
+const ruleTextOf = (raw: Schemas['AccessPolicyView']) =>
+  [
+    raw.condition_expr && `Chỉ cho thấy dòng: ${raw.condition_expr}`,
+    raw.columns?.length &&
+      `${raw.kind === 'mask' ? 'Cột che' : 'Cột ẩn'}: ${raw.columns.join(', ')}${raw.mask_method ? ` (${raw.mask_method})` : ''}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+function readAccessPolicy(raw: AccessPolicyWire, spaces: Map<string, string>): AccessPolicy {
+  return {
+    id: raw.id,
+    data_space_id: raw.data_space_id,
+    name: raw.name,
+    kind: raw.kind as AccessPolicy['kind'],
+    condition_expr: raw.condition_expr,
+    columns: raw.columns,
+    version: raw.version,
+    status: raw.status as AccessPolicy['status'],
+    simulated_at: raw.simulated_at,
+    activated_at: raw.activated_at,
+    code: raw.code ?? `v${raw.version}`,
+    data_space_name: raw.data_space_name ?? spaces.get(raw.data_space_id) ?? '',
+    owner_name: raw.owner_name ?? '',
+    rule_text: raw.rule_text ?? ruleTextOf(raw),
+    sample_question: raw.sample_question ?? '',
+    applied_this_week: raw.applied_this_week ?? 0,
+    last_backtest: raw.last_backtest ?? null,
+  };
+}
+
+/** GET /v1/policies?type=access answers an array; the Data Space names come from the spaces. */
+export const listAccessPolicies = async (): Promise<Page<AccessPolicy>> => {
+  const [rows, spaces] = await Promise.all([
+    v1Get<AccessPolicyWire[]>('/policies', { type: 'access' }),
+    listDataSpaceSummaries().catch(() => null),
+  ]);
+  const names = new Map<string, string>(spaces?.items.map((s) => [s.id, s.name]) ?? []);
+  return { items: rows.map((r) => readAccessPolicy(r, names)), next_page_token: '' };
+};
+
+/** A2 has no GET /v1/policies/{id}: a policy is its row in the list. */
+export const getAccessPolicy = async (id: string) => {
+  const policy = (await listAccessPolicies()).items.find((p) => p.id === id);
+  if (!policy) throw new V1Error(404, 'not_found', 'Không tìm thấy chính sách.');
+  return policy;
+};
 /** PROPOSAL: PATCH saves the rule as a new version (draft until simulated). */
 export const updateAccessPolicy = async (id: string, body: { rule_text: string }) =>
   v1Send<AccessPolicy>('PATCH', `/policies/${pathId(id)}`, body);
-export const simulatePolicy = async (id: string, body: { user_id: Uuid; question: string }) =>
-  v1Send<PolicySimulation>('POST', `/policies/${pathId(id)}:simulate`, body);
+/** PROPOSAL: the screen's comparison table, which the mock sends under `display`. */
+type SimulationWire = Schemas['SimulationView'] & { display?: PolicySimulation };
+
+/*
+ * PolicySimulate runs the policy as one person (as_user_id); the question stays on the screen.
+ * Without the PROPOSAL table the comparison is the api's: the row condition, the hidden and the
+ * masked columns, without the policy and with it.
+ */
+export const simulatePolicy = async (id: string, body: { user_id: Uuid; question: string }) => {
+  const raw = await v1Send<SimulationWire>('POST', `/policies/${pathId(id)}:simulate`, {
+    as_user_id: body.user_id,
+  } satisfies Schemas['PolicySimulate']);
+  if (raw.display) return raw.display;
+  const masked = Object.keys((raw.masked_columns as Record<string, unknown> | undefined) ?? {});
+  return {
+    question: raw.applies ? body.question : `${body.question} · ${raw.reason}`,
+    rows: [
+      { label: 'Dòng được thấy', without: 'tất cả', with: raw.row_condition ?? 'tất cả' },
+      { label: 'Cột ẩn', without: '—', with: raw.hidden_columns?.join(', ') || '—' },
+      { label: 'Cột che', without: '—', with: masked.join(', ') || '—' },
+    ],
+  } satisfies PolicySimulation;
+};
 export const backtestPolicy = async (id: string) =>
   v1Send<Backtest>('POST', `/policies/${pathId(id)}:backtest`);
 /** PROPOSAL: :disable (A2 has :activate only). */
@@ -449,11 +513,82 @@ export interface AuditQuery {
   page_token?: string;
 }
 
-export const searchAudit = (query: AuditQuery) =>
-  v1Get<Page<AuditEntry>>('/audit', { page_size: 50, ...query });
-/** 202: a signed CSV is prepared; over 100.000 rows it needs approval first. */
-export const exportAudit = (query: AuditQuery) =>
-  v1Send<{ status: string; needs_approval: boolean }>('POST', '/audit:export', query);
+/** PROPOSAL: who, what and which data in words, which the mock sends under `display`. */
+type AuditWire = Schemas['AuditLogView'] & { display?: AuditEntry };
+
+/** How a row came in: an MCP tool call, a client through the API, an agent, or the web app. */
+const channelOf = (raw: Schemas['AuditLogView']): AuditChannel =>
+  raw.action.startsWith('mcp.')
+    ? 'mcp'
+    : raw.actor_kind === 'client'
+      ? 'api'
+      : raw.actor_kind === 'agent'
+        ? 'agent'
+        : 'web';
+
+function readAudit(raw: AuditWire, names: Map<string, string>): AuditEntry {
+  if (raw.display) return raw.display;
+  const actor = (raw.actor_id && names.get(raw.actor_id)) || raw.actor_kind;
+  const behalf = raw.on_behalf_of ? names.get(raw.on_behalf_of) : undefined;
+  return {
+    id: raw.id,
+    at: raw.occurred_at,
+    actor_label: behalf ? `${actor} (của ${behalf})` : actor,
+    actor_kind:
+      raw.actor_kind === 'user' ? 'person' : raw.actor_kind === 'agent' ? 'agent' : 'client',
+    action_text: raw.action,
+    data_text: raw.object_kind
+      ? `${raw.object_kind} ${raw.object_id?.slice(0, 8) ?? ''}`.trim()
+      : '',
+    channel: channelOf(raw),
+    outcome: raw.outcome === 'ok' ? 'ok' : 'blocked',
+  };
+}
+
+/** One day as from/to: the audit filters by time, not by date. */
+const dayRange = (date?: string) =>
+  date
+    ? {
+        from: new Date(`${date}T00:00:00`).toISOString(),
+        to: new Date(new Date(`${date}T00:00:00`).getTime() + 86_400_000).toISOString(),
+      }
+    : {};
+
+/*
+ * GET /v1/audit filters by time, actor, object and outcome. The screen's text search, actor kind
+ * and channel are not filters of A2, so they apply to the page read.
+ */
+export const searchAudit = async (query: AuditQuery): Promise<Page<AuditEntry>> => {
+  const [page, users] = await Promise.all([
+    v1Get<Page<AuditWire>>('/audit', {
+      page_size: 50,
+      page_token: query.page_token,
+      ...dayRange(query.date),
+    }),
+    listAdminUsers().catch(() => null),
+  ]);
+  const names = new Map<string, string>(users?.items.map((u) => [u.id, u.display_name]) ?? []);
+  const q = query.q?.trim().toLowerCase();
+  const items = page.items
+    .map((r) => readAudit(r, names))
+    .filter(
+      (e) =>
+        (!query.actor_kind || e.actor_kind === query.actor_kind) &&
+        (!query.channel || e.channel === query.channel) &&
+        (!q ||
+          [e.actor_label, e.action_text, e.data_text].some((t) => t.toLowerCase().includes(q))),
+    );
+  return { items, next_page_token: page.next_page_token };
+};
+
+/** 202: a signed CSV is prepared; over the threshold it waits for an approver (A2). */
+export const exportAudit = async (query: AuditQuery) => {
+  const accepted = await v1Send<Schemas['ExportAccepted']>('POST', '/audit:export', {
+    filters: dayRange(query.date),
+    format: 'csv',
+  } satisfies Schemas['ExportIn']);
+  return { status: accepted.status, needs_approval: accepted.status === 'waiting_approval' };
+};
 
 /* ─── Yêu cầu của chủ thể dữ liệu (UC-11-06) ───────────────────────── */
 

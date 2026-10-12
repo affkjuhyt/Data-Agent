@@ -5,6 +5,7 @@ import type {
   AgentStep,
   AgentWire,
   BehaviorPolicy,
+  BehaviorPolicyWire,
   NarrativeEvent,
   DecideProposal,
   HitlOption,
@@ -32,7 +33,7 @@ import type {
 } from './types';
 import { readAppUser } from './adminAccess';
 import { listModelRoutes } from './adminPlatform';
-import { readDataset, readSource, readWorkspace } from './types';
+import { readBehaviorPolicy, readDataset, readSource, readWorkspace } from './types';
 
 /*
  * The endpoints the v3.1 screens call, with the paths and parameters of "Đặc tả API" A2/A3.
@@ -310,8 +311,15 @@ export const listMetrics = () => v1Get<Page<Metric>>('/metrics', ALL);
 export const listTerms = () => v1Get<Page<GlossaryTerm>>('/terms', ALL);
 
 /* Chính sách: the viewer's own rules, made from earlier decisions (UC-07-08) */
-export const listMyRules = () =>
-  v1Get<Page<BehaviorPolicy>>('/policies', { ...ALL, scope: 'user', status: 'active' });
+/** GET /v1/policies answers an array of the type asked for, not a page. */
+export const listMyRules = async (): Promise<Page<BehaviorPolicy>> => {
+  const rows = await v1Get<BehaviorPolicyWire[]>('/policies', {
+    type: 'behavior',
+    scope: 'user',
+    status: 'active',
+  });
+  return { items: rows.map(readBehaviorPolicy), next_page_token: '' };
+};
 
 /* Quản trị */
 export const listDataSpaces = () => v1Get<Page<DataSpace>>('/data-spaces', ALL);

@@ -369,6 +369,21 @@ export interface ModelConfig {
 
 /* ─── Chính sách: governance.behavior_policy ──────────────────────────── */
 
+/** GET /v1/policies?type=behavior as the api sends it, with the PROPOSAL weekly count. */
+export type BehaviorPolicyWire = components['schemas']['BehaviorPolicyView'] & {
+  applied_this_week?: number;
+};
+
+export const readBehaviorPolicy = (raw: BehaviorPolicyWire): BehaviorPolicy => ({
+  id: raw.id,
+  scope: raw.scope as BehaviorPolicy['scope'],
+  kind: raw.kind as BehaviorPolicy['kind'],
+  description: raw.description,
+  origin: raw.origin as BehaviorPolicy['origin'],
+  status: raw.status as BehaviorPolicy['status'],
+  applied_this_week: raw.applied_this_week ?? raw.override_count,
+});
+
 export interface BehaviorPolicy {
   id: Uuid;
   scope: 'system' | 'org' | 'data_space' | 'agent' | 'user';

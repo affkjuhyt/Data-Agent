@@ -56,18 +56,32 @@ export function createRuleHandlers() {
   };
 
   return [
-    // Only the drafts-from-decisions query; every other policy list falls through.
+    // The Data Space's draft behaviour policies, as an array of BehaviorPolicyView with the
+    // screen's fields alongside; every other policy list falls through.
     http.get('*/v1/policies', ({ request }) => {
       const q = new URL(request.url).searchParams;
-      if (q.get('origin') !== 'hitl' || q.get('status') !== 'draft') return undefined;
-      return HttpResponse.json({
-        items: rules.filter((r) => r.status === 'draft'),
-        next_page_token: '',
-      });
-    }),
-    http.get('*/v1/policies/:id', ({ params }) => {
-      const rule = rules.find((r) => r.id === params.id);
-      return rule ? HttpResponse.json(rule) : undefined;
+      if (q.get('type') !== 'behavior' || q.get('scope') !== 'data_space') return undefined;
+      const status = q.get('status');
+      return HttpResponse.json(
+        rules
+          .filter((r) => !status || r.status === status)
+          .map((r) => ({
+            ...r,
+            type: 'behavior',
+            data_space_id: 'ds-rui-ro-tin-dung',
+            subject_id: r.owner.id,
+            condition: {},
+            action: {},
+            exceptions: [],
+            origin_ref: null,
+            override_count: 0,
+            review_at: r.expires_at,
+            approved_at: null,
+            approved_by: null,
+            created_at: '2026-10-08T09:40:00+07:00',
+            updated_at: '2026-10-08T09:40:00+07:00',
+          })),
+      );
     }),
     http.post('*/v1/policies/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');

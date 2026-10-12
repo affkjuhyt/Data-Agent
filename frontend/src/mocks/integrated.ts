@@ -20,6 +20,8 @@ const INTEGRATED_GROUPS: readonly string[] = [
   'Lớp ngữ cảnh',
   'Theo dõi, báo cáo, thông báo',
   'Quản trị',
+  'Chính sách',
+  'Kiểm toán',
 ];
 
 const IDENTITY_OPERATIONS: readonly string[] = ['getMe', 'listMyDataSpaces'];
@@ -43,6 +45,8 @@ const HELD_BACK: readonly string[] = [
   'createDsr',
   'getDsr',
   'executeDsr',
+  // Chính sách: the matrix it runs beside (GET /v1/data-spaces/{id}/permissions) is not in A2.
+  'simulatePermissions',
 ];
 
 interface Operation {
