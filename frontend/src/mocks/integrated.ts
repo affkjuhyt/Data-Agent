@@ -16,6 +16,7 @@ const INTEGRATED_GROUPS: readonly string[] = [
   'Cần bạn và đánh giá',
   'Phiên làm việc',
   'Agent',
+  'Nguồn và danh mục',
 ];
 
 const IDENTITY_OPERATIONS: readonly string[] = ['getMe', 'listMyDataSpaces'];

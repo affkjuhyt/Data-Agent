@@ -527,6 +527,12 @@ function ChooseTables({
           {test.table_count} bảng trong schema {test.schema} · đã chọn {chosen.size}
         </span>
       </div>
+      {/* The api's connection test does not list tables; they come with the first scan. */}
+      {test.tables.length === 0 && (
+        <p className="text-muted-foreground da-body-small">
+          Kiểm tra kết nối chưa liệt kê bảng. Danh sách bảng có sau lần quét cấu trúc đầu tiên.
+        </p>
+      )}
       <ul className="flex flex-col">
         {test.tables.map((table) => (
           <li

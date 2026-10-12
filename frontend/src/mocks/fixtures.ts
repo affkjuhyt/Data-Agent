@@ -8,12 +8,12 @@ import type {
   RunWire,
   AppUser,
   DataSpace,
-  Dataset,
+  DatasetWire,
   GlossaryTerm,
   HitlRequest,
   Metric,
   ModelConfig,
-  Source,
+  SourceWire,
   WorkspaceWire,
 } from '../lib/v1/types';
 
@@ -621,8 +621,33 @@ export function workspacesFixture(): WorkspaceWire[] {
   ];
 }
 
-export function sourcesFixture(): Source[] {
-  const ok = (id: string, name: string, kind: string, refreshedMinutesAgo: number): Source => ({
+/** The catalog.source columns the overview screens do not draw. */
+const sourceColumns = {
+  data_space_id: DS,
+  has_credentials: true,
+  has_writeback_credentials: false,
+  authority_level: 'level_1',
+  conn_options: {},
+  connector_icon: null,
+  database_name: null,
+  db_version: null,
+  freshness_sla: null,
+  host: null,
+  port: null,
+  max_concurrency: 4,
+  query_timeout_s: 60,
+  profile_cron: null,
+  scan_cron: null,
+  scan_schemas: [],
+  scan_window: null,
+  work_calendar_id: null,
+  created_at: minutesFromNow(-30 * 24 * 60),
+  updated_at: minutesFromNow(-60),
+};
+
+export function sourcesFixture(): SourceWire[] {
+  const ok = (id: string, name: string, kind: string, refreshedMinutesAgo: number): SourceWire => ({
+    ...sourceColumns,
     id,
     name,
     kind,
@@ -637,6 +662,7 @@ export function sourcesFixture(): Source[] {
     ok('src-core', 'Core banking', 'oracle', 4 * 60),
     ok('src-gl', 'Sổ cái GL', 'sqlserver', 4.5 * 60),
     {
+      ...sourceColumns,
       id: 'src-dwh-retail',
       name: 'DWH bán lẻ',
       kind: 'sqlserver',
@@ -649,6 +675,7 @@ export function sourcesFixture(): Source[] {
       late_by_minutes: 8 * 60,
     },
     {
+      ...sourceColumns,
       id: 'src-credit-files',
       name: 'Hồ sơ tín dụng',
       kind: 'file',
@@ -672,7 +699,7 @@ export function sourcesFixture(): Source[] {
   ];
 }
 
-export function datasetsFixture(): Dataset[] {
+export function datasetsFixture(): DatasetWire[] {
   return [
     'Rủi ro tín dụng bán lẻ',
     'Dư nợ & huy động',
@@ -682,8 +709,27 @@ export function datasetsFixture(): Dataset[] {
     'Hiệu quả chi nhánh',
   ].map((display_name, i) => ({
     id: `dataset-${i}`,
+    data_space_id: DS,
+    source_id: 'src-core',
+    schema_name: 'mart',
+    table_name: `dataset_${i}`,
     display_name,
+    description: null,
+    description_status: 'approved',
     enabled: true,
+    expires_at: null,
+    history_kind: 'snapshot',
+    business_date_col: null,
+    knowledge_time_col: null,
+    object_kind: 'table',
+    origin: 'scan',
+    quality_state: 'ok',
+    row_estimate: null,
+    scope: 'data_space',
+    steward_id: null,
+    current_version: 1,
+    created_at: minutesFromNow(-30 * 24 * 60),
+    updated_at: minutesFromNow(-60),
     certified: true,
   }));
 }

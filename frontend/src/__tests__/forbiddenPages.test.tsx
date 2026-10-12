@@ -51,7 +51,8 @@ afterAll(() => server.close());
 const cases: [string, ComponentType, string][] = [
   ['document viewer', DocumentViewerPage, '*/v1/documents/locked-1'],
   ['forecast', ForecastPage, '*/v1/forecasts/locked-1'],
-  ['source', SourceDetailPage, '*/v1/sources/locked-1'],
+  // A2 has no GET /v1/sources/{id}: the page reads the list and the source's datasets.
+  ['source', SourceDetailPage, '*/v1/datasets'],
   ['session notebook', NotebookHost, '*/v1/workspaces/locked-1'],
 ];
 
@@ -72,7 +73,7 @@ describe('detail pages refused by the server', () => {
 
   it('keeps the plain load error for a 403 without an access block', async () => {
     server.use(
-      http.get('*/v1/sources/locked-1', () =>
+      http.get('*/v1/datasets', () =>
         HttpResponse.json(
           { title: 'Forbidden', status: 403, code: 'forbidden', detail: 'Không được phép.' },
           { status: 403, headers: { 'Content-Type': 'application/problem+json' } },

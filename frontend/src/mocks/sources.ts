@@ -73,6 +73,27 @@ function row(
     Pick<SourceRow, 'id' | 'name' | 'connector' | 'connector_label' | 'endpoint'>,
 ): SourceRow {
   return {
+    // The catalog.source columns the list does not draw.
+    data_space_id: 'ds-rui-ro-tin-dung',
+    has_credentials: true,
+    has_writeback_credentials: false,
+    authority_level: 'level_1',
+    conn_options: {},
+    connector_icon: null,
+    database_name: null,
+    db_version: null,
+    freshness_sla: null,
+    host: null,
+    port: null,
+    max_concurrency: 4,
+    query_timeout_s: 60,
+    profile_cron: null,
+    scan_cron: null,
+    scan_schemas: [],
+    scan_window: null,
+    work_calendar_id: null,
+    created_at: minutesAgo(30 * 24 * 60),
+    updated_at: minutesAgo(60),
     kind: partial.connector,
     mode: 'ingest',
     status: 'active',
@@ -1247,11 +1268,21 @@ export function createSourcesHandlers() {
 
   return [
     http.get('*/v1/sources', () => page(sources)),
-    http.get('*/v1/sources/:id', ({ params }) => {
-      const source = sources.find((s) => s.id === params.id);
-      return source
-        ? HttpResponse.json({ ...source, tables: tables[source.id] ?? [] })
-        : problem(404, 'not_found', 'Không tìm thấy nguồn.');
+    // A source's tables are its datasets (A2 has no GET /v1/sources/{id}); without source_id the
+    // dataset list of handlers.ts answers.
+    http.get('*/v1/datasets', ({ request }) => {
+      const sourceId = new URL(request.url).searchParams.get('source_id');
+      if (!sourceId) return undefined;
+      return page(
+        (tables[sourceId] ?? []).map((t) => ({
+          ...t,
+          source_id: sourceId,
+          schema_name: 'dbo',
+          table_name: t.name,
+          display_name: null,
+          row_estimate: t.row_count,
+        })),
+      );
     }),
     http.post('*/v1/sources', async ({ request }) => {
       const raw = (await request.json()) as NewSource & {
@@ -1283,9 +1314,33 @@ export function createSourcesHandlers() {
         sources = [created, ...sources];
         return HttpResponse.json(created, { status: 201 });
       }
-      const body = raw as NewSource;
-      if (!body.name?.trim() || !body.config?.host?.trim() || !body.config?.username?.trim())
-        return problem(422, 'validation_failed', 'Cần tên, máy chủ và tài khoản.');
+      const created_ = raw as unknown as {
+        name: string;
+        kind: string;
+        mode: SourceRow['mode'];
+        host: string | null;
+        port: number | null;
+        database_name: string | null;
+        credentials: { secret_ref: string } | null;
+      };
+      if (!created_.name?.trim() || !created_.host?.trim())
+        return problem(422, 'validation_failed', 'Cần tên và máy chủ.');
+      // The connector the form used, from the source kind it was sent as.
+      const code =
+        { rest_api: 'rest', kafka_cdc: 'kafka', file: 'folder', other: 'custom' }[created_.kind] ??
+        created_.kind;
+      const body: NewSource = {
+        name: created_.name,
+        connector: code,
+        mode: created_.mode,
+        config: {
+          host: created_.host,
+          port: created_.port ?? 0,
+          database: created_.database_name ?? '',
+          username: 'agent_ro',
+          secret_ref: created_.credentials?.secret_ref ?? '',
+        },
+      };
       const connector = connectors.find((c) => c.code === body.connector);
       const id = `src-new-${Object.keys(configs).length + 1}`;
       const created = row({

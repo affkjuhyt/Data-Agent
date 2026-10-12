@@ -1,12 +1,15 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
-import type { Source } from './types';
+import { listDataSpaces } from './api';
+import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
+import type { components } from './schema';
+import { readDataset, readSource, type DatasetWire, type Source, type SourceWire } from './types';
 
 /*
  * Dữ liệu · Nguồn (P04) and Tài liệu (P05): sources, the connect flow, ingestion jobs, file
  * uploads, collections and their documents. Paths follow "Đặc tả API" (/v1/<plural>, `:verb`
  * actions, cursor pages). The spec has catalog.source and catalog.dataset; everything the
  * P04/P05 screens need beyond them is marked PROPOSAL, as in types.ts, and served by
- * mocks/sources.ts until the backend has it.
+ * mocks/sources.ts until the backend has it. The api serves the source list and writes, the
+ * connection test and the datasets; without the PROPOSAL fields the rows derive what they can.
  */
 
 type Uuid = string;
@@ -20,6 +23,9 @@ export interface DataSpaceRef {
   id: Uuid;
   name: string;
 }
+
+/** PROPOSAL: the fields "P04 · Nguồn · Danh sách" shows beyond catalog.source. */
+type SourceRowExtras = Omit<SourceRow, keyof Source>;
 
 /** GET /v1/sources, with the fields "P04 · Nguồn · Danh sách" shows. */
 export interface SourceRow extends Source {
@@ -54,13 +60,105 @@ export interface SourceTable {
   refreshed_at: Timestamp | null;
 }
 
-/** GET /v1/sources/{id}: the row plus its tables (PROPOSAL: `tables` embedded). */
+/** A source's row plus its tables. */
 export interface SourceDetail extends SourceRow {
   tables: SourceTable[];
 }
 
-export const listSourceRows = () => v1Get<Page<SourceRow>>('/sources', ALL);
-export const getSource = async (id: string) => v1Get<SourceDetail>(`/sources/${pathId(id)}`);
+const CONNECTOR_LABEL: Record<string, string> = {
+  postgresql: 'PostgreSQL',
+  oracle: 'Oracle',
+  sqlserver: 'SQL Server',
+  mysql: 'MySQL',
+  snowflake: 'Snowflake',
+  bigquery: 'BigQuery',
+  databricks: 'Databricks',
+  clickhouse: 'ClickHouse',
+  kafka_cdc: 'Kafka (CDC)',
+  object_store: 'Kho đối tượng',
+  file: 'Tệp',
+  sftp: 'SFTP',
+  sharepoint: 'SharePoint',
+  rest_api: 'REST API',
+  other: 'Khác',
+};
+
+const STATUS_LABEL: Record<Source['status'], string> = {
+  draft: 'Nháp',
+  testing: 'Đang kiểm tra',
+  active: 'Đang hoạt động',
+  needs_fix: 'Cần sửa',
+  paused: 'Tạm dừng',
+  archived: 'Đã lưu trữ',
+};
+
+/** "core-db.noibo:1521/CORE"; empty for a source without a host (files, SharePoint). */
+const endpointOf = (raw: SourceWire) =>
+  raw.host
+    ? `${raw.host}${raw.port ? `:${raw.port}` : ''}${raw.database_name ? `/${raw.database_name}` : ''}`
+    : (raw.database_name ?? '');
+
+function readSourceRow(
+  raw: SourceWire & Partial<SourceRowExtras>,
+  spaces: DataSpaceRef[],
+): SourceRow {
+  const source = readSource(raw);
+  const space = spaces.find((d) => d.id === raw.data_space_id);
+  return {
+    ...source,
+    connector: raw.connector ?? raw.kind,
+    connector_label: raw.connector_label ?? CONNECTOR_LABEL[raw.kind] ?? raw.kind,
+    endpoint: raw.endpoint ?? endpointOf(raw),
+    refresh_text: raw.refresh_text ?? null,
+    status_label:
+      raw.status_label ??
+      [STATUS_LABEL[source.status], source.status_reason].filter(Boolean).join(' · '),
+    schema_drift: raw.schema_drift ?? false,
+    drift_id: raw.drift_id ?? null,
+    lag_seconds: raw.lag_seconds ?? null,
+    held_records: raw.held_records ?? null,
+    data_spaces: raw.data_spaces ?? (space ? [space] : []),
+  };
+}
+
+/** The Data Space names come from the spaces the viewer belongs to; a failure leaves them out. */
+const spaceRefs = async (): Promise<DataSpaceRef[]> =>
+  (await listDataSpaces().catch(() => null))?.items.map((d) => ({ id: d.id, name: d.name })) ?? [];
+
+export const listSourceRows = async (): Promise<Page<SourceRow>> => {
+  const [page, spaces] = await Promise.all([
+    v1Get<Page<SourceWire & Partial<SourceRowExtras>>>('/sources', ALL),
+    spaceRefs(),
+  ]);
+  return { ...page, items: page.items.map((raw) => readSourceRow(raw, spaces)) };
+};
+
+/** A table as GET /v1/datasets?source_id= gives it; counts the api lacks stay null (PROPOSAL). */
+const readTable = (raw: DatasetWire & Partial<SourceTable>): SourceTable => {
+  const dataset = readDataset(raw);
+  return {
+    id: dataset.id,
+    name: raw.name ?? `${dataset.schema_name}.${dataset.table_name}`,
+    description: dataset.description,
+    row_count: raw.row_count ?? dataset.row_estimate,
+    column_count: raw.column_count ?? null,
+    refreshed_at: raw.refreshed_at ?? null,
+  };
+};
+
+/**
+ * A2 has no GET /v1/sources/{id}: the source is its row in the list, and its tables are the
+ * datasets read from it.
+ */
+export const getSource = async (id: string): Promise<SourceDetail> => {
+  const [rows, tables] = await Promise.all([
+    listSourceRows(),
+    v1Get<Page<DatasetWire>>('/datasets', { ...ALL, source_id: pathId(id) }),
+  ]);
+  const row = rows.items.find((r) => r.id === id);
+  if (!row) throw new V1Error(404, 'not_found', 'Không tìm thấy nguồn.');
+  return { ...row, tables: tables.items.map(readTable) };
+};
 
 /* ─── Hồ sơ bảng: the profile of one table ────────────────────────────── */
 
@@ -141,11 +239,56 @@ export interface NewSource {
   config: { host: string; port: number; database: string; username: string; secret_ref: string };
 }
 
-/** POST /v1/sources creates the source as draft; nothing is read before :test passes. */
-export const createSource = (body: NewSource) => v1Send<SourceRow>('POST', '/sources', body);
+type SourceKind = components['schemas']['SourceCreate']['kind'];
 
-export const updateSource = async (id: string, body: Partial<NewSource>) =>
-  v1Send<SourceRow>('PATCH', `/sources/${pathId(id)}`, body);
+/** The connector codes of the catalogue that are not catalog.source kinds already. */
+const KIND: Record<string, SourceKind> = {
+  rest: 'rest_api',
+  kafka: 'kafka_cdc',
+  folder: 'file',
+  csv: 'file',
+  email: 'other',
+  recording: 'other',
+  custom: 'other',
+};
+
+const kindOf = (connector: string): SourceKind => KIND[connector] ?? (connector as SourceKind);
+
+/*
+ * The form as SourceCreate: the database is database_name, the password is a reference to the
+ * secret in OpenBao (the user name lives in that secret, so it is not sent).
+ */
+const sourceBody = (body: Partial<NewSource>) => ({
+  name: body.name,
+  ...(body.config
+    ? {
+        host: body.config.host || null,
+        port: body.config.port || null,
+        database_name: body.config.database || null,
+        credentials: body.config.secret_ref ? { secret_ref: body.config.secret_ref } : null,
+      }
+    : {}),
+});
+
+/** POST /v1/sources creates the source as draft; nothing is read before :test passes. */
+export const createSource = async (body: NewSource) =>
+  readSourceRow(
+    await v1Send<SourceWire>('POST', '/sources', {
+      ...sourceBody(body),
+      kind: kindOf(body.connector),
+      mode: body.mode,
+    }),
+    [],
+  );
+
+/** SourcePatch keeps the kind, host and database; the name and the secret can change. */
+export const updateSource = async (id: string, body: Partial<NewSource>) => {
+  const { name, credentials } = sourceBody(body) as { name?: string; credentials?: unknown };
+  return readSourceRow(
+    await v1Send<SourceWire>('PATCH', `/sources/${pathId(id)}`, { name, credentials }),
+    [],
+  );
+};
 
 export interface ConnectionCheck {
   key: 'network' | 'login' | 'catalog' | 'read_only' | 'version';
@@ -174,8 +317,48 @@ export interface ConnectionTest {
   initial_load_hours: number;
 }
 
-export const testSource = async (id: string) =>
-  v1Send<ConnectionTest>('POST', `/sources/${pathId(id)}:test`);
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The api answers :test with 202 and writes the result back on the source (status,
+ * status_reason, last_checked_at). The checks one by one, the fix and the tables found are
+ * PROPOSAL: without them the result is the source's status as one check, and its tables appear
+ * after the first scan.
+ */
+function testFromSource(row: SourceRow): ConnectionTest {
+  const ok = row.status !== 'needs_fix';
+  return {
+    checked_at: row.last_checked_at ?? new Date().toISOString(),
+    checks: [
+      {
+        key: 'login',
+        title: 'Kết nối và đăng nhập',
+        ok,
+        detail: row.status_reason ?? (ok ? 'Kết nối được.' : 'Không kết nối được.'),
+      },
+    ],
+    fix: null,
+    schema: '',
+    table_count: 0,
+    tables: [],
+    scan_minutes: 0,
+    initial_load_hours: 0,
+  };
+}
+
+export const testSource = async (id: string): Promise<ConnectionTest> => {
+  const accepted = await v1Send<
+    ConnectionTest | components['schemas']['services__api__modules__catalog__schemas__Accepted']
+  >('POST', `/sources/${pathId(id)}:test`);
+  if ('checks' in accepted) return accepted;
+  // Poll the list until the worker has written the result, for up to about half a minute.
+  for (let attempt = 0; attempt < 15; attempt++) {
+    await sleep(accepted.poll_after_ms ?? 2000);
+    const row = (await listSourceRows()).items.find((r) => r.id === id);
+    if (row && row.status !== 'testing') return testFromSource(row);
+  }
+  throw new V1Error(504, 'timeout', 'Kiểm tra kết nối chưa có kết quả, hãy thử lại sau.');
+};
 
 export interface ActivateSource {
   tables: { name: string; data_space_id: string; owner_id: string }[];
@@ -607,17 +790,21 @@ export const tryApiRequest = (request: ApiRequest) =>
   v1Send<ApiTryResult>('POST', '/connectors/rest:try', { request });
 
 /** PROPOSAL: POST /v1/sources with connector "rest" and an `api` body instead of `config`. */
-export const createApiSource = (body: {
+/** A REST source; `api` (the request and its mapping) is PROPOSAL, the api ignores it. */
+export const createApiSource = async (body: {
   name: string;
   request: ApiRequest;
   mapping: ApiFieldMapping[];
 }) =>
-  v1Send<SourceRow>('POST', '/sources', {
-    name: body.name,
-    connector: 'rest',
-    mode: 'ingest',
-    api: { request: body.request, mapping: body.mapping },
-  });
+  readSourceRow(
+    await v1Send<SourceWire>('POST', '/sources', {
+      name: body.name,
+      kind: 'rest_api',
+      mode: 'ingest',
+      api: { request: body.request, mapping: body.mapping },
+    }),
+    [],
+  );
 
 /** PROPOSAL: PUT /v1/sources/{id}/api-config. */
 export const saveApiConfig = async (

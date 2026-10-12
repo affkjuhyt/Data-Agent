@@ -294,26 +294,51 @@ export const readWorkspace = (raw: WorkspaceWire): Workspace => ({
 
 export type SourceStatus = 'draft' | 'testing' | 'active' | 'needs_fix' | 'paused' | 'archived';
 
-export interface Source {
-  id: Uuid;
-  name: string;
-  kind: string;
-  mode: 'federated' | 'ingest';
-  status: SourceStatus;
-  status_reason: string | null;
-  last_checked_at: Timestamp | null;
-  /** PROPOSAL: last successful refresh and whether it is late against freshness_sla. */
+/** PROPOSAL: freshness the source lists draw; the api does not send it yet. */
+interface SourceFreshness {
+  /** Last successful refresh, and how late it is against freshness_sla. */
   last_refreshed_at: Timestamp | null;
   late_by_minutes: number | null;
 }
 
-export interface Dataset {
-  id: Uuid;
+/** GET /v1/sources as the api sends it (catalog SourceView), plus the PROPOSAL freshness. */
+export type SourceWire =
+  components['schemas']['services__api__modules__catalog__schemas__SourceView'] &
+    Partial<SourceFreshness>;
+
+export type Source = Omit<SourceWire, 'mode' | 'status' | keyof SourceFreshness> & {
+  mode: 'federated' | 'ingest';
+  status: SourceStatus;
+  last_refreshed_at: Timestamp | null;
+  late_by_minutes: number | null;
+};
+
+export const readSource = (raw: SourceWire): Source => ({
+  ...raw,
+  mode: raw.mode as Source['mode'],
+  status: raw.status as SourceStatus,
+  last_refreshed_at: raw.last_refreshed_at ?? null,
+  late_by_minutes: raw.late_by_minutes ?? null,
+});
+
+/** GET /v1/datasets as the api sends it. PROPOSAL: `certified`, for "Bộ dữ liệu đã chứng nhận". */
+export type DatasetWire =
+  components['schemas']['services__api__modules__catalog__schemas__DatasetView'] & {
+    certified?: boolean;
+  };
+
+export type Dataset = Omit<DatasetWire, 'display_name' | 'certified'> & {
+  /** The display name, or the table's name without one. */
   display_name: string;
-  enabled: boolean;
-  /** PROPOSAL: certified for use in Khám phá / dashboards ("Bộ dữ liệu đã chứng nhận"). */
-  certified: boolean;
-}
+  /** null when the api does not say (the certification is on the dataset version). */
+  certified: boolean | null;
+};
+
+export const readDataset = (raw: DatasetWire): Dataset => ({
+  ...raw,
+  display_name: raw.display_name ?? raw.table_name,
+  certified: raw.certified ?? null,
+});
 
 export interface Metric {
   id: Uuid;

@@ -17,6 +17,7 @@ import type {
   AppUser,
   DataSpace,
   Dataset,
+  DatasetWire,
   GlossaryTerm,
   HitlRequest,
   Metric,
@@ -25,10 +26,11 @@ import type {
   RunStatus,
   RunWire,
   Source,
+  SourceWire,
   Workspace,
   WorkspaceWire,
 } from './types';
-import { readWorkspace } from './types';
+import { readDataset, readSource, readWorkspace } from './types';
 
 /*
  * The endpoints the v3.1 screens call, with the paths and parameters of "Đặc tả API" A2/A3.
@@ -294,8 +296,14 @@ export const listWorkspaces = async (): Promise<Page<Workspace>> => {
 };
 
 /* Nguồn, danh mục, lớp ngữ cảnh */
-export const listSources = () => v1Get<Page<Source>>('/sources', ALL);
-export const listDatasets = () => v1Get<Page<Dataset>>('/datasets', { ...ALL, enabled: true });
+export const listSources = async (): Promise<Page<Source>> => {
+  const page = await v1Get<Page<SourceWire>>('/sources', ALL);
+  return { ...page, items: page.items.map(readSource) };
+};
+export const listDatasets = async (): Promise<Page<Dataset>> => {
+  const page = await v1Get<Page<DatasetWire>>('/datasets', { ...ALL, enabled: true });
+  return { ...page, items: page.items.map(readDataset) };
+};
 export const listMetrics = () => v1Get<Page<Metric>>('/metrics', ALL);
 export const listTerms = () => v1Get<Page<GlossaryTerm>>('/terms', ALL);
 

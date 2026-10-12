@@ -10282,6 +10282,57 @@
     "title": "DataSpacePatch",
     "type": "object"
    },
+   "DataSpacePreferencePut": {
+    "properties": {
+     "data_space_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Data Space Id"
+     },
+     "open_last_used": {
+      "title": "Open Last Used",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "open_last_used"
+    ],
+    "title": "DataSpacePreferencePut",
+    "type": "object"
+   },
+   "DataSpacePreferenceView": {
+    "properties": {
+     "data_space_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Data Space Id"
+     },
+     "open_last_used": {
+      "title": "Open Last Used",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "open_last_used",
+     "data_space_id"
+    ],
+    "title": "DataSpacePreferenceView",
+    "type": "object"
+   },
    "DataSpaceSummary": {
     "description": "GET /v1/data-spaces: a Data Space the caller is a member of, with the\ncaller's roles there (A3: \"kèm vai trò của người gọi\").",
     "properties": {
@@ -81798,6 +81849,147 @@
     ],
     "x-use-cases": [
      "UC-12-01"
+    ]
+   }
+  },
+  "/v1/me/data-space-preference": {
+   "put": {
+    "operationId": "putMyDataSpacePreference",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DataSpacePreferencePut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DataSpacePreferenceView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Chọn Data Space mở lần sau",
+    "tags": [
+     "Quản trị"
+    ],
+    "x-capability": [
+     "—"
+    ],
+    "x-use-cases": [
+     "UC-11-08"
     ]
    }
   },
