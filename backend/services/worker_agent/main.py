@@ -24,7 +24,7 @@ from collections.abc import Mapping
 from sqlalchemy import text
 
 from libs.dataagent_db import unscoped_session
-from services.worker_agent import hitl, questions, resolutions
+from services.worker_agent import hitl, questions, replay, resolutions
 from services.worker_agent.events import EventSource, Handler, OutboxTableSource
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,12 @@ async def run_once(source: EventSource, handlers: Mapping[str, Handler], batch: 
         return len(events)
 
 
-HANDLERS: dict[str, Handler] = {**questions.HANDLERS, **hitl.HANDLERS, **resolutions.HANDLERS}
+HANDLERS: dict[str, Handler] = {
+    **questions.HANDLERS,
+    **replay.HANDLERS,
+    **hitl.HANDLERS,
+    **resolutions.HANDLERS,
+}
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
 
@@ -64,7 +69,7 @@ async def sources() -> list[EventSource]:
     for schema in await _outbox_schemas("svc_outbox_relay"):
         types = {hitl.EVENT_TYPE}
         if schema == "qa":
-            types |= set(questions.HANDLERS)
+            types |= set(questions.HANDLERS) | set(replay.HANDLERS)
         if schema == "inbox":
             # Claiming stamps published_at, so this worker is the one consumer of hitl.resolved
             # until Debezium gives each consumer its own group (ADR-06).

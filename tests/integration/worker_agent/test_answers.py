@@ -477,3 +477,67 @@ async def test_uc_01_03_a_chip_the_space_does_not_have_is_refused(
         q,
     )
     assert (status, kind) == ("refused", "refusal") and "KHONG_CO" in text
+
+
+async def test_uc_01_07_a_receipt_replays_identical_then_differs_after_the_source_changed(
+    seed: Seed,
+    warehouse: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    ddl_server: dict[str, str],
+) -> None:
+    from services.worker_agent import replay
+
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    q = bank.ask("Tỷ lệ nợ xấu theo vùng tháng 9/2026")
+    await drain()
+    answer = answer_of(seed, q)[5]
+    receipt = seed.one("SELECT id FROM qa.answer_receipt WHERE answer_id = %s", answer)
+
+    def ask_replay() -> uuid.UUID:
+        rid = seed.row(
+            "qa.receipt_replay",
+            org_id=bank.org,
+            receipt_id=receipt,
+            requested_by=bank.user,
+            mode="figures",
+            compiler_version_used="v3-compiler-1",
+            status="running",
+        )
+        seed.row(
+            "qa.outbox",
+            org_id=bank.org,
+            aggregate_type="receipt_replay",
+            aggregate_id=rid,
+            event_type="receipt_replay.requested",
+            payload=json.dumps({"replay_id": str(rid), "requested_by": str(bank.user)}),
+        )
+        return rid
+
+    source = OutboxTableSource(schema="qa", event_types=frozenset(replay.HANDLERS))
+    first = ask_replay()
+    while await run_once(source, replay.HANDLERS, batch=50):
+        pass
+    assert seed.one(
+        "SELECT status, outcome, differs_count FROM qa.receipt_replay WHERE id = %s", first
+    ) == ("completed", "identical", 0)
+
+    conn = psycopg2.connect(ddl_server["dataagent"])
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        # A late correction lands in the source after the answer.
+        cur.execute("INSERT INTO bank.loan VALUES ('HN2',3,1000,'TD','2026-09-30')")
+    try:
+        second = ask_replay()
+        while await run_once(source, replay.HANDLERS, batch=50):
+            pass
+        outcome, differs, results = seed.one(
+            "SELECT outcome, differs_count, figure_results FROM qa.receipt_replay WHERE id = %s",
+            second,
+        )
+        assert (outcome, differs) == ("differs", 1)
+        assert [r["figure_key"] for r in results if r["cause"]] == ["F1"]
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM bank.loan WHERE branch_code = 'HN2' AND group_code = 3")
+        conn.close()
