@@ -96,13 +96,13 @@ function packsFixture(): IndustryPack[] {
 }
 
 function versionFixture(id: string): PackVersion | null {
-  const pack = packsFixture().find((p) => p.latest.version_id === id) ?? null;
+  const pack = packsFixture().find((p) => p.latest!.version_id === id) ?? null;
   const name = id === 'pv-retail-2026-3' ? 'Ngân hàng · bán lẻ' : pack?.name;
   if (!name) return null;
   return {
     id,
     pack_name: name,
-    version: id === 'pv-retail-2026-3' ? '2026.3' : (pack?.latest.version ?? ''),
+    version: id === 'pv-retail-2026-3' ? '2026.3' : (pack?.latest?.version ?? ''),
     status: 'published',
     counts: [
       { label: 'Thực thể', value: 50 },
@@ -480,7 +480,23 @@ export function createPackHandlers() {
   const created: PackDraft[] = [];
   const findDraft = (id: string) => (id === draft.id ? draft : created.find((d) => d.id === id));
   return [
-    http.get('*/v1/packs', () => HttpResponse.json({ items: packs })),
+    // IndustryPackView with the screen's row under display.
+    http.get('*/v1/packs', () =>
+      HttpResponse.json({
+        items: packs.map((p) => ({
+          id: p.id,
+          code: p.id,
+          name: p.name,
+          publisher: p.publisher,
+          industry_code: 'banking',
+          description: null,
+          publisher_key_id: 'key-1',
+          created_at: '2026-09-01T09:00:00+07:00',
+          updated_at: '2026-10-01T09:00:00+07:00',
+          display: p,
+        })),
+      }),
+    ),
     http.post('*/v1/packs', async ({ request }) => {
       const body = (await request.json()) as {
         name: string;
@@ -488,13 +504,13 @@ export function createPackHandlers() {
         includes: string[];
       };
       if (!body.name?.trim()) return problem(422, 'validation_failed', 'Đặt tên gói.');
-      const base = packs.find((p) => p.latest.version_id === body.based_on_version_id);
+      const base = packs.find((p) => p.latest!.version_id === body.based_on_version_id);
       const id = `pv-own-${created.length + 1}`;
       created.push({
         id,
         pack_name: body.name.trim(),
         version: '0.1',
-        base_version: base ? `${base.name} ${base.latest.version}` : 'mô hình hiện tại của tổ chức',
+        base_version: base ? `${base.name} ${base.latest!.version}` : 'mô hình hiện tại của tổ chức',
         summary_text: `Gồm ${body.includes.join(', ')} · chưa sửa mục nào`,
         sections: body.includes.map((label) => ({ label, changed: 0, total: 0 })),
         test: null,

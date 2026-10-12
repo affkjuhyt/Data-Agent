@@ -24,7 +24,7 @@ describe('integrated groups', () => {
   });
 
   it('keeps the other groups and the PROPOSAL endpoints on the mock', () => {
-    expect(isIntegrated('GET', at('/v1/packs'), operations)).toBe(false);
+    expect(isIntegrated('GET', at('/v1/exec/theses'), operations)).toBe(false);
     expect(isIntegrated('GET', at('/v1/proposals/p-1/collaboration'), operations)).toBe(false);
     // Phiên is wired, but A2 has no read for a session report: that one stays mocked.
     expect(isIntegrated('GET', at('/v1/session-reports/r-1'), operations)).toBe(false);

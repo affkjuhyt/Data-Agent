@@ -26,7 +26,9 @@ export function CreatePackDialog({
   onCreated: (draftVersionId: string) => void;
 }) {
   const [name, setName] = useState('');
-  const [base, setBase] = useState<string>(packs[0]?.latest.version_id ?? CURRENT);
+  // Only a pack whose version is known can be a base (IndustryPackView has none, PROPOSAL).
+  const bases = packs.flatMap((p) => (p.latest ? [{ name: p.name, ...p.latest }] : []));
+  const [base, setBase] = useState<string>(bases[0]?.version_id ?? CURRENT);
   const [includes, setIncludes] = useState(DEFAULT_INCLUDES);
   const [sharing, setSharing] = useState<Sharing>('organisation');
   const [saving, setSaving] = useState(false);
@@ -79,9 +81,9 @@ export function CreatePackDialog({
             value={base}
             onChange={setBase}
             options={[
-              ...packs.map((p) => ({
-                value: p.latest.version_id,
-                label: `${p.name} ${p.latest.version}`,
+              ...bases.map((b) => ({
+                value: b.version_id,
+                label: `${b.name} ${b.version}`,
               })),
               { value: CURRENT, label: 'Mô hình hiện tại của tổ chức' },
             ]}

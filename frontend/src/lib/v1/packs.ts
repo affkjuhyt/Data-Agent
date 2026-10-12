@@ -1,4 +1,5 @@
 import { pathId, v1Get, v1Send, v1Upload } from './client';
+import type { components } from './schema';
 
 /*
  * Gói ngành (pack service, P09, UC-09-01…05): industry packs — canonical entities, metrics,
@@ -28,10 +29,34 @@ export interface IndustryPack {
     /** A newer version is out; the upgrade it would be. */
     upgrade: { to_version: string; upgrade_id: string } | null;
   } | null;
-  latest: { version: string; version_id: string; content_text: string };
+  /** PROPOSAL: IndustryPackView has no version; null without it (A2 lists no pack versions). */
+  latest: { version: string; version_id: string; content_text: string } | null;
 }
 
-export const listPacks = async () => v1Get<{ items: IndustryPack[] }>('/packs');
+type PackWire = components['schemas']['IndustryPackView'] & {
+  /** PROPOSAL: the list row as the screen draws it, which the mock sends. */
+  display?: IndustryPack;
+};
+
+/*
+ * GET /v1/packs as IndustryPackView: name and publisher. What is installed and the latest
+ * version are PROPOSAL, so without them the pack can be read about but not installed from here.
+ */
+export const listPacks = async () => {
+  const page = await v1Get<{ items: PackWire[] }>('/packs');
+  return {
+    items: page.items.map(
+      (p): IndustryPack =>
+        p.display ?? {
+          id: p.id,
+          name: p.name,
+          publisher: p.publisher,
+          installed: null,
+          latest: null,
+        },
+    ),
+  };
+};
 
 /**
  * PROPOSAL: POST /v1/packs — the organisation's own domain pack ("Hộp thoại · createPack",

@@ -28,6 +28,7 @@ const INTEGRATED_GROUPS: readonly string[] = [
   'Kỹ năng',
   'Biến đổi dữ liệu',
   'Dự báo',
+  'Gói ngành',
 ];
 
 const IDENTITY_OPERATIONS: readonly string[] = ['getMe', 'listMyDataSpaces'];
@@ -65,6 +66,16 @@ const HELD_BACK: readonly string[] = [
   'publishDataProduct',
   // Dự báo: a forecast is reached from the PROPOSAL list GET /v1/forecasts.
   'getForecast',
+  // Gói ngành: no read of an install, its mappings, an upgrade, a draft or a pack's versions.
+  'importPack',
+  'getPackVersion',
+  'createPackInstall',
+  'putPackMappings',
+  'activatePackInstall',
+  'putPackUpgradeDecisions',
+  'applyPackUpgrade',
+  'validatePackVersion',
+  'publishPackVersion',
 ];
 
 interface Operation {
