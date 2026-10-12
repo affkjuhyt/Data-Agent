@@ -183,12 +183,19 @@ async def _claims(session: AsyncSession, conflict_id: uuid.UUID) -> list[tuple[c
 async def _authority(
     session: AsyncSession, principal: Principal, space: uuid.UUID, data_kind: str
 ) -> cf.SourceAuthority | None:
+    # The active ranking when there is one (a draft beside it waits for approval, UC-07-05);
+    # otherwise the draft, shown but not applied.
+    sa = cf.SourceAuthority
     row: cf.SourceAuthority | None = await session.scalar(
-        select(cf.SourceAuthority).where(
-            cf.SourceAuthority.org_id == principal.org_id,
-            cf.SourceAuthority.data_space_id == space,
-            cf.SourceAuthority.data_kind == data_kind,
+        select(sa)
+        .where(
+            sa.org_id == principal.org_id,
+            sa.data_space_id == space,
+            sa.data_kind == data_kind,
+            sa.status.in_(("active", "draft")),
         )
+        .order_by((sa.status == "active").desc())
+        .limit(1)
     )
     return row
 
@@ -484,24 +491,34 @@ async def put_source_authority(
         backtest = rules.backtest(
             await _past_conflicts(session, principal, space, data_kind), body.ranking
         )
-        row = await session.scalar(
-            select(cf.SourceAuthority)
-            .where(
-                cf.SourceAuthority.org_id == principal.org_id,
-                cf.SourceAuthority.data_space_id == space,
-                cf.SourceAuthority.data_kind == data_kind,
+        sa = cf.SourceAuthority
+        rows = (
+            await session.scalars(
+                select(sa)
+                .where(
+                    sa.org_id == principal.org_id,
+                    sa.data_space_id == space,
+                    sa.data_kind == data_kind,
+                    sa.status.in_(("active", "draft")),
+                )
+                .with_for_update()
             )
-            .with_for_update()
-        )
+        ).all()
+        active = next((r for r in rows if r.status == "active"), None)
+        # UC-07-05: an edit is a draft beside the active ranking, which keeps applying until the
+        # draft is approved; approving it supersedes the active one (routines/conflict.sql).
+        row = next((r for r in rows if r.status == "draft"), None)
         previous = row.status if row else None
         if row is None:
-            row = cf.SourceAuthority(
+            row = sa(
                 id=uuid7(),
                 org_id=principal.org_id,
                 data_space_id=space,
                 data_kind=data_kind,
                 created_by=principal.user_id,
             )
+            if active is not None:
+                row.materiality = active.materiality
             session.add(row)
         row.ranking = list(body.ranking)
         if body.materiality is not None:
@@ -511,8 +528,7 @@ async def put_source_authority(
                 "amount_pct": float(body.materiality.amount_pct),
                 "count": body.materiality.count,
             }
-        # A draft until approved (UC-07-05 step 5, E1 for data in filed reports): one row per
-        # data kind, so the previous ranking stops applying until the new one is approved.
+        # A draft until approved (UC-07-05 step 5, E1 for data in filed reports).
         row.status, row.approved_by, row.approved_at = "draft", None, None
         row.backtest = backtest
         row.updated_at, row.updated_by = _now(), principal.user_id
@@ -528,6 +544,7 @@ async def put_source_authority(
                 data_kind=data_kind,
                 status=row.status,
                 previous_status=previous,
+                active_id=active.id if active else None,
                 ranking=row.ranking,
                 drafted_by=principal.user_id,
             )

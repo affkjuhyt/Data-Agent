@@ -343,7 +343,7 @@ async def create_data_product(
 ) -> DataProductView | PublishedDataProductView:
     sent = body.model_fields_set
     if body.layer == "published":
-        stray = sorted(sent - {"layer", "code", "name", *PUBLISHED_ONLY})
+        stray = sorted(sent - {"layer", "code", "name", "owner_id", *PUBLISHED_ONLY})
         if stray:
             raise field_error(stray[0], f"{stray} belong to layer context.")
         if body.contract is None:
@@ -356,6 +356,7 @@ async def create_data_product(
             contract=body.contract,
             dataset_id=body.dataset_id,
             data_mart_id=body.data_mart_id,
+            owner_id=body.owner_id,
         )
         return PublishedDataProductView.model_validate(published)
 

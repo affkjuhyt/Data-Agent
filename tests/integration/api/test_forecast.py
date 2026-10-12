@@ -1886,3 +1886,18 @@ async def test_the_ledger_has_no_delete(fx: Fx, api_database: str) -> None:
     finally:
         conn.close()
     assert fx.one("SELECT point FROM forecast.ledger_entry WHERE id = %s", lines.open) == 19850
+
+
+async def test_a_retired_model_takes_no_new_version(fx: Fx) -> None:
+    # 12/10/2026: approving a version of a retired model would bring the model back; refused.
+    async with client(fx) as api:
+        await _submit(api, fx, fx.draft)
+        fx.run("UPDATE forecast.forecast_model SET status = 'retired' WHERE id = %s", fx.model)
+        refused = await api.post(
+            f"/v1/forecast-model-versions/{fx.draft}:approve", headers=fx.headers("owner")
+        )
+        assert refused.status_code == 409 and refused.json()["code"] == "invalid_state"
+        assert (
+            fx.one("SELECT status FROM forecast.forecast_model WHERE id = %s", fx.model)
+            == "retired"
+        )

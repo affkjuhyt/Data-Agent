@@ -199,7 +199,7 @@ class SourceAuthority(Base):
         DateTime(timezone=True), nullable=True
     )
     status: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'draft'"), comment="draft, active"
+        Text, server_default=sql_text("'draft'"), comment="draft, active, superseded"
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")

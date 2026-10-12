@@ -223,6 +223,10 @@ class DataProduct(Base):
         server_default=sql_text("'{}'"),
         comment="Data Space đăng ký dùng",
     )
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        comment="logic → org.app_user; người phụ trách duyệt phát hành, khác người soạn (thêm 12/10/2026)",
+    )
     status: Mapped[str] = mapped_column(
         Text, server_default=sql_text("'draft'"), comment="draft, published, deprecated, retired"
     )
@@ -282,7 +286,7 @@ class WritebackRequest(Base):
     status: Mapped[str] = mapped_column(
         Text,
         server_default=sql_text("'draft'"),
-        comment="draft, previewed, submitted, approved, rejected, scheduled, executing, executed, cancelled_mismatch, failed, undone",
+        comment="draft, previewed, submitted, approved, rejected, scheduled, executing, executed, cancelled_mismatch, failed, undo_requested, undone",
     )
     executed_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

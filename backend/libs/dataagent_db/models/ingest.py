@@ -276,6 +276,14 @@ class QualityResult(Base):
     acknowledged_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, comment="Người xác nhận dùng tiếp khi vi phạm mức cao"
     )
+    acknowledged_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="Thêm 12/10/2026"
+    )
+    acknowledged_note: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Lý do dùng tiếp, bắt buộc khi có acknowledged_by (BR-116, thêm 12/10/2026)",
+    )
     checked_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )

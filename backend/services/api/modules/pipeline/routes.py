@@ -761,7 +761,12 @@ async def publish_data_product(
             raise Problem(409, "invalid_state", f"The data product is {product.status}.")
         if product.created_by == principal.user_id:
             # UC-06-06 step 4: the owner approves what the engineer drafted, not the drafter.
-            raise Problem(403, "forbidden", "Whoever drafted the data product cannot publish it.")
+            raise Problem(
+                403, "policy_denied", "Whoever drafted the data product cannot publish it."
+            )
+        if product.owner_id != principal.user_id:
+            # The approver of a published version is its owner (CHECK approved_by = owner_id).
+            raise Problem(403, "policy_denied", "Only the data product's owner publishes it.")
         if product.data_mart_id is not None:
             mart = await session.scalar(
                 select(pl.DataMart).where(pl.DataMart.id == product.data_mart_id)
@@ -919,6 +924,13 @@ async def create_writeback(
         if not source.writeback_secret_ref:
             # UC-06-04 precondition: the target source declares its own writeback account.
             raise Problem(403, "forbidden", "The source has no writeback account.")
+        if body.target_table not in (source.writeback_tables or []):
+            # UC-06-04 precondition: only a table the source lists as a writeback target.
+            raise Problem(
+                422,
+                "business_rule_violated",
+                f"{body.target_table} is not a writeback target of the source (writeback_tables).",
+            )
         derived = await session.scalar(
             select(catalog.Dataset).where(
                 catalog.Dataset.id == body.from_dataset_id,
@@ -1045,7 +1057,9 @@ async def undo_writeback(
                 409, "invalid_state", "The 30-day undo window of this writeback has passed."
             )
         # UC-06-04 5a: the undo is approved like the write; the worker restores from the snapshot
-        # and publishes writeback.rolled_back. The reason is what the approver reads.
+        # and publishes writeback.rolled_back. undo_requested keeps a second undo from being asked.
+        row.status = "undo_requested"
+        row.updated_by, row.updated_at = principal.user_id, now()
         emit(
             session,
             principal,
@@ -1054,6 +1068,7 @@ async def undo_writeback(
             "writeback.undo_requested",
             writeback_request_id=row.id,
             data_space_id=data_space,
+            previous_status="executed",
             status=row.status,
             requested_by=principal.user_id,
             excluded_reviewer_ids=[principal.user_id],

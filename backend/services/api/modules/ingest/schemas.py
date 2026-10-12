@@ -238,6 +238,8 @@ class QualityResultView(BaseModel):
     violations: int
     sample_ref: str | None
     acknowledged_by: uuid.UUID | None
+    acknowledged_at: datetime.datetime | None = None
+    acknowledged_note: str | None = None
     checked_at: datetime.datetime
     # From the rule, so the list reads without a second call.
     dataset_id: uuid.UUID

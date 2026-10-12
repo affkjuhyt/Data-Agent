@@ -34,7 +34,7 @@ backend/services/api/
     sse.py            event_stream, Last-Event-ID (A1.6)
     tracing.py        trace_id từ traceparent (ADR-40)
   catalogue/
-    a2_endpoints.json bản chụp A2: 383 endpoint, 22 nhóm, schema của từng nhóm
+    a2_endpoints.json bản chụp A2: 384 dòng (383 endpoint, POST /v1/data-products ở hai nhóm), 22 nhóm, schema của từng nhóm
     __init__.py       endpoint(method, path, operation_id=…) → kwargs của route + kiểm năng lực
     check.py          so OpenAPI sinh ra với A2
   modules/<schema>/   một package mỗi schema; đăng ký router ở modules/__init__.py

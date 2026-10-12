@@ -11,7 +11,7 @@ from __future__ import annotations
 import datetime
 import decimal
 import uuid
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -81,6 +81,11 @@ class SourcePatch(_Limits):
     scan_window: dict[str, Any] | None = None
     status: SettableSourceStatus | None = None
     credentials: SecretReference | None = None
+    # UC-06-04: the tables a writeback may target, schema.table each; [] allows none.
+    writeback_tables: (
+        list[Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$")]]
+        | None
+    ) = Field(default=None, max_length=500)
 
 
 class ScheduleUpdate(BaseModel):
@@ -120,6 +125,7 @@ class SourceView(BaseModel):
     # response only says whether one is set.
     has_credentials: bool = False
     has_writeback_credentials: bool = False
+    writeback_tables: list[str] = Field(default_factory=list)
     mode: str
     authority_level: str
     freshness_sla: datetime.timedelta | None

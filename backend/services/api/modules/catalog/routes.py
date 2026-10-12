@@ -196,6 +196,19 @@ async def list_sources(
     )
 
 
+@router.get(
+    "/v1/sources/{id}",
+    response_model=SourceView,
+    **endpoint("GET", "/v1/sources/{id}", operation_id="getSource"),
+)
+async def get_source(
+    source_id: PathId, principal: CurrentPrincipal, space: CurrentDataSpace
+) -> SourceView:
+    # Where :test's Location points (A3, 12/10/2026): the outcome the connector worker wrote.
+    async with transaction(ROLE, principal) as session:
+        return SourceView.of(await _source(session, principal, space, source_id))
+
+
 @router.post(
     "/v1/sources",
     status_code=201,
@@ -277,7 +290,14 @@ async def update_source(
     body: SourcePatch, source_id: PathId, principal: CurrentPrincipal, space: CurrentDataSpace
 ) -> SourceView:
     sent = body.model_fields_set
-    for name in ("name", "authority_level", "max_concurrency", "query_timeout_s", "scan_schemas"):
+    for name in (
+        "name",
+        "authority_level",
+        "max_concurrency",
+        "query_timeout_s",
+        "scan_schemas",
+        "writeback_tables",
+    ):
         if name in sent and getattr(body, name) is None:
             raise Problem(422, "validation_failed", f"{name} cannot be null.")
     if "credentials" in sent and body.credentials is None:
@@ -295,11 +315,14 @@ async def update_source(
             "query_timeout_s",
             "scan_schemas",
             "scan_window",
+            "writeback_tables",
         ):
             if name in sent:
                 value = getattr(body, name)
                 if name == "name":
                     value = value.strip()
+                elif name == "writeback_tables":
+                    value = sorted(set(value))
                 if getattr(row, name) != value:
                     setattr(row, name, value)
                     changed.append(name)
@@ -377,7 +400,7 @@ async def test_source(
                 requested_by=principal.user_id,
             )
         )
-    response.headers["Location"] = f"/v1/sources?status={row.status}"
+    response.headers["Location"] = f"/v1/sources/{row.id}"
     return Accepted(id=row.id, status=row.status, poll_after_ms=POLL_AFTER_MS)
 
 

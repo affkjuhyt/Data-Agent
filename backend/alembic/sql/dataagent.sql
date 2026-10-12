@@ -1127,6 +1127,7 @@ CREATE TABLE catalog.source (
   conn_options jsonb NOT NULL DEFAULT '{}',
   secret_ref text NOT NULL,
   writeback_secret_ref text,
+  writeback_tables text[] NOT NULL DEFAULT '{}',
   mode text NOT NULL DEFAULT 'federated',
   authority_level text NOT NULL DEFAULT 'reference',
   freshness_sla interval,
@@ -1163,6 +1164,7 @@ COMMENT ON COLUMN catalog.source.connector_icon IS 'Mã biểu tượng Connecto
 COMMENT ON COLUMN catalog.source.conn_options IS 'TLS, schema mặc định, tham số riêng của từng loại';
 COMMENT ON COLUMN catalog.source.secret_ref IS 'Đường dẫn OpenBao (BR-14); không lưu mật khẩu';
 COMMENT ON COLUMN catalog.source.writeback_secret_ref IS 'Tài khoản ghi ngược riêng (UC-06-04); null là không cho ghi ngược';
+COMMENT ON COLUMN catalog.source.writeback_tables IS 'Bảng đích được phép ghi ngược (schema.bảng); rỗng là không bảng nào (UC-06-04, thêm 12/10/2026)';
 COMMENT ON COLUMN catalog.source.mode IS 'federated (truy vấn tại chỗ) hoặc ingest (nạp về)';
 COMMENT ON COLUMN catalog.source.authority_level IS 'level_1, level_2, level_3, reference';
 COMMENT ON COLUMN catalog.source.freshness_sla IS 'Hạn độ mới; quá hạn thì trạng thái needs_fix (BR-56)';
@@ -3790,7 +3792,7 @@ CREATE TABLE skill.skill_suggestion (
   CHECK (status <> 'dismissed' OR dismissed_until IS NOT NULL)
 );
 COMMENT ON TABLE skill.skill_suggestion IS 'Kỹ năng agent đề xuất từ chuỗi bước người dùng lặp lại; chỉ dựa trên cấu trúc, không dùng dữ liệu của người khác. Use case: UC-03-07.';
-COMMENT ON COLUMN skill.skill_suggestion.pattern IS 'Chuỗi bước đã khái quát';
+COMMENT ON COLUMN skill.skill_suggestion.pattern IS 'Chuỗi bước đã khái quát, chỉ cấu trúc: loại bước, tên tham số, params_schema; không có giá trị, kết quả, mẫu dòng hay nội dung ô của phiên (BR-98, sửa 12/10/2026)';
 COMMENT ON COLUMN skill.skill_suggestion.session_ids IS 'logic → workspace.workspace';
 COMMENT ON COLUMN skill.skill_suggestion.status IS 'open, accepted, dismissed';
 COMMENT ON COLUMN skill.skill_suggestion.dismissed_until IS 'Không đề xuất lại trong 90 ngày';
@@ -4748,16 +4750,15 @@ CREATE TABLE conflict.source_authority (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
   CONSTRAINT source_authority_pkey PRIMARY KEY (id),
-  UNIQUE (data_space_id, data_kind),
-  CHECK (status IN ('draft','active')),
-  CHECK (status <> 'active' OR approved_by IS NOT NULL)
+  CHECK (status IN ('draft','active','superseded')),
+  CHECK (status NOT IN ('active','superseded') OR approved_by IS NOT NULL)
 );
 COMMENT ON TABLE conflict.source_authority IS 'Thứ tự ưu tiên nguồn theo loại dữ liệu và ngưỡng trọng yếu. Use case: UC-07-04, UC-07-05.';
 COMMENT ON COLUMN conflict.source_authority.data_kind IS 'Ví dụ dư nợ, số khách, văn bản pháp quy';
 COMMENT ON COLUMN conflict.source_authority.ranking IS 'Danh sách source_id theo thứ tự ưu tiên; nguồn tải tay và bên ngoài không đứng trên cấp 1 (BR-121)';
 COMMENT ON COLUMN conflict.source_authority.materiality IS 'Ngưỡng trọng yếu (BR-120)';
 COMMENT ON COLUMN conflict.source_authority.backtest IS 'Kết quả chạy thử trên xung đột 90 ngày';
-COMMENT ON COLUMN conflict.source_authority.status IS 'draft, active';
+COMMENT ON COLUMN conflict.source_authority.status IS 'draft, active, superseded';
 
 CREATE TABLE conflict.outbox (
   id uuid NOT NULL,
@@ -4780,6 +4781,8 @@ CREATE POLICY outbox_relay_read ON conflict.outbox FOR SELECT TO svc_outbox_rela
 CREATE POLICY outbox_relay_publish ON conflict.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX claim_data_space_id_subject_key_attribute_idx ON conflict.claim (data_space_id, subject_key, attribute);
 CREATE INDEX conflict_data_space_id_idx ON conflict.conflict (data_space_id) WHERE status = 'open';
+CREATE UNIQUE INDEX source_authority_data_space_id_data_kind_key ON conflict.source_authority (data_space_id, data_kind) WHERE status = 'active';
+CREATE UNIQUE INDEX source_authority_data_space_id_data_kind_key_2 ON conflict.source_authority (data_space_id, data_kind) WHERE status = 'draft';
 
 -- ═══ schema pack ═══
 CREATE TABLE pack.industry_pack (
@@ -5450,6 +5453,7 @@ CREATE TABLE pipeline.data_product (
   data_mart_id uuid,
   contract jsonb NOT NULL,
   consumers uuid[] NOT NULL DEFAULT '{}',
+  owner_id uuid NOT NULL,
   status text NOT NULL DEFAULT 'draft',
   breaking_notice_at timestamptz,
   retire_after timestamptz,
@@ -5463,6 +5467,7 @@ CREATE TABLE pipeline.data_product (
   CHECK (status IN ('draft','published','deprecated','retired')),
   CHECK (dataset_id IS NOT NULL OR data_mart_id IS NOT NULL),
   CHECK (status <> 'published' OR approved_by IS NOT NULL),
+  CHECK (approved_by IS NULL OR approved_by = owner_id),
   CHECK (retire_after IS NULL OR breaking_notice_at IS NULL OR retire_after >= breaking_notice_at + interval '30 days')
 );
 COMMENT ON TABLE pipeline.data_product IS 'Sản phẩm dữ liệu có hợp đồng, phiên bản và danh sách bên dùng; thay đổi phá vỡ báo trước 30 ngày (BR-60). Use case: UC-06-06.';
@@ -5470,6 +5475,7 @@ COMMENT ON COLUMN pipeline.data_product.data_space_id IS 'Data Space cung cấp'
 COMMENT ON COLUMN pipeline.data_product.data_mart_id IS 'FK data_mart';
 COMMENT ON COLUMN pipeline.data_product.contract IS 'Cột, kiểu, ý nghĩa, SLA';
 COMMENT ON COLUMN pipeline.data_product.consumers IS 'Data Space đăng ký dùng';
+COMMENT ON COLUMN pipeline.data_product.owner_id IS 'logic → org.app_user; người phụ trách duyệt phát hành, khác người soạn (thêm 12/10/2026)';
 COMMENT ON COLUMN pipeline.data_product.status IS 'draft, published, deprecated, retired';
 
 CREATE TABLE pipeline.writeback_request (
@@ -5495,7 +5501,7 @@ CREATE TABLE pipeline.writeback_request (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
   CONSTRAINT writeback_request_pkey PRIMARY KEY (id),
-  CHECK (status IN ('draft','previewed','submitted','approved','rejected','scheduled','executing','executed','cancelled_mismatch','failed','undone')),
+  CHECK (status IN ('draft','previewed','submitted','approved','rejected','scheduled','executing','executed','cancelled_mismatch','failed','undo_requested','undone')),
   CHECK (deletes = 0),
   CHECK (approved_by IS NULL OR approved_by <> requested_by),
   CHECK (status NOT IN ('approved','scheduled','executing','executed') OR approved_by IS NOT NULL)
@@ -5508,7 +5514,7 @@ COMMENT ON COLUMN pipeline.writeback_request.deletes IS 'Phải bằng 0 (BR-113
 COMMENT ON COLUMN pipeline.writeback_request.snapshot_ref IS 'Ảnh chụp bảng đích để hoàn tác 30 ngày';
 COMMENT ON COLUMN pipeline.writeback_request.approved_by IS 'Phải khác người yêu cầu (BR-24)';
 COMMENT ON COLUMN pipeline.writeback_request.proposal_id IS 'logic → inbox.proposal';
-COMMENT ON COLUMN pipeline.writeback_request.status IS 'draft, previewed, submitted, approved, rejected, scheduled, executing, executed, cancelled_mismatch, failed, undone';
+COMMENT ON COLUMN pipeline.writeback_request.status IS 'draft, previewed, submitted, approved, rejected, scheduled, executing, executed, cancelled_mismatch, failed, undo_requested, undone';
 
 CREATE TABLE pipeline.outbox (
   id uuid NOT NULL,
@@ -5703,15 +5709,20 @@ CREATE TABLE ingest.quality_result (
   violations bigint NOT NULL DEFAULT 0,
   sample_ref text,
   acknowledged_by uuid,
+  acknowledged_at timestamptz,
+  acknowledged_note text,
   checked_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT quality_result_pkey PRIMARY KEY (id),
-  CHECK (run_kind IN ('job_run','pipeline_run','scheduled','manual'))
+  CHECK (run_kind IN ('job_run','pipeline_run','scheduled','manual')),
+  CHECK (acknowledged_by IS NULL OR (acknowledged_at IS NOT NULL AND acknowledged_note IS NOT NULL))
 );
 COMMENT ON TABLE ingest.quality_result IS 'Kết quả một lần chạy quy tắc chất lượng sau nạp hoặc pipeline. Use case: UC-04-09, UC-06-07.';
 COMMENT ON COLUMN ingest.quality_result.rule_id IS 'FK quality_rule';
 COMMENT ON COLUMN ingest.quality_result.run_kind IS 'job_run, pipeline_run, scheduled, manual';
 COMMENT ON COLUMN ingest.quality_result.sample_ref IS 'Mẫu dòng vi phạm, đã che';
 COMMENT ON COLUMN ingest.quality_result.acknowledged_by IS 'Người xác nhận dùng tiếp khi vi phạm mức cao';
+COMMENT ON COLUMN ingest.quality_result.acknowledged_at IS 'Thêm 12/10/2026';
+COMMENT ON COLUMN ingest.quality_result.acknowledged_note IS 'Lý do dùng tiếp, bắt buộc khi có acknowledged_by (BR-116, thêm 12/10/2026)';
 
 CREATE TABLE ingest.outbox (
   id uuid NOT NULL,
@@ -9872,6 +9883,25 @@ CREATE TRIGGER external_event_changed AFTER UPDATE ON monitor.external_event
 -- covers: document.chunk#0
 -- 'simple' configuration: no stemming dictionary fits Vietnamese, so words are matched as written.
 CREATE INDEX chunk_text_idx ON document.chunk USING gin (to_tsvector('simple', text));
+
+-- ─── routines/conflict.sql ───
+-- routines/conflict.sql: what the conflict schema enforces beyond its CHECKs (tab 3b D4.16).
+
+-- covers: conflict.source_authority#0
+-- UC-07-05: editing an active ranking makes a new draft; the active one keeps applying until the
+-- draft is approved. Approving the draft supersedes the active one in the same statement, before
+-- the partial unique index (one active per data_space_id, data_kind) checks the new row.
+CREATE FUNCTION conflict.source_authority_supersede() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE conflict.source_authority SET status = 'superseded', updated_at = now()
+   WHERE data_space_id = NEW.data_space_id AND data_kind = NEW.data_kind
+     AND status = 'active' AND id <> NEW.id;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER source_authority_supersede BEFORE UPDATE OF status ON conflict.source_authority
+  FOR EACH ROW WHEN (NEW.status = 'active' AND OLD.status IS DISTINCT FROM 'active')
+  EXECUTE FUNCTION conflict.source_authority_supersede();
 
 -- ─── routines/acquire.sql ───
 -- routines/acquire.sql: what D4.22 (tab 3b) writes in words for the acquire schema (P14 crawl

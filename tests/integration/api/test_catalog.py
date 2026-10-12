@@ -960,3 +960,34 @@ async def test_certification_refusals(o: Org) -> None:
         unknown = await api.post(f"/v1/dataset-versions/{uuid.uuid4()}:certify", headers=h)
         assert unknown.status_code == 404
     assert o.events(elsewhere) == []
+
+
+async def test_one_source_is_read_and_names_its_writeback_tables(o: Org) -> None:
+    # 12/10/2026: GET /v1/sources/{id} is where :test's Location points; writeback_tables lists
+    # the tables a writeback may write (UC-06-04).
+    source = _source_row(o, writeback_secret_ref=f"secret/tenants/{o.org}/wb")
+    elsewhere = _source_row(o, o.other)
+    async with client(o) as api:
+        h = o.headers("admin")
+        got = await api.get(f"/v1/sources/{source}", headers=h)
+        assert got.status_code == 200, got.text
+        _no_secret(got.json())
+        assert got.json()["has_writeback_credentials"] is True
+        assert got.json()["writeback_tables"] == []
+        patched = await api.patch(
+            f"/v1/sources/{source}",
+            json={"writeback_tables": ["core.du_no", "core.du_no", "core.tai_khoan"]},
+            headers=h,
+        )
+        assert patched.status_code == 200, patched.text
+        assert patched.json()["writeback_tables"] == ["core.du_no", "core.tai_khoan"]
+        bad = await api.patch(
+            f"/v1/sources/{source}", json={"writeback_tables": ["du_no; drop"]}, headers=h
+        )
+        assert bad.status_code == 422
+        tested = await api.post(f"/v1/sources/{source}:test", headers=h)
+        assert tested.headers["Location"] == f"/v1/sources/{source}"
+        hidden = await api.get(f"/v1/sources/{elsewhere}", headers=h)
+        assert hidden.status_code == 404
+        no_admin = await api.get(f"/v1/sources/{source}", headers=o.headers("steward"))
+        assert no_admin.status_code == 403

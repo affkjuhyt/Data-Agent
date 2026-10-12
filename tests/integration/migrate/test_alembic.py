@@ -103,3 +103,42 @@ def test_an_existing_audit_database_gets_the_export_job(admin):
     assert (
         _one(audit, "SELECT has_table_privilege('svc_audit', 'audit.export_job', 'INSERT')") is True
     )
+
+
+def test_the_decisions_of_12_10_apply_to_a_migrated_cluster(admin):
+    _fresh(admin, "chain_1210", "chain_1210_audit")
+    db, audit = _db(admin, "chain_1210"), _db(admin, "chain_1210_audit")
+    _alembic(db, "upgrade", "v3_0008")
+    # Put back what a cluster migrated before 12/10/2026 has (the baseline is generated today).
+    for dsn, sql in (
+        (audit, "DROP TABLE audit.outbox"),
+        (db, "ALTER TABLE catalog.source DROP COLUMN writeback_tables"),
+        (db, "ALTER TABLE pipeline.data_product DROP COLUMN owner_id"),
+        (db, "ALTER TABLE ingest.quality_result DROP COLUMN acknowledged_note"),
+        (db, "DROP INDEX conflict.source_authority_data_space_id_data_kind_key_2"),
+    ):
+        conn = psycopg2.connect(dsn)
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(sql)
+        conn.close()
+    _alembic(db, "upgrade", "head")
+    assert _one(audit, "SELECT to_regclass('audit.outbox') IS NOT NULL") is True
+    assert _one(audit, "SELECT has_table_privilege('svc_outbox_relay', 'audit.outbox', 'SELECT')")
+    for schema, table, name in (
+        ("catalog", "source", "writeback_tables"),
+        ("pipeline", "data_product", "owner_id"),
+        ("ingest", "quality_result", "acknowledged_note"),
+    ):
+        assert (
+            _one(
+                db,
+                "SELECT count(*) FROM information_schema.columns WHERE table_schema = "
+                f"'{schema}' AND table_name = '{table}' AND column_name = '{name}'",
+            )
+            == 1
+        )
+    assert _one(
+        db,
+        "SELECT to_regclass('conflict.source_authority_data_space_id_data_kind_key_2') IS NOT NULL",
+    )

@@ -14,6 +14,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func, literal, or_, select
 
 from libs.dataagent_db import uuid7
+from libs.dataagent_db.models import org
 from libs.dataagent_db.models import pipeline as pl
 from services.api.kernel.auth import Principal
 from services.api.kernel.db import transaction
@@ -32,6 +33,7 @@ async def create_published_product(
     contract: dict[str, Any],
     dataset_id: uuid.UUID | None,
     data_mart_id: uuid.UUID | None,
+    owner_id: uuid.UUID,
 ) -> dict[str, Any]:
     """Drafts a P06 shared data product (pipeline.data_product) and returns it as JSON.
 
@@ -43,9 +45,21 @@ async def create_published_product(
     errors = rules.contract_errors(contract)
     if errors:
         raise invalid("contract", "; ".join(errors))
+    if owner_id == principal.user_id:
+        # UC-06-06 step 4: the owner approves what the drafter wrote, so they are two people.
+        raise invalid("owner_id", "The owner approves publishing, so is not the drafter.")
     if not code.strip() or not name.strip():
         raise invalid("code" if not code.strip() else "name", "code and name are required.")
     async with transaction(ROLE, principal) as session:
+        owner = await session.scalar(
+            select(org.AppUser.id).where(
+                org.AppUser.id == owner_id,
+                org.AppUser.org_id == principal.org_id,
+                org.AppUser.status == "active",
+            )
+        )
+        if owner is None:
+            raise invalid("owner_id", "owner_id is not an active user of this organisation.")
         if dataset_id is not None:
             await require_datasets(session, principal, data_space, [dataset_id], "dataset_id")
         if data_mart_id is not None:
@@ -87,6 +101,7 @@ async def create_published_product(
             dataset_id=dataset_id,
             data_mart_id=data_mart_id,
             contract=contract,
+            owner_id=owner_id,
             consumers=list(latest.consumers) if latest else [],
             status="draft",
             breaking_notice_at=(

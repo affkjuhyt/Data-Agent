@@ -7,6 +7,7 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'da_owner') THEN CREATE ROLE da_owner NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_audit') THEN CREATE ROLE svc_audit NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'audit_read') THEN CREATE ROLE audit_read NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_outbox_relay') THEN CREATE ROLE svc_outbox_relay NOLOGIN NOSUPERUSER NOBYPASSRLS; END IF;
 END $$;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -144,6 +145,25 @@ COMMENT ON COLUMN audit.export_job.object_key IS 'Đường dẫn tệp trong Mi
 COMMENT ON COLUMN audit.export_job.signature IS 'Chữ ký số của hệ thống trên SHA-256 của tệp';
 COMMENT ON COLUMN audit.export_job.expires_at IS 'Hết hạn tải tệp';
 
+CREATE TABLE audit.outbox (
+  id uuid NOT NULL,
+  org_id uuid NOT NULL,
+  aggregate_type text NOT NULL,
+  aggregate_id uuid NOT NULL,
+  event_type text NOT NULL,
+  payload jsonb NOT NULL DEFAULT '{}',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  published_at timestamptz,
+  CONSTRAINT outbox_pkey PRIMARY KEY (id)
+);
+COMMENT ON TABLE audit.outbox IS 'Sự kiện chờ Debezium đẩy sang Kafka (D5.3), ghi cùng giao dịch với thay đổi nghiệp vụ.';
+CREATE INDEX outbox_unpublished_idx ON audit.outbox (created_at) WHERE published_at IS NULL;
+ALTER TABLE audit.outbox ENABLE ROW LEVEL SECURITY;
+CREATE POLICY org_isolation ON audit.outbox USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
+GRANT USAGE ON SCHEMA audit TO svc_outbox_relay;
+GRANT SELECT, UPDATE (published_at) ON audit.outbox TO svc_outbox_relay;
+CREATE POLICY outbox_relay_read ON audit.outbox FOR SELECT TO svc_outbox_relay USING (true);
+CREATE POLICY outbox_relay_publish ON audit.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX audit_log_actor_id_occurred_at_idx ON audit.audit_log (actor_id, occurred_at);
 CREATE INDEX audit_log_object_kind_object_id_idx ON audit.audit_log (object_kind, object_id);
 CREATE INDEX audit_log_org_id_seq_idx ON audit.audit_log (org_id, seq);
@@ -159,6 +179,7 @@ ALTER TABLE audit.export_job ENABLE ROW LEVEL SECURITY;
 CREATE POLICY org_isolation ON audit.export_job USING (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid) WITH CHECK (org_id = NULLIF(current_setting('app.org_id', true), '')::uuid);
 
 GRANT USAGE ON SCHEMA audit TO svc_audit, audit_read;
+GRANT SELECT, INSERT, UPDATE, DELETE ON audit.outbox TO svc_audit;
 GRANT SELECT, INSERT, UPDATE, DELETE ON audit.audit_log TO svc_audit;
 GRANT SELECT ON audit.audit_log TO audit_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON audit.security_event TO svc_audit;

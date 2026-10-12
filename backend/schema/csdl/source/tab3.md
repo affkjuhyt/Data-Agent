@@ -22,7 +22,7 @@ Thiết kế này dựng lại cơ sở dữ liệu từ 88 đặc tả use case
 10. Bảng lớn phân vùng theo tháng: `query_run`, `agent_step`, `model_usage`, `usage_counter`, `webhook_delivery`, `notification`, `audit_log`. Phân vùng quá hạn theo `retention_policy` được xuất sang MinIO (`da-archive`) rồi gỡ.
 11. Dữ liệu cá nhân: cột có thể chứa dữ liệu cá nhân được đánh dấu trong từ điển và mã hoá ở tầng ứng dụng; định danh chủ thể dữ liệu chỉ lưu bản băm.
 12. Ngoài PostgreSQL: Qdrant giữ vector (đoạn tài liệu, danh mục lược đồ, câu hỏi mẫu), mỗi điểm có payload `org_id`, `data_space_id` để lọc; PostgreSQL chỉ giữ mã điểm. MinIO giữ tệp, Redis giữ bộ nhớ đệm và đếm hạn mức, OpenBao giữ bí mật, Kafka nhận sự kiện từ outbox.
-13. Outbox: mỗi schema có bảng `outbox` (`id`, `aggregate_type`, `aggregate_id`, `event_type`, `payload jsonb`, `created_at`, `published_at`); Debezium đọc và đẩy sang Kafka theo mục 9.3.
+13. Outbox: mỗi schema có bảng `outbox` (`id`, `aggregate_type`, `aggregate_id`, `event_type`, `payload jsonb`, `created_at`, `published_at`); Debezium đọc và đẩy sang Kafka theo mục 9.3. Từ 12/10/2026 kể cả schema audit trong CSDL dataagent\_audit (audit.outbox), để Audit service phát sự kiện, ví dụ mở yêu cầu duyệt bản xuất quá 100.000 dòng (BR-138).
 14. Đặt tên: snake\_case, số ít; khoá ngoại `<bảng>_id`; chỉ mục `<bảng>_<cột>_idx`; ràng buộc `<bảng>_<ý nghĩa>_check`.
 
 ## D2. Cấu trúc schema

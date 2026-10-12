@@ -20,7 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from ..base import Base, uuid7
 
-__all__ = ["AuditLog", "SecurityEvent", "ExportJob"]
+__all__ = ["AuditLog", "SecurityEvent", "ExportJob", "Outbox"]
 
 
 class AuditLog(Base):
@@ -142,4 +142,24 @@ class ExportJob(Base):
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
+    )
+
+
+class Outbox(Base):
+    """Events written in the same transaction as the change; Debezium publishes them (D5.3)."""
+
+    __tablename__ = "outbox"
+    __table_args__ = ({"schema": "audit"},)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    aggregate_type: Mapped[str] = mapped_column(Text)
+    aggregate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    event_type: Mapped[str] = mapped_column(Text)
+    payload: Mapped[Any] = mapped_column(JSONB, server_default=sql_text("'{}'"))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=sql_text("now()")
+    )
+    published_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )

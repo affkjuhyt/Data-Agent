@@ -97,6 +97,8 @@ def _source(seed: Seed, org: uuid.UUID, space: uuid.UUID, writeback: bool) -> uu
         kind="postgresql",
         secret_ref=f"kv/sources/{uuid.uuid4()}",
         writeback_secret_ref=f"kv/writeback/{uuid.uuid4()}" if writeback else None,
+        # UC-06-04: the one table the tests write back to is a declared target.
+        writeback_tables=["core.du_no_dieu_chinh"] if writeback else [],
     )
 
 
@@ -865,6 +867,8 @@ async def _product(
         "name": "Dư nợ hằng ngày",
         "dataset_id": str(pp.derived),
         "contract": CONTRACT,
+        # The owner approves publishing (12/10/2026); the drafter never does.
+        "owner_id": str(pp.users["approver"]),
     }
     body.update(extra)
     made = await api.post("/v1/data-products", json=body, headers=pp.headers(who))
@@ -1189,11 +1193,53 @@ async def test_an_executed_write_is_undone_within_thirty_days(pp: Space) -> None
         payload = dict(pp.events(made["id"]))["writeback.undo_requested"]
         assert payload["reason"] == "ghi nhầm kỳ"
         assert payload["excluded_reviewer_ids"] == [str(pp.users["eng"])]
+        # undo_requested (12/10/2026): the undo is not asked twice.
+        assert (
+            pp.one("SELECT status FROM pipeline.writeback_request WHERE id = %s", made["id"])
+            == "undo_requested"
+        )
+        twice = await api.post(url, json={"reason": "lần nữa"}, headers=pp.headers("eng"))
+        assert twice.status_code == 409
 
         pp.run(
-            "UPDATE pipeline.writeback_request SET executed_at = now() - interval '31 days'"
-            " WHERE id = %s",
+            "UPDATE pipeline.writeback_request SET status = 'executed',"
+            " executed_at = now() - interval '31 days' WHERE id = %s",
             made["id"],
         )
         late = await api.post(url, json={"reason": "muộn"}, headers=pp.headers("eng"))
         assert late.status_code == 409
+
+
+async def test_only_the_named_owner_publishes(pp: Space) -> None:
+    # 12/10/2026: pipeline.data_product.owner_id approves publishing; the drafter never owns.
+    async with client(pp) as api:
+        self_owned = await api.post(
+            "/v1/data-products",
+            json={
+                "layer": "published",
+                "code": "tu_so_huu",
+                "name": "Tự sở hữu",
+                "dataset_id": str(pp.derived),
+                "contract": CONTRACT,
+                "owner_id": str(pp.users["dataadmin"]),
+            },
+            headers=pp.headers("dataadmin"),
+        )
+        assert self_owned.status_code == 422
+        assert self_owned.json()["errors"][0]["field"] == "owner_id"
+        product = await _product(api, pp, code="chu_khac", owner_id=str(pp.users["eng"]))
+        not_owner = await api.post(
+            f"/v1/data-products/{product['id']}:publish", headers=pp.headers("approver")
+        )
+        assert not_owner.status_code == 403 and not_owner.json()["code"] == "policy_denied"
+
+
+async def test_a_writeback_goes_only_to_a_declared_target(pp: Space) -> None:
+    # UC-06-04: catalog.source.writeback_tables lists the tables a writeback may write.
+    async with client(pp) as api:
+        other = await api.post(
+            "/v1/writebacks",
+            json=_writeback_body(pp, target_table="core.khach_hang"),
+            headers=pp.headers("eng"),
+        )
+        assert other.status_code == 422 and other.json()["code"] == "business_rule_violated"

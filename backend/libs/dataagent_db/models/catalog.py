@@ -75,6 +75,11 @@ class Source(Base):
         nullable=True,
         comment="Tài khoản ghi ngược riêng (UC-06-04); null là không cho ghi ngược",
     )
+    writeback_tables: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        server_default=sql_text("'{}'"),
+        comment="Bảng đích được phép ghi ngược (schema.bảng); rỗng là không bảng nào (UC-06-04, thêm 12/10/2026)",
+    )
     mode: Mapped[str] = mapped_column(
         Text,
         server_default=sql_text("'federated'"),

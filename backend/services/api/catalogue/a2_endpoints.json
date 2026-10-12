@@ -1,5 +1,5 @@
 {
- "source": "Data Agent V3 — Tài liệu phân tích thiết kế hệ thống, tab 4 · Đặc tả API, A2 (rev 110)",
+ "source": "Data Agent V3 — Tài liệu phân tích thiết kế hệ thống, tab 4 · Đặc tả API, A2 (rev 121)",
  "as_of": "2026-10-12",
  "note": "Snapshot of A2. ADR-48: OpenAPI is generated from code and checked against this list; adding or removing an endpoint updates A2 and this file in the same PR.",
  "groups": {
@@ -739,6 +739,18 @@
   },
   {
    "group": "Nguồn và danh mục",
+   "method": "GET",
+   "path": "/v1/sources/{id}",
+   "summary": "Một nguồn: chế độ, kết quả kiểm tra, giới hạn tải, lịch quét; không có bí mật (thêm 12/10/2026)",
+   "use_cases": [
+    "04-01"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
    "method": "POST",
    "path": "/v1/sources",
    "summary": "Đăng ký nguồn",
@@ -1239,7 +1251,8 @@
     "05-03"
    ],
    "capability": [
-    "admin_data"
+    "admin_data",
+    "steward"
    ]
   },
   {

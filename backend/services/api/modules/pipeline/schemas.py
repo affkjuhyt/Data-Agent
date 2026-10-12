@@ -206,6 +206,7 @@ class DataProductView(_View):
     status: str
     breaking_notice_at: datetime.datetime | None
     retire_after: datetime.datetime | None
+    owner_id: uuid.UUID
     approved_by: uuid.UUID | None
     created_at: datetime.datetime
     updated_at: datetime.datetime

@@ -302,6 +302,9 @@ async def approve_version(
                 409, "invalid_state", f"The version is {row.status}, not pending_approval."
             )
         _check_decider(row, owner, principal)
+        if owner.status == "retired":
+            # A retired model takes no new version (12/10/2026): approving would bring it back.
+            raise Problem(409, "invalid_state", "The model is retired; it takes no new version.")
         now = store.now()
         previous_id = owner.current_version_id
         if previous_id is not None and previous_id != row.id:

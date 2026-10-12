@@ -1066,6 +1066,8 @@ def _result_view(result: ingest.QualityResult, rule: ingest.QualityRule) -> Qual
         violations=result.violations,
         sample_ref=result.sample_ref,
         acknowledged_by=result.acknowledged_by,
+        acknowledged_at=result.acknowledged_at,
+        acknowledged_note=result.acknowledged_note,
         checked_at=result.checked_at,
         dataset_id=rule.dataset_id,
         severity=rule.severity,
@@ -1151,7 +1153,10 @@ async def acknowledge_quality_result(
         if res.acknowledged_by is not None:
             raise Problem(409, "invalid_state", "The result is already acknowledged.")
         res.acknowledged_by = principal.user_id
-        # The note has no column on quality_result yet; the event carries ids only (no free text).
+        # BR-116: the reason to keep using the data is kept with the acknowledgement (12/10/2026);
+        # the event carries ids only.
+        res.acknowledged_at = _now()
+        res.acknowledged_note = body.note.strip()
         session.add(
             _event(
                 principal,

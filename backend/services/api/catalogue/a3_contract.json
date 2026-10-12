@@ -882,6 +882,22 @@
    "errors": [],
    "request_text": "?status, ?kind"
   },
+  "GET /v1/sources/{id}": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Source như trong danh sách: status, status_reason, db_version, last_checked_at, has_credentials, has_writeback_credentials, writeback_tables; không có secret_ref",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
   "POST /v1/sources": {
    "group": "Nguồn và danh mục",
    "groups": [
@@ -932,7 +948,8 @@
     "scan_schemas": false,
     "scan_window": false,
     "status": false,
-    "credentials": false
+    "credentials": false,
+    "writeback_tables": false
    },
    "query": [],
    "returns": "Source",
@@ -946,7 +963,7 @@
      "validation_failed"
     ]
    ],
-   "request_text": "name, authority_level, freshness_sla, max_concurrency, query_timeout_s, scan_schemas, scan_window, status, credentials"
+   "request_text": "name, authority_level, freshness_sla, max_concurrency, query_timeout_s, scan_schemas, scan_window, status, credentials, writeback_tables"
   },
   "POST /v1/sources/{id}:test": {
    "group": "Nguồn và danh mục",
@@ -1802,6 +1819,7 @@
     "dataset_id": false,
     "data_mart_id": false,
     "contract": false,
+    "owner_id": true,
     "description": false,
     "sample_questions": false,
     "scope_entities": false,
@@ -1809,7 +1827,6 @@
     "period_from": false,
     "period_to": false,
     "out_of_scope_note": false,
-    "owner_id": false,
     "steward_id": false,
     "freshness_statement": false,
     "pack_version_id": false,
@@ -1827,7 +1844,7 @@
      "validation_failed"
     ]
    ],
-   "request_text": "code*, name*, dataset_id, data_mart_id, contract* | code*, name*, description*, sample_questions, scope_entities, period_grain*, period_from*, period_to, out_of_scope_note, owner_id*, steward_id*, freshness_statement*, pack_version_id"
+   "request_text": "code*, name*, dataset_id, data_mart_id, contract*, owner_id* | code*, name*, description*, sample_questions, scope_entities, period_grain*, period_from*, period_to, out_of_scope_note, owner_id*, steward_id*, freshness_statement*, pack_version_id"
   },
   "POST /v1/data-products/{id}:publish": {
    "group": "Biến đổi dữ liệu",
@@ -1838,6 +1855,10 @@
    "query": [],
    "returns": "DataProduct",
    "errors": [
+    [
+     403,
+     "policy_denied"
+    ],
     [
      422,
      "business_rule_violated"
@@ -4082,7 +4103,7 @@
     "data_space_id": false
    },
    "query": [],
-   "returns": "Lựa chọn Data Space mở lần sau",
+   "returns": "Lựa chọn Data Space mở lần sau; chỉ nhận Data Space người gọi là thành viên và chưa archive",
    "errors": [
     [
      404,
@@ -5862,7 +5883,7 @@
     "from",
     "to"
    ],
-   "returns": "Danh sách AccuracyLog. Kèm rolling_mase, tỷ lệ nằm trong khoảng 80% và 95%; suy giảm thì phát forecast.model.degraded (BR-160)",
+   "returns": "Danh sách AccuracyLog. Kèm rolling_mase, tỷ lệ nằm trong khoảng 80% và 95%; chỉ đọc, không ghi gì: suy giảm do worker chấm điểm phát forecast.model.degraded (BR-160, sửa 12/10/2026)",
    "errors": [],
    "request_text": "?from, ?to"
   },
@@ -6498,7 +6519,7 @@
     "contract_ref": false
    },
    "query": [],
-   "returns": "201, Handover. Chủ kho gửi thì owner_participates = true sau xác nhận passkey; AC05 gửi thì chỉ seal hoặc shred theo exit_policy (BR-195)",
+   "returns": "201, Handover. Chủ kho gửi thì owner_participates = true sau xác nhận passkey; AC05 gửi thì chỉ làm đúng exit_policy của hợp đồng (seal hoặc shred), không chọn phương án khác (BR-195)",
    "errors": [
     [
      422,

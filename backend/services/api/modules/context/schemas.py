@@ -655,7 +655,8 @@ class DataProductCreate(BaseModel):
     period_from: datetime.date | None = None
     period_to: datetime.date | None = None
     out_of_scope_note: str | None = Field(default=None, max_length=2_000)
-    owner_id: uuid.UUID | None = None
+    # Both layers name an owner (P07 owner, P06 approver of publishing; A3 12/10/2026).
+    owner_id: uuid.UUID
     steward_id: uuid.UUID | None = None
     freshness_statement: str | None = Field(default=None, min_length=1, max_length=500)
     pack_version_id: uuid.UUID | None = None
@@ -727,6 +728,7 @@ class PublishedDataProductView(BaseModel):
     breaking_notice_at: datetime.datetime | None = None
     retire_after: datetime.datetime | None = None
     approved_by: uuid.UUID | None = None
+    owner_id: uuid.UUID
     created_at: datetime.datetime
     updated_at: datetime.datetime
 

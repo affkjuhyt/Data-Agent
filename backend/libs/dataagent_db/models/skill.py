@@ -202,7 +202,10 @@ class SkillSuggestion(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
-    pattern: Mapped[Any] = mapped_column(JSONB, comment="Chuỗi bước đã khái quát")
+    pattern: Mapped[Any] = mapped_column(
+        JSONB,
+        comment="Chuỗi bước đã khái quát, chỉ cấu trúc: loại bước, tên tham số, params_schema; không có giá trị, kết quả, mẫu dòng hay nội dung ô của phiên (BR-98, sửa 12/10/2026)",
+    )
     session_ids: Mapped[list[uuid.UUID]] = mapped_column(
         ARRAY(UUID(as_uuid=True)),
         server_default=sql_text("'{}'"),

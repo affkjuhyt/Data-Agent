@@ -158,11 +158,12 @@ Dịch vụ: Skill service (skill). 14 endpoint.
 
 ### Nguồn và danh mục
 
-Dịch vụ: Connector service (catalog). 13 endpoint. Hai endpoint chứng nhận dataset hợp nhất (thêm 10/10/2026, BR-156) nằm ở tệp OpenAPI bổ sung cho tới lần gộp (A4); chỉ người phụ trách dữ liệu (steward\_id hoặc backup\_steward\_id) của Data Space chứa dataset gọi được, ngoài năng lực steward.
+Dịch vụ: Connector service (catalog). 14 endpoint. Hai endpoint chứng nhận dataset hợp nhất (thêm 10/10/2026, BR-156) nằm ở tệp OpenAPI bổ sung cho tới lần gộp (A4); chỉ người phụ trách dữ liệu (steward\_id hoặc backup\_steward\_id) của Data Space chứa dataset gọi được, ngoài năng lực steward.
 
 | Phương thức | Đường dẫn | Chức năng | Use case | Quyền |
 | --- | --- | --- | --- | --- |
 | GET | /v1/sources | Danh sách nguồn | 04-01 | admin\_data |
+| GET | /v1/sources/{id} | Một nguồn: chế độ, kết quả kiểm tra, giới hạn tải, lịch quét; không có bí mật (thêm 12/10/2026) | 04-01 | admin\_data |
 | POST | /v1/sources | Đăng ký nguồn | 04-01 | admin\_data |
 | PATCH | /v1/sources/{id} | Sửa nguồn, giới hạn tải | 04-01 | admin\_data |
 | POST | /v1/sources/{id}:test | Kiểm tra kết nối và quyền tài khoản | 04-01 | admin\_data |
@@ -218,7 +219,7 @@ Dịch vụ: Document service (document). 15 endpoint.
 | GET | /v1/documents/{id}/versions | Dòng thời gian hiệu lực | 05-05 | ask |
 | POST | /v1/search/documents | Tìm lai ghép vector và từ khoá | 05-04 | ask |
 | GET | /v1/quality-issues | Hàng chờ chất lượng | 05-03 | admin\_data |
-| POST | /v1/quality-issues/{id}:resolve | Xử lý vấn đề | 05-03 | admin\_data |
+| POST | /v1/quality-issues/{id}:resolve | Xử lý vấn đề | 05-03 | admin\_data, steward |
 | POST | /v1/extraction-schemas | Tạo lược đồ trích xuất | 05-06 | admin\_data |
 | POST | /v1/extraction-schemas/{id}:test | Chạy thử trên mẫu; 202 | 05-06 | admin\_data |
 | POST | /v1/extraction-schemas/{id}:activate | Kích hoạt | 05-06 | admin\_data |
@@ -693,8 +694,9 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | Endpoint | Gửi lên | Trả về | Lỗi riêng |
 | --- | --- | --- | --- |
 | GET /v1/sources | ?status, ?kind | Danh sách Source | — |
+| GET /v1/sources/{id} | — | Source như trong danh sách: status, status\_reason, db\_version, last\_checked\_at, has\_credentials, has\_writeback\_credentials, writeback\_tables; không có secret\_ref | 404 not\_found |
 | POST /v1/sources | name\*, kind\*, host, port, database\_name, mode, authority\_level, freshness\_sla, max\_concurrency, query\_timeout\_s, scan\_schemas, scan\_window, work\_calendar\_id, credentials, writeback\_credentials | Source. credentials được lưu vào OpenBao, không lưu CSDL (BR-14) | 409 conflict (trùng tên trong Data Space); 422 business\_rule\_violated (mode = federated với nguồn không hỗ trợ) |
-| PATCH /v1/sources/{id} | name, authority\_level, freshness\_sla, max\_concurrency, query\_timeout\_s, scan\_schemas, scan\_window, status, credentials | Source | 412 precondition\_failed; 422 validation\_failed (giới hạn tải ngoài khoảng, BR-99) |
+| PATCH /v1/sources/{id} | name, authority\_level, freshness\_sla, max\_concurrency, query\_timeout\_s, scan\_schemas, scan\_window, status, credentials, writeback\_tables | Source | 412 precondition\_failed; 422 validation\_failed (giới hạn tải ngoài khoảng, BR-99) |
 | POST /v1/sources/{id}:test | — | 202, Location tới source. Connector worker mở kết nối bằng tài khoản ở secret\_ref (API không giữ mật khẩu kho), kiểm TLS, SELECT, quyền ghi, độ trễ, phiên bản rồi ghi status, status\_reason, db\_version, last\_checked\_at lên source; tài khoản có quyền ghi bị cảnh báo. Sửa 12/10/2026 | 409 invalid\_state (nguồn đã lưu trữ) |
 | PUT /v1/sources/{id}/scan-schedule | scan\_cron, profile\_cron, scan\_window, work\_calendar\_id | Source. Trả kèm 5 lần quét kế tiếp | — |
 | POST /v1/sources/{id}/scans | kind, tables | 202, Location tới scan\_run | 409 conflict (đang có lượt quét chạy, BR-103) |
@@ -761,11 +763,11 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | PUT /v1/pipelines/{id}/schedule | cron, work\_calendar\_id, trigger\_on\_job\_id, depends\_on\_pipeline\_ids, no\_overlap, on\_failure | Pipeline | — |
 | GET /v1/lineage | ?object\_kind, ?object\_id, ?direction, ?depth | JSON. Đồ thị nút và cạnh từ lineage\_edge; nút ngoài quyền hiện ẩn danh | — |
 | POST /v1/marts | name\*, fact\_dataset\_id\*, grain\*, measures, dimensions, relations, checks | DataMart | — |
-| POST /v1/data-products | code\*, name\*, dataset\_id, data\_mart\_id, contract\* | DataProduct | — |
-| POST /v1/data-products/{id}:publish | — | DataProduct | 422 business\_rule\_violated (thay đổi phá vỡ chưa báo trước 30 ngày, BR-60) |
+| POST /v1/data-products | code\*, name\*, dataset\_id, data\_mart\_id, contract\*, owner\_id\* | DataProduct | — |
+| POST /v1/data-products/{id}:publish | — | DataProduct | 403 policy\_denied (không phải owner\_id của sản phẩm, hoặc là người soạn); 422 business\_rule\_violated (thay đổi phá vỡ chưa báo trước 30 ngày, BR-60) |
 | POST /v1/writebacks | source\_id\*, target\_table\*, from\_dataset\_id\*, write\_window; ?dry\_run | WritebackRequest | 403 forbidden (nguồn không có tài khoản ghi ngược); 422 business\_rule\_violated (có dòng xoá, BR-113) |
 | POST /v1/writebacks/{id}:submit | — | WritebackRequest. Tạo đề xuất writeback; người duyệt phải khác người yêu cầu (BR-24) | — |
-| POST /v1/writebacks/{id}:undo | reason\* | 202, Location tới writeback\_request | 409 invalid\_state (quá 30 ngày hoặc chưa executed) |
+| POST /v1/writebacks/{id}:undo | reason\* | 202, Location tới writeback\_request | 409 invalid\_state (quá 30 ngày, chưa executed hoặc đã yêu cầu hoàn tác) |
 
 ### A3 · Lớp ngữ cảnh
 
@@ -1059,12 +1061,12 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/forecast-model-versions/{id} | — | ModelVersion. Kèm model\_card, features và future\_assumption từng biến | — |
 | GET /v1/forecast-model-versions/{id}/backtest | — | BacktestRun. metrics theo từng tầm so với baseline\_metrics (seasonal naive), candidates | — |
 | POST /v1/forecast-model-versions/{id}:submit | note | ModelVersion (status = pending\_approval); tạo yêu cầu Cần bạn kind = forecast\_model | 422 business\_rule\_violated (MASE ≥ 1 so với seasonal naive, BR-158) |
-| POST /v1/forecast-model-versions/{id}:approve | note | ModelVersion (status = published); phiên bản cũ chuyển retired, dự báo tính lại; sự kiện forecast.model.published (BR-158) | 403 policy\_denied (người tạo tự duyệt); 409 invalid\_state (chưa ở pending\_approval) |
+| POST /v1/forecast-model-versions/{id}:approve | note | ModelVersion (status = published); phiên bản cũ chuyển retired, dự báo tính lại; sự kiện forecast.model.published (BR-158) | 403 policy\_denied (người tạo tự duyệt); 409 invalid\_state (chưa ở pending\_approval, hoặc mô hình đã ngừng: không nhận phiên bản mới, sửa 12/10/2026) |
 | POST /v1/forecast-model-versions/{id}:reject | reason\* | ModelVersion (status = rejected) | 409 invalid\_state |
 | POST /v1/forecast-models/{id}:retrain | reason, training\_to | 202, Location tới forecast\_job. Phiên bản mới qua backtest và duyệt (UC-15-04) | 409 invalid\_state (đang có lượt huấn luyện) |
 | POST /v1/forecast-models/{id}/scenarios | name\*, assumptions\* | Scenario kèm Prediction theo kịch bản và chênh lệch so với kịch bản gốc | 422 business\_rule\_violated (mô hình không dùng biến trong assumptions) |
 | GET /v1/forecast-models/{id}/predictions | ?scenario\_id, ?model\_version\_id, ?from, ?to | Danh sách Prediction (point, lo80, hi80, lo95, hi95, contributions). Luôn kèm giả định và nhãn mô hình (BR-158, BR-160) | — |
-| GET /v1/forecast-models/{id}/accuracy | ?from, ?to | Danh sách AccuracyLog. Kèm rolling\_mase, tỷ lệ nằm trong khoảng 80% và 95%; suy giảm thì phát forecast.model.degraded (BR-160) | — |
+| GET /v1/forecast-models/{id}/accuracy | ?from, ?to | Danh sách AccuracyLog. Kèm rolling\_mase, tỷ lệ nằm trong khoảng 80% và 95%; chỉ đọc, không ghi gì: suy giảm do worker chấm điểm phát forecast.model.degraded (BR-160, sửa 12/10/2026) | — |
 | GET /v1/formula-models | ?metric\_code, ?product\_code, ?status | Danh sách FormulaModel kèm trạng thái phiên bản (published, degraded) và reconstruction\_mae | — |
 | POST /v1/formula-models | model\_id\*, metric\_version\_id\*, product\_code\*, formula\*, window\_rule\*, input\_series\*, nowcast\_method, n\_draws, miss\_abs\_threshold, rounding | FormulaModel kèm ModelVersion draft algorithm = formula\_mc | 422 business\_rule\_violated (metric\_version chưa certified, formula tham chiếu tham số không tồn tại, BR-183) |
 | GET /v1/formula-models/{id} | — | FormulaModel. Kèm fund\_model (method, log\_score so với mốc), input\_series, owner | — |
@@ -1104,7 +1106,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/exec/theses/{id}/publications | title\*, statement\_public\*, target\_data\_space\_id\*, attribution\*, attribution\_label\*, confidence\_public, rationale\_public, ref\_kind\*, metric\_ref\*, scope, period\_label\*, comparator\*, threshold\*, threshold\_hi, unit\* | 202, Location tới publication. Workflow giải mã cond\_ct để đối chiếu điều kiện công bố (ghi sổ, purpose validate); Context service tạo trang kind hypothesis bản nháp và đề xuất knowledge\_page giao người phụ trách Data Space đích (BR-194) | 422 business\_rule\_violated (câu giả thuyết có số; điều kiện khác điều kiện đã ghi); 409 invalid\_state (luận điểm rút hoặc không chấm được) |
 | GET /v1/exec/publications/{id} | — | Publication kèm knowledge\_page\_id, trạng thái duyệt | — |
 | POST /v1/exec/publications/{id}:withdraw | reason | Publication (status = withdrawn); trang chuyển retired | 409 invalid\_state |
-| POST /v1/exec/handovers | kind\*, reason\*, successor\_id, contract\_ref | 201, Handover. Chủ kho gửi thì owner\_participates = true sau xác nhận passkey; AC05 gửi thì chỉ seal hoặc shred theo exit\_policy (BR-195) | 422 business\_rule\_violated (selective\_handover khi chủ kho không tham gia; kind khác exit\_policy); 409 conflict (đang có yêu cầu mở) |
+| POST /v1/exec/handovers | kind\*, reason\*, successor\_id, contract\_ref | 201, Handover. Chủ kho gửi thì owner\_participates = true sau xác nhận passkey; AC05 gửi thì chỉ làm đúng exit\_policy của hợp đồng (seal hoặc shred), không chọn phương án khác (BR-195) | 422 business\_rule\_violated (selective\_handover khi chủ kho không tham gia; kind khác exit\_policy); 409 conflict (đang có yêu cầu mở) |
 | GET /v1/exec/handovers/{id} | — | Handover; AC05, AC06 thấy cùng nội dung (bảng không có bản mã) | — |
 | POST /v1/exec/handovers/{id}/items | items\* \[{source\_kind, source\_id, payload\_sealed}\] | Danh sách HandoverItem; tăng items\_total | 409 invalid\_state (handover chưa approved hoặc in\_progress) |
 | GET /v1/exec/handovers/{id}/items | — | Danh sách HandoverItem của người nhận | 404 not\_found (không phải người nhận) |

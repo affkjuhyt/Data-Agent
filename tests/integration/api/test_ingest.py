@@ -1013,7 +1013,11 @@ async def test_only_a_failed_high_check_is_acknowledged_by_an_approver(ds: Space
         )
         assert done.status_code == 200, done.text
         assert done.json()["acknowledged_by"] == str(ds.users["owner"])
+        # BR-116: the reason is kept with the acknowledgement (12/10/2026), not in the event.
+        assert done.json()["acknowledged_note"] == "đã đối chiếu Core, dùng tiếp"
+        assert done.json()["acknowledged_at"] is not None
         [(kind, payload)] = ds.events(blocking)
+        assert "note" not in payload
         assert kind == "quality_result.acknowledged"
         assert payload["quality_rule_id"] == str(high)
         twice = await api.post(url, json={"note": "lại"}, headers=ds.headers("owner"))

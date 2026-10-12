@@ -4643,6 +4643,17 @@
      "pii": false
     },
     {
+     "name": "writeback_tables",
+     "type": "text[]",
+     "not_null": true,
+     "default": "'{}'",
+     "unique": false,
+     "comment": "Bảng đích được phép ghi ngược (schema.bảng); rỗng là không bảng nào (UC-06-04, thêm 12/10/2026)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "mode",
      "type": "text",
      "not_null": true,
@@ -17904,7 +17915,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "Chuỗi bước đã khái quát",
+     "comment": "Chuỗi bước đã khái quát, chỉ cấu trúc: loại bước, tên tham số, params_schema; không có giá trị, kết quả, mẫu dòng hay nội dung ô của phiên (BR-98, sửa 12/10/2026)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -22462,7 +22473,7 @@
      "not_null": true,
      "default": "'draft'",
      "unique": false,
-     "comment": "draft, active",
+     "comment": "draft, active, superseded",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -22478,22 +22489,35 @@
    ],
    "constraints": [
     {
-     "kind": "unique",
-     "sql": "UNIQUE (data_space_id, data_kind)"
+     "kind": "check",
+     "sql": "CHECK (status IN ('draft','active','superseded'))"
     },
     {
      "kind": "check",
-     "sql": "CHECK (status IN ('draft','active'))"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (status <> 'active' OR approved_by IS NOT NULL)"
+     "sql": "CHECK (status NOT IN ('active','superseded') OR approved_by IS NOT NULL)"
     }
    ],
-   "indexes": [],
+   "indexes": [
+    {
+     "unique": true,
+     "method": "btree",
+     "expr": "data_space_id, data_kind",
+     "where": "status = 'active'",
+     "comment": null
+    },
+    {
+     "unique": true,
+     "method": "btree",
+     "expr": "data_space_id, data_kind",
+     "where": "status = 'draft'",
+     "comment": null
+    }
+   ],
    "partition": null,
    "immutable": false,
-   "notes": []
+   "notes": [
+    "Sửa bảng xếp hạng đang dùng tạo bản nháp mới; bản active vẫn áp dụng tới khi bản nháp được duyệt, lúc đó bản cũ thành superseded (UC-07-05, sửa 12/10/2026)."
+   ]
   },
   {
    "schema": "period",
@@ -25903,6 +25927,17 @@
      "pii": false
     },
     {
+     "name": "owner_id",
+     "type": "uuid",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "logic → org.app_user; người phụ trách duyệt phát hành, khác người soạn (thêm 12/10/2026)",
+     "fk": null,
+     "logic_ref": "org.app_user",
+     "pii": false
+    },
+    {
      "name": "status",
      "type": "text",
      "not_null": true,
@@ -25971,6 +26006,10 @@
     {
      "kind": "check",
      "sql": "CHECK (status <> 'published' OR approved_by IS NOT NULL)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (approved_by IS NULL OR approved_by = owner_id)"
     },
     {
      "kind": "check",
@@ -26133,7 +26172,7 @@
      "not_null": true,
      "default": "'draft'",
      "unique": false,
-     "comment": "draft, previewed, submitted, approved, rejected, scheduled, executing, executed, cancelled_mismatch, failed, undone",
+     "comment": "draft, previewed, submitted, approved, rejected, scheduled, executing, executed, cancelled_mismatch, failed, undo_requested, undone",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -26172,7 +26211,7 @@
    "constraints": [
     {
      "kind": "check",
-     "sql": "CHECK (status IN ('draft','previewed','submitted','approved','rejected','scheduled','executing','executed','cancelled_mismatch','failed','undone'))"
+     "sql": "CHECK (status IN ('draft','previewed','submitted','approved','rejected','scheduled','executing','executed','cancelled_mismatch','failed','undo_requested','undone'))"
     },
     {
      "kind": "check",
@@ -27189,6 +27228,28 @@
      "pii": false
     },
     {
+     "name": "acknowledged_at",
+     "type": "timestamptz",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Thêm 12/10/2026",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "acknowledged_note",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Lý do dùng tiếp, bắt buộc khi có acknowledged_by (BR-116, thêm 12/10/2026)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "checked_at",
      "type": "timestamptz",
      "not_null": true,
@@ -27208,6 +27269,10 @@
     {
      "kind": "check",
      "sql": "CHECK (run_kind IN ('job_run','pipeline_run','scheduled','manual'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (acknowledged_by IS NULL OR (acknowledged_at IS NOT NULL AND acknowledged_note IS NOT NULL))"
     },
     {
      "kind": "fk",

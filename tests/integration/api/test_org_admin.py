@@ -418,6 +418,8 @@ async def test_group_mappings_refuse_bad_references(world: World) -> None:
 # AC-11-01-02
 @pytest.mark.req("AC-11-01-02")
 async def test_emergency_access_lasts_a_day_and_needs_a_second_person(world: World) -> None:
+    # Measured when the test runs: a module-level instant drifts by the minutes the suite took.
+    now = datetime.datetime.now(datetime.UTC)
     body = {
         "user_id": str(world.users["analyst"]),
         "role_id": str(world.roles["admin"]),
@@ -434,7 +436,7 @@ async def test_emergency_access_lasts_a_day_and_needs_a_second_person(world: Wor
         until = datetime.datetime.fromisoformat(row["valid_until"])
         assert (
             datetime.timedelta(hours=23, minutes=58)
-            < until - NOW
+            < until - now
             <= datetime.timedelta(hours=24, minutes=5)
         )
         assert world.one("SELECT source FROM org.user_role WHERE id = %s", row["id"]) == "emergency"
@@ -445,14 +447,14 @@ async def test_emergency_access_lasts_a_day_and_needs_a_second_person(world: Wor
 
         too_long = await api.post(
             "/v1/admin/emergency-access",
-            json={**body, "valid_until": (NOW + datetime.timedelta(hours=25)).isoformat()},
+            json={**body, "valid_until": (now + datetime.timedelta(hours=25)).isoformat()},
             headers=world.headers("admin"),
         )
         assert too_long.status_code == 422
         assert too_long.json()["code"] == "business_rule_violated"
         past = await api.post(
             "/v1/admin/emergency-access",
-            json={**body, "valid_until": (NOW - datetime.timedelta(hours=1)).isoformat()},
+            json={**body, "valid_until": (now - datetime.timedelta(hours=1)).isoformat()},
             headers=world.headers("admin"),
         )
         assert past.status_code == 422

@@ -286,7 +286,14 @@ async def test_each_layer_needs_its_own_capability(ds: Space) -> None:
             "name": "Giá bán lẻ dùng chung",
             "dataset_id": str(ds.dataset),
             "contract": {"columns": [{"name": "gia", "type": "numeric"}]},
+            "owner_id": str(ds.users["owner"]),
         }
+        no_owner = await api.post(
+            "/v1/data-products",
+            json={k: v for k, v in published.items() if k != "owner_id"},
+            headers=ds.headers("dataadmin"),
+        )
+        assert no_owner.status_code == 422
         no_admin = await api.post(
             "/v1/data-products", json=published, headers=ds.headers("steward")
         )
