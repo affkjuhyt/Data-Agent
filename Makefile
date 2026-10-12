@@ -3,7 +3,7 @@
 # .github/workflows/ci.yml does, so a green `make ci` means a green pipeline.
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
-PY_IMAGE ?= localhost:5001/dataagent/workflow_runtime:latest
+PY_IMAGE ?= localhost:5001/dataagent/api:latest
 DOCKER_RUN_PY = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(PY_IMAGE)
 # ruff, mypy and import-linter preinstalled (tests/dev-tools.Dockerfile): a cache hit after
 # the first build, so lint runs in seconds instead of re-installing tools from PyPI each time.
@@ -50,10 +50,10 @@ type:  ## mypy strict on libs + services (same set as CI python-type)
 # can import every service (their OTel/boto3 pins conflict). suite:image pairs;
 # tests/unit/<suite> and tests/integration/<suite> are the directories.
 IMAGE_REGISTRY ?= localhost:5001
-UNIT_SUITES ?= workflow_runtime:workflow_runtime kb_backend:kb-backend platform_workers:platform-workers \
+UNIT_SUITES ?= kb_backend:kb-backend platform_workers:platform-workers \
                sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker \
                model_service:model_service contracts:kb-backend api:api worker_agent:worker-agent
-INTEGRATION_SUITES ?= workflow_runtime:workflow_runtime sandbox_executor:sandbox_executor \
+INTEGRATION_SUITES ?= sandbox_executor:sandbox_executor \
                       contracts:kb-backend api:api migrate:migrate worker_agent:worker-agent
 # The integration sandbox tests start real sandbox-runner containers; the tag
 # differs per host (tests/integration/_sandbox.py), override it to match.

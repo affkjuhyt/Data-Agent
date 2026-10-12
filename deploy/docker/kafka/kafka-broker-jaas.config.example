@@ -14,7 +14,6 @@ KafkaServer {
     password="REPLACE_WITH_KAFKA_ADMIN_PASSWORD"
     user_admin="REPLACE_WITH_KAFKA_ADMIN_PASSWORD"
     user_audit-consumer="REPLACE_WITH_AUDIT_CONSUMER_PASSWORD"
-    user_workflow_runtime="REPLACE_WITH_WORKFLOW_RUNTIME_PASSWORD"
     user_memory-consumer="REPLACE_WITH_MEMORY_CONSUMER_PASSWORD"
     user_schema-crawler-worker="REPLACE_WITH_SCHEMA_CRAWLER_WORKER_PASSWORD"
     user_web-crawler-worker="REPLACE_WITH_WEB_CRAWLER_WORKER_PASSWORD";

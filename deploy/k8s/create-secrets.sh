@@ -47,8 +47,7 @@ kubectl -n dataagent-service create secret generic api-secrets \
 
 # worker-agent: answers as svc_qa, opens HITL requests as svc_inbox, releases approved audit exports
 # as svc_audit_worker (that one update only), claims outbox rows as svc_outbox_relay in both databases (docs/v3/06-api-v1.md §6),
-# runs queries in place as svc_query with source credentials read from OpenBao. The AppRole is
-# workflow_runtime's (read on secret/data/tenants/*) until G1 removes that runtime and renames it.
+# and runs queries in place as svc_query with source credentials read from OpenBao.
 kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_QA="${DATAAGENT_DB_URL__SVC_QA}" \
   --from-literal=DATAAGENT_DB_URL__SVC_OUTBOX_RELAY="${DATAAGENT_DB_URL__SVC_OUTBOX_RELAY}" \
@@ -63,20 +62,6 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
 kubectl -n dataagent-service create secret generic kb-backend-secrets \
   --from-literal=KB_BACKEND_URL_ASYNC="${KB_BACKEND_URL_ASYNC}" \
   --from-literal=MINIO_URL="${MINIO_URL}" \
-  --from-literal=GATEWAY_KEY="${GATEWAY_KEY}" \
-  --from-literal=SERVICE_AUTH_SECRET="${SERVICE_AUTH_SECRET}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl -n dataagent-service create secret generic workflow-runtime-secrets \
-  --from-literal=RUNTIME_DB_URL="${RUNTIME_DB_URL}" \
-  --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \
-  --from-literal=LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY}" \
-  --from-literal=LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY}" \
-  --from-literal=OPENBAO_ROLE_ID="${OPENBAO_ROLE_ID}" \
-  --from-literal=OPENBAO_SECRET_ID="${OPENBAO_SECRET_ID}" \
-  --from-literal=KAFKA_SASL_PASSWORD="${WORKFLOW_RUNTIME_KAFKA_PASSWORD}" \
-  --from-literal=MINIO_ACCESS_KEY="${MINIO_ROOT_USER}" \
-  --from-literal=MINIO_SECRET_KEY="${MINIO_ROOT_PASSWORD}" \
   --from-literal=GATEWAY_KEY="${GATEWAY_KEY}" \
   --from-literal=SERVICE_AUTH_SECRET="${SERVICE_AUTH_SECRET}" \
   --dry-run=client -o yaml | kubectl apply -f -
@@ -264,17 +249,12 @@ kubectl -n dataagent-service create secret generic setup-secrets \
 kubectl -n dataagent-service create secret generic eval-secrets \
   --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \
   --from-literal=AGENT_ID="${EVAL_AGENT_ID}" \
-  --from-literal=EVAL_ACCESS_TOKEN="${EVAL_ACCESS_TOKEN}" \
+  --from-literal=EVAL_ACCESS_TOKEN="${EVAL_ACCESS_TOKEN:-}" \
   --from-literal=GATEWAY_KEY="${GATEWAY_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic postgres-backup-secrets \
   --from-literal=PGPASSWORD="${POSTGRES_PASSWORD}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-# app_user: the job cleans one tenant at a time (see job/memory-cleanup.yaml).
-kubectl -n dataagent-service create secret generic memory-cleanup-secrets \
-  --from-literal=DATABASE_URL="${APP_DATABASE_URL}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-database create secret generic postgres-restore-secrets \

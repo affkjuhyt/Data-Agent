@@ -35,13 +35,13 @@ GATEWAY_KEY = "kong-proves-itself-with-this"
 def auth(monkeypatch):
     """Re-import so module-level env reads (KB_ALLOWED_SERVICES) are re-evaluated."""
     monkeypatch.setenv("SERVICE_AUTH_SECRET", SECRET)
-    monkeypatch.setenv("KB_ALLOWED_SERVICES", "workflow_runtime")
+    monkeypatch.setenv("KB_ALLOWED_SERVICES", "worker-agent")
     monkeypatch.setenv("KB_GATEWAY_KEY", GATEWAY_KEY)
     import services.kb_backend.dependencies.auth as auth_mod
     return importlib.reload(auth_mod)
 
 
-def _assertion(roles, *, service="workflow_runtime", tenant=TENANT, user="u1", secret=SECRET):
+def _assertion(roles, *, service="worker-agent", tenant=TENANT, user="u1", secret=SECRET):
     return mint_service_assertion(
         service=service, tenant_id=tenant, user_id=user, roles=roles, secret=secret,
     )
@@ -68,7 +68,7 @@ class TestServiceAssertionPath:
 
         assert ctx["role"] == "BUSINESS_OPERATOR"
         assert ctx["tenant_id"] == TENANT
-        assert ctx["auth_source"] == "service:workflow_runtime"
+        assert ctx["auth_source"] == "service:worker-agent"
 
     def test_headers_cannot_widen_a_narrow_assertion(self, auth):
         """The escalation this change exists to stop: identity must come from

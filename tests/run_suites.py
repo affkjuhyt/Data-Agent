@@ -32,52 +32,41 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Pass-through of the Makefile defaults so `python3 tests/run_suites.py …` works alone.
 DEFAULT_UNIT = (
-    "workflow_runtime:workflow_runtime kb_backend:kb-backend platform_workers:platform-workers "
+    "kb_backend:kb-backend platform_workers:platform-workers "
     "sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker model_service:model_service api:api worker_agent:worker-agent"
 )
 DEFAULT_INTEGRATION = (
-    "workflow_runtime:workflow_runtime sandbox_executor:sandbox_executor api:api migrate:migrate "
+    "sandbox_executor:sandbox_executor api:api migrate:migrate "
     "worker_agent:worker-agent"
 )
 
 # Which suites a change under backend/services/<service>/ can break: the suite of
 # that service, plus every suite whose tests import it (measured with grep over
-# tests/, 2026-10-02 — e.g. tests/unit/workflow_runtime loads auth_api, kb_backend,
-# model_service and sandbox_executor modules; the workflow_runtime integration
-# suite runs sandbox_executor's app in-process).
+# tests/ and the V3 service boundaries.
 SERVICE_SUITES: dict[str, set[tuple[str, str]]] = {
     "api": {("unit", "api"), ("integration", "api")},
     "worker_agent": {("unit", "worker_agent"), ("integration", "worker_agent")},
-    "auth_api": {("unit", "auth_api"), ("unit", "workflow_runtime")},
+    "auth_api": {("unit", "auth_api")},
     "kb_backend": {
-        ("unit", "kb_backend"), ("unit", "kb_worker"), ("unit", "workflow_runtime"),
-        ("integration", "workflow_runtime"),
+        ("unit", "kb_backend"), ("unit", "kb_worker"),
     },
-    "model_service": {("unit", "model_service"), ("unit", "workflow_runtime")},
+    "model_service": {("unit", "model_service")},
     "platform_workers": {("unit", "platform_workers"), ("unit", "kb_backend")},
     "sandbox_executor": {
-        ("unit", "sandbox_executor"), ("unit", "workflow_runtime"),
-        ("integration", "sandbox_executor"), ("integration", "workflow_runtime"),
+        ("unit", "sandbox_executor"), ("integration", "sandbox_executor"),
     },
-    "workflow_runtime": {("unit", "workflow_runtime"), ("integration", "workflow_runtime")},
 }
 
 # Files outside the services that some unit suites read directly (manifests, the
 # frontend's package.json, model/ configs).
 OTHER_PREFIXES: dict[str, set[tuple[str, str]]] = {
-    "deploy/": {("unit", "workflow_runtime"), ("unit", "kb_backend")},
-    "frontend/package": {("unit", "workflow_runtime")},
-    "frontend/vite.config.ts": {("unit", "workflow_runtime")},
-    "frontend/src/App.tsx": {("unit", "workflow_runtime")},
-    "model/": {("unit", "workflow_runtime"), ("unit", "model_service")},
+    "deploy/": {("unit", "kb_backend")},
+    "model/": {("unit", "model_service")},
 }
 
 # Per-suite pytest flags. sandbox_executor starts a real container per test, so it is
 # spread over 4 xdist workers (161 s -> 64 s, 2026-10-02); tests sharing a fixed
-# Docker resource carry @pytest.mark.xdist_group. Measured and left serial: the
-# workflow_runtime suites — integration gains nothing (each worker starts its own
-# containers) and its sandbox wiring service binds a fixed port; unit has tests
-# that depend on running order.
+# Docker resource carry @pytest.mark.xdist_group.
 SUITE_PYTEST_ARGS: dict[tuple[str, str], list[str]] = {
     ("integration", "sandbox_executor"): ["-n", "4", "--dist", "loadgroup"],
 }

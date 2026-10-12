@@ -1,5 +1,0 @@
-# test_sandbox_handler_wiring.py runs sandbox_executor's app in-process next to
-# workflow_runtime's handlers. These are the sandbox imports the workflow_runtime
-# image lacks — not its whole requirements.txt, whose boto3 pin conflicts.
-sqlparse==0.5.1
-docker==7.1.0

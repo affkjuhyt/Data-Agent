@@ -203,7 +203,7 @@ ansible-playbook plan.yml -e '{"changed_paths": ["backend/alembic/versions/x.py"
 ```
 
 The logic lives in [`filter_plugins/deploy_plan.py`](filter_plugins/deploy_plan.py)
-and is unit-tested in `tests/unit/workflow_runtime/test_deploy_plan.py`.
+and is covered by the deploy-plan unit tests.
 
 ## Logs and timings
 

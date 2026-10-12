@@ -11,6 +11,6 @@ pytest-xdist>=3.5
 respx>=0.21
 # fastapi.testclient runs on httpx; model_service's image does not ship it.
 httpx>=0.27
-# tests/unit/workflow_runtime/test_k8s_manifests.py validates manifest field
+# kubeconform validates Kubernetes manifest fields in CI.
 # names against the generated API models offline; it skips without this.
 kubernetes>=31.0

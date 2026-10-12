@@ -23,7 +23,6 @@
 # ── Postgres roles ────────────────────────────────────────────────────
 vault_postgres_password: ""
 vault_app_user_password: ""
-vault_runtime_writer_password: ""
 vault_sandbox_reader_password: ""
 vault_kb_backend_password: ""
 vault_kb_ingestion_worker_password: ""
@@ -46,7 +45,6 @@ vault_kafka_admin_password: ""
 vault_audit_consumer_kafka_password: ""
 vault_memory_consumer_kafka_password: ""
 vault_schema_crawler_worker_kafka_password: ""
-vault_workflow_runtime_kafka_password: ""
 
 # ── identity and gateway ──────────────────────────────────────────────
 vault_keycloak_admin_password: ""
