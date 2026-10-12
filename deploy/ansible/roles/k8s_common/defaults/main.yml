@@ -136,7 +136,6 @@ service_workloads:
   - worker-agent
   - litellm
   - auth-api
-  - workflow-runtime
   - kb-backend
   - kb-promote-silver
   - kb-promote-gold

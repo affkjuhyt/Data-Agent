@@ -435,6 +435,22 @@
       changed_when: "'created' in svc_apply.stdout or 'configured' in svc_apply.stdout"
       when: (apply_services | bool) and (services_changed | bool)
 
+    - name: Remove the retired workflow-runtime workload in a V3 service slice
+      ansible.builtin.command:
+        cmd: >-
+          {{ kubectl }} -n {{ ns_service }} delete
+          deployment/workflow-runtime service/workflow-runtime
+          serviceaccount/workflow-runtime configmap/workflow-runtime-env
+          secret/workflow-runtime-secrets
+          --ignore-not-found=true
+      register: legacy_runtime_delete
+      changed_when: >-
+        'deleted' in legacy_runtime_delete.stdout
+        or 'deleted' in legacy_runtime_delete.stderr
+      when:
+        - apply_services | bool
+        - "'workflow-runtime' not in service_manifests"
+
     # After the service tier, whose manifests carry per-workload env ConfigMaps
     # of their own, so a change there is seen too.
     - name: Snapshot the service tier's Secrets and ConfigMaps after

@@ -21,16 +21,11 @@ KC_BASE="${KEYCLOAK_URL:-http://localhost:8110}"
 
 # Upstream hostnames below default to the backend/services/<name> directory
 # names (underscores). k8s Service objects can't contain underscores at all
-# (DNS-1035 label rule), so the Services are named with hyphens
-# (workflow-runtime, flow-builder, auth-api) and dataagent-config
-# (deploy/k8s/{dev,production}/configmap.yaml) sets these three to match.
+# (DNS-1035 label rule), so dataagent-config (deploy/k8s/{dev,production}/configmap.yaml)
+# sets the active service names to match.
 # Without the override, Kong's upstream DNS lookup 503s with "name error"
 # the moment a route actually gets proxied (JWT/CORS checks can pass fine
 # before that point, which is what made this easy to miss).
-WORKFLOW_RUNTIME_HOST="${WORKFLOW_RUNTIME_HOST:-workflow_runtime}"
-# Agent/workflow/canvas authoring (ex flow_builder) is served by workflow_runtime. The Kong
-# service keeps the name `flow_builder`: its JWT audience, IP restriction and rate limit
-# are keyed on it (Keycloak audience mappers included), so only the upstream moved.
 AUTH_API_HOST="${AUTH_API_HOST:-auth_api}"
 API_HOST="${API_HOST:-api}"
 REALM="${KEYCLOAK_REALM:-aeroflow}"
@@ -144,41 +139,19 @@ fi
 # Helper: extract first occurrence of a string field from JSON (no jq/Python needed)
 json_field() { grep -o "\"$1\":\"[^\"]*\"" | head -1 | sed 's/.*":"//;s/"$//'; }
 
-# ── 2. Create upstream services ────────────────────────────────────────
-echo "📡 Creating workflow_runtime service..."
-curl -sf -X PUT "$KONG_ADMIN/services/workflow_runtime" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "workflow_runtime",
-    "host": "'"$WORKFLOW_RUNTIME_HOST"'",
-    "port": 8240,
-    "protocol": "http",
-    "connect_timeout": 5000,
-    "read_timeout": 60000
-  }' | json_field name | xargs -I{} echo "  → service: {}"
-
-echo "📡 Creating flow_builder service..."
-curl -sf -X PUT "$KONG_ADMIN/services/flow_builder" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "flow_builder",
-    "host": "'"$WORKFLOW_RUNTIME_HOST"'",
-    "port": 8240,
-    "protocol": "http",
-    "connect_timeout": 5000,
-    "read_timeout": 30000
-  }' | json_field name | xargs -I{} echo "  → service: {}"
+# ── 2. Create the V3 upstream and routes ───────────────────────────────
+# The old workflow-runtime and flow-builder routes are deliberately removed
+# here. Kong is stateful, so deleting their manifests alone would leave stale
+# routes active after a rollout.
+echo "🧹 Removing legacy workflow-runtime routes and services..."
+for route in builder-route runtime-route; do
+  curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/flow_builder/routes/$route" || true
+  curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/workflow_runtime/routes/$route" || true
+done
+curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/flow_builder" || true
+curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/workflow_runtime" || true
 
 # ── 3. Create routes ───────────────────────────────────────────────────
-echo "🛣️  Creating flow_builder route (canvas + agent CRUD)..."
-curl -sf -X PUT "$KONG_ADMIN/services/flow_builder/routes/builder-route" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "builder-route",
-    "paths": ["/api/agents", "/api/workflows", "/api/workflow-versions"],
-    "strip_path": false,
-    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
-  }' | json_field name | xargs -I{} echo "  → route: {}"
 
 echo "📡 Creating api service..."
 curl -sf -X PUT "$KONG_ADMIN/services/api" \
@@ -196,16 +169,6 @@ curl -sf -X PUT "$KONG_ADMIN/services/api/routes/api-v1-route" \
   -d '{
     "name": "api-v1-route",
     "paths": ["/v1"],
-    "strip_path": false,
-    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
-  }' | json_field name | xargs -I{} echo "  → route: {}"
-
-echo "🛣️  Creating workflow_runtime route (conversations + catalog + nodes)..."
-curl -sf -X PUT "$KONG_ADMIN/services/workflow_runtime/routes/runtime-route" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "runtime-route",
-    "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts", "/api/catalog", "/api/sandbox", "/api/runtime-config", "/api/db-connector", "/api/reviews", "/api/platform", "/api/billing", "/api/orchestrate", "/api/storage", "/api/ask/results"],
     "strip_path": false,
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
@@ -265,9 +228,8 @@ echo "🧹 Removing the retired release_worker service..."
 curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/release_worker/routes/release-route" || true
 curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/release_worker" || true
 
-# (3d used to create an `orchestrator` service + route here, and 3d-2 a
-# `minio_service` one. Both now live inside workflow_runtime — /api/orchestrate
-# and /api/storage are on runtime-route above.)
+# (3d used to create an `orchestrator` service + route, and 3d-2 a
+# `minio_service` one. Both are retired with the legacy runtime.)
 
 # ── 3e. Create kb-backend service + route ──────────────────────────────
 # Kong reaches kb-backend by its Service short name: both run in
@@ -382,16 +344,6 @@ for p in data.get('data', []):
     curl -sf -X DELETE "$KONG_ADMIN/plugins/$pid" && echo "  → removed aeroflow-jwks plugin $pid"
   done
 else
-  echo "🔐 Enabling aeroflow-jwks plugin on workflow_runtime..."
-  upsert_plugin "$KONG_ADMIN/services/workflow_runtime/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"workflow_runtime\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
-    "aeroflow-jwks"
-
-  echo "🔐 Enabling aeroflow-jwks plugin on flow_builder..."
-  upsert_plugin "$KONG_ADMIN/services/flow_builder/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"flow_builder\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
-    "aeroflow-jwks"
-
   # ── 4c. aeroflow-jwks on auth_api ──────────────────────────────────────
   echo "🔐 Enabling aeroflow-jwks plugin on auth_api (aud=auth_api)..."
   upsert_plugin "$KONG_ADMIN/services/auth_api/plugins" \
@@ -431,18 +383,12 @@ upsert_plugin "$KONG_ADMIN/routes/kb-backend-route/plugins" \
   "cors"
 
 # ── 5. IP restriction ─────────────────────────────────────────────────
-# Applied to: workflow_runtime, flow_builder, auth_api-keys-route, auth_api-secrets-route.
+# Applied to: auth_api-keys-route and auth_api-secrets-route.
 # auth_api ip-allowlist routes are intentionally EXCLUDED so admin can always
 # manage the allowlist regardless of the current IP policy.
 # Default: allow_all — auth_api syncs Kong to the DB mode on startup.
 # Switch to restricted via PUT /api/auth/ip-allowlist/config {"mode":"allowlist"}.
 _IP_DEFAULT='{"name":"ip-restriction","config":{"allow":["0.0.0.0/0","::/0"]}}'
-
-echo "🛡️  Enabling IP restriction on workflow_runtime..."
-upsert_plugin "$KONG_ADMIN/services/workflow_runtime/plugins" "$_IP_DEFAULT" "ip-restriction"
-
-echo "🛡️  Enabling IP restriction on flow_builder..."
-upsert_plugin "$KONG_ADMIN/services/flow_builder/plugins" "$_IP_DEFAULT" "ip-restriction"
 
 echo "🛡️  Enabling IP restriction on auth_api-keys-route..."
 upsert_plugin "$KONG_ADMIN/routes/auth_api-keys-route/plugins" "$_IP_DEFAULT" "ip-restriction"
@@ -475,16 +421,6 @@ upsert_plugin "$KONG_ADMIN/plugins" \
   "correlation-id" "global"
 
 # ── 10. Rate limiting ──────────────────────────────────────────────────
-echo "⏱️  Enabling rate-limiting on workflow_runtime..."
-upsert_plugin "$KONG_ADMIN/services/workflow_runtime/plugins" \
-  '{"name":"rate-limiting","config":{"minute":300,"policy":"local"}}' \
-  "rate-limiting"
-
-echo "⏱️  Enabling rate-limiting on flow_builder..."
-upsert_plugin "$KONG_ADMIN/services/flow_builder/plugins" \
-  '{"name":"rate-limiting","config":{"minute":300,"policy":"local"}}' \
-  "rate-limiting"
-
 # kb-gateway (Go edge) removed 30-08-2026 — this plugin is what it existed for.
 echo "⏱️  Enabling rate-limiting on kb-backend..."
 upsert_plugin "$KONG_ADMIN/services/kb-backend/plugins" \
@@ -523,8 +459,8 @@ if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ] && [ -f "$CA_FILE" ]; then
     -d "{\"cert\":$(echo "$CERT_CONTENT" | "$PY_RUN" -c 'import json,sys;print(json.dumps(sys.stdin.read()))'),\"key\":$(echo "$KEY_CONTENT" | "$PY_RUN" -c 'import json,sys;print(json.dumps(sys.stdin.read()))')}" \
     | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
 
-  # Attach client cert to backend services
-  for svc in workflow_runtime flow_builder; do
+  # Attach client cert to the active V3 backend services
+  for svc in api kb-backend; do
     curl -sf -X PATCH "$KONG_ADMIN/services/$svc" \
       -H "Content-Type: application/json" \
       -d "{\"client_certificate\":{\"id\":\"$CLIENT_CERT_ID\"}}" > /dev/null
@@ -645,8 +581,7 @@ echo "  Proxy :  http://localhost:8000"
 echo "  Admin :  in-network only (kong-admin:8001)"
 echo ""
 echo "  JWT:    RS256, issuer=$ISSUER"
-echo "  Routes: /api/agents|workflows|workflow-versions  -> workflow_runtime:8240 (Kong service flow_builder)"
-echo "          /api/conversations|traces|nodes|catalog|platform|billing -> workflow_runtime:8240"
+echo "  Routes: /v1/* -> api:8290"
 echo "  CORS:   localhost:3000, localhost:8150"
 MTLS_STATUS="NOT configured (run deploy/docker/certs/gen-certs.sh first)"
 [ -f "$CERT_FILE" ] && MTLS_STATUS="Configured (Kong presents client cert)"
