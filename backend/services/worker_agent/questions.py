@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs.contracts.v1.errors import ErrorCode, NextAction, Refusal
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, qa
+from services.worker_agent.answer import narrator
 from services.worker_agent.answer.narrate import figures_of, text_of
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.llm import Gateway, gateway_from_env
@@ -527,6 +528,40 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             truncated=outcome.truncated,
         )
         shown = [f for f in figures if f.display_state == "shown"]
+        check = {
+            "numbers_total": len(shown),
+            "traced": len(shown),
+            "untraceable_draft": 0,
+            "regenerated": 0,
+            "sentences_dropped": 0,
+            "untraceable_final": 0,
+        }
+        model = gateway()
+        if model is not None:
+            # G5.15: the main model writes the sentences, numbers only as figure tags, post-checked.
+            told = await narrator.narrate(
+                model,
+                figures,
+                question=question.text,
+                metric_name=p.metric_name,
+                exempt_text=[c.label for c in u.chips]
+                + [v for f in figures for v in f.dimensions.values()],
+            )
+            if told is not None:
+                notes = [n for n in (latest_note,) if n]
+                if outcome.truncated:
+                    notes.append("Kết quả có hơn 10.000 dòng; bảng chỉ có 10.000 dòng đầu.")
+                text = " ".join([told.text, *notes])
+                check.update(
+                    numbers_total=told.numbers_total,
+                    traced=told.numbers_total,
+                    untraceable_draft=told.untraceable_draft,
+                    regenerated=told.regenerated,
+                    sentences_dropped=told.sentences_dropped,
+                )
+                p.models.append(
+                    {"task": "narrate", "model_name": told.model, "tokens": told.tokens}
+                )
         lineage = hashlib.sha256(
             f"{p.compiled.sql_sha256}:{outcome.result_hash}".encode()
         ).hexdigest()
@@ -542,14 +577,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                     f.as_json(str(outcome.query_run_id), str(p.compiled.metric_version_id), trust)
                     for f in figures
                 ],
-                number_check={
-                    "numbers_total": len(shown),
-                    "traced": len(shown),
-                    "untraceable_draft": 0,
-                    "regenerated": 0,
-                    "sentences_dropped": 0,
-                    "untraceable_final": 0,
-                },
+                number_check=check,
                 chart_spec={"type": "bar", "x": u.group_by[0], "y": "value"}
                 if u.group_by
                 else None,
