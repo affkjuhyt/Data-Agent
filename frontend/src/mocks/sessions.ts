@@ -373,7 +373,9 @@ export function createSessionHandlers() {
   const accepted = (id: string) =>
     HttpResponse.json({ id, status: 'queued', poll_after_ms: 1000 }, { status: 202 });
   /** The api's report row (ReportView) for a drafted review. */
-  const reportRow = (r: SessionReport): components['schemas']['ReportView'] => ({
+  const reportRow = (
+    r: SessionReport,
+  ): components['schemas']['ReportView'] & Partial<SessionReport> => ({
     id: r.id,
     workspace_id: r.workspace_id,
     version: 1,
@@ -386,6 +388,11 @@ export function createSessionHandlers() {
     hitl_request_id: null,
     created_at: r.drafted_at,
     updated_at: new Date().toISOString(),
+    drafted_by: r.drafted_by,
+    tile_count: r.tile_count,
+    reviewer_name: r.reviewer_name,
+    document: r.document,
+    recipients_text: r.recipients_text,
   });
   const resolveMembers = (input: { principal_id: string; role: WorkspaceMember['role'] }[]) => {
     const known = [
@@ -545,9 +552,14 @@ export function createSessionHandlers() {
       return page(principalsFixture().filter((p) => p.name.toLowerCase().includes(q)));
     }),
 
-    http.get('*/v1/workspaces/:id/session-reports', ({ params }) =>
-      find(params.id) ? page(reports.filter((r) => r.workspace_id === params.id)) : notFound(),
-    ),
+    http.get('*/v1/session-reports', ({ request }) => {
+      const workspaceId = new URL(request.url).searchParams.get('workspace_id');
+      return page(
+        (workspaceId ? reports.filter((r) => r.workspace_id === workspaceId) : reports).map(
+          reportRow,
+        ),
+      );
+    }),
 
     http.post('*/v1/workspaces/:id/reports', ({ params }) => {
       const ws = find(params.id);
@@ -560,7 +572,7 @@ export function createSessionHandlers() {
     http.get('*/v1/session-reports/:id', ({ params }) => {
       const report = reports.find((r) => r.id === params.id);
       return report
-        ? HttpResponse.json(report)
+        ? HttpResponse.json(reportRow(report))
         : problem(404, 'not_found', 'Không tìm thấy báo cáo.');
     }),
 

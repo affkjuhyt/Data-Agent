@@ -278,11 +278,93 @@ export const searchPrincipals = (q: string) =>
   v1Get<Page<Principal>>('/principals', { q, page_size: 20 });
 
 /* Báo cáo của phiên */
-/** PROPOSAL: A2 has no list of a session's reports. */
-export const listSessionReports = async (workspaceId: string) =>
-  v1Get<Page<SessionReport>>(`/workspaces/${pathId(workspaceId)}/session-reports`, {
+
+const REPORT_STATUS: Record<string, SessionReport['status']> = {
+  drafting: 'drafting',
+  pending_review: 'pending_review',
+  changes_requested: 'changes_requested',
+  draft: 'drafting',
+  checking: 'drafting',
+  failed_checks: 'changes_requested',
+  ready: 'pending_review',
+  pending_approval: 'pending_review',
+  published: 'published',
+};
+
+function readReportChecks(raw: unknown): ReportCheck[] {
+  if (Array.isArray(raw)) {
+    return raw.flatMap((value) => {
+      if (typeof value !== 'object' || value === null) return [];
+      const check = value as Record<string, unknown>;
+      return [
+        {
+          ok: check.ok === true,
+          title: typeof check.title === 'string' ? check.title : '',
+          detail: typeof check.detail === 'string' ? check.detail : '',
+        },
+      ];
+    });
+  }
+  if (!raw || typeof raw !== 'object') return [];
+  return Object.entries(raw).map(([name, value]) => {
+    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      const check = value as Record<string, unknown>;
+      return {
+        ok: check.ok === true || check.status === 'pass' || check.status === 'passed',
+        title: typeof check.title === 'string' ? check.title : name,
+        detail: typeof check.detail === 'string' ? check.detail : '',
+      };
+    }
+    return {
+      ok: value === true || value === 'pass' || value === 'passed',
+      title: name,
+      detail: typeof value === 'string' ? value : '',
+    };
+  });
+}
+
+/**
+ * The API returns the report row only. `body_ref` is an object-store reference, not report text,
+ * so keep the preview empty until a document endpoint exists instead of showing fabricated data.
+ */
+export function readSessionReport(raw: components['schemas']['ReportView']): SessionReport {
+  // MSW keeps the richer design fixture beside the wire row; the real API simply omits it until
+  // the report-document contract is shipped. Reading it here keeps mock and live adapters on one
+  // path without making the live response depend on undocumented fields.
+  const fixture = raw as components['schemas']['ReportView'] &
+    Partial<
+      Pick<
+        SessionReport,
+        'document' | 'drafted_by' | 'tile_count' | 'reviewer_name' | 'recipients_text'
+      >
+    >;
+  return {
+    id: raw.id,
+    workspace_id: raw.workspace_id,
+    status: REPORT_STATUS[raw.status] ?? 'drafting',
+    drafted_by: fixture.drafted_by ?? 'Agent Báo cáo',
+    tile_count: fixture.tile_count ?? 0,
+    drafted_at: raw.created_at,
+    reviewer_name: fixture.reviewer_name ?? '',
+    document: fixture.document ?? {
+      heading: raw.title,
+      summary: '',
+      figures: [],
+      recommendation: '',
+    },
+    checks: readReportChecks(raw.checks),
+    recipients_text: fixture.recipients_text ?? '',
+  };
+}
+
+/** The API filters the report list by workspace_id; there is no nested collection route. */
+export const listSessionReports = async (workspaceId: string) => {
+  const page = await v1Get<Page<components['schemas']['ReportView']>>('/session-reports', {
+    workspace_id: pathId(workspaceId),
     page_size: 20,
   });
+  return { ...page, items: page.items.map(readSessionReport) };
+};
 
 /** Asks Agent Báo cáo to draft a report from every tile of the session. */
 export const createSessionReport = async (workspaceId: string, title: string) =>
@@ -294,9 +376,10 @@ export const createSessionReport = async (workspaceId: string, title: string) =>
     },
   );
 
-/** PROPOSAL: A2 has no read for a session report. */
 export const getSessionReport = async (id: string) =>
-  v1Get<SessionReport>(`/session-reports/${pathId(id)}`);
+  readSessionReport(
+    await v1Get<components['schemas']['ReportView']>(`/session-reports/${pathId(id)}`),
+  );
 
 /**
  * Publish needs every check to pass and a reviewer other than the author (409 otherwise). The
