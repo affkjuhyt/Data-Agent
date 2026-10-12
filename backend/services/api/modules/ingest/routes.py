@@ -27,10 +27,14 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
     encode_page_token,
     invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import Problem
@@ -260,6 +264,14 @@ async def list_jobs(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at", "updated_at", "name", "status", "mode", default="created_at desc"
+            )
+        ),
+    ],
     status: JobStatus | None = None,
     source_id: uuid.UUID | None = None,
 ) -> Page[IngestionJobSummary]:
@@ -271,14 +283,21 @@ async def list_jobs(
         query = query.where(job.status == status)
     if source_id:
         query = query.where(job.source_id == source_id)
-    after = _after(page)
-    if after:
-        query = query.where(tuple_(job.created_at, job.id) < after)
-    query = query.order_by(job.created_at.desc(), job.id.desc()).limit(page.page_size + 1)
+    query = keyset(
+        query,
+        columns={
+            "created_at": job.created_at,
+            "updated_at": job.updated_at,
+            "name": job.name,
+            "status": job.status,
+            "mode": job.mode,
+        },
+        tiebreak=job.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        jobs, token = _cut(
-            list((await session.scalars(query)).all()), page, lambda r: (r.created_at, r.id)
-        )
+        jobs, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
         ids = [j.id for j in jobs]
         runs = {
             r.job_id: r
@@ -487,6 +506,9 @@ async def list_job_runs(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order, Depends(order_by("started_at", "created_at", "status", default="started_at desc"))
+    ],
     job_id: uuid.UUID | None = None,
     status: str | None = None,
     from_: Annotated[datetime.datetime | None, Query(alias="from")] = None,
@@ -506,14 +528,15 @@ async def list_job_runs(
         query = query.where(run.started_at >= from_)
     if to:
         query = query.where(run.started_at < to)
-    after = _after(page)
-    if after:
-        query = query.where(tuple_(run.started_at, run.id) < after)
-    query = query.order_by(run.started_at.desc(), run.id.desc()).limit(page.page_size + 1)
+    query = keyset(
+        query,
+        columns={"started_at": run.started_at, "created_at": run.created_at, "status": run.status},
+        tiebreak=run.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows, token = _cut(
-            list((await session.scalars(query)).all()), page, lambda r: (r.started_at, r.id)
-        )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(
         items=[JobRunView.model_validate(r, from_attributes=True) for r in rows],
         next_page_token=token,
@@ -533,6 +556,12 @@ async def list_dlq(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by("created_at", "expires_at", "status", "error_kind", default="created_at desc")
+        ),
+    ],
     status: str | None = None,
     error_kind: str | None = None,
 ) -> Page[DlqRecordView]:
@@ -542,15 +571,21 @@ async def list_dlq(
         query = query.where(dlq.status == status)
     if error_kind:
         query = query.where(dlq.error_kind == error_kind)
-    after = _after(page)
-    if after:
-        query = query.where(tuple_(dlq.created_at, dlq.id) < after)
-    query = query.order_by(dlq.created_at.desc(), dlq.id.desc()).limit(page.page_size + 1)
+    query = keyset(
+        query,
+        columns={
+            "created_at": dlq.created_at,
+            "expires_at": dlq.expires_at,
+            "status": dlq.status,
+            "error_kind": dlq.error_kind,
+        },
+        tiebreak=dlq.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
         await _job(session, job_id, principal, data_space)
-        rows, token = _cut(
-            list((await session.scalars(query)).all()), page, lambda r: (r.created_at, r.id)
-        )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(
         items=[DlqRecordView.model_validate(r, from_attributes=True) for r in rows],
         next_page_token=token,
@@ -898,6 +933,14 @@ async def list_quality_rules(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at", "updated_at", "kind", "severity", "status", default="created_at desc"
+            )
+        ),
+    ],
     dataset_id: uuid.UUID | None = None,
     severity: Severity | None = None,
     status: str | None = None,
@@ -910,14 +953,21 @@ async def list_quality_rules(
         query = query.where(rule.severity == severity)
     if status:
         query = query.where(rule.status == status)
-    after = _after(page)
-    if after:
-        query = query.where(tuple_(rule.created_at, rule.id) < after)
-    query = query.order_by(rule.created_at.desc(), rule.id.desc()).limit(page.page_size + 1)
+    query = keyset(
+        query,
+        columns={
+            "created_at": rule.created_at,
+            "updated_at": rule.updated_at,
+            "kind": rule.kind,
+            "severity": rule.severity,
+            "status": rule.status,
+        },
+        tiebreak=rule.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows, token = _cut(
-            list((await session.scalars(query)).all()), page, lambda r: (r.created_at, r.id)
-        )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(
         items=[QualityRuleView.model_validate(r, from_attributes=True) for r in rows],
         next_page_token=token,

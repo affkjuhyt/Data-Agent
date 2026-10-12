@@ -17,7 +17,7 @@ from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Response
-from sqlalchemy import func, select, text, tuple_
+from sqlalchemy import func, select, text
 
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import context, qa
@@ -26,10 +26,12 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
-    encode_page_token,
-    invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
@@ -400,21 +402,19 @@ async def edit_question_plan(
 async def list_conversations(
     principal: CurrentPrincipal,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order, Depends(order_by("created_at", "updated_at", default="updated_at desc"))
+    ],
     data_space: CurrentDataSpace,
     q: Annotated[str | None, Query(max_length=200)] = None,
     from_: Annotated[datetime.datetime | None, Query(alias="from")] = None,
     to: Annotated[datetime.datetime | None, Query()] = None,
 ) -> Page[ConversationView]:
-    stmt = (
-        select(qa.Conversation)
-        .where(
-            qa.Conversation.org_id == principal.org_id,
-            qa.Conversation.user_id == principal.user_id,
-            qa.Conversation.data_space_id == data_space,
-            qa.Conversation.deleted_at.is_(None),
-        )
-        .order_by(qa.Conversation.updated_at.desc(), qa.Conversation.id.desc())
-        .limit(page.page_size + 1)
+    stmt = select(qa.Conversation).where(
+        qa.Conversation.org_id == principal.org_id,
+        qa.Conversation.user_id == principal.user_id,
+        qa.Conversation.data_space_id == data_space,
+        qa.Conversation.deleted_at.is_(None),
     )
     if q:
         stmt = stmt.where(qa.Conversation.title.ilike(f"%{q}%"))
@@ -422,26 +422,19 @@ async def list_conversations(
         stmt = stmt.where(qa.Conversation.updated_at >= from_)
     if to is not None:
         stmt = stmt.where(qa.Conversation.updated_at < to)
-    if page.cursor:
-        try:
-            after = (
-                datetime.datetime.fromisoformat(page.cursor["updated_at"]),
-                uuid.UUID(page.cursor["id"]),
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        stmt = stmt.where(tuple_(qa.Conversation.updated_at, qa.Conversation.id) < after)
-    async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(stmt)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    last = rows[-1] if more else None
-    return Page(
-        items=[ConversationView.model_validate(row) for row in rows],
-        next_page_token=encode_page_token(
-            {"updated_at": last.updated_at.isoformat(), "id": str(last.id)} if last else None
-        ),
+    stmt = keyset(
+        stmt,
+        columns={
+            "created_at": qa.Conversation.created_at,
+            "updated_at": qa.Conversation.updated_at,
+        },
+        tiebreak=qa.Conversation.id,
+        order=order,
+        page=page,
     )
+    async with transaction(ROLE, principal) as session:
+        rows, token = next_page(list((await session.scalars(stmt)).all()), order=order, page=page)
+    return Page(items=[ConversationView.model_validate(row) for row in rows], next_page_token=token)
 
 
 # ─── answers and lineage ───

@@ -24,7 +24,15 @@ from libs.dataagent_db.models import forecast as fc
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
-from services.api.kernel.pagination import Page, PageRequest, page_request
+from services.api.kernel.pagination import (
+    Order,
+    Page,
+    PageRequest,
+    keyset,
+    next_page,
+    order_by,
+    page_request,
+)
 from services.api.kernel.problems import FieldError, Problem
 from services.api.modules.forecast import jobs, rules, store
 from services.api.modules.forecast.schemas import (
@@ -187,9 +195,13 @@ async def create_formula_model(
         )
         if owner is None:
             raise _invalid("model_id", "model_id is not a forecast model of this Data Space.")
-        found = await _certified_metric_version(session, principal, data_space, body.metric_version_id)
+        found = await _certified_metric_version(
+            session, principal, data_space, body.metric_version_id
+        )
         if found is None:
-            raise _invalid("metric_version_id", "metric_version_id is not a metric version of this Data Space.")
+            raise _invalid(
+                "metric_version_id", "metric_version_id is not a metric version of this Data Space."
+            )
         metric_version, metric = found
         if metric.code != owner.metric_code:
             raise _invalid(
@@ -218,7 +230,9 @@ async def create_formula_model(
         # A formula is not fitted on a series: the training window is a placeholder that
         # ml-forecast overwrites when it fits the Fund model on the published periods.
         valid_from = metric_version.valid_from.date() if metric_version.valid_from else None
-        start = valid_from if valid_from and valid_from < today else today - datetime.timedelta(days=1)
+        start = (
+            valid_from if valid_from and valid_from < today else today - datetime.timedelta(days=1)
+        )
         version = fc.ModelVersion(
             id=uuid7(),
             org_id=principal.org_id,
@@ -318,6 +332,19 @@ async def list_components(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at",
+                "updated_at",
+                "code",
+                "valid_from",
+                "status",
+                default="created_at desc",
+            )
+        ),
+    ],
     at: Annotated[
         datetime.datetime | None,
         Query(description="The values in force at this moment and certified by then"),
@@ -343,9 +370,21 @@ async def list_components(
             )
         if status:
             query = query.where(c.status == status)
-        rows = list((await session.scalars(store.keyset(query, page, c.created_at, c.id))).all())
-    token = store.page_token(rows, page)
-    return Page(items=[_component_view(r) for r in rows[: page.page_size]], next_page_token=token)
+        query = keyset(
+            query,
+            columns={
+                "created_at": c.created_at,
+                "updated_at": c.updated_at,
+                "code": c.code,
+                "valid_from": c.valid_from,
+                "status": c.status,
+            },
+            tiebreak=c.id,
+            order=order,
+            page=page,
+        )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[_component_view(r) for r in rows], next_page_token=token)
 
 
 @router.post(
@@ -445,8 +484,7 @@ async def _component_in_space(
             )
         ).all()
         if any(
-            row.code in rules.formula_parameters(formula)
-            and row.product_code in _products(product)
+            row.code in rules.formula_parameters(formula) and row.product_code in _products(product)
             for formula, product in formulas
         ):
             return row
@@ -470,7 +508,9 @@ async def certify_component(
     async with transaction(ROLE, principal) as session:
         row = await _component_in_space(session, component_id, principal, data_space)
         if row.status not in ("draft", "pending_review"):
-            raise Problem(409, "invalid_state", f"The parameter is {row.status}, not awaiting review.")
+            raise Problem(
+                409, "invalid_state", f"The parameter is {row.status}, not awaiting review."
+            )
         if row.created_by == principal.user_id:
             raise Problem(
                 403, "policy_denied", "Whoever entered the value cannot certify it (BR-182)."
@@ -549,7 +589,9 @@ async def _gate(
     now = store.now()
     missing: list[FieldError] = []
     for formula in formulas:
-        found = await _certified_metric_version(session, principal, data_space, formula.metric_version_id)
+        found = await _certified_metric_version(
+            session, principal, data_space, formula.metric_version_id
+        )
         if found is None or not _metric_version_in_force(found[0], now):
             missing.append(
                 FieldError(

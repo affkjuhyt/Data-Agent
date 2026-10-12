@@ -18,7 +18,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, Path, Query, Response, UploadFile
 from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
-from sqlalchemy import select, tuple_
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -28,10 +28,12 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
-    encode_page_token,
-    invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
@@ -281,30 +283,39 @@ async def _load_content(
 async def list_packs(
     principal: CurrentPrincipal,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "code", "name", "industry_code", "created_at", "updated_at", default="code asc"
+            )
+        ),
+    ],
     industry_code: str | None = None,
     code: str | None = None,
 ) -> Page[IndustryPackView]:
-    query = select(pk.IndustryPack).where(pk.IndustryPack.org_id == principal.org_id)
+    p = pk.IndustryPack
+    query = select(p).where(p.org_id == principal.org_id)
     if industry_code:
-        query = query.where(pk.IndustryPack.industry_code == industry_code)
+        query = query.where(p.industry_code == industry_code)
     if code:
-        query = query.where(pk.IndustryPack.code == code)
-    if page.cursor:
-        try:
-            after = (str(page.cursor["code"]), uuid.UUID(page.cursor["id"]))
-        except (KeyError, TypeError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(tuple_(pk.IndustryPack.code, pk.IndustryPack.id) > after)
-    query = query.order_by(pk.IndustryPack.code, pk.IndustryPack.id).limit(page.page_size + 1)
-    async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(query)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    token = {"code": rows[-1].code, "id": str(rows[-1].id)} if more else None
-    return Page(
-        items=[IndustryPackView.model_validate(r) for r in rows],
-        next_page_token=encode_page_token(token),
+        query = query.where(p.code == code)
+    query = keyset(
+        query,
+        columns={
+            "code": p.code,
+            "name": p.name,
+            "industry_code": p.industry_code,
+            "created_at": p.created_at,
+            "updated_at": p.updated_at,
+        },
+        tiebreak=p.id,
+        order=order,
+        page=page,
     )
+    async with transaction(ROLE, principal) as session:
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[IndustryPackView.model_validate(r) for r in rows], next_page_token=token)
 
 
 async def _reject_import(principal: Principal, pack_code: str | None, reason: str) -> None:

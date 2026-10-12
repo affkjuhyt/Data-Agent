@@ -12,7 +12,7 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query
-from sqlalchemy import Select, and_, or_, select, tuple_
+from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -22,10 +22,12 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
-    encode_page_token,
-    invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import Problem
@@ -114,6 +116,14 @@ async def list_inbox(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at", "updated_at", "title", "kind", "status", default="created_at desc"
+            )
+        ),
+    ],
     kind: str | None = None,
     risk: str | None = None,
     status: str | None = None,
@@ -138,26 +148,24 @@ async def list_inbox(
             query = query.where(hitl.assignee_id == uuid.UUID(assignee))
         except ValueError as exc:
             raise Problem(422, "validation_failed", "assignee is 'me' or a user id.") from exc
-    if page.cursor:
-        try:
-            after = (
-                datetime.datetime.fromisoformat(page.cursor["created_at"]),
-                uuid.UUID(page.cursor["id"]),
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(tuple_(hitl.created_at, hitl.id) < after)
-    query = query.order_by(hitl.created_at.desc(), hitl.id.desc()).limit(page.page_size + 1)
-    async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(query)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    token = (
-        {"created_at": rows[-1].created_at.isoformat(), "id": str(rows[-1].id)} if more else None
+    query = keyset(
+        query,
+        columns={
+            "created_at": hitl.created_at,
+            "updated_at": hitl.updated_at,
+            "title": hitl.title,
+            "kind": hitl.kind,
+            "status": hitl.status,
+        },
+        tiebreak=hitl.id,
+        order=order,
+        page=page,
     )
+    async with transaction(ROLE, principal) as session:
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(
         items=[HitlView.model_validate(row, from_attributes=True) for row in rows],
-        next_page_token=encode_page_token(token),
+        next_page_token=token,
     )
 
 

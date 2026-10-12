@@ -30,10 +30,14 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
     encode_page_token,
     invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import Problem
@@ -144,15 +148,6 @@ def _event(
     )
 
 
-def _after(page: PageRequest) -> tuple[datetime.datetime, uuid.UUID] | None:
-    if not page.cursor:
-        return None
-    try:
-        return datetime.datetime.fromisoformat(page.cursor["t"]), uuid.UUID(page.cursor["id"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise invalid_page_token() from exc
-
-
 def _cut(
     rows: Sequence[R], page: PageRequest, key: Callable[[R], dict[str, Any]]
 ) -> tuple[list[R], str]:
@@ -222,22 +217,35 @@ async def list_collections(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at", "updated_at", "name", "code", "status", default="created_at desc"
+            )
+        ),
+    ],
     status: str | None = None,
 ) -> Page[CollectionView]:
     col = doc.Collection
     query = select(col).where(_in_space(principal, data_space))
     if status:
         query = query.where(col.status == status)
-    after = _after(page)
-    if after:
-        query = query.where(tuple_(col.created_at, col.id) < after)
-    query = query.order_by(col.created_at.desc(), col.id.desc()).limit(page.page_size + 1)
+    query = keyset(
+        query,
+        columns={
+            "created_at": col.created_at,
+            "updated_at": col.updated_at,
+            "name": col.name,
+            "code": col.code,
+            "status": col.status,
+        },
+        tiebreak=col.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows, token = _cut(
-            list((await session.scalars(query)).all()),
-            page,
-            lambda r: {"t": r.created_at.isoformat(), "id": str(r.id)},
-        )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(
         items=[CollectionView.model_validate(r, from_attributes=True) for r in rows],
         next_page_token=token,

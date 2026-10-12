@@ -15,7 +15,7 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path
-from sqlalchemy import select, tuple_
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -24,10 +24,12 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
-    encode_page_token,
-    invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
@@ -96,6 +98,20 @@ async def list_conflicts(
     principal: CurrentPrincipal,
     space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at",
+                "updated_at",
+                "kind",
+                "status",
+                "attribute",
+                "subject_key",
+                default="created_at desc",
+            )
+        ),
+    ],
     status: str | None = None,
     kind: str | None = None,
     material: bool | None = None,
@@ -108,26 +124,25 @@ async def list_conflicts(
         query = query.where(c.kind == kind)
     if material is not None:
         query = query.where(c.material.is_(material))
-    if page.cursor:
-        try:
-            after = (
-                datetime.datetime.fromisoformat(page.cursor["created_at"]),
-                uuid.UUID(page.cursor["id"]),
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(tuple_(c.created_at, c.id) < after)
-    query = query.order_by(c.created_at.desc(), c.id.desc()).limit(page.page_size + 1)
-    async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(query)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    token = (
-        {"created_at": rows[-1].created_at.isoformat(), "id": str(rows[-1].id)} if more else None
+    query = keyset(
+        query,
+        columns={
+            "created_at": c.created_at,
+            "updated_at": c.updated_at,
+            "kind": c.kind,
+            "status": c.status,
+            "attribute": c.attribute,
+            "subject_key": c.subject_key,
+        },
+        tiebreak=c.id,
+        order=order,
+        page=page,
     )
+    async with transaction(ROLE, principal) as session:
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(
         items=[ConflictView.model_validate(r, from_attributes=True) for r in rows],
-        next_page_token=encode_page_token(token),
+        next_page_token=token,
     )
 
 
@@ -379,27 +394,35 @@ async def list_source_authorities(
     principal: CurrentPrincipal,
     space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by("data_kind", "created_at", "updated_at", "status", default="data_kind asc")
+        ),
+    ],
     data_kind: str | None = None,
 ) -> Page[SourceAuthorityView]:
     sa = cf.SourceAuthority
     query = select(sa).where(sa.org_id == principal.org_id, sa.data_space_id == space)
     if data_kind:
         query = query.where(sa.data_kind == data_kind)
-    if page.cursor:
-        try:
-            after = (str(page.cursor["data_kind"]), uuid.UUID(page.cursor["id"]))
-        except (KeyError, TypeError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(tuple_(sa.data_kind, sa.id) > after)
-    query = query.order_by(sa.data_kind, sa.id).limit(page.page_size + 1)
+    query = keyset(
+        query,
+        columns={
+            "data_kind": sa.data_kind,
+            "created_at": sa.created_at,
+            "updated_at": sa.updated_at,
+            "status": sa.status,
+        },
+        tiebreak=sa.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(query)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    token = {"data_kind": rows[-1].data_kind, "id": str(rows[-1].id)} if more else None
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(
         items=[SourceAuthorityView.model_validate(r, from_attributes=True) for r in rows],
-        next_page_token=encode_page_token(token),
+        next_page_token=token,
     )
 
 

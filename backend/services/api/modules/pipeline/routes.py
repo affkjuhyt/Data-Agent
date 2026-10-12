@@ -27,10 +27,12 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
-    encode_page_token,
-    invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import Problem
@@ -207,6 +209,10 @@ async def list_pipelines(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(order_by("created_at", "updated_at", "name", "status", default="created_at desc")),
+    ],
     scope: Literal["personal", "data_space"] | None = None,
     status: Literal["draft", "active", "paused"] | None = None,
 ) -> Page[PipelineView]:
@@ -221,27 +227,21 @@ async def list_pipelines(
         query = query.where(p.scope == scope)
     if status:
         query = query.where(p.status == status)
-    if page.cursor:
-        try:
-            after = (
-                datetime.datetime.fromisoformat(page.cursor["created_at"]),
-                uuid.UUID(page.cursor["id"]),
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(tuple_(p.created_at, p.id) < after)
-    query = query.order_by(p.created_at.desc(), p.id.desc()).limit(page.page_size + 1)
+    query = keyset(
+        query,
+        columns={
+            "created_at": p.created_at,
+            "updated_at": p.updated_at,
+            "name": p.name,
+            "status": p.status,
+        },
+        tiebreak=p.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(query)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    token = (
-        {"created_at": rows[-1].created_at.isoformat(), "id": str(rows[-1].id)} if more else None
-    )
-    return Page(
-        items=[PipelineView.model_validate(r) for r in rows],
-        next_page_token=encode_page_token(token),
-    )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[PipelineView.model_validate(r) for r in rows], next_page_token=token)
 
 
 @router.post(

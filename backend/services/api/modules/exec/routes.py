@@ -21,7 +21,7 @@ import datetime
 import math
 import re
 import uuid
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, Path, Query, Request, Response
@@ -35,10 +35,14 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
     encode_page_token,
     invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import Problem
@@ -180,19 +184,16 @@ async def _paged(
     page: PageRequest,
     key: InstrumentedAttribute[Any],
     ident: InstrumentedAttribute[Any],
-    *,
-    ascending: bool = False,
-    parse: Callable[[Any], Any] = _parse_time,
 ) -> tuple[Sequence[Row[Any]], str]:
-    """A1.4 cursor paging on (key, id) of the query's first entity."""
+    """A1.4 cursor paging, newest first, on (key, id) of the query's first entity. Only for a
+    query that selects more than an entity; an entity list pages through keyset()."""
     if page.cursor:
         try:
-            after = (parse(page.cursor["k"]), uuid.UUID(str(page.cursor["id"])))
+            after = (_parse_time(page.cursor["k"]), uuid.UUID(str(page.cursor["id"])))
         except (KeyError, TypeError, ValueError) as exc:
             raise invalid_page_token() from exc
-        position = tuple_(key, ident)
-        query = query.where(position > after if ascending else position < after)
-    order = (key.asc(), ident.asc()) if ascending else (key.desc(), ident.desc())
+        query = query.where(tuple_(key, ident) < after)
+    order = (key.desc(), ident.desc())
     rows = (await session.execute(query.order_by(*order).limit(page.page_size + 1))).all()
     more = len(rows) > page.page_size
     rows = rows[: page.page_size]
@@ -450,6 +451,12 @@ async def get_transit_key(principal: CurrentPrincipal, request: Request) -> Tran
 async def list_theses(
     principal: CurrentPrincipal,
     page: Paging,
+    order: Annotated[
+        Order,
+        Depends(
+            order_by("committed_at", "due_at", "created_at", "status", default="committed_at desc")
+        ),
+    ],
     status: ThesisStatus | None = None,
     due_from: datetime.datetime | None = None,
     due_to: datetime.datetime | None = None,
@@ -462,9 +469,21 @@ async def list_theses(
         query = query.where(t.due_at >= due_from)
     if due_to:
         query = query.where(t.due_at < due_to)
+    query = keyset(
+        query,
+        columns={
+            "committed_at": t.committed_at,
+            "due_at": t.due_at,
+            "created_at": t.created_at,
+            "status": t.status,
+        },
+        tiebreak=t.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows, token = await _paged(session, query, page, t.committed_at, t.id)
-    return Page(items=[ThesisView.model_validate(r[0]) for r in rows], next_page_token=token)
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[ThesisView.model_validate(r) for r in rows], next_page_token=token)
 
 
 @router.post(
@@ -598,6 +617,10 @@ async def list_evidence(
     thesis_id: IdPath,
     principal: CurrentPrincipal,
     page: Paging,
+    order: Annotated[
+        Order,
+        Depends(order_by("batch_no", "recorded_at", "created_at", default="batch_no desc")),
+    ],
     batch_no: Annotated[int | None, Query(ge=1)] = None,
 ) -> Page[EvidenceView]:
     e = vaultdb.ThesisEvidence
@@ -612,8 +635,19 @@ async def list_evidence(
                 select(func.coalesce(func.max(e.batch_no), 0)).where(e.thesis_id == thesis.id)
             )
             query = query.where(e.batch_no >= int(latest or 0) - 1)
-        rows, token = await _paged(session, query, page, e.batch_no, e.id, parse=int)
-    return Page(items=[EvidenceView.model_validate(r[0]) for r in rows], next_page_token=token)
+        query = keyset(
+            query,
+            columns={
+                "batch_no": e.batch_no,
+                "recorded_at": e.recorded_at,
+                "created_at": e.created_at,
+            },
+            tiebreak=e.id,
+            order=order,
+            page=page,
+        )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[EvidenceView.model_validate(r) for r in rows], next_page_token=token)
 
 
 @router.post(
@@ -691,14 +725,25 @@ async def refresh_evidence(
     **endpoint("GET", "/v1/exec/theses/{id}/scores", operation_id="listExecThesisScores"),
 )
 async def list_thesis_scores(
-    thesis_id: IdPath, principal: CurrentPrincipal, page: Paging
+    thesis_id: IdPath,
+    principal: CurrentPrincipal,
+    page: Paging,
+    order: Annotated[
+        Order, Depends(order_by("scored_at", "as_of", "created_at", default="scored_at desc"))
+    ],
 ) -> Page[ScoreView]:
     s = vaultdb.ThesisScore
     async with transaction(ROLE, principal) as session:
         thesis = await _thesis(session, thesis_id, principal)
-        query = select(s).where(s.thesis_id == thesis.id)
-        rows, token = await _paged(session, query, page, s.scored_at, s.id)
-    return Page(items=[ScoreView.model_validate(r[0]) for r in rows], next_page_token=token)
+        query = keyset(
+            select(s).where(s.thesis_id == thesis.id),
+            columns={"scored_at": s.scored_at, "as_of": s.as_of, "created_at": s.created_at},
+            tiebreak=s.id,
+            order=order,
+            page=page,
+        )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[ScoreView.model_validate(r) for r in rows], next_page_token=token)
 
 
 @router.get(
@@ -741,6 +786,7 @@ async def list_scores(
 async def list_key_access(
     principal: CurrentPrincipal,
     page: Paging,
+    order: Annotated[Order, Depends(order_by("at", "action", default="at desc"))],
     thesis_id: uuid.UUID | None = None,
     from_: FromQuery = None,
     to: ToQuery = None,
@@ -756,9 +802,16 @@ async def list_key_access(
         query = query.where(log.at < to)
     if action:
         query = query.where(log.action == action)
+    query = keyset(
+        query,
+        columns={"at": log.at, "action": log.action},
+        tiebreak=log.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows, token = await _paged(session, query, page, log.at, log.id)
-    return Page(items=[KeyAccessView.model_validate(r[0]) for r in rows], next_page_token=token)
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[KeyAccessView.model_validate(r) for r in rows], next_page_token=token)
 
 
 # ─── private memory (UC-16-02) ───
@@ -772,6 +825,7 @@ async def list_key_access(
 async def list_memory_items(
     principal: CurrentPrincipal,
     page: Paging,
+    order: Annotated[Order, Depends(order_by("created_at", "kind", default="created_at desc"))],
     kind: MemoryKind | None = None,
     from_: FromQuery = None,
     to: ToQuery = None,
@@ -784,9 +838,16 @@ async def list_memory_items(
         query = query.where(m.created_at >= from_)
     if to:
         query = query.where(m.created_at < to)
+    query = keyset(
+        query,
+        columns={"created_at": m.created_at, "kind": m.kind},
+        tiebreak=m.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows, token = await _paged(session, query, page, m.created_at, m.id)
-    return Page(items=[MemoryItemView.model_validate(r[0]) for r in rows], next_page_token=token)
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[MemoryItemView.model_validate(r) for r in rows], next_page_token=token)
 
 
 @router.post(
@@ -1433,7 +1494,12 @@ async def add_handover_items(
     **endpoint("GET", "/v1/exec/handovers/{id}/items", operation_id="listExecHandoverItems"),
 )
 async def list_handover_items(
-    handover_id: IdPath, principal: CurrentPrincipal, page: Paging
+    handover_id: IdPath,
+    principal: CurrentPrincipal,
+    page: Paging,
+    order: Annotated[
+        Order, Depends(order_by("created_at", "source_kind", default="created_at asc"))
+    ],
 ) -> Page[HandoverItemView]:
     i = vaultdb.HandoverItem
     # successor_read: the caller sees only the items sealed for them.
@@ -1442,11 +1508,18 @@ async def list_handover_items(
         i.org_id == principal.org_id,
         i.successor_id == principal.user_id,
     )
+    query = keyset(
+        query,
+        columns={"created_at": i.created_at, "source_kind": i.source_kind},
+        tiebreak=i.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows, token = await _paged(session, query, page, i.created_at, i.id, ascending=True)
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     if not rows and not page.cursor:
         raise Problem(404, "not_found", "No handover items for you here.")
-    return Page(items=[HandoverItemView.model_validate(r[0]) for r in rows], next_page_token=token)
+    return Page(items=[HandoverItemView.model_validate(r) for r in rows], next_page_token=token)
 
 
 @router.post(

@@ -26,10 +26,14 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
     encode_page_token,
     invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
@@ -556,24 +560,24 @@ async def list_reconciliation(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order, Depends(order_by("item_code", "status", "created_at", default="item_code asc"))
+    ],
 ) -> Page[ReconciliationView]:
     r = pd.PeriodReconciliation
     query = select(r).where(r.period_close_id == period_id, r.org_id == principal.org_id)
-    if page.cursor:
-        try:
-            after = str(page.cursor["item_code"])
-        except (KeyError, TypeError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(r.item_code > after)
-    query = query.order_by(r.item_code).limit(page.page_size + 1)
+    query = keyset(
+        query,
+        columns={"item_code": r.item_code, "status": r.status, "created_at": r.created_at},
+        tiebreak=r.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
         await _period(session, principal, data_space, period_id)
-        rows = list((await session.scalars(query)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(
-        items=[ReconciliationView.model_validate(row) for row in rows],
-        next_page_token=encode_page_token({"item_code": rows[-1].item_code} if more else None),
+        items=[ReconciliationView.model_validate(row) for row in rows], next_page_token=token
     )
 
 
@@ -810,31 +814,17 @@ async def list_retro_changes(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[Order, Depends(order_by("detected_at", default="detected_at desc"))],
 ) -> Page[RetroChangeView]:
     rc = pd.RetroChange
     query = select(rc).where(rc.period_close_id == period_id, rc.org_id == principal.org_id)
-    if page.cursor:
-        try:
-            after = (
-                datetime.datetime.fromisoformat(page.cursor["detected_at"]),
-                uuid.UUID(page.cursor["id"]),
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(tuple_(rc.detected_at, rc.id) < after)
-    query = query.order_by(rc.detected_at.desc(), rc.id.desc()).limit(page.page_size + 1)
+    query = keyset(
+        query, columns={"detected_at": rc.detected_at}, tiebreak=rc.id, order=order, page=page
+    )
     async with transaction(ROLE, principal) as session:
         await _period(session, principal, data_space, period_id)
-        rows = list((await session.scalars(query)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    token = (
-        {"detected_at": rows[-1].detected_at.isoformat(), "id": str(rows[-1].id)} if more else None
-    )
-    return Page(
-        items=[RetroChangeView.model_validate(r) for r in rows],
-        next_page_token=encode_page_token(token),
-    )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[RetroChangeView.model_validate(r) for r in rows], next_page_token=token)
 
 
 @router.post(

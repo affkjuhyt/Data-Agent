@@ -14,7 +14,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Path, Query, Response
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import and_, exists, func, or_, select, tuple_, update
+from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -23,10 +23,12 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
-    encode_page_token,
-    invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
@@ -218,6 +220,10 @@ async def list_workspaces(
     principal: CurrentPrincipal,
     space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(order_by("created_at", "updated_at", "title", "status", default="updated_at desc")),
+    ],
     owner: Annotated[
         uuid.UUID | Literal["me"] | None,
         Query(description="owner_id, or `me` for the caller's own workspaces"),
@@ -252,29 +258,22 @@ async def list_workspaces(
         query = query.where(ws.Workspace.owner_id == (me if owner == "me" else owner))
     if status is not None:
         query = query.where(ws.Workspace.status == status)
-    if page.cursor:
-        try:
-            after = (
-                datetime.datetime.fromisoformat(page.cursor["updated_at"]),
-                uuid.UUID(page.cursor["id"]),
-            )
-        except (KeyError, TypeError, ValueError):
-            raise invalid_page_token() from None
-        query = query.where(tuple_(ws.Workspace.updated_at, ws.Workspace.id) < after)
-    query = query.order_by(ws.Workspace.updated_at.desc(), ws.Workspace.id.desc()).limit(
-        page.page_size + 1
+    w = ws.Workspace
+    query = keyset(
+        query,
+        columns={
+            "created_at": w.created_at,
+            "updated_at": w.updated_at,
+            "title": w.title,
+            "status": w.status,
+        },
+        tiebreak=w.id,
+        order=order,
+        page=page,
     )
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(query)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    last = rows[-1] if more else None
-    return Page(
-        items=[WorkspaceView.model_validate(row) for row in rows],
-        next_page_token=encode_page_token(
-            {"updated_at": last.updated_at.isoformat(), "id": str(last.id)} if last else None
-        ),
-    )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[WorkspaceView.model_validate(row) for row in rows], next_page_token=token)
 
 
 @router.post(

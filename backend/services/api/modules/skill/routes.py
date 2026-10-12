@@ -17,7 +17,7 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Response
-from sqlalchemy import ColumnElement, Select, and_, exists, func, not_, or_, select, tuple_
+from sqlalchemy import ColumnElement, and_, exists, func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -27,10 +27,12 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
-    encode_page_token,
-    invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
@@ -103,26 +105,6 @@ def _emit(
             },
         )
     )
-
-
-def _keyset(query: Select[Any], model: Any, page: PageRequest) -> Select[Any]:
-    """Newest first, the cursor being the (created_at, id) of the last row served (A1.4)."""
-    query = query.order_by(model.created_at.desc(), model.id.desc()).limit(page.page_size + 1)
-    if not page.cursor:
-        return query
-    try:
-        at = datetime.datetime.fromisoformat(page.cursor["created_at"])
-        last = uuid.UUID(page.cursor["id"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise invalid_page_token() from exc
-    return query.where(tuple_(model.created_at, model.id) < (at, last))
-
-
-def _page_token(rows: list[Any], page: PageRequest) -> str:
-    if len(rows) <= page.page_size:
-        return ""
-    last = rows[page.page_size - 1]
-    return encode_page_token({"created_at": last.created_at.isoformat(), "id": str(last.id)})
 
 
 def _visible(principal: Principal, data_space: uuid.UUID) -> ColumnElement[bool]:
@@ -209,6 +191,20 @@ async def list_skills(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at",
+                "updated_at",
+                "code",
+                "name",
+                "category",
+                "run_count_30d",
+                default="created_at desc",
+            )
+        ),
+    ],
     category: Category | None = None,
     scope: Scope | None = None,
     q: str | None = None,
@@ -233,12 +229,23 @@ async def list_skills(
         query = query.where(
             or_(s.name.ilike(pattern), s.code.ilike(pattern), s.description.ilike(pattern))
         )
-    async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(_keyset(query, s, page))).all())
-    return Page(
-        items=[SkillView.model_validate(r) for r in rows[: page.page_size]],
-        next_page_token=_page_token(rows, page),
+    query = keyset(
+        query,
+        columns={
+            "created_at": s.created_at,
+            "updated_at": s.updated_at,
+            "code": s.code,
+            "name": s.name,
+            "category": s.category,
+            "run_count_30d": s.run_count_30d,
+        },
+        tiebreak=s.id,
+        order=order,
+        page=page,
     )
+    async with transaction(ROLE, principal) as session:
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[SkillView.model_validate(r) for r in rows], next_page_token=token)
 
 
 @router.post(
@@ -866,17 +873,29 @@ async def list_suggestions(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(order_by("created_at", "updated_at", "user_count", default="created_at desc")),
+    ],
     status: SuggestionStatus = "open",
 ) -> Page[SuggestionView]:
     s = skill.SkillSuggestion
     query = select(s).where(s.org_id == principal.org_id, s.data_space_id == data_space)
     query = query.where(s.status == status)
-    async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(_keyset(query, s, page))).all())
-    return Page(
-        items=[_suggestion_view(r) for r in rows[: page.page_size]],
-        next_page_token=_page_token(rows, page),
+    query = keyset(
+        query,
+        columns={
+            "created_at": s.created_at,
+            "updated_at": s.updated_at,
+            "user_count": s.user_count,
+        },
+        tiebreak=s.id,
+        order=order,
+        page=page,
     )
+    async with transaction(ROLE, principal) as session:
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[_suggestion_view(r) for r in rows], next_page_token=token)
 
 
 def _suggestion_view(row: skill.SkillSuggestion) -> SuggestionView:

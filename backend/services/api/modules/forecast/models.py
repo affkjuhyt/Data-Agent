@@ -16,7 +16,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, Path, Query, Response
-from sqlalchemy import select, tuple_
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -25,10 +25,14 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
     encode_page_token,
     invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
@@ -107,6 +111,12 @@ async def list_models(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by("created_at", "updated_at", "metric_code", "status", default="created_at desc")
+        ),
+    ],
     metric_code: Annotated[str | None, Query(max_length=200)] = None,
     frequency: Frequency | None = None,
     status: Annotated[str | None, Query(pattern="^(active|degraded|retired)$")] = None,
@@ -119,11 +129,23 @@ async def list_models(
         query = query.where(m.frequency == frequency)
     if status:
         query = query.where(m.status == status)
+    query = keyset(
+        query,
+        columns={
+            "created_at": m.created_at,
+            "updated_at": m.updated_at,
+            "metric_code": m.metric_code,
+            "status": m.status,
+        },
+        tiebreak=m.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(store.keyset(query, page, m.created_at, m.id))).all())
-        token = store.page_token(rows, page)
-        rows = rows[: page.page_size]
-        figures = await _figures(session, [r.current_version_id for r in rows if r.current_version_id])
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+        figures = await _figures(
+            session, [r.current_version_id for r in rows if r.current_version_id]
+        )
     return Page(items=[_model_view(r, figures) for r in rows], next_page_token=token)
 
 
@@ -137,7 +159,9 @@ async def get_model(
 ) -> ForecastModelDetail:
     async with transaction(ROLE, principal) as session:
         row = await store.model(session, model_id, principal, data_space)
-        figures = await _figures(session, [row.current_version_id] if row.current_version_id else [])
+        figures = await _figures(
+            session, [row.current_version_id] if row.current_version_id else []
+        )
         out = ForecastModelDetail(**_model_view(row, figures).model_dump())
         if row.current_version_id is not None:
             current = await session.get(fc.ModelVersion, row.current_version_id)
@@ -274,7 +298,9 @@ async def approve_version(
     async with transaction(ROLE, principal) as session:
         row, owner = await store.version(session, version_id, principal, data_space, lock=True)
         if row.status != "pending_approval":
-            raise Problem(409, "invalid_state", f"The version is {row.status}, not pending_approval.")
+            raise Problem(
+                409, "invalid_state", f"The version is {row.status}, not pending_approval."
+            )
         _check_decider(row, owner, principal)
         now = store.now()
         previous_id = owner.current_version_id
@@ -351,7 +377,9 @@ async def reject_version(
     async with transaction(ROLE, principal) as session:
         row, owner = await store.version(session, version_id, principal, data_space, lock=True)
         if row.status != "pending_approval":
-            raise Problem(409, "invalid_state", f"The version is {row.status}, not pending_approval.")
+            raise Problem(
+                409, "invalid_state", f"The version is {row.status}, not pending_approval."
+            )
         # Approve and reject are one decision (UC-15-04 step 3) under one set of rules.
         _check_decider(row, owner, principal)
         row.status = "rejected"
@@ -448,7 +476,11 @@ async def _serving_version(
                 422,
                 "validation_failed",
                 "model_version_id is not a version of this model.",
-                errors=[FieldError(field="model_version_id", code="not_found", message="No such version.")],
+                errors=[
+                    FieldError(
+                        field="model_version_id", code="not_found", message="No such version."
+                    )
+                ],
             )
         return found
     if owner.current_version_id is not None:
@@ -608,6 +640,7 @@ async def list_accuracy(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[Order, Depends(order_by("period", "recorded_at", default="period desc"))],
     period_from: Annotated[datetime.date | None, Query(alias="from")] = None,
     period_to: Annotated[datetime.date | None, Query(alias="to")] = None,
     as_of: Annotated[
@@ -625,28 +658,17 @@ async def list_accuracy(
             query = query.where(a.period >= period_from)
         if period_to:
             query = query.where(a.period <= period_to)
-        if page.cursor:
-            try:
-                cursor = (
-                    datetime.date.fromisoformat(page.cursor["period"]),
-                    uuid.UUID(page.cursor["id"]),
-                )
-            except (KeyError, TypeError, ValueError) as exc:
-                raise invalid_page_token() from exc
-            query = query.where(tuple_(a.period, a.id) < cursor)
-        rows = list(
-            (
-                await session.scalars(
-                    query.order_by(a.period.desc(), a.id.desc()).limit(page.page_size + 1)
-                )
-            ).all()
+        query = keyset(
+            query,
+            columns={"period": a.period, "recorded_at": a.recorded_at},
+            tiebreak=a.id,
+            order=order,
+            page=page,
         )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
         figures = await _figures(
             session, [owner.current_version_id] if owner.current_version_id else []
         )
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    last = rows[-1] if more else None
     backtest_mase, rolling_mase = (
         figures.get(owner.current_version_id, (None, None))
         if owner.current_version_id
@@ -654,9 +676,7 @@ async def list_accuracy(
     )
     return AccuracyPage(
         items=[AccuracyView.model_validate(r) for r in rows],
-        next_page_token=encode_page_token(
-            {"period": last.period.isoformat(), "id": str(last.id)} if last else None
-        ),
+        next_page_token=token,
         rolling_mase=rolling_mase,
         backtest_mase=backtest_mase,
         in80_rate=rules.rate([r.in80 for r in rows]),

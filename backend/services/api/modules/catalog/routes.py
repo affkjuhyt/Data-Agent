@@ -16,7 +16,7 @@ import zoneinfo
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Response
-from sqlalchemy import Select, or_, select, tuple_
+from sqlalchemy import Select, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -25,10 +25,14 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
     encode_page_token,
     invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
@@ -99,35 +103,6 @@ def _secret_ref(ref: SecretReference, principal: Principal, field: str) -> str:
         ) from exc
 
 
-def _after(page: PageRequest, keys: tuple[str, ...]) -> tuple[Any, ...] | None:
-    """The cursor of a (created_at, id) ordered list, or None on the first page."""
-    if not page.cursor:
-        return None
-    try:
-        return (
-            datetime.datetime.fromisoformat(page.cursor[keys[0]]),
-            uuid.UUID(page.cursor[keys[1]]),
-        )
-    except (KeyError, TypeError, ValueError) as exc:
-        raise invalid_page_token() from exc
-
-
-async def _page(
-    session: AsyncSession, query: Select[Any], page: PageRequest, created_at: Any, id_: Any
-) -> tuple[list[Any], str]:
-    after = _after(page, ("created_at", "id"))
-    if after is not None:
-        query = query.where(tuple_(created_at, id_) < after)
-    query = query.order_by(created_at.desc(), id_.desc()).limit(page.page_size + 1)
-    rows = list((await session.scalars(query)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    token = (
-        {"created_at": rows[-1].created_at.isoformat(), "id": str(rows[-1].id)} if more else None
-    )
-    return rows, encode_page_token(token)
-
-
 # --- sources ------------------------------------------------------------------------------------
 
 
@@ -181,6 +156,14 @@ async def list_sources(
     principal: CurrentPrincipal,
     space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at", "updated_at", "name", "kind", "status", default="created_at desc"
+            )
+        ),
+    ],
     status: str | None = None,
     kind: str | None = None,
 ) -> Page[SourceView]:
@@ -192,8 +175,21 @@ async def list_sources(
         query = query.where(src.status == status)
     if kind:
         query = query.where(src.kind == kind)
+    query = keyset(
+        query,
+        columns={
+            "created_at": src.created_at,
+            "updated_at": src.updated_at,
+            "name": src.name,
+            "kind": src.kind,
+            "status": src.status,
+        },
+        tiebreak=src.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows, token = await _page(session, query, page, src.created_at, src.id)
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(
         items=[SourceView.of(r) for r in rows],
         next_page_token=token,
@@ -602,6 +598,18 @@ async def list_datasets(
     principal: CurrentPrincipal,
     space: CurrentDataSpace,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by(
+                "created_at",
+                "updated_at",
+                "table_name",
+                "schema_name",
+                default="created_at desc",
+            )
+        ),
+    ],
     source_id: uuid.UUID | None = None,
     enabled: bool | None = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
@@ -625,8 +633,20 @@ async def list_datasets(
                 ds.description.ilike(like, escape="\\"),
             )
         )
+    query = keyset(
+        query,
+        columns={
+            "created_at": ds.created_at,
+            "updated_at": ds.updated_at,
+            "table_name": ds.table_name,
+            "schema_name": ds.schema_name,
+        },
+        tiebreak=ds.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows, token = await _page(session, query, page, ds.created_at, ds.id)
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page(
         items=[DatasetView.model_validate(r, from_attributes=True) for r in rows],
         next_page_token=token,
