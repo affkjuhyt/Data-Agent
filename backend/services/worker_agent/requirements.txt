@@ -6,3 +6,4 @@ redis>=5.0
 # The read-only guard parses SQL per source dialect; OpenBao is read over HTTP (query/).
 sqlglot==25.24.5
 httpx==0.27.2
+mcp>=1.0,<2.0
