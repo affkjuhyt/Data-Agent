@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 ROLE = "svc_audit"
 SERVICE = "api"
+UNLOGGED = frozenset({"/healthz", "/readyz", "/v1/openapi.json", "/v1/docs"})
 
 
 def _outcome(status: int) -> Literal["ok", "denied", "error"]:
@@ -56,7 +57,9 @@ def _ip(request: Request) -> str | None:
     is the one a client cannot forge; anything before it is whatever the client sent. A value that
     is not an address is dropped rather than written: inet would refuse it, and a refused insert
     would lose the row."""
-    forwarded = request.headers.get("X-Forwarded-For")
+    # Every X-Forwarded-For header, in order: a client may send several, and only the last value of
+    # the last one is the gateway's.
+    forwarded = ",".join(request.headers.getlist("X-Forwarded-For"))
     candidate = (
         forwarded.split(",")[-1].strip()
         if forwarded
@@ -72,7 +75,9 @@ async def access_log_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
     response = await call_next(request)
-    if not request.url.path.startswith("/v1/"):
+    # Everything is logged but the probes and the published spec: a prefix test would let a path
+    # the router still serves (e.g. one spelled differently) slip past the log.
+    if request.url.path in UNLOGGED:
         return response
     principal: Principal | None = getattr(request.state, "principal", None)
     if principal is not None:

@@ -127,3 +127,13 @@ async def test_a1_8_a_forged_forwarded_for_neither_lands_nor_drops_the_row(
     conn.close()
     # The gateway's own hop is kept, the client's claim is not; a junk value is dropped, the row is not.
     assert ips == ["10.0.0.7", None]
+
+
+async def test_a1_8_no_path_slips_past_the_log(seed: Seed, audit_rows: Any) -> None:
+    org, _ = build(seed)
+    async with client(org, "kc-ac06") as c:
+        await c.get("//v1/security-events")
+        await c.get("/v1/no-such-thing")
+        await c.get("/healthz")
+    actions = [r[0] for r in audit_rows(org)]
+    assert actions.count("api.unmatched") + actions.count("api.listSecurityEvents") == 2
