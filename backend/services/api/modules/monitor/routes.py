@@ -38,6 +38,7 @@ from services.api.modules.monitor.support import (
     ROLE,
     active_user,
     emit,
+    in_data_space,
     invalid_field,
     keyset,
     next_token,
@@ -348,6 +349,9 @@ async def assign_alert(
             raise Problem(409, "invalid_state", "The alert is closed.")
         if not await active_user(session, principal, body.assignee_id):
             raise invalid_field("assignee_id", "assignee_id is not an active user.")
+        # The assignee is notified with the alert's content: they must be able to open the space.
+        if not await in_data_space(session, principal, body.assignee_id, data_space):
+            raise invalid_field("assignee_id", "assignee_id is not a member of the Data Space.")
         previous = row.status
         row.status, row.assigned_to = "assigned", body.assignee_id
         row.updated_by, row.updated_at = principal.user_id, now()

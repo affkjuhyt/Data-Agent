@@ -416,9 +416,12 @@ async def channel_callback(
             raise Problem(404, "not_found", "Card not found.")
         if hitl.status not in PENDING_HITL:
             raise Problem(409, "invalid_state", f"The request is already {hitl.status}.")
-        if hitl.risk == "high":
-            # BR-67: high-risk requests are decided in the app only.
-            raise Problem(403, "forbidden", "A high-risk request is decided in the app.")
+        # BR-67: high-risk requests and source conflicts are decided in the app only, and an
+        # approval taken outside it is a low-risk one; picking an option (answer) is allowed.
+        if hitl.risk == "high" or hitl.kind == "conflict":
+            raise Problem(403, "forbidden", "This request is decided in the app.")
+        if action.decision != "answer" and hitl.risk != "low":
+            raise Problem(403, "forbidden", "Only a low-risk request is approved outside the app.")
         at = _now()
         delivery.status, delivery.acted_at = "acted", at
         delivery.action_taken = action.model_dump(exclude_none=True)

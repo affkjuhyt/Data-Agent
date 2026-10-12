@@ -23,6 +23,7 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.problems import FieldError, Problem
+from services.api.modules.workspace import session_takes_results
 
 router = APIRouter()
 ROLE = "svc_agent"
@@ -166,6 +167,12 @@ async def create_task(
 ) -> TaskAccepted:
     if body.due_at is not None and body.due_at.tzinfo is None:
         raise _invalid("due_at", "due_at needs a time zone (RFC 3339).")
+    # Results land in a session (UC-08-07): one of this Data Space the requester may edit, so a
+    # task never writes into another space's or another person's session.
+    if body.workspace_id is not None and not await session_takes_results(
+        principal, data_space, body.workspace_id
+    ):
+        raise _invalid("workspace_id", "No session of this Data Space you may edit has that id.")
     async with transaction(ROLE, principal) as session:
         owner = await _agent_for(session, principal, data_space, body.agent_id)
         row = agent.BackgroundTask(

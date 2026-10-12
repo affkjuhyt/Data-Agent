@@ -7,7 +7,7 @@ import decimal
 import uuid
 from typing import Any
 
-from sqlalchemy import Select, select, tuple_
+from sqlalchemy import Select, and_, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -91,6 +91,28 @@ async def active_user(session: AsyncSession, principal: Principal, user_id: uuid
             org.AppUser.org_id == principal.org_id,
             org.AppUser.status == "active",
         )
+    )
+    return found is not None
+
+
+async def in_data_space(
+    session: AsyncSession, principal: Principal, user_id: uuid.UUID, data_space: uuid.UUID
+) -> bool:
+    """A current membership of the user in the Data Space, held directly or through a group."""
+    member = org.DataSpaceMember
+    groups = select(org.UserGroupMember.group_id).where(org.UserGroupMember.user_id == user_id)
+    found = await session.scalar(
+        select(member.id)
+        .where(
+            member.org_id == principal.org_id,
+            member.data_space_id == data_space,
+            or_(member.valid_until.is_(None), member.valid_until > func.now()),
+            or_(
+                and_(member.principal_type == "user", member.principal_id == user_id),
+                and_(member.principal_type == "group", member.principal_id.in_(groups)),
+            ),
+        )
+        .limit(1)
     )
     return found is not None
 
