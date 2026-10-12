@@ -19,7 +19,8 @@ describe('integrated groups', () => {
   it('always lets identity through, so X-Data-Space holds a real id', () => {
     expect(isIntegrated('GET', at('/v1/me'), operations)).toBe(true);
     expect(isIntegrated('GET', at('/v1/data-spaces'), operations)).toBe(true);
-    expect(isIntegrated('POST', at('/v1/data-spaces'), operations)).toBe(false);
+    // With Quản trị wired the rest of the group follows identity to the api.
+    expect(isIntegrated('POST', at('/v1/data-spaces'), operations)).toBe(true);
   });
 
   it('keeps the other groups and the PROPOSAL endpoints on the mock', () => {
@@ -46,5 +47,8 @@ describe('integrated groups', () => {
     expect(isIntegrated('POST', at('/v1/reports/r-1:pause'), operations)).toBe(false);
     expect(isIntegrated('PATCH', at('/v1/monitors/m-1'), operations)).toBe(false);
     expect(isIntegrated('GET', at('/v1/report-runs/rr-1'), operations)).toBe(false);
+    expect(isIntegrated('GET', at('/v1/admin/model-providers'), operations)).toBe(true);
+    expect(isIntegrated('PUT', at('/v1/data-spaces/ds-1/members'), operations)).toBe(false);
+    expect(isIntegrated('POST', at('/v1/dsr'), operations)).toBe(false);
   });
 });

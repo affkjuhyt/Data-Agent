@@ -30,6 +30,8 @@ import type {
   Workspace,
   WorkspaceWire,
 } from './types';
+import { readAppUser } from './adminAccess';
+import { listModelRoutes } from './adminPlatform';
 import { readDataset, readSource, readWorkspace } from './types';
 
 /*
@@ -313,5 +315,10 @@ export const listMyRules = () =>
 
 /* Quản trị */
 export const listDataSpaces = () => v1Get<Page<DataSpace>>('/data-spaces', ALL);
-export const listUsers = () => v1Get<Page<AppUser>>('/admin/users', ALL);
-export const listModels = () => v1Get<Page<ModelConfig>>('/admin/models', ALL);
+/** GET /v1/admin/users read as people and agents (lib/v1/adminAccess readAppUser). */
+export const listUsers = async (): Promise<Page<AppUser>> => {
+  const page = await v1Get<Page<components['schemas']['AdminUser']>>('/admin/users', ALL);
+  return { ...page, items: page.items.map(readAppUser) };
+};
+/** GET /v1/admin/models answers the whole list, not a page. */
+export const listModels: () => Promise<Page<ModelConfig>> = listModelRoutes;

@@ -801,6 +801,26 @@ export function dataSpacesFixture(): DataSpace[] {
   ];
 }
 
+/**
+ * GET /v1/admin/users as the api sends it (AdminUser): a person is kind "human" there. The
+ * screen's display fields, when the fixture has them, travel alongside.
+ */
+export const userWire = <T extends AppUser>(u: T) => ({
+  ...u,
+  kind: u.kind === 'person' ? 'human' : 'agent',
+  username: 'username' in u ? String(u.username) : u.id,
+  email: null,
+  department: null,
+  default_data_space_id: null,
+  owner_user_id: null,
+  last_login_at: null,
+  last_synced_at: 'last_synced_at' in u ? (u.last_synced_at as string | null) : null,
+  org_roles: [],
+  data_space_roles: [],
+  created_at: minutesFromNow(-365 * 24 * 60),
+  updated_at: minutesFromNow(-24 * 60),
+});
+
 export function usersFixture(): AppUser[] {
   const people = Array.from({ length: 1284 }, (_, i) => ({
     id: `user-${i}`,

@@ -19,6 +19,7 @@ const INTEGRATED_GROUPS: readonly string[] = [
   'Nguồn và danh mục',
   'Lớp ngữ cảnh',
   'Theo dõi, báo cáo, thông báo',
+  'Quản trị',
 ];
 
 const IDENTITY_OPERATIONS: readonly string[] = ['getMe', 'listMyDataSpaces'];
@@ -26,7 +27,8 @@ const IDENTITY_OPERATIONS: readonly string[] = ['getMe', 'listMyDataSpaces'];
 /*
  * Served operations of an integrated group that stay on the mock with their screen: A2 has the
  * write but no read the screen loads first (GET /v1/monitors, /v1/reports, /v1/reports/{id},
- * /v1/me/digests are not in A2). Sending them to the api would act on the mock's ids.
+ * /v1/me/digests, /v1/access-requests, /v1/data-spaces/{id}/members, /v1/dsr are not in A2).
+ * Sending them to the api would act on the mock's ids.
  */
 const HELD_BACK: readonly string[] = [
   'createMonitor',
@@ -35,6 +37,12 @@ const HELD_BACK: readonly string[] = [
   'pauseReportSchedule',
   'runReportNow',
   'getReportRun',
+  // Quản trị: no list or read of access requests, Data Space members or DSRs in A2.
+  'decideAccessRequest',
+  'putDataSpaceMembers',
+  'createDsr',
+  'getDsr',
+  'executeDsr',
 ];
 
 interface Operation {

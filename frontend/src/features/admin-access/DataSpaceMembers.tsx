@@ -84,7 +84,7 @@ export default function DataSpaceMembers({ id }: { id: string }) {
         </div>
         <aside className="flex w-[340px] shrink-0 flex-col gap-da-md border-l border-border bg-card px-da-xl py-da-lg max-[1279px]:hidden">
           <h2 className="text-foreground da-heading-3">
-            Thành viên{space.data ? ` · ${count(space.data.member_count)}` : ''}
+            Thành viên{space.data?.member_count != null ? ` · ${count(space.data.member_count)}` : ''}
           </h2>
           <AsyncRegion state={members} what="thành viên">
             {(p) => (

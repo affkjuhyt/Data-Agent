@@ -1,5 +1,8 @@
 import { pathId, v1Get, v1Send, type Page } from './client';
+import type { components } from './schema';
 import type { AppUser, DataSpace } from './types';
+
+type Schemas = components['schemas'];
 
 /*
  * Quản trị · người, quyền và tuân thủ (P11: UC-11-01, -02, -03, -06, -07, -08), with the paths
@@ -10,6 +13,8 @@ import type { AppUser, DataSpace } from './types';
  * Fields marked PROPOSAL are not in the spec: the screens need a display text or a computed
  * figure the tables do not hold, and the backend is asked to add them. Endpoints marked
  * PROPOSAL are missing from A2 (the spec has PUT members but no GET, :decide but no list, …).
+ * The api's rows are read into the screens' shapes below; what only a PROPOSAL field says is
+ * derived from the row or left empty.
  */
 
 type Uuid = string;
@@ -65,20 +70,72 @@ export interface Invitation {
   valid_until: string | null;
 }
 
-export const listAdminUsers = () => v1Get<Page<AdminUser>>('/admin/users', ALL);
+/** GET /v1/admin/users as the api sends it, with the PROPOSAL display fields when present. */
+type AdminUserWire = Schemas['AdminUser'] &
+  Partial<
+    Pick<
+      AdminUser,
+      | 'group_label'
+      | 'role_name'
+      | 'data_space_text'
+      | 'row_scope_text'
+      | 'row_scope_limited'
+      | 'valid_until'
+      | 'identity_source'
+    >
+  >;
+
+/*
+ * org.app_user.kind is human, agent or service. A service account (an API client) is not a
+ * person anyone may pick as an owner or a reviewer, so it reads as a non-person like an agent.
+ */
+export const readAppUser = (raw: Schemas['AdminUser']): AppUser => ({
+  id: raw.id,
+  display_name: raw.display_name,
+  kind: raw.kind === 'human' ? 'person' : 'agent',
+  status: raw.status,
+});
+
+/** The effective roles in words: the organisation's, then each Data Space's by its code. */
+function readAdminUser(raw: AdminUserWire): AdminUser {
+  const orgRoles = (raw.org_roles ?? []).map((r) => r.name);
+  const spaceRoles = raw.data_space_roles ?? [];
+  return {
+    ...readAppUser(raw),
+    username: raw.username,
+    group_label: raw.group_label ?? (raw.kind === 'agent' ? 'agent' : ''),
+    role_name:
+      raw.role_name ??
+      [...orgRoles, ...spaceRoles.flatMap((s) => s.roles.map((r) => r.name))]
+        .filter((n, i, all) => all.indexOf(n) === i)
+        .join(', '),
+    data_space_text: raw.data_space_text ?? spaceRoles.map((s) => s.data_space_code).join(', '),
+    row_scope_text: raw.row_scope_text ?? '',
+    row_scope_limited: raw.row_scope_limited ?? false,
+    valid_until: raw.valid_until ?? null,
+    last_synced_at: raw.last_synced_at,
+    identity_source: raw.identity_source ?? '',
+  };
+}
+
+export const listAdminUsers = async () => {
+  const page = await v1Get<Page<AdminUserWire>>('/admin/users', ALL);
+  return { ...page, items: page.items.map(readAdminUser) };
+};
 export const listRoles = () => v1Get<Page<Role>>('/admin/roles', ALL);
 export const listGroups = () => v1Get<Page<UserGroup>>('/admin/groups', ALL);
 /** PROPOSAL: re-read people and groups from the identity source now (202). */
 export const syncDirectory = () => v1Send<{ status: string }>('POST', '/admin/directory:sync');
-export const inviteUser = (body: Invitation) => v1Send<AdminUser>('POST', '/admin/invitations', body);
+export const inviteUser = (body: Invitation) =>
+  v1Send<AdminUser>('POST', '/admin/invitations', body);
 
 /* ─── Data Space, thành viên và quyền (UC-11-08) ─────────────────────── */
 
 export interface DataSpaceSummary extends DataSpace {
-  /** PROPOSAL: steward display name (steward_id is the column). */
+  /** PROPOSAL: steward display name (steward_id is the column); empty without it. */
   steward_name: string;
-  /** PROPOSAL: members counted over people, groups' people and agents. */
-  member_count: number;
+  /** PROPOSAL: members counted over people, groups' people and agents; null without it. */
+  member_count: number | null;
 }
 
 /** The four flags of "Tạo Data Space" (data_space.default_policy). */
@@ -178,11 +235,50 @@ export interface PermissionSimulation {
   views: PermissionView[];
 }
 
-export const listDataSpaceSummaries = () => v1Get<Page<DataSpaceSummary>>('/data-spaces', ALL);
+type DataSpaceWire = DataSpace & Partial<Pick<DataSpaceSummary, 'steward_name' | 'member_count'>>;
+
+const readSummary = (raw: DataSpaceWire): DataSpaceSummary => ({
+  ...raw,
+  steward_name: raw.steward_name ?? '',
+  member_count: raw.member_count ?? null,
+});
+
+export const listDataSpaceSummaries = async () => {
+  const page = await v1Get<Page<DataSpaceWire>>('/data-spaces', ALL);
+  return { ...page, items: page.items.map(readSummary) };
+};
+
+/** "Rủi ro tín dụng" → "RUI_RO_TIN_DUNG" (org.data_space.code). */
+const codeOf = (name: string) =>
+  name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'D')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60) || 'DATA_SPACE';
 export const getDataSpace = async (id: string) =>
   v1Get<DataSpaceSummary>(`/data-spaces/${pathId(id)}`);
-export const createDataSpace = (body: CreateDataSpace) =>
-  v1Send<DataSpaceSummary>('POST', '/data-spaces', body);
+/**
+ * DataSpaceCreate carries the name, steward and default policy; the sources follow in
+ * PUT /v1/data-spaces/{id}/sources. Group mappings and the draft/onboarding choice are PROPOSAL:
+ * the api opens the space as it is and maps groups through PUT /v1/admin/group-mappings.
+ */
+export const createDataSpace = async (body: CreateDataSpace) => {
+  const created = await v1Send<Schemas['DataSpaceView']>('POST', '/data-spaces', {
+    code: codeOf(body.name),
+    name: body.name,
+    description: body.description ?? null,
+    steward_id: body.steward_id,
+    default_policy: body.default_policy,
+  } satisfies Schemas['DataSpaceCreate']);
+  if (body.source_ids.length > 0)
+    await v1Send('PUT', `/data-spaces/${pathId(created.id)}/sources`, {
+      source_ids: body.source_ids,
+    });
+  return created;
+};
 export const listMembers = async (id: string) =>
   v1Get<Page<DataSpaceMember>>(`/data-spaces/${pathId(id)}/members`, ALL);
 /** A2: PUT replaces the whole member list. */
@@ -250,8 +346,9 @@ export interface DecideAccess {
 }
 
 /** PROPOSAL: GET /v1/access-requests (A2 has create and :decide only). */
-export const listAccessRequests = (query: { status?: AccessRequestStatus; data_space_id?: string } = {}) =>
-  v1Get<Page<AccessRequest>>('/access-requests', { ...ALL, ...query });
+export const listAccessRequests = (
+  query: { status?: AccessRequestStatus; data_space_id?: string } = {},
+) => v1Get<Page<AccessRequest>>('/access-requests', { ...ALL, ...query });
 /** PROPOSAL: GET /v1/access-requests/{id} */
 export const getAccessRequest = async (id: string) =>
   v1Get<AccessRequest>(`/access-requests/${pathId(id)}`);
@@ -313,8 +410,7 @@ export interface PolicySimulation {
 export const listAccessPolicies = () =>
   v1Get<Page<AccessPolicy>>('/policies', { ...ALL, family: 'access' });
 /** PROPOSAL: GET /v1/policies/{id} */
-export const getAccessPolicy = async (id: string) =>
-  v1Get<AccessPolicy>(`/policies/${pathId(id)}`);
+export const getAccessPolicy = async (id: string) => v1Get<AccessPolicy>(`/policies/${pathId(id)}`);
 /** PROPOSAL: PATCH saves the rule as a new version (draft until simulated). */
 export const updateAccessPolicy = async (id: string, body: { rule_text: string }) =>
   v1Send<AccessPolicy>('PATCH', `/policies/${pathId(id)}`, body);

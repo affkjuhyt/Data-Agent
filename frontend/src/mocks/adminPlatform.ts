@@ -13,10 +13,12 @@ import type {
   NewProvider,
   NotificationPreferences,
   OpsPeriod,
+  ProviderWire,
   RoutingLogEntry,
   SystemHealth,
 } from '../lib/v1/adminPlatform';
 import type { Me } from '../lib/v1/me';
+import type { ModelConfig } from '../lib/v1/types';
 
 /*
  * MSW handlers for lib/v1/adminPlatform.ts. Data is the data drawn in the Figma frames
@@ -781,6 +783,70 @@ export function channelRulesFixture(): ChannelRules {
 
 const PERIODS: OpsPeriod[] = ['24h', '7d', '30d'];
 
+/*
+ * Where A2 has the resource, the mock answers at its path in its shape (ModelConfigView,
+ * ModelProviderView, ModelRouteDecisionView, PrefView) and sends the screen's richer row under
+ * `display`, which the client prefers when present.
+ */
+const AT = '2026-10-01T09:00:00+07:00';
+
+export const modelWire = (m: ModelConfig & Partial<ModelRoute>) => ({
+  ...m,
+  id: m.id ?? `model-${m.task}`,
+  provider_id: 'prov-1',
+  endpoint: 'http://llm.noibo.local',
+  route_role: 'primary',
+  rollout_pct: 100,
+  version: 1,
+  limits: {},
+  fallback_model: m.fallback_name ?? null,
+  latest_eval: null,
+  eval_run_id: null,
+  activated_at: AT,
+  activated_by: null,
+  created_at: AT,
+  updated_at: AT,
+});
+
+const providerWire = (p: AiProvider): ProviderWire => ({
+  id: p.id,
+  code: p.id,
+  display_name: p.name,
+  kind: p.kind === 'local' ? 'on_prem' : 'frontier',
+  api_style: 'openai_compatible',
+  endpoint: `https://${p.endpoint_label}`,
+  data_region: p.region_text,
+  zero_retention: p.zero_retention === 'committed',
+  max_classification: p.kind === 'local' ? 'restricted' : 'public',
+  enabled: p.ac06_status === 'approved',
+  approved_at: p.ac06_status === 'approved' ? AT : null,
+  approved_by: null,
+  contract_ref: null,
+  monthly_budget_vnd: p.month_budget_vnd,
+  monthly_cost_vnd: p.month_cost_vnd ?? 0,
+  price: { [p.model_name]: {} },
+  status: 'active',
+  created_at: AT,
+  updated_at: AT,
+  display: p,
+});
+
+export const prefsWire = (p: NotificationPreferences) => ({
+  items: p.events.map((e) => ({
+    id: null,
+    kind: e.key,
+    channels: Object.entries(e.channels)
+      .filter(([c, on]) => on && c !== 'digest')
+      .map(([c]) => c),
+    batch_mode: e.channels.digest ? 'daily' : 'instant',
+    quiet_hours: null,
+    created_at: null,
+    updated_at: null,
+  })),
+  next_page_token: '',
+  display: p,
+});
+
 export function createAdminPlatformHandlers() {
   let models = modelRoutesFixture();
   let integrations = integrationsFixture();
@@ -799,7 +865,7 @@ export function createAdminPlatformHandlers() {
     }),
 
     // Before the generic "/admin/models" handler of handlers.ts: this one serves the P11 fields.
-    http.get('*/v1/admin/models', () => page(models)),
+    http.get('*/v1/admin/models', () => HttpResponse.json(models.map(modelWire))),
     http.post('*/v1/admin/models', async ({ request }) => {
       const body = (await request.json()) as NewModel;
       if (!body.name?.trim() || !/^https?:\/\//.test(body.endpoint ?? ''))
@@ -849,9 +915,24 @@ export function createAdminPlatformHandlers() {
       return HttpResponse.json(policy);
     }),
 
-    http.get('*/v1/admin/providers', () => page(providers)),
-    http.post('*/v1/admin/providers', async ({ request }) => {
-      const body = (await request.json()) as NewProvider;
+    http.get('*/v1/admin/model-providers', () => page(providers.map(providerWire))),
+    http.post('*/v1/admin/model-providers', async ({ request }) => {
+      const raw = (await request.json()) as {
+        display_name: string;
+        kind: 'on_prem' | 'frontier';
+        endpoint: string;
+        data_region: string | null;
+        monthly_budget_vnd: number | null;
+        price: Record<string, unknown>;
+      };
+      const body: NewProvider = {
+        name: raw.display_name,
+        kind: raw.kind === 'on_prem' ? 'local' : 'frontier',
+        model_name: Object.keys(raw.price ?? {})[0] ?? '',
+        endpoint: raw.endpoint,
+        region: raw.data_region ?? '',
+        month_budget_vnd: raw.monthly_budget_vnd,
+      };
       if (
         !body.name?.trim() ||
         !body.model_name?.trim() ||
@@ -874,35 +955,54 @@ export function createAdminPlatformHandlers() {
         budget_month: '2026-10',
       };
       providers = [...providers, added];
-      return HttpResponse.json(added, { status: 201 });
+      return HttpResponse.json(providerWire(added), { status: 201 });
     }),
-    http.post('*/v1/admin/providers/:action', ({ params }) => {
+    // ModelProviderTestResult: one call through the provider with the model named in the body.
+    http.post('*/v1/admin/model-providers/:action', ({ params }) => {
       // MSW reads ":test" as part of the segment: "<id>:test".
       const [id, verb] = String(params.action).split(':');
       if (verb !== 'test') return problem(404, 'not_found', 'Không có thao tác này.');
       const provider = providers.find((p) => p.id === id);
       if (!provider) return problem(404, 'not_found', 'Không tìm thấy provider.');
+      const result = { provider_id: provider.id, model_name: provider.model_name };
       if (provider.zero_retention === 'verifying')
         return HttpResponse.json({
-          ok: false,
-          latency_ms: null,
-          detail: 'Endpoint chưa xác nhận vùng dữ liệu nên chưa nhận lời gọi.',
+          ...result,
+          outcome: 'error',
+          latency_ms: 0,
+          error: 'Endpoint chưa xác nhận vùng dữ liệu nên chưa nhận lời gọi.',
         });
       return HttpResponse.json({
-        ok: true,
+        ...result,
+        outcome: 'ok',
         latency_ms: provider.kind === 'local' ? 640 : 1280,
-        detail: null,
+        error: null,
       });
     }),
-    http.get('*/v1/admin/routing-log', ({ request }) => {
+    // The fixture's week whatever from/to asks; the screen's rows and totals ride along.
+    http.get('*/v1/admin/model-route-decisions', ({ request }) => {
       const params = new URL(request.url).searchParams;
-      const week = params.get('week') ?? '2026-W41';
-      if (week !== '2026-W41') return problem(404, 'not_found', 'Chưa có nhật ký của tuần này.');
+      const week = '2026-W41';
       const size = Number(params.get('page_size') ?? 50);
       const start = Number(params.get('page_token') || 0);
       const end = start + size;
+      const API_DECISION = {
+        frontier: 'frontier_allowed',
+        blocked: 'frontier_blocked',
+        local: 'on_prem_default',
+      } as const;
       return HttpResponse.json({
-        items: routingLog.slice(start, end),
+        items: routingLog.slice(start, end).map((e) => ({
+          id: e.id,
+          decided_at: e.at,
+          task: 'answer',
+          decision: API_DECISION[e.decision],
+          reasons: [e.reason],
+          chosen_provider_id: 'prov-1',
+          model_name: e.provider_name,
+          caller_kind: 'user',
+          display: e,
+        })),
         next_page_token: end < routingLog.length ? String(end) : '',
         week,
         frontier_calls: 412,
@@ -942,21 +1042,31 @@ export function createAdminPlatformHandlers() {
     }),
 
     http.get('*/v1/me', () => HttpResponse.json(meFixture())),
-    http.get('*/v1/me/notification-preferences', () => HttpResponse.json(preferences)),
-    http.put('*/v1/me/notification-preferences', async ({ request }) => {
-      const body = (await request.json()) as NotificationPreferences;
+    // PrefView rows (one per kind) with the screen's labels and locks under display.
+    http.get('*/v1/me/notification-prefs', () => HttpResponse.json(prefsWire(preferences))),
+    http.put('*/v1/me/notification-prefs', async ({ request }) => {
+      const body = (await request.json()) as {
+        prefs: { kind: string; channels: string[]; batch_mode: string }[];
+      };
       // Locked channels stay on whatever the client sends.
       preferences = {
-        ...body,
-        events: body.events.map((event) => ({
-          ...event,
-          channels: {
-            ...event.channels,
-            ...Object.fromEntries(event.locked.map((channel) => [channel, true])),
-          },
-        })),
+        ...preferences,
+        events: preferences.events.map((event) => {
+          const pref = body.prefs.find((p) => p.kind === event.key);
+          if (!pref) return event;
+          const channels = Object.fromEntries(
+            Object.keys(event.channels).map((c) => [
+              c,
+              c === 'digest' ? pref.batch_mode === 'daily' : pref.channels.includes(c),
+            ]),
+          ) as typeof event.channels;
+          return {
+            ...event,
+            channels: { ...channels, ...Object.fromEntries(event.locked.map((c) => [c, true])) },
+          };
+        }),
       };
-      return HttpResponse.json(preferences);
+      return HttpResponse.json(prefsWire(preferences));
     }),
     http.post('*/v1/me/notification-preferences\\:test', () =>
       HttpResponse.json({ channels: ['in_app', 'teams', 'email'] }),

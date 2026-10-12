@@ -99,7 +99,7 @@ export function ProvidersTab({
   const callOnce = async (provider: AiProvider) => {
     setTesting(provider.id);
     try {
-      const result = await testProvider(provider.id);
+      const result = await testProvider(provider.id, provider.model_name);
       toast(
         result.ok
           ? {

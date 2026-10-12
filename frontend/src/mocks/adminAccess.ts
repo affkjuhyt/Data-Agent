@@ -1,4 +1,5 @@
 import { http, HttpResponse } from 'msw';
+import { userWire } from './fixtures';
 import type {
   AccessPolicy,
   AccessRequest,
@@ -519,7 +520,7 @@ export function createAdminAccessHandlers() {
 
   return [
     /* Người dùng */
-    http.get('*/v1/admin/users', () => page(users)),
+    http.get('*/v1/admin/users', () => page(users.map(userWire))),
     http.get('*/v1/admin/roles', () => page(roles)),
     http.get('*/v1/admin/groups', () => page(groupsFixture())),
     http.post(/\/v1\/admin\/directory:sync$/, () =>
@@ -562,7 +563,8 @@ export function createAdminAccessHandlers() {
         id: `ds-${spaces.length + 1}`,
         code: body.name.trim().toUpperCase().replace(/\s+/g, '_'),
         name: body.name.trim(),
-        status: body.status,
+        // DataSpaceCreate has no status: the api opens the space as onboarding.
+        status: 'onboarding',
         steward_id: body.steward_id,
         opened_at: null,
         my_roles: [STEWARD_ROLE],
@@ -573,6 +575,11 @@ export function createAdminAccessHandlers() {
       };
       spaces = [...spaces, created];
       return HttpResponse.json(created, { status: 201 });
+    }),
+    // The sources chosen on create follow in their own PUT (A2).
+    http.put('*/v1/data-spaces/:id/sources', ({ params }) => {
+      const space = spaces.find((s) => s.id === params.id);
+      return space ? HttpResponse.json(space) : problem(404, 'not_found', 'Không tìm thấy Data Space.');
     }),
     http.get('*/v1/data-spaces/:id', ({ params }) => {
       const space = spaces.find((s) => s.id === params.id);

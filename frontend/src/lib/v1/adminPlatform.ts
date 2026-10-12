@@ -1,5 +1,8 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
+import type { components } from './schema';
 import type { ModelConfig } from './types';
+
+type Schemas = components['schemas'];
 
 /*
  * Platform side of Quản trị and the personal settings (UC-11-04 giám sát, UC-11-05 mô hình AI,
@@ -9,6 +12,8 @@ import type { ModelConfig } from './types';
  * read model for service health, GPU load, client usage, the ops roll-up or the channel rules
  * matrix. Everything marked PROPOSAL is asked of the backend; the mock (mocks/adminPlatform.ts)
  * serves it. Counts and amounts arrive computed: the screens never derive totals from a page.
+ * Where A2 has the resource (models, model providers, route decisions, notification prefs) its
+ * shapes are read below into the screens' ones.
  */
 type Uuid = string;
 type Timestamp = string;
@@ -128,8 +133,8 @@ export interface ModelRoute extends ModelConfig {
   placement: string | null;
   /** PROPOSAL: model used when this one is overloaded; "luật" for the rule-based fallback. */
   fallback_name: string | null;
-  /** PROPOSAL */
-  latency_p95_ms: number;
+  /** p95 latency from the gateway; null before it has served calls. */
+  latency_p95_ms: number | null;
   /** PROPOSAL: last eval score in [0,1], null when the task has no eval set. */
   eval_score: number | null;
   /** PROPOSAL: the model before the last change, and its cost relative to the current one. */
@@ -166,7 +171,38 @@ export interface NewModel {
   rate_limit_per_min: number;
 }
 
-export const listModelRoutes = () => v1Get<Page<ModelRoute>>('/admin/models', { page_size: 500 });
+type ModelWire = Schemas['ModelConfigView'] &
+  Partial<
+    Pick<ModelRoute, 'placement' | 'fallback_name' | 'eval_score' | 'previous' | 'eval_suite_name'>
+  > & { latest_eval_delta?: number | null };
+
+/** latest_eval is the eval run's row: its pass rate is the score. */
+const scoreOf = (raw: unknown): number | null => {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const { pass_rate } = raw as { pass_rate?: unknown };
+  const n = typeof pass_rate === 'string' ? Number(pass_rate) : pass_rate;
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+};
+
+const readModelRoute = (raw: ModelWire): ModelRoute => ({
+  id: raw.id,
+  task: raw.task,
+  model_name: raw.model_name,
+  status: raw.status,
+  latest_eval_delta: raw.latest_eval_delta ?? null,
+  placement: raw.placement ?? null,
+  fallback_name: raw.fallback_name ?? raw.fallback_model,
+  latency_p95_ms: raw.latency_p95_ms ?? null,
+  eval_score: raw.eval_score ?? scoreOf(raw.latest_eval),
+  previous: raw.previous ?? null,
+  eval_suite_name: raw.eval_suite_name ?? null,
+});
+
+/** GET /v1/admin/models answers the whole list, not a page. */
+export const listModelRoutes = async (): Promise<Page<ModelRoute>> => {
+  const items = await v1Get<ModelWire[]>('/admin/models');
+  return { items: items.map(readModelRoute), next_page_token: '' };
+};
 export const getAiPolicy = () => v1Get<AiPolicy>('/admin/ai-policy');
 export const getGpuLoad = () => v1Get<GpuLoad>('/admin/gpu-load', { window: '24h' });
 
@@ -248,18 +284,162 @@ export interface RoutingLog extends Page<RoutingLogEntry> {
   local_calls: number;
 }
 
-export const listProviders = () => v1Get<Page<AiProvider>>('/admin/providers', { page_size: 500 });
+/** PROPOSAL: the row as the screen draws it, which the mock sends under `display`. */
+export type ProviderWire = Schemas['ModelProviderView'] & { display?: AiProvider };
 
-/** PROPOSAL: a new frontier provider starts pending AC06 and is not routed to until approved. */
-export const addProvider = (body: NewProvider) =>
-  v1Send<AiProvider>('POST', '/admin/providers', body);
+/** "2026-10" */
+const thisMonth = () => new Date().toISOString().slice(0, 7);
 
-export const testProvider = async (id: string) =>
-  v1Send<ProviderTest>('POST', `/admin/providers/${pathId(id)}:test`);
+/*
+ * A provider's models are the keys of its price list (price per million tokens by model). An
+ * on-prem provider is the organisation's own and needs no approval; a frontier one is routed to
+ * only once the AC06 committee approved it.
+ */
+function readProvider(raw: ProviderWire): AiProvider {
+  if (raw.display) return raw.display;
+  const models = typeof raw.price === 'object' && raw.price !== null ? Object.keys(raw.price) : [];
+  const local = raw.kind === 'on_prem';
+  return {
+    id: raw.id,
+    name: raw.display_name,
+    kind: local ? 'local' : 'frontier',
+    model_name: models[0] ?? '',
+    model_note: models.length > 1 ? models.slice(1).join(', ') : null,
+    endpoint_label: raw.endpoint,
+    region_text: raw.data_region ?? (local ? 'trong tổ chức' : ''),
+    zero_retention: local ? 'not_applicable' : raw.zero_retention ? 'committed' : 'none',
+    ac06_status:
+      local || raw.approved_at ? 'approved' : raw.status === 'retired' ? 'rejected' : 'pending',
+    month_cost_vnd: local ? null : Number(raw.monthly_cost_vnd ?? 0),
+    month_budget_vnd:
+      local || raw.monthly_budget_vnd === null ? null : Number(raw.monthly_budget_vnd),
+    budget_month: thisMonth(),
+  };
+}
 
-/** Without `week` the server answers the current one. */
-export const getRoutingLog = (opts: { week?: string; page_size: number; page_token?: string }) =>
-  v1Get<RoutingLog>('/admin/routing-log', opts);
+export const listProviders = async () => {
+  const page = await v1Get<Page<ProviderWire>>('/admin/model-providers', { page_size: 500 });
+  return { ...page, items: page.items.map(readProvider) };
+};
+
+/** "Nhà cung cấp A (API)" → "nha-cung-cap-a-api" (governance.model_provider.code). */
+const codeOf = (name: string) =>
+  name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'provider';
+
+/**
+ * A new frontier provider starts pending AC06 and is not routed to until approved. The model is
+ * the first key of its price list; the price itself is set by the admin later.
+ */
+export const addProvider = async (body: NewProvider) =>
+  readProvider(
+    await v1Send<ProviderWire>('POST', '/admin/model-providers', {
+      code: codeOf(body.name),
+      display_name: body.name,
+      kind: body.kind === 'local' ? 'on_prem' : 'frontier',
+      endpoint: body.endpoint,
+      data_region: body.region || null,
+      monthly_budget_vnd: body.month_budget_vnd,
+      price: body.model_name ? { [body.model_name]: {} } : {},
+    }),
+  );
+
+/** One trial call through the provider with its model (POST :test needs the model's name). */
+export const testProvider = async (id: string, modelName: string): Promise<ProviderTest> => {
+  if (!modelName)
+    throw new V1Error(422, 'validation_failed', 'Nhà cung cấp chưa có mô hình để thử.');
+  const result = await v1Send<Schemas['ModelProviderTestResult']>(
+    'POST',
+    `/admin/model-providers/${pathId(id)}:test`,
+    { model_name: modelName } satisfies Schemas['ModelProviderTest'],
+  );
+  return {
+    ok: result.outcome === 'ok',
+    latency_ms: result.latency_ms,
+    detail: result.error ?? null,
+  };
+};
+
+/** PROPOSAL: a row's question and asker in words, and the week's totals; the mock sends them. */
+type RoutingWire = Page<Schemas['ModelRouteDecisionView'] & { display?: RoutingLogEntry }> &
+  Partial<Pick<RoutingLog, 'week' | 'frontier_calls' | 'blocked_internal' | 'local_calls'>>;
+
+const DECISION: Record<string, RoutingDecision> = {
+  frontier_allowed: 'frontier',
+  frontier_blocked: 'blocked',
+  on_prem_default: 'local',
+};
+
+/** Monday 00:00 UTC of an ISO week, "2026-W41". */
+function weekStart(week: string): Date {
+  const [year, w] = week.split('-W').map(Number);
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const monday = new Date(jan4);
+  monday.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7) + (w - 1) * 7);
+  return monday;
+}
+
+/** The ISO week of a day: the week holding its Thursday, counted from the week of 4 January. */
+function isoWeek(at: Date): string {
+  const thursday = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
+  thursday.setUTCDate(thursday.getUTCDate() + 3 - ((thursday.getUTCDay() + 6) % 7));
+  const year = thursday.getUTCFullYear();
+  const week =
+    1 + Math.round((thursday.getTime() - weekStart(`${year}-W01`).getTime()) / 604_800_000 - 3 / 7);
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
+
+/**
+ * GET /v1/admin/model-route-decisions for the week (from/to). The audit keeps the prompt's hash,
+ * not the question (BR-181): the row shows the task instead. The week's counts are counted over
+ * the page read, which holds the week up to page_size decisions.
+ */
+export const getRoutingLog = async (opts: {
+  week?: string;
+  page_size: number;
+  page_token?: string;
+}): Promise<RoutingLog> => {
+  const week = opts.week ?? isoWeek(new Date());
+  const from = weekStart(week);
+  const to = new Date(from.getTime() + 604_800_000);
+  const [page, providers] = await Promise.all([
+    v1Get<RoutingWire>('/admin/model-route-decisions', {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      page_size: opts.page_size,
+      page_token: opts.page_token,
+    }),
+    listProviders().catch(() => null),
+  ]);
+  const names = new Map<string, string>(providers?.items.map((p) => [p.id, p.name]) ?? []);
+  const items = page.items.map(
+    (d): RoutingLogEntry =>
+      d.display ?? {
+        id: d.id,
+        at: d.decided_at,
+        question: d.task,
+        decision: DECISION[d.decision] ?? 'local',
+        reason: d.reasons.join('; '),
+        provider_name: names.get(d.chosen_provider_id) ?? d.model_name,
+        asked_by_name: d.caller_kind,
+      },
+  );
+  const count = (k: RoutingDecision) => items.filter((i) => i.decision === k).length;
+  return {
+    items,
+    next_page_token: page.next_page_token,
+    week: page.week ?? week,
+    frontier_calls: page.frontier_calls ?? count('frontier'),
+    blocked_internal: page.blocked_internal ?? count('blocked'),
+    local_calls: page.local_calls ?? count('local'),
+  };
+};
 
 /* ─── Tích hợp: client API, MCP, webhook (UC-12-01..04) ────────────────── */
 
@@ -324,11 +504,81 @@ export interface NotificationPreferences {
   grouping_text: string;
 }
 
-export const getNotificationPreferences = () =>
-  v1Get<NotificationPreferences>('/me/notification-preferences');
+/** notification.kind in the order and words of "Cài đặt thông báo". */
+const KIND_LABEL: Record<string, { label: string; description: string }> = {
+  hitl: { label: 'Cần bạn quyết', description: 'Việc chờ bạn duyệt, chọn hoặc trả lời' },
+  alert: { label: 'Cảnh báo', description: 'Chỉ số vượt ngưỡng bạn theo dõi' },
+  task_done: { label: 'Việc đã xong', description: 'Agent hoặc lượt chạy bạn giao đã xong' },
+  report: { label: 'Báo cáo', description: 'Báo cáo định kỳ đã phát hành' },
+  digest: { label: 'Bản tin', description: 'Bản tin tổng hợp theo lịch' },
+  comment: { label: 'Bình luận', description: 'Ai đó nhắc bạn hoặc trả lời bạn' },
+  share: { label: 'Chia sẻ', description: 'Phiên, báo cáo được chia sẻ với bạn' },
+  system: { label: 'Hệ thống', description: 'Thông báo của quản trị' },
+};
 
-export const saveNotificationPreferences = (body: NotificationPreferences) =>
-  v1Send<NotificationPreferences>('PUT', '/me/notification-preferences', body);
+const CHANNELS: NotificationChannel[] = ['in_app', 'teams', 'zalo', 'email', 'digest'];
+type PrefChannel = Schemas['PrefIn']['channels'][number];
+
+/** A HITL request always reaches the app (BR-67: high-risk work is decided in the app). */
+const LOCKED: Record<string, NotificationChannel[]> = { hitl: ['in_app'] };
+
+const BATCH_TEXT: Record<string, string> = {
+  instant: 'Gửi ngay từng thông báo',
+  '15m': 'Gộp thông báo trong 15 phút',
+  daily: 'Gộp vào bản tin hằng ngày',
+};
+
+/*
+ * GET /v1/me/notification-prefs: one row per kind, with defaults filled in. "Bản tin" is the
+ * daily batch mode, not a channel of its own; quiet hours and grouping are said from the first
+ * row that has them.
+ */
+/** PROPOSAL: the screen's labels and locks, which the mock sends under `display`. */
+type PrefsWire = Page<Schemas['PrefView']> & { display?: NotificationPreferences };
+
+function readPrefs(page: PrefsWire): NotificationPreferences {
+  if (page.display) return page.display;
+  const rows = page.items;
+  const quiet = rows.find((r) => r.quiet_hours)?.quiet_hours as {
+    from?: string;
+    to?: string;
+  } | null;
+  const batch = rows.find((r) => r.batch_mode !== 'instant')?.batch_mode ?? 'instant';
+  return {
+    events: rows.map((r) => ({
+      key: r.kind,
+      label: KIND_LABEL[r.kind]?.label ?? r.kind,
+      description: KIND_LABEL[r.kind]?.description ?? '',
+      channels: Object.fromEntries(
+        CHANNELS.map((c) => [
+          c,
+          c === 'digest' ? r.batch_mode === 'daily' : r.channels.includes(c),
+        ]),
+      ) as Record<NotificationChannel, boolean>,
+      locked: LOCKED[r.kind] ?? [],
+    })),
+    quiet_hours_text:
+      quiet?.from && quiet.to
+        ? `Không gửi từ ${quiet.from} đến ${quiet.to}`
+        : 'Không đặt giờ yên tĩnh',
+    grouping_text: BATCH_TEXT[batch] ?? batch,
+  };
+}
+
+export const getNotificationPreferences = async () =>
+  readPrefs(await v1Get<PrefsWire>('/me/notification-prefs'));
+
+/** PUT replaces the set; "Bản tin" on a row is its daily batch mode. */
+export const saveNotificationPreferences = async (body: NotificationPreferences) =>
+  readPrefs(
+    await v1Send<PrefsWire>('PUT', '/me/notification-prefs', {
+      prefs: body.events.map((e) => ({
+        kind: e.key as Schemas['PrefIn']['kind'],
+        channels: CHANNELS.filter((c) => c !== 'digest' && e.channels[c]) as PrefChannel[],
+        batch_mode: e.channels.digest ? 'daily' : 'instant',
+      })),
+    } satisfies Schemas['PrefsPut']),
+  );
 
 /** PROPOSAL: sends one sample notification to every channel the user has turned on. */
 export const sendTestNotification = () =>

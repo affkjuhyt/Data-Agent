@@ -7,7 +7,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { listNotifications, type AppNotification } from '../../lib/v1/notifications';
-import { notificationPreferencesFixture } from '../../mocks/adminPlatform';
+import { notificationPreferencesFixture, prefsWire } from '../../mocks/adminPlatform';
 import { createNotificationHandlers } from '../../mocks/notifications';
 import { NotificationDrawer } from './NotificationDrawer';
 import { dayGroupOf, routeOf } from './notificationRoute';
@@ -17,8 +17,8 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 beforeEach(() =>
   server.resetHandlers(
     ...createNotificationHandlers(),
-    http.get('*/v1/me/notification-preferences', () =>
-      HttpResponse.json(notificationPreferencesFixture()),
+    http.get('*/v1/me/notification-prefs', () =>
+      HttpResponse.json(prefsWire(notificationPreferencesFixture())),
     ),
   ),
 );

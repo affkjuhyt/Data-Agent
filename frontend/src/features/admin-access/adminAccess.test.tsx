@@ -153,16 +153,19 @@ describe('CreateDataSpacePage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Tạo Data Space' }));
 
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('admin', 'DATA_SPACES', 'ds-6'));
+    // DataSpaceCreate, then the chosen sources in their own PUT (A2).
     expect(sent).toContainEqual({
       path: '/data-spaces',
       body: expect.objectContaining({
+        code: 'THE_TIN_DUNG',
         name: 'Thẻ tín dụng',
         steward_id: 'u-duc-long',
-        source_ids: ['src-core'],
-        group_ids: ['grp-risk-head'],
-        status: 'onboarding',
         default_policy: expect.objectContaining({ mask_pii: true, allow_external_channels: false }),
       }),
+    });
+    expect(sent).toContainEqual({
+      path: '/data-spaces/ds-6/sources',
+      body: { source_ids: ['src-core'] },
     });
   });
 });

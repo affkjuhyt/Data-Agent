@@ -21,6 +21,7 @@ import {
   sourcesFixture,
   termsFixture,
   usersFixture,
+  userWire,
   workspacesFixture,
 } from './fixtures';
 import { createAdminAccessHandlers } from './adminAccess';
@@ -34,7 +35,7 @@ import { createExploreHandlers } from './explore';
 import { createForecastHandlers } from './forecast';
 import { createSkillAuthoringHandlers } from './skillAuthoring';
 import { createSkillsHandlers } from './skills';
-import { createAdminPlatformHandlers } from './adminPlatform';
+import { createAdminPlatformHandlers, modelWire } from './adminPlatform';
 import { createAgentBuilderHandlers } from './agentBuilder';
 import { createAgentOpsHandlers } from './agentOps';
 import { createAlertHandlers } from './alerts';
@@ -343,8 +344,8 @@ export function createHandlers() {
     http.get('*/v1/terms', () => page(termsFixture())),
     http.get('*/v1/policies', () => page(myRulesFixture())),
     http.get('*/v1/data-spaces', () => page(dataSpacesFixture())),
-    http.get('*/v1/admin/users', () => page(usersFixture())),
-    http.get('*/v1/admin/models', () => page(modelsFixture())),
+    http.get('*/v1/admin/users', () => page(usersFixture().map(userWire))),
+    http.get('*/v1/admin/models', () => HttpResponse.json(modelsFixture().map(modelWire))),
     ...createNotificationHandlers(),
   ];
 }
