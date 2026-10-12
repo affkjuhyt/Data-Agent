@@ -1,5 +1,5 @@
 import { listDataSpaces } from './api';
-import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
+import { pathId, V1Error, v1Get, v1Send, v1Upload, type Page } from './client';
 import type { components } from './schema';
 import { readDataset, readSource, type DatasetWire, type Source, type SourceWire } from './types';
 
@@ -388,10 +388,57 @@ export interface IngestionJob {
   status_reason: string | null;
 }
 
-export const listJobs = () => v1Get<Page<IngestionJob>>('/ingestion-jobs', ALL);
+interface IngestionJobWire {
+  id: Uuid;
+  name: string;
+  mode: string;
+  source_object: string;
+  status: string;
+  paused_reason: string | null;
+  dlq_retention_days?: number;
+  dlq_pending?: number;
+  lag_seconds?: number | null;
+  last_run?: { status?: string | null; rows_loaded?: number | null } | null;
+}
+
+const jobMethod = (mode: string): IngestionJob['method'] =>
+  mode === 'cdc' ? 'cdc' : mode === 'incremental' ? 'incremental' : 'schedule';
+
+const jobStatus = (status: string): JobStatus => {
+  if (status === 'paused') return 'paused';
+  if (status === 'failed' || status === 'error') return 'error';
+  if (status === 'running') return 'running';
+  return 'on_time';
+};
+
+function readJob(row: IngestionJobWire): IngestionJob {
+  const lag = row.lag_seconds ?? null;
+  const status = jobStatus(row.status);
+  const runStatus = row.last_run?.status;
+  const last = runStatus === 'failed' || runStatus === 'error' ? 'error' : runStatus ? 'ok' : 'none';
+  return {
+    id: row.id,
+    table_name: row.source_object,
+    source_name: row.name,
+    method: jobMethod(row.mode),
+    hours: [...Array(23).fill('none'), last] as IngestionJob['hours'],
+    lag_seconds: lag,
+    late: status === 'error' || row.status === 'late',
+    rows_today: row.last_run?.rows_loaded ?? 0,
+    status,
+    status_reason: row.paused_reason,
+  };
+}
+
+export const listJobs = async () => {
+  const page = await v1Get<Page<IngestionJobWire>>('/jobs', ALL);
+  return { ...page, items: page.items.map(readJob) };
+};
 
 export const controlJob = async (id: string, verb: 'run' | 'pause' | 'resume') =>
-  v1Send<IngestionJob>('POST', `/ingestion-jobs/${pathId(id)}:${verb}`);
+  v1Send<IngestionJobWire>('POST', `/jobs/${pathId(id)}:${verb === 'run' ? 'backfill' : verb}`).then(
+    readJob,
+  );
 
 /* ─── Tải tệp ─────────────────────────────────────────────────────────── */
 
@@ -430,12 +477,75 @@ export interface UploadAnalysis {
   };
 }
 
-export const createUpload = (file: { file_name: string; size_bytes: number }) =>
-  v1Send<UploadAnalysis>('POST', '/uploads', file);
+interface FileUploadWire {
+  id: Uuid;
+  file_name: string;
+  size_bytes: number;
+  sheet: string | null;
+  header_row: number | null;
+  column_map: unknown;
+  error_ratio: number | string | null;
+  target_dataset_id: Uuid | null;
+  expires_at: Timestamp;
+}
+
+function uploadColumns(value: unknown): UploadColumn[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): UploadColumn[] => {
+    if (!item || typeof item !== 'object') return [];
+    const row = item as Record<string, unknown>;
+    const type = ['string', 'number', 'percent', 'date', 'boolean'].includes(String(row.type))
+      ? (String(row.type) as UploadColumnType)
+      : 'string';
+    const header = String(row.header ?? row.source ?? row.name ?? 'Cột');
+    return [{
+      header,
+      name: String(row.name ?? row.target ?? header).toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+      type,
+      unit: typeof row.unit === 'string' ? row.unit : null,
+      example: String(row.example ?? ''),
+      personal: Boolean(row.personal ?? row.is_personal),
+      issue: typeof row.issue === 'string' ? row.issue : null,
+    }];
+  });
+}
+
+function readUpload(row: FileUploadWire): UploadAnalysis {
+  const ratio = row.error_ratio === null ? 0 : Number(row.error_ratio);
+  return {
+    id: row.id,
+    file_name: row.file_name,
+    sheet: row.sheet ?? '',
+    row_count: 0,
+    header_row: row.header_row ?? 0,
+    columns: uploadColumns(row.column_map),
+    issue_note: ratio > 0 ? `Tỷ lệ dòng cần kiểm tra: ${ratio * 100}%` : null,
+    target: {
+      table: row.target_dataset_id ?? 'Bảng mới',
+      is_new: row.target_dataset_id === null,
+      data_space_name: '',
+      on_reupload: 'replace',
+      expires: row.expires_at,
+    },
+  };
+}
+
+export const createUpload = async (file: File) => {
+  const form = new FormData();
+  form.append('file', file);
+  const row = await v1Upload<FileUploadWire>('/uploads', form, { fileName: file.name });
+  return 'columns' in row && 'target' in row ? (row as unknown as UploadAnalysis) : readUpload(row);
+};
 
 /** PROPOSAL: POST /v1/uploads/{id}:commit creates the table with the columns as edited. */
-export const commitUpload = async (id: string, columns: UploadColumn[]) =>
-  v1Send<{ table: string }>('POST', `/uploads/${pathId(id)}:commit`, { columns });
+export const commitUpload = async (id: string, columns: UploadColumn[]) => {
+  const row = await v1Send<{ table_name?: string; display_name?: string }>(
+    'POST',
+    `/uploads/${pathId(id)}:commit`,
+    { column_map: columns },
+  );
+  return { table: row.table_name ?? row.display_name ?? 'bảng mới' };
+};
 
 /* ─── Tài liệu: collections and documents (P05) ───────────────────────── */
 
@@ -747,24 +857,106 @@ export interface ErrorRecordGroup {
   target_table: string;
   /** PROPOSAL: who misses data if the batch is skipped, one sentence; null when nobody reads it. */
   impact_text: string | null;
+  /** IDs of the canonical ingest.dlq_record rows represented by this screen row. */
+  record_ids?: Uuid[];
 }
 
-export const listErrorGroups = () => v1Get<Page<ErrorRecordGroup>>('/error-record-groups', ALL);
+type DlqRecordWire = components['schemas']['DlqRecordView'];
+const UUID_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/*
+ * The V3 API exposes DLQ records per ingestion job. Keep the page-level shape local to the
+ * frontend until the product needs a cross-job aggregate endpoint; calling the canonical routes
+ * here avoids a second, divergent "error-record-groups" API contract.
+ */
+export const listErrorGroups = async (): Promise<Page<ErrorRecordGroup>> => {
+  const jobs = await v1Get<Page<IngestionJobWire>>('/jobs', ALL);
+  const records = (
+    await Promise.all(
+      jobs.items
+        .filter((job) => (job.dlq_pending ?? 0) > 0)
+        .map(async (job) => {
+          const dlq = await v1Get<Page<DlqRecordWire>>(`/jobs/${pathId(job.id)}/dlq`, ALL);
+          return dlq.items.map((record) => ({ job, record }));
+        }),
+    )
+  ).flat();
+
+  if (records.length === 0) {
+    // Keep the existing integrated mock usable while the real API has no DLQ rows yet.
+    try {
+      return await v1Get<Page<ErrorRecordGroup>>('/error-record-groups', ALL);
+    } catch (error) {
+      if (!(error instanceof V1Error) || error.status !== 404) throw error;
+    }
+  }
+  return {
+    next_page_token: '',
+    items: records.map(({ job, record }) => ({
+      id: record.id,
+      cause: record.error || record.error_kind,
+      job_id: record.job_id,
+      table_name: job.source_object,
+      count: 1,
+      suggestion: null,
+      blocked_by_drift_id: null,
+      sample: record.payload_ref,
+      retention_days: job.dlq_retention_days ?? 30,
+      batch_at: record.created_at,
+      target_table: job.source_object,
+      impact_text: null,
+      record_ids: [record.id],
+    })),
+  };
+};
 
 /** PROPOSAL: :reload loads the groups again in time order without duplicates (409 while blocked). */
-export const reloadErrorGroups = (ids: string[]) =>
-  v1Send<{ reloaded: number }>('POST', '/error-record-groups:reload', { ids });
+export const reloadErrorGroups = async (ids: string[]) => {
+  if (!ids.every((id) => UUID_ID.test(id))) {
+    return v1Send<{ reloaded: number }>('POST', '/error-record-groups:reload', { ids });
+  }
+  try {
+    await Promise.all(ids.map((id) => v1Send('POST', `/dlq/${pathId(id)}:replay`)));
+  } catch (error) {
+    if (!(error instanceof V1Error) || error.status !== 404) throw error;
+    return v1Send<{ reloaded: number }>('POST', '/error-record-groups:reload', { ids });
+  }
+  return { reloaded: ids.length };
+};
 
 /** PROPOSAL: :discard drops the groups; the reason goes to the audit log. */
-export const discardErrorGroups = (ids: string[], reason: string) =>
-  v1Send<{ discarded: number }>('POST', '/error-record-groups:discard', { ids, reason });
+export const discardErrorGroups = async (ids: string[], reason: string) => {
+  if (!ids.every((id) => UUID_ID.test(id))) {
+    return v1Send<{ discarded: number }>('POST', '/error-record-groups:discard', { ids, reason });
+  }
+  try {
+    await Promise.all(
+      ids.map((id) => v1Send('POST', `/dlq/${pathId(id)}:discard`, { reason })),
+    );
+  } catch (error) {
+    if (!(error instanceof V1Error) || error.status !== 404) throw error;
+    return v1Send<{ discarded: number }>('POST', '/error-record-groups:discard', { ids, reason });
+  }
+  return { discarded: ids.length };
+};
 
 /**
  * PROPOSAL: POST /v1/error-record-groups/{id}:skip — gives up on this batch: its records stay in
  * the DLQ for `retention_days` and never reach the target table ("Xác nhận · skipBatch" 2094:8435).
  */
 export async function skipErrorGroup(id: string) {
-  return v1Send<ErrorRecordGroup>('POST', `/error-record-groups/${pathId(id)}:skip`);
+  if (!UUID_ID.test(id)) {
+    return v1Send<ErrorRecordGroup>('POST', `/error-record-groups/${pathId(id)}:skip`);
+  }
+  try {
+    await v1Send('POST', `/dlq/${pathId(id)}:discard`, {
+      reason: 'Bỏ qua lô theo yêu cầu người dùng.',
+    });
+  } catch (error) {
+    if (!(error instanceof V1Error) || error.status !== 404) throw error;
+    return v1Send<ErrorRecordGroup>('POST', `/error-record-groups/${pathId(id)}:skip`);
+  }
+  return { id } as ErrorRecordGroup;
 }
 
 /* ─── Khám phá bảng (UC-04-02, UC-06-02) ──────────────────────────────── */
