@@ -22,6 +22,8 @@ interface MartDimension extends MartTable {
   suggested: boolean;
 }
 
+export type DataMartWire = components['schemas']['DataMartView'];
+
 /** One item the agent proposes adding to a mart ("Hộp thoại · suggestMart"). */
 interface MartSuggestionItem {
   key: string;
@@ -52,12 +54,99 @@ export interface DataMart {
   suggestion: { dimensions: MartSuggestionItem[]; measures: MartSuggestionItem[] } | null;
 }
 
-/** PROPOSAL: GET /v1/marts (A2 only creates marts). */
-export const listMarts = () => v1Get<Page<Pick<DataMart, 'id' | 'name'>>>('/marts');
+const textOf = (value: unknown, fallback: string): string =>
+  typeof value === 'string' && value.trim() ? value : fallback;
+
+const linesOf = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) =>
+      typeof item === 'string'
+        ? [item]
+        : typeof item === 'object' && item !== null
+          ? [textOf((item as Record<string, unknown>).name, '—')]
+          : [],
+    );
+  }
+  return [];
+};
+
+/** Adapt A3's DataMartView to the star-model presentation shape. */
+export function readDataMart(raw: DataMartWire, datasets: Map<string, string>): DataMart {
+  if (!raw.fact_dataset_id) return raw as unknown as DataMart;
+  const dimensions = Array.isArray(raw.dimensions) ? raw.dimensions : [];
+  const measures = Array.isArray(raw.measures) ? raw.measures : [];
+  const proposed = Array.isArray(raw.suggested_dimensions) ? raw.suggested_dimensions : [];
+  const tableOf = (value: unknown, fallback: string) =>
+    typeof value === 'object' && value !== null
+      ? (value as Record<string, unknown>)
+      : { name: fallback };
+  const fact = tableOf(null, datasets.get(raw.fact_dataset_id) ?? raw.fact_dataset_id);
+  const dimensionRows = [...dimensions, ...proposed].map((value, index) => {
+    const row = tableOf(value, `dimension_${index + 1}`);
+    const name = textOf(row.name ?? row.label, `dimension_${index + 1}`);
+    return {
+      name,
+      lines: linesOf(row.columns ?? row.fields),
+      suggested: index >= dimensions.length,
+    };
+  });
+  const productName = raw.name.replace(/\W+/g, '_').replace(/^_+|_+$/g, '').toLowerCase();
+  return {
+    id: raw.id,
+    name: raw.name,
+    summary_text: `${raw.grain} · ${measures.length} độ đo · ${dimensionRows.length} chiều`,
+    fact: { name: textOf(fact.name, raw.fact_dataset_id), lines: [raw.grain] },
+    dimensions: dimensionRows.filter((d) => !d.suggested),
+    product_draft: {
+      name: productName || 'data_product',
+      version: '1',
+      version_text: 'v1',
+      contract_text: `${measures.length} độ đo · ${dimensionRows.length} chiều`,
+      freshness_text: 'Cập nhật theo pipeline',
+      quality_text: raw.relation_check_passed ? 'Đã kiểm tra liên kết' : 'Chưa kiểm tra liên kết',
+      consumers_text: 'Chưa có người dùng',
+      breaking_note: null,
+    },
+    suggestion: proposed.length
+      ? {
+          dimensions: proposed.map((value, index) => {
+            const row = tableOf(value, `dimension_${index + 1}`);
+            return { key: textOf(row.name, `dimension_${index + 1}`), label: textOf(row.label, '') };
+          }),
+          measures: [],
+        }
+      : null,
+  };
+}
+
+const tablesFor = (datasets: Page<components['schemas']['services__api__modules__catalog__schemas__DatasetView']> | null) =>
+  new Map<string, string>(
+    datasets?.items.map((d) => [d.id, `${d.schema_name}.${d.table_name}`]) ?? [],
+  );
+
+/** GET /v1/marts, adapted from the API's DataMartView. */
+export const listMarts = async (): Promise<Page<Pick<DataMart, 'id' | 'name'>>> => {
+  const [page, datasets] = await Promise.all([
+    v1Get<Page<DataMartWire>>('/marts'),
+    v1Get<Page<components['schemas']['services__api__modules__catalog__schemas__DatasetView']>>(
+      '/datasets',
+      { page_size: 500 },
+    ).catch(() => null),
+  ]);
+  const tables = tablesFor(datasets);
+  return { ...page, items: page.items.map((m) => readDataMart(m, tables)) };
+};
 
 /** PROPOSAL: GET /v1/marts/{id}. */
 export async function getMart(id: string) {
-  return v1Get<DataMart>(`/marts/${pathId(id)}`);
+  const [mart, datasets] = await Promise.all([
+    v1Get<DataMartWire>(`/marts/${pathId(id)}`),
+    v1Get<Page<components['schemas']['services__api__modules__catalog__schemas__DatasetView']>>(
+      '/datasets',
+      { page_size: 500 },
+    ).catch(() => null),
+  ]);
+  return readDataMart(mart, tablesFor(datasets));
 }
 
 /** PROPOSAL: POST /v1/marts/{id}:apply-suggestion — add the ticked dimensions and measures. */

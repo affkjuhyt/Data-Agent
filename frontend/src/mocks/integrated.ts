@@ -87,9 +87,7 @@ const HELD_BACK: readonly string[] = [
   // whose mocks still hold the old shapes; each leaves this list with its screen.
   // Retry stays held back: the UI offers use_fallback, while A2's retry endpoint has no request body.
   'retryRun',
-  'getDataMart',
   'getWriteback',
-  'listDataMarts',
   'updateDataMart',
   'disablePolicy',
   'getPolicy',
