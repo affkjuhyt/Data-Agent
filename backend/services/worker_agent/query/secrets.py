@@ -11,6 +11,7 @@ A port, so tests and a cluster without OpenBao use another implementation.
 from __future__ import annotations
 
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -34,9 +35,19 @@ class SecretReader(Protocol):
     async def read(self, org_id: uuid.UUID, secret_ref: str) -> Credentials: ...
 
 
+_SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
+
+
 def _check_ref(org_id: uuid.UUID, secret_ref: str) -> str:
     parts = secret_ref.strip("/").split("/")
-    if len(parts) < 4 or parts[:2] != ["secret", "tenants"] or parts[2] != str(org_id):
+    # Every segment is a plain name: an empty, "." or ".." segment (or an encoded one) would let
+    # the HTTP client's path normalisation walk out of this organisation's subtree.
+    if (
+        len(parts) < 4
+        or parts[:2] != ["secret", "tenants"]
+        or parts[2] != str(org_id)
+        or not all(_SEGMENT.fullmatch(p) for p in parts)
+    ):
         raise SecretUnavailable("the source's secret_ref is not one of its organisation's paths")
     # KV v2: secret/<path> is read at /v1/secret/data/<path>.
     return "/".join(parts[1:])
