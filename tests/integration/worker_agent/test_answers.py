@@ -5,6 +5,7 @@ and, in a data product's scope, the sealed receipt."""
 
 from __future__ import annotations
 
+import decimal
 import json
 import uuid
 from dataclasses import dataclass
@@ -541,3 +542,65 @@ async def test_uc_01_07_a_receipt_replays_identical_then_differs_after_the_sourc
         with conn.cursor() as cur:
             cur.execute("DELETE FROM bank.loan WHERE branch_code = 'HN2' AND group_code = 3")
         conn.close()
+
+
+class FakeGateway:
+    """Stands in for LiteLLM: answers the planner's JSON from a fixed reading."""
+
+    def __init__(self, content: dict[str, Any]) -> None:
+        self.content = content
+        self.calls: list[str] = []
+
+    async def json_chat(self, role: str, system: str, user: str, *, max_tokens: int = 800) -> Any:
+        from services.worker_agent.llm import Reply
+
+        self.calls.append(role)
+        return Reply(self.content, model="planner", tokens=120, latency_ms=5)
+
+
+async def test_g5_1_the_model_reads_what_the_rules_could_not(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    fake = FakeGateway({"metric": "NPL_RATIO", "group_by": ["vung"], "filters": {}, "period": None})
+    monkeypatch.setattr(questions, "_gateway", fake)
+    monkeypatch.setattr(questions, "_gateway_read", True)
+    q = bank.ask("Khoản vay khó đòi chiếm bao nhiêu phần trăm ở mỗi miền, tháng 9/2026?")
+    await drain()
+    status, kind, _text, figures, scope, answer = answer_of(seed, q)
+    assert (status, kind, scope) == ("answered", "data", "in_scope") and fake.calls == ["planner"]
+    assert [f["dimensions"]["vung"] for f in figures] == ["Miền Bắc", "Miền Nam"]
+    # The plan says the reading is the model's, at the proceed threshold, and the receipt names it.
+    assert seed.one(
+        "SELECT confidence FROM qa.plan WHERE question_id = %s ORDER BY version DESC LIMIT 1", q
+    ) == pytest.approx(decimal.Decimal("0.8"))
+    assert (
+        seed.one("SELECT models->0->>'task' FROM qa.answer_receipt WHERE answer_id = %s", answer)
+        == "understand"
+    )
+
+
+async def test_g5_1_a_code_the_model_invents_is_never_compiled(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    monkeypatch.setattr(questions, "_gateway", FakeGateway({"metric": "LOI_NHUAN", "group_by": []}))
+    monkeypatch.setattr(questions, "_gateway_read", True)
+    q = bank.ask("Lợi nhuận ròng quý trước?")
+    await drain()
+    assert answer_of(seed, q)[:2] == ("refused", "refusal")
+    assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", q) == 0
+
+
+async def test_g5_1_an_ambiguous_model_reading_asks_which(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    monkeypatch.setattr(
+        questions, "_gateway", FakeGateway({"metric": None, "alternatives": ["DU_NO", "NPL_RATIO"]})
+    )
+    monkeypatch.setattr(questions, "_gateway_read", True)
+    q = bank.ask("Tình hình tín dụng ra sao?")
+    await drain()
+    assert answer_of(seed, q)[:2] == ("clarifying", "clarification")

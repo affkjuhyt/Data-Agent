@@ -25,7 +25,7 @@ import decimal
 import hashlib
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import func, select
@@ -36,12 +36,14 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, qa
 from services.worker_agent.answer.narrate import figures_of, text_of
 from services.worker_agent.events import Event, Handler
+from services.worker_agent.llm import Gateway, gateway_from_env
 from services.worker_agent.progress import publish
 from services.worker_agent.query.executor import run_query
 from services.worker_agent.query.guard import SqlRejected, dialect_of
 from services.worker_agent.query.secrets import SecretReader, StaticReader, reader_from_env
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import load
+from services.worker_agent.understand import llm_reader
 from services.worker_agent.understand.resolver import Understanding, from_chips, understand
 
 logger = logging.getLogger(__name__)
@@ -57,6 +59,8 @@ NOT_STANDARD = "chưa có định nghĩa chuẩn"
 OUT_OF_SCOPE = "Ngoài phạm vi data product, không có biên nhận"
 
 _secrets: SecretReader | None = None
+_gateway: Gateway | None = None
+_gateway_read = False
 
 
 def secrets() -> SecretReader:
@@ -65,6 +69,13 @@ def secrets() -> SecretReader:
         # Without OpenBao no source can be opened; the run then fails with that said, not a guess.
         _secrets = reader_from_env() or StaticReader({})
     return _secrets
+
+
+def gateway() -> Gateway | None:
+    global _gateway, _gateway_read
+    if not _gateway_read:
+        _gateway, _gateway_read = gateway_from_env(), True
+    return _gateway
 
 
 @dataclass
@@ -88,6 +99,8 @@ class Prepared:
     knowledge_mode: str
     knowledge_at: datetime.datetime | None
     started: datetime.datetime
+    # Model calls behind this answer, for the receipt (ADR-43: models[], frontier_used).
+    models: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _plan_ir(
@@ -291,6 +304,16 @@ async def _understand_and_plan(
             if edited is not None
             else understand(question.text, layer.vocabulary, today=today)
         )
+        models: list[dict[str, Any]] = []
+        model = gateway()
+        if edited is None and u.decision == "unknown" and model is not None:
+            # The rule pass placed no metric: the fast model reads it against this catalogue.
+            read = await llm_reader.read(question.text, layer.vocabulary, model, today=today)
+            if read is not None:
+                u, reply = read
+                models.append(
+                    {"task": "understand", "model_name": reply.model, "tokens": reply.tokens}
+                )
 
         compiled: c.Compiled | None = None
         problem: Refusal | None = None
@@ -385,6 +408,7 @@ async def _understand_and_plan(
                 knowledge_mode=question.knowledge_mode,
                 knowledge_at=question.knowledge_at,
                 started=datetime.datetime.now(datetime.UTC),
+                models=models,
             )
 
     if u.decision == "clarify":
@@ -606,7 +630,7 @@ async def _seal_receipt(
             knowledge_at=p.knowledge_at,
             compiler_version=p.compiled.compiler_version,
             runtime_version=RUNTIME_VERSION,
-            models=[],  # the fast path calls no model
+            models=p.models,  # empty when the answer took no model call
             frontier_used=False,
             freshness=freshness,
         )
