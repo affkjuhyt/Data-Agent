@@ -398,3 +398,25 @@ async def test_br_48_owner_confirms_only_the_scope_they_saw(seed: Seed) -> None:
             f"/v1/me/clients/{made['id']}:confirm", headers={"If-Match": f'"{made["updated_at"]}"'}
         )
     assert stale.status_code == 412 and stale.json()["code"] == "precondition_failed"
+
+
+async def test_a1_4_my_clients_sort_and_page_by_order_by(seed: Seed) -> None:
+    org, kc = build(seed), FakeKeycloak()
+    async with client(org, kc) as admin:
+        for name in ("Bravo", "Alpha", "Charlie"):
+            made = await admin.post("/v1/admin/clients", json=new_client(org, name=name))
+            assert made.status_code == 201, made.text
+        first = await admin.get("/v1/me/clients", params={"order_by": "name asc", "page_size": 2})
+        rest = await admin.get(
+            "/v1/me/clients",
+            params={"order_by": "name asc", "page_token": first.json()["next_page_token"]},
+        )
+        mixed = await admin.get(
+            "/v1/me/clients",
+            params={"order_by": "name desc", "page_token": first.json()["next_page_token"]},
+        )
+        unknown = await admin.get("/v1/me/clients", params={"order_by": "secret_ref asc"})
+    names = [c["name"] for c in first.json()["items"]] + [c["name"] for c in rest.json()["items"]]
+    assert names == ["Alpha", "Bravo", "Charlie"] and rest.json()["next_page_token"] == ""
+    assert mixed.status_code == 400  # a token issued for another order
+    assert unknown.status_code == 422

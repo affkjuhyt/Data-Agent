@@ -20,7 +20,7 @@ import uuid
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Path, Query, Response
-from sqlalchemy import Select, func, select, text, tuple_
+from sqlalchemy import Select, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -29,10 +29,14 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
     encode_page_token,
     invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import Problem
@@ -262,32 +266,21 @@ async def get_audit_export(
 async def list_security_events(
     principal: CurrentPrincipal,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[Order, Depends(order_by("occurred_at", default="occurred_at desc"))],
     kind: Annotated[str | None, Query(max_length=64)] = None,
     severity: Annotated[str | None, Query(pattern="^(low|medium|high|critical)$")] = None,
     status: Annotated[str | None, Query(pattern="^(open|investigating|closed)$")] = None,
 ) -> Page[SecurityEventView]:
     ev = audit.SecurityEvent
-    query = select(ev).order_by(ev.occurred_at.desc(), ev.id.desc()).limit(page.page_size + 1)
+    query = select(ev)
     for column, value in ((ev.kind, kind), (ev.severity, severity), (ev.status, status)):
         if value is not None:
             query = query.where(column == value)
-    if page.cursor:
-        try:
-            after = (
-                datetime.datetime.fromisoformat(str(page.cursor["at"])),
-                uuid.UUID(str(page.cursor["id"])),
-            )
-        except (KeyError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(tuple_(ev.occurred_at, ev.id) < after)
+    query = keyset(
+        query, columns={"occurred_at": ev.occurred_at}, tiebreak=ev.id, order=order, page=page
+    )
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(query)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    last = rows[-1] if more else None
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page[SecurityEventView](
-        items=[SecurityEventView.model_validate(r) for r in rows],
-        next_page_token=encode_page_token(
-            {"at": last.occurred_at.isoformat(), "id": str(last.id)} if last else None
-        ),
+        items=[SecurityEventView.model_validate(r) for r in rows], next_page_token=token
     )

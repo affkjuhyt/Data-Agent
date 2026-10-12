@@ -23,7 +23,7 @@ import uuid
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Path, Query, Response
-from sqlalchemy import func, select, tuple_, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -33,10 +33,12 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
-    encode_page_token,
-    invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import Problem
@@ -423,44 +425,28 @@ async def list_deliveries(
     subscription_id: PathId,
     principal: CurrentPrincipal,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[Order, Depends(order_by("created_at", default="created_at desc"))],
     status: Annotated[str | None, Query(pattern="^(pending|delivered|retrying|failed)$")] = None,
     from_: Annotated[datetime.datetime | None, Query(alias="from")] = None,
     to: datetime.datetime | None = None,
 ) -> Page[WebhookDeliveryView]:
     d = ig.WebhookDelivery
-    query = (
-        select(d)
-        .where(d.subscription_id == subscription_id)
-        .order_by(d.created_at.desc(), d.id.desc())
-        .limit(page.page_size + 1)
-    )
+    query = select(d).where(d.subscription_id == subscription_id)
     if status is not None:
         query = query.where(d.status == status)
     if from_ is not None:
         query = query.where(d.created_at >= from_)
     if to is not None:
         query = query.where(d.created_at < to)
-    if page.cursor:
-        try:
-            after = (
-                datetime.datetime.fromisoformat(str(page.cursor["at"])),
-                uuid.UUID(str(page.cursor["id"])),
-            )
-        except (KeyError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(tuple_(d.created_at, d.id) < after)
+    query = keyset(
+        query, columns={"created_at": d.created_at}, tiebreak=d.id, order=order, page=page
+    )
     async with transaction(ROLE, principal) as session:
         if await session.get(ig.WebhookSubscription, subscription_id) is None:
             raise Problem(404, "not_found", "No such webhook.")
-        rows = list((await session.scalars(query)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    last = rows[-1] if more else None
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page[WebhookDeliveryView](
-        items=[WebhookDeliveryView.model_validate(r) for r in rows],
-        next_page_token=encode_page_token(
-            {"at": last.created_at.isoformat(), "id": str(last.id)} if last else None
-        ),
+        items=[WebhookDeliveryView.model_validate(r) for r in rows], next_page_token=token
     )
 
 

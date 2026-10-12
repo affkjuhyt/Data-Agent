@@ -17,7 +17,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Path, Query, Response
-from sqlalchemy import select, tuple_
+from sqlalchemy import select
 
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import integration as ig
@@ -25,10 +25,12 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentPrincipal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
-    encode_page_token,
-    invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import Problem
@@ -63,38 +65,36 @@ def _matches(if_match: str | None, row: ig.ApiClient) -> bool:
 async def list_my_clients(
     principal: CurrentPrincipal,
     page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(
+            order_by("created_at", "updated_at", "expires_at", "name", default="created_at desc")
+        ),
+    ],
     status: Annotated[
         str | None, Query(pattern="^(pending_owner|active|paused|revoked|expired)$")
     ] = None,
 ) -> Page[ApiClientView]:
     c = ig.ApiClient
-    query = (
-        select(c)
-        .where(c.owner_user_id == principal.user_id)
-        .order_by(c.created_at.desc(), c.id.desc())
-        .limit(page.page_size + 1)
-    )
+    query = select(c).where(c.owner_user_id == principal.user_id)
     if status is not None:
         query = query.where(c.status == status)
-    if page.cursor:
-        try:
-            after = (
-                datetime.datetime.fromisoformat(str(page.cursor["at"])),
-                uuid.UUID(str(page.cursor["id"])),
-            )
-        except (KeyError, ValueError) as exc:
-            raise invalid_page_token() from exc
-        query = query.where(tuple_(c.created_at, c.id) < after)
+    query = keyset(
+        query,
+        columns={
+            "created_at": c.created_at,
+            "updated_at": c.updated_at,
+            "expires_at": c.expires_at,
+            "name": c.name,
+        },
+        tiebreak=c.id,
+        order=order,
+        page=page,
+    )
     async with transaction(ROLE, principal) as session:
-        rows = list((await session.scalars(query)).all())
-    more = len(rows) > page.page_size
-    rows = rows[: page.page_size]
-    last = rows[-1] if more else None
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
     return Page[ApiClientView](
-        items=[ApiClientView.model_validate(r) for r in rows],
-        next_page_token=encode_page_token(
-            {"at": last.created_at.isoformat(), "id": str(last.id)} if last else None
-        ),
+        items=[ApiClientView.model_validate(r) for r in rows], next_page_token=token
     )
 
 

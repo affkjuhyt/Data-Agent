@@ -117,6 +117,12 @@ hoặc không gửi If-Match thì không kiểm (A1 ghi "nên gửi"); route b�
 `/v1/me/clients/{id}:confirm`). Đây không phải khoá: hai người đọc cùng ETag vẫn có thể cùng qua trong vài mili
 giây; bảng cần chặt hơn giữ OCC của riêng nó.
 
+Sắp xếp `?order_by=<trường> asc|desc` (A1.4) dùng `order_by(...)` và `keyset(...)` của `kernel/pagination.py`: route
+nêu các trường được sắp (cột không NULL) và thứ tự mặc định, kernel lo ORDER BY, con trỏ (kèm id làm khoá phụ) và
+giới hạn trang; trường ngoài danh sách trả 422, page_token cấp cho thứ tự khác trả 400. Đã áp cho
+`GET /v1/me/clients`, `GET /v1/webhooks/{id}/deliveries`, `GET /v1/security-events`; các danh sách khác chuyển dần
+sang cùng helper.
+
 A2 có 382 endpoint, làm dần theo nhóm: một nhóm vào `COMPLETE_GROUPS` trong commit phục vụ endpoint cuối
 của nhóm, từ đó bỏ một endpoint là lỗi. Thêm hoặc bỏ endpoint phải sửa tab 4 A2 và `a2_endpoints.json`
 trong cùng PR. Xem độ phủ: `python -m services.api.catalogue.check` trong image `api`.
