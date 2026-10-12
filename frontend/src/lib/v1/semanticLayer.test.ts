@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { readContextEval, type EvalSetWire } from './semanticLayer';
+import {
+  readContextEval,
+  readEntityDetail,
+  readEntityModel,
+  type EntityDetailWire,
+  type EvalSetWire,
+  type EntityViewWire,
+} from './semanticLayer';
 
 describe('readContextEval', () => {
   it('adapts an API eval-set detail to the evaluation screen model', () => {
@@ -75,6 +82,57 @@ describe('readContextEval', () => {
       expected: '{"scope":"Miền Bắc"}',
       understood: '{"scope":"25 tỉnh"}',
       cause: 'Thuật ngữ mơ hồ',
+    });
+  });
+});
+
+describe('entity adapters', () => {
+  it('adapts entity list/detail API views for the model screen', () => {
+    const row = {
+      id: 'entity-1',
+      key: 'customer',
+      data_space_id: 'space-1',
+      name: 'Khách hàng',
+      description: 'Một khách hàng',
+      key_columns: ['customer_id'],
+      canonical_entity_id: null,
+      status: 'active',
+      primary_dataset: { id: 'dataset-1', name: 'crm.customers' },
+      relationships: [
+        {
+          id: 'rel-1',
+          from_dataset_id: 'dataset-1',
+          from_columns: ['customer_id'],
+          from_entity: 'customer',
+          to_dataset_id: 'dataset-2',
+          to_columns: ['customer_id'],
+          to_entity: 'loan',
+          cardinality: '1:n',
+          origin: 'manual',
+          status: 'confirmed',
+        },
+      ],
+      created_at: '2026-10-13T00:00:00Z',
+      updated_at: '2026-10-13T00:00:00Z',
+    } as EntityViewWire;
+
+    expect(readEntityModel({ items: [row], next_page_token: '' })).toMatchObject({
+      title: 'Mô hình thực thể',
+      focus: 'customer',
+      entities: [
+        { key: 'customer', name: 'Khách hàng', source_text: 'crm.customers', columns: ['customer_id'] },
+      ],
+      relationships: [{ from: 'customer', to: 'loan', cardinality: '1:n' }],
+    });
+
+    expect(
+      readEntityDetail({ ...row, dimensions: [], measures: [], metrics: [] } as EntityDetailWire),
+    ).toMatchObject({
+      key: 'customer',
+      facts: [{ label: 'Khóa chính', value: 'customer_id' }],
+      sources: [{ label: 'crm.customers', role: 'Bảng chính' }],
+      synonyms: [],
+      metrics: [],
     });
   });
 });

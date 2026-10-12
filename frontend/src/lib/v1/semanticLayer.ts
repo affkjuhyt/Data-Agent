@@ -42,10 +42,60 @@ export interface EntityModel {
   focus: string;
 }
 
-export const getEntityModel = async () => v1Get<EntityModel>('/entities');
+export type EntityViewWire = components['schemas']['EntityView'];
+export type EntityDetailWire = components['schemas']['EntityDetail'];
 
-/** PROPOSAL: GET /v1/entities/{key} */
-export const getEntity = async (key: string) => v1Get<EntityDetail>(`/entities/${pathId(key)}`);
+export function readEntityModel(raw: Page<EntityViewWire>): EntityModel {
+  if ('entities' in raw) return raw as unknown as EntityModel;
+  const entities = raw.items ?? [];
+  const relationships = new Map<string, { from: string; to: string; cardinality: string }>();
+  entities.forEach((entity) =>
+    (entity.relationships ?? []).forEach((relation) => {
+      const from = relation.from_entity ?? entity.key;
+      const to = relation.to_entity ?? relation.to_dataset_id;
+      const key = `${from}>${to}`;
+      if (!relationships.has(key)) relationships.set(key, { from, to, cardinality: relation.cardinality });
+    }),
+  );
+  return {
+    title: 'Mô hình thực thể',
+    entities: entities.map((entity, index) => ({
+      key: entity.key,
+      name: entity.name,
+      source_text: entity.primary_dataset?.name ?? 'Chưa gắn bảng',
+      columns: entity.key_columns,
+      x: entities.length ? (index % 3) * 35 + 5 : 5,
+      y: entities.length ? Math.floor(index / 3) * 28 + 8 : 8,
+    })),
+    relationships: [...relationships.values()],
+    focus: entities[0]?.key ?? '',
+  };
+}
+
+export function readEntityDetail(raw: EntityDetailWire): EntityDetail {
+  if ('facts' in raw) return raw as unknown as EntityDetail;
+  const source = raw.primary_dataset?.name ?? 'Chưa gắn bảng';
+  return {
+    key: raw.key,
+    name: raw.name,
+    description: raw.description ?? '',
+    facts: [{ label: 'Khóa chính', value: raw.key_columns.join(', ') || 'Chưa xác định' }],
+    sources: [{ label: source, role: 'Bảng chính', tone: 'success' }],
+    synonyms: [],
+    metrics: (raw.metrics ?? []).map((metric) => metric.display_name ?? metric.code),
+    more_metrics: 0,
+  };
+}
+
+export const getEntityModel = async () => {
+  const raw = await v1Get<Page<EntityViewWire>>('/entities');
+  return readEntityModel(raw);
+};
+
+export const getEntity = async (key: string) => {
+  const raw = await v1Get<EntityDetailWire>(`/entities/${pathId(key)}`);
+  return readEntityDetail(raw);
+};
 
 /** PROPOSAL: POST /v1/entities:suggest-relationships — the agent's candidates, not yet saved. */
 export interface RelationshipSuggestion {
