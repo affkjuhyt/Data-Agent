@@ -49,7 +49,7 @@ của chúng, không đánh lại). Chỉ liệt kê việc **mới** so với V
 
 | ID | Việc | Phụ thuộc | Vai | Cỡ | Xong khi | TT |
 | --- | --- | --- | --- | --- | --- | --- |
-| R1-01 | Connections: bảng `registry.connection` (engine, host, db, `secret_ref`, owner, classification, read-only role, giới hạn rows/bytes/timeout); UI "Connections" thay WarehouseCenter Snowflake-only; connection test | R0-6 | BE1, FE2 | M | Thêm Postgres/ClickHouse/Snowflake từ UI; không mật khẩu trong Postgres | todo |
+| R1-01 | Connections: `catalog.source` (engine, host, db, `secret_ref`, owner, classification, read-only role, giới hạn rows/bytes/timeout); UI "Connections" thay WarehouseCenter Snowflake-only; connection test | R0-6 | BE1, FE2 | M | Thêm Postgres/ClickHouse/Snowflake từ UI; không mật khẩu trong Postgres | done 08f7d740 |
 | R1-02 | Executor MySQL, SQL Server (đọc-chỉ; thêm SQLGlot làm dependency để parse/kiểm theo dialect — hiện sandbox dùng `sql_scan` + sqlparse, compiler semantic chỉ có postgres/clickhouse); BigQuery/Databricks/Oracle/Trino theo khách (cắt nếu không có khách) | R1-01 | SR2 | M | Test readonly + guard cho mỗi engine | todo |
 | R1-03 | Schema crawler thu PK/FK, cardinality, null rate, giá trị mẫu; join hint từ khoá thật trước, LLM sau và gắn `proposed` | R0-6 | DE | M | Catalog có FK; join LLM không được dùng khi chưa duyệt | todo |
 | R1-04 | Catalog thống nhất `catalog.asset` (table, column, document, series, api) + `asset_id` dùng chung; màn Catalog trong Data Studio | R1-03, V2 S1-03 | BE1, FE2 | L | Một màn thấy bảng, tài liệu, series; link tới nguồn | todo |
