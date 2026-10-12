@@ -112,11 +112,11 @@ function Notebook({ ws: loaded, onChanged }: { ws: WorkspaceDetail; onChanged: (
     setBusy('report');
     setError(undefined);
     try {
-      // An unpublished report of this session is reviewed, not drafted again.
-      const existing = (await listSessionReports(ws.id)).items.find(
-        (r) => r.status !== 'published',
-      );
-      const report = existing ?? (await createSessionReport(ws.id));
+      // An unpublished report of this session is reviewed, not drafted again. A2 has no list of
+      // a session's reports (PROPOSAL), so when it cannot be read a new one is drafted.
+      const drafts = await listSessionReports(ws.id).catch(() => null);
+      const existing = drafts?.items.find((r) => r.status !== 'published');
+      const report = existing ?? (await createSessionReport(ws.id, ws.title));
       navigate('analysis', 'REPORT', report.id);
     } catch (e) {
       setError(`Không tạo được báo cáo: ${(e as Error).message}`);
@@ -157,26 +157,19 @@ function Notebook({ ws: loaded, onChanged }: { ws: WorkspaceDetail; onChanged: (
         }
       />
 
-      {ws.refresh && stale.length > 0 && (
+      {stale.length > 0 && (
         <div className="flex items-center gap-[10px] border-b border-border bg-background px-da-3xl py-da-md">
           <StatusDot tone="warning" />
           <p className="min-w-0 flex-1 text-foreground da-body-small">
-            Dữ liệu {ws.refresh.source_name} cập nhật lúc {hhmm(ws.refresh.refreshed_at)}. Ô{' '}
-            {tileList(stale)} dùng số cũ và cần chạy lại.
+            {ws.refresh &&
+              `Dữ liệu ${ws.refresh.source_name} cập nhật lúc ${hhmm(ws.refresh.refreshed_at)}. `}
+            Ô {tileList(stale)} dùng số cũ và cần chạy lại.
           </p>
           <button
             type="button"
             disabled={busy === 'refresh'}
             onClick={() =>
-              run(
-                'refresh',
-                () =>
-                  refreshWorkspace(
-                    ws.id,
-                    stale.map((t) => t.id),
-                  ),
-                `Đã chạy lại ${stale.length} ô`,
-              )
+              run('refresh', () => refreshWorkspace(ws.id), `Đang chạy lại ${stale.length} ô`)
             }
             className="shrink-0 text-primary da-body-strong hover:underline disabled:text-muted-foreground"
           >
@@ -270,7 +263,7 @@ function TileRow({
 
   return (
     <article
-      aria-label={`Ô ${tile.seq} · ${tile.title}`}
+      aria-label={`Ô ${tile.seq} · ${tile.title || KIND_LABEL[tile.kind]}`}
       className="flex w-full items-start gap-da-lg"
     >
       <span className="w-[28px] shrink-0 text-muted-foreground da-mono">[{tile.seq}]</span>
@@ -294,10 +287,12 @@ function TileRow({
             aria-pressed={selected}
             className="min-w-0 flex-1 truncate text-left text-foreground da-body-strong hover:underline"
           >
-            {tile.title}
+            {tile.title || KIND_LABEL[tile.kind]}
           </button>
           {tile.state === 'stale' && <StatusDot tone="warning">Cần chạy lại</StatusDot>}
-          <span className="shrink-0 text-muted-foreground da-caption">{tile.author.name}</span>
+          {tile.author.name && (
+            <span className="shrink-0 text-muted-foreground da-caption">{tile.author.name}</span>
+          )}
         </div>
         <p
           className={cn(
@@ -350,7 +345,7 @@ function CommentPanel({
     setSending(true);
     setError(undefined);
     try {
-      await addTileComment(workspaceId, tile.id, draft);
+      await addTileComment(tile.id, draft);
       setDraft('');
       thread.reload();
       onCommented();
@@ -367,7 +362,7 @@ function CommentPanel({
       className="flex w-[340px] shrink-0 flex-col gap-da-lg border-l border-border bg-background px-[20px] py-da-xl"
     >
       <h2 className="text-foreground da-heading-3">
-        Ô {tile.seq} · {tile.title}
+        Ô {tile.seq} · {tile.title || KIND_LABEL[tile.kind]}
       </h2>
       <AsyncRegion
         state={thread}

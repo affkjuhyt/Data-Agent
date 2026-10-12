@@ -10,7 +10,12 @@ import spec from '../lib/v1/openapi.json';
  * Identity is always real once any group is: the Data Space id in X-Data-Space comes from
  * GET /v1/data-spaces, and a fixture id there would make every real call answer 404.
  */
-const INTEGRATED_GROUPS: readonly string[] = ['Hỏi đáp', 'Truy vấn', 'Cần bạn và đánh giá'];
+const INTEGRATED_GROUPS: readonly string[] = [
+  'Hỏi đáp',
+  'Truy vấn',
+  'Cần bạn và đánh giá',
+  'Phiên làm việc',
+];
 
 const IDENTITY_OPERATIONS: readonly string[] = ['getMe', 'listMyDataSpaces'];
 

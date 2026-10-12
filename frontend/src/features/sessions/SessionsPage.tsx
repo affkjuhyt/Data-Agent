@@ -75,8 +75,12 @@ function SessionList() {
                       {[
                         FROM_LABEL[ws.created_from],
                         `${ws.tile_count} ô`,
-                        ws.participants.people > 1 ? `${ws.participants.people} người` : null,
-                        ws.participants.agents > 0 ? `${ws.participants.agents} agent` : null,
+                        (ws.participants?.people ?? 0) > 1
+                          ? `${ws.participants?.people} người`
+                          : null,
+                        (ws.participants?.agents ?? 0) > 0
+                          ? `${ws.participants?.agents} agent`
+                          : null,
                       ]
                         .filter(Boolean)
                         .join(' · ')}

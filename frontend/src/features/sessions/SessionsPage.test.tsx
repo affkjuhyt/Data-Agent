@@ -108,6 +108,60 @@ describe('SessionsPage', () => {
     );
   });
 
+  it('draws a workspace as the api sends it, without the PROPOSAL fields', async () => {
+    const at = new Date().toISOString();
+    const tile = (id: string, position: number, extra: object) => ({
+      id,
+      workspace_id: 'ws-api',
+      position,
+      kind: 'sql',
+      title: null,
+      spec: {},
+      depends_on: [],
+      author_kind: 'user',
+      agent_suggestion_state: null,
+      latest_snapshot_id: null,
+      stale: false,
+      created_at: at,
+      updated_at: at,
+      ...extra,
+    });
+    server.use(
+      http.get('*/v1/workspaces/:id', () =>
+        HttpResponse.json({
+          id: 'ws-api',
+          data_space_id: 'ds',
+          owner_id: 'u',
+          title: 'Phiên từ api',
+          description: null,
+          params: { kỳ: 'T10/2026' },
+          template_of_skill_id: null,
+          created_from: 'blank',
+          created_from_ref: null,
+          tile_count: 3,
+          last_refreshed_at: null,
+          status: 'active',
+          created_at: at,
+          updated_at: at,
+          participants: [],
+          permission: 'owner',
+          tiles: [
+            tile('t-2', 2, { spec: { sql: 'select 2' }, stale: true }),
+            tile('t-1', 1, { title: 'Mở đầu', kind: 'text', spec: { md: '# Mở đầu' } }),
+            tile('t-3', 3, { author_kind: 'agent', agent_suggestion_state: 'dismissed' }),
+          ],
+        }),
+      ),
+    );
+    routeId = 'ws-api';
+    renderWithToast(<SessionsPage />);
+    const tiles = await screen.findAllByRole('article');
+    expect(tiles.map((t) => t.getAttribute('aria-label'))).toEqual(['Ô 1 · Mở đầu', 'Ô 2 · SQL']);
+    expect(screen.getByText('select 2')).toBeInTheDocument();
+    expect(screen.getByText(/tham số phiên: kỳ = T10\/2026/)).toBeInTheDocument();
+    expect(screen.getByText('Ô 2 dùng số cũ và cần chạy lại.')).toBeInTheDocument();
+  });
+
   it('keeps the page usable when the session fails to load', async () => {
     routeId = 'ws-missing';
     renderWithToast(<SessionsPage />);
@@ -133,7 +187,7 @@ describe('ReportReviewPage', () => {
 
   it('publishes once every check passes', async () => {
     routeId = 'report-risk-sept';
-    // A copy whose checks all pass; publishing answers with it published.
+    // A copy whose checks all pass.
     const passing = {
       id: 'report-risk-sept',
       workspace_id: 'ws-npl-sept',
@@ -152,11 +206,14 @@ describe('ReportReviewPage', () => {
       recipients_text: 'GRP-RISK-ANALYST',
     };
     const published: string[] = [];
+    // :publish answers with the bare report row; the page reads the review again.
     server.use(
-      http.get('*/v1/session-reports/:id', () => HttpResponse.json(passing)),
+      http.get('*/v1/session-reports/:id', () =>
+        HttpResponse.json(published.length ? { ...passing, status: 'published' } : passing),
+      ),
       http.post('*/v1/session-reports/:action', ({ params }) => {
         published.push(String(params.action));
-        return HttpResponse.json({ ...passing, status: 'published' });
+        return HttpResponse.json({ id: passing.id, status: 'published' });
       }),
     );
     renderWithToast(<ReportReviewPage />);

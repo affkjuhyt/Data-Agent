@@ -9,6 +9,7 @@ describe('integrated groups', () => {
     expect(isIntegrated('GET', at('/v1/inbox?page_size=500'), operations)).toBe(true);
     expect(isIntegrated('POST', at('/v1/hitl-requests/0192-ab:resolve'), operations)).toBe(true);
     expect(isIntegrated('POST', at('/v1/questions'), operations)).toBe(true);
+    expect(isIntegrated('PATCH', at('/v1/tiles/t-1'), operations)).toBe(true);
   });
 
   it('always lets identity through, so X-Data-Space holds a real id', () => {
@@ -20,6 +21,8 @@ describe('integrated groups', () => {
   it('keeps the other groups and the PROPOSAL endpoints on the mock', () => {
     expect(isIntegrated('GET', at('/v1/periods/p-1'), operations)).toBe(false);
     expect(isIntegrated('GET', at('/v1/proposals/p-1/collaboration'), operations)).toBe(false);
+    // Phiên is wired, but A2 has no read for a session report: that one stays mocked.
+    expect(isIntegrated('GET', at('/v1/session-reports/r-1'), operations)).toBe(false);
     // A verb the api does not serve is not taken for the plain path.
     expect(isIntegrated('POST', at('/v1/hitl-requests/h-1:snooze'), operations)).toBe(false);
     expect(isIntegrated('DELETE', at('/v1/inbox'), operations)).toBe(false);

@@ -21,7 +21,9 @@ import type {
   RunStatus,
   Source,
   Workspace,
+  WorkspaceWire,
 } from './types';
+import { readWorkspace } from './types';
 
 /*
  * The endpoints the v3.1 screens call, with the paths and parameters of "Đặc tả API" A2/A3.
@@ -171,8 +173,10 @@ export const retryRun = async (id: string, useFallback = false) =>
   v1Send<AgentRun>('POST', `/runs/${pathId(id)}:retry`, { use_fallback: useFallback });
 
 /* Phiên làm việc */
-export const listWorkspaces = () =>
-  v1Get<Page<Workspace>>('/workspaces', { ...ALL, status: 'active' });
+export const listWorkspaces = async (): Promise<Page<Workspace>> => {
+  const page = await v1Get<Page<WorkspaceWire>>('/workspaces', { ...ALL, status: 'active' });
+  return { ...page, items: page.items.map(readWorkspace) };
+};
 
 /* Nguồn, danh mục, lớp ngữ cảnh */
 export const listSources = () => v1Get<Page<Source>>('/sources', ALL);

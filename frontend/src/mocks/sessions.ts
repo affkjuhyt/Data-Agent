@@ -1,17 +1,19 @@
 import { http, HttpResponse } from 'msw';
+import type { components } from '../lib/v1/schema';
 import type {
+  Author,
   Principal,
   SessionReport,
   TileComment,
   TileTask,
-  WorkspaceDetail,
+  WorkspaceDetailWire,
   WorkspaceMember,
-  WorkspaceTile,
 } from '../lib/v1/sessions';
 import { workspacesFixture } from './fixtures';
 
 /*
- * MSW handlers for the Phiên làm việc endpoints (lib/v1/sessions.ts, all PROPOSAL). Data is
+ * MSW handlers for the Phiên làm việc endpoints (lib/v1/sessions.ts): the served ones answer with
+ * the api's shapes, the PROPOSAL reads with the screen's. Data is
  * taken from "P02 · Phiên · Notebook / Chia sẻ / Duyệt & phát hành báo cáo"; state lives in
  * memory: re-running clears the stale mark, accepting a proposed tile makes it a normal tile,
  * comments append, a drafted report can be published once its checks pass.
@@ -38,93 +40,137 @@ const YEN = { kind: 'person' as const, name: 'Đỗ Hải Yến' };
 const LONG = { kind: 'person' as const, name: 'Phạm Đức Long' };
 const ANALYST = { kind: 'agent' as const, name: 'Agent Phân tích' };
 
+type TileWire = WorkspaceDetailWire['tiles'][number];
+
 const tile = (
-  t: Omit<WorkspaceTile, 'comment_count' | 'task_count'> & Partial<WorkspaceTile>,
-): WorkspaceTile => ({
-  comment_count: 0,
-  task_count: 0,
-  ...t,
+  workspaceId: string,
+  t: Pick<TileWire, 'id' | 'position' | 'kind' | 'title' | 'spec'> & {
+    author: Author;
+    stale?: boolean;
+    suggested?: boolean;
+    comment_count?: number;
+    task_count?: number;
+  },
+): TileWire => ({
+  id: t.id,
+  workspace_id: workspaceId,
+  position: t.position,
+  kind: t.kind,
+  title: t.title,
+  spec: t.spec,
+  depends_on: [],
+  author_kind: t.author.kind === 'agent' ? 'agent' : 'user',
+  author_name: t.author.name,
+  agent_suggestion_state: t.suggested ? 'suggested' : null,
+  latest_snapshot_id: null,
+  stale: t.stale ?? false,
+  comment_count: t.comment_count ?? 0,
+  task_count: t.task_count ?? 0,
+  created_at: minutesFromNow(-120),
+  updated_at: minutesFromNow(-30),
 });
 
-function sessionDetailsFixture(): WorkspaceDetail[] {
+const participant = (workspaceId: string, id: string, type: 'user' | 'agent') => ({
+  id: `p-${workspaceId}-${id}`,
+  workspace_id: workspaceId,
+  principal_type: type,
+  principal_id: id,
+  role: type === 'agent' ? 'agent_helper' : 'editor',
+  joined_at: minutesFromNow(-120),
+});
+
+function sessionDetailsFixture(): WorkspaceDetailWire[] {
   const [npl, reconcile, cashflow] = workspacesFixture();
+  const detail = (
+    ws: typeof npl,
+    rest: Pick<WorkspaceDetailWire, 'params' | 'working' | 'refresh' | 'tiles'>,
+  ): WorkspaceDetailWire => {
+    const { participants: _counts, agent_state: _state, ...row } = ws;
+    return {
+      ...row,
+      ...rest,
+      permission: 'owner',
+      participants: (rest.working ?? []).map((a, i) =>
+        participant(ws.id, `${a.kind}-${i}`, a.kind === 'agent' ? 'agent' : 'user'),
+      ),
+    };
+  };
   return [
-    {
-      ...npl,
-      params: [
-        { name: 'kỳ', value: 'T9/2026' },
-        { name: 'phạm vi', value: 'Bán lẻ' },
-      ],
+    detail(npl, {
+      params: { kỳ: 'T9/2026', 'phạm vi': 'Bán lẻ' },
       working: [YEN, LONG, ANALYST],
       refresh: { source_name: 'Core banking', refreshed_at: minutesFromNow(-12) },
       tiles: [
-        tile({
+        tile(npl.id, {
           id: 'tile-question',
-          seq: 1,
-          kind: 'text',
+          position: 1,
+          kind: 'question',
           title: 'Câu hỏi',
-          body: 'Vì sao nợ xấu bán lẻ T9 tăng 0,22 điểm, vùng nào và sản phẩm nào đóng góp?',
+          spec: {
+            question: 'Vì sao nợ xấu bán lẻ T9 tăng 0,22 điểm, vùng nào và sản phẩm nào đóng góp?',
+          },
           author: YEN,
-          state: 'ok',
         }),
-        tile({
+        tile(npl.id, {
           id: 'tile-npl-region',
-          seq: 2,
+          position: 2,
           kind: 'sql',
           title: 'Nợ xấu theo vùng',
-          body: 'SELECT region, npl_ratio FROM metric(NPL_RATIO@4) WHERE period IN (:ky_truoc, :ky_nay) …',
+          spec: {
+            sql: 'SELECT region, npl_ratio FROM metric(NPL_RATIO@4) WHERE period IN (:ky_truoc, :ky_nay) …',
+          },
           author: ANALYST,
-          state: 'stale',
+          stale: true,
           comment_count: 2,
           task_count: 1,
         }),
-        tile({
+        tile(npl.id, {
           id: 'tile-chart',
-          seq: 3,
+          position: 3,
           kind: 'chart',
           title: 'DH Bắc Bộ tăng mạnh nhất',
-          body: 'Cột theo vùng, T8 và T9 · DH Bắc Bộ +0,61 điểm',
+          spec: { summary: 'Cột theo vùng, T8 và T9 · DH Bắc Bộ +0,61 điểm' },
           author: ANALYST,
-          state: 'ok',
         }),
-        tile({
+        tile(npl.id, {
           id: 'tile-decompose',
-          seq: 4,
-          kind: 'skill',
+          position: 4,
+          kind: 'skill_run',
           title: 'Phân rã biến động v4',
-          body: 'Tiêu dùng không TSBĐ đóng góp 55% mức tăng',
+          spec: { summary: 'Tiêu dùng không TSBĐ đóng góp 55% mức tăng' },
           author: ANALYST,
-          state: 'stale',
+          stale: true,
         }),
-        tile({
+        tile(npl.id, {
           id: 'tile-restructured',
-          seq: 5,
+          position: 5,
           kind: 'sql',
           title: 'Kiểm tra khoản cơ cấu trong kỳ',
-          body: '19 khoản tái cơ cấu chuyển nhóm 2 → 3 trong tuần cuối T9 có thể giải thích 0,12 điểm. Thêm ô này?',
+          spec: {
+            summary:
+              '19 khoản tái cơ cấu chuyển nhóm 2 → 3 trong tuần cuối T9 có thể giải thích 0,12 điểm. Thêm ô này?',
+          },
           author: ANALYST,
-          state: 'proposed',
+          suggested: true,
         }),
       ],
-    },
-    {
-      ...reconcile,
-      params: [{ name: 'kỳ', value: 'T9/2026' }],
+    }),
+    detail(reconcile, {
+      params: { kỳ: 'T9/2026' },
       working: [YEN, { kind: 'agent', name: 'Agent Đối soát' }],
       refresh: null,
       tiles: [
-        tile({
+        tile(reconcile.id, {
           id: 'tile-reconcile-question',
-          seq: 1,
-          kind: 'text',
+          position: 1,
+          kind: 'question',
           title: 'Câu hỏi',
-          body: 'Dư nợ T9 trên Core banking có khớp báo cáo đã nộp NHNN không?',
+          spec: { question: 'Dư nợ T9 trên Core banking có khớp báo cáo đã nộp NHNN không?' },
           author: YEN,
-          state: 'ok',
         }),
       ],
-    },
-    { ...cashflow, params: [], working: [YEN], refresh: null, tiles: [] },
+    }),
+    detail(cashflow, { params: {}, working: [YEN], refresh: null, tiles: [] }),
   ];
 }
 
@@ -266,13 +312,13 @@ const sharePreview = (members: WorkspaceMember[]) => {
     )} sẽ thấy ô 2–4 với số của 3 chi nhánh Hà Nội; câu kết luận về DH Bắc Bộ được ẩn và ghi “ngoài phạm vi của bạn”.`;
 };
 
-function draftReport(workspace: WorkspaceDetail, id = `report-${workspace.id}`): SessionReport {
+function draftReport(workspace: WorkspaceDetailWire, id = `report-${workspace.id}`): SessionReport {
   return {
     id,
     workspace_id: workspace.id,
     status: 'pending_review',
     drafted_by: 'Agent Báo cáo',
-    tile_count: workspace.tiles.filter((t) => t.state !== 'proposed').length,
+    tile_count: workspace.tiles.filter((t) => t.agent_suggestion_state !== 'suggested').length,
     drafted_at: new Date().toISOString(),
     reviewer_name: 'Phạm Đức Long',
     document: {
@@ -321,10 +367,26 @@ export function createSessionHandlers() {
   let reports: SessionReport[] = [draftReport(workspaces[0], 'report-risk-sept')];
 
   const find = (id: unknown) => workspaces.find((w) => w.id === id);
-  const save = (next: WorkspaceDetail) => {
+  const save = (next: WorkspaceDetailWire) => {
     workspaces = workspaces.map((w) => (w.id === next.id ? next : w));
-    return HttpResponse.json(next);
   };
+  const accepted = (id: string) =>
+    HttpResponse.json({ id, status: 'queued', poll_after_ms: 1000 }, { status: 202 });
+  /** The api's report row (ReportView) for a drafted review. */
+  const reportRow = (r: SessionReport): components['schemas']['ReportView'] => ({
+    id: r.id,
+    workspace_id: r.workspace_id,
+    version: 1,
+    title: r.document.heading,
+    body_ref: `s3://reports/${r.id}.md`,
+    checks: r.checks,
+    status: r.status,
+    approved_by: null,
+    published_at: r.status === 'published' ? new Date().toISOString() : null,
+    hitl_request_id: null,
+    created_at: r.drafted_at,
+    updated_at: new Date().toISOString(),
+  });
   const resolveMembers = (input: { principal_id: string; role: WorkspaceMember['role'] }[]) => {
     const known = [
       ...members,
@@ -354,39 +416,32 @@ export function createSessionHandlers() {
       return ws ? HttpResponse.json(ws) : notFound();
     }),
 
-    http.post('*/v1/workspaces/:action', async ({ params, request }) => {
+    http.post('*/v1/workspaces/:action', ({ params }) => {
       // MSW reads ":refresh" as part of the id segment: "<id>:refresh".
       const [id, verb] = String(params.action).split(':');
       if (verb !== 'refresh') return problem(404, 'not_found', 'Không có thao tác này.');
       const ws = find(id);
       if (!ws) return notFound();
-      const { tile_ids } = (await request.json()) as { tile_ids: string[] };
-      return save({
+      // The api re-runs in the background; the mock is done before the workspace is read again.
+      save({
         ...ws,
         refresh: null,
         last_refreshed_at: new Date().toISOString(),
-        tiles: ws.tiles.map((t) =>
-          tile_ids.includes(t.id) && t.state === 'stale' ? { ...t, state: 'ok' } : t,
-        ),
+        tiles: ws.tiles.map((t) => ({ ...t, stale: false })),
       });
+      return accepted(`refresh-${id}`);
     }),
 
-    http.post('*/v1/workspaces/:id/tiles/:action', ({ params }) => {
-      const ws = find(params.id);
-      if (!ws) return notFound();
-      const [tileId, verb] = String(params.action).split(':');
-      const target = ws.tiles.find((t) => t.id === tileId);
-      if (!target) return problem(404, 'not_found', 'Không tìm thấy ô.');
-      if (target.state !== 'proposed')
+    http.patch('*/v1/tiles/:id', async ({ params, request }) => {
+      const ws = workspaces.find((w) => w.tiles.some((t) => t.id === params.id));
+      const target = ws?.tiles.find((t) => t.id === params.id);
+      if (!ws || !target) return problem(404, 'not_found', 'Không tìm thấy ô.');
+      const body = (await request.json()) as components['schemas']['TilePatch'];
+      if (body.agent_suggestion_state && target.agent_suggestion_state !== 'suggested')
         return problem(409, 'invalid_state', 'Ô này không còn là đề xuất.');
-      if (verb === 'accept')
-        return save({
-          ...ws,
-          tiles: ws.tiles.map((t) => (t.id === tileId ? { ...t, state: 'ok' } : t)),
-        });
-      if (verb === 'dismiss')
-        return save({ ...ws, tiles: ws.tiles.filter((t) => t.id !== tileId) });
-      return problem(404, 'not_found', 'Không có thao tác này.');
+      const next = { ...target, ...body } as TileWire;
+      save({ ...ws, tiles: ws.tiles.map((t) => (t.id === target.id ? next : t)) });
+      return HttpResponse.json(next);
     }),
 
     http.get('*/v1/workspaces/:id/tiles/:tileId/comments', ({ params }) => {
@@ -397,9 +452,9 @@ export function createSessionHandlers() {
       });
     }),
 
-    http.post('*/v1/workspaces/:id/tiles/:tileId/comments', async ({ params, request }) => {
-      const ws = find(params.id);
-      if (!ws) return notFound();
+    http.post('*/v1/tiles/:tileId/comments', async ({ params, request }) => {
+      const ws = workspaces.find((w) => w.tiles.some((t) => t.id === params.tileId));
+      if (!ws) return problem(404, 'not_found', 'Không tìm thấy ô.');
       const { body } = (await request.json()) as { body: string };
       if (!body?.trim()) return problem(422, 'validation_failed', 'Bình luận trống.');
       const created: TileComment = {
@@ -410,17 +465,29 @@ export function createSessionHandlers() {
         created_at: new Date().toISOString(),
       };
       comments = [...comments, created];
-      workspaces = workspaces.map((w) =>
-        w.id === ws.id
-          ? {
-              ...w,
-              tiles: w.tiles.map((t) =>
-                t.id === params.tileId ? { ...t, comment_count: t.comment_count + 1 } : t,
-              ),
-            }
-          : w,
-      );
-      return HttpResponse.json(created, { status: 201 });
+      save({
+        ...ws,
+        tiles: ws.tiles.map((t) =>
+          t.id === params.tileId ? { ...t, comment_count: (t.comment_count ?? 0) + 1 } : t,
+        ),
+      });
+      const view: components['schemas']['CommentView'] = {
+        id: created.id,
+        workspace_id: ws.id,
+        tile_id: created.tile_id,
+        parent_id: null,
+        author_id: 'u-yen',
+        body: created.body,
+        mentions: [],
+        assignee_id: null,
+        due_at: null,
+        status: 'open',
+        resolved_at: null,
+        agent_run_id: null,
+        created_at: created.created_at,
+        updated_at: created.created_at,
+      };
+      return HttpResponse.json(view, { status: 201 });
     }),
 
     http.get('*/v1/workspaces/:id/sharing', ({ params }) => {
@@ -433,20 +500,34 @@ export function createSessionHandlers() {
       });
     }),
 
-    http.put('*/v1/workspaces/:id/sharing', async ({ params, request }) => {
+    http.put('*/v1/workspaces/:id/shares', async ({ params, request }) => {
       const ws = find(params.id);
       if (!ws) return notFound();
-      const body = (await request.json()) as {
-        members: { principal_id: string; role: WorkspaceMember['role'] }[];
-      };
-      if (!body.members.some((m) => m.role === 'owner'))
-        return problem(422, 'validation_failed', 'Phiên cần một người sở hữu.');
-      members = resolveMembers(body.members);
-      return HttpResponse.json({
-        members,
-        preview: sharePreview(members),
-        link: `/analysis/sessions/${ws.id}`,
-      });
+      const { shares } = (await request.json()) as components['schemas']['SharesPut'];
+      // The owner is the workspace's and stays; the shares replace everyone else (A1.3).
+      const owners = members.filter((m) => m.role === 'owner');
+      members = [
+        ...owners,
+        ...resolveMembers(
+          shares.map((g) => ({
+            principal_id: g.principal_id,
+            role: g.permission === 'edit' ? ('editor' as const) : ('viewer' as const),
+          })),
+        ),
+      ];
+      return page(
+        shares.map((g, i) => ({
+          id: `share-${i}`,
+          workspace_id: ws.id,
+          principal_type: g.principal_type,
+          principal_id: g.principal_id,
+          permission: g.permission,
+          granted_by: 'u-yen',
+          expires_at: g.expires_at ?? null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      );
     }),
 
     http.post('*/v1/workspaces/:id/:action', async ({ params, request }) => {
@@ -468,12 +549,12 @@ export function createSessionHandlers() {
       find(params.id) ? page(reports.filter((r) => r.workspace_id === params.id)) : notFound(),
     ),
 
-    http.post('*/v1/workspaces/:id/session-reports', ({ params }) => {
+    http.post('*/v1/workspaces/:id/reports', ({ params }) => {
       const ws = find(params.id);
       if (!ws) return notFound();
       const report = draftReport(ws);
       reports = [...reports.filter((r) => r.id !== report.id), report];
-      return HttpResponse.json(report, { status: 201 });
+      return HttpResponse.json(reportRow(report), { status: 201 });
     }),
 
     http.get('*/v1/session-reports/:id', ({ params }) => {
@@ -491,12 +572,14 @@ export function createSessionHandlers() {
         return problem(409, 'invalid_state', 'Báo cáo không ở trạng thái chờ duyệt.');
       let next: SessionReport;
       if (verb === 'check') {
-        // The mock's checks do not change on their own; a re-check answers with the same result.
-        next = { ...report };
+        // The mock's checks do not change on their own; a re-check finds the same result.
+        return accepted(`check-${id}`);
       } else if (verb === 'publish') {
         if (report.checks.some((c) => !c.ok))
           return problem(409, 'checks_failed', 'Còn kiểm tra chưa đạt, chưa phát hành được.');
         next = { ...report, status: 'published' };
+        reports = reports.map((r) => (r.id === id ? next : r));
+        return HttpResponse.json(reportRow(next));
       } else if (verb === 'request-changes') {
         const { note } = (await request.json()) as { note?: string };
         if (!note?.trim())

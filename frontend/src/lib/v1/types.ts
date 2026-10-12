@@ -237,19 +237,30 @@ export interface AgentRun {
 
 /* ─── Phân tích: workspace.workspace ──────────────────────────────────── */
 
-export interface Workspace {
-  id: Uuid;
-  title: string;
-  description: string | null;
-  created_from: 'blank' | 'conversation' | 'template' | 'agent_run';
-  tile_count: number;
-  last_refreshed_at: Timestamp | null;
-  status: 'active' | 'archived';
-  updated_at: Timestamp;
-  /** PROPOSAL: people and agents in it, and whether an agent waits on the viewer. */
+/** PROPOSAL: people and agents in a workspace, and whether an agent waits on the viewer. */
+interface WorkspaceActivity {
   participants: { people: number; agents: number };
   agent_state: 'waiting_you' | 'running' | null;
 }
+
+/** GET /v1/workspaces as the api sends it, plus the PROPOSAL activity when present. */
+export type WorkspaceWire = components['schemas']['WorkspaceView'] & Partial<WorkspaceActivity>;
+
+/** A workspace as the session lists read it; without the PROPOSAL fields they are left out. */
+export type Workspace = Omit<WorkspaceWire, 'created_from' | 'status' | keyof WorkspaceActivity> & {
+  created_from: 'blank' | 'conversation' | 'template' | 'agent_run';
+  status: 'active' | 'archived';
+  participants: WorkspaceActivity['participants'] | null;
+  agent_state: WorkspaceActivity['agent_state'];
+};
+
+export const readWorkspace = (raw: WorkspaceWire): Workspace => ({
+  ...raw,
+  created_from: raw.created_from as Workspace['created_from'],
+  status: raw.status as Workspace['status'],
+  participants: raw.participants ?? null,
+  agent_state: raw.agent_state ?? null,
+});
 
 /* ─── Dữ liệu: catalog.source, catalog.dataset, context.metric ────────── */
 

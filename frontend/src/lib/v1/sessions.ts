@@ -1,14 +1,15 @@
 import { pathId, v1Get, v1Send, type Page } from './client';
-import type { Workspace } from './types';
+import type { components } from './schema';
+import { readWorkspace, type Workspace } from './types';
 
 /*
  * Phiên làm việc (P02, UC-02-01…07): one workspace as a notebook of tiles, its comments and
  * assigned tasks, its sharing, and the report drafted from it.
  *
- * Every type and endpoint here is a PROPOSAL: the system design has workspace.workspace (and
- * the tile_count on it) but no screen-level shape for tiles, comments, sharing or session
- * reports yet. Paths follow "Đặc tả API" A1: /v1/<plural>, `:verb` actions, cursor pages.
- * docs/v3/05-ui-v3.md §4 lists them for the backend.
+ * The api serves the workspace with its tiles, the tile and comment writes, the shares and the
+ * report's create, check and publish (A2). A2 has no read for a tile's comments, a workspace's
+ * shares or a session report, and no principal search: those calls stay PROPOSAL, answered by
+ * the dev mock (docs/v3/05-ui-v3.md §4).
  */
 
 type Uuid = string;
@@ -20,7 +21,23 @@ export interface Author {
   name: string;
 }
 
-/** PROPOSAL: workspace.tile — one cell of the notebook. */
+/**
+ * GET /v1/workspaces/{id} as the api sends it. PROPOSAL: the tile's author name and activity
+ * counts, who is working and the source refresh that made tiles stale.
+ */
+type TileWire = components['schemas']['TileView'] & {
+  author_name?: string;
+  comment_count?: number;
+  task_count?: number;
+};
+
+export type WorkspaceDetailWire = Omit<components['schemas']['WorkspaceDetail'], 'tiles'> & {
+  tiles: TileWire[];
+  working?: Author[];
+  refresh?: WorkspaceDetail['refresh'];
+};
+
+/** One cell of the notebook as the screen draws it, read from workspace.tile. */
 export interface WorkspaceTile {
   id: Uuid;
   /** Position in the notebook, 1-based, shown as "[1]". */
@@ -39,15 +56,70 @@ export interface WorkspaceTile {
   task_count: number;
 }
 
-/** PROPOSAL: GET /v1/workspaces/{id} — the workspace row plus what the notebook screen needs. */
-export interface WorkspaceDetail extends Workspace {
+/** The workspace as the notebook draws it. */
+export interface WorkspaceDetail extends Omit<Workspace, 'params'> {
   /** Session parameters applied to every tile (UC-02-01): "kỳ = T9/2026". */
   params: { name: string; value: string }[];
-  /** Who is working in it now, people first, for "… đang làm". */
+  /** The viewer's right on it: view, comment, edit or owner. */
+  permission: components['schemas']['WorkspaceDetail']['permission'];
+  /** Who is working in it now, people first, for "… đang làm". Empty without the PROPOSAL field. */
   working: Author[];
-  /** The newest source refresh that made tiles stale, null when every tile is current. */
+  /** The newest source refresh that made tiles stale, null when unknown or every tile is current. */
   refresh: { source_name: string; refreshed_at: Timestamp } | null;
+  /** Without the ones a person dismissed. */
   tiles: WorkspaceTile[];
+}
+
+const KIND: Record<string, WorkspaceTile['kind']> = {
+  sql: 'sql',
+  chart: 'chart',
+  skill_run: 'skill',
+};
+
+/** What a tile says in one line: its SQL, its text or its question, whichever `spec` holds. */
+const bodyOf = (spec: unknown) => {
+  if (typeof spec !== 'object' || spec === null) return '';
+  const fields = spec as Record<string, unknown>;
+  const text = ['sql', 'md', 'text', 'question', 'summary'].map((k) => fields[k]);
+  return (text.find((v) => typeof v === 'string') as string | undefined) ?? '';
+};
+
+function readTile(raw: TileWire): WorkspaceTile {
+  const agent = raw.author_kind === 'agent';
+  return {
+    id: raw.id,
+    seq: raw.position,
+    kind: KIND[raw.kind] ?? 'text',
+    title: raw.title ?? '',
+    body: bodyOf(raw.spec),
+    author: { kind: agent ? 'agent' : 'person', name: raw.author_name ?? (agent ? 'Agent' : '') },
+    state: raw.agent_suggestion_state === 'suggested' ? 'proposed' : raw.stale ? 'stale' : 'ok',
+    comment_count: raw.comment_count ?? 0,
+    task_count: raw.task_count ?? 0,
+  };
+}
+
+/** `params` is the jsonb object of WorkspaceCreate, {"kỳ": "T9/2026"}. */
+const readParams = (raw: unknown) =>
+  typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+    ? Object.entries(raw).map(([name, value]) => ({ name, value: String(value) }))
+    : [];
+
+function readWorkspaceDetail(raw: WorkspaceDetailWire): WorkspaceDetail {
+  // The detail lists its participants; the session lists count them (people, agents).
+  const { participants, ...row } = raw;
+  const count = (type: string) => participants.filter((p) => p.principal_type === type).length;
+  return {
+    ...readWorkspace({ ...row, participants: { people: count('user'), agents: count('agent') } }),
+    params: readParams(raw.params),
+    permission: raw.permission,
+    working: raw.working ?? [],
+    refresh: raw.refresh ?? null,
+    tiles: raw.tiles
+      .filter((t) => t.agent_suggestion_state !== 'dismissed')
+      .sort((a, b) => a.position - b.position)
+      .map(readTile),
+  };
 }
 
 /** PROPOSAL: a comment on a tile (UC-02-05). */
@@ -141,66 +213,106 @@ export interface SessionReport {
 
 /* Phiên */
 export const getWorkspace = async (id: string) =>
-  v1Get<WorkspaceDetail>(`/workspaces/${pathId(id)}`);
+  readWorkspaceDetail(await v1Get<WorkspaceDetailWire>(`/workspaces/${pathId(id)}`));
 
-/** Re-run the stale tiles; the old results stay in the session history (UC-02-02). */
-export const refreshWorkspace = async (id: string, tileIds: string[]) =>
-  v1Send<WorkspaceDetail>('POST', `/workspaces/${pathId(id)}:refresh`, { tile_ids: tileIds });
+/**
+ * Re-run the stale tiles in dependency order; the old results stay in the session history
+ * (UC-02-02). The api answers 202 and runs them in the background, so this reads the workspace
+ * again for what is already done.
+ */
+export const refreshWorkspace = async (id: string) => {
+  await v1Send('POST', `/workspaces/${pathId(id)}:refresh`, {});
+  return getWorkspace(id);
+};
 
 /** Accept or dismiss a tile an agent proposed (UC-02-06). */
-export const decideTile = async (workspaceId: string, tileId: string, verb: 'accept' | 'dismiss') =>
-  v1Send<WorkspaceDetail>(
-    'POST',
-    `/workspaces/${pathId(workspaceId)}/tiles/${pathId(tileId)}:${verb}`,
-  );
+export const decideTile = async (
+  workspaceId: string,
+  tileId: string,
+  verb: 'accept' | 'dismiss',
+) => {
+  await v1Send('PATCH', `/tiles/${pathId(tileId)}`, {
+    agent_suggestion_state: verb === 'accept' ? 'accepted' : 'dismissed',
+  });
+  return getWorkspace(workspaceId);
+};
 
 /* Bình luận và giao việc */
+/** PROPOSAL: A2 writes comments but has no read for them. */
 export const getTileThread = async (workspaceId: string, tileId: string) =>
   v1Get<TileThread>(`/workspaces/${pathId(workspaceId)}/tiles/${pathId(tileId)}/comments`);
 
-export const addTileComment = async (workspaceId: string, tileId: string, body: string) =>
-  v1Send<TileComment>(
-    'POST',
-    `/workspaces/${pathId(workspaceId)}/tiles/${pathId(tileId)}/comments`,
-    { body },
-  );
+export const addTileComment = async (tileId: string, body: string) =>
+  v1Send<components['schemas']['CommentView']>('POST', `/tiles/${pathId(tileId)}/comments`, {
+    body,
+  });
 
 /* Chia sẻ */
+/** PROPOSAL: A2 replaces the shares but has no read for them. */
 export const getSharing = async (id: string) =>
   v1Get<WorkspaceSharing>(`/workspaces/${pathId(id)}/sharing`);
 
 export type SharingInput = { principal_id: string; kind: 'user' | 'group'; role: MemberRole }[];
 
+/*
+ * PUT replaces the whole set (A1.3). The owner is the workspace's, not a share, so it is left
+ * out; editor and viewer are the "edit" and "view" permissions.
+ */
 export const saveSharing = async (id: string, members: SharingInput) =>
-  v1Send<WorkspaceSharing>('PUT', `/workspaces/${pathId(id)}/sharing`, { members });
+  v1Send<Page<components['schemas']['ShareView']>>('PUT', `/workspaces/${pathId(id)}/shares`, {
+    shares: members
+      .filter((m) => m.role !== 'owner')
+      .map((m) => ({
+        principal_type: m.kind,
+        principal_id: m.principal_id,
+        permission: m.role === 'editor' ? ('edit' as const) : ('view' as const),
+      })),
+  } satisfies components['schemas']['SharesPut']);
 
-/** "Người nhận thấy gì" for members not saved yet: the server applies each one's data scope. */
+/** PROPOSAL: "Người nhận thấy gì" for members not saved yet, from each one's data scope. */
 export const previewSharing = async (id: string, members: SharingInput) =>
   v1Send<{ preview: string }>('POST', `/workspaces/${pathId(id)}/sharing:preview`, { members });
 
+/** PROPOSAL: people and groups to share with. */
 export const searchPrincipals = (q: string) =>
   v1Get<Page<Principal>>('/principals', { q, page_size: 20 });
 
 /* Báo cáo của phiên */
+/** PROPOSAL: A2 has no list of a session's reports. */
 export const listSessionReports = async (workspaceId: string) =>
   v1Get<Page<SessionReport>>(`/workspaces/${pathId(workspaceId)}/session-reports`, {
     page_size: 20,
   });
 
-/** Asks Agent Báo cáo to draft a report from the session; answers with the draft. */
-export const createSessionReport = async (workspaceId: string) =>
-  v1Send<SessionReport>('POST', `/workspaces/${pathId(workspaceId)}/session-reports`, {});
+/** Asks Agent Báo cáo to draft a report from every tile of the session. */
+export const createSessionReport = async (workspaceId: string, title: string) =>
+  v1Send<components['schemas']['ReportView']>(
+    'POST',
+    `/workspaces/${pathId(workspaceId)}/reports`,
+    {
+      title,
+    },
+  );
 
+/** PROPOSAL: A2 has no read for a session report. */
 export const getSessionReport = async (id: string) =>
   v1Get<SessionReport>(`/session-reports/${pathId(id)}`);
 
-/** Publish needs every check to pass and a reviewer other than the author (409 otherwise). */
-export const publishSessionReport = async (id: string) =>
-  v1Send<SessionReport>('POST', `/session-reports/${pathId(id)}:publish`, {});
+/**
+ * Publish needs every check to pass and a reviewer other than the author (409 otherwise). The
+ * api answers with the bare report row, so the review shape is read again.
+ */
+export const publishSessionReport = async (id: string) => {
+  await v1Send('POST', `/session-reports/${pathId(id)}:publish`, { recipients: [] });
+  return getSessionReport(id);
+};
 
-/** Re-runs the pre-publish checks, e.g. after a number was tied to a tile. */
-export const checkSessionReport = async (id: string) =>
-  v1Send<SessionReport>('POST', `/session-reports/${pathId(id)}:check`, {});
+/** Re-runs the pre-publish checks (202), e.g. after a number was tied to a tile. */
+export const checkSessionReport = async (id: string) => {
+  await v1Send('POST', `/session-reports/${pathId(id)}:check`);
+  return getSessionReport(id);
+};
 
+/** PROPOSAL: A2 has no request-changes for a session report. */
 export const requestReportChanges = async (id: string, note: string) =>
   v1Send<SessionReport>('POST', `/session-reports/${pathId(id)}:request-changes`, { note });

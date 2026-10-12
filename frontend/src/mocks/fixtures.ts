@@ -13,7 +13,7 @@ import type {
   Metric,
   ModelConfig,
   Source,
-  Workspace,
+  WorkspaceWire,
 } from '../lib/v1/types';
 
 /*
@@ -551,7 +551,17 @@ export function runsFixture(): AgentRun[] {
   return runs;
 }
 
-export function workspacesFixture(): Workspace[] {
+/** The workspace columns the lists do not draw. */
+const workspaceColumns = {
+  data_space_id: DS,
+  owner_id: 'u-yen',
+  params: {},
+  template_of_skill_id: null,
+  created_from_ref: null,
+  created_at: minutesFromNow(-7 * 24 * 60),
+};
+
+export function workspacesFixture(): WorkspaceWire[] {
   return [
     {
       id: 'ws-npl-sept',
@@ -562,6 +572,7 @@ export function workspacesFixture(): Workspace[] {
       last_refreshed_at: minutesFromNow(-30),
       status: 'active',
       updated_at: minutesFromNow(-10),
+      ...workspaceColumns,
       participants: { people: 3, agents: 2 },
       agent_state: 'waiting_you',
     },
@@ -574,6 +585,7 @@ export function workspacesFixture(): Workspace[] {
       last_refreshed_at: minutesFromNow(-5),
       status: 'active',
       updated_at: minutesFromNow(-5),
+      ...workspaceColumns,
       participants: { people: 1, agents: 1 },
       agent_state: 'running',
     },
@@ -586,6 +598,7 @@ export function workspacesFixture(): Workspace[] {
       last_refreshed_at: minutesFromNow(-3 * 24 * 60),
       status: 'active',
       updated_at: minutesFromNow(-3 * 24 * 60),
+      ...workspaceColumns,
       participants: { people: 1, agents: 0 },
       agent_state: null,
     },

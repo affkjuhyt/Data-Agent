@@ -147,8 +147,12 @@ export default function AnalysisPage() {
                         <span className="text-muted-foreground da-caption">
                           {[
                             FROM_LABEL[ws.created_from],
-                            ws.participants.people > 1 ? `${ws.participants.people} người` : null,
-                            ws.participants.agents > 0 ? `${ws.participants.agents} agent` : null,
+                            (ws.participants?.people ?? 0) > 1
+                              ? `${ws.participants?.people} người`
+                              : null,
+                            (ws.participants?.agents ?? 0) > 0
+                              ? `${ws.participants?.agents} agent`
+                              : null,
                           ]
                             .filter(Boolean)
                             .join(' · ')}
