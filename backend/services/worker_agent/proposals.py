@@ -15,6 +15,10 @@ Applying: `proposal.decided` (inbox.outbox) is routed by kind to the role that o
 The proposal then ends `applied` (or `apply_failed` with the object gone or moved on). A
 proposal the worker does not apply yet is left as the inbox wrote it.
 
+A reviewer may rewrite a proposal's `diff` (accept_with_edit). What is applied is never read from
+it: the request is kept in `evidence`, which no decision changes, and a share is checked again
+at apply time (it widens, it is not org-wide, it is this skill's).
+
 BR-96 wants an org-wide skill approved by the steward and then the system administrator. A
 proposal's second step is the compliance capability's (BR-119) and the table has no column
 naming another, so a two-step skill proposal is not opened: the version goes back to testing
@@ -45,6 +49,7 @@ DECIDED = "proposal.decided"
 NAMESPACE = uuid.UUID("6b1f0c55-5f5e-4c49-9a39-2f4f5c1f1d7e")
 TRANSITION = datetime.timedelta(days=30)  # BR-97, as services/api/modules/skill/routes.py
 RUNNABLE = ("published", "needs_review")
+SCOPE_RANK = {"personal": 0, "data_space": 1, "org": 2}  # as services/api/modules/skill/rules.py
 
 
 def _now() -> datetime.datetime:
@@ -95,6 +100,9 @@ async def _open(
                 target_ref=target_ref,
                 title=title,
                 diff=_plain(diff),
+                # A reviewer can replace `diff` (accept_with_edit) but not `evidence`: the request as
+                # the module made it is kept here, and only this is ever applied.
+                evidence=[{"requested": _plain(diff)}],
                 proposed_by=proposed_by,
                 eval_run_id=eval_run_id,
                 created_by=proposed_by,
@@ -210,11 +218,19 @@ def _skill_event(
     )
 
 
+def _requested(proposal: dict[str, Any]) -> dict[str, Any]:
+    """The request the module made, from `evidence`; never the editable `diff`."""
+    for item in proposal.get("evidence") or []:
+        if isinstance(item, dict) and isinstance(item.get("requested"), dict):
+            return dict(item["requested"])
+    return {}
+
+
 async def _apply_skill(event: Event, proposal: dict[str, Any]) -> bool:
     """True when the decision changed the skill, False when its object had moved on."""
     org, reviewer = event.org_id, uuid.UUID(str(event.payload["reviewer_id"]))
     version_id = uuid.UUID(str(proposal["target_ref"]))
-    diff = proposal["diff"] or {}
+    diff = _requested(proposal)
     accepted = event.payload.get("status") == "accepted"
     async with scoped_session("svc_skill", org, reviewer) as session:
         version = await session.get(skill.SkillVersion, version_id, with_for_update=True)
@@ -226,9 +242,16 @@ async def _apply_skill(event: Event, proposal: dict[str, Any]) -> bool:
         if diff.get("action") == "share":
             if not accepted:
                 return True  # the scope simply stays as it is
-            if version.status not in RUNNABLE:
+            scope = str(diff.get("scope") or "")
+            if (
+                version.status not in RUNNABLE
+                or str(diff.get("skill_id")) != str(row.id)
+                or SCOPE_RANK.get(scope, -1) <= SCOPE_RANK.get(row.scope, 99)
+                # BR-96: org-wide needs a second, administrator step this proposal never had.
+                or scope == "org"
+            ):
                 return False
-            previous, row.scope = row.scope, str(diff["scope"])
+            previous, row.scope = row.scope, scope
             row.updated_by, row.updated_at = reviewer, _now()
             session.add(
                 _skill_event(
@@ -242,7 +265,7 @@ async def _apply_skill(event: Event, proposal: dict[str, Any]) -> bool:
                 )
             )
             return True
-        if version.status != "pending_review":
+        if version.status != "pending_review" or diff.get("action") != "publish":
             return False
         if not accepted:
             # Rejected, or changes asked for: back to the author as a draft (AC-03-05-02).
@@ -375,7 +398,7 @@ async def _proposal(event: Event) -> dict[str, Any] | None:
             "kind": row.kind,
             "status": row.status,
             "target_ref": row.target_ref,
-            "diff": row.diff,
+            "evidence": row.evidence,
             "data_space_id": row.data_space_id,
         }
 

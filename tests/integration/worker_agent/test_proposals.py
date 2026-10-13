@@ -308,3 +308,41 @@ async def test_ac_09_02_05_an_activation_waits_for_a_closing_period(world: World
     assert await proposals.activate_waiting(w.org, w.space, w.steward) == 1
     assert w.seed.one("SELECT status FROM pack.pack_install WHERE id = %s", install) == "active"
     assert w.seed.one("SELECT status FROM inbox.proposal WHERE id = %s", pid) == "applied"
+
+
+async def test_an_edited_diff_never_widens_what_is_applied(world: World) -> None:
+    # accept_with_edit replaces the diff; a reviewer must not turn a Data Space share into an
+    # org-wide one (BR-96 wants a second, administrator step for that).
+    w = world
+    skill_id, version, _ = _skill(w)
+    w.seed.one(
+        "UPDATE skill.skill_version SET status = 'published', approved_by = %s WHERE id = %s"
+        " RETURNING 1",
+        w.steward,
+        version,
+    )
+    w.seed.one("UPDATE skill.skill SET scope = 'personal' WHERE id = %s RETURNING 1", skill_id)
+    _event(
+        w,
+        "skill",
+        proposals.SHARE,
+        skill_id,
+        skill_id=skill_id,
+        skill_version_id=version,
+        version=2,
+        data_space_id=w.space,
+        previous_scope="personal",
+        scope="data_space",
+        approval_steps=1,
+        requested_by=w.author,
+    )
+    await _drain("skill")
+    pid = _opened(w, version)[0]
+    w.seed.one(
+        "UPDATE inbox.proposal SET diff = %s WHERE id = %s RETURNING 1",
+        json.dumps({"action": "share", "skill_id": str(skill_id), "scope": "org"}),
+        pid,
+    )
+    _decide(w, pid, "accept")
+    await _drain("inbox")
+    assert w.seed.one("SELECT scope FROM skill.skill WHERE id = %s", skill_id) == "data_space"
