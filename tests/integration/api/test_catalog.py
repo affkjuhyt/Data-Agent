@@ -1020,9 +1020,10 @@ async def test_one_source_is_read_and_names_its_writeback_tables(o: Org) -> None
         assert no_admin.status_code == 403
 
 
-async def test_activation_keeps_tables_in_the_sources_data_space_and_their_rules(o: Org) -> None:
+async def test_activation_assigns_tables_only_where_the_caller_administers_data(o: Org) -> None:
     source = _source_row(o)
     plain = _dataset(o, source, table_name="du_no")
+    shared = _dataset(o, source, table_name="ty_gia")
     personal = _dataset(o, source, table_name="khach_hang")
     _column(o, personal, "so_cccd", 1, pii_label="national_id")
     url = f"/v1/sources/{source}:activate"
@@ -1035,15 +1036,17 @@ async def test_activation_keeps_tables_in_the_sources_data_space_and_their_rules
 
     async with client(o) as api:
         h = o.headers("admin")
-        # A table cannot be moved into another Data Space, even one the caller also administers.
-        moved = await api.post(
-            url, json={"tables": [table("du_no", data_space_id=str(o.other))]}, headers=h
-        )
-        assert moved.status_code == 422, moved.text
+        # Another organisation's Data Space, or one where the caller does not administer the data.
         foreign = await api.post(
             url, json={"tables": [table("du_no", data_space_id=str(o.foreign_space))]}, headers=h
         )
-        assert foreign.status_code == 422, foreign.text
+        assert foreign.status_code == 403, foreign.text
+        not_theirs = await api.post(
+            url,
+            json={"tables": [table("du_no", data_space_id=str(o.other))]},
+            headers=o.headers("adminonly"),
+        )
+        assert not_theirs.status_code == 403, not_theirs.text
         stranger = await api.post(
             url, json={"tables": [table("du_no", owner_id=str(o.users["foreign"]))]}, headers=h
         )
@@ -1057,12 +1060,20 @@ async def test_activation_keeps_tables_in_the_sources_data_space_and_their_rules
         assert "so_cccd" in unmasked.json()["detail"]
         assert o.one("SELECT enabled FROM catalog.dataset WHERE id = %s", plain) is False
 
-        done = await api.post(url, json={"tables": [table("du_no")]}, headers=h)
+        # UC-04-04 E1: a table may go to another Data Space the caller also administers.
+        done = await api.post(
+            url,
+            json={"tables": [table("du_no"), table("ty_gia", data_space_id=str(o.other))]},
+            headers=h,
+        )
         assert done.status_code == 200, done.text
         assert o.one("SELECT enabled FROM catalog.dataset WHERE id = %s", plain) is True
         assert o.one("SELECT enabled FROM catalog.dataset WHERE id = %s", personal) is False
-        assert str(o.one("SELECT data_space_id FROM catalog.dataset WHERE id = %s", plain)) == str(
+        assert o.one("SELECT data_space_id FROM catalog.dataset WHERE id = %s", plain) == str(
             o.space
+        )
+        assert o.one("SELECT data_space_id FROM catalog.dataset WHERE id = %s", shared) == str(
+            o.other
         )
         denied = await api.post(url, json={"tables": []}, headers=o.headers("analyst"))
         assert denied.status_code == 403

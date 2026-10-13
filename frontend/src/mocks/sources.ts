@@ -1249,6 +1249,13 @@ export function createSourcesHandlers() {
   const configs: Record<string, NewSource> = {};
   const tests: Record<string, number> = {};
   const passed: Record<string, boolean> = {};
+  // What the last connection test found, which the structure scan turns into the source's tables.
+  const found: Record<string, ReturnType<typeof testResult>['tables']> = {};
+  // Personal-data columns of the scanned tables, by dataset id (catalog.column_meta.pii_label).
+  const scannedPii: Record<
+    string,
+    { id: string; name: string; pii_label: string; pii_confirmed: boolean }[]
+  > = {};
   let jobs = jobsFixture();
   const uploads: Record<string, UploadAnalysis> = {};
   const collections = collectionsFixture();
@@ -1373,6 +1380,74 @@ export function createSourcesHandlers() {
         ? HttpResponse.json(source)
         : problem(404, 'not_found', 'Không tìm thấy nguồn.');
     }),
+    // The structure scan before activation finishes at once here.
+    http.post('*/v1/sources/:id/scans', ({ params }) => {
+      const id = String(params.id);
+      if (!sources.some((s) => s.id === id))
+        return problem(404, 'not_found', 'Không tìm thấy nguồn.');
+      tables[id] = (found[id] ?? []).map((t, i) => {
+        const datasetId = `${id}-t${i}`;
+        if (t.personal_data)
+          scannedPii[datasetId] = [
+            {
+              id: `${datasetId}-c0`,
+              name: 'so_the',
+              pii_label: 'account_no',
+              pii_confirmed: false,
+            },
+          ];
+        return {
+          id: datasetId,
+          name: t.name,
+          description: t.description,
+          row_count: t.estimated_rows,
+          column_count: null,
+          refreshed_at: null,
+        };
+      });
+      return HttpResponse.json(
+        { id: `scan-${id}`, status: 'running', poll_after_ms: 0 },
+        { status: 202 },
+      );
+    }),
+    http.get('*/v1/scan-runs/:id', ({ params }) => {
+      const id = String(params.id);
+      const sourceId = id.replace(/^scan-/, '');
+      const count = tables[sourceId]?.length ?? 0;
+      return HttpResponse.json({
+        id,
+        source_id: sourceId,
+        kind: 'schema',
+        trigger: 'manual',
+        workflow_id: null,
+        status: 'succeeded',
+        tables_total: count,
+        tables_scanned: count,
+        tables_skipped: [],
+        resume_from: null,
+        started_at: new Date().toISOString(),
+        finished_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      });
+    }),
+    // A scanned table's detail: only its personal-data columns matter to the connect flow.
+    http.get('*/v1/datasets/:id', ({ params }) => {
+      const columns = scannedPii[String(params.id)];
+      if (columns === undefined) return undefined;
+      return HttpResponse.json({ id: String(params.id), columns });
+    }),
+    http.patch('*/v1/datasets/:id', async ({ params, request }) => {
+      const columns = scannedPii[String(params.id)];
+      if (columns === undefined) return undefined;
+      const body = (await request.json()) as {
+        columns?: { id: string; pii_confirmed?: boolean }[];
+      };
+      for (const patch of body.columns ?? []) {
+        const column = columns.find((c) => c.id === patch.id);
+        if (column && patch.pii_confirmed) column.pii_confirmed = true;
+      }
+      return HttpResponse.json({ id: String(params.id), columns });
+    }),
     http.post('*/v1/sources/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
       const source = sources.find((s) => s.id === id);
@@ -1393,6 +1468,7 @@ export function createSourcesHandlers() {
         tests[id] = (tests[id] ?? 0) + 1;
         const result = testResult(config, tests[id] > 1 || !configs[id]);
         passed[id] = result.checks.every((c) => c.ok);
+        found[id] = result.tables;
         return HttpResponse.json(result);
       }
       if (verb === 'activate') {
@@ -1579,13 +1655,19 @@ export function createSourcesHandlers() {
         jobs.map((job) => ({
           id: job.id,
           name: job.source_name,
-          mode: job.method === 'cdc' ? 'cdc' : job.method === 'incremental' ? 'incremental' : 'full',
+          mode:
+            job.method === 'cdc' ? 'cdc' : job.method === 'incremental' ? 'incremental' : 'full',
           source_object: job.table_name,
           status: job.status === 'error' ? 'failed' : job.status,
           paused_reason: job.status_reason,
           lag_seconds: job.lag_seconds,
           last_run: {
-            status: job.hours.at(-1) === 'error' ? 'failed' : job.hours.at(-1) === 'none' ? null : 'succeeded',
+            status:
+              job.hours.at(-1) === 'error'
+                ? 'failed'
+                : job.hours.at(-1) === 'none'
+                  ? null
+                  : 'succeeded',
             rows_loaded: job.rows_today,
           },
         })),

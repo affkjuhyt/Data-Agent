@@ -33,7 +33,7 @@ describe('integrated groups', () => {
     expect(isIntegrated('GET', at('/v1/session-reports/r-1'), operations)).toBe(true);
     expect(isIntegrated('POST', at('/v1/runs/r-1:retry'), operations)).toBe(true);
     expect(isIntegrated('POST', at('/v1/agents/a-1:lock'), operations)).toBe(true);
-    expect(isIntegrated('POST', at('/v1/sources/s-1:activate'), operations)).toBe(false);
+    expect(isIntegrated('POST', at('/v1/sources/s-1:activate'), operations)).toBe(true);
     expect(isIntegrated('GET', at('/v1/data-products/dp-1/monitoring'), operations)).toBe(false);
     // A verb the api does not serve is not taken for the plain path.
     expect(isIntegrated('POST', at('/v1/hitl-requests/h-1:snooze'), operations)).toBe(false);

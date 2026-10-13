@@ -13,13 +13,15 @@ import { Select } from '../../design-system/Select';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber, formatTime } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
-import { listDataSpaces, listSourceDatasets, listUsers } from '../../lib/v1/api';
+import { listDataSpaces, listUsers } from '../../lib/v1/api';
 import {
   activateSource,
+  confirmMasking,
   createSource,
   listConnectors,
   listSecretRefs,
   getScanRun,
+  listScannedTables,
   startSourceScan,
   testSource,
   updateSource,
@@ -89,6 +91,7 @@ function ConnectFlow({ connector }: { connector: Connector }) {
     mode: 'ingest' as NewSource['mode'],
   });
   const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [maskConfirmed, setMaskConfirmed] = useState(false);
   const [assign, setAssign] = useState<Record<string, { data_space_id: string; owner_id: string }>>(
     {},
   );
@@ -156,17 +159,12 @@ function ConnectFlow({ connector }: { connector: Connector }) {
         scan = await getScanRun(accepted.id);
       }
       if (scan.status !== 'succeeded') throw new Error('Quét cấu trúc nguồn chưa hoàn tất.');
-      const datasets = (await listSourceDatasets(sourceId)).items;
+      const tables = await listScannedTables(sourceId);
       setTest({
         ...test,
-        schema: datasets[0]?.schema_name ?? '',
-        table_count: datasets.length,
-        tables: datasets.map((dataset) => ({
-          name: `${dataset.schema_name}.${dataset.table_name}`,
-          description: dataset.description,
-          personal_data: null,
-          estimated_rows: dataset.row_estimate ?? 0,
-        })),
+        schema: tables[0]?.name.split('.')[0] ?? '',
+        table_count: tables.length,
+        tables,
       });
       setStep(4);
     });
@@ -174,15 +172,27 @@ function ConnectFlow({ connector }: { connector: Connector }) {
   const save = () =>
     run(async () => {
       if (!sourceId || !test) return;
-      const tables = test.tables
-        .filter((t) => chosen.has(t.name))
-        .map((t) => ({ name: t.name, ...assign[t.name] }));
+      const picked = test.tables.filter((t) => chosen.has(t.name));
+      // UC-04-04 step 3: the api enables a table only once its personal-data columns are
+      // confirmed as masked, which the admin did on this step.
+      for (const t of picked) {
+        const pending = (t.personal_columns ?? []).filter((c) => !c.confirmed);
+        if (t.dataset_id && pending.length)
+          await confirmMasking(
+            t.dataset_id,
+            pending.map((c) => c.id),
+          );
+      }
+      const tables = picked.map((t) => ({ name: t.name, ...assign[t.name] }));
       await activateSource(sourceId, { tables, ...schedule });
       toast({ tone: 'success', message: `Đã lưu ${form.name}. Đang quét cấu trúc.` });
       navigate('data', 'SOURCE', sourceId);
     });
 
   const passed = test?.checks.every((c) => c.ok) ?? false;
+  const needsMask = (test?.tables ?? []).some(
+    (t) => chosen.has(t.name) && (t.personal_columns ?? []).some((c) => !c.confirmed),
+  );
   const actions: Record<Step, ReactNode> = {
     2: (
       <>
@@ -202,7 +212,12 @@ function ConnectFlow({ connector }: { connector: Connector }) {
         <Button loading={busy} onClick={() => sourceId && void runTest(sourceId)}>
           Kiểm tra lại
         </Button>
-        <Button kind="primary" loading={busy} disabled={!passed} onClick={() => void chooseTables()}>
+        <Button
+          kind="primary"
+          loading={busy}
+          disabled={!passed}
+          onClick={() => void chooseTables()}
+        >
           Tiếp: chọn dữ liệu
         </Button>
       </>
@@ -225,7 +240,10 @@ function ConnectFlow({ connector }: { connector: Connector }) {
         <Button
           kind="primary"
           loading={busy}
-          disabled={[...chosen].some((t) => !assign[t]?.data_space_id || !assign[t]?.owner_id)}
+          disabled={
+            [...chosen].some((t) => !assign[t]?.data_space_id || !assign[t]?.owner_id) ||
+            (needsMask && !maskConfirmed)
+          }
           onClick={() => void save()}
         >
           Lưu và bắt đầu
@@ -273,6 +291,9 @@ function ConnectFlow({ connector }: { connector: Connector }) {
           setAssign={setAssign}
           schedule={schedule}
           setSchedule={setSchedule}
+          needsMask={needsMask}
+          maskConfirmed={maskConfirmed}
+          setMaskConfirmed={setMaskConfirmed}
         />
       )}
     </div>
@@ -624,6 +645,9 @@ function Assign({
   setAssign,
   schedule,
   setSchedule,
+  needsMask,
+  maskConfirmed,
+  setMaskConfirmed,
 }: {
   test: ConnectionTest;
   mode: NewSource['mode'];
@@ -636,6 +660,9 @@ function Assign({
   ) => void;
   schedule: Omit<ActivateSource, 'tables'>;
   setSchedule: (fn: (s: Omit<ActivateSource, 'tables'>) => Omit<ActivateSource, 'tables'>) => void;
+  needsMask: boolean;
+  maskConfirmed: boolean;
+  setMaskConfirmed: (on: boolean) => void;
 }) {
   const spaces = useV1(listDataSpaces, []);
   const users = useV1(listUsers, []);
@@ -719,6 +746,12 @@ function Assign({
               ))}
             </tbody>
           </table>
+          {needsMask && (
+            <Checkbox checked={maskConfirmed} onChange={setMaskConfirmed}>
+              Tôi xác nhận các cột dữ liệu cá nhân đánh dấu ở trên được che; bảng chỉ vào lớp ngữ
+              cảnh sau khi xác nhận.
+            </Checkbox>
+          )}
           <p className="text-muted-foreground da-caption">
             Người phụ trách duyệt mọi thay đổi cấu trúc và yêu cầu quyền trên bảng của mình. Một
             bảng có thể dùng ở nhiều Data Space; quyền theo dòng, cột đặt ở Quản trị · Chính sách.

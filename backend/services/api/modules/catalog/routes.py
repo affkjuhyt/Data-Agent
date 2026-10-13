@@ -62,6 +62,7 @@ from services.api.modules.catalog.schemas import (
     SourceSchedule,
     SourceView,
 )
+from services.api.modules.org import capabilities_of
 
 router = APIRouter()
 ROLE = "svc_catalog"
@@ -545,15 +546,17 @@ async def activate_source(
         source = await _source(session, principal, space, source_id, lock=True)
         if source.status not in SCANNABLE:
             raise Problem(409, "invalid_state", "The source must pass its connection test first.")
-        # A source belongs to one Data Space, so its tables stay there; moving a dataset into
-        # another Data Space is not this endpoint's to do, and the caller may not administer it.
-        elsewhere = sorted({str(t.data_space_id) for t in body.tables if t.data_space_id != space})
-        if elsewhere:
-            raise Problem(
-                422,
-                "validation_failed",
-                "tables[].data_space_id must be the source's Data Space (X-Data-Space).",
-            )
+        # UC-04-04 E1: one source may serve several Data Spaces, each enabling its own tables, so
+        # a table may be assigned elsewhere; but only where the caller administers the data too,
+        # or this would be a way to put tables into a Data Space they have no right over.
+        for target in sorted({t.data_space_id for t in body.tables if t.data_space_id != space}):
+            held = await capabilities_of(principal.org_id, principal.user_id, target)
+            if not held or "admin_data" not in held:
+                raise Problem(
+                    403,
+                    "forbidden",
+                    "tables[].data_space_id names a Data Space whose data you do not administer.",
+                )
         owners = {t.owner_id for t in body.tables}
         if owners:
             active = set(
@@ -615,6 +618,7 @@ async def activate_source(
             )
             dataset.enabled = selected
             if selected and assignment is not None:
+                dataset.data_space_id = assignment.data_space_id
                 dataset.steward_id = assignment.owner_id
                 dataset.updated_by = principal.user_id
         source.scan_cron = body.schema_scan

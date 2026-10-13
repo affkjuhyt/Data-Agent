@@ -1179,11 +1179,15 @@
     "on_schema_change": false
    },
    "query": [],
-   "returns": "Source. Bật các bảng đã chọn, tắt các bảng còn lại của nguồn, đặt người phụ trách từng bảng và lịch quét; bảng ở lại Data Space của nguồn",
+   "returns": "Source. Bật các bảng đã chọn, tắt các bảng còn lại của nguồn, đặt người phụ trách từng bảng và lịch quét; mỗi bảng vào data_space_id đã chọn (UC-04-04 E1: một nguồn dùng chung cho nhiều Data Space)",
    "errors": [
     [
      409,
      "invalid_state"
+    ],
+    [
+     403,
+     "forbidden"
     ],
     [
      422,

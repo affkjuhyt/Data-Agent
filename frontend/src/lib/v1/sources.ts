@@ -216,11 +216,12 @@ export const getTableProfile = async (id: string): Promise<TableProfile> => {
     ? await v1Get<SourceWire>(`/sources/${pathId(dataset.source_id)}`)
     : null;
   const columns = dataset.columns ?? [];
-  const refreshedAt = columns
-    .map((column) => column.profile?.created_at ?? null)
-    .filter((value): value is string => value !== null)
-    .sort()
-    .at(-1) ?? null;
+  const refreshedAt =
+    columns
+      .map((column) => column.profile?.created_at ?? null)
+      .filter((value): value is string => value !== null)
+      .sort()
+      .at(-1) ?? null;
 
   return {
     id: dataset.id,
@@ -246,6 +247,62 @@ export const getTableProfile = async (id: string): Promise<TableProfile> => {
     review: dataset.profile_review ?? null,
   };
 };
+
+/** A column the scan labelled as personal data (catalog.column_meta.pii_label). */
+export interface PersonalColumn {
+  id: string;
+  name: string;
+  label: string;
+  confirmed: boolean;
+}
+
+const PII_LABELS: Record<string, string> = {
+  national_id: 'Số CCCD',
+  phone: 'Số điện thoại',
+  email: 'Email',
+  account_no: 'Số tài khoản',
+  name: 'Họ tên',
+  address: 'Địa chỉ',
+  other: 'Dữ liệu cá nhân',
+};
+
+/**
+ * The tables the structure scan found, for "Chọn dữ liệu": A2's datasets of the source, each read
+ * once for its personal-data columns (the list carries none), which must be confirmed as masked
+ * before :activate enables the table (UC-04-04 step 3).
+ */
+export const listScannedTables = async (sourceId: string): Promise<ConnectionTest['tables']> => {
+  const page = await v1Get<Page<DatasetWire>>('/datasets', { ...ALL, source_id: pathId(sourceId) });
+  return Promise.all(
+    page.items.map(async (dataset) => {
+      const detail = await v1Get<DatasetDetailWire>(`/datasets/${pathId(dataset.id)}`);
+      const personal = (detail.columns ?? [])
+        .filter((column) => column.pii_label)
+        .map((column) => ({
+          id: column.id,
+          name: column.name,
+          label: PII_LABELS[column.pii_label ?? ''] ?? PII_LABELS.other,
+          confirmed: column.pii_confirmed,
+        }));
+      return {
+        name: `${dataset.schema_name}.${dataset.table_name}`,
+        description: dataset.description,
+        personal_data: personal.length
+          ? `${[...new Set(personal.map((c) => c.label))].join(', ')} · che`
+          : null,
+        estimated_rows: dataset.row_estimate ?? 0,
+        dataset_id: dataset.id,
+        personal_columns: personal,
+      };
+    }),
+  );
+};
+
+/** PATCH /v1/datasets/{id}: the admin confirms these personal-data columns are masked. */
+export const confirmMasking = (datasetId: string, columnIds: string[]) =>
+  v1Send('PATCH', `/datasets/${pathId(datasetId)}`, {
+    columns: columnIds.map((id) => ({ id, pii_confirmed: true })),
+  });
 
 /** PROPOSAL: POST /v1/datasets/{id}:profile — profile again now. */
 export const reprofileTable = async (id: string) =>
@@ -362,6 +419,9 @@ export interface ConnectionTest {
     description: string | null;
     personal_data: string | null;
     estimated_rows: number;
+    /** After the structure scan: the dataset the table became, and its personal-data columns. */
+    dataset_id?: string;
+    personal_columns?: PersonalColumn[];
   }[];
   /** Estimates for "Sau khi lưu". */
   scan_minutes: number;
@@ -434,8 +494,7 @@ export const startSourceScan = (id: string) =>
     { kind: 'schema' },
   );
 
-export const getScanRun = (id: string) =>
-  v1Get<ScanRun>(`/scan-runs/${pathId(id)}`);
+export const getScanRun = (id: string) => v1Get<ScanRun>(`/scan-runs/${pathId(id)}`);
 
 export interface ActivateSource {
   tables: { name: string; data_space_id: string; owner_id: string }[];
@@ -496,7 +555,8 @@ function readJob(row: IngestionJobWire): IngestionJob {
   const lag = row.lag_seconds ?? null;
   const status = jobStatus(row.status);
   const runStatus = row.last_run?.status;
-  const last = runStatus === 'failed' || runStatus === 'error' ? 'error' : runStatus ? 'ok' : 'none';
+  const last =
+    runStatus === 'failed' || runStatus === 'error' ? 'error' : runStatus ? 'ok' : 'none';
   return {
     id: row.id,
     table_name: row.source_object,
@@ -517,9 +577,10 @@ export const listJobs = async () => {
 };
 
 export const controlJob = async (id: string, verb: 'run' | 'pause' | 'resume') =>
-  v1Send<IngestionJobWire>('POST', `/jobs/${pathId(id)}:${verb === 'run' ? 'backfill' : verb}`).then(
-    readJob,
-  );
+  v1Send<IngestionJobWire>(
+    'POST',
+    `/jobs/${pathId(id)}:${verb === 'run' ? 'backfill' : verb}`,
+  ).then(readJob);
 
 /* ─── Tải tệp ─────────────────────────────────────────────────────────── */
 
@@ -579,15 +640,19 @@ function uploadColumns(value: unknown): UploadColumn[] {
       ? (String(row.type) as UploadColumnType)
       : 'string';
     const header = String(row.header ?? row.source ?? row.name ?? 'Cột');
-    return [{
-      header,
-      name: String(row.name ?? row.target ?? header).toLowerCase().replace(/[^a-z0-9]+/g, '_'),
-      type,
-      unit: typeof row.unit === 'string' ? row.unit : null,
-      example: String(row.example ?? ''),
-      personal: Boolean(row.personal ?? row.is_personal),
-      issue: typeof row.issue === 'string' ? row.issue : null,
-    }];
+    return [
+      {
+        header,
+        name: String(row.name ?? row.target ?? header)
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_'),
+        type,
+        unit: typeof row.unit === 'string' ? row.unit : null,
+        example: String(row.example ?? ''),
+        personal: Boolean(row.personal ?? row.is_personal),
+        issue: typeof row.issue === 'string' ? row.issue : null,
+      },
+    ];
   });
 }
 
@@ -1021,9 +1086,7 @@ export const discardErrorGroups = async (ids: string[], reason: string) => {
     return v1Send<{ discarded: number }>('POST', '/error-record-groups:discard', { ids, reason });
   }
   try {
-    await Promise.all(
-      ids.map((id) => v1Send('POST', `/dlq/${pathId(id)}:discard`, { reason })),
-    );
+    await Promise.all(ids.map((id) => v1Send('POST', `/dlq/${pathId(id)}:discard`, { reason })));
   } catch (error) {
     if (!(error instanceof V1Error) || error.status !== 404) throw error;
     return v1Send<{ discarded: number }>('POST', '/error-record-groups:discard', { ids, reason });
