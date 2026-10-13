@@ -1246,9 +1246,31 @@ export interface DryRunResult {
   checks: { title: string; result: string; ok: boolean }[];
 }
 
-/** PROPOSAL: POST /v1/ingestion-jobs:dry-run reads 1,000 rows with the config, writes nothing. */
-export const dryRunJob = (body: NewJob) =>
-  v1Send<DryRunResult>('POST', '/ingestion-jobs:dry-run', body);
+/**
+ * A3 exposes dry-run as the real source-job create with `?dry_run=true`; keep the old endpoint
+ * only for candidates reconstructed from the compatibility adapter, which have no source id.
+ */
+export const dryRunJob = async (body: NewJob, candidate: JobCandidate): Promise<DryRunResult> => {
+  if (!candidate.source_id) return v1Send<DryRunResult>('POST', '/ingestion-jobs:dry-run', body);
+  const raw = await v1Send<components['schemas']['IngestionJobDryRun']>(
+    'POST',
+    `/sources/${pathId(candidate.source_id)}/jobs?dry_run=true`,
+    {
+      name: candidate.table_name,
+      mode: JOB_MODE[body.method] ?? 'full',
+      source_object: candidate.source_object,
+      target_dataset_id: body.dataset_id,
+      cursor_column: body.method === 'incremental' ? body.cursor_column : null,
+      schedule_cron: SCHEDULE_CRON[body.schedule],
+      freshness_sla: `PT${body.freshness_sla_hours}H`,
+      ...(body.on_invalid_record === 'quarantine_30d' ? { dlq_retention_days: 30 } : {}),
+    },
+  );
+  return {
+    rows_read: raw.sample.length,
+    checks: [{ title: 'Cấu hình job', result: raw.note, ok: true }],
+  };
+};
 
 const SCHEDULE_CRON: Record<NewJob['schedule'], string> = {
   every_2h_daytime: '0 8-18/2 * * *',

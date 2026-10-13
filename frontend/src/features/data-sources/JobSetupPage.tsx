@@ -137,13 +137,12 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
   const incremental = job.method === 'incremental';
   const cursor = candidate.cursor_columns.find((c) => c.name === job.cursor_column);
   const ready = !incremental || Boolean(job.cursor_column);
-  // A2 has no dry run (PROPOSAL :dry-run): a table read from A2 is saved without one.
-  const canDryRun = candidate.source_id === null;
+  const canDryRun = true;
 
   const run = async () => {
     setBusy('dry');
     try {
-      setDryRun(await dryRunJob(job));
+      setDryRun(await dryRunJob(job, candidate));
     } catch (e) {
       toast({ tone: 'error', message: `Không chạy thử được. ${(e as Error).message}` });
     } finally {
