@@ -79,3 +79,42 @@ def test_the_tables_a_query_reads_leave_out_ctes_and_table_functions() -> None:
 def test_a_table_in_another_database_is_refused() -> None:
     with pytest.raises(SqlRejected):
         tables_of(check_read_only("SELECT * FROM other.public.t", "postgres"), "postgres")
+
+
+@pytest.mark.parametrize(
+    ("sql", "tables"),
+    [
+        # A CTE inside a subquery does not hide the real table read outside it.
+        (
+            "SELECT * FROM loan, (WITH loan AS (SELECT 1 AS n) SELECT * FROM loan) s",
+            {(None, "loan")},
+        ),
+        ("SELECT * FROM t WHERE x IN (WITH t AS (SELECT 1) SELECT * FROM t)", {(None, "t")}),
+        # A CTE seen from a nested scope, and a recursive one, are still not tables.
+        (
+            "WITH a AS (SELECT 1) SELECT * FROM (WITH b AS (SELECT * FROM a) SELECT * FROM b) x",
+            set(),
+        ),
+        (
+            "WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r) SELECT * FROM r",
+            set(),
+        ),
+    ],
+)
+def test_cte_names_are_resolved_scope_by_scope(
+    sql: str, tables: set[tuple[str | None, str]]
+) -> None:
+    assert tables_of(check_read_only(sql, "postgres"), "postgres") == tables
+
+
+def test_an_unqualified_pg_name_is_refused() -> None:
+    # pg_catalog comes first in PostgreSQL's search path, whatever the source's schema is.
+    with pytest.raises(SqlRejected):
+        tables_of(check_read_only("SELECT * FROM pg_roles", "postgres"), "postgres")
+
+
+def test_a_table_the_scope_walk_misses_still_counts() -> None:
+    # sqlglot's scope walk skips a scalar subquery in double parentheses, as the compiler writes.
+    sql = "SELECT * FROM bank.loan WHERE d = ((SELECT max(d) FROM bank.history))"
+    tree = check_read_only(sql, "postgres")
+    assert tables_of(tree, "postgres") == {("bank", "loan"), ("bank", "history")}

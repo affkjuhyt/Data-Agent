@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import sqlglot
 from sqlglot import exp
-from sqlglot.errors import ParseError, TokenError
+from sqlglot.errors import OptimizeError, ParseError, TokenError
+from sqlglot.optimizer.scope import traverse_scope
 
 # sqlglot's dialect names for catalog.source.kind.
 DIALECTS = {
@@ -150,25 +151,45 @@ def capped(tree: exp.Expression, dialect: str, limit: int) -> str:
 def tables_of(tree: exp.Expression, dialect: str) -> set[tuple[str | None, str]]:
     """The (schema, table) pairs a checked query reads; schema None when it is not written.
 
-    A CTE's own name is not a table, nor is a table function (generate_series). A name in another
-    database (catalog.schema.table) is refused: a source is one database. PostgreSQL folds an
-    unquoted name to lower case and keeps a quoted one, so the name is the one it resolves to;
-    the other engines compare names without case."""
-    ctes = {cte.alias_or_name.lower() for cte in tree.find_all(exp.CTE)}
+    A CTE's name is not a table, but only where that CTE is visible: names are resolved scope by
+    scope (sqlglot's scope analysis), so a CTE inside a subquery cannot hide a real table of the
+    same name elsewhere in the statement. A table node the scope walk does not reach (sqlglot
+    skips a subquery in double parentheses) counts as a table whatever its name: counting too
+    much only makes the caller's allowlist refuse, never admit. A table function (generate_series) is not a table. A name in another database
+    (catalog.schema.table) is refused: a source is one database. PostgreSQL folds an unquoted name
+    to lower case and keeps a quoted one, so the name is the one it resolves to; the other engines
+    compare names without case. PostgreSQL also searches pg_catalog before the search path, so an
+    unqualified pg_* name is refused rather than guessed."""
+    try:
+        scopes = traverse_scope(tree)
+    except OptimizeError as exc:
+        raise SqlRejected("the tables of the SQL cannot be resolved") from exc
     fold = dialect == "postgres"
+
+    def name(ident: exp.Identifier) -> str:
+        text = str(ident.this)
+        return text if fold and ident.quoted else text.lower()
+
+    seen: set[int] = set()
     found: set[tuple[str | None, str]] = set()
-    for table in tree.find_all(exp.Table):
-        if not isinstance(table.this, exp.Identifier):
-            continue
+
+    def add(table: exp.Table) -> None:
         if table.args.get("catalog"):
             raise SqlRejected("a table in another database is not allowed")
-
-        def name(ident: exp.Identifier) -> str:
-            text = str(ident.this)
-            return text if fold and ident.quoted else text.lower()
-
         schema = table.args.get("db")
-        if schema is None and table.name.lower() in ctes:
-            continue
+        if schema is None and fold and table.name.lower().startswith("pg_"):
+            raise SqlRejected("write the schema of a pg_* table")
         found.add((name(schema) if isinstance(schema, exp.Identifier) else None, name(table.this)))
+
+    for scope in scopes:
+        for table in scope.tables:
+            seen.add(id(table))
+            if not isinstance(table.this, exp.Identifier):
+                continue
+            if table.args.get("db") is None and table.name in scope.cte_sources:
+                continue
+            add(table)
+    for table in tree.find_all(exp.Table):
+        if isinstance(table.this, exp.Identifier) and id(table) not in seen:
+            add(table)
     return found
