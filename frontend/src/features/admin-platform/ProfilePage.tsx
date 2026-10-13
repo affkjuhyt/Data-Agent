@@ -3,12 +3,14 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { listDataSpaces } from '../../lib/v1/api';
 import { getMe, roleLabel } from '../../lib/v1/me';
 import { useV1 } from '../../lib/v1/useV1';
+import { MyClients } from './MyClients';
 import { KeyValueList } from './parts';
 
 /*
  * "Cài đặt · Hồ sơ" (2324:20173, UC-11-01): who the user is, as the directory says (GET /v1/me),
  * and the Data Spaces they belong to (GET /v1/data-spaces). Read only: the frame hides its Save
- * buttons, and the display format has no editor drawn yet.
+ * buttons, and the display format has no editor drawn yet. Below, the API clients the user
+ * answers for, where they agree to one granted in their name (MyClients).
  */
 
 // The organisation's locale decides language and number, date and time formats (A1.1).
@@ -55,6 +57,7 @@ export default function ProfilePage() {
           );
         }}
       </AsyncRegion>
+      <MyClients />
     </div>
   );
 }

@@ -55,5 +55,8 @@ describe('integrated groups', () => {
     expect(isIntegrated('POST', at('/v1/dsr'), operations)).toBe(true);
     expect(isIntegrated('POST', at('/v1/packs:import'), operations)).toBe(true);
     expect(isIntegrated('GET', at('/v1/documents'), operations)).toBe(true);
+    expect(isIntegrated('GET', at('/v1/me/clients'), operations)).toBe(true);
+    expect(isIntegrated('POST', at('/v1/me/clients/c-1:confirm'), operations)).toBe(true);
+    expect(isIntegrated('GET', at('/v1/admin/clients/c-1/usage'), operations)).toBe(true);
   });
 });

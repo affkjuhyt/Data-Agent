@@ -4,6 +4,7 @@
  * and where each link goes.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import type { ReactElement } from 'react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -226,19 +227,44 @@ describe('IntegrationsPage', () => {
     expect(screen.getByText('MCP · Ngô Thanh Bình')).toBeInTheDocument();
     expect(screen.getByText('12.480')).toBeInTheDocument();
     expect(screen.getByText('Sắp hết hạn')).toBeInTheDocument();
-    expect(await screen.findByText('ask 71% · get_metric 24%')).toBeInTheDocument();
-    expect(screen.getByText('5.000 lượt/ngày · đã dùng 41%')).toBeInTheDocument();
+    expect(
+      await screen.findByText('ask_question 71% · get_metric_definition 24%'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('5.000 lượt/ngày · hôm nay đã dùng 41%')).toBeInTheDocument();
+    expect(screen.getByText('52 lượt · người dùng không có quyền dữ liệu')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Excel add-in/ }));
     expect(await screen.findByText('Excel add-in · 7 ngày')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Đăng ký client' }));
     const dialog = screen.getByRole('dialog', { name: 'Thêm tích hợp' });
-    fireEvent.change(within(dialog).getByLabelText('Địa chỉ'), {
-      target: { value: 'https://mcp-ticket.noibo/v1' },
-    });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Kết nối & kiểm tra' }));
-    expect(await screen.findByText('mcp-ticket.noibo · 7 ngày')).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText('Tên'), { target: { value: 'Ticket MCP' } });
+    for (const field of ['Người phụ trách', 'Data Space']) {
+      fireEvent.click(await within(dialog).findByRole('combobox', { name: field }));
+      fireEvent.click((await screen.findAllByRole('option'))[0]);
+    }
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'ask_question' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cấp client' }));
+    const secret = await screen.findByRole('dialog', { name: 'Đã cấp Ticket MCP' });
+    expect(within(secret).getByDisplayValue('da_sk_live_9f3c1b7e2a')).toBeInTheDocument();
+    fireEvent.click(within(secret).getByRole('button', { name: 'Đã chép, đóng' }));
+    expect(await screen.findByText('Ticket MCP · 7 ngày')).toBeInTheDocument();
+    expect(screen.getByText('Chờ người phụ trách')).toBeInTheDocument();
+  });
+
+  it('shows a rotated secret once and revokes with a reason', async () => {
+    renderPage(<IntegrationsPage />);
+    expect(await screen.findByText('Copilot nội bộ · 7 ngày')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Xoay bí mật' }));
+    const secret = await screen.findByRole('dialog', { name: 'Bí mật mới của Copilot nội bộ' });
+    expect(within(secret).getByDisplayValue('da_sk_live_rotated_51d0')).toBeInTheDocument();
+    fireEvent.click(within(secret).getByRole('button', { name: 'Đã chép, đóng' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Thu hồi' }));
+    const revoke = screen.getByRole('dialog', { name: 'Thu hồi Copilot nội bộ?' });
+    fireEvent.change(within(revoke).getByLabelText('Lý do'), { target: { value: 'Lộ bí mật' } });
+    fireEvent.click(within(revoke).getByRole('button', { name: 'Thu hồi' }));
+    expect(await screen.findByText('Đã thu hồi Copilot nội bộ.')).toBeInTheDocument();
   });
 });
 
@@ -271,6 +297,44 @@ describe('NotificationsPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'quy tắc kênh' }));
     expect(navigate).toHaveBeenCalledWith('account', 'CHANNEL_RULES');
+  });
+});
+
+describe('MyClients on Hồ sơ', () => {
+  it('agrees to a client granted in my name, with If-Match as listed', async () => {
+    let ifMatch: string | null = null;
+    server.use(
+      http.post(/\/v1\/me\/clients\/[^/:]+:confirm$/, ({ request }) => {
+        ifMatch = request.headers.get('If-Match');
+        return undefined;
+      }),
+    );
+    renderPage(<ProfilePage />);
+    const row = (await screen.findByText('Power BI phòng Rủi ro')).closest('li')!;
+    expect(within(row).getByText('Chờ bạn đồng ý')).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole('button', { name: 'Đồng ý' }));
+    expect(
+      await screen.findByText('Power BI phòng Rủi ro gọi được Data Agent bằng quyền của bạn.'),
+    ).toBeInTheDocument();
+    expect(ifMatch).toBe('"2026-10-12T03:15:00.123456Z"');
+    await waitFor(() => expect(within(row).getByText('Hoạt động')).toBeInTheDocument());
+    expect(within(row).queryByRole('button', { name: 'Đồng ý' })).not.toBeInTheDocument();
+  });
+
+  it('asks to look again when an admin changed the client since it was listed', async () => {
+    server.use(
+      http.post(/\/v1\/me\/clients\/[^/:]+:confirm$/, () =>
+        HttpResponse.json(
+          { code: 'precondition_failed', detail: 'If-Match must be the ETag.' },
+          { status: 412 },
+        ),
+      ),
+    );
+    renderPage(<ProfilePage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Đồng ý' }));
+    expect(
+      await screen.findByText('Power BI phòng Rủi ro vừa được quản trị viên sửa. Xem lại rồi đồng ý.'),
+    ).toBeInTheDocument();
   });
 });
 

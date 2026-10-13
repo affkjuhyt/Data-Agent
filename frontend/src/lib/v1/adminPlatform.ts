@@ -1,6 +1,7 @@
 import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
 import type { components } from './schema';
 import type { ModelConfig } from './types';
+import { listAdminUsers } from './adminAccess';
 
 type Schemas = components['schemas'];
 
@@ -443,22 +444,28 @@ export const getRoutingLog = async (opts: {
 
 /* ─── Tích hợp: client API, MCP, webhook (UC-12-01..04) ────────────────── */
 
-export type IntegrationKind = 'mcp' | 'api' | 'webhook';
+/*
+ * A2 serves the clients (GET /v1/admin/clients since 12/10/2026, never a secret or hash), their
+ * writes and usage, and the owner's side (/v1/me/clients). There is no list of webhooks.
+ */
+export type IntegrationKind = 'mcp' | 'api';
 
-/** PROPOSAL: GET /v1/admin/integrations. A client acts only as the user who calls through it. */
+/** A client acts only as its owner, who confirms one granted in their name (BR-48). */
 export interface Integration {
   id: Uuid;
   name: string;
   kind: IntegrationKind;
   owner_name: string;
+  /** The MCP tools it was granted. */
   scopes: string[];
-  calls_7d: number;
+  /** PROPOSAL: calls and error rate over 7 days; null when the row has no figures. */
+  calls_7d: number | null;
   error_rate_7d: number | null;
+  quota_per_day: number;
   expires_at: Timestamp;
-  status: 'active' | 'expiring' | 'expired' | 'revoked';
+  status: 'pending_owner' | 'active' | 'expiring' | 'paused' | 'expired' | 'revoked';
 }
 
-/** PROPOSAL: GET /v1/admin/integrations/{id}/usage?days=7. */
 export interface IntegrationUsage {
   daily_calls: number[];
   top_tools: { name: string; share: number }[];
@@ -467,24 +474,165 @@ export interface IntegrationUsage {
   blocked_by_permission: number;
 }
 
-export interface NewIntegration {
-  kind: IntegrationKind;
-  endpoint: string;
-  auth: 'oauth2_client_credentials' | 'api_key' | 'mtls';
-  tools: string[];
-  /** null = every agent of the organisation. */
-  data_space_id: string | null;
+/** A3's listed client; PROPOSAL: the owner's name and 7-day figures under `display` (mock only). */
+export type ClientWire = Schemas['ApiClientListed'] & {
+  display?: Pick<Integration, 'owner_name' | 'calls_7d' | 'error_rate_7d'>;
+};
+
+/** The MCP tools a client may be granted (integration/rules.py MCP_TOOLS). */
+export const MCP_TOOLS = [
+  'ask_question',
+  'get_metric_definition',
+  'search_metrics',
+  'run_skill',
+  'get_published_result',
+  'search_documents',
+] as const;
+
+// An active client this close to its expiry is drawn as expiring (BR-144: at most 12 months).
+const EXPIRING_DAYS = 30;
+
+function readClient(raw: ClientWire, names: Map<string, string>, now = Date.now()): Integration {
+  const left = (new Date(raw.expires_at).getTime() - now) / 86_400_000;
+  const status: Integration['status'] =
+    raw.status === 'active' && left <= EXPIRING_DAYS
+      ? 'expiring'
+      : ((['pending_owner', 'active', 'paused', 'expired', 'revoked'] as const).find(
+          (s) => s === raw.status,
+        ) ?? 'paused');
+  return {
+    id: raw.id,
+    name: raw.name,
+    kind: raw.kind === 'mcp' ? 'mcp' : 'api',
+    owner_name: raw.display?.owner_name ?? names.get(raw.owner_user_id) ?? '',
+    scopes: Array.isArray(raw.tools) ? raw.tools : [],
+    calls_7d: raw.display?.calls_7d ?? null,
+    error_rate_7d: raw.display?.error_rate_7d ?? null,
+    quota_per_day: raw.quota_per_day,
+    expires_at: raw.expires_at,
+    status,
+  };
 }
 
-export const listIntegrations = () =>
-  v1Get<Page<Integration>>('/admin/integrations', { page_size: 500 });
+const userNames = async () => {
+  const users = await listAdminUsers().catch(() => null);
+  return new Map<string, string>(users?.items.map((u) => [u.id, u.display_name]) ?? []);
+};
 
-export const getIntegrationUsage = async (id: string) =>
-  v1Get<IntegrationUsage>(`/admin/integrations/${pathId(id)}/usage`, { days: 7 });
+/** GET /v1/admin/clients. The 7-day figures come from the usage panel, not the list. */
+export const listIntegrations = async (): Promise<Page<Integration>> => {
+  const [page, names] = await Promise.all([
+    v1Get<Page<ClientWire>>('/admin/clients', { page_size: 500 }),
+    userNames(),
+  ]);
+  return { ...page, items: page.items.map((c) => readClient(c, names)) };
+};
 
-/** PROPOSAL: connects, calls the endpoint once to check it, and answers 422 when that fails. */
-export const addIntegration = (body: NewIntegration) =>
-  v1Send<Integration>('POST', '/admin/integrations', body);
+const localDay = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+
+/*
+ * GET /v1/admin/clients/{id}/usage over the last 7 local days by the hour (day buckets are
+ * truncated in the server's zone), summed here into days and tools. Quota use is today's calls
+ * against the client's quota_per_day.
+ */
+export const getIntegrationUsage = async (client: Integration): Promise<IntegrationUsage> => {
+  const today = new Date();
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6 + i);
+    return localDay(d);
+  });
+  const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6);
+  const page = await v1Get<Page<Schemas['UsageRow']>>(`/admin/clients/${pathId(client.id)}/usage`, {
+    from: from.toISOString(),
+    to: today.toISOString(),
+    granularity: 'hour',
+  });
+  const daily = days.map(() => 0);
+  const byTool = new Map<string, number>();
+  let blocked = 0;
+  for (const row of page.items) {
+    const index = days.indexOf(localDay(new Date(row.bucket)));
+    if (index >= 0) daily[index] += row.calls;
+    byTool.set(row.tool, (byTool.get(row.tool) ?? 0) + row.calls);
+    blocked += row.blocked_by_permission;
+  }
+  const total = daily.reduce((a, b) => a + b, 0);
+  return {
+    daily_calls: daily,
+    top_tools: [...byTool]
+      .filter(([, calls]) => calls > 0)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(([name, calls]) => ({ name, share: calls / total })),
+    quota_per_day: client.quota_per_day,
+    quota_used_ratio: client.quota_per_day > 0 ? daily[6] / client.quota_per_day : 0,
+    blocked_by_permission: blocked,
+  };
+};
+
+export interface NewClient {
+  name: string;
+  kind: IntegrationKind;
+  owner_user_id: Uuid;
+  tools: string[];
+  data_space_ids: Uuid[];
+  /** YYYY-MM-DD, at most 12 months ahead (BR-144). */
+  expires_on: string;
+}
+
+/**
+ * POST /v1/admin/clients. The secret is in this answer only. A client granted to someone else
+ * waits in pending_owner until that person confirms it (GET /v1/me/clients).
+ */
+export const addClient = async (body: NewClient) => {
+  const [y, m, d] = body.expires_on.split('-').map(Number);
+  const issued = await v1Send<Schemas['ApiClientIssued']>('POST', '/admin/clients', {
+    name: body.name,
+    kind: body.kind === 'mcp' ? 'mcp' : 'rest',
+    owner_user_id: body.owner_user_id,
+    tools: body.tools,
+    data_space_ids: body.data_space_ids,
+    // End of the chosen local day.
+    expires_at: new Date(y, m - 1, d, 23, 59, 59).toISOString(),
+    // The api's defaults, sent because the generated type makes defaulted fields required.
+    identity_mode: 'on_behalf_of_user',
+    quota_per_minute: 60,
+    quota_per_day: 5000,
+  } satisfies Schemas['ApiClientCreate']);
+  // A new client has made no call yet.
+  const client = readClient({ ...issued, calls_24h: 0, errors_24h: 0 }, await userNames());
+  return { client, secret: issued.client_secret };
+};
+
+/** The new secret is in this answer only. */
+export const rotateClientSecret = async (id: string) =>
+  (await v1Send<Schemas['ApiClientIssued']>('POST', `/admin/clients/${pathId(id)}:rotate-secret`))
+    .client_secret;
+
+/** Emergency revoke: the client's webhooks pause with it. */
+export const revokeClient = (id: string, reason: string) =>
+  v1Send<Schemas['ApiClientView']>('POST', `/admin/clients/${pathId(id)}:revoke`, {
+    reason,
+  } satisfies Schemas['Revoke']);
+
+/** POST /v1/webhooks for an active client; the signing key is in this answer only. */
+export const addWebhook = (body: Schemas['WebhookCreate']) =>
+  v1Send<Schemas['WebhookIssued']>('POST', '/webhooks', body);
+
+/* The owner's side (UC-12-01, BR-48) */
+
+export type MyClient = Schemas['ApiClientView'];
+
+export const listMyClients = () => v1Get<Page<MyClient>>('/me/clients', { page_size: 500 });
+
+/**
+ * Consent is to the client as listed: If-Match carries its updated_at, so a client an admin
+ * widened after the list was read answers 412 instead of being confirmed.
+ */
+export const confirmMyClient = (client: MyClient) =>
+  v1Send<MyClient>('POST', `/me/clients/${pathId(client.id)}:confirm`, undefined, {
+    ifMatch: `"${client.updated_at}"`,
+  });
 
 /* ─── Cài đặt cá nhân (UC-11-01, UC-08-07) ─────────────────────────────── */
 

@@ -2,63 +2,77 @@ import { useState, type ReactNode } from 'react';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
+import { Checkbox } from '../../design-system/Checkbox';
+import { Dialog } from '../../design-system/Dialog';
 import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
+import { listAdminUsers } from '../../lib/v1/adminAccess';
 import {
-  addIntegration,
+  addClient,
+  addWebhook,
   getIntegrationUsage,
   listIntegrations,
+  MCP_TOOLS,
+  revokeClient,
+  rotateClientSecret,
   type Integration,
   type IntegrationKind,
   type IntegrationUsage,
-  type NewIntegration,
 } from '../../lib/v1/adminPlatform';
 import { listDataSpaces } from '../../lib/v1/api';
 import { useV1 } from '../../lib/v1/useV1';
 import { formatExpiry, pct } from './format';
-import { Dialog } from '../../design-system/Dialog';
 
 /*
- * "P12 · Tích hợp · Client & sử dụng" (2306:20082, UC-12-01, UC-12-03, UC-12-04): the clients
- * that call Data Agent (MCP, API, webhook) with their scopes, 7-day calls, errors, expiry and
- * status; on the right the usage of the selected client. A client has no rights of its own:
- * every call carries the identity of the real user behind it. UC-12-02 (calling over MCP) has
- * no screen. "Đăng ký client" and "Webhook" open "Hộp thoại · addIntegration" (2095:8701).
+ * "P12 · Tích hợp · Client & sử dụng" (2306:20082, UC-12-01, UC-12-03, UC-12-04): the REST and
+ * MCP clients that call Data Agent with their tools, 7-day calls, errors, expiry and status; on
+ * the right the usage of the selected client, with rotating its secret and revoking it. A
+ * client has no rights of its own: it acts as its owner, who confirms one granted in their name
+ * (Hồ sơ · Client tôi phụ trách). UC-12-02 (calling over MCP) has no screen. "Đăng ký client"
+ * and "Webhook" open "Hộp thoại · addIntegration" (2095:8701); a secret or signing key is shown
+ * once, in the answer that issues it.
  */
-const KIND_LABEL: Record<IntegrationKind, string> = { mcp: 'MCP', api: 'API', webhook: 'Webhook' };
+type DialogKind = IntegrationKind | 'webhook';
+
+const KIND_LABEL: Record<IntegrationKind, string> = { mcp: 'MCP', api: 'API' };
 
 const STATUS: Record<
   Integration['status'],
   { label: string; tone: 'success' | 'warning' | 'idle' }
 > = {
+  pending_owner: { label: 'Chờ người phụ trách', tone: 'warning' },
   active: { label: 'Hoạt động', tone: 'success' },
   expiring: { label: 'Sắp hết hạn', tone: 'warning' },
+  paused: { label: 'Tạm dừng', tone: 'idle' },
   expired: { label: 'Hết hạn', tone: 'idle' },
   revoked: { label: 'Đã thu hồi', tone: 'idle' },
 };
 
-const DIALOG_KINDS: { value: IntegrationKind; label: string }[] = [
-  { value: 'mcp', label: 'Máy chủ MCP' },
-  { value: 'api', label: 'Client API' },
+const DIALOG_KINDS: { value: DialogKind; label: string }[] = [
+  { value: 'mcp', label: 'Client MCP' },
+  { value: 'api', label: 'Client API (REST)' },
   { value: 'webhook', label: 'Webhook' },
 ];
 
-const AUTH: { value: NewIntegration['auth']; label: string }[] = [
-  { value: 'oauth2_client_credentials', label: 'OAuth2 · client credentials' },
-  { value: 'api_key', label: 'API key · lưu trong kho bí mật' },
-  { value: 'mtls', label: 'mTLS' },
-];
+interface Issued {
+  title: string;
+  label: string;
+  value: string;
+  note: string;
+}
 
 export default function IntegrationsPage() {
   const toast = useToast();
   const clients = useV1(listIntegrations, []);
   const [selected, setSelected] = useState<string>();
-  const [dialog, setDialog] = useState<IntegrationKind | null>(null);
+  const [dialog, setDialog] = useState<DialogKind | null>(null);
+  const [issued, setIssued] = useState<Issued | null>(null);
 
   const items = clients.data?.items ?? [];
   const current = items.find((c) => c.id === selected) ?? items[0];
@@ -98,11 +112,11 @@ export default function IntegrationsPage() {
                 <thead>
                   <tr className="border-b border-border text-left text-muted-foreground da-caption">
                     <th className="px-da-lg py-da-md font-normal">Client</th>
-                    <th className="w-[232px] py-da-md font-normal">Phạm vi</th>
+                    <th className="w-[232px] py-da-md font-normal">Công cụ</th>
                     <th className="w-[132px] py-da-md font-normal">Lượt gọi 7 ngày</th>
                     <th className="w-[82px] py-da-md font-normal">Lỗi</th>
                     <th className="w-[112px] py-da-md font-normal">Hạn</th>
-                    <th className="w-[142px] py-da-md pr-da-lg font-normal">Trạng thái</th>
+                    <th className="w-[162px] py-da-md pr-da-lg font-normal">Trạng thái</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -125,15 +139,17 @@ export default function IntegrationsPage() {
                               {client.name}
                             </span>
                             <span className="truncate text-muted-foreground da-caption">
-                              {KIND_LABEL[client.kind]} · {client.owner_name}
+                              {[KIND_LABEL[client.kind], client.owner_name]
+                                .filter(Boolean)
+                                .join(' · ')}
                             </span>
                           </button>
                         </td>
                         <td className="py-da-md text-foreground da-mono">
-                          {client.scopes.join(', ')}
+                          {client.scopes.join(', ') || '—'}
                         </td>
                         <td className="py-da-md text-foreground da-mono">
-                          {formatNumber(client.calls_7d)}
+                          {client.calls_7d === null ? '—' : formatNumber(client.calls_7d)}
                         </td>
                         <td
                           className={cn(
@@ -143,7 +159,7 @@ export default function IntegrationsPage() {
                               : 'text-foreground',
                           )}
                         >
-                          {client.error_rate_7d === null ? '—' : pct(client.error_rate_7d)}
+                          {pct(client.error_rate_7d)}
                         </td>
                         <td className="py-da-md text-muted-foreground da-mono">
                           {formatExpiry(client.expires_at)}
@@ -164,7 +180,24 @@ export default function IntegrationsPage() {
           aria-label="Sử dụng của client"
           className="flex w-[340px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pt-[20px] pb-da-xl max-[1279px]:w-full max-[1279px]:border-l-0 max-[1279px]:border-t"
         >
-          {current && <UsagePanel client={current} />}
+          {current && (
+            <UsagePanel
+              key={current.id}
+              client={current}
+              onRotated={(secret) =>
+                setIssued({
+                  title: `Bí mật mới của ${current.name}`,
+                  label: 'Client secret',
+                  value: secret,
+                  note: 'Bí mật cũ hết hiệu lực. Chỉ hiện một lần: chép vào công cụ gọi Data Agent ngay.',
+                })
+              }
+              onRevoked={() => {
+                toast({ tone: 'success', message: `Đã thu hồi ${current.name}.` });
+                clients.reload();
+              }}
+            />
+          )}
           <p className="text-muted-foreground da-caption">
             Client không có quyền riêng; mọi lời gọi mang danh tính người dùng thật.
           </p>
@@ -172,29 +205,75 @@ export default function IntegrationsPage() {
       </div>
 
       {dialog && (
-        <AddIntegrationDialog
+        <AddDialog
           initialKind={dialog}
+          clients={items.filter((c) => c.status === 'active' || c.status === 'expiring')}
           onClose={() => setDialog(null)}
-          onAdded={(client) => {
+          onIssued={(result, clientId) => {
             setDialog(null);
-            setSelected(client.id);
-            toast({ tone: 'success', message: `Đã kết nối ${client.name}.` });
+            if (clientId) setSelected(clientId);
+            setIssued(result);
             clients.reload();
           }}
         />
       )}
+      {issued && <IssuedDialog issued={issued} onClose={() => setIssued(null)} />}
     </div>
   );
 }
 
-function UsagePanel({ client }: { client: Integration }) {
-  const usage = useV1(() => getIntegrationUsage(client.id), [client.id]);
+function UsagePanel({
+  client,
+  onRotated,
+  onRevoked,
+}: {
+  client: Integration;
+  onRotated: (secret: string) => void;
+  onRevoked: () => void;
+}) {
+  const toast = useToast();
+  const usage = useV1(() => getIntegrationUsage(client), [client.id]);
+  const [busy, setBusy] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const live = client.status !== 'revoked' && client.status !== 'expired';
+
+  const rotate = async () => {
+    setBusy(true);
+    try {
+      onRotated(await rotateClientSecret(client.id));
+    } catch (e) {
+      toast({ tone: 'error', message: `Không xoay được bí mật: ${(e as Error).message}` });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <>
       <h2 className="text-foreground da-heading-3">{client.name} · 7 ngày</h2>
       <AsyncRegion state={usage} what="số lượt gọi" skeletonRows={3}>
         {(data) => <UsageBody data={data} />}
       </AsyncRegion>
+      {live && (
+        <div className="flex flex-wrap gap-da-sm">
+          <Button size="sm" loading={busy} onClick={rotate}>
+            Xoay bí mật
+          </Button>
+          <Button size="sm" kind="danger" onClick={() => setRevoking(true)}>
+            Thu hồi
+          </Button>
+        </div>
+      )}
+      {revoking && (
+        <RevokeDialog
+          client={client}
+          onClose={() => setRevoking(false)}
+          onRevoked={() => {
+            setRevoking(false);
+            onRevoked();
+          }}
+        />
+      )}
     </>
   );
 }
@@ -222,7 +301,8 @@ function UsageBody({ data }: { data: IntegrationUsage }) {
           : data.top_tools.map((t) => `${t.name} ${pct(t.share, 0)}`).join(' · ')}
       </UsageLine>
       <UsageLine label="Hạn mức">
-        {formatNumber(data.quota_per_day)} lượt/ngày · đã dùng {pct(data.quota_used_ratio, 0)}
+        {formatNumber(data.quota_per_day)} lượt/ngày · hôm nay đã dùng{' '}
+        {pct(data.quota_used_ratio, 0)}
       </UsageLine>
       <UsageLine label="Bị chặn do quyền">
         {formatNumber(data.blocked_by_permission)} lượt · người dùng không có quyền dữ liệu
@@ -240,47 +320,136 @@ function UsageLine({ label, children }: { label: string; children: ReactNode }) 
   );
 }
 
-function AddIntegrationDialog({
-  initialKind,
+function RevokeDialog({
+  client,
   onClose,
-  onAdded,
+  onRevoked,
 }: {
-  initialKind: IntegrationKind;
+  client: Integration;
   onClose: () => void;
-  onAdded: (client: Integration) => void;
+  onRevoked: () => void;
 }) {
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
+  const submit = async () => {
+    setSaving(true);
+    setError(undefined);
+    try {
+      await revokeClient(client.id, reason.trim());
+      onRevoked();
+    } catch (e) {
+      setError((e as Error).message);
+      setSaving(false);
+    }
+  };
+  return (
+    <Dialog
+      size="sm"
+      open
+      title={`Thu hồi ${client.name}?`}
+      description="Client ngừng gọi được ngay, webhook của nó tạm dừng. Không hoàn tác được."
+      submitLabel="Thu hồi"
+      submitting={saving}
+      canSubmit={Boolean(reason.trim())}
+      error={error}
+      onSubmit={submit}
+      onClose={onClose}
+    >
+      <Field label="Lý do">
+        <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} />
+      </Field>
+    </Dialog>
+  );
+}
+
+/** YYYY-MM-DD in local time. */
+const isoDay = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** Today plus `months`, as YYYY-MM-DD. */
+const monthsAhead = (months: number) => {
+  const d = new Date();
+  d.setMonth(d.getMonth() + months);
+  return isoDay(d);
+};
+
+function AddDialog({
+  initialKind,
+  clients,
+  onClose,
+  onIssued,
+}: {
+  initialKind: DialogKind;
+  clients: Integration[];
+  onClose: () => void;
+  onIssued: (issued: Issued, clientId?: string) => void;
+}) {
+  const toast = useToast();
   const spaces = useV1(listDataSpaces, []);
-  const [kind, setKind] = useState<IntegrationKind>(initialKind);
-  const [endpoint, setEndpoint] = useState('');
-  const [auth, setAuth] = useState<NewIntegration['auth']>('oauth2_client_credentials');
-  const [tools, setTools] = useState('');
-  const [audience, setAudience] = useState<string>('org');
+  const users = useV1(listAdminUsers, []);
+  const [kind, setKind] = useState<DialogKind>(initialKind);
+  const [name, setName] = useState('');
+  const [owner, setOwner] = useState<string | null>(null);
+  const [space, setSpace] = useState<string | null>(null);
+  const [tools, setTools] = useState<string[]>([]);
+  const [expiresOn, setExpiresOn] = useState(monthsAhead(6));
+  const [clientId, setClientId] = useState<string | null>(clients[0]?.id ?? null);
+  const [target, setTarget] = useState('');
+  const [events, setEvents] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
 
-  const audiences = [
-    { value: 'org', label: 'Mọi agent của tổ chức' },
-    ...(spaces.data?.items ?? []).map((s) => ({
-      value: s.id,
-      label: `Agent trong Data Space ${s.name}`,
-    })),
-  ];
+  const people = (users.data?.items ?? []).filter((u) => u.kind === 'person');
+  const eventTypes = events
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const canSubmit =
+    kind === 'webhook'
+      ? Boolean(clientId && target.trim() && eventTypes.length)
+      : Boolean(name.trim() && owner && space && tools.length && expiresOn);
 
   const submit = async () => {
     setSaving(true);
     setError(undefined);
     try {
-      const client = await addIntegration({
+      if (kind === 'webhook') {
+        const hook = await addWebhook({
+          api_client_id: clientId!,
+          target_url: target.trim(),
+          event_types: eventTypes,
+        });
+        onIssued({
+          title: 'Đã đăng ký webhook',
+          label: 'Khoá ký',
+          value: hook.signing_key,
+          note: 'Chỉ hiện một lần: dùng khoá này để kiểm chữ ký của mỗi lần gửi.',
+        });
+        return;
+      }
+      const { client, secret } = await addClient({
+        name: name.trim(),
         kind,
-        endpoint: endpoint.trim(),
-        auth,
-        tools: tools
-          .split(',')
-          .map((t) => t.trim())
-          .filter(Boolean),
-        data_space_id: audience === 'org' ? null : audience,
+        owner_user_id: owner!,
+        tools,
+        data_space_ids: [space!],
+        expires_on: expiresOn,
       });
-      onAdded(client);
+      if (client.status === 'pending_owner')
+        toast({
+          tone: 'info',
+          message: `${client.name} chờ ${client.owner_name || 'người phụ trách'} xác nhận trước khi gọi được.`,
+        });
+      onIssued(
+        {
+          title: `Đã cấp ${client.name}`,
+          label: 'Client secret',
+          value: secret,
+          note: 'Chỉ hiện một lần: chép vào công cụ gọi Data Agent ngay.',
+        },
+        client.id,
+      );
     } catch (e) {
       setError((e as Error).message);
       setSaving(false);
@@ -292,46 +461,108 @@ function AddIntegrationDialog({
       size="sm"
       open
       title="Thêm tích hợp"
-      description="Nơi agent nhận việc hoặc gửi kết quả."
-      submitLabel="Kết nối & kiểm tra"
+      description="Client gọi Data Agent bằng quyền của người phụ trách; webhook nhận sự kiện."
+      submitLabel={kind === 'webhook' ? 'Đăng ký webhook' : 'Cấp client'}
       submitting={saving}
-      canSubmit={Boolean(endpoint.trim())}
+      canSubmit={canSubmit}
       error={error}
       onSubmit={submit}
       onClose={onClose}
     >
       <Field label="Loại">
-        <Select<IntegrationKind>
-          label="Loại"
-          options={DIALOG_KINDS}
-          value={kind}
-          onChange={setKind}
-        />
+        <Select<DialogKind> label="Loại" options={DIALOG_KINDS} value={kind} onChange={setKind} />
       </Field>
-      <Field label="Địa chỉ">
-        <Input
-          value={endpoint}
-          onChange={(e) => setEndpoint(e.target.value)}
-          placeholder="https://mcp-ticket.noibo/v1"
-        />
-      </Field>
-      <Field label="Xác thực">
-        <Select<NewIntegration['auth']>
-          label="Xác thực"
-          options={AUTH}
-          value={auth}
-          onChange={setAuth}
-        />
-      </Field>
-      <Field label="Công cụ cung cấp">
-        <Input
-          value={tools}
-          onChange={(e) => setTools(e.target.value)}
-          placeholder="ticket.create, ticket.search"
-        />
-      </Field>
-      <Field label="Ai dùng được">
-        <Select label="Ai dùng được" options={audiences} value={audience} onChange={setAudience} />
+      {kind === 'webhook' ? (
+        <>
+          <Field label="Client">
+            <Select
+              label="Client"
+              options={clients.map((c) => ({ value: c.id, label: c.name }))}
+              value={clientId}
+              onChange={setClientId}
+            />
+          </Field>
+          <Field label="Địa chỉ nhận">
+            <Input
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              placeholder="https://bot.noibo/hooks/data-agent"
+            />
+          </Field>
+          <Field label="Sự kiện">
+            <Input
+              value={events}
+              onChange={(e) => setEvents(e.target.value)}
+              placeholder="alert.fired, report.published"
+            />
+          </Field>
+        </>
+      ) : (
+        <>
+          <Field label="Tên">
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Copilot nội bộ" />
+          </Field>
+          <Field label="Người phụ trách">
+            <Select
+              label="Người phụ trách"
+              options={people.map((u) => ({ value: u.id, label: u.display_name }))}
+              value={owner}
+              onChange={setOwner}
+            />
+          </Field>
+          <Field label="Data Space">
+            <Select
+              label="Data Space"
+              options={(spaces.data?.items ?? []).map((s) => ({ value: s.id, label: s.name }))}
+              value={space}
+              onChange={setSpace}
+            />
+          </Field>
+          <fieldset className="flex flex-col gap-da-xs">
+            <legend className="pb-da-xs text-foreground da-label">Công cụ</legend>
+            {MCP_TOOLS.map((tool) => (
+              <Checkbox
+                key={tool}
+                checked={tools.includes(tool)}
+                onChange={(on) =>
+                  setTools((all) => (on ? [...all, tool] : all.filter((t) => t !== tool)))
+                }
+              >
+                {tool}
+              </Checkbox>
+            ))}
+          </fieldset>
+          <Field label="Hạn dùng" hint="Tối đa 12 tháng (BR-144).">
+            <Input
+              type="date"
+              value={expiresOn}
+              min={isoDay(new Date())}
+              max={monthsAhead(12)}
+              onChange={(e) => setExpiresOn(e.target.value)}
+            />
+          </Field>
+        </>
+      )}
+    </Dialog>
+  );
+}
+
+function IssuedDialog({ issued, onClose }: { issued: Issued; onClose: () => void }) {
+  return (
+    <Dialog
+      size="sm"
+      open
+      title={issued.title}
+      description={issued.note}
+      onClose={onClose}
+      footer={
+        <Button kind="primary" onClick={onClose}>
+          Đã chép, đóng
+        </Button>
+      }
+    >
+      <Field label={issued.label}>
+        <Input readOnly value={issued.value} className="da-mono" />
       </Field>
     </Dialog>
   );

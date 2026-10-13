@@ -4,11 +4,9 @@ import type {
   AiPolicy,
   AiProvider,
   ChannelRules,
+  ClientWire,
   GpuLoad,
-  Integration,
-  IntegrationUsage,
   ModelRoute,
-  NewIntegration,
   NewModel,
   NewProvider,
   NotificationPreferences,
@@ -18,7 +16,15 @@ import type {
   SystemHealth,
 } from '../lib/v1/adminPlatform';
 import type { Me } from '../lib/v1/me';
+import type { components } from '../lib/v1/schema';
 import type { ModelConfig } from '../lib/v1/types';
+
+type Schemas = components['schemas'];
+type ApiClientCreate = Schemas['ApiClientCreate'];
+type ApiClientIssued = Schemas['ApiClientIssued'];
+type UsageRow = Schemas['UsageRow'];
+type WebhookCreate = Schemas['WebhookCreate'];
+type WebhookIssued = Schemas['WebhookIssued'];
 
 /*
  * MSW handlers for lib/v1/adminPlatform.ts. Data is the data drawn in the Figma frames
@@ -519,85 +525,143 @@ export function gpuLoadFixture(): GpuLoad {
   };
 }
 
-export function integrationsFixture(): Integration[] {
+const daysAhead = (days: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString();
+};
+
+const DS_RISK_ID = 'ds-rui-ro-tin-dung';
+
+/* ApiClientListed as GET /v1/admin/clients sends it; the owner's name and 7-day figures under `display` (PROPOSAL). */
+function clientRow(
+  row: Pick<ClientWire, 'id' | 'name' | 'kind' | 'tools' | 'expires_at' | 'status'> &
+    Partial<ClientWire>,
+): ClientWire {
+  const at = '2026-09-01T02:00:00Z';
+  return {
+    identity_mode: 'on_behalf_of_user',
+    owner_user_id: '00000000-0000-4000-8000-0000000000b1',
+    keycloak_client_id: `da-${row.id}`,
+    data_space_ids: [DS_RISK_ID],
+    quota_per_minute: 60,
+    quota_per_day: 5000,
+    calls_24h: 0,
+    errors_24h: 0,
+    owner_confirmed_at: row.status === 'pending_owner' ? null : at,
+    secret_rotated_at: null,
+    revoked_at: row.status === 'revoked' ? at : null,
+    created_at: at,
+    updated_at: at,
+    ...row,
+  };
+}
+
+export function integrationsFixture(): ClientWire[] {
   return [
-    {
+    clientRow({
       id: 'cli-copilot',
       name: 'Copilot nội bộ',
       kind: 'mcp',
-      owner_name: 'Ngô Thanh Bình',
-      scopes: ['ask', 'get_metric', 'run_skill'],
-      calls_7d: 12480,
-      error_rate_7d: 0.004,
-      expires_at: '2026-12-31T00:00:00+07:00',
+      tools: ['ask_question', 'get_metric_definition', 'run_skill'],
+      expires_at: daysAhead(80),
       status: 'active',
-    },
-    {
+      display: { owner_name: 'Ngô Thanh Bình', calls_7d: 12480, error_rate_7d: 0.004 },
+    }),
+    clientRow({
       id: 'cli-excel',
       name: 'Excel add-in',
-      kind: 'api',
-      owner_name: 'Lê Minh Châu',
-      scopes: ['get_metric', 'query'],
-      calls_7d: 3204,
-      error_rate_7d: 0.011,
-      expires_at: '2027-03-31T00:00:00+07:00',
+      kind: 'rest',
+      tools: ['get_metric_definition', 'search_metrics'],
+      expires_at: daysAhead(170),
       status: 'active',
-    },
-    {
+      display: { owner_name: 'Lê Minh Châu', calls_7d: 3204, error_rate_7d: 0.011 },
+    }),
+    clientRow({
       id: 'cli-sbv',
       name: 'Hệ thống báo cáo NHNN',
-      kind: 'api',
-      owner_name: 'Trần Quốc An',
-      scopes: ['get_frozen_values'],
-      calls_7d: 62,
-      error_rate_7d: 0,
-      expires_at: '2027-06-30T00:00:00+07:00',
+      kind: 'rest',
+      tools: ['get_published_result'],
+      expires_at: daysAhead(260),
       status: 'active',
-    },
-    {
+      display: { owner_name: 'Trần Quốc An', calls_7d: 62, error_rate_7d: 0 },
+    }),
+    clientRow({
       id: 'cli-zalo',
       name: 'Bot Zalo OA',
-      kind: 'webhook',
-      owner_name: 'Pháp chế',
-      scopes: ['hitl.*'],
-      calls_7d: 840,
-      error_rate_7d: 0.026,
-      expires_at: '2026-11-15T00:00:00+07:00',
-      status: 'expiring',
-    },
-    {
+      kind: 'mcp',
+      tools: ['ask_question'],
+      expires_at: daysAhead(20),
+      status: 'active',
+      display: { owner_name: 'Pháp chế', calls_7d: 840, error_rate_7d: 0.026 },
+    }),
+    clientRow({
       id: 'cli-hackathon',
       name: 'Thử nghiệm Hackathon',
       kind: 'mcp',
-      owner_name: 'Phạm Đức Long',
-      scopes: ['ask'],
-      calls_7d: 0,
-      error_rate_7d: null,
-      expires_at: '2026-10-01T00:00:00+07:00',
+      tools: ['ask_question'],
+      expires_at: daysAhead(-11),
       status: 'expired',
-    },
+      display: { owner_name: 'Phạm Đức Long', calls_7d: 0, error_rate_7d: null },
+    }),
   ];
 }
 
-const usageFixture = (id: string): IntegrationUsage =>
-  id === 'cli-copilot'
-    ? {
-        daily_calls: [1600, 1720, 1880, 1690, 2010, 1820, 1760],
-        top_tools: [
-          { name: 'ask', share: 0.71 },
-          { name: 'get_metric', share: 0.24 },
-        ],
-        quota_per_day: 5000,
-        quota_used_ratio: 0.41,
-        blocked_by_permission: 52,
-      }
-    : {
-        daily_calls: [0, 0, 0, 0, 0, 0, 0],
-        top_tools: [],
-        quota_per_day: 1000,
-        quota_used_ratio: 0,
-        blocked_by_permission: 0,
-      };
+/* Per local day, the copilot's calls split over its tools; one row at noon per day and tool. */
+const COPILOT_DAYS = [1600, 1720, 1880, 1690, 2010, 1820, 2050];
+const COPILOT_TOOLS: [string, number][] = [
+  ['ask_question', 0.71],
+  ['get_metric_definition', 0.24],
+  ['run_skill', 0.05],
+];
+
+function usageRows(id: string): UsageRow[] {
+  if (id !== 'cli-copilot') return [];
+  const today = new Date();
+  return COPILOT_DAYS.flatMap((calls, i) =>
+    COPILOT_TOOLS.map(([tool, share]) => ({
+      bucket: new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate() - 6 + i,
+        12,
+      ).toISOString(),
+      tool,
+      data_space_id: DS_RISK_ID,
+      calls: Math.round(calls * share),
+      errors: 0,
+      blocked_by_permission: tool === 'ask_question' && i === 6 ? 52 : 0,
+      blocked_by_quota: 0,
+      p95_ms: 820,
+    })),
+  );
+}
+
+/* The clients the signed-in person (meFixture) answers for. */
+export function myClientsFixture(): ClientWire[] {
+  const me = '01920000-0000-7000-8000-00000000a5c1';
+  return [
+    clientRow({
+      id: 'cli-power-bi',
+      name: 'Power BI phòng Rủi ro',
+      kind: 'rest',
+      owner_user_id: me,
+      tools: ['get_metric_definition', 'search_metrics'],
+      expires_at: daysAhead(180),
+      status: 'pending_owner',
+      updated_at: '2026-10-12T03:15:00.123456Z',
+    }),
+    clientRow({
+      id: 'cli-teams-bot',
+      name: 'Bot Teams của tôi',
+      kind: 'mcp',
+      owner_user_id: me,
+      tools: ['ask_question'],
+      expires_at: daysAhead(90),
+      status: 'active',
+    }),
+  ];
+}
 
 export function meFixture(): Me {
   return {
@@ -612,7 +676,11 @@ export function meFixture(): Me {
     time_zone: 'Asia/Ho_Chi_Minh',
     roles: [
       {
-        role: { id: '01920000-0000-7000-8000-0000000000a1', code: 'AC01', name: 'Chuyên viên phân tích' },
+        role: {
+          id: '01920000-0000-7000-8000-0000000000a1',
+          code: 'AC01',
+          name: 'Chuyên viên phân tích',
+        },
         source: 'group_mapping',
         group_name: 'GRP-RISK-ANALYST',
         valid_until: null,
@@ -850,6 +918,7 @@ export const prefsWire = (p: NotificationPreferences) => ({
 export function createAdminPlatformHandlers() {
   let models = modelRoutesFixture();
   let integrations = integrationsFixture();
+  let myClients = myClientsFixture();
   let preferences = notificationPreferencesFixture();
   let policy = aiPolicyFixture();
   let providers = providersFixture();
@@ -1012,33 +1081,75 @@ export function createAdminPlatformHandlers() {
     }),
     http.get('*/v1/admin/gpu-load', () => HttpResponse.json(gpuLoadFixture())),
 
-    http.get('*/v1/admin/integrations', () => page(integrations)),
-    http.get('*/v1/admin/integrations/:id/usage', ({ params }) =>
+    // PROPOSAL: GET /v1/admin/clients (A2 has the writes and the usage, not the list).
+    http.get('*/v1/admin/clients', () => page(integrations)),
+    http.get('*/v1/admin/clients/:id/usage', ({ params }) =>
       integrations.some((i) => i.id === params.id)
-        ? HttpResponse.json(usageFixture(String(params.id)))
+        ? page(usageRows(String(params.id)))
         : problem(404, 'not_found', 'Không tìm thấy client.'),
     ),
-    http.post('*/v1/admin/integrations', async ({ request }) => {
-      const body = (await request.json()) as NewIntegration;
-      let host: string;
-      try {
-        host = new URL(body.endpoint).host;
-      } catch {
-        return problem(422, 'validation_failed', 'Địa chỉ không hợp lệ.');
-      }
-      const added: Integration = {
+    http.post('*/v1/admin/clients', async ({ request }) => {
+      const body = (await request.json()) as ApiClientCreate;
+      if (!body.tools?.length)
+        return problem(422, 'validation_failed', 'Chọn ít nhất một công cụ.');
+      // Granted to someone else, the client waits for its owner (BR-48).
+      const mine = body.owner_user_id === meFixture().id;
+      const added = clientRow({
         id: `cli-${integrations.length + 1}`,
-        name: host,
+        name: body.name,
         kind: body.kind,
-        owner_name: 'Đỗ Hải Yến',
-        scopes: body.tools,
-        calls_7d: 0,
-        error_rate_7d: null,
-        expires_at: '2027-10-10T00:00:00+07:00',
-        status: 'active',
-      };
+        owner_user_id: body.owner_user_id,
+        tools: body.tools,
+        data_space_ids: body.data_space_ids ?? [],
+        expires_at: body.expires_at,
+        status: mine ? 'active' : 'pending_owner',
+      });
       integrations = [...integrations, added];
-      return HttpResponse.json(added, { status: 201 });
+      const issued: ApiClientIssued = { ...added, client_secret: 'da_sk_live_9f3c1b7e2a' };
+      return HttpResponse.json(issued, { status: 201 });
+    }),
+    http.post(/\/v1\/admin\/clients\/[^/:]+:(rotate-secret|revoke)$/, ({ request }) => {
+      const [, id, verb] = /clients\/([^/:]+):([a-z-]+)$/.exec(new URL(request.url).pathname)!;
+      const client = integrations.find((c) => c.id === id);
+      if (!client) return problem(404, 'not_found', 'Không tìm thấy client.');
+      if (verb === 'revoke') {
+        const revoked = { ...client, status: 'revoked', revoked_at: new Date().toISOString() };
+        integrations = integrations.map((c) => (c.id === id ? revoked : c));
+        return HttpResponse.json(revoked);
+      }
+      return HttpResponse.json({ ...client, client_secret: 'da_sk_live_rotated_51d0' });
+    }),
+    http.post('*/v1/webhooks', async ({ request }) => {
+      const body = (await request.json()) as WebhookCreate;
+      const issued: WebhookIssued = {
+        id: 'wh-1',
+        ...body,
+        status: 'active',
+        consecutive_failures: 0,
+        paused_reason: null,
+        created_at: new Date().toISOString(),
+        signing_key: 'whsec_4b8e0c2d',
+      };
+      return HttpResponse.json(issued, { status: 201 });
+    }),
+    http.get('*/v1/me/clients', () => page(myClients)),
+    http.post(/\/v1\/me\/clients\/[^/:]+:confirm$/, ({ request }) => {
+      const id = /clients\/([^/:]+):confirm$/.exec(new URL(request.url).pathname)![1];
+      const client = myClients.find((c) => c.id === id);
+      if (!client) return problem(404, 'not_found', 'No such client of yours.');
+      if (client.status !== 'pending_owner')
+        return problem(409, 'invalid_state', `The client is ${client.status}, not pending_owner.`);
+      // The api compares instants; the mock sends updated_at back exactly as listed.
+      if (request.headers.get('If-Match') !== `"${client.updated_at}"`)
+        return problem(
+          412,
+          'precondition_failed',
+          "If-Match must be the client's ETag as you saw it.",
+        );
+      const now = new Date().toISOString();
+      const confirmed = { ...client, status: 'active', owner_confirmed_at: now, updated_at: now };
+      myClients = myClients.map((c) => (c.id === id ? confirmed : c));
+      return HttpResponse.json(confirmed, { headers: { ETag: `"${now}"` } });
     }),
 
     http.get('*/v1/me', () => HttpResponse.json(meFixture())),
