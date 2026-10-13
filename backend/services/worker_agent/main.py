@@ -33,6 +33,7 @@ from services.worker_agent import (
     resolutions,
     schema_scans,
     source_tests,
+    tiles,
 )
 from services.worker_agent.events import EventSource, Handler, OutboxTableSource
 
@@ -60,6 +61,7 @@ HANDLERS: dict[str, Handler] = {
     **source_tests.HANDLERS,
     **schema_scans.HANDLERS,
     **query_runs.HANDLERS,
+    **tiles.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -90,6 +92,8 @@ async def sources() -> list[EventSource]:
             types |= set(source_tests.HANDLERS) | set(schema_scans.HANDLERS)
         if schema == "query":
             types |= set(query_runs.HANDLERS)
+        if schema == "workspace":
+            types |= set(tiles.HANDLERS)
         found.append(OutboxTableSource(schema=schema, event_types=frozenset(types)))
     try:
         audit = await _outbox_schemas(AUDIT_RELAY)

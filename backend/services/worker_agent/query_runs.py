@@ -155,9 +155,12 @@ def _condition(f: dict[str, Any]) -> exp.Expression:
     return _OPS[op](this=column, expression=_literal(value))
 
 
-async def _dataset(session: Any, run: q.QueryRun, p: dict[str, Any]) -> tuple[catalog.Source, str]:
+async def dataset_sql(
+    session: Any, data_space_id: uuid.UUID, p: dict[str, Any]
+) -> tuple[catalog.Source, str]:
+    """A dataset's rows under column filters ({dataset_id, filters}), as SQL on its source."""
     dataset = await session.get(catalog.Dataset, uuid.UUID(str(p["dataset_id"])))
-    if dataset is None or dataset.data_space_id != run.data_space_id:
+    if dataset is None or dataset.data_space_id != data_space_id:
         raise Unbuildable("Bảng không còn trong Data Space.")
     source = _queryable(await session.get(catalog.Source, dataset.source_id))
     query = exp.select(exp.Star()).from_(
@@ -168,13 +171,13 @@ async def _dataset(session: Any, run: q.QueryRun, p: dict[str, Any]) -> tuple[ca
     return source, query.sql(dialect=dialect_of(source.kind))
 
 
-async def _sql_source(session: Any, run: q.QueryRun) -> catalog.Source:
+async def sql_source(session: Any, data_space_id: uuid.UUID, sql: str) -> catalog.Source:
     """The one queryable source whose datasets of the Data Space hold every table the SQL reads."""
     ds = catalog.Dataset
     datasets = (
         await session.scalars(
             select(ds).where(
-                ds.data_space_id == run.data_space_id,
+                ds.data_space_id == data_space_id,
                 ds.deleted_at.is_(None),
                 ds.enabled.is_(True),
                 ds.source_id.is_not(None),
@@ -193,7 +196,7 @@ async def _sql_source(session: Any, run: q.QueryRun) -> catalog.Source:
     for source in sources.values():
         try:
             dialect = dialect_of(source.kind)
-            tables = tables_of(check_read_only(run.sql_generated, dialect), dialect)
+            tables = tables_of(check_read_only(sql, dialect), dialect)
         except SqlRejected:
             continue
         if not tables:
@@ -223,9 +226,12 @@ async def run_requested(event: Event) -> None:
             if run.caller_kind == "question":
                 source, sql, metric_version_ids = await _explore(session, run, p)
             elif p.get("mode") == "dataset":
-                source, sql = await _dataset(session, run, p)
+                source, sql = await dataset_sql(session, run.data_space_id, p)
             else:
-                source, sql = await _sql_source(session, run), run.sql_generated
+                source, sql = (
+                    await sql_source(session, run.data_space_id, run.sql_generated),
+                    run.sql_generated,
+                )
     except (Unbuildable, c.CompileError, SqlRejected) as exc:
         await _fail(run, str(exc))
         return

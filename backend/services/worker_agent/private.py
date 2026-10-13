@@ -33,7 +33,7 @@ from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog
 from services.worker_agent.answer.narrate import figures_of, text_of
 from services.worker_agent.llm import ModelUnavailable
-from services.worker_agent.query.executor import run_query
+from services.worker_agent.query.executor import CallerKind, run_query
 from services.worker_agent.query.guard import SqlRejected, dialect_of
 from services.worker_agent.questions import QUERYABLE, gateway, secrets
 from services.worker_agent.semantic import compiler as c
@@ -64,8 +64,16 @@ async def _emit(redis: Any, question_id: str, event: str, data: dict[str, Any]) 
     await redis.expire(stream, TTL_SECONDS)
 
 
-async def answer(question: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    """The terminal event for one private question: ("answer", …) or ("error", …)."""
+async def answer(
+    question: dict[str, Any],
+    *,
+    private: bool = True,
+    caller_kind: CallerKind = "ad_hoc",
+    caller_id: uuid.UUID | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """The terminal event for one private question: ("answer", …) or ("error", …).
+
+    A workspace's question tile asks the same way, recorded (private=False, caller_kind tile)."""
     if not question.get("data_space_id"):
         return "error", {
             "code": "data_space_required",
@@ -136,13 +144,13 @@ async def answer(question: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         org_id=org_id,
         data_space_id=space_id,
         principal_id=owner_id,
-        caller_kind="ad_hoc",
-        caller_id=question_id,
+        caller_kind=caller_kind,
+        caller_id=caller_id or question_id,
         source=source,
         sql=compiled.sql,
         secrets=secrets(),
         metric_version_ids=[compiled.metric_version_id],
-        private=True,
+        private=private,
     )
     if not outcome.ok:
         return "error", {

@@ -47,7 +47,8 @@ kubectl -n dataagent-service create secret generic api-secrets \
 
 # worker-agent: answers as svc_qa, opens HITL requests as svc_inbox, releases approved audit exports
 # as svc_audit_worker (that one update only), claims outbox rows as svc_outbox_relay in both databases (docs/v3/06-api-v1.md §6),
-# and runs queries in place as svc_query with source credentials read from OpenBao.
+# runs queries in place as svc_query with source credentials read from OpenBao, writes schema
+# profiles as svc_context and tile snapshots as svc_workspace.
 kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_QA="${DATAAGENT_DB_URL__SVC_QA}" \
   --from-literal=DATAAGENT_DB_URL__SVC_OUTBOX_RELAY="${DATAAGENT_DB_URL__SVC_OUTBOX_RELAY}" \
@@ -56,6 +57,8 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_OUTBOX_RELAY_AUDIT="${DATAAGENT_DB_URL__SVC_OUTBOX_RELAY_AUDIT}" \
   --from-literal=DATAAGENT_DB_URL__SVC_CATALOG="${DATAAGENT_DB_URL__SVC_CATALOG}" \
   --from-literal=DATAAGENT_DB_URL__SVC_QUERY="${DATAAGENT_DB_URL__SVC_QUERY}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_CONTEXT="${DATAAGENT_DB_URL__SVC_CONTEXT}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_WORKSPACE="${DATAAGENT_DB_URL__SVC_WORKSPACE}" \
   --from-literal=OPENBAO_ROLE_ID="${WORKER_AGENT_OPENBAO_ROLE_ID}" \
   --from-literal=OPENBAO_SECRET_ID="${WORKER_AGENT_OPENBAO_SECRET_ID}" \
   --dry-run=client -o yaml | kubectl apply -f -
