@@ -32,7 +32,14 @@ from sqlalchemy import update
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog
 from libs.dataagent_db.models import query as q
-from services.worker_agent.query.guard import SqlRejected, capped, check_read_only, dialect_of
+from services.worker_agent.query.guard import (
+    SqlRejected,
+    capped,
+    check_read_only,
+    dialect_of,
+    tables_of,
+)
+from services.worker_agent.query.scope import datasets_read
 from services.worker_agent.query.secrets import SecretReader, SecretUnavailable
 
 ROLE = "svc_query"
@@ -262,39 +269,70 @@ async def run_query(
     metric_version_ids: Sequence[uuid.UUID] = (),
     as_of: datetime.date | None = None,
     private: bool = False,
+    run_id: uuid.UUID | None = None,
+    limit: int = MAX_ROWS,
 ) -> QueryOutcome:
     """`private=True` is the channel of UC-16-02: the run is recorded (who, which source, status,
     counts, result hash) but neither its SQL, whose literals come from the question, nor its rows,
     nor an error message that may quote either. BR-193 / AC-16-02-10: none of the question's text
-    is left in a table."""
-    run_id = uuid7()
+    is left in a table.
+
+    `run_id` names a run the api already recorded (POST /v1/query-runs, the explorer): that row is
+    completed instead of a new one written. `limit` (at most BR-03's 10 000) caps the rows."""
+    limit = min(limit, MAX_ROWS)
+    existing = run_id is not None
+    run_id = run_id or uuid7()
     started = time.monotonic()
     outcome = QueryOutcome(query_run_id=run_id, status="failed", sql=sql)
     executed = sql
+    tables: set[tuple[str | None, str]] = set()
     try:
         dialect = dialect_of(source.kind)
-        executed = capped(check_read_only(sql, dialect), dialect, MAX_ROWS + 1)
+        tree = check_read_only(sql, dialect)
+        tables = tables_of(tree, dialect)
+        executed = capped(tree, dialect, limit + 1)
     except SqlRejected as exc:
         outcome.error = str(exc)
     async with scoped_session(ROLE, org_id, principal_id) as session:
-        session.add(
-            q.QueryRun(
-                id=run_id,
-                org_id=org_id,
-                data_space_id=data_space_id,
-                caller_kind=caller_kind,
-                caller_id=caller_id,
-                principal_id=principal_id,
-                source_id=source.id,
-                route="live",
-                sql_generated="" if private else sql,
-                sql_executed="" if private else executed,
-                metric_version_ids=list(metric_version_ids),
-                as_of=as_of,
-                status="failed" if outcome.error else "running",
-                error=_stored_error(outcome, private),
+        if outcome.error is None:
+            try:
+                await datasets_read(
+                    session,
+                    data_space_id=data_space_id,
+                    principal_id=principal_id,
+                    source=source,
+                    tables=tables,
+                )
+            except SqlRejected as exc:
+                outcome.error = str(exc)
+        recorded = {
+            "source_id": source.id,
+            "sql_generated": "" if private else sql,
+            "sql_executed": "" if private else executed,
+            "status": "failed" if outcome.error else "running",
+            "error": _stored_error(outcome, private),
+        }
+        if existing:
+            if metric_version_ids:
+                recorded["metric_version_ids"] = list(metric_version_ids)
+            await session.execute(
+                update(q.QueryRun).where(q.QueryRun.id == run_id).values(**recorded)
             )
-        )
+        else:
+            session.add(
+                q.QueryRun(
+                    id=run_id,
+                    org_id=org_id,
+                    data_space_id=data_space_id,
+                    caller_kind=caller_kind,
+                    caller_id=caller_id,
+                    principal_id=principal_id,
+                    route="live",
+                    metric_version_ids=list(metric_version_ids),
+                    as_of=as_of,
+                    **recorded,
+                )
+            )
     if outcome.error:
         return outcome
 
@@ -308,8 +346,8 @@ async def run_query(
                 ),
                 timeout=timeout_s + 5,
             )
-        outcome.truncated = len(rows) > MAX_ROWS
-        outcome.rows = rows[:MAX_ROWS]
+        outcome.truncated = len(rows) > limit
+        outcome.rows = rows[:limit]
         outcome.columns = columns
         outcome.result_hash = _hash(columns, outcome.rows)
         outcome.status = "succeeded"

@@ -69,6 +69,27 @@ def _source(
         query_timeout_s=over.get("timeout", 5),
     )
     secrets = StaticReader({ref: {"user": "dw_reader", "password": WAREHOUSE_PASSWORD}})
+    # The executor reads only tables that are datasets of the Data Space on this source.
+    seed.row(
+        "catalog.source",
+        id=source.id,
+        org_id=org,
+        data_space_id=space,
+        name="Kho",
+        kind="postgresql",
+        secret_ref=ref,
+    )
+    seed.row(
+        "catalog.dataset",
+        org_id=org,
+        data_space_id=space,
+        source_id=source.id,
+        origin="source",
+        schema_name="dw",
+        table_name="loan_balance",
+        history_kind="none",
+        enabled=True,
+    )
     return org, space, user, source, secrets
 
 
@@ -158,3 +179,24 @@ async def test_credentials_of_another_organisation_are_refused(
         sql="SELECT 1",
     )
     assert not out.ok and "organisation" in (out.error or "")
+
+
+async def test_a_table_outside_the_data_space_is_refused_before_the_source(
+    seed: Seed, warehouse: dict[str, object]
+) -> None:
+    # The source login can read pg_catalog; the Data Space does not hold it.
+    org, space, user, source, secrets = _source(seed, warehouse)
+    out = await run_query(
+        org_id=org,
+        data_space_id=space,
+        principal_id=user,
+        caller_kind="ad_hoc",
+        caller_id=user,
+        source=source,
+        secrets=secrets,
+        sql="SELECT rolname FROM pg_catalog.pg_roles",
+    )
+    assert not out.ok and "not a dataset of this Data Space" in (out.error or "")
+    assert seed.one(
+        "SELECT status, source_id::text FROM query.query_run WHERE id = %s", out.query_run_id
+    ) == ("failed", str(source.id))

@@ -145,3 +145,30 @@ def capped(tree: exp.Expression, dialect: str, limit: int) -> str:
     if again.sql(dialect=dialect) != sql:
         raise SqlRejected("the SQL does not read back as itself")
     return sql
+
+
+def tables_of(tree: exp.Expression, dialect: str) -> set[tuple[str | None, str]]:
+    """The (schema, table) pairs a checked query reads; schema None when it is not written.
+
+    A CTE's own name is not a table, nor is a table function (generate_series). A name in another
+    database (catalog.schema.table) is refused: a source is one database. PostgreSQL folds an
+    unquoted name to lower case and keeps a quoted one, so the name is the one it resolves to;
+    the other engines compare names without case."""
+    ctes = {cte.alias_or_name.lower() for cte in tree.find_all(exp.CTE)}
+    fold = dialect == "postgres"
+    found: set[tuple[str | None, str]] = set()
+    for table in tree.find_all(exp.Table):
+        if not isinstance(table.this, exp.Identifier):
+            continue
+        if table.args.get("catalog"):
+            raise SqlRejected("a table in another database is not allowed")
+
+        def name(ident: exp.Identifier) -> str:
+            text = str(ident.this)
+            return text if fold and ident.quoted else text.lower()
+
+        schema = table.args.get("db")
+        if schema is None and table.name.lower() in ctes:
+            continue
+        found.add((name(schema) if isinstance(schema, exp.Identifier) else None, name(table.this)))
+    return found

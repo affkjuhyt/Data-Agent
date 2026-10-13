@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.worker_agent.query.guard import SqlRejected, capped, check_read_only
+from services.worker_agent.query.guard import SqlRejected, capped, check_read_only, tables_of
 
 pytestmark = [pytest.mark.unit]
 
@@ -64,3 +64,18 @@ def test_what_runs_is_checked_again() -> None:
 def test_a_comment_is_refused(sql: str) -> None:
     with pytest.raises(SqlRejected):
         check_read_only(sql, "postgres")
+
+
+def test_the_tables_a_query_reads_leave_out_ctes_and_table_functions() -> None:
+    tree = check_read_only(
+        'WITH recent AS (SELECT * FROM bank.loan) SELECT * FROM recent JOIN "Branch" b ON true'
+        " JOIN generate_series(1, 3) g ON true JOIN LOAN x ON true",
+        "postgres",
+    )
+    # PostgreSQL folds an unquoted name and keeps a quoted one.
+    assert tables_of(tree, "postgres") == {("bank", "loan"), (None, "Branch"), (None, "loan")}
+
+
+def test_a_table_in_another_database_is_refused() -> None:
+    with pytest.raises(SqlRejected):
+        tables_of(check_read_only("SELECT * FROM other.public.t", "postgres"), "postgres")

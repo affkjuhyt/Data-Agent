@@ -27,6 +27,7 @@ from libs.dataagent_db import unscoped_session
 from services.worker_agent import (
     hitl,
     private,
+    query_runs,
     questions,
     replay,
     resolutions,
@@ -58,6 +59,7 @@ HANDLERS: dict[str, Handler] = {
     **resolutions.HANDLERS,
     **source_tests.HANDLERS,
     **schema_scans.HANDLERS,
+    **query_runs.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -86,6 +88,8 @@ async def sources() -> list[EventSource]:
             types |= set(resolutions.HANDLERS)
         if schema == "catalog":
             types |= set(source_tests.HANDLERS) | set(schema_scans.HANDLERS)
+        if schema == "query":
+            types |= set(query_runs.HANDLERS)
         found.append(OutboxTableSource(schema=schema, event_types=frozenset(types)))
     try:
         audit = await _outbox_schemas(AUDIT_RELAY)
