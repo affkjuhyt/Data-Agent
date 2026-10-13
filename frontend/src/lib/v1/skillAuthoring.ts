@@ -256,8 +256,29 @@ export const getLatestTestRun = async (id: string) =>
   v1Get<SkillTestRun>(`/skills/${pathId(id)}/test-runs/latest`);
 
 /** PROPOSAL: POST /v1/skills/{id}:test — reruns every case on locked data. */
-export const runSkillTests = async (id: string) =>
-  v1Send<SkillTestRun>('POST', `/skills/${pathId(id)}:test`, {});
+export const runSkillTests = async (id: string): Promise<SkillTestRun> => {
+  try {
+    return await v1Send<SkillTestRun>('POST', `/skills/${pathId(id)}:test`, {});
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+    const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+    const draft = raw.versions.find((version) => version.status === 'draft');
+    if (!draft) throw error;
+    await v1Send<Schemas['services__api__modules__skill__schemas__Accepted']>(
+      'POST',
+      `/skill-versions/${pathId(draft.id)}:test`,
+    );
+    return {
+      skill_id: raw.id,
+      skill_name: raw.name,
+      version: draft.version,
+      status: 'testing' as SkillAuthoringStatus,
+      ran_at: new Date().toISOString(),
+      cases: [],
+      failures: [],
+    };
+  }
+};
 
 /** PROPOSAL: POST /v1/skills/{id}/test-cases (A2 SkillTestCase). */
 export const addSkillTestCase = async (
@@ -269,12 +290,24 @@ export const addSkillTestCase = async (
 export const applySkillFix = async (id: string, caseId: string) =>
   v1Send<SkillTestRun>('POST', `/skills/${pathId(id)}:apply-fix`, { case_id: caseId });
 
-/**
- * PROPOSAL: POST /v1/skills/{id}:submit {notes} — sends the version for review; 409 while a
- * failing case has no note.
- */
-export const submitSkill = async (id: string, notes: Record<string, string>) =>
-  v1Send<{ status: SkillAuthoringStatus }>('POST', `/skills/${pathId(id)}:submit`, { notes });
+/** Submit the current testing version through the canonical publish workflow. */
+export const submitSkill = async (id: string, notes: Record<string, string>) => {
+  try {
+    return await v1Send<{ status: SkillAuthoringStatus }>('POST', `/skills/${pathId(id)}:submit`, {
+      notes,
+    });
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+    const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+    const candidate = raw.versions.find((version) => version.status === 'testing');
+    if (!candidate) throw error;
+    const published = await v1Send<Schemas['VersionView']>(
+      'POST',
+      `/skill-versions/${pathId(candidate.id)}:publish`,
+    );
+    return { status: published.status as SkillAuthoringStatus };
+  }
+};
 
 /* ─── Chạy kỹ năng (UC-03-01) và yếu tố bên ngoài (UC-03-02) ──────────── */
 
