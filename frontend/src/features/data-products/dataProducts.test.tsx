@@ -149,15 +149,22 @@ describe('QualityRulesPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Thêm quy tắc' }));
     const dialog = screen.getByRole('dialog');
-    fireEvent.change(within(dialog).getByLabelText('Quy tắc'), {
-      target: { value: 'Lãi suất > 0' },
-    });
-    fireEvent.change(within(dialog).getByLabelText('Áp vào'), {
-      target: { value: 'prep.loans_retail.rate' },
-    });
+    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Bảng' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Thu hồi nợ' }));
+    fireEvent.change(within(dialog).getByLabelText('Cột'), { target: { value: 'rate' } });
+    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Kiểm tra' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Trong khoảng' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Thêm quy tắc' }));
+    expect(
+      await within(dialog).findByText('Nhập giá trị nhỏ nhất và lớn nhất.'),
+    ).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText('Nhỏ nhất'), { target: { value: '0' } });
+    fireEvent.change(within(dialog).getByLabelText('Lớn nhất'), { target: { value: '25' } });
     fireEvent.click(within(dialog).getByLabelText('Cảnh báo'));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Thêm quy tắc' }));
-    expect(await screen.findByText('Đã tạo “Lãi suất > 0” · bạn là chủ sở hữu')).toBeInTheDocument();
-    expect(await screen.findByText('prep.loans_retail.rate')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Đã tạo “Trong khoảng · Thu hồi nợ.rate” · bạn là chủ sở hữu'),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('Thu hồi nợ.rate')).toBeInTheDocument();
   });
 });

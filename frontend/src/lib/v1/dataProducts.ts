@@ -1,6 +1,9 @@
+import { listDatasets } from './api';
 import { pathId, v1Get, v1Send, type Page } from './client';
 import { getMe } from './me';
 import type { components } from './schema';
+
+type Schemas = components['schemas'];
 
 /*
  * P06 Chuẩn bị dữ liệu, second half: data marts and data products (UC-06-06) and quality rules
@@ -318,9 +321,101 @@ export interface QualityRule {
   current: { state: CheckState; value_text: string | null } | null;
 }
 
-/** A2: GET /v1/quality-rules. */
-export const listQualityRules = () => v1Get<Page<QualityRule>>('/quality-rules');
+export type RuleKind = Schemas['QualityRuleCreate']['kind'];
 
-/** A2: POST /v1/quality-rules; the owner is the caller until reassigned. */
-export const createQualityRule = (body: { name: string; target: string; severity: RuleSeverity }) =>
-  v1Send<QualityRule>('POST', '/quality-rules', body);
+export const RULE_KIND: Record<RuleKind, string> = {
+  not_null: 'Không rỗng',
+  range: 'Trong khoảng',
+  unique: 'Không trùng',
+  in_list: 'Thuộc danh sách',
+  sum_matches: 'Tổng khớp',
+  freshness: 'Độ mới',
+  custom_sql: 'SQL tuỳ chỉnh',
+};
+
+type RuleWire = Schemas['QualityRuleView'] & { display?: QualityRule };
+type ResultRow = Schemas['QualityResultView'];
+
+const ORIGIN: Record<string, string> = {
+  manual: 'Người tạo',
+  agent_suggested: 'Agent đề xuất',
+  pack: 'Gói ngành',
+};
+
+/** high blocks the report (BR-116); medium and low warn. */
+const severityOf = (severity: string): RuleSeverity => (severity === 'high' ? 'block' : 'warn');
+
+/** A failed check is a failure where the rule blocks and a warning where it does not. */
+const stateOf = (result: ResultRow): CheckState =>
+  result.passed ? 'pass' : severityOf(result.severity) === 'block' ? 'fail' : 'warn';
+const WORST: CheckState[] = ['pass', 'warn', 'fail'];
+
+function ruleName(raw: Schemas['QualityRuleView']) {
+  const params = (raw.params ?? {}) as Record<string, unknown>;
+  const kind = RULE_KIND[raw.kind as RuleKind] ?? raw.kind;
+  return raw.kind === 'range' && (params.min !== undefined || params.max !== undefined)
+    ? `${kind} ${params.min ?? '…'} – ${params.max ?? '…'}`
+    : kind;
+}
+
+/*
+ * A rule as the screen lists it: its name is its kind (and range), where it applies is the
+ * dataset and column, the owner is who made it (A3 keeps the origin, not a person). The last
+ * seven days and the current state are the rule's results of the past week, the worst of each
+ * day; a day without a check stays empty.
+ */
+function readRule(raw: RuleWire, tables: Map<string, string>, results: ResultRow[]): QualityRule {
+  if (raw.display) return raw.display;
+  const mine = results
+    .filter((r) => r.rule_id === raw.id)
+    .sort((a, b) => b.checked_at.localeCompare(a.checked_at));
+  const today = new Date();
+  const last_7d = Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(today);
+    day.setDate(today.getDate() - (6 - i));
+    const key = day.toISOString().slice(0, 10);
+    const states = mine.filter((r) => r.checked_at.slice(0, 10) === key).map(stateOf);
+    return states.length ? WORST[Math.max(...states.map((st) => WORST.indexOf(st)))] : null;
+  });
+  const latest = mine[0];
+  const table = tables.get(raw.dataset_id) ?? raw.dataset_id;
+  return {
+    id: raw.id,
+    name: ruleName(raw),
+    target: raw.column_name ? `${table}.${raw.column_name}` : table,
+    severity: severityOf(raw.severity),
+    owner: { id: '', name: ORIGIN[raw.origin] ?? raw.origin },
+    last_7d,
+    current: latest
+      ? {
+          state: stateOf(latest),
+          value_text: latest.violations ? `${latest.violations} dòng vi phạm` : null,
+        }
+      : null,
+  };
+}
+
+/** A2: GET /v1/quality-rules, with the datasets they apply to and the past week's results. */
+export const listQualityRules = async (): Promise<Page<QualityRule>> => {
+  const week = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const [rules, datasets, results] = await Promise.all([
+    v1Get<Page<RuleWire>>('/quality-rules', { page_size: 500 }),
+    listDatasets(),
+    v1Get<Page<ResultRow>>('/quality-results', { from: week, page_size: 500 }),
+  ]);
+  const tables = new Map(datasets.items.map((d) => [d.id, d.display_name]));
+  return { ...rules, items: rules.items.map((r) => readRule(r, tables, results.items)) };
+};
+
+/** A2: POST /v1/quality-rules (QualityRuleCreate); the data-quality agent runs it right away. */
+export const createQualityRule = (body: {
+  dataset_id: string;
+  kind: RuleKind;
+  column_name?: string;
+  params?: Record<string, number>;
+  severity: RuleSeverity;
+}) =>
+  v1Send<Schemas['QualityRuleView']>('POST', '/quality-rules', {
+    ...body,
+    severity: body.severity === 'block' ? 'high' : 'medium',
+  });
