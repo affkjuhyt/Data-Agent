@@ -67,11 +67,13 @@ async def test_uc_16_02_a_private_question_is_answered_and_nothing_is_kept(
         "text"
     ]
     run = answer["figures"][0]["query_run_id"]
-    # The run is on record (SQL, hashes); its rows and the question are not.
-    assert seed.one("SELECT status, caller_kind FROM query.query_run WHERE id = %s", run) == (
-        "succeeded",
-        "ad_hoc",
-    )
+    # The run is on record (who, status, result hash); its SQL, whose literals come from the
+    # question, its rows and the question are not (AC-16-02-10).
+    assert seed.one(
+        "SELECT status, caller_kind, sql_generated, sql_executed, result_hash IS NOT NULL"
+        " FROM query.query_run WHERE id = %s",
+        run,
+    ) == ("succeeded", "ad_hoc", "", "", True)
     assert seed.one("SELECT count(*) FROM query.query_result WHERE query_run_id = %s", run) == 0
     assert seed.one("SELECT count(*) FROM qa.question WHERE org_id = %s", bank.org) == 0
     assert 0 < await redis.ttl(f"exec:pq:{qid}:events") <= 900

@@ -243,6 +243,12 @@ def driver_for(kind: str) -> Any:
         raise SecretUnavailable(f"queries on a {kind} source are not wired yet") from exc
 
 
+def _stored_error(outcome: QueryOutcome, private: bool) -> str | None:
+    if outcome.error is None or not private:
+        return outcome.error
+    return f"private run {outcome.status}"
+
+
 async def run_query(
     *,
     org_id: uuid.UUID,
@@ -255,10 +261,12 @@ async def run_query(
     secrets: SecretReader,
     metric_version_ids: Sequence[uuid.UUID] = (),
     as_of: datetime.date | None = None,
-    keep_rows: bool = True,
+    private: bool = False,
 ) -> QueryOutcome:
-    """`keep_rows=False` records the run (SQL, hashes, counts) but stores none of its rows: the
-    private channel of UC-16-02 keeps no answer data in a table (BR-193)."""
+    """`private=True` is the channel of UC-16-02: the run is recorded (who, which source, status,
+    counts, result hash) but neither its SQL, whose literals come from the question, nor its rows,
+    nor an error message that may quote either. BR-193 / AC-16-02-10: none of the question's text
+    is left in a table."""
     run_id = uuid7()
     started = time.monotonic()
     outcome = QueryOutcome(query_run_id=run_id, status="failed", sql=sql)
@@ -279,12 +287,12 @@ async def run_query(
                 principal_id=principal_id,
                 source_id=source.id,
                 route="live",
-                sql_generated=sql,
-                sql_executed=executed,
+                sql_generated="" if private else sql,
+                sql_executed="" if private else executed,
                 metric_version_ids=list(metric_version_ids),
                 as_of=as_of,
                 status="failed" if outcome.error else "running",
-                error=outcome.error,
+                error=_stored_error(outcome, private),
             )
         )
     if outcome.error:
@@ -322,13 +330,13 @@ async def run_query(
             .where(q.QueryRun.id == run_id)
             .values(
                 status=outcome.status,
-                error=outcome.error,
+                error=_stored_error(outcome, private),
                 row_count=len(outcome.rows) if outcome.ok else None,
                 result_hash=outcome.result_hash,
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
         )
-        if outcome.ok and keep_rows:
+        if outcome.ok and not private:
             session.add(
                 q.QueryResult(
                     id=uuid7(),

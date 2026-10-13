@@ -11,8 +11,9 @@ Contract with the api (services/api/modules/exec/private_channel.py, agreed 13/1
 
 BR-193: the text and the answer live at most 15 minutes and never in a table, the outbox or a
 log. So the answer path here reads the semantic layer and the catalogue (svc_qa, reads only),
-runs its query with keep_rows=False (query.query_run keeps the compiled SQL and hashes, no rows),
-writes no qa.* row, and never logs the question. A model is used only when the rules place no
+runs its query with private=True (query.query_run keeps who, which source and the result hash, no
+SQL, rows or error text), writes no qa.* row, and logs neither the question nor an exception's
+message or traceback, which may quote it. A model is used only when the rules place no
 metric, and only through the on-prem alias; an unavailable model is an `error`
 (model_unavailable), never a fallback elsewhere.
 """
@@ -141,7 +142,7 @@ async def answer(question: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         sql=compiled.sql,
         secrets=secrets(),
         metric_version_ids=[compiled.metric_version_id],
-        keep_rows=False,
+        private=True,
     )
     if not outcome.ok:
         return "error", {
@@ -193,8 +194,10 @@ async def handle(redis: Any, question_id: str) -> None:
     await _emit(redis, question_id, "progress", {"status": "running"})
     try:
         event, data = await answer(question)
-    except Exception:
-        logger.exception("worker-agent | private question %s failed", question_id)
+    except Exception as exc:  # noqa: BLE001 - every failure ends the stream with an error event
+        logger.error(
+            "worker-agent | private question %s failed: %s", question_id, type(exc).__name__
+        )
         event, data = (
             "error",
             {"code": "internal_error", "message": "Không trả lời được câu hỏi này."},
