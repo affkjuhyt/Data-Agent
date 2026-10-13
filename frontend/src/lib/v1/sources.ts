@@ -1553,6 +1553,22 @@ export const saveApiConfig = async (
   body: { request: ApiRequest; mapping: ApiFieldMapping[] },
 ) => v1Send<ApiSourceConfig>('PUT', `/sources/${pathId(sourceId)}/api-config`, body);
 
-/** PROPOSAL: POST /v1/sources/{id}:backfill — load a past date range again. */
-export const backfillSource = async (sourceId: string, range: { from: string; to: string }) =>
-  v1Send<{ status: 'queued' }>('POST', `/sources/${pathId(sourceId)}:backfill`, range);
+/**
+ * Backfill belongs to an ingestion job in A3, not to the source itself. Resolve the source's
+ * first job, then use the job backfill endpoint; the source verb remains a compatibility fallback
+ * for the older adapter while it has no source_id on its job rows.
+ */
+export const backfillSource = async (sourceId: string, range: { from: string; to: string }) => {
+  const jobs = await v1Get<Page<components['schemas']['IngestionJobSummary']>>('/jobs', {
+    source_id: sourceId,
+    page_size: 50,
+  }).catch(() => null);
+  const job = jobs?.items.find((item) => item.source_id === sourceId);
+  if (job)
+    return v1Send<{ id: string; status: string; poll_after_ms: number }>(
+      'POST',
+      `/jobs/${pathId(job.id)}:backfill`,
+      range,
+    );
+  return v1Send<{ status: 'queued' }>('POST', `/sources/${pathId(sourceId)}:backfill`, range);
+};
