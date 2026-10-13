@@ -1,5 +1,8 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { pathId, v1Get, v1Send, V1Error, type Page } from './client';
+import type { components } from './schema';
 import type { SkillStatus } from './skills';
+
+type Schemas = components['schemas'];
 
 /*
  * Skill authoring and running (P03, UC-03-01…04): the skill editor, a skill made from a
@@ -198,13 +201,14 @@ export const submitSkill = async (id: string, notes: Record<string, string>) =>
 
 /* ─── Chạy kỹ năng (UC-03-01) và yếu tố bên ngoài (UC-03-02) ──────────── */
 
-export type SkillRunKind = 'decomposition' | 'external_factors';
+/** generic: a skill A2 serves, whose result has no designed view; it is shown as written. */
+export type SkillRunKind = 'decomposition' | 'external_factors' | 'generic';
 
 export interface SkillRunParam {
   key: string;
   label: string;
   value: string;
-  /** Only the valid choices: dimensions are those the metric allows. */
+  /** Only the valid choices: dimensions are those the metric allows; empty = typed freely. */
   options: { value: string; label: string }[];
 }
 
@@ -274,18 +278,133 @@ export interface SkillRun {
   ran_at: string;
   decomposition: Decomposition | null;
   external: ExternalFactorSearch | null;
+  /** A2 RunDetail of a generic skill: its state, the conclusion and the main figures. */
+  outcome: {
+    status: 'running' | 'done' | 'failed';
+    summary: string | null;
+    figures: { label: string; value: string }[];
+    error: string | null;
+  } | null;
 }
 
-export const getSkillRunForm = async (id: string) =>
-  v1Get<SkillRunForm>(`/skills/${pathId(id)}/run-form`);
+type RunWire = Schemas['RunDetail'] & { display?: SkillRun };
 
-/** PROPOSAL: GET /v1/skills/{id}/runs — the viewer's runs, newest first. */
-export const listSkillRuns = async (id: string) =>
-  v1Get<Page<SkillRun>>(`/skills/${pathId(id)}/runs`, { page_size: 1 });
+/** 404 from a PROPOSAL read: the thing is A2's, not the designed fixture's. */
+const notProposal = (e: unknown) => e instanceof V1Error && e.status === 404;
 
-/** PROPOSAL: POST /v1/skills/{id}:run {params} — runs under the caller's permissions. */
-export const runSkill = async (id: string, params: Record<string, string>) =>
-  v1Send<SkillRun>('POST', `/skills/${pathId(id)}:run`, { params });
+/*
+ * PROPOSAL: GET /v1/skills/{id}/run-form — the designed form, with the kind of view its result
+ * gets. A skill it does not know is read from A2's GET /v1/skills/{id}: the published version's
+ * params_schema (a JSON Schema) gives the parameters, an enum their valid choices, a default the
+ * first value, and the result is shown generically.
+ */
+export const getSkillRunForm = async (id: string): Promise<SkillRunForm> => {
+  try {
+    return await v1Get<SkillRunForm>(`/skills/${pathId(id)}/run-form`);
+  } catch (e) {
+    if (!notProposal(e)) throw e;
+  }
+  const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+  const version = raw.published_version ?? null;
+  const schema = (version?.params_schema ?? {}) as {
+    properties?: Record<string, { title?: string; enum?: unknown[]; default?: unknown }>;
+  };
+  const params = Object.entries(schema.properties ?? {}).map(([key, prop]) => {
+    const options = (prop.enum ?? []).map((v) => ({ value: String(v), label: String(v) }));
+    return {
+      key,
+      label: prop.title ?? key,
+      value: prop.default !== undefined ? String(prop.default) : (options[0]?.value ?? ''),
+      options,
+    };
+  });
+  return {
+    skill_id: raw.id,
+    name: raw.name,
+    version: version?.version ?? raw.current_version ?? 0,
+    status: (version?.status ?? 'draft') as SkillAuthoringStatus,
+    kind: 'generic',
+    params,
+    params_note: version ? '' : 'Kỹ năng chưa có phiên bản được chứng nhận để chạy.',
+  };
+};
+
+const FINISHED: Record<string, 'done' | 'failed'> = {
+  succeeded: 'done',
+  completed: 'done',
+  failed: 'failed',
+  cancelled: 'failed',
+  timeout: 'failed',
+};
+
+const text = (v: unknown) =>
+  v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+
+/** result is "the conclusion and the main figures" (jsonb): a summary line, the rest as figures. */
+function readRun(raw: RunWire): SkillRun {
+  if (raw.display) return raw.display;
+  const result = (raw.result ?? {}) as Record<string, unknown>;
+  const summaryKey = ['summary', 'conclusion', 'text'].find((k) => typeof result[k] === 'string');
+  return {
+    id: raw.id,
+    skill_id: raw.skill_id,
+    version: raw.version,
+    kind: 'generic',
+    params: Object.fromEntries(
+      Object.entries((raw.params ?? {}) as Record<string, unknown>).map(([k, v]) => [k, text(v)]),
+    ),
+    ran_at: raw.started_at ?? raw.created_at,
+    decomposition: null,
+    external: null,
+    outcome: {
+      status: FINISHED[raw.status] ?? 'running',
+      summary: summaryKey ? (result[summaryKey] as string) : null,
+      figures: Object.entries(result)
+        .filter(([k]) => k !== summaryKey)
+        .map(([label, value]) => ({ label, value: text(value) })),
+      error: raw.error,
+    },
+  };
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/*
+ * PROPOSAL: GET /v1/skills/{id}/runs — the viewer's runs, newest first. A2 lists no runs of a
+ * skill, so there an answer of 404 means "no run yet" rather than an error.
+ */
+export const listSkillRuns = async (id: string): Promise<Page<SkillRun>> => {
+  try {
+    return await v1Get<Page<SkillRun>>(`/skills/${pathId(id)}/runs`, { page_size: 1 });
+  } catch (e) {
+    if (notProposal(e)) return { items: [], next_page_token: '' };
+    throw e;
+  }
+};
+
+/**
+ * A2: POST /v1/skills/{id}/runs (202), under the caller's permissions, then the run read back
+ * until it finishes or about twenty seconds pass; a run still queued is returned as running.
+ * PROPOSAL: POST /v1/skills/{id}:run, which answers the designed result of the other kinds.
+ */
+export const runSkill = async (
+  id: string,
+  params: Record<string, string>,
+  kind: SkillRunKind,
+): Promise<SkillRun> => {
+  if (kind !== 'generic') return v1Send<SkillRun>('POST', `/skills/${pathId(id)}:run`, { params });
+  const accepted = await v1Send<Schemas['services__api__modules__skill__schemas__Accepted']>(
+    'POST',
+    `/skills/${pathId(id)}/runs`,
+    { params },
+  );
+  let run = readRun(await v1Get<RunWire>(`/skill-runs/${pathId(accepted.id)}`));
+  for (let attempt = 0; attempt < 10 && run.outcome?.status === 'running'; attempt++) {
+    await sleep(accepted.poll_after_ms ?? 2000);
+    run = readRun(await v1Get<RunWire>(`/skill-runs/${pathId(accepted.id)}`));
+  }
+  return run;
+};
 
 /**
  * PROPOSAL: POST /v1/skill-runs/{id}:add-to-session — adds the result as a tile to the session
