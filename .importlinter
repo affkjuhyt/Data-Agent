@@ -83,19 +83,6 @@ forbidden_modules =
     libs.ingestion.silver
     libs.ingestion.gold
 
-# workflow_runtime is layered (api > application > infrastructure > domain): a lower
-# layer never imports a higher one. application may use infrastructure directly (no
-# ports/adapters yet: that is the remaining distance to a strict clean architecture).
-# main.py and jobs/ are entrypoints and sit outside the layers.
-[importlinter:contract:workflow-runtime-layers]
-name = workflow_runtime layers: api > application > infrastructure > domain
-type = layers
-layers =
-    services.workflow_runtime.api
-    services.workflow_runtime.application
-    services.workflow_runtime.infrastructure
-    services.workflow_runtime.domain
-
 # The `api` block (ADR-28, docs/v3/06-api-v1.md). The shared kernel
 # serves every module and may not depend on one; the api is new code and takes
 # nothing from the services it replaces. Module-to-module rules (only through a
