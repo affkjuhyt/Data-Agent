@@ -3,8 +3,8 @@ import type { components } from './schema';
 
 /*
  * Cảnh báo (monitor service, P08, UC-08-02): what a monitor raised, the cause the Agent Phân tích
- * attached, and what people did with it. A2 has GET /v1/alerts and :ack, :assign, :close; one alert
- * by id, reopening, opening an investigation and flagging a wrong analysis are PROPOSALs. The
+ * attached, and what people did with it. A2 has GET /v1/alerts and :ack, :assign, :close, :reopen;
+ * one alert by id, opening an investigation and flagging a wrong analysis are PROPOSALs. The
  * api's AlertView is read into the screen's Alert below; its PROPOSAL parts are null or derived.
  */
 
@@ -110,9 +110,9 @@ export const closeAlert = async (id: string, note: string, kind: 'resolved' | 'f
     await v1Send<AlertWire>('POST', `/alerts/${pathId(id)}:close`, { close_note: note, kind }),
   );
 
-/** PROPOSAL */
-export const reopenAlert = async (id: string) =>
-  readAlert(await v1Send<AlertWire>('POST', `/alerts/${pathId(id)}:reopen`));
+/** A2 :reopen (added 12/10/2026): a closed alert opens again, with the reason why. */
+export const reopenAlert = async (id: string, reason: string) =>
+  readAlert(await v1Send<AlertWire>('POST', `/alerts/${pathId(id)}:reopen`, { reason }));
 
 /** PROPOSAL: a notebook seeded with the alert and its analysis. */
 export const investigateAlert = async (id: string) =>

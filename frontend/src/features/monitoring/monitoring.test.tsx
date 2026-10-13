@@ -130,6 +130,13 @@ describe('AlertPage', () => {
     expect(await screen.findByText('Đã đóng · báo nhầm')).toBeInTheDocument();
     expect(screen.getByText(/Agent ghi nhớ: khi giải thích nợ xấu/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Mở lại' }));
+    const reopen = screen.getByRole('alertdialog', { name: 'Mở lại #A-2291?' });
+    fireEvent.click(within(reopen).getByRole('button', { name: 'Mở lại' }));
+    expect(await within(reopen).findByText('Ghi vì sao mở lại.')).toBeInTheDocument();
+    fireEvent.change(within(reopen).getByLabelText('Lý do (bắt buộc)'), {
+      target: { value: 'Sổ cái điều chỉnh lại, số vượt ngưỡng trở lại.' },
+    });
+    fireEvent.click(within(reopen).getByRole('button', { name: 'Mở lại' }));
     expect(await screen.findByText('Đang cảnh báo')).toBeInTheDocument();
   });
 

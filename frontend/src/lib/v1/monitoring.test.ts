@@ -6,11 +6,28 @@
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { getAlert } from './alerts';
+import { getAlert, reopenAlert } from './alerts';
 import { listNotifications } from './notifications';
 
 const at = '2026-10-12T07:15:00Z';
+let reopenBody: unknown;
 const server = setupServer(
+  http.post('*/v1/alerts/:action', async ({ request }) => {
+    reopenBody = await request.json();
+    return HttpResponse.json({
+      id: '0192f0aa-2222-7000-8000-000000000001',
+      monitor_id: 'm-1',
+      status: 'open',
+      summary: 'Nợ xấu bán lẻ vượt 2,3%',
+      value: null,
+      threshold_value: null,
+      period_label: null,
+      occurrences: 1,
+      fired_at: at,
+      closed_at: null,
+      close_note: null,
+    });
+  }),
   http.get('*/v1/alerts', () =>
     HttpResponse.json({
       items: [
@@ -76,6 +93,12 @@ describe('monitoring from the api', () => {
       { label: 'Kỳ', value: 'T9/2026' },
     ]);
     await expect(getAlert('missing')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('reopens an alert with the reason A3 requires', async () => {
+    const alert = await reopenAlert('0192f0aa-2222-7000-8000-000000000001', 'Số vượt ngưỡng lại.');
+    expect(reopenBody).toEqual({ reason: 'Số vượt ngưỡng lại.' });
+    expect(alert.status).toBe('open');
   });
 
   it('routes a HITL notification to its request and leaves the others on the feed', async () => {

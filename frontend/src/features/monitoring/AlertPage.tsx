@@ -44,7 +44,7 @@ import { whenText } from './whenText';
  * alert that fired more than twice needs a note however it is closed (BR-124). Opened from the
  * rail without an id, the page shows the newest open alert.
  */
-type Dialog = 'assign' | 'resolve' | 'false_positive' | 'dispute' | null;
+type Dialog = 'assign' | 'resolve' | 'false_positive' | 'dispute' | 'reopen' | null;
 
 const STATUS = {
   open: { label: 'Đang cảnh báo', tone: 'error' },
@@ -170,7 +170,7 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
             <Button
               loading={busy === 'reopen'}
               disabled={busy !== null}
-              onClick={() => act('reopen', () => reopenAlert(alert.id), `Đã mở lại ${alert.code}`)}
+              onClick={() => dialogOpen('reopen')}
             >
               Mở lại
             </Button>
@@ -379,22 +379,38 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
         />
       </ConfirmDialog>
       <ConfirmDialog
-        open={dialog === 'resolve' || dialog === 'false_positive' || dialog === 'dispute'}
-        title={
-          dialog === 'false_positive'
-            ? `Đóng ${alert.code} do báo nhầm?`
-            : dialog === 'dispute'
-              ? 'Báo phân tích này sai'
-              : `Đánh dấu ${alert.code} đã xử lý?`
+        open={
+          dialog === 'resolve' ||
+          dialog === 'false_positive' ||
+          dialog === 'dispute' ||
+          dialog === 'reopen'
         }
-        confirmLabel={dialog === 'dispute' ? 'Gửi' : 'Đóng cảnh báo'}
+        title={
+          dialog === 'reopen'
+            ? `Mở lại ${alert.code}?`
+            : dialog === 'false_positive'
+              ? `Đóng ${alert.code} do báo nhầm?`
+              : dialog === 'dispute'
+                ? 'Báo phân tích này sai'
+                : `Đánh dấu ${alert.code} đã xử lý?`
+        }
+        confirmLabel={
+          dialog === 'dispute' ? 'Gửi' : dialog === 'reopen' ? 'Mở lại' : 'Đóng cảnh báo'
+        }
         tone="primary"
         cancelLabel="Quay lại"
         loading={busy === dialog}
         error={dialog ? error : undefined}
         onCancel={() => setDialog(null)}
         onConfirm={() => {
-          if (dialog === 'dispute') {
+          if (dialog === 'reopen') {
+            // A2 :reopen requires the reason; it is kept with the alert's history.
+            if (!note.trim()) {
+              setError('Ghi vì sao mở lại.');
+              return;
+            }
+            act('reopen', () => reopenAlert(alert.id, note.trim()), `Đã mở lại ${alert.code}`);
+          } else if (dialog === 'dispute') {
             if (!note.trim()) {
               setError('Ghi phân tích sai ở đâu.');
               return;
@@ -410,15 +426,21 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
       >
         <div className="flex flex-col gap-da-sm">
           <p>
-            {dialog === 'false_positive'
-              ? 'Agent ghi nhớ điều bạn viết để lần sau giải thích đúng hơn; ngưỡng theo dõi giữ nguyên.'
-              : dialog === 'dispute'
-                ? 'Phân tích sai đi vào bộ đánh giá của Agent Phân tích.'
-                : 'Cảnh báo đóng lại; theo dõi vẫn chạy.'}
+            {dialog === 'reopen'
+              ? 'Cảnh báo mở lại và vào lại hàng việc của người được giao.'
+              : dialog === 'false_positive'
+                ? 'Agent ghi nhớ điều bạn viết để lần sau giải thích đúng hơn; ngưỡng theo dõi giữ nguyên.'
+                : dialog === 'dispute'
+                  ? 'Phân tích sai đi vào bộ đánh giá của Agent Phân tích.'
+                  : 'Cảnh báo đóng lại; theo dõi vẫn chạy.'}
           </p>
           <label className="flex flex-col gap-da-xs">
             <span className="text-foreground da-label">
-              {dialog === 'resolve' && alert.occurrences <= 2 ? 'Ghi chú' : 'Ghi chú (bắt buộc)'}
+              {dialog === 'reopen'
+                ? 'Lý do (bắt buộc)'
+                : dialog === 'resolve' && alert.occurrences <= 2
+                  ? 'Ghi chú'
+                  : 'Ghi chú (bắt buộc)'}
             </span>
             <textarea
               value={note}

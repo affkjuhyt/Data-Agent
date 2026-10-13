@@ -224,9 +224,13 @@ export function createAlertHandlers() {
                 }));
               })()
             : verb === 'reopen'
-              ? update(id, (a) => ({ ...a, status: 'open', close_kind: null, closed: null }))
+              ? body.reason?.trim()
+                ? update(id, (a) => ({ ...a, status: 'open', close_kind: null, closed: null }))
+                : 'needs_reason'
               : undefined;
       if (result === undefined) return problem(404, 'not_found', 'Không có thao tác này.');
+      // AlertReopen: reason is required.
+      if (result === 'needs_reason') return problem(422, 'validation_failed', 'Ghi vì sao mở lại.');
       if (result === 'needs_note')
         return problem(
           422,
