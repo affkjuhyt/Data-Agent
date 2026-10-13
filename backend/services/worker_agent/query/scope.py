@@ -26,13 +26,19 @@ class OutOfScope(SqlRejected):
 
 
 def default_schema(source: catalog.Source) -> str | None:
-    """The schema an unqualified name resolves to: the source's configured one (it sets the
-    search path), else the engine's default."""
+    """The one schema an unqualified name resolves to, None when names must be qualified.
+
+    The executor makes the source agree: on PostgreSQL it sets search_path to exactly this schema
+    (else the login's own default, "$user" first, would decide); on MySQL it is the database the
+    connection USEs. A SQL Server login has its own default schema the worker cannot see, so
+    names there are always written with their schema."""
     options = source.conn_options if isinstance(source.conn_options, dict) else {}
-    configured = options.get("schema")
-    if configured:
-        return str(configured)
-    return {"postgresql": "public", "sqlserver": "dbo"}.get(source.kind, source.database_name)
+    configured = str(options.get("schema") or "") or None
+    if source.kind == "postgresql":
+        return configured or "public"
+    if source.kind == "mysql":
+        return configured or source.database_name
+    return None
 
 
 def resolve(tables: set[tuple[str | None, str]], source: catalog.Source) -> set[tuple[str, str]]:

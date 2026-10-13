@@ -39,7 +39,7 @@ from services.worker_agent.query.guard import (
     dialect_of,
     tables_of,
 )
-from services.worker_agent.query.scope import datasets_read
+from services.worker_agent.query.scope import datasets_read, default_schema
 from services.worker_agent.query.secrets import SecretReader, SecretUnavailable
 
 ROLE = "svc_query"
@@ -130,10 +130,12 @@ async def _run_postgres(
     try:
         async with conn.transaction(readonly=True):
             await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_s) * 1000}")
-            if options.get("schema"):
-                await conn.execute(
-                    "SELECT set_config('search_path', $1, true)", str(options["schema"])
-                )
+            # Exactly the one schema the table check resolved unqualified names to (scope.py),
+            # quoted as one identifier: not the login's default path, not a list.
+            await conn.execute(
+                "SELECT set_config('search_path', quote_ident($1), true)",
+                default_schema(source) or "public",
+            )
             stmt = await conn.prepare(sql)
             columns = [{"name": a.name, "type": a.type.name} for a in stmt.get_attributes()]
             records = await stmt.fetch()

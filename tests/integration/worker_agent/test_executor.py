@@ -200,3 +200,45 @@ async def test_a_table_outside_the_data_space_is_refused_before_the_source(
     assert seed.one(
         "SELECT status, source_id::text FROM query.query_run WHERE id = %s", out.query_run_id
     ) == ("failed", str(source.id))
+
+
+async def test_an_unqualified_name_reads_the_schema_the_check_resolved_not_the_logins_own(
+    seed: Seed, warehouse: dict[str, object], ddl_server: dict[str, str]
+) -> None:
+    # PostgreSQL's default search path puts a schema named after the login ("$user") first.
+    conn = psycopg2.connect(ddl_server["dataagent"])
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("CREATE SCHEMA IF NOT EXISTS dw_reader AUTHORIZATION dw_reader")
+        cur.execute("DROP TABLE IF EXISTS dw_reader.shadow, public.shadow")
+        cur.execute("CREATE TABLE dw_reader.shadow (v text)")
+        cur.execute("INSERT INTO dw_reader.shadow VALUES ('outside the data space')")
+        cur.execute("CREATE TABLE public.shadow (v text)")
+        cur.execute("INSERT INTO public.shadow VALUES ('registered')")
+        cur.execute("GRANT SELECT ON public.shadow TO dw_reader")
+    conn.close()
+    org, space, user, source, secrets = _source(seed, warehouse)
+    source.conn_options = {"sslmode": "disable"}  # no schema: unqualified names mean public
+    seed.row(
+        "catalog.dataset",
+        org_id=org,
+        data_space_id=space,
+        source_id=source.id,
+        origin="source",
+        schema_name="public",
+        table_name="shadow",
+        history_kind="none",
+        enabled=True,
+    )
+    out = await run_query(
+        org_id=org,
+        data_space_id=space,
+        principal_id=user,
+        caller_kind="ad_hoc",
+        caller_id=user,
+        source=source,
+        secrets=secrets,
+        sql="SELECT v FROM shadow",
+    )
+    assert out.ok, out.error
+    assert out.rows == [["registered"]]
