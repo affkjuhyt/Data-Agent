@@ -3981,6 +3981,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/lineage/targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Danh sách đối tượng có thể chọn cho dòng dữ liệu
+         * @description Return selectable catalogue objects for the lineage target picker.
+         */
+        get: operations["listLineageTargets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/marts": {
         parameters: {
             query?: never;
@@ -15454,6 +15474,16 @@ export interface components {
             kind: string;
             /** Name */
             name?: string | null;
+        };
+        /** LineageTarget */
+        LineageTarget: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label: string;
         };
         /** LineageView */
         LineageView: {
@@ -54434,6 +54464,116 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LineageGraph"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    listLineageTargets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LineageTarget"][];
                 };
             };
             /** @description Invalid request */

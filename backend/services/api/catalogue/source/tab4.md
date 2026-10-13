@@ -851,6 +851,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/pipelines/{id}:materialize | table\_name\*, scope | 202, Location tới pipeline\_run | 422 business\_rule\_violated (tổng cột tiền lệch, UC-06-01 E2) |
 | PUT /v1/pipelines/{id}/schedule | cron, work\_calendar\_id, trigger\_on\_job\_id, depends\_on\_pipeline\_ids, no\_overlap, on\_failure | Pipeline | — |
 | GET /v1/lineage | ?object\_kind, ?object\_id, ?direction, ?depth | JSON. Đồ thị nút và cạnh từ lineage\_edge; nút ngoài quyền hiện ẩn danh | — |
+| GET /v1/lineage/targets | — | Danh sách dataset trong Data Space để chọn làm đối tượng xem dòng dữ liệu | — |
 | POST /v1/marts | name\*, fact\_dataset\_id\*, grain\*, measures, dimensions, relations, checks | DataMart | — |
 | POST /v1/data-products | code\*, name\*, dataset\_id, data\_mart\_id, contract\*, owner\_id\* | DataProduct | — |
 | POST /v1/data-products/{id}:publish | — | DataProduct | 403 policy\_denied (không phải owner\_id của sản phẩm, hoặc là người soạn); 422 business\_rule\_violated (thay đổi phá vỡ chưa báo trước 30 ngày, BR-60) |

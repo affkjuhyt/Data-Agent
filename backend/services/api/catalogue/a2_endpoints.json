@@ -1680,6 +1680,18 @@
   },
   {
    "group": "Biến đổi dữ liệu",
+   "method": "GET",
+   "path": "/v1/lineage/targets",
+   "summary": "Danh sách đối tượng có thể chọn cho dòng dữ liệu",
+   "use_cases": [
+    "06-05"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
    "method": "POST",
    "path": "/v1/marts",
    "summary": "Tạo data mart",

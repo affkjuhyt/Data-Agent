@@ -2208,6 +2208,17 @@
    "errors": [],
    "request_text": "?object_kind, ?object_id, ?direction, ?depth"
   },
+  "GET /v1/lineage/targets": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách LineageTarget",
+   "errors": [],
+   "request_text": ""
+  },
   "POST /v1/marts": {
    "group": "Biến đổi dữ liệu",
    "groups": [

@@ -24759,6 +24759,25 @@
     "title": "LineageNode",
     "type": "object"
    },
+   "LineageTarget": {
+    "properties": {
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "label"
+    ],
+    "title": "LineageTarget",
+    "type": "object"
+   },
    "LineageView": {
     "properties": {
      "answer_id": {
@@ -92549,6 +92568,142 @@
      }
     ],
     "summary": "Dòng dữ liệu của một đối tượng",
+    "tags": [
+     "Biến đổi dữ liệu"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-06-05"
+    ]
+   }
+  },
+  "/v1/lineage/targets": {
+   "get": {
+    "description": "Return selectable catalogue objects for the lineage target picker.",
+    "operationId": "listLineageTargets",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/LineageTarget"
+         },
+         "title": "Response Listlineagetargets",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Danh sách đối tượng có thể chọn cho dòng dữ liệu",
     "tags": [
      "Biến đổi dữ liệu"
     ],

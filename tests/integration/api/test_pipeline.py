@@ -694,6 +694,17 @@ async def test_an_active_pipeline_is_scheduled(pp: Space) -> None:
 # --- lineage -------------------------------------------------------------------------------------
 
 
+@pytest.mark.req("AC-06-05-00")
+async def test_lineage_targets_lists_visible_datasets(pp: Space) -> None:
+    async with client(pp) as api:
+        response = await api.get("/v1/lineage/targets", headers=pp.headers("analyst"))
+    assert response.status_code == 200, response.text
+    ids = {item["id"] for item in response.json()}
+    assert str(pp.raw) in ids
+    assert str(pp.derived) in ids
+    assert str(pp.other_dataset) not in ids
+
+
 def _edge(
     pp: Space,
     from_: tuple[str, uuid.UUID],
