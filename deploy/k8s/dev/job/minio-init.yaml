@@ -17,7 +17,7 @@ metadata:
     app: minio-init
     app.kubernetes.io/part-of: dataagent
 data:
-  MINIO_BUCKETS: knowledge-base langfuse sandbox-audit da-results
+  MINIO_BUCKETS: knowledge-base langfuse sandbox-audit da-results da-exports
   # Raw is immutable (S2-02, ADR-V2-21): object lock, settable only at bucket creation.
   # GOVERNANCE on dev so an operator can still clean it up; COMPLIANCE in production.
   RAW_RETENTION_MODE: GOVERNANCE
@@ -54,6 +54,8 @@ spec:
           export PATH="/opt/bitnami/minio-client/bin:$PATH"
           until mc alias set local http://minio.dataagent-database.svc.cluster.local:8360 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do echo waiting for minio; sleep 2; done
           for b in $MINIO_BUCKETS; do mc mb --ignore-existing "local/$b"; done
+          # BR-86: an answer export is downloadable for 24 hours; the file does not outlive it.
+          mc ilm rule add --expire-days 1 local/da-exports >/dev/null 2>&1 || mc ilm rule ls local/da-exports
           mc mb --ignore-existing --with-lock local/raw
           mc retention set --default "$RAW_RETENTION_MODE" "${RAW_RETENTION_DAYS}d" local/raw
         resources:

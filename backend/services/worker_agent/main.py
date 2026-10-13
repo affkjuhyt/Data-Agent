@@ -25,6 +25,7 @@ from sqlalchemy import text
 
 from libs.dataagent_db import unscoped_session
 from services.worker_agent import (
+    exports,
     hitl,
     private,
     proposals,
@@ -64,6 +65,7 @@ HANDLERS: dict[str, Handler] = {
     **query_runs.HANDLERS,
     **tiles.HANDLERS,
     **proposals.HANDLERS,
+    **exports.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -85,7 +87,7 @@ async def sources() -> list[EventSource]:
     for schema in await _outbox_schemas("svc_outbox_relay"):
         types = {hitl.EVENT_TYPE}
         if schema == "qa":
-            types |= set(questions.HANDLERS) | set(replay.HANDLERS)
+            types |= set(questions.HANDLERS) | set(replay.HANDLERS) | set(exports.HANDLERS)
         if schema == "inbox":
             # Claiming stamps published_at, so this worker is the one consumer of hitl.resolved
             # until Debezium gives each consumer its own group (ADR-06).

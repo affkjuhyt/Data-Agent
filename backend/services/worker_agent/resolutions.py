@@ -2,7 +2,7 @@
 
 The inbox records the decision and emits `hitl.resolved` (inbox.outbox); the module that asked
 for it changes its own object. Each source is routed by `source_service` to the code that knows
-its object, in the role that owns it. Only the audit export is wired so far; other sources'
+its object, in the role that owns it. The audit export and the answer export are wired; other sources'
 decisions are acknowledged and left to their own consumer (they are no-ops here, logged).
 
 Idempotent: an object that already left its waiting state is not touched again.
@@ -17,7 +17,8 @@ import uuid
 from sqlalchemy import update
 
 from libs.dataagent_db import scoped_session
-from libs.dataagent_db.models import audit
+from libs.dataagent_db.models import audit, qa
+from services.worker_agent import exports
 from services.worker_agent.events import Event, Handler
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,28 @@ async def _audit_export(event: Event) -> None:
         logger.info("worker-agent | audit export %s %s", job_id, values["status"])
 
 
-ROUTES = {("audit", "export"): _audit_export}
+async def _answer_export(event: Event) -> None:
+    """BR-85: an answer export that needed approval runs once a steward approved it; any other
+    decision ends it. Only the request recorded on the job moves it."""
+    p = event.payload
+    job_id = uuid.UUID(str(p["source_ref"]))
+    approved = p.get("status") == "approved"
+    async with scoped_session("svc_qa", event.org_id) as session:
+        job = await session.scalar(
+            update(qa.ExportJob)
+            .where(
+                qa.ExportJob.id == job_id,
+                qa.ExportJob.hitl_request_id == uuid.UUID(str(p["hitl_request_id"])),
+                qa.ExportJob.status == "waiting_approval",
+            )
+            .values(status="queued" if approved else "failed")
+            .returning(qa.ExportJob.requested_by)
+        )
+    if job is not None and approved:
+        await exports.run_export(event.org_id, job_id, job)
+
+
+ROUTES = {("audit", "export"): _audit_export, ("qa", "export"): _answer_export}
 
 
 async def act_on_decision(event: Event) -> None:

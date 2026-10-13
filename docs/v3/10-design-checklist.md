@@ -262,7 +262,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-04 | UC-01-01 | todo |  |
 | BR-05 | UC-01-03 | todo |  |
 | BR-06 | UC-02-01 | todo | `backend/services/api/modules/workspace/routes.py` |
-| BR-07 | UC-02-02, UC-02-03 | todo | `backend/services/api/modules/qa/query.py`, `backend/services/api/modules/workspace/routes.py`, `backend/services/api/modules/workspace/schemas.py` +2 |
+| BR-07 | UC-02-02, UC-02-03 | todo | `backend/services/api/modules/qa/query.py`, `backend/services/api/modules/workspace/routes.py`, `backend/services/api/modules/workspace/schemas.py` +3 |
 | BR-08 | UC-03-01 | todo | `backend/services/api/modules/skill/schemas.py`, `frontend/src/lib/v1/openapi.json`, `frontend/src/lib/v1/schema.ts` |
 | BR-09 | UC-03-01 | todo |  |
 | BR-10 | UC-03-01 | todo |  |
@@ -340,8 +340,8 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-82 | UC-01-04 | todo |  |
 | BR-83 | UC-01-05 | todo | `backend/services/api/modules/qa/routes.py` |
 | BR-84 | UC-01-05 | todo |  |
-| BR-85 | UC-01-06 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `frontend/src/lib/v1/exports.ts` |
-| BR-86 | UC-01-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-85 | UC-01-06 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `backend/services/worker_agent/exports.py` +2 |
+| BR-86 | UC-01-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-87 | UC-02-01 | todo | `backend/services/api/modules/workspace/routes.py` |
 | BR-88 | UC-02-02 | todo |  |
 | BR-89 | UC-02-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/workspace.py`, `backend/schema/csdl/definitions.json` +8 |
@@ -351,7 +351,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-93 | UC-03-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-94 | UC-03-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-95 | UC-03-04 | todo |  |
-| BR-96 | UC-03-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-96 | UC-03-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-97 | UC-03-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/versions/v3_0008_skill_version_keep_if_run.py`, `backend/libs/dataagent_db/models/skill.py` +9 |
 | BR-98 | UC-03-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +7 |
 | BR-99 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +5 |
@@ -433,7 +433,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-175 | UC-01-01, UC-01-07, UC-07-13 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/qa.py` +15 |
 | BR-176 | UC-01-01, UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-177 | UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +6 |
-| BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +16 |
+| BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +17 |
 | BR-179 | UC-01-05, UC-07-14, UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/schema/csdl/definitions.json` +13 |
 | BR-180 | UC-01-01, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/governance.py` +14 |
 | BR-181 | UC-01-07, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/qa.py` +9 |
