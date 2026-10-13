@@ -10,7 +10,8 @@ Running: the job is claimed `queued` → `running` in one statement. The file ho
 figures and, when asked, the detail rows behind them, read again with the requester's rights
 (BR-07) rather than copied from whoever asked the question; a figure the answer masked (BR-178)
 stays empty and brings no rows. A footer names the exporter, the time, the knowledge time and
-each metric's definition (AC-01-06-01). Any text cell starting with = + - @ is written behind an
+each metric's definition (AC-01-06-01). Detail rows read again must not outnumber the rows the
+approver saw. Any text cell starting with = + - @ or a tab or line break is written behind an
 apostrophe so a spreadsheet never reads it as a formula (AC-01-06-04). The file goes to
 da-exports and the job becomes `ready` with a 24 hour expiry (BR-86); an audit row is requested
 with the row count and the columns. CSV and Excel are written; PDF and PNG need a renderer the
@@ -52,7 +53,8 @@ CONTENT_TYPES = {
 NUMERIC_TYPES = re.compile(
     r"^(numeric|decimal|int[248]?|integer|bigint|smallint|float[48]?|real|double)", re.I
 )
-_RISKY = ("=", "+", "-", "@")
+# What a spreadsheet may read as the start of a formula, the control characters included (OWASP).
+_RISKY = ("=", "+", "-", "@", "\t", "\r", "\n")
 
 
 class ExportFailed(RuntimeError):
@@ -330,7 +332,12 @@ async def run_export(org: uuid.UUID, export_id: uuid.UUID, requester: uuid.UUID)
         result, definitions, figures, as_of = await _figures_sheet(job, requester)
         sheets = [result]
         if job.include_detail_rows:
-            sheets += await _detail_sheets(job, requester, figures)
+            detail = await _detail_sheets(job, requester, figures)
+            # The approver decided on job.row_count rows; rows read again now must not be more
+            # than that, or the file is not the one that was approved.
+            if job.row_count is not None and any(len(d.rows) > job.row_count for d in detail):
+                raise ExportFailed("Kết quả đã nhiều dòng hơn lúc được duyệt; hãy xuất lại.")
+            sheets += detail
         now = datetime.datetime.now(datetime.UTC)
         footer = _footer(str(requester), now, as_of, definitions)
         body = write_csv(sheets, footer) if job.format == "csv" else write_xlsx(sheets, footer)

@@ -286,6 +286,13 @@
           {{ v3_db_roles | reject('in', (vault_db_role_passwords | default({})).keys() | list) | list }}
         v3_db_roles: [svc_acquire, svc_agent, svc_audit, svc_audit_worker, svc_catalog, svc_conflict, svc_context, svc_document, svc_eval, svc_exec, svc_forecast, svc_governance, svc_inbox, svc_ingest, svc_integration, svc_monitor, svc_notify, svc_org, svc_outbox_relay, svc_pack, svc_period, svc_pipeline, svc_qa, svc_query, svc_skill, svc_workspace]
 
+    - name: Check the vault holds worker-agent's own MinIO password
+      ansible.builtin.assert:
+        that: (vault_worker_agent_minio_password | default('')) | length >= 8
+        fail_msg: "vault_worker_agent_minio_password is missing or shorter than MinIO's 8 characters"
+        quiet: true
+      no_log: true
+
     - name: Render secrets.env from the vault
       ansible.builtin.template:
         src: templates/secrets.env.j2

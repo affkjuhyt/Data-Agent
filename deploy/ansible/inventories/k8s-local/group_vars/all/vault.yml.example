@@ -39,6 +39,8 @@ vault_db_role_passwords: {}
 vault_neo4j_password: ""
 vault_clickhouse_password: ""
 vault_minio_root_password: ""
+# MinIO user worker-agent: writes answer exports to da-exports, nothing else (minio-init).
+vault_worker_agent_minio_password: ""
 
 # ── Kafka SASL, one principal per consumer ────────────────────────────
 vault_kafka_admin_password: ""

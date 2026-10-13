@@ -175,6 +175,17 @@ async def test_ac_01_06_02_detail_rows_wait_for_a_steward_then_run_as_the_reques
     )
 
 
+async def test_detail_rows_beyond_what_was_approved_are_not_exported(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch, store: MemoryStore
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    job = _export(bank, await _answer(bank), "csv", detail=True, status="queued")
+    # The approver saw one row; the query returns two now.
+    seed.one("UPDATE qa.export_job SET row_count = 1 WHERE id = %s RETURNING 1", job)
+    await _drain_exports()
+    assert _job(seed, job)[0] == "failed" and store.files == {}
+
+
 async def test_a_pdf_export_fails_instead_of_writing_a_wrong_file(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch, store: MemoryStore
 ) -> None:
@@ -185,13 +196,17 @@ async def test_a_pdf_export_fails_instead_of_writing_a_wrong_file(
 
 
 def test_ac_01_06_04_a_text_cell_never_starts_a_formula() -> None:
-    assert [exports.safe(v) for v in ("=SUM(A1:A9)", "+84", "-5", "@x", "ok")] == [
+    assert [exports.safe(v) for v in ("=SUM(A1:A9)", "+84", "-5", "@x", "\t=1", "\r=1", "ok")] == [
         "'=SUM(A1:A9)",
         "'+84",
         "'-5",
         "'@x",
+        "'\t=1",
+        "'\r=1",
         "ok",
     ]
+    # A numeric column's value that is not a plain number is text, and escaped like text.
+    assert exports.safe("-2+3+cmd|' /C calc'!A0", numeric=True) == "'-2+3+cmd|' /C calc'!A0"
     # A number of a numeric column is a number, not a formula.
     assert exports.safe("-5.25", numeric=True) == "-5.25"
     assert exports.safe("-5.25", numeric=True, as_number=True) == -5.25
