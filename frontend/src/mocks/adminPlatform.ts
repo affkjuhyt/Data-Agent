@@ -51,6 +51,7 @@ const problem = (status: number, code: string, detail: string) =>
 export function systemHealthFixture(): SystemHealth {
   return {
     as_of: '2026-10-10T08:15:00+07:00',
+    no_data: false,
     services_up: 15,
     services_total: 16,
     services_note: 'Ingestion khởi động lại 07:42',
@@ -925,7 +926,15 @@ export function createAdminPlatformHandlers() {
   const routingLog = routingLogFixture();
 
   return [
-    http.get('*/v1/admin/system-health', () => HttpResponse.json(systemHealthFixture())),
+    // A2's SystemHealth (Prometheus series by section) with the designed snapshot under display.
+    http.get('*/v1/admin/system/health', () =>
+      HttpResponse.json({
+        checked_at: new Date().toISOString(),
+        status: 'ok',
+        sections: {},
+        display: systemHealthFixture(),
+      }),
+    ),
 
     http.get('*/v1/agent-ops/summary', ({ request }) => {
       const period = new URL(request.url).searchParams.get('period') as OpsPeriod;

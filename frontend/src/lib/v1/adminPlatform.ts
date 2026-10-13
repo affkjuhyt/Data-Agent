@@ -22,21 +22,27 @@ type Tone = 'success' | 'warning' | 'error' | 'idle';
 
 /* ─── Giám sát hệ thống (UC-11-04) ─────────────────────────────────────── */
 
-/** PROPOSAL: GET /v1/admin/system-health, one snapshot of the platform. */
+/**
+ * GET /v1/admin/system/health, one snapshot of the platform. A2 sends Prometheus series by
+ * section; the latency, the error rate and the model table are PROPOSAL and null/empty there.
+ */
 export interface SystemHealth {
   as_of: Timestamp;
+  /** Prometheus is not configured or did not answer: nothing below is measured. */
+  no_data: boolean;
   services_up: number;
   services_total: number;
   /** The one event worth a line under the count: "Ingestion khởi động lại 07:42". */
   services_note: string | null;
-  latency_p95_ms: number;
-  latency_target_ms: number;
-  gpu_utilization: number;
+  latency_p95_ms: number | null;
+  latency_target_ms: number | null;
+  /** Ratio 0…1; null without GPU metrics. */
+  gpu_utilization: number | null;
   gpu_hosts: number;
   gpu_cards: number;
-  error_rate_24h: number;
+  error_rate_24h: number | null;
   /** Change of the 24 h error rate vs the day before, in percentage points. */
-  error_rate_delta_pp: number;
+  error_rate_delta_pp: number | null;
   services: ServiceHealth[];
   models: ModelLoad[];
   alerts: SystemAlert[];
@@ -49,7 +55,7 @@ export interface ServiceHealth {
   status: 'ok' | 'degraded' | 'restarted' | 'down';
   version: string;
   latency_p95_ms: number | null;
-  error_rate_24h: number;
+  error_rate_24h: number | null;
   note: string | null;
 }
 
@@ -71,7 +77,94 @@ export interface SystemAlert {
   detail: string;
 }
 
-export const getSystemHealth = () => v1Get<SystemHealth>('/admin/system-health');
+type HealthWire = Schemas['SystemHealth'] & { display?: SystemHealth };
+type Series = { labels?: Record<string, string>; value?: string | number | null };
+
+const seriesOf = (raw: HealthWire, section: string): Series[] => {
+  const sections = (raw.sections ?? {}) as Record<string, { series?: Series[] }>;
+  return sections[section]?.series ?? [];
+};
+const valueOf = (s: Series) => (s.value === null || s.value === undefined ? NaN : Number(s.value));
+
+const ALERT_SEVERITY: Record<string, SystemAlert['severity']> = {
+  critical: 'error',
+  error: 'error',
+  warning: 'warning',
+};
+
+/*
+ * The sections are the api's PromQL (admin_models.HEALTH_QUERIES): `up` by target, GPU use by
+ * card (DCGM, in percent), Kafka consumer lag by group, seconds since the last backup by job,
+ * replication lag, and the alerts firing. A service is a job; it is down when no target answers
+ * and degraded when only some do.
+ */
+function readHealth(raw: HealthWire): SystemHealth {
+  if (raw.display) return raw.display;
+  const jobs = new Map<string, { up: number; total: number }>();
+  for (const s of seriesOf(raw, 'services')) {
+    const job = s.labels?.job ?? s.labels?.instance ?? '?';
+    const row = jobs.get(job) ?? { up: 0, total: 0 };
+    row.total += 1;
+    if (valueOf(s) === 1) row.up += 1;
+    jobs.set(job, row);
+  }
+  const services: ServiceHealth[] = [...jobs.entries()].map(([name, { up, total }]) => ({
+    name,
+    status: up === total ? 'ok' : up === 0 ? 'down' : 'degraded',
+    version: '',
+    latency_p95_ms: null,
+    error_rate_24h: null,
+    note: total > 1 ? `${up}/${total} phiên bản trả lời` : null,
+  }));
+  const gpus = seriesOf(raw, 'gpu').filter((s) => !isNaN(valueOf(s)));
+  const lagging = seriesOf(raw, 'queues').filter((s) => valueOf(s) > 0);
+  const backups = seriesOf(raw, 'backup').filter((s) => !isNaN(valueOf(s)));
+  const dr = Math.max(
+    ...seriesOf(raw, 'dr')
+      .map(valueOf)
+      .filter((v) => !isNaN(v)),
+    -1,
+  );
+  const hours = (seconds: number) => Math.round(seconds / 3600);
+  return {
+    as_of: raw.checked_at,
+    no_data: raw.status === 'no_data',
+    services_up: services.filter((s) => s.status === 'ok').length,
+    services_total: services.length,
+    services_note: lagging.length
+      ? lagging
+          .map((s) => `Hàng đợi ${s.labels?.consumergroup ?? '?'} trễ ${valueOf(s)} tin`)
+          .join(' · ')
+      : null,
+    latency_p95_ms: null,
+    latency_target_ms: null,
+    gpu_utilization: gpus.length
+      ? gpus.reduce((sum, s) => sum + valueOf(s), 0) / gpus.length / 100
+      : null,
+    gpu_hosts: new Set(gpus.map((s) => s.labels?.Hostname ?? s.labels?.instance ?? '')).size,
+    gpu_cards: gpus.length,
+    error_rate_24h: null,
+    error_rate_delta_pp: null,
+    services,
+    models: [],
+    alerts: seriesOf(raw, 'alerts').map((s, i) => ({
+      id: `${s.labels?.alertname ?? 'alert'}-${s.labels?.instance ?? i}`,
+      severity: ALERT_SEVERITY[s.labels?.severity ?? ''] ?? 'info',
+      title: s.labels?.alertname ?? 'Cảnh báo',
+      detail: [s.labels?.summary, s.labels?.job, s.labels?.instance].filter(Boolean).join(' · '),
+    })),
+    backup_text:
+      [
+        ...backups.map((s) => `${s.labels?.job ?? 'Sao lưu'}: ${hours(valueOf(s))} giờ trước`),
+        dr >= 0 ? `sao chép sang site DR trễ ${Math.round(dr)} giây` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'Chưa có số liệu sao lưu.',
+  };
+}
+
+export const getSystemHealth = async () =>
+  readHealth(await v1Get<HealthWire>('/admin/system/health'));
 
 /* ─── Vận hành agent (UC-13-06, UC-11-04) ──────────────────────────────── */
 
