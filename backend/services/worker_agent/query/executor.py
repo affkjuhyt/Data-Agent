@@ -255,7 +255,10 @@ async def run_query(
     secrets: SecretReader,
     metric_version_ids: Sequence[uuid.UUID] = (),
     as_of: datetime.date | None = None,
+    keep_rows: bool = True,
 ) -> QueryOutcome:
+    """`keep_rows=False` records the run (SQL, hashes, counts) but stores none of its rows: the
+    private channel of UC-16-02 keeps no answer data in a table (BR-193)."""
     run_id = uuid7()
     started = time.monotonic()
     outcome = QueryOutcome(query_run_id=run_id, status="failed", sql=sql)
@@ -325,7 +328,7 @@ async def run_query(
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
         )
-        if outcome.ok:
+        if outcome.ok and keep_rows:
             session.add(
                 q.QueryResult(
                     id=uuid7(),

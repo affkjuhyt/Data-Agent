@@ -24,7 +24,15 @@ from collections.abc import Mapping
 from sqlalchemy import text
 
 from libs.dataagent_db import unscoped_session
-from services.worker_agent import hitl, questions, replay, resolutions, schema_scans, source_tests
+from services.worker_agent import (
+    hitl,
+    private,
+    questions,
+    replay,
+    resolutions,
+    schema_scans,
+    source_tests,
+)
 from services.worker_agent.events import EventSource, Handler, OutboxTableSource
 
 logger = logging.getLogger(__name__)
@@ -94,6 +102,9 @@ async def sources() -> list[EventSource]:
 
 async def run(stop: asyncio.Event) -> None:
     claimed_from = await sources()
+    # UC-16-02's private questions come from Redis, not an outbox (BR-193: never in a table).
+    redis = private.redis_from_env()
+    private_loop = asyncio.create_task(private.run(redis, stop)) if redis is not None else None
     while not stop.is_set():
         handled = 0
         for source in claimed_from:
@@ -104,6 +115,8 @@ async def run(stop: asyncio.Event) -> None:
         if not handled:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=POLL_SECONDS)
+    if private_loop is not None:
+        await private_loop
 
 
 def main() -> None:
