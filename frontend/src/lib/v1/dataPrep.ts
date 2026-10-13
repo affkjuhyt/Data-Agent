@@ -1,5 +1,6 @@
-import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
+import { currentDataSpace, pathId, V1Error, v1Get, v1Send, type Page } from './client';
 import type { components } from './schema';
+import { awaitQueryRun, getQueryRows } from './explore';
 
 /*
  * Data preparation (P06, UC-06-01…05): the SQL editor and its derived datasets, transformation
@@ -12,7 +13,7 @@ import type { components } from './schema';
 
 /* ─── SQL (v3.1 · Dữ liệu · SQL, UC-06-01 nhánh SQL) ──────────────────── */
 
-/** PROPOSAL: GET /v1/sql/catalog — the tables the caller may query, grouped by source. */
+/** The tables the caller may query, grouped from the canonical dataset catalogue. */
 interface SqlCatalogGroup {
   id: string;
   name: string;
@@ -38,18 +39,78 @@ export interface SqlSuggestion {
   sql: string;
 }
 
-export const getSqlCatalog = () => v1Get<{ items: SqlCatalogGroup[] }>('/sql/catalog');
+export const getSqlCatalog = async (): Promise<{ items: SqlCatalogGroup[] }> => {
+  try {
+    return await v1Get<{ items: SqlCatalogGroup[] }>('/sql/catalog');
+  } catch (error) {
+    if (!(error instanceof V1Error) || error.status !== 404) throw error;
+    const datasets = await v1Get<Page<DatasetRow>>('/datasets', { page_size: 500 });
+    const sourceNames = new Map<string, string>();
+    await Promise.all(
+      [...new Set(datasets.items.map((dataset) => dataset.source_id).filter(Boolean))].map(
+        async (sourceId) => {
+          const source = await v1Get<{ id: string; name: string }>(`/sources/${pathId(sourceId!)}`);
+          sourceNames.set(source.id, source.name);
+        },
+      ),
+    );
+    const groups = new Map<string, SqlCatalogGroup>();
+    for (const dataset of datasets.items) {
+      const key = dataset.source_id ?? 'derived';
+      const group = groups.get(key) ?? {
+        id: key,
+        name: dataset.source_id ? (sourceNames.get(key) ?? 'Nguồn dữ liệu') : 'Bảng dẫn xuất',
+        tables: [],
+      };
+      group.tables.push(tableName(dataset));
+      groups.set(key, group);
+    }
+    return { items: [...groups.values()] };
+  }
+};
 
-/** PROPOSAL: POST /v1/sql:run — read-only, permissions of the caller, at most `limit` rows. */
-export const runSql = (sql: string, limit = 500) =>
-  v1Send<SqlResult>('POST', '/sql:run', { sql, limit });
+/** Read-only SQL through the canonical query-run worker and policy path. */
+export const runSql = async (sql: string, limit = 500): Promise<SqlResult> => {
+  try {
+    return await v1Send<SqlResult>('POST', '/sql:run', { sql, limit });
+  } catch (error) {
+    if (!(error instanceof V1Error) || error.status !== 404) throw error;
+    const run = await v1Send<components['schemas']['QueryRunView']>('POST', '/query-runs', {
+      sql,
+      limit,
+    });
+    const finished = await awaitQueryRun(run);
+    const rows = await getQueryRows(finished.id, limit);
+    return {
+      columns: rows.columns.map((column) => column.name),
+      rows: rows.rows as SqlResult['rows'],
+      row_count: finished.row_count ?? rows.rows.length,
+      duration_ms: finished.duration_ms ?? 0,
+      permission_scope: currentDataSpace() ?? 'Data Space hiện tại',
+      masked_columns: [],
+    };
+  }
+};
 
-/** PROPOSAL: POST /v1/sql:format — the server formats, so the editor and pipelines agree. */
-export const formatSql = (sql: string) => v1Send<{ sql: string }>('POST', '/sql:format', { sql });
+/** Server formatting when available; otherwise keep a deterministic read-only fallback. */
+export const formatSql = async (sql: string): Promise<{ sql: string }> => {
+  try {
+    return await v1Send<{ sql: string }>('POST', '/sql:format', { sql });
+  } catch (error) {
+    if (!(error instanceof V1Error) || error.status !== 404) throw error;
+    return { sql: sql.trim().replace(/\s+/g, ' ') };
+  }
+};
 
-/** PROPOSAL: POST /v1/sql:suggest — null when the agent has nothing to add. */
-export const suggestSql = (sql: string) =>
-  v1Send<{ suggestion: SqlSuggestion | null }>('POST', '/sql:suggest', { sql });
+/** Optional agent hint; a missing suggestion service must not block a valid query. */
+export const suggestSql = async (sql: string) => {
+  try {
+    return await v1Send<{ suggestion: SqlSuggestion | null }>('POST', '/sql:suggest', { sql });
+  } catch (error) {
+    if (error instanceof V1Error && error.status === 404) return { suggestion: null };
+    throw error;
+  }
+};
 
 /* ─── Bảng dẫn xuất (UC-06-02) ────────────────────────────────────────── */
 
@@ -447,13 +508,9 @@ export function readWriteback(raw: WritebackWire): Writeback {
     id: raw.id,
     code: raw.id,
     title: `Ghi ngược vào ${raw.target_table}`,
-    status: [
-      'pending_approval',
-      'changes_requested',
-      'rejected',
-      'approved',
-      'written',
-    ].includes(status)
+    status: ['pending_approval', 'changes_requested', 'rejected', 'approved', 'written'].includes(
+      status,
+    )
       ? status
       : 'pending_approval',
     summary_text: `Yêu cầu ghi ngược ${rowCount.toLocaleString('vi-VN')} dòng vào ${raw.target_table}.`,
