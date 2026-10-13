@@ -947,9 +947,13 @@ export const resolveSourceDrift = async (
 
 export type JobMethod = IngestionJob['method'];
 
-/** PROPOSAL: a table that can get an ingestion job, with what the agent suggests for it. */
+/** A table that can get an ingestion job, with what the agent suggests for it. */
 export interface JobCandidate {
   dataset_id: Uuid;
+  /** Set when the candidate is read from A2 (its job is created on the source); null on the PROPOSAL. */
+  source_id: Uuid | null;
+  /** The table as the source names it, JobCreate.source_object: "dbo.card_transactions". */
+  source_object: string;
   table_name: string;
   source_name: string;
   /** Columns that can serve as the incremental cursor, the suggested one first. */
@@ -959,11 +963,74 @@ export interface JobCandidate {
   suggested_method: JobMethod;
   /** "raw.card_transactions · ghi thêm theo phân vùng ngày" */
   target_text: string;
-  estimate: { rows_per_run: string; duration: string; source_load: string };
+  /** PROPOSAL: the agent's estimate of a run; null without it. */
+  estimate: { rows_per_run: string; duration: string; source_load: string } | null;
 }
 
-/** PROPOSAL: GET /v1/ingestion-job-candidates — tables of ingest sources without a job. */
-export const listJobCandidates = () => v1Get<Page<JobCandidate>>('/ingestion-job-candidates', ALL);
+/** Columns a run can read past, timestamps first: what an incremental job's cursor can be. */
+const CURSOR_TYPES = ['timestamp', 'datetime', 'date', 'integer', 'bigint', 'number'];
+
+/*
+ * From A2: the tables of the sources in ingest mode that no job reads yet (a job names its table
+ * in source_object), each with the columns that can serve as the cursor. The agent's suggestion,
+ * the cursor's current value and the estimate are PROPOSAL and absent here.
+ */
+async function servedJobCandidates(): Promise<Page<JobCandidate>> {
+  const [sources, datasets, jobs] = await Promise.all([
+    v1Get<Page<SourceWire>>('/sources', ALL),
+    v1Get<Page<DatasetWire>>('/datasets', ALL),
+    v1Get<Page<components['schemas']['IngestionJobSummary']>>('/jobs', ALL),
+  ]);
+  const ingest = new Map(sources.items.filter((s) => s.mode === 'ingest').map((s) => [s.id, s]));
+  const read = new Set(jobs.items.map((j) => `${j.source_id}|${j.source_object}`));
+  const free = datasets.items.filter((d) => {
+    if (!d.source_id || !ingest.has(d.source_id)) return false;
+    const qualified = d.schema_name ? `${d.schema_name}.${d.table_name}` : d.table_name;
+    return !read.has(`${d.source_id}|${qualified}`) && !read.has(`${d.source_id}|${d.table_name}`);
+  });
+  const items = await Promise.all(
+    free.map(async (d): Promise<JobCandidate> => {
+      const detail = await v1Get<components['schemas']['DatasetDetail']>(
+        `/datasets/${pathId(d.id)}`,
+      );
+      const cursor_columns = (detail.columns ?? [])
+        .filter((c) => CURSOR_TYPES.includes((c.normalized_type ?? '').toLowerCase()))
+        .sort(
+          (a, b) =>
+            CURSOR_TYPES.indexOf((a.normalized_type ?? '').toLowerCase()) -
+            CURSOR_TYPES.indexOf((b.normalized_type ?? '').toLowerCase()),
+        )
+        .map((c) => ({ name: c.name, data_type: c.data_type, hint: null }));
+      const qualified = d.schema_name ? `${d.schema_name}.${d.table_name}` : d.table_name;
+      return {
+        dataset_id: d.id,
+        source_id: d.source_id ?? null,
+        source_object: qualified,
+        table_name: d.table_name,
+        source_name: ingest.get(d.source_id ?? '')?.name ?? '',
+        cursor_columns,
+        cursor_value: null,
+        suggested_method: cursor_columns.length ? 'incremental' : 'schedule',
+        target_text: qualified,
+        estimate: null,
+      };
+    }),
+  );
+  return { items, next_page_token: '' };
+}
+
+/**
+ * PROPOSAL: GET /v1/ingestion-job-candidates — tables of ingest sources without a job, with the
+ * agent's suggestion. Where it is not served (404) the candidates are read from A2.
+ */
+export const listJobCandidates = async (): Promise<Page<JobCandidate>> => {
+  try {
+    return await v1Get<Page<JobCandidate>>('/ingestion-job-candidates', ALL);
+  } catch (e) {
+    if (!(e instanceof V1Error) || e.status !== 404) throw e;
+  }
+  return servedJobCandidates();
+};
 
 export interface NewJob {
   dataset_id: Uuid;
@@ -988,8 +1055,38 @@ export interface DryRunResult {
 export const dryRunJob = (body: NewJob) =>
   v1Send<DryRunResult>('POST', '/ingestion-jobs:dry-run', body);
 
-/** PROPOSAL: POST /v1/ingestion-jobs. Jobs run with the source's read-only account. */
-export const createJob = (body: NewJob) => v1Send<IngestionJob>('POST', '/ingestion-jobs', body);
+const SCHEDULE_CRON: Record<NewJob['schedule'], string> = {
+  every_2h_daytime: '0 8-18/2 * * *',
+  hourly: '0 * * * *',
+  daily_night: '0 1 * * *',
+};
+const JOB_MODE: Partial<Record<JobMethod, 'full' | 'incremental' | 'cdc'>> = {
+  incremental: 'incremental',
+  cdc: 'cdc',
+};
+
+/**
+ * A candidate read from A2 gets its job with POST /v1/sources/{id}/jobs (JobCreate): the schedule
+ * as cron, the freshness SLA as a duration, the error queue's retention. Retry, schema changes and
+ * the other invalid-record choices are PROPOSAL (JobCreate has no field for them). Otherwise
+ * PROPOSAL: POST /v1/ingestion-jobs. Jobs run with the source's read-only account.
+ */
+export const createJob = (body: NewJob, candidate: JobCandidate) =>
+  candidate.source_id
+    ? v1Send<components['schemas']['IngestionJobSummary']>(
+        'POST',
+        `/sources/${pathId(candidate.source_id)}/jobs`,
+        {
+          name: candidate.table_name,
+          mode: JOB_MODE[body.method] ?? 'full',
+          source_object: candidate.source_object,
+          cursor_column: body.method === 'incremental' ? body.cursor_column : null,
+          schedule_cron: SCHEDULE_CRON[body.schedule],
+          freshness_sla: `PT${body.freshness_sla_hours}H`,
+          ...(body.on_invalid_record === 'quarantine_30d' ? { dlq_retention_days: 30 } : {}),
+        },
+      )
+    : v1Send<IngestionJob>('POST', '/ingestion-jobs', body);
 
 /* ─── Bản ghi lỗi (UC-04-07) ──────────────────────────────────────────── */
 

@@ -1035,6 +1035,8 @@ function jobCandidatesFixture(): JobCandidate[] {
   return [
     {
       dataset_id: 'tbl-card-transactions',
+      source_id: null,
+      source_object: 'dbo.card_transactions',
       table_name: 'card_transactions',
       source_name: 'Thẻ tín dụng',
       cursor_columns: [
@@ -1057,6 +1059,8 @@ function jobCandidatesFixture(): JobCandidate[] {
     },
     {
       dataset_id: 'tbl-card-statements',
+      source_id: null,
+      source_object: 'dbo.card_statements',
       table_name: 'card_statements',
       source_name: 'Thẻ tín dụng',
       cursor_columns: [{ name: 'stmt_date', data_type: 'DATE', hint: null }],

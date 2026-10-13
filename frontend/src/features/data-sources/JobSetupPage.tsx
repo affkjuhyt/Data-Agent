@@ -137,6 +137,8 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
   const incremental = job.method === 'incremental';
   const cursor = candidate.cursor_columns.find((c) => c.name === job.cursor_column);
   const ready = !incremental || Boolean(job.cursor_column);
+  // A2 has no dry run (PROPOSAL :dry-run): a table read from A2 is saved without one.
+  const canDryRun = candidate.source_id === null;
 
   const run = async () => {
     setBusy('dry');
@@ -151,7 +153,7 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
   const save = async () => {
     setBusy('save');
     try {
-      await createJob(job);
+      await createJob(job, candidate);
       toast({ tone: 'success', message: `Đã tạo job nạp ${candidate.table_name}.` });
       navigate('data', 'JOBS');
     } catch (e) {
@@ -171,13 +173,15 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
             <Button kind="ghost" onClick={() => navigate('data', 'JOBS')}>
               Huỷ
             </Button>
-            <Button
-              loading={busy === 'dry'}
-              disabled={!ready || busy !== null}
-              onClick={() => void run()}
-            >
-              Chạy thử 1.000 dòng
-            </Button>
+            {canDryRun && (
+              <Button
+                loading={busy === 'dry'}
+                disabled={!ready || busy !== null}
+                onClick={() => void run()}
+              >
+                Chạy thử 1.000 dòng
+              </Button>
+            )}
             <Button
               kind="primary"
               loading={busy === 'save'}
@@ -312,57 +316,65 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
           aria-label="Ước tính và chạy thử"
           className="flex min-w-0 flex-1 flex-col gap-[10px] bg-background px-da-3xl pt-[20px] max-[1023px]:border-t max-[1023px]:border-border max-[1023px]:pb-da-xl"
         >
-          <h2 className="text-foreground da-heading-3">Ước tính</h2>
-          <dl className="grid grid-cols-3 overflow-hidden rounded-lg border border-border bg-card">
-            {[
-              ['Mỗi lần chạy', candidate.estimate.rows_per_run],
-              ['Thời gian', candidate.estimate.duration],
-              ['Tải lên nguồn', candidate.estimate.source_load],
-            ].map(([label, value], i) => (
-              <div
-                key={label}
-                className={cn(
-                  'flex flex-col gap-[2px] px-[14px] py-[10px]',
-                  i < 2 && 'border-r border-border',
-                )}
-              >
-                <dt className="text-muted-foreground da-caption">{label}</dt>
-                <dd className="text-foreground da-body-strong">{value}</dd>
-              </div>
-            ))}
-          </dl>
-          <h2 className="text-foreground da-heading-3">Chạy thử 1.000 dòng</h2>
-          {dryRun ? (
-            <table className="w-full table-fixed border-collapse">
-              <thead>
-                <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="px-da-lg py-da-md font-normal">Kiểm tra</th>
-                  <th className="w-[216px] px-da-md py-da-md font-normal">Kết quả</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dryRun.checks.map((check) => (
-                  <tr key={check.title} className="border-b border-border">
-                    <td className="px-da-lg py-[9px] text-foreground da-body-small">
-                      {check.title}
-                    </td>
-                    <td
-                      className={cn(
-                        'px-da-md py-[9px] da-body-small',
-                        check.ok ? 'text-foreground' : 'text-warning',
-                      )}
-                    >
-                      {check.result}
-                    </td>
-                  </tr>
+          {candidate.estimate && (
+            <>
+              <h2 className="text-foreground da-heading-3">Ước tính</h2>
+              <dl className="grid grid-cols-3 overflow-hidden rounded-lg border border-border bg-card">
+                {[
+                  ['Mỗi lần chạy', candidate.estimate.rows_per_run],
+                  ['Thời gian', candidate.estimate.duration],
+                  ['Tải lên nguồn', candidate.estimate.source_load],
+                ].map(([label, value], i) => (
+                  <div
+                    key={label}
+                    className={cn(
+                      'flex flex-col gap-[2px] px-[14px] py-[10px]',
+                      i < 2 && 'border-r border-border',
+                    )}
+                  >
+                    <dt className="text-muted-foreground da-caption">{label}</dt>
+                    <dd className="text-foreground da-body-strong">{value}</dd>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="text-muted-foreground da-body-small">
-              Chưa chạy thử. Chạy thử đọc 1.000 dòng theo cấu hình bên trái và không ghi gì vào bảng
-              đích; dòng lỗi được đếm trước khi bạn lưu.
-            </p>
+              </dl>
+            </>
+          )}
+          {canDryRun && (
+            <>
+              <h2 className="text-foreground da-heading-3">Chạy thử 1.000 dòng</h2>
+              {dryRun ? (
+                <table className="w-full table-fixed border-collapse">
+                  <thead>
+                    <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                      <th className="px-da-lg py-da-md font-normal">Kiểm tra</th>
+                      <th className="w-[216px] px-da-md py-da-md font-normal">Kết quả</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dryRun.checks.map((check) => (
+                      <tr key={check.title} className="border-b border-border">
+                        <td className="px-da-lg py-[9px] text-foreground da-body-small">
+                          {check.title}
+                        </td>
+                        <td
+                          className={cn(
+                            'px-da-md py-[9px] da-body-small',
+                            check.ok ? 'text-foreground' : 'text-warning',
+                          )}
+                        >
+                          {check.result}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="text-muted-foreground da-body-small">
+                  Chưa chạy thử. Chạy thử đọc 1.000 dòng theo cấu hình bên trái và không ghi gì vào
+                  bảng đích; dòng lỗi được đếm trước khi bạn lưu.
+                </p>
+              )}
+            </>
           )}
           <p className="text-muted-foreground da-caption">
             UC-04-06 · job chạy bằng tài khoản chỉ đọc; không bao giờ xoá dữ liệu ở nguồn
