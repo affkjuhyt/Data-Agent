@@ -813,6 +813,17 @@ class PublishedDataProductView(BaseModel):
     updated_at: datetime.datetime
 
 
+class PublishedCatalogProduct(BaseModel):
+    """The minimal cross-Data-Space shape used by the shared product picker."""
+
+    id: uuid.UUID
+    code: str
+    name: str
+    version: str
+    owner_space: dict[str, uuid.UUID | str]
+    has_pii: bool
+
+
 MemberKind = Literal["dataset", "metric", "knowledge_page", "document_collection", "shared_product"]
 
 

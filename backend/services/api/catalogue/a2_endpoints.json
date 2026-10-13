@@ -3982,6 +3982,19 @@
    ]
   },
   {
+   "group": "Lớp ngữ cảnh",
+   "method": "GET",
+   "path": "/v1/data-products/catalog",
+   "summary": "Catalog sản phẩm dữ liệu đã phát hành của Data Space khác",
+   "use_cases": [
+    "06-06",
+    "11-08"
+   ],
+   "capability": [
+    "—"
+   ]
+  },
+  {
    "group": "Quản trị",
    "method": "GET",
    "path": "/v1/admin/ai-settings",

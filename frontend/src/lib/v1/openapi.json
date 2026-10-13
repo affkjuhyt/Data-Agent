@@ -31080,6 +31080,27 @@
     "title": "Page[PrincipalRef]",
     "type": "object"
    },
+   "Page_PublishedCatalogProduct_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/PublishedCatalogProduct"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "next_page_token": {
+      "default": "",
+      "title": "Next Page Token",
+      "type": "string"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "Page[PublishedCatalogProduct]",
+    "type": "object"
+   },
    "Page_QualityIssueView_": {
     "properties": {
      "items": {
@@ -34312,6 +34333,57 @@
      }
     },
     "title": "PublicationWithdraw",
+    "type": "object"
+   },
+   "PublishedCatalogProduct": {
+    "description": "The minimal cross-Data-Space shape used by the shared product picker.",
+    "properties": {
+     "code": {
+      "title": "Code",
+      "type": "string"
+     },
+     "has_pii": {
+      "title": "Has Pii",
+      "type": "boolean"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "owner_space": {
+      "additionalProperties": {
+       "anyOf": [
+        {
+         "format": "uuid",
+         "type": "string"
+        },
+        {
+         "type": "string"
+        }
+       ]
+      },
+      "title": "Owner Space",
+      "type": "object"
+     },
+     "version": {
+      "title": "Version",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "code",
+     "name",
+     "version",
+     "owner_space",
+     "has_pii"
+    ],
+    "title": "PublishedCatalogProduct",
     "type": "object"
    },
    "PublishedDataProductView": {
@@ -64223,6 +64295,183 @@
     ],
     "x-use-cases": [
      "UC-06-06"
+    ]
+   }
+  },
+  "/v1/data-products/catalog": {
+   "get": {
+    "description": "List only published products owned by another Data Space.\n\nThe picker needs ownership and a PII warning, not the product contract; the latter is only\nreturned after the owner grants access through the normal access-request workflow.",
+    "operationId": "listPublishedProductCatalog",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "maximum": 500,
+       "minimum": 1,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_token",
+      "required": false,
+      "schema": {
+       "default": "",
+       "maxLength": 2048,
+       "title": "Page Token",
+       "type": "string"
+      }
+     },
+     {
+      "description": "A3's name for page_token",
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 2048,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "A3's name for page_token",
+       "title": "Cursor"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_PublishedCatalogProduct_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Catalog sản phẩm dữ liệu đã phát hành của Data Space khác",
+    "tags": [
+     "Lớp ngữ cảnh"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-06-06",
+     "UC-11-08"
     ]
    }
   },

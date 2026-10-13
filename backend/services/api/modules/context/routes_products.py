@@ -29,7 +29,7 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
-from libs.dataagent_db.models import catalog, context, document, org, pack
+from libs.dataagent_db.models import catalog, context, document, org, pack, pipeline
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
@@ -60,6 +60,7 @@ from services.api.modules.context.schemas import (
     MemberCreate,
     MemberView,
     PeriodState,
+    PublishedCatalogProduct,
     PublishedDataProductView,
     ReasonBody,
     ScopeMatch,
@@ -322,6 +323,57 @@ async def list_data_products(
     for item in items:
         item.freshness_state = states.get(item.id, "unknown")
     return Page[DataProductView](items=items, next_page_token=token)
+
+
+@router.get(
+    "/v1/data-products/catalog",
+    response_model=Page[PublishedCatalogProduct],
+    **endpoint("GET", "/v1/data-products/catalog", operation_id="listPublishedProductCatalog"),
+)
+async def list_published_product_catalog(
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: ContextPage,
+) -> Page[PublishedCatalogProduct]:
+    """List only published products owned by another Data Space.
+
+    The picker needs ownership and a PII warning, not the product contract; the latter is only
+    returned after the owner grants access through the normal access-request workflow.
+    """
+    product = pipeline.DataProduct
+    async with transaction(ROLE, principal) as session:
+        rows = (
+            await session.execute(
+                select(product, org.DataSpace.id, org.DataSpace.name)
+                .join(org.DataSpace, org.DataSpace.id == product.data_space_id)
+                .where(
+                    product.org_id == principal.org_id,
+                    product.data_space_id != data_space,
+                    product.status == "published",
+                    org.DataSpace.deleted_at.is_(None),
+                )
+                .order_by(product.code, product.version.desc(), product.id)
+                .limit(page.page_size + 1)
+            )
+        ).all()
+    items = rows[: page.page_size]
+    return Page(
+        items=[
+            PublishedCatalogProduct(
+                id=row.id,
+                code=row.code,
+                name=row.name,
+                version=str(row.version),
+                owner_space={"id": space_id, "name": space_name},
+                has_pii=bool(
+                    isinstance(row.contract, dict)
+                    and (row.contract.get("has_pii") or row.contract.get("contains_pii"))
+                ),
+            )
+            for row, space_id, space_name in items
+        ],
+        next_page_token="",
+    )
 
 
 @router.post(

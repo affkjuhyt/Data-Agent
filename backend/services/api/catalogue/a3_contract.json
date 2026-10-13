@@ -5412,6 +5412,21 @@
    ],
    "request_text": "—"
   },
+  "GET /v1/data-products/catalog": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh",
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [
+    "cursor",
+    "page_size"
+   ],
+   "returns": "Sản phẩm dữ liệu đã phát hành của Data Space khác; chỉ metadata và cảnh báo PII",
+   "errors": [],
+   "request_text": "?cursor, ?page_size"
+  },
   "GET /v1/admin/ai-settings": {
    "group": "Quản trị",
    "groups": [

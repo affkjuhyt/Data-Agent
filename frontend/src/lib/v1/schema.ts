@@ -1464,6 +1464,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/data-products/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Catalog sản phẩm dữ liệu đã phát hành của Data Space khác
+         * @description List only published products owned by another Data Space.
+         *
+         *     The picker needs ownership and a PII warning, not the product contract; the latter is only
+         *     returned after the owner grants access through the normal access-request workflow.
+         */
+        get: operations["listPublishedProductCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/data-products/index": {
         parameters: {
             query?: never;
@@ -17679,6 +17702,16 @@ export interface components {
              */
             next_page_token: string;
         };
+        /** Page[PublishedCatalogProduct] */
+        Page_PublishedCatalogProduct_: {
+            /** Items */
+            items: components["schemas"]["PublishedCatalogProduct"][];
+            /**
+             * Next Page Token
+             * @default
+             */
+            next_page_token: string;
+        };
         /** Page[QualityIssueView] */
         Page_QualityIssueView_: {
             /** Items */
@@ -18912,6 +18945,29 @@ export interface components {
         PublicationWithdraw: {
             /** Reason */
             reason?: string | null;
+        };
+        /**
+         * PublishedCatalogProduct
+         * @description The minimal cross-Data-Space shape used by the shared product picker.
+         */
+        PublishedCatalogProduct: {
+            /** Code */
+            code: string;
+            /** Has Pii */
+            has_pii: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Owner Space */
+            owner_space: {
+                [key: string]: string;
+            };
+            /** Version */
+            version: string;
         };
         /**
          * PublishedDataProductView
@@ -34940,6 +34996,121 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["services__api__modules__context__schemas__DataProductView"] | components["schemas"]["PublishedDataProductView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    listPublishedProductCatalog: {
+        parameters: {
+            query?: {
+                page_size?: number;
+                page_token?: string;
+                /** @description A3's name for page_token */
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PublishedCatalogProduct_"];
                 };
             };
             /** @description Invalid request */
