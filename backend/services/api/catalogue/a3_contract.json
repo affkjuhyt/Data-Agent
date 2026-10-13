@@ -1084,6 +1084,45 @@
    ],
    "request_text": "—"
   },
+  "GET /v1/sources/{id}/api-config": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Cấu hình request REST, mapping cột và health; không trả secret",
+   "errors": [
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "PUT /v1/sources/{id}/api-config": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {
+    "request": true,
+    "mapping": false
+   },
+   "query": [],
+   "returns": "Cấu hình request REST, mapping cột và health; credential chỉ là secret_ref",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "request*, mapping"
+  },
   "POST /v1/sources": {
    "group": "Nguồn và danh mục",
    "groups": [

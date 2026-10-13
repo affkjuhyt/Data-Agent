@@ -887,6 +887,30 @@
   },
   {
    "group": "Nguồn và danh mục",
+   "method": "GET",
+   "path": "/v1/sources/{id}/api-config",
+   "summary": "Đọc cấu hình request và mapping của nguồn REST; không có bí mật",
+   "use_cases": [
+    "04-01"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "PUT",
+   "path": "/v1/sources/{id}/api-config",
+   "summary": "Lưu cấu hình request và mapping của nguồn REST",
+   "use_cases": [
+    "04-01"
+   ],
+   "capability": [
+    "admin_data"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
    "method": "POST",
    "path": "/v1/sources",
    "summary": "Đăng ký nguồn",

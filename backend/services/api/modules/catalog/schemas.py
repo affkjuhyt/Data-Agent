@@ -190,6 +190,19 @@ class SecretRefView(BaseModel):
     label: str
 
 
+class ApiConfigPut(BaseModel):
+    """The request/mapping kept with a REST source; credentials remain references only."""
+
+    request: dict[str, Any]
+    mapping: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ApiConfigView(ApiConfigPut):
+    source_id: uuid.UUID
+    name: str
+    health: dict[str, Any] | None = None
+
+
 class SourceSchedule(SourceView):
     """The source and its next five scans of each kind (UC-04-05 step 3)."""
 

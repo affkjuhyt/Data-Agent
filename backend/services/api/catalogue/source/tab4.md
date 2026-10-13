@@ -175,7 +175,9 @@ Dịch vụ: Connector service (catalog). 17 endpoint. Hai endpoint chứng nh�
 | GET | /v1/secret-refs | Các reference OpenBao đã dùng trong tổ chức, không trả bí mật (thêm 13/10/2026) | 04-01 | admin\_data |
 | GET | /v1/sources | Danh sách nguồn | 04-01 | admin\_data |
 | GET | /v1/sources/{id} | Một nguồn: chế độ, kết quả kiểm tra, giới hạn tải, lịch quét; không có bí mật (thêm 12/10/2026) | 04-01 | admin\_data |
+| GET | /v1/sources/{id}/api-config | Đọc cấu hình request và mapping của nguồn REST; không có bí mật | 04-01 | admin\_data |
 | POST | /v1/sources | Đăng ký nguồn | 04-01 | admin\_data |
+| PUT | /v1/sources/{id}/api-config | Lưu cấu hình request và mapping của nguồn REST | 04-01 | admin\_data |
 | PATCH | /v1/sources/{id} | Sửa nguồn, giới hạn tải | 04-01 | admin\_data |
 | POST | /v1/sources/{id}:test | Kiểm tra kết nối và quyền tài khoản | 04-01 | admin\_data |
 | POST | /v1/sources/{id}:activate | Chọn bảng và kích hoạt nguồn sau lượt quét cấu trúc đầu (thêm 13/10/2026) | 04-01, 04-04 | admin\_data |
@@ -758,7 +760,9 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/secret-refs | — | Các reference OpenBao (secret/tenants/<org>/…) đã dùng trong tổ chức, {ref, label}; không trả secret | — |
 | GET /v1/sources | ?status, ?kind | Danh sách Source | — |
 | GET /v1/sources/{id} | — | Source như trong danh sách: status, status\_reason, db\_version, last\_checked\_at, has\_credentials, has\_writeback\_credentials, writeback\_tables; không có secret\_ref | 404 not\_found |
+| GET /v1/sources/{id}/api-config | — | Cấu hình request REST, mapping cột và health; không trả secret | 422 business\_rule\_violated (nguồn không phải REST) |
 | POST /v1/sources | name\*, kind\*, host, port, database\_name, mode, authority\_level, freshness\_sla, max\_concurrency, query\_timeout\_s, scan\_schemas, scan\_window, work\_calendar\_id, credentials, writeback\_credentials | Source. credentials được lưu vào OpenBao, không lưu CSDL (BR-14) | 409 conflict (trùng tên trong Data Space); 422 business\_rule\_violated (mode = federated với nguồn không hỗ trợ) |
+| PUT /v1/sources/{id}/api-config | request\*, mapping | Cấu hình request REST, mapping cột và health; credential chỉ là secret\_ref | 422 validation\_failed (URL không dùng HTTPS); 422 business\_rule\_violated (nguồn không phải REST) |
 | PATCH /v1/sources/{id} | name, authority\_level, freshness\_sla, max\_concurrency, query\_timeout\_s, scan\_schemas, scan\_window, status, credentials, writeback\_tables | Source | 412 precondition\_failed; 422 validation\_failed (giới hạn tải ngoài khoảng, BR-99) |
 | POST /v1/sources/{id}:test | — | 202, Location tới source. Connector worker mở kết nối bằng tài khoản ở secret\_ref (API không giữ mật khẩu kho), kiểm TLS, SELECT, quyền ghi, độ trễ, phiên bản rồi ghi status, status\_reason, db\_version, last\_checked\_at lên source; tài khoản có quyền ghi bị cảnh báo. Sửa 12/10/2026 | 409 invalid\_state (nguồn đã lưu trữ) |
 | POST /v1/sources/{id}:activate | tables\[\] {name\*, data\_space\_id\*, owner\_id\*}, schema\_scan, profiling, on\_schema\_change | Source. Bật các bảng đã chọn, tắt các bảng còn lại của nguồn, đặt người phụ trách từng bảng và lịch quét; mỗi bảng vào data\_space\_id đã chọn (UC-04-04 E1: một nguồn dùng chung cho nhiều Data Space) | 409 invalid\_state (nguồn chưa qua kiểm tra kết nối); 403 forbidden (data\_space\_id là Data Space mà người gọi không có admin\_data); 422 validation\_failed (owner\_id không phải người dùng còn hoạt động); 422 business\_rule\_violated (cột dữ liệu cá nhân chưa xác nhận che, UC-04-04 bước 3) |

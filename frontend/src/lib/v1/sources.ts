@@ -1477,7 +1477,7 @@ export const deriveTable = async (
 
 export type ApiAuth = 'oauth2_client' | 'api_key' | 'bearer';
 
-/** PROPOSAL: the request a REST source makes; the secret is a reference, never the value. */
+/** The request a REST source makes; the secret is a reference, never the value. */
 export interface ApiRequest {
   url: string;
   query: string;
@@ -1499,7 +1499,7 @@ export interface ApiFieldMapping {
   note: string | null;
 }
 
-/** PROPOSAL: GET /v1/sources/{id}/api-config — an existing REST source and its health. */
+/** GET /v1/sources/{id}/api-config — an existing REST source and its health. */
 export interface ApiSourceConfig {
   source_id: Uuid;
   name: string;
@@ -1530,24 +1530,26 @@ interface ApiTryResult {
 export const tryApiRequest = (request: ApiRequest) =>
   v1Send<ApiTryResult>('POST', '/connectors/rest:try', { request });
 
-/** PROPOSAL: POST /v1/sources with connector "rest" and an `api` body instead of `config`. */
-/** A REST source; `api` (the request and its mapping) is PROPOSAL, the api ignores it. */
+/** POST /v1/sources followed by PUT /v1/sources/{id}/api-config. */
 export const createApiSource = async (body: {
   name: string;
   request: ApiRequest;
   mapping: ApiFieldMapping[];
 }) =>
-  readSourceRow(
-    await v1Send<SourceWire>('POST', '/sources', {
+  {
+    const source = await v1Send<SourceWire>('POST', '/sources', {
       name: body.name,
       kind: 'rest_api',
       mode: 'ingest',
+      // Kept for older adapters; the A3 backend ignores this extra field and the config is
+      // persisted explicitly through PUT /sources/{id}/api-config below.
       api: { request: body.request, mapping: body.mapping },
-    }),
-    [],
-  );
+    });
+    await saveApiConfig(source.id, { request: body.request, mapping: body.mapping });
+    return readSourceRow(source, []);
+  };
 
-/** PROPOSAL: PUT /v1/sources/{id}/api-config. */
+/** PUT /v1/sources/{id}/api-config. */
 export const saveApiConfig = async (
   sourceId: string,
   body: { request: ApiRequest; mapping: ApiFieldMapping[] },

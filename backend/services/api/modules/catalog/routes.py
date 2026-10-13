@@ -40,6 +40,8 @@ from services.api.modules.catalog import rules
 from services.api.modules.catalog.schemas import (
     Accepted,
     ActivateRequest,
+    ApiConfigPut,
+    ApiConfigView,
     CertificationView,
     CertifiedVersion,
     CertifyRequest,
@@ -333,6 +335,70 @@ async def get_source(
     # Where :test's Location points (A3, 12/10/2026): the outcome the connector worker wrote.
     async with transaction(ROLE, principal) as session:
         return SourceView.of(await _source(session, principal, space, source_id))
+
+
+def _api_config(row: catalog.Source) -> ApiConfigView:
+    config = row.conn_options if isinstance(row.conn_options, dict) else {}
+    saved_value = config.get("api")
+    saved: dict[str, Any] = saved_value if isinstance(saved_value, dict) else {}
+    request_value = saved.get("request")
+    request: dict[str, Any] = request_value if isinstance(request_value, dict) else {}
+    mapping_value = saved.get("mapping")
+    mapping: list[dict[str, Any]] = (
+        [item for item in mapping_value if isinstance(item, dict)]
+        if isinstance(mapping_value, list)
+        else []
+    )
+    health_value = saved.get("health")
+    health: dict[str, Any] | None = health_value if isinstance(health_value, dict) else None
+    return ApiConfigView(
+        source_id=row.id,
+        name=row.name,
+        request=request,
+        mapping=mapping,
+        health=health,
+    )
+
+
+@router.get(
+    "/v1/sources/{id}/api-config",
+    response_model=ApiConfigView,
+    **endpoint("GET", "/v1/sources/{id}/api-config", operation_id="getSourceApiConfig"),
+)
+async def get_source_api_config(
+    source_id: PathId, principal: CurrentPrincipal, space: CurrentDataSpace
+) -> ApiConfigView:
+    async with transaction(ROLE, principal) as session:
+        row = await _source(session, principal, space, source_id)
+        if row.kind != "rest_api":
+            raise Problem(422, "business_rule_violated", "The source is not a REST API source.")
+        return _api_config(row)
+
+
+@router.put(
+    "/v1/sources/{id}/api-config",
+    response_model=ApiConfigView,
+    **endpoint("PUT", "/v1/sources/{id}/api-config", operation_id="putSourceApiConfig"),
+)
+async def put_source_api_config(
+    body: ApiConfigPut,
+    source_id: PathId,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+) -> ApiConfigView:
+    if not str(body.request.get("url", "")).startswith("https://"):
+        raise Problem(422, "validation_failed", "request.url must start with https://.")
+    async with transaction(ROLE, principal) as session:
+        row = await _source(session, principal, space, source_id, lock=True)
+        if row.kind != "rest_api":
+            raise Problem(422, "business_rule_violated", "The source is not a REST API source.")
+        options = dict(row.conn_options) if isinstance(row.conn_options, dict) else {}
+        options["api"] = {"request": body.request, "mapping": body.mapping}
+        row.conn_options = options
+        row.updated_by = principal.user_id
+        await session.flush()
+        await session.refresh(row)
+        return _api_config(row)
 
 
 @router.post(
