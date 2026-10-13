@@ -29,7 +29,7 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
-from libs.dataagent_db.models import catalog, context, document, org, pack, pipeline
+from libs.dataagent_db.models import catalog, context, document, org, pack
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
@@ -60,6 +60,8 @@ from services.api.modules.context.schemas import (
     MemberCreate,
     MemberView,
     PeriodState,
+    ProductUseRequestBody,
+    ProductUseRequestView,
     PublishedCatalogProduct,
     PublishedDataProductView,
     ReasonBody,
@@ -67,7 +69,11 @@ from services.api.modules.context.schemas import (
     SubmitBody,
 )
 from services.api.modules.eval import data_product_eval_summary
-from services.api.modules.pipeline import create_published_product, shared_product_usable
+from services.api.modules.pipeline import (
+    create_published_product,
+    published_products,
+    shared_product_usable,
+)
 
 router = APIRouter()
 
@@ -340,23 +346,19 @@ async def list_published_product_catalog(
     The picker needs ownership and a PII warning, not the product contract; the latter is only
     returned after the owner grants access through the normal access-request workflow.
     """
-    product = pipeline.DataProduct
+    products = await published_products(principal, data_space)
     async with transaction(ROLE, principal) as session:
-        rows = (
-            await session.execute(
-                select(product, org.DataSpace.id, org.DataSpace.name)
-                .join(org.DataSpace, org.DataSpace.id == product.data_space_id)
-                .where(
-                    product.org_id == principal.org_id,
-                    product.data_space_id != data_space,
-                    product.status == "published",
-                    org.DataSpace.deleted_at.is_(None),
+        spaces = dict(
+            (
+                await session.execute(
+                    select(org.DataSpace.id, org.DataSpace.name).where(
+                        org.DataSpace.id.in_({p.data_space_id for p in products}),
+                        org.DataSpace.deleted_at.is_(None),
+                    )
                 )
-                .order_by(product.code, product.version.desc(), product.id)
-                .limit(page.page_size + 1)
-            )
-        ).all()
-    items = rows[: page.page_size]
+            ).all()
+        )
+    items = products[: page.page_size]
     return Page(
         items=[
             PublishedCatalogProduct(
@@ -364,16 +366,55 @@ async def list_published_product_catalog(
                 code=row.code,
                 name=row.name,
                 version=str(row.version),
-                owner_space={"id": space_id, "name": space_name},
+                owner_space={"id": row.data_space_id, "name": spaces[row.data_space_id]},
                 has_pii=bool(
                     isinstance(row.contract, dict)
                     and (row.contract.get("has_pii") or row.contract.get("contains_pii"))
                 ),
             )
-            for row, space_id, space_name in items
+            for row in items
         ],
         next_page_token="",
     )
+
+
+@router.post(
+    "/v1/data-products:request-use",
+    response_model=dict[str, list[ProductUseRequestView]],
+    status_code=202,
+    **endpoint("POST", "/v1/data-products:request-use", operation_id="requestDataProductUse"),
+)
+async def request_data_product_use(
+    body: ProductUseRequestBody,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> dict[str, list[ProductUseRequestView]]:
+    """Create pending owner-space access requests for published products."""
+    if body.data_space_id != data_space:
+        raise Problem(422, "validation_failed", "data_space_id must be the selected Data Space.")
+    products = await published_products(principal, data_space, set(body.product_ids))
+    if len(products) != len(set(body.product_ids)):
+        raise Problem(404, "not_found", "One or more published products are not available.")
+    async with transaction(ROLE, principal) as session:
+        made: list[ProductUseRequestView] = []
+        for row in products:
+            request_id = uuid7()
+            emit(
+                session,
+                principal,
+                "data_product",
+                row.id,
+                "data_product.use_requested",
+                request_id=request_id,
+                product_id=row.id,
+                owner_data_space_id=row.data_space_id,
+                requester_data_space_id=data_space,
+                requester_id=principal.user_id,
+                capability="view_aggregate",
+                requested_until=(now() + datetime.timedelta(days=90)).date(),
+            )
+            made.append(ProductUseRequestView(id=request_id, product_id=row.id, status="pending"))
+    return {"requests": made}
 
 
 @router.post(
@@ -513,6 +554,52 @@ async def get_data_product(
     detail.latest_eval_run = summary.latest_run
     detail.open_error_book_entries = summary.open_error_book_entries
     return detail
+
+
+@router.post(
+    "/v1/data-products/{id}:draft-version",
+    response_model=DataProductDetail,
+    **endpoint(
+        "POST", "/v1/data-products/{id}:draft-version", operation_id="draftDataProductVersion"
+    ),
+)
+async def draft_data_product_version(
+    product_id: ProductId,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> DataProductDetail:
+    """Open an unchanged next-version proposal for the agent/editor to refine."""
+    async with transaction(ROLE, principal) as session:
+        row = await _product(session, product_id, principal, data_space, lock=True)
+        if row.status not in _VERSIONED:
+            raise Problem(409, "invalid_state", f"A {row.status} data product has no next version.")
+        if row.proposal_id is not None:
+            raise Problem(409, "invalid_state", "A change of this data product is in review.")
+        row.proposal_id = uuid7()
+        row.updated_by = principal.user_id
+        row.updated_at = now()
+        emit(
+            session,
+            principal,
+            "data_product",
+            row.id,
+            "data_product.change_proposed",
+            data_product_id=row.id,
+            data_space_id=data_space,
+            version=row.version + 1,
+            proposal_id=row.proposal_id,
+            proposal_kind="data_product",
+            target_service="context",
+            assignee_id=row.owner_id,
+            created_by=principal.user_id,
+            changes={},
+        )
+        await session.flush()
+        await session.refresh(row)
+        draft = _view(row)
+        draft.version = row.version + 1
+        draft.status = "pending_review"
+    return DataProductDetail(**draft.model_dump())
 
 
 @router.patch(

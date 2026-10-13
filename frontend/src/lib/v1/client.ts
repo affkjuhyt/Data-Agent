@@ -142,9 +142,13 @@ export async function v1Send<T = unknown>(
   method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   path: string,
   body?: unknown,
-  options: { ifMatch?: string } = {},
+  options: { ifMatch?: string; query?: Query } = {},
 ): Promise<T> {
-  const target = `${BASE}${safePath(path)}`;
+  const target = new URL(`${BASE}${safePath(path)}`);
+  Object.entries(options.query ?? {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '')
+      target.searchParams.set(key, String(value));
+  });
   const extra: Record<string, string> = {};
   if (body !== undefined) extra['Content-Type'] = 'application/json';
   if (options.ifMatch) extra['If-Match'] = options.ifMatch;

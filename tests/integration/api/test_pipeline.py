@@ -521,6 +521,23 @@ async def test_preview_runs_on_a_sample(pp: Space) -> None:
         assert nothing.status_code == 409
 
 
+@pytest.mark.req("AC-06-03-01")
+async def test_run_pipeline_queues_full_run(pp: Space) -> None:
+    async with client(pp) as api:
+        made = await _create(api, pp)
+        response = await api.post(f"/v1/pipelines/{made['id']}/runs", headers=pp.headers("eng"))
+        assert response.status_code == 202, response.text
+        accepted = response.json()
+        assert response.headers["Location"] == f"/v1/pipeline-runs/{accepted['id']}"
+        assert accepted["status"] == "running"
+        assert pp.one("SELECT mode FROM pipeline.pipeline_run WHERE id = %s", accepted["id"]) == (
+            "full"
+        )
+        [(event, payload)] = pp.events(accepted["id"])
+        assert event == "pipeline_run.requested"
+        assert payload["mode"] == "full"
+
+
 # AC-06-01-06
 # AC-06-02-03
 @pytest.mark.req("AC-06-01-06", "AC-06-02-03")
@@ -692,6 +709,17 @@ async def test_an_active_pipeline_is_scheduled(pp: Space) -> None:
 
 
 # --- lineage -------------------------------------------------------------------------------------
+
+
+@pytest.mark.req("AC-06-05-00")
+async def test_lineage_targets_lists_visible_datasets(pp: Space) -> None:
+    async with client(pp) as api:
+        response = await api.get("/v1/lineage/targets", headers=pp.headers("analyst"))
+    assert response.status_code == 200, response.text
+    ids = {item["id"] for item in response.json()}
+    assert str(pp.raw) in ids
+    assert str(pp.derived) in ids
+    assert str(pp.other_dataset) not in ids
 
 
 def _edge(

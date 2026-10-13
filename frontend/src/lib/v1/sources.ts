@@ -1172,14 +1172,22 @@ const CURSOR_TYPES = ['timestamp', 'datetime', 'date', 'integer', 'bigint', 'num
  * the cursor's current value and the estimate are PROPOSAL and absent here.
  */
 async function servedJobCandidates(): Promise<Page<JobCandidate>> {
-  const [sources, datasets, jobs] = await Promise.all([
+  const [sources, jobs] = await Promise.all([
     v1Get<Page<SourceWire>>('/sources', ALL),
-    v1Get<Page<DatasetWire>>('/datasets', ALL),
     v1Get<Page<components['schemas']['IngestionJobSummary']>>('/jobs', ALL),
   ]);
-  const ingest = new Map(sources.items.filter((s) => s.mode === 'ingest').map((s) => [s.id, s]));
-  const read = new Set(jobs.items.map((j) => `${j.source_id}|${j.source_object}`));
-  const free = datasets.items.filter((d) => {
+  const sourceItems = sources.items ?? [];
+  const ingest = new Map(sourceItems.filter((s) => s.mode === 'ingest').map((s) => [s.id, s]));
+  const datasetPages = await Promise.all(
+    [...ingest.keys()].map((sourceId) =>
+      v1Get<Page<DatasetWire>>('/datasets', { ...ALL, source_id: sourceId }),
+    ),
+  );
+  const datasets = [
+    ...new Map(datasetPages.flatMap((page) => page?.items ?? []).map((d) => [d.id, d])).values(),
+  ];
+  const read = new Set((jobs.items ?? []).map((j) => `${j.source_id}|${j.source_object}`));
+  const free = datasets.filter((d) => {
     if (!d.source_id || !ingest.has(d.source_id)) return false;
     const qualified = d.schema_name ? `${d.schema_name}.${d.table_name}` : d.table_name;
     return !read.has(`${d.source_id}|${qualified}`) && !read.has(`${d.source_id}|${d.table_name}`);
@@ -1212,6 +1220,10 @@ async function servedJobCandidates(): Promise<Page<JobCandidate>> {
       };
     }),
   );
+  items.sort(
+    (a, b) =>
+      Number(b.suggested_method === 'incremental') - Number(a.suggested_method === 'incremental'),
+  );
   return { items, next_page_token: '' };
 }
 
@@ -1219,14 +1231,7 @@ async function servedJobCandidates(): Promise<Page<JobCandidate>> {
  * Compatibility helper over GET /v1/sources and GET /v1/jobs — tables of ingest sources without a job, with the
  * agent's suggestion. Where it is not served (404) the candidates are read from A2.
  */
-export const listJobCandidates = async (): Promise<Page<JobCandidate>> => {
-  try {
-    return await v1Get<Page<JobCandidate>>('/ingestion-job-candidates', ALL);
-  } catch (e) {
-    if (!(e instanceof V1Error) || e.status !== 404) throw e;
-  }
-  return servedJobCandidates();
-};
+export const listJobCandidates = (): Promise<Page<JobCandidate>> => servedJobCandidates();
 
 export interface NewJob {
   dataset_id: Uuid;
@@ -1248,14 +1253,15 @@ export interface DryRunResult {
 }
 
 /**
- * A3 exposes dry-run as the real source-job create with `?dry_run=true`; keep the old endpoint
- * only for candidates reconstructed from the compatibility adapter, which have no source id.
+ * A3 exposes dry-run as the real source-job create with `?dry_run=true`. Candidates without a
+ * source id cannot be submitted because the source account and policy are part of the contract.
  */
 export const dryRunJob = async (body: NewJob, candidate: JobCandidate): Promise<DryRunResult> => {
-  if (!candidate.source_id) return v1Send<DryRunResult>('POST', '/ingestion-jobs:dry-run', body);
+  if (!candidate.source_id)
+    throw new V1Error(422, 'source_required', 'Cần chọn bảng thuộc một nguồn dữ liệu.');
   const raw = await v1Send<components['schemas']['IngestionJobDryRun']>(
     'POST',
-    `/sources/${pathId(candidate.source_id)}/jobs?dry_run=true`,
+    `/sources/${pathId(candidate.source_id)}/jobs`,
     {
       name: candidate.table_name,
       mode: JOB_MODE[body.method] ?? 'full',
@@ -1266,10 +1272,26 @@ export const dryRunJob = async (body: NewJob, candidate: JobCandidate): Promise<
       freshness_sla: `PT${body.freshness_sla_hours}H`,
       ...(body.on_invalid_record === 'quarantine_30d' ? { dlq_retention_days: 30 } : {}),
     },
+    { query: { dry_run: true } },
   );
   return {
     rows_read: raw.sample.length,
-    checks: [{ title: 'Cấu hình job', result: raw.note, ok: true }],
+    checks: [
+      {
+        title: body.method === 'incremental' ? 'Đọc được theo con trỏ' : 'Đọc được từ nguồn',
+        result: raw.note,
+        ok: true,
+      },
+      ...(raw.errors.length
+        ? [
+            {
+              title: 'Dòng thiếu trường bắt buộc',
+              result: `${raw.errors.length} · sẽ vào hàng bản ghi lỗi`,
+              ok: false,
+            },
+          ]
+        : []),
+    ],
   };
 };
 
@@ -1289,22 +1311,23 @@ const JOB_MODE: Partial<Record<JobMethod, 'full' | 'incremental' | 'cdc'>> = {
  * the other invalid-record choices are compatibility-only (JobCreate has no field for them).
  * Jobs run with the source's read-only account.
  */
-export const createJob = (body: NewJob, candidate: JobCandidate) =>
-  candidate.source_id
-    ? v1Send<components['schemas']['IngestionJobSummary']>(
-        'POST',
-        `/sources/${pathId(candidate.source_id)}/jobs`,
-        {
-          name: candidate.table_name,
-          mode: JOB_MODE[body.method] ?? 'full',
-          source_object: candidate.source_object,
-          cursor_column: body.method === 'incremental' ? body.cursor_column : null,
-          schedule_cron: SCHEDULE_CRON[body.schedule],
-          freshness_sla: `PT${body.freshness_sla_hours}H`,
-          ...(body.on_invalid_record === 'quarantine_30d' ? { dlq_retention_days: 30 } : {}),
-        },
-      )
-    : v1Send<IngestionJob>('POST', '/ingestion-jobs', body);
+export const createJob = (body: NewJob, candidate: JobCandidate) => {
+  if (!candidate.source_id)
+    throw new V1Error(422, 'source_required', 'Cần chọn bảng thuộc một nguồn dữ liệu.');
+  return v1Send<components['schemas']['IngestionJobSummary']>(
+    'POST',
+    `/sources/${pathId(candidate.source_id)}/jobs`,
+    {
+      name: candidate.table_name,
+      mode: JOB_MODE[body.method] ?? 'full',
+      source_object: candidate.source_object,
+      cursor_column: body.method === 'incremental' ? body.cursor_column : null,
+      schedule_cron: SCHEDULE_CRON[body.schedule],
+      freshness_sla: `PT${body.freshness_sla_hours}H`,
+      ...(body.on_invalid_record === 'quarantine_30d' ? { dlq_retention_days: 30 } : {}),
+    },
+  );
+};
 
 /* ─── Bản ghi lỗi (UC-04-07) ──────────────────────────────────────────── */
 
@@ -1336,80 +1359,71 @@ export interface ErrorRecordGroup {
   impact_text?: string | null;
 }
 
-type DlqRecordWire = components['schemas']['DlqRecordView'];
+type DlqRecordWire = components['schemas']['DlqRecordView'] &
+  Partial<
+    Pick<ErrorRecordGroup, 'suggestion' | 'blocked_by_drift_id' | 'target_table' | 'impact_text'>
+  > & { display_count?: number };
 
 /*
  * The jobs that hold records in the DLQ (dlq_pending on GET /v1/jobs), each one's pending
  * records, grouped by error kind.
  */
 export const listErrorGroups = async (): Promise<Page<ErrorRecordGroup>> => {
-  try {
-    const jobs = await v1Get<Page<IngestionJobWire>>('/jobs', ALL);
-    const groups = await Promise.all(
-      jobs.items
-        .filter((job) => (job.dlq_pending ?? 0) > 0)
-        .map(async (job) => {
-          const dlq = await v1Get<Page<DlqRecordWire>>(`/jobs/${pathId(job.id)}/dlq`, {
-            ...ALL,
-            status: 'pending',
-          });
-          const byKind = new Map<string, DlqRecordWire[]>();
-          for (const record of dlq.items)
-            byKind.set(record.error_kind, [...(byKind.get(record.error_kind) ?? []), record]);
-          return [...byKind].map(([kind, records]): ErrorRecordGroup => {
-            const oldest = [...records].sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
-            return {
-              id: `${job.id}|${kind}`,
-              // The kind is a code; the oldest record's own message says the cause in words.
-              cause: oldest.error || kind,
-              job_id: job.id,
-              table_name: job.source_object,
-              count: records.length,
-              suggestion: null,
-              blocked_by_drift_id: null,
-              sample: oldest.payload_ref,
-              retention_days: job.dlq_retention_days ?? 30,
-              batch_at: oldest.created_at,
-              target_table: job.source_object,
-              record_ids: records.map((r) => r.id),
-            };
-          });
-        }),
-    );
-    const items = groups.flat();
-    if (items.length) return { next_page_token: '', items };
-    throw new V1Error(404, 'empty_legacy_fallback', 'Không có dữ liệu tương thích.');
-  } catch {
-    // Compatibility with the older mock/adapter while deployed clusters roll out A2's job-DLQ API.
-    return v1Get<Page<ErrorRecordGroup>>('/error-record-groups', ALL);
-  }
+  const jobs = await v1Get<Page<IngestionJobWire>>('/jobs', ALL);
+  const groups = await Promise.all(
+    jobs.items
+      .filter((job) => (job.dlq_pending ?? 0) > 0)
+      .map(async (job) => {
+        const dlq = await v1Get<Page<DlqRecordWire>>(`/jobs/${pathId(job.id)}/dlq`, {
+          ...ALL,
+          status: 'pending',
+        });
+        const byKind = new Map<string, DlqRecordWire[]>();
+        for (const record of dlq.items)
+          byKind.set(record.error_kind, [...(byKind.get(record.error_kind) ?? []), record]);
+        return [...byKind].map(([kind, records]): ErrorRecordGroup => {
+          const oldest = [...records].sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
+          return {
+            id: `${job.id}|${kind}`,
+            // The kind is a code; the oldest record's own message says the cause in words.
+            cause: oldest.error || kind,
+            job_id: job.id,
+            table_name: job.source_object,
+            count: oldest.display_count ?? records.length,
+            suggestion: oldest.suggestion ?? null,
+            blocked_by_drift_id: oldest.blocked_by_drift_id ?? null,
+            sample: oldest.payload_ref,
+            retention_days: job.dlq_retention_days ?? 30,
+            batch_at: oldest.created_at,
+            target_table: oldest.target_table ?? job.source_object,
+            record_ids: records.map((r) => r.id),
+            impact_text: oldest.impact_text ?? null,
+          };
+        });
+      }),
+  );
+  return { next_page_token: '', items: groups.flat() };
 };
 
 /** POST /v1/dlq/{id}:replay for each record of the groups; the job loads them in time order. */
 export const reloadErrorGroups = async (groups: ErrorRecordGroup[]) => {
+  const blocked = groups.find((group) => group.blocked_by_drift_id && group.count > 0);
+  if (blocked)
+    throw new V1Error(
+      409,
+      'blocked_by_schema_drift',
+      `“${blocked.cause}” chỉ nạp lại được sau khi thay đổi cấu trúc được chấp nhận.`,
+    );
   const ids = groups.flatMap((g) => g.record_ids);
-  try {
-    await Promise.all(ids.map((id) => v1Send('POST', `/dlq/${pathId(id)}:replay`)));
-    return { reloaded: ids.length };
-  } catch {
-    return v1Send<{ reloaded: number }>('POST', '/error-record-groups:reload', {
-      ids: groups.map((g) => g.id),
-    });
-  }
+  await Promise.all(ids.map((id) => v1Send('POST', `/dlq/${pathId(id)}:replay`)));
+  return { reloaded: ids.length };
 };
 
 /** POST /v1/dlq/{id}:discard {reason} for each record; the reason goes to the audit log. */
 export const discardErrorGroups = async (groups: ErrorRecordGroup[], reason: string) => {
   const ids = groups.flatMap((g) => g.record_ids);
-  try {
-    await Promise.all(ids.map((id) => v1Send('POST', `/dlq/${pathId(id)}:discard`, { reason })));
-    return { discarded: ids.length };
-  } catch {
-    return v1Send<{ discarded: number }>('POST', '/error-record-groups:discard', {
-      ids: groups.map((g) => g.id),
-      reason,
-    });
-  }
+  await Promise.all(ids.map((id) => v1Send('POST', `/dlq/${pathId(id)}:discard`, { reason })));
+  return { discarded: ids.length };
 };
 
 /* ─── Khám phá bảng (UC-04-02, UC-06-02) ──────────────────────────────── */

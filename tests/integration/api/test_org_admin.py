@@ -95,6 +95,28 @@ def _member(seed: Seed, org: uuid.UUID, space: uuid.UUID, user: uuid.UUID, role:
     )
 
 
+@pytest.mark.req("AC-11-01-07")
+async def test_directory_sync_and_invitation_are_queued(world: World) -> None:
+    async with client(world) as api:
+        synced = await api.post("/v1/admin/directory:sync", headers=world.headers("admin"))
+        invited = await api.post(
+            "/v1/admin/invitations",
+            headers=world.headers("admin"),
+            json={
+                "email": "new.user@example.test",
+                "role_id": str(world.roles["analyst"]),
+                "data_space_id": str(world.space),
+            },
+        )
+    assert synced.status_code == 202, synced.text
+    assert synced.json() == {"status": "queued"}
+    assert world.event_types(world.org) == ["directory.sync_requested"]
+    assert invited.status_code == 202, invited.text
+    invitation_id = invited.json()["id"]
+    assert invited.json()["status"] == "pending"
+    assert world.event_types(invitation_id) == ["directory.invitation_requested"]
+
+
 @pytest.fixture
 def world(seed: Seed) -> World:
     org = seed.org()

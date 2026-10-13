@@ -6535,6 +6535,71 @@
     "title": "ColumnProfileView",
     "type": "object"
    },
+   "ColumnStatsView": {
+    "properties": {
+     "buckets_text": {
+      "title": "Buckets Text",
+      "type": "string"
+     },
+     "distinct": {
+      "title": "Distinct",
+      "type": "integer"
+     },
+     "histogram": {
+      "items": {
+       "additionalProperties": {
+        "anyOf": [
+         {
+          "type": "boolean"
+         },
+         {
+          "type": "number"
+         }
+        ]
+       },
+       "type": "object"
+      },
+      "title": "Histogram",
+      "type": "array"
+     },
+     "max": {
+      "title": "Max",
+      "type": "string"
+     },
+     "median": {
+      "title": "Median",
+      "type": "string"
+     },
+     "min": {
+      "title": "Min",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "null_ratio": {
+      "title": "Null Ratio",
+      "type": "number"
+     },
+     "type_label": {
+      "title": "Type Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "type_label",
+     "null_ratio",
+     "distinct",
+     "min",
+     "max",
+     "median",
+     "buckets_text"
+    ],
+    "title": "ColumnStatsView",
+    "type": "object"
+   },
    "ColumnView": {
     "properties": {
      "data_type": {
@@ -12816,6 +12881,122 @@
     "title": "DerivedDatasetAccepted",
     "type": "object"
    },
+   "DerivedTableCreate": {
+    "properties": {
+     "access": {
+      "enum": [
+       "inherit",
+       "owner_only"
+      ],
+      "title": "Access",
+      "type": "string"
+     },
+     "data_space_id": {
+      "format": "uuid",
+      "title": "Data Space Id",
+      "type": "string"
+     },
+     "name": {
+      "maxLength": 255,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$",
+      "title": "Name",
+      "type": "string"
+     },
+     "refresh": {
+      "enum": [
+       "after_etl",
+       "hourly",
+       "manual"
+      ],
+      "title": "Refresh",
+      "type": "string"
+     },
+     "sql": {
+      "maxLength": 100000,
+      "minLength": 1,
+      "title": "Sql",
+      "type": "string"
+     },
+     "write_mode": {
+      "enum": [
+       "replace",
+       "append",
+       "merge"
+      ],
+      "title": "Write Mode",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "data_space_id",
+     "write_mode",
+     "refresh",
+     "access",
+     "sql"
+    ],
+    "title": "DerivedTableCreate",
+    "type": "object"
+   },
+   "DerivedTableView": {
+    "properties": {
+     "access": {
+      "enum": [
+       "inherit",
+       "owner_only"
+      ],
+      "title": "Access",
+      "type": "string"
+     },
+     "data_space_id": {
+      "format": "uuid",
+      "title": "Data Space Id",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "refresh": {
+      "enum": [
+       "after_etl",
+       "hourly",
+       "manual"
+      ],
+      "title": "Refresh",
+      "type": "string"
+     },
+     "version": {
+      "title": "Version",
+      "type": "integer"
+     },
+     "write_mode": {
+      "enum": [
+       "replace",
+       "append",
+       "merge"
+      ],
+      "title": "Write Mode",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "data_space_id",
+     "write_mode",
+     "refresh",
+     "access",
+     "version"
+    ],
+    "title": "DerivedTableView",
+    "type": "object"
+   },
    "DiffRow": {
     "properties": {
      "below_materiality": {
@@ -12930,6 +13111,19 @@
      }
     },
     "title": "DigestPut",
+    "type": "object"
+   },
+   "DirectorySyncAccepted": {
+    "properties": {
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "status"
+    ],
+    "title": "DirectorySyncAccepted",
     "type": "object"
    },
    "Dismiss": {
@@ -22388,6 +22582,80 @@
     "title": "IngestionJobView",
     "type": "object"
    },
+   "InvitationAccepted": {
+    "properties": {
+     "email": {
+      "title": "Email",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "email",
+     "status"
+    ],
+    "title": "InvitationAccepted",
+    "type": "object"
+   },
+   "InvitationCreate": {
+    "properties": {
+     "data_space_id": {
+      "format": "uuid",
+      "title": "Data Space Id",
+      "type": "string"
+     },
+     "email": {
+      "maxLength": 320,
+      "minLength": 3,
+      "title": "Email",
+      "type": "string"
+     },
+     "role_id": {
+      "format": "uuid",
+      "title": "Role Id",
+      "type": "string"
+     },
+     "row_scope": {
+      "anyOf": [
+       {
+        "maxLength": 2000,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Row Scope"
+     },
+     "valid_until": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Valid Until"
+     }
+    },
+    "required": [
+     "email",
+     "role_id",
+     "data_space_id"
+    ],
+    "title": "InvitationCreate",
+    "type": "object"
+   },
    "JobAccepted": {
     "description": "A1.6: the body of a 202; Location points at the resource to poll.",
     "properties": {
@@ -24757,6 +25025,25 @@
      "id"
     ],
     "title": "LineageNode",
+    "type": "object"
+   },
+   "LineageTarget": {
+    "properties": {
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "label"
+    ],
+    "title": "LineageTarget",
     "type": "object"
    },
    "LineageView": {
@@ -33813,6 +34100,56 @@
     "title": "ProblemBody",
     "type": "object"
    },
+   "ProductUseRequestBody": {
+    "properties": {
+     "data_space_id": {
+      "format": "uuid",
+      "title": "Data Space Id",
+      "type": "string"
+     },
+     "product_ids": {
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "maxItems": 100,
+      "minItems": 1,
+      "title": "Product Ids",
+      "type": "array"
+     }
+    },
+    "required": [
+     "product_ids",
+     "data_space_id"
+    ],
+    "title": "ProductUseRequestBody",
+    "type": "object"
+   },
+   "ProductUseRequestView": {
+    "properties": {
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "product_id": {
+      "format": "uuid",
+      "title": "Product Id",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "product_id",
+     "status"
+    ],
+    "title": "ProductUseRequestView",
+    "type": "object"
+   },
    "Progress": {
     "description": "How far preprocessing (UC-05-02) has got, from the rows it has written so far.",
     "properties": {
@@ -37783,6 +38120,49 @@
      "resolution"
     ],
     "title": "ResolveIssue",
+    "type": "object"
+   },
+   "RestTryRequest": {
+    "properties": {
+     "request": {
+      "title": "Request",
+      "type": "object"
+     }
+    },
+    "required": [
+     "request"
+    ],
+    "title": "RestTryRequest",
+    "type": "object"
+   },
+   "RestTryResult": {
+    "properties": {
+     "body": {
+      "title": "Body",
+      "type": "string"
+     },
+     "duration_ms": {
+      "title": "Duration Ms",
+      "type": "integer"
+     },
+     "mapping": {
+      "items": {
+       "type": "object"
+      },
+      "title": "Mapping",
+      "type": "array"
+     },
+     "status": {
+      "title": "Status",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "status",
+     "duration_ms",
+     "body"
+    ],
+    "title": "RestTryResult",
     "type": "object"
    },
    "RetireRequest": {
@@ -50703,6 +51083,138 @@
     ]
    }
   },
+  "/v1/admin/directory:sync": {
+   "post": {
+    "description": "Queue an identity-directory refresh; the connector owns the external call.",
+    "operationId": "syncDirectory",
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DirectorySyncAccepted"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Đồng bộ thư mục danh tính",
+    "tags": [
+     "Quản trị"
+    ],
+    "x-capability": [
+     "admin"
+    ],
+    "x-use-cases": [
+     "UC-11-01"
+    ]
+   }
+  },
   "/v1/admin/emergency-access": {
    "post": {
     "operationId": "grantEmergencyAccess",
@@ -51105,6 +51617,147 @@
      }
     ],
     "summary": "Nhóm danh tính và số thành viên",
+    "tags": [
+     "Quản trị"
+    ],
+    "x-capability": [
+     "admin"
+    ],
+    "x-use-cases": [
+     "UC-11-01"
+    ]
+   }
+  },
+  "/v1/admin/invitations": {
+   "post": {
+    "operationId": "inviteUser",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/InvitationCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/InvitationAccepted"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Mời người dùng vào Data Space",
     "tags": [
      "Quản trị"
     ],
@@ -59884,6 +60537,148 @@
     ]
    }
   },
+  "/v1/connectors/rest:try": {
+   "post": {
+    "description": "Queue one REST request; the connector worker reads the secret and performs the call.",
+    "operationId": "tryRestConnector",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RestTryRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RestTryResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Xếp hàng kiểm tra một request REST không lưu bí mật",
+    "tags": [
+     "Nguồn và danh mục"
+    ],
+    "x-capability": [
+     "admin_data"
+    ],
+    "x-use-cases": [
+     "UC-04-01"
+    ]
+   }
+  },
   "/v1/consolidation-runs/{id}": {
    "get": {
     "operationId": "getConsolidationRun",
@@ -65649,6 +66444,150 @@
     ]
    }
   },
+  "/v1/data-products/{id}:draft-version": {
+   "post": {
+    "description": "Open an unchanged next-version proposal for the agent/editor to refine.",
+    "operationId": "draftDataProductVersion",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DataProductDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Mở bản nháp phiên bản kế tiếp để chỉnh sửa",
+    "tags": [
+     "Lớp ngữ cảnh"
+    ],
+    "x-capability": [
+     "steward"
+    ],
+    "x-use-cases": [
+     "UC-07-13"
+    ]
+   }
+  },
   "/v1/data-products/{id}:publish": {
    "post": {
     "operationId": "publishDataProduct",
@@ -66248,6 +67187,156 @@
     ],
     "x-use-cases": [
      "UC-07-13"
+    ]
+   }
+  },
+  "/v1/data-products:request-use": {
+   "post": {
+    "description": "Create pending owner-space access requests for published products.",
+    "operationId": "requestDataProductUse",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProductUseRequestBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": {
+          "items": {
+           "$ref": "#/components/schemas/ProductUseRequestView"
+          },
+          "type": "array"
+         },
+         "title": "Response Requestdataproductuse",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Xin quyền dùng sản phẩm dữ liệu của Data Space khác",
+    "tags": [
+     "Lớp ngữ cảnh"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-07-13",
+     "UC-11-08"
     ]
    }
   },
@@ -68245,6 +69334,160 @@
     ]
    }
   },
+  "/v1/datasets/{id}/columns/{column}": {
+   "get": {
+    "operationId": "getDatasetColumnStats",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "column",
+      "required": true,
+      "schema": {
+       "maxLength": 200,
+       "minLength": 1,
+       "title": "Column",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ColumnStatsView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Thống kê một cột dữ liệu",
+    "tags": [
+     "Nguồn và danh mục"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-04-02"
+    ]
+   }
+  },
   "/v1/datasets/{id}/versions": {
    "get": {
     "operationId": "listDatasetVersions",
@@ -68888,6 +70131,148 @@
     ],
     "x-use-cases": [
      "UC-13-05"
+    ]
+   }
+  },
+  "/v1/derived-tables": {
+   "post": {
+    "description": "Register a SQL-derived dataset; materialisation is owned by the catalog worker.",
+    "operationId": "createDerivedTable",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DerivedTableCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DerivedTableView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Lưu câu SQL thành bảng dẫn xuất",
+    "tags": [
+     "Nguồn và danh mục"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-06-02"
     ]
    }
   },
@@ -92031,6 +93416,142 @@
     ]
    }
   },
+  "/v1/lineage/targets": {
+   "get": {
+    "description": "Return selectable catalogue objects for the lineage target picker.",
+    "operationId": "listLineageTargets",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/LineageTarget"
+         },
+         "title": "Response Listlineagetargets",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Danh sách đối tượng có thể chọn cho dòng dữ liệu",
+    "tags": [
+     "Biến đổi dữ liệu"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-06-05"
+    ]
+   }
+  },
   "/v1/marts": {
    "get": {
     "operationId": "listDataMarts",
@@ -102822,6 +104343,150 @@
     ],
     "x-use-cases": [
      "UC-06-02"
+    ]
+   }
+  },
+  "/v1/pipelines/{id}/runs": {
+   "post": {
+    "description": "Queue a full pipeline run for the list screen's Run now action.",
+    "operationId": "runPipeline",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/services__api__modules__pipeline__schemas__Accepted"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Chạy pipeline ngay",
+    "tags": [
+     "Biến đổi dữ liệu"
+    ],
+    "x-capability": [
+     "prepare_data"
+    ],
+    "x-use-cases": [
+     "UC-06-03"
     ]
    }
   },

@@ -12,10 +12,11 @@ import uuid
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Path, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import org
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal
@@ -29,7 +30,8 @@ from services.api.kernel.pagination import (
     order_by,
     page_request,
 )
-from services.api.modules.org.admin.common import live_data_space, org_only, same_space
+from services.api.kernel.problems import Problem
+from services.api.modules.org.admin.common import emit, live_data_space, org_only, same_space
 from services.api.modules.org.admin.schemas import (
     MemberView,
     PermissionMatrix,
@@ -68,6 +70,24 @@ class MemberDetail(MemberView):
     principal_name: str
     role_code: str
     role_name: str
+
+
+class DirectorySyncAccepted(BaseModel):
+    status: str
+
+
+class InvitationCreate(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    role_id: uuid.UUID
+    data_space_id: uuid.UUID
+    row_scope: str | None = Field(default=None, max_length=2_000)
+    valid_until: str | None = None
+
+
+class InvitationAccepted(BaseModel):
+    id: uuid.UUID
+    email: str
+    status: str
 
 
 def _like(q: str) -> str:
@@ -177,6 +197,53 @@ async def list_groups(principal: CurrentPrincipal) -> Page[UserGroupView]:
             for row in rows
         ]
     )
+
+
+@router.post(
+    "/v1/admin/directory:sync",
+    response_model=DirectorySyncAccepted,
+    status_code=202,
+    **endpoint("POST", "/v1/admin/directory:sync", operation_id="syncDirectory"),
+)
+async def sync_directory(principal: CurrentPrincipal) -> DirectorySyncAccepted:
+    """Queue an identity-directory refresh; the connector owns the external call."""
+    async with transaction(ROLE, principal) as session:
+        emit(session, principal, "directory", principal.org_id, "directory.sync_requested")
+    return DirectorySyncAccepted(status="queued")
+
+
+@router.post(
+    "/v1/admin/invitations",
+    response_model=InvitationAccepted,
+    status_code=202,
+    **endpoint("POST", "/v1/admin/invitations", operation_id="inviteUser"),
+)
+async def invite_user(
+    body: InvitationCreate, principal: CurrentPrincipal
+) -> InvitationAccepted:
+    invitation_id = uuid7()
+    async with transaction(ROLE, principal) as session:
+        await live_data_space(session, body.data_space_id)
+        role = await session.scalar(
+            select(org.Role).where(org.Role.id == body.role_id, org.Role.org_id == principal.org_id)
+        )
+        if role is None:
+            raise Problem(404, "not_found", "Role not found.")
+        emit(
+            session,
+            principal,
+            "invitation",
+            invitation_id,
+            "directory.invitation_requested",
+            invitation_id=invitation_id,
+            email=body.email,
+            role_id=body.role_id,
+            data_space_id=body.data_space_id,
+            row_scope=body.row_scope,
+            valid_until=body.valid_until,
+            requested_by=principal.user_id,
+        )
+    return InvitationAccepted(id=invitation_id, email=body.email, status="pending")
 
 
 @router.get(

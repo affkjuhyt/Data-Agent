@@ -14,6 +14,7 @@ import datetime
 import uuid
 import zoneinfo
 from typing import Annotated, Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Path, Query, Response
 from sqlalchemy import Select, func, or_, select
@@ -46,6 +47,7 @@ from services.api.modules.catalog.schemas import (
     CertifiedVersion,
     CertifyRequest,
     ColumnProfileView,
+    ColumnStatsView,
     ColumnView,
     ConnectorForm,
     ConnectorView,
@@ -55,6 +57,10 @@ from services.api.modules.catalog.schemas import (
     DatasetVersionView,
     DatasetView,
     DerivedDatasetAccepted,
+    DerivedTableCreate,
+    DerivedTableView,
+    RestTryRequest,
+    RestTryResult,
     RevokeRequest,
     ScanRequest,
     ScanRunView,
@@ -167,6 +173,51 @@ async def list_connectors(principal: CurrentPrincipal) -> Page[ConnectorView]:
             for item in CONNECTORS
         ],
         next_page_token="",
+    )
+
+
+@router.post(
+    "/v1/connectors/rest:try",
+    response_model=RestTryResult,
+    status_code=202,
+    **endpoint("POST", "/v1/connectors/rest:try", operation_id="tryRestConnector"),
+)
+async def try_rest_connector(
+    body: RestTryRequest, principal: CurrentPrincipal, space: CurrentDataSpace
+) -> RestTryResult:
+    """Queue one REST request; the connector worker reads the secret and performs the call."""
+    request = body.request
+    url = request.get("url")
+    if not isinstance(url, str) or urlparse(url).scheme not in {"http", "https"}:
+        raise Problem(422, "validation_failed", "request.url must be an http(s) URL.")
+    safe_request = {
+        key: value for key, value in request.items() if key not in {"headers", "body", "payload"}
+    }
+    if isinstance(request.get("headers"), list):
+        safe_request["header_names"] = [
+            item.get("name")
+            for item in request["headers"]
+            if isinstance(item, dict) and isinstance(item.get("name"), str)
+        ]
+    try_id = uuid7()
+    async with transaction(ROLE, principal) as session:
+        session.add(
+            _event(
+                principal,
+                "connector_try",
+                try_id,
+                "connector.rest_try_requested",
+                try_id=try_id,
+                data_space_id=space,
+                requested_by=principal.user_id,
+                request=safe_request,
+            )
+        )
+    return RestTryResult(
+        status=202,
+        duration_ms=0,
+        body="Đã xếp hàng kiểm tra REST; connector worker sẽ trả kết quả vào cấu hình nguồn.",
+        mapping=[],
     )
 
 
@@ -1042,6 +1093,50 @@ async def get_dataset(
         return await _detail(session, row)
 
 
+@router.get(
+    "/v1/datasets/{id}/columns/{column}",
+    response_model=ColumnStatsView,
+    **endpoint("GET", "/v1/datasets/{id}/columns/{column}", operation_id="getDatasetColumnStats"),
+)
+async def get_dataset_column_stats(
+    dataset_id: PathId,
+    column: Annotated[str, Path(min_length=1, max_length=200)],
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+) -> ColumnStatsView:
+    async with transaction(ROLE, principal) as session:
+        dataset = await _dataset(session, principal, space, dataset_id)
+        meta = await session.scalar(
+            select(catalog.ColumnMeta).where(
+                catalog.ColumnMeta.dataset_id == dataset.id,
+                catalog.ColumnMeta.name == column,
+                catalog.ColumnMeta.removed_in_version.is_(None),
+            )
+        )
+        if meta is None:
+            raise Problem(404, "not_found", "Column not found.")
+        if meta.pii_label:
+            raise Problem(403, "masked_column", "Personal-data columns are not profiled.")
+        profile = await session.scalar(
+            select(catalog.ColumnProfile)
+            .where(catalog.ColumnProfile.column_id == meta.id)
+            .order_by(catalog.ColumnProfile.created_at.desc(), catalog.ColumnProfile.id.desc())
+        )
+    if profile is None:
+        raise Problem(404, "not_found", "Column profile not found.")
+    return ColumnStatsView(
+        name=meta.name,
+        type_label=meta.normalized_type or meta.data_type,
+        null_ratio=float(profile.null_ratio or 0),
+        distinct=int(profile.distinct_est or 0),
+        min=profile.min_value or "—",
+        max=profile.max_value or "—",
+        median="—",
+        histogram=[],
+        buckets_text="Phân bố theo giá trị phổ biến",
+    )
+
+
 @router.post(
     "/v1/datasets/{id}:derive",
     response_model=DerivedDatasetAccepted,
@@ -1092,6 +1187,66 @@ async def derive_dataset(
         )
         await session.flush()
     return DerivedDatasetAccepted(id=row.id, name=row.table_name, row_count=0)
+
+
+@router.post(
+    "/v1/derived-tables",
+    response_model=DerivedTableView,
+    status_code=201,
+    **endpoint("POST", "/v1/derived-tables", operation_id="createDerivedTable"),
+)
+async def create_derived_table(
+    body: DerivedTableCreate, principal: CurrentPrincipal, space: CurrentDataSpace
+) -> DerivedTableView:
+    """Register a SQL-derived dataset; materialisation is owned by the catalog worker."""
+    if body.data_space_id != space:
+        raise Problem(404, "not_found", "Data Space not found.")
+    schema_name, table_name = body.name.split(".", 1)
+    derived_id = uuid7()
+    async with transaction(ROLE, principal) as session:
+        row = catalog.Dataset(
+            id=derived_id,
+            org_id=principal.org_id,
+            source_id=None,
+            data_space_id=space,
+            origin="derived",
+            schema_name=schema_name,
+            table_name=table_name,
+            object_kind="table",
+            display_name=body.name,
+            description="Bảng dẫn xuất từ SQL",
+            enabled=False,
+            steward_id=principal.user_id,
+            scope="personal" if body.access == "owner_only" else "data_space",
+            created_by=principal.user_id,
+            updated_by=principal.user_id,
+        )
+        session.add(row)
+        session.add(
+            _event(
+                principal,
+                "dataset",
+                derived_id,
+                "dataset.sql_derived_requested",
+                dataset_id=derived_id,
+                data_space_id=space,
+                write_mode=body.write_mode,
+                refresh=body.refresh,
+                access=body.access,
+                sql=body.sql,
+                requested_by=principal.user_id,
+            )
+        )
+        await session.flush()
+    return DerivedTableView(
+        id=derived_id,
+        name=body.name,
+        data_space_id=space,
+        write_mode=body.write_mode,
+        refresh=body.refresh,
+        access=body.access,
+        version=1,
+    )
 
 
 @router.patch(

@@ -229,6 +229,33 @@ async def test_connection_catalogue_and_secret_refs_require_admin_data(o: Org) -
     assert denied_refs.status_code == 403
 
 
+async def test_rest_try_queues_redacted_connector_request(o: Org) -> None:
+    async with client(o) as api:
+        response = await api.post(
+            "/v1/connectors/rest:try",
+            headers=o.headers("admin"),
+            json={
+                "request": {
+                    "url": "https://api.example.test/v1/data",
+                    "auth": "bearer",
+                    "secret_ref": f"secret/tenants/{o.org}/rest",
+                    "headers": [{"name": "Authorization", "value": "do-not-store"}],
+                }
+            },
+        )
+    assert response.status_code == 202, response.text
+    assert response.json()["status"] == 202
+    event = o.one("SELECT event_type FROM catalog.outbox WHERE aggregate_type = 'connector_try'")
+    assert event == "connector.rest_try_requested"
+    assert (
+        o.one(
+            "SELECT payload->'request'->>'header_names' FROM catalog.outbox "
+            "WHERE aggregate_type = 'connector_try'"
+        )
+        == '["Authorization"]'
+    )
+
+
 def _source_row(o: Org, space: uuid.UUID | None = None, **values: Any) -> uuid.UUID:
     values.setdefault("name", f"src-{uuid.uuid4().hex[:6]}")
     values.setdefault("kind", "postgresql")
@@ -692,10 +719,20 @@ async def test_dataset_detail_masks_the_values_of_personal_columns(o: Org) -> No
         )
     async with client(o) as api:
         got = await api.get(f"/v1/datasets/{dataset}", headers=o.headers("analyst"))
+        stats = await api.get(
+            f"/v1/datasets/{dataset}/columns/tinh", headers=o.headers("analyst")
+        )
+        masked = await api.get(
+            f"/v1/datasets/{dataset}/columns/so_cccd", headers=o.headers("analyst")
+        )
     assert got.status_code == 200, got.text
     columns = {c["name"]: c for c in got.json()["columns"]}
     # The removed column is not current.
     assert list(columns) == ["so_cccd", "tinh"]
+    assert stats.status_code == 200, stats.text
+    assert stats.json()["name"] == "tinh"
+    assert stats.json()["distinct"] == 0
+    assert masked.status_code == 403
     masked = columns["so_cccd"]["profile"]
     assert masked["top_values"] == [{"value": "***", "count": 7}]
     assert masked["min_value"] is None and masked["max_value"] is None
@@ -857,6 +894,28 @@ async def test_dataset_derive_registers_worker_request(o: Org) -> None:
     assert event and event[-1][0] == "dataset.derive_requested"
     assert event[-1][1]["source_dataset_id"] == str(dataset)
     assert event[-1][1]["drop_duplicates"] is True
+
+
+async def test_sql_derived_table_registers_worker_request(o: Org) -> None:
+    async with client(o) as api:
+        response = await api.post(
+            "/v1/derived-tables",
+            headers=o.headers("analyst"),
+            json={
+                "name": "prep.open_loans",
+                "data_space_id": str(o.space),
+                "write_mode": "replace",
+                "refresh": "manual",
+                "access": "inherit",
+                "sql": "select * from raw.loans where status = 'open'",
+            },
+        )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["name"] == "prep.open_loans" and body["version"] == 1
+    event = o.events(body["id"])
+    assert event and event[-1][0] == "dataset.sql_derived_requested"
+    assert event[-1][1]["refresh"] == "manual"
 
 
 async def test_dataset_versions_newest_first(o: Org) -> None:

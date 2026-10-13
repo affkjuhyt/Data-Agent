@@ -45,6 +45,7 @@ from services.api.modules.pipeline.schemas import (
     LineageGroup,
     LineageLink,
     LineageNode,
+    LineageTarget,
     MartCreate,
     MartPatch,
     MaterializeRequest,
@@ -486,6 +487,60 @@ async def preview_pipeline(
         return PipelineRunView.model_validate(run)
 
 
+@router.post(
+    "/v1/pipelines/{id}/runs",
+    status_code=202,
+    response_model=Accepted,
+    **endpoint("POST", "/v1/pipelines/{id}/runs", operation_id="runPipeline"),
+)
+async def run_pipeline(
+    pipeline_id: PathId,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    response: Response,
+) -> Accepted:
+    """Queue a full pipeline run for the list screen's Run now action."""
+    async with transaction(ROLE, principal) as session:
+        row = await _pipeline(session, principal, data_space, pipeline_id)
+        running = await session.scalar(
+            select(pl.PipelineRun.id).where(
+                pl.PipelineRun.pipeline_id == row.id,
+                pl.PipelineRun.mode == "full",
+                pl.PipelineRun.status == "running",
+            )
+        )
+        if running is not None:
+            raise Problem(409, "invalid_state", "A full run of this pipeline is still running.")
+        run = pl.PipelineRun(
+            id=uuid7(),
+            org_id=principal.org_id,
+            pipeline_id=row.id,
+            mode="full",
+            status="running",
+            started_at=now(),
+            created_at=now(),
+        )
+        session.add(run)
+        emit(
+            session,
+            principal,
+            "pipeline_run",
+            run.id,
+            "pipeline_run.requested",
+            pipeline_run_id=run.id,
+            pipeline_id=row.id,
+            data_space_id=data_space,
+            mode=run.mode,
+            status=run.status,
+            requested_by=principal.user_id,
+        )
+    return _accepted(
+        response,
+        f"/v1/pipeline-runs/{run.id}",
+        Accepted(id=run.id, status="running", poll_after_ms=POLL_AFTER_MS),
+    )
+
+
 @router.get(
     "/v1/pipelines/{id}/steps/{seq}/preview",
     response_model=StepPreview,
@@ -860,6 +915,39 @@ async def get_lineage(
     return LineageGraph(
         root=root_node, direction=direction, depth=depth, nodes=out_nodes, edges=out_edges
     )
+
+
+@router.get(
+    "/v1/lineage/targets",
+    response_model=list[LineageTarget],
+    **endpoint("GET", "/v1/lineage/targets", operation_id="listLineageTargets"),
+)
+async def list_lineage_targets(
+    principal: CurrentPrincipal, data_space: CurrentDataSpace
+) -> list[LineageTarget]:
+    """Return selectable catalogue objects for the lineage target picker."""
+    async with transaction(ROLE, principal) as session:
+        rows = list(
+            (
+                await session.scalars(
+                    select(catalog.Dataset)
+                    .where(
+                        catalog.Dataset.org_id == principal.org_id,
+                        catalog.Dataset.data_space_id == data_space,
+                        catalog.Dataset.deleted_at.is_(None),
+                    )
+                    .order_by(catalog.Dataset.display_name, catalog.Dataset.table_name)
+                    .limit(500)
+                )
+            ).all()
+        )
+    return [
+        LineageTarget(
+            id=row.id,
+            label=row.display_name or f"{row.schema_name}.{row.table_name}",
+        )
+        for row in rows
+    ]
 
 
 # --- data marts and shared data products ---------------------------------------------------------

@@ -2,6 +2,7 @@ import { readAgent } from './api';
 import { pathId, v1Get, v1Send, type Page } from './client';
 import type { components } from './schema';
 import type { AgentDef, AgentRun, AgentWire } from './types';
+import { getOnboarding } from './explore';
 
 /*
  * P13 agent authoring on the v1 API ("Đặc tả API" A2/A3, group Agent; tables agent.agent_config,
@@ -162,7 +163,10 @@ export interface TestStep {
   state: 'done' | 'asked' | 'error';
 }
 
-export interface TestRun extends Pick<AgentRun, 'id' | 'agent_id' | 'config_version' | 'status' | 'cost' | 'started_at' | 'finished_at'> {
+export interface TestRun extends Pick<
+  AgentRun,
+  'id' | 'agent_id' | 'config_version' | 'status' | 'cost' | 'started_at' | 'finished_at'
+> {
   is_test: true;
   /** PROPOSAL: the agent's name, for the drawer title. */
   agent_name: string;
@@ -438,9 +442,19 @@ function readMemory(raw: MemoryWire): AgentMemory {
 
 /* ─── Endpoints ───────────────────────────────────────────────────────── */
 
-/** PROPOSAL: A2 has template_ref but no list of templates. */
-export const listTemplates = () =>
-  v1Get<Page<AgentTemplate>>('/agent-templates', { page_size: 50 });
+/** The onboarding contract is the canonical source for the templates used by agent authoring. */
+export const listTemplates = async (): Promise<Page<AgentTemplate>> => {
+  const onboarding = await getOnboarding();
+  return {
+    items: onboarding.templates.map((template) => ({
+      ref: template.ref,
+      title: template.title,
+      pack: 'onboarding',
+      description: template.description,
+    })),
+    next_page_token: '',
+  };
+};
 
 export const draftAgent = async (body: DraftRequest) =>
   readDraft(await v1Send<DraftWire>('POST', '/agents:draft-from-text', body), body.description);

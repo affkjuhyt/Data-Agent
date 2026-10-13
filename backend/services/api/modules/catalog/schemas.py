@@ -203,6 +203,17 @@ class ApiConfigView(ApiConfigPut):
     health: dict[str, Any] | None = None
 
 
+class RestTryRequest(BaseModel):
+    request: dict[str, Any]
+
+
+class RestTryResult(BaseModel):
+    status: int
+    duration_ms: int
+    body: str
+    mapping: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class SourceSchedule(SourceView):
     """The source and its next five scans of each kind (UC-04-05 step 3)."""
 
@@ -281,6 +292,18 @@ class ColumnView(BaseModel):
     profile: ColumnProfileView | None = None
 
 
+class ColumnStatsView(BaseModel):
+    name: str
+    type_label: str
+    null_ratio: float
+    distinct: int
+    min: str
+    max: str
+    median: str
+    histogram: list[dict[str, bool | float]] = Field(default_factory=list)
+    buckets_text: str
+
+
 class DatasetDetail(DatasetView):
     # The current columns (not removed) with their latest profile.
     columns: list[ColumnView] = Field(default_factory=list)
@@ -316,6 +339,28 @@ class DerivedDatasetAccepted(BaseModel):
     id: uuid.UUID
     name: str
     row_count: int
+
+
+class DerivedTableCreate(BaseModel):
+    name: str = Field(
+        pattern=r"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$",
+        max_length=255,
+    )
+    data_space_id: uuid.UUID
+    write_mode: Literal["replace", "append", "merge"]
+    refresh: Literal["after_etl", "hourly", "manual"]
+    access: Literal["inherit", "owner_only"]
+    sql: str = Field(min_length=1, max_length=100_000)
+
+
+class DerivedTableView(BaseModel):
+    id: uuid.UUID
+    name: str
+    data_space_id: uuid.UUID
+    write_mode: Literal["replace", "append", "merge"]
+    refresh: Literal["after_etl", "hourly", "manual"]
+    access: Literal["inherit", "owner_only"]
+    version: int
 
 
 class DatasetVersionView(BaseModel):

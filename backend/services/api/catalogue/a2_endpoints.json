@@ -863,6 +863,14 @@
   },
   {
    "group": "Nguồn và danh mục",
+   "method": "POST",
+   "path": "/v1/connectors/rest:try",
+   "summary": "Xếp hàng kiểm tra một request REST không lưu bí mật",
+   "use_cases": ["04-01"],
+   "capability": ["admin_data"]
+  },
+  {
+   "group": "Nguồn và danh mục",
    "method": "GET",
    "path": "/v1/secret-refs",
    "summary": "Các reference OpenBao đã dùng trong tổ chức, không trả bí mật (thêm 13/10/2026)",
@@ -1023,6 +1031,18 @@
    "method": "GET",
    "path": "/v1/datasets/{id}",
    "summary": "Bảng, cột, hồ sơ dữ liệu",
+   "use_cases": [
+    "04-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
+   "method": "GET",
+   "path": "/v1/datasets/{id}/columns/{column}",
+   "summary": "Thống kê một cột dữ liệu",
    "use_cases": [
     "04-02"
    ],
@@ -1576,6 +1596,18 @@
   },
   {
    "group": "Biến đổi dữ liệu",
+   "method": "POST",
+   "path": "/v1/pipelines/{id}/runs",
+   "summary": "Chạy pipeline ngay",
+   "use_cases": [
+    "06-03"
+   ],
+   "capability": [
+    "prepare_data"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
    "method": "GET",
    "path": "/v1/pipelines/{id}/steps/{seq}/preview",
    "summary": "Xem trước một bước",
@@ -1663,6 +1695,18 @@
    "method": "GET",
    "path": "/v1/lineage",
    "summary": "Dòng dữ liệu của một đối tượng",
+   "use_cases": [
+    "06-05"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "GET",
+   "path": "/v1/lineage/targets",
+   "summary": "Danh sách đối tượng có thể chọn cho dòng dữ liệu",
    "use_cases": [
     "06-05"
    ],
@@ -2195,6 +2239,14 @@
    "capability": [
     "ask"
    ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/data-products/{id}:draft-version",
+   "summary": "Mở bản nháp phiên bản kế tiếp để chỉnh sửa",
+   "use_cases": ["07-13"],
+   "capability": ["steward"]
   },
   {
    "group": "Lớp ngữ cảnh",
@@ -3638,6 +3690,14 @@
    "capability": ["ask"]
   },
   {
+   "group": "Nguồn và danh mục",
+   "method": "POST",
+   "path": "/v1/derived-tables",
+   "summary": "Lưu câu SQL thành bảng dẫn xuất",
+   "use_cases": ["06-02"],
+   "capability": ["ask"]
+  },
+  {
    "group": "Quản trị",
    "method": "PUT",
    "path": "/v1/me/data-space-preference",
@@ -3999,6 +4059,30 @@
   },
   {
    "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/admin/directory:sync",
+   "summary": "Đồng bộ thư mục danh tính",
+   "use_cases": [
+    "11-01"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/admin/invitations",
+   "summary": "Mời người dùng vào Data Space",
+   "use_cases": [
+    "11-01"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
    "method": "GET",
    "path": "/v1/data-spaces/{id}/members",
    "summary": "Thành viên Data Space: vai trò, phạm vi dòng, hạn dùng (thêm 12/10/2026)",
@@ -4033,6 +4117,14 @@
    "capability": [
     "—"
    ]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/data-products:request-use",
+   "summary": "Xin quyền dùng sản phẩm dữ liệu của Data Space khác",
+   "use_cases": ["07-13", "11-08"],
+   "capability": ["ask"]
   },
   {
    "group": "Quản trị",

@@ -69,6 +69,52 @@ describe('readPipelineDetail', () => {
     ]);
     expect(pipeline.messages).toEqual([]);
   });
+
+  it('keeps canonical pipeline display details when the API includes step and conversation metadata', () => {
+    const pipeline = readPipelineDetail(
+      {
+        id: 'pipeline-2',
+        data_space_id: 'space-1',
+        name: 'Lọc giao dịch lỗi',
+        owner_id: 'user-1',
+        input_dataset_ids: ['dataset-1'],
+        target_dataset_id: null,
+        steps: [
+          {
+            kind: 'filter',
+            description: 'Bỏ giao dịch thử',
+            language: 'sql',
+            code: "WHERE is_test = false",
+            rows_in: 200,
+            rows_out: 180,
+            is_new: true,
+            kind_label: 'lọc',
+          },
+        ],
+        messages: [{ id: 'm1', author: 'agent', text: 'Đã thêm bước lọc.' }],
+        scope: 'data_space',
+        status: 'draft',
+        cron: null,
+        work_calendar_id: null,
+        trigger_on_job_id: null,
+        depends_on_pipeline_ids: [],
+        no_overlap: true,
+        on_failure: 'notify',
+        created_at: '2026-10-13T00:00:00Z',
+        updated_at: '2026-10-13T00:00:00Z',
+        last_run: null,
+      } as PipelineDetailWire & { messages: unknown[] },
+      new Map([['dataset-1', 'raw.transactions']]),
+    );
+
+    expect(pipeline.steps[0]).toMatchObject({
+      rows_in: 200,
+      rows_out: 180,
+      is_new: true,
+      kind_label: 'lọc',
+    });
+    expect(pipeline.messages).toEqual([{ id: 'm1', author: 'agent', text: 'Đã thêm bước lọc.' }]);
+  });
 });
 
 describe('readWriteback', () => {

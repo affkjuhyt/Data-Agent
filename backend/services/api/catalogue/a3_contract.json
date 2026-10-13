@@ -1057,6 +1057,15 @@
    "errors": [],
    "request_text": "—"
   },
+  "POST /v1/connectors/rest:try": {
+   "group": "Nguồn và danh mục",
+   "groups": ["Nguồn và danh mục"],
+   "body": {"request": true},
+   "query": [],
+   "returns": "202, trạng thái queued; request gửi worker không chứa header/body bí mật",
+   "errors": [[422, "validation_failed"]],
+   "request_text": "request*"
+  },
   "GET /v1/secret-refs": {
    "group": "Nguồn và danh mục",
    "groups": [
@@ -1326,6 +1335,20 @@
    "errors": [],
    "request_text": "—"
   },
+  "GET /v1/datasets/{id}/columns/{column}": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ColumnStatsView",
+   "errors": [
+    [403, "masked_column"],
+    [404, "not_found"]
+   ],
+   "request_text": "—"
+  },
   "POST /v1/datasets/{id}:derive": {
    "group": "Nguồn và danh mục",
    "groups": ["Nguồn và danh mục"],
@@ -1337,6 +1360,22 @@
    "returns": "201, Dataset dẫn xuất đã đăng ký; worker materialize theo outbox",
    "errors": [[404, "not_found"]],
    "request_text": "filters, drop_duplicates"
+  },
+  "POST /v1/derived-tables": {
+   "group": "Nguồn và danh mục",
+   "groups": ["Nguồn và danh mục"],
+   "body": {
+    "name": true,
+    "data_space_id": true,
+    "write_mode": true,
+    "refresh": true,
+    "access": true,
+    "sql": true
+   },
+   "query": [],
+   "returns": "201, DerivedTableView",
+   "errors": [[404, "not_found"]],
+   "request_text": "name, data_space_id, write_mode, refresh, access, sql"
   },
   "PATCH /v1/datasets/{id}": {
    "group": "Nguồn và danh mục",
@@ -2080,6 +2119,19 @@
    "errors": [],
    "request_text": "sample_rows"
   },
+  "POST /v1/pipelines/{id}/runs": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, Accepted; Location tới pipeline_run",
+   "errors": [
+    [409, "invalid_state"]
+   ],
+   "request_text": ""
+  },
   "GET /v1/pipelines/{id}/steps/{seq}/preview": {
    "group": "Biến đổi dữ liệu",
    "groups": [
@@ -2198,6 +2250,17 @@
    "returns": "JSON. Đồ thị nút và cạnh từ lineage_edge; nút ngoài quyền hiện ẩn danh",
    "errors": [],
    "request_text": "?object_kind, ?object_id, ?direction, ?depth"
+  },
+  "GET /v1/lineage/targets": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách LineageTarget",
+   "errors": [],
+   "request_text": ""
   },
   "POST /v1/marts": {
    "group": "Biến đổi dữ liệu",
@@ -2989,6 +3052,15 @@
     ]
    ],
    "request_text": "?version"
+  },
+  "POST /v1/data-products/{id}:draft-version": {
+   "group": "Lớp ngữ cảnh",
+   "groups": ["Lớp ngữ cảnh"],
+   "body": {},
+   "query": [],
+   "returns": "DataProduct bản nháp version + 1, proposal_id; bản đang phục vụ không đổi",
+   "errors": [[409, "invalid_state"]],
+   "request_text": "—"
   },
   "PATCH /v1/data-products/{id}": {
    "group": "Lớp ngữ cảnh",
@@ -5426,6 +5498,36 @@
    "errors": [],
    "request_text": "—"
   },
+  "POST /v1/admin/directory:sync": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, DirectorySyncAccepted",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/admin/invitations": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "email": true,
+    "role_id": true,
+    "data_space_id": true,
+    "row_scope": false,
+    "valid_until": false
+   },
+   "query": [],
+   "returns": "202, InvitationAccepted",
+   "errors": [
+    [404, "not_found"]
+   ],
+   "request_text": "email*, role_id*, data_space_id*, row_scope, valid_until"
+  },
   "GET /v1/data-spaces/{id}/members": {
    "group": "Quản trị",
    "groups": [
@@ -5474,6 +5576,18 @@
    "returns": "Sản phẩm dữ liệu đã phát hành của Data Space khác; chỉ metadata và cảnh báo PII",
    "errors": [],
    "request_text": "?cursor, ?page_size"
+  },
+  "POST /v1/data-products:request-use": {
+   "group": "Lớp ngữ cảnh",
+   "groups": ["Lớp ngữ cảnh"],
+   "body": {
+    "product_ids": true,
+    "data_space_id": true
+   },
+   "query": [],
+   "returns": "202, các AccessRequest đang chờ steward của Data Space sở hữu sản phẩm quyết định",
+   "errors": [[404, "not_found"]],
+   "request_text": "product_ids*, data_space_id*"
   },
   "GET /v1/admin/ai-settings": {
    "group": "Quản trị",

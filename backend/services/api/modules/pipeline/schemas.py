@@ -174,6 +174,11 @@ class LineageNode(BaseModel):
     hidden: bool = False
 
 
+class LineageTarget(BaseModel):
+    id: uuid.UUID
+    label: str
+
+
 class LineageLink(BaseModel):
     source: str
     target: str

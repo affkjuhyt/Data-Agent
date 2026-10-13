@@ -504,9 +504,12 @@ Dịch vụ: Admin service (org, governance). 27 endpoint.
 | GET | /v1/principals | Tìm người, nhóm AD, agent để mời hoặc chia sẻ (thêm 12/10/2026) | 02-03, 11-08, 11-01 | ask |
 | GET | /v1/admin/roles | Vai trò và năng lực của từng vai trò (thêm 12/10/2026) | 11-01, 11-08 | admin |
 | GET | /v1/admin/groups | Nhóm danh tính và số thành viên | 11-01 | admin |
+| POST | /v1/admin/directory:sync | 202, xếp hàng đồng bộ thư mục danh tính | 11-01 | admin |
+| POST | /v1/admin/invitations | 202, lời mời đang chờ gửi | 11-01 | admin |
 | GET | /v1/data-spaces/{id}/members | Thành viên Data Space: vai trò, phạm vi dòng, hạn dùng (thêm 12/10/2026) | 11-08 | steward |
 | GET | /v1/data-spaces/{id}/permissions | Ma trận vai trò và năng lực trong Data Space | 11-08 | steward |
 | GET | /v1/data-products/catalog | Catalog sản phẩm đã phát hành của Data Space khác | 06-06, 11-08 | ask |
+| POST | /v1/data-products:request-use | Tạo AccessRequest chờ Data Space sở hữu sản phẩm quyết định | 07-13, 11-08 | ask |
 | GET | /v1/admin/ai-settings | Quy định AI hiện hành (thêm 12/10/2026) | 11-05 | admin |
 | GET | /v1/admin/agent-usage | Vận hành agent theo ngày và theo agent: lượt chạy, cần người, lỗi, thời gian, chi phí so ngân sách (thêm 12/10/2026) | 11-04, 13-06 | admin |
 | POST | /v1/schedules:preview | Các lần chạy tới của một lịch chưa lưu, theo lịch làm việc và ngày nghỉ (thêm 12/10/2026) | 06-03, 04-05, 02-04 | ask |
@@ -771,6 +774,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | Endpoint | Gửi lên | Trả về | Lỗi riêng |
 | --- | --- | --- | --- |
 | GET /v1/connectors | — | Danh mục connector cho màn Kết nối dữ liệu kèm số nguồn đã nối của tổ chức; không có credential | — |
+| POST /v1/connectors/rest:try | request\* | Xếp hàng kiểm tra request REST; worker đọc OpenBao và không lưu secret | 422 validation\_failed |
 | GET /v1/secret-refs | — | Các reference OpenBao (secret/tenants/<org>/…) đã dùng trong tổ chức, {ref, label}; không trả secret | — |
 | GET /v1/sources | ?status, ?kind | Danh sách Source | — |
 | GET /v1/sources/{id} | — | Source như trong danh sách: status, status\_reason, db\_version, last\_checked\_at, has\_credentials, has\_writeback\_credentials, writeback\_tables; không có secret\_ref | 404 not\_found |
@@ -785,7 +789,9 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/scan-runs/{id} | — | ScanRun | — |
 | GET /v1/datasets | ?source\_id, ?enabled, ?q, ?origin | Danh sách Dataset | — |
 | GET /v1/datasets/{id} | — | Dataset. Kèm column\_meta hiện hành và column\_profile mới nhất; giá trị phổ biến của cột cá nhân đã che | — |
+| GET /v1/datasets/{id}/columns/{column} | — | Thống kê cột: tỷ lệ null, distinct, min/max và phân bố | 403 masked\_column; 404 not\_found |
 | POST /v1/datasets/{id}:derive | filters, drop\_duplicates | Đăng ký bảng dẫn xuất; worker materialize theo outbox | 404 not\_found |
+| POST /v1/derived-tables | name, data\_space\_id, write\_mode, refresh, access, sql | Lưu SQL thành bảng dẫn xuất; worker materialize theo outbox | 404 not\_found |
 | PATCH /v1/datasets/{id} | enabled, steward\_id, display\_name, description, description\_status, business\_date\_col, knowledge\_time\_col, columns | Dataset | 422 business\_rule\_violated (bật bảng có cột cá nhân chưa xác nhận cách che, BR-102) |
 | GET /v1/datasets/{id}/versions | — | Danh sách DatasetVersion | — |
 | POST /v1/dataset-versions/{id}:certify | note | DatasetVersion (certified\_at, certified\_by điền), kèm DatasetVersionCertification vừa ghi; sự kiện catalog.dataset\_version.certified. Từ đây phiên bản dùng được cho số báo cáo cơ quan quản lý (BR-156) | 403 policy\_denied (người gọi không phải người phụ trách dữ liệu của Data Space chứa dataset; người chứng nhận trùng người tạo phiên bản, BR-156); 409 invalid\_state (phiên bản đã được chứng nhận); 422 business\_rule\_violated (dataset không có origin consolidated, BR-156) |
@@ -846,9 +852,11 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/pipelines | name\*, input\_dataset\_ids\*, steps, scope, instruction | Pipeline. instruction là mô tả bằng lời để agent đề xuất các bước | — |
 | PATCH /v1/pipelines/{id} | name, steps, scope, status, on\_failure, depends\_on\_pipeline\_ids | Pipeline | 412 precondition\_failed |
 | POST /v1/pipelines/{id}:preview | sample\_rows | PipelineRun. Chạy trên 10.000 dòng; trả số dòng bị loại từng bước và kiểm tra tổng | — |
+| POST /v1/pipelines/{id}/runs | — | 202, Location tới pipeline\_run chạy đầy đủ | 409 invalid\_state khi đang có lượt chạy |
 | POST /v1/pipelines/{id}:materialize | table\_name\*, scope | 202, Location tới pipeline\_run | 422 business\_rule\_violated (tổng cột tiền lệch, UC-06-01 E2) |
 | PUT /v1/pipelines/{id}/schedule | cron, work\_calendar\_id, trigger\_on\_job\_id, depends\_on\_pipeline\_ids, no\_overlap, on\_failure | Pipeline | — |
 | GET /v1/lineage | ?object\_kind, ?object\_id, ?direction, ?depth | JSON. Đồ thị nút và cạnh từ lineage\_edge; nút ngoài quyền hiện ẩn danh | — |
+| GET /v1/lineage/targets | — | Danh sách dataset trong Data Space để chọn làm đối tượng xem dòng dữ liệu | — |
 | POST /v1/marts | name\*, fact\_dataset\_id\*, grain\*, measures, dimensions, relations, checks | DataMart | — |
 | POST /v1/data-products | code\*, name\*, dataset\_id, data\_mart\_id, contract\*, owner\_id\* | DataProduct | — |
 | POST /v1/data-products/{id}:publish | — | DataProduct | 403 policy\_denied (không phải owner\_id của sản phẩm, hoặc là người soạn); 422 business\_rule\_violated (thay đổi phá vỡ chưa báo trước 30 ngày, BR-60) |
@@ -897,6 +905,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/data-products | ?status, ?owner\_id, ?steward\_id, ?q, ?cursor | Danh sách DataProduct kèm freshness\_state tổng | — |
 | POST /v1/data-products | code\*, name\*, description\*, sample\_questions, scope\_entities, period\_grain\*, period\_from\*, period\_to, out\_of\_scope\_note, owner\_id\*, steward\_id\*, freshness\_statement\*, pack\_version\_id | DataProduct ở draft; tạo eval\_set context nếu chưa có | 409 conflict (trùng code); 422 validation\_failed (owner trùng steward) |
 | GET /v1/data-products/{id} | ?version | DataProduct kèm members, freshness từng dataset primary, kết quả bộ đánh giá gần nhất, số mục Error Book đang mở | 404 not\_found |
+| POST /v1/data-products/{id}:draft-version | — | Mở bản nháp version + 1 và proposal để agent/editor chỉnh sửa; bản đang phục vụ không đổi | 409 invalid\_state |
 | PATCH /v1/data-products/{id} | name, description, sample\_questions, scope\_entities, period\_from, period\_to, out\_of\_scope\_note, owner\_id, steward\_id, freshness\_statement | DataProduct; với bản active trả bản nháp version + 1, bản cũ phục vụ đến khi duyệt | 409 conflict (đổi code sau khi active); 422 validation\_failed |
 | POST /v1/data-products/{id}/members | member\_kind\*, member\_ref\*, role, sla\_kind, sla\_cron, sla\_event\_calendar\_code, sla\_timezone, sla\_work\_calendar\_id, sla\_max\_age, sla\_grace, as\_of\_col | DataProductMember kèm next\_due\_at, freshness\_state tính ngay | 422 business\_rule\_violated (chỉ số chưa certified, dataset không truy được theo thời điểm, dataset primary thiếu cam kết, BR-175); 409 conflict (đã là thành phần) |
 | DELETE /v1/data-products/{id}/members/{member\_id} | — | 204 | 422 business\_rule\_violated (gỡ thành phần primary của bản active, phải qua phiên bản mới) |
