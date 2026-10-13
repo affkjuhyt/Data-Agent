@@ -1326,6 +1326,18 @@
    "errors": [],
    "request_text": "—"
   },
+  "POST /v1/datasets/{id}:derive": {
+   "group": "Nguồn và danh mục",
+   "groups": ["Nguồn và danh mục"],
+   "body": {
+    "filters": false,
+    "drop_duplicates": false
+   },
+   "query": [],
+   "returns": "201, Dataset dẫn xuất đã đăng ký; worker materialize theo outbox",
+   "errors": [[404, "not_found"]],
+   "request_text": "filters, drop_duplicates"
+  },
   "PATCH /v1/datasets/{id}": {
    "group": "Nguồn và danh mục",
    "groups": [

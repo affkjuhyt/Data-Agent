@@ -49,10 +49,12 @@ from services.api.modules.catalog.schemas import (
     ColumnView,
     ConnectorForm,
     ConnectorView,
+    DatasetDeriveRequest,
     DatasetDetail,
     DatasetPatch,
     DatasetVersionView,
     DatasetView,
+    DerivedDatasetAccepted,
     RevokeRequest,
     ScanRequest,
     ScanRunView,
@@ -1038,6 +1040,58 @@ async def get_dataset(
     async with transaction(ROLE, principal) as session:
         row = await _dataset(session, principal, space, dataset_id)
         return await _detail(session, row)
+
+
+@router.post(
+    "/v1/datasets/{id}:derive",
+    response_model=DerivedDatasetAccepted,
+    status_code=201,
+    **endpoint("POST", "/v1/datasets/{id}:derive", operation_id="deriveDataset"),
+)
+async def derive_dataset(
+    body: DatasetDeriveRequest,
+    dataset_id: PathId,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+) -> DerivedDatasetAccepted:
+    """Register a filtered/deduplicated derived table and let the worker materialize it."""
+    async with transaction(ROLE, principal) as session:
+        source = await _dataset(session, principal, space, dataset_id)
+        derived_id = uuid7()
+        table_name = f"derived_{str(derived_id).replace('-', '')[:20]}"
+        row = catalog.Dataset(
+            id=derived_id,
+            org_id=principal.org_id,
+            source_id=None,
+            data_space_id=space,
+            origin="derived",
+            schema_name="derived",
+            table_name=table_name,
+            object_kind="table",
+            display_name=f"{source.display_name or source.table_name} · dẫn xuất",
+            description=f"Từ {source.schema_name}.{source.table_name}",
+            enabled=False,
+            steward_id=principal.user_id,
+            created_by=principal.user_id,
+            updated_by=principal.user_id,
+        )
+        session.add(row)
+        session.add(
+            _event(
+                principal,
+                "dataset",
+                row.id,
+                "dataset.derive_requested",
+                dataset_id=row.id,
+                source_dataset_id=source.id,
+                data_space_id=space,
+                filters=body.filters,
+                drop_duplicates=body.drop_duplicates,
+                requested_by=principal.user_id,
+            )
+        )
+        await session.flush()
+    return DerivedDatasetAccepted(id=row.id, name=row.table_name, row_count=0)
 
 
 @router.patch(

@@ -307,6 +307,17 @@ class DatasetPatch(BaseModel):
     columns: list[ColumnPatch] | None = Field(default=None, max_length=5_000)
 
 
+class DatasetDeriveRequest(BaseModel):
+    filters: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
+    drop_duplicates: bool = False
+
+
+class DerivedDatasetAccepted(BaseModel):
+    id: uuid.UUID
+    name: str
+    row_count: int
+
+
 class DatasetVersionView(BaseModel):
     id: uuid.UUID
     dataset_id: uuid.UUID

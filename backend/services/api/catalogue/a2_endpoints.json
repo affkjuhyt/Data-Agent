@@ -3630,6 +3630,14 @@
    ]
   },
   {
+   "group": "Nguồn và danh mục",
+   "method": "POST",
+   "path": "/v1/datasets/{id}:derive",
+   "summary": "Tạo bảng dẫn xuất từ bộ lọc và tuỳ chọn bỏ trùng",
+   "use_cases": ["04-02", "06-02"],
+   "capability": ["ask"]
+  },
+  {
    "group": "Quản trị",
    "method": "PUT",
    "path": "/v1/me/data-space-preference",

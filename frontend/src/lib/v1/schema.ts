@@ -1814,6 +1814,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/datasets/{id}:derive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tạo bảng dẫn xuất từ bộ lọc và tuỳ chọn bỏ trùng
+         * @description Register a filtered/deduplicated derived table and let the worker materialize it.
+         */
+        post: operations["deriveDataset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/deployments/{id}": {
         parameters: {
             query?: never;
@@ -10867,6 +10887,16 @@ export interface components {
             /** Work Calendar Id */
             work_calendar_id: string | null;
         };
+        /** DatasetDeriveRequest */
+        DatasetDeriveRequest: {
+            /**
+             * Drop Duplicates
+             * @default false
+             */
+            drop_duplicates: boolean;
+            /** Filters */
+            filters?: Record<string, never>[];
+        };
         /** DatasetDetail */
         DatasetDetail: {
             /** Business Date Col */
@@ -11114,6 +11144,18 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** DerivedDatasetAccepted */
+        DerivedDatasetAccepted: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Row Count */
+            row_count: number;
         };
         /** DiffRow */
         DiffRow: {
@@ -37883,6 +37925,122 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_DatasetVersionView_"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    deriveDataset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetDeriveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DerivedDatasetAccepted"];
                 };
             };
             /** @description Invalid request */

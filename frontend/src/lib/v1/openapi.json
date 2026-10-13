@@ -11965,6 +11965,25 @@
     "title": "DataSpaceView",
     "type": "object"
    },
+   "DatasetDeriveRequest": {
+    "properties": {
+     "drop_duplicates": {
+      "default": false,
+      "title": "Drop Duplicates",
+      "type": "boolean"
+     },
+     "filters": {
+      "items": {
+       "type": "object"
+      },
+      "maxItems": 50,
+      "title": "Filters",
+      "type": "array"
+     }
+    },
+    "title": "DatasetDeriveRequest",
+    "type": "object"
+   },
    "DatasetDetail": {
     "properties": {
      "business_date_col": {
@@ -12771,6 +12790,30 @@
      "updated_at"
     ],
     "title": "DeploymentView",
+    "type": "object"
+   },
+   "DerivedDatasetAccepted": {
+    "properties": {
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "row_count": {
+      "title": "Row Count",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "row_count"
+    ],
+    "title": "DerivedDatasetAccepted",
     "type": "object"
    },
    "DiffRow": {
@@ -68384,6 +68427,161 @@
     ],
     "x-use-cases": [
      "UC-04-03"
+    ]
+   }
+  },
+  "/v1/datasets/{id}:derive": {
+   "post": {
+    "description": "Register a filtered/deduplicated derived table and let the worker materialize it.",
+    "operationId": "deriveDataset",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DatasetDeriveRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DerivedDatasetAccepted"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Tạo bảng dẫn xuất từ bộ lọc và tuỳ chọn bỏ trùng",
+    "tags": [
+     "Nguồn và danh mục"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-04-02",
+     "UC-06-02"
     ]
    }
   },

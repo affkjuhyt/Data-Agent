@@ -838,6 +838,27 @@ async def test_enabling_a_table_needs_its_personal_columns_confirmed(o: Org) -> 
         assert o.one("SELECT enabled FROM catalog.dataset WHERE id = %s", dataset) is True
 
 
+async def test_dataset_derive_registers_worker_request(o: Org) -> None:
+    source = _source_row(o)
+    dataset = _dataset(o, source, table_name="khoan_vay")
+    async with client(o) as api:
+        response = await api.post(
+            f"/v1/datasets/{dataset}:derive",
+            headers=o.headers("analyst"),
+            json={
+                "filters": [{"column": "status", "op": "eq", "value": "open"}],
+                "drop_duplicates": True,
+            },
+        )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["id"] and body["name"].startswith("derived_") and body["row_count"] == 0
+    event = o.events(body["id"])
+    assert event and event[-1][0] == "dataset.derive_requested"
+    assert event[-1][1]["source_dataset_id"] == str(dataset)
+    assert event[-1][1]["drop_duplicates"] is True
+
+
 async def test_dataset_versions_newest_first(o: Org) -> None:
     source = _source_row(o)
     dataset = _dataset(o, source)
