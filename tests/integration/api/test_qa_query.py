@@ -97,8 +97,11 @@ def world(seed: Seed) -> World:
 
 
 @asynccontextmanager
-async def api_for(world: World) -> AsyncIterator[httpx.AsyncClient]:
+async def api_for(world: World, **state: Any) -> AsyncIterator[httpx.AsyncClient]:
     app = create_app(Settings(), token_verifier=Tokens(world.org))
+    # Ports a test stands in for (e.g. export_links), set on app.state as the deploy would.
+    for name, value in state.items():
+        setattr(app.state, name, value)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://api"
     ) as api:

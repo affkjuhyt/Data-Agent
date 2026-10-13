@@ -284,6 +284,61 @@ async def test_exports_by_size_and_owner(world: World, seed: Seed) -> None:
         assert expired.status_code == 410 and expired.json()["code"] == "gone"
 
 
+class _Links:
+    def __init__(self) -> None:
+        self.signed: list[str] = []
+
+    async def sign(self, key: str) -> str | None:
+        self.signed.append(key)
+        return f"https://minio.local/da-exports/{key}?X-Amz-Expires=900"
+
+
+@pytest.mark.req("AC-01-06-05")
+async def test_a_ready_export_gets_a_signed_link_its_requester_only_and_audited(
+    world: World, seed: Seed
+) -> None:
+    run = query_run(seed, world, row_count=2_000)
+    links = _Links()
+    async with api_for(world, export_links=links) as api:
+        answer, _ = await answered(
+            api, seed, world, figures=[{"key": "F1", "query_run_id": str(run)}]
+        )
+        made = await api.post(
+            f"/v1/answers/{answer}/exports", headers=as_(world, "asker"), json={"format": "csv"}
+        )
+        export = made.json()["id"]
+        queued = await api.get(f"/v1/exports/{export}", headers=as_(world, "asker"))
+        assert queued.json()["download_url"] is None and links.signed == []
+
+        key = f"{world.org}/{export}.csv"
+        sql(
+            seed,
+            "UPDATE qa.export_job SET status = 'ready', object_key = %s,"
+            " expires_at = now() + interval '1 day' WHERE id = %s",
+            key,
+            export,
+        )
+        ready = await api.get(f"/v1/exports/{export}", headers=as_(world, "asker"))
+        assert ready.status_code == 200, ready.text
+        assert ready.json()["download_url"].startswith(f"https://minio.local/da-exports/{key}")
+        assert links.signed == [key]
+        issued = [e for e in events(seed, "qa", export) if e[0] == "audit.requested"]
+        assert issued and issued[-1][2]["action"] == "export.download_link_issued"
+
+        theirs = await api.get(f"/v1/exports/{export}", headers=as_(world, "voter1"))
+        assert theirs.status_code == 404 and links.signed == [key]
+
+        # A key outside the organisation is never signed, whatever the row holds.
+        sql(
+            seed,
+            "UPDATE qa.export_job SET object_key = %s WHERE id = %s",
+            f"{uuid.uuid4()}/x.csv",
+            export,
+        )
+        foreign = await api.get(f"/v1/exports/{export}", headers=as_(world, "asker"))
+        assert foreign.json()["download_url"] is None and links.signed == [key]
+
+
 # --- receipts and replays -----------------------------------------------------------------------
 
 
