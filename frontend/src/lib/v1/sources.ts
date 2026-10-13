@@ -320,7 +320,7 @@ export const reprofileTable = async (profile: Pick<TableProfile, 'source' | 'tab
 
 export type ConnectorCategory = 'database' | 'warehouse' | 'app' | 'file' | 'document';
 
-/** PROPOSAL: GET /v1/connectors — the catalogue on "Kết nối dữ liệu". */
+/** GET /v1/connectors — the catalogue on "Kết nối dữ liệu". */
 export interface Connector {
   code: string;
   name: string;
@@ -344,7 +344,7 @@ export interface SecretRef {
   label: string;
 }
 
-/** PROPOSAL: GET /v1/secret-refs?kind= — references only, the value stays in OpenBao. */
+/** GET /v1/secret-refs?kind= — references only, the value stays in OpenBao. */
 export const listSecretRefs = (kind: 'database' | 'api' = 'database') =>
   v1Get<Page<SecretRef>>('/secret-refs', { ...ALL, kind });
 
@@ -519,7 +519,7 @@ export const activateSource = async (id: string, body: ActivateSource) =>
 
 export type JobStatus = 'running' | 'on_time' | 'late' | 'error' | 'paused';
 
-/** PROPOSAL: GET /v1/ingestion-jobs ("P04 · Job nạp · Giám sát"). */
+/** GET /v1/jobs ("P04 · Job nạp · Giám sát"). */
 export interface IngestionJob {
   id: Uuid;
   table_name: string;
@@ -1216,7 +1216,7 @@ async function servedJobCandidates(): Promise<Page<JobCandidate>> {
 }
 
 /**
- * PROPOSAL: GET /v1/ingestion-job-candidates — tables of ingest sources without a job, with the
+ * Compatibility helper over GET /v1/sources and GET /v1/jobs — tables of ingest sources without a job, with the
  * agent's suggestion. Where it is not served (404) the candidates are read from A2.
  */
 export const listJobCandidates = async (): Promise<Page<JobCandidate>> => {
@@ -1286,8 +1286,8 @@ const JOB_MODE: Partial<Record<JobMethod, 'full' | 'incremental' | 'cdc'>> = {
 /**
  * A candidate read from A2 gets its job with POST /v1/sources/{id}/jobs (JobCreate): the schedule
  * as cron, the freshness SLA as a duration, the error queue's retention. Retry, schema changes and
- * the other invalid-record choices are PROPOSAL (JobCreate has no field for them). Otherwise
- * PROPOSAL: POST /v1/ingestion-jobs. Jobs run with the source's read-only account.
+ * the other invalid-record choices are compatibility-only (JobCreate has no field for them).
+ * Jobs run with the source's read-only account.
  */
 export const createJob = (body: NewJob, candidate: JobCandidate) =>
   candidate.source_id
@@ -1542,7 +1542,7 @@ export const getColumnStats = async (id: string, column: string): Promise<Column
   }
 };
 
-/** PROPOSAL: POST /v1/datasets/{id}:derive creates a derived table from the filters. */
+/** Pending backend action: POST /v1/datasets/{id}:derive creates a derived table from filters. */
 export const deriveTable = async (
   id: string,
   body: { filters: ExploreFilter[]; drop_duplicates: boolean },
@@ -1606,7 +1606,7 @@ interface ApiTryResult {
   mapping: ApiFieldMapping[];
 }
 
-/** PROPOSAL: POST /v1/connectors/rest:try — one call with the request, nothing saved. */
+/** Pending connector-worker action: POST /v1/connectors/rest:try — one call with the request. */
 export const tryApiRequest = (request: ApiRequest) =>
   v1Send<ApiTryResult>('POST', '/connectors/rest:try', { request });
 

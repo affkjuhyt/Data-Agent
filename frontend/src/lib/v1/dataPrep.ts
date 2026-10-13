@@ -395,7 +395,7 @@ export const publishPipeline = async (id: string, body: PublishPipeline) =>
 
 export type ScheduleKind = 'daily' | 'after_source' | 'business_hours' | 'cron';
 
-/** PROPOSAL: GET/PUT /v1/pipelines/{id}/schedule. */
+/** PUT /v1/pipelines/{id}/schedule; GET remains a frontend compatibility projection. */
 export interface PipelineSchedule {
   kind: ScheduleKind;
   cron: string | null;
@@ -569,7 +569,7 @@ export interface LineageNode {
 }
 
 /**
- * PROPOSAL: GET /v1/lineage?target={id} — the target, everything it is built from, and what
+ * GET /v1/lineage — the target, everything it is built from, and what
  * uses it one step down. Only objects the caller may see are returned (BR).
  */
 export interface LineageGraph {
@@ -584,6 +584,6 @@ export interface LineageGraph {
 export const getLineage = (target?: string) =>
   v1Get<LineageGraph>('/lineage', target ? { target } : undefined);
 
-/** PROPOSAL: GET /v1/lineage/targets — the tables, metrics and reports lineage can start from. */
+/** Frontend target-picker projection; A2 exposes the graph endpoint, not this convenience list. */
 export const listLineageTargets = () =>
   v1Get<{ items: { id: string; label: string }[] }>('/lineage/targets');
