@@ -6,7 +6,15 @@
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { createSource, getSource, listSourceDrifts, listSourceRows, testSource } from './sources';
+import {
+  createSource,
+  getColumnStats,
+  getSource,
+  listSourceDrifts,
+  listSourceRows,
+  previewTable,
+  testSource,
+} from './sources';
 
 const at = '2026-10-12T08:00:00Z';
 const source = (extra: object = {}) => ({
@@ -70,6 +78,37 @@ const server = setupServer(
           : [],
       next_page_token: '',
     }),
+  ),
+  http.get('*/v1/datasets/:id', ({ params }) =>
+    params.id === 'd-1'
+      ? HttpResponse.json({
+          id: 'd-1',
+          data_space_id: 'ds-1',
+          source_id: 's-1',
+          origin: 'source',
+          schema_name: 'CORE',
+          table_name: 'LOAN',
+          display_name: 'Loan',
+          row_estimate: 1200,
+          columns: [
+            {
+              id: 'c-1',
+              name: 'balance',
+              data_type: 'NUMBER',
+              normalized_type: 'number',
+              profile: {
+                sample_rows: 1200,
+                null_ratio: '0.1',
+                distinct_est: 900,
+                min_value: '10',
+                max_value: '1000',
+                top_values: [{ value: '100', count: 4 }],
+                created_at: at,
+              },
+            },
+          ],
+        })
+      : undefined,
   ),
 );
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -174,5 +213,68 @@ describe('sources from the api', () => {
       ),
     );
     expect((await listSourceDrifts()).items).toEqual([]);
+  });
+
+  it('uses the canonical query run when the table preview route is not served', async () => {
+    const run = {
+      id: 'qr-1',
+      data_space_id: 'ds-1',
+      caller_kind: 'ad_hoc',
+      caller_id: 'u-1',
+      principal_id: 'u-1',
+      source_id: 's-1',
+      route: 'live',
+      period_close_id: null,
+      policies_applied: [],
+      metric_version_ids: [],
+      as_of: null,
+      row_count: 1,
+      result_hash: null,
+      duration_ms: 12,
+      status: 'succeeded',
+      error: null,
+      started_at: at,
+    };
+    server.use(
+      http.post('*/v1/datasets/:action', () =>
+        HttpResponse.json(
+          { status: 404, code: 'not_found', detail: 'Not served.' },
+          { status: 404 },
+        ),
+      ),
+      http.post('*/v1/query-runs', () => HttpResponse.json(run, { status: 202 })),
+      http.get('*/v1/query-runs/:id', () => HttpResponse.json(run)),
+      http.get('*/v1/query-runs/:id/rows', () =>
+        HttpResponse.json({
+          columns: [{ name: 'balance', type: 'number' }],
+          items: [[100]],
+          next_page_token: '',
+          truncated: false,
+          expires_at: at,
+        }),
+      ),
+    );
+    await expect(previewTable('d-1', [])).resolves.toMatchObject({
+      name: 'Loan',
+      matched_rows: 1,
+      rows: [[100]],
+    });
+  });
+
+  it('derives column statistics from the dataset profile when the stats route is absent', async () => {
+    server.use(
+      http.get('*/v1/datasets/:id/columns/:column', () =>
+        HttpResponse.json(
+          { status: 404, code: 'not_found', detail: 'Not served.' },
+          { status: 404 },
+        ),
+      ),
+    );
+    await expect(getColumnStats('d-1', 'balance')).resolves.toMatchObject({
+      name: 'balance',
+      distinct: 900,
+      min: '10',
+      max: '1000',
+    });
   });
 });

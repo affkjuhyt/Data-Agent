@@ -1,6 +1,7 @@
 import { listDataSpaces } from './api';
 import { pathId, V1Error, v1Get, v1Send, v1Upload, type Page } from './client';
 import type { components } from './schema';
+import { awaitQueryRun, getQueryRows } from './explore';
 import { readDataset, readSource, type DatasetWire, type Source, type SourceWire } from './types';
 
 /*
@@ -1423,7 +1424,7 @@ export interface ExploreFilter {
 
 export type CellValue = string | number | null;
 
-/** PROPOSAL: POST /v1/datasets/{id}:preview — a page of rows under filters, masked. */
+/** Preview rows; the catalog action is kept as a compatibility path over query-runs. */
 export interface TablePreview {
   id: Uuid;
   name: string;
@@ -1440,10 +1441,55 @@ export interface TablePreview {
   quality: { agent_name: string; text: string } | null;
 }
 
-export const previewTable = async (id: string, filters: ExploreFilter[]) =>
-  v1Send<TablePreview>('POST', `/datasets/${pathId(id)}:preview`, { filters, limit: 50 });
+export const previewTable = async (id: string, filters: ExploreFilter[]): Promise<TablePreview> => {
+  try {
+    return await v1Send<TablePreview>('POST', `/datasets/${pathId(id)}:preview`, {
+      filters,
+      limit: 50,
+    });
+  } catch (error) {
+    if (!(error instanceof V1Error) || error.status !== 404) throw error;
+    const dataset = await v1Get<DatasetDetailWire>(`/datasets/${pathId(id)}`);
+    const [source, run] = await Promise.all([
+      dataset.source_id ? v1Get<SourceWire>(`/sources/${pathId(dataset.source_id)}`) : null,
+      v1Send<components['schemas']['QueryRunView']>('POST', '/query-runs', {
+        dataset_id: id,
+        filters,
+        limit: 50,
+      }),
+    ]);
+    const finished = await awaitQueryRun(run);
+    const result = await getQueryRows(finished.id, 50);
+    const columns = (dataset.columns ?? []).map((column) => ({
+      name: column.name,
+      type_label: column.normalized_type || column.data_type,
+      numeric: ['integer', 'decimal', 'number', 'float'].includes(column.normalized_type),
+      masked: Boolean(column.pii_label),
+    }));
+    return {
+      id: dataset.id,
+      name: dataset.display_name ?? dataset.table_name,
+      source_name: source?.name ?? 'Nguồn dữ liệu',
+      row_count: dataset.row_estimate ?? finished.row_count ?? result.rows.length,
+      matched_rows: finished.row_count ?? result.rows.length,
+      snapshot_text: 'Kết quả truy vấn mới nhất',
+      columns:
+        columns.length > 0
+          ? columns
+          : result.columns.map((column) => ({
+              name: column.name,
+              type_label: column.type ?? 'unknown',
+              numeric: false,
+              masked: false,
+            })),
+      rows: result.rows as CellValue[][],
+      duplicate_rows: [],
+      quality: null,
+    };
+  }
+};
 
-/** PROPOSAL: GET /v1/datasets/{id}/columns/{name} — statistics of one column on the whole table. */
+/** Column statistics; falls back to the latest masked catalog profile. */
 export interface ColumnStats {
   name: string;
   /** "số nguyên" */
@@ -1459,8 +1505,42 @@ export interface ColumnStats {
   buckets_text: string;
 }
 
-export const getColumnStats = async (id: string, column: string) =>
-  v1Get<ColumnStats>(`/datasets/${pathId(id)}/columns/${pathId(column)}`);
+export const getColumnStats = async (id: string, column: string): Promise<ColumnStats> => {
+  try {
+    return await v1Get<ColumnStats>(`/datasets/${pathId(id)}/columns/${pathId(column)}`);
+  } catch (error) {
+    if (!(error instanceof V1Error) || error.status !== 404) throw error;
+    const dataset = await v1Get<DatasetDetailWire>(`/datasets/${pathId(id)}`);
+    const found = dataset.columns?.find((candidate) => candidate.name === column);
+    if (!found) throw new V1Error(404, 'not_found', 'Không tìm thấy cột.');
+    if (found.pii_label) {
+      throw new V1Error(
+        403,
+        'masked_column',
+        'Cột dữ liệu cá nhân không lập hồ sơ, chỉ hiện “đã che”.',
+      );
+    }
+    const profile = found.profile;
+    if (!profile) throw new V1Error(404, 'not_found', 'Cột chưa có hồ sơ dữ liệu.');
+    const histogram =
+      histogramFrom(profile.top_values)?.map((height) => ({
+        height,
+        flagged: false,
+      })) ?? [];
+    return {
+      name: found.name,
+      type_label: found.normalized_type || found.data_type,
+      null_ratio: Number(profile.null_ratio ?? 0),
+      distinct: profile.distinct_est ?? 0,
+      min: profile.min_value ?? '—',
+      max: profile.max_value ?? '—',
+      median: '—',
+      histogram,
+      buckets_text:
+        histogram.length > 0 ? 'Phân bố theo giá trị phổ biến' : 'Chưa đủ dữ liệu để lập biểu đồ',
+    };
+  }
+};
 
 /** PROPOSAL: POST /v1/datasets/{id}:derive creates a derived table from the filters. */
 export const deriveTable = async (
@@ -1535,19 +1615,18 @@ export const createApiSource = async (body: {
   name: string;
   request: ApiRequest;
   mapping: ApiFieldMapping[];
-}) =>
-  {
-    const source = await v1Send<SourceWire>('POST', '/sources', {
-      name: body.name,
-      kind: 'rest_api',
-      mode: 'ingest',
-      // Kept for older adapters; the A3 backend ignores this extra field and the config is
-      // persisted explicitly through PUT /sources/{id}/api-config below.
-      api: { request: body.request, mapping: body.mapping },
-    });
-    await saveApiConfig(source.id, { request: body.request, mapping: body.mapping });
-    return readSourceRow(source, []);
-  };
+}) => {
+  const source = await v1Send<SourceWire>('POST', '/sources', {
+    name: body.name,
+    kind: 'rest_api',
+    mode: 'ingest',
+    // Kept for older adapters; the A3 backend ignores this extra field and the config is
+    // persisted explicitly through PUT /sources/{id}/api-config below.
+    api: { request: body.request, mapping: body.mapping },
+  });
+  await saveApiConfig(source.id, { request: body.request, mapping: body.mapping });
+  return readSourceRow(source, []);
+};
 
 /** PUT /v1/sources/{id}/api-config. */
 export const saveApiConfig = async (
