@@ -341,6 +341,28 @@ class DerivedDatasetAccepted(BaseModel):
     row_count: int
 
 
+class DerivedTableCreate(BaseModel):
+    name: str = Field(
+        pattern=r"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$",
+        max_length=255,
+    )
+    data_space_id: uuid.UUID
+    write_mode: Literal["replace", "append", "merge"]
+    refresh: Literal["after_etl", "hourly", "manual"]
+    access: Literal["inherit", "owner_only"]
+    sql: str = Field(min_length=1, max_length=100_000)
+
+
+class DerivedTableView(BaseModel):
+    id: uuid.UUID
+    name: str
+    data_space_id: uuid.UUID
+    write_mode: Literal["replace", "append", "merge"]
+    refresh: Literal["after_etl", "hourly", "manual"]
+    access: Literal["inherit", "owner_only"]
+    version: int
+
+
 class DatasetVersionView(BaseModel):
     id: uuid.UUID
     dataset_id: uuid.UUID

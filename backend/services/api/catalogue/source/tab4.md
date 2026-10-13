@@ -791,6 +791,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/datasets/{id} | — | Dataset. Kèm column\_meta hiện hành và column\_profile mới nhất; giá trị phổ biến của cột cá nhân đã che | — |
 | GET /v1/datasets/{id}/columns/{column} | — | Thống kê cột: tỷ lệ null, distinct, min/max và phân bố | 403 masked\_column; 404 not\_found |
 | POST /v1/datasets/{id}:derive | filters, drop\_duplicates | Đăng ký bảng dẫn xuất; worker materialize theo outbox | 404 not\_found |
+| POST /v1/derived-tables | name, data\_space\_id, write\_mode, refresh, access, sql | Lưu SQL thành bảng dẫn xuất; worker materialize theo outbox | 404 not\_found |
 | PATCH /v1/datasets/{id} | enabled, steward\_id, display\_name, description, description\_status, business\_date\_col, knowledge\_time\_col, columns | Dataset | 422 business\_rule\_violated (bật bảng có cột cá nhân chưa xác nhận cách che, BR-102) |
 | GET /v1/datasets/{id}/versions | — | Danh sách DatasetVersion | — |
 | POST /v1/dataset-versions/{id}:certify | note | DatasetVersion (certified\_at, certified\_by điền), kèm DatasetVersionCertification vừa ghi; sự kiện catalog.dataset\_version.certified. Từ đây phiên bản dùng được cho số báo cáo cơ quan quản lý (BR-156) | 403 policy\_denied (người gọi không phải người phụ trách dữ liệu của Data Space chứa dataset; người chứng nhận trùng người tạo phiên bản, BR-156); 409 invalid\_state (phiên bản đã được chứng nhận); 422 business\_rule\_violated (dataset không có origin consolidated, BR-156) |

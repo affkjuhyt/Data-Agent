@@ -896,6 +896,28 @@ async def test_dataset_derive_registers_worker_request(o: Org) -> None:
     assert event[-1][1]["drop_duplicates"] is True
 
 
+async def test_sql_derived_table_registers_worker_request(o: Org) -> None:
+    async with client(o) as api:
+        response = await api.post(
+            "/v1/derived-tables",
+            headers=o.headers("analyst"),
+            json={
+                "name": "prep.open_loans",
+                "data_space_id": str(o.space),
+                "write_mode": "replace",
+                "refresh": "manual",
+                "access": "inherit",
+                "sql": "select * from raw.loans where status = 'open'",
+            },
+        )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["name"] == "prep.open_loans" and body["version"] == 1
+    event = o.events(body["id"])
+    assert event and event[-1][0] == "dataset.sql_derived_requested"
+    assert event[-1][1]["refresh"] == "manual"
+
+
 async def test_dataset_versions_newest_first(o: Org) -> None:
     source = _source_row(o)
     dataset = _dataset(o, source)

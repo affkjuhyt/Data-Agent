@@ -3690,6 +3690,14 @@
    "capability": ["ask"]
   },
   {
+   "group": "Nguồn và danh mục",
+   "method": "POST",
+   "path": "/v1/derived-tables",
+   "summary": "Lưu câu SQL thành bảng dẫn xuất",
+   "use_cases": ["06-02"],
+   "capability": ["ask"]
+  },
+  {
    "group": "Quản trị",
    "method": "PUT",
    "path": "/v1/me/data-space-preference",

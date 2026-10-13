@@ -57,6 +57,8 @@ from services.api.modules.catalog.schemas import (
     DatasetVersionView,
     DatasetView,
     DerivedDatasetAccepted,
+    DerivedTableCreate,
+    DerivedTableView,
     RestTryRequest,
     RestTryResult,
     RevokeRequest,
@@ -1185,6 +1187,66 @@ async def derive_dataset(
         )
         await session.flush()
     return DerivedDatasetAccepted(id=row.id, name=row.table_name, row_count=0)
+
+
+@router.post(
+    "/v1/derived-tables",
+    response_model=DerivedTableView,
+    status_code=201,
+    **endpoint("POST", "/v1/derived-tables", operation_id="createDerivedTable"),
+)
+async def create_derived_table(
+    body: DerivedTableCreate, principal: CurrentPrincipal, space: CurrentDataSpace
+) -> DerivedTableView:
+    """Register a SQL-derived dataset; materialisation is owned by the catalog worker."""
+    if body.data_space_id != space:
+        raise Problem(404, "not_found", "Data Space not found.")
+    schema_name, table_name = body.name.split(".", 1)
+    derived_id = uuid7()
+    async with transaction(ROLE, principal) as session:
+        row = catalog.Dataset(
+            id=derived_id,
+            org_id=principal.org_id,
+            source_id=None,
+            data_space_id=space,
+            origin="derived",
+            schema_name=schema_name,
+            table_name=table_name,
+            object_kind="table",
+            display_name=body.name,
+            description="Bảng dẫn xuất từ SQL",
+            enabled=False,
+            steward_id=principal.user_id,
+            scope="personal" if body.access == "owner_only" else "data_space",
+            created_by=principal.user_id,
+            updated_by=principal.user_id,
+        )
+        session.add(row)
+        session.add(
+            _event(
+                principal,
+                "dataset",
+                derived_id,
+                "dataset.sql_derived_requested",
+                dataset_id=derived_id,
+                data_space_id=space,
+                write_mode=body.write_mode,
+                refresh=body.refresh,
+                access=body.access,
+                sql=body.sql,
+                requested_by=principal.user_id,
+            )
+        )
+        await session.flush()
+    return DerivedTableView(
+        id=derived_id,
+        name=body.name,
+        data_space_id=space,
+        write_mode=body.write_mode,
+        refresh=body.refresh,
+        access=body.access,
+        version=1,
+    )
 
 
 @router.patch(

@@ -1982,6 +1982,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/derived-tables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lưu câu SQL thành bảng dẫn xuất
+         * @description Register a SQL-derived dataset; materialisation is owned by the catalog worker.
+         */
+        post: operations["createDerivedTable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/dlq/{id}:discard": {
         parameters: {
             query?: never;
@@ -11333,6 +11353,65 @@ export interface components {
             name: string;
             /** Row Count */
             row_count: number;
+        };
+        /** DerivedTableCreate */
+        DerivedTableCreate: {
+            /**
+             * Access
+             * @enum {string}
+             */
+            access: "inherit" | "owner_only";
+            /**
+             * Data Space Id
+             * Format: uuid
+             */
+            data_space_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Refresh
+             * @enum {string}
+             */
+            refresh: "after_etl" | "hourly" | "manual";
+            /** Sql */
+            sql: string;
+            /**
+             * Write Mode
+             * @enum {string}
+             */
+            write_mode: "replace" | "append" | "merge";
+        };
+        /** DerivedTableView */
+        DerivedTableView: {
+            /**
+             * Access
+             * @enum {string}
+             */
+            access: "inherit" | "owner_only";
+            /**
+             * Data Space Id
+             * Format: uuid
+             */
+            data_space_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Refresh
+             * @enum {string}
+             */
+            refresh: "after_etl" | "hourly" | "manual";
+            /** Version */
+            version: number;
+            /**
+             * Write Mode
+             * @enum {string}
+             */
+            write_mode: "replace" | "append" | "merge";
         };
         /** DiffRow */
         DiffRow: {
@@ -39216,6 +39295,120 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeploymentView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    createDerivedTable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DerivedTableCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DerivedTableView"];
                 };
             };
             /** @description Invalid request */

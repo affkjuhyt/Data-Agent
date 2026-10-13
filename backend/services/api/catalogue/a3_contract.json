@@ -1361,6 +1361,22 @@
    "errors": [[404, "not_found"]],
    "request_text": "filters, drop_duplicates"
   },
+  "POST /v1/derived-tables": {
+   "group": "Nguồn và danh mục",
+   "groups": ["Nguồn và danh mục"],
+   "body": {
+    "name": true,
+    "data_space_id": true,
+    "write_mode": true,
+    "refresh": true,
+    "access": true,
+    "sql": true
+   },
+   "query": [],
+   "returns": "201, DerivedTableView",
+   "errors": [[404, "not_found"]],
+   "request_text": "name, data_space_id, write_mode, refresh, access, sql"
+  },
   "PATCH /v1/datasets/{id}": {
    "group": "Nguồn và danh mục",
    "groups": [
