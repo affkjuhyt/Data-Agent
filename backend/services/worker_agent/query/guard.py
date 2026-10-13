@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import sqlglot
 from sqlglot import exp
-from sqlglot.errors import ParseError
+from sqlglot.errors import ParseError, TokenError
 
 # sqlglot's dialect names for catalog.source.kind.
 DIALECTS = {
@@ -100,10 +100,16 @@ def check_read_only(sql: str, dialect: str) -> exp.Expression:
     """The parsed statement when it is one read-only query; SqlRejected otherwise."""
     try:
         statements = [s for s in sqlglot.parse(sql, read=dialect) if s is not None]
-    except ParseError as exc:
+    # TokenError is not a ParseError: an unterminated literal or quoted identifier fails in the
+    # tokenizer and would otherwise escape the guard instead of becoming a refusal.
+    except (ParseError, TokenError) as exc:
         raise SqlRejected("the SQL does not parse") from exc
     if len(statements) != 1:
         raise SqlRejected("exactly one statement is allowed")
+    # No comments at all: the compiler never writes one, and a comment is where text smuggled
+    # into SQL hides from a reader (the release gate's comment-smuggling cases).
+    if any(token.comments for token in sqlglot.tokenize(sql, read=dialect)):
+        raise SqlRejected("comments are not allowed")
     tree = statements[0]
     if not isinstance(tree, exp.Query):
         raise SqlRejected("only a query is allowed")

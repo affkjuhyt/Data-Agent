@@ -37,6 +37,7 @@ def test_a_read_only_query_passes(sql: str) -> None:
         "SELECT set_config('role', 'postgres', false)",
         "COPY loans TO '/tmp/x'",
         "SELEC broken",
+        "SELECT * FROM loans WHERE name = 'unclosed",
         "SELECT pg_catalog.pg_ls_waldir()",
         "SELECT * FROM dblink('host=x', 'select 1') AS t(a int)",
         "SELECT my_schema.custom_writer(1)",
@@ -55,3 +56,11 @@ def test_the_cap_wraps_the_query() -> None:
 def test_what_runs_is_checked_again() -> None:
     sql = capped(check_read_only("SELECT 'it''s' AS a", "postgres"), "postgres", 5)
     assert check_read_only(sql, "postgres").sql(dialect="postgres") == sql
+
+
+@pytest.mark.parametrize(
+    "sql", ["SELECT 1 -- note", "SELECT /* x */ 1", "SELECT 1 /*; DROP TABLE t */"]
+)
+def test_a_comment_is_refused(sql: str) -> None:
+    with pytest.raises(SqlRejected):
+        check_read_only(sql, "postgres")
