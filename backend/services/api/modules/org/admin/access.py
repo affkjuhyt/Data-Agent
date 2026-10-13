@@ -9,7 +9,7 @@ import datetime
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy import func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +18,15 @@ from libs.dataagent_db.models import org
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal
 from services.api.kernel.db import transaction
+from services.api.kernel.pagination import (
+    Order,
+    Page,
+    PageRequest,
+    keyset,
+    next_page,
+    order_by,
+    page_request,
+)
 from services.api.kernel.problems import Problem
 from services.api.modules.org.admin.common import audit, emit, now, org_only
 from services.api.modules.org.admin.schemas import (
@@ -48,6 +57,66 @@ NARROWER = {
     "view_detail": frozenset({"view_detail", "view_aggregate", "ask"}),
     "run_agent": frozenset({"run_agent", "view_aggregate", "ask"}),
 }
+
+
+@router.get(
+    "/v1/access-requests",
+    response_model=Page[AccessRequestView],
+    **endpoint("GET", "/v1/access-requests", operation_id="listAccessRequests"),
+)
+async def list_access_requests(
+    principal: CurrentPrincipal,
+    page: PageRequest = Depends(page_request),
+    order: Order = Depends(order_by("created_at", "status", default="created_at desc")),
+    status: str | None = Query(default=None, max_length=30),
+    data_space_id: uuid.UUID | None = Query(default=None),
+) -> Page[AccessRequestView]:
+    """List requests visible to the requester or to a Data Space steward."""
+    row = org.AccessRequest
+    query = select(row).where(row.org_id == principal.org_id)
+    if data_space_id is not None:
+        query = query.where(row.data_space_id == data_space_id)
+    if "steward" not in principal.capabilities:
+        query = query.where(row.requester_id == principal.user_id)
+    if status is not None:
+        query = query.where(row.status == status)
+    query = keyset(
+        query,
+        columns={"created_at": row.created_at, "status": row.status},
+        tiebreak=row.id,
+        order=order,
+        page=page,
+    )
+    async with transaction(ROLE, principal) as session:
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(
+        items=[AccessRequestView.model_validate(item) for item in rows],
+        next_page_token=token,
+    )
+
+
+@router.get(
+    "/v1/access-requests/{id}",
+    response_model=AccessRequestView,
+    **endpoint("GET", "/v1/access-requests/{id}", operation_id="getAccessRequest"),
+)
+async def get_access_request(
+    request_id: Annotated[uuid.UUID, Path(alias="id")],
+    principal: CurrentPrincipal,
+) -> AccessRequestView:
+    row = org.AccessRequest
+    async with transaction(ROLE, principal) as session:
+        request = await session.scalar(
+            select(row).where(
+                row.id == request_id,
+                row.org_id == principal.org_id,
+            )
+        )
+    if request is None:
+        raise Problem(404, "not_found", "Access request not found.")
+    if request.requester_id != principal.user_id and "steward" not in principal.capabilities:
+        raise Problem(404, "not_found", "Access request not found.")
+    return AccessRequestView.model_validate(request)
 
 
 @router.post(

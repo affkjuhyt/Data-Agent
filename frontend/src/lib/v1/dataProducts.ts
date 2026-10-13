@@ -93,7 +93,10 @@ export function readDataMart(raw: DataMartWire, datasets: Map<string, string>): 
       suggested: index >= dimensions.length,
     };
   });
-  const productName = raw.name.replace(/\W+/g, '_').replace(/^_+|_+$/g, '').toLowerCase();
+  const productName = raw.name
+    .replace(/\W+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
   return {
     id: raw.id,
     name: raw.name,
@@ -114,7 +117,10 @@ export function readDataMart(raw: DataMartWire, datasets: Map<string, string>): 
       ? {
           dimensions: proposed.map((value, index) => {
             const row = tableOf(value, `dimension_${index + 1}`);
-            return { key: textOf(row.name, `dimension_${index + 1}`), label: textOf(row.label, '') };
+            return {
+              key: textOf(row.name, `dimension_${index + 1}`),
+              label: textOf(row.label, ''),
+            };
           }),
           measures: [],
         }
@@ -122,7 +128,11 @@ export function readDataMart(raw: DataMartWire, datasets: Map<string, string>): 
   };
 }
 
-const tablesFor = (datasets: Page<components['schemas']['services__api__modules__catalog__schemas__DatasetView']> | null) =>
+const tablesFor = (
+  datasets: Page<
+    components['schemas']['services__api__modules__catalog__schemas__DatasetView']
+  > | null,
+) =>
   new Map<string, string>(
     datasets?.items.map((d) => [d.id, `${d.schema_name}.${d.table_name}`]) ?? [],
   );
@@ -152,12 +162,25 @@ export async function getMart(id: string) {
   return readDataMart(mart, tablesFor(datasets));
 }
 
-/** PROPOSAL: POST /v1/marts/{id}:apply-suggestion — add the ticked dimensions and measures. */
+/** Accept the selected agent suggestions through the canonical mart PATCH contract. */
 export async function applyMartSuggestion(
   id: string,
   body: { dimensions: string[]; measures: string[] },
 ) {
-  return v1Send<DataMart>('POST', `/marts/${pathId(id)}:apply-suggestion`, body);
+  const [mart, datasets] = await Promise.all([
+    v1Get<DataMartWire>(`/marts/${pathId(id)}`),
+    v1Get<Page<components['schemas']['services__api__modules__catalog__schemas__DatasetView']>>(
+      '/datasets',
+      { page_size: 500 },
+    ).catch(() => null),
+  ]);
+  const selectedDimensions = body.dimensions.map((name) => ({ name }));
+  const selectedMeasures = body.measures.map((name) => ({ name }));
+  const updated = await v1Send<DataMartWire>('PATCH', `/marts/${pathId(id)}`, {
+    dimensions: [...(Array.isArray(mart.dimensions) ? mart.dimensions : []), ...selectedDimensions],
+    measures: [...(Array.isArray(mart.measures) ? mart.measures : []), ...selectedMeasures],
+  });
+  return readDataMart(updated, tablesFor(datasets));
 }
 
 /* ─── Data product (catalog.data_product) ─────────────────────────────── */

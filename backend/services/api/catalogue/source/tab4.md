@@ -476,6 +476,8 @@ Dịch vụ: Admin service (org, governance). 27 endpoint.
 | PUT | /v1/data-spaces/{id}/sources | Gán nguồn | 04-04 | admin\_data |
 | POST | /v1/access-requests | Yêu cầu quyền | 11-07 | — |
 | POST | /v1/access-requests/{id}:decide | Duyệt, thu hẹp, từ chối | 11-07 | steward |
+| GET | /v1/access-requests | Danh sách yêu cầu quyền của người gửi hoặc steward | 11-07 | — |
+| GET | /v1/access-requests/{id} | Một yêu cầu quyền trong Data Space hiện tại | 11-07 | — |
 | GET | /v1/admin/models | Mô hình theo tác vụ | 11-05 | admin |
 | PUT | /v1/admin/models/{task} | Đổi mô hình (chạy bộ đánh giá trước) | 11-05 | admin |
 | PUT | /v1/admin/ai-settings/{key} | Quy định AI | 11-05 | admin |

@@ -831,6 +831,28 @@ async def _decide(
     )
 
 
+async def test_access_requests_can_be_listed_by_requester_and_steward(world: World) -> None:
+    async with client(world) as api:
+        sent = (await _request(api, world, "ask")).json()
+        own = await api.get("/v1/access-requests", headers=world.headers("colleague"))
+        assert own.status_code == 200, own.text
+        assert any(item["id"] == sent["id"] for item in own.json()["items"])
+
+        detail = await api.get(
+            f"/v1/access-requests/{sent['id']}",
+            headers=world.headers("colleague"),
+        )
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["id"] == sent["id"]
+
+        steward = await api.get(
+            "/v1/access-requests?status=pending",
+            headers=world.headers("steward", world.space),
+        )
+        assert steward.status_code == 200, steward.text
+        assert any(item["id"] == sent["id"] for item in steward.json()["items"])
+
+
 # AC-11-07-01
 @pytest.mark.req("AC-11-07-01")
 async def test_an_approved_request_adds_a_member_for_the_requested_time(world: World) -> None:

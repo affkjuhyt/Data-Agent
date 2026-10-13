@@ -3620,6 +3620,30 @@
   {
    "group": "Quản trị",
    "method": "GET",
+   "path": "/v1/access-requests",
+   "summary": "Danh sách yêu cầu quyền",
+   "use_cases": [
+    "11-07"
+   ],
+   "capability": [
+    "—"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/access-requests/{id}",
+   "summary": "Một yêu cầu quyền",
+   "use_cases": [
+    "11-07"
+   ],
+   "capability": [
+    "—"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "GET",
    "path": "/v1/admin/models",
    "summary": "Mô hình theo tác vụ",
    "use_cases": [

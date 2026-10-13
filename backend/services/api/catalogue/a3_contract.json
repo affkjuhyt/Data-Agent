@@ -4954,6 +4954,38 @@
    ],
    "request_text": "decision*, granted_scope, note"
   },
+  "GET /v1/access-requests": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "data_space_id",
+    "cursor",
+    "page_size"
+   ],
+   "returns": "Page[AccessRequest]",
+   "errors": [],
+   "request_text": "?status, ?data_space_id, ?cursor, ?page_size"
+  },
+  "GET /v1/access-requests/{id}": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "AccessRequest",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
   "GET /v1/admin/models": {
    "group": "Quản trị",
    "groups": [
