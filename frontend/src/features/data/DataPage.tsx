@@ -16,8 +16,6 @@ import { useV1 } from '../../lib/v1/useV1';
  * "Thay đổi gần đây" and "Được hỏi nhiều tuần này" of the design have no API yet.
  * Sources, uploads and collections still open the Knowledge Ops screen until P04/P05 are rebuilt.
  */
-const PENDING = 'Màn này đang được làm.';
-
 export default function DataPage() {
   const { navigate } = useAppState();
   const sources = useV1(listSources, []);
@@ -25,6 +23,9 @@ export default function DataPage() {
   const metrics = useV1(listMetrics, []);
   const terms = useV1(listTerms, []);
   const openSources = () => navigate('data', 'SOURCES');
+  const openPipelines = () => navigate('data', 'PIPELINES');
+  const openDefinitions = () => navigate('data', 'METRIC_CATALOG');
+  const openReadyDatasets = () => navigate('data', 'DATA_PRODUCTS');
 
   const steps = [
     {
@@ -41,6 +42,7 @@ export default function DataPage() {
       stat: null,
       text: 'Làm sạch, loại trùng, ghép bảng theo lịch',
       link: 'Xem pipeline →',
+      onOpen: openPipelines,
     },
     {
       icon: 'layers' as const,
@@ -51,6 +53,7 @@ export default function DataPage() {
           : null,
       text: 'Chỉ số đã chứng nhận, từ điển nghiệp vụ',
       link: 'Mở semantic layer →',
+      onOpen: openDefinitions,
     },
     {
       icon: 'check' as const,
@@ -60,6 +63,7 @@ export default function DataPage() {
         : null,
       text: 'Dùng trong Khám phá, dashboard và agent',
       link: 'Mở bộ dữ liệu →',
+      onOpen: openReadyDatasets,
     },
   ];
 
@@ -98,7 +102,6 @@ export default function DataPage() {
                 titleSize="md"
                 corner={index + 1}
                 onOpen={step.onOpen}
-                pendingReason={step.onOpen ? undefined : PENDING}
                 className="h-full"
               >
                 {step.stat && <span className="text-foreground da-body-strong">{step.stat}</span>}
