@@ -71,7 +71,43 @@ export interface SkillTrial {
 }
 
 export const getSkillDefinition = async (id: string) =>
-  v1Get<SkillDefinition>(`/skills/${pathId(id)}/definition`);
+  v1Get<SkillDefinition>(`/skills/${pathId(id)}/definition`).catch(async (e) => {
+    if (!notProposal(e)) throw e;
+    const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+    const version = raw.published_version ?? raw.versions[0];
+    const params = (version && 'params_schema' in version ? version.params_schema : {}) as {
+      properties?: Record<string, { title?: string }>;
+    };
+    const steps = (version && 'steps' in version ? version.steps : []) as Array<Record<string, unknown>>;
+    return {
+      skill_id: raw.id,
+      name: raw.name,
+      version: version?.version ?? raw.current_version ?? 0,
+      status: (version?.status ?? 'draft') as SkillAuthoringStatus,
+      inputs: Object.entries(params.properties ?? {}).map(([name, spec]) => ({
+        name,
+        description: spec.title ?? name,
+      })),
+      output_text:
+        version && 'template_md' in version ? String(version.template_md ?? '') : '',
+      steps: steps.map((step, index) => ({
+        seq: Number(step.seq ?? index + 1),
+        text: String(step.text ?? step.name ?? ''),
+        tool: typeof step.tool === 'string' ? step.tool : null,
+      })),
+      instructions:
+        version && 'template_md' in version ? String(version.template_md ?? '') : '',
+      guardrails: [],
+      owner: { id: raw.owner_id, name: '' },
+      scope_label: raw.scope,
+      domain_text: raw.category,
+      used_by_text: `${raw.run_count_30d} lượt/30 ngày`,
+      quality_text: version?.status === 'published' ? 'Đã xuất bản' : 'Chưa kiểm định',
+      test_count: 0,
+      version_count: raw.versions.length,
+      quick_test: { params: {}, lines: [] },
+    } as SkillDefinition;
+  });
 
 /** PROPOSAL: the latest trial of the working version; null when it was never tried. */
 export const getLatestTrial = async (id: string) =>
@@ -81,11 +117,52 @@ export const getLatestTrial = async (id: string) =>
 export const saveSkillDefinition = async (
   id: string,
   body: { instructions: string; steps: SkillStepSpec[] },
-) => v1Send<SkillDefinition>('PUT', `/skills/${pathId(id)}/definition`, body);
+) => {
+  try {
+    return await v1Send<SkillDefinition>('PUT', `/skills/${pathId(id)}/definition`, body);
+  } catch (e) {
+    if (!notProposal(e)) throw e;
+    const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+    const draft = raw.versions.find((version) => version.status === 'draft');
+    const payload = {
+      steps: body.steps.map((step) => ({ seq: step.seq, text: step.text, tool: step.tool })),
+      template_md: body.instructions,
+    };
+    if (draft) {
+      return v1Send<SkillDefinition>('PATCH', `/skill-versions/${pathId(draft.id)}`, payload);
+    }
+    return v1Send<SkillDefinition>('POST', `/skills/${pathId(id)}/versions`, {
+      params_schema: { type: 'object', properties: {} },
+      ...payload,
+    });
+  }
+};
 
 /** PROPOSAL: POST /v1/skills/{id}:try {params} — runs the working version once. */
 export const trySkill = async (id: string, params: Record<string, string>) =>
-  v1Send<SkillTrial>('POST', `/skills/${pathId(id)}:try`, { params });
+  v1Send<SkillTrial>('POST', `/skills/${pathId(id)}:try`, { params }).catch(async (e) => {
+    if (!notProposal(e)) throw e;
+    const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+    const draft = raw.versions.find((version) => version.status === 'draft');
+    if (!draft) throw e;
+    const accepted = await v1Send<Schemas['services__api__modules__skill__schemas__Accepted']>(
+      'POST',
+      `/skill-versions/${pathId(draft.id)}:try`,
+      { params },
+    );
+    let run = readRun(await v1Get<RunWire>(`/skill-runs/${pathId(accepted.id)}`));
+    for (let attempt = 0; attempt < 10 && run.outcome?.status === 'running'; attempt++) {
+      await sleep(accepted.poll_after_ms ?? 2000);
+      run = readRun(await v1Get<RunWire>(`/skill-runs/${pathId(accepted.id)}`));
+    }
+    return {
+      version: draft.version,
+      duration_text: '',
+      steps: [],
+      bars: [],
+      conclusion: run.outcome?.summary ?? run.outcome?.error ?? '',
+    } satisfies SkillTrial;
+  });
 
 /* ─── Tạo kỹ năng từ phiên (UC-03-03) ─────────────────────────────────── */
 
