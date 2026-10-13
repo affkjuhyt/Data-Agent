@@ -4932,6 +4932,42 @@
    ],
    "request_text": "open_last_used*, data_space_id"
   },
+  "GET /v1/me/onboarding": {
+   "group": "Quản trị",
+   "groups": ["Quản trị"],
+   "body": {},
+   "query": [],
+   "returns": "Trạng thái hướng dẫn bắt đầu, các bước và mẫu agent",
+   "errors": [[403, "forbidden"]],
+   "request_text": "—"
+  },
+  "POST /v1/me/onboarding:skip": {
+   "group": "Quản trị",
+   "groups": ["Quản trị"],
+   "body": {},
+   "query": [],
+   "returns": "Trạng thái hướng dẫn đã bỏ qua",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/me/onboarding:complete": {
+   "group": "Quản trị",
+   "groups": ["Quản trị"],
+   "body": {},
+   "query": [],
+   "returns": "Trạng thái hướng dẫn đã hoàn tất",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/me/onboarding:try-agent": {
+   "group": "Quản trị",
+   "groups": ["Quản trị"],
+   "body": {"template_ref": true},
+   "query": [],
+   "returns": "AgentRun được tạo để chạy thử mẫu agent",
+   "errors": [[422, "invalid_request"]],
+   "request_text": "template_ref*"
+  },
   "POST /v1/data-spaces": {
    "group": "Quản trị",
    "groups": [

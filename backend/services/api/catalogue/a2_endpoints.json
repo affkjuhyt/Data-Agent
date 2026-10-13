@@ -3643,6 +3643,38 @@
   },
   {
    "group": "Quản trị",
+   "method": "GET",
+   "path": "/v1/me/onboarding",
+   "summary": "Trạng thái hướng dẫn bắt đầu và các mẫu agent",
+   "use_cases": ["11-01"],
+   "capability": ["—"]
+  },
+  {
+   "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/me/onboarding:skip",
+   "summary": "Bỏ qua hướng dẫn bắt đầu",
+   "use_cases": ["11-01"],
+   "capability": ["—"]
+  },
+  {
+   "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/me/onboarding:complete",
+   "summary": "Hoàn tất hướng dẫn bắt đầu",
+   "use_cases": ["11-01"],
+   "capability": ["—"]
+  },
+  {
+   "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/me/onboarding:try-agent",
+   "summary": "Tạo agent mẫu và khởi chạy lượt thử",
+   "use_cases": ["11-01"],
+   "capability": ["create_agent"]
+  },
+  {
+   "group": "Quản trị",
    "method": "POST",
    "path": "/v1/data-spaces",
    "summary": "Tạo Data Space",

@@ -4,24 +4,198 @@ from __future__ import annotations
 
 import datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from sqlalchemy import select
 
-from libs.dataagent_db.models import org
+from libs.dataagent_db import uuid7
+from libs.dataagent_db.models import agent, org
 from services.api.catalogue import endpoint
-from services.api.kernel.auth import CurrentPrincipal
+from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal
 from services.api.kernel.db import transaction
 from services.api.kernel.problems import Problem
 from services.api.modules.org.identity import ROLE, memberships, my_groups, user_role_in_force
 from services.api.modules.org.schemas import (
+    AgentTemplateChoice,
     DataSpacePreferencePut,
     DataSpacePreferenceView,
     Me,
+    OnboardingAgentAccepted,
+    OnboardingAgentRequest,
+    OnboardingStep,
+    OnboardingView,
     RoleGrant,
     RoleRef,
 )
 
 router = APIRouter()
+
+_TEMPLATES = (
+    AgentTemplateChoice(
+        ref="analysis",
+        title="Phân tích biến động",
+        description="Tìm nguyên nhân và bằng chứng cho các thay đổi đáng chú ý.",
+        badge={"label": "Đề xuất cho bạn", "recommended": True},
+    ),
+    AgentTemplateChoice(
+        ref="reconcile",
+        title="Đối soát số liệu",
+        description="So sánh các nguồn và đưa ra danh sách chênh lệch cần xem.",
+        badge={"label": "Phổ biến", "recommended": False},
+    ),
+    AgentTemplateChoice(
+        ref="report",
+        title="Báo cáo định kỳ",
+        description="Tóm tắt chỉ số và điểm cần chú ý cho nhóm của bạn.",
+        badge={"label": "Nên có", "recommended": False},
+    ),
+)
+
+
+def _onboarding(user: org.AppUser) -> OnboardingView:
+    attrs = user.attributes if isinstance(user.attributes, dict) else {}
+    saved = attrs.get("onboarding") if isinstance(attrs.get("onboarding"), dict) else {}
+    state = str(saved.get("state", "pending"))
+    return OnboardingView(
+        state=state,
+        steps=[
+            OnboardingStep(key="domain", label="Bối cảnh", state="done"),
+            OnboardingStep(key="sources", label="Nguồn dữ liệu", state="done"),
+            OnboardingStep(key="first_agent", label="Agent đầu tiên", state="current"),
+            OnboardingStep(key="invite", label="Mời đồng nghiệp", state="todo"),
+        ],
+        context_text="Gói dữ liệu của bạn đã sẵn sàng để bắt đầu.",
+        templates=list(_TEMPLATES),
+    )
+
+
+async def _set_onboarding_state(principal: CurrentPrincipal, state: str) -> OnboardingView:
+    async with transaction(ROLE, principal) as session:
+        user = await session.get(org.AppUser, principal.user_id, with_for_update=True)
+        if user is None:
+            raise Problem(403, "forbidden", "No active account in this organisation.")
+        attrs = dict(user.attributes) if isinstance(user.attributes, dict) else {}
+        attrs["onboarding"] = {
+            "state": state,
+            "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
+        }
+        user.attributes = attrs
+        await session.flush()
+        return _onboarding(user)
+
+
+@router.get(
+    "/v1/me/onboarding",
+    response_model=OnboardingView,
+    **endpoint("GET", "/v1/me/onboarding", operation_id="getMyOnboarding"),
+)
+async def get_onboarding(principal: CurrentPrincipal) -> OnboardingView:
+    async with transaction(ROLE, principal) as session:
+        user = await session.get(org.AppUser, principal.user_id)
+        if user is None:
+            raise Problem(403, "forbidden", "No active account in this organisation.")
+        return _onboarding(user)
+
+
+@router.post(
+    "/v1/me/onboarding:skip",
+    response_model=OnboardingView,
+    **endpoint("POST", "/v1/me/onboarding:skip", operation_id="skipMyOnboarding"),
+)
+async def skip_onboarding(principal: CurrentPrincipal) -> OnboardingView:
+    return await _set_onboarding_state(principal, "skipped")
+
+
+@router.post(
+    "/v1/me/onboarding:complete",
+    response_model=OnboardingView,
+    **endpoint("POST", "/v1/me/onboarding:complete", operation_id="completeMyOnboarding"),
+)
+async def complete_onboarding(principal: CurrentPrincipal) -> OnboardingView:
+    return await _set_onboarding_state(principal, "done")
+
+
+@router.post(
+    "/v1/me/onboarding:try-agent",
+    status_code=202,
+    response_model=OnboardingAgentAccepted,
+    **endpoint("POST", "/v1/me/onboarding:try-agent", operation_id="tryMyOnboardingAgent"),
+)
+async def try_onboarding_agent(
+    body: OnboardingAgentRequest,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    response: Response,
+) -> OnboardingAgentAccepted:
+    template = next((item for item in _TEMPLATES if item.ref == body.template_ref), None)
+    if template is None:
+        raise Problem(422, "invalid_request", "Unknown onboarding agent template.")
+    kind = {"analysis": "analysis", "reconcile": "reconcile", "report": "report"}[template.ref]
+    async with transaction("svc_agent", principal) as session:
+        owner = agent.AgentDef(
+            id=uuid7(),
+            org_id=principal.org_id,
+            data_space_id=data_space,
+            code=f"onboarding-{template.ref}-{str(uuid7())[-8:]}",
+            name=template.title,
+            kind=kind,
+            owner_user_id=principal.user_id,
+            account_user_id=uuid7(),
+            status="testing",
+            created_by=principal.user_id,
+            updated_by=principal.user_id,
+        )
+        session.add(owner)
+        await session.flush()
+        session.add(
+            agent.AgentConfig(
+                id=uuid7(),
+                org_id=principal.org_id,
+                agent_id=owner.id,
+                version=1,
+                goal=template.description,
+                data_scope={},
+                skill_ids=[],
+                autonomy="propose_approve",
+                checkpoints=["before_write_derived", "send_external"],
+                denied_actions=["modify_source_data", "send_external"],
+                limits={},
+                model_by_task={},
+                status="testing",
+            )
+        )
+        owner.current_config_version = 1
+        run = agent.AgentRun(
+            id=uuid7(),
+            org_id=principal.org_id,
+            agent_id=owner.id,
+            config_version=1,
+            data_space_id=data_space,
+            trigger_kind="test",
+            initiated_by=principal.user_id,
+            is_test=True,
+        )
+        session.add(run)
+        session.add(
+            agent.Outbox(
+                id=uuid7(),
+                org_id=principal.org_id,
+                aggregate_type="agent_run",
+                aggregate_id=run.id,
+                event_type="run.status_changed",
+                payload={
+                    "run_id": str(run.id),
+                    "agent_id": str(owner.id),
+                    "config_version": 1,
+                    "is_test": True,
+                    "previous_status": None,
+                    "status": run.status,
+                },
+            )
+        )
+        await session.flush()
+        started = (owner.id, run.id)
+    response.headers["Location"] = f"/v1/runs/{started[1]}"
+    return OnboardingAgentAccepted(agent_id=started[0], run_id=started[1])
 
 
 @router.get("/v1/me", **endpoint("GET", "/v1/me", operation_id="getMe"))

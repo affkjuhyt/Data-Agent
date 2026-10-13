@@ -1048,6 +1048,10 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/data-spaces | — | Danh sách DataSpace. Chỉ các Data Space người gọi là thành viên; kèm vai trò của người gọi | — |
 | GET /v1/me | — | AppUser của người gọi (id, username, display\_name, email, department, kind, default\_data\_space\_id) kèm locale, time\_zone của tổ chức; vai trò toàn tổ chức với nguồn (group\_mapping, emergency, manual) và hạn; năng lực toàn tổ chức. Vai trò theo Data Space lấy ở GET /v1/data-spaces | 403 forbidden (đăng nhập được nhưng không có tài khoản đang hoạt động trong tổ chức) |
 | PUT /v1/me/data-space-preference | open\_last\_used\*, data\_space\_id | Lựa chọn Data Space mở lần sau; chỉ nhận Data Space người gọi là thành viên và chưa archive | 404 not\_found (không thuộc Data Space hoặc đã archive) |
+| GET /v1/me/onboarding | — | Trạng thái hướng dẫn bắt đầu, các bước và mẫu agent | 403 forbidden |
+| POST /v1/me/onboarding:skip | — | Bỏ qua hướng dẫn bắt đầu | — |
+| POST /v1/me/onboarding:complete | — | Hoàn tất hướng dẫn bắt đầu | — |
+| POST /v1/me/onboarding:try-agent | template\_ref\* | Tạo agent mẫu và khởi chạy lượt thử | 422 invalid\_request |
 | POST /v1/data-spaces | code\*, name\*, description, steward\_id\*, backup\_steward\_id, default\_policy, work\_calendar\_id | DataSpace | 409 conflict (trùng mã) |
 | PATCH /v1/data-spaces/{id} | name, description, steward\_id, backup\_steward\_id, default\_policy, status, work\_calendar\_id | DataSpace | 422 business\_rule\_violated (gỡ người phụ trách cuối cùng, BR-143) |
 | PUT /v1/data-spaces/{id}/members | members\* | Danh sách DataSpaceMember | 403 policy\_denied (agent vượt quyền chủ sở hữu) |
