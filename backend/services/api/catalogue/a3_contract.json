@@ -5367,6 +5367,17 @@
    "errors": [],
    "request_text": "—"
   },
+  "GET /v1/admin/groups": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Danh sách nhóm danh tính và số thành viên",
+   "errors": [],
+   "request_text": "—"
+  },
   "GET /v1/data-spaces/{id}/members": {
    "group": "Quản trị",
    "groups": [
@@ -5384,6 +5395,22 @@
     ]
    ],
    "request_text": "?cursor"
+  },
+  "GET /v1/data-spaces/{id}/permissions": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Ma trận vai trò, năng lực và quy tắc truy cập",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
   },
   "GET /v1/admin/ai-settings": {
    "group": "Quản trị",

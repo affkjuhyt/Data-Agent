@@ -115,6 +115,31 @@ class GroupMappingSet(BaseModel):
     users_removed: list[uuid.UUID]
 
 
+class UserGroupView(BaseModel):
+    id: uuid.UUID
+    name: str
+    member_count: int
+    source: str
+
+
+class PermissionCell(BaseModel):
+    capability: str
+    value: Literal["yes", "approval", "no", "never"]
+
+
+class PermissionRoleView(BaseModel):
+    role_id: uuid.UUID
+    name: str
+    member_count: int
+    member_unit: Literal["người", "agent"]
+    cells: dict[str, Literal["yes", "approval", "no", "never"]]
+
+
+class PermissionMatrix(BaseModel):
+    roles: list[PermissionRoleView]
+    rules: dict[str, str]
+
+
 # ── emergency access ──
 
 

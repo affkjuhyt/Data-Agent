@@ -13,7 +13,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Path, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db.models import org
@@ -30,7 +30,12 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.modules.org.admin.common import live_data_space, org_only, same_space
-from services.api.modules.org.admin.schemas import MemberView
+from services.api.modules.org.admin.schemas import (
+    MemberView,
+    PermissionMatrix,
+    PermissionRoleView,
+    UserGroupView,
+)
 from services.api.modules.org.identity import ROLE
 
 router = APIRouter()
@@ -147,6 +152,94 @@ async def list_roles(principal: CurrentPrincipal) -> Page[RoleView]:
             )
             for r in rows
         ]
+    )
+
+
+@router.get(
+    "/v1/admin/groups",
+    response_model=Page[UserGroupView],
+    **endpoint("GET", "/v1/admin/groups", operation_id="listGroups"),
+)
+async def list_groups(principal: CurrentPrincipal) -> Page[UserGroupView]:
+    async with transaction(ROLE, principal) as session:
+        rows = (
+            await session.scalars(
+                select(org.UserGroup)
+                .where(org.UserGroup.org_id == principal.org_id)
+                .order_by(org.UserGroup.name, org.UserGroup.id)
+            )
+        ).all()
+    return Page[UserGroupView](
+        items=[
+            UserGroupView(
+                id=row.id, name=row.name, member_count=row.member_count, source=row.source
+            )
+            for row in rows
+        ]
+    )
+
+
+@router.get(
+    "/v1/data-spaces/{id}/permissions",
+    response_model=PermissionMatrix,
+    **endpoint("GET", "/v1/data-spaces/{id}/permissions", operation_id="getDataSpacePermissions"),
+)
+async def get_data_space_permissions(
+    space_id: Annotated[uuid.UUID, Path(alias="id")],
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> PermissionMatrix:
+    same_space(space_id, data_space)
+    async with transaction(ROLE, principal) as session:
+        await live_data_space(session, space_id)
+        roles = (
+            await session.scalars(
+                select(org.Role).where(org.Role.org_id == principal.org_id).order_by(org.Role.code)
+            )
+        ).all()
+        member_counts = dict(
+            await session.execute(
+                select(org.DataSpaceMember.role_id, func.count(org.DataSpaceMember.id))
+                .where(org.DataSpaceMember.data_space_id == space_id)
+                .group_by(org.DataSpaceMember.role_id)
+            )
+        )
+    cells = (
+        "view_aggregate",
+        "view_detail",
+        "view_pii",
+        "ask",
+        "run_agent",
+        "create_agent",
+        "approve",
+        "publish",
+        "admin",
+    )
+    return PermissionMatrix(
+        roles=[
+            PermissionRoleView(
+                role_id=role.id,
+                name=role.name,
+                member_count=int(member_counts.get(role.id, 0)),
+                member_unit="người",
+                cells={
+                    capability: (
+                        "yes"
+                        if capability in role.capabilities
+                        else "approval"
+                        if capability in {"approve", "publish"} and "admin" in role.capabilities
+                        else "no"
+                    )
+                    for capability in cells
+                },
+            )
+            for role in roles
+        ],
+        rules={
+            "row": "Theo phạm vi Data Space",
+            "column": "Theo nhãn PII",
+            "agent": "Theo capability của role",
+        },
     )
 
 

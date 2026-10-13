@@ -31668,6 +31668,27 @@
     "title": "Page[UsageRow]",
     "type": "object"
    },
+   "Page_UserGroupView_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/UserGroupView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "next_page_token": {
+      "default": "",
+      "title": "Next Page Token",
+      "type": "string"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "Page[UserGroupView]",
+    "type": "object"
+   },
    "Page_WebhookDeliveryView_": {
     "properties": {
      "items": {
@@ -32202,6 +32223,77 @@
      "filed_at"
     ],
     "title": "PeriodVersion",
+    "type": "object"
+   },
+   "PermissionMatrix": {
+    "properties": {
+     "roles": {
+      "items": {
+       "$ref": "#/components/schemas/PermissionRoleView"
+      },
+      "title": "Roles",
+      "type": "array"
+     },
+     "rules": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "title": "Rules",
+      "type": "object"
+     }
+    },
+    "required": [
+     "roles",
+     "rules"
+    ],
+    "title": "PermissionMatrix",
+    "type": "object"
+   },
+   "PermissionRoleView": {
+    "properties": {
+     "cells": {
+      "additionalProperties": {
+       "enum": [
+        "yes",
+        "approval",
+        "no",
+        "never"
+       ],
+       "type": "string"
+      },
+      "title": "Cells",
+      "type": "object"
+     },
+     "member_count": {
+      "title": "Member Count",
+      "type": "integer"
+     },
+     "member_unit": {
+      "enum": [
+       "người",
+       "agent"
+      ],
+      "title": "Member Unit",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "role_id": {
+      "format": "uuid",
+      "title": "Role Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "role_id",
+     "name",
+     "member_count",
+     "member_unit",
+     "cells"
+    ],
+    "title": "PermissionRoleView",
     "type": "object"
    },
    "PermissionSimulate": {
@@ -43727,6 +43819,35 @@
     "title": "UsageRow",
     "type": "object"
    },
+   "UserGroupView": {
+    "properties": {
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "member_count": {
+      "title": "Member Count",
+      "type": "integer"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "member_count",
+     "source"
+    ],
+    "title": "UserGroupView",
+    "type": "object"
+   },
    "UserRoleView": {
     "properties": {
      "approved_by": {
@@ -50610,6 +50731,137 @@
      }
     ],
     "summary": "Ánh xạ nhóm sang vai trò",
+    "tags": [
+     "Quản trị"
+    ],
+    "x-capability": [
+     "admin"
+    ],
+    "x-use-cases": [
+     "UC-11-01"
+    ]
+   }
+  },
+  "/v1/admin/groups": {
+   "get": {
+    "operationId": "listGroups",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_UserGroupView_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Nhóm danh tính và số thành viên",
     "tags": [
      "Quản trị"
     ],
@@ -66407,6 +66659,149 @@
      }
     ],
     "summary": "Thành viên, vai trò, phạm vi dòng",
+    "tags": [
+     "Quản trị"
+    ],
+    "x-capability": [
+     "steward"
+    ],
+    "x-use-cases": [
+     "UC-11-08"
+    ]
+   }
+  },
+  "/v1/data-spaces/{id}/permissions": {
+   "get": {
+    "operationId": "getDataSpacePermissions",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PermissionMatrix"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Ma trận vai trò và năng lực trong Data Space",
     "tags": [
      "Quản trị"
     ],

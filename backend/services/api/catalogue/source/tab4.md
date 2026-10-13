@@ -503,7 +503,9 @@ Dịch vụ: Admin service (org, governance). 27 endpoint.
 | GET | /v1/admin/model-route-decisions | Nhật ký định tuyến và lời gọi frontier | 11-05, 01-07 | compliance |
 | GET | /v1/principals | Tìm người, nhóm AD, agent để mời hoặc chia sẻ (thêm 12/10/2026) | 02-03, 11-08, 11-01 | ask |
 | GET | /v1/admin/roles | Vai trò và năng lực của từng vai trò (thêm 12/10/2026) | 11-01, 11-08 | admin |
+| GET | /v1/admin/groups | Nhóm danh tính và số thành viên | 11-01 | admin |
 | GET | /v1/data-spaces/{id}/members | Thành viên Data Space: vai trò, phạm vi dòng, hạn dùng (thêm 12/10/2026) | 11-08 | steward |
+| GET | /v1/data-spaces/{id}/permissions | Ma trận vai trò và năng lực trong Data Space | 11-08 | steward |
 | GET | /v1/admin/ai-settings | Quy định AI hiện hành (thêm 12/10/2026) | 11-05 | admin |
 | GET | /v1/admin/agent-usage | Vận hành agent theo ngày và theo agent: lượt chạy, cần người, lỗi, thời gian, chi phí so ngân sách (thêm 12/10/2026) | 11-04, 13-06 | admin |
 | POST | /v1/schedules:preview | Các lần chạy tới của một lịch chưa lưu, theo lịch làm việc và ngày nghỉ (thêm 12/10/2026) | 06-03, 04-05, 02-04 | ask |
