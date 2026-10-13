@@ -251,7 +251,13 @@ function LedgerBody({
             <Button onClick={() => downloadCsv(`so-du-bao-${l.series_id}.csv`, csvOf(l))}>
               Xuất
             </Button>
-            <FollowScheduleButton seriesId={l.series_id} following={l.following_schedule} primary />
+            {l.following_schedule !== null && (
+              <FollowScheduleButton
+                seriesId={l.series_id}
+                following={l.following_schedule}
+                primary
+              />
+            )}
           </>
         }
       />

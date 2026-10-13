@@ -812,6 +812,8 @@ function fuelHandlers() {
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),
 
+    // A2's ledger has no line yet in the demo; the screens fall back to the PROPOSAL series below.
+    http.get('*/v1/forecast-ledger', () => HttpResponse.json({ items: [], next_page_token: '' })),
     http.get('*/v1/forecast-series', () =>
       HttpResponse.json({
         items: FUELS.map((f) => ({ id: seriesId(f), label: f.label })),

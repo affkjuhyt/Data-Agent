@@ -545,15 +545,157 @@ export interface ForecastLedger {
   window_periods: number;
   /** Newest first. */
   rows: ForecastLedgerRow[];
-  following_schedule: boolean;
+  /** PROPOSAL with :follow; null on A2's ledger, which has no schedule to follow. */
+  following_schedule: boolean | null;
 }
 
-export const listForecastSeries = () =>
-  v1Get<Page<{ id: string; label: string }>>('/forecast-series', { page_size: 20 });
+/*
+ * A2's ledger is GET /v1/forecast-ledger, one line per issued forecast, filtered by model and
+ * scope.product_code: a series here is that pair, its id `ledger~<model>~<product>`. Other ids are
+ * the PROPOSAL series (/forecast-series) the fuel-price screen still reads.
+ */
+const LEDGER = 'ledger~';
+type LedgerLine = Schemas['LedgerEntryView'];
+type LedgerPage = Page<LedgerLine> & { calibration?: Schemas['Calibration'] | null };
+
+const productOf = (line: LedgerLine) => {
+  const scope = (line.scope ?? {}) as Record<string, unknown>;
+  return typeof scope.product_code === 'string' ? scope.product_code : '';
+};
+const ledgerSeriesId = (modelId: string, product: string) => `${LEDGER}${modelId}~${product}`;
+
+const PRODUCT_LABEL: Record<string, string> = {
+  e5ron92: 'E5RON92',
+  ron95: 'RON95-III',
+  'ron95-iii': 'RON95-III',
+  do: 'Diesel 0,05S',
+  'diesel-005s': 'Diesel 0,05S',
+  dau_hoa: 'Dầu hoả',
+  'dau-hoa': 'Dầu hoả',
+  mazut: 'Mazut',
+};
+const productLabel = (code: string) => PRODUCT_LABEL[code] ?? (code.toUpperCase() || 'Mô hình');
+
+const seriesOf = (lines: LedgerLine[]) => {
+  const seen = new Map<string, { id: string; label: string; model: string }>();
+  for (const line of lines) {
+    const product = productOf(line);
+    const id = ledgerSeriesId(line.forecast_model_id, product);
+    if (!seen.has(id))
+      seen.set(id, { id, label: productLabel(product), model: line.forecast_model_id });
+  }
+  return [...seen.values()];
+};
+
+/** The series with issued lines; until there are any, the PROPOSAL list. */
+export const listForecastSeries = async (): Promise<Page<{ id: string; label: string }>> => {
+  const lines = await v1Get<LedgerPage>('/forecast-ledger', { page_size: 500 });
+  const series = seriesOf(lines.items);
+  if (series.length)
+    return { items: series.map(({ id, label }) => ({ id, label })), next_page_token: '' };
+  return v1Get<Page<{ id: string; label: string }>>('/forecast-series', { page_size: 20 });
+};
+
+const ISSUED_VIA: Record<string, string> = {
+  bulletin: 'bản tin',
+  answer: 'câu trả lời',
+  monitor: 'theo dõi',
+  manual: 'thủ công',
+};
+const COMPONENT: Record<string, string> = {
+  fund: 'Quỹ bình ổn khác dự kiến',
+  world_price: 'Giá thế giới khác dự kiến',
+  fx: 'Tỷ giá khác dự kiến',
+  tax: 'Thuế, phí khác dự kiến',
+};
+const num = (v: number | string | null | undefined) =>
+  v === null || v === undefined ? null : Number(v);
+
+function readLedgerRow(line: LedgerLine): ForecastLedgerRow {
+  const q = (line.quantiles ?? {}) as Record<string, number | string>;
+  const median = Number(line.point);
+  const at = (key: string) => (q[key] === undefined ? median : Number(q[key]));
+  const actual = num(line.actual);
+  const attribution = (line.miss_attribution ?? null) as { component?: string } | null;
+  return {
+    period_date: line.period,
+    published_at: line.issued_at,
+    channel_label: ISSUED_VIA[line.issued_via] ?? line.issued_via,
+    median,
+    lo80: at('p10'),
+    hi80: at('p90'),
+    lo95: at('p02_5'),
+    hi95: at('p97_5'),
+    actual,
+    error: actual === null ? null : actual - median,
+    inside80: line.in80,
+    inside95: line.in95,
+    missed: line.miss === true,
+    main_driver: attribution?.component
+      ? (COMPONENT[attribution.component] ?? attribution.component)
+      : null,
+    error_book_ref: line.error_book_entry_id,
+  };
+}
+
+const WINDOWS = [
+  { periods: 20, label: '20 kỳ gần nhất' },
+  { periods: 10, label: '10 kỳ gần nhất' },
+];
+
+/*
+ * One series of A2's ledger. The calibration comes with the page (BR-185: the model's last N
+ * scored periods); coverage is a share of the scored ones, so the counts are read back from it.
+ * The rule a miss is judged by is the model's and is not served (PROPOSAL), nor is the version
+ * label; the version shown is the model's current one.
+ */
+async function servedLedger(seriesId: string, periods: number): Promise<ForecastLedger> {
+  const [modelId, product = ''] = seriesId.slice(LEDGER.length).split('~');
+  const [page, all, model] = await Promise.all([
+    v1Get<LedgerPage>('/forecast-ledger', {
+      forecast_model_id: modelId,
+      ...(product ? { product_code: product } : {}),
+      page_size: periods,
+    }),
+    v1Get<LedgerPage>('/forecast-ledger', { forecast_model_id: modelId, page_size: 500 }),
+    v1Get<Schemas['ForecastModelDetail']>(`/forecast-models/${pathId(modelId)}`),
+  ]);
+  const c = page.calibration;
+  const n = c?.n_scored ?? 0;
+  const share = (v: number | string | null | undefined) => Math.round((num(v) ?? 0) * n);
+  const crps = num(c?.crps);
+  const naive = num(c?.crps_naive);
+  return {
+    series_id: seriesId,
+    product_label: productLabel(product),
+    products: seriesOf(all.items).map((s) => ({ series_id: s.id, label: s.label })),
+    model_version_label: model.current_version
+      ? `${model.metric_code} v${model.current_version.version}`
+      : model.metric_code,
+    illustrative: false,
+    // The ceiling prices are per litre; scope carries no unit.
+    unit_label: product === 'mazut' ? 'đ/kg' : product ? 'đ/lít' : '',
+    calibration: {
+      periods: n,
+      inside80: share(c?.coverage80),
+      inside95: share(c?.coverage95),
+      mae: num(c?.mae) ?? 0,
+      crps_vs_naive: crps !== null && naive ? crps / naive - 1 : 0,
+      missed: c?.miss_count ?? 0,
+      miss_rule_text: c?.insufficient ? 'chưa đủ 10 kỳ đã chấm để kết luận' : '',
+    },
+    windows: WINDOWS,
+    window_periods: periods,
+    rows: page.items.map(readLedgerRow),
+    following_schedule: null,
+  };
+}
 
 /** The newest `periods` rows of the ledger; the calibration always covers the model's fixed N. */
 export const getForecastLedger = async (seriesId: string, periods?: number) =>
-  v1Get<ForecastLedger>(`/forecast-series/${pathId(seriesId)}/ledger`, { periods });
+  seriesId.startsWith(LEDGER)
+    ? servedLedger(seriesId, periods ?? 20)
+    : v1Get<ForecastLedger>(`/forecast-series/${pathId(seriesId)}/ledger`, { periods });
 
 /** Subscribe to (or leave) the pre- and post-period bulletins of one fuel. */
 export const followForecastSchedule = async (seriesId: string, follow: boolean) =>
