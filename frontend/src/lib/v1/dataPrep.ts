@@ -152,8 +152,18 @@ export interface Pipeline {
   status: PipelineStatus;
 }
 
-export type PipelineDetailWire = components['schemas']['PipelineDetail'];
-type PipelineWire = components['schemas']['PipelineView'] & { display?: Pipeline };
+type PipelineDisplayWire = Partial<Pipeline> & {
+  input_table?: string;
+  input_rows?: number;
+  preview_sample?: number;
+  steps?: PipelineStep[];
+  messages?: PrepMessage[];
+};
+export type PipelineDetailWire = components['schemas']['PipelineDetail'] & {
+  display?: PipelineDisplayWire;
+  messages?: PrepMessage[];
+};
+type PipelineWire = components['schemas']['PipelineView'] & { display?: PipelineDisplayWire };
 type DatasetRow = components['schemas']['services__api__modules__catalog__schemas__DatasetView'];
 
 /** The schedule in words from cron, the job it follows, or the pipelines it waits for. */
@@ -171,8 +181,7 @@ const scheduleOf = (raw: components['schemas']['PipelineView']) =>
  * inputs are named from the datasets, the status is the pipeline's own.
  */
 function readPipeline(raw: PipelineWire, tables: Map<string, string>): Pipeline {
-  if (raw.display) return raw.display;
-  return {
+  const base: Pipeline = {
     id: raw.id,
     name: raw.name,
     owner_name: '',
@@ -183,6 +192,7 @@ function readPipeline(raw: PipelineWire, tables: Map<string, string>): Pipeline 
     last_run: null,
     status: raw.status as PipelineStatus,
   };
+  return raw.display ? { ...base, ...raw.display, id: raw.id } : base;
 }
 
 const readPipelineSteps = (raw: PipelineDetailWire): PipelineStep[] =>
@@ -191,15 +201,22 @@ const readPipelineSteps = (raw: PipelineDetailWire): PipelineStep[] =>
     const step = value as Record<string, unknown>;
     const title = typeof step.description === 'string' ? step.description : `Bước ${index + 1}`;
     const sql = typeof step.code === 'string' ? step.code : '';
+    const rowsIn = typeof step.rows_in === 'number' ? step.rows_in : 0;
+    const rowsOut = typeof step.rows_out === 'number' ? step.rows_out : 0;
     return [
       {
         seq: index + 1,
         title,
         sql,
-        rows_in: 0,
-        rows_out: 0,
-        is_new: false,
-        kind_label: typeof step.kind === 'string' ? step.kind : null,
+        rows_in: rowsIn,
+        rows_out: rowsOut,
+        is_new: step.is_new === true,
+        kind_label:
+          typeof step.kind_label === 'string'
+            ? step.kind_label
+            : typeof step.kind === 'string'
+              ? step.kind
+              : null,
       },
     ];
   });
@@ -212,6 +229,17 @@ export function readPipelineDetail(
   // Unit/demo handlers already return the screen shape; keep them usable while the real API is
   // switched on, but adapt A3's PipelineDetail below when input_dataset_ids is present.
   if (!Array.isArray(raw.input_dataset_ids)) return raw as unknown as PipelineDetail;
+  const display = raw.display;
+  if (display) {
+    return {
+      ...readPipeline({ ...raw, ...display } as PipelineWire, tables),
+      input_table: display.input_table ?? '',
+      input_rows: display.input_rows ?? 0,
+      preview_sample: display.preview_sample ?? 10_000,
+      steps: display.steps ?? readPipelineSteps(raw),
+      messages: display.messages ?? raw.messages ?? [],
+    };
+  }
   const base = readPipeline(raw, tables);
   const lastRun = raw.last_run ?? null;
   return {
@@ -220,7 +248,7 @@ export function readPipelineDetail(
     input_rows: lastRun?.rows_in ?? 0,
     preview_sample: lastRun?.sample_rows ?? 10_000,
     steps: readPipelineSteps(raw),
-    messages: [],
+    messages: raw.messages ?? [],
   };
 }
 
