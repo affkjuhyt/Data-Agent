@@ -557,6 +557,47 @@ const FUELS: FuelProduct[] = [
 const fuelForecastId = (f: FuelProduct) => `fpf-2026-07-09-${f.code}`;
 const seriesId = (f: FuelProduct) => `fs-ceiling-${f.code}`;
 const FUEL_BASE = FUELS[0].previous;
+const FORMULA_MODEL_ID = 'formula-mc-v2';
+
+const formulaModelWire = (fuel: FuelProduct) => ({
+  id: FORMULA_MODEL_ID,
+  metric_version_id: 'mv-ceiling-price',
+  model_id: MODEL_ID,
+  model_version_id: V7_ID,
+  product_code: fuel.key,
+  owner_id: 'u-long',
+  formula: { kind: 'weighted_components' },
+  input_series: { product_code: fuel.key },
+  nowcast_method: 'latest_published',
+  fund_model: { kind: 'probabilistic' },
+  n_draws: 10000,
+  miss_abs_threshold: 300,
+  rounding: 'nearest_unit',
+  version_status: 'published',
+  reconstruction_mae: null,
+  created_at: '2026-09-01T09:00:00+07:00',
+  updated_at: '2026-10-06T09:00:00+07:00',
+});
+
+const ledgerFuelLines = () =>
+  FUELS.map((fuel) => ({
+    id: `ledger-${fuel.code}`,
+    forecast_model_id: MODEL_ID,
+    job_id: JOB_ID,
+    model_version_id: V7_ID,
+    period: '2026-07-09',
+    issued_at: '2026-07-08T18:02:00+07:00',
+    issued_via: 'bulletin',
+    point: fuel.previous,
+    quantiles: {},
+    actual: null,
+    in80: null,
+    in95: null,
+    miss: false,
+    miss_attribution: null,
+    error_book_entry_id: null,
+    scope: { product_code: fuel.key },
+  }));
 
 /** A two-sided normal density whose 10th/50th/90th percentiles are the forecast's. */
 function density(median: number, lo80: number, hi80: number, from: number, to: number) {
@@ -586,7 +627,9 @@ function fuelForecast(fuel: FuelProduct): FuelPriceForecast {
     product_code: fuel.key,
     formula_model_id: 'formula-mc-v2',
     model_id: MODEL_ID,
-    series_id: seriesId(fuel),
+    // Mirror the id produced by the real ledger adapter; the legacy endpoint is only a
+    // compatibility response for older fixtures.
+    series_id: `ledger~${MODEL_ID}~${fuel.key}`,
     product_label: fuel.label,
     products: FUELS.map((f) => ({ forecast_id: fuelForecastId(f), label: f.label })),
     period_date: '2026-07-09',
@@ -774,7 +817,9 @@ function fuelHandlers() {
   let fuelForecasts = FUELS.map(fuelForecast);
   // Following is per fuel, shared by the forecast and the ledger of that fuel.
   const following = new Set<string>();
-  const findFuel = (id: string) => fuelForecasts.find((f) => f.id === id);
+  const findFuel = (id: string) =>
+    fuelForecasts.find((f) => f.id === id) ??
+    fuelForecasts.find((f) => id.endsWith(`__${f.product_code}`));
   const withFollow = (f: FuelPriceForecast) => ({
     ...f,
     following_schedule: following.has(f.series_id),
@@ -824,8 +869,11 @@ function fuelHandlers() {
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),
 
-    // A2's ledger has no line yet in the demo; the screens fall back to the PROPOSAL series below.
-    http.get('*/v1/forecast-ledger', () => HttpResponse.json({ items: [], next_page_token: '' })),
+    // The fuel screen now discovers products through A2's formula models and ledger.
+    // Keep these rows in the wire shape so the same code path is exercised in dev and tests.
+    http.get('*/v1/forecast-ledger', () =>
+      HttpResponse.json({ items: ledgerFuelLines(), next_page_token: '' }),
+    ),
     http.get('*/v1/forecast-series', () =>
       HttpResponse.json({
         items: FUELS.map((f) => ({ id: seriesId(f), label: f.label })),
@@ -876,6 +924,8 @@ export function createForecastHandlers() {
   let forecasts = [forecast(), staleForecast()];
   let bench = workbench();
   let currentModel = model();
+  let calendarFollowing = false;
+  const scenarios = new Map<string, { modelId: string; product: string; level: number }>();
 
   const saveForecast = (next: Forecast) => {
     forecasts = forecasts.map((f) => (f.id === next.id ? next : f));
@@ -981,6 +1031,117 @@ export function createForecastHandlers() {
         return saveForecast({ ...found, added_to_session: true });
       }
       return problem(404, 'not_found', 'Không có thao tác này.');
+    }),
+
+    // Forecast fuel discovery uses the A2 formula/ledger resources, not the old fuel aggregate.
+    http.get('*/v1/formula-models', ({ request }) => {
+      const product = new URL(request.url).searchParams.get('product_code');
+      const items = FUELS.filter((fuel) => !product || fuel.key === product).map(formulaModelWire);
+      return HttpResponse.json({ items, next_page_token: '' });
+    }),
+    http.get('*/v1/formula-models/:id', ({ params }) => {
+      const fuel = FUELS.find((item) => item.key === params.id);
+      return fuel
+        ? HttpResponse.json(formulaModelWire(fuel))
+        : params.id === FORMULA_MODEL_ID
+          ? HttpResponse.json(formulaModelWire(FUELS[0]))
+          : problem(404, 'not_found', 'Không tìm thấy mô hình công thức.');
+    }),
+    http.get('*/v1/forecast-models/:id/predictions', ({ params, request }) => {
+      const url = new URL(request.url);
+      const scenarioId = url.searchParams.get('scenario_id');
+      const scenario = scenarioId ? scenarios.get(scenarioId) : null;
+      const fuel = FUELS.find((item) => item.key === scenario?.product) ?? FUELS[0];
+      const found = fuelForecast(fuel);
+      const base = found?.distribution.median ?? 19910;
+      const shift = scenario?.level === 300 ? 130 : scenario?.level === 200 ? 30 : -170;
+      return HttpResponse.json({
+        items: [
+          {
+            id: `prediction-${scenarioId ?? 'base'}`,
+            job_id: JOB_ID,
+            model_version_id: V7_ID,
+            period: '2026-07-09',
+            point: base + shift,
+            lo80: base + shift - 230,
+            hi80: base + shift + 240,
+            lo95: base + shift - 340,
+            hi95: base + shift + 440,
+            cutoff_at: '2026-07-07T00:00:00+07:00',
+            created_at: '2026-07-08T18:02:00+07:00',
+            interval_method: 'empirical',
+            exog_uncertainty: 'included',
+            is_experimental: false,
+            contributions: {},
+          },
+        ],
+        next_page_token: '',
+        notice: 'Kịch bản đã chạy với giả định Quỹ cố định.',
+      });
+    }),
+    http.post('*/v1/forecast-models/:id/scenarios', async ({ params, request }) => {
+      const body = (await request.json()) as {
+        assumptions?: { value?: number; from_period?: string }[];
+      };
+      const assumption = body.assumptions?.[0];
+      const scenarioId = `scenario-fund-${Date.now()}`;
+      const product = new URL(request.url).searchParams.get('product_code') ?? 'xang';
+      scenarios.set(scenarioId, {
+        modelId: String(params.id),
+        product,
+        level: Number(assumption?.value ?? 0),
+      });
+      return HttpResponse.json(
+        {
+          id: scenarioId,
+          status: 'queued',
+          poll_after_ms: 1,
+          model_id: String(params.id),
+          model_version_id: V7_ID,
+          name: 'Kịch bản Quỹ',
+          assumptions: body.assumptions ?? [],
+          notice: 'Kịch bản đã được xếp hàng.',
+        },
+        { status: 202 },
+      );
+    }),
+    http.get('*/v1/external-calendars', () =>
+      HttpResponse.json({
+        items: [
+          {
+            id: 'calendar-fuel-bulletins',
+            code: 'fuel-bulletins',
+            name: 'Bản tin giá xăng dầu',
+            data_space_id: 'ds-nang-luong',
+            owner_id: 'u-long',
+            forecast_model_ids: [MODEL_ID],
+            status: 'active',
+            default_local_time: '15:00',
+            detection_source_id: null,
+            forecast_lead: 'P1D',
+            legal_basis: null,
+            post_bulletin: true,
+            post_wait_max: 'PT6H',
+            pre_bulletin_days_before: 1,
+            pre_bulletin_local_time: '09:00',
+            created_at: '2026-09-01T09:00:00+07:00',
+            updated_at: '2026-10-06T09:00:00+07:00',
+            subscription_status: calendarFollowing ? 'active' : 'paused',
+          },
+        ],
+        next_page_token: '',
+      }),
+    ),
+    http.put('*/v1/external-calendars/:id/subscription', async ({ request }) => {
+      const body = (await request.json()) as { status?: string };
+      calendarFollowing = body.status === 'active';
+      return HttpResponse.json({
+        id: 'subscription-fuel-bulletins',
+        calendar_id: 'calendar-fuel-bulletins',
+        status: calendarFollowing ? 'active' : 'paused',
+        kinds: ['pre', 'post'],
+        channels: ['in_app'],
+      });
     }),
 
     // ForecastModelView/Detail with the screen's model under display.

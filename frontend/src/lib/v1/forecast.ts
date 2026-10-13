@@ -1003,7 +1003,9 @@ export interface FuelPriceForecast {
   fund_scenario: FuelFundScenario | null;
 }
 
-const FUEL_SEP = '~';
+// Composite ids are used as route params by the list screen, so keep the separator inside the
+// same safe alphabet as UUIDs/business codes accepted by pathId().
+const FUEL_SEP = '__';
 const fuelId = (jobId: string, product: string) => `${jobId}${FUEL_SEP}${product}`;
 const splitFuelId = (id: string) => {
   const at = id.lastIndexOf(FUEL_SEP);
@@ -1014,6 +1016,7 @@ type DistributionItem = Schemas['DistributionItem'];
 type FormulaModelWire = Schemas['FormulaModelView'];
 
 const PRODUCT_LABEL: Record<string, string> = {
+  xang: 'E5RON92',
   e5ron92: 'E5RON92',
   ron95: 'RON95-III',
   ron95iii: 'RON95-III',
