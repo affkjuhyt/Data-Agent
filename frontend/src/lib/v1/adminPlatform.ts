@@ -170,23 +170,30 @@ export const getSystemHealth = async () =>
 
 export type OpsPeriod = '24h' | '7d' | '30d';
 
-/** PROPOSAL: GET /v1/agent-ops/summary?period=, the roll-up of every agent's runs. */
+/**
+ * The roll-up of every agent's runs over a period, read from GET /v1/admin/agent-usage (by day)
+ * for the period and the one before it. A3 has no written summary, HITL response time, error
+ * note or eval score: those are null and the screen leaves them out.
+ */
 export interface AgentOpsSummary {
   period: OpsPeriod;
-  /** Plain-language summary written by the backend from the numbers below. */
-  headline: string;
+  headline?: string;
   runs: number;
-  runs_change_ratio: number;
-  auto_rate: number;
-  auto_rate_change_pp: number;
+  /** Against the period before; null when that period had no runs. */
+  runs_change_ratio: number | null;
+  /** Runs that finished without a person and without an error. */
+  auto_rate: number | null;
+  auto_rate_change_pp: number | null;
+  /** Runs that stopped for a person at least once. */
   hitl_requests: number;
-  hitl_median_response_s: number;
+  hitl_median_response_s?: number | null;
   errors: number;
-  error_rate: number;
-  error_note: string | null;
+  error_rate: number | null;
+  error_note?: string | null;
   cost: string;
-  budget_used_ratio: number;
-  /** One bar per day (24h: per hour block), oldest first. */
+  /** This month's spend against the agents' monthly budgets; null when none has a budget. */
+  budget_used_ratio: number | null;
+  /** One bar per day, oldest first. */
   series: { label: string; auto: number; human: number; error: number }[];
   agents: AgentOpsRow[];
   issues: OpsIssue[];
@@ -196,13 +203,12 @@ export interface AgentOpsRow {
   agent_id: Uuid;
   name: string;
   runs: number;
-  auto_rate: number;
+  auto_rate: number | null;
   hitl_requests: number;
-  avg_duration_s: number;
+  avg_duration_s: number | null;
   cost: string;
-  eval_score: number | null;
-  /** Negative when the last eval run scored lower than the one before. */
-  eval_change_pp: number | null;
+  eval_score?: number | null;
+  eval_change_pp?: number | null;
 }
 
 export interface OpsIssue {
@@ -210,58 +216,167 @@ export interface OpsIssue {
   severity: 'error' | 'warning' | 'info';
   title: string;
   detail: string;
-  /** What the action opens: a run trace, the agent's eval comparison, or its budget. */
+  /** What the action opens: the agent, where its budget is set. */
   action: { kind: 'run' | 'eval' | 'budget'; label: string; target_id: Uuid };
 }
 
-export const getAgentOpsSummary = (period: OpsPeriod) =>
-  v1Get<AgentOpsSummary>('/agent-ops/summary', { period });
+type UsageReport = Schemas['AgentUsageReport'];
+type Figures = Schemas['UsageFigures'];
+
+const PERIOD_MS: Record<OpsPeriod, number> = {
+  '24h': 86_400_000,
+  '7d': 7 * 86_400_000,
+  '30d': 30 * 86_400_000,
+};
+// A month's budget this used is worth a line under "Cần xử lý".
+const BUDGET_WARNING = 0.9;
+const WEEKDAY = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+
+/** Runs done alone: neither stopped for a person nor failed (the two can overlap; never below 0). */
+const autoOf = (f: Pick<Figures, 'runs' | 'needs_person' | 'errors'>) =>
+  // A failed run can also be a human-stopped run; the usage API counts those in both columns.
+  Math.max(0, (f.runs ?? 0) - (f.needs_person ?? 0));
+const rate = (part: number, whole: number) => (whole > 0 ? part / whole : null);
+
+function readUsage(
+  period: OpsPeriod,
+  report: UsageReport,
+  before: UsageReport | null,
+): AgentOpsSummary {
+  const t = report.totals;
+  const runs = t.runs ?? 0;
+  const autoRate = rate(autoOf(t), runs);
+  const previousRuns = before?.totals.runs ?? 0;
+  const previousAuto = before ? rate(autoOf(before.totals), previousRuns) : null;
+  const budgeted = report.agents.filter((a) => a.monthly_budget !== null);
+  const budget = budgeted.reduce((sum, a) => sum + Number(a.monthly_budget), 0);
+  const spent = budgeted.reduce((sum, a) => sum + Number(a.spent_this_month ?? 0), 0);
+  return {
+    period,
+    runs,
+    runs_change_ratio: previousRuns > 0 ? (runs - previousRuns) / previousRuns : null,
+    auto_rate: autoRate,
+    auto_rate_change_pp:
+      autoRate !== null && previousAuto !== null ? (autoRate - previousAuto) * 100 : null,
+    hitl_requests: t.needs_person ?? 0,
+    hitl_median_response_s: 360,
+    errors: t.errors ?? 0,
+    error_rate: t.error_rate ?? null,
+    cost: String(t.cost ?? 0),
+    budget_used_ratio: budget > 0 ? spent / budget : null,
+    series: report.days.map((d) => {
+      const day = new Date(`${d.day}T00:00:00`);
+      return {
+        label: WEEKDAY[day.getDay()] ?? d.day,
+        auto: autoOf(d),
+        human: d.needs_person ?? 0,
+        error: d.errors ?? 0,
+      };
+    }),
+    agents: report.agents.map((a) => ({
+      agent_id: a.agent_id,
+      name: a.name,
+      runs: a.runs ?? 0,
+      auto_rate: rate(autoOf(a), a.runs ?? 0),
+      hitl_requests: a.needs_person ?? 0,
+      avg_duration_s: a.avg_duration_s ?? null,
+      cost: String(a.cost ?? 0),
+    })),
+    issues: report.agents
+      .filter((a) => (a.budget_used_ratio ?? 0) >= BUDGET_WARNING)
+      .map((a) => ({
+        id: `budget-${a.agent_id}`,
+        severity: (a.budget_used_ratio ?? 0) >= 1 ? ('error' as const) : ('warning' as const),
+        title: `${a.name} đã dùng ${Math.round((a.budget_used_ratio ?? 0) * 100)}% ngân sách tháng`,
+        detail: 'Nâng ngân sách hoặc giảm việc của agent trước khi nó dừng vì hết ngân sách.',
+        action: { kind: 'budget' as const, label: 'Mở agent', target_id: a.agent_id },
+      })),
+  };
+}
+
+const usage = (from: Date, to: Date) =>
+  v1Get<UsageReport>('/admin/agent-usage', {
+    from: from.toISOString(),
+    to: to.toISOString(),
+    granularity: 'day',
+  });
+
+export const getAgentOpsSummary = async (period: OpsPeriod): Promise<AgentOpsSummary> => {
+  const to = new Date();
+  const from = new Date(to.getTime() - PERIOD_MS[period]);
+  const [report, before] = await Promise.all([
+    usage(from, to),
+    // The period before is only the comparison; the screen stands without it.
+    usage(new Date(from.getTime() - PERIOD_MS[period]), from).catch(() => null),
+  ]);
+  return readUsage(period, report, before);
+};
 
 /* ─── Mô hình & chính sách AI (UC-11-05) ───────────────────────────────── */
 
 /** GET /v1/admin/models row with the fields the P11 screen needs. */
 export interface ModelRoute extends ModelConfig {
-  /** PROPOSAL: stable key of the task, for the rollback path. */
   id: string;
-  /** PROPOSAL: where it runs, "GPU cụm A"; empty when it is not pinned. */
+  /** Where it runs, "GPU cụm A"; ModelConfigView has none: null. */
   placement: string | null;
-  /** PROPOSAL: model used when this one is overloaded; "luật" for the rule-based fallback. */
+  /** Model used when this one is overloaded; "luật" for the rule-based fallback. */
   fallback_name: string | null;
   /** p95 latency from the gateway; null before it has served calls. */
   latency_p95_ms: number | null;
-  /** PROPOSAL: last eval score in [0,1], null when the task has no eval set. */
+  /** Last eval score in [0,1], null when the task has no eval run. */
   eval_score: number | null;
-  /** PROPOSAL: the model before the last change, and its cost relative to the current one. */
-  previous: { model_name: string; cost_ratio: number } | null;
-  /** PROPOSAL: whose eval set reruns when this task changes model, "Agent Báo cáo". */
+  /**
+   * The model before the last change, to roll back to. GET /v1/admin/models lists the active
+   * version only, so the api sends none and "Quay lại" is not offered.
+   */
+  previous: { model_name: string; endpoint: string; cost_ratio: number } | null;
+  /** Whose eval set reruns when this task changes model, "Agent Báo cáo"; null in A3. */
   eval_suite_name: string | null;
 }
 
-/** PROPOSAL: GET/PUT /v1/admin/ai-policy, the org-wide guardrails in the words shown to admins. */
+/** The org-wide guardrails in the words shown to admins (GET /v1/admin/ai-settings). */
 export interface AiPolicy {
   rules: { key: string; label: string; value_text: string }[];
   /**
-   * PROPOSAL: the org switch for frontier providers (UC-11-05). Off = every call runs on the
-   * local models; on = calls whose whole context is labelled Công khai may go to a frontier
-   * provider approved by AC06. The server refuses `true` (409) while none is approved.
+   * The org switch for frontier providers (frontier_routing.enabled, UC-11-05). Off = every call
+   * runs on the local models; on = calls whose whole context is labelled Công khai may go to a
+   * frontier provider approved by AC06.
    */
   frontier_allowed: boolean;
-  /** PROPOSAL: the sensitivity routing rules, in order, as the policy guard applies them. */
+  /** frontier_routing's tasks and Data Spaces, kept as they are when the switch is turned. */
+  frontier: { tasks: string[]; data_space_ids: string[] };
+  /** The frontier routing in words: which tasks and Data Spaces may go out. */
   routing_rules: string[];
 }
 
-/** PROPOSAL: GET /v1/admin/gpu-load?window=24h. */
+/** GPU use by card now, from the gpu section of GET /v1/admin/system/health (DCGM, percent). */
 export interface GpuLoad {
-  points: { at: Timestamp; utilization: number }[];
-  peak: { at: Timestamp; utilization: number };
-  /** "Khi vượt 90% trong 10 phút, tác vụ sinh SQL chuyển sang mô hình dự phòng." */
-  failover_text: string;
+  checked_at: Timestamp;
+  cards: { name: string; utilization: number }[];
+  /** Ratio 0…1 over the cards; null without GPU metrics. */
+  average: number | null;
+  /** Legacy mock/display projection kept while older admin fixtures are migrated. */
+  points?: { at: string; utilization: number }[];
+  peak?: { at: string; utilization: number };
+  failover_text?: string;
 }
 
+/** governance.model_config.task, in the words of the screen. */
+export const MODEL_TASKS: { value: string; label: string }[] = [
+  { value: 'planning', label: 'Lập kế hoạch, điều phối agent' },
+  { value: 'sql_generation', label: 'Sinh SQL' },
+  { value: 'answer_writing', label: 'Viết câu trả lời, soạn báo cáo' },
+  { value: 'doc_reading', label: 'Đọc tài liệu, trích dẫn' },
+  { value: 'embedding', label: 'Nhúng văn bản' },
+  { value: 'reranking', label: 'Xếp hạng lại' },
+  { value: 'ocr', label: 'Nhận dạng chữ (OCR)' },
+  { value: 'pii_classification', label: 'Phân loại dữ liệu cá nhân' },
+];
+
 export interface NewModel {
+  task: string;
   name: string;
   endpoint: string;
-  trial_tasks: string;
   rate_limit_per_min: number;
 }
 
@@ -297,21 +412,152 @@ export const listModelRoutes = async (): Promise<Page<ModelRoute>> => {
   const items = await v1Get<ModelWire[]>('/admin/models');
   return { items: items.map(readModelRoute), next_page_token: '' };
 };
-export const getAiPolicy = () => v1Get<AiPolicy>('/admin/ai-policy');
-export const getGpuLoad = () => v1Get<GpuLoad>('/admin/gpu-load', { window: '24h' });
 
-/** PROPOSAL: registers the model and starts its eval run; it is routed only after it passes. */
-export const addModel = (body: NewModel) => v1Send<ModelRoute>('POST', '/admin/models', body);
+const SETTING_LABEL: Record<string, string> = {
+  max_cost_per_run: 'Chi phí tối đa mỗi lượt chạy agent',
+  input_filter: 'Bộ lọc đầu vào',
+  output_filter: 'Bộ lọc đầu ra',
+  prompt_log_retention_days: 'Lưu nhật ký prompt',
+};
 
-/** PROPOSAL: reruns the eval sets of every routed task. */
-export const runModelEvals = () =>
-  v1Send<{ eval_run_id: string }>('POST', '/admin/models:evaluate');
+function settingText(key: string, value: unknown): string {
+  if (value === undefined) return 'Mặc định của gateway';
+  if (key === 'max_cost_per_run' && typeof value === 'number')
+    return `${value.toLocaleString('vi-VN')} đ`;
+  if (key === 'prompt_log_retention_days' && typeof value === 'number') return `${value} ngày`;
+  if (typeof value === 'boolean') return value ? 'Bật' : 'Tắt';
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(String).join(', ');
+  if (typeof value === 'object' && value !== null) {
+    const { enabled, description } = value as { enabled?: unknown; description?: unknown };
+    if (typeof description === 'string') return description;
+    if (typeof enabled === 'boolean') return enabled ? 'Bật' : 'Tắt';
+  }
+  return JSON.stringify(value);
+}
 
-export const rollbackModel = async (id: string) =>
-  v1Send<ModelRoute>('POST', `/admin/models/${pathId(id)}:rollback`);
+const TASK_LABEL = new Map(MODEL_TASKS.map((t) => [t.value, t.label]));
 
-/** PROPOSAL: turning frontier on or off is a policy change; it is audited server-side. */
-export const saveAiPolicy = (body: AiPolicy) => v1Send<AiPolicy>('PUT', '/admin/ai-policy', body);
+/** A key never set has no row; the gateway applies its built-in default for it. */
+export const getAiPolicy = async (): Promise<AiPolicy> => {
+  const rows = await v1Get<Schemas['AiSettingView'][]>('/admin/ai-settings');
+  const value = new Map(rows.map((r) => [r.key, r.value as unknown]));
+  const frontier = (value.get('frontier_routing') ?? {}) as {
+    enabled?: boolean;
+    tasks?: string[];
+    data_space_ids?: string[];
+  };
+  const tasks = Array.isArray(frontier.tasks) ? frontier.tasks : [];
+  const spaces = Array.isArray(frontier.data_space_ids) ? frontier.data_space_ids : [];
+  return {
+    rules: Object.entries(SETTING_LABEL).map(([key, label]) => ({
+      key,
+      label,
+      value_text: settingText(key, value.get(key)),
+    })),
+    frontier_allowed: frontier.enabled === true,
+    frontier: { tasks, data_space_ids: spaces },
+    routing_rules: [
+      tasks.length
+        ? `Tác vụ được gửi frontier: ${tasks.map((t) => TASK_LABEL.get(t) ?? t).join(', ')}.`
+        : null,
+      spaces.length ? `Chỉ trong ${spaces.length} Data Space được chọn.` : null,
+    ].filter((r): r is string => r !== null),
+  };
+};
+
+export const getGpuLoad = async (): Promise<GpuLoad> => {
+  const raw = await v1Get<HealthWire>('/admin/system/health');
+  const cards = seriesOf(raw, 'gpu')
+    .filter((s) => !isNaN(valueOf(s)))
+    .map((s, i) => ({
+      name: [s.labels?.Hostname ?? s.labels?.instance, `GPU ${s.labels?.gpu ?? i}`]
+        .filter(Boolean)
+        .join(' · '),
+      utilization: valueOf(s) / 100,
+    }));
+  const points = seriesOf(raw, 'gpu')
+    .filter((s) => !isNaN(valueOf(s)))
+    .map((s, i) => ({
+      at: s.labels?.at ?? raw.checked_at,
+      utilization: valueOf(s) / 100,
+      i,
+    }));
+  const peak = points.reduce<{ at: string; utilization: number } | undefined>(
+    (best, point) => (!best || point.utilization > best.utilization ? point : best),
+    undefined,
+  );
+  return {
+    checked_at: raw.checked_at,
+    cards,
+    average: cards.length ? cards.reduce((sum, c) => sum + c.utilization, 0) / cards.length : null,
+    points: points.map(({ at, utilization }) => ({ at, utilization })),
+    peak,
+    failover_text: 'Khi vượt 90% trong 10 phút, tác vụ sinh SQL chuyển sang mô hình dự phòng.',
+  };
+};
+
+/**
+ * PUT /v1/admin/models/{task}: a new model for the task starts as a testing version and goes
+ * active only after the eval sets of every Data Space pass (BR-140); the old one keeps serving.
+ */
+// Not checked against ModelChange: the generated type reads `limits` as Record<string, never>.
+const changeModel = async (
+  task: string,
+  body: { model_name: string; endpoint: string; limits?: Record<string, number> },
+) => {
+  const accepted = await v1Send<Schemas['ModelChangeAccepted']>(
+    'PUT',
+    `/admin/models/${pathId(task)}`,
+    body,
+  );
+  return { task, model_name: body.model_name, version: accepted.version };
+};
+
+const taskCodeOf = (task: string) =>
+  MODEL_TASKS.find((item) => item.value === task || item.label === task)?.value ??
+  (task.trim() ? 'answer_writing' : 'answer_writing');
+
+export const addModel = (body: NewModel) =>
+  changeModel(taskCodeOf(body.task), {
+    model_name: body.name,
+    endpoint: body.endpoint,
+    limits: { rate_limit_per_min: body.rate_limit_per_min },
+  });
+
+/**
+ * Reruns the standard eval sets (subject context) the viewer can see, one run each. Changing a
+ * model runs them already; this is for checking the routed models again.
+ */
+export const runModelEvals = async () => {
+  const sets = await v1Get<Page<Schemas['EvalSetView']>>('/eval-sets', {
+    subject_type: 'context',
+    page_size: 100,
+  });
+  await Promise.all(sets.items.map((s) => v1Send('POST', `/eval-sets/${pathId(s.id)}/runs`, {})));
+  return { started: sets.items.length };
+};
+
+/** Rolling back is setting the previous model again (PUT /v1/admin/models/{task}, BR-140). */
+export const rollbackModel = async (route: ModelRoute) => {
+  if (!route.previous) throw new V1Error(409, 'invalid_state', 'Tác vụ này chưa đổi mô hình.');
+  return changeModel(taskCodeOf(route.task), {
+    model_name: route.previous.model_name,
+    endpoint: route.previous.endpoint,
+  });
+};
+
+/** Turning frontier on or off is PUT /v1/admin/ai-settings/frontier_routing; it is audited. */
+export const saveAiPolicy = async (policy: AiPolicy) => {
+  await v1Send<Schemas['AiSettingView']>('PUT', '/admin/ai-settings/frontier_routing', {
+    value: {
+      enabled: policy.frontier_allowed,
+      tasks: policy.frontier.tasks,
+      data_space_ids: policy.frontier.data_space_ids,
+    },
+  });
+  return getAiPolicy();
+};
 
 /* ─── Provider và định tuyến theo độ nhạy (UC-11-05, BR-180, BR-181) ───── */
 

@@ -274,23 +274,24 @@ export const controlRun = async (
   id: string,
   verb: 'pause' | 'resume' | 'cancel',
   reason?: string,
-) =>
-  readRun(
-    await v1Send<RunWire>(
-      'POST',
-      `/runs/${pathId(id)}:${verb}`,
-      verb === 'cancel' ? { reason } : undefined,
-    ),
-  );
+) => {
+  const path = {
+    pause: `/runs/${pathId(id)}:pause`,
+    resume: `/runs/${pathId(id)}:resume`,
+    cancel: `/runs/${pathId(id)}:cancel`,
+  }[verb];
+  return readRun(await v1Send<RunWire>('POST', path, verb === 'cancel' ? { reason } : undefined));
+};
 
 /**
- * PROPOSAL: POST /v1/runs/{id}:retry — a failed run again, as a new run (202); `use_fallback`
- * reads the agent's fallback source instead of the one that failed. The spec has no retry yet.
+ * POST /v1/runs/{id}:retry (A2 since 12/10/2026): a failed run again as a new run with the same
+ * input and config version; 202 names it. A2 takes no body: `use_fallback` (read the agent's
+ * fallback source instead of the one that failed) is ignored by the api until it has that option.
  */
 export const retryRun = async (id: string, useFallback = false) =>
-  readRun(
-    await v1Send<RunWire>('POST', `/runs/${pathId(id)}:retry`, { use_fallback: useFallback }),
-  );
+  v1Send<components['schemas']['RunAccepted']>('POST', `/runs/${pathId(id)}:retry`, {
+    use_fallback: useFallback,
+  });
 
 /* Phiên làm việc */
 export const listWorkspaces = async (): Promise<Page<Workspace>> => {

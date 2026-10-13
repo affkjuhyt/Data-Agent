@@ -154,8 +154,7 @@ describe('periods from the api', () => {
       ['Khoá kỳ', 'pending', 'chưa khoá'],
       ['Nộp báo cáo', 'pending', 'chưa nộp'],
     ]);
-    expect(period).toMatchObject({ can_start_close: true, can_cancel: false });
-    expect(period.can_lock.allowed).toBe(false);
+    expect(period.can_start_close).toBe(true);
   });
 
   it('finds a retro change among the periods and decides it as A3 names it', async () => {

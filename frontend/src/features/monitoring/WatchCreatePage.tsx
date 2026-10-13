@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
@@ -12,33 +12,27 @@ import { Toggle } from '../../design-system/Toggle';
 import { Tooltip } from '../../design-system/Tooltip';
 import {
   createMonitor,
+  getMetricShape,
   getMonitorOptions,
-  previewMonitor,
   type MonitorDraft,
   type MonitorOptions,
-  type MonitorPreview,
   type RuleKind,
 } from '../../lib/v1/monitors';
 import { useV1 } from '../../lib/v1/useV1';
-import { PreviewChart } from './PreviewChart';
 
 /*
- * "P08 · Theo dõi · Tạo theo dõi" (2270:16233, UC-08-01): metric and scope, the rule, who hears of
- * it, and whether the Agent Phân tích attaches a cause. On the right the draft runs against the last
- * 90 days of one group, so the person sees how often it would have fired before turning it on; above
- * 30% of periods is noisy (BR-32). Bất thường learns a normal range from 30 days and Dự báo from 60;
- * a metric with less history cannot use them yet ("Tạo · Không đủ lịch sử", 2272:16634). An
- * uncertified metric alerts inside the app only.
+ * "P08 · Theo dõi · Tạo theo dõi" (2270:16233, UC-08-01): metric and how to split it, the rule, who
+ * hears of it, and whether the Agent Phân tích attaches a cause. A2 creates the monitor active and
+ * the monitor agent then backtests it on the last 12 periods; above 30% of periods is noisy (BR-32)
+ * and the list marks it. A2 has no preview of an unsaved rule, so the frame's 90-day preview and
+ * the forecast rule kind (not in monitor.rule_kind) are not drawn. An uncertified metric alerts
+ * inside the app only.
  */
 const KINDS: { value: RuleKind; label: string }[] = [
   { value: 'threshold', label: 'Ngưỡng' },
   { value: 'change_vs_previous', label: 'Thay đổi' },
   { value: 'seasonal_anomaly', label: 'Bất thường' },
-  { value: 'forecast', label: 'Dự báo' },
 ];
-const NEEDS_DAYS: Partial<Record<RuleKind, number>> = { seasonal_anomaly: 30, forecast: 60 };
-const NOISY_SHARE = 0.3;
-const PREVIEW_DELAY_MS = 300;
 const DAILY = '0 7 * * *';
 
 const opt = (pairs: [string, string][]) => pairs.map(([value, label]) => ({ value, label }));
@@ -64,10 +58,6 @@ const SENSITIVITY = opt([
   ['medium', 'vừa'],
   ['high', 'cao'],
 ]);
-const HORIZONS = opt([
-  ['30d', '30 ngày'],
-  ['90d', '90 ngày'],
-]);
 
 const parse = (s: string) => Number(s.replace(',', '.'));
 const valid = (s: string) => s.trim() !== '' && Number.isFinite(parse(s));
@@ -85,8 +75,8 @@ function WatchForm({ options }: { options: MonitorOptions }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [metricId, setMetricId] = useState(options.metrics[0]?.id ?? '');
-  const [scope, setScope] = useState(options.scopes[0]?.value ?? '');
-  const [split, setSplit] = useState(options.splits[0]?.value ?? '');
+  const shape = useV1(metricId ? () => getMetricShape(metricId) : null, [metricId]);
+  const [split, setSplit] = useState('none');
   const [kind, setKind] = useState<RuleKind>('threshold');
   const [direction, setDirection] = useState('above');
   const [value, setValue] = useState('2,0');
@@ -97,7 +87,6 @@ function WatchForm({ options }: { options: MonitorOptions }) {
   const [changeDirection, setChangeDirection] = useState('down');
   const [base, setBase] = useState('week');
   const [sensitivity, setSensitivity] = useState('medium');
-  const [horizon, setHorizon] = useState('30d');
   const [who, setWho] = useState(options.recipients[0]?.value ?? '');
   const [channels, setChannels] = useState(options.channels[0]?.value ?? '');
   const [withAnalysis, setWithAnalysis] = useState(true);
@@ -105,13 +94,8 @@ function WatchForm({ options }: { options: MonitorOptions }) {
   const [error, setError] = useState<string>();
 
   const metric = options.metrics.find((m) => m.id === metricId);
-  const groups = options.splits.find((s) => s.value === split)?.groups ?? [];
-  const [group, setGroup] = useState(groups[0] ?? '');
-  const unit = metric?.unit ?? '';
-  const needs = NEEDS_DAYS[kind];
-  const lacking = metric && needs && metric.history_days < needs ? needs : null;
-  const ready = new Date();
-  if (lacking && metric) ready.setDate(ready.getDate() + (lacking - metric.history_days));
+  const unit = shape.data?.unit ?? '';
+  const splits = shape.data?.splits ?? [{ value: 'none', label: 'Không tách' }];
 
   const rule: Record<string, string | number> =
     kind === 'threshold'
@@ -130,53 +114,24 @@ function WatchForm({ options }: { options: MonitorOptions }) {
             base,
             text: `${changeDirection === 'up' ? 'tăng' : 'giảm'} > ${change}% so với ${BASES.find((b) => b.value === base)?.label}`,
           }
-        : kind === 'seasonal_anomaly'
-          ? {
-              sensitivity,
-              text: `bất thường · độ nhạy ${SENSITIVITY.find((s) => s.value === sensitivity)?.label}`,
-            }
-          : {
-              direction: 'below',
-              value: parse(value),
-              horizon,
-              text: `< ${value}${unit} · dự báo ${HORIZONS.find((h) => h.value === horizon)?.label}`,
-            };
+        : {
+            sensitivity,
+            text: `bất thường · độ nhạy ${SENSITIVITY.find((s) => s.value === sensitivity)?.label}`,
+          };
   const ruleOk =
-    kind === 'threshold' || kind === 'forecast'
-      ? valid(value)
-      : kind === 'change_vs_previous'
-        ? valid(change)
-        : true;
+    kind === 'threshold' ? valid(value) : kind === 'change_vs_previous' ? valid(change) : true;
   const draft: MonitorDraft = {
     metric_id: metricId,
-    scope_filter: { scope, split },
+    split,
     rule_kind: kind,
     rule,
     schedule_cron: DAILY,
     notify_mode: withAnalysis ? 'with_analysis' : 'alert_only',
-    recipients: { who, channels: metric?.certified ? channels : 'in_app' },
+    recipients: { who: who ? [who] : [], channels: metric?.certified ? channels : 'in_app' },
   };
-  const draftKey = JSON.stringify(draft);
 
-  const [preview, setPreview] = useState<MonitorPreview>();
-  // The preview follows the draft; an answer for an older draft is dropped.
-  useEffect(() => {
-    if (!ruleOk) return;
-    let live = true;
-    const timer = window.setTimeout(() => {
-      previewMonitor(JSON.parse(draftKey) as MonitorDraft, group)
-        .then((p) => live && setPreview(p))
-        .catch(() => live && setPreview(undefined));
-    }, PREVIEW_DELAY_MS);
-    return () => {
-      live = false;
-      window.clearTimeout(timer);
-    };
-  }, [draftKey, group, ruleOk]);
-
-  const noisy = preview?.periods ? preview.fires / preview.periods > NOISY_SHARE : false;
-  const blocker = lacking
-    ? `Chỉ số chưa đủ ${lacking} ngày dữ liệu cho điều kiện này.`
+  const blocker = !metric
+    ? 'Chọn chỉ số.'
     : !ruleOk
       ? 'Nhập giá trị cho điều kiện.'
       : null;
@@ -185,8 +140,8 @@ function WatchForm({ options }: { options: MonitorOptions }) {
     setBusy(true);
     setError(undefined);
     try {
-      const created = await createMonitor(draft);
-      toast({ tone: 'success', message: `Đã tạo theo dõi ${created.name}` });
+      await createMonitor(draft);
+      toast({ tone: 'success', message: `Đã tạo theo dõi ${metric?.name ?? ''}` });
       navigate('analysis', 'WATCH');
     } catch (e) {
       setError((e as Error).message);
@@ -227,30 +182,15 @@ function WatchForm({ options }: { options: MonitorOptions }) {
             <Select
               label="Chỉ số"
               value={metricId}
-              onChange={setMetricId}
+              onChange={(v) => {
+                setMetricId(v);
+                setSplit('none');
+              }}
               options={options.metrics.map((m) => ({ value: m.id, label: m.label }))}
             />
-            <div className="grid grid-cols-2 gap-da-sm">
-              <Field label="Phạm vi">
-                <Select
-                  label="Phạm vi"
-                  value={scope}
-                  onChange={setScope}
-                  options={options.scopes}
-                />
-              </Field>
-              <Field label="Tách theo">
-                <Select
-                  label="Tách theo"
-                  value={split}
-                  onChange={(v) => {
-                    setSplit(v);
-                    setGroup(options.splits.find((s) => s.value === v)?.groups[0] ?? '');
-                  }}
-                  options={options.splits.map((s) => ({ value: s.value, label: s.label }))}
-                />
-              </Field>
-            </div>
+            <Field label="Tách theo">
+              <Select label="Tách theo" value={split} onChange={setSplit} options={splits} />
+            </Field>
           </Section>
           <Section n={2} title="Điều kiện">
             <div>
@@ -262,15 +202,7 @@ function WatchForm({ options }: { options: MonitorOptions }) {
                 items={KINDS}
               />
             </div>
-            {lacking && metric ? (
-              <Notice tone="warning">
-                Chỉ số này mới có {metric.history_days} ngày dữ liệu. Điều kiện{' '}
-                {KINDS.find((k) => k.value === kind)?.label} cần ít nhất {lacking} ngày để học
-                khoảng bình thường — dùng được từ{' '}
-                {`${String(ready.getDate()).padStart(2, '0')}/${String(ready.getMonth() + 1).padStart(2, '0')}`}
-                . Trong lúc chờ, bạn có thể dùng Ngưỡng hoặc Thay đổi.
-              </Notice>
-            ) : kind === 'threshold' ? (
+            {kind === 'threshold' ? (
               <>
                 <Line>
                   <span>Khi giá trị</span>
@@ -317,7 +249,7 @@ function WatchForm({ options }: { options: MonitorOptions }) {
                   <Select label="So với" value={base} onChange={setBase} options={BASES} />
                 </Narrow>
               </Line>
-            ) : kind === 'seasonal_anomaly' ? (
+            ) : (
               <Line>
                 <span>Báo khi lệch khỏi khoảng bình thường theo mùa vụ, độ nhạy</span>
                 <Narrow>
@@ -326,20 +258,6 @@ function WatchForm({ options }: { options: MonitorOptions }) {
                     value={sensitivity}
                     onChange={setSensitivity}
                     options={SENSITIVITY}
-                  />
-                </Narrow>
-              </Line>
-            ) : (
-              <Line>
-                <span>Khi dự báo dưới</span>
-                <NumberBox label="Ngưỡng dự báo" value={value} onChange={setValue} unit={unit} />
-                <span>trong</span>
-                <Narrow>
-                  <Select
-                    label="Tầm dự báo"
-                    value={horizon}
-                    onChange={setHorizon}
-                    options={HORIZONS}
                   />
                 </Narrow>
               </Line>
@@ -391,46 +309,17 @@ function WatchForm({ options }: { options: MonitorOptions }) {
                 Agent Phân tích tìm nguyên nhân và đính kèm vào cảnh báo
               </span>
             </div>
-            <p className="text-muted-foreground da-caption">{options.analysis_cost_text}</p>
           </Section>
         </div>
         <aside className="flex min-w-0 flex-1 flex-col gap-da-lg border-l border-border bg-background px-da-2xl pt-da-xl max-[1023px]:border-l-0 max-[1023px]:border-t">
-          <div className="flex items-center gap-da-md">
-            <h2 className="text-foreground da-heading-3">Xem trước trên 90 ngày</h2>
-            {groups.length > 1 && (
-              <div className="ml-auto w-[180px]">
-                <Select
-                  label="Nhóm xem trước"
-                  value={group}
-                  onChange={setGroup}
-                  options={groups.map((g) => ({ value: g, label: g }))}
-                />
-              </div>
-            )}
-          </div>
-          {preview?.series && !lacking ? (
-            <>
-              <div className="rounded-md border border-border bg-card p-da-lg">
-                <PreviewChart preview={preview} unit={unit} />
-              </div>
-              <p className="text-foreground da-body">{preview.text}</p>
-              {noisy && (
-                <Notice tone="warning">
-                  Theo dõi này báo ở hơn 30% số kỳ — dễ gây nhiễu (BR-32). Cân nhắc nâng ngưỡng.
-                </Notice>
-              )}
-              {preview.note && (
-                <p className="text-muted-foreground da-body-small">{preview.note}</p>
-              )}
-              <p className="text-muted-foreground da-caption">
-                Chỉ số phải được chứng nhận thì cảnh báo mới gửi ra kênh ngoài.
-              </p>
-            </>
-          ) : (
-            <p className="text-muted-foreground da-body">
-              {lacking || preview ? 'Chưa đủ dữ liệu để xem trước.' : 'Đang xem trước…'}
-            </p>
-          )}
+          <h2 className="text-foreground da-heading-3">Sau khi tạo</h2>
+          <p className="text-foreground da-body">
+            Agent theo dõi chạy thử điều kiện trên 12 kỳ gần nhất. Nếu điều kiện báo ở hơn 30% số
+            kỳ, danh sách Theo dõi đánh dấu nó dễ gây nhiễu (BR-32) để bạn nâng ngưỡng.
+          </p>
+          <p className="text-muted-foreground da-caption">
+            Chỉ số phải được chứng nhận thì cảnh báo mới gửi ra kênh ngoài.
+          </p>
         </aside>
       </div>
     </div>

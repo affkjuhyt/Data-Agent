@@ -19,9 +19,12 @@ const problem = (status: number, code: string, detail: string) =>
     { status, headers: { 'Content-Type': 'application/problem+json' } },
   );
 
+/** The screen's product without the Theo dõi figures, which the detail sends as `stats`. */
+type Product = Omit<AnswerProduct, 'monitoring'>;
+
 const ours = (id: unknown) => typeof id === 'string' && id.startsWith('adp-');
 
-function productsFixture(): AnswerProduct[] {
+function productsFixture(): Product[] {
   return [
     {
       id: 'adp-fuel-prices',
@@ -196,7 +199,7 @@ function monitoringFixture(): ProductMonitoring {
  */
 const AT = '2026-07-01T09:00:00+07:00';
 
-const row = (p: AnswerProduct): ProductSummaryWire => ({
+const row = (p: Product): ProductSummaryWire => ({
   id: p.id,
   code: p.code,
   name: p.name,
@@ -230,13 +233,14 @@ const row = (p: AnswerProduct): ProductSummaryWire => ({
   readiness_text: p.readiness_text,
 });
 
-const detail = (p: AnswerProduct): ProductDetailWire => ({
+const detail = (p: Product): ProductDetailWire => ({
   ...row(p),
   members: [],
   freshness: [],
   latest_eval_run: null,
   open_error_book_entries: p.stats.error_book_count,
   display: p,
+  stats: monitoringFixture(),
 });
 
 export function createAnswerProductHandlers() {
@@ -259,9 +263,6 @@ export function createAnswerProductHandlers() {
             display: freshnessFixture(),
           })
         : undefined,
-    ),
-    http.get('*/v1/data-products/:id/monitoring', ({ params }) =>
-      ours(params.id) ? HttpResponse.json(monitoringFixture()) : undefined,
     ),
     http.get('*/v1/data-products/:id', ({ params }) => {
       if (!ours(params.id)) return undefined;

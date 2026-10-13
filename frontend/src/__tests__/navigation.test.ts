@@ -64,7 +64,7 @@ describe('navigation', () => {
     expect(resolveRoute('settings')).toEqual({ module: 'admin', sub: undefined });
     expect(resolveRoute('ops', 'TRACES')).toEqual({ module: 'agents', sub: 'RUNS' });
     expect(resolveRoute('ops', 'REVIEWS')).toEqual({ module: 'needs-you', sub: undefined });
-    expect(resolveRoute('ops', 'ANALYTICS')).toEqual({ module: 'analysis', sub: 'DASHBOARD' });
+    expect(resolveRoute('ops', 'ANALYTICS')).toEqual({ module: 'analysis', sub: 'SESSIONS' });
     expect(resolveRoute('settings', 'TEAM')).toEqual({ module: 'admin', sub: 'USERS' });
     expect(resolveRoute('settings', 'AI_PROVIDERS')).toEqual({ module: 'admin', sub: 'MODELS' });
     expect(resolveRoute('settings', 'BILLING')).toEqual({ module: 'agents', sub: 'OPERATIONS' });

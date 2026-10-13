@@ -3,16 +3,19 @@ import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
-import { ConfirmDialog } from '../../design-system/ConfirmDialog';
+import { Dialog } from '../../design-system/Dialog';
+import { Field } from '../../design-system/Field';
+import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
 import {
-  acceptCalibrationGap,
   activatePackInstall,
-  applyCalibrationFix,
+  calibratePackInstall,
+  createMetricOverride,
   getCalibration,
   type Calibration,
 } from '../../lib/v1/packs';
@@ -20,10 +23,11 @@ import { useV1 } from '../../lib/v1/useV1';
 
 /*
  * "P09 · Đưa vào ngành · Đối chiếu số" (2286:17389, UC-09-02): metrics computed from the mapped
- * data against what the organisation reported for the last three periods, within a tolerance.
- * A gap comes with what the Agent Đối soát found and, when it can, a fix to the mapping; otherwise
- * the data owner accepts it with a note. Finishing the onboarding waits until every row matches or
- * is accepted (BR-36).
+ * data against what the organisation reported, within a tolerance. A gap comes with what the
+ * Agent Đối soát found. It is fixed by changing the mapping and reconciling again (5a), or, when
+ * the organisation computes the metric its own way, by an override sent for approval — a gap is
+ * never just accepted (BR-36). Finishing sends the activation for approval; the api refuses it
+ * while a regulatory metric differs without an approved override, other metrics do not block (4a).
  */
 export default function PackCalibrationPage() {
   const { routeId } = useAppState();
@@ -36,29 +40,26 @@ export default function PackCalibrationPage() {
     );
   return (
     <AsyncRegion state={calibration} what="đối chiếu số">
-      {(c) => (
-        <CalibrationBody installId={routeId} calibration={c} onChanged={calibration.reload} />
-      )}
+      {(c) => <CalibrationBody calibration={c} onChanged={calibration.reload} />}
     </AsyncRegion>
   );
 }
 
 function CalibrationBody({
-  installId,
   calibration,
   onChanged,
 }: {
-  installId: string;
   calibration: Calibration;
   onChanged: () => void;
 }) {
   const { navigate } = useAppState();
   const toast = useToast();
+  const installId = calibration.install_id;
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string>();
-  const [accepting, setAccepting] = useState<string | null>(null);
-  const [note, setNote] = useState('');
-  const done = calibration.matched === calibration.total;
+  const [adjusting, setAdjusting] = useState<string | null>(null);
+  const finished = calibration.run_status !== null && calibration.run_status !== 'running';
+  const allMatch = finished && calibration.matched === calibration.total;
 
   const act = async (
     key: string,
@@ -80,20 +81,19 @@ function CalibrationBody({
     }
   };
 
-  const finish = () =>
-    act(
-      'activate',
-      () => activatePackInstall(installId),
-      `Đã gửi duyệt kích hoạt ${calibration.install_title}`,
-      () => navigate('data', 'PACKS'),
-    );
-
   const finishButton = (
     <Button
       kind="primary"
       loading={busy === 'activate'}
-      disabled={busy !== null || !done}
-      onClick={finish}
+      disabled={busy !== null || !finished}
+      onClick={() =>
+        act(
+          'activate',
+          () => activatePackInstall(installId),
+          `Đã gửi duyệt kích hoạt ${calibration.install_title}`,
+          () => navigate('data', 'PACKS'),
+        )
+      }
     >
       Hoàn tất đưa vào ngành
     </Button>
@@ -107,71 +107,89 @@ function CalibrationBody({
         title={
           <span className="flex items-center gap-[10px]">
             Đối chiếu số đã báo cáo
-            <StatusDot tone={done ? 'success' : 'warning'}>
-              {calibration.matched}/{calibration.total} khớp
-            </StatusDot>
+            {calibration.run_status === null ? (
+              <StatusDot tone="neutral">Chưa đối chiếu</StatusDot>
+            ) : calibration.run_status === 'running' ? (
+              <StatusDot tone="info">Đang đối chiếu</StatusDot>
+            ) : (
+              <StatusDot tone={allMatch ? 'success' : 'warning'}>
+                {calibration.matched}/{calibration.total} khớp
+              </StatusDot>
+            )}
           </span>
         }
-        description={`So chỉ số tính từ dữ liệu đã ánh xạ với số tổ chức đã báo cáo 3 kỳ gần nhất · ${calibration.tolerance_text}`}
+        description={[
+          'So chỉ số tính từ dữ liệu đã ánh xạ với số tổ chức đã báo cáo',
+          calibration.periods.length ? `kỳ ${calibration.periods.join(', ')}` : '',
+          calibration.tolerance_text,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
         actions={
           <>
             <Button kind="ghost" onClick={() => navigate('data', 'PACK_ONBOARD', installId)}>
               Quay lại ánh xạ
             </Button>
-            {done ? (
+            <Button
+              loading={busy === 'calibrate'}
+              disabled={busy !== null || calibration.run_status === 'running'}
+              onClick={() =>
+                act('calibrate', () => calibratePackInstall(installId), 'Đang đối chiếu lại')
+              }
+            >
+              {calibration.run_status === null ? 'Đối chiếu số' : 'Đối chiếu lại'}
+            </Button>
+            {finished ? (
               finishButton
             ) : (
-              <Tooltip content="Còn chỉ số lệch chưa xử lý (BR-36).">{finishButton}</Tooltip>
+              <Tooltip content="Chờ lượt đối chiếu số xong.">{finishButton}</Tooltip>
             )}
           </>
         }
       />
       <div className="flex min-h-0 flex-1 max-[1023px]:flex-col">
         <div className="flex min-w-0 flex-1 flex-col gap-da-md px-da-3xl pb-da-2xl pt-da-xl">
-          {error && !accepting && <Notice tone="error">Không thực hiện được: {error}</Notice>}
-          <table className="w-full table-fixed border-collapse da-body-small">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="px-da-md py-da-sm font-normal">Chỉ số</th>
-                <th className="w-[92px] px-da-md py-da-sm font-normal">Kỳ</th>
-                <th className="w-[132px] px-da-md py-da-sm font-normal">Tính từ dữ liệu</th>
-                <th className="w-[122px] px-da-md py-da-sm font-normal">Đã báo cáo</th>
-                <th className="w-[92px] px-da-md py-da-sm font-normal">Lệch</th>
-                <th className="w-[130px] px-da-md py-da-sm font-normal">Kết quả</th>
-              </tr>
-            </thead>
-            <tbody>
-              {calibration.rows.map((r) => (
-                <tr key={r.id} className="border-b border-border text-foreground">
-                  <td className="px-da-md py-[9px]">{r.metric}</td>
-                  <td className="px-da-md py-[9px] text-muted-foreground da-mono">{r.period}</td>
-                  <td className="px-da-md py-[9px] da-mono">{r.computed}</td>
-                  <td className="px-da-md py-[9px] da-mono">{r.reported}</td>
-                  <td
-                    className={cn(
-                      'px-da-md py-[9px] da-mono',
-                      !r.ok && !r.accepted_note && 'text-error',
-                    )}
-                  >
-                    {r.diff}
-                  </td>
-                  <td className="px-da-md py-[9px]">
-                    {r.ok ? (
-                      <StatusDot tone="success">Khớp</StatusDot>
-                    ) : r.accepted_note ? (
-                      <Tooltip content={r.accepted_note}>
-                        <span>
-                          <StatusDot tone="info">Chấp nhận lệch</StatusDot>
-                        </span>
-                      </Tooltip>
-                    ) : (
-                      <StatusDot tone="error">Lệch</StatusDot>
-                    )}
-                  </td>
+          {error && !adjusting && <Notice tone="error">Không thực hiện được: {error}</Notice>}
+          {calibration.rows.length === 0 ? (
+            <p className="text-muted-foreground da-body-small">
+              {calibration.run_status === 'running'
+                ? 'Agent Đối soát đang tính các chỉ số trên dữ liệu đã ánh xạ.'
+                : 'Chưa có kết quả đối chiếu. Duyệt ánh xạ rồi chạy đối chiếu số.'}
+            </p>
+          ) : (
+            <table className="w-full table-fixed border-collapse da-body-small">
+              <thead>
+                <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                  <th className="px-da-md py-da-sm font-normal">Chỉ số</th>
+                  <th className="w-[92px] px-da-md py-da-sm font-normal">Kỳ</th>
+                  <th className="w-[132px] px-da-md py-da-sm font-normal">Tính từ dữ liệu</th>
+                  <th className="w-[122px] px-da-md py-da-sm font-normal">Đã báo cáo</th>
+                  <th className="w-[92px] px-da-md py-da-sm font-normal">Lệch</th>
+                  <th className="w-[130px] px-da-md py-da-sm font-normal">Kết quả</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {calibration.rows.map((r) => (
+                  <tr key={r.id} className="border-b border-border text-foreground">
+                    <td className="px-da-md py-[9px]">{r.metric}</td>
+                    <td className="px-da-md py-[9px] text-muted-foreground da-mono">{r.period}</td>
+                    <td className="px-da-md py-[9px] da-mono">{r.computed}</td>
+                    <td className="px-da-md py-[9px] da-mono">{r.reported}</td>
+                    <td className={cn('px-da-md py-[9px] da-mono', !r.ok && 'text-error')}>
+                      {r.diff}
+                    </td>
+                    <td className="px-da-md py-[9px]">
+                      {r.ok ? (
+                        <StatusDot tone="success">Khớp</StatusDot>
+                      ) : (
+                        <StatusDot tone="error">Lệch</StatusDot>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
           {calibration.findings.map((f) => (
             <section
               key={f.row_id}
@@ -181,31 +199,21 @@ function CalibrationBody({
               <h2 className="text-foreground da-heading-3">{f.title}</h2>
               <p className="text-foreground da-body-small">{f.text}</p>
               <div className="flex flex-wrap gap-da-sm">
-                {f.fix && (
-                  <Button
-                    loading={busy === f.fix.id}
-                    disabled={busy !== null}
-                    onClick={() =>
-                      act(
-                        f.fix!.id,
-                        () => applyCalibrationFix(installId, f.fix!.id),
-                        'Đã sửa ánh xạ; đối chiếu lại',
-                      )
-                    }
-                  >
-                    {f.fix.label}
-                  </Button>
-                )}
+                <Button
+                  disabled={busy !== null}
+                  onClick={() => navigate('data', 'PACK_ONBOARD', installId)}
+                >
+                  Sửa ánh xạ
+                </Button>
                 <Button
                   kind="ghost"
                   disabled={busy !== null}
                   onClick={() => {
-                    setNote('');
                     setError(undefined);
-                    setAccepting(f.row_id);
+                    setAdjusting(f.metric_code);
                   }}
                 >
-                  Ghi chú lệch được chấp nhận
+                  Hiệu chỉnh {f.metric_code} cho tổ chức
                 </Button>
               </div>
             </section>
@@ -214,47 +222,88 @@ function CalibrationBody({
         <aside className="flex w-[320px] shrink-0 flex-col gap-da-md border-l border-border bg-background px-da-xl pt-da-xl max-[1023px]:w-full max-[1023px]:border-l-0">
           <h2 className="text-foreground da-heading-3">Hoàn tất khi nào</h2>
           <p className="text-foreground da-body-small">
-            Mọi chỉ số đối chiếu khớp trong ngưỡng, hoặc phần lệch được chủ sở hữu dữ liệu ghi chú
-            chấp nhận.
+            Chỉ số lệch được sửa ánh xạ rồi đối chiếu lại, hoặc có hiệu chỉnh của tổ chức đã được
+            duyệt.
           </p>
           <h2 className="text-foreground da-heading-3">Sau khi hoàn tất</h2>
           <p className="text-foreground da-body-small">{calibration.after_text}</p>
           <p className="text-muted-foreground da-caption">Đối chiếu số là điều kiện để hoàn tất.</p>
         </aside>
       </div>
-      <ConfirmDialog
-        open={accepting !== null}
-        title="Chấp nhận phần lệch?"
-        confirmLabel="Chấp nhận"
-        tone="primary"
-        cancelLabel="Quay lại"
-        loading={busy === 'accept'}
-        error={accepting ? error : undefined}
-        onCancel={() => setAccepting(null)}
-        onConfirm={() => {
-          if (!note.trim()) {
-            setError('Ghi lý do chấp nhận phần lệch.');
-            return;
-          }
-          const rowId = accepting!;
-          act(
-            'accept',
-            () => acceptCalibrationGap(installId, rowId, note.trim()),
-            'Đã ghi chú phần lệch',
-            () => setAccepting(null),
-          );
-        }}
-      >
-        <label className="flex flex-col gap-da-xs">
-          <span className="text-foreground da-label">Lý do (bắt buộc)</span>
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={3}
-            className="rounded-md border border-border-strong bg-card px-da-md py-da-sm text-foreground da-body-small"
-          />
-        </label>
-      </ConfirmDialog>
+      {adjusting && (
+        <OverrideDialog
+          installId={installId}
+          metricCode={adjusting}
+          onClose={() => setAdjusting(null)}
+          onCreated={(id) => navigate('data', 'METRIC_OVERRIDE', id)}
+        />
+      )}
     </div>
+  );
+}
+
+/** UC-09-03: the organisation's own formula for a pack metric, with its reason (BR-129). */
+function OverrideDialog({
+  installId,
+  metricCode,
+  onClose,
+  onCreated,
+}: {
+  installId: string;
+  metricCode: string;
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
+  const toast = useToast();
+  const [expression, setExpression] = useState('');
+  const [scope, setScope] = useState('');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
+
+  const submit = async () => {
+    setSaving(true);
+    setError(undefined);
+    try {
+      const created = await createMetricOverride({
+        pack_install_id: installId,
+        pack_metric_code: metricCode,
+        expression: expression.trim(),
+        reason: reason.trim(),
+        scope_condition: scope.trim() || null,
+      });
+      toast({ tone: 'success', message: `Đã gửi duyệt hiệu chỉnh ${metricCode}` });
+      onCreated(created.id);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open
+      title={`Hiệu chỉnh ${metricCode}`}
+      description="Công thức của tổ chức thay cho công thức của gói; gửi duyệt ngay khi tạo."
+      onClose={onClose}
+      onSubmit={submit}
+      submitLabel="Gửi duyệt"
+      submitting={saving}
+      canSubmit={Boolean(expression.trim() && reason.trim())}
+      error={error}
+    >
+      <div className="flex flex-col gap-da-lg">
+        <Field label="Công thức của tổ chức" labelTone="muted">
+          <Textarea mono value={expression} onChange={(e) => setExpression(e.target.value)} />
+        </Field>
+        <Field label="Điều kiện phạm vi (không bắt buộc)" labelTone="muted">
+          <Input value={scope} onChange={(e) => setScope(e.target.value)} />
+        </Field>
+        <Field label="Lý do" labelTone="muted">
+          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+      </div>
+    </Dialog>
   );
 }

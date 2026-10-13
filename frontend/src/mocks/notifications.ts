@@ -72,7 +72,7 @@ function notificationsFixture(): AppNotification[] {
 }
 
 export function createNotificationHandlers() {
-  let notifications = notificationsFixture();
+  const notifications = notificationsFixture();
   return [
     // NotificationView as the api sends it, with the screen's fields alongside.
     http.get('*/v1/me/notifications', () =>
@@ -95,16 +95,5 @@ export function createNotificationHandlers() {
         next_page_token: '',
       }),
     ),
-    http.post('*/v1/me/notifications\\:mark-read', async ({ request }) => {
-      const { ids } = (await request.json()) as { ids: string[] };
-      const now = new Date().toISOString();
-      let marked = 0;
-      notifications = notifications.map((n) => {
-        if (!ids.includes(n.id) || n.read_at) return n;
-        marked += 1;
-        return { ...n, read_at: now };
-      });
-      return HttpResponse.json({ marked });
-    }),
   ];
 }

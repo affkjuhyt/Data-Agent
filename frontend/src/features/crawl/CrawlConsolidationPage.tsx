@@ -11,7 +11,7 @@ import { cn } from '../../lib/utils';
 import {
   decideEntityMatch,
   getConsolidationRun,
-  publishConsolidationRun,
+  certifyDatasetVersion,
   type ConsolidationRun,
 } from '../../lib/v1/crawl';
 import { useV1 } from '../../lib/v1/useV1';
@@ -21,7 +21,8 @@ import { useV1 } from '../../lib/v1/useV1';
  * The steps it went through, the consolidated table and the paragraph that will be embedded — only
  * the table, its claims and that paragraph are, never raw pages (BR-154) — then what still waits on
  * a person: entity links the agent was unsure of, and gaps between sources above the materiality
- * threshold, which already opened a Cần bạn request (BR-155). Publishing waits on both.
+ * threshold, which already opened a Cần bạn request (BR-155). The run writes the dataset version
+ * itself; certifying it is the person's gate (BR-156) and waits on both.
  */
 const fmt = (n: number | null) => (n === null ? '—' : n.toFixed(2).replace('.', ','));
 
@@ -48,9 +49,10 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
     pendingMatches.length && `${pendingMatches.length} liên kết thực thể`,
     openConflicts.length && `${openConflicts.length} xung đột`,
   ].filter(Boolean);
-  const version = run.next_dataset_version;
-  // Publishing by hand is PROPOSAL; A2's run publishes itself, so without a version there is no button.
-  const canPublish = !published && version !== null;
+  const version = run.dataset_version;
+  const versionId = run.dataset_version_id;
+  const named = version === null ? 'dataset' : `dataset v${version}`;
+  const [certified, setCertified] = useState(false);
 
   const act = async (key: string, call: () => Promise<unknown>, message: string) => {
     setBusy(key);
@@ -66,16 +68,23 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
     }
   };
 
-  const publishButton = (
+  const certifyButton = versionId && (
     <Button
       kind="primary"
-      loading={busy === 'publish'}
+      loading={busy === 'certify'}
       disabled={busy !== null || waiting.length > 0}
       onClick={() =>
-        act('publish', () => publishConsolidationRun(run.id), `Đã phát hành dataset v${version}`)
+        act(
+          'certify',
+          async () => {
+            await certifyDatasetVersion(versionId);
+            setCertified(true);
+          },
+          `Đã chứng nhận ${named}`,
+        )
       }
     >
-      Phát hành dataset v{version}
+      Chứng nhận {named}
     </Button>
   );
 
@@ -86,24 +95,25 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
         breadcrumb={['Dữ liệu', 'Thu thập ngoài', `Hợp nhất · ${run.spec_name}`]}
         title={run.title}
         description={
-          published
-            ? `${run.summary_text} · đã phát hành${version === null ? '' : ` v${version}`}`
+          certified
+            ? `${run.summary_text} · đã chứng nhận ${named}`
             : waiting.length
-              ? `${run.summary_text} · chờ ${waiting.join(' và ')} trước khi phát hành`
-              : `${run.summary_text} · sẵn sàng phát hành`
+              ? `${run.summary_text} · chờ ${waiting.join(' và ')} trước khi chứng nhận`
+              : `${run.summary_text} · sẵn sàng chứng nhận`
         }
         actions={
           <>
             <Tooltip content="Trình sửa đặc tả hợp nhất đang được làm.">
               <Button disabled>Sửa đặc tả hợp nhất</Button>
             </Tooltip>
-            {canPublish &&
+            {certifyButton &&
+              !certified &&
               (waiting.length ? (
                 <Tooltip content={`Còn ${waiting.join(' và ')} chờ quyết định.`}>
-                  {publishButton}
+                  {certifyButton}
                 </Tooltip>
               ) : (
-                publishButton
+                certifyButton
               ))}
           </>
         }
@@ -111,7 +121,8 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
       <div className="flex flex-col gap-da-xl px-da-3xl pb-da-2xl pt-da-xl">
         {published && (
           <Notice tone="success">
-            Đã phát hành dataset{version === null ? '' : ` v${version}`}; đang nhúng.
+            Lượt hợp nhất đã ghi {named}
+            {certified ? ' và bạn đã chứng nhận.' : '; chờ chứng nhận.'}
           </Notice>
         )}
         {run.status === 'failed' && <Notice tone="error">Lượt hợp nhất thất bại.</Notice>}
@@ -200,7 +211,7 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
                         <div className="flex shrink-0 gap-da-sm">
                           <Button
                             size="sm"
-                            disabled={busy !== null || published}
+                            disabled={busy !== null || certified}
                             loading={busy === `${m.id}:split`}
                             onClick={() =>
                               act(
@@ -215,7 +226,7 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
                           <Button
                             size="sm"
                             kind="primary"
-                            disabled={busy !== null || published}
+                            disabled={busy !== null || certified}
                             loading={busy === `${m.id}:merge`}
                             onClick={() =>
                               act(

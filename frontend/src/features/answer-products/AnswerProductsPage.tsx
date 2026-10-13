@@ -18,13 +18,13 @@ import {
   draftProductVersion,
   getAnswerProduct,
   getProductFreshness,
-  getProductMonitoring,
   listAnswerProducts,
   removeProductMember,
   submitAnswerProduct,
   type AnswerProduct,
   type AnswerProductSummary,
   type FreshnessState,
+  type ProductMonitoring,
   type ProductStatus,
 } from '../../lib/v1/answerProducts';
 import { useV1 } from '../../lib/v1/useV1';
@@ -360,7 +360,7 @@ function ProductBody({ product, onChanged }: { product: AnswerProduct; onChanged
           />
         )}
         {tab === 'freshness' && <FreshnessTab id={product.id} />}
-        {tab === 'monitoring' && <MonitoringTab id={product.id} />}
+        {tab === 'monitoring' && <MonitoringTab monitoring={product.monitoring} />}
       </div>
       <Dialog
         open={submitting}
@@ -670,40 +670,38 @@ function FreshnessTab({ id }: { id: string }) {
   );
 }
 
-function MonitoringTab({ id }: { id: string }) {
-  const monitoring = useV1(() => getProductMonitoring(id), [id]);
+function MonitoringTab({ monitoring: m }: { monitoring: ProductMonitoring | null }) {
+  if (!m)
+    return (
+      <p className="text-muted-foreground da-body-small">
+        Chưa có số liệu theo dõi theo tuần cho data product này.
+      </p>
+    );
   return (
-    <AsyncRegion state={monitoring} what="theo dõi">
-      {(m) => (
-        <section className="flex flex-col gap-da-sm rounded-md border border-border bg-card p-da-lg">
-          <h2 className="text-foreground da-heading-3">{m.questions_30d} câu hỏi trong 30 ngày</h2>
-          <table className="w-full border-collapse da-body-small">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="py-da-sm font-normal">Tuần</th>
-                <th className="py-da-sm font-normal">Trong phạm vi</th>
-                <th className="py-da-sm font-normal">Ngoài phạm vi</th>
-                <th className="py-da-sm font-normal">Bị che</th>
-              </tr>
-            </thead>
-            <tbody>
-              {m.weeks.map((w) => (
-                <tr
-                  key={w.label}
-                  className="border-b border-border text-foreground last:border-b-0"
-                >
-                  <td className="py-[7px]">{w.label}</td>
-                  <td className="py-[7px]">{pct(w.in_scope_pct)}</td>
-                  <td className="py-[7px]">{pct(100 - w.in_scope_pct)}</td>
-                  <td className={cn('py-[7px]', w.masked_pct > 0 && 'text-warning')}>
-                    {pct(w.masked_pct)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
-    </AsyncRegion>
+    <section className="flex flex-col gap-da-sm rounded-md border border-border bg-card p-da-lg">
+      <h2 className="text-foreground da-heading-3">{m.questions_30d} câu hỏi trong 30 ngày</h2>
+      <table className="w-full border-collapse da-body-small">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <th className="py-da-sm font-normal">Tuần</th>
+            <th className="py-da-sm font-normal">Trong phạm vi</th>
+            <th className="py-da-sm font-normal">Ngoài phạm vi</th>
+            <th className="py-da-sm font-normal">Bị che</th>
+          </tr>
+        </thead>
+        <tbody>
+          {m.weeks.map((w) => (
+            <tr key={w.label} className="border-b border-border text-foreground last:border-b-0">
+              <td className="py-[7px]">{w.label}</td>
+              <td className="py-[7px]">{pct(w.in_scope_pct)}</td>
+              <td className="py-[7px]">{pct(100 - w.in_scope_pct)}</td>
+              <td className={cn('py-[7px]', w.masked_pct > 0 && 'text-warning')}>
+                {pct(w.masked_pct)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }

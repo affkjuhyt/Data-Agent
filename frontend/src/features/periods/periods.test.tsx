@@ -1,6 +1,7 @@
 /**
  * Chốt kỳ against the v1 mock: the close under way opens by default, a reconciliation mismatch
- * is decided inline (with a required note), which unlocks "Khoá kỳ"; locking asks first.
+ * is decided inline (with a required note), after which the period locks itself; :close is the
+ * only action and there is no lock or cancel to press.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { setupServer } from 'msw/node';
@@ -42,16 +43,15 @@ describe('PeriodClosePage', () => {
     expect(screen.getByText('182.430 tỷ')).toBeInTheDocument();
     const periods = await screen.findByRole('navigation', { name: 'Các kỳ' });
     expect(within(periods).getByText('Đã khoá · 2 điều chỉnh')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Khoá kỳ' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
+    expect(screen.getByText(/Kỳ tự khoá khi mọi chỉ tiêu khớp/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Khoá kỳ' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Huỷ chốt' })).toBeNull();
 
     fireEvent.click(within(periods).getByRole('button', { name: /T8\/2026/ }));
     expect(navigate).toHaveBeenCalledWith('data', 'PERIOD', 'period-2026-08');
   });
 
-  it('accepts the mismatch with a note, then locks the period after confirmation', async () => {
+  it('accepts the mismatch with a note, after which the period locks itself', async () => {
     page();
     fireEvent.click(await screen.findByRole('button', { name: 'Chấp nhận kèm ghi chú' }));
     const save = screen.getByRole('button', { name: 'Ghi nhận' });
@@ -61,24 +61,15 @@ describe('PeriodClosePage', () => {
     });
     fireEvent.click(save);
 
-    // Once the step is done the enabled button replaces the disabled one and its tooltip.
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Khoá kỳ' })).not.toHaveAttribute('aria-disabled'),
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Khoá kỳ' }));
-    const dialog = screen.getByRole('alertdialog', { name: 'Khoá kỳ T9/2026?' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Khoá kỳ' }));
+    expect(await screen.findByText('Đã ghi nhận quyết định đối soát')).toBeInTheDocument();
     await waitFor(async () => expect((await getPeriod('period-2026-09')).status).toBe('locked'));
   });
 
-  it('waiting for the ledger keeps the period unlockable', async () => {
+  it('waiting for the ledger keeps the period closing', async () => {
     page();
     fireEvent.click(await screen.findByRole('button', { name: 'Chờ sổ cái điều chỉnh' }));
     expect(await screen.findByText(/Chờ sổ cái điều chỉnh TK 2141/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Khoá kỳ' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
+    expect((await getPeriod('period-2026-09')).status).toBe('closing');
   });
 
   it('starts the close of an open period with :close', async () => {

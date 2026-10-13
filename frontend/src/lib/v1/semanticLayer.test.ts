@@ -76,9 +76,9 @@ describe('readContextEval', () => {
     } as EvalSetWire);
 
     expect(view.data_space_name).toBe('Rủi ro tín dụng');
-    expect(view.kpis[1].value).toBe('10 / 12');
+    expect(view.kpis[1]).toMatchObject({ value: '10 / 12', note: 'tỷ lệ 83,3%' });
     expect(view.misses[0]).toEqual({
-      question: '{"question":"Nợ xấu miền Bắc?"}',
+      question: 'Nợ xấu miền Bắc?',
       expected: '{"scope":"Miền Bắc"}',
       understood: '{"scope":"25 tỉnh"}',
       cause: 'Thuật ngữ mơ hồ',
@@ -107,9 +107,9 @@ describe('entity adapters', () => {
           to_dataset_id: 'dataset-2',
           to_columns: ['customer_id'],
           to_entity: 'loan',
-          cardinality: '1:n',
-          origin: 'manual',
-          status: 'confirmed',
+          cardinality: 'one_to_many',
+          origin: 'declared',
+          status: 'pending_review',
         },
       ],
       created_at: '2026-10-13T00:00:00Z',
@@ -120,17 +120,22 @@ describe('entity adapters', () => {
       title: 'Mô hình thực thể',
       focus: 'customer',
       entities: [
-        { key: 'customer', name: 'Khách hàng', source_text: 'crm.customers', columns: ['customer_id'] },
+        {
+          key: 'customer',
+          name: 'Khách hàng',
+          source_text: 'crm.customers',
+          columns: ['customer_id'],
+        },
       ],
-      relationships: [{ from: 'customer', to: 'loan', cardinality: '1:n' }],
+      relationships: [{ from: 'customer', to: 'loan', cardinality: '1 — n', pending: true }],
     });
 
     expect(
       readEntityDetail({ ...row, dimensions: [], measures: [], metrics: [] } as EntityDetailWire),
     ).toMatchObject({
       key: 'customer',
-      facts: [{ label: 'Khóa chính', value: 'customer_id' }],
-      sources: [{ label: 'crm.customers', role: 'Bảng chính' }],
+      facts: [{ label: 'Khoá', value: 'customer_id' }],
+      sources: [{ label: 'crm.customers', role: 'Chính' }],
       synonyms: [],
       metrics: [],
     });

@@ -34,6 +34,11 @@ metadata:
 spec:
   # Replicas may grow: outbox rows are claimed FOR UPDATE SKIP LOCKED, so two never take the same one.
   replicas: 1
+  # One-node local clusters run near their memory requests: a rolling update's
+  # surge pod stays Pending and the deploy waits out wait_rollout with the old
+  # code still serving. Recreate frees the old pod before scheduling the new one.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: worker-agent

@@ -71,6 +71,7 @@ const SCENARIO_DISCLAIMER =
 
 function scenario(text: string): Forecast['scenario'] {
   return {
+    id: `scenario-${text.length}`,
     text,
     saved: false,
     disclaimer: SCENARIO_DISCLAIMER,
@@ -91,6 +92,7 @@ function forecast(): Forecast {
   return {
     id: FORECAST_ID,
     metric_name: 'Số dư huy động bán lẻ',
+    frequency: 'month',
     horizon_label: 'T11/2026 – T1/2027',
     unit_label: 'nghìn tỷ đồng',
     model: {
@@ -412,6 +414,8 @@ function workbench(): ForecastWorkbench {
     next_version_label: 'v7',
     can_create_card: { allowed: true, reason: null },
     model_id: null,
+    version_id: null,
+    forecast_model_id: null,
   };
 }
 
@@ -578,6 +582,10 @@ function fuelForecast(fuel: FuelProduct): FuelPriceForecast {
   const hi80 = at(20190);
   return {
     id: fuelForecastId(fuel),
+    job_id: JOB_ID,
+    product_code: fuel.key,
+    formula_model_id: 'formula-mc-v2',
+    model_id: MODEL_ID,
     series_id: seriesId(fuel),
     product_label: fuel.label,
     products: FUELS.map((f) => ({ forecast_id: fuelForecastId(f), label: f.label })),
@@ -615,10 +623,10 @@ function fuelForecast(fuel: FuelProduct): FuelPriceForecast {
         'Nguồn: giá thế giới bình quân Bộ Công Thương 25/6–02/7 + chuỗi công khai · tỷ giá trung tâm NHNN · thuế phí theo NQ 34/2026/NQ-CP · Quỹ theo mô hình xác suất.',
     },
     fund_levels: [
-      { label: `Trích 0 ${fuel.unit}`, probability: 0.12 },
-      { label: `Trích 200 ${fuel.unit}`, probability: 0.7 },
-      { label: `Trích 300 ${fuel.unit}`, probability: 0.18 },
-      { label: `Chi 300 ${fuel.unit}`, probability: 0.08 },
+      { label: `Trích 0 ${fuel.unit}`, probability: 0.12, value: 0 },
+      { label: `Trích 200 ${fuel.unit}`, probability: 0.7, value: 200 },
+      { label: `Trích 300 ${fuel.unit}`, probability: 0.18, value: 300 },
+      { label: `Chi 300 ${fuel.unit}`, probability: 0.08, value: -300 },
     ],
     parameters: [
       {
@@ -627,6 +635,7 @@ function fuelForecast(fuel: FuelProduct): FuelPriceForecast {
         effective_from: '2026-01-01',
         legal_ref: { label: 'NQ 34/2026/NQ-CP', document_id: 'doc-nq-34-2026' },
         certified_by_name: 'Lê Thu Hà',
+        certified: true,
       },
       {
         key: fuel.key === 'xang' ? 'thue_ttdb_xang_e5' : `thue_ttdb_${fuel.key}`,
@@ -634,6 +643,7 @@ function fuelForecast(fuel: FuelProduct): FuelPriceForecast {
         effective_from: '2026-01-01',
         legal_ref: { label: 'Luật 66/2025/QH15', document_id: 'doc-luat-66-2025' },
         certified_by_name: 'Lê Thu Hà',
+        certified: true,
       },
       {
         key: `thue_nk_bq_${fuel.key}`,
@@ -641,6 +651,7 @@ function fuelForecast(fuel: FuelProduct): FuelPriceForecast {
         effective_from: '2026-06-26',
         legal_ref: { label: 'CV 9017/BTC-QLG', document_id: 'doc-cv-9017-btc' },
         certified_by_name: 'Nguyễn Thị Hạnh',
+        certified: true,
       },
       {
         key: `chi_phi_dinh_muc_${fuel.key}`,
@@ -648,6 +659,7 @@ function fuelForecast(fuel: FuelProduct): FuelPriceForecast {
         effective_from: '2026-06-26',
         legal_ref: { label: 'CV 9149/BTC-QLG', document_id: 'doc-cv-9149-btc' },
         certified_by_name: 'Nguyễn Thị Hạnh',
+        certified: true,
       },
     ],
     world_price: { known_days: 5, total_days: 7, simulated_range_text: '03/7–08/7' },

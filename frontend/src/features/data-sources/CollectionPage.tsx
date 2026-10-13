@@ -78,7 +78,7 @@ function CollectionView({ collection }: { collection: CollectionDetail }) {
     if (!file) return;
     setUploading(true);
     try {
-      await addDocument(collection.id, { file_name: file.name, size_bytes: file.size });
+      await addDocument(collection.id, file);
       toast({ tone: 'success', message: `Đã nhận ${file.name}. Agent đang tiền xử lý.` });
       documents.reload();
     } catch (e) {
@@ -91,7 +91,7 @@ function CollectionView({ collection }: { collection: CollectionDetail }) {
   const facts = [
     `${formatNumber(collection.document_count)} tài liệu`,
     collection.sync_text,
-    `Data Space ${collection.data_space_name}`,
+    collection.data_space_name && `Data Space ${collection.data_space_name}`,
     collection.pages_pending_review > 0
       ? `${formatNumber(collection.pages_pending_review)} trang chờ xem lại`
       : null,

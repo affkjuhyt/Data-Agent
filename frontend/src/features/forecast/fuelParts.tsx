@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Button } from '../../design-system/Button';
 import { useToast } from '../../design-system/Toast';
-import { followForecastSchedule, type FuelPriceDistribution } from '../../lib/v1/forecast';
+import {
+  followForecastSchedule,
+  getScheduleCalendar,
+  type FuelPriceDistribution,
+} from '../../lib/v1/forecast';
+import { useV1 } from '../../lib/v1/useV1';
 
 /* Pieces the two fuel-price screens (UC-15-07, UC-15-08) share. */
 
@@ -42,27 +47,31 @@ export function hasInterval(
 }
 
 /**
- * "Theo dõi lịch": subscribe to the pre-period and post-period bulletins of one fuel. The state
- * comes with the page's resource; the button keeps its own copy once toggled.
+ * "Theo dõi lịch": subscribe to the pre-period and post-period bulletins of one fuel, that is to
+ * the external calendar whose events the series' model forecasts. Without such a calendar there
+ * is nothing to follow and the button is not shown. The api does not say whether the viewer
+ * already follows it, so the button starts off and keeps its own state once toggled.
  */
 export function FollowScheduleButton({
   seriesId,
-  following,
   primary = false,
 }: {
   seriesId: string;
-  following: boolean;
   primary?: boolean;
 }) {
   const toast = useToast();
-  const [on, setOn] = useState(following);
+  const calendar = useV1(() => getScheduleCalendar(seriesId), [seriesId]);
+  const [on, setOn] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => setOn(following), [following, seriesId]);
+  useEffect(() => setOn(calendar.data?.following ?? false), [calendar.data]);
+
+  if (!calendar.data) return null;
+  const calendarId = calendar.data.id;
 
   const toggle = async () => {
     setBusy(true);
     try {
-      const result = await followForecastSchedule(seriesId, !on);
+      const result = await followForecastSchedule(calendarId, !on);
       setOn(result.following);
       toast({
         tone: 'success',

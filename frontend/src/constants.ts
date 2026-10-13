@@ -38,7 +38,6 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
       items: [
         { id: 'ASK', label: 'Hỏi đáp' },
         { id: 'EXPLORE', label: 'Khám phá' },
-        { id: 'DASHBOARD', label: 'Dashboard' },
         // P16: only leaders with the exec_vault role have a vault.
         { id: 'VAULT', label: 'Kho riêng', requires: 'exec_vault' },
         { id: 'FORECAST', label: 'Dự báo' },

@@ -7,15 +7,16 @@ import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { formatDate } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
 import {
+  activateDecisionRule,
   backtestDecisionRule,
   discardDecisionRule,
   getDecisionRule,
   listDraftRules,
-  submitDecisionRule,
   type DecisionRule,
 } from '../../lib/v1/rules';
 import { useV1 } from '../../lib/v1/useV1';
@@ -23,16 +24,16 @@ import { useV1 } from '../../lib/v1/useV1';
 /*
  * "P07 · Quy tắc từ quyết định" (2302:19305, UC-07-08): a rule drafted from a decision in Cần
  * bạn. Bordered header (where it came from), the rule in KHI … THÌ form, what it would have done
- * over the last 30 days — including every case where it would have chosen differently from the
- * person, which is what the owner must judge — and on the right how long it holds. A draft is
- * dropped, backtested again, or sent to its owner; it never applies itself.
+ * over the last 30 days — including how many cases it would have decided differently from the
+ * person, which is what the owner must judge — and on the right how long it holds. The draft is
+ * already in its owner's Cần bạn; it is dropped (with a reason), backtested again, or switched on
+ * by the owner. It never applies itself.
  */
 const STATUS: Record<
   DecisionRule['status'],
   { label: string; tone: 'warning' | 'info' | 'success' | 'idle' }
 > = {
   draft: { label: 'Bản nháp', tone: 'warning' },
-  pending_review: { label: 'Chờ chủ sở hữu duyệt', tone: 'info' },
   active: { label: 'Đang áp dụng', tone: 'success' },
   disabled: { label: 'Đã bỏ', tone: 'idle' },
   expired: { label: 'Hết hạn', tone: 'idle' },
@@ -65,24 +66,26 @@ export default function DecisionRulePage() {
 function RuleBody({ rule, onChanged }: { rule: DecisionRule; onChanged: () => void }) {
   const { navigate } = useAppState();
   const toast = useToast();
-  const [busy, setBusy] = useState<'backtest' | 'submit' | 'discard' | null>(null);
+  const [busy, setBusy] = useState<'backtest' | 'activate' | 'discard' | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [reason, setReason] = useState('');
+  const [reasonMissing, setReasonMissing] = useState(false);
   const [error, setError] = useState<string>();
   const status = STATUS[rule.status];
   const draft = rule.status === 'draft';
 
-  const act = async (verb: 'backtest' | 'submit' | 'discard') => {
+  const act = async (verb: 'backtest' | 'activate' | 'discard') => {
     setBusy(verb);
     setError(undefined);
     try {
       if (verb === 'backtest') {
         await backtestDecisionRule(rule.id, rule.backtest?.window_days ?? 30);
         toast({ tone: 'info', message: 'Đang chạy thử lại; kết quả hiện khi xong.' });
-      } else if (verb === 'submit') {
-        await submitDecisionRule(rule.id);
-        toast({ tone: 'success', message: `Đã gửi ${rule.owner.name} duyệt` });
+      } else if (verb === 'activate') {
+        await activateDecisionRule(rule.id);
+        toast({ tone: 'success', message: 'Đã bật quy tắc' });
       } else {
-        await discardDecisionRule(rule.id);
+        await discardDecisionRule(rule.id, reason.trim());
         toast({ tone: 'success', message: 'Đã bỏ bản nháp quy tắc' });
         navigate('needs-you');
         return;
@@ -107,7 +110,7 @@ function RuleBody({ rule, onChanged }: { rule: DecisionRule; onChanged: () => vo
             <StatusDot tone={status.tone}>{status.label}</StatusDot>
           </span>
         }
-        description={rule.origin_label}
+        description={`${rule.origin_label} · ${formatDate(rule.created_at)}`}
         actions={
           draft && (
             <>
@@ -123,16 +126,23 @@ function RuleBody({ rule, onChanged }: { rule: DecisionRule; onChanged: () => vo
               </Button>
               <Button
                 kind="primary"
-                loading={busy === 'submit'}
+                loading={busy === 'activate'}
                 disabled={busy !== null}
-                onClick={() => act('submit')}
+                onClick={() => act('activate')}
               >
-                Gửi chủ sở hữu duyệt
+                Bật quy tắc
               </Button>
             </>
           )
         }
       />
+      {draft && (
+        <div className="px-da-3xl pt-da-lg">
+          <Notice tone="info">
+            Bản nháp đã nằm trong Cần bạn của chủ sở hữu; quy tắc chỉ áp dụng khi chủ sở hữu bật.
+          </Notice>
+        </div>
+      )}
       {error && (
         <div className="px-da-3xl pt-da-lg">
           <Notice tone="error">Không thực hiện được: {error}</Notice>
@@ -151,9 +161,7 @@ function RuleBody({ rule, onChanged }: { rule: DecisionRule; onChanged: () => vo
           <dl className="flex flex-col gap-[10px]">
             {[
               ['Phạm vi', rule.scope_label],
-              ['Chủ sở hữu duyệt', rule.owner.name],
               ['Tự hết hạn', rule.expires_at ? expiryText(rule.expires_at) : 'Không hết hạn'],
-              ['Nhắc xem lại', `${rule.review_reminder_days} ngày trước khi hết hạn`],
             ].map(([label, value]) => (
               <div key={label} className="flex flex-col gap-[2px] pb-da-sm">
                 <dt className="text-muted-foreground da-caption">{label}</dt>
@@ -174,10 +182,22 @@ function RuleBody({ rule, onChanged }: { rule: DecisionRule; onChanged: () => vo
         cancelLabel="Giữ lại"
         loading={busy === 'discard'}
         onCancel={() => setConfirmDiscard(false)}
-        onConfirm={() => act('discard')}
+        error={reasonMissing ? 'Ghi lý do bỏ quy tắc.' : undefined}
+        onConfirm={() => {
+          setReasonMissing(!reason.trim());
+          if (reason.trim()) act('discard');
+        }}
       >
-        Quyết định gốc vẫn giữ nguyên. Các vụ tương tự sẽ tiếp tục được hỏi {rule.owner.name} qua
-        Cần bạn.
+        <span className="flex flex-col gap-da-sm">
+          Quyết định gốc vẫn giữ nguyên. Các vụ tương tự sẽ tiếp tục được hỏi qua Cần bạn.
+          <Textarea
+            aria-label="Lý do bỏ"
+            placeholder="Lý do bỏ (bắt buộc)"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={2}
+          />
+        </span>
       </ConfirmDialog>
     </div>
   );
@@ -202,13 +222,13 @@ function Backtest({ rule }: { rule: DecisionRule }) {
     );
   }
   const cells: { label: string; value: string; warn?: boolean }[] = [
-    { label: result.case_label, value: String(result.cases) },
+    { label: 'Vụ khớp điều kiện', value: String(result.cases) },
     { label: 'Quy tắc tự xử lý', value: String(result.auto_handled) },
-    { label: 'Vẫn hỏi người', value: `${result.asked_people} · ${result.asked_reason}` },
+    { label: 'Vẫn hỏi người', value: String(result.asked_people) },
     {
       label: 'Khác quyết định người đã làm',
-      value: String(result.disagreements.length),
-      warn: result.disagreements.length > 0,
+      value: String(result.changed),
+      warn: result.changed > 0,
     },
   ];
   return (
@@ -232,26 +252,6 @@ function Backtest({ rule }: { rule: DecisionRule }) {
           </div>
         ))}
       </dl>
-      {result.disagreements.length > 0 && (
-        <table className="w-full table-fixed border-collapse">
-          <thead>
-            <tr className="border-b border-border text-left text-muted-foreground da-caption">
-              <th className="px-da-lg py-da-md font-normal">Vụ khác với người đã quyết</th>
-              <th className="w-[160px] px-da-lg py-da-md font-normal">Người chọn</th>
-              <th className="w-[160px] px-da-lg py-da-md font-normal">Quy tắc chọn</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result.disagreements.map((d) => (
-              <tr key={d.case_text} className="border-b border-border da-body-small">
-                <td className="px-da-lg py-da-md text-foreground">{d.case_text}</td>
-                <td className="px-da-lg py-da-md text-foreground">{d.person_chose}</td>
-                <td className="px-da-lg py-da-md text-warning">{d.rule_chooses}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
     </>
   );
 }

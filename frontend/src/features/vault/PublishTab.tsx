@@ -84,6 +84,8 @@ function PublishForm({
   const [title, setTitle] = useState(defaults(thesis).title);
   const [statement, setStatement] = useState(defaults(thesis).statement);
   const [attribution, setAttribution] = useState<'named' | 'role_only'>('role_only');
+  // The title signed instead of the name is the leader's own words (attribution_label, A3).
+  const [roleTitle, setRoleTitle] = useState('Thành viên Ban điều hành');
   const [showConfidence, setShowConfidence] = useState(false);
   const [showRationale, setShowRationale] = useState(false);
   const [target, setTarget] = useState<string | null>(null);
@@ -91,11 +93,8 @@ function PublishForm({
   const [error, setError] = useState<string>();
   const [sent, setSent] = useState<string>();
 
-  const space = targets.data?.items.find((t) => t.id === (target ?? targets.data?.items[0]?.id));
-  const signer =
-    attribution === 'named'
-      ? user.name
-      : (targets.data?.attribution_title ?? 'Thành viên Ban điều hành');
+  const space = targets.data?.find((t) => t.id === (target ?? targets.data?.[0]?.id));
+  const signer = attribution === 'named' ? user.name : roleTitle.trim();
   const thresholdShown = c ? `${formatNumber(c.threshold)}` : '';
   const hasNumber = Boolean(
     c && statement.replace(/(\d)[.,](?=\d)/g, '$1').includes(thresholdShown.replace(/\./g, '')),
@@ -112,7 +111,7 @@ function PublishForm({
   };
 
   const send = async () => {
-    if (!thesis || !c || !space) return;
+    if (!thesis || !c || !space || !signer) return;
     setSending(true);
     setError(undefined);
     try {
@@ -134,10 +133,10 @@ function PublishForm({
         threshold: c.threshold,
         unit: c.unit,
       });
-      // A3 answers 202 with the publication's id; who reviews it is the target's (PROPOSAL list).
-      setSent(space.reviewer_name);
+      // A3 answers 202 with the publication's id; the target's steward reviews it.
+      setSent(`người phụ trách ${space.name}`);
       theses.reload();
-      toast({ tone: 'success', message: `Đã gửi ${space.reviewer_name} duyệt` });
+      toast({ tone: 'success', message: `Đã gửi người phụ trách ${space.name} duyệt` });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -147,7 +146,7 @@ function PublishForm({
 
   const pending = Boolean(sent || thesis?.publication_id);
   const canSend = Boolean(
-    thesis && space && title.trim() && statement.trim() && !hasNumber && !pending,
+    thesis && space && signer && title.trim() && statement.trim() && !hasNumber && !pending,
   );
   const label = 'grid gap-da-md md:grid-cols-[130px_1fr] md:items-center';
 
@@ -254,8 +253,16 @@ function PublishForm({
                   checked={attribution === 'role_only'}
                   onChange={() => setAttribution('role_only')}
                 >
-                  {targets.data?.attribution_title ?? 'Chức danh'}
+                  Chức danh
                 </Radio>
+                {attribution === 'role_only' && (
+                  <Input
+                    aria-label="Chức danh"
+                    value={roleTitle}
+                    onChange={(e) => setRoleTitle(e.target.value)}
+                    className="w-[240px] max-w-full"
+                  />
+                )}
               </div>
             </div>
             <div className={label}>
@@ -276,7 +283,7 @@ function PublishForm({
                 label="Data Space đích"
                 value={space?.id ?? null}
                 onChange={setTarget}
-                options={(targets.data?.items ?? []).map((t) => ({ value: t.id, label: t.name }))}
+                options={(targets.data ?? []).map((t) => ({ value: t.id, label: t.name }))}
               />
             </div>
             <div className="flex flex-col gap-da-xs rounded-lg bg-subtle p-da-lg">
@@ -296,7 +303,7 @@ function PublishForm({
             {space && (
               <p className="flex items-start gap-da-md text-foreground da-caption">
                 <span aria-hidden className="mt-[5px] size-[6px] shrink-0 rounded-full bg-info" />
-                Người duyệt: {space.reviewer_name}, phụ trách Data Space {space.name} (khác bạn) ·
+                Người duyệt: người phụ trách Data Space {space.name} (khác bạn) ·
                 trạng thái: {pending ? 'đã gửi, chờ duyệt' : 'nháp, chưa gửi'} · sau ngày chấm trang
                 tự đổi nhãn “Đã kiểm chứng: đúng/sai”
               </p>

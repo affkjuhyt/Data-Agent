@@ -4,6 +4,7 @@
  * after the agent's unsure field is mapped; drift, record review, and consolidation.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
@@ -38,7 +39,8 @@ describe('CrawlSourcesPage', () => {
         '9 nguồn · 6 đúng lịch · 1 đổi cấu trúc · 1 bị chặn · 23 bản ghi chờ duyệt',
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText('98,6%')).toBeInTheDocument();
+    expect(screen.getByText('99,2%')).toBeInTheDocument();
+    expect(screen.getByText('trung bình 7 nguồn có mẫu')).toBeInTheDocument();
     expect(screen.getByText('Bị chặn 403 · 3 lượt')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Chạy ngay' })).toHaveAttribute(
       'aria-disabled',
@@ -222,18 +224,18 @@ describe('CrawlReviewPage', () => {
 });
 
 describe('CrawlConsolidationPage', () => {
-  it('decides the entity links, and keeps publishing blocked by the open conflict', async () => {
+  it('decides the entity links, and keeps certifying blocked by the open conflict', async () => {
     routeId = 'cons-deposit-w41';
     wrap(<CrawlConsolidationPage />);
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Hợp nhất dữ liệu · tuần 41' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/chờ 2 liên kết thực thể và 1 xung đột trước khi phát hành/),
+      screen.getByText(/chờ 2 liên kết thực thể và 1 xung đột trước khi chứng nhận/),
     ).toBeInTheDocument();
     expect(screen.getByText('Thực thể · 2 chờ')).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /^12 tháng/ })).toHaveClass('bg-accent');
-    const publish = screen.getByRole('button', { name: 'Phát hành dataset v42' });
+    const publish = screen.getByRole('button', { name: 'Chứng nhận dataset v42' });
     expect(publish).toHaveAttribute('aria-disabled', 'true');
 
     const vietbank = screen.getByRole('listitem', { name: 'Liên kết “VietBank”' });
@@ -246,16 +248,49 @@ describe('CrawlConsolidationPage', () => {
     expect(await screen.findByText('Đã tách “Ngân hàng BV”')).toBeInTheDocument();
     expect(await screen.findByText('Nhận diện thực thể chờ duyệt · 0')).toBeInTheDocument();
     expect(screen.getByText('Thực thể')).toBeInTheDocument();
-    expect(screen.getByText(/chờ 1 xung đột trước khi phát hành/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Phát hành dataset v42' })).toHaveAttribute(
+    expect(screen.getByText(/chờ 1 xung đột trước khi chứng nhận/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Chứng nhận dataset v42' })).toHaveAttribute(
       'aria-disabled',
       'true',
     );
   });
 
-  it('is opened from the latest dataset in the source list', async () => {
+  it('certifies the version an A2 run wrote once nothing waits', async () => {
+    let certified = '';
+    server.use(
+      http.get('*/v1/consolidation-runs/:id', () =>
+        HttpResponse.json({
+          id: 'cons-a2',
+          spec_id: 'cspec-deposit',
+          status: 'published',
+          dataset_version_id: 'dsv-a2',
+          records_in: 412,
+          records_out: 148,
+          claims_created: 30,
+          chunks_embedded: 12,
+          conflicts_opened: 0,
+          started_at: '2026-10-10T08:00:00+07:00',
+        }),
+      ),
+      http.get('*/v1/entity-links', () => HttpResponse.json({ items: [], next_page_token: '' })),
+      http.post('*/v1/dataset-versions/:action', ({ params }) => {
+        certified = String(params.action);
+        return HttpResponse.json({ id: 'dsv-a2' });
+      }),
+    );
+    routeId = 'cons-a2';
+    wrap(<CrawlConsolidationPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Chứng nhận dataset' }));
+    expect(await screen.findByText('Đã chứng nhận dataset')).toBeInTheDocument();
+    expect(certified).toBe('dsv-a2:certify');
+    expect(screen.queryByRole('button', { name: 'Chứng nhận dataset' })).toBeNull();
+  });
+
+  it('shows the newest consolidated version over the source list, without a run to open', async () => {
     wrap(<CrawlSourcesPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Lượt hợp nhất kế tiếp' }));
-    expect(navigate).toHaveBeenCalledWith('data', 'CRAWL_MERGE', 'cons-deposit-w41');
+    expect(await screen.findByText('Lãi suất huy động tuần 41')).toBeInTheDocument();
+    expect(screen.getByText('Dataset v41 · 3 nguồn')).toBeInTheDocument();
+    // A2 lists no consolidation runs, so the link to the next one is not drawn.
+    expect(screen.queryByRole('button', { name: 'Lượt hợp nhất kế tiếp' })).toBeNull();
   });
 });

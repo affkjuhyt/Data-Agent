@@ -329,19 +329,26 @@ export const runKnowledgeLint = () =>
 /* ─── Lưu câu trả lời thành tri thức (UC-07-12) ───────────────────────── */
 
 /**
- * PROPOSAL: GET /v1/answers/{id}/knowledge-draft — what saving this answer would propose: the
- * page it fits, the paragraph with its figures turned into placeholders bound to the query
- * (never fixed numbers, BR-162), the source and the period it holds for.
+ * What saving an answer starts from: the answer (A2: GET /v1/answers/{id}) and the page of the
+ * knowledge index it fits best (A2: GET /v1/knowledge/index?q=). The paragraph and its figure
+ * placeholders bound to the query (BR-162) are built by the server when it saves, so the dialog
+ * shows the answer, not a preview of the paragraph.
  */
-interface KnowledgeDraft {
+export interface KnowledgeDraft {
+  answer_text: string;
   target_page: { id: string; title: string } | null;
-  paragraph: string;
-  source_text: string;
-  validity_text: string;
 }
 
-export const getKnowledgeDraft = async (answerId: string) =>
-  v1Get<KnowledgeDraft>(`/answers/${pathId(answerId)}/knowledge-draft`);
+export async function getKnowledgeDraft(answerId: string): Promise<KnowledgeDraft> {
+  const answer = await v1Get<Schemas['AnswerView']>(`/answers/${pathId(answerId)}`);
+  // The index is only a suggestion: without it the user picks the page.
+  const index = await v1Get<Page<Schemas['KnowledgeIndexEntry']>>('/knowledge/index', {
+    q: answer.text.slice(0, 200),
+    limit: 1,
+  }).catch(() => null);
+  const top = index?.items[0];
+  return { answer_text: answer.text, target_page: top ? { id: top.id, title: top.title } : null };
+}
 
 /**
  * A2: POST /v1/knowledge-pages:from-answer (202) — the answer becomes a draft version of the

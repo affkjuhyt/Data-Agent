@@ -33,15 +33,18 @@ export function chartRows(forecast: Forecast): Row[] {
   const rows: Row[] = forecast.history.map((h) => ({ label: h.label, actual: h.actual }));
   const points = forecast.points.filter((p) => finite(p.mean, p.lo80, p.hi80, p.lo95, p.hi95));
   const last = rows[rows.length - 1];
-  if (points.length === 0 || last?.actual === undefined) return rows;
+  if (points.length === 0) return rows;
 
-  const anchor = last.actual;
-  Object.assign(last, {
-    mean: anchor,
-    band80: [anchor, anchor],
-    band95: [anchor, anchor],
-    scenario: forecast.scenario ? anchor : undefined,
-  });
+  // Without actuals (the job does not carry them) the forecast stands on its own.
+  if (last?.actual !== undefined) {
+    const anchor = last.actual;
+    Object.assign(last, {
+      mean: anchor,
+      band80: [anchor, anchor],
+      band95: [anchor, anchor],
+      scenario: forecast.scenario ? anchor : undefined,
+    });
+  }
   const scenario = new Map(forecast.scenario?.points.map((p) => [p.period, p.value]));
   for (const p of points) {
     rows.push({
@@ -57,7 +60,7 @@ export function chartRows(forecast: Forecast): Row[] {
 
 /** "30/09" from the ISO cut-off date. */
 export const cutoffShort = (iso: string) => {
-  const [, month, day] = iso.split('-');
+  const [, month, day] = iso.slice(0, 10).split('-');
   return `${day}/${month}`;
 };
 

@@ -85,7 +85,7 @@ export default function ModelsPage() {
     setBusy(true);
     setError(undefined);
     try {
-      await rollbackModel(rollback.id);
+      await rollbackModel(rollback);
       toast({
         tone: 'success',
         message: `“${rollback.task}” đã quay lại ${rollback.previous?.model_name}.`,
@@ -348,8 +348,18 @@ function RollbackConsequence({ route }: { route: ModelRoute }) {
 function GpuPanel({ data }: { data: GpuLoad }) {
   const W = 272;
   const H = 90;
-  const n = data.points.length;
-  const points = data.points
+  const series =
+    data.points ?? data.cards.map((card, i) => ({ at: String(i), utilization: card.utilization }));
+  const peak = data.peak ??
+    data.cards.reduce<{ at: string; utilization: number } | null>(
+      (best, card) =>
+        !best || card.utilization > best.utilization
+          ? { at: data.checked_at, utilization: card.utilization }
+          : best,
+      null,
+    ) ?? { at: data.checked_at, utilization: 0 };
+  const n = series.length;
+  const points = series
     .map((p, i) => {
       const x = n > 1 ? (i / (n - 1)) * W : 0;
       const y = H - p.utilization * H;
@@ -363,14 +373,14 @@ function GpuPanel({ data }: { data: GpuLoad }) {
         height={H}
         viewBox={`0 0 ${W} ${H}`}
         role="img"
-        aria-label={`Tải GPU theo giờ, cao nhất ${pct(data.peak.utilization, 0)} lúc ${formatHour(data.peak.at)}`}
+        aria-label={`Tải GPU theo giờ, cao nhất ${pct(peak.utilization, 0)} lúc ${formatHour(peak.at)}`}
         className="overflow-visible text-primary"
       >
         <polyline points={points} fill="none" stroke="currentColor" strokeWidth={1.5} />
       </svg>
       <p className="text-foreground da-body-small">
-        Cao điểm {pct(data.peak.utilization, 0)} lúc {formatHour(data.peak.at)}.{' '}
-        {data.failover_text}
+        Cao điểm {pct(peak.utilization, 0)} lúc {formatHour(peak.at)}.{' '}
+        {data.failover_text ?? 'Theo dõi tải GPU để tự động điều phối khi cần.'}
       </p>
     </>
   );
@@ -381,7 +391,7 @@ function AddModelDialog({
   onAdded,
 }: {
   onClose: () => void;
-  onAdded: (route: ModelRoute) => void;
+  onAdded: (route: { model_name: string }) => void;
 }) {
   const [name, setName] = useState('');
   const [endpoint, setEndpoint] = useState('');
@@ -397,7 +407,7 @@ function AddModelDialog({
       const route = await addModel({
         name: name.trim(),
         endpoint: endpoint.trim(),
-        trial_tasks: tasks.trim(),
+        task: tasks.trim(),
         rate_limit_per_min: Number(limit),
       });
       onAdded(route);

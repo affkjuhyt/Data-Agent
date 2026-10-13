@@ -1255,3 +1255,22 @@ class TestEveryBuiltImageIsStartedByItsManifest:
                 if not c.get("command") and not c.get("args"):
                     missing.append(f"{doc['metadata']['name']}/{c['name']}")
         assert not missing, f"built image with no command and no CMD to fall back on: {missing}"
+
+
+class TestCreateSecretsHasNoDuplicateKey:
+    """`kubectl create secret --from-literal` refuses a key given twice, and the deploy
+    stops at its Secrets step. Two commits each adding the same role to one Secret is
+    an easy merge to miss by eye."""
+
+    def test_each_secret_names_a_key_once(self):
+        script = (K8S_DIR / "create-secrets.sh").read_text()
+        duplicated = {}
+        for block in re.split(r"(?=kubectl -n \S+ create secret generic )", script):
+            name = re.match(r"kubectl -n \S+ create secret generic (\S+)", block)
+            if not name:
+                continue
+            keys = re.findall(r"--from-(?:literal|file)=([A-Za-z0-9_.-]+)=", block)
+            repeated = sorted({k for k in keys if keys.count(k) > 1})
+            if repeated:
+                duplicated[name.group(1)] = repeated
+        assert not duplicated, f"keys given twice: {duplicated}"

@@ -212,7 +212,7 @@ function Available({ items }: { items: IndustryPack[] }) {
           {items.map((p) => (
             <tr key={p.id} className="border-b border-border text-foreground">
               <td className="px-da-md py-[10px]">
-                {/* Without a known version (PROPOSAL) the pack is listed but not opened. */}
+                {/* GET /v1/packs carries no version yet: without one the pack is listed, not opened. */}
                 {p.latest ? (
                   <button
                     type="button"

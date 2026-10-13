@@ -60,162 +60,26 @@
   changed_when: true
   no_log: true
 
-- name: List secret engines
-  ansible.builtin.command: "{{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }} bao secrets list -format=json"
-  register: bao_mounts
-  changed_when: false
-  no_log: true
-
-- name: Enable kv v2
-  ansible.builtin.command: "{{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }} bao secrets enable -path=secret -version=2 kv"
-  when: "'secret/' not in (bao_mounts.stdout | from_json)"
-  changed_when: true
-  no_log: true
-
-- name: Enable transit
-  ansible.builtin.command: "{{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }} bao secrets enable transit"
-  when: "'transit/' not in (bao_mounts.stdout | from_json)"
-  changed_when: true
-  no_log: true
-
-- name: Write read policy
-  ansible.builtin.shell: |
-    set -euo pipefail
-    {{ kubectl }} exec -i -n {{ ns_database }} statefulset/openbao -- \
-    env BAO_TOKEN={{ bao_keys.root_token }} bao policy write dataagent-secret-read-policy - <<'POLICY'
-    path "secret/data/tenants/*" { capabilities = ["read"] }
-    path "secret/data/warehouse/*" { capabilities = ["read"] }
-    POLICY
-  args:
-    executable: /bin/bash
-  changed_when: false
-  no_log: true
-
-- name: Write the demo warehouse password
-  ansible.builtin.command: >
-    {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
-    bao kv put -mount=secret tenants/{{ seed_demo_tenant }}/e2e_dw_password
-    value={{ vault_sandbox_reader_password }}
-  when: seed_demo | bool
-  changed_when: false
-  no_log: true
-  # tests/e2e/seed.sql registers secrets_vault row e2e_dw_password; the demo
-  # agent's db_connector resolves it here. sandbox_reader's password is the one
-  # the db-init Job sets, so both come from the same vault value.
-
-- name: Write the demo PostgreSQL source credentials
-  ansible.builtin.command: >
-    {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
-    bao kv put -mount=secret tenants/{{ seed_demo_tenant }}/demo-postgres
-    user=app_user password={{ vault_app_user_password }}
-  when: seed_demo | bool
-  changed_when: false
-  no_log: true
-  # The V3 source wizard reads this path through the worker-agent. The password
-  # remains in OpenBao and is the same app_user credential created by db-init.
-
-- name: List auth methods
-  ansible.builtin.command: "{{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }} bao auth list -format=json"
-  register: bao_auth
-  changed_when: false
-  no_log: true
-
-- name: Enable approle
-  ansible.builtin.command: "{{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }} bao auth enable approle"
-  when: "'approle/' not in (bao_auth.stdout | from_json)"
-  changed_when: true
-  no_log: true
-
-- name: Look for previously minted workload secret ids
+# ~15 kubectl exec round trips (~12 s) that are no-ops on a running, unsealed
+# vault. They rerun when it was just initialised or unsealed, when the database
+# tier or the playbook changed, when a vault value may have (secrets_changed),
+# on a rotation, or when the minted credentials file is missing.
+- name: Look for the minted credentials file
   ansible.builtin.stat:
     path: "{{ openbao_env_file }}"
-  register: openbao_env_stat
+  register: openbao_env_present
 
-- name: Load the previously minted secret id
-  ansible.builtin.include_vars:
-    file: "{{ openbao_env_file }}"
-    name: openbao_state
-  when: openbao_env_stat.stat.exists
-  no_log: true
-
-- name: Set the previously minted secret id
-  ansible.builtin.set_fact:
-    openbao_prev: "{{ (openbao_state | default({}, true)).openbao_env | default({}, true) }}"
-  no_log: true
-  # Not read from openbao_env: deploy.yml set_fact's that before this role
-  # runs, and set_fact outranks include_vars. Reading it there would make every
-  # run look like a first run and mint fresh secret ids, invalidating workload
-  # logins.
-
-- name: Write workload AppRoles
-  ansible.builtin.command: >
-    {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
-    bao write auth/approle/role/{{ item.role }}
-    token_policies=dataagent-secret-read-policy token_ttl=1h token_max_ttl=4h
-  loop:
-    - {role: worker_agent, prefix: WORKER_AGENT}
-    - {role: sandbox_executor, prefix: SANDBOX_EXECUTOR}
-    - {role: platform_workers, prefix: PLATFORM_WORKERS}
-  changed_when: false
-  no_log: true
-
-- name: Get workload AppRole ids
-  ansible.builtin.command: >
-    {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
-    bao read -field=role_id auth/approle/role/{{ item.role }}/role-id
-  loop:
-    - {role: worker_agent, prefix: WORKER_AGENT}
-    - {role: sandbox_executor, prefix: SANDBOX_EXECUTOR}
-    - {role: platform_workers, prefix: PLATFORM_WORKERS}
-  register: bao_role_ids
-  changed_when: false
-  no_log: true
-
-- name: Mint workload AppRole secret ids
-  ansible.builtin.command: >
-    {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
-    bao write -f -field=secret_id auth/approle/role/{{ item.role }}/secret-id
-  loop:
-    - {role: worker_agent, prefix: WORKER_AGENT}
-    - {role: sandbox_executor, prefix: SANDBOX_EXECUTOR}
-    - {role: platform_workers, prefix: PLATFORM_WORKERS}
-  register: bao_secret_ids
+- name: Configure engines, policy and AppRoles
+  ansible.builtin.include_tasks: configure.yml
   when: >-
-    (openbao_prev[item.prefix ~ '_OPENBAO_SECRET_ID'] | default('') | length) == 0
+    (not bao_status.initialized) or bao_status.sealed
+    or (databases_changed | default(true) | bool)
+    or (secrets_changed | default(true) | bool)
     or (openbao_rotate_approle | bool)
-  changed_when: true
-  no_log: true
-
-- name: Record whether an AppRole moved
-  ansible.builtin.set_fact:
-    openbao_minted: "{{ bao_secret_ids.results | selectattr('skipped', 'undefined') | list | length > 0 }}"
-  # deploy.yml re-renders and reapplies the Secrets only when a fresh or
-  # explicitly rotated workload credential was minted.
-
-- name: Record the OpenBao credentials
-  ansible.builtin.copy:
-    dest: "{{ openbao_env_file }}"
-    mode: "0600"
-    content: |
-      # Minted by the k8s_openbao role against the running OpenBao. Read back
-      # by deploy.yml, which folds these credentials into secrets.env; kept out of
-      # the repo and out of the vault because they only exist once a cluster
-      # does. Delete this file (and openbao-keys.json) only if you are also
-      # resetting the OpenBao volume.
-      openbao_env:
-        OPENBAO_TOKEN: "{{ bao_keys.root_token }}"
-        WORKER_AGENT_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[0].stdout | trim }}"
-        WORKER_AGENT_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[0].stdout | default(openbao_prev.WORKER_AGENT_OPENBAO_SECRET_ID | default(''), true) | trim }}"
-        SANDBOX_EXECUTOR_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[1].stdout | trim }}"
-        SANDBOX_EXECUTOR_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[1].stdout | default(openbao_prev.SANDBOX_EXECUTOR_OPENBAO_SECRET_ID | default(''), true) | trim }}"
-        PLATFORM_WORKERS_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[2].stdout | trim }}"
-        PLATFORM_WORKERS_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[2].stdout | default(openbao_prev.PLATFORM_WORKERS_OPENBAO_SECRET_ID | default(''), true) | trim }}"
-  no_log: true
-  # A skipped mint keeps each existing secret id rather than blanking it: a
-  # rerun that does not rotate must not invalidate a workload's login.
+    or not openbao_env_present.stat.exists
 
 - name: Report openbao
   ansible.builtin.debug:
     msg: >-
       initialised={{ bao_status.initialized }} sealed_before={{ bao_status.sealed }}
-      keys={{ bao_keys_file }} approle={{ 'minted' if openbao_minted else 'unchanged' }}
+      keys={{ bao_keys_file }} approle={{ 'minted' if (openbao_minted | default(false)) else 'unchanged' }}

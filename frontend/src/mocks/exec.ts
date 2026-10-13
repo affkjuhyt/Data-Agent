@@ -763,15 +763,6 @@ export function createExecHandlers() {
       const body = `event: answer\ndata: ${JSON.stringify(answer)}\n\nevent: done\ndata: {}\n\n`;
       return new HttpResponse(body, { headers: { 'Content-Type': 'text/event-stream' } });
     }),
-    http.get('*/v1/exec/publish-targets', () =>
-      HttpResponse.json({
-        items: [
-          { id: 'ds-finance', name: 'Khối Tài chính', reviewer_name: 'Lê Thu Hà' },
-          { id: 'ds-funding', name: 'Khối Nguồn vốn', reviewer_name: 'Trần Minh Quân' },
-        ],
-        attribution_title: 'Thành viên Ban điều hành',
-      }),
-    ),
     http.post('*/v1/exec/handovers', async ({ request }) => {
       const body = (await request.json()) as { kind: string; reason: string };
       if (!['leave_position', 'contract_end', 'owner_request'].includes(body.reason))

@@ -368,6 +368,7 @@ function profileOf(table: SourceTable, source: SourceRow): TableProfile {
   return {
     id: table.id,
     name: table.name,
+    table_ref: `${source.name}.${table.name}`,
     source: { id: source.id, name: source.name },
     row_count: table.row_count ?? 0,
     column_count: table.column_count ?? 0,
@@ -772,7 +773,7 @@ function collectionsFixture(): Collection[] {
 const SUMMARY: CollectionsSummary = {
   ingesting_files: 312,
   recognition_errors: 4,
-  pii_batches_pending: 2,
+  pii_issues_pending: 2,
   index_coverage: 0.992,
 };
 

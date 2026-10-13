@@ -354,6 +354,8 @@ function draftReport(workspace: WorkspaceDetailWire, id = `report-${workspace.id
       },
     ],
     recipients_text: 'GRP-RISK-ANALYST, Ban điều hành · email (PDF) và trong ứng dụng',
+    // A report waiting for review has its review request in Cần bạn.
+    hitl_request_id: `hitl-${id}`,
   };
 }
 
@@ -385,7 +387,7 @@ export function createSessionHandlers() {
     status: r.status,
     approved_by: null,
     published_at: r.status === 'published' ? new Date().toISOString() : null,
-    hitl_request_id: null,
+    hitl_request_id: r.status === 'pending_review' ? r.hitl_request_id : null,
     created_at: r.drafted_at,
     updated_at: new Date().toISOString(),
     drafted_by: r.drafted_by,
@@ -418,6 +420,32 @@ export function createSessionHandlers() {
   const notFound = () => problem(404, 'not_found', 'Không tìm thấy phiên làm việc.');
 
   return [
+    // A new workspace (WorkspaceView); an investigation names its alert in params.
+    http.post('*/v1/workspaces', async ({ request }) => {
+      const body = (await request.json()) as components['schemas']['WorkspaceCreate'];
+      const params = (body.params ?? {}) as Record<string, string>;
+      const now = new Date().toISOString();
+      return HttpResponse.json(
+        {
+          id: params.alert_id ? `ws-alert-${params.alert_id}` : `ws-new-${workspaces.length}`,
+          data_space_id: 'ds-rui-ro-tin-dung',
+          owner_id: 'user-me',
+          title: body.title,
+          description: body.description ?? null,
+          params,
+          template_of_skill_id: null,
+          created_from: body.created_from ?? 'blank',
+          created_from_ref: body.created_from_ref ?? null,
+          tile_count: 0,
+          last_refreshed_at: null,
+          status: 'active',
+          created_at: now,
+          updated_at: now,
+        } satisfies components['schemas']['WorkspaceView'],
+        { status: 201 },
+      );
+    }),
+
     http.get('*/v1/workspaces/:id', ({ params }) => {
       const ws = find(params.id);
       return ws ? HttpResponse.json(ws) : notFound();
@@ -644,30 +672,35 @@ export function createSessionHandlers() {
       });
     }),
 
-    http.post('*/v1/session-reports/:action', async ({ params, request }) => {
+    http.post('*/v1/session-reports/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
       const report = reports.find((r) => r.id === id);
       if (!report) return problem(404, 'not_found', 'Không tìm thấy báo cáo.');
       if (report.status !== 'pending_review')
         return problem(409, 'invalid_state', 'Báo cáo không ở trạng thái chờ duyệt.');
-      let next: SessionReport;
-      if (verb === 'check') {
-        // The mock's checks do not change on their own; a re-check finds the same result.
-        return accepted(`check-${id}`);
-      } else if (verb === 'publish') {
-        if (report.checks.some((c) => !c.ok))
-          return problem(409, 'checks_failed', 'Còn kiểm tra chưa đạt, chưa phát hành được.');
-        next = { ...report, status: 'published' };
-        reports = reports.map((r) => (r.id === id ? next : r));
-        return HttpResponse.json(reportRow(next));
-      } else if (verb === 'request-changes') {
-        const { note } = (await request.json()) as { note?: string };
-        if (!note?.trim())
-          return problem(422, 'validation_failed', 'Yêu cầu sửa cần ghi nội dung.');
-        next = { ...report, status: 'changes_requested' };
-      } else return problem(404, 'not_found', 'Không có thao tác này.');
+      // The mock's checks do not change on their own; a re-check finds the same result.
+      if (verb === 'check') return accepted(`check-${id}`);
+      if (verb !== 'publish') return problem(404, 'not_found', 'Không có thao tác này.');
+      if (report.checks.some((c) => !c.ok))
+        return problem(409, 'checks_failed', 'Còn kiểm tra chưa đạt, chưa phát hành được.');
+      const next: SessionReport = { ...report, status: 'published' };
       reports = reports.map((r) => (r.id === id ? next : r));
-      return HttpResponse.json(next);
+      return HttpResponse.json(reportRow(next));
+    }),
+
+    // The reviewer's answer on a report's review request (HitlResolve); other ids fall through.
+    http.post('*/v1/hitl-requests/:action', async ({ params, request }) => {
+      const [hitlId, verb] = String(params.action).split(':');
+      const report = reports.find((r) => r.hitl_request_id === hitlId);
+      if (!report || verb !== 'resolve') return undefined;
+      const body = (await request.json()) as components['schemas']['HitlResolve'];
+      if (body.decision !== 'request_changes') return undefined;
+      if (!body.note?.trim())
+        return problem(422, 'validation_failed', 'Yêu cầu sửa cần ghi nội dung.');
+      reports = reports.map((r) =>
+        r.id === report.id ? { ...r, status: 'changes_requested' } : r,
+      );
+      return HttpResponse.json({ id: hitlId, status: 'resolved' });
     }),
   ];
 }

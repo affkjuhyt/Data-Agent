@@ -1,154 +1,354 @@
-import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
+import { controlRun, listAgents } from './api';
+import { pathId, v1Get, v1Send, type Page } from './client';
+import type { components } from './schema';
 import type { RunStatus } from './types';
+
+type Schemas = components['schemas'];
 
 /*
  * Agent operations of P13: trying a new config version against the eval set and in parallel on
  * live traffic, then widening or rolling it back (UC-13-04, UC-13-05), and a team of agents
  * working one problem under a lead agent (UC-13-08).
  *
- * The system design has agent_def.config_version, eval_run and agent_run.trigger_kind =
- * 'agent_call', but no resource for a rollout nor for a delegation tree, so every resource and
- * endpoint below is a PROPOSAL for the backend; the mock (mocks/agentOps.ts) serves them.
+ * A2 has no rollout nor orchestration resource. A rollout is the agent's active deployment
+ * (GET /v1/agents/{id}: active_deployment, PATCH /v1/deployments/{id} {traffic_pct},
+ * POST /v1/deployments/{id}:rollback {reason}), compared on the candidate config's eval run
+ * (GET /v1/agents/{id}/configs → eval_run_id, GET /v1/eval-runs/{id}, GET /v1/eval-sets/{id}).
+ * A team is a lead run and its child runs (GET /v1/runs/{id}, GET /v1/runs/{id}/children),
+ * paused and resumed on the lead (POST /v1/runs/{id}:pause | :resume).
  */
 type Uuid = string;
-type Timestamp = string;
 
 /* ─── Đánh giá & triển khai (UC-13-04, UC-13-05) ─────────────────────── */
 
-/** PROPOSAL: how a criterion is measured, so the screen formats it ("97,5%", "8.400 đ", "6 phút"). */
-export type EvalUnit = 'percent' | 'vnd' | 'minutes';
+/** How a criterion is measured, so the screen formats it ("97,5%", "2 câu"). */
+export type EvalUnit = 'percent' | 'count' | 'vnd' | 'minutes';
 
-/** PROPOSAL: one row of "Bộ đánh giá": the baseline and the candidate on the same eval set. */
+/** One row of "Bộ đánh giá": the baseline and the candidate on the same eval set. */
 export interface EvalCriterion {
   key: string;
   label: string;
   unit: EvalUnit;
-  baseline: number;
+  /** Null when the eval run has no baseline to compare with. */
+  baseline: number | null;
   candidate: number;
-  threshold: { op: 'gte' | 'lte' | 'eq'; value: number };
+  /** Null for a measure the quality gate does not judge. */
+  threshold: { op: 'gte' | 'lte' | 'eq'; value: number } | null;
 }
 
-/** PROPOSAL: one version's numbers on live traffic over `window_days`. */
+/** One version's numbers on live traffic. */
 export interface LiveStats {
-  runs: number;
-  needs_approval_pct: number;
-  errors: number;
+  runs: number | null;
+  needs_approval_pct: number | null;
+  errors: number | null;
 }
 
-export type RolloutStatus = 'canary' | 'held' | 'completed' | 'rolled_back';
+/** agent_deployment.status. */
+export type RolloutStatus =
+  | 'pending_approval'
+  | 'rolling'
+  | 'completed'
+  | 'rolled_back'
+  | 'cancelled';
 
-/** PROPOSAL: GET /v1/agents/{id}/rollout — the version being tried and the one it may replace. */
+/** The version being tried and the one it may replace. */
 export interface Rollout {
   agent_id: Uuid;
   agent_name: string;
-  baseline_version: number;
+  deployment_id: Uuid;
+  /** Null for an agent's first version. */
+  baseline_version: number | null;
   candidate_version: number;
   /** Share of new runs the candidate takes, 0–100. */
   candidate_share_pct: number;
-  /** The next step the owner can widen to ("Tăng lên 100%"); null once at 100. */
+  /** The next step the owner can widen to (10 → 50 → 100); null once at 100. */
   next_share_pct: number | null;
-  /** The share before the last change, so a toast can undo it ("Lùi lại", "Hoàn tác"). */
-  previous_share_pct: number | null;
   status: RolloutStatus;
-  /** What the candidate changes, in words, from the config version's change note. */
-  change_summary: string;
-  eval_set: { id: Uuid; case_count: number; criteria: EvalCriterion[] };
-  live: { window_days: number; baseline: LiveStats; candidate: LiveStats };
-  /** Automatic rollback conditions, in words ("Tự quay lui khi"). */
+  /** What the candidate changes, from its config version's change note. */
+  change_summary: string | null;
+  /** The candidate's eval run on its eval set; null before it ran. */
+  eval_set: { id: Uuid; case_count: number; criteria: EvalCriterion[] } | null;
+  /** deployment.observed; null until the observation window has numbers. */
+  live: { window_days: number | null; baseline: LiveStats; candidate: LiveStats } | null;
+  /** Automatic rollback conditions (BR-148 gates), in words ("Tự quay lui khi"). */
   auto_rollback_rules: string[];
-  updated_at: Timestamp;
 }
 
-/** PROPOSAL: a case added to the eval set, optionally frozen from a real run. */
-export type EvalCaseKind = 'correct_conclusion' | 'ask_on_time' | 'permission' | 'cost' | 'latency';
+/** UC-13-05: traffic widens 10 → 50 → 100 (agent_deployment.traffic_pct). */
+const SHARE_STEPS = [10, 50, 100];
+const nextShare = (pct: number) => SHARE_STEPS.find((s) => s > pct) ?? null;
+
+const num = (v: unknown): number | null => {
+  const n = typeof v === 'string' ? Number(v) : v;
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+};
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** pass_rate is 0–1 or 0–100 depending on the writer; the screen shows percent. */
+const percent = (v: unknown) => {
+  const n = num(v);
+  return n === null ? null : n <= 1 ? n * 100 : n;
+};
+
+/** BR-148 gates (agent/rules.py DEFAULT_GATES) in words; another key is shown as written. */
+const GATE_TEXT: Record<string, (v: unknown) => string> = {
+  error_rate_increase_pts: (v) => `Tỷ lệ lỗi tăng quá ${String(v)} điểm so với bản cũ`,
+  needs_human_increase_pts: (v) => `Tỷ lệ cần người duyệt tăng quá ${String(v)} điểm`,
+  cost_per_run_increase_pct: (v) => `Chi phí mỗi lượt tăng quá ${String(v)}%`,
+  min_runs: (v) => `Xét sau ít nhất ${String(v)} lượt chạy`,
+};
+
+const gateRules = (gates: unknown) =>
+  isRecord(gates)
+    ? Object.entries(gates).map(([k, v]) => GATE_TEXT[k]?.(v) ?? `${k}: ${String(v)}`)
+    : [];
+
+const liveStats = (v: unknown): LiveStats => {
+  const r = isRecord(v) ? v : {};
+  return {
+    runs: num(r.runs),
+    needs_approval_pct: num(r.needs_human_pct ?? r.needs_approval_pct),
+    errors: num(r.errors ?? r.error_count),
+  };
+};
+
+/*
+ * deployment.observed is "Số đo trong cửa sổ quan sát" (jsonb) with no fixed shape yet; it is read
+ * as {window_days, baseline: {runs, needs_human_pct, errors}, candidate: {…}} and left out otherwise.
+ */
+function readLive(observed: unknown): Rollout['live'] {
+  if (!isRecord(observed) || !isRecord(observed.candidate)) return null;
+  return {
+    window_days: num(observed.window_days),
+    baseline: liveStats(observed.baseline),
+    candidate: liveStats(observed.candidate),
+  };
+}
+
+type Deployment = Schemas['DeploymentView'];
+
+const withDeployment = (r: Rollout, d: Deployment): Rollout => ({
+  ...r,
+  deployment_id: d.id,
+  baseline_version: d.previous_version,
+  candidate_version: d.config_version,
+  candidate_share_pct: d.traffic_pct,
+  next_share_pct: d.status === 'rolling' ? nextShare(d.traffic_pct) : null,
+  status: d.status as RolloutStatus,
+  live: readLive(d.observed) ?? r.live,
+  auto_rollback_rules: gateRules(d.gates),
+});
+
+async function evalOf(run: Schemas['EvalRunDetail']): Promise<NonNullable<Rollout['eval_set']>> {
+  const set = await v1Get<Schemas['EvalSetDetail']>(`/eval-sets/${pathId(run.eval_set_id)}`).catch(
+    () => null,
+  );
+  const threshold = percent(set?.pass_threshold);
+  return {
+    id: run.eval_set_id,
+    case_count: set?.item_count ?? run.item_count,
+    criteria: [
+      {
+        key: 'pass_rate',
+        label: 'Tỷ lệ đạt',
+        unit: 'percent',
+        baseline: percent(run.baseline?.pass_rate),
+        candidate: percent(run.pass_rate) ?? 0,
+        threshold: threshold === null ? null : { op: 'gte', value: threshold },
+      },
+      {
+        key: 'regressions',
+        label: 'Câu đổi kết quả so với bản trước',
+        unit: 'count',
+        baseline: null,
+        candidate: run.regressions,
+        threshold: null,
+      },
+    ],
+  };
+}
+
+/** The agent's deployment in progress; null when it has none (UC-13-05 not started or done). */
+export const getRollout = async (agentId: string): Promise<Rollout | null> => {
+  const agent = await v1Get<Schemas['AgentView']>(`/agents/${pathId(agentId)}`);
+  const deployment = agent.active_deployment;
+  if (!deployment) return null;
+  const configs = await v1Get<Page<Schemas['ConfigView']>>(`/agents/${pathId(agent.id)}/configs`, {
+    page_size: 500,
+  });
+  const candidate = configs.items.find((c) => c.version === deployment.config_version);
+  const run = candidate?.eval_run_id
+    ? await v1Get<Schemas['EvalRunDetail']>(`/eval-runs/${pathId(candidate.eval_run_id)}`)
+    : null;
+  const base: Rollout = {
+    agent_id: agent.id,
+    agent_name: agent.name,
+    deployment_id: deployment.id,
+    baseline_version: null,
+    candidate_version: deployment.config_version,
+    candidate_share_pct: 0,
+    next_share_pct: null,
+    status: 'rolling',
+    change_summary: candidate?.change_note ?? null,
+    eval_set: run ? await evalOf(run) : null,
+    live: null,
+    auto_rollback_rules: [],
+  };
+  return withDeployment(base, deployment);
+};
+
+/** Widen, narrow or restore the candidate's share; 100 completes the deployment. */
+export const setRolloutShare = async (rollout: Rollout, pct: number) =>
+  withDeployment(
+    rollout,
+    await v1Send<Deployment>('PATCH', `/deployments/${pathId(rollout.deployment_id)}`, {
+      traffic_pct: pct,
+    } satisfies Schemas['DeploymentPatch']),
+  );
+
+/** Every new run goes back to the baseline; runs already started keep their version. */
+export const rollbackRollout = async (rollout: Rollout, reason: string) =>
+  withDeployment(
+    rollout,
+    await v1Send<Deployment>('POST', `/deployments/${pathId(rollout.deployment_id)}:rollback`, {
+      reason,
+    } satisfies Schemas['DeploymentRollback']),
+  );
+
+/** A case added to the eval set, optionally frozen from a real run (eval_item.category). */
+export type EvalCaseKind = Schemas['EvalItemCreate']['category'];
 
 export interface NewEvalCase {
   source_run_id: Uuid | null;
   input: string;
   expected: string;
-  kind: EvalCaseKind;
+  kind: NonNullable<EvalCaseKind>;
 }
 
-export interface EvalCase extends NewEvalCase {
-  id: Uuid;
-  eval_set_id: Uuid;
-  created_at: Timestamp;
-}
-
-/** PROPOSAL: the agents with a version in canary, for opening the screen without an agent. */
-export const listRollouts = async (): Promise<Page<Rollout>> => {
-  try {
-    return await v1Get<Page<Rollout>>('/rollouts', { status: 'canary,held', page_size: 50 });
-  } catch (error) {
-    // The rollout collection is a proposal until the API-05 deployment read model lands.
-    // A missing collection therefore means there is no candidate to show, not a broken page.
-    if (error instanceof V1Error && error.status === 404)
-      return { items: [], next_page_token: '' };
-    throw error;
-  }
-};
-
-export const getRollout = async (agentId: string) =>
-  v1Get<Rollout>(`/agents/${pathId(agentId)}/rollout`);
-
-/** PROPOSAL: widen, narrow or restore the candidate's share. */
-export const setRolloutShare = async (agentId: string, candidateSharePct: number) =>
-  v1Send<Rollout>('POST', `/agents/${pathId(agentId)}/rollout:set`, {
-    candidate_share_pct: candidateSharePct,
-  });
-
-/** PROPOSAL: keep the current share and record the decision, so it stops asking. */
-export const holdRollout = async (agentId: string) =>
-  v1Send<Rollout>('POST', `/agents/${pathId(agentId)}/rollout:hold`);
-
-/** PROPOSAL: every new run goes back to the baseline; runs already started keep their version. */
-export const rollbackRollout = async (agentId: string) =>
-  v1Send<Rollout>('POST', `/agents/${pathId(agentId)}/rollout:rollback`);
-
+/** POST /v1/eval-sets/{id}/items: input and expected are jsonb; the run it came from rides along. */
 export const addEvalCase = async (evalSetId: string, body: NewEvalCase) =>
-  v1Send<EvalCase>('POST', `/eval-sets/${pathId(evalSetId)}/cases`, body);
+  v1Send<Schemas['EvalItemView']>('POST', `/eval-sets/${pathId(evalSetId)}/items`, {
+    input: { text: body.input, ...(body.source_run_id ? { run_id: body.source_run_id } : {}) },
+    expected: { text: body.expected },
+    category: body.kind,
+  } as unknown as Schemas['EvalItemCreate']);
 
 /* ─── Điều phối nhiều agent (UC-13-08) ────────────────────────────────── */
 
-/** PROPOSAL: one agent's part of the team run: its task, what it found, its run's status. */
+/** One agent's part of the team run: its task, what it found, its run's status. */
 export interface DelegatedTask {
   run_id: Uuid;
   agent_id: Uuid;
   agent_name: string;
-  /** Null for the lead agent; otherwise the agent that delegated (agent_run.trigger_kind = agent_call). */
+  /** Null for the lead agent; otherwise the agent that delegated (trigger_kind agent_call). */
   delegated_by: string | null;
-  task: string;
-  /** The latest result or what it is doing, one sentence. */
+  /** The lead's step that handed the task out; null when the step is not known. */
+  task: string | null;
+  /** That step's summary once the child answered. */
   result_text: string | null;
   status: RunStatus;
-  cost: string;
+  cost: number;
 }
 
-/** PROPOSAL: GET /v1/orchestrations/{id} — a lead run and the runs it delegated, as one tree. */
+/** A lead run and the runs it delegated, as one tree. */
 export interface Orchestration {
   /** The lead run's id. */
   id: Uuid;
   code: string;
-  title: string;
   status: RunStatus;
   lead_agent_name: string;
-  started_at: Timestamp;
-  /** What started it, "cảnh báo #A-2291". */
-  started_from: string;
+  started_at: string | null;
   /** Lead first, then the delegated runs in the order they were handed out. */
   tasks: DelegatedTask[];
-  /** The team's guardrails in words ("Quy tắc điều phối"). */
-  rules: string[];
   /** Total of every run in the tree. */
-  cost: string;
+  cost: number;
 }
 
-export const listOrchestrations = (query: { status?: RunStatus } = {}) =>
-  v1Get<Page<Orchestration>>('/orchestrations', { page_size: 50, ...query });
+type RunWire = Schemas['RunView'];
+type RunRow = Schemas['RunSummary'];
 
-export const getOrchestration = async (id: string) =>
-  v1Get<Orchestration>(`/orchestrations/${pathId(id)}`);
+const children = async (id: string) =>
+  (await v1Get<Page<RunRow>>(`/runs/${pathId(id)}/children`, { page_size: 500 })).items;
 
-/** PROPOSAL: pause or resume the lead and every delegated run that has not finished. */
-export const controlOrchestration = async (id: string, verb: 'pause' | 'resume') =>
-  v1Send<Orchestration>('POST', `/orchestrations/${pathId(id)}:${verb}`);
+/** UC-13-08 nests at most a few levels; each level is one read per parent. */
+const MAX_DEPTH = 3;
+
+export const getOrchestration = async (id: string): Promise<Orchestration> => {
+  const [lead, agents] = await Promise.all([
+    v1Get<RunWire>(`/runs/${pathId(id)}`, { view: 'technical' }),
+    listAgents().catch(() => null),
+  ]);
+  const nameOf = (agentId: string) => agents?.items.find((a) => a.id === agentId)?.name ?? 'Agent';
+  // The step of a parent that started a child names the task and, once done, its result.
+  const steps = new Map(
+    (lead.steps ?? []).flatMap((s) => (s.child_run_id ? [[s.child_run_id, s]] : [])),
+  );
+  const tasks: DelegatedTask[] = [
+    {
+      run_id: lead.id,
+      agent_id: lead.agent_id,
+      agent_name: nameOf(lead.agent_id),
+      delegated_by: null,
+      task: null,
+      result_text: null,
+      status: lead.status as RunStatus,
+      cost: num(lead.cost) ?? 0,
+    },
+  ];
+  let level: { id: string; agent_id: string }[] = [lead];
+  for (let depth = 0; depth < MAX_DEPTH && level.length; depth++) {
+    const next = await Promise.all(level.map(async (p) => ({ p, rows: await children(p.id) })));
+    level = [];
+    for (const { p, rows } of next)
+      for (const row of rows) {
+        const step = steps.get(row.id);
+        tasks.push({
+          run_id: row.id,
+          agent_id: row.agent_id,
+          agent_name: nameOf(row.agent_id),
+          delegated_by: nameOf(p.agent_id),
+          task: step?.name ?? null,
+          result_text: step?.summary ?? null,
+          status: row.status as RunStatus,
+          cost: num(row.cost) ?? 0,
+        });
+        level.push(row);
+      }
+  }
+  return {
+    id: lead.id,
+    code: `#${lead.id.slice(0, 8)}`,
+    status: lead.status as RunStatus,
+    lead_agent_name: tasks[0].agent_name,
+    started_at: lead.started_at,
+    tasks,
+    cost: tasks.reduce((sum, t) => sum + t.cost, 0),
+  };
+};
+
+const ACTIVE = new Set(['queued', 'planning', 'running', 'waiting_human', 'paused']);
+
+/*
+ * A2 lists runs without a "has children" filter: a lead is found as the parent of a delegated
+ * run (depth 1) on the latest page, preferring one still going.
+ */
+export const findOrchestration = async (): Promise<string | null> => {
+  const page = await v1Get<Page<RunRow>>('/runs', { page_size: 500 });
+  const leads = [
+    ...new Set(
+      page.items.flatMap((r) => (r.depth === 1 && r.parent_run_id ? [r.parent_run_id] : [])),
+    ),
+  ];
+  const active = leads.find((id) => {
+    const lead = page.items.find((r) => r.id === id);
+    return lead ? ACTIVE.has(lead.status) : false;
+  });
+  return active ?? leads[0] ?? null;
+};
+
+/** Pause or resume the lead; its delegated runs wait on it. */
+export const controlOrchestration = async (id: string, verb: 'pause' | 'resume') => {
+  await controlRun(id, verb);
+  return getOrchestration(id);
+};

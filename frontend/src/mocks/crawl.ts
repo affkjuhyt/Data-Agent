@@ -1,6 +1,5 @@
 import { http, HttpResponse } from 'msw';
 import type {
-  AcquireSummary,
   CrawlRun,
   CrawlSchemaVersion,
   ConsolidationRun,
@@ -171,24 +170,32 @@ function sourcesFixture(): CrawlSource[] {
   ];
 }
 
-const SUMMARY: AcquireSummary = {
-  active: 7,
-  total: 9,
-  paused: 1,
-  blocked: 1,
-  last_agent_run_text: 'Agent Thu thập · 10/10 08:05',
-  sample_accuracy_pct: 98.6,
-  accuracy_delta_text: '+0,4 điểm so với tuần trước',
-  sample_text: '2% bản ghi mỗi lượt, 4 lượt gần nhất',
-  pending_records: 23,
-  blocking_records: 4,
-  latest_dataset: {
-    published_at: '2026-10-10T08:20:00+07:00',
-    title: 'Lãi suất huy động tuần 41',
-    detail: 'Dataset v41 · 30 ngân hàng',
-    consolidation_run_id: 'cons-deposit-w41',
-  },
+/*
+ * The active consolidation spec and the versions of the dataset it writes, which say the newest
+ * consolidated data over the list (A2 ConsolidationSpecView, DatasetVersionView).
+ */
+const DEPOSIT_DATASET_ID = 'dset-deposit-rates';
+const CONSOLIDATION_SPEC = {
+  id: 'cspec-deposit',
+  name: 'Lãi suất huy động tuần 41',
+  entity_type: 'bank',
+  grain: 'week',
+  status: 'active',
+  source_ids: ['cs-deposit-a', 'cs-deposit-b', 'cs-deposit-c'],
+  target_dataset_id: DEPOSIT_DATASET_ID,
 };
+const DEPOSIT_VERSIONS = [
+  {
+    id: 'dsv-deposit-41',
+    dataset_id: DEPOSIT_DATASET_ID,
+    version: 41,
+    change_kind: 'data',
+    valid_from: '2026-10-10T08:20:00+07:00',
+    valid_to: null,
+    certified_at: '2026-10-10T09:00:00+07:00',
+    certified_by: 'u-steward',
+  },
+];
 
 const SUGGESTION: SourceSuggestion = {
   suggested_name: 'Lãi suất huy động · 30 ngân hàng',
@@ -513,7 +520,8 @@ function consolidationFixture(): ConsolidationRun {
     title: 'Hợp nhất dữ liệu · tuần 41',
     summary_text: '3 nguồn thu · 30 ngân hàng · 412 bản ghi vào, 148 dòng hợp nhất',
     status: 'pending_review',
-    next_dataset_version: 42,
+    dataset_version_id: 'dsv-deposit-42',
+    dataset_version: 42,
     steps: [
       { label: 'Chuẩn hoá', state: 'done' },
       { label: 'Thực thể', state: 'waiting' },
@@ -674,18 +682,30 @@ export function createCrawlHandlers() {
         };
       return HttpResponse.json({ id, status, method: 'human' });
     }),
-    http.post('*/v1/consolidation-runs/:action', ({ params }) => {
+    // A2 certification of the version the run wrote; it waits on the links and conflicts.
+    http.post('*/v1/dataset-versions/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
-      if (id !== consolidation.id || verb !== 'publish')
-        return problem(404, 'not_found', 'Không tìm thấy lượt hợp nhất.');
+      if (id !== consolidation.dataset_version_id || verb !== 'certify')
+        return problem(404, 'not_found', 'Không tìm thấy phiên bản dataset.');
       const waiting =
         consolidation.entity_matches.filter((m) => !m.decision).length +
         consolidation.conflicts.filter((c) => c.open).length;
       if (waiting)
-        return problem(409, 'invalid_state', `Còn ${waiting} mục chờ trước khi phát hành.`);
-      consolidation = { ...consolidation, status: 'published' };
-      return HttpResponse.json(consolidation);
+        return problem(409, 'invalid_state', `Còn ${waiting} mục chờ trước khi chứng nhận.`);
+      return HttpResponse.json({
+        id,
+        version: consolidation.dataset_version,
+        certified_at: new Date().toISOString(),
+      });
     }),
+    http.get('*/v1/consolidation-specs', () =>
+      HttpResponse.json({ items: [CONSOLIDATION_SPEC], next_page_token: '' }),
+    ),
+    http.get('*/v1/datasets/:id/versions', ({ params }) =>
+      params.id === DEPOSIT_DATASET_ID
+        ? HttpResponse.json({ items: DEPOSIT_VERSIONS, next_page_token: '' })
+        : undefined,
+    ),
     http.get('*/v1/crawl-runs/:id/records', ({ params }) =>
       params.id === run.id
         ? HttpResponse.json({ items: records.map(recordWire), next_page_token: '' })
@@ -868,7 +888,6 @@ export function createCrawlHandlers() {
     http.get('*/v1/crawl-sources', () =>
       HttpResponse.json({ items: sources.map(sourceWire), next_page_token: '' }),
     ),
-    http.get('*/v1/acquire/summary', () => HttpResponse.json(SUMMARY)),
     http.post('*/v1/crawl-sources/:id/runs', ({ params }) => {
       const source = sources.find((x) => x.id === params.id);
       if (!source) return problem(404, 'not_found', 'Không tìm thấy nguồn.');

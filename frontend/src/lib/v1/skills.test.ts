@@ -107,13 +107,10 @@ describe('skills from the api', () => {
     expect(await listTools()).toMatchObject({
       items: [
         {
-          id: 'notify.send',
           name: 'notify.send',
           level: 'external',
           description: 'Gửi Teams',
-          mcp_server_id: 'mcp-ticket',
-          agent_count: 0,
-          calls_30d: 0,
+          executed_by: 'mcp-ticket',
         },
       ],
     });

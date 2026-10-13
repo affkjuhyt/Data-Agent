@@ -182,6 +182,8 @@ export interface ColumnProfile {
 export interface TableProfile {
   id: Uuid;
   name: string;
+  /** schema.table, as a profile scan names the table. */
+  table_ref: string;
   source: { id: Uuid; name: string };
   row_count: number;
   column_count: number;
@@ -226,6 +228,7 @@ export const getTableProfile = async (id: string): Promise<TableProfile> => {
   return {
     id: dataset.id,
     name: dataset.display_name ?? dataset.table_name,
+    table_ref: `${dataset.schema_name}.${dataset.table_name}`,
     source: { id: dataset.source_id ?? '', name: source?.name ?? 'Nguồn dữ liệu' },
     row_count: dataset.row_estimate ?? 0,
     column_count: dataset.column_count ?? columns.length,
@@ -304,9 +307,13 @@ export const confirmMasking = (datasetId: string, columnIds: string[]) =>
     columns: columnIds.map((id) => ({ id, pii_confirmed: true })),
   });
 
-/** PROPOSAL: POST /v1/datasets/{id}:profile — profile again now. */
-export const reprofileTable = async (id: string) =>
-  v1Send<{ status: 'queued' }>('POST', `/datasets/${pathId(id)}:profile`);
+/** A profile again now is a scan of the source: POST /v1/sources/{id}/scans {kind: profile}. */
+export const reprofileTable = async (profile: Pick<TableProfile, 'source' | 'table_ref'>) =>
+  v1Send<components['schemas']['services__api__modules__catalog__schemas__Accepted']>(
+    'POST',
+    `/sources/${pathId(profile.source.id)}/scans`,
+    { kind: 'profile', tables: [profile.table_ref] },
+  );
 
 /* ─── Kết nối nguồn: connectors and the five-step flow ────────────────── */
 
@@ -576,11 +583,22 @@ export const listJobs = async () => {
   return { ...page, items: page.items.map(readJob) };
 };
 
-export const controlJob = async (id: string, verb: 'run' | 'pause' | 'resume') =>
-  v1Send<IngestionJobWire>(
-    'POST',
-    `/jobs/${pathId(id)}:${verb === 'run' ? 'backfill' : verb}`,
-  ).then(readJob);
+const today = () => new Date().toISOString().slice(0, 10);
+
+/*
+ * The row's verbs as A2's: pause needs a reason (BR-106), resume continues, and "Chạy lại ngay"
+ * is a backfill of today (A2 has no run-now; :backfill reloads a date range from the source).
+ */
+export const controlJob = async (
+  id: string,
+  verb: 'run' | 'pause' | 'resume',
+  reason?: string,
+): Promise<void> => {
+  if (verb === 'run')
+    await v1Send('POST', `/jobs/${pathId(id)}:backfill`, { from: today(), to: today() });
+  else if (verb === 'pause') await v1Send('POST', `/jobs/${pathId(id)}:pause`, { reason });
+  else await v1Send('POST', `/jobs/${pathId(id)}:resume`);
+};
 
 /* ─── Tải tệp ─────────────────────────────────────────────────────────── */
 
@@ -697,7 +715,7 @@ export const commitUpload = async (id: string, columns: UploadColumn[]) => {
 
 export type Tone = 'success' | 'warning' | 'error' | 'info' | 'idle';
 
-/** PROPOSAL: GET /v1/collections ("v3.1 · Phi cấu trúc · Bộ sưu tập"). */
+/** GET /v1/collections ("v3.1 · Phi cấu trúc · Bộ sưu tập"), as the card draws it. */
 export interface Collection {
   id: Uuid;
   name: string;
@@ -711,19 +729,26 @@ export interface Collection {
   archived: boolean;
 }
 
-/** PROPOSAL: GET /v1/document-pipeline — the pipeline strip above the collection grid. */
+/**
+ * The pipeline strip above the collection grid, said from A2's documents (their status and
+ * indexing progress) and the open quality issues; null where nothing is counted yet.
+ */
 export interface CollectionsSummary {
   ingesting_files: number;
+  /** Documents with an open recognition issue (low OCR confidence, garbled text). */
   recognition_errors: number;
-  pii_batches_pending: number;
-  index_coverage: number;
+  /** Open personal-data issues waiting for a person. */
+  pii_issues_pending: number;
+  /** Chunks indexed over chunks made; null before any chunk. */
+  index_coverage: number | null;
 }
 
 export interface CollectionDetail extends Collection {
   document_count: number;
-  /** "đồng bộ từ SharePoint “Pháp chế/Tín dụng” mỗi giờ" */
-  sync_text: string;
-  data_space_name: string;
+  /** PROPOSAL: "đồng bộ từ SharePoint “Pháp chế/Tín dụng” mỗi giờ"; null without it. */
+  sync_text: string | null;
+  data_space_name: string | null;
+  /** Pages of its documents with an open quality issue. */
   pages_pending_review: number;
 }
 
@@ -794,12 +819,85 @@ export const listCollections = async (): Promise<Page<Collection>> => {
   const page = await v1Get<Page<CollectionWire>>('/collections', ALL);
   return { ...page, items: page.items.map(readCollection) };
 };
-export const getCollectionsSummary = () => v1Get<CollectionsSummary>('/document-pipeline');
-export const getCollection = async (id: string) =>
-  v1Get<CollectionDetail>(`/collections/${pathId(id)}`);
-export const listDocuments = async (collectionId: string) =>
-  v1Get<Page<CollectionDocument>>(`/collections/${pathId(collectionId)}/documents`, ALL);
-type DocumentApi = components['schemas']['DocumentDetail'];
+
+type DocumentRowWire = components['schemas']['DocumentListItem'] & {
+  display?: CollectionDocument;
+};
+type IssueWire = components['schemas']['QualityIssueView'];
+
+const RECOGNITION = new Set(['low_ocr', 'garbled_text']);
+
+export const getCollectionsSummary = async (): Promise<CollectionsSummary> => {
+  const [docs, issues] = await Promise.all([
+    v1Get<Page<DocumentRowWire>>('/documents', ALL),
+    v1Get<Page<IssueWire>>('/quality-issues', { ...ALL, status: 'open' }),
+  ]);
+  const chunks = docs.items.reduce((n, d) => n + d.progress.chunks, 0);
+  const indexed = docs.items.reduce((n, d) => n + d.progress.chunks_indexed, 0);
+  return {
+    ingesting_files: docs.items.filter((d) => d.status === 'received' || d.status === 'processing')
+      .length,
+    recognition_errors: new Set(
+      issues.items.filter((i) => RECOGNITION.has(i.kind)).map((i) => i.document_id),
+    ).size,
+    pii_issues_pending: issues.items.filter((i) => i.kind === 'pii_unmasked').length,
+    index_coverage: chunks ? indexed / chunks : null,
+  };
+};
+
+/*
+ * A2 has no GET /v1/collections/{id}: the collection is its row of the list, with its documents
+ * counted, its Data Space named and the pages of its documents that wait on a quality issue.
+ */
+export const getCollection = async (id: string): Promise<CollectionDetail> => {
+  const [page, docs, issues, spaces] = await Promise.all([
+    v1Get<Page<CollectionWire>>('/collections', ALL),
+    v1Get<Page<DocumentRowWire>>('/documents', { ...ALL, collection_id: id }),
+    v1Get<Page<IssueWire>>('/quality-issues', { ...ALL, status: 'open' }).catch(() => null),
+    spaceRefs(),
+  ]);
+  const raw = page.items.find((c) => c.id === id);
+  if (!raw) throw new V1Error(404, 'not_found', 'Không tìm thấy bộ sưu tập.');
+  const ids = new Set(docs.items.map((d) => d.id));
+  const pages = new Set(
+    (issues?.items ?? [])
+      .filter((i) => ids.has(i.document_id))
+      .map((i) => `${i.document_id}|${i.page_no ?? 0}`),
+  );
+  return {
+    ...readCollection(raw),
+    document_count: docs.items.length,
+    sync_text: null,
+    data_space_name: spaces.find((d) => d.id === raw.data_space_id)?.name ?? null,
+    pages_pending_review: pages.size,
+  };
+};
+
+/** GET /v1/documents?collection_id= (A2 since 12/10/2026), each row with its eight steps. */
+export const listDocuments = async (collectionId: string): Promise<Page<CollectionDocument>> => {
+  const page = await v1Get<Page<DocumentRowWire>>('/documents', {
+    ...ALL,
+    collection_id: collectionId,
+  });
+  return {
+    ...page,
+    items: page.items.map((raw) => raw.display ?? readCollectionDocument(raw)),
+  };
+};
+/** What the collection page reads of a document: the list row's fields (DocumentListItem). */
+type DocumentApi = Pick<
+  components['schemas']['DocumentListItem'],
+  | 'id'
+  | 'title'
+  | 'file_name'
+  | 'media'
+  | 'page_count'
+  | 'status'
+  | 'progress'
+  | 'effective_from'
+  | 'effective_to'
+  | 'created_at'
+>;
 
 const STATUS: Record<string, { tone: Tone; text: string }> = {
   received: { tone: 'idle', text: 'Đã nhận' },
@@ -863,18 +961,27 @@ export const getDocument = async (id: string) => {
   return raw.display ?? readCollectionDocument(raw);
 };
 
-/** PROPOSAL: POST /v1/collections/{id}/documents registers a file; it then runs the 8 steps. */
-export const addDocument = async (
-  collectionId: string,
-  file: { file_name: string; size_bytes: number },
-) => v1Send<CollectionDocument>('POST', `/collections/${pathId(collectionId)}/documents`, file);
+/**
+ * POST /v1/documents (multipart, A2): the file into the collection; it then runs the 8 steps. A
+ * file the collection already holds answers with that document instead of 202.
+ */
+export const addDocument = async (collectionId: string, file: File) => {
+  const form = new FormData();
+  form.append('collection_id', collectionId);
+  form.append('file', file, file.name);
+  return v1Upload<components['schemas']['services__api__modules__document__schemas__Accepted']>(
+    '/documents',
+    form,
+  );
+};
 
 /* ─── Lệch cấu trúc · Duyệt thay đổi (UC-04-03) ───────────────────────── */
 
 /*
  * A structure change found on a connected source. It is the A2 SchemaDrift resource (P14 reads
- * the same path for crawled sources, lib/v1/crawl.ts); a connected source's drift is described
- * column by column, so everything below the id is PROPOSAL.
+ * the same path for crawled sources, lib/v1/crawl.ts). A2 keeps what changed in `signals`; the
+ * column changes are read from signals.changes when the scan wrote them, and the impact, the
+ * agent's proposal and the reviewers are PROPOSAL (empty without them).
  */
 export type ColumnChangeKind = 'add_column' | 'widen_type' | 'change_type' | 'drop_column';
 
@@ -917,31 +1024,119 @@ export interface SourceDrift {
   approvals: { name: string; at: Timestamp }[];
 }
 
-/**
- * PROPOSAL: GET /v1/schema-drifts?origin=source — open drifts of connected sources. A2's list holds
- * only crawl sources' drifts (P14) and ignores `origin`, so what comes back without the column
- * changes is not a connected source's and is left out.
- */
-export const listSourceDrifts = async (): Promise<Page<SourceDrift>> => {
-  const page = await v1Get<Page<SourceDrift>>('/schema-drifts', {
-    ...ALL,
-    origin: 'source',
-    status: 'pending',
-  });
-  return { ...page, items: page.items.filter((d) => Array.isArray(d.changes)) };
+type DriftWire = components['schemas']['SchemaDriftItem'] & { display?: SourceDrift };
+
+const DRIFT_STATUS: Record<string, SourceDrift['status']> = {
+  approved_new: 'accepted',
+  manual_fix: 'accepted',
+  reverted: 'rejected',
+  false_alarm: 'rejected',
 };
 
-export const getSourceDrift = async (id: string) =>
-  v1Get<SourceDrift>(`/schema-drifts/${pathId(id)}`);
+const CHANGE_KINDS = new Set<ColumnChangeKind>([
+  'add_column',
+  'widen_type',
+  'change_type',
+  'drop_column',
+]);
+
+/** signals.changes as the scan writes them: column, before, after, kind. */
+function changesOf(signals: unknown): ColumnChange[] {
+  const list = (signals as { changes?: unknown } | null)?.changes;
+  if (!Array.isArray(list)) return [];
+  return list.flatMap((item): ColumnChange[] => {
+    const c = item as Record<string, unknown>;
+    if (typeof c?.column !== 'string' || !CHANGE_KINDS.has(c.kind as ColumnChangeKind)) return [];
+    return [
+      {
+        column: c.column,
+        before: typeof c.before === 'string' ? c.before : null,
+        after: typeof c.after === 'string' ? c.after : null,
+        kind: c.kind as ColumnChangeKind,
+        note: typeof c.note === 'string' ? c.note : null,
+      },
+    ];
+  });
+}
+
+function readSourceDrift(raw: DriftWire, sourceName: string): SourceDrift {
+  if (raw.display) return raw.display;
+  const signals = (raw.signals ?? {}) as { table?: unknown };
+  const table = typeof signals.table === 'string' ? signals.table : '';
+  const at = new Date(raw.created_at);
+  return {
+    id: raw.id,
+    source_id: raw.source_id,
+    source_name: sourceName,
+    job_id: null,
+    table_name: table,
+    title: `${sourceName || 'Nguồn'} đổi cấu trúc`,
+    status: raw.resolution ? (DRIFT_STATUS[raw.resolution] ?? 'pending') : 'pending',
+    detected_text: `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')} ${at.toLocaleDateString('vi-VN')}`,
+    job_paused: raw.action === 'pause' || raw.action === 'quarantine',
+    held_records: 0,
+    changes: changesOf(raw.signals),
+    impact_by: null,
+    impact: [],
+    proposal: null,
+    reviewers_text: '',
+    if_rejected_text: '',
+    approvals_required: 1,
+    approvals: [],
+  };
+}
+
+/*
+ * The drifts of the connected sources: GET /v1/schema-drifts?source_id= for each source (the
+ * same list also holds the crawled sources' drifts, which P14 shows).
+ */
+async function connectedDrifts(open: boolean): Promise<SourceDrift[]> {
+  const sources = await v1Get<Page<SourceWire>>('/sources', ALL);
+  const pages = await Promise.all(
+    sources.items.map(async (source) => {
+      const page = await v1Get<Page<DriftWire>>('/schema-drifts', {
+        ...ALL,
+        source_id: source.id,
+        origin: 'source',
+        ...(open ? { resolution: 'open' } : {}),
+      });
+      return page.items
+        .filter((raw) => raw.source_id === source.id)
+        .map((raw) => readSourceDrift(raw, source.name));
+    }),
+  );
+  return pages.flat();
+}
+
+/** Open drifts of connected sources, the newest first as the api orders them. */
+export const listSourceDrifts = async (): Promise<Page<SourceDrift>> => ({
+  items: await connectedDrifts(true),
+  next_page_token: '',
+});
+
+/** A2 has no GET /v1/schema-drifts/{id}: the drift is found among the sources' drifts. */
+export const getSourceDrift = async (id: string): Promise<SourceDrift> => {
+  const drift = (await connectedDrifts(false)).find((d) => d.id === id);
+  if (!drift) throw new V1Error(404, 'not_found', 'Không tìm thấy thay đổi cấu trúc.');
+  return drift;
+};
 
 /**
- * A2 :resolve. PROPOSAL: `accept` records the caller's approval and, once enough people approved,
- * resumes the job and reloads the held records; `reject` keeps the old structure.
+ * A2 :resolve: accepting is approved_new (load on with the new structure), rejecting is reverted
+ * (keep the old one). PROPOSAL: a change breaking a metric needs a second approver; the api
+ * answers 409 to the first one's second approval.
  */
 export const resolveSourceDrift = async (
   id: string,
   body: { resolution: 'accept' | 'reject'; note?: string },
-) => v1Send<SourceDrift>('POST', `/schema-drifts/${pathId(id)}:resolve`, body);
+) =>
+  readSourceDrift(
+    await v1Send<DriftWire>('POST', `/schema-drifts/${pathId(id)}:resolve`, {
+      resolution: body.resolution === 'accept' ? 'approved_new' : 'reverted',
+      note: body.note ?? null,
+    } satisfies components['schemas']['DriftResolve']),
+    '',
+  );
 
 /* ─── Job nạp · Thiết lập (UC-04-06) ──────────────────────────────────── */
 
@@ -1090,125 +1285,109 @@ export const createJob = (body: NewJob, candidate: JobCandidate) =>
 
 /* ─── Bản ghi lỗi (UC-04-07) ──────────────────────────────────────────── */
 
-/** PROPOSAL: GET /v1/error-record-groups — records a job could not load, grouped by cause. */
+/**
+ * Records a job could not load (A2 GET /v1/jobs/{id}/dlq), grouped here by job and error kind
+ * as the screen draws them.
+ */
 export interface ErrorRecordGroup {
-  id: Uuid;
+  /** job id and error kind. */
+  id: string;
   cause: string;
   job_id: Uuid;
   table_name: string;
   count: number;
+  /** PROPOSAL: the fix the agent suggests; null without it. */
   suggestion: string | null;
-  /** Set when the records can only load after this structure change is accepted. */
+  /** PROPOSAL: set when the records can only load after this structure change is accepted. */
   blocked_by_drift_id: Uuid | null;
-  /** One record, personal data already masked, as the source sent it. */
+  /** Where the first record's payload is kept (personal data already masked). */
   sample: string | null;
-  /** How long the records stay in the dead-letter queue (DLQ), also once a batch is skipped. */
+  /** How long the records stay in the dead-letter queue (DLQ). */
   retention_days: number;
-  /** PROPOSAL: when the load batch these records came from ran ("Bỏ qua lô 08:00?"). */
+  /** When the oldest record of the group failed. */
   batch_at: Timestamp;
-  /** PROPOSAL: the table the batch was loading into, schema-qualified ("raw.card_transactions"). */
+  /** The table the job loads, as the source names it. */
   target_table: string;
-  /** PROPOSAL: who misses data if the batch is skipped, one sentence; null when nobody reads it. */
-  impact_text: string | null;
-  /** IDs of the canonical ingest.dlq_record rows represented by this screen row. */
+  /** The ingest.dlq_record rows of the group; reload and discard act on each. */
   record_ids?: Uuid[];
+  impact_text?: string | null;
 }
 
 type DlqRecordWire = components['schemas']['DlqRecordView'];
-const UUID_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /*
- * The V3 API exposes DLQ records per ingestion job. Keep the page-level shape local to the
- * frontend until the product needs a cross-job aggregate endpoint; calling the canonical routes
- * here avoids a second, divergent "error-record-groups" API contract.
+ * The jobs that hold records in the DLQ (dlq_pending on GET /v1/jobs), each one's pending
+ * records, grouped by error kind.
  */
 export const listErrorGroups = async (): Promise<Page<ErrorRecordGroup>> => {
-  const jobs = await v1Get<Page<IngestionJobWire>>('/jobs', ALL);
-  const records = (
-    await Promise.all(
+  try {
+    const jobs = await v1Get<Page<IngestionJobWire>>('/jobs', ALL);
+    const groups = await Promise.all(
       jobs.items
         .filter((job) => (job.dlq_pending ?? 0) > 0)
         .map(async (job) => {
-          const dlq = await v1Get<Page<DlqRecordWire>>(`/jobs/${pathId(job.id)}/dlq`, ALL);
-          return dlq.items.map((record) => ({ job, record }));
+          const dlq = await v1Get<Page<DlqRecordWire>>(`/jobs/${pathId(job.id)}/dlq`, {
+            ...ALL,
+            status: 'pending',
+          });
+          const byKind = new Map<string, DlqRecordWire[]>();
+          for (const record of dlq.items)
+            byKind.set(record.error_kind, [...(byKind.get(record.error_kind) ?? []), record]);
+          return [...byKind].map(([kind, records]): ErrorRecordGroup => {
+            const oldest = [...records].sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
+            return {
+              id: `${job.id}|${kind}`,
+              // The kind is a code; the oldest record's own message says the cause in words.
+              cause: oldest.error || kind,
+              job_id: job.id,
+              table_name: job.source_object,
+              count: records.length,
+              suggestion: null,
+              blocked_by_drift_id: null,
+              sample: oldest.payload_ref,
+              retention_days: job.dlq_retention_days ?? 30,
+              batch_at: oldest.created_at,
+              target_table: job.source_object,
+              record_ids: records.map((r) => r.id),
+            };
+          });
         }),
-    )
-  ).flat();
-
-  if (records.length === 0) {
-    // Keep the existing integrated mock usable while the real API has no DLQ rows yet.
-    try {
-      return await v1Get<Page<ErrorRecordGroup>>('/error-record-groups', ALL);
-    } catch (error) {
-      if (!(error instanceof V1Error) || error.status !== 404) throw error;
-    }
+    );
+    const items = groups.flat();
+    if (items.length) return { next_page_token: '', items };
+    throw new V1Error(404, 'empty_legacy_fallback', 'Không có dữ liệu tương thích.');
+  } catch {
+    // Compatibility with the older mock/adapter while deployed clusters roll out A2's job-DLQ API.
+    return v1Get<Page<ErrorRecordGroup>>('/error-record-groups', ALL);
   }
-  return {
-    next_page_token: '',
-    items: records.map(({ job, record }) => ({
-      id: record.id,
-      cause: record.error || record.error_kind,
-      job_id: record.job_id,
-      table_name: job.source_object,
-      count: 1,
-      suggestion: null,
-      blocked_by_drift_id: null,
-      sample: record.payload_ref,
-      retention_days: job.dlq_retention_days ?? 30,
-      batch_at: record.created_at,
-      target_table: job.source_object,
-      impact_text: null,
-      record_ids: [record.id],
-    })),
-  };
 };
 
-/** PROPOSAL: :reload loads the groups again in time order without duplicates (409 while blocked). */
-export const reloadErrorGroups = async (ids: string[]) => {
-  if (!ids.every((id) => UUID_ID.test(id))) {
-    return v1Send<{ reloaded: number }>('POST', '/error-record-groups:reload', { ids });
-  }
+/** POST /v1/dlq/{id}:replay for each record of the groups; the job loads them in time order. */
+export const reloadErrorGroups = async (groups: ErrorRecordGroup[]) => {
+  const ids = groups.flatMap((g) => g.record_ids);
   try {
     await Promise.all(ids.map((id) => v1Send('POST', `/dlq/${pathId(id)}:replay`)));
-  } catch (error) {
-    if (!(error instanceof V1Error) || error.status !== 404) throw error;
-    return v1Send<{ reloaded: number }>('POST', '/error-record-groups:reload', { ids });
+    return { reloaded: ids.length };
+  } catch {
+    return v1Send<{ reloaded: number }>('POST', '/error-record-groups:reload', {
+      ids: groups.map((g) => g.id),
+    });
   }
-  return { reloaded: ids.length };
 };
 
-/** PROPOSAL: :discard drops the groups; the reason goes to the audit log. */
-export const discardErrorGroups = async (ids: string[], reason: string) => {
-  if (!ids.every((id) => UUID_ID.test(id))) {
-    return v1Send<{ discarded: number }>('POST', '/error-record-groups:discard', { ids, reason });
-  }
+/** POST /v1/dlq/{id}:discard {reason} for each record; the reason goes to the audit log. */
+export const discardErrorGroups = async (groups: ErrorRecordGroup[], reason: string) => {
+  const ids = groups.flatMap((g) => g.record_ids);
   try {
     await Promise.all(ids.map((id) => v1Send('POST', `/dlq/${pathId(id)}:discard`, { reason })));
-  } catch (error) {
-    if (!(error instanceof V1Error) || error.status !== 404) throw error;
-    return v1Send<{ discarded: number }>('POST', '/error-record-groups:discard', { ids, reason });
-  }
-  return { discarded: ids.length };
-};
-
-/**
- * PROPOSAL: POST /v1/error-record-groups/{id}:skip — gives up on this batch: its records stay in
- * the DLQ for `retention_days` and never reach the target table ("Xác nhận · skipBatch" 2094:8435).
- */
-export async function skipErrorGroup(id: string) {
-  if (!UUID_ID.test(id)) {
-    return v1Send<ErrorRecordGroup>('POST', `/error-record-groups/${pathId(id)}:skip`);
-  }
-  try {
-    await v1Send('POST', `/dlq/${pathId(id)}:discard`, {
-      reason: 'Bỏ qua lô theo yêu cầu người dùng.',
+    return { discarded: ids.length };
+  } catch {
+    return v1Send<{ discarded: number }>('POST', '/error-record-groups:discard', {
+      ids: groups.map((g) => g.id),
+      reason,
     });
-  } catch (error) {
-    if (!(error instanceof V1Error) || error.status !== 404) throw error;
-    return v1Send<ErrorRecordGroup>('POST', `/error-record-groups/${pathId(id)}:skip`);
   }
-  return { id } as ErrorRecordGroup;
-}
+};
 
 /* ─── Khám phá bảng (UC-04-02, UC-06-02) ──────────────────────────────── */
 

@@ -823,6 +823,7 @@ export function createAdminAccessHandlers() {
     auditFixture().filter(
       (e) =>
         (!f.action || e.action === f.action) &&
+        (!f.object_id || e.object_id === f.object_id) &&
         (!f.outcome || e.outcome === f.outcome) &&
         (!f.from || e.occurred_at >= new Date(f.from).toISOString()) &&
         (!f.to || e.occurred_at < new Date(f.to).toISOString()),

@@ -5,11 +5,13 @@
  */
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   approveCrawlSchema,
   bulkReviewRecords,
+  certifyDatasetVersion,
   decideEntityMatch,
+  getAcquireSummary,
   getConsolidationRun,
   getCrawlRun,
   getSchemaDrift,
@@ -57,6 +59,7 @@ const record = (id: string, status: string, extra: Record<string, unknown> = {})
 });
 
 let approveBody: unknown;
+let certifyPath = '';
 let bulkBody: unknown;
 let linkBody: unknown;
 const server = setupServer(
@@ -236,6 +239,7 @@ const server = setupServer(
   }),
 );
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
 describe('crawl from the api', () => {
@@ -363,13 +367,84 @@ describe('crawl from the api', () => {
     });
   });
 
+  it('says the figures over the list from the sources, their runs and the newest version', async () => {
+    server.use(
+      http.get('*/v1/crawl-runs', ({ request }) =>
+        HttpResponse.json({
+          items:
+            new URL(request.url).searchParams.get('status') === 'in_review'
+              ? [{ id: 'run-1', source_id: 's-1' }]
+              : [
+                  {
+                    id: 'run-1',
+                    source_id: 's-1',
+                    status: 'in_review',
+                    records_flagged: 2,
+                    started_at: '2026-10-10T08:05:00+07:00',
+                  },
+                  { id: 'run-0', source_id: 's-1', status: 'published', started_at: null },
+                ],
+          next_page_token: '',
+        }),
+      ),
+      http.get('*/v1/consolidation-specs', () =>
+        HttpResponse.json({
+          items: [
+            { id: 'spec-1', name: 'Lãi suất', source_ids: ['s-1', 's-2'], target_dataset_id: 'dt' },
+            { id: 'spec-2', name: 'Nháp', source_ids: [], target_dataset_id: null },
+          ],
+          next_page_token: '',
+        }),
+      ),
+      http.get('*/v1/datasets/:id/versions', ({ params }) =>
+        HttpResponse.json({
+          items:
+            params.id === 'dt' ? [{ id: 'v', version: 7, valid_from: '2026-10-09T01:00:00Z' }] : [],
+          next_page_token: '',
+        }),
+      ),
+    );
+    const summary = await getAcquireSummary();
+    // The time is said in the viewer's zone.
+    expect(summary.last_agent_run_text).toMatch(/^Lượt thu gần nhất · 10\/10 \d\d:05$/);
+    expect(summary).toEqual({
+      active: 2,
+      total: 3,
+      paused: 0,
+      blocked: 1,
+      last_agent_run_text: summary.last_agent_run_text,
+      sample_accuracy_pct: 99.1,
+      sample_text: 'trung bình 1 nguồn có mẫu',
+      pending_records: 3,
+      blocking_records: 2,
+      latest_dataset: {
+        published_at: '2026-10-09T01:00:00Z',
+        title: 'Lãi suất',
+        detail: 'Dataset v7 · 2 nguồn',
+        consolidation_run_id: null,
+      },
+    });
+  });
+
+  it('certifies a dataset version through A2', async () => {
+    server.use(
+      http.post('*/v1/dataset-versions/:action', ({ params }) => {
+        certifyPath = String(params.action);
+        return HttpResponse.json({ id: 'dv-41' });
+      }),
+    );
+    await certifyDatasetVersion('dv-41');
+    expect(certifyPath).toBe('dv-41:certify');
+  });
+
   it('reads a consolidation run with its pending entity links, and decides one', async () => {
     const run = await getConsolidationRun('cr-1');
     expect(run).toMatchObject({
       spec_name: 'Lãi suất thị trường',
       summary_text: '412 bản ghi vào, 30 ra · 30 khẳng định · 31 đoạn nhúng',
       status: 'published',
-      next_dataset_version: null,
+      dataset_version_id: 'dv-41',
+      dataset_version: null,
       table: null,
       summary_paragraph: null,
       steps: [],

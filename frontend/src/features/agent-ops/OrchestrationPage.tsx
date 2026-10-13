@@ -10,8 +10,8 @@ import { formatMoneyShort, formatTime } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
 import {
   controlOrchestration,
+  findOrchestration,
   getOrchestration,
-  listOrchestrations,
   type DelegatedTask,
   type Orchestration,
 } from '../../lib/v1/agentOps';
@@ -21,8 +21,8 @@ import { taskStatus } from './format';
 /*
  * "P13 · Điều phối nhiều agent" (2311:20297, UC-13-08): one lead agent and the agents it
  * delegated to, working one problem. Each row is one agent's run: its task, what it found, its
- * status; delegated rows are indented under the lead. On the right, on --background, the team's
- * guardrails and what the whole tree has cost so far.
+ * status; delegated rows are indented under the lead. On the right, on --background, what the
+ * whole tree has cost so far. Pausing and resuming act on the lead run; its children wait on it.
  *
  * /agents/orchestration/{lead_run_id} opens one; without an id, the latest one still running.
  */
@@ -35,9 +35,7 @@ export default function OrchestrationPage() {
     () =>
       routeId
         ? getOrchestration(routeId)
-        : listOrchestrations().then(
-            (p) => p.items.find((o) => ACTIVE.has(o.status)) ?? p.items[0] ?? null,
-          ),
+        : findOrchestration().then((id) => (id ? getOrchestration(id) : null)),
     [routeId],
   );
   const [current, setCurrent] = useState<Orchestration | null>();
@@ -115,7 +113,9 @@ function OrchestrationView({
 }) {
   const status = taskStatus(o.status);
   const helpers = o.tasks.filter((t) => t.delegated_by !== null).length;
-  const minutes = Math.max(0, Math.round((Date.now() - new Date(o.started_at).getTime()) / 60_000));
+  const minutes = o.started_at
+    ? Math.max(0, Math.round((Date.now() - new Date(o.started_at).getTime()) / 60_000))
+    : null;
 
   return (
     <>
@@ -124,11 +124,13 @@ function OrchestrationView({
         breadcrumb={['Agents', 'Điều phối', o.code]}
         title={
           <span className="flex items-center gap-[10px]">
-            {o.title}
+            Lượt điều phối của {o.lead_agent_name}
             <StatusDot tone={status.tone}>{status.label}</StatusDot>
           </span>
         }
-        description={`${o.lead_agent_name} dẫn dắt, giao việc cho ${helpers} agent khác · bắt đầu ${formatTime(o.started_at)} từ ${o.started_from}`}
+        description={`${o.lead_agent_name} dẫn dắt, giao việc cho ${helpers} agent khác${
+          o.started_at ? ` · bắt đầu ${formatTime(o.started_at)}` : ''
+        }`}
         actions={
           <>
             {o.status === 'paused' ? (
@@ -161,15 +163,10 @@ function OrchestrationView({
           ))}
         </ul>
         <aside className="flex w-[340px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pt-[20px] max-[1279px]:hidden">
-          <h2 className="text-foreground da-heading-3">Quy tắc điều phối</h2>
-          {o.rules.map((rule) => (
-            <p key={rule} className="text-foreground da-body-small">
-              · {rule}
-            </p>
-          ))}
           <h2 className="text-foreground da-heading-3">Chi phí hiện tại</h2>
           <p className="text-foreground da-body-small">
-            {formatMoneyShort(o.cost)} · {o.tasks.length} lượt · {minutes} phút
+            {formatMoneyShort(o.cost)} · {o.tasks.length} lượt
+            {minutes !== null && ` · ${minutes} phút`}
           </p>
         </aside>
       </div>
@@ -193,7 +190,7 @@ function TaskRow({ task: t }: { task: DelegatedTask }) {
             <span className="text-muted-foreground da-caption">được giao bởi {t.delegated_by}</span>
           )}
         </div>
-        <p className="text-foreground da-body-small">{t.task}</p>
+        {t.task && <p className="text-foreground da-body-small">{t.task}</p>}
         {t.result_text && <p className="text-muted-foreground da-body-small">→ {t.result_text}</p>}
       </div>
       <span className="w-[110px] shrink-0">

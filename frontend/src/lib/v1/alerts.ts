@@ -4,13 +4,13 @@ import type { components } from './schema';
 /*
  * Cảnh báo (monitor service, P08, UC-08-02): what a monitor raised, the cause the Agent Phân tích
  * attached, and what people did with it. A2 has GET /v1/alerts and :ack, :assign, :close, :reopen;
- * one alert by id, opening an investigation and flagging a wrong analysis are PROPOSALs. The
- * api's AlertView is read into the screen's Alert below; its PROPOSAL parts are null or derived.
+ * an investigation is a new workspace (POST /v1/workspaces). The api's AlertView is read into the
+ * screen's Alert below; the parts AlertView lacks (chart, analysis, activity) are null or empty.
  */
 
 export type AlertStatus = 'open' | 'ack' | 'assigned' | 'closed';
 
-/** PROPOSAL: GET /v1/alerts/{id} — monitor.alert with its monitor, series and analysis. */
+/** monitor.alert with its monitor, series and analysis, as the screen draws it. */
 export interface Alert {
   id: string;
   /** "#A-2291" */
@@ -27,7 +27,7 @@ export interface Alert {
   /** "Teams, email cho 2 người" */
   delivered_text: string;
   occurrences: number;
-  /** PROPOSAL: the 30 days around it, the threshold, and the day it crossed; null without it. */
+  /** The 30 days around it, the threshold, and the day it crossed; AlertView has none: null. */
   chart: {
     metric_label: string;
     cutoff_text: string;
@@ -50,8 +50,7 @@ export interface Alert {
   closed: { by: string; at: string; note: string; agent_note: string | null } | null;
 }
 
-/** A2: GET /v1/alerts — open ones first, for the rail without an id. */
-/** GET /v1/alerts as the api sends it (AlertView), with the PROPOSAL detail when present. */
+/** GET /v1/alerts as the api sends it (AlertView); the mock adds the screen's detail. */
 export type AlertWire = components['schemas']['AlertView'] & Partial<Omit<Alert, 'status'>>;
 
 const number = (v: number | string | null) => (v === null ? '—' : String(v).replace('.', ','));
@@ -114,10 +113,17 @@ export const closeAlert = async (id: string, note: string, kind: 'resolved' | 'f
 export const reopenAlert = async (id: string, reason: string) =>
   readAlert(await v1Send<AlertWire>('POST', `/alerts/${pathId(id)}:reopen`, { reason }));
 
-/** PROPOSAL: a notebook seeded with the alert and its analysis. */
-export const investigateAlert = async (id: string) =>
-  v1Send<{ workspace_id: string }>('POST', `/alerts/${pathId(id)}:investigate`);
-
-/** PROPOSAL: the attached analysis is wrong; goes to the agent's evaluation set. */
-export const disputeAlertAnalysis = async (id: string, reason: string) =>
-  v1Send<{ id: string }>('POST', `/alerts/${pathId(id)}:dispute-analysis`, { reason });
+/*
+ * Opening an investigation is creating a workspace with the alert as its context (UC-08-02).
+ * WorkspaceCreate.created_from has no "alert" yet, so the workspace starts blank and carries the
+ * alert in its params.
+ */
+export const investigateAlert = async (alert: Pick<Alert, 'id' | 'code' | 'title' | 'summary'>) => {
+  const ws = await v1Send<components['schemas']['WorkspaceView']>('POST', '/workspaces', {
+    title: `Điều tra ${alert.code} · ${alert.title}`.slice(0, 300),
+    description: alert.summary,
+    created_from: 'blank',
+    params: { alert_id: alert.id },
+  });
+  return { workspace_id: ws.id };
+};

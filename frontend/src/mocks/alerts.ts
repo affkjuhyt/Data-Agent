@@ -187,12 +187,6 @@ export function createAlertHandlers() {
       const body = (await request.json().catch(() => ({}))) as Record<string, string>;
       const now = new Date();
       const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      if (verb === 'investigate')
-        return alerts.some((a) => a.id === id)
-          ? HttpResponse.json({ workspace_id: `ws-alert-${id}` }, { status: 201 })
-          : problem(404, 'not_found', 'Không tìm thấy cảnh báo.');
-      if (verb === 'dispute-analysis')
-        return HttpResponse.json({ id: `dispute-${id}` }, { status: 201 });
       const result =
         verb === 'assign'
           ? update(id, (a) => ({

@@ -91,9 +91,15 @@ describe('VaultPage', () => {
     fireEvent.change(sentence, {
       target: { value: 'Giá trần kỳ tới sẽ không thấp hơn ngưỡng dưới đây.' },
     });
-    await screen.findByText(/Người duyệt: Lê Thu Hà/);
+    // The targets are the viewer's Data Spaces; their steward reviews.
+    await screen.findByText(/Người duyệt: người phụ trách Data Space Rủi ro tín dụng/);
+    expect(screen.getByRole('textbox', { name: 'Chức danh' })).toHaveValue(
+      'Thành viên Ban điều hành',
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Gửi duyệt công bố' }));
-    expect(await screen.findByText('Đã gửi Lê Thu Hà duyệt')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Đã gửi người phụ trách Rủi ro tín dụng duyệt'),
+    ).toBeInTheDocument();
     expect(screen.getByText('Khoá bọc · 3')).toBeInTheDocument();
   }, 30_000);
 

@@ -37,14 +37,12 @@ import { createSkillAuthoringHandlers } from './skillAuthoring';
 import { createSkillsHandlers } from './skills';
 import { createAdminPlatformHandlers, modelWire } from './adminPlatform';
 import { createAgentBuilderHandlers } from './agentBuilder';
-import { createAgentOpsHandlers } from './agentOps';
+import { createAgentOpsHandlers, teamRunsFixture } from './agentOps';
 import { createAlertHandlers } from './alerts';
 import { createAnswerReceiptHandlers } from './answerReceipts';
 import { createFeedbackHandlers } from './feedback';
 import { createQuestionHandlers } from './questions';
-import { createDashboardHandlers } from './dashboards';
 import { createAuthorityHandlers } from './authorities';
-import { createCollaborationHandlers } from './collaboration';
 import { createCrawlHandlers } from './crawl';
 import { createExampleHandlers } from './examples';
 import { createHomeHandlers } from './home';
@@ -85,7 +83,8 @@ const problem = (status: number, code: string, detail: string) =>
 export function createHandlers() {
   let inbox: HitlRequest[] = inboxFixture();
   let proposals: ProposalWire[] = proposalsFixture();
-  let runs: RunWire[] = runsFixture();
+  // With the lead run and child runs of "Điều phối nhiều agent" (mocks/agentOps.ts).
+  let runs: RunWire[] = [...runsFixture(), ...teamRunsFixture()];
   let agents = agentsFixture();
 
   return [
@@ -101,24 +100,25 @@ export function createHandlers() {
     ...createForecastHandlers(),
     ...createSkillsHandlers(),
     ...createSkillAuthoringHandlers(),
+    // Before the data prep mock (a metric's lineage) and the metric mock: it answers GET
+    // /v1/metrics?view=catalog and its own metric ids, and falls through otherwise.
+    ...createMetricCatalogHandlers(),
     ...createDataPrepHandlers(),
     // Before the P06 shared product mock: it answers /v1/data-products?layer=context and adp-* ids only.
     ...createAnswerProductHandlers(),
     ...createDataProductsHandlers(),
     ...createAdminAccessHandlers(),
+    // Before the agent builder: it answers GET /v1/agents/{id} for its rollout agent only.
+    ...createAgentOpsHandlers(),
     ...createAgentBuilderHandlers(),
     ...createSourcesHandlers(),
     ...createAdminPlatformHandlers(),
-    ...createAgentOpsHandlers(),
     ...createSessionHandlers(),
-    ...createDashboardHandlers(),
     ...createFeedbackHandlers(),
     ...createQuestionHandlers(),
     // Before the inbox: the period mock answers its own reconciliation HITL request.
     ...createPeriodHandlers(),
     ...createRuleHandlers(),
-    // Before the metric mock: it answers GET /v1/metrics?view=catalog and falls through otherwise.
-    ...createMetricCatalogHandlers(),
     ...createMetricHandlers(),
     ...createExampleHandlers(),
     ...createAuthorityHandlers(),
@@ -131,7 +131,6 @@ export function createHandlers() {
     ...createSemanticLayerHandlers(),
     ...createErrorBookHandlers(),
     ...createExecHandlers(),
-    ...createCollaborationHandlers(),
     ...createInboxHandlers(),
     ...createHomeHandlers(),
 
@@ -238,6 +237,9 @@ export function createHandlers() {
         ),
       );
     }),
+    http.get('*/v1/runs/:id/children', ({ params }) =>
+      page(runs.filter((r) => r.parent_run_id === params.id)),
+    ),
     http.get('*/v1/runs/:id', ({ params, request }) => {
       const run = runs.find((r) => r.id === params.id);
       if (!run) return problem(404, 'not_found', 'Không tìm thấy lượt chạy.');
@@ -279,21 +281,6 @@ export function createHandlers() {
         edited_by_user: true,
       });
     }),
-    http.post('*/v1/runs/:id/:action', async ({ params, request }) => {
-      if (params.action !== 'plan:estimate')
-        return problem(404, 'not_found', 'Không có thao tác này.');
-      const edit = (await request.json()) as PlanEdit;
-      const added = edit.steps.filter((s) => !s.id && !s.removed).length;
-      const removed = edit.steps.filter((s) => s.removed).length;
-      const seconds = Math.max(0, 50 + added * 30 - removed * 20);
-      const parts = [
-        `Ước tính thêm ${Math.floor(seconds / 60)} phút ${seconds % 60} giây`,
-        `${(added * 8000 + 4000).toLocaleString('vi-VN')} đ`,
-      ];
-      if (edit.steps.some((s) => s.removed && s.agent_name === 'Agent Báo cáo'))
-        parts.push('bản tin tuần sẽ không nhận kết quả này');
-      return HttpResponse.json({ text: parts.join(' · ') });
-    }),
     http.post('*/v1/runs/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
       const run = runs.find((r) => r.id === id);
@@ -306,7 +293,7 @@ export function createHandlers() {
           to: 'cancelled',
         },
       };
-      // PROPOSAL :retry — a failed run again, as a new queued run (202).
+      // A2 :retry — a failed run again, as a new queued run (202).
       if (verb === 'retry') {
         if (run.status !== 'failed')
           return problem(409, 'invalid_state', 'Chỉ chạy lại được lượt chạy lỗi.');

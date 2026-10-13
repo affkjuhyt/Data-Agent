@@ -8,7 +8,7 @@ import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
 import { createHandlers } from '../../mocks/handlers';
-import { CreateCollectionDialog, SuggestCollectionDialog } from './CollectionDialogs';
+import { CreateCollectionDialog } from './CollectionDialogs';
 import DocumentAnswerPage from './DocumentAnswerPage';
 import DocumentsPage from './DocumentsPage';
 import DocumentViewerPage from './DocumentViewerPage';
@@ -65,24 +65,24 @@ describe('DocumentViewerPage', () => {
     expect(await screen.findByText('Trang 4 / 12')).toBeInTheDocument();
   });
 
-  it('lists chunks, links and history in their tabs', async () => {
+  it('lists chunks and history in their tabs', async () => {
     routeId = 'doc-hs-0187';
     wrap(<DocumentViewerPage />);
+    // Chunks come with each page (A2), numbered in the document's order.
     fireEvent.click(await screen.findByRole('tab', { name: 'Đoạn văn' }));
-    expect(await screen.findByText('tr.3 · đoạn 12')).toBeInTheDocument();
+    expect(await screen.findByText('tr.3 · đoạn 1')).toBeInTheDocument();
+    expect(screen.getByText('tr.5 · đoạn 3')).toBeInTheDocument();
     expect(screen.getByText(/412 đoạn trong bộ sưu tập/)).toBeInTheDocument();
+    // Figma's Liên kết tab is not in the design.
+    expect(screen.queryByRole('tab', { name: 'Liên kết' })).toBeNull();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Liên kết' }));
-    expect(await screen.findByText('LD2409-0187')).toBeInTheDocument();
-    expect(screen.getByText('Lệch số tiền')).toBeInTheDocument();
-    expect(screen.getByText('Tham chiếu')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Thông tư phân loại nợ' }));
-    expect(navigate).toHaveBeenCalledWith('data', 'DOCUMENT', 'doc-tt31');
-
+    // The versions, then who read or changed it from the audit log.
     fireEvent.click(screen.getByRole('tab', { name: 'Lịch sử' }));
     expect(
-      await screen.findByText('08/10 10:42 · Trần Quốc An xem trường loan_amount'),
+      await screen.findByText(/^08\/10 \d\d:42 · Người dùng xem tài liệu$/),
     ).toBeInTheDocument();
+    expect(screen.getByText(/Agent sửa thông tin tài liệu/)).toBeInTheDocument();
+    expect(screen.getByText(/Nạp Hợp đồng tín dụng/)).toBeInTheDocument();
   });
 
   it('opens a document of a collection from the collection screen', async () => {
@@ -163,14 +163,9 @@ describe('DocumentsPage', () => {
     });
     fireEvent.click(within(dialog).getByRole('combobox', { name: 'Bộ sưu tập' }));
     fireEvent.click((await screen.findAllByRole('option'))[0]);
-    expect(
-      await within(dialog).findByText(
-        'Agent Tài liệu phát hiện 1 tệp trùng với tệp đã có; sẽ bỏ qua.',
-      ),
-    ).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Nạp' }));
     expect(
-      // One request per file (A2); the mock accepts each, the precheck above named the duplicate.
+      // One request per file (A2); a duplicate is only known from the answer to its upload.
       await screen.findByText('Đã nhận 2 tệp. Agent Tài liệu đang tiền xử lý.'),
     ).toBeInTheDocument();
   });
@@ -256,7 +251,7 @@ describe('DocumentAnswerPage', () => {
     });
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
     expect(await screen.findByText(/tối thiểu vào nhóm 3/)).toBeInTheDocument();
-    expect(screen.getByText('Bị thay thế 01/09/2026 bởi QĐ 845/2026')).toBeInTheDocument();
+    expect(screen.getByText('Hết hiệu lực 01/09/2026')).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { name: '[1] TT 31/2024/TT-NHNN · Điều 10, khoản 3' }),
     ).toBeInTheDocument();
@@ -299,19 +294,5 @@ describe('Collection dialogs', () => {
         name: 'Biên bản kiểm tra sau cho vay',
       }),
     );
-  });
-
-  it('creates the collections the agent suggested and the reader kept', async () => {
-    const onCreated = vi.fn();
-    wrap(<SuggestCollectionDialog open onClose={() => {}} onCreated={onCreated} />);
-    const third = await screen.findByRole('checkbox', {
-      name: 'Hợp đồng bảo lãnh · 410 tệp · lẫn trong Hợp đồng & phụ lục',
-    });
-    expect(
-      screen.getByText('Đề xuất 3 cần tách khỏi bộ sưu tập hiện có; lược đồ cũ vẫn dùng được.'),
-    ).toBeInTheDocument();
-    fireEvent.click(third);
-    fireEvent.click(screen.getByRole('button', { name: 'Tạo 2 bộ sưu tập' }));
-    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(2));
   });
 });

@@ -13,7 +13,6 @@ import {
 } from '../../lib/v1/adminPlatform';
 import {
   listNotifications,
-  markNotificationsRead,
   type AppNotification,
   type NotificationCategory,
 } from '../../lib/v1/notifications';
@@ -59,14 +58,11 @@ function DrawerBody({
   const feed = useV1(listNotifications, []);
   const preferences = useV1(getNotificationPreferences, []);
   const [filter, setFilter] = useState<Filter>('all');
-  // Rows opened in this sitting lose their unread outline at once, before the feed reloads.
+  // Rows opened in this sitting lose their unread outline. A2 has no call that sets read_at,
+  // so the server still counts them unread.
   const [readHere, setReadHere] = useState<Set<string>>(new Set());
   const open = (item: AppNotification) => {
-    if (!item.read_at && !readHere.has(item.id)) {
-      setReadHere((ids) => new Set(ids).add(item.id));
-      // Best effort: failing to mark read must not keep the user from the thing itself.
-      markNotificationsRead([item.id]).catch(() => {});
-    }
+    if (!item.read_at && !readHere.has(item.id)) setReadHere((ids) => new Set(ids).add(item.id));
     const route = routeOf(item);
     if (route) {
       onClose();

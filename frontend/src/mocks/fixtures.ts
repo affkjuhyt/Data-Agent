@@ -27,6 +27,24 @@ const DS = 'ds-rui-ro-tin-dung';
 
 const agent = (id: string, name: string) => ({ id, name });
 
+/** One step of a review chain (ApprovalStepView); `decidedMinutes` is relative to now. */
+const approvalStep = (
+  step: number,
+  role: string,
+  approverId: string | null,
+  decision: string | null,
+  decidedMinutes?: number,
+) => ({
+  id: `approval-step-${step}-${role.length}`,
+  step,
+  approver_role: role,
+  approver_id: approverId,
+  decision,
+  note: null,
+  decided_at: decidedMinutes === undefined ? null : minutesFromNow(decidedMinutes),
+  created_at: minutesFromNow(-40),
+});
+
 export function inboxFixture(): HitlRequest[] {
   const base = {
     data_space_id: DS,
@@ -85,6 +103,12 @@ export function inboxFixture(): HitlRequest[] {
       due_at: minutesFromNow(5 * 60),
       created_at: minutesFromNow(-40),
       agent: agent('agent-reconcile', 'Agent Đối soát'),
+      // The chain of "Cộng tác · Duyệt nhiều người" (2084:7085): step 2 is the caller's.
+      approval_steps: [
+        approvalStep(1, 'Người lập kiểm tra', 'u-minh-chau', 'approve', -20),
+        approvalStep(2, 'Chủ sở hữu dữ liệu · bắt buộc', null, null),
+        approvalStep(3, 'Kiểm soát · bắt buộc vì kỳ đã nộp', 'u-duc-long', null),
+      ],
     },
     {
       ...base,
@@ -100,6 +124,10 @@ export function inboxFixture(): HitlRequest[] {
       due_at: minutesFromNow(3 * 24 * 60),
       created_at: minutesFromNow(-120),
       agent: agent('agent-analysis', 'Agent Phân tích'),
+      approval_steps: [
+        approvalStep(1, 'Chủ sở hữu chỉ số', null, null),
+        approvalStep(2, 'Kiểm soát báo cáo · bắt buộc vì chạm số đã nộp', 'u-hai-yen', null),
+      ],
     },
     {
       ...base,
@@ -1023,13 +1051,14 @@ export function proposalsFixture(): ProposalWire[] {
       expires_at: minutesFromNow(5 * 60),
       requires_compliance: false,
       ...proposalColumns('dw', 'dataset-overdue-loans'),
+      proposed_by: 'agent-doi-soat',
       checks: [
         { ok: true, text: '214/214 khoản có bằng chứng từ Core banking' },
         { ok: true, text: 'Khớp số đã nộp ngày 05/10' },
       ],
       approval: {
         reason: 'Ghi đè số nội bộ của kỳ đã nộp',
-        // The chain of "Cộng tác · Duyệt nhiều người" (2084:7085), mocks/collaboration.ts.
+        // The chain of "Cộng tác · Duyệt nhiều người" (2084:7085) is hitl-adjust-214's approval_steps.
         steps: [
           { name: 'Nguyễn Thu Hà', role: 'người lập kiểm tra' },
           { name: 'Bạn', role: 'chủ sở hữu dữ liệu' },

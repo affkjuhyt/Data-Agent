@@ -14,7 +14,7 @@ describe('MobileTabBar', () => {
 
   it('maps pages to tabs: Hỏi đáp is Hỏi, other Phân tích pages have no tab', () => {
     expect(mobileTabOf('analysis', 'ASK')).toBe('ask');
-    expect(mobileTabOf('analysis', 'DASHBOARD')).toBeUndefined();
+    expect(mobileTabOf('analysis', 'SESSIONS')).toBeUndefined();
     expect(mobileTabOf('needs-you', undefined)).toBe('needs-you');
     expect(mobileTabOf('data', 'SOURCES')).toBeUndefined();
   });

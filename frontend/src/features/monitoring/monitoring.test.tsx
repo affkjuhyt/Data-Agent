@@ -1,8 +1,9 @@
 /**
- * Theo dõi against the v1 mock: the list with its filters and muting, and creating a monitor —
- * the preview before it, and the rule kinds a young metric cannot use yet — and one alert.
+ * Theo dõi against the v1 mock: the list with its filters and pausing, creating a monitor on a
+ * published metric, and one alert.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { http } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
@@ -30,12 +31,10 @@ afterAll(() => server.close());
 const wrap = (ui: React.ReactNode) => render(<ToastProvider>{ui}</ToastProvider>);
 
 describe('WatchListPage', () => {
-  it('lists the monitors, filters them, and mutes one', async () => {
+  it('lists the monitors, filters them, and pauses one', async () => {
     wrap(<WatchListPage />);
     expect(
-      await screen.findByText(
-        /^14 theo dõi trong Rủi ro tín dụng · 3 đang cảnh báo · kiểm tra gần nhất/,
-      ),
+      await screen.findByText(/^14 theo dõi trong Rủi ro tín dụng · 3 đang cảnh báo/),
     ).toBeInTheDocument();
     expect(screen.getAllByRole('row')).toHaveLength(15);
 
@@ -51,12 +50,10 @@ describe('WatchListPage', () => {
     });
     const row = screen.getByRole('row', { name: /Tỷ lệ thu hồi nợ/ });
     fireEvent.click(within(row).getByRole('button', { name: /Thao tác với/ }));
-    fireEvent.click(within(row).getByRole('menuitem', { name: 'Tắt tiếng 7 ngày' }));
-    expect(await screen.findByText(/Đã tắt tiếng Tỷ lệ thu hồi nợ tới/)).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole('menuitem', { name: 'Tạm dừng' }));
+    expect(await screen.findByText('Đã tạm dừng Tỷ lệ thu hồi nợ')).toBeInTheDocument();
     expect(
-      await within(screen.getByRole('row', { name: /Tỷ lệ thu hồi nợ/ })).findByText(
-        /Tắt tiếng tới/,
-      ),
+      await within(screen.getByRole('row', { name: /Tỷ lệ thu hồi nợ/ })).findByText('Tạm dừng'),
     ).toBeInTheDocument();
   });
 
@@ -70,31 +67,37 @@ describe('WatchListPage', () => {
 });
 
 describe('WatchCreatePage', () => {
-  it('previews the threshold over 90 days and creates the monitor', async () => {
-    wrap(<WatchCreatePage />);
-    expect(
-      await screen.findByText(
-        /theo dõi này sẽ cảnh báo 3 lần, cả ba trong 6 ngày gần đây và chỉ ở DH Bắc Bộ/,
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Ngưỡng 2,0%')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Tạo theo dõi' }));
-    expect(await screen.findByText('Đã tạo theo dõi Nợ xấu (%)')).toBeInTheDocument();
-    expect(navigate).toHaveBeenCalledWith('analysis', 'WATCH');
-  });
-
-  it('keeps Bất thường off a metric with too little history', async () => {
-    wrap(<WatchCreatePage />);
-    fireEvent.click(await screen.findByRole('combobox', { name: 'Chỉ số' }));
-    fireEvent.click(await screen.findByRole('option', { name: /OVERDUE_30/ }));
-    fireEvent.click(screen.getByRole('radio', { name: 'Bất thường' }));
-    expect(screen.getByText(/mới có 12 ngày dữ liệu.*cần ít nhất 30 ngày/)).toBeInTheDocument();
-    expect(screen.getByText('Chưa đủ dữ liệu để xem trước.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Tạo theo dõi' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
+  it('creates a monitor on a published metric with the rule in A3 words', async () => {
+    let sent: Record<string, unknown> | undefined;
+    server.use(
+      http.post('*/v1/monitors', async ({ request }) => {
+        sent = (await request.clone().json()) as Record<string, unknown>;
+        return undefined;
+      }),
     );
-    expect(screen.getByRole('combobox', { name: 'Kênh' })).toHaveTextContent('Chỉ trong ứng dụng');
+    wrap(<WatchCreatePage />);
+    expect(await screen.findByRole('combobox', { name: 'Chỉ số' })).toHaveTextContent('NPL_RATIO');
+    // The splits are the dimensions of the metric's current version.
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Tách theo' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'region' }));
+    expect(screen.queryByRole('radio', { name: 'Dự báo' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo theo dõi' }));
+    expect(await screen.findByText('Đã tạo theo dõi NPL_RATIO')).toBeInTheDocument();
+    expect(navigate).toHaveBeenCalledWith('analysis', 'WATCH');
+    expect(sent).toMatchObject({
+      metric_id: 'metric-npl-ratio',
+      scope_filter: { split: 'region' },
+      rule_kind: 'threshold',
+      rule: { direction: 'above', value: 2 },
+      notify_mode: 'with_analysis',
+      recipients: [
+        {
+          principal_type: 'user',
+          principal_id: '01920000-0000-7000-8000-00000000a5c1',
+          channels: ['teams', 'email'],
+        },
+      ],
+    });
   });
 });
 

@@ -743,6 +743,23 @@
         msg: "Not ready in {{ wait_rollout }}s: {{ svc_rollout.stdout_lines | join(', ') }}"
       when: (svc_rollout.stdout_lines | default([]) | length) > 0
 
+    # "Not ready" alone hid the usual cause on the one-node cluster: the new pod
+    # never scheduled (Insufficient memory) while the old one kept serving.
+    - name: Say why pods are still Pending
+      ansible.builtin.command:
+        cmd: >-
+          {{ kubectl }} get pods -A --field-selector=status.phase=Pending -o
+          jsonpath={% raw %}'{range .items[*]}{.metadata.namespace}/{.metadata.name}: {.status.conditions[?(@.type=="PodScheduled")].message}{"\n"}{end}'{% endraw %}
+      register: pending_pods
+      changed_when: false
+      failed_when: false
+      when: (svc_rollout.stdout_lines | default([]) | length) > 0
+
+    - name: Report the Pending pods
+      ansible.builtin.debug:
+        msg: "{{ pending_pods.stdout_lines }}"
+      when: (pending_pods.stdout_lines | default([]) | length) > 0
+
     - name: Run the gateway setup Job
       ansible.builtin.import_role:
         name: k8s_setup

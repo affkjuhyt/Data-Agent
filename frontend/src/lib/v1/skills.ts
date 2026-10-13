@@ -6,8 +6,9 @@ type Schemas = components['schemas'];
 
 /*
  * Skills and tools, the library side of P03 (UC-03-01, UC-03-05…07, UC-13-02): the skill
- * library, the versions of one skill with its review and deprecation, the agent's skill
- * suggestions and sharing, the tool registry by permission level and the MCP connections.
+ * library, the versions of one skill with its review, the agent's skill suggestions and sharing,
+ * and the tool catalogue by permission level (GET /v1/tools; tools are the system's catalogue,
+ * assigned to agents through their config, so there is no registering one from the screen).
  * The authoring side (definition, tests, run) lives in skillAuthoring.ts and reads these
  * types. Fields marked PROPOSAL are what the screens need and the spec does not fix yet. The
  * api's rows are read below; the screen's richer row travels under `display` when the mock sends
@@ -230,40 +231,109 @@ interface Option {
 }
 
 /**
- * PROPOSAL: GET /v1/skill-versions/{id}/review — what the reviewer needs to decide: the
- * pre-approval checks, the scopes they may publish to, and who runs the version it replaces.
+ * What the reviewer needs to decide on a version waiting for review (UC-03-05). A2 has no review
+ * resource: publishing opens a skill_publish proposal in Cần bạn (target_ref = the version), found
+ * from the caller's open approve_proposal requests; the checks come from the version's eval run.
  */
 export interface SkillVersionReview {
   version_id: string;
   version: number;
+  /** The skill_publish proposal; null when the caller has none open for this version. */
+  proposal_id: string | null;
   /** The version in use that the new one replaces; null for a first version. */
-  current: { id: string; version: number; agent_count: number; session_count: number } | null;
+  current: { id: string; version: number } | null;
   checks: { text: string; ok: boolean }[];
-  scope_options: Option[];
-  scope_value: string;
-  /** When the current version stops: "30 ngày sau khi phát hành v3 · 07/11". */
-  deprecate_options: Option[];
-  /** Where its users move: "v3 · tham số giữ nguyên". */
-  replacement_options: Option[];
-  consumers: { name: string; kind: 'agent' | 'session'; action_text: string }[];
-  /** BR: the reviewer is not the author; org-wide publishing needs an administrator. */
+  /** The scope the version is published to, as the proposal asks (personal, data_space, org). */
+  scope: Option | null;
   can_approve: { allowed: boolean; reason: string | null };
 }
 
-export const getSkillVersionReview = async (versionId: string) =>
-  v1Get<SkillVersionReview>(`/skill-versions/${pathId(versionId)}/review`);
+const PUBLISH_SCOPE: Record<string, string> = {
+  personal: 'Cá nhân',
+  data_space: 'Data Space',
+  org: 'Toàn tổ chức',
+};
 
-/** :approve — certified and published at the chosen scope; the previous version is scheduled to stop. */
-export const approveSkillVersion = async (
-  versionId: string,
-  body: { scope: string; deprecate_previous: string; replacement: string },
-) => v1Send<SkillVersion>('POST', `/skill-versions/${pathId(versionId)}:approve`, body);
+type Proposal = Schemas['ProposalDetail'];
 
-/** :request-changes — back to the author with the reviewer's note. */
-export const requestSkillChanges = async (versionId: string, comment: string) =>
-  v1Send<SkillVersion>('POST', `/skill-versions/${pathId(versionId)}:request-changes`, {
-    comment,
+/** The open skill_publish proposal of a version, among the caller's approve_proposal requests. */
+async function publishProposal(versionId: string): Promise<Proposal | null> {
+  const inbox = await v1Get<Page<Schemas['HitlView']>>('/inbox', {
+    kind: 'approve_proposal',
+    status: 'open',
+    page_size: 500,
   });
+  const refs = inbox.items.flatMap((h) =>
+    h.kind === 'approve_proposal' && h.source_ref ? [h.source_ref] : [],
+  );
+  const proposals = await Promise.all(
+    refs.map((id) => v1Get<Proposal>(`/proposals/${pathId(id)}`).catch(() => null)),
+  );
+  return (
+    proposals.find(
+      (p): p is Proposal => p !== null && p.kind === 'skill_publish' && p.target_ref === versionId,
+    ) ?? null
+  );
+}
+
+function checksOf(run: Schemas['EvalRunDetail'] | null): SkillVersionReview['checks'] {
+  if (!run) return [{ ok: false, text: 'Chưa có kết quả kiểm định' }];
+  const checks = [{ ok: run.failed === 0, text: `Kiểm định ${run.passed}/${run.item_count} đạt` }];
+  if (run.regressions > 0)
+    checks.push({ ok: false, text: `${run.regressions} ca đổi kết quả so với bản trước` });
+  return checks;
+}
+
+export const getSkillVersionReview = async (
+  skillId: string,
+  versionId: string,
+): Promise<SkillVersionReview> => {
+  const skill = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(skillId)}`);
+  const versions = skill.versions ?? [];
+  const version = versions.find((v) => v.id === versionId);
+  const current = versions.find((v) => v.status === 'published') ?? null;
+  const [run, proposal] = await Promise.all([
+    version?.eval_run_id
+      ? v1Get<Schemas['EvalRunDetail']>(`/eval-runs/${pathId(version.eval_run_id)}`).catch(
+          () => null,
+        )
+      : null,
+    publishProposal(versionId),
+  ]);
+  const diff = (proposal?.diff ?? {}) as { scope?: unknown };
+  const scope = typeof diff.scope === 'string' ? diff.scope : null;
+  return {
+    version_id: versionId,
+    version: version?.version ?? 0,
+    proposal_id: proposal?.id ?? null,
+    current: current ? { id: current.id, version: current.version } : null,
+    checks: checksOf(run),
+    scope: scope ? { value: scope, label: PUBLISH_SCOPE[scope] ?? scope } : null,
+    can_approve: !proposal
+      ? { allowed: false, reason: 'Đề xuất phát hành này không nằm trong Cần bạn của bạn.' }
+      : proposal.status !== 'pending_review'
+        ? { allowed: false, reason: 'Đề xuất phát hành đã được xử lý.' }
+        : { allowed: true, reason: null },
+  };
+};
+
+/**
+ * Approving is accepting the skill_publish proposal in Cần bạn (POST /v1/proposals/{id}:decide);
+ * the version is published and the one in use retires after the transition (BR-97).
+ */
+export const approveSkillVersion = async (proposalId: string) =>
+  v1Send<Proposal>('POST', `/proposals/${pathId(proposalId)}:decide`, {
+    decision: 'accept',
+    reviewed_regressions: true,
+  } satisfies Schemas['ProposalDecision']);
+
+/** Asking for changes sends the version back to its author with the reviewer's note. */
+export const requestSkillChanges = async (proposalId: string, note: string) =>
+  v1Send<Proposal>('POST', `/proposals/${pathId(proposalId)}:decide`, {
+    decision: 'request_changes',
+    note,
+    reviewed_regressions: true,
+  } satisfies Schemas['ProposalDecision']);
 
 /* ─── Đề xuất từ agent & chia sẻ (UC-03-07) ───────────────────────────── */
 
@@ -345,67 +415,40 @@ export const shareSkill = async (id: string, dataSpaceId: string | null) => {
   return { status: shared.scope === scope ? ('shared' as const) : ('pending_admin' as const) };
 };
 
-/* ─── Công cụ & kết nối MCP (UC-13-02) ────────────────────────────────── */
+/* ─── Công cụ (UC-13-02) ──────────────────────────────────────────────── */
 
 export type ToolLevel = 'read' | 'write_derived' | 'external' | 'system';
 
-/** PROPOSAL: GET /v1/tools — the actions an agent may call, by permission level. */
+/** GET /v1/tools — the actions an agent may call, by permission level. */
 export interface Tool {
-  id: string;
+  /** agent.tool_def.code ("metric.query"). */
   name: string;
   level: ToolLevel;
   description: string;
-  /** null = built in; otherwise the MCP server that provides it. */
-  mcp_server_id: string | null;
-  agent_count: number;
-  calls_30d: number;
+  /** The service that runs it. */
+  executed_by: string;
+  /** The checkpoint the tool asks for by default; null when it runs without one. */
+  default_checkpoint: string | null;
 }
 
 type ToolWire = Schemas['services__api__modules__skill__schemas__ToolView'];
 
-const readTool = (raw: ToolWire): Tool => {
-  // Unit/demo handlers already return the screen shape.
-  if ('name' in raw) return raw as unknown as Tool;
-  const level: ToolLevel =
-    raw.level === 'external_send'
-      ? 'external'
-      : raw.level === 'system_action'
-        ? 'system'
-        : raw.level;
-  return {
-    id: raw.code,
-    name: raw.code,
-    level,
-    description: raw.description,
-    mcp_server_id: raw.executed_by || null,
-    agent_count: 0,
-    calls_30d: 0,
-  };
+const LEVEL: Record<ToolWire['level'], ToolLevel> = {
+  read: 'read',
+  write_derived: 'write_derived',
+  external_send: 'external',
+  system_action: 'system',
 };
+
+const readTool = (raw: ToolWire): Tool => ({
+  name: raw.code,
+  level: LEVEL[raw.level] ?? 'read',
+  description: raw.description,
+  executed_by: raw.executed_by,
+  default_checkpoint: raw.default_checkpoint,
+});
 
 export const listTools = async () => {
   const page = await v1Get<Page<ToolWire>>('/tools', { page_size: 500 });
   return { ...page, items: page.items.map(readTool) };
 };
-
-export const registerTool = (body: {
-  name: string;
-  /** 'builtin' or an MCP server id. */
-  provider: string;
-  level: ToolLevel;
-  description: string;
-  agent_ids: string[];
-}) => v1Send<Tool>('POST', '/tools', body);
-
-type McpStatus = 'active' | 'auth_error' | 'pending_pii_review';
-
-/** PROPOSAL: GET /v1/mcp-servers. */
-export interface McpServer {
-  id: string;
-  name: string;
-  tools: string[];
-  auth: 'oauth2' | 'sso' | 'api_key';
-  status: McpStatus;
-}
-
-export const listMcpServers = () => v1Get<Page<McpServer>>('/mcp-servers', { page_size: 500 });

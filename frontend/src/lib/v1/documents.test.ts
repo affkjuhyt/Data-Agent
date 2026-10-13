@@ -9,10 +9,19 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   createCollection,
   getDocumentPage,
+  getDocumentCounts,
   getDocumentView,
+  getValidity,
+  investigateDocument,
+  listActivity,
+  listChunks,
+  listLibrary,
   listQualityIssues,
+  askDocuments,
   resolveQualityIssue,
+  setSupersession,
   uploadDocuments,
+  DOCUMENT_ANSWER_PURPOSE,
 } from './documents';
 import { getDocument, listCollections } from './sources';
 
@@ -166,5 +175,202 @@ describe('documents from the api', () => {
       files: [new File(['x'], 'a.pdf'), new File(['y'], 'b.pdf')],
     });
     expect(result).toEqual({ accepted: 1, skipped: 1 });
+  });
+
+  it('reads the library from DocumentListItem, filtering the PROPOSAL category here', async () => {
+    let query = '';
+    server.use(
+      http.get('*/v1/documents', ({ request }) => {
+        query = new URL(request.url).search;
+        return HttpResponse.json({
+          items: [
+            { ...doc, step: 'reading_pages', status: 'processing', effective_from: null },
+            {
+              ...doc,
+              id: 'd-2',
+              title: 'TT 31',
+              status: 'ready',
+              step: 'done',
+              effective_to: '2020-01-01',
+            },
+          ],
+          next_page_token: '',
+        });
+      }),
+    );
+    const { items } = await listLibrary({ state: 'processing', collection_id: 'c-1' });
+    expect(query).toContain('status=processing');
+    expect(query).toContain('collection_id=c-1');
+    expect(items[0]).toMatchObject({
+      title: 'HD_0187.pdf',
+      category: null,
+      category_label: 'PDF',
+      processing: { step_text: 'Đọc trang', progress: 0.5, started_at: at },
+    });
+    expect(items[1].validity).toEqual({
+      tone: 'idle',
+      text: 'Hết hiệu lực 01/01/2020',
+      ended: true,
+    });
+    expect(await getDocumentCounts()).toEqual({
+      all: 2,
+      regulation: undefined,
+      internal: undefined,
+      processing: 1,
+    });
+    expect((await listLibrary({ category: 'regulation' })).items).toEqual([]);
+  });
+
+  it('lists the chunks from the pages, once each and in order', async () => {
+    server.use(
+      http.get('*/v1/documents/:id/pages/:n', ({ params }) =>
+        HttpResponse.json({
+          page_no: Number(params.n),
+          chunks:
+            params.n === '1'
+              ? [
+                  { id: 'k1', page_from: 1, text: 'a' },
+                  { id: 'k2', page_from: 1, text: 'b' },
+                ]
+              : [
+                  { id: 'k2', page_from: 1, text: 'b' },
+                  { id: 'k3', page_from: 2, text: 'c' },
+                ],
+        }),
+      ),
+    );
+    expect((await listChunks({ id: 'd-1', page_count: 2 })).items).toEqual([
+      { id: 'k1', page: 1, ordinal: 1, text: 'a' },
+      { id: 'k2', page: 1, ordinal: 2, text: 'b' },
+      { id: 'k3', page: 2, ordinal: 3, text: 'c' },
+    ]);
+  });
+
+  it('says the history from the versions, leaving the audit out without audit_read', async () => {
+    server.use(
+      http.get('*/v1/documents/:id/versions', () =>
+        HttpResponse.json({
+          items: [
+            {
+              ...doc,
+              title: 'QĐ 1120',
+              doc_no: '1120/QĐ',
+              effective_from: '2023-04-01',
+              effective_to: '2026-09-01',
+              created_at: '2023-03-15T02:00:00Z',
+            },
+          ],
+          next_page_token: '',
+        }),
+      ),
+      http.get('*/v1/audit', () =>
+        HttpResponse.json({ title: 'forbidden', status: 403, code: 'forbidden' }, { status: 403 }),
+      ),
+    );
+    const { items } = await listActivity('d-1');
+    expect(items.map((i) => i.text)).toEqual(['Nạp QĐ 1120 · 1120/QĐ · hiệu lực từ 01/04/2023']);
+    const v = await getValidity('d-1');
+    expect(v).toMatchObject({ title: 'QĐ 1120', owner_text: null, pending: null, impact: [] });
+    expect(v.status.text).toBe('Hết hiệu lực');
+    expect(v.timeline.map((e) => e.text)).toEqual([
+      'QĐ 1120 · 1120/QĐ · có hiệu lực',
+      'QĐ 1120 hết hiệu lực',
+    ]);
+  });
+
+  it('records a supersession on both documents', async () => {
+    const patches: [string, unknown][] = [];
+    server.use(
+      http.patch('*/v1/documents/:id', async ({ params, request }) => {
+        patches.push([String(params.id), await request.json()]);
+        return HttpResponse.json(doc);
+      }),
+    );
+    await setSupersession('d-old', { superseded_by: 'd-new', valid_to: '2026-09-01' });
+    expect(patches).toEqual([
+      ['d-new', { supersedes_id: 'd-old' }],
+      ['d-old', { effective_to: '2026-09-01' }],
+    ]);
+  });
+
+  it('hands the investigation to an agent as a task', async () => {
+    server.use(
+      http.post('*/v1/tasks', async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(
+          { id: 't-1', status: 'queued', poll_after_ms: 1 },
+          { status: 202 },
+        );
+      }),
+    );
+    expect((await investigateDocument({ id: 'd-1', title: 'Khiếu nại phí' })).id).toBe('t-1');
+    expect(String((bodies[0] as { description: string }).description)).toContain('Khiếu nại phí');
+  });
+
+  it('answers from documents: Hỏi đáp writes the answer, the search cites the passages', async () => {
+    let asked: unknown;
+    let searched: unknown;
+    server.use(
+      http.post('*/v1/questions', async ({ request }) => {
+        asked = await request.json();
+        return HttpResponse.json(
+          { id: 'q', question_id: 'q', conversation_id: 'c', status: 'received', poll_after_ms: 0 },
+          { status: 202 },
+        );
+      }),
+      http.get('*/v1/questions/:id', () =>
+        HttpResponse.json({ id: 'q', status: 'answered', answer_id: 'a' }),
+      ),
+      http.get('*/v1/answers/:id', () =>
+        HttpResponse.json({
+          id: 'a',
+          kind: 'document',
+          text: 'Nhóm 3 [1].',
+          agent_name: null,
+          latency_ms: 3400,
+        }),
+      ),
+      http.post('*/v1/search/documents', async ({ request }) => {
+        searched = await request.json();
+        return HttpResponse.json({
+          items: [
+            {
+              document_id: 'd-9',
+              document_title: null,
+              doc_no: 'TT 31/2024',
+              section_path: 'Điều 10',
+              page_from: 14,
+              text: 'tối thiểu là nhóm 3',
+              effective_from: null,
+              effective_to: '2020-01-01',
+            },
+          ],
+          next_page_token: '',
+        });
+      }),
+    );
+    const answer = await askDocuments({ question: 'Nhóm nợ?', collection_id: 'c-1' });
+    expect(asked).toEqual({
+      text: 'Nhóm nợ?',
+      knowledge_mode: 'latest',
+      purpose: DOCUMENT_ANSWER_PURPOSE,
+    });
+    expect(searched).toEqual({ query: 'Nhóm nợ?', collection_ids: ['c-1'], top_k: 5 });
+    expect(answer).toMatchObject({
+      answer: 'Nhóm 3 [1].',
+      not_found: false,
+      scope_text: 'Tìm trong: bộ sưu tập đã chọn',
+      meta_text: 'Agent Tài liệu · 1 nguồn · 3,4 giây',
+    });
+    expect(answer.citations[0]).toEqual({
+      n: 1,
+      document_id: 'd-9',
+      title: 'TT 31/2024',
+      locator: 'Điều 10 · trang 14',
+      page: 14,
+      validity: { tone: 'warning', text: 'Hết hiệu lực 01/01/2020' },
+      superseded: true,
+      quote: 'tối thiểu là nhóm 3',
+    });
   });
 });

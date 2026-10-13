@@ -10,7 +10,8 @@ import type {
 /*
  * The periods of "P10 · Kỳ chốt · Chốt kỳ" (2304:19277). T9/2026 is mid-close and stopped on a
  * reconciliation mismatch; its HITL request is answered here (and only here, so the Cần bạn
- * list keeps its own fixture), which moves the close on to the lock step.
+ * list keeps its own fixture). Accepting it lets the close run to its end: the period locks
+ * itself, as the worker does once the reconciliation is settled (UC-10-02 step 5).
  */
 const ISSUE_HITL = 'hitl-period-t9-2141';
 
@@ -72,9 +73,7 @@ function september(): PeriodClose {
     ],
     frozen_note:
       'Số đóng băng được gắn vào báo cáo NHNN T9 và không sửa được nữa; chỉ có thể tạo bản điều chỉnh.',
-    can_lock: { allowed: false, reason: 'Còn bước đối soát chờ bạn quyết định.' },
     can_start_close: false,
-    can_cancel: true,
   };
 }
 
@@ -93,9 +92,7 @@ function plain(summary: PeriodSummary): PeriodClose {
     ],
     frozen_figures: [],
     frozen_note: '',
-    can_lock: { allowed: false, reason: done ? 'Kỳ đã khoá.' : 'Kỳ chưa bắt đầu chốt.' },
     can_start_close: summary.status === 'open',
-    can_cancel: false,
   };
 }
 
@@ -317,35 +314,8 @@ export function createPeriodHandlers() {
           status: 'closing',
           steps: period.steps.map((s, i) => ({ ...s, state: i === 0 ? 'running' : 'pending' })),
           can_start_close: false,
-          can_cancel: true,
         });
         return HttpResponse.json({ id, status: 'closing', poll_after_ms: 1000 }, { status: 202 });
-      }
-      if (period.status !== 'closing')
-        return problem(409, 'invalid_state', 'Kỳ không ở trạng thái đang chốt.');
-      if (verb === 'lock') {
-        if (!period.can_lock.allowed)
-          return problem(409, 'invalid_state', period.can_lock.reason ?? 'Chưa khoá được.');
-        return HttpResponse.json(
-          save({
-            ...period,
-            status: 'locked',
-            steps: period.steps.map((s) => ({ ...s, state: 'done' })),
-            can_lock: { allowed: false, reason: 'Kỳ đã khoá.' },
-          }),
-        );
-      }
-      if (verb === 'cancel-close') {
-        return HttpResponse.json(
-          save({
-            ...period,
-            status: 'open',
-            steps: period.steps.map((s) => ({ ...s, state: 'pending', issue: undefined })),
-            can_lock: { allowed: false, reason: 'Kỳ chưa bắt đầu chốt.' },
-            can_start_close: true,
-            can_cancel: false,
-          }),
-        );
       }
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),
@@ -360,24 +330,24 @@ export function createPeriodHandlers() {
       if (body.option === 'accept_with_note' && !body.note?.trim())
         return problem(422, 'validation_failed', 'Cần ghi chú khi chấp nhận chênh lệch.');
       const accepted = body.option === 'accept_with_note';
-      save({
-        ...period,
-        steps: period.steps.map((s) =>
-          s.issue?.hitl_id === id
-            ? {
-                ...s,
-                state: accepted ? 'done' : 'running',
-                detail: accepted
-                  ? 'Chấp nhận lệch TK 2141 theo ngày Core banking, có ghi chú'
-                  : 'Chờ sổ cái điều chỉnh TK 2141; agent đối soát lại khi có bút toán',
-                issue: undefined,
-              }
-            : s,
-        ),
-        can_lock: accepted
-          ? { allowed: true, reason: null }
-          : { allowed: false, reason: 'Đang chờ sổ cái điều chỉnh.' },
-      });
+      const steps = period.steps.map((s) =>
+        s.issue?.hitl_id === id
+          ? {
+              ...s,
+              state: accepted ? ('done' as const) : ('running' as const),
+              detail: accepted
+                ? 'Chấp nhận lệch TK 2141 theo ngày Core banking, có ghi chú'
+                : 'Chờ sổ cái điều chỉnh TK 2141; agent đối soát lại khi có bút toán',
+              issue: undefined,
+            }
+          : s,
+      );
+      // Settled, the close runs on to its last step and the period locks itself.
+      save(
+        accepted
+          ? { ...period, status: 'locked', steps: steps.map((s) => ({ ...s, state: 'done' })) }
+          : { ...period, steps },
+      );
       return HttpResponse.json({ id, status: 'answered' });
     }),
     http.post('*/v1/retro-changes/:action', async ({ params, request }) => {

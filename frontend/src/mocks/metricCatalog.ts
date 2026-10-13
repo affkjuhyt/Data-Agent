@@ -1,10 +1,14 @@
 import { http, HttpResponse } from 'msw';
-import type { CatalogMetric, CatalogMetricWire, MetricProfile } from '../lib/v1/metricCatalog';
+import type { CatalogMetric, CatalogMetricWire } from '../lib/v1/metricCatalog';
+import type { components } from '../lib/v1/schema';
+
+type Schemas = components['schemas'];
 
 /*
  * "Dữ liệu & tri thức" (2056:1150, tabs 2099:11054, 2099:11344, 2099:11632) for the dev mock: six
- * metrics of the catalog and the full profile of NPL_RATIO; the others get a short one. GET
- * /v1/metrics answers here only with ?view=catalog; the plain list stays with handlers.ts.
+ * metrics of the catalog, one metric (GET /v1/metrics/{id}) for those mocks/metrics.ts does not
+ * answer, and the lineage of a metric. GET /v1/metrics answers here only with ?view=catalog; the
+ * plain list stays with handlers.ts.
  */
 function catalogFixture(): CatalogMetric[] {
   return [
@@ -65,97 +69,99 @@ function catalogFixture(): CatalogMetric[] {
   ];
 }
 
-function profileFixture(id: string): MetricProfile | null {
-  const m = catalogFixture().find((x) => x.id === id);
-  if (!m) return null;
-  const base: MetricProfile = {
+/*
+ * One metric as A2 sends it. NPL_RATIO (its versions) and COST_OF_RISK (the 403 of "Thiếu
+ * quyền") are answered by mocks/metrics.ts; the other catalog metrics get a MetricDetail here.
+ */
+const ANSWERED_BY_METRICS_MOCK = ['metric-npl-ratio', 'metric-cost-of-risk'];
+
+function detailFixture(m: CatalogMetric): Schemas['MetricDetail'] {
+  const at = '2026-01-05T09:00:00+07:00';
+  return {
     id: m.id,
     code: m.code,
-    name: m.name,
-    status: m.status,
-    meta_line: `${m.code} · v${m.version} · domain ${m.domain}`,
-    definition: {
-      expression: `${m.code} = …`,
-      note: 'Định nghĩa đầy đủ ở trang Chỉ số · Định nghĩa.',
-    },
-    lineage: [],
-    agents: [],
-    change_notice: null,
+    display_name: m.name,
+    status: 'active',
+    certified: m.status === 'certified',
+    current_version: m.version,
+    data_space_id: 'ds-rui-ro-tin-dung',
+    owner_id: 'u-long',
+    canonical_dataset_id: null,
+    consumer_group: null,
+    in_filed_report: false,
+    pack_metric_id: null,
+    created_at: at,
+    updated_at: at,
+    usage: { data_product_ids: [], knowledge_page_ids: [] },
     versions: [
       {
+        id: `mv-${m.id}-v${m.version}`,
+        metric_id: m.id,
         version: m.version,
-        change: 'Phiên bản hiện hành',
-        effective: '—',
-        status: m.status === 'draft' ? 'draft' : 'certified',
+        display_name: m.name,
+        expression: `${m.code} = …`,
+        description: 'Định nghĩa đầy đủ ở trang Chỉ số · Định nghĩa.',
+        change_note: 'Phiên bản hiện hành',
+        status: m.status === 'certified' ? 'certified' : 'draft',
+        additivity: 'none',
+        allowed_dimensions: [],
+        filters: [],
+        decimals: 2,
+        direction: 'neutral',
+        period_semantics: 'end_of_period',
+        time_grain: 'month',
+        unit: null,
+        legal_basis: null,
+        override_id: null,
+        proposal_id: null,
+        valid_from: null,
+        valid_to: null,
+        certified_at: null,
+        certified_by: null,
+        created_at: at,
       },
     ],
-    usage: [],
-    usage_note: m.usage_text,
-    quality: [],
   };
-  if (id !== 'metric-npl-ratio') return base;
+}
+
+type Node = Schemas['LineageNode'];
+const node = (key: string, kind: string, name: string): Node => ({
+  id: null,
+  key,
+  kind,
+  name,
+  hidden: false,
+});
+
+/** GET /v1/lineage?object_kind=metric: NPL_RATIO from core banking to the agents using it. */
+function lineageFixture(id: string, code: string): Schemas['LineageGraph'] {
+  const root = node(id, 'metric', code);
+  if (id !== 'metric-npl-ratio')
+    return { root, nodes: [root], edges: [], depth: 3, direction: 'both', grouped: false };
+  const nodes = [
+    node('src-core', 'source', 'Core banking'),
+    node('ds-loans', 'dataset', 'fact_loan_balance_daily'),
+    root,
+    node('report-t9', 'report', 'Báo cáo rủi ro tháng 9'),
+    node('agent-risk', 'agent', 'Agent Giám sát rủi ro'),
+    node('agent-analysis', 'agent', 'Agent Phân tích'),
+    node('skill-decompose', 'skill', 'Kỹ năng Phân rã biến động'),
+  ];
+  const edge = (source: string, target: string) => ({ source, target, via: null, via_ref: null });
   return {
-    ...base,
-    meta_line: 'NPL_RATIO · v4 · hiệu lực từ 01/03/2026 · chủ sở hữu Trần Quốc An',
-    definition: {
-      expression:
-        'NPL_RATIO = SUM(balance WHERE debt_group IN (3,4,5))\n          / SUM(balance)\nlọc: segment, region, product · thời điểm: cuối kỳ',
-      note: 'Dư nợ nhóm 3–5 chia tổng dư nợ cho vay khách hàng tại ngày cuối kỳ. Agent chỉ dùng phiên bản chứng nhận trừ khi người dùng chọn khác; mọi câu trả lời ghi rõ phiên bản.',
-    },
-    lineage: [
-      { kind: 'Nguồn', title: 'Core banking', detail: 'ld_loans' },
-      { kind: 'Kho', title: 'DWH', detail: 'fact_loan_balance_daily' },
-      { kind: 'Snapshot', title: 'Phiên bản theo ngày', detail: 'loan_balance_snapshot' },
-      { kind: 'Chỉ số', title: 'NPL_RATIO v4', detail: '', current: true },
-      { kind: 'Sử dụng', title: '23 artifact · 5 agent', detail: 'báo cáo, notebook, cảnh báo' },
+    root,
+    nodes,
+    edges: [
+      edge('src-core', 'ds-loans'),
+      edge('ds-loans', id),
+      edge(id, 'report-t9'),
+      edge(id, 'agent-risk'),
+      edge(id, 'agent-analysis'),
+      edge(id, 'skill-decompose'),
     ],
-    agents: [
-      { name: 'Agent Giám sát rủi ro', state: 'Đang chạy', tone: 'success' },
-      { name: 'Agent Phân tích', state: 'Chờ bạn', tone: 'warning' },
-      { name: 'Agent Đối soát', state: 'Đang chạy', tone: 'success' },
-      { name: 'Agent Báo cáo', state: 'Đang chạy', tone: 'success' },
-      { name: 'Agent Dự báo', state: 'Chờ lịch', tone: 'idle' },
-    ],
-    change_notice: {
-      title: 'Agent Tài liệu: văn bản mới thay đổi tiêu chí nợ nhóm 2',
-      text: 'Đã soạn NPL_RATIO v5 (nháp) và chạy thử: kết quả T9 thay đổi +0,03 điểm, ảnh hưởng 4 báo cáo.',
-      draft_version: 5,
-    },
-    versions: [
-      {
-        version: 5,
-        change: 'Tính khoản cơ cấu lần 2 vào nhóm 3',
-        effective: '01/01/2027',
-        status: 'draft',
-      },
-      {
-        version: 4,
-        change: 'Loại trừ cho vay nội bộ',
-        effective: '01/03/2026',
-        status: 'certified',
-      },
-      { version: 3, change: 'Thêm phân khúc', effective: '01/09/2025', status: 'archived' },
-      {
-        version: 2,
-        change: 'Chuẩn hoá theo thông tư 2024',
-        effective: '01/01/2025',
-        status: 'archived',
-      },
-    ],
-    usage: [
-      { place: 'Báo cáo rủi ro tháng 9', kind: 'Báo cáo', version: 'v4', last: '08/10' },
-      { place: 'Agent Giám sát rủi ro', kind: 'Agent', version: 'v4', last: '12:00' },
-      { place: 'Notebook “Điều tra nợ xấu”', kind: 'Phiên', version: 'v4', last: '09:58' },
-      { place: 'mart_credit_risk_retail', kind: 'Data mart', version: 'v4', last: '06:10' },
-      { place: 'Kỹ năng Phân rã biến động', kind: 'Kỹ năng', version: 'v4', last: 'hôm qua' },
-    ],
-    usage_note: '23 artifact · 5 agent · 9 phiên trong 30 ngày',
-    quality: [
-      { ok: true, label: 'Đạt', text: 'Khớp số đã nộp 6/6 kỳ gần nhất' },
-      { ok: true, label: 'Đạt', text: 'Dữ liệu nguồn mới tới 30/09 23:59' },
-      { ok: true, label: 'Đạt', text: 'Không âm, không vượt 100%' },
-      { ok: false, label: 'Cảnh báo', text: 'Tây Nguyên thiếu 2 chi nhánh trong T8 (đã ghi chú)' },
-    ],
+    depth: 3,
+    direction: 'both',
+    grouped: false,
   };
 }
 
@@ -186,14 +192,18 @@ export function createMetricCatalogHandlers() {
       }));
       return HttpResponse.json({ items, next_page_token: '' });
     }),
-    http.get('*/v1/metrics/:id/profile', ({ params }) => {
-      const profile = profileFixture(String(params.id));
-      return profile
-        ? HttpResponse.json(profile)
-        : HttpResponse.json(
-            { title: 'not_found', status: 404, code: 'not_found', detail: 'Không có chỉ số này.' },
-            { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
-          );
+    http.get('*/v1/metrics/:id', ({ params }) => {
+      const m = catalogFixture().find((x) => x.id === params.id);
+      return m && !ANSWERED_BY_METRICS_MOCK.includes(m.id)
+        ? HttpResponse.json(detailFixture(m))
+        : undefined;
+    }),
+    http.get('*/v1/lineage', ({ request }) => {
+      const query = new URL(request.url).searchParams;
+      const m = catalogFixture().find((x) => x.id === query.get('object_id'));
+      return query.get('object_kind') === 'metric' && m
+        ? HttpResponse.json(lineageFixture(m.id, m.code))
+        : undefined;
     }),
   ];
 }

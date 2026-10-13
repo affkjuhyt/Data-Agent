@@ -1,22 +1,26 @@
 import { http, HttpResponse } from 'msw';
-import type {
-  Calibration,
-  EntityMappings,
-  IndustryPack,
-  MetricOverride,
-  PackDraft,
-  PackInstall,
-  PackUpgrade,
-  PackVersion,
-} from '../lib/v1/packs';
+import type { components } from '../lib/v1/schema';
+import type { IndustryPack } from '../lib/v1/packs';
 
 /*
- * Gói ngành (P09) for the dev mock: the installed and available packs of "Gói ngành · Danh sách"
- * (2284:17173); installing Ngân hàng · bán lẻ 2026.3 (2284:17334); onboarding Rủi ro tín dụng —
- * mappings (2284:17560) and the calibration against reported figures (2286:17389); the NPL_RATIO
- * override (2286:17580); the 2026.3 → 2026.4 upgrade (2286:17750); and the 2026.4 draft
- * (2287:17550).
+ * Gói ngành (P09) for the dev mock, in the api's shapes: the installed and available packs of
+ * "Gói ngành · Danh sách" (2284:17173); the versions of Ngân hàng · bán lẻ, rủi ro tín dụng and the
+ * available packs (2284:17334); onboarding Rủi ro tín dụng — mappings (2284:17560) and its
+ * calibration run (2286:17389); the NPL_RATIO override (2286:17580); the 2026.3 → 2026.4 upgrade
+ * (2286:17750); and the 2026.4 draft (2287:17550). GET /v1/packs carries what IndustryPackView
+ * lacks (installed, latest, draft) under `display`.
  */
+type Schemas = components['schemas'];
+type Version = Schemas['PackVersionDetail'];
+type Mapping = Schemas['MappingView'];
+type Run = Schemas['CalibrationRunView'];
+type Override = Schemas['MetricOverrideView'];
+type Upgrade = Schemas['PackUpgradeView'];
+
+const T0 = '2026-10-01T09:00:00+07:00';
+const USER = 'user-1';
+const SPACE = 'ds-credit-risk';
+
 const problem = (status: number, code: string, detail: string) =>
   HttpResponse.json(
     { title: code, status, code, detail },
@@ -41,6 +45,7 @@ function packsFixture(): IndustryPack[] {
         upgrade: { to_version: '2026.4', upgrade_id: 'upg-retail-2026-4' },
       },
       latest: { version: '2026.4', version_id: 'pv-retail-2026-4', content_text: '' },
+      draft: { version: '2026.4', version_id: 'pv-retail-2026-4-draft' },
     },
     {
       id: 'pack-bank-credit-risk',
@@ -49,15 +54,16 @@ function packsFixture(): IndustryPack[] {
       installed: {
         install_id: 'inst-credit-risk',
         version: '2026.3',
-        scope_text: 'Mở rộng của gói Ngân hàng',
-        mapped: 18,
-        mapped_total: 23,
-        overrides: 6,
-        first_override_id: 'ovr-npl-ratio',
+        scope_text: 'Rủi ro tín dụng',
+        mapped: 38,
+        mapped_total: 45,
+        overrides: 0,
+        first_override_id: null,
         status: 'onboarding',
         upgrade: null,
       },
       latest: { version: '2026.3', version_id: 'pv-credit-2026-3', content_text: '' },
+      draft: null,
     },
     {
       id: 'pack-life-insurance',
@@ -69,6 +75,7 @@ function packsFixture(): IndustryPack[] {
         version_id: 'pv-life-2026-2',
         content_text: '38 thực thể · 112 chỉ số · 9 kỹ năng · 4 agent mẫu',
       },
+      draft: null,
     },
     {
       id: 'pack-retail-chain',
@@ -80,6 +87,7 @@ function packsFixture(): IndustryPack[] {
         version_id: 'pv-chain-2026-1',
         content_text: '29 thực thể · 86 chỉ số · 7 kỹ năng · 3 agent mẫu',
       },
+      draft: null,
     },
     {
       id: 'pack-securities',
@@ -91,602 +99,778 @@ function packsFixture(): IndustryPack[] {
         version_id: 'pv-sec-2025-4',
         content_text: '31 thực thể · 74 chỉ số · 5 kỹ năng',
       },
+      draft: null,
     },
   ];
 }
 
-function versionFixture(id: string): PackVersion | null {
-  const pack = packsFixture().find((p) => p.latest!.version_id === id) ?? null;
-  const name = id === 'pv-retail-2026-3' ? 'Ngân hàng · bán lẻ' : pack?.name;
-  if (!name) return null;
+function packWire(p: IndustryPack): Schemas['IndustryPackView'] & { display: IndustryPack } {
+  return {
+    id: p.id,
+    code: p.id,
+    name: p.name,
+    publisher: p.publisher,
+    industry_code: 'banking',
+    origin: p.id.startsWith('pack-own') ? 'organisation' : 'vendor',
+    description: null,
+    publisher_key_id: 'key-1',
+    created_at: T0,
+    updated_at: T0,
+    display: p,
+  };
+}
+
+/* ─── Versions ──────────────────────────────────────────────────────── */
+
+type Attribute = NonNullable<Schemas['CanonicalEntityView']['attributes']>[number];
+
+const attribute = (
+  entity: string,
+  code: string,
+  required = false,
+  dataType = 'string',
+): Attribute => ({
+  id: `attr-${entity}-${code}`,
+  code,
+  name: code,
+  data_type: dataType,
+  required,
+  pii: false,
+  code_list: null,
+});
+
+// Rủi ro tín dụng: customer is spelled out, the others are numbered attributes.
+const CREDIT_ENTITIES: [string, string, number][] = [
+  ['loan', 'Khoản vay', 12],
+  ['collateral', 'Tài sản bảo đảm', 8],
+  ['repayment', 'Giao dịch trả nợ', 7],
+  ['branch', 'Chi nhánh', 4],
+  ['card', 'Thẻ tín dụng', 9],
+];
+
+function creditEntities(): Schemas['CanonicalEntityView'][] {
+  const customer: Schemas['CanonicalEntityView'] = {
+    id: 'ent-customer',
+    code: 'customer',
+    name: 'Khách hàng',
+    description: null,
+    key_attributes: ['customer_id'],
+    attributes: [
+      attribute('customer', 'customer_id', true),
+      attribute('customer', 'segment'),
+      attribute('customer', 'birth_date', false, 'date'),
+      attribute('customer', 'income_band', false, 'code'),
+      attribute('customer', 'kyc_level', true),
+    ],
+  };
+  const others = CREDIT_ENTITIES.map(([code, name, n]) => ({
+    id: `ent-${code}`,
+    code,
+    name,
+    description: null,
+    key_attributes: [],
+    attributes: Array.from({ length: n }, (_, i) => attribute(code, `attr_${i + 1}`)),
+  }));
+  return [others[0], customer, ...others.slice(1)];
+}
+
+const metric = (code: string, name: string, expression: string, regulatory = false) => ({
+  id: `metric-${code}`,
+  code,
+  name,
+  expression,
+  unit: null,
+  additivity: 'none',
+  legal_basis: regulatory ? 'Thông tư 11/2021/TT-NHNN' : null,
+  is_internal: !regulatory,
+  in_regulatory_report: regulatory,
+});
+
+function version(
+  id: string,
+  packId: string,
+  v: string,
+  counts: { entities: number; metrics: number; skills: number; templates: number; rules: number },
+  extra: Partial<Version> = {},
+): Version {
   return {
     id,
-    pack_name: name,
-    version: id === 'pv-retail-2026-3' ? '2026.3' : (pack?.latest?.version ?? ''),
+    pack_id: packId,
+    version: v,
     status: 'published',
-    counts: [
-      { label: 'Thực thể', value: 50 },
-      { label: 'Chỉ số', value: 148 },
-      { label: 'Thuật ngữ', value: 612 },
-      { label: 'Kỹ năng', value: 12 },
-      { label: 'Agent mẫu', value: 6 },
-      { label: 'Luật kiểm tra', value: 84 },
+    manifest: {},
+    signature: 'sig',
+    signature_verified_at: T0,
+    min_core_version: '3.0.0',
+    object_key: `packs/${id}.dapack`,
+    release_notes: null,
+    released_at: T0,
+    breaking_changes: [],
+    created_at: T0,
+    updated_at: T0,
+    entities: Array.from({ length: counts.entities }, (_, i) => ({
+      id: `${id}-ent-${i}`,
+      code: `entity_${i + 1}`,
+      name: `Thực thể ${i + 1}`,
+      description: null,
+      key_attributes: [],
+      attributes: [],
+    })),
+    metrics: Array.from({ length: counts.metrics }, (_, i) =>
+      metric(`METRIC_${i + 1}`, `Chỉ số ${i + 1}`, `sum(x_${i + 1})`),
+    ),
+    rules: Array.from({ length: counts.rules }, (_, i) => ({
+      id: `${id}-rule-${i}`,
+      code: `RULE_${i + 1}`,
+      description: `Luật ${i + 1}`,
+      expression: 'x >= 0',
+      severity: 'blocking',
+      tolerance: null,
+    })),
+    skills: [
+      ...Array.from({ length: counts.skills }, (_, i) => ({
+        id: `${id}-skill-${i}`,
+        code: `skill_${i + 1}`,
+        name: `Kỹ năng ${i + 1}`,
+        kind: 'skill',
+        definition: {},
+      })),
+      ...Array.from({ length: counts.templates }, (_, i) => ({
+        id: `${id}-tpl-${i}`,
+        code: `agent_${i + 1}`,
+        name: `Agent mẫu ${i + 1}`,
+        kind: 'agent_template',
+        definition: {},
+      })),
     ],
-    checks: [
-      { item: 'Phiên bản Data Agent tương thích', result: '3.1 ≥ 3.0 yêu cầu', ok: true },
-      {
-        item: 'Không ghi đè định nghĩa đang được chứng nhận',
-        result: '0 định nghĩa bị ghi đè',
-        ok: true,
-      },
-      { item: 'Ngôn ngữ thuật ngữ', result: 'Tiếng Việt, kèm tên tiếng Anh', ok: true },
-      {
-        item: '2 chỉ số trùng mã với chỉ số đã có',
-        result: 'NPL_RATIO, CASA_RATIO — chọn cách xử lý bên dưới',
-        ok: false,
-      },
-      { item: 'Chữ ký của nhà phát hành', result: 'Hợp lệ · Data Agent', ok: true },
-    ],
-    code_conflicts: [
-      {
-        code: 'NPL_RATIO',
-        org_text: 'v4 · nhóm 3–5 · loại trừ vay nội bộ · đã chứng nhận',
-        pack_text: 'nhóm 3–5 · gồm vay nội bộ',
-        suggested: 'keep_org',
-      },
-      {
-        code: 'CASA_RATIO',
-        org_text: 'v3 · trung bình ngày',
-        pack_text: 'cuối kỳ',
-        suggested: 'keep_org',
-      },
-    ],
-    targets: [
-      { id: 'ds-credit-risk', name: 'Rủi ro tín dụng', default: true },
-      { id: 'ds-retail', name: 'Kinh doanh bán lẻ', default: true },
-      { id: 'ds-finance', name: 'Tài chính', default: true },
-      { id: 'ds-ops', name: 'Vận hành', default: false },
-    ],
+    latest_check_run: null,
+    ...extra,
   };
 }
 
-function installFixture(): PackInstall {
-  return {
-    id: 'inst-credit-risk',
-    title: 'Rủi ro tín dụng',
-    summary_text:
-      '18/23 thực thể đã ánh xạ · Agent Chuẩn bị dữ liệu đề xuất 41 ánh xạ, bạn đã duyệt 36',
-    entities: [
-      { key: 'loan', name: 'Khoản vay', mapped: 12, total: 12 },
-      { key: 'customer', name: 'Khách hàng', mapped: 9, total: 10 },
-      { key: 'collateral', name: 'Tài sản bảo đảm', mapped: 6, total: 8 },
-      { key: 'repayment', name: 'Giao dịch trả nợ', mapped: 7, total: 7 },
-      { key: 'branch', name: 'Chi nhánh', mapped: 4, total: 4 },
-      { key: 'card', name: 'Thẻ tín dụng', mapped: 0, total: 9 },
-    ],
-  };
-}
-
-function customerMappings(): EntityMappings {
-  return {
-    entity: 'customer',
-    name: 'Khách hàng',
-    main_table: 'core.CUSTOMERS',
-    rows: [
-      {
-        attr: 'customer_id',
-        required: true,
-        column: 'CUSTOMERS.CIF_NO',
-        options: ['CUSTOMERS.CIF_NO', 'CUSTOMERS.CUST_ID'],
-        confidence: 0.99,
-        note: 'Khoá, khớp 100% với LD_LOANS.customer_id',
-        unsure: false,
-        approved: true,
-      },
-      {
-        attr: 'segment',
-        required: false,
-        column: 'CUSTOMERS.CUST_TYPE',
-        options: ['CUSTOMERS.CUST_TYPE', 'CUSTOMERS.SEGMENT_CD'],
-        confidence: 0.93,
-        note: 'Giá trị I/C → cá nhân/doanh nghiệp',
-        unsure: false,
-        approved: true,
-      },
-      {
-        attr: 'birth_date',
-        required: false,
-        column: 'CUSTOMERS.DOB',
-        options: ['CUSTOMERS.DOB'],
-        confidence: 0.97,
-        note: 'Dữ liệu cá nhân · chỉ dùng để tính tuổi',
-        unsure: false,
-        approved: true,
-      },
-      {
-        attr: 'income_band',
-        required: false,
-        column: 'CUSTOMERS.INCOME_GRP',
-        options: ['CUSTOMERS.INCOME_GRP', 'CUSTOMERS.INCOME_AMT'],
-        confidence: 0.61,
-        note: 'Agent không chắc: 7 nhóm thu nhập, gói dùng 5 nhóm',
-        unsure: true,
-        approved: false,
-      },
-      {
-        attr: 'kyc_level',
-        required: true,
-        column: null,
-        options: ['CUSTOMERS.KYC_FLAG', 'EKYC.LEVEL'],
-        confidence: null,
-        note: 'Chưa tìm thấy cột phù hợp',
-        unsure: true,
-        approved: false,
-      },
-    ],
-    decisions: [
-      {
-        text: 'income_band: gộp 7 nhóm thu nhập của tổ chức thành 5 nhóm của gói? Agent đề xuất gộp nhóm 6–7 vào nhóm 5.',
-        code_mapping: {
-          attr: 'income_band',
-          rows: [
-            { from: '1 · dưới 5 triệu', to: '1' },
-            { from: '2 · 5–10 triệu', to: '2' },
-            { from: '3 · 10–20 triệu', to: '3' },
-            { from: '4 · 20–35 triệu', to: '4' },
-            { from: '5 · 35–50 triệu', to: '5' },
-            { from: '6 · 50–100 triệu', to: '5' },
-            { from: '7 · trên 100 triệu', to: '5' },
-          ],
+function versionsFixture(): Map<string, Version> {
+  const retail = { entities: 50, metrics: 148, skills: 12, templates: 6, rules: 84 };
+  const list = [
+    version('pv-retail-2026-3', 'pack-bank-retail', '2026.3', retail),
+    version('pv-retail-2026-4', 'pack-bank-retail', '2026.4', retail),
+    version('pv-retail-2026-4-draft', 'pack-bank-retail', '2026.4', retail, {
+      status: 'draft',
+      signature: '',
+      signature_verified_at: null,
+      released_at: null,
+      release_notes: 'Thêm chiều kỳ hạn cho LOAN_GROWTH; bỏ CARD_ACTIVE.',
+      latest_check_run: {
+        id: 'check-1',
+        pack_version_id: 'pv-retail-2026-4-draft',
+        checks: {
+          legal_basis: [],
+          code_reuse: ['CARD_ACTIVE'],
+          breaking_changes_without_guide: [],
+          sample_datasets: 'skipped',
+          sample_questions: 'skipped',
         },
+        passed: false,
+        ran_by: USER,
+        created_at: '2026-10-12T10:12:00+07:00',
       },
+    }),
+    version(
+      'pv-credit-2026-3',
+      'pack-bank-credit-risk',
+      '2026.3',
+      { entities: 0, metrics: 0, skills: 4, templates: 2, rules: 20 },
       {
-        text: 'kyc_level là thuộc tính bắt buộc. Không có cột phù hợp: có thể lấy từ hệ thống eKYC hoặc đánh dấu “không áp dụng”, khi đó 3 chỉ số tuân thủ sẽ không tính được.',
-        code_mapping: null,
+        entities: creditEntities(),
+        metrics: [
+          metric('LOAN_BALANCE', 'Dư nợ cho vay', 'sum(loan.balance)', true),
+          metric('NPL_RATIO', 'Tỷ lệ nợ xấu', 'dư nợ nhóm 3–5\n÷ tổng dư nợ', true),
+          metric('LOAN_COUNT', 'Số khoản vay', 'count(loan)'),
+          metric('CARD_BALANCE', 'Dư nợ thẻ tín dụng', 'sum(card.balance)'),
+        ],
       },
-    ],
+    ),
+    version('pv-life-2026-2', 'pack-life-insurance', '2026.2', {
+      entities: 38,
+      metrics: 112,
+      skills: 9,
+      templates: 4,
+      rules: 40,
+    }),
+    version('pv-chain-2026-1', 'pack-retail-chain', '2026.1', {
+      entities: 29,
+      metrics: 86,
+      skills: 7,
+      templates: 3,
+      rules: 30,
+    }),
+    version('pv-sec-2025-4', 'pack-securities', '2025.4', {
+      entities: 31,
+      metrics: 74,
+      skills: 5,
+      templates: 0,
+      rules: 25,
+    }),
+  ];
+  return new Map(list.map((v) => [v.id, v]));
+}
+
+/* ─── Install, mappings, calibration ────────────────────────────────── */
+
+const INSTALL_ID = 'inst-credit-risk';
+const INSTALL_VERSION = 'pv-credit-2026-3';
+
+function mapping(
+  entity: string,
+  code: string,
+  column: string,
+  confidence: number,
+  confirmed = true,
+): Mapping {
+  return {
+    id: `map-${entity}-${code}`,
+    pack_install_id: INSTALL_ID,
+    attribute_id: `attr-${entity}-${code}`,
+    dataset_id: `dataset-${entity}`,
+    column_expr: column,
+    confidence,
+    origin: confirmed ? 'confirmed' : 'suggested',
+    confirmed_by: confirmed ? USER : null,
+    valid_from: T0,
+    valid_to: null,
+    created_at: T0,
+    updated_at: T0,
+    entity_code: entity,
+    attribute_code: code,
+    attribute_name: code,
+    required: false,
+    code_mappings: [],
   };
 }
 
-function calibrationFixture(): Calibration {
-  return {
-    install_title: 'Rủi ro tín dụng',
-    matched: 5,
-    total: 6,
-    tolerance_text: 'ngưỡng chấp nhận lệch 0,1%',
-    rows: [
-      {
-        id: 'c1',
-        metric: 'Dư nợ cho vay',
-        period: '09/2026',
-        computed: '182.431 tỷ',
-        reported: '182.430 tỷ',
-        diff: '0,00%',
-        ok: true,
-        accepted_note: null,
-      },
-      {
-        id: 'c2',
-        metric: 'Dư nợ cho vay',
-        period: '08/2026',
-        computed: '180.416 tỷ',
-        reported: '180.416 tỷ',
-        diff: '0,00%',
-        ok: true,
-        accepted_note: null,
-      },
-      {
-        id: 'c3',
-        metric: 'Nợ xấu (NPL_RATIO)',
-        period: '09/2026',
-        computed: '1,85%',
-        reported: '1,84%',
-        diff: '+0,01 điểm',
-        ok: true,
-        accepted_note: null,
-      },
-      {
-        id: 'c4',
-        metric: 'Nợ xấu (NPL_RATIO)',
-        period: '08/2026',
-        computed: '1,63%',
-        reported: '1,62%',
-        diff: '+0,01 điểm',
-        ok: true,
-        accepted_note: null,
-      },
-      {
-        id: 'c5',
-        metric: 'Số khoản vay',
-        period: '09/2026',
-        computed: '1.284.562',
-        reported: '1.284.562',
-        diff: '0,00%',
-        ok: true,
-        accepted_note: null,
-      },
-      {
-        id: 'c6',
-        metric: 'Dư nợ thẻ tín dụng',
-        period: '09/2026',
-        computed: '9.721 tỷ',
-        reported: '9.643 tỷ',
-        diff: '+0,81%',
-        ok: false,
-        accepted_note: null,
-      },
-    ],
-    findings: [
-      {
-        row_id: 'c6',
-        title: 'Dư nợ thẻ tín dụng lệch 0,81% (78 tỷ)',
-        text: 'Agent Đối soát tìm thấy: số đã báo cáo không tính 2.140 thẻ phụ có dư nợ, còn ánh xạ hiện tại gộp thẻ phụ vào thẻ chính. Thực thể Thẻ tín dụng mới ánh xạ 0/9 thuộc tính, nên dư nợ thẻ đang lấy tạm từ bảng tổng hợp.',
-        fix: { id: 'fix-exclude-supplementary', label: 'Loại thẻ phụ khỏi ánh xạ' },
-      },
-    ],
-    after_text:
-      '148 chỉ số của gói chuyển sang “đã ánh xạ” và dùng được trong Khám phá; agent mẫu của gói có thể bật.',
+function mappingsFixture(): Mapping[] {
+  // How many attributes of each entity are mapped already.
+  const done: Record<string, number> = {
+    loan: 12,
+    collateral: 6,
+    repayment: 7,
+    branch: 4,
+    card: 0,
   };
+  const numbered = CREDIT_ENTITIES.flatMap(([code]) =>
+    Array.from({ length: done[code] }, (_, i) =>
+      mapping(code, `attr_${i + 1}`, `core.${code.toUpperCase()}.COL_${i + 1}`, 0.95),
+    ),
+  );
+  return [
+    ...numbered,
+    { ...mapping('customer', 'customer_id', 'core.CUSTOMERS.CIF_NO', 0.99), required: true },
+    mapping('customer', 'segment', 'core.CUSTOMERS.CUST_TYPE', 0.93),
+    mapping('customer', 'birth_date', 'core.CUSTOMERS.DOB', 0.97),
+    mapping('customer', 'income_band', 'core.CUSTOMERS.INCOME_GRP', 0.61, false),
+  ];
 }
 
-function overrideFixture(): MetricOverride {
-  return {
+const item = (
+  id: string,
+  code: string,
+  period: string,
+  computed: number,
+  filed: number,
+  passed = true,
+  cause: string | null = null,
+) => ({
+  id,
+  item_kind: 'metric',
+  item_code: code,
+  period,
+  computed_value: computed,
+  filed_value: filed,
+  delta: Math.round((computed - filed) * 1000) / 1000,
+  passed,
+  suggested_cause: cause,
+});
+
+function runsFixture(): Map<string, Run> {
+  const credit: Run = {
+    id: 'cal-credit-1',
+    pack_install_id: INSTALL_ID,
+    trigger: 'onboarding',
+    periods: ['2026-08', '2026-09'],
+    tolerance_pp: 0.1,
+    status: 'failed',
+    passed: 5,
+    failed: 1,
+    created_at: T0,
+    finished_at: T0,
+    items: [
+      item('c1', 'LOAN_BALANCE', '2026-09', 182431, 182430),
+      item('c2', 'LOAN_BALANCE', '2026-08', 180416, 180416),
+      item('c3', 'NPL_RATIO', '2026-09', 1.85, 1.84),
+      item('c4', 'NPL_RATIO', '2026-08', 1.63, 1.62),
+      item('c5', 'LOAN_COUNT', '2026-09', 1284562, 1284562),
+      item(
+        'c6',
+        'CARD_BALANCE',
+        '2026-09',
+        9721,
+        9643,
+        false,
+        'Số đã báo cáo không tính 2.140 thẻ phụ có dư nợ; ánh xạ hiện tại gộp thẻ phụ vào thẻ chính.',
+      ),
+    ],
+  };
+  const override: Run = {
+    ...credit,
+    id: 'cal-ovr-npl',
+    trigger: 'override',
+    status: 'passed',
+    passed: 2,
+    failed: 0,
+    items: [
+      item('o1', 'NPL_RATIO', '2026-08', 1.62, 1.62),
+      item('o2', 'NPL_RATIO', '2026-09', 1.84, 1.84),
+    ],
+  };
+  return new Map([credit, override].map((r) => [r.id, r]));
+}
+
+function overridesFixture(): Map<string, Override> {
+  const npl: Override = {
     id: 'ovr-npl-ratio',
-    metric_code: 'NPL_RATIO',
-    status: 'draft',
-    summary_text:
-      'Bản gốc từ gói Ngân hàng 2026.3 · bản của tổ chức v4 đang dùng ở 23 artifact và 5 agent',
-    base_expression: 'dư nợ nhóm 3–5\n÷ tổng dư nợ\nlọc: phân khúc = bán lẻ',
-    org_expression:
-      'dư nợ nhóm 3–5\n÷ tổng dư nợ\nlọc: phân khúc = bán lẻ\n   và loại trừ cho vay nội bộ\n   và tính khoản cơ cấu lần 2 vào nhóm 3',
-    changes: [
-      {
-        change: '+ loại trừ cho vay nội bộ',
-        reason: 'Theo quy định nội bộ, khớp số báo cáo đã nộp',
-      },
-      {
-        change: '+ khoản cơ cấu lần 2 vào nhóm 3',
-        reason: 'Áp dụng từ 01/01/2027 theo văn bản sửa đổi',
-      },
-    ],
-    upgrade_note:
-      'Hiệu chỉnh vẫn liên kết với bản gốc. Khi nâng cấp gói, phần gốc thay đổi được gộp với hai thay đổi trên; nếu đụng cùng một chỗ, người phụ trách chỉ số chọn ở màn Nâng cấp gói.',
-    trial: null,
-    trial_note: null,
+    pack_install_id: INSTALL_ID,
+    pack_metric_code: 'NPL_RATIO',
+    expression: 'dư nợ nhóm 3–5\n÷ tổng dư nợ\nloại trừ cho vay nội bộ',
+    scope_condition: 'phân khúc = bán lẻ',
+    reason: 'Theo quy định nội bộ, khớp số báo cáo đã nộp',
+    status: 'pending_review',
+    approved_by: null,
+    compliance_approved_by: null,
+    calibration_run_id: 'cal-ovr-npl',
+    created_at: T0,
+    updated_at: T0,
   };
+  return new Map([[npl.id, npl]]);
 }
 
-function upgradeFixture(): PackUpgrade {
+function upgradeFixture(): Upgrade {
   return {
     id: 'upg-retail-2026-4',
-    pack_name: 'Ngân hàng · bán lẻ',
-    from_version: '2026.3',
-    to_version: '2026.4',
-    summary_text:
-      '42 thay đổi trong gói · 38 tự gộp · 3 cần bạn chọn · 1 bị bỏ qua vì tổ chức đã xoá phần đó',
-    conflicts: [
-      {
-        id: 'cf-npl-filter',
-        element: 'NPL_RATIO · bộ lọc',
-        old: 'phân khúc = bán lẻ',
-        new: 'phân khúc = bán lẻ và loại nợ được khoanh',
-        org: '+ loại trừ vay nội bộ',
-        options: [
-          { value: 'merge', label: 'Gộp cả hai (đề xuất)' },
-          { value: 'org', label: 'Giữ của tổ chức' },
-          { value: 'pack', label: 'Dùng bản mới' },
-        ],
-        suggested: 'merge',
-      },
-      {
-        id: 'cf-term-npl',
-        element: 'Thuật ngữ “nợ xấu”',
-        old: '→ NPL_RATIO',
-        new: '→ NPL_RATIO, thêm nghĩa “nợ nhóm 2-5”',
-        org: 'đã đổi nghĩa mặc định sang NPL_INTERNAL',
-        options: [
-          { value: 'org', label: 'Giữ của tổ chức' },
-          { value: 'pack', label: 'Dùng bản mới' },
-        ],
-        suggested: 'org',
-      },
-      {
-        id: 'cf-skill-variance',
-        element: 'Kỹ năng Phân rã biến động',
-        old: 'v2',
-        new: 'v3 · thêm bước kiểm định',
-        org: 'tham số kỳ mặc định = quý',
-        options: [
-          { value: 'pack_keep_params', label: 'Dùng bản mới, giữ tham số' },
-          { value: 'org', label: 'Giữ của tổ chức' },
-          { value: 'pack', label: 'Dùng bản mới' },
-        ],
-        suggested: 'pack_keep_params',
-      },
-    ],
-    auto: Array.from({ length: 38 }, (_, i) => ({
-      element: i === 0 ? 'Chỉ số LOAN_GROWTH' : `Thuật ngữ #${i + 1}`,
-      text: i === 0 ? 'thêm chiều kỳ hạn' : 'thêm đồng nghĩa',
-    })),
-    skipped: [{ element: 'Chỉ số CARD_ACTIVE', reason: 'tổ chức đã xoá chỉ số này' }],
-    benchmark_pct: null,
-    status: 'dry_run',
+    pack_install_id: 'inst-retail',
+    from_version_id: 'pv-retail-2026-3',
+    to_version_id: 'pv-retail-2026-4',
+    merge_result: {
+      items: [
+        {
+          kind: 'metric',
+          code: 'NPL_RATIO',
+          outcome: 'conflict',
+          options: ['keep_override', 'take_new', 'defer'],
+          decision: null,
+        },
+        {
+          kind: 'mapping',
+          code: 'card.supplementary_flag',
+          outcome: 'conflict',
+          options: ['keep_override', 'take_new', 'defer'],
+          decision: null,
+        },
+        { kind: 'metric', code: 'LOAN_GROWTH', outcome: 'take_new' },
+        { kind: 'metric', code: 'CASA_RATIO', outcome: 'added' },
+        { kind: 'metric', code: 'CARD_ACTIVE', outcome: 'removed' },
+      ],
+    },
+    conflicts_open: 2,
+    calibration_run_id: null,
+    status: 'needs_decision',
+    apply_from_period: null,
+    rollback_until: null,
+    approved_by: null,
+    dry_run: false,
+    created_at: T0,
+    updated_at: T0,
   };
 }
 
-function draftFixture(): PackDraft {
-  return {
-    id: 'pv-retail-2026-4-draft',
-    pack_name: 'Ngân hàng · bán lẻ',
-    version: '2026.4',
-    base_version: '2026.3',
-    summary_text: 'Dành cho chuyên gia ngành · 42 thay đổi so với 2026.3',
-    sections: [
-      { label: 'Thực thể', changed: 2, total: 50 },
-      { label: 'Chỉ số', changed: 31, total: 148 },
-      { label: 'Thuật ngữ', changed: 6, total: 612 },
-      { label: 'Kỹ năng', changed: 1, total: 12 },
-      { label: 'Agent mẫu', changed: 0, total: 6 },
-      { label: 'Luật kiểm tra', changed: 2, total: 84 },
-      { label: 'Bộ dữ liệu mẫu', changed: 0, total: 1 },
-      { label: 'Ghi chú phát hành', changed: 0, total: 0 },
-    ],
-    test: {
-      run_text: 'chạy 10:12 · 4 phút',
-      kpis: [
-        { label: 'Câu hỏi chuẩn', value: '97,2% đúng', tone: 'neutral' },
-        { label: 'Chỉ số tính được', value: '148/148', tone: 'neutral' },
-        { label: 'Luật kiểm tra', value: '82/84 đạt', tone: 'warning' },
-        { label: 'So với 2026.3', value: '+1,4 điểm', tone: 'success' },
-      ],
-      failures: [
-        {
-          item: 'Luật “dư nợ không âm” · bảng thẻ',
-          kind: 'Luật kiểm tra',
-          detail: 'Bộ dữ liệu mẫu có 3 dòng hoàn tiền âm hợp lệ; nên loại giao dịch hoàn tiền',
-        },
-        {
-          item: 'Luật “ngày giải ngân ≤ ngày đáo hạn”',
-          kind: 'Luật kiểm tra',
-          detail: '1 dòng mẫu sai; lỗi ở dữ liệu mẫu, không phải luật',
-        },
-        {
-          item: '“tỷ lệ nợ quá hạn 30+” theo vùng',
-          kind: 'Câu hỏi chuẩn',
-          detail: 'Hiểu “vùng” là chi nhánh; cần thêm đồng nghĩa “miền”',
-        },
-      ],
-    },
-    conditions: [
-      { text: 'Câu hỏi chuẩn ≥ 95%', ok: true },
-      { text: 'Mọi chỉ số tính được trên dữ liệu mẫu', ok: true },
-      { text: 'Luật kiểm tra đạt hết hoặc có ghi chú', ok: false },
-      { text: 'Có ghi chú phát hành', ok: true },
-    ],
-    after_text:
-      '2 tổ chức đang dùng 2026.3 nhận thông báo có bản mới. Không tổ chức nào được nâng cấp tự động.',
-  };
-}
+/* ─── Handlers ──────────────────────────────────────────────────────── */
 
 export function createPackHandlers() {
   let packs = packsFixture();
-  let mappings = customerMappings();
-  let install = installFixture();
-  let calibration = calibrationFixture();
-  let override = overrideFixture();
+  const versions = versionsFixture();
+  let mappings = mappingsFixture();
+  const runs = runsFixture();
+  const overrides = overridesFixture();
   let upgrade = upgradeFixture();
-  const draft = draftFixture();
-  // Drafts of the organisation's own packs (PROPOSAL POST /v1/packs), opened by Biên soạn gói.
-  const created: PackDraft[] = [];
-  const findDraft = (id: string) => (id === draft.id ? draft : created.find((d) => d.id === id));
-  return [
-    // IndustryPackView with the screen's row under display.
-    http.get('*/v1/packs', () =>
-      HttpResponse.json({
-        items: packs.map((p) => ({
-          id: p.id,
-          code: p.id,
-          name: p.name,
-          publisher: p.publisher,
-          industry_code: 'banking',
-          description: null,
-          publisher_key_id: 'key-1',
-          created_at: '2026-09-01T09:00:00+07:00',
-          updated_at: '2026-10-01T09:00:00+07:00',
-          display: p,
-        })),
-      }),
-    ),
-    http.post('*/v1/packs', async ({ request }) => {
-      const body = (await request.json()) as {
-        name: string;
-        based_on_version_id: string | null;
-        includes: string[];
+  let latestRun: string | null = 'cal-credit-1';
+  let installStatus = 'mapping';
+
+  const installView = (): Schemas['PackInstallView'] => ({
+    id: INSTALL_ID,
+    data_space_id: SPACE,
+    pack_version_id: INSTALL_VERSION,
+    previous_pack_version_id: null,
+    status: installStatus,
+    activated_at: null,
+    activated_by: null,
+    proposal_id: null,
+    created_at: T0,
+    updated_at: T0,
+  });
+
+  const installDetail = (): Schemas['PackInstallDetail'] => {
+    const entities = (versions.get(INSTALL_VERSION)!.entities ?? []).map((e) => {
+      const attrs = e.attributes ?? [];
+      const mapped = attrs.filter((a) => mappings.some((m) => m.attribute_id === a.id)).length;
+      const required = attrs.filter((a) => a.required);
+      return {
+        code: e.code,
+        name: e.name,
+        mapped,
+        total: attrs.length,
+        required_total: required.length,
+        required_mapped: required.filter((a) => mappings.some((m) => m.attribute_id === a.id))
+          .length,
       };
-      if (!body.name?.trim()) return problem(422, 'validation_failed', 'Đặt tên gói.');
-      const base = packs.find((p) => p.latest!.version_id === body.based_on_version_id);
-      const id = `pv-own-${created.length + 1}`;
-      created.push({
+    });
+    const run = latestRun ? runs.get(latestRun)! : null;
+    return {
+      ...installView(),
+      pack_id: 'pack-bank-credit-risk',
+      pack_code: 'bank-credit-risk',
+      pack_name: 'Ngân hàng · rủi ro tín dụng',
+      version: '2026.3',
+      entities,
+      mapped: entities.reduce((n, e) => n + e.mapped, 0),
+      total: entities.reduce((n, e) => n + e.total, 0),
+      latest_calibration_run: run
+        ? {
+            id: run.id,
+            status: run.status,
+            trigger: run.trigger,
+            passed: run.passed,
+            failed: run.failed,
+            created_at: run.created_at,
+            finished_at: run.finished_at,
+          }
+        : null,
+    };
+  };
+
+  const summary = (id: string | null | undefined) => {
+    const run = id ? runs.get(id) : undefined;
+    return run
+      ? {
+          id: run.id,
+          status: run.status,
+          trigger: run.trigger,
+          passed: run.passed,
+          failed: run.failed,
+          created_at: run.created_at,
+          finished_at: run.finished_at,
+        }
+      : null;
+  };
+
+  const upgradeItems = () =>
+    ((upgrade.merge_result as { items: Record<string, unknown>[] }).items ?? []).map((i) => ({
+      ...i,
+    }));
+
+  return [
+    http.get('*/v1/packs', () => HttpResponse.json({ items: packs.map(packWire) })),
+    http.post('*/v1/packs', async ({ request }) => {
+      const body = (await request.json()) as Schemas['PackCreate'];
+      if (!body.name?.trim() || !/^[a-z0-9][a-z0-9_.-]*$/.test(body.code ?? ''))
+        return problem(422, 'validation_failed', 'Đặt tên gói.');
+      const id = `pack-own-${packs.filter((p) => p.id.startsWith('pack-own')).length + 1}`;
+      const pack: IndustryPack = {
         id,
-        pack_name: body.name.trim(),
-        version: '0.1',
-        base_version: base ? `${base.name} ${base.latest!.version}` : 'mô hình hiện tại của tổ chức',
-        summary_text: `Gồm ${body.includes.join(', ')} · chưa sửa mục nào`,
-        sections: body.includes.map((label) => ({ label, changed: 0, total: 0 })),
-        test: null,
-        conditions: [{ text: 'Chạy kiểm tra trên dữ liệu mẫu', ok: false }],
-        after_text: 'Sau khi phát hành, gói xuất hiện trong Gói ngành của tổ chức.',
-      });
-      return HttpResponse.json(
-        { id: `pack-own-${created.length}`, draft_version_id: id },
-        { status: 201 },
-      );
+        name: body.name,
+        publisher: 'Ngân hàng Việt Nam',
+        installed: null,
+        latest: null,
+        draft: null,
+      };
+      packs = [...packs, pack];
+      const { display: _display, ...view } = packWire(pack);
+      return HttpResponse.json(view, { status: 201 });
     }),
     http.post('*/v1/packs\\:import', () =>
       HttpResponse.json({ id: 'pv-life-2026-2' }, { status: 201 }),
     ),
-    http.get('*/v1/pack-versions', () =>
-      HttpResponse.json({
-        items: [draft, ...created].map((d) => ({
-          id: d.id,
-          pack_name: d.pack_name,
-          version: d.version,
-        })),
-      }),
-    ),
-    http.get('*/v1/pack-versions/:id/draft', ({ params }) => {
-      const found = findDraft(String(params.id));
-      return found ? HttpResponse.json(found) : problem(404, 'not_found', 'Không có bản nháp.');
+    http.post('*/v1/packs/:id/versions', async ({ params, request }) => {
+      const pack = packs.find((p) => p.id === params.id);
+      if (!pack) return problem(404, 'not_found', 'Pack not found.');
+      const body = (await request.json()) as Schemas['PackVersionCreate'];
+      const content = body.manifest as Partial<Version>;
+      const id = `pv-own-${[...versions.keys()].filter((k) => k.startsWith('pv-own')).length + 1}`;
+      const draft = version(
+        id,
+        pack.id,
+        body.version,
+        { entities: 0, metrics: 0, skills: 0, templates: 0, rules: 0 },
+        {
+          status: 'draft',
+          signature: '',
+          signature_verified_at: null,
+          released_at: null,
+          min_core_version: body.min_core_version,
+          entities: content.entities ?? [],
+          metrics: content.metrics ?? [],
+          rules: content.rules ?? [],
+          skills: content.skills ?? [],
+        },
+      );
+      versions.set(id, draft);
+      packs = packs.map((p) =>
+        p.id === pack.id ? { ...p, draft: { version: body.version, version_id: id } } : p,
+      );
+      const {
+        entities: _e,
+        metrics: _m,
+        rules: _r,
+        skills: _s,
+        latest_check_run: _c,
+        ...view
+      } = draft;
+      return HttpResponse.json(view, { status: 201 });
     }),
     http.get('*/v1/pack-versions/:id', ({ params }) => {
-      const version = versionFixture(String(params.id));
-      return version
-        ? HttpResponse.json(version)
+      const found = versions.get(String(params.id));
+      return found
+        ? HttpResponse.json(found)
         : problem(404, 'not_found', 'Không tìm thấy phiên bản gói.');
     }),
     http.post('*/v1/pack-versions/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
-      const target = findDraft(id);
-      if (!target) return problem(404, 'not_found', 'Không có bản nháp.');
-      if (verb === 'validate') return HttpResponse.json({ id: 'check-run' }, { status: 202 });
+      const target = versions.get(id);
+      if (!target) return problem(404, 'not_found', 'Không tìm thấy phiên bản gói.');
+      if (target.status !== 'draft') return problem(409, 'invalid_state', 'Không phải bản nháp.');
+      if (verb === 'validate')
+        return HttpResponse.json({ id: 'check-2', status: 'queued' }, { status: 202 });
       if (verb === 'publish') {
-        if (target.conditions.some((c) => !c.ok))
+        if (!target.latest_check_run?.passed)
           return problem(409, 'invalid_state', 'Bản nháp chưa qua kiểm tra.');
+        versions.set(id, { ...target, status: 'published' });
         return HttpResponse.json({ id });
       }
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),
     http.post('*/v1/pack-installs', async ({ request }) => {
-      const body = (await request.json()) as { data_space_ids: string[] };
-      if (!body.data_space_ids?.length)
-        return problem(422, 'validation_failed', 'Chọn ít nhất một Data Space.');
-      return HttpResponse.json({ id: install.id }, { status: 201 });
+      const body = (await request.json()) as Schemas['PackInstallCreate'];
+      if (!versions.has(body.pack_version_id))
+        return problem(422, 'validation_failed', 'pack_version_id is not an imported version.');
+      return HttpResponse.json(installView(), { status: 201 });
     }),
-    http.get('*/v1/pack-installs', () => HttpResponse.json({ items: [install] })),
     http.get('*/v1/pack-installs/:id/mappings', ({ params, request }) => {
-      if (params.id !== install.id) return problem(404, 'not_found', 'Không tìm thấy lượt cài.');
+      if (params.id !== INSTALL_ID) return problem(404, 'not_found', 'Không tìm thấy lượt cài.');
       const entity = new URL(request.url).searchParams.get('entity');
-      if (entity && entity !== 'customer') {
-        const e = install.entities.find((x) => x.key === entity);
-        if (!e) return problem(404, 'not_found', 'Không có thực thể này.');
-        return HttpResponse.json({
-          entity: e.key,
-          name: e.name,
-          main_table: 'core.' + e.key.toUpperCase(),
-          rows: [],
-          decisions: [],
-        } satisfies EntityMappings);
-      }
-      return HttpResponse.json(mappings);
+      return HttpResponse.json({
+        items: mappings.filter((m) => !entity || m.entity_code === entity),
+        next_page_token: '',
+      });
     }),
-    http.put('*/v1/pack-installs/:id/mappings', async ({ request }) => {
-      const body = (await request.json()) as {
-        entity_mappings: { entity: string; attr: string; column: string | null }[];
-      };
-      const ours = body.entity_mappings.filter((m) => m.entity === mappings.entity);
-      mappings = {
-        ...mappings,
-        rows: mappings.rows.map((r) => {
-          const m = ours.find((x) => x.attr === r.attr);
-          return m ? { ...r, column: m.column, approved: true } : r;
-        }),
-      };
-      const done = mappings.rows.filter((r) => r.approved).length;
-      install = {
-        ...install,
-        entities: install.entities.map((e) =>
-          e.key === mappings.entity ? { ...e, mapped: done } : e,
+    http.put('*/v1/pack-installs/:id/mappings', async ({ params, request }) => {
+      if (params.id !== INSTALL_ID) return problem(404, 'not_found', 'Không tìm thấy lượt cài.');
+      const body = (await request.json()) as Schemas['MappingsPut'];
+      const attrs = (versions.get(INSTALL_VERSION)!.entities ?? []).flatMap((e) =>
+        (e.attributes ?? []).map((a) => ({ ...a, entity: e.code })),
+      );
+      const next: Mapping[] = [];
+      for (const input of body.entity_mappings) {
+        const attr = attrs.find((a) => a.id === input.attribute_id);
+        if (!attr)
+          return problem(
+            422,
+            'validation_failed',
+            'An attribute is not in the installed pack version.',
+          );
+        const old = mappings.find((m) => m.attribute_id === input.attribute_id);
+        next.push({
+          ...(old ?? mapping(attr.entity, attr.code, input.column_expr, 1)),
+          required: attr.required,
+          dataset_id: input.dataset_id,
+          column_expr: input.column_expr,
+          origin: input.origin ?? 'confirmed',
+          confirmed_by: USER,
+        });
+      }
+      // PUT replaces the set: what was not sent closes.
+      mappings = next;
+      return HttpResponse.json(
+        mappings.map(
+          ({
+            entity_code: _e,
+            attribute_code: _a,
+            attribute_name: _n,
+            required: _r,
+            code_mappings: _c,
+            ...m
+          }) => m,
         ),
-      };
-      return HttpResponse.json({ approved: ours.length });
+      );
     }),
-    http.get('*/v1/pack-installs/:id/calibration', ({ params }) =>
-      params.id === install.id
-        ? HttpResponse.json(calibration)
-        : problem(404, 'not_found', 'Không tìm thấy lượt cài.'),
-    ),
     http.get('*/v1/pack-installs/:id', ({ params }) =>
-      params.id === install.id
-        ? HttpResponse.json(install)
+      params.id === INSTALL_ID
+        ? HttpResponse.json(installDetail())
         : problem(404, 'not_found', 'Không tìm thấy lượt cài.'),
     ),
-    http.post('*/v1/pack-installs/:action', async ({ params, request }) => {
+    http.post('*/v1/pack-installs/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
-      if (id !== install.id) return problem(404, 'not_found', 'Không tìm thấy lượt cài.');
-      const body = (await request.json().catch(() => ({}))) as Record<string, string>;
-      const settle = (rowId: string, patch: Partial<Calibration['rows'][number]>) => {
-        const rows = calibration.rows.map((r) => (r.id === rowId ? { ...r, ...patch } : r));
-        calibration = {
-          ...calibration,
-          rows,
-          matched: rows.filter((r) => r.ok || r.accepted_note).length,
-          findings: calibration.findings.filter((f) => f.row_id !== rowId),
+      if (id !== INSTALL_ID) return problem(404, 'not_found', 'Không tìm thấy lượt cài.');
+      if (verb === 'calibrate') {
+        const run: Run = {
+          ...runs.get('cal-credit-1')!,
+          id: `cal-credit-${runs.size + 1}`,
+          status: 'running',
+          passed: 0,
+          failed: 0,
+          finished_at: null,
+          items: [],
         };
-        return HttpResponse.json(calibration);
-      };
-      if (verb === 'apply-fix')
-        return settle('c6', { computed: '9.643 tỷ', diff: '0,00%', ok: true });
-      if (verb === 'accept-gap') return settle(body.row_id, { accepted_note: body.note });
+        runs.set(run.id, run);
+        latestRun = run.id;
+        installStatus = 'calibrating';
+        return HttpResponse.json({ id: run.id, status: 'running' }, { status: 202 });
+      }
       if (verb === 'activate') {
-        if (calibration.matched < calibration.total)
-          return problem(422, 'business_rule_violated', 'Đối chiếu số chưa đạt (BR-36).');
-        packs = packs.map((p) =>
-          p.installed?.install_id === id
-            ? { ...p, installed: { ...p.installed, status: 'active' } }
-            : p,
+        const run = latestRun ? runs.get(latestRun) : undefined;
+        if (!run || run.status === 'running')
+          return problem(
+            422,
+            'business_rule_violated',
+            'The numbers are not reconciled yet (BR-36).',
+          );
+        const regulatory = new Set(
+          (versions.get(INSTALL_VERSION)!.metrics ?? [])
+            .filter((m) => m.in_regulatory_report)
+            .map((m) => m.code),
         );
-        return HttpResponse.json({ id });
+        const explained = new Set(
+          [...overrides.values()]
+            .filter((o) => o.status === 'active')
+            .map((o) => o.pack_metric_code),
+        );
+        const blocking = (run.items ?? []).filter(
+          (i) => !i.passed && regulatory.has(i.item_code) && !explained.has(i.item_code),
+        );
+        if (blocking.length)
+          return problem(
+            422,
+            'business_rule_violated',
+            `Chỉ số thuộc báo cáo gửi cơ quan quản lý còn lệch: ${blocking.map((i) => i.item_code).join(', ')} (BR-36).`,
+          );
+        installStatus = 'pending_activation';
+        return HttpResponse.json(installView());
       }
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),
-    http.get('*/v1/metric-overrides/:id', ({ params }) =>
-      params.id === override.id
-        ? HttpResponse.json(override)
-        : problem(404, 'not_found', 'Không tìm thấy hiệu chỉnh.'),
-    ),
-    http.post('*/v1/metric-overrides/:action', ({ params }) => {
-      const [id, verb] = String(params.action).split(':');
-      if (id !== override.id) return problem(404, 'not_found', 'Không tìm thấy hiệu chỉnh.');
-      if (verb === 'trial') {
-        override = {
-          ...override,
-          trial: [
-            { period: '04/26', base: '1,58%', org: '1,55%' },
-            { period: '05/26', base: '1,60%', org: '1,57%' },
-            { period: '06/26', base: '1,63%', org: '1,60%' },
-            { period: '07/26', base: '1,66%', org: '1,62%' },
-            { period: '08/26', base: '1,66%', org: '1,63%' },
-            { period: '09/26', base: '1,88%', org: '1,84%' },
-          ],
-          trial_note:
-            'Bản của tổ chức khớp số đã báo cáo cả 6 kỳ; bản gốc cao hơn 0,03–0,04 điểm do gồm vay nội bộ.',
-        };
-        return HttpResponse.json(override);
-      }
-      if (verb === 'submit') {
-        if (!override.trial)
-          return problem(409, 'invalid_state', 'Chạy thử trước khi gửi chứng nhận.');
-        override = { ...override, status: 'submitted' };
-        return HttpResponse.json(override);
-      }
-      if (verb === 'discard') return HttpResponse.json({ id });
-      return problem(404, 'not_found', 'Không có thao tác này.');
+    http.get('*/v1/calibration-runs/:id', ({ params }) => {
+      const run = runs.get(String(params.id));
+      return run ? HttpResponse.json(run) : problem(404, 'not_found', 'Calibration run not found.');
     }),
-    http.get('*/v1/pack-upgrades/:id', ({ params }) =>
-      params.id === upgrade.id
-        ? HttpResponse.json(upgrade)
-        : problem(404, 'not_found', 'Không tìm thấy lượt nâng cấp.'),
-    ),
-    http.put('*/v1/pack-upgrades/:id/decisions', () => HttpResponse.json(upgrade)),
+    http.post('*/v1/metric-overrides', async ({ request }) => {
+      const body = (await request.json()) as Schemas['MetricOverrideCreate'];
+      if (!body.reason?.trim())
+        return problem(422, 'validation_failed', 'An override needs its reason (BR-129).');
+      const metrics = versions.get(INSTALL_VERSION)!.metrics ?? [];
+      if (!metrics.some((m) => m.code === body.pack_metric_code))
+        return problem(
+          422,
+          'validation_failed',
+          'pack_metric_code is not a metric of the installed pack.',
+        );
+      const row: Override = {
+        id: `ovr-${overrides.size + 1}`,
+        pack_install_id: body.pack_install_id,
+        pack_metric_code: body.pack_metric_code,
+        expression: body.expression,
+        scope_condition: body.scope_condition ?? null,
+        reason: body.reason.trim(),
+        status: 'pending_review',
+        approved_by: null,
+        compliance_approved_by: null,
+        calibration_run_id: null,
+        created_at: T0,
+        updated_at: T0,
+      };
+      overrides.set(row.id, row);
+      return HttpResponse.json(row, { status: 201 });
+    }),
+    http.get('*/v1/metric-overrides/:id', ({ params }) => {
+      const row = overrides.get(String(params.id));
+      if (!row) return problem(404, 'not_found', 'Metric override not found.');
+      const m = (versions.get(INSTALL_VERSION)!.metrics ?? []).find(
+        (x) => x.code === row.pack_metric_code,
+      );
+      return HttpResponse.json({
+        ...row,
+        metric_name: m?.name ?? null,
+        base_expression: m?.expression ?? null,
+        in_regulatory_report: Boolean(m?.in_regulatory_report),
+        awaiting:
+          row.status === 'pending_review' ? (row.approved_by ? 'compliance' : 'approve') : null,
+        calibration_run: summary(row.calibration_run_id),
+      } satisfies Schemas['MetricOverrideDetail']);
+    }),
+    http.get('*/v1/pack-upgrades/:id', ({ params }) => {
+      if (params.id !== upgrade.id)
+        return problem(404, 'not_found', 'Không tìm thấy lượt nâng cấp.');
+      const items = upgradeItems();
+      return HttpResponse.json({
+        ...upgrade,
+        conflicts: items.filter((i) => i.outcome === 'conflict'),
+        decisions: items.filter((i) => i.decision),
+        calibration_run: summary(upgrade.calibration_run_id),
+      });
+    }),
+    http.put('*/v1/pack-upgrades/:id/decisions', async ({ params, request }) => {
+      if (params.id !== upgrade.id)
+        return problem(404, 'not_found', 'Không tìm thấy lượt nâng cấp.');
+      if (upgrade.status !== 'needs_decision')
+        return problem(409, 'invalid_state', `The upgrade is ${upgrade.status}.`);
+      const body = (await request.json()) as Schemas['DecisionsPut'];
+      const items = upgradeItems();
+      for (const d of body.decisions) {
+        const found = items.find(
+          (i) => i.outcome === 'conflict' && i.code === d.code && i.kind === (d.kind ?? 'metric'),
+        );
+        if (!found)
+          return problem(
+            422,
+            'validation_failed',
+            `${d.kind} ${d.code} is not a conflict of this upgrade.`,
+          );
+        found.decision = d.decision;
+      }
+      const open = items.filter((i) => i.outcome === 'conflict' && !i.decision).length;
+      // The mock finishes the test run at once: with nothing open it waits for approval.
+      const run: Run = {
+        ...runs.get('cal-credit-1')!,
+        id: 'cal-upgrade-1',
+        pack_install_id: upgrade.pack_install_id,
+        trigger: 'upgrade',
+        status: 'passed',
+        passed: 6,
+        failed: 0,
+        items: [],
+      };
+      if (!open) runs.set(run.id, run);
+      upgrade = {
+        ...upgrade,
+        merge_result: { items },
+        conflicts_open: open,
+        status: open ? 'needs_decision' : 'pending_approval',
+        calibration_run_id: open ? null : run.id,
+      };
+      return HttpResponse.json(upgrade);
+    }),
     http.post('*/v1/pack-upgrades/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
       if (id !== upgrade.id) return problem(404, 'not_found', 'Không tìm thấy lượt nâng cấp.');
-      if (verb === 'benchmark') {
-        upgrade = { ...upgrade, benchmark_pct: 97.2 };
-        return HttpResponse.json(upgrade);
-      }
       if (verb === 'apply') {
-        upgrade = { ...upgrade, status: 'applied' };
+        if (upgrade.status !== 'pending_approval')
+          return problem(409, 'invalid_state', `The upgrade is ${upgrade.status}.`);
+        upgrade = { ...upgrade, status: 'applied', approved_by: USER };
         return HttpResponse.json(upgrade);
       }
       return problem(404, 'not_found', 'Không có thao tác này.');

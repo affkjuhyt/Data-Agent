@@ -369,11 +369,19 @@ export const requestHandover = async (body: {
 }) => v1Send<Schemas['HandoverView']>('POST', '/exec/handovers', body);
 
 /**
- * PROPOSAL: Data Spaces a hypothesis can be published to, with who reviews there, and the title
- * the leader may sign with instead of the name ("Thành viên Ban điều hành").
+ * Data Spaces a hypothesis can be published to: the viewer's own (GET /v1/data-spaces). The
+ * reviewer is the target's steward; DataSpaceSummary carries only the steward's id, so no name.
+ * The title the leader signs with instead of the name is typed in (attribution_label, A3).
  */
-export const listPublishTargets = async () =>
-  v1Get<{
-    items: { id: string; name: string; reviewer_name: string }[];
-    attribution_title: string;
-  }>('/exec/publish-targets');
+export interface PublishTarget {
+  id: string;
+  name: string;
+  steward_id: string;
+}
+
+export const listPublishTargets = async (): Promise<PublishTarget[]> => {
+  const page = await v1Get<Page<Schemas['DataSpaceSummary']>>('/data-spaces', { page_size: 500 });
+  return page.items
+    .filter((s) => s.status === 'active')
+    .map((s) => ({ id: s.id, name: s.name, steward_id: s.steward_id }));
+};

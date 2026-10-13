@@ -74,6 +74,37 @@ const server = setupServer(
       masked_columns: { id_number: 'hash' },
     });
   }),
+  // GET /v1/policies/{id} answers either kind; only a behaviour policy is a rule.
+  http.get('*/v1/policies/rule-1', () =>
+    HttpResponse.json({
+      id: 'rule-1',
+      type: 'behavior',
+      scope: 'data_space',
+      kind: 'auto_handle',
+      description: 'Lệch dưới 2 tỷ dùng Core banking',
+      condition: { gap_lt: 2e9 },
+      action: { text: 'dùng Core banking' },
+      exceptions: [],
+      origin: 'hitl',
+      status: 'draft',
+      override_count: 0,
+      subject_id: null,
+      approved_by: null,
+      review_at: '2027-01-06',
+      created_at: at,
+      latest_backtest: {
+        window_from: '2026-09-12T00:00:00Z',
+        window_to: '2026-10-12T00:00:00Z',
+        matched_count: 41,
+        auto_handled_count: 33,
+        blocked_count: 2,
+        changed_result_count: 1,
+      },
+    }),
+  ),
+  http.get('*/v1/policies/access-1', () =>
+    HttpResponse.json({ id: 'access-1', type: 'access', name: 'Chi nhánh thấy chi nhánh' }),
+  ),
   http.get('*/v1/admin/users', () =>
     HttpResponse.json({
       items: [
@@ -149,9 +180,11 @@ describe('governance from the api', () => {
     const rule = await getDecisionRule('rule-1');
     expect(rule).toMatchObject({
       title: 'Lệch dưới 2 tỷ dùng Core banking',
-      owner: { id: 'u-an' },
+      rule_text: 'KHI gap_lt = 2000000000\nTHÌ dùng Core banking',
+      expires_at: '2027-01-06',
+      backtest: { window_days: 30, cases: 41, auto_handled: 33, asked_people: 6, changed: 1 },
     });
-    await expect(getDecisionRule('rule-2')).rejects.toMatchObject({ status: 404 });
+    await expect(getDecisionRule('access-1')).rejects.toMatchObject({ status: 404 });
   });
 
   it('says an audit row from its actor, action and object, and filters on the server', async () => {

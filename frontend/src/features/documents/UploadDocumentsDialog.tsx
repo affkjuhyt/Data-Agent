@@ -1,23 +1,18 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { Field } from '../../design-system/Field';
-import { Icon } from '../../design-system/Icon';
 import { Select } from '../../design-system/Select';
 import { formatNumber } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
-import {
-  listSchemas,
-  precheckUpload,
-  uploadDocuments,
-  type PiiPolicy,
-} from '../../lib/v1/documents';
+import { listSchemas, uploadDocuments, type PiiPolicy } from '../../lib/v1/documents';
 import { listCollections } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "Hộp thoại · upload" (2095:8532, UC-05-01): files into a collection, read with its extraction
- * schema, personal data masked before chunking. Once files and a collection are chosen the
- * agent checks for duplicates it will skip; the note shows before anything is sent.
+ * schema, personal data masked before chunking. A file the collection already holds (same hash)
+ * is answered with that document and counted as skipped after the upload (A3), so there is no
+ * check beforehand.
  */
 const NO_SCHEMA = '__none';
 
@@ -50,7 +45,6 @@ export function UploadDocumentsDialog({
   const [collection, setCollection] = useState<string | null>(collectionId ?? null);
   const [schema, setSchema] = useState<string>(NO_SCHEMA);
   const [pii, setPii] = useState<PiiPolicy>('mask');
-  const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -59,7 +53,6 @@ export function UploadDocumentsDialog({
     setFiles([]);
     setCollection(collectionId ?? null);
     setPii('mask');
-    setNote(null);
     setError(undefined);
   }, [open, collectionId]);
 
@@ -74,23 +67,6 @@ export function UploadDocumentsDialog({
     setSchema(preferred?.id ?? NO_SCHEMA);
     // collectionSchemas is derived from these two.
   }, [collection, schemas.data]);
-
-  useEffect(() => {
-    if (!open || !collection || files.length === 0) {
-      setNote(null);
-      return;
-    }
-    let alive = true;
-    precheckUpload({
-      collection_id: collection,
-      files: files.map((f) => ({ file_name: f.name, size_bytes: f.size })),
-    })
-      .then((r) => alive && setNote(r.note))
-      .catch(() => alive && setNote(null));
-    return () => {
-      alive = false;
-    };
-  }, [open, collection, files]);
 
   const pick = (list: FileList | null) => {
     if (list && list.length) setFiles(Array.from(list));
@@ -190,12 +166,6 @@ export function UploadDocumentsDialog({
       <Field labelTone="muted" label="Dữ liệu cá nhân">
         <Select<PiiPolicy> label="Dữ liệu cá nhân" options={PII} value={pii} onChange={setPii} />
       </Field>
-      {note && (
-        <p className="flex items-start gap-da-md rounded-md bg-info-subtle px-da-md py-da-sm text-foreground da-caption">
-          <Icon name="agent" className="shrink-0 text-info" />
-          {note}
-        </p>
-      )}
     </Dialog>
   );
 }

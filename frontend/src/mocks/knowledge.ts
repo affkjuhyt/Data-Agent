@@ -353,6 +353,51 @@ const findingWire = (f: KnowledgeFinding): FindingWire => ({
   created_at: AT,
 });
 
+/* "Lưu câu trả lời thành tri thức" (2405:15399): the answers the dialog is opened on. */
+const SAVED_ANSWERS: Record<string, string> = {
+  'answer-npl-t9':
+    'Nợ xấu bán lẻ T9 tăng 0,12 điểm so với T8, chủ yếu từ khoản vay tiêu dùng tín chấp ở vùng Đông Nam Bộ.',
+  'answer-typed-number': 'Lãi suất huy động 12 tháng của Ngân hàng B là 4,9%.',
+};
+
+const answerWire = (id: string, text: string): components['schemas']['AnswerView'] => ({
+  id,
+  text,
+  kind: 'data',
+  question_id: `q-${id}`,
+  plan_id: `plan-${id}`,
+  figures: [],
+  citations: [],
+  chart_spec: null,
+  filed_vs_current: null,
+  reconcile_badge: null,
+  agent_name: 'Agent Hỏi đáp',
+  latency_ms: 1200,
+  lineage_hash: null,
+  data_product_id: null,
+  product_scope: 'not_applicable',
+  forecast_job_id: null,
+  number_check: {},
+  created_at: '2026-10-09T09:12:00+07:00',
+});
+
+const NPL_INDEX_ENTRY: components['schemas']['KnowledgeIndexEntry'] = {
+  id: 'kp-npl',
+  slug: 'no-xau-ban-le',
+  title: 'Nợ xấu bán lẻ (chỉ số NPL_RATIO)',
+  kind: 'metric',
+  status: 'certified',
+  subject_kind: 'metric',
+  subject_ref: 'NPL_RATIO',
+  index_summary: 'Định nghĩa và diễn biến nợ xấu bán lẻ.',
+  classification: 'internal',
+  has_external_source: false,
+  certification_suspended: false,
+  current_version_id: null,
+  tags: [],
+  updated_at: '2026-10-08T10:00:00+07:00',
+};
+
 const accepted = (id: string) =>
   HttpResponse.json({ id, status: 'queued', poll_after_ms: 1000 }, { status: 202 });
 
@@ -366,17 +411,19 @@ export function createKnowledgeHandlers() {
   const pages = pagesFixture();
   let findings = findingsFixture();
   return [
-    http.get('*/v1/answers/:id/knowledge-draft', ({ params }) =>
-      params.id === 'answer-npl-t9'
-        ? HttpResponse.json({
-            target_page: { id: 'kp-npl', title: 'Nợ xấu bán lẻ (chỉ số NPL_RATIO)' },
-            paragraph:
-              'Nợ xấu bán lẻ T9 tăng {npl_ratio_delta} so với T8, chủ yếu từ khoản vay tiêu dùng tín chấp ở vùng Đông Nam Bộ.',
-            source_text: 'Lượt truy vấn QR-2026-1009-118 · chỉ số NPL_RATIO v4 đã chứng nhận',
-            validity_text: 'Kỳ T9/2026',
-          })
-        : problem(404, 'not_found', 'Không có câu trả lời này.'),
-    ),
+    // AnswerView of the two answers the save dialog is opened on; other ids fall through.
+    http.get('*/v1/answers/:id', ({ params }) => {
+      const text = SAVED_ANSWERS[String(params.id)];
+      return text ? HttpResponse.json(answerWire(String(params.id), text)) : undefined;
+    }),
+    // The index ranks NPL_RATIO's page first for an answer about bad debt, and finds no other.
+    http.get('*/v1/knowledge/index', ({ request }) => {
+      const q = (new URL(request.url).searchParams.get('q') ?? '').toLowerCase();
+      return HttpResponse.json({
+        items: q.includes('nợ xấu') ? [NPL_INDEX_ENTRY] : [],
+        next_page_token: '',
+      });
+    }),
     http.post('*/v1/knowledge-pages\\:from-answer', async ({ request }) => {
       const body = (await request.json()) as { answer_id: string };
       // An answer with a hand-typed figure cannot be saved (BR-167).

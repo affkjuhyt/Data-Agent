@@ -20,9 +20,10 @@ import { OpsKpi } from './parts';
 
 /*
  * "v3.1 · Vận hành agent" (2058:1356, UC-13-06 and UC-11-04): the roll-up of every agent over
- * 24 h / 7 / 30 days. A plain-language summary, five KPIs, runs per day stacked by outcome
- * (done alone, needed a person, failed), the per-agent table and "Cần xử lý" on the right.
- * Each issue opens the place that fixes it: the run's trace, the eval comparison, the agent.
+ * 24 h / 7 / 30 days from GET /v1/admin/agent-usage. Five KPIs, runs per day stacked by outcome
+ * (done alone, needed a person, failed), the per-agent table and "Cần xử lý" on the right (agents
+ * near their monthly budget). A3 has no written summary, HITL response time or eval score per
+ * agent, so the frame's summary line and "Đánh giá" column are not drawn.
  */
 const PERIODS: { value: OpsPeriod; label: string }[] = [
   { value: '24h', label: '24 giờ' },
@@ -41,6 +42,7 @@ const BAR_MAX_PX = 171;
 
 const signed = (n: number, digits = 1) =>
   `${n > 0 ? '+' : n < 0 ? '−' : ''}${formatNumber(Math.abs(n), { maxFractionDigits: digits })}`;
+const duration = (s: number | null) => (s === null ? '—' : formatRunDuration(s));
 
 export default function AgentOperationsPage() {
   const { navigate } = useAppState();
@@ -84,36 +86,46 @@ function OpsBody({
   const maxDay = Math.max(1, ...data.series.map((d) => d.auto + d.human + d.error));
   return (
     <>
-      <Notice tone="info">{data.headline}</Notice>
-
       <div className="grid grid-cols-5 gap-da-md max-[1279px]:grid-cols-3">
         <OpsKpi
           label="Lượt chạy"
           value={formatNumber(data.runs)}
-          note={`${signed(data.runs_change_ratio * 100, 0)}% ${PREVIOUS[data.period]}`}
+          note={
+            data.runs_change_ratio === null
+              ? undefined
+              : `${signed(data.runs_change_ratio * 100, 0)}% ${PREVIOUS[data.period]}`
+          }
         />
         <OpsKpi
           label="Tự hoàn tất"
           value={pct(data.auto_rate)}
-          note={`${signed(data.auto_rate_change_pp)} điểm`}
-          noteTone={data.auto_rate_change_pp >= 0 ? 'success' : 'error'}
+          note={
+            data.auto_rate_change_pp === null ? undefined : `${signed(data.auto_rate_change_pp)} điểm`
+          }
+          noteTone={(data.auto_rate_change_pp ?? 0) >= 0 ? 'success' : 'error'}
         />
         <OpsKpi
-          label="Yêu cầu HITL"
+          label="Cần người"
           value={formatNumber(data.hitl_requests)}
-          note={`trung vị phản hồi ${formatElapsed(data.hitl_median_response_s)}`}
+          note={
+            data.hitl_median_response_s == null
+              ? undefined
+              : `trung vị phản hồi ${formatElapsed(data.hitl_median_response_s)}`
+          }
         />
         <OpsKpi
           label="Lỗi"
           value={`${formatNumber(data.errors)} · ${pct(data.error_rate)}`}
-          note={data.error_note ?? undefined}
-          noteTone="error"
         />
         <OpsKpi
           label="Chi phí"
           value={formatMillions(data.cost)}
-          note={`${pct(data.budget_used_ratio, 0)} ngân sách tháng`}
-          noteTone={data.budget_used_ratio > 0.9 ? 'warning' : 'muted'}
+          note={
+            data.budget_used_ratio === null
+              ? undefined
+              : `${pct(data.budget_used_ratio, 0)} ngân sách tháng`
+          }
+          noteTone={(data.budget_used_ratio ?? 0) > 0.9 ? 'warning' : 'muted'}
         />
       </div>
 
@@ -169,13 +181,11 @@ function OpsBody({
                   <th className="w-[98px] py-da-sm text-right font-medium">Tự hoàn tất</th>
                   <th className="w-[68px] py-da-sm text-right font-medium">HITL</th>
                   <th className="w-[108px] py-da-sm text-right font-medium">Thời gian TB</th>
-                  <th className="w-[98px] py-da-sm text-right font-medium">Chi phí</th>
-                  <th className="w-[110px] py-da-sm pr-da-lg text-right font-medium">Đánh giá</th>
+                  <th className="w-[98px] py-da-sm pr-da-lg text-right font-medium">Chi phí</th>
                 </tr>
               </thead>
               <tbody>
                 {data.agents.map((agent) => {
-                  const dropped = (agent.eval_change_pp ?? 0) < 0;
                   return (
                     <tr
                       key={agent.agent_id}
@@ -190,22 +200,10 @@ function OpsBody({
                       <td className="py-da-sm text-right da-mono">{pct(agent.auto_rate, 0)}</td>
                       <td className="py-da-sm text-right da-mono">{agent.hitl_requests}</td>
                       <td className="py-da-sm text-right da-mono">
-                        {formatRunDuration(agent.avg_duration_s)}
+                        {duration(agent.avg_duration_s)}
                       </td>
-                      <td className="py-da-sm text-right da-mono">{formatMillions(agent.cost)}</td>
-                      <td
-                        className={cn(
-                          'py-da-sm pr-da-lg text-right da-mono',
-                          dropped && 'text-error',
-                        )}
-                      >
-                        {pct(agent.eval_score, 0)}
-                        {dropped && (
-                          <>
-                            {' ↓'}
-                            <span className="sr-only"> giảm so với lần trước</span>
-                          </>
-                        )}
+                      <td className="py-da-sm pr-da-lg text-right da-mono">
+                        {formatMillions(agent.cost)}
                       </td>
                     </tr>
                   );

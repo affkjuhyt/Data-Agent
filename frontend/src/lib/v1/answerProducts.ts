@@ -70,6 +70,8 @@ export interface AnswerProduct extends AnswerProductSummary {
   reviewer_text: string;
   /** A draft version is being prepared beside the active one. */
   draft_version: number | null;
+  /** The Theo dõi tab; null while the api does not send it. */
+  monitoring: ProductMonitoring | null;
 }
 
 /** A2: GET /v1/data-products/{id}/freshness?periods= — per primary dataset, and the last periods. */
@@ -86,7 +88,11 @@ export interface ProductFreshness {
   periods: { period: string; state: 'shown' | 'masked_stale' | 'not_available'; note: string }[];
 }
 
-/** PROPOSAL: the Theo dõi tab — scope and masking over 30 days, by week. */
+/**
+ * PROPOSAL: the Theo dõi tab — scope and masking over 30 days, by week. A2 serves it on GET
+ * /v1/data-products/{id} as `stats` (non_a2_plan, Lớp ngữ cảnh), which DataProductDetail does not
+ * carry yet; the tab says so until it does.
+ */
 export interface ProductMonitoring {
   weeks: { label: string; in_scope_pct: number; masked_pct: number }[];
   questions_30d: number;
@@ -101,6 +107,7 @@ type SummaryExtras = Pick<
 export type ProductSummaryWire = ProductRow & Partial<SummaryExtras>;
 export type ProductDetailWire = Schemas['DataProductDetail'] & {
   display?: Partial<AnswerProduct>;
+  stats?: ProductMonitoring;
 };
 
 /** BR-175: a product goes to review with 10 sample questions or more. */
@@ -186,8 +193,9 @@ function readProduct(raw: ProductDetailWire): AnswerProduct {
     },
     reviewer_text: 'Người duyệt: owner, khác steward và người tạo.',
     draft_version: null,
+    monitoring: null,
   };
-  return { ...derived, ...raw.display };
+  return { ...derived, ...raw.display, monitoring: raw.stats ?? null };
 }
 
 /** The api lists the context layer's products only (A2 has no read for published ones). */
@@ -239,9 +247,6 @@ export const getProductFreshness = async (id: string) =>
   readFreshness(
     await v1Get<FreshnessWire>(`/data-products/${pathId(id)}/freshness`, { periods: 8 }),
   );
-
-export const getProductMonitoring = async (id: string) =>
-  v1Get<ProductMonitoring>(`/data-products/${pathId(id)}/monitoring`);
 
 /** A2: PATCH on an active product returns the draft version + 1; the old one serves until approved. */
 export const draftProductVersion = async (id: string) =>

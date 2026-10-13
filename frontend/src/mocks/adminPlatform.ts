@@ -328,7 +328,7 @@ export function modelRoutesFixture(): ModelRoute[] {
       latency_p95_ms: 3200,
       eval_score: 0.89,
       latest_eval_delta: -4,
-      previous: { model_name: 'LLM-L 32B', cost_ratio: 3.5 },
+      previous: { model_name: 'LLM-L 32B', endpoint: 'https://llm.internal/v1', cost_ratio: 3.5 },
       eval_suite_name: 'Agent Báo cáo',
     }),
     route({
@@ -383,6 +383,7 @@ export function aiPolicyFixture(): AiPolicy {
       },
     ],
     frontier_allowed: true,
+    frontier: { tasks: [], data_space_ids: [] },
     routing_rules: [
       'Mặc định mọi lời gọi chạy trên vLLM tại chỗ.',
       'Chỉ gửi frontier khi mọi dữ liệu trong ngữ cảnh có nhãn Công khai, hoặc câu hỏi ngoài phạm vi data product và không kèm dữ liệu nội bộ.',
@@ -517,6 +518,9 @@ export function gpuLoadFixture(): GpuLoad {
     0.8, 0.72, 0.64, 0.6, 0.58, 0.56, 0.55, 0.54,
   ];
   return {
+    checked_at: '2026-10-10T08:15:00+07:00',
+    cards: [],
+    average: null,
     points: load.map((utilization, hour) => ({
       at: `2026-10-09T${String(hour).padStart(2, '0')}:00:00+07:00`,
       utilization,
@@ -931,7 +935,17 @@ export function createAdminPlatformHandlers() {
       HttpResponse.json({
         checked_at: new Date().toISOString(),
         status: 'ok',
-        sections: {},
+        sections: {
+          gpu: {
+            series: Array.from({ length: 24 }, (_, hour) => ({
+              labels: { at: `2026-10-09T${String(hour).padStart(2, '0')}:00:00+07:00` },
+              value: [
+                42, 40, 38, 37, 38, 40, 46, 55, 66, 74, 78, 80, 79, 77, 79, 83, 80, 72, 64, 60, 58,
+                56, 55, 54,
+              ][hour],
+            })),
+          },
+        },
         display: systemHealthFixture(),
       }),
     ),
@@ -940,6 +954,44 @@ export function createAdminPlatformHandlers() {
       const period = new URL(request.url).searchParams.get('period') as OpsPeriod;
       if (!PERIODS.includes(period)) return problem(422, 'validation_failed', 'Kỳ không hợp lệ.');
       return HttpResponse.json(agentOpsFixture(period));
+    }),
+    http.get('*/v1/admin/agent-usage', ({ request }) => {
+      const url = new URL(request.url);
+      const summary = agentOpsFixture('7d');
+      const day = (label: string) => ({
+        day: `2026-10-${label}`,
+        runs: 41,
+        needs_person: 2,
+        errors: 1,
+        error_rate: 0.02,
+        cost: '600000',
+      });
+      return HttpResponse.json({
+        from: url.searchParams.get('from'),
+        to: url.searchParams.get('to'),
+        granularity: 'day',
+        totals: {
+          runs: summary.runs,
+          needs_person: summary.hitl_requests,
+          errors: summary.errors,
+          error_rate: summary.error_rate,
+          cost: 4200000,
+          avg_duration_s: 360,
+        },
+        days: ['07', '08', '09', '10', '11', '12', '13'].map(day),
+        agents: summary.agents.map((a) => ({
+          agent_id: a.agent_id,
+          name: a.name,
+          runs: a.runs,
+          needs_person: a.hitl_requests,
+          errors: 0,
+          avg_duration_s: a.avg_duration_s,
+          cost: a.cost,
+          monthly_budget: '2000000',
+          spent_this_month: a.cost,
+          budget_used_ratio: 0.62,
+        })),
+      });
     }),
 
     // Before the generic "/admin/models" handler of handlers.ts: this one serves the P11 fields.
@@ -950,7 +1002,7 @@ export function createAdminPlatformHandlers() {
         return problem(422, 'validation_failed', 'Cần tên và địa chỉ http(s) của mô hình.');
       const added: ModelRoute = {
         id: `trial-${models.length + 1}`,
-        task: body.trial_tasks || 'Chưa định tuyến',
+        task: body.task || 'Chưa định tuyến',
         model_name: body.name,
         status: 'evaluating',
         placement: null,
@@ -963,6 +1015,38 @@ export function createAdminPlatformHandlers() {
       };
       models = [...models, added];
       return HttpResponse.json(added, { status: 201 });
+    }),
+    http.put('*/v1/admin/models/:task', async ({ params, request }) => {
+      const body = (await request.json()) as { model_name: string; endpoint: string };
+      const task = String(params.task);
+      const taskLabel: Record<string, string> = {
+        planning: 'Lập kế hoạch, điều phối agent',
+        sql_generation: 'Sinh SQL',
+        answer_writing: 'Soạn báo cáo',
+      };
+      const current = models.find((m) => m.task === task || m.task === taskLabel[task]);
+      const isRollback = Boolean(current?.previous && body.model_name === current.previous.model_name);
+      const updated: ModelRoute = {
+        ...(current ?? {
+          id: `trial-${models.length + 1}`,
+          task,
+          model_name: body.model_name,
+          status: 'evaluating' as const,
+          placement: null,
+          fallback_name: null,
+          latency_p95_ms: null,
+          eval_score: null,
+          latest_eval_delta: null,
+          previous: null,
+          eval_suite_name: null,
+        }),
+        model_name: body.model_name,
+        status: isRollback ? 'active' : 'evaluating',
+      };
+      models = current
+        ? models.map((m) => (m.task === task || m.task === taskLabel[task] ? updated : m))
+        : [...models, updated];
+      return HttpResponse.json({ version: 1 });
     }),
     http.post('*/v1/admin/models\\:evaluate', () =>
       HttpResponse.json({ eval_run_id: 'eval-mock' }, { status: 202 }),
@@ -977,13 +1061,47 @@ export function createAdminPlatformHandlers() {
       const back: ModelRoute = {
         ...route,
         model_name: route.previous.model_name,
-        previous: { model_name: route.model_name, cost_ratio: 1 / route.previous.cost_ratio },
+        previous: {
+          model_name: route.model_name,
+          endpoint: route.previous.endpoint,
+          cost_ratio: 1 / route.previous.cost_ratio,
+        },
         latest_eval_delta: 0,
       };
       models = models.map((m) => (m.id === id ? back : m));
       return HttpResponse.json(back);
     }),
     http.get('*/v1/admin/ai-policy', () => HttpResponse.json(policy)),
+    http.get('*/v1/admin/ai-settings', () =>
+      HttpResponse.json([
+        { key: 'max_cost_per_run', value: 50000 },
+        { key: 'input_filter', value: 'Chặn yêu cầu lấy dữ liệu cá nhân hàng loạt' },
+        { key: 'output_filter', value: 'Chặn gửi dữ liệu cá nhân ra ngoài' },
+        { key: 'prompt_log_retention_days', value: 30 },
+        {
+          key: 'frontier_routing',
+          value: {
+            enabled: policy.frontier_allowed,
+            tasks: policy.frontier.tasks,
+            data_space_ids: policy.frontier.data_space_ids,
+          },
+        },
+      ]),
+    ),
+    http.put('*/v1/admin/ai-settings/frontier_routing', async ({ request }) => {
+      const body = (await request.json()) as {
+        value?: { enabled?: boolean; tasks?: string[]; data_space_ids?: string[] };
+      };
+      policy = {
+        ...policy,
+        frontier_allowed: body.value?.enabled === true,
+        frontier: {
+          tasks: body.value?.tasks ?? [],
+          data_space_ids: body.value?.data_space_ids ?? [],
+        },
+      };
+      return HttpResponse.json({ key: 'frontier_routing', value: body.value ?? {} });
+    }),
     http.put('*/v1/admin/ai-policy', async ({ request }) => {
       const body = (await request.json()) as AiPolicy;
       const approved = providers.some((p) => p.kind === 'frontier' && p.ac06_status === 'approved');

@@ -11,23 +11,31 @@ import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import {
   applyPackUpgrade,
-  benchmarkPackUpgrade,
   decidePackUpgrade,
   getPackUpgrade,
   type PackUpgrade,
+  type UpgradeChoice,
 } from '../../lib/v1/packs';
 import { useV1 } from '../../lib/v1/useV1';
 
 /*
- * "P09 · Nâng cấp gói · Gộp ba chiều" (2286:17750, UC-09-04): a dry run of upgrading a pack. Each
- * element both the pack and the organisation changed shows the old pack, the new pack and the
- * organisation's edit, and a choice (the agent's suggestion first); the changes that merged on
- * their own and the ones skipped because the organisation removed that part are in their own
- * tabs. Applying needs every choice made and the pack's benchmark questions at 95% or more; the
- * old version is kept 30 days to roll back. Nothing the organisation edited is overwritten silently.
+ * "P09 · Nâng cấp gói · Gộp ba chiều" (2286:17750, UC-09-04): upgrading a pack. Each element both
+ * the pack and the organisation changed needs a choice; the changes that merged on their own and
+ * the ones skipped because the new pack dropped them are in their own tabs. With every choice made
+ * the upgrade runs against the filed numbers (step 5), then someone other than who started it
+ * applies it; the old version is kept 30 days to roll back. Nothing the organisation edited is
+ * overwritten silently. The merge items carry codes only, so the old, new and organisation's text
+ * show "—".
  */
 type Tab = 'conflicts' | 'auto' | 'skipped';
-const BENCHMARK_MIN = 95;
+
+const STATUS: Record<string, string> = {
+  needs_decision: 'Cần chọn',
+  testing: 'Đang chạy thử',
+  pending_approval: 'Chờ áp dụng',
+  applied: 'Đã áp dụng',
+  rolled_back: 'Đã quay lui',
+};
 
 export default function PackUpgradePage() {
   const { routeId } = useAppState();
@@ -49,34 +57,35 @@ function UpgradeBody({ upgrade, onChanged }: { upgrade: PackUpgrade; onChanged: 
   const { navigate } = useAppState();
   const toast = useToast();
   const [tab, setTab] = useState<Tab>('conflicts');
-  const [decisions, setDecisions] = useState<Record<string, string>>(
-    Object.fromEntries(upgrade.conflicts.map((c) => [c.id, c.suggested])),
+  const [decisions, setDecisions] = useState<Record<string, UpgradeChoice>>(
+    Object.fromEntries(upgrade.conflicts.flatMap((c) => (c.decision ? [[c.id, c.decision]] : []))),
   );
-  const [busy, setBusy] = useState<'benchmark' | 'apply' | null>(null);
+  const [busy, setBusy] = useState<'decide' | 'apply' | null>(null);
   const [error, setError] = useState<string>();
+  const deciding = upgrade.status === 'needs_decision';
   const chosen = upgrade.conflicts.every((c) => decisions[c.id]);
-  const benchmarkOk = upgrade.benchmark_pct !== null && upgrade.benchmark_pct >= BENCHMARK_MIN;
-  const blocker = !chosen
-    ? 'Chọn cách xử lý cho mọi mục.'
-    : upgrade.benchmark_pct === null
-      ? 'Chạy bộ câu hỏi chuẩn trước khi áp dụng.'
-      : !benchmarkOk
-        ? `Bộ câu hỏi chuẩn dưới ${BENCHMARK_MIN}%.`
-        : null;
+  const testOk = upgrade.test !== null && upgrade.test.matched === upgrade.test.total;
+  const blocker =
+    upgrade.status === 'pending_approval'
+      ? null
+      : deciding
+        ? 'Chọn cách xử lý cho mọi mục rồi chạy thử.'
+        : upgrade.status === 'testing'
+          ? 'Chờ chạy thử với số đã nộp xong.'
+          : `Lượt nâng cấp ${STATUS[upgrade.status]?.toLowerCase() ?? upgrade.status}.`;
 
-  const run = async (key: 'benchmark' | 'apply') => {
+  const run = async (key: 'decide' | 'apply') => {
     setBusy(key);
     setError(undefined);
     try {
-      if (key === 'benchmark') {
-        const result = await benchmarkPackUpgrade(upgrade.id);
-        toast({
-          tone: 'success',
-          message: `Bộ câu hỏi chuẩn: ${String(result.benchmark_pct).replace('.', ',')}% đúng`,
-        });
+      if (key === 'decide') {
+        await decidePackUpgrade(
+          upgrade.id,
+          upgrade.conflicts.map((c) => ({ code: c.id, kind: c.kind, decision: decisions[c.id] })),
+        );
+        toast({ tone: 'success', message: 'Đã lưu lựa chọn; đang chạy thử với số đã nộp' });
         onChanged();
       } else {
-        await decidePackUpgrade(upgrade.id, decisions);
         await applyPackUpgrade(upgrade.id);
         toast({
           tone: 'success',
@@ -111,7 +120,9 @@ function UpgradeBody({ upgrade, onChanged }: { upgrade: PackUpgrade; onChanged: 
           title={
             <span className="flex items-center gap-[10px]">
               Nâng cấp {upgrade.from_version} → {upgrade.to_version}
-              <StatusDot tone="warning">{upgrade.conflicts.length} cần chọn</StatusDot>
+              <StatusDot tone={upgrade.status === 'pending_approval' ? 'success' : 'warning'}>
+                {STATUS[upgrade.status] ?? upgrade.status}
+              </StatusDot>
             </span>
           }
           description={upgrade.summary_text}
@@ -120,13 +131,15 @@ function UpgradeBody({ upgrade, onChanged }: { upgrade: PackUpgrade; onChanged: 
               <Button kind="ghost" onClick={() => navigate('data', 'PACKS')}>
                 Huỷ
               </Button>
-              <Button
-                loading={busy === 'benchmark'}
-                disabled={busy !== null}
-                onClick={() => run('benchmark')}
-              >
-                Chạy bộ câu hỏi chuẩn
-              </Button>
+              {deciding && (
+                <Button
+                  loading={busy === 'decide'}
+                  disabled={busy !== null || !chosen}
+                  onClick={() => run('decide')}
+                >
+                  Lưu lựa chọn và chạy thử
+                </Button>
+              )}
               {blocker ? <Tooltip content={blocker}>{applyButton}</Tooltip> : applyButton}
             </>
           }
@@ -146,10 +159,9 @@ function UpgradeBody({ upgrade, onChanged }: { upgrade: PackUpgrade; onChanged: 
       </div>
       <div className="flex flex-col gap-da-md px-da-3xl pb-da-2xl pt-da-lg">
         {error && <Notice tone="error">Không thực hiện được: {error}</Notice>}
-        {upgrade.benchmark_pct !== null && (
-          <Notice tone={benchmarkOk ? 'success' : 'warning'}>
-            Bộ câu hỏi chuẩn: {String(upgrade.benchmark_pct).replace('.', ',')}% đúng (cần từ{' '}
-            {BENCHMARK_MIN}%).
+        {upgrade.test && (
+          <Notice tone={testOk ? 'success' : 'warning'}>
+            Chạy thử với số đã nộp: {upgrade.test.matched}/{upgrade.test.total} khớp.
           </Notice>
         )}
         {tab === 'conflicts' ? (
@@ -167,13 +179,17 @@ function UpgradeBody({ upgrade, onChanged }: { upgrade: PackUpgrade; onChanged: 
               {upgrade.conflicts.map((c) => (
                 <tr key={c.id} className="border-b border-border align-top text-foreground">
                   <td className="px-da-md py-[12px]">{c.element}</td>
-                  <td className="px-da-md py-[12px] text-muted-foreground da-mono">{c.old}</td>
-                  <td className="px-da-md py-[12px] da-mono">{c.new}</td>
-                  <td className="px-da-md py-[12px] text-info da-mono">{c.org}</td>
+                  <td className="px-da-md py-[12px] text-muted-foreground da-mono">
+                    {c.old ?? '—'}
+                  </td>
+                  <td className="px-da-md py-[12px] da-mono">{c.new ?? '—'}</td>
+                  <td className="px-da-md py-[12px] text-info da-mono">{c.org ?? '—'}</td>
                   <td className="px-da-md py-[8px]">
-                    <Select
+                    <Select<UpgradeChoice>
                       label={`Chọn cho ${c.element}`}
                       value={decisions[c.id] ?? null}
+                      placeholder="Chọn"
+                      disabled={!deciding}
                       onChange={(v) => setDecisions({ ...decisions, [c.id]: v })}
                       options={c.options}
                     />
@@ -199,9 +215,8 @@ function UpgradeBody({ upgrade, onChanged }: { upgrade: PackUpgrade; onChanged: 
           </ul>
         )}
         <p className="text-muted-foreground da-body-small">
-          Áp dụng nâng cấp được mở khi đã chọn đủ {upgrade.conflicts.length} mục và bộ câu hỏi chuẩn
-          đạt từ {BENCHMARK_MIN}% trở lên. Bản {upgrade.from_version} được giữ để quay lui trong 30
-          ngày.
+          Áp dụng nâng cấp được mở khi đã chọn đủ {upgrade.conflicts.length} mục và chạy thử với số
+          đã nộp xong. Bản {upgrade.from_version} được giữ để quay lui trong 30 ngày.
         </p>
         <p className="text-muted-foreground da-caption">Không tự ghi đè phần tổ chức đã sửa.</p>
       </div>

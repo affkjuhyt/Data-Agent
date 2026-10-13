@@ -40,15 +40,26 @@ describe('readCalibrationRun', () => {
           },
         ],
       } as CalibrationRunWire,
-      'Ngân hàng Việt Nam · 2.0',
+      { id: 'install-1', title: 'Ngân hàng Việt Nam · 2.0' },
     );
 
     expect(calibration).toMatchObject({
       install_title: 'Ngân hàng Việt Nam · 2.0',
       matched: 1,
       total: 2,
-      rows: [{ metric: 'NPL_RATIO', ok: true }, { metric: 'LOAN_GROWTH', ok: false }],
-      findings: [{ row_id: 'item-2', text: 'Bảng ánh xạ thiếu khoản vay ngoại bảng' }],
+      rows: [
+        { metric: 'NPL_RATIO', ok: true },
+        { metric: 'LOAN_GROWTH', ok: false },
+      ],
+      run_status: 'failed',
+      periods: ['2026-09'],
+      findings: [
+        {
+          row_id: 'item-2',
+          metric_code: 'LOAN_GROWTH',
+          text: 'Bảng ánh xạ thiếu khoản vay ngoại bảng',
+        },
+      ],
     });
   });
 });

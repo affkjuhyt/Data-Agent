@@ -6,10 +6,12 @@ type Schemas = components['schemas'];
 /*
  * Kỳ chốt (period.period_close, A2 "Kỳ chốt"): the reporting periods of a Data Space and the
  * close of one. A2 has GET /v1/periods, GET /v1/periods/{id}, :close (start, 202) and :publish
- * (mark filed and freeze). Fields and verbs marked PROPOSAL are what "P10 · Kỳ chốt · Chốt kỳ"
- * (2304:19277) needs beyond that. The api's rows are read into the screens' shapes below; the
- * PROPOSAL parts come along under `display` when the mock sends them and are said from the row
- * otherwise.
+ * (mark filed and freeze). There is no lock and no cancel: locking is the last step of :close,
+ * taken by the worker once every item matches or its exceptions have both approvals (UC-10-02
+ * step 5, BR-132), and a close that fails is closed again (E1). Fields marked PROPOSAL are what
+ * "P10 · Kỳ chốt · Chốt kỳ" (2304:19277) shows beyond PeriodCloseDetail; the api's rows are read
+ * into the screens' shapes below, the PROPOSAL parts come along under `display` when the mock
+ * sends them and are said from the row otherwise.
  */
 export type PeriodStatus = 'open' | 'closing' | 'locked' | 'published';
 
@@ -49,15 +51,8 @@ export interface PeriodClose extends PeriodSummary {
   /** PROPOSAL: the figures locking freezes, and what that means for the filed report. */
   frozen_figures: { label: string; value: string }[];
   frozen_note: string;
-  /**
-   * PROPOSAL: whether the caller may lock now — every step before the lock done, and not the
-   * person who ran the reconciliation (four eyes).
-   */
-  can_lock: { allowed: boolean; reason: string | null };
   /** A2 :close starts the close of an open period (or one whose close failed). */
   can_start_close: boolean;
-  /** PROPOSAL with :cancel-close. */
-  can_cancel: boolean;
 }
 
 /** period_close.status: open, closing, close_failed, closed, filed, retro_detected. */
@@ -83,9 +78,7 @@ const readSummary = (raw: PeriodWire): PeriodSummary =>
 
 /*
  * Without the PROPOSAL close page: the steps are the close's own states (snapshot hashed, the
- * reconciliation counted by status, locked, filed) and nothing is said frozen. On A2 the period
- * locks itself once the reconciliation matches or its exceptions are approved (UC-10-02), so there
- * is no lock to press and no close to cancel.
+ * reconciliation counted by status, locked, filed) and nothing is said frozen.
  */
 function readClose(raw: PeriodDetailWire): PeriodClose {
   if (raw.display) return raw.display;
@@ -124,12 +117,7 @@ function readClose(raw: PeriodDetailWire): PeriodClose {
     ],
     frozen_figures: [],
     frozen_note: '',
-    can_lock: {
-      allowed: false,
-      reason: 'Kỳ tự khoá khi đối chiếu khớp hoặc ngoại lệ được duyệt.',
-    },
     can_start_close: raw.status === 'open' || raw.status === 'close_failed',
-    can_cancel: false,
   };
 }
 
@@ -167,17 +155,15 @@ export const listPeriods = async () => {
 export const getPeriod = async (id: string) =>
   readClose(await v1Get<PeriodDetailWire>(`/periods/${pathId(id)}`));
 
-/** A2: :close (202) — the worker snapshots, hashes and reconciles; the period then locks itself. */
+/**
+ * A2: :close (202) — the worker snapshots, hashes and reconciles, then locks the period and
+ * freezes its figures; afterwards every change goes through a retro change.
+ */
 export const startPeriodClose = async (id: string) =>
-  v1Send<{ id: string; status: string }>('POST', `/periods/${pathId(id)}:close`);
-
-/** PROPOSAL: :lock freezes the figures; afterwards every change goes through a retro change. */
-export const lockPeriod = async (id: string) =>
-  v1Send<PeriodClose>('POST', `/periods/${pathId(id)}:lock`);
-
-/** PROPOSAL: :cancel-close drops the close under way and reopens the period. */
-export const cancelPeriodClose = async (id: string) =>
-  v1Send<PeriodClose>('POST', `/periods/${pathId(id)}:cancel-close`);
+  v1Send<{ id: string; status: string; poll_after_ms?: number }>(
+    'POST',
+    `/periods/${pathId(id)}:close`,
+  );
 
 /* ─── Thay đổi hồi tố (period.retro_change, UC-10-04) ─────────────────── */
 

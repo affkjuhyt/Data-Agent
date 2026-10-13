@@ -1,7 +1,7 @@
 /**
- * Gói ngành against the v1 mock: the pack list, installing a pack with its code conflicts,
- * onboarding (mapping an entity, then calibrating until it can finish), adjusting a metric,
- * upgrading with a three-way merge, and publishing a draft.
+ * Gói ngành against the v1 mock (the api's shapes): the pack list, installing a pack version,
+ * onboarding (mapping an entity, then calibrating and finishing or adjusting a metric), reading an
+ * override, upgrading with a three-way merge, and a draft that cannot be published yet.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { setupServer } from 'msw/node';
@@ -75,15 +75,15 @@ describe('CreatePackDialog', () => {
 });
 
 describe('PackInstallPage', () => {
-  it('shows the checks and code conflicts, and installs into the ticked Data Spaces', async () => {
+  it('shows what the version adds and its checks, and installs into the Data Space', async () => {
     routeId = 'pv-life-2026-2';
     wrap(<PackInstallPage />);
-    expect(await screen.findByText('2 chỉ số trùng mã với chỉ số đã có')).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Cách xử lý NPL_RATIO' })).toHaveTextContent(
-      'Giữ bản của tổ chức, liên kết với gói',
-    );
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Tài chính' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Cài vào 2 Data Space' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Cài “Bảo hiểm nhân thọ” 2026.2' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Chữ ký của nhà phát hành')).toBeInTheDocument();
+    expect(screen.getByText('112')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cài vào Data Space này' }));
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith('data', 'PACK_ONBOARD', 'inst-credit-risk'),
     );
@@ -91,11 +91,13 @@ describe('PackInstallPage', () => {
 });
 
 describe('PackOnboardPage', () => {
-  it('opens the first entity not fully mapped and approves the ticked rows once the required one has a column', async () => {
+  it('opens the first entity not fully mapped and approves the ticked rows once the required one is settled', async () => {
     wrap(<PackOnboardPage />);
     expect(
-      await screen.findByRole('heading', { level: 2, name: 'Khách hàng' }),
+      // Four requests in a row: the install list, the install, its version and its mappings.
+      await screen.findByRole('heading', { level: 2, name: 'Khách hàng' }, { timeout: 5000 }),
     ).toBeInTheDocument();
+    expect(screen.getByText(/kyc_level là thuộc tính bắt buộc/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Chọn kyc_level' }));
     fireEvent.click(screen.getByRole('button', { name: 'Duyệt ánh xạ đã chọn' }));
     expect(
@@ -103,86 +105,104 @@ describe('PackOnboardPage', () => {
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('combobox', { name: 'Cột cho kyc_level' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'EKYC.LEVEL' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Không áp dụng' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Chọn income_band' }));
     fireEvent.click(screen.getByRole('button', { name: 'Duyệt ánh xạ đã chọn' }));
     expect(await screen.findByText('Đã duyệt 4 ánh xạ của Khách hàng')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Xem bảng gộp' }));
-    const dialog = screen.getByRole('alertdialog', { name: 'Bảng gộp income_band' });
-    expect(within(dialog).getByText('7 · trên 100 triệu')).toBeInTheDocument();
   });
 });
 
 describe('PackCalibrationPage', () => {
-  it('keeps finishing closed until the gap is fixed, then finishes', async () => {
+  it('shows the gap with its cause and finishes once the run is done', async () => {
     routeId = 'inst-credit-risk';
     wrap(<PackCalibrationPage />);
     expect(await screen.findByText('5/6 khớp')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Hoàn tất đưa vào ngành' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Loại thẻ phụ khỏi ánh xạ' }));
-    expect(await screen.findByText('6/6 khớp')).toBeInTheDocument();
+    expect(screen.getByText(/không tính 2.140 thẻ phụ/)).toBeInTheDocument();
+    expect(screen.queryByText('Ghi chú lệch được chấp nhận')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Hoàn tất đưa vào ngành' }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('data', 'PACKS'));
   });
 
-  it('accepts a gap only with a note', async () => {
+  it('accepts a gap only through an override sent for approval', async () => {
     routeId = 'inst-credit-risk';
     wrap(<PackCalibrationPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Ghi chú lệch được chấp nhận' }));
-    const dialog = screen.getByRole('alertdialog', { name: 'Chấp nhận phần lệch?' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Chấp nhận' }));
-    expect(await within(dialog).findByText('Ghi lý do chấp nhận phần lệch.')).toBeInTheDocument();
-    fireEvent.change(within(dialog).getByLabelText('Lý do (bắt buộc)'), {
-      target: { value: 'Báo cáo NHNN không tính thẻ phụ theo quy định' },
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Hiệu chỉnh CARD_BALANCE cho tổ chức' }),
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Hiệu chỉnh CARD_BALANCE' });
+    const send = within(dialog).getByRole('button', { name: 'Gửi duyệt' });
+    expect(send).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.change(within(dialog).getByLabelText('Công thức của tổ chức'), {
+      target: { value: 'sum(card.balance) where card.kind = main' },
     });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Chấp nhận' }));
-    expect(await screen.findByText('Chấp nhận lệch')).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText('Lý do'), {
+      target: { value: 'Báo cáo NHNN không tính thẻ phụ' },
+    });
+    fireEvent.click(send);
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('data', 'METRIC_OVERRIDE', 'ovr-2'));
+  });
+
+  it('reconciles again on request', async () => {
+    routeId = 'inst-credit-risk';
+    wrap(<PackCalibrationPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Đối chiếu lại' }));
+    expect(await screen.findByText('Đang đối chiếu')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hoàn tất đưa vào ngành' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 });
 
 describe('MetricOverridePage', () => {
-  it('runs the 6-period trial before sending for certification', async () => {
+  it('shows the override waiting for approval with its run against the filed numbers', async () => {
     routeId = 'ovr-npl-ratio';
     wrap(<MetricOverridePage />);
-    expect(await screen.findByText('2 điểm khác')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Gửi chứng nhận' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Chạy thử 6 kỳ' }));
-    expect(await screen.findByText(/khớp số đã báo cáo cả 6 kỳ/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Gửi chứng nhận' }));
-    expect(await screen.findByText('Chờ chứng nhận')).toBeInTheDocument();
+    expect(await screen.findByText('Chờ duyệt')).toBeInTheDocument();
+    expect(screen.getByText('2 điểm khác')).toBeInTheDocument();
+    expect(screen.getByText(/Chờ người phụ trách chỉ số duyệt trong Cần bạn/)).toBeInTheDocument();
+    expect(screen.getByText('Đối chiếu với số đã nộp: 2/2 khớp.')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 });
 
 describe('PackUpgradePage', () => {
-  it('needs the benchmark before applying, then applies the choices', async () => {
+  it('needs every choice and the test run before applying, then applies', async () => {
     routeId = 'upg-retail-2026-4';
     wrap(<PackUpgradePage />);
     expect(
-      await screen.findByRole('combobox', { name: 'Chọn cho NPL_RATIO · bộ lọc' }),
-    ).toHaveTextContent('Gộp cả hai (đề xuất)');
+      await screen.findByText('Nâng cấp 2026.3 → 2026.4', {}, { timeout: 5000 }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Áp dụng nâng cấp' })).toHaveAttribute(
       'aria-disabled',
       'true',
     );
+    expect(screen.getByRole('button', { name: 'Lưu lựa chọn và chạy thử' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     fireEvent.click(screen.getByRole('tab', { name: /Bỏ qua/ }));
-    expect(screen.getByText('tổ chức đã xoá chỉ số này')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Chạy bộ câu hỏi chuẩn' }));
-    expect(await screen.findByText(/Bộ câu hỏi chuẩn: 97,2% đúng \(cần/)).toBeInTheDocument();
+    expect(screen.getByText('Chỉ số CARD_ACTIVE')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /Cần chọn/ }));
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Chọn cho Chỉ số NPL_RATIO' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Giữ của tổ chức' }));
+    fireEvent.click(
+      screen.getByRole('combobox', { name: 'Chọn cho Ánh xạ card.supplementary_flag' }),
+    );
+    fireEvent.click(await screen.findByRole('option', { name: 'Dùng bản mới' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu lựa chọn và chạy thử' }));
+    expect(await screen.findByText('Chạy thử với số đã nộp: 6/6 khớp.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Áp dụng nâng cấp' }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('data', 'PACKS'));
   });
 });
 
 describe('PackAuthorPage', () => {
-  it('keeps publishing closed while a check rule fails', async () => {
+  it('keeps publishing closed while a check fails', async () => {
     wrap(<PackAuthorPage />);
-    expect(await screen.findByText('82/84 đạt')).toBeInTheDocument();
+    expect(await screen.findByText('1 chưa đạt')).toBeInTheDocument();
+    expect(screen.getByText('CARD_ACTIVE')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Phát hành 2026.4' })).toHaveAttribute(
       'aria-disabled',
       'true',

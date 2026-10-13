@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
@@ -6,23 +6,25 @@ import { Badge } from '../../design-system/Badge';
 import { Button } from '../../design-system/Button';
 import { Card } from '../../design-system/Card';
 import { EmptyState } from '../../design-system/EmptyState';
+import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
+import { Select } from '../../design-system/Select';
 import { useToast } from '../../design-system/Toast';
 import { csvCell } from '../../lib/csv';
 import { cn } from '../../lib/utils';
 import {
   addForecastToSession,
-  clearScenario,
   formatOne,
   formatSigned,
   formatTwo,
   getForecast,
   listForecasts,
+  reloadScenario,
   runScenario,
-  saveScenario,
   type Forecast,
   type ForecastPoint,
+  type ForecastScenario,
 } from '../../lib/v1/forecast';
 import { useV1 } from '../../lib/v1/useV1';
 import { cutoffShort, ForecastChart, ForecastLegend } from './ForecastChart';
@@ -42,7 +44,13 @@ const dateVN = (iso: string) => {
   return `${day}/${month}/${year}`;
 };
 
-const timeVN = (iso: string) => iso.slice(11, 16);
+const timeVN = (iso: string) =>
+  new Date(iso).toLocaleTimeString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Ho_Chi_Minh',
+  });
 
 function csvOf(f: Forecast): string {
   const scenario = new Map(f.scenario?.points.map((p) => [p.period, p.value]));
@@ -55,7 +63,7 @@ function csvOf(f: Forecast): string {
   });
   const meta = [
     [`Mô hình ${f.model.version_label} · ${f.model.algorithm_label}`],
-    [`Dữ liệu đến ${dateVN(f.data_cutoff)} · đơn vị ${f.unit_label}`],
+    [`Dữ liệu đến ${dateVN(f.data_cutoff)}${f.unit_label ? ` · đơn vị ${f.unit_label}` : ''}`],
   ];
   return [...meta, head, ...rows].map((row) => row.map(csvCell).join(',')).join('\n');
 }
@@ -89,29 +97,42 @@ export default function ForecastPage() {
   }
   return (
     <AsyncRegion state={forecast} what="dự báo">
-      {(f) => <ForecastBody forecast={f} onChanged={forecast.reload} />}
+      {(f) => <ForecastBody key={f.id} forecast={f} />}
     </AsyncRegion>
   );
 }
 
-function ForecastBody({ forecast, onChanged }: { forecast: Forecast; onChanged: () => void }) {
+function ForecastBody({ forecast }: { forecast: Forecast }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [adding, setAdding] = useState(false);
-  const f = forecast;
+  const [added, setAdded] = useState(false);
+  // The scenario is the screen's: the api keeps it under its name, the base forecast is untouched.
+  const [scenario, setScenario] = useState<ForecastScenario | null>(null);
+  const f: Forecast = { ...forecast, scenario };
+  const sessionId = f.session_id;
 
   const add = async () => {
+    if (!sessionId) return;
     setAdding(true);
     try {
-      await addForecastToSession(f.id);
+      await addForecastToSession(sessionId, f);
+      setAdded(true);
       toast({ tone: 'success', message: 'Đã thêm dự báo vào phiên' });
-      onChanged();
     } catch (e) {
       toast({ tone: 'error', message: (e as Error).message });
     } finally {
       setAdding(false);
     }
   };
+
+  const facts = [
+    f.model.algorithm_label,
+    `MASE backtest ${f.model.mase === null ? '—' : formatTwo(f.model.mase)}`,
+    `dữ liệu đến ${dateVN(f.data_cutoff)}`,
+    `tạo ${timeVN(f.created_at)}`,
+    f.unit_label && `đơn vị ${f.unit_label}`,
+  ].filter(Boolean);
 
   return (
     <div className="flex min-h-full flex-col">
@@ -121,22 +142,26 @@ function ForecastBody({ forecast, onChanged }: { forecast: Forecast; onChanged: 
         title={`Dự báo ${lowerFirst(f.metric_name)} · ${f.horizon_label}`}
         description={
           <>
-            <button
-              type="button"
-              className="text-primary hover:underline"
-              onClick={() => navigate('analysis', 'FORECAST_MODEL', f.model.id)}
-            >
-              Mô hình {f.model.version_label}
-            </button>
-            {` · ${f.model.algorithm_label} · MASE backtest ${formatTwo(f.model.mase)} · dữ liệu đến ${dateVN(f.data_cutoff)} · tạo ${timeVN(f.created_at)} · đơn vị ${f.unit_label}`}
+            {f.model.id ? (
+              <button
+                type="button"
+                className="text-primary hover:underline"
+                onClick={() => navigate('analysis', 'FORECAST_MODEL', f.model.id)}
+              >
+                Mô hình {f.model.version_label}
+              </button>
+            ) : (
+              'Chưa có phiên bản mô hình'
+            )}
+            {` · ${facts.join(' · ')}`}
           </>
         }
         actions={
           <>
             <Button onClick={() => downloadCsv(`du-bao-${f.id}.csv`, csvOf(f))}>Xuất</Button>
-            {f.session_id && (
-              <Button kind="primary" loading={adding} disabled={f.added_to_session} onClick={add}>
-                {f.added_to_session ? 'Đã thêm vào phiên' : 'Thêm vào phiên'}
+            {sessionId && (
+              <Button kind="primary" loading={adding} disabled={added} onClick={add}>
+                {added ? 'Đã thêm vào phiên' : 'Thêm vào phiên'}
               </Button>
             )}
           </>
@@ -156,15 +181,17 @@ function ForecastBody({ forecast, onChanged }: { forecast: Forecast; onChanged: 
               <ForecastLegend scenarioLabel={f.scenario?.short_label} />
             </div>
             <ForecastChart forecast={f} />
-            <p className="text-muted-foreground da-caption">{f.interval_note}</p>
+            {f.interval_note && (
+              <p className="text-muted-foreground da-caption">{f.interval_note}</p>
+            )}
           </Card>
           <PeriodTable forecast={f} />
         </div>
         <aside className="flex w-[384px] shrink-0 flex-col gap-da-xl">
-          <Contributions forecast={f} />
-          <ScenarioCard forecast={f} onChanged={onChanged} />
+          {f.contributions.items.length > 0 && <Contributions forecast={f} />}
+          <ScenarioCard forecast={f} onScenario={setScenario} />
           <Card size="sm" title="Giả định">
-            <p className="text-muted-foreground da-caption">{f.assumptions_text}</p>
+            <p className="text-muted-foreground da-caption">{f.assumptions_text || '—'}</p>
           </Card>
         </aside>
       </div>
@@ -255,25 +282,57 @@ function Contributions({ forecast }: { forecast: Forecast }) {
   );
 }
 
-function ScenarioCard({ forecast, onChanged }: { forecast: Forecast; onChanged: () => void }) {
-  const toast = useToast();
-  const scenario = forecast.scenario;
-  const [text, setText] = useState(scenario?.text ?? '');
-  const [busy, setBusy] = useState<'run' | 'save' | 'clear' | null>(null);
-  const [error, setError] = useState<string>();
-  useEffect(() => setText(forecast.scenario?.text ?? ''), [forecast.scenario?.text]);
+const CHANGE_KINDS: { value: string; label: string }[] = [
+  { value: 'tăng', label: 'Tăng' },
+  { value: 'giảm', label: 'Giảm' },
+  { value: 'giữ nguyên', label: 'Giữ nguyên' },
+];
 
-  const act = async (kind: 'run' | 'save' | 'clear') => {
-    setBusy(kind);
+/*
+ * UC-15-05: one exogenous variable the model uses, fixed from a period on. The assumption is
+ * structured (variable, change, value, from) — the api runs it on the trained model and keeps it
+ * under its name; the result is read back by scenario id once computed.
+ */
+function ScenarioCard({
+  forecast,
+  onScenario,
+}: {
+  forecast: Forecast;
+  onScenario: (scenario: ForecastScenario | null) => void;
+}) {
+  const scenario = forecast.scenario;
+  const variables = forecast.scenario_variables;
+  const [feature, setFeature] = useState<string | null>(variables[0] ?? null);
+  const [change, setChange] = useState<string>('tăng');
+  const [value, setValue] = useState('');
+  const [from, setFrom] = useState<string | null>(forecast.points[0]?.period ?? null);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState<'run' | 'reload' | null>(null);
+  const [error, setError] = useState<string>();
+
+  const amount = value.trim() === '' ? null : Number(value.replace(',', '.'));
+  const needsValue = change !== 'giữ nguyên';
+  const fromLabel = forecast.points.find((p) => p.period === from)?.label ?? '';
+  const defaultName = feature
+    ? `${feature} ${change}${needsValue && amount !== null ? ` ${value.trim()}` : ''} từ ${fromLabel}`
+    : '';
+  const ready =
+    feature !== null && from !== null && (!needsValue || (amount !== null && !Number.isNaN(amount)));
+
+  const run = async () => {
+    if (!feature || !from) return;
+    setBusy('run');
     setError(undefined);
     try {
-      if (kind === 'run') await runScenario(forecast.id, text.trim());
-      if (kind === 'save') {
-        await saveScenario(forecast.id);
-        toast({ tone: 'success', message: 'Đã lưu kịch bản' });
-      }
-      if (kind === 'clear') await clearScenario(forecast.id);
-      onChanged();
+      onScenario(
+        await runScenario(forecast, {
+          name: name.trim() || defaultName,
+          feature,
+          change_kind: change,
+          value: needsValue ? amount : null,
+          from_period: from,
+        }),
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -281,50 +340,101 @@ function ScenarioCard({ forecast, onChanged }: { forecast: Forecast; onChanged: 
     }
   };
 
-  const edited = text.trim() !== (scenario?.text ?? '');
+  const reload = async () => {
+    if (!scenario) return;
+    setBusy('reload');
+    setError(undefined);
+    try {
+      onScenario(await reloadScenario(forecast, scenario));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (variables.length === 0)
+    return (
+      <Card size="sm" title="Kịch bản">
+        <p className="text-muted-foreground da-caption">
+          Mô hình không dùng biến ngoại sinh nào, nên không có kịch bản áp dụng.
+        </p>
+      </Card>
+    );
+
+  if (scenario)
+    return (
+      <Card size="sm" title="Kịch bản">
+        <p className="text-foreground da-body-strong">{scenario.text}</p>
+        <p className="text-muted-foreground da-caption">{scenario.disclaimer}</p>
+        {scenario.summary && <p className="text-foreground da-body-small">{scenario.summary}</p>}
+        {error && <Notice tone="error">{error}</Notice>}
+        <p className="text-muted-foreground da-caption">Đã lưu với tên này, mở lại được sau.</p>
+        <div className="flex justify-end gap-da-md">
+          {scenario.points.length === 0 && (
+            <Button loading={busy === 'reload'} onClick={reload}>
+              Tải kết quả
+            </Button>
+          )}
+          <Button kind="primary" onClick={() => onScenario(null)}>
+            Bỏ kịch bản
+          </Button>
+        </div>
+      </Card>
+    );
+
   return (
     <Card size="sm" title="Kịch bản">
-      <Input
-        aria-label="Giả định của kịch bản"
-        placeholder="Ví dụ: Lãi suất điều hành +0,5 điểm từ T12/2026"
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && edited && text.trim()) void act('run');
-        }}
-      />
+      <Field label="Biến">
+        <Select
+          label="Biến của kịch bản"
+          options={variables.map((v) => ({ value: v, label: v }))}
+          value={feature}
+          onChange={setFeature}
+        />
+      </Field>
+      <div className="flex gap-da-md">
+        <div className="min-w-0 flex-1">
+          <Field label="Thay đổi">
+            <Select label="Thay đổi" options={CHANGE_KINDS} value={change} onChange={setChange} />
+          </Field>
+        </div>
+        <div className="min-w-0 flex-1">
+          <Field label="Mức">
+            <Input
+              aria-label="Mức thay đổi"
+              inputMode="decimal"
+              placeholder="0,5"
+              disabled={!needsValue}
+              value={needsValue ? value : ''}
+              onChange={(event) => setValue(event.target.value)}
+              className="w-full"
+            />
+          </Field>
+        </div>
+      </div>
+      <Field label="Từ kỳ">
+        <Select
+          label="Từ kỳ"
+          options={forecast.points.map((p) => ({ value: p.period, label: p.label }))}
+          value={from}
+          onChange={setFrom}
+        />
+      </Field>
+      <Field label="Tên kịch bản">
+        <Input
+          aria-label="Tên kịch bản"
+          placeholder={defaultName}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          className="w-full"
+        />
+      </Field>
       {error && <Notice tone="error">{error}</Notice>}
-      {scenario && !edited && (
-        <>
-          <p className="text-muted-foreground da-caption">{scenario.disclaimer}</p>
-          <p className="text-foreground da-body-small">{scenario.summary}</p>
-        </>
-      )}
       <div className="flex justify-end gap-da-md">
-        {scenario && !edited ? (
-          <>
-            <Button loading={busy === 'clear'} onClick={() => act('clear')}>
-              Bỏ kịch bản
-            </Button>
-            <Button
-              kind="primary"
-              loading={busy === 'save'}
-              disabled={scenario.saved}
-              onClick={() => act('save')}
-            >
-              {scenario.saved ? 'Đã lưu kịch bản' : 'Lưu kịch bản'}
-            </Button>
-          </>
-        ) : (
-          <Button
-            kind="primary"
-            loading={busy === 'run'}
-            disabled={!text.trim()}
-            onClick={() => act('run')}
-          >
-            Chạy kịch bản
-          </Button>
-        )}
+        <Button kind="primary" loading={busy === 'run'} disabled={!ready} onClick={run}>
+          Chạy kịch bản
+        </Button>
       </div>
     </Card>
   );

@@ -25,8 +25,9 @@ import { whenText } from './whenText';
 /*
  * "P08 · Theo dõi · Danh sách" (2270:15950, UC-08-01): every monitor of the Data Space, newest
  * firing first. Filters on the left (state, owner, kind of rule) combine across groups and widen
- * within one; search matches the name and the metric. A row's menu opens its latest alert or mutes
- * it for 7 days. A monitor on an uncertified metric still alerts, but only inside the app.
+ * within one; search matches the name and the metric. A row's menu opens its latest alert or
+ * pauses it (A2 pauses without an end date; "Bật lại" resumes it). A monitor on an uncertified
+ * metric still alerts, but only inside the app.
  */
 const STATE: Record<
   MonitorState,
@@ -36,15 +37,13 @@ const STATE: Record<
   early_warning: { label: 'Cảnh báo sớm', tone: 'warning' },
   normal: { label: 'Bình thường', tone: 'success' },
   insufficient_data: { label: 'Không đủ dữ liệu', tone: 'idle' },
-  muted: { label: 'Tắt tiếng', tone: 'neutral' },
+  muted: { label: 'Tạm dừng', tone: 'neutral' },
 };
 const KIND: Record<RuleKind, string> = {
   threshold: 'Ngưỡng',
   change_vs_previous: 'Thay đổi',
   seasonal_anomaly: 'Bất thường',
-  forecast: 'Dự báo',
 };
-const MUTE_DAYS = 7;
 
 type Owner = 'me' | string;
 interface Filters {
@@ -54,10 +53,6 @@ interface Filters {
 }
 
 const ownerOf = (m: Monitor): Owner => (m.owner_is_me ? 'me' : m.owner_name);
-const dayMonth = (iso: string) => {
-  const d = new Date(iso);
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
-};
 
 export default function WatchListPage() {
   const { navigate, dataSpace } = useAppState();
@@ -65,7 +60,8 @@ export default function WatchListPage() {
   const items = monitors.data?.items ?? [];
   const alerting = items.filter((m) => m.state === 'alerting').length;
   const lastCheck = items.reduce<string | null>(
-    (latest, m) => (!latest || m.last_checked_at > latest ? m.last_checked_at : latest),
+    (latest, m) =>
+      m.last_checked_at && (!latest || m.last_checked_at > latest) ? m.last_checked_at : latest,
     null,
   );
 
@@ -146,14 +142,10 @@ function WatchList({ items, onChanged }: { items: Monitor[]; onChanged: () => vo
   const mute = async (m: Monitor, on: boolean) => {
     setError(undefined);
     try {
-      const until = new Date();
-      until.setDate(until.getDate() + MUTE_DAYS);
-      await muteMonitor(m.id, on ? until.toISOString() : null);
+      await muteMonitor(m.id, on);
       toast({
         tone: 'success',
-        message: on
-          ? `Đã tắt tiếng ${m.name} tới ${dayMonth(until.toISOString())}`
-          : `Đã bật lại ${m.name}`,
+        message: on ? `Đã tạm dừng ${m.name}` : `Đã bật lại ${m.name}`,
       });
       onChanged();
     } catch (e) {
@@ -241,11 +233,10 @@ function WatchList({ items, onChanged }: { items: Monitor[]; onChanged: () => vo
                   </td>
                   <td className="px-da-md py-[10px]">{m.condition_text}</td>
                   <td className="px-da-md py-[10px]">
-                    <StatusDot tone={STATE[m.state].tone}>
-                      {m.state === 'muted' && m.muted_until
-                        ? `Tắt tiếng tới ${dayMonth(m.muted_until)}`
-                        : STATE[m.state].label}
-                    </StatusDot>
+                    <StatusDot tone={STATE[m.state].tone}>{STATE[m.state].label}</StatusDot>
+                    {m.noise_warning && (
+                      <p className="text-warning da-caption">Dễ gây nhiễu (BR-32)</p>
+                    )}
                   </td>
                   <td className="px-da-md py-[10px]">
                     {m.last_fired_at ? whenText(m.last_fired_at) : '—'}
@@ -267,7 +258,7 @@ function WatchList({ items, onChanged }: { items: Monitor[]; onChanged: () => vo
                           : []),
                         m.state === 'muted'
                           ? { label: 'Bật lại', onSelect: () => mute(m, false) }
-                          : { label: `Tắt tiếng ${MUTE_DAYS} ngày`, onSelect: () => mute(m, true) },
+                          : { label: 'Tạm dừng', onSelect: () => mute(m, true) },
                       ]}
                     />
                   </td>

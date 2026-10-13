@@ -31,6 +31,11 @@ metadata:
     app.kubernetes.io/part-of: dataagent
 spec:
   replicas: 1
+  # One-node local clusters run near their memory requests: a rolling update's
+  # surge pod stays Pending and the deploy waits out wait_rollout with the old
+  # code still serving. Recreate frees the old pod before scheduling the new one.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: frontend

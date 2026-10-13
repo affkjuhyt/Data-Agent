@@ -207,6 +207,8 @@ export interface SessionReport {
   checks: ReportCheck[];
   /** "GRP-RISK-ANALYST, Ban điều hành · email (PDF) và trong ứng dụng". */
   recipients_text: string;
+  /** The review request in Cần bạn that a passing check opens (UC-02-07 step 4); null before. */
+  hitl_request_id: Uuid | null;
 }
 
 /** The immutable markdown artifact returned by GET /v1/session-reports/{id}/document. */
@@ -437,6 +439,7 @@ export function readSessionReport(raw: components['schemas']['ReportView']): Ses
     },
     checks: readReportChecks(raw.checks),
     recipients_text: fixture.recipients_text ?? '',
+    hitl_request_id: raw.hitl_request_id,
   };
 }
 
@@ -533,6 +536,16 @@ export const checkSessionReport = async (id: string) => {
   return getSessionReport(id);
 };
 
-/** PROPOSAL: A2 has no request-changes for a session report. */
-export const requestReportChanges = async (id: string, note: string) =>
-  v1Send<SessionReport>('POST', `/session-reports/${pathId(id)}:request-changes`, { note });
+/**
+ * Asking for changes is the reviewer's answer on the report's review request in Cần bạn
+ * (POST /v1/hitl-requests/{id}:resolve), not a verb of the report.
+ */
+export const requestReportChanges = async (report: SessionReport, note: string) => {
+  if (!report.hitl_request_id)
+    throw new V1Error(409, 'invalid_state', 'Báo cáo chưa có yêu cầu duyệt trong Cần bạn.');
+  await v1Send('POST', `/hitl-requests/${pathId(report.hitl_request_id)}:resolve`, {
+    decision: 'request_changes',
+    note,
+  } satisfies Pick<components['schemas']['HitlResolve'], 'decision' | 'note'>);
+  return getSessionReport(report.id);
+};

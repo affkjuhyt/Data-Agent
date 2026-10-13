@@ -48,6 +48,7 @@ export default function DocumentsPage() {
   // The panel opens on the first document until the reader picks one, as the frame draws it.
   const shown = selected ?? rows.data?.items[0]?.id ?? null;
 
+  const categorised = !counts.data || counts.data.regulation !== undefined;
   const label = (text: string, n: number | undefined) =>
     n === undefined ? text : `${text} · ${formatNumber(n)}`;
 
@@ -69,10 +70,18 @@ export default function DocumentsPage() {
           value={tab}
           onChange={setTab}
           items={[
-            { value: 'all', label: label('Tất cả', counts.data?.all) },
-            { value: 'regulation', label: label('Quy định', counts.data?.regulation) },
-            { value: 'internal', label: label('Nội bộ', counts.data?.internal) },
-            { value: 'processing', label: label('Đang xử lý', counts.data?.processing) },
+            { value: 'all' as const, label: label('Tất cả', counts.data?.all) },
+            // The category is the agent's (PROPOSAL): without it on the rows, no category tabs.
+            ...(categorised
+              ? [
+                  {
+                    value: 'regulation' as const,
+                    label: label('Quy định', counts.data?.regulation),
+                  },
+                  { value: 'internal' as const, label: label('Nội bộ', counts.data?.internal) },
+                ]
+              : []),
+            { value: 'processing' as const, label: label('Đang xử lý', counts.data?.processing) },
           ]}
         />
         <div role="tabpanel">

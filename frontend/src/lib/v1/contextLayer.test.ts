@@ -1,13 +1,15 @@
 /**
  * The context layer as the api sends it, without the PROPOSAL display fields: the readers derive
- * what the screens draw from the api's rows (Lớp ngữ cảnh, A2).
+ * what the screens draw from the api's rows (Lớp ngữ cảnh, A2), and a metric is put together from
+ * GET /v1/metrics/{id} and GET /v1/lineage.
  */
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { getAnswerProduct } from './answerProducts';
 import { getKnowledgePage, getLatestLintRun, listOpenFindings } from './knowledge';
-import { listCatalogMetrics } from './metricCatalog';
+import { listCatalogMetrics, readMetricProfile } from './metricCatalog';
+import type { components } from './schema';
 import { listGlossary, listUnknownPhrases } from './semanticLayer';
 
 const at = '2026-10-01T09:00:00Z';
@@ -217,5 +219,76 @@ describe('the context layer from the api', () => {
       in_scope_pct: null,
       eval: { passed: 9, total: 10, threshold_pct: 95 },
     });
+    // DataProductDetail has no weekly stats yet: the Theo dõi tab says so.
+    expect(p.monitoring).toBeNull();
+  });
+
+  it('puts a metric together from its versions, lineage and quality results', () => {
+    type S = components['schemas'];
+    const version = (no: number, status: string, note: string) =>
+      ({
+        version: no,
+        status,
+        change_note: note,
+        display_name: 'Nợ xấu (%)',
+        expression: `NPL v${no}`,
+        description: no === 4 ? 'Dư nợ nhóm 3–5 / tổng dư nợ' : null,
+        unit: '%',
+        valid_from: no === 4 ? '2026-03-01T00:00:00Z' : null,
+      }) as S['MetricVersionView'];
+    const node = (key: string, kind: string, name: string) =>
+      ({ key, kind, name, id: null, hidden: false }) as S['LineageNode'];
+    const edge = (source: string, target: string) => ({ source, target, via: null, via_ref: null });
+    const p = readMetricProfile(
+      {
+        id: 'm-1',
+        code: 'NPL',
+        certified: true,
+        current_version: 4,
+        usage: { data_product_ids: ['dp-1'], knowledge_page_ids: [] },
+        versions: [
+          version(3, 'superseded', 'Thêm phân khúc'),
+          version(5, 'pending_review', 'Cơ cấu lần 2'),
+          version(4, 'certified', 'Loại vay nội bộ'),
+        ],
+      } as S['MetricDetail'],
+      {
+        root: node('m-1', 'metric', 'NPL'),
+        nodes: [
+          node('ds-1', 'dataset', 'fact_loan'),
+          node('src-1', 'source', 'Core'),
+          node('m-1', 'metric', 'NPL'),
+          node('a-1', 'agent', 'Agent Rủi ro'),
+        ],
+        edges: [edge('ds-1', 'm-1'), edge('src-1', 'ds-1'), edge('m-1', 'a-1')],
+        depth: 3,
+        direction: 'both',
+        grouped: false,
+      },
+      [{ ok: true, label: 'Đạt', text: 'not_null · không vi phạm · 01/10/2026' }],
+    );
+    expect(p).toMatchObject({
+      name: 'Nợ xấu (%)',
+      status: 'certified',
+      meta_line: 'NPL · v4 · hiệu lực từ 01/03/2026 · đơn vị %',
+      definition: { expression: 'NPL v4', note: 'Dư nợ nhóm 3–5 / tổng dư nợ' },
+      change_notice: { title: 'Đang có bản nháp v5', text: 'Cơ cấu lần 2', draft_version: 5 },
+      usage_note: 'Dùng ở 1 data product, 0 trang tri thức.',
+    });
+    // Source first, then what it feeds, the metric, and its uses summed up.
+    expect(p.lineage.map((l) => `${l.kind}:${l.title}`)).toEqual([
+      'Nguồn:Core',
+      'Dataset:fact_loan',
+      'Chỉ số:NPL v4',
+      'Sử dụng:1 nơi dùng',
+    ]);
+    expect(p.agents).toEqual([{ name: 'Agent Rủi ro', state: 'Dùng chỉ số này', tone: 'idle' }]);
+    expect(p.versions.map((v) => [v.version, v.status, v.effective])).toEqual([
+      [5, 'draft', '—'],
+      [4, 'certified', '01/03/2026'],
+      [3, 'archived', '—'],
+    ]);
+    expect(p.usage).toEqual([{ place: 'Agent Rủi ro', kind: 'Agent', version: 'v4', last: '—' }]);
+    expect(p.quality).toHaveLength(1);
   });
 });

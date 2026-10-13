@@ -44,23 +44,33 @@ export interface CrawlSource {
   review_run_id: string | null;
 }
 
-/** PROPOSAL: GET /v1/acquire/summary — the four figures over the list. */
+/**
+ * The four figures over the list, said from A2's rows (GET /v1/crawl-sources, /crawl-runs,
+ * /consolidation-specs and the target dataset's versions). A figure no row carries is null and
+ * its line is left out.
+ */
 export interface AcquireSummary {
   active: number;
   total: number;
   paused: number;
   blocked: number;
-  last_agent_run_text: string;
-  sample_accuracy_pct: number;
-  accuracy_delta_text: string;
-  sample_text: string;
+  /** "Lượt thu gần nhất · 10/10 08:05"; null before any run. */
+  last_agent_run_text: string | null;
+  /** The mean of the sources' sample accuracy; null when no source was sampled yet. */
+  sample_accuracy_pct: number | null;
+  /** "trung bình 7 nguồn có mẫu"; null with no accuracy. */
+  sample_text: string | null;
   pending_records: number;
+  /** Records flagged in the runs that wait for review (they block publishing). */
   blocking_records: number;
   latest_dataset: {
     published_at: string;
     title: string;
     detail: string;
-    /** PROPOSAL: the consolidation run that is waiting to publish the next version. */
+    /**
+     * The consolidation run that made it. A2 lists neither consolidation runs nor a spec's last
+     * run, so this is null against the api and the link to the run is not drawn.
+     */
     consolidation_run_id: string | null;
   } | null;
 }
@@ -162,7 +172,69 @@ export const listCrawlSources = async (): Promise<Page<CrawlSource>> => {
   };
 };
 
-export const getAcquireSummary = () => v1Get<AcquireSummary>('/acquire/summary');
+/** The newest version of the datasets the active consolidation specs write. */
+async function latestConsolidated(): Promise<AcquireSummary['latest_dataset']> {
+  const specs = await v1Get<Page<Schemas['ConsolidationSpecView']>>('/consolidation-specs', {
+    status: 'active',
+    page_size: 500,
+  });
+  const versions = await Promise.all(
+    specs.items
+      .filter((spec) => spec.target_dataset_id)
+      .map(async (spec) => {
+        const page = await v1Get<Page<Schemas['DatasetVersionView']>>(
+          `/datasets/${pathId(spec.target_dataset_id!)}/versions`,
+          { page_size: 1 },
+        );
+        return page.items[0] ? { spec, version: page.items[0] } : null;
+      }),
+  );
+  const newest = versions
+    .filter((v) => v !== null)
+    .sort((a, b) => b.version.valid_from.localeCompare(a.version.valid_from))[0];
+  return newest
+    ? {
+        published_at: newest.version.valid_from,
+        title: newest.spec.name,
+        detail: `Dataset v${newest.version.version} · ${newest.spec.source_ids.length} nguồn`,
+        consolidation_run_id: null,
+      }
+    : null;
+}
+
+export const getAcquireSummary = async (): Promise<AcquireSummary> => {
+  const [sources, runs, latest] = await Promise.all([
+    listCrawlSources(),
+    v1Get<Page<Schemas['CrawlRunView']>>('/crawl-runs', { page_size: 500 }),
+    latestConsolidated().catch(() => null),
+  ]);
+  const items = sources.items;
+  const paused = items.filter((s) => s.health === 'paused').length;
+  const blocked = items.filter((s) => s.health === 'blocked').length;
+  const sampled = items.flatMap((s) =>
+    s.sample_accuracy_pct === null ? [] : [s.sample_accuracy_pct],
+  );
+  const lastRun = runs.items
+    .flatMap((r) => (r.started_at ? [r.started_at] : []))
+    .sort()
+    .at(-1);
+  return {
+    active: items.length - paused - blocked,
+    total: items.length,
+    paused,
+    blocked,
+    last_agent_run_text: lastRun ? `Lượt thu gần nhất · ${ddmm(lastRun)}` : null,
+    sample_accuracy_pct: sampled.length
+      ? Math.round((sampled.reduce((n, x) => n + x, 0) / sampled.length) * 10) / 10
+      : null,
+    sample_text: sampled.length ? `trung bình ${sampled.length} nguồn có mẫu` : null,
+    pending_records: items.reduce((n, s) => n + s.pending_review, 0),
+    blocking_records: runs.items
+      .filter((r) => r.status === 'in_review')
+      .reduce((n, r) => n + (r.records_flagged ?? 0), 0),
+    latest_dataset: latest,
+  };
+};
 
 /** A2: POST /v1/crawl-sources/{id}/runs (202); 409 when the source is not active or busy. */
 export const runCrawlSource = async (id: string) =>
@@ -695,10 +767,11 @@ export interface ConsolidationRun {
   summary_text: string;
   status: 'pending_review' | 'published' | 'failed';
   /**
-   * PROPOSAL, with :publish: the version a person publishes. A2's run publishes itself when the
-   * worker finishes (status published, dataset_version_id set), so null there and no button.
+   * The dataset version the run wrote: A3's run publishes it itself, and the person's gate is
+   * certifying it (BR-156). A2's run carries only the version's id; its number is PROPOSAL.
    */
-  next_dataset_version: number | null;
+  dataset_version_id: string | null;
+  dataset_version: number | null;
   /** PROPOSAL: the steps the run went through. */
   steps: { label: string; state: 'done' | 'waiting' | 'pending' }[];
   /** PROPOSAL: the consolidated table. */
@@ -770,7 +843,8 @@ export const getConsolidationRun = async (id: string): Promise<ConsolidationRun>
         : run.status === 'failed'
           ? 'failed'
           : 'pending_review',
-    next_dataset_version: null,
+    dataset_version_id: run.dataset_version_id,
+    dataset_version: null,
     steps: [],
     table: null,
     summary_paragraph: null,
@@ -796,6 +870,10 @@ export const decideEntityMatch = async (id: string, decision: 'merge' | 'split')
     status: decision === 'merge' ? 'confirmed' : 'rejected',
   });
 
-/** PROPOSAL: :publish — the dataset version, once no entity match or conflict is open. */
-export const publishConsolidationRun = async (id: string) =>
-  v1Send<ConsolidationRun>('POST', `/consolidation-runs/${pathId(id)}:publish`);
+/** A2: POST /v1/dataset-versions/{id}:certify — the person certifies the version the run wrote. */
+export const certifyDatasetVersion = async (datasetVersionId: string) =>
+  v1Send<Schemas['CertifiedVersion']>(
+    'POST',
+    `/dataset-versions/${pathId(datasetVersionId)}:certify`,
+    {},
+  );

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
-import { Badge } from '../../design-system/Badge';
 import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Icon } from '../../design-system/Icon';
@@ -17,7 +16,6 @@ import {
   getDocumentView,
   listActivity,
   listChunks,
-  listLinks,
   resolveQualityIssue,
   type DocumentPage,
   type DocumentView,
@@ -28,14 +26,14 @@ import {
 import { useV1 } from '../../lib/v1/useV1';
 import { CallViewer } from './CallViewer';
 import { EmailViewer } from './EmailViewer';
-import { HEAD_ROW, ROW } from './parts';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 /*
  * "v3.1 · Phi cấu trúc · Trình xem tài liệu" (2069:3041, UC-05-04, UC-05-05) at /data/document/<id>:
  * the page on the left with the extracted fields outlined on it (or its OCR text), and on the
- * right what the agent made of it in four tabs — Trường (2069:3169), Đoạn văn (2101:12453),
- * Liên kết (2101:12637), Lịch sử (2101:12848). An email opens "Trình xem email" (2075:5236) and a
+ * right what the agent made of it in three tabs — Trường (2069:3169), Đoạn văn (2101:12453) and
+ * Lịch sử (2101:12848). Figma's Liên kết tab (2101:12637) is not in SCR-10/SCR-34 and A2 has no
+ * source for it, so it is not drawn. An email opens "Trình xem email" (2075:5236) and a
  * recording "Trình xem ghi âm" (2075:5061) at the same address.
  */
 export default function DocumentViewerPage() {
@@ -87,7 +85,7 @@ function normalize(doc: DocumentView): DocumentView {
   };
 }
 
-type Tab = 'fields' | 'chunks' | 'links' | 'history';
+type Tab = 'fields' | 'chunks' | 'history';
 type Mode = 'original' | 'ocr';
 
 function FileViewer({ doc, onChanged }: { doc: DocumentView; onChanged: () => void }) {
@@ -179,14 +177,12 @@ function FileViewer({ doc, onChanged }: { doc: DocumentView; onChanged: () => vo
           items={[
             { value: 'fields', label: `Trường · ${formatNumber(doc.fields.length)}` },
             { value: 'chunks', label: 'Đoạn văn' },
-            { value: 'links', label: 'Liên kết' },
             { value: 'history', label: 'Lịch sử' },
           ]}
         />
         <div role="tabpanel" className="flex flex-col gap-da-lg">
           {tab === 'fields' && <FieldsTab doc={doc} onJump={setPageNo} onChanged={onChanged} />}
           {tab === 'chunks' && <ChunksTab doc={doc} onJump={setPageNo} />}
-          {tab === 'links' && <LinksTab id={doc.id} />}
           {tab === 'history' && <HistoryTab id={doc.id} />}
         </div>
       </aside>
@@ -399,7 +395,7 @@ function IssueBox({ issue, onChanged }: { issue: FieldIssue; onChanged: () => vo
 }
 
 function ChunksTab({ doc, onJump }: { doc: DocumentView; onJump: (page: number) => void }) {
-  const chunks = useV1(() => listChunks(doc.id), [doc.id]);
+  const chunks = useV1(() => listChunks(doc), [doc.id, doc.page_count]);
   return (
     <AsyncRegion
       state={chunks}
@@ -427,74 +423,6 @@ function ChunksTab({ doc, onJump }: { doc: DocumentView; onJump: (page: number) 
             ))}
           </ul>
           {doc.index_text && <p className="text-muted-foreground da-caption">{doc.index_text}</p>}
-        </div>
-      )}
-    </AsyncRegion>
-  );
-}
-
-function LinksTab({ id }: { id: string }) {
-  const { navigate } = useAppState();
-  const links = useV1(() => listLinks(id), [id]);
-  return (
-    <AsyncRegion
-      state={links}
-      what="liên kết"
-      skeletonRows={4}
-      isEmpty={(p) => p.items.length === 0}
-      empty={
-        <p className="text-muted-foreground da-body-small">
-          Tài liệu chưa liên kết với bản ghi nào.
-        </p>
-      }
-    >
-      {(p) => (
-        <div className="overflow-hidden rounded-md border border-border bg-card">
-          <table className="w-full table-fixed border-collapse">
-            <thead>
-              <tr className={HEAD_ROW}>
-                <th className="px-da-md py-da-sm font-medium">Liên kết tới</th>
-                <th className="w-[100px] px-da-md py-da-sm font-medium">Loại</th>
-                <th className="w-[122px] px-da-md py-da-sm font-medium">Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody>
-              {p.items.map((link) => (
-                <tr key={link.id} className={ROW}>
-                  <td className="px-da-md py-da-sm">
-                    {link.target_document_id ? (
-                      <button
-                        type="button"
-                        className="text-left text-foreground da-body-strong hover:underline"
-                        onClick={() => navigate('data', 'DOCUMENT', link.target_document_id!)}
-                      >
-                        {link.target_label}
-                      </button>
-                    ) : (
-                      <span
-                        className={cn(
-                          'text-foreground',
-                          link.target_is_code ? 'da-mono' : 'da-body-strong',
-                        )}
-                      >
-                        {link.target_label}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-da-md py-da-sm text-foreground da-body-small">
-                    {link.kind_label}
-                  </td>
-                  <td className="px-da-md py-da-sm">
-                    {link.state ? (
-                      <StatusDot tone={link.state.tone}>{link.state.text}</StatusDot>
-                    ) : (
-                      <Badge>Tham chiếu</Badge>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       )}
     </AsyncRegion>
