@@ -871,9 +871,46 @@ function fuelHandlers() {
 
     // The fuel screen now discovers products through A2's formula models and ledger.
     // Keep these rows in the wire shape so the same code path is exercised in dev and tests.
-    http.get('*/v1/forecast-ledger', () =>
-      HttpResponse.json({ items: ledgerFuelLines(), next_page_token: '' }),
-    ),
+    http.get('*/v1/forecast-ledger', ({ request }) => {
+      const url = new URL(request.url);
+      const product = url.searchParams.get('product_code');
+      const periods = Number(url.searchParams.get('page_size')) || 20;
+      const fuel = FUELS.find((item) => item.key === product) ?? FUELS[0];
+      if (!url.searchParams.has('forecast_model_id'))
+        return HttpResponse.json({ items: ledgerFuelLines(), next_page_token: '' });
+      const served = ledger(fuel, periods);
+      return HttpResponse.json({
+        items: served.rows.map((row) => ({
+          id: `ledger-${fuel.code}-${row.period_date}`,
+          forecast_model_id: MODEL_ID,
+          job_id: JOB_ID,
+          model_version_id: V7_ID,
+          period: row.period_date,
+          issued_at: row.published_at,
+          issued_via: 'bulletin',
+          point: row.median,
+          quantiles: { p10: row.lo80, p90: row.hi80, p02_5: row.lo95, p97_5: row.hi95 },
+          actual: row.actual,
+          in80: row.inside80,
+          in95: row.inside95,
+          miss: row.missed,
+          miss_attribution: row.main_driver ? { component: 'fund' } : null,
+          error_book_entry_id: row.error_book_ref,
+          scope: { product_code: fuel.key },
+        })),
+        next_page_token: '',
+        calibration: {
+          n_scored: served.calibration.periods,
+          coverage80: served.calibration.inside80 / served.calibration.periods,
+          coverage95: served.calibration.inside95 / served.calibration.periods,
+          mae: served.calibration.mae,
+          crps: -0.38,
+          crps_naive: 1,
+          miss_count: served.calibration.missed,
+          insufficient: false,
+        },
+      });
+    }),
     http.get('*/v1/forecast-series', () =>
       HttpResponse.json({
         items: FUELS.map((f) => ({ id: seriesId(f), label: f.label })),
