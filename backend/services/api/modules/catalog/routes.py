@@ -14,6 +14,7 @@ import datetime
 import uuid
 import zoneinfo
 from typing import Annotated, Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Path, Query, Response
 from sqlalchemy import Select, func, or_, select
@@ -55,6 +56,8 @@ from services.api.modules.catalog.schemas import (
     DatasetVersionView,
     DatasetView,
     DerivedDatasetAccepted,
+    RestTryRequest,
+    RestTryResult,
     RevokeRequest,
     ScanRequest,
     ScanRunView,
@@ -167,6 +170,51 @@ async def list_connectors(principal: CurrentPrincipal) -> Page[ConnectorView]:
             for item in CONNECTORS
         ],
         next_page_token="",
+    )
+
+
+@router.post(
+    "/v1/connectors/rest:try",
+    response_model=RestTryResult,
+    status_code=202,
+    **endpoint("POST", "/v1/connectors/rest:try", operation_id="tryRestConnector"),
+)
+async def try_rest_connector(
+    body: RestTryRequest, principal: CurrentPrincipal, space: CurrentDataSpace
+) -> RestTryResult:
+    """Queue one REST request; the connector worker reads the secret and performs the call."""
+    request = body.request
+    url = request.get("url")
+    if not isinstance(url, str) or urlparse(url).scheme not in {"http", "https"}:
+        raise Problem(422, "validation_failed", "request.url must be an http(s) URL.")
+    safe_request = {
+        key: value for key, value in request.items() if key not in {"headers", "body", "payload"}
+    }
+    if isinstance(request.get("headers"), list):
+        safe_request["header_names"] = [
+            item.get("name")
+            for item in request["headers"]
+            if isinstance(item, dict) and isinstance(item.get("name"), str)
+        ]
+    try_id = uuid7()
+    async with transaction(ROLE, principal) as session:
+        session.add(
+            _event(
+                principal,
+                "connector_try",
+                try_id,
+                "connector.rest_try_requested",
+                try_id=try_id,
+                data_space_id=space,
+                requested_by=principal.user_id,
+                request=safe_request,
+            )
+        )
+    return RestTryResult(
+        status=202,
+        duration_ms=0,
+        body="Đã xếp hàng kiểm tra REST; connector worker sẽ trả kết quả vào cấu hình nguồn.",
+        mapping=[],
     )
 
 

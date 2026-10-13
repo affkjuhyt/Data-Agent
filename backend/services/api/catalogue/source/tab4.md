@@ -772,6 +772,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | Endpoint | Gửi lên | Trả về | Lỗi riêng |
 | --- | --- | --- | --- |
 | GET /v1/connectors | — | Danh mục connector cho màn Kết nối dữ liệu kèm số nguồn đã nối của tổ chức; không có credential | — |
+| POST /v1/connectors/rest:try | request\* | Xếp hàng kiểm tra request REST; worker đọc OpenBao và không lưu secret | 422 validation\_failed |
 | GET /v1/secret-refs | — | Các reference OpenBao (secret/tenants/<org>/…) đã dùng trong tổ chức, {ref, label}; không trả secret | — |
 | GET /v1/sources | ?status, ?kind | Danh sách Source | — |
 | GET /v1/sources/{id} | — | Source như trong danh sách: status, status\_reason, db\_version, last\_checked\_at, has\_credentials, has\_writeback\_credentials, writeback\_tables; không có secret\_ref | 404 not\_found |

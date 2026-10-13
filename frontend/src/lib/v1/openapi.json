@@ -37835,6 +37835,49 @@
     "title": "ResolveIssue",
     "type": "object"
    },
+   "RestTryRequest": {
+    "properties": {
+     "request": {
+      "title": "Request",
+      "type": "object"
+     }
+    },
+    "required": [
+     "request"
+    ],
+    "title": "RestTryRequest",
+    "type": "object"
+   },
+   "RestTryResult": {
+    "properties": {
+     "body": {
+      "title": "Body",
+      "type": "string"
+     },
+     "duration_ms": {
+      "title": "Duration Ms",
+      "type": "integer"
+     },
+     "mapping": {
+      "items": {
+       "type": "object"
+      },
+      "title": "Mapping",
+      "type": "array"
+     },
+     "status": {
+      "title": "Status",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "status",
+     "duration_ms",
+     "body"
+    ],
+    "title": "RestTryResult",
+    "type": "object"
+   },
    "RetireRequest": {
     "properties": {
      "reason": {
@@ -59923,6 +59966,148 @@
      }
     ],
     "summary": "Danh mục connector cho màn Kết nối dữ liệu (thêm 13/10/2026)",
+    "tags": [
+     "Nguồn và danh mục"
+    ],
+    "x-capability": [
+     "admin_data"
+    ],
+    "x-use-cases": [
+     "UC-04-01"
+    ]
+   }
+  },
+  "/v1/connectors/rest:try": {
+   "post": {
+    "description": "Queue one REST request; the connector worker reads the secret and performs the call.",
+    "operationId": "tryRestConnector",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RestTryRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RestTryResult"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Xếp hàng kiểm tra một request REST không lưu bí mật",
     "tags": [
      "Nguồn và danh mục"
     ],

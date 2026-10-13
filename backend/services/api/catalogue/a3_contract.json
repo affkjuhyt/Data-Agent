@@ -1057,6 +1057,15 @@
    "errors": [],
    "request_text": "—"
   },
+  "POST /v1/connectors/rest:try": {
+   "group": "Nguồn và danh mục",
+   "groups": ["Nguồn và danh mục"],
+   "body": {"request": true},
+   "query": [],
+   "returns": "202, trạng thái queued; request gửi worker không chứa header/body bí mật",
+   "errors": [[422, "validation_failed"]],
+   "request_text": "request*"
+  },
   "GET /v1/secret-refs": {
    "group": "Nguồn và danh mục",
    "groups": [

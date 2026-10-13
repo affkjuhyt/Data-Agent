@@ -229,6 +229,33 @@ async def test_connection_catalogue_and_secret_refs_require_admin_data(o: Org) -
     assert denied_refs.status_code == 403
 
 
+async def test_rest_try_queues_redacted_connector_request(o: Org) -> None:
+    async with client(o) as api:
+        response = await api.post(
+            "/v1/connectors/rest:try",
+            headers=o.headers("admin"),
+            json={
+                "request": {
+                    "url": "https://api.example.test/v1/data",
+                    "auth": "bearer",
+                    "secret_ref": f"secret/tenants/{o.org}/rest",
+                    "headers": [{"name": "Authorization", "value": "do-not-store"}],
+                }
+            },
+        )
+    assert response.status_code == 202, response.text
+    assert response.json()["status"] == 202
+    event = o.one("SELECT event_type FROM catalog.outbox WHERE aggregate_type = 'connector_try'")
+    assert event == "connector.rest_try_requested"
+    assert (
+        o.one(
+            "SELECT payload->'request'->>'header_names' FROM catalog.outbox "
+            "WHERE aggregate_type = 'connector_try'"
+        )
+        == '["Authorization"]'
+    )
+
+
 def _source_row(o: Org, space: uuid.UUID | None = None, **values: Any) -> uuid.UUID:
     values.setdefault("name", f"src-{uuid.uuid4().hex[:6]}")
     values.setdefault("kind", "postgresql")

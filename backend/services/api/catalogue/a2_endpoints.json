@@ -863,6 +863,14 @@
   },
   {
    "group": "Nguồn và danh mục",
+   "method": "POST",
+   "path": "/v1/connectors/rest:try",
+   "summary": "Xếp hàng kiểm tra một request REST không lưu bí mật",
+   "use_cases": ["04-01"],
+   "capability": ["admin_data"]
+  },
+  {
+   "group": "Nguồn và danh mục",
    "method": "GET",
    "path": "/v1/secret-refs",
    "summary": "Các reference OpenBao đã dùng trong tổ chức, không trả bí mật (thêm 13/10/2026)",

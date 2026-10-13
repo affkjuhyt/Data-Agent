@@ -203,6 +203,17 @@ class ApiConfigView(ApiConfigPut):
     health: dict[str, Any] | None = None
 
 
+class RestTryRequest(BaseModel):
+    request: dict[str, Any]
+
+
+class RestTryResult(BaseModel):
+    status: int
+    duration_ms: int
+    body: str
+    mapping: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class SourceSchedule(SourceView):
     """The source and its next five scans of each kind (UC-04-05 step 3)."""
 
