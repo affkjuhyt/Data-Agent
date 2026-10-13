@@ -617,6 +617,10 @@ async def test_a_run_needs_a_published_version_and_valid_params(sk: Org) -> None
         run_id = started.json()["id"]
         assert started.json()["status"] == "queued"
         assert started.headers["Location"] == f"/v1/skill-runs/{run_id}"
+        history = await api.get(url, params={"page_size": 10}, headers=sk.headers("analyst"))
+        assert history.status_code == 200, history.text
+        assert [item["id"] for item in history.json()["items"]] == [run_id]
+        assert history.json()["items"][0]["skill_id"] == made["id"]
         assert sk.one("SELECT principal_id FROM skill.skill_run WHERE id = %s", run_id) == str(
             sk.users["analyst"]
         )

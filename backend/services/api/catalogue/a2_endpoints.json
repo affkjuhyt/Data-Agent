@@ -693,6 +693,18 @@
   {
    "group": "Kỹ năng",
    "method": "GET",
+   "path": "/v1/skills/{id}/runs",
+   "summary": "Lịch sử lượt chạy kỹ năng",
+   "use_cases": [
+    "03-01"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Kỹ năng",
+   "method": "GET",
    "path": "/v1/skill-runs/{id}",
    "summary": "Kết quả lượt chạy kỹ năng",
    "use_cases": [

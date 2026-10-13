@@ -859,6 +859,20 @@
    ],
    "request_text": "params*, as_of"
   },
+  "GET /v1/skills/{id}/runs": {
+   "group": "Kỹ năng",
+   "groups": [
+    "Kỹ năng"
+   ],
+   "body": {},
+   "query": [
+    "cursor",
+    "page_size"
+   ],
+   "returns": "Page[SkillRun]",
+   "errors": [],
+   "request_text": "?cursor, ?page_size"
+  },
   "GET /v1/skill-runs/{id}": {
    "group": "Kỹ năng",
    "groups": [

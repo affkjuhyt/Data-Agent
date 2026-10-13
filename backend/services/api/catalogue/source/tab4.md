@@ -152,6 +152,7 @@ Dịch vụ: Skill service (skill). 14 endpoint.
 | POST | /v1/skills | Tạo kỹ năng (tay hoặc từ phiên) | 03-03 | create\_skill |
 | GET | /v1/skills/{id} | Chi tiết kỹ năng và phiên bản | 03-01 | ask |
 | POST | /v1/skills/{id}/runs | Chạy kỹ năng; 202 | 03-01, 03-02 | ask |
+| GET | /v1/skills/{id}/runs | Lịch sử lượt chạy kỹ năng | 03-01 | ask |
 | GET | /v1/skill-runs/{id} | Kết quả lượt chạy kỹ năng | 03-01, 03-02 | ask |
 | POST | /v1/skills/{id}/versions | Tạo phiên bản mới | 03-03 | create\_skill |
 | PATCH | /v1/skill-versions/{id} | Sửa phiên bản nháp | 03-03 | create\_skill |
@@ -741,6 +742,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/skills | code\*, name\*, description, category\*, scope, origin, origin\_ref | Skill | 409 conflict (trùng mã) |
 | GET /v1/skills/{id} | — | Skill. Kèm phiên bản đang phát hành và params\_schema | — |
 | POST /v1/skills/{id}/runs | params\*, as\_of | 202, Location tới skill\_run | 422 validation\_failed (params sai params\_schema); 409 invalid\_state (kỹ năng chưa phát hành) |
+| GET /v1/skills/{id}/runs | ?cursor, ?page_size | Page[SkillRun] | — |
 | GET /v1/skill-runs/{id} | — | SkillRun. Kèm các bước skill\_run\_step | — |
 | POST /v1/skills/{id}/versions | params\_schema\*, steps\*, template\_md, metric\_version\_ids, sandbox\_limits | SkillVersion | — |
 | PATCH /v1/skill-versions/{id} | params\_schema, steps, template\_md, sandbox\_limits | SkillVersion | 409 invalid\_state (không sửa bản đã phát hành, BR-12) |

@@ -5917,7 +5917,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Lịch sử lượt chạy kỹ năng */
+        get: operations["listSkillRuns"];
         put?: never;
         /** Chạy kỹ năng; 202 */
         post: operations["createSkillRun"];
@@ -17558,6 +17559,16 @@ export interface components {
         Page_RoleView_: {
             /** Items */
             items: components["schemas"]["RoleView"][];
+            /**
+             * Next Page Token
+             * @default
+             */
+            next_page_token: string;
+        };
+        /** Page[RunDetail] */
+        Page_RunDetail_: {
+            /** Items */
+            items: components["schemas"]["RunDetail"][];
             /**
              * Next Page Token
              * @default
@@ -68424,6 +68435,125 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    listSkillRuns: {
+        parameters: {
+            query?: {
+                page_size?: number;
+                page_token?: string;
+                /** @description A3's name for page_token */
+                cursor?: string | null;
+                order_by?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description Skill id or code (A1.1) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_RunDetail_"];
                 };
             };
             /** @description Invalid request */

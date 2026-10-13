@@ -31109,6 +31109,27 @@
     "title": "Page[RoleView]",
     "type": "object"
    },
+   "Page_RunDetail_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/RunDetail"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "next_page_token": {
+      "default": "",
+      "title": "Next Page Token",
+      "type": "string"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "Page[RunDetail]",
+    "type": "object"
+   },
    "Page_RunSummary_": {
     "properties": {
      "items": {
@@ -112609,6 +112630,208 @@
    }
   },
   "/v1/skills/{id}/runs": {
+   "get": {
+    "operationId": "listSkillRuns",
+    "parameters": [
+     {
+      "description": "Skill id or code (A1.1)",
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "description": "Skill id or code (A1.1)",
+       "title": "Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "maximum": 500,
+       "minimum": 1,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_token",
+      "required": false,
+      "schema": {
+       "default": "",
+       "maxLength": 2048,
+       "title": "Page Token",
+       "type": "string"
+      }
+     },
+     {
+      "description": "A3's name for page_token",
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 2048,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "A3's name for page_token",
+       "title": "Cursor"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order_by",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 64,
+         "pattern": "^[a-z_]+( (asc|desc|ASC|DESC))?$",
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order By"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_RunDetail_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Lịch sử lượt chạy kỹ năng",
+    "tags": [
+     "Kỹ năng"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-03-01"
+    ]
+   },
    "post": {
     "operationId": "createSkillRun",
     "parameters": [

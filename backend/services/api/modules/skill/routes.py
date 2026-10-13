@@ -385,6 +385,53 @@ async def create_run(
 
 
 @router.get(
+    "/v1/skills/{id}/runs",
+    response_model=Page[RunDetail],
+    **endpoint("GET", "/v1/skills/{id}/runs", operation_id="listSkillRuns"),
+)
+async def list_skill_runs(
+    ref: SkillRef,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[Order, Depends(order_by("created_at", "status", default="created_at desc"))],
+) -> Page[RunDetail]:
+    async with transaction(ROLE, principal) as session:
+        row = await _skill(session, ref, principal, data_space)
+        run = skill.SkillRun
+        version = skill.SkillVersion
+        query = (
+            select(run, version)
+            .join(version, version.id == run.skill_version_id)
+            .where(
+                run.org_id == principal.org_id,
+                run.data_space_id == data_space,
+                run.principal_id == principal.user_id,
+                version.skill_id == row.id,
+            )
+        )
+        query = keyset(
+            query,
+            columns={"created_at": run.created_at, "status": run.status},
+            tiebreak=run.id,
+            order=order,
+            page=page,
+        )
+        rows, token = next_page(list((await session.execute(query)).all()), order=order, page=page)
+    return Page(
+        items=[
+            RunDetail(
+                **RunView.model_validate(item).model_dump(),
+                skill_id=ver.skill_id,
+                version=ver.version,
+            )
+            for item, ver in rows
+        ],
+        next_page_token=token,
+    )
+
+
+@router.get(
     "/v1/skill-runs/{id}",
     response_model=RunDetail,
     **endpoint("GET", "/v1/skill-runs/{id}", operation_id="getSkillRun"),

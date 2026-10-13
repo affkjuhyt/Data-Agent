@@ -78,7 +78,9 @@ export const getSkillDefinition = async (id: string) =>
     const params = (version && 'params_schema' in version ? version.params_schema : {}) as {
       properties?: Record<string, { title?: string }>;
     };
-    const steps = (version && 'steps' in version ? version.steps : []) as Array<Record<string, unknown>>;
+    const steps = (version && 'steps' in version ? version.steps : []) as Array<
+      Record<string, unknown>
+    >;
     return {
       skill_id: raw.id,
       name: raw.name,
@@ -88,15 +90,13 @@ export const getSkillDefinition = async (id: string) =>
         name,
         description: spec.title ?? name,
       })),
-      output_text:
-        version && 'template_md' in version ? String(version.template_md ?? '') : '',
+      output_text: version && 'template_md' in version ? String(version.template_md ?? '') : '',
       steps: steps.map((step, index) => ({
         seq: Number(step.seq ?? index + 1),
         text: String(step.text ?? step.name ?? ''),
         tool: typeof step.tool === 'string' ? step.tool : null,
       })),
-      instructions:
-        version && 'template_md' in version ? String(version.template_md ?? '') : '',
+      instructions: version && 'template_md' in version ? String(version.template_md ?? '') : '',
       guardrails: [],
       owner: { id: raw.owner_id, name: '' },
       scope_label: raw.scope,
@@ -446,17 +446,12 @@ function readRun(raw: RunWire): SkillRun {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/*
- * PROPOSAL: GET /v1/skills/{id}/runs — the viewer's runs, newest first. A2 lists no runs of a
- * skill, so there an answer of 404 means "no run yet" rather than an error.
- */
+/** GET /v1/skills/{id}/runs — the viewer's runs, newest first. */
 export const listSkillRuns = async (id: string): Promise<Page<SkillRun>> => {
-  try {
-    return await v1Get<Page<SkillRun>>(`/skills/${pathId(id)}/runs`, { page_size: 1 });
-  } catch (e) {
-    if (notProposal(e)) return { items: [], next_page_token: '' };
-    throw e;
-  }
+  const page = await v1Get<Page<Schemas['RunDetail']>>(`/skills/${pathId(id)}/runs`, {
+    page_size: 50,
+  });
+  return { ...page, items: page.items.map((run) => readRun(run)) };
 };
 
 /**
