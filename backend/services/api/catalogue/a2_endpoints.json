@@ -1596,6 +1596,18 @@
   },
   {
    "group": "Biến đổi dữ liệu",
+   "method": "POST",
+   "path": "/v1/pipelines/{id}/runs",
+   "summary": "Chạy pipeline ngay",
+   "use_cases": [
+    "06-03"
+   ],
+   "capability": [
+    "prepare_data"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
    "method": "GET",
    "path": "/v1/pipelines/{id}/steps/{seq}/preview",
    "summary": "Xem trước một bước",

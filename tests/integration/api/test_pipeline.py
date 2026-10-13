@@ -521,6 +521,23 @@ async def test_preview_runs_on_a_sample(pp: Space) -> None:
         assert nothing.status_code == 409
 
 
+@pytest.mark.req("AC-06-03-01")
+async def test_run_pipeline_queues_full_run(pp: Space) -> None:
+    async with client(pp) as api:
+        made = await _create(api, pp)
+        response = await api.post(f"/v1/pipelines/{made['id']}/runs", headers=pp.headers("eng"))
+        assert response.status_code == 202, response.text
+        accepted = response.json()
+        assert response.headers["Location"] == f"/v1/pipeline-runs/{accepted['id']}"
+        assert accepted["status"] == "running"
+        assert pp.one("SELECT mode FROM pipeline.pipeline_run WHERE id = %s", accepted["id"]) == (
+            "full"
+        )
+        [(event, payload)] = pp.events(accepted["id"])
+        assert event == "pipeline_run.requested"
+        assert payload["mode"] == "full"
+
+
 # AC-06-01-06
 # AC-06-02-03
 @pytest.mark.req("AC-06-01-06", "AC-06-02-03")

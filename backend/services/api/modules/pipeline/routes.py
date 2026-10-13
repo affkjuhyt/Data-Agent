@@ -487,6 +487,60 @@ async def preview_pipeline(
         return PipelineRunView.model_validate(run)
 
 
+@router.post(
+    "/v1/pipelines/{id}/runs",
+    status_code=202,
+    response_model=Accepted,
+    **endpoint("POST", "/v1/pipelines/{id}/runs", operation_id="runPipeline"),
+)
+async def run_pipeline(
+    pipeline_id: PathId,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    response: Response,
+) -> Accepted:
+    """Queue a full pipeline run for the list screen's Run now action."""
+    async with transaction(ROLE, principal) as session:
+        row = await _pipeline(session, principal, data_space, pipeline_id)
+        running = await session.scalar(
+            select(pl.PipelineRun.id).where(
+                pl.PipelineRun.pipeline_id == row.id,
+                pl.PipelineRun.mode == "full",
+                pl.PipelineRun.status == "running",
+            )
+        )
+        if running is not None:
+            raise Problem(409, "invalid_state", "A full run of this pipeline is still running.")
+        run = pl.PipelineRun(
+            id=uuid7(),
+            org_id=principal.org_id,
+            pipeline_id=row.id,
+            mode="full",
+            status="running",
+            started_at=now(),
+            created_at=now(),
+        )
+        session.add(run)
+        emit(
+            session,
+            principal,
+            "pipeline_run",
+            run.id,
+            "pipeline_run.requested",
+            pipeline_run_id=run.id,
+            pipeline_id=row.id,
+            data_space_id=data_space,
+            mode=run.mode,
+            status=run.status,
+            requested_by=principal.user_id,
+        )
+    return _accepted(
+        response,
+        f"/v1/pipeline-runs/{run.id}",
+        Accepted(id=run.id, status="running", poll_after_ms=POLL_AFTER_MS),
+    )
+
+
 @router.get(
     "/v1/pipelines/{id}/steps/{seq}/preview",
     response_model=StepPreview,

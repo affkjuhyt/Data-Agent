@@ -849,6 +849,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/pipelines | name\*, input\_dataset\_ids\*, steps, scope, instruction | Pipeline. instruction là mô tả bằng lời để agent đề xuất các bước | — |
 | PATCH /v1/pipelines/{id} | name, steps, scope, status, on\_failure, depends\_on\_pipeline\_ids | Pipeline | 412 precondition\_failed |
 | POST /v1/pipelines/{id}:preview | sample\_rows | PipelineRun. Chạy trên 10.000 dòng; trả số dòng bị loại từng bước và kiểm tra tổng | — |
+| POST /v1/pipelines/{id}/runs | — | 202, Location tới pipeline\_run chạy đầy đủ | 409 invalid\_state khi đang có lượt chạy |
 | POST /v1/pipelines/{id}:materialize | table\_name\*, scope | 202, Location tới pipeline\_run | 422 business\_rule\_violated (tổng cột tiền lệch, UC-06-01 E2) |
 | PUT /v1/pipelines/{id}/schedule | cron, work\_calendar\_id, trigger\_on\_job\_id, depends\_on\_pipeline\_ids, no\_overlap, on\_failure | Pipeline | — |
 | GET /v1/lineage | ?object\_kind, ?object\_id, ?direction, ?depth | JSON. Đồ thị nút và cạnh từ lineage\_edge; nút ngoài quyền hiện ẩn danh | — |

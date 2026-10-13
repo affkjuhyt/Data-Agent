@@ -2103,6 +2103,19 @@
    "errors": [],
    "request_text": "sample_rows"
   },
+  "POST /v1/pipelines/{id}/runs": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, Accepted; Location tới pipeline_run",
+   "errors": [
+    [409, "invalid_state"]
+   ],
+   "request_text": ""
+  },
   "GET /v1/pipelines/{id}/steps/{seq}/preview": {
    "group": "Biến đổi dữ liệu",
    "groups": [
