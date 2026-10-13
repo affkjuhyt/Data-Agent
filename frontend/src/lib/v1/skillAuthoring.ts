@@ -70,63 +70,56 @@ export interface SkillTrial {
   conclusion: string;
 }
 
-export const getSkillDefinition = async (id: string) =>
-  v1Get<SkillDefinition>(`/skills/${pathId(id)}/definition`).catch(async (e) => {
-    if (!notProposal(e)) throw e;
-    const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
-    const version = raw.published_version ?? raw.versions[0];
-    const params = (version && 'params_schema' in version ? version.params_schema : {}) as {
-      properties?: Record<string, { title?: string }>;
-    };
-    const steps = (version && 'steps' in version ? version.steps : []) as Array<
-      Record<string, unknown>
-    >;
-    return {
-      skill_id: raw.id,
-      name: raw.name,
-      version: version?.version ?? raw.current_version ?? 0,
-      status: (version?.status ?? 'draft') as SkillAuthoringStatus,
-      inputs: Object.entries(params.properties ?? {}).map(([name, spec]) => ({
-        name,
-        description: spec.title ?? name,
-      })),
-      output_text: version && 'template_md' in version ? String(version.template_md ?? '') : '',
-      steps: steps.map((step, index) => ({
-        seq: Number(step.seq ?? index + 1),
-        text: String(step.text ?? step.name ?? ''),
-        tool: typeof step.tool === 'string' ? step.tool : null,
-      })),
-      instructions: version && 'template_md' in version ? String(version.template_md ?? '') : '',
-      guardrails: [],
-      owner: { id: raw.owner_id, name: '' },
-      scope_label: raw.scope,
-      domain_text: raw.category,
-      used_by_text: `${raw.run_count_30d} lượt/30 ngày`,
-      quality_text: version?.status === 'published' ? 'Đã xuất bản' : 'Chưa kiểm định',
-      test_count: 0,
-      version_count: raw.versions.length,
-      quick_test: { params: {}, lines: [] },
-    } as SkillDefinition;
-  });
+export const getSkillDefinition = async (id: string): Promise<SkillDefinition> => {
+  const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+  const version = raw.published_version ?? raw.versions[0];
+  const params = (version && 'params_schema' in version ? version.params_schema : {}) as {
+    properties?: Record<string, { title?: string }>;
+  };
+  const steps = (version && 'steps' in version ? version.steps : []) as Array<
+    Record<string, unknown>
+  >;
+  return {
+    skill_id: raw.id,
+    name: raw.name,
+    version: version?.version ?? raw.current_version ?? 0,
+    status: (version?.status ?? 'draft') as SkillAuthoringStatus,
+    inputs: Object.entries(params.properties ?? {}).map(([name, spec]) => ({
+      name,
+      description: spec.title ?? name,
+    })),
+    output_text: version && 'template_md' in version ? String(version.template_md ?? '') : '',
+    steps: steps.map((step, index) => ({
+      seq: Number(step.seq ?? index + 1),
+      text: String(step.text ?? step.name ?? ''),
+      tool: typeof step.tool === 'string' ? step.tool : null,
+    })),
+    instructions: version && 'template_md' in version ? String(version.template_md ?? '') : '',
+    guardrails: [],
+    owner: { id: raw.owner_id, name: '' },
+    scope_label: raw.scope,
+    domain_text: raw.category,
+    used_by_text: `${raw.run_count_30d} lượt/30 ngày`,
+    quality_text: version?.status === 'published' ? 'Đã xuất bản' : 'Chưa kiểm định',
+    test_count: 0,
+    version_count: raw.versions.length,
+    quick_test: { params: {}, lines: [] },
+  } as SkillDefinition;
+};
 
 /** The trial read is not an A2 resource; use the canonical skill state when it is absent. */
 export const getLatestTrial = async (id: string): Promise<SkillTrial | null> => {
-  try {
-    return await v1Get<SkillTrial | null>(`/skills/${pathId(id)}/trials/latest`);
-  } catch (error) {
-    if (!notProposal(error)) throw error;
-    const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
-    const version = raw.versions.find((candidate) => candidate.status === 'testing');
-    return version
-      ? {
-          version: version.version,
-          duration_text: '',
-          steps: [],
-          bars: [],
-          conclusion: 'Đang chờ kết quả kiểm định.',
-        }
-      : null;
-  }
+  const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+  const version = raw.versions.find((candidate) => candidate.status === 'testing');
+  return version
+    ? {
+        version: version.version,
+        duration_text: '',
+        steps: [],
+        bars: [],
+        conclusion: 'Đang chờ kết quả kiểm định.',
+      }
+    : null;
 };
 
 /** PROPOSAL: PUT /v1/skills/{id}/definition — saves the draft version in place. */
@@ -134,24 +127,19 @@ export const saveSkillDefinition = async (
   id: string,
   body: { instructions: string; steps: SkillStepSpec[] },
 ) => {
-  try {
-    return await v1Send<SkillDefinition>('PUT', `/skills/${pathId(id)}/definition`, body);
-  } catch (e) {
-    if (!notProposal(e)) throw e;
-    const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
-    const draft = raw.versions.find((version) => version.status === 'draft');
-    const payload = {
-      steps: body.steps.map((step) => ({ seq: step.seq, text: step.text, tool: step.tool })),
-      template_md: body.instructions,
-    };
-    if (draft) {
-      return v1Send<SkillDefinition>('PATCH', `/skill-versions/${pathId(draft.id)}`, payload);
-    }
-    return v1Send<SkillDefinition>('POST', `/skills/${pathId(id)}/versions`, {
-      params_schema: { type: 'object', properties: {} },
-      ...payload,
-    });
+  const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+  const draft = raw.versions.find((version) => version.status === 'draft');
+  const payload = {
+    steps: body.steps.map((step) => ({ seq: step.seq, text: step.text, tool: step.tool })),
+    template_md: body.instructions,
+  };
+  if (draft) {
+    return v1Send<SkillDefinition>('PATCH', `/skill-versions/${pathId(draft.id)}`, payload);
   }
+  return v1Send<SkillDefinition>('POST', `/skills/${pathId(id)}/versions`, {
+    params_schema: { type: 'object', properties: {} },
+    ...payload,
+  });
 };
 
 /** PROPOSAL: POST /v1/skills/{id}:try {params} — runs the working version once. */
@@ -206,28 +194,23 @@ export interface SessionSkillDraft {
 }
 
 export const getSessionSkillDraft = async (sessionId: string): Promise<SessionSkillDraft> => {
-  try {
-    return await v1Get<SessionSkillDraft>(`/workspaces/${pathId(sessionId)}/skill-draft`);
-  } catch (error) {
-    if (!notProposal(error)) throw error;
-    const workspace = await v1Get<Schemas['WorkspaceDetail']>(`/workspaces/${pathId(sessionId)}`);
-    const tiles = workspace.tiles ?? [];
-    return {
-      session_id: workspace.id,
-      session_title: workspace.title,
-      cells: tiles.map((tile, index) => ({
-        seq: index + 1,
-        title: tile.title ?? tile.kind,
-        param_text: null,
-        note: null,
-        kept: true,
-      })),
-      name: workspace.title,
-      description: workspace.description ?? '',
-      params: [],
-      test_case_text: tiles.at(-1)?.title ?? '',
-    };
-  }
+  const workspace = await v1Get<Schemas['WorkspaceDetail']>(`/workspaces/${pathId(sessionId)}`);
+  const tiles = workspace.tiles ?? [];
+  return {
+    session_id: workspace.id,
+    session_title: workspace.title,
+    cells: tiles.map((tile, index) => ({
+      seq: index + 1,
+      title: tile.title ?? tile.kind,
+      param_text: null,
+      note: null,
+      kept: true,
+    })),
+    name: workspace.title,
+    description: workspace.description ?? '',
+    params: [],
+    test_case_text: tiles.at(-1)?.title ?? '',
+  };
 };
 
 /** PROPOSAL: POST /v1/skills:from-session — creates the skill as a draft (v1) with its first case. */
@@ -237,42 +220,39 @@ export const createSkillFromSession = async (body: {
   name: string;
   description: string;
 }): Promise<{ skill_id: string; version: number }> =>
-  v1Send<{ skill_id: string; version: number }>('POST', '/skills:from-session', body).catch(
-    async (error) => {
-      if (!notProposal(error)) throw error;
-      const workspace = await v1Get<Schemas['WorkspaceDetail']>(
-        `/workspaces/${pathId(body.session_id)}`,
-      );
-      const skill = await v1Send<Schemas['SkillView']>('POST', '/skills', {
-        code:
-          body.name
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '_')
-            .replace(/^_|_$/g, '') || 'session_skill',
-        name: body.name,
-        description: body.description,
-        category: 'custom',
-        scope: 'personal',
-        origin: 'from_session',
-        origin_ref: body.session_id,
-      });
-      const selected = new Set(body.kept_cells);
-      const steps = (workspace.tiles ?? [])
-        .filter((_, index) => selected.size === 0 || selected.has(index + 1))
-        .map((tile, index) => ({
-          seq: index + 1,
-          text: tile.title ?? tile.kind,
-          tool: tile.kind === 'sql' ? 'query.run' : null,
-        }));
-      if (steps.length === 0) steps.push({ seq: 1, text: body.name, tool: null });
-      const version = await v1Send<Schemas['VersionView']>(
-        'POST',
-        `/skills/${pathId(skill.id)}/versions`,
-        { params_schema: { type: 'object', properties: {} }, steps },
-      );
-      return { skill_id: skill.id, version: version.version };
-    },
-  );
+  (async () => {
+    const workspace = await v1Get<Schemas['WorkspaceDetail']>(
+      `/workspaces/${pathId(body.session_id)}`,
+    );
+    const skill = await v1Send<Schemas['SkillView']>('POST', '/skills', {
+      code:
+        body.name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_|_$/g, '') || 'session_skill',
+      name: body.name,
+      description: body.description,
+      category: 'custom',
+      scope: 'personal',
+      origin: 'from_session',
+      origin_ref: body.session_id,
+    });
+    const selected = new Set(body.kept_cells);
+    const steps = (workspace.tiles ?? [])
+      .filter((_, index) => selected.size === 0 || selected.has(index + 1))
+      .map((tile, index) => ({
+        seq: index + 1,
+        text: tile.title ?? tile.kind,
+        tool: tile.kind === 'sql' ? 'query.run' : null,
+      }));
+    if (steps.length === 0) steps.push({ seq: 1, text: body.name, tool: null });
+    const version = await v1Send<Schemas['VersionView']>(
+      'POST',
+      `/skills/${pathId(skill.id)}/versions`,
+      { params_schema: { type: 'object', properties: {} }, steps },
+    );
+    return { skill_id: skill.id, version: version.version };
+  })();
 
 /* ─── Biến phiên thành agent (UC-03-03, UC-13-01) ─────────────────────── */
 
@@ -292,22 +272,17 @@ export interface SessionAgentDraft {
 }
 
 export const getSessionAgentDraft = async (sessionId: string): Promise<SessionAgentDraft> => {
-  try {
-    return await v1Get<SessionAgentDraft>(`/workspaces/${pathId(sessionId)}/agent-draft`);
-  } catch (error) {
-    if (!notProposal(error)) throw error;
-    const workspace = await v1Get<Schemas['WorkspaceDetail']>(`/workspaces/${pathId(sessionId)}`);
-    return {
-      session_id: workspace.id,
-      session_title: workspace.title,
-      cells: (workspace.tiles ?? []).map((tile, index) => ({
-        seq: index + 1,
-        label: tile.title ?? tile.kind,
-        kept: true,
-      })),
-      params: [],
-    };
-  }
+  const workspace = await v1Get<Schemas['WorkspaceDetail']>(`/workspaces/${pathId(sessionId)}`);
+  return {
+    session_id: workspace.id,
+    session_title: workspace.title,
+    cells: (workspace.tiles ?? []).map((tile, index) => ({
+      seq: index + 1,
+      label: tile.title ?? tile.kind,
+      kept: true,
+    })),
+    params: [],
+  };
 };
 
 /* ─── Kiểm định kỹ năng (UC-03-04) ────────────────────────────────────── */
@@ -343,23 +318,18 @@ export interface SkillTestRun {
 }
 
 export const getLatestTestRun = async (id: string): Promise<SkillTestRun> => {
-  try {
-    return await v1Get<SkillTestRun>(`/skills/${pathId(id)}/test-runs/latest`);
-  } catch (error) {
-    if (!notProposal(error)) throw error;
-    const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
-    const version = raw.versions.find((candidate) => candidate.eval_run_id) ?? raw.versions[0];
-    if (!version) throw error;
-    return {
-      skill_id: raw.id,
-      skill_name: raw.name,
-      version: version.version,
-      status: version.status as SkillAuthoringStatus,
-      ran_at: version.created_at,
-      cases: [],
-      failures: [],
-    };
-  }
+  const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+  const version = raw.versions.find((candidate) => candidate.eval_run_id) ?? raw.versions[0];
+  if (!version) throw new V1Error(404, 'not_found', 'Kỹ năng chưa có phiên bản.');
+  return {
+    skill_id: raw.id,
+    skill_name: raw.name,
+    version: version.version,
+    status: version.status as SkillAuthoringStatus,
+    ran_at: version.created_at,
+    cases: [],
+    failures: [],
+  };
 };
 
 /** PROPOSAL: POST /v1/skills/{id}:test — reruns every case on locked data. */
@@ -392,14 +362,10 @@ export const addSkillTestCase = async (
   id: string,
   body: { name: string; period_text: string; expected: string },
 ) => {
-  try {
-    return await v1Send<SkillTestRun>('POST', `/skills/${pathId(id)}/test-cases`, body);
-  } catch (error) {
-    if (!notProposal(error)) throw error;
-    // A2 keeps the version/eval workflow; until a dedicated case table exists, re-run the
-    // canonical locked-data test so the screen never falls back to a mock-only result.
-    return runSkillTests(id);
-  }
+  void body;
+  // A2 keeps the version/eval workflow; rerunning the locked-data test is the canonical
+  // operation until a dedicated case resource is added to the contract.
+  return runSkillTests(id);
 };
 
 /** PROPOSAL: POST /v1/skills/{id}:apply-fix {case_id} — applies the proposed fix and reruns. */
@@ -530,11 +496,6 @@ const notProposal = (e: unknown) => e instanceof V1Error && e.status === 404;
  * first value, and the result is shown generically.
  */
 export const getSkillRunForm = async (id: string): Promise<SkillRunForm> => {
-  try {
-    return await v1Get<SkillRunForm>(`/skills/${pathId(id)}/run-form`);
-  } catch (e) {
-    if (!notProposal(e)) throw e;
-  }
   const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
   const version = raw.published_version ?? null;
   const schema = (version?.params_schema ?? {}) as {

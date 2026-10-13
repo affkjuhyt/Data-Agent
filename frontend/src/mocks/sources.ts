@@ -277,6 +277,10 @@ function tablesFixture(): Record<string, SourceTable[]> {
       t('tbl-collateral', 'COLLATERAL', 'Tài sản bảo đảm', 402_115, 18),
     ],
     'src-gl': [t('tbl-gl-balances', 'GL_BALANCES', 'Số dư sổ cái theo ngày', 412_000, 12)],
+    'src-card': [
+      t('tbl-card-transactions', 'card_transactions', 'Giao dịch thẻ', 180_000, 18),
+      t('tbl-card-statements', 'card_statements', 'Sao kê thẻ', 2_000_000, 22),
+    ],
   };
 }
 
@@ -987,7 +991,8 @@ const driftWire = (value: SourceDrift) => ({
   id: value.id,
   source_id: value.source_id,
   created_at: '2026-10-13T08:00:00+07:00',
-  resolution: value.status === 'accepted' ? 'approved_new' : value.status === 'rejected' ? 'reverted' : null,
+  resolution:
+    value.status === 'accepted' ? 'approved_new' : value.status === 'rejected' ? 'reverted' : null,
   action: value.job_paused ? 'quarantine' : 'none',
   signals: { table: value.table_name, changes: value.changes },
   display: value,
@@ -1046,7 +1051,7 @@ function jobCandidatesFixture(): JobCandidate[] {
   return [
     {
       dataset_id: 'tbl-card-transactions',
-      source_id: null,
+      source_id: 'src-card',
       source_object: 'dbo.card_transactions',
       table_name: 'card_transactions',
       source_name: 'Thẻ tín dụng',
@@ -1070,7 +1075,7 @@ function jobCandidatesFixture(): JobCandidate[] {
     },
     {
       dataset_id: 'tbl-card-statements',
-      source_id: null,
+      source_id: 'src-card',
       source_object: 'dbo.card_statements',
       table_name: 'card_statements',
       source_name: 'Thẻ tín dụng',
@@ -1551,6 +1556,20 @@ export function createSourcesHandlers() {
       const found = findTable(String(params.id));
       if (!found) return problem(404, 'not_found', 'Không tìm thấy bảng.');
       const profile = profileOf(found.table, found.source);
+      const candidateColumns =
+        found.table.id === 'tbl-card-transactions'
+          ? [
+              { name: 'updated_at', data_type: 'TIMESTAMP', normalized_type: 'timestamp' },
+              { name: 'txn_time', data_type: 'TIMESTAMP', normalized_type: 'timestamp' },
+              { name: 'txn_id', data_type: 'VARCHAR2(16)', normalized_type: 'text' },
+            ]
+          : found.table.id === 'tbl-card-statements'
+            ? []
+            : profile.columns.map((column) => ({
+                name: column.name,
+                data_type: column.data_type,
+                normalized_type: 'string',
+              }));
       return HttpResponse.json({
         id: found.table.id,
         source_id: found.source.id,
@@ -1576,26 +1595,26 @@ export function createSourcesHandlers() {
         quality_state: 'unknown',
         created_at: at(8, 0),
         updated_at: at(8, 0),
-        columns: profile.columns.map((column, ordinal) => ({
+        columns: candidateColumns.map((column, ordinal) => ({
           id: `${found.table.id}-column-${ordinal}`,
           dataset_version: 1,
           name: column.name,
           ordinal,
           data_type: column.data_type,
-          normalized_type: 'string',
+          normalized_type: column.normalized_type,
           is_nullable: true,
           is_key: false,
           display_name: null,
-          description: column.note,
+          description: null,
           description_status: 'none',
           unit: null,
-          pii_label: column.histogram_note === 'che' ? 'other' : null,
+          pii_label: column.name === 'card_no' ? 'other' : null,
           pii_confirmed: false,
           profile: {
             scan_run_id: 'scan-1',
             sample_rows: found.table.row_count ?? 0,
-            null_ratio: column.null_ratio,
-            distinct_est: typeof column.distinct === 'number' ? column.distinct : null,
+            null_ratio: null,
+            distinct_est: null,
             min_value: null,
             max_value: null,
             top_values: null,
@@ -1672,7 +1691,18 @@ export function createSourcesHandlers() {
           name: job.source_name,
           mode:
             job.method === 'cdc' ? 'cdc' : job.method === 'incremental' ? 'incremental' : 'full',
-          source_object: job.table_name,
+          source_object:
+            job.id === 'job-ld-loans'
+              ? 'dbo.LD_LOANS'
+              : job.id === 'job-gl-balances'
+                ? 'dbo.GL_BALANCES'
+                : job.table_name,
+          source_id:
+            job.id === 'job-ld-loans' ? 'src-core' : job.id === 'job-gl-balances' ? 'src-gl' : null,
+          dlq_pending: errorGroups
+            .filter((group) => group.job_id === job.id)
+            .reduce((total, group) => total + Math.max(group.count, 1), 0),
+          dlq_retention_days: 30,
           status: job.status === 'error' ? 'failed' : job.status,
           paused_reason: job.status_reason,
           lag_seconds: job.lag_seconds,
@@ -1688,6 +1718,58 @@ export function createSourcesHandlers() {
         })),
       ),
     ),
+    http.get('*/v1/jobs/:id/dlq', ({ params }) => {
+      const records = errorGroups
+        .filter((group) => group.job_id === params.id)
+        .flatMap((group) =>
+          Array.from({ length: Math.max(group.count, 1) }, (_, index) => ({
+            id: `${group.id}-${index + 1}`,
+            job_id: group.job_id,
+            error_kind: group.id,
+            error: group.cause,
+            payload_ref: group.sample,
+            display_count: group.count,
+            suggestion: group.suggestion,
+            blocked_by_drift_id: group.blocked_by_drift_id,
+            target_table: group.target_table,
+            impact_text: group.impact_text,
+            created_at: new Date(new Date(group.batch_at).getTime() + index).toISOString(),
+            status: 'pending',
+          })),
+        );
+      return page(records);
+    }),
+    http.post('*/v1/dlq/:id\\:replay', ({ params }) => {
+      const recordId = String(params.id);
+      const group = errorGroups.find((candidate) => recordId.startsWith(`${candidate.id}-`));
+      if (!group) return problem(404, 'not_found', 'Không tìm thấy bản ghi lỗi.');
+      if (group.blocked_by_drift_id)
+        return problem(
+          409,
+          'blocked_by_schema_drift',
+          `“${group.cause}” chỉ nạp lại được sau khi thay đổi cấu trúc được chấp nhận.`,
+        );
+      errorGroups = errorGroups.map((candidate) =>
+        candidate.id === group.id
+          ? { ...candidate, count: Math.max(0, candidate.count - 1) }
+          : candidate,
+      );
+      return HttpResponse.json({ replayed: 1 });
+    }),
+    http.post('*/v1/dlq/:id\\:discard', async ({ params, request }) => {
+      const recordId = String(params.id);
+      const group = errorGroups.find((candidate) => recordId.startsWith(`${candidate.id}-`));
+      if (!group) return problem(404, 'not_found', 'Không tìm thấy bản ghi lỗi.');
+      const body = (await request.json()) as { reason?: string };
+      if (!body.reason?.trim())
+        return problem(422, 'validation_failed', 'Cần lý do để bỏ bản ghi.');
+      errorGroups = errorGroups.map((candidate) =>
+        candidate.id === group.id
+          ? { ...candidate, count: Math.max(0, candidate.count - 1) }
+          : candidate,
+      );
+      return HttpResponse.json({ discarded: 1 });
+    }),
     http.post('*/v1/jobs/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
       const job = jobs.find((j) => j.id === id);
@@ -1864,6 +1946,32 @@ export function createSourcesHandlers() {
     }),
 
     http.get('*/v1/ingestion-job-candidates', () => page(candidates)),
+    http.post('*/v1/sources/:id/jobs', async ({ params, request }) => {
+      if (params.id !== 'src-card') return problem(404, 'not_found', 'Không tìm thấy nguồn.');
+      const body = (await request.json()) as {
+        mode?: string;
+        cursor_column?: string | null;
+        schedule_cron?: string;
+        source_object?: string;
+      };
+      if (body.mode === 'incremental' && !body.cursor_column)
+        return problem(422, 'validation_failed', 'Nạp tăng dần cần một cột con trỏ.');
+      if (new URL(request.url).searchParams.get('dry_run') === 'true')
+        return HttpResponse.json({
+          sample: Array.from({ length: 1000 }, () => ({})),
+          errors: [{}, {}, {}],
+          note: 'đạt',
+        });
+      return HttpResponse.json(
+        {
+          id: `job-new-${jobs.length + 1}`,
+          source_id: 'src-card',
+          source_object: body.source_object ?? 'dbo.card_transactions',
+          status: 'queued',
+        },
+        { status: 201 },
+      );
+    }),
     http.post('*/v1/ingestion-jobs\\:dry-run', async ({ request }) => {
       const body = (await request.json()) as NewJob;
       const candidate = candidates.find((c) => c.dataset_id === body.dataset_id);

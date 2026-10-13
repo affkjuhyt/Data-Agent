@@ -14,10 +14,16 @@ const notFound = () =>
     { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
   );
 
+const unexpectedProposal = () =>
+  HttpResponse.json(
+    { type: 'about:blank', title: 'unexpected_proposal', status: 500 },
+    { status: 500, headers: { 'Content-Type': 'application/problem+json' } },
+  );
+
 let reads = 0;
 let runBody: unknown;
 const server = setupServer(
-  http.get('*/v1/skills/:id/run-form', notFound),
+  http.get('*/v1/skills/:id/run-form', unexpectedProposal),
   http.get('*/v1/skills/:id/runs', notFound),
   http.get('*/v1/skills/:id', () =>
     HttpResponse.json({

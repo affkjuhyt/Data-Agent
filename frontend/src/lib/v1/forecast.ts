@@ -82,12 +82,9 @@ const timeVN = (iso: string) =>
     timeZone: 'Asia/Ho_Chi_Minh',
   });
 
-// Forecast jobs and issued forecasts share the screen model, but are separate resources in the
-// deployed API. Keep the job endpoint as a compatibility fallback for older gateways.
-const getDetail = (id: string) =>
-  v1Get<DetailWire>(`/forecasts/${pathId(id)}`).catch(() =>
-    v1Get<DetailWire>(`/forecast-jobs/${pathId(id)}`),
-  );
+// Forecast jobs and issued forecasts share the screen model; the canonical detail resource
+// serves both states.
+const getDetail = (id: string) => v1Get<DetailWire>(`/forecasts/${pathId(id)}`);
 
 const getVersion = (id: string) => v1Get<VersionView>(`/forecast-model-versions/${pathId(id)}`);
 
@@ -1216,16 +1213,7 @@ function readFuel(
  * not name their latest run, so it is read from the ledger (the newest line of that product).
  */
 export async function listFuelPriceForecasts(): Promise<Page<{ id: string; label: string }>> {
-  const formulas = await v1Get<Page<FormulaModelWire>>('/formula-models', { page_size: 20 }).catch(
-    () => null,
-  );
-  if (!formulas)
-    return v1Get<Page<FuelPriceForecast>>('/fuel-price-forecasts', { page_size: 20 }).then(
-      (page) => ({
-        items: page.items.map((item) => ({ id: item.id, label: item.product_label })),
-        next_page_token: page.next_page_token,
-      }),
-    );
+  const formulas = await v1Get<Page<FormulaModelWire>>('/formula-models', { page_size: 20 });
   if (formulas.items.length === 0) return { items: [], next_page_token: '' };
   const products = new Set(formulas.items.map((f) => f.product_code));
   const ledger = await v1Get<Page<Schemas['LedgerEntryView']>>('/forecast-ledger', {
@@ -1248,10 +1236,6 @@ export async function listFuelPriceForecasts(): Promise<Page<{ id: string; label
  * model version and the parameters in force at the period (BR-182).
  */
 export async function getFuelPriceForecast(id: string): Promise<FuelPriceForecast> {
-  const legacy = await v1Get<FuelPriceForecast>(`/fuel-price-forecasts/${pathId(id)}`).catch(
-    () => null,
-  );
-  if (legacy) return legacy;
   const [jobId, product] = splitFuelId(id);
   const [job, distribution] = await Promise.all([
     getDetail(jobId),
@@ -1433,10 +1417,8 @@ export const listForecastSeries = async (): Promise<Page<{ id: string; label: st
   if (series.length)
     return { items: series.map(({ id, label }) => ({ id, label })), next_page_token: '' };
   const formulas = await v1Get<Page<FormulaModelWire>>('/formula-models', { page_size: 20 }).catch(
-    () => null,
+    () => ({ items: [], next_page_token: '' }),
   );
-  if (!formulas)
-    return v1Get<Page<{ id: string; label: string }>>('/forecast-series', { page_size: 500 });
   return {
     items: formulas.items.map((f) => ({
       id: ledgerSeriesId(f.model_id, f.product_code),
@@ -1542,13 +1524,7 @@ async function servedLedger(seriesId: string, periods: number): Promise<Forecast
 
 /** The newest `periods` rows of the ledger; the calibration always covers the model's fixed N. */
 export const getForecastLedger = async (seriesId: string, periods?: number) => {
-  try {
-    return await servedLedger(seriesId, periods ?? 20);
-  } catch {
-    return v1Get<ForecastLedger>(`/forecast-series/${pathId(seriesId)}/ledger`, {
-      periods: periods ?? 20,
-    });
-  }
+  return servedLedger(seriesId, periods ?? 20);
 };
 
 /* Theo dõi lịch: the pre- and post-period bulletins of a series (UC-08-08) */

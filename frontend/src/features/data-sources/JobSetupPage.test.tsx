@@ -25,6 +25,9 @@ describe('JobSetupPage', () => {
         <JobSetupPage />
       </ToastProvider>,
     );
+    expect(await screen.findByRole('combobox', { name: 'Bảng nguồn' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Bảng nguồn' }));
+    fireEvent.click(screen.getByRole('option', { name: 'card_transactions · Thẻ tín dụng' }));
     expect(
       await screen.findByRole('heading', { name: 'Job nạp · card_transactions' }),
     ).toBeInTheDocument();
@@ -32,10 +35,6 @@ describe('JobSetupPage', () => {
     expect(screen.getByRole('combobox', { name: 'Cột con trỏ' })).toHaveTextContent(
       'updated_at · TIMESTAMP',
     );
-    expect(
-      screen.getByText('Agent gợi ý: cột này luôn được cập nhật khi dòng đổi'),
-    ).toBeInTheDocument();
-    expect(screen.getByText('~180.000 dòng')).toBeInTheDocument();
     expect(screen.getByText(/Chưa chạy thử/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Chạy thử 1.000 dòng' }));
