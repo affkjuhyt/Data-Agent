@@ -15,6 +15,11 @@ What a tile's spec holds decides how it runs:
 - `text`, `skill_run`, `agent_result` have nothing to query here (a skill run is the skill
   worker's) and are left as they are.
 
+A snapshot is the tile's latest for every member of the workspace, while its queries ran with
+one person's rights, so it holds no data: the runs, and a summary of shape only (columns, row
+count, figure count). The values are read through GET /v1/query-runs/{id}/rows, which serves them
+to whoever ran the query and no one else.
+
 A tile whose dependency failed is not run: its snapshot is `failed` and says why (UC-02-02 step
 2). A knowledge time before today needs the history route, so such a refresh fails each tile
 saying so instead of running live. A redelivered event writes one more snapshot, which becomes
@@ -123,7 +128,8 @@ async def _question(
     if event != "answer":
         return Snapshot("failed", error=str(data.get("message")))
     runs = sorted({uuid.UUID(f["query_run_id"]) for f in data["figures"]}, key=str)
-    return Snapshot("ok", runs, summary=data)
+    # No text or value: the snapshot is the tile's for every member, the figures are the asker's.
+    return Snapshot("ok", runs, summary={"figure_count": len(data["figures"])})
 
 
 async def run_tiles(

@@ -103,7 +103,8 @@ async def test_uc_02_02_a_refresh_runs_each_tile_in_order_and_skips_after_a_fail
     assert (status, error, runs) == ("ok", None, 1) and summary["row_count"] == 3
     assert _latest(bank, chart)[:3] == ("ok", None, 1)  # type: ignore[index]
     status, _, runs, summary = _latest(bank, question)  # type: ignore[misc]
-    assert status == "ok" and runs == 1 and "Miền Bắc" in summary["text"]
+    # The snapshot is every member's: it holds the run, not the answer's text or values.
+    assert status == "ok" and runs == 1 and summary == {"figure_count": 2}
     status, _, _, summary = _latest(bank, table)  # type: ignore[misc]
     assert status == "ok" and summary["row_count"] == 2 and summary["truncated"]
     assert _latest(bank, note) is None
