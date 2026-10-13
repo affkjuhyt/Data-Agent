@@ -48,11 +48,14 @@ type:  ## mypy strict on libs + services (same set as CI python-type)
 
 # One suite per service, each run in that service's own image: no single image
 # can import every service (their OTel/boto3 pins conflict). suite:image pairs;
-# tests/unit/<suite> and tests/integration/<suite> are the directories.
+# tests/unit/<suite> and tests/integration/<suite> are the directories. `repo` (deploy/,
+# k8s, Ansible, model/, cross-service policy) belongs to no service and runs on the local
+# dev-tools image: an image naming a `/` is used as given, not looked up in the registry.
 IMAGE_REGISTRY ?= localhost:5001
 UNIT_SUITES ?= kb_backend:kb-backend platform_workers:platform-workers \
                sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker \
-               model_service:model_service contracts:kb-backend api:api worker_agent:worker-agent
+               model_service:model_service contracts:kb-backend api:api worker_agent:worker-agent \
+               repo:$(DEV_TOOLS_IMAGE)
 INTEGRATION_SUITES ?= sandbox_executor:sandbox_executor \
                       contracts:kb-backend api:api migrate:migrate worker_agent:worker-agent
 # The integration sandbox tests start real sandbox-runner containers; the tag
@@ -72,16 +75,17 @@ RUN_SUITES = UNIT_SUITES="$(UNIT_SUITES)" INTEGRATION_SUITES="$(INTEGRATION_SUIT
              IMAGE_REGISTRY="$(IMAGE_REGISTRY)" SANDBOX_RUNNER_IMAGE="$(SANDBOX_RUNNER_IMAGE)" \
              PYTEST_ARGS="$(PYTEST_ARGS)" python3 tests/run_suites.py --jobs $(TEST_JOBS)
 
-test-unit:  ## pytest unit, one suite per service in that service's image, in parallel
+# dev-tools first: the repo suite's base image. A cache hit after the first build.
+test-unit: dev-tools  ## pytest unit, one suite per service in that service's image, in parallel
 	@$(RUN_SUITES) unit
 
 test-integration:  ## pytest integration (testcontainers), one suite per service image, in parallel
 	@$(RUN_SUITES) integration
 
-test:  ## unit + integration suites, all at once (same suites as CI python-test / python-integration)
+test: dev-tools  ## unit + integration suites, all at once (same suites as CI python-test / python-integration)
 	@$(RUN_SUITES) all
 
-test-changed:  ## only the suites the changes since CHANGED_BASE (default main) can affect
+test-changed: dev-tools  ## only the suites the changes since CHANGED_BASE (default main) can affect
 	@$(RUN_SUITES) changed --base $(CHANGED_BASE)
 
 # Tab 7 F3: the frontend's types come from the api's own OpenAPI (ADR-48), never written by hand.

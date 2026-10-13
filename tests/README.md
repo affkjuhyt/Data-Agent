@@ -13,13 +13,16 @@ tests/
 ├── unit/                    # pure Python, no Docker, no network — fast
 │   ├── _loader.py           # load a service module by path, with stubs that do not leak
 │   ├── workflow_runtime/    # one suite per service, run in that service's image:
-│   ├── kb_backend/          #   a test goes in the suite of the code it exercises;
-│   ├── platform_workers/    #   pure-library, manifest, deploy and grant tests go in
-│   ├── sandbox_executor/    #   workflow_runtime. There is no single image that can
-│   ├── auth_api/            #   import every service (their pins conflict: OTel,
-│   ├── kb_worker/         #   boto3), so the suites are never run together.
+│   ├── kb_backend/          #   a test goes in the suite of the code it exercises.
+│   ├── platform_workers/    #   There is no single image that can import every
+│   ├── sandbox_executor/    #   service (their pins conflict: OTel, boto3), so the
+│   ├── auth_api/            #   suites are never run together.
+│   ├── kb_worker/
 │   ├── model_service/
-│   └── contracts/           # libs/contracts (NOP-150), run in the kb-backend image (PyYAML, pinned pydantic)
+│   ├── contracts/           # libs/contracts (NOP-150), run in the kb-backend image (PyYAML, pinned pydantic)
+│   └── repo/                # repo-wide: k8s manifests, db-init, Ansible deploy plan, migrate image,
+│                            #   cross-service auth/tenant policy, model/bench and model/eval.
+│                            #   Runs in the local dev-tools image (tests/dev-tools.Dockerfile)
 ├── fixtures/contracts/      # invalid DTO cases + compat/ pairs for the contract gate (NOP-152);
 │                            #   mock/ = the Contract v1 mock's answers (NOP-151)
 ├── contract_mock/           # Contract v1 mock API for FE/Data/Agent (NOP-151, `make mock-api`; README.md)
@@ -81,12 +84,18 @@ make test TEST_JOBS=1                            # unit + integration, one suite
 `localhost:5000/dataagent/<image>:latest` with the test tooling baked in by
 `tests/test-image.Dockerfile`. That image is rebuilt only when the service image or
 a requirements file changes, so a run no longer pays a `pip install` per suite.
+The `repo` suite belongs to no service: its base is the local `dataagent/dev-tools:local`
+(`make dev-tools`, which the test targets run first), named in `UNIT_SUITES` as
+`repo:dataagent/dev-tools:local` — an image with a `/` is used as given, not looked up
+in the registry.
 The suites run at the same time and each prints its output whole when it ends,
 followed by a summary with the time each took.
 
 `make test-changed` maps the files changed since `CHANGED_BASE` (default `main`;
 committed, staged, unstaged and untracked) to suites: a service's own suites plus
-every suite that imports it (`SERVICE_SUITES` in `run_suites.py`). Anything under
+every suite that imports it (`SERVICE_SUITES` in `run_suites.py`), plus `repo`, which
+reads every service's Dockerfile and sources; `deploy/`, `frontend/` and `model/` select
+`repo` too. Anything under
 `backend/libs`, `backend/alembic` or the shared test fixtures runs everything.
 Before a merge, run `make test` anyway.
 

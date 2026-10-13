@@ -25,7 +25,7 @@
 | Mã | Lỗi | Trạng thái 27/09 | Bằng chứng |
 | --- | --- | --- | --- |
 | NC-E1 | Docling chạy `do_ocr=False`: PDF scan vào hệ thống như tài liệu rỗng, không lỗi, không cảnh báo | **Đã sửa**: OCR Tesseract `vie+eng`, cấu hình cố định để cùng ảnh luôn ra cùng chữ. Chưa có benchmark độ chính xác token số (NC-ADR-T8) | `backend/libs/ingestion/docling_parser.py:55-71` |
-| NC-E2 | Scorer `_numbers()` xoá dấu phân cách, nên `128,4` và `1284` là cùng một số | **Đã sửa**: `grounding.py` dùng `libs.indicator.numeric` (đọc theo locale, giữ mọi cách đọc khi mơ hồ, so ở độ chính xác công bố) | `model/eval/scorers/grounding.py:36`, `tests/unit/workflow_runtime/test_eval_numeric.py` |
+| NC-E2 | Scorer `_numbers()` xoá dấu phân cách, nên `128,4` và `1284` là cùng một số | **Đã sửa**: `grounding.py` dùng `libs.indicator.numeric` (đọc theo locale, giữ mọi cách đọc khi mơ hồ, so ở độ chính xác công bố) | `model/eval/scorers/grounding.py:36`, `tests/unit/repo/test_eval_numeric.py` |
 | NC-E3 | `formatVN.ts` định dạng theo chuẩn Mỹ (`1,284,560`, `MM/dd/yyyy`) dù tên gợi ý ngược lại | **Còn mở** (P0-02). Quy ước đích ở [13](13-ui-principles.md) mục 2 | `frontend/src/lib/formatVN.ts:2` |
 
 ## 2. Kỹ thuật lõi số

@@ -31,9 +31,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Pass-through of the Makefile defaults so `python3 tests/run_suites.py …` works alone.
+# `repo` (deploy/, k8s, Ansible, model/, cross-service policy) belongs to no service, so it
+# runs on the local dev-tools image (`make dev-tools` builds it) instead of a registry image.
 DEFAULT_UNIT = (
     "kb_backend:kb-backend platform_workers:platform-workers "
-    "sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker model_service:model_service api:api worker_agent:worker-agent"
+    "sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker model_service:model_service api:api worker_agent:worker-agent "
+    "repo:dataagent/dev-tools:local"
 )
 DEFAULT_INTEGRATION = (
     "sandbox_executor:sandbox_executor api:api migrate:migrate "
@@ -57,11 +60,16 @@ SERVICE_SUITES: dict[str, set[tuple[str, str]]] = {
     },
 }
 
-# Files outside the services that some unit suites read directly (manifests, the
-# frontend's package.json, model/ configs).
+# The repo suite (tests/unit/repo) reads every service's Dockerfile and scans their
+# sources for tenant scoping and authentication, so a change to any service can break it.
+REPO_SUITE = ("unit", "repo")
+
+# Files outside the services that some unit suites read directly (manifests, Ansible,
+# the frontend's Dockerfiles and dev proxy, model/ configs).
 OTHER_PREFIXES: dict[str, set[tuple[str, str]]] = {
-    "deploy/": {("unit", "kb_backend")},
-    "model/": {("unit", "model_service")},
+    "deploy/": {REPO_SUITE, ("unit", "kb_backend")},
+    "frontend/": {REPO_SUITE},
+    "model/": {REPO_SUITE, ("unit", "model_service")},
 }
 
 # Per-suite pytest flags. sandbox_executor starts a real container per test, so it is
@@ -105,7 +113,7 @@ def suites_for_paths(paths: list[str], every: list[Suite]) -> list[Suite]:
         if path.startswith(("tests/unit/", "tests/integration/")) and len(parts) > 3:
             selected.add((parts[1], parts[2]))
         elif path.startswith("backend/services/") and parts[2] in SERVICE_SUITES:
-            selected |= SERVICE_SUITES[parts[2]]
+            selected |= SERVICE_SUITES[parts[2]] | {REPO_SUITE}
         elif any(path.startswith(prefix) for prefix in OTHER_PREFIXES):
             for prefix, suites in OTHER_PREFIXES.items():
                 if path.startswith(prefix):
@@ -133,12 +141,18 @@ def changed_paths(base: str) -> list[str]:
     return sorted(paths)
 
 
+def base_image(suite: Suite, registry: str) -> str:
+    """A bare name is a service image in the registry; a reference with a `/` (the repo
+    suite's local dataagent/dev-tools:local) is used as it is."""
+    return suite.image if "/" in suite.image else f"{registry}/dataagent/{suite.image}:latest"
+
+
 def build_test_image(suite: Suite, registry: str) -> str:
     tag = f"dataagent-test/{suite.name}:latest"
     subprocess.run(
         [
             "docker", "build", "-q",
-            "--build-arg", f"BASE={registry}/dataagent/{suite.image}:latest",
+            "--build-arg", f"BASE={base_image(suite, registry)}",
             "--build-arg", f"SUITE={suite.name}",
             "-f", "tests/test-image.Dockerfile", "-t", tag, ".",
         ],
@@ -221,7 +235,7 @@ def main() -> int:
         for future in as_completed(futures):
             suite, rc, seconds, log = future.result()
             timings.append((suite, rc, seconds))
-            print(f"== {suite.label} ({args.registry}/dataagent/{suite.image}) "
+            print(f"== {suite.label} ({base_image(suite, args.registry)}) "
                   f"{'ok' if rc == 0 else 'FAILED'} in {seconds:.0f}s", flush=True)
             print(log.read_text(), end="", flush=True)
             if rc != 0:
