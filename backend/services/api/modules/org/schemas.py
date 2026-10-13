@@ -68,3 +68,32 @@ class DataSpacePreferencePut(BaseModel):
 class DataSpacePreferenceView(BaseModel):
     open_last_used: bool
     data_space_id: uuid.UUID | None
+
+
+class OnboardingStep(BaseModel):
+    key: str
+    label: str
+    state: str
+
+
+class AgentTemplateChoice(BaseModel):
+    ref: str
+    title: str
+    description: str
+    badge: dict[str, bool | str]
+
+
+class OnboardingView(BaseModel):
+    state: str
+    steps: list[OnboardingStep]
+    context_text: str
+    templates: list[AgentTemplateChoice]
+
+
+class OnboardingAgentRequest(BaseModel):
+    template_ref: str
+
+
+class OnboardingAgentAccepted(BaseModel):
+    agent_id: uuid.UUID
+    run_id: uuid.UUID

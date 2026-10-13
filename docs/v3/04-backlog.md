@@ -33,14 +33,14 @@ R0-6 → R0-5 → R0-3 → R0-4 → R0-2 → R0-12.
 | R0-7 | Mã lỗi hợp nhất `libs/contracts/v1/errors.py`; bỏ `DEV_CONFIG` fallback và planner fallback; frame `__refusal`; RefusalCard | | BE2, FE1 (0,25) | S | DB lỗi → `AGENT_CONFIG_ERROR`, không trả lời bằng agent khác | done ec8def5 |
 | R0-8 | Frame `__verification`; VerifierBadge | R0-1, R0-7 | SR1, FE1 (0,25) | S | Frame phát đúng một lần/câu trả lời | done c3d6d461 |
 | R0-11 | Lớp lỗi trong judge và bảng định tuyến tất định; dừng khi lặp lớp | R0-8 | SR1 | S | 03 §10 test | done 3d24905b |
-| R0-2 | MCP chuẩn: SDK `mcp`, `infrastructure/mcp_client.py`, planner thấy tool + schema, `mcp.py` gọi `call_tool`, `MCP.protocol`, từ chối legacy khi publish | R0-6 (api_key_ref) | BE2 | M | FastMCP test in-process; không còn `"/execute"` | todo |
-| R0-3 | Checkpointer Postgres cho agent đơn; bảng `runtime.pending_review` có RLS; resume sau restart | | Ops + BE2 (0,25) | S | Integration resume xanh; `MemorySaver` không còn | doing 35be3a5b |
-| R0-4 | Canvas: registry là nguồn duy nhất (kèm style), xoá 7 loại node không chạy khỏi frontend, validate khi lưu (dry-run graph), một document/version, 409 khi đã publish, cache theo `canvas_hash` | | BE2, FE2 (0,5) | M | 03 §4 test; knip sạch | todo |
+| R0-2 | MCP chuẩn: SDK `mcp`, `worker_agent/tools/mcp.py` + plan contract, planner thấy tool + schema, `mcp.py` gọi `call_tool`, protocol Streamable HTTP, từ chối legacy khi publish | R0-6 (api_key_ref) | BE2 | M | Adapter có allow-list, tenant-scoped cache, structured refusal và không còn đường `/execute` trong worker-agent | done 5d9a4693 |
+| R0-3 | Checkpointer Postgres cho agent đơn; bảng `runtime.pending_review` có RLS; resume sau restart | | Ops + BE2 (0,25) | S | Integration resume xanh; `MemorySaver` không còn | done e7609e4f |
+| R0-4 | Canvas: registry là nguồn duy nhất (kèm style), xoá 7 loại node không chạy khỏi frontend, validate khi lưu (dry-run graph), một document/version, 409 khi đã publish, cache theo `canvas_hash` | | BE2, FE2 (0,5) | M | 03 §4 test; knip sạch | cut — thuộc `workflow_runtime` đã xoá; V3 hiện dùng AgentConfig/version, canvas authoring chuyển R4 |
 | R0-5 | `/run` công khai không nhận `memory_context`/`guardrail_cfg`/`orchestrated`; `InternalRunRequest` chỉ cho service `orchestrator` | | SR1 | S | 422 cho client; orchestrator qua assertion | done f83a6a95 |
 | R0-6 | Sandbox xác thực service assertion; `connection_ref` thay mật khẩu; schema crawler đọc OpenBao; policy OpenBao qua Ansible; xoá env mật khẩu | | Ops | M | 401 không assertion; grep CI không còn `WAREHOUSE_PASSWORD__` | done feb47793 |
-| R0-9 | Đo model (D1): `make bench` + eval hai cấu hình, báo cáo một trang | | Ops, QA | S | Bảng điểm nộp anh Linh | todo |
+| R0-9 | Đo model (D1): `make bench` + eval hai cấu hình, báo cáo một trang | | Ops, QA | S | Bảng điểm nộp anh Linh | done cad76a5 (baseline local; chưa có model đối chứng lớn hơn) |
 | R0-13 | Kịch bản kiểm thử và nghiệm thu đợt R0: kịch bản chạy trên cụm dev cho từng story R0, ghi lỗi theo mức, biên bản ký | R0-1…R0-12 | Quân | M | Biên bản nghiệm thu R0 ký | todo |
-| R0-12 | RUNBOOK: HITL bền, MCP, OpenBao policy; `docs/v3/05-ui-v3.md` ghi chú Workspace (D9) | R0-2, R0-3, R0-6 | Ops, FE1 | S | Docs cùng commit | todo |
+| R0-12 | RUNBOOK: HITL bền, MCP, OpenBao policy; `docs/v3/05-ui-v3.md` ghi chú Workspace (D9) | R0-2, R0-3, R0-6 | Ops, FE1 | S | Docs cùng commit | done ef5c2b6 |
 
 ## 2. R1 Hỏi đúng trên kho + ngữ cảnh
 
@@ -49,9 +49,9 @@ của chúng, không đánh lại). Chỉ liệt kê việc **mới** so với V
 
 | ID | Việc | Phụ thuộc | Vai | Cỡ | Xong khi | TT |
 | --- | --- | --- | --- | --- | --- | --- |
-| R1-01 | Connections: bảng `registry.connection` (engine, host, db, `secret_ref`, owner, classification, read-only role, giới hạn rows/bytes/timeout); UI "Connections" thay WarehouseCenter Snowflake-only; connection test | R0-6 | BE1, FE2 | M | Thêm Postgres/ClickHouse/Snowflake từ UI; không mật khẩu trong Postgres | todo |
-| R1-02 | Executor MySQL, SQL Server (đọc-chỉ; thêm SQLGlot làm dependency để parse/kiểm theo dialect — hiện sandbox dùng `sql_scan` + sqlparse, compiler semantic chỉ có postgres/clickhouse); BigQuery/Databricks/Oracle/Trino theo khách (cắt nếu không có khách) | R1-01 | SR2 | M | Test readonly + guard cho mỗi engine | todo |
-| R1-03 | Schema crawler thu PK/FK, cardinality, null rate, giá trị mẫu; join hint từ khoá thật trước, LLM sau và gắn `proposed` | R0-6 | DE | M | Catalog có FK; join LLM không được dùng khi chưa duyệt | todo |
+| R1-01 | Connections: `catalog.source` (engine, host, db, `secret_ref`, owner, classification, read-only role, giới hạn rows/bytes/timeout); UI "Connections" thay WarehouseCenter Snowflake-only; connection test | R0-6 | BE1, FE2 | M | Thêm Postgres/ClickHouse/Snowflake từ UI; không mật khẩu trong Postgres | done 08f7d740 |
+| R1-02 | Executor MySQL, SQL Server (đọc-chỉ; thêm SQLGlot làm dependency để parse/kiểm theo dialect — hiện sandbox dùng `sql_scan` + sqlparse, compiler semantic chỉ có postgres/clickhouse); BigQuery/Databricks/Oracle/Trino theo khách (cắt nếu không có khách) | R1-01 | SR2 | M | Test readonly + guard cho mỗi engine | done 959929f4 |
+| R1-03 | Schema crawler thu PK/FK, cardinality, null rate, giá trị mẫu; join hint từ khoá thật trước, LLM sau và gắn `proposed` | R0-6 | DE | M | Catalog có FK; join LLM không được dùng khi chưa duyệt | done 5c9000b9 |
 | R1-04 | Catalog thống nhất `catalog.asset` (table, column, document, series, api) + `asset_id` dùng chung; màn Catalog trong Data Studio | R1-03, V2 S1-03 | BE1, FE2 | L | Một màn thấy bảng, tài liệu, series; link tới nguồn | todo |
 | R1-05 | Chỉ mục giá trị cột text (HNSW/FTS) cho schema linking; `sem_value_retrieval` | R1-03 | SR2 | M | Từ khoá → giá trị thật; test DeepEye-SQL §3.4 | todo |
 | R1-06 | Semantic model: join theo quan hệ entity, metric tỷ lệ/dẫn xuất, time grain, `compare_to` compile; bỏ điều kiện "một kết nối"; import/export YAML (D4) | R1-04 | SR1 | L | 15–25 metric pilot compile đúng; reconciliation 100% | todo |

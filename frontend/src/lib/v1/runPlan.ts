@@ -27,10 +27,3 @@ export const updateRunPlan = async (runId: string, edit: PlanEdit) =>
     `/runs/${pathId(runId)}/plan`,
     edit,
   );
-
-/**
- * PROPOSAL: POST /v1/runs/{id}/plan:estimate — what the edited plan adds in time and cost, and
- * what it puts at risk downstream, before it is applied.
- */
-export const estimateRunPlan = async (runId: string, edit: PlanEdit) =>
-  v1Send<{ text: string }>('POST', `/runs/${pathId(runId)}/plan:estimate`, edit);

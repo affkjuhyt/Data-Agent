@@ -93,6 +93,25 @@ def other_headers(world: AgentWorld) -> dict[str, str]:
     return {"Authorization": f"Bearer kc-other-{world.suffix}", "X-Data-Space": str(world.space)}
 
 
+async def test_onboarding_is_server_backed_and_starts_a_trial(world: AgentWorld) -> None:
+    headers = owner_headers(world)
+    async with client(world) as api:
+        initial = await api.get("/v1/me/onboarding", headers=headers)
+        assert initial.status_code == 200
+        assert initial.json()["state"] == "pending"
+        assert len(initial.json()["templates"]) == 3
+
+        started = await api.post(
+            "/v1/me/onboarding:try-agent", headers=headers, json={"template_ref": "analysis"}
+        )
+        assert started.status_code == 202, started.text
+        assert started.json()["agent_id"] and started.json()["run_id"]
+
+        skipped = await api.post("/v1/me/onboarding:skip", headers=headers)
+        assert skipped.status_code == 200
+        assert skipped.json()["state"] == "skipped"
+
+
 def events(seed: Seed, aggregate_id: str) -> list[tuple[str, str, dict[str, Any]]]:
     with seed.conn.cursor() as cur:
         cur.execute(

@@ -82,10 +82,14 @@
   vars:
     images_only_list: "{{ images_only.split(',') | map('trim') | reject('equalto', '') | list }}"
 
+# Not the on-demand images: eval's hand-applied Job manifest names it, so it is
+# "missing" until someone builds it, and it was rebuilt on every run.
 - name: Add images that the registry does not serve yet
   ansible.builtin.set_fact:
     images: "{{ images + [item | combine({'because': ['registry missing']})] }}"
-  loop: "{{ image_catalog | selectattr('name', 'in', registry_missing.stdout_lines) | list }}"
+  loop: >-
+    {{ image_catalog | selectattr('name', 'in', registry_missing.stdout_lines)
+                     | rejectattr('name', 'in', images_on_demand) | list }}
   when: item.name not in (images | map(attribute='name') | list)
 
 - name: Narrow the build list to images_only

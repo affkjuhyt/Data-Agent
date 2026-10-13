@@ -129,7 +129,11 @@ class HitlRequest(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
-    data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    data_space_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        comment="Rỗng với yêu cầu toàn tổ chức (bản xuất nhật ký kiểm toán, quyền khẩn cấp); khi đó năng lực của người duyệt xét ở cấp tổ chức. Sửa 12/10/2026",
+    )
     kind: Mapped[str] = mapped_column(
         Text,
         comment="approve_proposal, conflict, clarification, checkpoint, budget, access, export, writeback, period_exception, retro_change, deploy, memory_share, schema_drift, report_publish, data_review, entity_match, forecast_assumption, forecast_model, legal_review, knowledge_finding",
@@ -155,6 +159,11 @@ class HitlRequest(Base):
     )
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     assignee_group: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assignee_capability: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Năng lực của người duyệt (steward, compliance, audit_read…): ai có năng lực này trong Data Space của yêu cầu, hoặc ở cấp tổ chức khi data_space_id rỗng, thấy và duyệt được. Thêm 12/10/2026",
+    )
     due_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(
         Text,
@@ -200,7 +209,10 @@ class HitlApprovalStep(Base):
         comment="FK hitl_request",
     )
     step: Mapped[int] = mapped_column(SmallInteger)
-    approver_role: Mapped[str] = mapped_column(Text, comment="Ví dụ AC03, AC06")
+    approver_role: Mapped[str] = mapped_column(
+        Text,
+        comment="Năng lực người duyệt bước này phải có, ví dụ steward, compliance; mỗi bước một người khác (BR-132)",
+    )
     approver_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     decision: Mapped[str | None] = mapped_column(Text, nullable=True, comment="approve, reject")
     note: Mapped[str | None] = mapped_column(Text, nullable=True)

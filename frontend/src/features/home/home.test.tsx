@@ -1,8 +1,9 @@
 /**
- * Trang chủ against the v1 mock: the metrics the viewer follows, their dashboards with the
- * agent's line, the guide link, and the mobile read (both layouts are in the DOM; CSS picks one).
+ * Trang chủ against the v1 mock: the guide link, and the mobile read with the newest digest
+ * (both layouts are in the DOM; CSS picks one). A2 cannot read back the followed metrics, so
+ * "Chỉ số của bạn" is hidden.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHandlers } from '../../mocks/handlers';
@@ -25,22 +26,11 @@ afterEach(() => navigate.mockReset());
 afterAll(() => server.close());
 
 describe('HomePage', () => {
-  it('shows the followed metrics and opens one in the catalog', async () => {
+  it('links the guide, and has no dashboard block (the design has no dashboards)', async () => {
     render(<HomePage />);
-    const metrics = await screen.findByRole('region', { name: 'Chỉ số của bạn' });
-    expect(within(metrics).getByText('+0,22 điểm so với T8')).toBeInTheDocument();
-    expect(within(metrics).getByText('DH Bắc Bộ đóng góp 74%')).toBeInTheDocument();
-    fireEvent.click(within(metrics).getByRole('button', { name: /Nợ xấu bán lẻ/ }));
-    expect(navigate).toHaveBeenCalledWith('data', 'METRIC_CATALOG', 'metric-npl-ratio');
-  });
-
-  it('lists the dashboards with the agent line, and links the guide', async () => {
-    render(<HomePage />);
-    const dashboards = await screen.findByRole('region', { name: 'Dashboard của bạn' });
-    const first = await within(dashboards).findByRole('button', { name: 'Rủi ro tín dụng · tuần' });
-    fireEvent.click(first);
-    expect(navigate).toHaveBeenCalledWith('analysis', 'DASHBOARD', expect.any(String));
-    expect(within(dashboards).getAllByText(/^AI: /).length).toBeGreaterThan(0);
+    await screen.findByText('Tóm tắt sáng nay');
+    expect(screen.queryByRole('region', { name: 'Chỉ số của bạn' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Dashboard của bạn' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Mới dùng\?/ }));
     expect(navigate).toHaveBeenCalledWith('home', 'HOW_IT_WORKS');
   });
@@ -48,6 +38,8 @@ describe('HomePage', () => {
   it('has the mobile read with the morning summary and the two link cards', async () => {
     render(<HomePage />);
     expect(await screen.findByText('Tóm tắt sáng nay')).toBeInTheDocument();
+    expect(screen.getByText(/Kỳ 09\/2026 chưa chốt được/)).toBeInTheDocument();
+    expect(screen.getByText('Bản tin lúc 06:00')).toBeInTheDocument();
     expect(screen.getByText('Chào Hải Yến')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^Agent đang chạy/ }));
     expect(navigate).toHaveBeenCalledWith('agents', 'RUNS');

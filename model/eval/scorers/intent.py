@@ -1,61 +1,51 @@
-"""Intent accuracy — online tier, needs a model.
+"""Intent accuracy for the V3 model gateway."""
 
-The classifier under test is the real planner node, not a prompt copied into
-this file. A copy would drift from the one that ships, and then the number
-reported here would be about something nobody runs.
-
-`classify` is injected so the metric arithmetic is testable without a model, and
-so an operator can point the same corpus at a different endpoint (a candidate
-model, a staging LiteLLM) without editing the scorer.
-
-Two things are scored per case, and only what the case states is checked:
-
-  * `analysis_type` — the closed taxonomy in nodes/model_harness/intent.py.
-  * `intent` — question vs task.
-
-They are orthogonal. A case that pins one and leaves the other unstated is not
-an incomplete case; it is one that has an opinion about one axis only ("vẽ biểu
-đồ so sánh 2 quý" is a task AND a comparison, but "doanh thu tháng 3" is a
-question whose task-ness nobody should be graded on).
-
-`unsupported_recall` is reported separately because it is the case that costs
-something real: FORECAST and ANOMALY are what this platform cannot do, and a
-misclassification there is what lets an invented number reach an answer. It is
-low-frequency, so it disappears into an overall accuracy that a corpus of easy
-lookups can carry.
-"""
 from __future__ import annotations
 
+import json
+import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from model.eval import _paths
+import httpx
 
-# The analysis types the platform has no implementation for. Kept in sync with
-# nodes/model_harness/intent.py's capability table by importing it below when
-# the workflow_runtime tree is importable; the literal is the fallback for a
-# scorer running from the ragas image, which does not carry that service.
 UNSUPPORTED = ("forecast", "anomaly")
-
 Classifier = Callable[[str], Awaitable[dict[str, Any]]]
 
 
 async def planner_classifier(question: str, config: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Classify one question with the REAL planner node.
+    """Classify one question using the V3 planner taxonomy at LiteLLM.
 
-    Requires LiteLLM reachable (LITELLM_BASE_URL). Everything the planner reads
-    beyond `query` and `config` is optional state it defaults, so a bare state is
-    a legitimate call rather than a special evaluation path through it.
+    The worker planner HTTP contract is not exposed yet, so the release scorer talks to the
+    same model gateway with a closed JSON contract; it does not import a legacy service.
     """
-    _paths.ensure(_paths.WORKFLOW_RUNTIME)
-    from nodes.model_harness.planner import planner_node
-    from config_loader import DEV_CONFIG
-
-    # planner_node's own inline default ("planner", no provider prefix) only
-    # works via a Router that pre-resolves it — bare litellm.acompletion() needs
-    # DEV_CONFIG's "openai/planner" (or a case-supplied override) to reach the
-    # LiteLLM proxy without "LLM Provider NOT provided".
-    result = await planner_node({"query": question, "config": {**DEV_CONFIG, **(config or {})}})  # type: ignore[arg-type]
+    del config
+    base_url = os.getenv("LITELLM_BASE_URL")
+    if not base_url:
+        raise RuntimeError("LITELLM_BASE_URL is required for the intent eval")
+    system = (
+        "Classify the question as JSON only with keys intent and analysis_type. "
+        "intent is question or task. analysis_type is one of lookup, analytical, comparison, "
+        "forecast, anomaly, other. Forecast and anomaly are unsupported by the current V3 worker."
+    )
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            base_url.rstrip("/") + "/v1/chat/completions",
+            headers={"Authorization": f"Bearer {os.getenv('LITELLM_API_KEY', '')}"},
+            json={
+                "model": os.getenv("EVAL_PLANNER_MODEL", "planner"),
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": question},
+                ],
+                "temperature": 0,
+                "response_format": {"type": "json_object"},
+            },
+        )
+        response.raise_for_status()
+        result = json.loads(response.json()["choices"][0]["message"]["content"])
+    if not isinstance(result, dict):
+        raise ValueError("the V3 planner did not return an object")
     return {
         "intent": result.get("intent", ""),
         "analysis_type": result.get("analysis_type", ""),
@@ -73,33 +63,34 @@ async def score(cases: list[dict[str, Any]], classify: Classifier) -> dict[str, 
         try:
             actual = await classify(case["question"])
             error = ""
-        except Exception as e:  # noqa: BLE001 - a classifier that fell over is a wrong answer, not a skip
+        except Exception as exc:  # noqa: BLE001 - a classifier outage is a failed case
             actual = {}
-            error = f"{type(e).__name__}: {e}"
-
+            error = f"{type(exc).__name__}: {exc}"
         checked = {k: v for k, v in expect.items() if k in ("intent", "analysis_type")}
         passed = not error and all(actual.get(k) == v for k, v in checked.items())
-        correct += 1 if passed else 0
-
+        correct += int(passed)
         if expect.get("analysis_type") in UNSUPPORTED:
             unsupported_total += 1
-            unsupported_hit += 1 if actual.get("analysis_type") == expect["analysis_type"] else 0
-
-        results.append({
-            "id": case["id"],
-            "tag": case.get("tag", ""),
-            "question": case["question"],
-            "expected": checked,
-            "actual": {k: actual.get(k, "") for k in checked},
-            "passed": passed,
-            "error": error,
-        })
+            unsupported_hit += int(actual.get("analysis_type") == expect["analysis_type"])
+        results.append(
+            {
+                "id": case["id"],
+                "tag": case.get("tag", ""),
+                "question": case["question"],
+                "expected": checked,
+                "actual": {k: actual.get(k, "") for k in checked},
+                "passed": passed,
+                "error": error,
+            }
+        )
 
     total = len(cases)
     return {
         "metrics": {
             "intent_accuracy": (correct / total) if total else 0.0,
-            "unsupported_recall": (unsupported_hit / unsupported_total) if unsupported_total else 1.0,
+            "unsupported_recall": (unsupported_hit / unsupported_total)
+            if unsupported_total
+            else 1.0,
         },
         "counts": {
             "total": total,

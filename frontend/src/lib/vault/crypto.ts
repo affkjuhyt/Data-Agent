@@ -82,18 +82,24 @@ interface KdfSpec {
   memLimit?: number;
 }
 
-/** "argon2id;t=3;m=268435456" or "prf-hkdf-sha256" — what VaultKeyWrap.kdf stores. */
-export function kdfString(spec: KdfSpec): string {
-  return spec.kind === 'argon2id'
-    ? `argon2id;t=${spec.opsLimit};m=${spec.memLimit}`
-    : 'prf-hkdf-sha256';
+/*
+ * What VaultKeyWrap.kdf stores: tab 3b's CHECK admits 'hkdf_sha256' (PRF, hmac-secret) and
+ * 'argon2id' (the paper code) and no parameters, so argon2id is always RECOVERY_KDF. Changing
+ * those parameters needs a new kdf value, or every paper code already printed stops opening.
+ */
+export function kdfString(spec: KdfSpec): 'hkdf_sha256' | 'argon2id' {
+  if (
+    spec.kind === 'argon2id' &&
+    (spec.opsLimit !== RECOVERY_KDF.opsLimit || spec.memLimit !== RECOVERY_KDF.memLimit)
+  )
+    throw new Error('Tham số Argon2id khác tham số của spec.');
+  return spec.kind === 'argon2id' ? 'argon2id' : 'hkdf_sha256';
 }
 
 export function parseKdf(text: string): KdfSpec {
-  if (text === 'prf-hkdf-sha256') return { kind: 'prf-hkdf' };
-  const m = /^argon2id;t=(\d+);m=(\d+)$/.exec(text);
-  if (!m) throw new Error(`KDF không hỗ trợ: ${text}`);
-  return { kind: 'argon2id', opsLimit: Number(m[1]), memLimit: Number(m[2]) };
+  if (text === 'hkdf_sha256') return { kind: 'prf-hkdf' };
+  if (text === 'argon2id') return { kind: 'argon2id', ...RECOVERY_KDF };
+  throw new Error(`KDF không hỗ trợ: ${text}`);
 }
 
 /** 24 words, 256 bits of entropy (BIP-39 English list). */

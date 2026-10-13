@@ -20,6 +20,7 @@ import {
   getTransitKey,
   listMemoryItems,
   listScores,
+  PRIVATE_CONTEXT_MAX,
   privateAnswer,
   withdrawThesis,
   type MemoryKind,
@@ -161,7 +162,9 @@ export function ThesesTab({ frame }: { frame: Frame }) {
         <MemoryCard memory={memory.data ?? []} error={memory.error?.message} />
       </div>
       <AskPrivately
-        contextIds={(memory.data ?? []).filter((m) => m.content).map((m) => m.id)}
+        context={(memory.data ?? [])
+          .flatMap((m) => (m.content ? [{ memory_item_id: m.id, text: m.content.text }] : []))
+          .slice(0, PRIVATE_CONTEXT_MAX)}
         onSaved={memory.reload}
       />
       <MemoryDialog open={noting} onClose={() => setNoting(false)} onSaved={memory.reload} />
@@ -684,7 +687,13 @@ function MemoryDialog({
   );
 }
 
-function AskPrivately({ contextIds, onSaved }: { contextIds: string[]; onSaved: () => void }) {
+function AskPrivately({
+  context,
+  onSaved,
+}: {
+  context: { memory_item_id: string; text: string }[];
+  onSaved: () => void;
+}) {
   const { session } = useVault();
   const [text, setText] = useState('');
   const [asking, setAsking] = useState(false);
@@ -699,7 +708,7 @@ function AskPrivately({ contextIds, onSaved }: { contextIds: string[]; onSaved: 
     setError(undefined);
     setSaved(false);
     try {
-      const { id } = await askPrivately({ text: question, context_items: contextIds });
+      const { id } = await askPrivately({ text: question, context_items: context });
       setAnswer({ question, reply: await privateAnswer(id) });
       setText('');
     } catch (e) {

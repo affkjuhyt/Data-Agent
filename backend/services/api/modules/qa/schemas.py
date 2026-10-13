@@ -376,6 +376,39 @@ class ExploreQueryCreate(_Body):
     compare: str | None = Field(default=None, max_length=64)
 
 
+class RowFilter(_Body):
+    """A condition on one column of the dataset (SCR-12 Khám phá bảng)."""
+
+    column: str = Field(min_length=1, max_length=200)
+    op: Literal["eq", "ne", "gt", "gte", "lt", "lte", "in"] = "eq"
+    value: str | int | float | bool | None | list[str | int | float] = None
+
+    @model_validator(mode="after")
+    def _list_only_for_in(self) -> RowFilter:
+        if (self.op == "in") != isinstance(self.value, list):
+            raise ValueError("value is a list exactly when op is `in`")
+        return self
+
+
+class QueryRunCreate(_Body):
+    """POST /v1/query-runs: one dataset with filters, or one read-only SQL statement."""
+
+    dataset_id: uuid.UUID | None = None
+    sql: str | None = Field(default=None, min_length=1, max_length=100_000)
+    filters: list[RowFilter] = Field(default_factory=list, max_length=50)
+    # BR-03: a run returns at most 10,000 rows.
+    limit: int = Field(default=1_000, ge=1, le=10_000)
+    as_of: datetime.date | None = None
+
+    @model_validator(mode="after")
+    def _one_target(self) -> QueryRunCreate:
+        if (self.dataset_id is None) == (self.sql is None):
+            raise ValueError("send dataset_id or sql, not both")
+        if self.sql is not None and self.filters:
+            raise ValueError("filters apply to a dataset; write them in the SQL instead")
+        return self
+
+
 class QueryRunView(_Row):
     """QueryRun without its SQL (GET .../sql, view_detail) and its storage reference."""
 

@@ -14,7 +14,6 @@ import { Tabs } from '../../design-system/Tabs';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import {
-  clearFundScenario,
   formatPercent,
   formatWhole,
   formatWholeSigned,
@@ -25,6 +24,7 @@ import {
   runFundScenario,
   type ForecastLedgerRow,
   type FuelFundLevel,
+  type FuelFundScenario,
   type FuelPriceForecast,
 } from '../../lib/v1/forecast';
 import { useV1 } from '../../lib/v1/useV1';
@@ -80,22 +80,19 @@ export default function FuelForecastPage() {
   }
   return (
     <AsyncRegion state={forecast} what="dự báo giá">
-      {(f) => <FuelForecastBody forecast={f} onChanged={forecast.reload} />}
+      {(f) => <FuelForecastBody key={f.id} forecast={f} />}
     </AsyncRegion>
   );
 }
 
-function FuelForecastBody({
-  forecast: f,
-  onChanged,
-}: {
-  forecast: FuelPriceForecast;
-  onChanged: () => void;
-}) {
+function FuelForecastBody({ forecast }: { forecast: FuelPriceForecast }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [rerunning, setRerunning] = useState(false);
   const [scenarioOpen, setScenarioOpen] = useState(false);
+  // The Fund scenario is the screen's; dropping it shows the forecast as computed again.
+  const [fundScenario, setFundScenario] = useState<FuelFundScenario | null>(null);
+  const f: FuelPriceForecast = { ...forecast, fund_scenario: fundScenario };
   const d = f.distribution;
   const shown = hasInterval(d);
   const tag = f.illustrative ? ' · minh hoạ' : '';
@@ -103,9 +100,11 @@ function FuelForecastBody({
   const rerun = async () => {
     setRerunning(true);
     try {
-      await rerunFuelPriceForecast(f.id);
-      toast({ tone: 'success', message: 'Đã chạy lại mô phỏng với giá thế giới mới nhất' });
-      onChanged();
+      await rerunFuelPriceForecast(f);
+      toast({
+        tone: 'success',
+        message: 'Đã gửi chạy lại mô phỏng với giá thế giới mới nhất; kết quả mới có khi chạy xong',
+      });
     } catch (e) {
       toast({ tone: 'error', message: (e as Error).message });
     } finally {
@@ -113,7 +112,15 @@ function FuelForecastBody({
     }
   };
 
-  const change = d.median - f.previous.ceiling;
+  const previous = f.previous.ceiling;
+  const change = previous === null ? null : d.median - previous;
+  const description = [
+    `Kỳ ${dayMonthYear(f.period_date)}${f.period_note ? `, ${f.period_note}` : ''}`,
+    `chạy ${dayMonthTime(f.run_at)}`,
+    f.model.version_label,
+    `${formatWhole(f.model.simulations)} lần mô phỏng`,
+    f.source_note,
+  ].filter(Boolean);
 
   return (
     <div className="flex min-h-full flex-col">
@@ -126,14 +133,16 @@ function FuelForecastBody({
             {f.illustrative && <Badge tone="warning">Số dự báo minh hoạ</Badge>}
           </span>
         }
-        description={`Kỳ ${dayMonthYear(f.period_date)}, ${f.period_note} · chạy ${dayMonthTime(f.run_at)} · ${f.model.version_label} · ${formatWhole(f.model.simulations)} lần mô phỏng · ${f.source_note}`}
+        description={description.join(' · ')}
         actions={
           <>
             <Button loading={rerunning} onClick={rerun}>
               Chạy lại
             </Button>
-            <Button onClick={() => setScenarioOpen(true)}>Kịch bản Quỹ</Button>
-            <FollowScheduleButton seriesId={f.series_id} following={f.following_schedule} />
+            {f.fund_levels.length > 0 && (
+              <Button onClick={() => setScenarioOpen(true)}>Kịch bản Quỹ</Button>
+            )}
+            <FollowScheduleButton seriesId={f.series_id} />
             <Button kind="primary" onClick={() => navigate('analysis', 'ASK')}>
               Hỏi tiếp
             </Button>
@@ -151,30 +160,44 @@ function FuelForecastBody({
           {shown ? (
             <>
               <div className="flex flex-wrap gap-da-lg">
-                <Stat
-                  stat={{
-                    label: `Giá trần kỳ trước · ${dayMonth(f.previous.period_date)}`,
-                    value: formatWhole(f.previous.ceiling),
-                    note: `${f.unit_label} · ${f.previous.source_text}`,
-                    tone: 'default',
-                  }}
-                />
+                {previous !== null && (
+                  <Stat
+                    stat={{
+                      label: f.previous.period_date
+                        ? `Giá trần kỳ trước · ${dayMonth(f.previous.period_date)}`
+                        : 'Giá trần kỳ trước',
+                      value: formatWhole(previous),
+                      note: [f.unit_label, f.previous.source_text].filter(Boolean).join(' · '),
+                      tone: 'default',
+                    }}
+                  />
+                )}
                 <Stat
                   stat={{
                     label: `Trung vị kỳ ${dayMonth(f.period_date)}`,
                     value: formatWhole(d.median),
-                    note: `${formatWholeSigned(change)} ${f.unit_label} so kỳ trước${tag}`,
-                    tone: change > 0 ? 'warning' : change < 0 ? 'success' : 'default',
+                    note:
+                      change === null
+                        ? `${f.unit_label}${tag}`
+                        : `${formatWholeSigned(change)} ${f.unit_label} so kỳ trước${tag}`,
+                    tone:
+                      change === null || change === 0
+                        ? 'default'
+                        : change > 0
+                          ? 'warning'
+                          : 'success',
                   }}
                 />
-                <Stat
-                  stat={{
-                    label: 'P(tăng)',
-                    value: formatPercent(d.p_increase),
-                    note: `xác suất giá trần tăng${tag}`,
-                    tone: 'default',
-                  }}
-                />
+                {d.p_increase !== null && (
+                  <Stat
+                    stat={{
+                      label: 'P(tăng)',
+                      value: formatPercent(d.p_increase),
+                      note: `xác suất giá trần tăng${tag}`,
+                      tone: 'default',
+                    }}
+                  />
+                )}
               </div>
               <Card
                 size="sm"
@@ -182,7 +205,9 @@ function FuelForecastBody({
               >
                 <DistributionLegend forecast={f} />
                 <DistributionChart forecast={f} />
-                {f.fund_scenario && <FundScenarioNotice forecast={f} onChanged={onChanged} />}
+                {f.fund_scenario && (
+                  <FundScenarioNotice forecast={f} onClear={() => setFundScenario(null)} />
+                )}
               </Card>
             </>
           ) : (
@@ -192,20 +217,24 @@ function FuelForecastBody({
             </Notice>
           )}
           <div className="flex flex-wrap items-start gap-da-lg">
-            <Card
-              size="sm"
-              title={`Phân rã chênh lệch kỳ vọng so kỳ trước (${f.unit_label})`}
-              className="min-w-0 flex-[1_1_380px]"
-            >
-              <WaterfallChart forecast={f} />
-              <p className="text-muted-foreground da-caption">{f.decomposition.source_note}</p>
-            </Card>
-            <FundCard forecast={f} />
+            {previous !== null && f.decomposition.steps.length > 0 && (
+              <Card
+                size="sm"
+                title={`Phân rã chênh lệch kỳ vọng so kỳ trước (${f.unit_label})`}
+                className="min-w-0 flex-[1_1_380px]"
+              >
+                <WaterfallChart forecast={f} />
+                {f.decomposition.source_note && (
+                  <p className="text-muted-foreground da-caption">{f.decomposition.source_note}</p>
+                )}
+              </Card>
+            )}
+            {f.fund_levels.length > 0 && <FundCard forecast={f} />}
           </div>
         </div>
         <aside className="flex w-[392px] max-w-full shrink-0 flex-col gap-da-lg">
-          <ParametersCard forecast={f} />
-          <WorldPriceCard forecast={f} />
+          {f.parameters.length > 0 && <ParametersCard forecast={f} />}
+          {f.world_price && <WorldPriceCard worldPrice={f.world_price} />}
           <RecentLedgerCard forecast={f} />
         </aside>
       </div>
@@ -213,9 +242,9 @@ function FuelForecastBody({
         open={scenarioOpen}
         forecast={f}
         onClose={() => setScenarioOpen(false)}
-        onDone={() => {
+        onDone={(scenario) => {
           setScenarioOpen(false);
-          onChanged();
+          setFundScenario(scenario);
         }}
       />
     </div>
@@ -234,8 +263,12 @@ function DistributionLegend({ forecast: f }: { forecast: FuelPriceForecast }) {
       text: `Khoảng 95%: ${formatWhole(d.lo95)} – ${formatWhole(d.hi95)}`,
     },
     { swatch: 'bg-info', text: `Trung vị ${formatWhole(d.median)}` },
-    { swatch: 'bg-foreground', text: `Giá kỳ trước ${formatWhole(f.previous.ceiling)}` },
   ];
+  if (f.previous.ceiling !== null)
+    items.push({
+      swatch: 'bg-foreground',
+      text: `Giá kỳ trước ${formatWhole(f.previous.ceiling)}`,
+    });
   return (
     <ul className="flex flex-wrap items-center gap-da-xl" aria-label="Chú giải">
       {items.map((item) => (
@@ -250,31 +283,18 @@ function DistributionLegend({ forecast: f }: { forecast: FuelPriceForecast }) {
 
 function FundScenarioNotice({
   forecast: f,
-  onChanged,
+  onClear,
 }: {
   forecast: FuelPriceForecast;
-  onChanged: () => void;
+  onClear: () => void;
 }) {
-  const toast = useToast();
-  const [busy, setBusy] = useState(false);
   const s = f.fund_scenario;
   if (!s) return null;
-  const clear = async () => {
-    setBusy(true);
-    try {
-      await clearFundScenario(f.id);
-      onChanged();
-    } catch (e) {
-      toast({ tone: 'error', message: (e as Error).message });
-    } finally {
-      setBusy(false);
-    }
-  };
   return (
     <Notice
       tone="info"
       action={
-        <Button size="sm" kind="ghost" loading={busy} onClick={clear}>
+        <Button size="sm" kind="ghost" onClick={onClear}>
           Bỏ kịch bản
         </Button>
       }
@@ -343,7 +363,7 @@ function ParametersCard({ forecast: f }: { forecast: FuelPriceForecast }) {
               ) : (
                 <span className="font-medium">{p.legal_ref.label}</span>
               )}{' '}
-              · {p.certified_by_name}
+              · {p.certified_by_name || (p.certified ? 'đã chứng nhận' : 'chưa chứng nhận')}
             </p>
           </li>
         ))}
@@ -355,8 +375,12 @@ function ParametersCard({ forecast: f }: { forecast: FuelPriceForecast }) {
   );
 }
 
-function WorldPriceCard({ forecast: f }: { forecast: FuelPriceForecast }) {
-  const { known_days: known, total_days: total, simulated_range_text: range } = f.world_price;
+function WorldPriceCard({
+  worldPrice,
+}: {
+  worldPrice: NonNullable<FuelPriceForecast['world_price']>;
+}) {
+  const { known_days: known, total_days: total, simulated_range_text: range } = worldPrice;
   const simulated = total - known;
   return (
     <Card size="sm" title="Giá thế giới bình quân kỳ">
@@ -462,7 +486,7 @@ function FundScenarioDialog({
   open: boolean;
   forecast: FuelPriceForecast;
   onClose: () => void;
-  onDone: () => void;
+  onDone: (scenario: FuelFundScenario) => void;
 }) {
   const [level, setLevel] = useState('');
   const [busy, setBusy] = useState(false);
@@ -472,8 +496,11 @@ function FundScenarioDialog({
     setBusy(true);
     setError(undefined);
     try {
-      await runFundScenario(f.id, level);
-      onDone();
+      const chosen = f.fund_levels.find((l) => l.label === level);
+      if (!chosen) return;
+      const scenario = await runFundScenario(f, chosen);
+      if (scenario) onDone(scenario);
+      else setError('Kịch bản đang được tính; chạy lại sau ít phút để xem kết quả.');
     } catch (e) {
       setError((e as Error).message);
     } finally {

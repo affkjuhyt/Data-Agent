@@ -24,7 +24,7 @@
 | `workflow-runtime` | `service/workflow-runtime.yaml`, `dataagent/workflow_runtime` | `api` cho resource/control + `worker-agent` cho execution | Giữ | `worker-agent` chạy agent turn thật, resume/HITL, outbox và sandbox; Kong không còn route runtime cũ |
 | `kb-backend` | `service/kb-backend.yaml`, `dataagent/kb-backend` | `api` cho catalog/query + `worker-ingest`/`crawler` | Giữ | ingest/search/catalog mới chạy trên V3 và các `/api/data`, `/api/knowledge`, `/api/pipeline` đã có replacement |
 | `kb-promote-*` | bốn manifest `kb-promote-*`, image `kb-worker` | `worker-ingest` | Giữ | Kafka consumer/group mới xử lý đủ Bronze/Silver/Gold, retry và DLQ |
-| `indicator-api` | `service/indicator-api.yaml`, `dataagent/indicator-api` | module Observation/Governance trong API hoặc khối được chốt | Giữ | capability registry, observation publish, DQ/HITL và `/metrics` đã có endpoint/worker thay thế |
+| `indicator-api` | đã xoá 12/10/2026 | module của `api` (mọi route của nó chỉ trả 501) | Đã xoá | không còn Kong route, lời gọi frontend, import hay topic nào; manifest, Ansible, Makefile, CI, secret xoá cùng commit |
 | `platform-workers-*` | audit, memory, schema-crawler, web-crawler | `worker-ingest`, `crawler`, audit/memory worker V3 | Giữ | từng topic, group, ACL và state store có consumer thay thế; không còn CronJob/manifest tham chiếu |
 | `model-service` | `service/model-service.yaml`, `dataagent/model_service` | Chưa được đặc tả rõ trong V3 | Giữ | Có quyết định riêng về LLM/model proxy; không xoá theo suy đoán |
 | `sandbox-executor` | `service/sandbox-executor.yaml`, `dataagent/sandbox_executor` | Có thể nằm trong `worker-agent` | Giữ | worker-agent có boundary xác thực, policy OpenBao và test isolation tương đương |

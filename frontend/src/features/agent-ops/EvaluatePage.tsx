@@ -6,15 +6,15 @@ import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { StatusDot } from '../../design-system/StatusDot';
+import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { formatNumber } from '../../lib/formatVN';
 import {
   getRollout,
-  holdRollout,
-  listRollouts,
   rollbackRollout,
   setRolloutShare,
+  type LiveStats,
   type Rollout,
 } from '../../lib/v1/agentOps';
 import { useV1 } from '../../lib/v1/useV1';
@@ -24,12 +24,14 @@ import { formatMeasure, formatThreshold, gateOf, rolloutStatus } from './format'
 /*
  * "P13 · Đánh giá & triển khai" (2311:20138, UC-13-04/05): a new config version of one agent
  * against the one it may replace — first on the eval set, then side by side on live traffic —
- * and the three decisions: roll back, hold the share, or widen it. Widening needs the quality
- * gate (every eval criterion within its threshold) and goes through "Xác nhận · rollout"
- * (2094:8378); rolling back through "Xác nhận · rollback" (2094:8361). Both toasts
- * (2094:8040, 2094:8053) can undo by restoring the previous share.
+ * and the two decisions: roll back (with a reason) or widen the share. Widening needs the quality
+ * gate (every eval criterion with a threshold within it) and goes through "Xác nhận · rollout"
+ * (2094:8378); rolling back through "Xác nhận · rollback" (2094:8361). The widen toast (2094:8040)
+ * can undo by restoring the previous share; a rollback ends the deployment and is not undone.
+ * Holding the share is doing nothing: the quality gate decides the next step (UC-13-05 step 4).
  *
- * /agents/evaluate/{agent_id} opens one agent; without an id, the first agent in canary.
+ * /agents/evaluate/{agent_id} opens one agent's deployment in progress; the screen is opened
+ * from an agent, so without an id it says so.
  */
 type Dialog = 'widen' | 'rollback' | null;
 
@@ -37,16 +39,17 @@ export default function EvaluatePage() {
   const { routeId } = useAppState();
   const toast = useToast();
   const loaded = useV1<Rollout | null>(
-    () => (routeId ? getRollout(routeId) : listRollouts().then((p) => p.items[0] ?? null)),
+    () => (routeId ? getRollout(routeId) : Promise.resolve(null)),
     [routeId],
   );
-  // Actions answer with the new rollout; keep it rather than refetch, because the list behind
-  // the id-less view drops an agent once it leaves canary.
+  // Actions answer with the new deployment; keep it rather than refetch, because the agent
+  // drops its active deployment once it completes or is rolled back.
   const [current, setCurrent] = useState<Rollout | null>();
   const [dialog, setDialog] = useState<Dialog>(null);
   const [adding, setAdding] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
+  const [reason, setReason] = useState('');
 
   useEffect(() => setCurrent(undefined), [routeId]);
 
@@ -67,10 +70,9 @@ export default function EvaluatePage() {
     }
   };
 
-  const undoTo = (r: Rollout, pct: number | null) => () => {
-    if (pct === null) return;
+  const undoTo = (r: Rollout, pct: number) => () => {
     void act(
-      () => setRolloutShare(r.agent_id, pct),
+      () => setRolloutShare(r, pct),
       () => {},
     );
   };
@@ -87,7 +89,11 @@ export default function EvaluatePage() {
             <EmptyState
               icon="layers"
               title="Chưa có phiên bản nào đang thử"
-              description="Khi một agent có phiên bản mới, nó chạy bộ đánh giá rồi nhận một phần lượt chạy thật trước khi thay phiên bản cũ."
+              description={
+                routeId
+                  ? 'Agent này không có phiên bản nào đang triển khai. Khi có phiên bản mới, nó chạy bộ đánh giá rồi nhận một phần lượt chạy thật trước khi thay phiên bản cũ.'
+                  : 'Mở Đánh giá & triển khai từ một agent trong Đội agent để xem phiên bản đang thử của nó.'
+              }
             />
           </div>
         }
@@ -103,18 +109,9 @@ export default function EvaluatePage() {
               }}
               onRollback={() => {
                 setError(undefined);
+                setReason('');
                 setDialog('rollback');
               }}
-              onHold={() =>
-                act(
-                  () => holdRollout(r.agent_id),
-                  (next) =>
-                    toast({
-                      tone: 'success',
-                      message: `Giữ v${next.candidate_version} ở ${next.candidate_share_pct}% lượt chạy`,
-                    }),
-                )
-              }
               onAddCase={() => setAdding(true)}
               error={dialog === null ? error : undefined}
             />
@@ -129,34 +126,46 @@ export default function EvaluatePage() {
           sending={sending}
           error={error}
           adding={adding}
+          reason={reason}
+          onReason={setReason}
           onCancel={() => setDialog(null)}
           onWiden={(r, pct) =>
             act(
-              () => setRolloutShare(r.agent_id, pct),
+              () => setRolloutShare(r, pct),
               (next) =>
                 toast({
                   tone: 'success',
                   message: `v${next.candidate_version} đang nhận ${next.candidate_share_pct}% lượt chạy`,
-                  action: { label: 'Lùi lại', onClick: undoTo(next, next.previous_share_pct) },
+                  // A completed deployment takes no traffic change, so 100% has no undo.
+                  action:
+                    next.status === 'rolling'
+                      ? { label: 'Lùi lại', onClick: undoTo(next, r.candidate_share_pct) }
+                      : undefined,
                 }),
             )
           }
-          onRollback={(r) =>
-            act(
-              () => rollbackRollout(r.agent_id),
+          onRollback={(r) => {
+            if (!reason.trim()) {
+              setError('Ghi lý do quay lui.');
+              return;
+            }
+            void act(
+              () => rollbackRollout(r, reason.trim()),
               (next) =>
                 toast({
                   tone: 'success',
-                  message: `Đã lùi về v${next.baseline_version} · v${next.candidate_version} ngừng nhận lượt mới`,
-                  action: { label: 'Hoàn tác', onClick: undoTo(next, next.previous_share_pct) },
+                  message:
+                    next.baseline_version === null
+                      ? `v${next.candidate_version} ngừng nhận lượt mới`
+                      : `Đã lùi về v${next.baseline_version} · v${next.candidate_version} ngừng nhận lượt mới`,
                 }),
-            )
-          }
+            );
+          }}
           onCloseAdd={() => setAdding(false)}
           onAdded={() => {
             setAdding(false);
             const r = state.data;
-            if (r)
+            if (r?.eval_set)
               setCurrent({
                 ...r,
                 eval_set: { ...r.eval_set, case_count: r.eval_set.case_count + 1 },
@@ -175,7 +184,6 @@ function RolloutView({
   error,
   onWiden,
   onRollback,
-  onHold,
   onAddCase,
 }: {
   rollout: Rollout;
@@ -183,13 +191,13 @@ function RolloutView({
   error?: string;
   onWiden: () => void;
   onRollback: () => void;
-  onHold: () => void;
   onAddCase: () => void;
 }) {
   const status = rolloutStatus(r);
   const gate = gateOf(r);
-  const live = r.status === 'canary' || r.status === 'held';
+  const live = r.status === 'rolling';
   const baseShare = 100 - r.candidate_share_pct;
+  const baseline = r.baseline_version === null ? 'bản cũ' : `v${r.baseline_version}`;
 
   const widen = r.next_share_pct !== null && (
     <Button kind="primary" disabled={!gate.open} onClick={onWiden}>
@@ -209,19 +217,16 @@ function RolloutView({
           </span>
         }
         description={
-          live
-            ? `${r.change_summary} · đang chạy ${r.candidate_share_pct}% lượt cùng v${r.baseline_version}`
-            : r.change_summary
+          [r.change_summary, live && `đang chạy ${r.candidate_share_pct}% lượt cùng ${baseline}`]
+            .filter(Boolean)
+            .join(' · ') || undefined
         }
         actions={
-          r.status !== 'rolled_back' && (
+          live && (
             <>
-              <Button kind="ghost" onClick={onRollback}>
-                Quay lại v{r.baseline_version}
-              </Button>
-              {live && (
-                <Button loading={sending} disabled={r.status === 'held'} onClick={onHold}>
-                  Giữ {r.candidate_share_pct}%
+              {r.baseline_version !== null && (
+                <Button kind="ghost" loading={sending} onClick={onRollback}>
+                  Quay lại v{r.baseline_version}
                 </Button>
               )}
               {widen &&
@@ -245,72 +250,45 @@ function RolloutView({
       )}
       <div className="flex flex-1 items-stretch">
         <div className="flex min-w-0 flex-1 flex-col gap-[14px] pb-da-3xl pl-da-3xl pr-da-2xl pt-da-xl">
-          <div className="flex items-center gap-da-md">
-            <h2 className="flex-1 text-foreground da-heading-3">
-              Bộ đánh giá · {formatNumber(r.eval_set.case_count)} tình huống
-            </h2>
-            <Button size="sm" kind="ghost" icon="plus" onClick={onAddCase}>
-              Thêm tình huống
-            </Button>
-          </div>
-          <table className="w-full table-fixed border-collapse">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="px-da-lg py-da-md font-normal">Tiêu chí</th>
-                <th className="w-[100px] px-da-lg py-da-md font-normal">v{r.baseline_version}</th>
-                <th className="w-[100px] px-da-lg py-da-md font-normal">v{r.candidate_version}</th>
-                <th className="w-[100px] px-da-lg py-da-md font-normal">Ngưỡng</th>
-              </tr>
-            </thead>
-            <tbody>
-              {r.eval_set.criteria.map((c) => (
-                <tr key={c.key} className="border-b border-border">
-                  <td className="px-da-lg py-[9px] text-foreground da-body-small">{c.label}</td>
-                  <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
-                    {formatMeasure(c.baseline, c.unit)}
-                  </td>
-                  <td className="px-da-lg py-[9px] text-foreground da-mono">
-                    {formatMeasure(c.candidate, c.unit)}
-                  </td>
-                  <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
-                    {formatThreshold(c)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {r.eval_set ? (
+            <EvalTable rollout={r} evalSet={r.eval_set} onAddCase={onAddCase} />
+          ) : (
+            <p className="text-muted-foreground da-body-small">
+              v{r.candidate_version} chưa có kết quả bộ đánh giá.
+            </p>
+          )}
 
           <h2 className="text-foreground da-heading-3">Chạy thật song song</h2>
-          <table className="w-full table-fixed border-collapse">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="px-da-lg py-da-md font-normal">Chỉ số {r.live.window_days} ngày</th>
-                <th className="w-[120px] px-da-lg py-da-md font-normal">
-                  v{r.baseline_version} · {baseShare}%
-                </th>
-                <th className="w-[120px] px-da-lg py-da-md font-normal">
-                  v{r.candidate_version} · {r.candidate_share_pct}%
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                ['Lượt chạy', r.live.baseline.runs, r.live.candidate.runs],
-                [
-                  'Cần người duyệt',
-                  `${r.live.baseline.needs_approval_pct}%`,
-                  `${r.live.candidate.needs_approval_pct}%`,
-                ],
-                ['Lỗi', r.live.baseline.errors, r.live.candidate.errors],
-              ].map(([label, base, cand]) => (
-                <tr key={label} className="border-b border-border text-foreground">
-                  <td className="px-da-lg py-[9px] da-body-small">{label}</td>
-                  <td className="px-da-lg py-[9px] da-mono">{base}</td>
-                  <td className="px-da-lg py-[9px] da-mono">{cand}</td>
+          {r.live ? (
+            <table className="w-full table-fixed border-collapse">
+              <thead>
+                <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                  <th className="px-da-lg py-da-md font-normal">
+                    Chỉ số{r.live.window_days !== null && ` ${r.live.window_days} ngày`}
+                  </th>
+                  <th className="w-[120px] px-da-lg py-da-md font-normal">
+                    {baseline} · {baseShare}%
+                  </th>
+                  <th className="w-[120px] px-da-lg py-da-md font-normal">
+                    v{r.candidate_version} · {r.candidate_share_pct}%
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {LIVE_ROWS.map(([label, read]) => (
+                  <tr key={label} className="border-b border-border text-foreground">
+                    <td className="px-da-lg py-[9px] da-body-small">{label}</td>
+                    <td className="px-da-lg py-[9px] da-mono">{read(r.live!.baseline)}</td>
+                    <td className="px-da-lg py-[9px] da-mono">{read(r.live!.candidate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-muted-foreground da-body-small">
+              Chưa có số đo lượt chạy thật trong cửa sổ quan sát.
+            </p>
+          )}
         </div>
 
         <aside className="flex w-[340px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pt-[20px] max-[1279px]:hidden">
@@ -321,8 +299,8 @@ function RolloutView({
             </p>
           ))}
           <p className="text-muted-foreground da-body-small">
-            Quay lui đưa toàn bộ lượt chạy về v{r.baseline_version} trong vài giây; lượt đang chạy
-            của v{r.candidate_version} chạy nốt và được đánh dấu.
+            Quay lui đưa toàn bộ lượt chạy về {baseline} trong vài giây; lượt đang chạy của v
+            {r.candidate_version} chạy nốt và được đánh dấu.
           </p>
         </aside>
       </div>
@@ -336,6 +314,8 @@ function Dialogs({
   sending,
   error,
   adding,
+  reason,
+  onReason,
   onCancel,
   onWiden,
   onRollback,
@@ -347,6 +327,8 @@ function Dialogs({
   sending: boolean;
   error?: string;
   adding: boolean;
+  reason: string;
+  onReason: (reason: string) => void;
   onCancel: () => void;
   onWiden: (r: Rollout, pct: number) => void;
   onRollback: (r: Rollout) => void;
@@ -378,16 +360,86 @@ function Dialogs({
         onCancel={onCancel}
         onConfirm={() => onRollback(r)}
       >
-        v{r.candidate_version} ngừng nhận lượt mới; lượt đang chạy giữ phiên bản lúc bắt đầu. Kết
-        quả bộ thử v{r.candidate_version} được giữ để xem lại.
+        <span className="flex flex-col gap-da-sm">
+          v{r.candidate_version} ngừng nhận lượt mới; lượt đang chạy giữ phiên bản lúc bắt đầu. Kết
+          quả bộ thử v{r.candidate_version} được giữ để xem lại.
+          <Textarea
+            aria-label="Lý do quay lui"
+            placeholder="Lý do quay lui (bắt buộc)"
+            value={reason}
+            onChange={(e) => onReason(e.target.value)}
+            rows={2}
+          />
+        </span>
       </ConfirmDialog>
-      <AddCaseDialog
-        open={adding}
-        agentId={r.agent_id}
-        evalSetId={r.eval_set.id}
-        onClose={onCloseAdd}
-        onAdded={onAdded}
-      />
+      {r.eval_set && (
+        <AddCaseDialog
+          open={adding}
+          agentId={r.agent_id}
+          evalSetId={r.eval_set.id}
+          onClose={onCloseAdd}
+          onAdded={onAdded}
+        />
+      )}
+    </>
+  );
+}
+
+const dash = (v: number | null, suffix = '') => (v === null ? '—' : `${formatNumber(v)}${suffix}`);
+
+const LIVE_ROWS: [string, (s: LiveStats) => string][] = [
+  ['Lượt chạy', (s) => dash(s.runs)],
+  ['Cần người duyệt', (s) => dash(s.needs_approval_pct, '%')],
+  ['Lỗi', (s) => dash(s.errors)],
+];
+
+function EvalTable({
+  rollout: r,
+  evalSet,
+  onAddCase,
+}: {
+  rollout: Rollout;
+  evalSet: NonNullable<Rollout['eval_set']>;
+  onAddCase: () => void;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-da-md">
+        <h2 className="flex-1 text-foreground da-heading-3">
+          Bộ đánh giá · {formatNumber(evalSet.case_count)} tình huống
+        </h2>
+        <Button size="sm" kind="ghost" icon="plus" onClick={onAddCase}>
+          Thêm tình huống
+        </Button>
+      </div>
+      <table className="w-full table-fixed border-collapse">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <th className="px-da-lg py-da-md font-normal">Tiêu chí</th>
+            <th className="w-[100px] px-da-lg py-da-md font-normal">
+              {r.baseline_version === null ? 'Bản cũ' : `v${r.baseline_version}`}
+            </th>
+            <th className="w-[100px] px-da-lg py-da-md font-normal">v{r.candidate_version}</th>
+            <th className="w-[100px] px-da-lg py-da-md font-normal">Ngưỡng</th>
+          </tr>
+        </thead>
+        <tbody>
+          {evalSet.criteria.map((c) => (
+            <tr key={c.key} className="border-b border-border">
+              <td className="px-da-lg py-[9px] text-foreground da-body-small">{c.label}</td>
+              <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
+                {formatMeasure(c.baseline, c.unit)}
+              </td>
+              <td className="px-da-lg py-[9px] text-foreground da-mono">
+                {formatMeasure(c.candidate, c.unit)}
+              </td>
+              <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
+                {formatThreshold(c)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </>
   );
 }

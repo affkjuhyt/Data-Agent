@@ -1,4 +1,4 @@
-import type { McpServer, Skill, SkillVersionStatus, ToolLevel } from '../../lib/v1/skills';
+import type { Skill, SkillVersionStatus, ToolLevel } from '../../lib/v1/skills';
 import { formatNumber } from '../../lib/formatVN';
 
 type Tone = 'success' | 'warning' | 'error' | 'info' | 'idle';
@@ -62,18 +62,6 @@ export const TOOL_LEVELS: {
 
 export const levelOf = (level: ToolLevel) =>
   TOOL_LEVELS.find((l) => l.level === level) ?? TOOL_LEVELS[0];
-
-export const MCP_AUTH: Record<McpServer['auth'], string> = {
-  oauth2: 'OAuth2',
-  sso: 'SSO',
-  api_key: 'API key',
-};
-
-export const MCP_STATUS: Record<McpServer['status'], { label: string; tone: Tone }> = {
-  active: { label: 'Hoạt động', tone: 'success' },
-  auth_error: { label: 'Lỗi xác thực', tone: 'error' },
-  pending_pii_review: { label: 'Chờ duyệt PII', tone: 'warning' },
-};
 
 /** "412 lượt"; a dash when the skill never ran. */
 export const runsText = (runs: number | null) =>

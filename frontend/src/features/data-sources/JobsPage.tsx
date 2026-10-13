@@ -3,7 +3,10 @@ import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
+import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
+import { Field } from '../../design-system/Field';
+import { Input } from '../../design-system/Input';
 import { Menu } from '../../design-system/Menu';
 import { Segmented } from '../../design-system/Segmented';
 import { StatusDot } from '../../design-system/StatusDot';
@@ -25,7 +28,8 @@ import {
 /*
  * "P04 · Job nạp · Giám sát" (2281:16917, UC-04-09): every ingestion job with a 24-hour strip
  * (one cell per hour: success, error, no run), lag, rows loaded today and status. "Tạo job" opens
- * Job nạp · Thiết lập; "Chạy bù" has no flow in Figma yet; a row's "…" runs, pauses or resumes it.
+ * Job nạp · Thiết lập; "Chạy bù" has no flow in Figma yet; a row's "…" runs today's data again,
+ * pauses (with the reason BR-106 asks for) or resumes it.
  */
 const CELL: Record<IngestionJob['hours'][number], string> = {
   ok: 'bg-success opacity-55',
@@ -42,18 +46,30 @@ export default function JobsPage() {
   const count = (f: JobFilter) => items.filter((j) => matchesJobFilter(j, f)).length;
   const visible = useMemo(() => items.filter((j) => matchesJobFilter(j, filter)), [items, filter]);
 
-  const act = async (job: IngestionJob, verb: 'run' | 'pause' | 'resume') => {
+  const [pausing, setPausing] = useState<IngestionJob | null>(null);
+  const [reason, setReason] = useState('');
+  const [pauseError, setPauseError] = useState<string>();
+
+  const act = async (job: IngestionJob, verb: 'run' | 'pause' | 'resume', why?: string) => {
     const done = { run: 'Đã chạy lại', pause: 'Đã tạm dừng', resume: 'Đã tiếp tục' }[verb];
     try {
-      await controlJob(job.id, verb);
+      await controlJob(job.id, verb, why);
       toast({ tone: 'success', message: `${done} ${job.table_name}.` });
       jobs.reload();
+      return true;
     } catch (e) {
       toast({
         tone: 'error',
         message: `Không thực hiện được với ${job.table_name}. ${(e as Error).message}`,
       });
+      return false;
     }
+  };
+
+  const pause = async () => {
+    if (!pausing) return;
+    if (!reason.trim()) return setPauseError('Ghi lý do tạm dừng.');
+    if (await act(pausing, 'pause', reason.trim())) setPausing(null);
   };
 
   return (
@@ -182,7 +198,11 @@ export default function JobsPage() {
                               : {
                                   label: 'Tạm dừng',
                                   icon: 'clock',
-                                  onSelect: () => void act(job, 'pause'),
+                                  onSelect: () => {
+                                    setReason('');
+                                    setPauseError(undefined);
+                                    setPausing(job);
+                                  },
                                 },
                           ]}
                         />
@@ -208,6 +228,28 @@ export default function JobsPage() {
           Mỗi ô là một giờ: xanh là chạy thành công, đỏ là lỗi, xám là không có lần chạy. Job trễ
           quá hạn độ mới sẽ báo người phụ trách nguồn và đánh dấu số liệu liên quan là “có thể cũ”.
         </p>
+        <ConfirmDialog
+          open={pausing !== null}
+          size="md"
+          tone="primary"
+          title={`Tạm dừng ${pausing?.table_name ?? ''}?`}
+          confirmLabel="Tạm dừng"
+          error={pauseError}
+          onConfirm={() => void pause()}
+          onCancel={() => setPausing(null)}
+        >
+          <div className="flex flex-col gap-da-md">
+            <p>Job không chạy cho tới khi được tiếp tục. Lý do được ghi vào nhật ký kiểm toán.</p>
+            <Field label="Lý do">
+              <Input
+                className="w-full"
+                value={reason}
+                placeholder="Ví dụ: nguồn đang bảo trì"
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </Field>
+          </div>
+        </ConfirmDialog>
       </div>
     </div>
   );

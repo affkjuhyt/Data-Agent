@@ -361,7 +361,7 @@ async function seed(): Promise<Seed> {
     kind,
     credential_id: null,
     label,
-    kdf: 'prf-hkdf-sha256',
+    kdf: 'hkdf_sha256',
     kdf_salt: toB64(randomKey()),
     wrapped_vmk: toB64(randomKey()),
     last_used_at: lastUsed,
@@ -378,7 +378,7 @@ async function seed(): Promise<Seed> {
     contract_ref: 'HĐ-LĐ-2024-017',
     sealed_read_until: null,
     key_wraps: [
-      wrapStub('passkey', 'iPhone 15 · passkey', at('2026-10-10T08:12:00+07:00')),
+      wrapStub('passkey_prf', 'iPhone 15 · passkey', at('2026-10-10T08:12:00+07:00')),
       wrapStub('hardware_key', 'YubiKey 5C · két sắt', at('2026-09-02T10:00:00+07:00')),
       { ...paper, id: 'kw-paper', last_used_at: null, created_at: at('2026-03-03T09:00:00+07:00') },
     ],
@@ -510,43 +510,70 @@ async function seed(): Promise<Seed> {
   return { vault, theses, memory, evidence, scores, transitPem };
 }
 
-const accessLog: KeyAccessEntry[] = [
-  {
-    id: 'kal-4',
-    at: at('2026-10-22T18:00:04+07:00'),
-    purpose: 'scoring',
-    workflow: 'ExecThesisWorkflow',
-    actor_text: 'ExecThesisWorkflow · score_thesis',
-    correlation_id: '7f2a…c41e',
-    thesis_id: '0192a1b2-0001-7000-8000-000000000001',
-  },
-  {
-    id: 'kal-3',
-    at: at('2026-10-10T02:00:11+07:00'),
-    purpose: 'evidence_refresh',
-    workflow: 'ExecThesisWorkflow',
-    actor_text: 'ExecThesisWorkflow · evidence_refresh',
-    correlation_id: '19bd…07aa',
-    thesis_id: '0192a1b2-0001-7000-8000-000000000001',
-  },
-  {
-    id: 'kal-2',
-    at: at('2026-10-06T14:12:37+07:00'),
-    purpose: 'validate',
-    workflow: 'ExecThesisWorkflow',
-    actor_text: 'ExecThesisWorkflow · validate_condition',
-    correlation_id: 'a3e0…5b19',
-    thesis_id: '0192a1b2-0001-7000-8000-000000000001',
-  },
-  {
-    id: 'kal-1',
-    at: at('2026-10-06T14:12:30+07:00'),
-    purpose: 'unlock',
-    workflow: 'device',
-    actor_text: 'Thiết bị · iPhone passkey',
-    correlation_id: null,
-    thesis_id: null,
-  },
+// KeyAccessView as the api sends it; the screen's actor line is read from actor_kind and actor_ref.
+const access = (
+  id: string,
+  iso: string,
+  purpose: KeyAccessEntry['purpose'],
+  action: string,
+  actorKind: 'workflow' | 'owner_device',
+  actorRef: string,
+  correlationId: string,
+  thesisId: string | null,
+) => ({
+  id,
+  vault_id: 'vault-an',
+  thesis_id: thesisId,
+  key_kind: actorKind === 'workflow' ? 'condition_transit' : 'vault_key',
+  action,
+  purpose,
+  actor_kind: actorKind,
+  actor_ref: actorRef,
+  correlation_id: correlationId,
+  at: at(iso),
+});
+const T1 = '0192a1b2-0001-7000-8000-000000000001';
+const accessLog = [
+  access(
+    'kal-4',
+    '2026-10-22T18:00:04+07:00',
+    'scoring',
+    'decrypt_condition',
+    'workflow',
+    'ExecThesisWorkflow · score_thesis',
+    '7f2a…c41e',
+    T1,
+  ),
+  access(
+    'kal-3',
+    '2026-10-10T02:00:11+07:00',
+    'evidence_refresh',
+    'decrypt_condition',
+    'workflow',
+    'ExecThesisWorkflow · evidence_refresh',
+    '19bd…07aa',
+    T1,
+  ),
+  access(
+    'kal-2',
+    '2026-10-06T14:12:37+07:00',
+    'validate',
+    'decrypt_condition',
+    'workflow',
+    'ExecThesisWorkflow · validate_condition',
+    'a3e0…5b19',
+    T1,
+  ),
+  access(
+    'kal-1',
+    '2026-10-06T14:12:30+07:00',
+    'unlock',
+    'unlock',
+    'owner_device',
+    'iPhone passkey',
+    '',
+    null,
+  ),
 ];
 
 const page = <T>(items: T[]) => HttpResponse.json({ items, next_page_token: '' });
@@ -568,7 +595,7 @@ export function createExecHandlers() {
     return state;
   };
   const wrapsOk = (wraps: { kind: string }[]) =>
-    wraps.length >= 2 && wraps.some((w) => w.kind !== 'passkey');
+    wraps.length >= 2 && wraps.some((w) => w.kind !== 'passkey_prf');
   return [
     http.get('*/v1/exec/vault', async () => HttpResponse.json((await load()).vault)),
     http.post('*/v1/exec/vault', async () =>
@@ -629,7 +656,19 @@ export function createExecHandlers() {
     }),
     http.get('*/v1/exec/theses/:id/evidence', async ({ params }) => {
       const s = await load();
-      return HttpResponse.json(s.evidence[String(params.id)] ?? { batches: [], items: [] });
+      const found = s.evidence[String(params.id)] ?? { batches: [], items: [] };
+      // EvidenceView rows; `batches` (with what was dropped as untraceable) is the PROPOSAL extra.
+      const ranAt = new Map(found.batches.map((b) => [b.batch_no, b.ran_at]));
+      return HttpResponse.json({
+        batches: found.batches,
+        items: found.items.map((e) => ({
+          ...e,
+          thesis_id: String(params.id),
+          agent_run_id: 'run-evidence',
+          recorded_at: ranAt.get(e.batch_no) ?? '',
+        })),
+        next_page_token: '',
+      });
     }),
     http.post('*/v1/exec/theses/:id/:action', async ({ params, request }) => {
       const s = await load();
@@ -637,10 +676,19 @@ export function createExecHandlers() {
       if (!t) return problem(404, 'not_found', 'Không tìm thấy luận điểm.');
       if (params.action === 'evidence:refresh') {
         if (t.status !== 'open') return problem(409, 'invalid_state', 'Luận điểm không còn mở.');
-        return HttpResponse.json({ agent_run_id: 'run-evidence' }, { status: 202 });
+        return HttpResponse.json(
+          { id: 'run-evidence', status: 'queued', poll_after_ms: 500 },
+          { status: 202 },
+        );
       }
       if (params.action === 'publications') {
-        const body = (await request.json()) as { statement_public: string; threshold: number };
+        const body = (await request.json()) as {
+          statement_public: string;
+          threshold: number;
+          attribution: string;
+        };
+        if (body.attribution !== 'named' && body.attribution !== 'role_only')
+          return problem(422, 'validation_failed', 'attribution: named hoặc role_only.');
         // A date may stay in the sentence; the threshold may not (it lives in the condition).
         const digits = body.statement_public.replace(/(\d)[.,](?=\d)/g, '$1');
         if (
@@ -659,7 +707,7 @@ export function createExecHandlers() {
           x.id === t.id ? { ...x, publication_id: `pub-${t.id.slice(-4)}` } : x,
         );
         return HttpResponse.json(
-          { id: `pub-${t.id.slice(-4)}`, status: 'pending_review', reviewer_name: 'Lê Thu Hà' },
+          { id: `pub-${t.id.slice(-4)}`, status: 'queued', poll_after_ms: 500 },
           { status: 202 },
         );
       }
@@ -694,9 +742,19 @@ export function createExecHandlers() {
       s.memory = [item, ...s.memory];
       return HttpResponse.json(item, { status: 201 });
     }),
-    http.post('*/v1/exec/private-questions', () =>
-      HttpResponse.json({ id: 'pq-1' }, { status: 202 }),
-    ),
+    http.post('*/v1/exec/private-questions', async ({ request }) => {
+      // PrivateQuestionCreate: the items the device decrypted, as text, at most eight.
+      const body = (await request.json()) as { context_items: { text?: unknown }[] };
+      if (
+        body.context_items.length > 8 ||
+        body.context_items.some((c) => typeof c.text !== 'string' || !c.text)
+      )
+        return problem(422, 'validation_failed', 'context_items: tối đa 8 mục có text.');
+      return HttpResponse.json(
+        { id: 'pq-1', status: 'queued', poll_after_ms: 500 },
+        { status: 202 },
+      );
+    }),
     http.get('*/v1/exec/private-questions/:id/stream', () => {
       const answer = {
         text: 'Lãi suất 12 tháng bình quân thị trường tuần 41 là 4,85%/năm; của mình 4,70%, thấp hơn 0,15 điểm.',
@@ -705,20 +763,17 @@ export function createExecHandlers() {
       const body = `event: answer\ndata: ${JSON.stringify(answer)}\n\nevent: done\ndata: {}\n\n`;
       return new HttpResponse(body, { headers: { 'Content-Type': 'text/event-stream' } });
     }),
-    http.get('*/v1/exec/publish-targets', () =>
-      HttpResponse.json({
-        items: [
-          { id: 'ds-finance', name: 'Khối Tài chính', reviewer_name: 'Lê Thu Hà' },
-          { id: 'ds-funding', name: 'Khối Nguồn vốn', reviewer_name: 'Trần Minh Quân' },
-        ],
-        attribution_title: 'Thành viên Ban điều hành',
-      }),
-    ),
     http.post('*/v1/exec/handovers', async ({ request }) => {
       const body = (await request.json()) as { kind: string; reason: string };
-      if (!body.reason?.trim()) return problem(422, 'validation_failed', 'Ghi lý do.');
+      if (!['leave_position', 'contract_end', 'owner_request'].includes(body.reason))
+        return problem(422, 'validation_failed', 'Chọn lý do.');
       return HttpResponse.json(
-        { id: 'ho-1', status: body.kind === 'seal' ? 'completed' : 'requested', kind: body.kind },
+        {
+          id: 'ho-1',
+          kind: body.kind,
+          reason: body.reason,
+          status: body.kind === 'seal' ? 'completed' : 'requested',
+        },
         { status: 201 },
       );
     }),

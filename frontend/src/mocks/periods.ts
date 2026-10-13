@@ -10,7 +10,8 @@ import type {
 /*
  * The periods of "P10 · Kỳ chốt · Chốt kỳ" (2304:19277). T9/2026 is mid-close and stopped on a
  * reconciliation mismatch; its HITL request is answered here (and only here, so the Cần bạn
- * list keeps its own fixture), which moves the close on to the lock step.
+ * list keeps its own fixture). Accepting it lets the close run to its end: the period locks
+ * itself, as the worker does once the reconciliation is settled (UC-10-02 step 5).
  */
 const ISSUE_HITL = 'hitl-period-t9-2141';
 
@@ -72,7 +73,7 @@ function september(): PeriodClose {
     ],
     frozen_note:
       'Số đóng băng được gắn vào báo cáo NHNN T9 và không sửa được nữa; chỉ có thể tạo bản điều chỉnh.',
-    can_lock: { allowed: false, reason: 'Còn bước đối soát chờ bạn quyết định.' },
+    can_start_close: false,
   };
 }
 
@@ -91,7 +92,7 @@ function plain(summary: PeriodSummary): PeriodClose {
     ],
     frozen_figures: [],
     frozen_note: '',
-    can_lock: { allowed: false, reason: done ? 'Kỳ đã khoá.' : 'Kỳ chưa bắt đầu chốt.' },
+    can_start_close: summary.status === 'open',
   };
 }
 
@@ -222,6 +223,50 @@ function compare(leftId: string, rightId: string): PeriodComparison | null {
   };
 }
 
+/*
+ * Periods, closes and retro changes are kept in the screens' shapes and answered in the api's
+ * (PeriodCloseView, PeriodCloseDetail, RetroChangeView, CompareResult) with the screen's row
+ * under `display`.
+ */
+const AT = '2026-10-01T09:00:00+07:00';
+
+const periodWire = (p: PeriodClose, detail = false) => {
+  const { id, code, status, adjustment_count } = p;
+  return {
+    id,
+    period_label: code,
+    status: { open: 'open', closing: 'closing', locked: 'closed', published: 'filed' }[status],
+    business_date: '2026-09-30',
+    version: adjustment_count + 1,
+    data_space_id: 'ds-rui-ro-tin-dung',
+    closed_at: null,
+    closed_by: null,
+    filed_at: null,
+    filed_report_code: null,
+    period_calendar_id: null,
+    snapshot_hash: null,
+    workflow_id: null,
+    created_at: AT,
+    updated_at: AT,
+    display: detail ? p : { id, code, status, adjustment_count },
+  };
+};
+
+const retroWire = (r: RetroChange) => ({
+  id: r.id,
+  period_close_id: r.period_id,
+  published_result_id: `pr-${r.id}`,
+  current_value: '0',
+  delta: '0',
+  below_materiality: false,
+  compliance_notified: r.escalation !== null,
+  decision: r.status === 'open' ? null : r.status === 'no_change' ? 'no_action' : 'new_version',
+  decision_note: r.decision_note,
+  new_period_close_id: null,
+  detected_at: AT,
+  display: r,
+});
+
 export function createPeriodHandlers() {
   let retro = retroChanges();
   let periods: PeriodClose[] = summaries().map((s) =>
@@ -231,54 +276,46 @@ export function createPeriodHandlers() {
     periods = periods.map((p) => (p.id === next.id ? next : p));
     return next;
   };
-  const summary = ({ id, code, status, adjustment_count }: PeriodClose): PeriodSummary => ({
-    id,
-    code,
-    status,
-    adjustment_count,
-  });
 
   return [
     http.get('*/v1/periods', () =>
-      HttpResponse.json({ items: periods.map(summary), next_page_token: '' }),
+      HttpResponse.json({ items: periods.map((p) => periodWire(p)), next_page_token: '' }),
     ),
     // Before /v1/periods/:id, which would otherwise take "compare" as an id.
     http.get('*/v1/periods/compare', ({ request }) => {
       const params = new URL(request.url).searchParams;
-      const result = compare(params.get('left') ?? '', params.get('right') ?? '');
-      return result ? HttpResponse.json(result) : problem(404, 'not_found', 'Không tìm thấy bản.');
+      const result = compare(params.get('a') ?? '', params.get('b') ?? '');
+      return result
+        ? HttpResponse.json({ a: {}, b: {}, items: [], rows_id: null, display: result })
+        : problem(404, 'not_found', 'Không tìm thấy bản.');
     }),
     http.get('*/v1/periods/:id', ({ params }) => {
       const period = periods.find((p) => p.id === params.id);
-      return period ? HttpResponse.json(period) : problem(404, 'not_found', 'Không tìm thấy kỳ.');
+      return period
+        ? HttpResponse.json(periodWire(period, true))
+        : problem(404, 'not_found', 'Không tìm thấy kỳ.');
     }),
+    // A2 lists retro changes per period.
+    http.get('*/v1/periods/:id/retro-changes', ({ params }) =>
+      HttpResponse.json({
+        items: retro.filter((r) => r.period_id === params.id).map(retroWire),
+        next_page_token: '',
+      }),
+    ),
     http.post('*/v1/periods/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
       const period = periods.find((p) => p.id === id);
       if (!period) return problem(404, 'not_found', 'Không tìm thấy kỳ.');
-      if (period.status !== 'closing')
-        return problem(409, 'invalid_state', 'Kỳ không ở trạng thái đang chốt.');
-      if (verb === 'lock') {
-        if (!period.can_lock.allowed)
-          return problem(409, 'invalid_state', period.can_lock.reason ?? 'Chưa khoá được.');
-        return HttpResponse.json(
-          save({
-            ...period,
-            status: 'locked',
-            steps: period.steps.map((s) => ({ ...s, state: 'done' })),
-            can_lock: { allowed: false, reason: 'Kỳ đã khoá.' },
-          }),
-        );
-      }
-      if (verb === 'cancel-close') {
-        return HttpResponse.json(
-          save({
-            ...period,
-            status: 'open',
-            steps: period.steps.map((s) => ({ ...s, state: 'pending', issue: undefined })),
-            can_lock: { allowed: false, reason: 'Kỳ chưa bắt đầu chốt.' },
-          }),
-        );
+      if (verb === 'close') {
+        // A2 :close (202): the worker snapshots and reconciles; the period locks itself after.
+        if (period.status !== 'open') return problem(409, 'invalid_state', 'Kỳ không còn mở.');
+        save({
+          ...period,
+          status: 'closing',
+          steps: period.steps.map((s, i) => ({ ...s, state: i === 0 ? 'running' : 'pending' })),
+          can_start_close: false,
+        });
+        return HttpResponse.json({ id, status: 'closing', poll_after_ms: 1000 }, { status: 202 });
       }
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),
@@ -293,38 +330,25 @@ export function createPeriodHandlers() {
       if (body.option === 'accept_with_note' && !body.note?.trim())
         return problem(422, 'validation_failed', 'Cần ghi chú khi chấp nhận chênh lệch.');
       const accepted = body.option === 'accept_with_note';
-      save({
-        ...period,
-        steps: period.steps.map((s) =>
-          s.issue?.hitl_id === id
-            ? {
-                ...s,
-                state: accepted ? 'done' : 'running',
-                detail: accepted
-                  ? 'Chấp nhận lệch TK 2141 theo ngày Core banking, có ghi chú'
-                  : 'Chờ sổ cái điều chỉnh TK 2141; agent đối soát lại khi có bút toán',
-                issue: undefined,
-              }
-            : s,
-        ),
-        can_lock: accepted
-          ? { allowed: true, reason: null }
-          : { allowed: false, reason: 'Đang chờ sổ cái điều chỉnh.' },
-      });
+      const steps = period.steps.map((s) =>
+        s.issue?.hitl_id === id
+          ? {
+              ...s,
+              state: accepted ? ('done' as const) : ('running' as const),
+              detail: accepted
+                ? 'Chấp nhận lệch TK 2141 theo ngày Core banking, có ghi chú'
+                : 'Chờ sổ cái điều chỉnh TK 2141; agent đối soát lại khi có bút toán',
+              issue: undefined,
+            }
+          : s,
+      );
+      // Settled, the close runs on to its last step and the period locks itself.
+      save(
+        accepted
+          ? { ...period, status: 'locked', steps: steps.map((s) => ({ ...s, state: 'done' })) }
+          : { ...period, steps },
+      );
       return HttpResponse.json({ id, status: 'answered' });
-    }),
-    http.get('*/v1/retro-changes', ({ request }) => {
-      const status = new URL(request.url).searchParams.get('status');
-      return HttpResponse.json({
-        items: retro.filter((r) => !status || r.status === status),
-        next_page_token: '',
-      });
-    }),
-    http.get('*/v1/retro-changes/:id', ({ params }) => {
-      const change = retro.find((r) => r.id === params.id);
-      return change
-        ? HttpResponse.json(change)
-        : problem(404, 'not_found', 'Không tìm thấy thay đổi hồi tố.');
     }),
     http.post('*/v1/retro-changes/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
@@ -333,14 +357,14 @@ export function createPeriodHandlers() {
         return problem(404, 'not_found', 'Không tìm thấy thay đổi hồi tố.');
       if (change.status !== 'open') return problem(409, 'invalid_state', 'Thay đổi đã được quyết.');
       const body = (await request.json()) as {
-        decision: 'new_version' | 'no_change';
+        decision: 'new_version' | 'no_action';
         decision_note: string;
       };
       if (!body.decision_note?.trim())
         return problem(422, 'validation_failed', 'Cần lý do cho quyết định.');
       const decided: RetroChange = {
         ...change,
-        status: body.decision,
+        status: body.decision === 'no_action' ? 'no_change' : 'new_version',
         decision_note: body.decision_note,
       };
       retro = retro.map((r) => (r.id === id ? decided : r));
@@ -350,7 +374,7 @@ export function createPeriodHandlers() {
           p.id === change.period_id ? { ...p, adjustment_count: p.adjustment_count + 1 } : p,
         );
       }
-      return HttpResponse.json(decided);
+      return HttpResponse.json(retroWire(decided));
     }),
   ];
 }

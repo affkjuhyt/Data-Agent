@@ -1,11 +1,18 @@
+import { listUsers } from './api';
 import { pathId, v1Get, v1Send, type Page } from './client';
+import type { components } from './schema';
+
+type Schemas = components['schemas'];
 
 /*
  * Skills and tools, the library side of P03 (UC-03-01, UC-03-05…07, UC-13-02): the skill
- * library, the versions of one skill with its review and deprecation, the agent's skill
- * suggestions and sharing, the tool registry by permission level and the MCP connections.
+ * library, the versions of one skill with its review, the agent's skill suggestions and sharing,
+ * and the tool catalogue by permission level (GET /v1/tools; tools are the system's catalogue,
+ * assigned to agents through their config, so there is no registering one from the screen).
  * The authoring side (definition, tests, run) lives in skillAuthoring.ts and reads these
- * types. Fields marked PROPOSAL are what the screens need and the spec does not fix yet.
+ * types. Fields marked PROPOSAL are what the screens need and the spec does not fix yet. The
+ * api's rows are read below; the screen's richer row travels under `display` when the mock sends
+ * it and is said from the api's row otherwise.
  */
 export type SkillStatus = 'draft' | 'testing' | 'pending_review' | 'certified' | 'deprecated';
 export type SkillScope = 'data_space' | 'organization' | 'domain_pack';
@@ -38,16 +45,119 @@ export interface Skill {
   pending_version_id: string | null;
 }
 
-export const listSkills = (query: { scope?: SkillScope; status?: SkillStatus } = {}) =>
-  v1Get<Page<Skill>>('/skills', { ...query, page_size: 500 });
+type SkillWire = (Schemas['SkillView'] | Schemas['SkillDetail']) & { display?: Skill };
 
-export const getSkill = async (id: string) => v1Get<Skill>(`/skills/${pathId(id)}`);
+/** skill.scope personal, data_space, org; a pack's skill is the domain pack's. */
+const scopeOf = (raw: Schemas['SkillView']): SkillScope =>
+  raw.origin === 'pack' ? 'domain_pack' : raw.scope === 'org' ? 'organization' : 'data_space';
+
+const SCOPE_LABEL: Record<string, string> = {
+  personal: 'Cá nhân',
+  data_space: 'Data Space',
+  org: 'Toàn tổ chức',
+};
+
+/*
+ * The skill's status from its versions when the detail has them (a version waiting for review,
+ * none published yet), else from the row: replaced is deprecated, no version a draft.
+ */
+function statusOf(raw: SkillWire): { status: SkillStatus; pending: string | null } {
+  const versions = 'versions' in raw ? (raw.versions ?? []) : [];
+  const pending = versions.find((v) => v.status === 'pending_review') ?? null;
+  if (raw.replaced_by_skill_id) return { status: 'deprecated', pending: null };
+  if (pending) return { status: 'pending_review', pending: pending.id };
+  if (versions.some((v) => v.status === 'testing')) return { status: 'testing', pending: null };
+  if (raw.current_version === null) return { status: 'draft', pending: null };
+  return { status: 'certified', pending: null };
+}
+
+const STATUS_TEXT: Record<SkillStatus, string> = {
+  draft: 'Nháp',
+  testing: 'Đang kiểm định',
+  pending_review: 'Chờ duyệt',
+  certified: 'Đã chứng nhận',
+  deprecated: 'Đã ngừng',
+};
+
+function readSkill(raw: SkillWire, names: Map<string, string>): Skill {
+  if (raw.display) return raw.display;
+  const { status, pending } = statusOf(raw);
+  const owner = { id: raw.owner_id, name: names.get(raw.owner_id) ?? '' };
+  const steps = 'published_version' in raw ? raw.published_version?.steps : null;
+  return {
+    id: raw.id,
+    name: raw.name,
+    description: raw.description ?? '',
+    version: raw.current_version ?? 0,
+    status,
+    status_text: STATUS_TEXT[status],
+    scope: scopeOf(raw),
+    scope_label: SCOPE_LABEL[raw.scope] ?? raw.scope,
+    owner,
+    created_by: owner,
+    step_count: Array.isArray(steps) ? steps.length : 0,
+    agent_count: 0,
+    runs_30d: raw.run_count_30d || null,
+    pass_rate_pct: null,
+    pending_version_id: pending,
+  };
+}
+
+/** The owners' names come from the people the viewer may see; a failure leaves them empty. */
+const userNames = async () =>
+  new Map<string, string>(
+    (await listUsers().catch(() => null))?.items.map((u) => [u.id, u.display_name]) ?? [],
+  );
+
+/** A2 filters by scope and category; `status` is the screen's, applied to the page read. */
+export const listSkills = async (query: { scope?: SkillScope; status?: SkillStatus } = {}) => {
+  const [page, names] = await Promise.all([
+    v1Get<Page<SkillWire>>('/skills', {
+      scope:
+        query.scope === 'organization'
+          ? 'org'
+          : query.scope === 'data_space'
+            ? 'data_space'
+            : undefined,
+      page_size: 500,
+    }),
+    userNames(),
+  ]);
+  const items = page.items.map((s) => readSkill(s, names));
+  return { ...page, items: query.status ? items.filter((s) => s.status === query.status) : items };
+};
+
+export const getSkill = async (id: string) => {
+  const [raw, names] = await Promise.all([v1Get<SkillWire>(`/skills/${pathId(id)}`), userNames()]);
+  return readSkill(raw, names);
+};
+
+/** "Phân rã biến động" → "phan_ra_bien_dong" (skill.code). */
+const codeOf = (name: string) =>
+  name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60) || 'skill';
 
 /**
- * PROPOSAL: POST /v1/skills — an empty draft owned by the caller, opened in the editor
- * (skillAuthoring.ts fills its definition).
+ * POST /v1/skills (SkillCreate) — an empty draft owned by the caller, opened in the editor
+ * (skillAuthoring.ts fills its definition). It starts personal and custom; sharing widens it.
  */
-export const createSkill = (body: { name: string }) => v1Send<Skill>('POST', '/skills', body);
+export const createSkill = async (body: { name: string }) =>
+  readSkill(
+    await v1Send<SkillWire>('POST', '/skills', {
+      code: codeOf(body.name),
+      name: body.name,
+      category: 'custom',
+      origin: 'manual',
+      scope: 'personal',
+    } satisfies Schemas['SkillCreate']),
+    new Map(),
+  );
 
 /* ─── Phiên bản kỹ năng · Duyệt & ngừng (UC-03-05, UC-03-06) ───────────── */
 
@@ -71,8 +181,49 @@ export interface SkillVersion {
   status_text: string;
 }
 
-export const listSkillVersions = async (skillId: string) =>
-  v1Get<Page<SkillVersion>>(`/skills/${pathId(skillId)}/versions`);
+/** skill_version.status in the screen's words: published is in use, retired stopped. */
+const VERSION_STATUS: Record<string, SkillVersionStatus> = {
+  draft: 'draft',
+  testing: 'draft',
+  pending_review: 'pending_review',
+  needs_review: 'changes_requested',
+  published: 'active',
+  retired: 'deprecated',
+};
+
+const VERSION_TEXT: Record<SkillVersionStatus, string> = {
+  draft: 'Nháp',
+  pending_review: 'Chờ duyệt',
+  changes_requested: 'Cần sửa',
+  active: 'Đang dùng',
+  deprecated: 'Đã ngừng',
+};
+
+/**
+ * A2 has no GET /v1/skills/{id}/versions: the skill's detail carries its versions, newest first.
+ * The change note and the eval counts are PROPOSAL.
+ */
+export const listSkillVersions = async (skillId: string): Promise<Page<SkillVersion>> => {
+  const raw = await v1Get<Schemas['SkillDetail'] & { display_versions?: SkillVersion[] }>(
+    `/skills/${pathId(skillId)}`,
+  );
+  if (raw.display_versions) return { items: raw.display_versions, next_page_token: '' };
+  const items = [...(raw.versions ?? [])]
+    .sort((a, b) => b.version - a.version)
+    .map((v): SkillVersion => {
+      const status = VERSION_STATUS[v.status] ?? 'draft';
+      return {
+        id: v.id,
+        version: v.version,
+        change_text: '',
+        eval_passed: 0,
+        eval_total: 0,
+        status,
+        status_text: VERSION_TEXT[status],
+      };
+    });
+  return { items, next_page_token: '' };
+};
 
 interface Option {
   value: string;
@@ -80,40 +231,109 @@ interface Option {
 }
 
 /**
- * PROPOSAL: GET /v1/skill-versions/{id}/review — what the reviewer needs to decide: the
- * pre-approval checks, the scopes they may publish to, and who runs the version it replaces.
+ * What the reviewer needs to decide on a version waiting for review (UC-03-05). A2 has no review
+ * resource: publishing opens a skill_publish proposal in Cần bạn (target_ref = the version), found
+ * from the caller's open approve_proposal requests; the checks come from the version's eval run.
  */
 export interface SkillVersionReview {
   version_id: string;
   version: number;
+  /** The skill_publish proposal; null when the caller has none open for this version. */
+  proposal_id: string | null;
   /** The version in use that the new one replaces; null for a first version. */
-  current: { id: string; version: number; agent_count: number; session_count: number } | null;
+  current: { id: string; version: number } | null;
   checks: { text: string; ok: boolean }[];
-  scope_options: Option[];
-  scope_value: string;
-  /** When the current version stops: "30 ngày sau khi phát hành v3 · 07/11". */
-  deprecate_options: Option[];
-  /** Where its users move: "v3 · tham số giữ nguyên". */
-  replacement_options: Option[];
-  consumers: { name: string; kind: 'agent' | 'session'; action_text: string }[];
-  /** BR: the reviewer is not the author; org-wide publishing needs an administrator. */
+  /** The scope the version is published to, as the proposal asks (personal, data_space, org). */
+  scope: Option | null;
   can_approve: { allowed: boolean; reason: string | null };
 }
 
-export const getSkillVersionReview = async (versionId: string) =>
-  v1Get<SkillVersionReview>(`/skill-versions/${pathId(versionId)}/review`);
+const PUBLISH_SCOPE: Record<string, string> = {
+  personal: 'Cá nhân',
+  data_space: 'Data Space',
+  org: 'Toàn tổ chức',
+};
 
-/** :approve — certified and published at the chosen scope; the previous version is scheduled to stop. */
-export const approveSkillVersion = async (
-  versionId: string,
-  body: { scope: string; deprecate_previous: string; replacement: string },
-) => v1Send<SkillVersion>('POST', `/skill-versions/${pathId(versionId)}:approve`, body);
+type Proposal = Schemas['ProposalDetail'];
 
-/** :request-changes — back to the author with the reviewer's note. */
-export const requestSkillChanges = async (versionId: string, comment: string) =>
-  v1Send<SkillVersion>('POST', `/skill-versions/${pathId(versionId)}:request-changes`, {
-    comment,
+/** The open skill_publish proposal of a version, among the caller's approve_proposal requests. */
+async function publishProposal(versionId: string): Promise<Proposal | null> {
+  const inbox = await v1Get<Page<Schemas['HitlView']>>('/inbox', {
+    kind: 'approve_proposal',
+    status: 'open',
+    page_size: 500,
   });
+  const refs = inbox.items.flatMap((h) =>
+    h.kind === 'approve_proposal' && h.source_ref ? [h.source_ref] : [],
+  );
+  const proposals = await Promise.all(
+    refs.map((id) => v1Get<Proposal>(`/proposals/${pathId(id)}`).catch(() => null)),
+  );
+  return (
+    proposals.find(
+      (p): p is Proposal => p !== null && p.kind === 'skill_publish' && p.target_ref === versionId,
+    ) ?? null
+  );
+}
+
+function checksOf(run: Schemas['EvalRunDetail'] | null): SkillVersionReview['checks'] {
+  if (!run) return [{ ok: false, text: 'Chưa có kết quả kiểm định' }];
+  const checks = [{ ok: run.failed === 0, text: `Kiểm định ${run.passed}/${run.item_count} đạt` }];
+  if (run.regressions > 0)
+    checks.push({ ok: false, text: `${run.regressions} ca đổi kết quả so với bản trước` });
+  return checks;
+}
+
+export const getSkillVersionReview = async (
+  skillId: string,
+  versionId: string,
+): Promise<SkillVersionReview> => {
+  const skill = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(skillId)}`);
+  const versions = skill.versions ?? [];
+  const version = versions.find((v) => v.id === versionId);
+  const current = versions.find((v) => v.status === 'published') ?? null;
+  const [run, proposal] = await Promise.all([
+    version?.eval_run_id
+      ? v1Get<Schemas['EvalRunDetail']>(`/eval-runs/${pathId(version.eval_run_id)}`).catch(
+          () => null,
+        )
+      : null,
+    publishProposal(versionId),
+  ]);
+  const diff = (proposal?.diff ?? {}) as { scope?: unknown };
+  const scope = typeof diff.scope === 'string' ? diff.scope : null;
+  return {
+    version_id: versionId,
+    version: version?.version ?? 0,
+    proposal_id: proposal?.id ?? null,
+    current: current ? { id: current.id, version: current.version } : null,
+    checks: checksOf(run),
+    scope: scope ? { value: scope, label: PUBLISH_SCOPE[scope] ?? scope } : null,
+    can_approve: !proposal
+      ? { allowed: false, reason: 'Đề xuất phát hành này không nằm trong Cần bạn của bạn.' }
+      : proposal.status !== 'pending_review'
+        ? { allowed: false, reason: 'Đề xuất phát hành đã được xử lý.' }
+        : { allowed: true, reason: null },
+  };
+};
+
+/**
+ * Approving is accepting the skill_publish proposal in Cần bạn (POST /v1/proposals/{id}:decide);
+ * the version is published and the one in use retires after the transition (BR-97).
+ */
+export const approveSkillVersion = async (proposalId: string) =>
+  v1Send<Proposal>('POST', `/proposals/${pathId(proposalId)}:decide`, {
+    decision: 'accept',
+    reviewed_regressions: true,
+  } satisfies Schemas['ProposalDecision']);
+
+/** Asking for changes sends the version back to its author with the reviewer's note. */
+export const requestSkillChanges = async (proposalId: string, note: string) =>
+  v1Send<Proposal>('POST', `/proposals/${pathId(proposalId)}:decide`, {
+    decision: 'request_changes',
+    note,
+    reviewed_regressions: true,
+  } satisfies Schemas['ProposalDecision']);
 
 /* ─── Đề xuất từ agent & chia sẻ (UC-03-07) ───────────────────────────── */
 
@@ -132,59 +352,103 @@ export interface SkillSuggestion {
   occurrences: { at: string; where: string }[];
 }
 
-export const listSkillSuggestions = () =>
-  v1Get<Page<SkillSuggestion>>('/skill-suggestions', { page_size: 500 });
+type SuggestionWire = Schemas['services__api__modules__skill__schemas__SuggestionView'] & {
+  display?: SkillSuggestion;
+};
+
+/**
+ * `pattern` is the generalised chain (BR-98): step kinds and parameter names, no values. Each
+ * step reads as its name or kind; the steps may sit at the top or under `steps`.
+ */
+function stepsOf(pattern: unknown): string[] {
+  const list = Array.isArray(pattern)
+    ? pattern
+    : typeof pattern === 'object' &&
+        pattern !== null &&
+        Array.isArray((pattern as { steps?: unknown }).steps)
+      ? (pattern as { steps: unknown[] }).steps
+      : [];
+  return list.flatMap((s) => {
+    if (typeof s === 'string') return [s];
+    if (typeof s !== 'object' || s === null) return [];
+    const { name, kind } = s as { name?: unknown; kind?: unknown };
+    return typeof name === 'string' ? [name] : typeof kind === 'string' ? [kind] : [];
+  });
+}
+
+function readSuggestion(raw: SuggestionWire): SkillSuggestion {
+  if (raw.display) return raw.display;
+  const steps = stepsOf(raw.pattern);
+  const sessions = raw.session_ids.length;
+  return {
+    id: raw.id,
+    title: steps.length ? steps.join(' → ') : 'Chuỗi bước lặp lại',
+    repeat_text: `Lặp lại trong ${sessions} phiên của ${raw.user_count} người`,
+    count_text: `${sessions} phiên · ${raw.user_count} người`,
+    steps,
+    used_by: [],
+    session_ids: raw.session_ids,
+    occurrences: [],
+  };
+}
+
+export const listSkillSuggestions = async () => {
+  const page = await v1Get<Page<SuggestionWire>>('/skill-suggestions', { page_size: 500 });
+  return { ...page, items: page.items.map(readSuggestion) };
+};
 
 /** :dismiss — the agent does not suggest the same chain again for 90 days. */
 export const dismissSkillSuggestion = async (id: string) =>
   v1Send<void>('POST', `/skill-suggestions/${pathId(id)}:dismiss`, {});
 
 /**
- * PROPOSAL: :share — a certified skill to another Data Space or the whole organisation
- * (`data_space_id` null). The receiver runs it with its own data permissions; org-wide sharing
- * waits for an administrator.
+ * :share — a certified skill to its Data Space or the whole organisation (`data_space_id` null).
+ * A2's ShareRequest names the scope, not another Data Space: sharing to a space is the skill's
+ * own. The receiver runs it with its own data permissions; org-wide sharing waits for an
+ * administrator, which the skill's scope not yet being org says.
  */
-export const shareSkill = async (id: string, dataSpaceId: string | null) =>
-  v1Send<{ status: 'shared' | 'pending_admin' }>('POST', `/skills/${pathId(id)}:share`, {
-    data_space_id: dataSpaceId,
-  });
+export const shareSkill = async (id: string, dataSpaceId: string | null) => {
+  const scope = dataSpaceId === null ? 'org' : 'data_space';
+  const shared = await v1Send<Schemas['SkillView']>('POST', `/skills/${pathId(id)}:share`, {
+    scope,
+  } satisfies Schemas['ShareRequest']);
+  return { status: shared.scope === scope ? ('shared' as const) : ('pending_admin' as const) };
+};
 
-/* ─── Công cụ & kết nối MCP (UC-13-02) ────────────────────────────────── */
+/* ─── Công cụ (UC-13-02) ──────────────────────────────────────────────── */
 
 export type ToolLevel = 'read' | 'write_derived' | 'external' | 'system';
 
-/** PROPOSAL: GET /v1/tools — the actions an agent may call, by permission level. */
+/** GET /v1/tools — the actions an agent may call, by permission level. */
 export interface Tool {
-  id: string;
+  /** agent.tool_def.code ("metric.query"). */
   name: string;
   level: ToolLevel;
   description: string;
-  /** null = built in; otherwise the MCP server that provides it. */
-  mcp_server_id: string | null;
-  agent_count: number;
-  calls_30d: number;
+  /** The service that runs it. */
+  executed_by: string;
+  /** The checkpoint the tool asks for by default; null when it runs without one. */
+  default_checkpoint: string | null;
 }
 
-export const listTools = () => v1Get<Page<Tool>>('/tools', { page_size: 500 });
+type ToolWire = Schemas['services__api__modules__skill__schemas__ToolView'];
 
-export const registerTool = (body: {
-  name: string;
-  /** 'builtin' or an MCP server id. */
-  provider: string;
-  level: ToolLevel;
-  description: string;
-  agent_ids: string[];
-}) => v1Send<Tool>('POST', '/tools', body);
+const LEVEL: Record<ToolWire['level'], ToolLevel> = {
+  read: 'read',
+  write_derived: 'write_derived',
+  external_send: 'external',
+  system_action: 'system',
+};
 
-type McpStatus = 'active' | 'auth_error' | 'pending_pii_review';
+const readTool = (raw: ToolWire): Tool => ({
+  name: raw.code,
+  level: LEVEL[raw.level] ?? 'read',
+  description: raw.description,
+  executed_by: raw.executed_by,
+  default_checkpoint: raw.default_checkpoint,
+});
 
-/** PROPOSAL: GET /v1/mcp-servers. */
-export interface McpServer {
-  id: string;
-  name: string;
-  tools: string[];
-  auth: 'oauth2' | 'sso' | 'api_key';
-  status: McpStatus;
-}
-
-export const listMcpServers = () => v1Get<Page<McpServer>>('/mcp-servers', { page_size: 500 });
+export const listTools = async () => {
+  const page = await v1Get<Page<ToolWire>>('/tools', { page_size: 500 });
+  return { ...page, items: page.items.map(readTool) };
+};

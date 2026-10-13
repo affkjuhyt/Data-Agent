@@ -1,13 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
-import { Field } from '../../design-system/Field';
 import { Icon } from '../../design-system/Icon';
-import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
@@ -28,9 +26,10 @@ import { VERSION_TONE } from './labels';
 
 /*
  * "P03 · Phiên bản kỹ năng · Duyệt & ngừng" (2294:18535, UC-03-05, UC-03-06): the versions of
- * one skill, and for the version waiting for review the checks before approval, the scope to
- * publish to, when the version in use stops and who still runs it. Agents never upgrade on
- * their own: publishing asks each agent owner to approve the upgrade ("Xác nhận · publishSkill").
+ * one skill, and for the version waiting for review the checks before approval (its eval run) and
+ * the scope it is published to. Approving or asking for changes decides the skill_publish
+ * proposal in Cần bạn; the version in use retires after the 30-day transition (BR-97). Agents
+ * never upgrade on their own ("Xác nhận · publishSkill").
  * Opened from the rail ("Đang chờ duyệt") without an id, it shows the first skill waiting.
  */
 interface Loaded {
@@ -48,7 +47,7 @@ async function load(routeId: string | undefined): Promise<Loaded | null> {
   }
   const [skill, versions] = await Promise.all([getSkill(id), listSkillVersions(id)]);
   const review = skill.pending_version_id
-    ? await getSkillVersionReview(skill.pending_version_id)
+    ? await getSkillVersionReview(id, skill.pending_version_id)
     : null;
   return { skill, versions: versions.items, review };
 }
@@ -92,19 +91,10 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
   const pending = versions.find((v) => v.id === review?.version_id);
   const current = review?.current;
 
-  const [scope, setScope] = useState(review?.scope_value ?? null);
-  const [stopAt, setStopAt] = useState(review?.deprecate_options[0]?.value ?? null);
-  const [replacement, setReplacement] = useState(review?.replacement_options[0]?.value ?? null);
   const [dialog, setDialog] = useState<'publish' | 'changes' | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-
-  useEffect(() => {
-    setScope(review?.scope_value ?? null);
-    setStopAt(review?.deprecate_options[0]?.value ?? null);
-    setReplacement(review?.replacement_options[0]?.value ?? null);
-  }, [review]);
 
   const open = (which: 'publish' | 'changes') => {
     setError(undefined);
@@ -128,14 +118,13 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
   const summary = [
     `${versions.length} phiên bản`,
     pending && `v${pending.version} chờ duyệt`,
-    current
-      ? `v${current.version} đang dùng ở ${current.agent_count} agent và ${current.session_count} phiên`
-      : active && `v${active.version} đang dùng`,
+    active && `v${active.version} đang dùng`,
   ]
     .filter(Boolean)
     .join(' · ');
 
   const blocked = review && !review.can_approve.allowed ? review.can_approve.reason : null;
+  const proposalId = review?.proposal_id ?? null;
   const publishButton = pending && (
     <Button kind="primary" disabled={Boolean(blocked)} onClick={() => open('publish')}>
       Duyệt và phát hành v{pending.version}
@@ -161,7 +150,7 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
         actions={
           pending && (
             <>
-              <Button kind="ghost" onClick={() => open('changes')}>
+              <Button kind="ghost" disabled={Boolean(blocked)} onClick={() => open('changes')}>
                 Yêu cầu sửa
               </Button>
               {blocked ? <Tooltip content={blocked}>{publishButton}</Tooltip> : publishButton}
@@ -202,51 +191,11 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
           </section>
 
           {review && pending && current && (
-            <section className="flex flex-col gap-[10px] border-b border-border py-da-xl">
-              <h2 className="text-foreground da-heading-3">
-                Khi phát hành v{pending.version}, ngừng dùng v{current.version}?
-              </h2>
-              <div className="grid grid-cols-2 gap-da-lg">
-                <Field label={`Ngừng v${current.version} từ`} labelTone="muted">
-                  <Select
-                    label={`Ngừng v${current.version} từ`}
-                    options={review.deprecate_options}
-                    value={stopAt}
-                    onChange={setStopAt}
-                  />
-                </Field>
-                <Field label="Chuyển người dùng sang" labelTone="muted">
-                  <Select
-                    label="Chuyển người dùng sang"
-                    options={review.replacement_options}
-                    value={replacement}
-                    onChange={setReplacement}
-                  />
-                </Field>
-              </div>
-              <table className="w-full table-fixed border-collapse">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                    <th className="py-da-md pl-da-lg font-normal">Đang dùng v{current.version}</th>
-                    <th className="w-[112px] py-da-md pl-da-lg font-normal">Loại</th>
-                    <th className="w-[324px] px-da-lg py-da-md font-normal">Việc cần làm</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {review.consumers.map((c) => (
-                    <tr key={c.name} className="border-b border-border">
-                      <td className="py-[9px] pl-da-lg text-foreground da-body-strong">{c.name}</td>
-                      <td className="py-[9px] pl-da-lg text-muted-foreground da-body-small">
-                        {c.kind === 'agent' ? 'Agent' : 'Phiên'}
-                      </td>
-                      <td className="px-da-lg py-[9px] text-foreground da-body-small">
-                        {c.action_text}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </section>
+            <p className="py-da-xl text-foreground da-body-small">
+              Khi phát hành v{pending.version}, v{current.version} ngừng dùng sau 30 ngày; người dùng
+              chuyển sang v{pending.version} với tham số giữ nguyên. Kết quả cũ luôn ghi rõ phiên
+              bản đã dùng.
+            </p>
           )}
         </div>
 
@@ -272,12 +221,7 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
               ))}
             </ul>
             <h2 className="text-foreground da-heading-3">Phạm vi dùng</h2>
-            <Select
-              label="Phạm vi dùng"
-              options={review.scope_options}
-              value={scope}
-              onChange={setScope}
-            />
+            <p className="text-foreground da-body-small">{review.scope?.label ?? '—'}</p>
             <p className="text-foreground da-body-small">
               Agent không tự nâng phiên bản kỹ năng; chủ sở hữu từng agent nhận yêu cầu duyệt. Kết
               quả cũ luôn ghi rõ phiên bản đã dùng.
@@ -297,19 +241,15 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
             error={error}
             onCancel={() => setDialog(null)}
             onConfirm={() =>
+              proposalId &&
               act(
-                () =>
-                  approveSkillVersion(pending.id, {
-                    scope: scope ?? '',
-                    deprecate_previous: stopAt ?? '',
-                    replacement: replacement ?? '',
-                  }),
+                () => approveSkillVersion(proposalId),
                 `Đã phát hành ${skill.name} v${pending.version}`,
               )
             }
           >
             {current
-              ? `${current.agent_count} agent đang dùng v${current.version} không tự nâng cấp; chủ sở hữu từng agent sẽ được thông báo.`
+              ? `Agent đang dùng v${current.version} không tự nâng cấp; chủ sở hữu từng agent sẽ được thông báo.`
               : 'Phiên bản đầu tiên: agent chỉ dùng khi chủ sở hữu gán kỹ năng.'}
           </ConfirmDialog>
           <ConfirmDialog
@@ -326,8 +266,9 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
                 setError('Ghi điều cần sửa.');
                 return;
               }
+              if (!proposalId) return;
               act(
-                () => requestSkillChanges(pending.id, note.trim()),
+                () => requestSkillChanges(proposalId, note.trim()),
                 `Đã trả v${pending.version} về ${skill.created_by.name}`,
               );
             }}

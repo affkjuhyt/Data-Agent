@@ -13,6 +13,7 @@ Thiết kế CSDL ở tài liệu phân tích thiết kế (tab 3 “Thiết k�
 | DDL | `backend/schema/csdl/gen_ddl.py` → `backend/alembic/sql/dataagent.sql`, `dataagent_audit.sql` | Vai trò, schema, bảng, outbox, chỉ mục, FK, RLS, quyền, routines, phân vùng tháng |
 | ORM | `backend/schema/csdl/gen_orm.py` → `backend/libs/dataagent_db/models/<schema>.py` | Một module mỗi schema, một lớp mỗi bảng (PascalCase) và `Outbox` |
 | Migration | `backend/alembic/versions/` | Revision áp tệp SQL sinh ra |
+| Dữ liệu khởi tạo | `backend/alembic/seed/` | Dòng dùng chung cho mọi tổ chức mà thiết kế bảo nạp bằng migration, ví dụ `tool_def.json` (59 công cụ của tab 5 G2, nạp ở v3_0011) |
 | Kiểm thử | `tests/integration/migrate/` | Số lượng đối tượng, cách ly tổ chức, ORM khớp DDL, các phép thử D5.4 theo từng schema, `scoped_session` |
 
 Sinh lại sau khi thiết kế đổi (từ `backend/schema`):
@@ -63,5 +64,11 @@ Mỗi routine ghi diễn giải của mình trong chú thích cạnh dấu `cove
   hạn. Yêu cầu rời vị trí chỉ trỏ được tới kho của chính chủ kho.
 - Không cấp được `audit_read` trên `governance.model_route_decision` từ `dataagent.sql`: vai trò này thuộc CSDL
   audit; đọc qua Audit service.
+- Quyết định 12/10/2026 (revision `v3_0009`): mọi schema có outbox, kể cả `audit.outbox` trong CSDL audit (relay
+  `svc_outbox_relay` đọc cả hai CSDL); `conflict.source_authority` giữ một bản active và một bản nháp mỗi loại dữ
+  liệu, duyệt bản nháp thì trigger chuyển bản cũ thành `superseded` (UC-07-05); `catalog.source.writeback_tables`
+  là danh sách bảng đích được ghi ngược; `pipeline.writeback_request` có trạng thái `undo_requested`;
+  `pipeline.data_product.owner_id` là người duyệt phát hành (CHECK `approved_by = owner_id`);
+  `ingest.quality_result` lưu `acknowledged_at`, `acknowledged_note` (BR-116).
 - Chưa kiểm ở CSDL: chủ trang hypothesis khác người công bố (BR-194) — cần đọc `exec` dưới RLS chủ kho, để ở
   tầng ứng dụng.

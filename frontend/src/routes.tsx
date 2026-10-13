@@ -31,7 +31,6 @@ const OrchestrationPage = React.lazy(() => import('./features/agent-ops/Orchestr
 const AgentOperationsPage = React.lazy(() => import('./features/admin-platform/AgentOperationsPage'));
 const SessionsPage = React.lazy(() => import('./features/sessions/SessionsPage'));
 const ReportReviewPage = React.lazy(() => import('./features/sessions/ReportReviewPage'));
-const DashboardPage = React.lazy(() => import('./features/dashboards/DashboardPage'));
 const SourcesPage = React.lazy(() => import('./features/data-sources/SourcesPage'));
 const SourceDetailPage = React.lazy(() => import('./features/data-sources/SourceDetailPage'));
 const TableProfilePage = React.lazy(() => import('./features/data-sources/TableProfilePage'));
@@ -173,7 +172,6 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     SESSIONS:  { render: () => <SessionsPage /> },
     // /analysis/report/<id>, under "Phiên làm việc"; Cần bạn report_publish cards open it.
     REPORT:    { render: () => <ReportReviewPage /> },
-    DASHBOARD: { render: () => <DashboardPage /> },
     // P16 Kho riêng: the executive vault, four tabs on one page.
     VAULT:     { render: () => <VaultPage /> },
     EXPLORE:         { render: () => <ExplorePage /> },

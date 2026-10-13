@@ -17,6 +17,22 @@ const INTEGRATED_GROUPS: readonly string[] = [
   'Phiên làm việc',
   'Agent',
   'Nguồn và danh mục',
+  'Nạp dữ liệu',
+  'Lớp ngữ cảnh',
+  'Theo dõi, báo cáo, thông báo',
+  'Quản trị',
+  'Chính sách',
+  'Kiểm toán',
+  'Xung đột',
+  'Kỳ chốt',
+  'Tài liệu',
+  'Kỹ năng',
+  'Biến đổi dữ liệu',
+  'Dự báo',
+  'Gói ngành',
+  'Thu thập',
+  'Tích hợp',
+  'Lớp riêng lãnh đạo',
 ];
 
 const IDENTITY_OPERATIONS: readonly string[] = ['getMe', 'listMyDataSpaces'];
@@ -41,7 +57,8 @@ export function integratedOperations(
     );
     for (const [method, operation] of Object.entries(methods)) {
       const group = operation.tags?.[0] ?? '';
-      if (groups.includes(group) || IDENTITY_OPERATIONS.includes(operation.operationId ?? ''))
+      const id = operation.operationId ?? '';
+      if (groups.includes(group) || IDENTITY_OPERATIONS.includes(id))
         operations.push({ method: method.toUpperCase(), pattern });
     }
   }

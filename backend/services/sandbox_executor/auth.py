@@ -18,7 +18,7 @@ def require_service_assertion(token: str) -> dict[str, Any]:
     """Verify the caller before accepting any execution or polling request."""
     allowed = {
         item.strip()
-        for item in os.environ.get("SANDBOX_ALLOWED_SERVICES", "workflow_runtime").split(",")
+        for item in os.environ.get("SANDBOX_ALLOWED_SERVICES", "worker-agent").split(",")
         if item.strip()
     }
     try:

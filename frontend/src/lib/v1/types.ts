@@ -340,17 +340,11 @@ export const readDataset = (raw: DatasetWire): Dataset => ({
   certified: raw.certified ?? null,
 });
 
-export interface Metric {
-  id: Uuid;
-  code: string;
-  status: 'draft' | 'active' | 'retired';
-  current_version: number | null;
-}
+/** GET /v1/metrics (context MetricView). */
+export type Metric = components['schemas']['MetricView'];
 
-export interface GlossaryTerm {
-  id: Uuid;
-  term: string;
-}
+/** GET /v1/terms (context TermView). */
+export type GlossaryTerm = components['schemas']['TermView'];
 
 /* ─── Quản trị: org.data_space, org.app_user, governance.model_config ── */
 
@@ -374,6 +368,21 @@ export interface ModelConfig {
 }
 
 /* ─── Chính sách: governance.behavior_policy ──────────────────────────── */
+
+/** GET /v1/policies?type=behavior as the api sends it, with the PROPOSAL weekly count. */
+export type BehaviorPolicyWire = components['schemas']['BehaviorPolicyView'] & {
+  applied_this_week?: number;
+};
+
+export const readBehaviorPolicy = (raw: BehaviorPolicyWire): BehaviorPolicy => ({
+  id: raw.id,
+  scope: raw.scope as BehaviorPolicy['scope'],
+  kind: raw.kind as BehaviorPolicy['kind'],
+  description: raw.description,
+  origin: raw.origin as BehaviorPolicy['origin'],
+  status: raw.status as BehaviorPolicy['status'],
+  applied_this_week: raw.applied_this_week ?? raw.override_count,
+});
 
 export interface BehaviorPolicy {
   id: Uuid;

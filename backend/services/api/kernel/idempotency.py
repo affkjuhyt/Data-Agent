@@ -29,10 +29,10 @@ from typing import Any, Protocol
 from fastapi import Request, Response
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
-from starlette.concurrency import run_in_threadpool
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import integration as ig
+from services.api.kernel.auth import bearer_claims
 from services.api.kernel.problems import Problem, problem_response
 
 logger = logging.getLogger(__name__)
@@ -207,13 +207,8 @@ async def idempotency_middleware(
         return problem_response(
             Problem(400, "invalid_request", f"{HEADER} is 1 to {MAX_KEY_LENGTH} characters.")
         )
-    authorization = request.headers.get("Authorization", "")
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        return await call_next(request)
-    try:
-        claims = await run_in_threadpool(request.app.state.token_verifier.claims, token)
-    except Exception:  # noqa: BLE001 - the route's own authentication answers it
+    claims = await bearer_claims(request)
+    if claims is None:
         return await call_next(request)
     caller = _caller(claims)
     if caller is None:

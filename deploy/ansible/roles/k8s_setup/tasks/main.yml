@@ -35,10 +35,13 @@
       changed_when: "'created' in backup_apply.stdout or 'configured' in backup_apply.stdout"
       when: apply_maintenance_jobs | bool
 
-- name: Apply memory cleanup cronjob
-  ansible.builtin.command: "{{ kubectl }} apply -f {{ (k8s_manifests ~ '/job/memory-cleanup.yaml') | quote }}"
-  register: memory_cleanup_apply
-  changed_when: "'created' in memory_cleanup_apply.stdout or 'configured' in memory_cleanup_apply.stdout"
+- name: Remove the retired memory cleanup CronJob
+  ansible.builtin.command: >-
+    {{ kubectl }} -n {{ ns_service }} delete
+    cronjob/memory-cleanup serviceaccount/memory-cleanup
+    configmap/memory-cleanup-env secret/memory-cleanup-secrets
+    --ignore-not-found=true
+  changed_when: false
   when: apply_maintenance_jobs | bool
 
 - name: Get restore suspend flag

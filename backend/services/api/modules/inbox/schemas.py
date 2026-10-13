@@ -29,7 +29,8 @@ class ApprovalStepView(BaseModel):
 
 class HitlView(BaseModel):
     id: uuid.UUID
-    data_space_id: uuid.UUID
+    # None for an org-wide request (an audit export, an emergency grant).
+    data_space_id: uuid.UUID | None
     kind: str
     risk: str
     title: str
@@ -40,6 +41,7 @@ class HitlView(BaseModel):
     parent_run_label: str | None
     assignee_id: uuid.UUID | None
     assignee_group: str | None
+    assignee_capability: str | None
     due_at: datetime.datetime | None
     status: str
     response: Any

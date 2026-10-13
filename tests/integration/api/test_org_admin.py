@@ -418,6 +418,8 @@ async def test_group_mappings_refuse_bad_references(world: World) -> None:
 # AC-11-01-02
 @pytest.mark.req("AC-11-01-02")
 async def test_emergency_access_lasts_a_day_and_needs_a_second_person(world: World) -> None:
+    # Measured when the test runs: a module-level instant drifts by the minutes the suite took.
+    now = datetime.datetime.now(datetime.UTC)
     body = {
         "user_id": str(world.users["analyst"]),
         "role_id": str(world.roles["admin"]),
@@ -434,7 +436,7 @@ async def test_emergency_access_lasts_a_day_and_needs_a_second_person(world: Wor
         until = datetime.datetime.fromisoformat(row["valid_until"])
         assert (
             datetime.timedelta(hours=23, minutes=58)
-            < until - NOW
+            < until - now
             <= datetime.timedelta(hours=24, minutes=5)
         )
         assert world.one("SELECT source FROM org.user_role WHERE id = %s", row["id"]) == "emergency"
@@ -445,14 +447,14 @@ async def test_emergency_access_lasts_a_day_and_needs_a_second_person(world: Wor
 
         too_long = await api.post(
             "/v1/admin/emergency-access",
-            json={**body, "valid_until": (NOW + datetime.timedelta(hours=25)).isoformat()},
+            json={**body, "valid_until": (now + datetime.timedelta(hours=25)).isoformat()},
             headers=world.headers("admin"),
         )
         assert too_long.status_code == 422
         assert too_long.json()["code"] == "business_rule_violated"
         past = await api.post(
             "/v1/admin/emergency-access",
-            json={**body, "valid_until": (NOW - datetime.timedelta(hours=1)).isoformat()},
+            json={**body, "valid_until": (now - datetime.timedelta(hours=1)).isoformat()},
             headers=world.headers("admin"),
         )
         assert past.status_code == 422
@@ -827,6 +829,28 @@ async def _decide(
         json=body,
         headers=world.headers(who, world.space),
     )
+
+
+async def test_access_requests_can_be_listed_by_requester_and_steward(world: World) -> None:
+    async with client(world) as api:
+        sent = (await _request(api, world, "ask")).json()
+        own = await api.get("/v1/access-requests", headers=world.headers("colleague"))
+        assert own.status_code == 200, own.text
+        assert any(item["id"] == sent["id"] for item in own.json()["items"])
+
+        detail = await api.get(
+            f"/v1/access-requests/{sent['id']}",
+            headers=world.headers("colleague"),
+        )
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["id"] == sent["id"]
+
+        steward = await api.get(
+            "/v1/access-requests?status=pending",
+            headers=world.headers("steward", world.space),
+        )
+        assert steward.status_code == 200, steward.text
+        assert any(item["id"] == sent["id"] for item in steward.json()["items"])
 
 
 # AC-11-07-01

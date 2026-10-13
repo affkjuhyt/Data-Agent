@@ -5,6 +5,7 @@ import type {
   AgentStep,
   AgentWire,
   BehaviorPolicy,
+  BehaviorPolicyWire,
   NarrativeEvent,
   DecideProposal,
   HitlOption,
@@ -30,7 +31,9 @@ import type {
   Workspace,
   WorkspaceWire,
 } from './types';
-import { readDataset, readSource, readWorkspace } from './types';
+import { readAppUser } from './adminAccess';
+import { listModelRoutes } from './adminPlatform';
+import { readBehaviorPolicy, readDataset, readSource, readWorkspace } from './types';
 
 /*
  * The endpoints the v3.1 screens call, with the paths and parameters of "Đặc tả API" A2/A3.
@@ -271,23 +274,24 @@ export const controlRun = async (
   id: string,
   verb: 'pause' | 'resume' | 'cancel',
   reason?: string,
-) =>
-  readRun(
-    await v1Send<RunWire>(
-      'POST',
-      `/runs/${pathId(id)}:${verb}`,
-      verb === 'cancel' ? { reason } : undefined,
-    ),
-  );
+) => {
+  const path = {
+    pause: `/runs/${pathId(id)}:pause`,
+    resume: `/runs/${pathId(id)}:resume`,
+    cancel: `/runs/${pathId(id)}:cancel`,
+  }[verb];
+  return readRun(await v1Send<RunWire>('POST', path, verb === 'cancel' ? { reason } : undefined));
+};
 
 /**
- * PROPOSAL: POST /v1/runs/{id}:retry — a failed run again, as a new run (202); `use_fallback`
- * reads the agent's fallback source instead of the one that failed. The spec has no retry yet.
+ * POST /v1/runs/{id}:retry (A2 since 12/10/2026): a failed run again as a new run with the same
+ * input and config version; 202 names it. A2 takes no body: `use_fallback` (read the agent's
+ * fallback source instead of the one that failed) is ignored by the api until it has that option.
  */
 export const retryRun = async (id: string, useFallback = false) =>
-  readRun(
-    await v1Send<RunWire>('POST', `/runs/${pathId(id)}:retry`, { use_fallback: useFallback }),
-  );
+  v1Send<components['schemas']['RunAccepted']>('POST', `/runs/${pathId(id)}:retry`, {
+    use_fallback: useFallback,
+  });
 
 /* Phiên làm việc */
 export const listWorkspaces = async (): Promise<Page<Workspace>> => {
@@ -304,14 +308,33 @@ export const listDatasets = async (): Promise<Page<Dataset>> => {
   const page = await v1Get<Page<DatasetWire>>('/datasets', { ...ALL, enabled: true });
   return { ...page, items: page.items.map(readDataset) };
 };
+export const listSourceDatasets = async (sourceId: string): Promise<Page<Dataset>> => {
+  const page = await v1Get<Page<DatasetWire>>('/datasets', {
+    ...ALL,
+    source_id: sourceId,
+  });
+  return { ...page, items: page.items.map(readDataset) };
+};
 export const listMetrics = () => v1Get<Page<Metric>>('/metrics', ALL);
 export const listTerms = () => v1Get<Page<GlossaryTerm>>('/terms', ALL);
 
 /* Chính sách: the viewer's own rules, made from earlier decisions (UC-07-08) */
-export const listMyRules = () =>
-  v1Get<Page<BehaviorPolicy>>('/policies', { ...ALL, scope: 'user', status: 'active' });
+/** GET /v1/policies answers an array of the type asked for, not a page. */
+export const listMyRules = async (): Promise<Page<BehaviorPolicy>> => {
+  const rows = await v1Get<BehaviorPolicyWire[]>('/policies', {
+    type: 'behavior',
+    scope: 'user',
+    status: 'active',
+  });
+  return { items: rows.map(readBehaviorPolicy), next_page_token: '' };
+};
 
 /* Quản trị */
 export const listDataSpaces = () => v1Get<Page<DataSpace>>('/data-spaces', ALL);
-export const listUsers = () => v1Get<Page<AppUser>>('/admin/users', ALL);
-export const listModels = () => v1Get<Page<ModelConfig>>('/admin/models', ALL);
+/** GET /v1/admin/users read as people and agents (lib/v1/adminAccess readAppUser). */
+export const listUsers = async (): Promise<Page<AppUser>> => {
+  const page = await v1Get<Page<components['schemas']['AdminUser']>>('/admin/users', ALL);
+  return { ...page, items: page.items.map(readAppUser) };
+};
+/** GET /v1/admin/models answers the whole list, not a page. */
+export const listModels: () => Promise<Page<ModelConfig>> = listModelRoutes;

@@ -214,3 +214,68 @@ async def test_export_needs_audit_read_and_stays_in_its_organisation(
         assert (await c.post("/v1/audit:export", json={"filters": {}})).status_code == 403
     async with client(mine) as c:
         assert (await c.get(made.headers["Location"])).status_code == 404
+
+
+async def test_br_138_a_large_export_asks_a_second_person_in_the_inbox(
+    seed: Seed, audit_db: AuditDb, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from services.api.modules.audit import routes
+
+    monkeypatch.setattr(routes, "APPROVAL_ROWS", 0)
+    org = build(seed)
+    audit_db.log(org.id, "query.executed", org.controller)
+    async with client(org) as c:
+        r = await c.post("/v1/audit:export", json={"filters": {}})
+    job = r.json()["id"]
+    hitl_id, event = audit_db.one(
+        "SELECT j.hitl_request_id::text, o.payload FROM audit.export_job j "
+        "JOIN audit.outbox o ON o.aggregate_id = j.id AND o.event_type = 'hitl.requested' "
+        "WHERE j.id = %s",
+        job,
+    )
+    assert event["hitl_request_id"] == hitl_id
+    assert (event["data_space_id"], event["assignee_capability"], event["kind"]) == (
+        None,
+        "audit_read",
+        "export",
+    )
+    assert event["excluded_approver_ids"] == [str(org.controller)]
+
+
+async def test_br_138_exports_cut_under_the_threshold_still_add_up(
+    seed: Seed, audit_db: AuditDb, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from services.api.modules.audit import routes
+
+    # "Quá" the threshold: 1 + 1 rows stay at 2, the third row takes the day past it.
+    monkeypatch.setattr(routes, "APPROVAL_ROWS", 2)
+    org = build(seed)
+    for action in ("a.one", "a.two"):
+        audit_db.log(org.id, action, org.controller)
+    async with client(org) as c:
+        first = await c.post("/v1/audit:export", json={"filters": {"action": "a.one"}})
+        second = await c.post("/v1/audit:export", json={"filters": {"action": "a.two"}})
+        third = await c.post("/v1/audit:export", json={"filters": {"action": "a.one"}})
+    assert [r.json()["status"] for r in (first, second, third)] == [
+        "queued",
+        "queued",
+        "waiting_approval",
+    ]
+
+
+async def test_br_138_parallel_exports_cannot_all_slip_under_the_threshold(
+    seed: Seed, audit_db: AuditDb, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from services.api.modules.audit import routes
+
+    monkeypatch.setattr(routes, "APPROVAL_ROWS", 2)
+    org = build(seed)
+    audit_db.log(org.id, "a.one", org.controller)
+    async with client(org) as c:
+        answers = await asyncio.gather(
+            *(c.post("/v1/audit:export", json={"filters": {"action": "a.one"}}) for _ in range(4))
+        )
+    # 1 row each: at most two fit under 2 rows a day, whatever the interleaving.
+    assert sorted(r.json()["status"] for r in answers).count("queued") == 2

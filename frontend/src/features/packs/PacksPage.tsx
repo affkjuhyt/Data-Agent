@@ -172,10 +172,15 @@ function Installed({ items }: { items: IndustryPack[] }) {
                             },
                           ]
                         : []),
-                      {
-                        label: 'Xem nội dung phiên bản',
-                        onSelect: () => navigate('data', 'PACK_INSTALL', p.latest.version_id),
-                      },
+                      ...(p.latest
+                        ? [
+                            {
+                              label: 'Xem nội dung phiên bản',
+                              onSelect: () =>
+                                navigate('data', 'PACK_INSTALL', p.latest?.version_id),
+                            },
+                          ]
+                        : []),
                     ]}
                   />
                 </td>
@@ -207,16 +212,21 @@ function Available({ items }: { items: IndustryPack[] }) {
           {items.map((p) => (
             <tr key={p.id} className="border-b border-border text-foreground">
               <td className="px-da-md py-[10px]">
-                <button
-                  type="button"
-                  onClick={() => navigate('data', 'PACK_INSTALL', p.latest.version_id)}
-                  className="text-left da-body-strong hover:underline"
-                >
-                  {p.name}
-                </button>
+                {/* GET /v1/packs carries no version yet: without one the pack is listed, not opened. */}
+                {p.latest ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate('data', 'PACK_INSTALL', p.latest?.version_id)}
+                    className="text-left da-body-strong hover:underline"
+                  >
+                    {p.name}
+                  </button>
+                ) : (
+                  <span className="da-body-strong">{p.name}</span>
+                )}
               </td>
-              <td className="px-da-md py-[10px] da-mono">{p.latest.version}</td>
-              <td className="px-da-md py-[10px] text-muted-foreground">{p.latest.content_text}</td>
+              <td className="px-da-md py-[10px] da-mono">{p.latest?.version ?? '—'}</td>
+              <td className="px-da-md py-[10px] text-muted-foreground">{p.latest?.content_text}</td>
               <td className="px-da-md py-[10px] text-muted-foreground">{p.publisher}</td>
             </tr>
           ))}

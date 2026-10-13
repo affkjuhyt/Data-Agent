@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Init/unseal OpenBao and mint the workflow_runtime AppRole, then patch the
-# three OPENBAO_* lines in deploy/k8s/secrets.env in place.
+# Init/unseal OpenBao and mint the workload AppRoles, then patch the
+# OpenBao credential lines in deploy/k8s/secrets.env in place.
 #
 # The manual counterpart of deploy/ansible/roles/k8s_openbao (the deploy path)
 # — same steps, addressed at the openbao Service's ClusterIP, and the result
@@ -64,27 +64,42 @@ echo "$mounts" | python3 -c 'import sys,json; d=json.load(sys.stdin); exit(0 if 
 echo "$mounts" | python3 -c 'import sys,json; d=json.load(sys.stdin); exit(0 if "transit/" in d else 1)' \
   || json "${AUTH_HDR[@]}" -X POST "$BAO_URL/v1/sys/mounts/transit" -d '{"type":"transit"}' > /dev/null
 
-json "${AUTH_HDR[@]}" -X POST "$BAO_URL/v1/sys/policies/acl/workflow_runtime-read-policy" \
-  -d '{"policy":"path \"secret/data/tenants/*\" { capabilities = [\"read\"] }"}' > /dev/null
-
 auth=$(json "${AUTH_HDR[@]}" "$BAO_URL/v1/sys/auth")
 echo "$auth" | python3 -c 'import sys,json; d=json.load(sys.stdin); exit(0 if "approle/" in d else 1)' \
   || json "${AUTH_HDR[@]}" -X POST "$BAO_URL/v1/sys/auth/approle" -d '{"type":"approle"}' > /dev/null
 
-json "${AUTH_HDR[@]}" -X POST "$BAO_URL/v1/auth/approle/role/workflow_runtime" \
-  -d '{"token_policies":"workflow_runtime-read-policy","token_ttl":"1h","token_max_ttl":"4h"}' > /dev/null
+json "${AUTH_HDR[@]}" -X POST "$BAO_URL/v1/sys/policies/acl/dataagent-secret-read-policy" \
+  -d '{"policy":"path \"secret/data/tenants/*\" { capabilities = [\"read\"] }\npath \"secret/data/warehouse/*\" { capabilities = [\"read\"] }"}' > /dev/null
 
-ROLE_ID=$(json "${AUTH_HDR[@]}" "$BAO_URL/v1/auth/approle/role/workflow_runtime/role-id" \
-  | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["role_id"])')
-SECRET_ID=$(json "${AUTH_HDR[@]}" -X POST "$BAO_URL/v1/auth/approle/role/workflow_runtime/secret-id" \
-  | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["secret_id"])')
+mint_approle() {
+  local role="$1"
+  json "${AUTH_HDR[@]}" -X POST "$BAO_URL/v1/auth/approle/role/$role" \
+    -d '{"token_policies":"dataagent-secret-read-policy","token_ttl":"1h","token_max_ttl":"4h"}' > /dev/null
+  ROLE_ID=$(json "${AUTH_HDR[@]}" "$BAO_URL/v1/auth/approle/role/$role/role-id" \
+    | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["role_id"])')
+  SECRET_ID=$(json "${AUTH_HDR[@]}" -X POST "$BAO_URL/v1/auth/approle/role/$role/secret-id" \
+    | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["secret_id"])')
+}
+
+mint_approle worker_agent
+WORKER_AGENT_ROLE_ID="$ROLE_ID"
+WORKER_AGENT_SECRET_ID="$SECRET_ID"
+mint_approle sandbox_executor
+SANDBOX_EXECUTOR_ROLE_ID="$ROLE_ID"
+SANDBOX_EXECUTOR_SECRET_ID="$SECRET_ID"
+mint_approle platform_workers
+PLATFORM_WORKERS_ROLE_ID="$ROLE_ID"
+PLATFORM_WORKERS_SECRET_ID="$SECRET_ID"
 
 sed -i \
   -e "s#^OPENBAO_TOKEN=.*#OPENBAO_TOKEN=$ROOT_TOKEN#" \
-  -e "s#^OPENBAO_ROLE_ID=.*#OPENBAO_ROLE_ID=$ROLE_ID#" \
-  -e "s#^OPENBAO_SECRET_ID=.*#OPENBAO_SECRET_ID=$SECRET_ID#" \
+  -e "s#^WORKER_AGENT_OPENBAO_ROLE_ID=.*#WORKER_AGENT_OPENBAO_ROLE_ID=$WORKER_AGENT_ROLE_ID#" \
+  -e "s#^WORKER_AGENT_OPENBAO_SECRET_ID=.*#WORKER_AGENT_OPENBAO_SECRET_ID=$WORKER_AGENT_SECRET_ID#" \
+  -e "s#^SANDBOX_EXECUTOR_OPENBAO_ROLE_ID=.*#SANDBOX_EXECUTOR_OPENBAO_ROLE_ID=$SANDBOX_EXECUTOR_ROLE_ID#" \
+  -e "s#^SANDBOX_EXECUTOR_OPENBAO_SECRET_ID=.*#SANDBOX_EXECUTOR_OPENBAO_SECRET_ID=$SANDBOX_EXECUTOR_SECRET_ID#" \
+  -e "s#^PLATFORM_WORKERS_OPENBAO_ROLE_ID=.*#PLATFORM_WORKERS_OPENBAO_ROLE_ID=$PLATFORM_WORKERS_ROLE_ID#" \
+  -e "s#^PLATFORM_WORKERS_OPENBAO_SECRET_ID=.*#PLATFORM_WORKERS_OPENBAO_SECRET_ID=$PLATFORM_WORKERS_SECRET_ID#" \
   "$SECRETS_ENV"
 
-echo "OpenBao ready: KV v2 (secret/), transit/, AppRole workflow_runtime."
-echo "OPENBAO_* written to $SECRETS_ENV — re-run create-secrets.sh, then:"
-echo "  kubectl -n dataagent-service rollout restart deployment/workflow-runtime deployment/auth-api"
+echo "OpenBao ready: KV v2 (secret/), transit/, workload AppRoles."
+echo "OpenBao credentials written to $SECRETS_ENV — re-run create-secrets.sh, then restart workloads that read them."

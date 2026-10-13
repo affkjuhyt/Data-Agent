@@ -4,7 +4,12 @@ Run: `python -m services.worker_agent.main` with backend/ on PYTHONPATH.
 
 Polls its event source, hands each event to the handler of its type, and acknowledges the
 batch only when every handler returned; a failing event is logged and left for the next
-claim (handlers are idempotent). G1 handles `question.received` only.
+claim (handlers are idempotent).
+
+It handles `question.received` from qa.outbox, `hitl.resolved` from inbox.outbox, and
+`hitl.requested` from the outbox of every
+schema that has one, in the main database and in the audit database (whose outbox is read
+through its own connection key, svc_outbox_relay_audit).
 """
 
 from __future__ import annotations
@@ -16,8 +21,23 @@ import os
 import signal
 from collections.abc import Mapping
 
+from sqlalchemy import text
+
+from libs.dataagent_db import unscoped_session
+from services.worker_agent import (
+    exports,
+    hitl,
+    private,
+    proposals,
+    query_runs,
+    questions,
+    replay,
+    resolutions,
+    schema_scans,
+    source_tests,
+    tiles,
+)
 from services.worker_agent.events import EventSource, Handler, OutboxTableSource
-from services.worker_agent.questions import HANDLERS
 
 logger = logging.getLogger(__name__)
 
@@ -35,17 +55,84 @@ async def run_once(source: EventSource, handlers: Mapping[str, Handler], batch: 
         return len(events)
 
 
+HANDLERS: dict[str, Handler] = {
+    **questions.HANDLERS,
+    **replay.HANDLERS,
+    **hitl.HANDLERS,
+    **resolutions.HANDLERS,
+    **source_tests.HANDLERS,
+    **schema_scans.HANDLERS,
+    **query_runs.HANDLERS,
+    **tiles.HANDLERS,
+    **proposals.HANDLERS,
+    **exports.HANDLERS,
+}
+AUDIT_RELAY = "svc_outbox_relay_audit"
+
+
+async def _outbox_schemas(role: str) -> list[str]:
+    """The schemas whose outbox this connection may claim from (its grants decide)."""
+    async with unscoped_session(role) as session:
+        rows = await session.execute(
+            text(
+                "SELECT table_schema FROM information_schema.tables "
+                "WHERE table_name = 'outbox' ORDER BY table_schema"
+            )
+        )
+        return [r[0] for r in rows]
+
+
+async def sources() -> list[EventSource]:
+    found: list[EventSource] = []
+    for schema in await _outbox_schemas("svc_outbox_relay"):
+        types = {hitl.EVENT_TYPE}
+        if schema == "qa":
+            types |= set(questions.HANDLERS) | set(replay.HANDLERS) | set(exports.HANDLERS)
+        if schema == "inbox":
+            # Claiming stamps published_at, so this worker is the one consumer of hitl.resolved
+            # until Debezium gives each consumer its own group (ADR-06).
+            types |= set(resolutions.HANDLERS) | {proposals.DECIDED}
+        if schema == "catalog":
+            types |= set(source_tests.HANDLERS) | set(schema_scans.HANDLERS)
+        if schema == "query":
+            types |= set(query_runs.HANDLERS)
+        if schema == "workspace":
+            types |= set(tiles.HANDLERS)
+        if schema == "skill":
+            types |= {proposals.PUBLISH, proposals.SHARE}
+        if schema == "pack":
+            types |= {proposals.ACTIVATE}
+        found.append(OutboxTableSource(schema=schema, event_types=frozenset(types)))
+    try:
+        audit = await _outbox_schemas(AUDIT_RELAY)
+    except RuntimeError:
+        # No URL for the audit database: requests raised by the audit module wait until it is set.
+        logger.warning("worker-agent | DATAAGENT_DB_URL__%s is not set", AUDIT_RELAY.upper())
+        audit = []
+    found += [
+        OutboxTableSource(schema=s, event_types=frozenset({hitl.EVENT_TYPE}), role=AUDIT_RELAY)
+        for s in audit
+    ]
+    return found
+
+
 async def run(stop: asyncio.Event) -> None:
-    source = OutboxTableSource(schema="qa", event_types=frozenset(HANDLERS))
+    claimed_from = await sources()
+    # UC-16-02's private questions come from Redis, not an outbox (BR-193: never in a table).
+    redis = private.redis_from_env()
+    private_loop = asyncio.create_task(private.run(redis, stop)) if redis is not None else None
     while not stop.is_set():
-        try:
-            handled = await run_once(source, HANDLERS)
-        except Exception:
-            logger.exception("worker-agent | batch failed; retrying after a pause")
-            handled = 0
+        handled = 0
+        for source in claimed_from:
+            try:
+                handled += await run_once(source, HANDLERS)
+            except Exception:
+                logger.exception("worker-agent | batch failed; retrying after a pause")
         if not handled:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), timeout=POLL_SECONDS)
+    if private_loop is not None:
+        await private_loop
 
 
 def main() -> None:

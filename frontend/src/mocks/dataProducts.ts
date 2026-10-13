@@ -1,12 +1,14 @@
 import { http, HttpResponse } from 'msw';
-import type {
-  CatalogProduct,
-  DataMart,
-  DataProduct,
-  DataProductDetail,
-  QualityRule,
-  RuleSeverity,
+import {
+  RULE_KIND,
+  type CatalogProduct,
+  type DataMart,
+  type DataProduct,
+  type DataProductDetail,
+  type QualityRule,
+  type RuleKind,
 } from '../lib/v1/dataProducts';
+import { datasetsFixture } from './fixtures';
 
 /* "P06 · Data mart & sản phẩm dữ liệu" (2290:18136) and "Hộp thoại · suggestMart" (2095:9307). */
 function martFixture(): DataMart {
@@ -331,16 +333,17 @@ export function createDataProductsHandlers() {
         : problem(404, 'not_found', 'Không tìm thấy sản phẩm dữ liệu.');
     }),
     http.post('*/v1/data-products', async ({ request }) => {
-      const body = (await request.json()) as { mart_id: string; name: string; version: string };
-      if (body.mart_id !== mart.id)
+      // DataProductCreate (layer=published); the version is the mart's draft one.
+      const body = (await request.json()) as { data_mart_id: string; name: string; code: string };
+      if (body.data_mart_id !== mart.id)
         return problem(422, 'validation_failed', 'Data mart không tồn tại.');
       const id = `dp-${body.name.replace(/_/g, '-')}`;
       const created: DataProductDetail = {
         ...productsFixture()[4],
         id,
         name: body.name,
-        code: body.name,
-        version: body.version,
+        code: body.code,
+        version: mart.product_draft.version,
         description: mart.name,
         used_by_spaces: null,
         quality_pct: null,
@@ -369,26 +372,44 @@ export function createDataProductsHandlers() {
       return HttpResponse.json(summary(done), { status: breaking ? 202 : 200 });
     }),
 
-    http.get('*/v1/quality-rules', () => page(rules)),
+    // QualityRuleView with the screen's row under display.
+    http.get('*/v1/quality-rules', () =>
+      page(
+        rules.map((r) => ({
+          id: r.id,
+          kind: 'not_null',
+          severity: r.severity === 'block' ? 'high' : 'medium',
+          display: r,
+        })),
+      ),
+    ),
+    // The rows above carry their results; the past week's results are empty.
+    http.get('*/v1/quality-results', () => page([])),
+    // QualityRuleCreate: a catalog dataset, the check, the column and its parameters.
     http.post('*/v1/quality-rules', async ({ request }) => {
       const body = (await request.json()) as {
-        name: string;
-        target: string;
-        severity: RuleSeverity;
+        dataset_id: string;
+        kind: string;
+        column_name?: string;
+        params?: Record<string, number>;
+        severity?: string;
       };
-      if (!body.name?.trim() || !body.target?.trim())
-        return problem(422, 'validation_failed', 'Cần tên quy tắc và nơi áp vào.');
+      const table = datasetsFixture().find((d) => d.id === body.dataset_id);
+      if (!table) return problem(422, 'validation_failed', 'dataset_id is not a dataset here.');
       const created: QualityRule = {
         id: `qr-${rules.length + 1}`,
-        name: body.name.trim(),
-        target: body.target.trim(),
-        severity: body.severity,
-        owner: { id: 'u-me', name: 'Bạn' },
+        name: RULE_KIND[body.kind as RuleKind] ?? body.kind,
+        target: `${table.display_name}.${body.column_name ?? ''}`,
+        severity: body.severity === 'high' ? 'block' : 'warn',
+        owner: { id: 'u-me', name: 'Người tạo' },
         last_7d: Array(7).fill(null),
         current: null,
       };
       rules = [...rules, created];
-      return HttpResponse.json(created, { status: 201 });
+      return HttpResponse.json(
+        { id: created.id, dataset_id: body.dataset_id, kind: body.kind, severity: body.severity },
+        { status: 201 },
+      );
     }),
   ];
 }

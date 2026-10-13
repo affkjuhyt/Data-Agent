@@ -149,6 +149,36 @@ class ShareView(_View):
     updated_at: datetime.datetime
 
 
+# Why a recipient would not see a tile (POST /v1/workspaces/{id}/shares:preview, BR-89):
+#   not_in_organisation    the principal is no active user or group of the organisation (E1)
+#   not_data_space_member  not a current member of the workspace's Data Space (2a: UC-11-07)
+#   missing_capability     a member whose roles do not include `ask`, so it cannot open sessions
+#   other_data_space       the tile's last result read a Data Space the recipient is not in
+HiddenReason = Literal[
+    "not_in_organisation", "not_data_space_member", "missing_capability", "other_data_space"
+]
+
+
+class HiddenTile(BaseModel):
+    tile_id: uuid.UUID
+    reason: HiddenReason
+
+
+class RecipientPreview(BaseModel):
+    """What one recipient would see if the shares were saved; nothing is written."""
+
+    principal_type: str
+    principal_id: uuid.UUID
+    permission: str
+    # False when the recipient could not open the session at all (every tile hidden).
+    can_open: bool
+    reason: HiddenReason | None
+    # A row scope on the recipient's membership: the tiles run, with fewer rows (BR-07).
+    row_scope_limited: bool
+    visible_tile_ids: list[uuid.UUID]
+    hidden_tiles: list[HiddenTile]
+
+
 class ParticipantCreate(_Body):
     principal_type: Literal["user", "agent"]
     principal_id: uuid.UUID
@@ -216,3 +246,12 @@ class ReportView(_View):
     hitl_request_id: uuid.UUID | None
     created_at: datetime.datetime
     updated_at: datetime.datetime
+
+
+class ReportDocumentView(BaseModel):
+    """The report worker's immutable markdown artifact, read through the API."""
+
+    report_id: uuid.UUID
+    body_ref: str
+    content_type: Literal["text/markdown"]
+    markdown: str

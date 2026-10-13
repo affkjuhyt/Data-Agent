@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { pathId, v1Get, v1Send, V1Error, type Page } from './client';
 import type { components } from './schema';
 import { readWorkspace, type Workspace } from './types';
 
@@ -6,10 +6,8 @@ import { readWorkspace, type Workspace } from './types';
  * Phiên làm việc (P02, UC-02-01…07): one workspace as a notebook of tiles, its comments and
  * assigned tasks, its sharing, and the report drafted from it.
  *
- * The api serves the workspace with its tiles, the tile and comment writes, the shares and the
- * report's create, check and publish (A2). A2 has no read for a tile's comments, a workspace's
- * shares or a session report, and no principal search: those calls stay PROPOSAL, answered by
- * the dev mock (docs/v3/05-ui-v3.md §4).
+ * The api serves the workspace with its tiles, comments, shares and report lifecycle. Display
+ * names and some activity counts remain optional because they are not columns in A2.
  */
 
 type Uuid = string;
@@ -209,7 +207,12 @@ export interface SessionReport {
   checks: ReportCheck[];
   /** "GRP-RISK-ANALYST, Ban điều hành · email (PDF) và trong ứng dụng". */
   recipients_text: string;
+  /** The review request in Cần bạn that a passing check opens (UC-02-07 step 4); null before. */
+  hitl_request_id: Uuid | null;
 }
+
+/** The immutable markdown artifact returned by GET /v1/session-reports/{id}/document. */
+export type SessionReportDocument = components['schemas']['ReportDocumentView'];
 
 /* Phiên */
 export const getWorkspace = async (id: string) =>
@@ -238,9 +241,41 @@ export const decideTile = async (
 };
 
 /* Bình luận và giao việc */
-/** PROPOSAL: A2 writes comments but has no read for them. */
-export const getTileThread = async (workspaceId: string, tileId: string) =>
-  v1Get<TileThread>(`/workspaces/${pathId(workspaceId)}/tiles/${pathId(tileId)}/comments`);
+function readTileThread(raw: unknown): TileThread {
+  if (!raw || typeof raw !== 'object') return { items: [], tasks: [] };
+  const value = raw as { items?: unknown; tasks?: unknown };
+  if (Array.isArray(value.tasks)) {
+    return {
+      items: Array.isArray(value.items) ? (value.items as TileComment[]) : [],
+      tasks: value.tasks as TileTask[],
+    };
+  }
+  const page = raw as { items?: components['schemas']['CommentView'][] };
+  const items = (page.items ?? []).map((comment) => ({
+    id: comment.id,
+    tile_id: comment.tile_id ?? '',
+    author: { kind: 'person' as const, name: comment.author_id },
+    body: comment.body,
+    created_at: comment.created_at,
+  }));
+  const tasks = (page.items ?? [])
+    .filter((comment) => comment.assignee_id && comment.due_at)
+    .map((comment) => ({
+      id: comment.id,
+      tile_id: comment.tile_id ?? '',
+      title: comment.body,
+      assignee_name: comment.assignee_id ?? '',
+      due_at: comment.due_at as string,
+    }));
+  return { items, tasks };
+}
+
+export const getTileThread = async (_workspaceId: string, tileId: string) =>
+  readTileThread(
+    await v1Get<Page<components['schemas']['CommentView']>>(`/tiles/${pathId(tileId)}/comments`, {
+      page_size: 100,
+    }),
+  );
 
 export const addTileComment = async (tileId: string, body: string) =>
   v1Send<components['schemas']['CommentView']>('POST', `/tiles/${pathId(tileId)}/comments`, {
@@ -248,9 +283,25 @@ export const addTileComment = async (tileId: string, body: string) =>
   });
 
 /* Chia sẻ */
-/** PROPOSAL: A2 replaces the shares but has no read for them. */
+function readSharing(raw: unknown, workspaceId: string): WorkspaceSharing {
+  if (raw && typeof raw === 'object' && 'members' in raw) return raw as WorkspaceSharing;
+  const page = raw as { items?: components['schemas']['ShareView'][] };
+  const members = (page.items ?? []).map((share) => ({
+    principal_id: share.principal_id,
+    kind: share.principal_type as 'user' | 'group',
+    name: share.principal_id,
+    detail: '',
+    scope_limited: false,
+    role: share.permission === 'edit' ? ('editor' as const) : ('viewer' as const),
+  }));
+  return { members, preview: '', link: `/analysis/sessions/${workspaceId}` };
+}
+
 export const getSharing = async (id: string) =>
-  v1Get<WorkspaceSharing>(`/workspaces/${pathId(id)}/sharing`);
+  readSharing(
+    await v1Get<Page<components['schemas']['ShareView']>>(`/workspaces/${pathId(id)}/shares`),
+    id,
+  );
 
 export type SharingInput = { principal_id: string; kind: 'user' | 'group'; role: MemberRole }[];
 
@@ -269,20 +320,180 @@ export const saveSharing = async (id: string, members: SharingInput) =>
       })),
   } satisfies components['schemas']['SharesPut']);
 
-/** PROPOSAL: "Người nhận thấy gì" for members not saved yet, from each one's data scope. */
-export const previewSharing = async (id: string, members: SharingInput) =>
-  v1Send<{ preview: string }>('POST', `/workspaces/${pathId(id)}/sharing:preview`, { members });
+/** "Người nhận thấy gì" is computed by the API before the share is saved. */
+export const previewSharing = async (id: string, members: SharingInput) => {
+  const raw = await v1Send<Page<components['schemas']['RecipientPreview']> | { preview: string }>(
+    'POST',
+    `/workspaces/${pathId(id)}/shares:preview`,
+    {
+      shares: members.map((member) => ({
+        principal_type: member.kind,
+        principal_id: member.principal_id,
+        permission: member.role === 'editor' ? 'edit' : 'view',
+      })),
+    },
+  );
+  if ('preview' in raw) return raw;
+  const blocked = raw.items.filter((item) => !item.can_open).length;
+  return {
+    preview:
+      blocked === 0
+        ? 'Mỗi người nhận đều có thể mở phiên trong phạm vi quyền của mình.'
+        : `${blocked} người nhận không thể mở toàn bộ phiên theo quyền hiện có.`,
+  };
+};
 
-/** PROPOSAL: people and groups to share with. */
-export const searchPrincipals = (q: string) =>
-  v1Get<Page<Principal>>('/principals', { q, page_size: 20 });
+/** The directory exposes only the fields needed by the share picker. */
+export const searchPrincipals = async (q: string) => {
+  const page = await v1Get<Page<components['schemas']['PrincipalRef']> | Page<Principal>>(
+    '/principals',
+    { q, page_size: 20 },
+  );
+  return {
+    ...page,
+    items: page.items.map((item) => {
+      const principal = item as components['schemas']['PrincipalRef'] & Partial<Principal>;
+      const legacy = item as Partial<Principal>;
+      return {
+        id: principal.id,
+        kind: principal.kind as 'user' | 'group',
+        name: principal.display_name ?? legacy.name ?? '',
+        detail: legacy.detail ?? '',
+        scope_limited: legacy.scope_limited ?? false,
+      };
+    }),
+  };
+};
 
 /* Báo cáo của phiên */
-/** PROPOSAL: A2 has no list of a session's reports. */
-export const listSessionReports = async (workspaceId: string) =>
-  v1Get<Page<SessionReport>>(`/workspaces/${pathId(workspaceId)}/session-reports`, {
+
+const REPORT_STATUS: Record<string, SessionReport['status']> = {
+  drafting: 'drafting',
+  pending_review: 'pending_review',
+  changes_requested: 'changes_requested',
+  draft: 'drafting',
+  checking: 'drafting',
+  failed_checks: 'changes_requested',
+  ready: 'pending_review',
+  pending_approval: 'pending_review',
+  published: 'published',
+};
+
+function readReportChecks(raw: unknown): ReportCheck[] {
+  if (Array.isArray(raw)) {
+    return raw.flatMap((value) => {
+      if (typeof value !== 'object' || value === null) return [];
+      const check = value as Record<string, unknown>;
+      return [
+        {
+          ok: check.ok === true,
+          title: typeof check.title === 'string' ? check.title : '',
+          detail: typeof check.detail === 'string' ? check.detail : '',
+        },
+      ];
+    });
+  }
+  if (!raw || typeof raw !== 'object') return [];
+  return Object.entries(raw).map(([name, value]) => {
+    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      const check = value as Record<string, unknown>;
+      return {
+        ok: check.ok === true || check.status === 'pass' || check.status === 'passed',
+        title: typeof check.title === 'string' ? check.title : name,
+        detail: typeof check.detail === 'string' ? check.detail : '',
+      };
+    }
+    return {
+      ok: value === true || value === 'pass' || value === 'passed',
+      title: name,
+      detail: typeof value === 'string' ? value : '',
+    };
+  });
+}
+
+/** The API row carries metadata; the document endpoint supplies the immutable report body. */
+export function readSessionReport(raw: components['schemas']['ReportView']): SessionReport {
+  // MSW keeps the richer design fixture beside the wire row; the real API simply omits it until
+  // the report-document contract is shipped. Reading it here keeps mock and live adapters on one
+  // path without making the live response depend on undocumented fields.
+  const fixture = raw as components['schemas']['ReportView'] &
+    Partial<
+      Pick<
+        SessionReport,
+        'document' | 'drafted_by' | 'tile_count' | 'reviewer_name' | 'recipients_text'
+      >
+    >;
+  return {
+    id: raw.id,
+    workspace_id: raw.workspace_id,
+    status: REPORT_STATUS[raw.status] ?? 'drafting',
+    drafted_by: fixture.drafted_by ?? 'Agent Báo cáo',
+    tile_count: fixture.tile_count ?? 0,
+    drafted_at: raw.created_at,
+    reviewer_name: fixture.reviewer_name ?? '',
+    document: fixture.document ?? {
+      heading: raw.title,
+      summary: '',
+      figures: [],
+      recommendation: '',
+    },
+    checks: readReportChecks(raw.checks),
+    recipients_text: fixture.recipients_text ?? '',
+    hitl_request_id: raw.hitl_request_id,
+  };
+}
+
+/**
+ * Read the deliberately small report-markdown contract. Unknown markdown is ignored rather than
+ * guessed: the review screen must never turn prose into an apparently grounded number.
+ */
+export function readReportDocument(markdown: string): SessionReport['document'] {
+  const lines = markdown.replaceAll('\r\n', '\n').split('\n');
+  let heading = '';
+  let section: 'summary' | 'figures' | 'recommendation' = 'summary';
+  const summary: string[] = [];
+  const figures: ReportFigure[] = [];
+  const recommendation: string[] = [];
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith('# ')) {
+      if (!heading) heading = line.slice(2).trim();
+      continue;
+    }
+    if (line.startsWith('## ')) {
+      const name = line.slice(3).trim().toLowerCase();
+      if (name.includes('figure') || name.includes('số')) section = 'figures';
+      else if (name.includes('recommend') || name.includes('khuyến')) section = 'recommendation';
+      else section = 'summary';
+      continue;
+    }
+    if (section === 'figures') {
+      const match = line.match(/^[-*]\s+(.+?)\s*\|\s*(grounded|ungrounded|pass|true|false)$/i);
+      if (match) {
+        figures.push({ value: match[1].trim(), grounded: /^(grounded|pass|true)$/i.test(match[2]) });
+        continue;
+      }
+    }
+    if (section === 'recommendation') recommendation.push(line.replace(/^[-*]\s+/, ''));
+    else if (section === 'summary') summary.push(line.replace(/^[-*]\s+/, ''));
+  }
+  return {
+    heading,
+    summary: summary.join('\n\n'),
+    figures,
+    recommendation: recommendation.join('\n\n'),
+  };
+}
+
+/** The API filters the report list by workspace_id; there is no nested collection route. */
+export const listSessionReports = async (workspaceId: string) => {
+  const page = await v1Get<Page<components['schemas']['ReportView']>>('/session-reports', {
+    workspace_id: pathId(workspaceId),
     page_size: 20,
   });
+  return { ...page, items: page.items.map(readSessionReport) };
+};
 
 /** Asks Agent Báo cáo to draft a report from every tile of the session. */
 export const createSessionReport = async (workspaceId: string, title: string) =>
@@ -294,9 +505,21 @@ export const createSessionReport = async (workspaceId: string, title: string) =>
     },
   );
 
-/** PROPOSAL: A2 has no read for a session report. */
-export const getSessionReport = async (id: string) =>
-  v1Get<SessionReport>(`/session-reports/${pathId(id)}`);
+export const getSessionReport = async (id: string) => {
+  const report = readSessionReport(
+    await v1Get<components['schemas']['ReportView']>(`/session-reports/${pathId(id)}`),
+  );
+  try {
+    const document = await v1Get<SessionReportDocument>(
+      `/session-reports/${pathId(id)}/document`,
+    );
+    return { ...report, document: readReportDocument(document.markdown) };
+  } catch (error) {
+    // A report row remains useful while its worker artifact is not available yet.
+    if (error instanceof V1Error && (error.status === 404 || error.status === 503)) return report;
+    throw error;
+  }
+};
 
 /**
  * Publish needs every check to pass and a reviewer other than the author (409 otherwise). The
@@ -313,6 +536,16 @@ export const checkSessionReport = async (id: string) => {
   return getSessionReport(id);
 };
 
-/** PROPOSAL: A2 has no request-changes for a session report. */
-export const requestReportChanges = async (id: string, note: string) =>
-  v1Send<SessionReport>('POST', `/session-reports/${pathId(id)}:request-changes`, { note });
+/**
+ * Asking for changes is the reviewer's answer on the report's review request in Cần bạn
+ * (POST /v1/hitl-requests/{id}:resolve), not a verb of the report.
+ */
+export const requestReportChanges = async (report: SessionReport, note: string) => {
+  if (!report.hitl_request_id)
+    throw new V1Error(409, 'invalid_state', 'Báo cáo chưa có yêu cầu duyệt trong Cần bạn.');
+  await v1Send('POST', `/hitl-requests/${pathId(report.hitl_request_id)}:resolve`, {
+    decision: 'request_changes',
+    note,
+  } satisfies Pick<components['schemas']['HitlResolve'], 'decision' | 'note'>);
+  return getSessionReport(report.id);
+};

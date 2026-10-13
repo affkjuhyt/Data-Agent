@@ -219,7 +219,7 @@ export async function passkeyWrap(
   const wrapKey = await wrapKeyFromPrf(new Uint8Array(prf), salt);
   try {
     return {
-      kind: 'passkey' as const,
+      kind: 'passkey_prf' as const,
       credential_id: credentialId,
       label,
       kdf: kdfString({ kind: 'prf-hkdf' }),

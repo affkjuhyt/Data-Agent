@@ -31,53 +31,50 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Pass-through of the Makefile defaults so `python3 tests/run_suites.py …` works alone.
+# `repo` (deploy/, k8s, Ansible, model/, cross-service policy) belongs to no service, so it
+# runs on the local dev-tools image (`make dev-tools` builds it) instead of a registry image.
 DEFAULT_UNIT = (
-    "workflow_runtime:workflow_runtime kb_backend:kb-backend platform_workers:platform-workers "
-    "sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker model_service:model_service api:api worker_agent:worker-agent"
+    "kb_backend:kb-backend platform_workers:platform-workers "
+    "sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker model_service:model_service api:api worker_agent:worker-agent "
+    "repo:dataagent/dev-tools:local"
 )
 DEFAULT_INTEGRATION = (
-    "workflow_runtime:workflow_runtime sandbox_executor:sandbox_executor api:api migrate:migrate "
+    "sandbox_executor:sandbox_executor api:api migrate:migrate "
     "worker_agent:worker-agent"
 )
 
 # Which suites a change under backend/services/<service>/ can break: the suite of
 # that service, plus every suite whose tests import it (measured with grep over
-# tests/, 2026-10-02 — e.g. tests/unit/workflow_runtime loads auth_api, kb_backend,
-# model_service and sandbox_executor modules; the workflow_runtime integration
-# suite runs sandbox_executor's app in-process).
+# tests/ and the V3 service boundaries.
 SERVICE_SUITES: dict[str, set[tuple[str, str]]] = {
     "api": {("unit", "api"), ("integration", "api")},
     "worker_agent": {("unit", "worker_agent"), ("integration", "worker_agent")},
-    "auth_api": {("unit", "auth_api"), ("unit", "workflow_runtime")},
+    "auth_api": {("unit", "auth_api")},
     "kb_backend": {
-        ("unit", "kb_backend"), ("unit", "kb_worker"), ("unit", "workflow_runtime"),
-        ("integration", "workflow_runtime"),
+        ("unit", "kb_backend"), ("unit", "kb_worker"),
     },
-    "model_service": {("unit", "model_service"), ("unit", "workflow_runtime")},
+    "model_service": {("unit", "model_service")},
     "platform_workers": {("unit", "platform_workers"), ("unit", "kb_backend")},
     "sandbox_executor": {
-        ("unit", "sandbox_executor"), ("unit", "workflow_runtime"),
-        ("integration", "sandbox_executor"), ("integration", "workflow_runtime"),
+        ("unit", "sandbox_executor"), ("integration", "sandbox_executor"),
     },
-    "workflow_runtime": {("unit", "workflow_runtime"), ("integration", "workflow_runtime")},
 }
 
-# Files outside the services that some unit suites read directly (manifests, the
-# frontend's package.json, model/ configs).
+# The repo suite (tests/unit/repo) reads every service's Dockerfile and scans their
+# sources for tenant scoping and authentication, so a change to any service can break it.
+REPO_SUITE = ("unit", "repo")
+
+# Files outside the services that some unit suites read directly (manifests, Ansible,
+# the frontend's Dockerfiles and dev proxy, model/ configs).
 OTHER_PREFIXES: dict[str, set[tuple[str, str]]] = {
-    "deploy/": {("unit", "workflow_runtime"), ("unit", "kb_backend")},
-    "frontend/package": {("unit", "workflow_runtime")},
-    "frontend/vite.config.ts": {("unit", "workflow_runtime")},
-    "frontend/src/App.tsx": {("unit", "workflow_runtime")},
-    "model/": {("unit", "workflow_runtime"), ("unit", "model_service")},
+    "deploy/": {REPO_SUITE, ("unit", "kb_backend")},
+    "frontend/": {REPO_SUITE},
+    "model/": {REPO_SUITE, ("unit", "model_service")},
 }
 
 # Per-suite pytest flags. sandbox_executor starts a real container per test, so it is
 # spread over 4 xdist workers (161 s -> 64 s, 2026-10-02); tests sharing a fixed
-# Docker resource carry @pytest.mark.xdist_group. Measured and left serial: the
-# workflow_runtime suites — integration gains nothing (each worker starts its own
-# containers) and its sandbox wiring service binds a fixed port; unit has tests
-# that depend on running order.
+# Docker resource carry @pytest.mark.xdist_group.
 SUITE_PYTEST_ARGS: dict[tuple[str, str], list[str]] = {
     ("integration", "sandbox_executor"): ["-n", "4", "--dist", "loadgroup"],
 }
@@ -116,7 +113,7 @@ def suites_for_paths(paths: list[str], every: list[Suite]) -> list[Suite]:
         if path.startswith(("tests/unit/", "tests/integration/")) and len(parts) > 3:
             selected.add((parts[1], parts[2]))
         elif path.startswith("backend/services/") and parts[2] in SERVICE_SUITES:
-            selected |= SERVICE_SUITES[parts[2]]
+            selected |= SERVICE_SUITES[parts[2]] | {REPO_SUITE}
         elif any(path.startswith(prefix) for prefix in OTHER_PREFIXES):
             for prefix, suites in OTHER_PREFIXES.items():
                 if path.startswith(prefix):
@@ -144,12 +141,18 @@ def changed_paths(base: str) -> list[str]:
     return sorted(paths)
 
 
+def base_image(suite: Suite, registry: str) -> str:
+    """A bare name is a service image in the registry; a reference with a `/` (the repo
+    suite's local dataagent/dev-tools:local) is used as it is."""
+    return suite.image if "/" in suite.image else f"{registry}/dataagent/{suite.image}:latest"
+
+
 def build_test_image(suite: Suite, registry: str) -> str:
     tag = f"dataagent-test/{suite.name}:latest"
     subprocess.run(
         [
             "docker", "build", "-q",
-            "--build-arg", f"BASE={registry}/dataagent/{suite.image}:latest",
+            "--build-arg", f"BASE={base_image(suite, registry)}",
             "--build-arg", f"SUITE={suite.name}",
             "-f", "tests/test-image.Dockerfile", "-t", tag, ".",
         ],
@@ -170,9 +173,14 @@ def run_suite(suite: Suite, registry: str, pytest_args: str, log_dir: Path) -> t
             return suite, 1, time.monotonic() - start, log
         # --user 0, no bytecode, no pytest cache: the checkout is mounted, and a run
         # must not leave root-owned files in it.
+        python_path = "/src/backend:/src"
+        if suite.name == "sandbox_executor":
+            # The sandbox image exposes api/auth as service-local top-level modules.
+            # Keep the normal repo path first, then add that service root for its tests.
+            python_path = "/src/backend:/src/backend/services/sandbox_executor:/src"
         cmd = [
             "docker", "run", "--rm", "--user", "0", "-v", f"{REPO_ROOT}:/src", "-w", "/src",
-            "-e", "PYTHONPATH=/src/backend:/src", "-e", "PYTHONDONTWRITEBYTECODE=1",
+            "-e", f"PYTHONPATH={python_path}", "-e", "PYTHONDONTWRITEBYTECODE=1",
             "-e", "OTEL_SDK_DISABLED=true",
         ]
         if suite.kind == "integration":
@@ -227,7 +235,7 @@ def main() -> int:
         for future in as_completed(futures):
             suite, rc, seconds, log = future.result()
             timings.append((suite, rc, seconds))
-            print(f"== {suite.label} ({args.registry}/dataagent/{suite.image}) "
+            print(f"== {suite.label} ({base_image(suite, args.registry)}) "
                   f"{'ok' if rc == 0 else 'FAILED'} in {seconds:.0f}s", flush=True)
             print(log.read_text(), end="", flush=True)
             if rc != 0:

@@ -36,12 +36,43 @@ def worker_database(ddl_server: dict[str, str]) -> Iterator[str]:  # noqa: F811
     conn = psycopg2.connect(dsn)
     conn.autocommit = True
     with conn.cursor() as cur:
-        for role in ("svc_qa", "svc_outbox_relay"):
+        # Roles are cluster-wide: one password serves both databases.
+        for role in (
+            "svc_qa",
+            "svc_inbox",
+            "svc_outbox_relay",
+            "svc_audit_worker",
+            "svc_query",
+            "svc_catalog",
+            "svc_context",
+            "svc_workspace",
+            "svc_skill",
+            "svc_pack",
+        ):
             cur.execute(f"ALTER ROLE {role} WITH LOGIN PASSWORD %s", (PASSWORD,))
     conn.close()
     mp = pytest.MonkeyPatch()
-    for role in ("svc_qa", "svc_outbox_relay"):
+    for role in (
+        "svc_qa",
+        "svc_inbox",
+        "svc_outbox_relay",
+        "svc_query",
+        "svc_catalog",
+        "svc_context",
+        "svc_workspace",
+        "svc_skill",
+        "svc_pack",
+    ):
         mp.setenv(f"DATAAGENT_DB_URL__{role.upper()}", _login_url(dsn, role))
+    # The audit database's outbox, read by the same relay role through its own connection key.
+    mp.setenv(
+        "DATAAGENT_DB_URL__SVC_AUDIT_WORKER",
+        _login_url(ddl_server["dataagent_audit"], "svc_audit_worker"),
+    )
+    mp.setenv(
+        "DATAAGENT_DB_URL__SVC_OUTBOX_RELAY_AUDIT",
+        _login_url(ddl_server["dataagent_audit"], "svc_outbox_relay"),
+    )
     engine_for.cache_clear()
     yield dsn
     engine_for.cache_clear()

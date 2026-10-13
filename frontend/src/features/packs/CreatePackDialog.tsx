@@ -7,12 +7,12 @@ import { createPack, type IndustryPack } from '../../lib/v1/packs';
 
 /*
  * "Hộp thoại · createPack" (2095:8808): the organisation's own domain pack, from an existing pack
- * version or from its current model. Creating it opens the first draft in Biên soạn gói.
+ * version or from its current model. Creating it opens the first draft in Biên soạn gói. The pack
+ * stays in the organisation: PackCreate has no sharing with other tenants, so the dialog does not
+ * offer it.
  */
 const CURRENT = '__current_model__';
 const DEFAULT_INCLUDES = 'Thực thể, chỉ số, từ điển, kỹ năng, agent mẫu';
-
-type Sharing = 'organisation' | 'invited_tenants';
 
 export function CreatePackDialog({
   open,
@@ -26,9 +26,10 @@ export function CreatePackDialog({
   onCreated: (draftVersionId: string) => void;
 }) {
   const [name, setName] = useState('');
-  const [base, setBase] = useState<string>(packs[0]?.latest.version_id ?? CURRENT);
+  // Only a pack whose version is known can be a base (GET /v1/packs lists no version yet).
+  const bases = packs.flatMap((p) => (p.latest ? [{ name: p.name, ...p.latest }] : []));
+  const [base, setBase] = useState<string>(bases[0]?.version_id ?? CURRENT);
   const [includes, setIncludes] = useState(DEFAULT_INCLUDES);
-  const [sharing, setSharing] = useState<Sharing>('organisation');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -43,7 +44,6 @@ export function CreatePackDialog({
           .split(',')
           .map((part) => part.trim())
           .filter(Boolean),
-        sharing,
       });
       onCreated(created.draft_version_id);
     } catch (e) {
@@ -79,9 +79,9 @@ export function CreatePackDialog({
             value={base}
             onChange={setBase}
             options={[
-              ...packs.map((p) => ({
-                value: p.latest.version_id,
-                label: `${p.name} ${p.latest.version}`,
+              ...bases.map((b) => ({
+                value: b.version_id,
+                label: `${b.name} ${b.version}`,
               })),
               { value: CURRENT, label: 'Mô hình hiện tại của tổ chức' },
             ]}
@@ -89,17 +89,6 @@ export function CreatePackDialog({
         </Field>
         <Field label="Gồm" labelTone="muted">
           <Input value={includes} onChange={(e) => setIncludes(e.target.value)} />
-        </Field>
-        <Field label="Chia sẻ" labelTone="muted">
-          <Select<Sharing>
-            label="Chia sẻ"
-            value={sharing}
-            onChange={setSharing}
-            options={[
-              { value: 'organisation', label: 'Chỉ trong tổ chức' },
-              { value: 'invited_tenants', label: 'Các tổ chức được mời' },
-            ]}
-          />
         </Field>
       </div>
     </Dialog>

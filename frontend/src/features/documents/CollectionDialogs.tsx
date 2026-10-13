@@ -6,22 +6,17 @@ import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
 import { SkeletonRows } from '../../design-system/SkeletonRow';
 import { listUsers } from '../../lib/v1/api';
-import {
-  createCollection,
-  listDocumentSources,
-  listSchemas,
-  suggestCollections,
-  type CollectionSuggestion,
-} from '../../lib/v1/documents';
+import { createCollection, listDocumentSources, listSchemas } from '../../lib/v1/documents';
 import { formatNumber } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
 import { useV1 } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 
 /*
- * The two ways to start a collection on "v3.1 · Phi cấu trúc · Bộ sưu tập" (UC-05-06):
- * "Hộp thoại · createCollection" (2095:8589) and "Hộp thoại · suggestCollection" (2095:8645), where
- * the agent scans the connected file sources and proposes how to group them.
+ * "Hộp thoại · createCollection" (2095:8589) on "v3.1 · Phi cấu trúc · Bộ sưu tập" (UC-05-06): a
+ * person makes a collection for a purpose. Figma's "suggestCollection" (2095:8645), where the
+ * agent proposed collections, is not in the design: UC-05-06 has the person create collections and
+ * the agent only propose the extraction schema.
  */
 const NEW_SCHEMA = '__new';
 
@@ -134,110 +129,6 @@ export function CreateCollectionDialog({
           onChange={setOwner}
         />
       </Field>
-    </Dialog>
-  );
-}
-
-export function SuggestCollectionDialog({
-  open,
-  onClose,
-  onCreated,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onCreated: (created: number) => void;
-}) {
-  const [suggestions, setSuggestions] = useState<CollectionSuggestion[] | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-
-  useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    setSuggestions(null);
-    setError(undefined);
-    suggestCollections()
-      .then((r) => {
-        if (!alive) return;
-        setSuggestions(r.suggestions);
-        setNote(r.note);
-        setPicked(new Set(r.suggestions.map((s) => s.id)));
-      })
-      .catch((e: Error) => alive && setError(`Agent chưa đề xuất được. ${e.message}`));
-    return () => {
-      alive = false;
-    };
-  }, [open]);
-
-  const toggle = (id: string, on: boolean) =>
-    setPicked((current) => {
-      const next = new Set(current);
-      if (on) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-
-  const submit = async () => {
-    const chosen = (suggestions ?? []).filter((s) => picked.has(s.id));
-    if (chosen.length === 0) return setError('Chọn ít nhất một đề xuất.');
-    setBusy(true);
-    setError(undefined);
-    try {
-      // The agent only proposes the grouping: the owner defaults to the caller and the schema
-      // is created after the first samples.
-      for (const s of chosen)
-        await createCollection({
-          name: s.name,
-          file_types: '',
-          source_id: s.source_id,
-          schema_id: null,
-        });
-      onCreated(chosen.length);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Dialog
-      open={open}
-      title="Agent đề xuất bộ sưu tập"
-      description="Agent quét các nguồn tệp đã kết nối và gợi ý cách tổ chức."
-      submitLabel={`Tạo ${formatNumber(picked.size)} bộ sưu tập`}
-      submitting={busy}
-      error={error}
-      onClose={onClose}
-      onSubmit={() => void submit()}
-    >
-      {suggestions === null && !error ? (
-        <SkeletonRows count={3} label="Agent đang quét các nguồn tệp…" />
-      ) : (
-        (suggestions ?? []).map((s, i) => (
-          <div key={s.id} className="flex flex-col gap-da-xs">
-            <span className="text-muted-foreground da-label">Đề xuất {i + 1}</span>
-            <div
-              className={cn(
-                'flex items-center rounded-md border px-da-md py-da-sm',
-                picked.has(s.id) ? 'border-primary' : 'border-border-strong',
-              )}
-            >
-              <Checkbox checked={picked.has(s.id)} onChange={(on) => toggle(s.id, on)}>
-                {s.label}
-              </Checkbox>
-            </div>
-          </div>
-        ))
-      )}
-      {note && (
-        <p className="flex items-start gap-da-md rounded-md bg-info-subtle px-da-md py-da-sm text-foreground da-caption">
-          <Icon name="agent" className="shrink-0 text-info" />
-          {note}
-        </p>
-      )}
     </Dialog>
   );
 }

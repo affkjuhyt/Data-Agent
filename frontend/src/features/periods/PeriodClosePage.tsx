@@ -3,18 +3,15 @@ import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
-import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
-import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
 import { resolveHitl } from '../../lib/v1/api';
 import {
-  cancelPeriodClose,
   getPeriod,
   listPeriods,
-  lockPeriod,
+  startPeriodClose,
   type CloseStep,
   type PeriodClose,
   type PeriodSummary,
@@ -25,8 +22,10 @@ import { useV1 } from '../../lib/v1/useV1';
  * "P10 · Kỳ chốt · Chốt kỳ" (2304:19277, UC-10-02, UC-10-03): the periods on the left (260px),
  * the close of the chosen one as four numbered steps, and on the right (320px) the figures that
  * locking freezes. A step stopped on a mismatch carries the agent's explanation and the
- * decision inline, answered through its HITL request. "Khoá kỳ" stays off until every step is
- * done and the caller is not the person who ran the reconciliation.
+ * decision inline, answered through its HITL request. "Chốt kỳ" (:close) is the only action:
+ * the period locks itself as the close's last step once every item matches or its exceptions
+ * have both approvals (UC-10-02 step 5, BR-132), so there is no lock to press and no close to
+ * cancel; a close that failed is started again.
  */
 type Tone = 'success' | 'warning' | 'info' | 'idle';
 
@@ -90,8 +89,7 @@ function PeriodBody({
   onChanged: () => void;
 }) {
   const toast = useToast();
-  const [busy, setBusy] = useState<'lock' | 'cancel' | null>(null);
-  const [confirm, setConfirm] = useState<'lock' | 'cancel' | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const closing = period.status === 'closing';
   const current = period.steps.findIndex((s) => s.state !== 'done');
@@ -99,23 +97,17 @@ function PeriodBody({
     ? `${PERIOD_STATUS.closing.label} · bước ${current + 1}/${period.steps.length}`
     : periodLabel(period);
 
-  const act = async (verb: 'lock' | 'cancel') => {
-    setBusy(verb);
+  const start = async () => {
+    setBusy(true);
     setError(undefined);
     try {
-      if (verb === 'lock') {
-        await lockPeriod(period.id);
-        toast({ tone: 'success', message: `Đã khoá kỳ ${period.code}` });
-      } else {
-        await cancelPeriodClose(period.id);
-        toast({ tone: 'success', message: `Đã huỷ chốt kỳ ${period.code}` });
-      }
+      await startPeriodClose(period.id);
+      toast({ tone: 'success', message: `Đang chốt kỳ ${period.code}` });
       onChanged();
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setBusy(null);
-      setConfirm(null);
+      setBusy(false);
     }
   };
 
@@ -132,27 +124,24 @@ function PeriodBody({
         }
         description={period.context_text}
         actions={
-          closing && (
-            <>
-              <Button kind="ghost" disabled={busy !== null} onClick={() => setConfirm('cancel')}>
-                Huỷ chốt
-              </Button>
-              {period.can_lock.allowed ? (
-                <Button kind="primary" loading={busy === 'lock'} onClick={() => setConfirm('lock')}>
-                  Khoá kỳ
-                </Button>
-              ) : (
-                <Tooltip content={period.can_lock.reason ?? 'Chưa khoá được.'}>
-                  <Button disabled>Khoá kỳ</Button>
-                </Tooltip>
-              )}
-            </>
+          period.can_start_close && (
+            <Button kind="primary" loading={busy} onClick={() => void start()}>
+              Chốt kỳ
+            </Button>
           )
         }
       />
       {error && (
         <div className="px-da-3xl pt-da-lg">
           <Notice tone="error">Không thực hiện được: {error}</Notice>
+        </div>
+      )}
+      {closing && (
+        <div className="px-da-3xl pt-da-lg">
+          <Notice tone="info">
+            Kỳ tự khoá khi mọi chỉ tiêu khớp hoặc ngoại lệ đủ hai người duyệt; sau khi khoá, mọi
+            thay đổi đi qua quy trình hồi tố.
+          </Notice>
         </div>
       )}
       <div className="flex min-h-0 flex-1">
@@ -203,25 +192,11 @@ function PeriodBody({
             </dl>
             <p className="text-foreground da-body-small">{period.frozen_note}</p>
             <p className="text-muted-foreground da-caption">
-              Người khoá kỳ khác người chạy đối soát.
+              Người bấm chốt kỳ không duyệt ngoại lệ của kỳ này.
             </p>
           </aside>
         )}
       </div>
-      <ConfirmDialog
-        open={confirm !== null}
-        title={confirm === 'lock' ? `Khoá kỳ ${period.code}?` : `Huỷ chốt kỳ ${period.code}?`}
-        confirmLabel={confirm === 'lock' ? 'Khoá kỳ' : 'Huỷ chốt'}
-        cancelLabel="Quay lại"
-        tone={confirm === 'lock' ? 'primary' : 'danger'}
-        loading={busy !== null}
-        onCancel={() => setConfirm(null)}
-        onConfirm={() => confirm && act(confirm)}
-      >
-        {confirm === 'lock'
-          ? 'Số liệu của kỳ được đóng băng; sau khi khoá, mọi thay đổi phải đi qua quy trình hồi tố.'
-          : 'Bản chụp và kết quả đối soát của lần chốt này bị bỏ; kỳ trở về đang mở.'}
-      </ConfirmDialog>
     </div>
   );
 }

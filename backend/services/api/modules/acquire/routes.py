@@ -67,6 +67,7 @@ from services.api.modules.acquire.schemas import (
     CrawlSourceCreate,
     CrawlSourceDetail,
     CrawlSourcePatch,
+    CrawlSourceSuggest,
     CrawlSourceSummary,
     CrawlSourceView,
     DriftResolve,
@@ -569,6 +570,40 @@ async def list_crawl_sources(
         rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
         items = await _summaries(session, rows)
     return Page(items=items, next_page_token=token)
+
+
+@router.post(
+    "/v1/crawl-sources:suggest",
+    status_code=202,
+    response_model=Accepted,
+    **endpoint("POST", "/v1/crawl-sources:suggest", operation_id="suggestCrawlSources"),
+)
+async def suggest_crawl_sources(
+    body: CrawlSourceSuggest,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+    response: Response,
+) -> Accepted:
+    """UC-14-01: the agent proposes sources for a goal, with what robots.txt and the terms say.
+    Searching and checking take longer than a request, so this is the Agent Thu thập run's job:
+    the api reserves the run id and asks for it, and registers nothing. A proposal becomes a
+    source only through POST /v1/crawl-sources, by a person."""
+    agent_run_id = uuid7()
+    async with transaction(ROLE, principal) as session:
+        _emit(
+            session,
+            principal,
+            "agent_run",
+            agent_run_id,
+            "acquire.source.suggest_requested",
+            agent_run_id=agent_run_id,
+            data_space_id=space,
+            requested_by=principal.user_id,
+            # The goal and examples are the request itself; no column holds them.
+            goal=body.goal,
+            examples=body.examples or [],
+        )
+    return _accepted(response, f"/v1/runs/{agent_run_id}", agent_run_id, "queued")
 
 
 @router.post(

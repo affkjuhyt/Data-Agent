@@ -162,6 +162,11 @@ class SkillRun(Base):
         DateTime(timezone=True), nullable=True
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mode: Mapped[str] = mapped_column(
+        Text,
+        server_default=sql_text("'run'"),
+        comment="run, try: try là chạy thử từ màn soạn kỹ năng (POST /v1/skill-versions/{id}:try), kết quả không dùng cho ô, cảnh báo hay agent (thêm 12/10/2026)",
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
@@ -202,7 +207,10 @@ class SkillSuggestion(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
     org_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     data_space_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
-    pattern: Mapped[Any] = mapped_column(JSONB, comment="Chuỗi bước đã khái quát")
+    pattern: Mapped[Any] = mapped_column(
+        JSONB,
+        comment="Chuỗi bước đã khái quát, chỉ cấu trúc: loại bước, tên tham số, params_schema; không có giá trị, kết quả, mẫu dòng hay nội dung ô của phiên (BR-98, sửa 12/10/2026)",
+    )
     session_ids: Mapped[list[uuid.UUID]] = mapped_column(
         ARRAY(UUID(as_uuid=True)),
         server_default=sql_text("'{}'"),

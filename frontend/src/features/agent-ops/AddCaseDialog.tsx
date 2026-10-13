@@ -3,20 +3,22 @@ import { Dialog } from '../../design-system/Dialog';
 import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
-import { addEvalCase, type EvalCase, type EvalCaseKind } from '../../lib/v1/agentOps';
+import { addEvalCase, type NewEvalCase } from '../../lib/v1/agentOps';
 import { listRuns } from '../../lib/v1/api';
 import { useV1 } from '../../lib/v1/useV1';
 
 /*
  * "Hộp thoại · addTest" (2095:9006): add a case to the eval set, optionally frozen from a real
- * run. Dialog md is the 560px of the Figma frame.
+ * run. Dialog md is the 560px of the Figma frame. The kinds are eval_item.category; cost and time
+ * are deployment gates (BR-148), not eval cases.
  */
-const KINDS: { value: EvalCaseKind; label: string }[] = [
-  { value: 'correct_conclusion', label: 'Kết luận đúng' },
-  { value: 'ask_on_time', label: 'Hỏi đúng lúc' },
-  { value: 'permission', label: 'Trong quyền dữ liệu' },
-  { value: 'cost', label: 'Chi phí' },
-  { value: 'latency', label: 'Thời gian' },
+type Kind = NewEvalCase['kind'];
+const KINDS: { value: Kind; label: string }[] = [
+  { value: 'correct_result', label: 'Kết luận đúng' },
+  { value: 'ask_at_right_time', label: 'Hỏi đúng lúc' },
+  { value: 'respect_permission', label: 'Trong quyền dữ liệu' },
+  { value: 'correct_format', label: 'Đúng khuôn trình bày' },
+  { value: 'refusal', label: 'Từ chối đúng' },
 ];
 const MANUAL = 'manual';
 
@@ -31,13 +33,13 @@ export function AddCaseDialog({
   agentId: string;
   evalSetId: string;
   onClose: () => void;
-  onAdded: (created: EvalCase) => void;
+  onAdded: () => void;
 }) {
   const runs = useV1(open ? () => listRuns({ agent_id: agentId }) : null, [open, agentId]);
   const [source, setSource] = useState<string>(MANUAL);
   const [input, setInput] = useState('');
   const [expected, setExpected] = useState('');
-  const [kind, setKind] = useState<EvalCaseKind>('ask_on_time');
+  const [kind, setKind] = useState<Kind>('ask_at_right_time');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -46,7 +48,7 @@ export function AddCaseDialog({
     setSource(MANUAL);
     setInput('');
     setExpected('');
-    setKind('ask_on_time');
+    setKind('ask_at_right_time');
     setError(undefined);
   }, [open]);
 
@@ -73,13 +75,13 @@ export function AddCaseDialog({
     setSending(true);
     setError(undefined);
     try {
-      const created = await addEvalCase(evalSetId, {
+      await addEvalCase(evalSetId, {
         source_run_id: source === MANUAL ? null : source,
         input: input.trim(),
         expected: expected.trim(),
         kind,
       });
-      onAdded(created);
+      onAdded();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -113,7 +115,7 @@ export function AddCaseDialog({
         <Input value={expected} onChange={(e) => setExpected(e.target.value)} className="w-full" />
       </Field>
       <Field label="Loại">
-        <Select<EvalCaseKind> label="Loại" options={KINDS} value={kind} onChange={setKind} />
+        <Select<Kind> label="Loại" options={KINDS} value={kind} onChange={setKind} />
       </Field>
     </Dialog>
   );

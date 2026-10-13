@@ -121,6 +121,22 @@ class RunCreate(BaseModel):
     as_of: datetime.date | None = None
 
 
+class TryRequest(BaseModel):
+    """POST /v1/skill-versions/{id}:try: one trial of a draft with these parameters."""
+
+    params: dict[str, Any]
+
+
+class ToolView(BaseModel):
+    """A tool an agent may be given (tab 5 G2): code, what it does, its permission level."""
+
+    code: str
+    level: Literal["read", "write_derived", "external_send", "system_action"]
+    description: str
+    executed_by: str
+    default_checkpoint: str | None
+
+
 class Accepted(BaseModel):
     """A1.6: the body of a 202, next to the Location header."""
 

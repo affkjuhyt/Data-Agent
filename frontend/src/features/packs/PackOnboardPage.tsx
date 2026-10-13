@@ -4,7 +4,6 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Checkbox } from '../../design-system/Checkbox';
-import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
@@ -26,9 +25,10 @@ import { useV1 } from '../../lib/v1/useV1';
  * "P09 · Đưa vào ngành · Ánh xạ" (2284:17560, UC-09-02): an installed pack's canonical entities
  * on the left, how far each is mapped; in the middle the attributes of one entity against the
  * organisation's columns, with the agent's confidence and note; on the right what waits on a
- * person — a code table to merge, a required attribute with no column. A required attribute must
- * be mapped or marked not applicable. Ticked rows are approved together; "Đối chiếu số" checks
- * the mapped figures against what was reported. Opened from the rail, the install in progress.
+ * person — a required attribute with no column. A required attribute must be mapped or marked not
+ * applicable. Ticked rows are approved together; "Đối chiếu số" checks the mapped figures against
+ * what was reported. Opened from the rail, the install in progress. The api gives the current
+ * column of each attribute, not the agent's alternatives or the code tables it would merge.
  */
 const fmt = (n: number) => n.toFixed(2).replace('.', ',');
 
@@ -56,7 +56,7 @@ export default function PackOnboardPage() {
 function OnboardBody({ install, onChanged }: { install: PackInstall; onChanged: () => void }) {
   const first = install.entities.find((e) => e.mapped < e.total) ?? install.entities[0];
   const [entity, setEntity] = useState(first?.key ?? '');
-  const mappings = useV1(entity ? () => getEntityMappings(install.id, entity) : null, [
+  const mappings = useV1(entity ? () => getEntityMappings(install, entity) : null, [
     install.id,
     entity,
   ]);
@@ -98,13 +98,11 @@ function MappingBody({
   const [picked, setPicked] = useState<Set<string>>(
     new Set(mappings.rows.filter((r) => r.approved || !r.unsure).map((r) => r.attr)),
   );
-  const [codeTable, setCodeTable] =
-    useState<EntityMappings['decisions'][number]['code_mapping']>(null);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
 
-  const save = async (extra?: { attr: string; rows: { from: string; to: string }[] }) => {
-    const rows = mappings.rows.filter((r) => picked.has(r.attr) || r.attr === extra?.attr);
+  const save = async () => {
+    const rows = mappings.rows.filter((r) => picked.has(r.attr));
     const missing = rows.filter((r) => !columns[r.attr]);
     if (missing.length) {
       setError(`Chọn cột hoặc “Không áp dụng” cho ${missing.map((r) => r.attr).join(', ')}.`);
@@ -113,16 +111,23 @@ function MappingBody({
     setBusy(true);
     setError(undefined);
     try {
-      const done = await saveMappings(installId, {
-        entity_mappings: rows.map((r) => ({
-          entity: mappings.entity,
-          attr: r.attr,
-          column: columns[r.attr] === NOT_APPLICABLE ? null : columns[r.attr],
-        })),
-        ...(extra ? { code_mappings: [extra] } : {}),
-      });
+      const done = await saveMappings(
+        installId,
+        mappings.entity,
+        rows.flatMap((r) =>
+          columns[r.attr] === NOT_APPLICABLE || !r.dataset_id
+            ? []
+            : [
+                {
+                  attribute_id: r.attribute_id,
+                  dataset_id: r.dataset_id,
+                  column_expr: columns[r.attr] as string,
+                  confidence: r.confidence,
+                },
+              ],
+        ),
+      );
       toast({ tone: 'success', message: `Đã duyệt ${done.approved} ánh xạ của ${mappings.name}` });
-      setCodeTable(null);
       onSaved();
     } catch (e) {
       setError((e as Error).message);
@@ -130,6 +135,7 @@ function MappingBody({
       setBusy(false);
     }
   };
+  const waiting = mappings.rows.filter((r) => r.required && !columns[r.attr]);
 
   return (
     <div className="flex min-h-full flex-col">
@@ -143,12 +149,7 @@ function MappingBody({
             <Button onClick={() => navigate('data', 'PACK_CALIBRATE', install.id)}>
               Đối chiếu số
             </Button>
-            <Button
-              kind="primary"
-              loading={busy && !codeTable}
-              disabled={busy}
-              onClick={() => save()}
-            >
+            <Button kind="primary" loading={busy} disabled={busy} onClick={() => save()}>
               Duyệt ánh xạ đã chọn
             </Button>
           </>
@@ -268,51 +269,19 @@ function MappingBody({
         </div>
         <aside className="flex w-[320px] shrink-0 flex-col gap-da-md border-l border-border bg-background px-da-xl pt-da-xl max-[1023px]:w-full max-[1023px]:border-l-0">
           <h2 className="text-foreground da-heading-3">Cần bạn quyết định</h2>
-          {mappings.decisions.length === 0 && (
+          {waiting.length === 0 && (
             <p className="text-muted-foreground da-body-small">Không có gì chờ ở thực thể này.</p>
           )}
-          {mappings.decisions.map((d) => (
-            <div key={d.text} className="flex flex-col gap-da-sm">
-              <p className="text-foreground da-body-small">{d.text}</p>
-              {d.code_mapping && (
-                <div>
-                  <Button onClick={() => setCodeTable(d.code_mapping)}>Xem bảng gộp</Button>
-                </div>
-              )}
-            </div>
+          {waiting.map((r) => (
+            <p key={r.attr} className="text-foreground da-body-small">
+              {r.attr} là thuộc tính bắt buộc nhưng chưa có cột. Chọn cột hoặc đánh dấu “Không áp
+              dụng”.
+            </p>
           ))}
           <p className="text-muted-foreground da-caption">
             Thuộc tính bắt buộc phải có ánh xạ hoặc được đánh dấu không áp dụng.
           </p>
         </aside>
-        <ConfirmDialog
-          open={codeTable !== null}
-          title={`Bảng gộp ${codeTable?.attr ?? ''}`}
-          confirmLabel="Dùng bảng gộp này"
-          tone="primary"
-          cancelLabel="Quay lại"
-          loading={busy}
-          error={codeTable ? error : undefined}
-          onCancel={() => setCodeTable(null)}
-          onConfirm={() => codeTable && save(codeTable)}
-        >
-          <table className="w-full border-collapse da-body-small">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="py-da-xs font-normal">Nhóm của tổ chức</th>
-                <th className="py-da-xs font-normal">Nhóm của gói</th>
-              </tr>
-            </thead>
-            <tbody>
-              {codeTable?.rows.map((r) => (
-                <tr key={r.from} className="border-b border-border">
-                  <td className="py-da-xs">{r.from}</td>
-                  <td className="py-da-xs da-mono">{r.to}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </ConfirmDialog>
       </div>
     </div>
   );

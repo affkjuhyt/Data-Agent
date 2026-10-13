@@ -76,6 +76,18 @@ class IngestionJobView(BaseModel):
     updated_at: datetime.datetime
 
 
+class IngestionJobDryRun(IngestionJobView):
+    """POST /v1/sources/{id}/jobs?dry_run=true: the job as it would be created, not recorded.
+
+    A3 also asks for a sample of 1,000 rows and its errors. Reading the source is worker-ingest's:
+    the api holds no connection to it, so sample and errors stay empty and `note` says so."""
+
+    dry_run: Literal[True] = True
+    sample: list[dict[str, Any]] = Field(default_factory=list)
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+    note: str
+
+
 class IngestionJobSummary(IngestionJobView):
     """GET /v1/jobs: the job with its latest run, lag and pending DLQ records (UC-04-09 step 1)."""
 
@@ -238,6 +250,8 @@ class QualityResultView(BaseModel):
     violations: int
     sample_ref: str | None
     acknowledged_by: uuid.UUID | None
+    acknowledged_at: datetime.datetime | None = None
+    acknowledged_note: str | None = None
     checked_at: datetime.datetime
     # From the rule, so the list reads without a second call.
     dataset_id: uuid.UUID

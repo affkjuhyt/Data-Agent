@@ -116,7 +116,13 @@ function Review({ report: loaded }: { report: SessionReport }) {
                     Sửa nội dung
                   </Button>
                 </Tooltip>
-                <Button onClick={() => setDialog(true)}>Yêu cầu sửa</Button>
+                {report.hitl_request_id ? (
+                  <Button onClick={() => setDialog(true)}>Yêu cầu sửa</Button>
+                ) : (
+                  <Tooltip content="Báo cáo chưa có yêu cầu duyệt trong Cần bạn.">
+                    <Button disabled>Yêu cầu sửa</Button>
+                  </Tooltip>
+                )}
                 {failing > 0 ? (
                   <Tooltip content={`Còn ${failing} kiểm tra chưa đạt`}>
                     <Button kind="primary" disabled>
@@ -220,7 +226,7 @@ function Review({ report: loaded }: { report: SessionReport }) {
           setNoteMissing(false);
           act(
             'changes',
-            () => requestReportChanges(report.id, note),
+            () => requestReportChanges(report, note),
             'Đã gửi yêu cầu sửa cho Agent Báo cáo',
           );
         }}

@@ -1,4 +1,6 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { currentDataSpace, pathId, V1Error, v1Get, v1Send, type Page } from './client';
+import type { components } from './schema';
+import { awaitQueryRun, getQueryRows } from './explore';
 
 /*
  * Data preparation (P06, UC-06-01…05): the SQL editor and its derived datasets, transformation
@@ -11,7 +13,7 @@ import { pathId, v1Get, v1Send, type Page } from './client';
 
 /* ─── SQL (v3.1 · Dữ liệu · SQL, UC-06-01 nhánh SQL) ──────────────────── */
 
-/** PROPOSAL: GET /v1/sql/catalog — the tables the caller may query, grouped by source. */
+/** The tables the caller may query, grouped from the canonical dataset catalogue. */
 interface SqlCatalogGroup {
   id: string;
   name: string;
@@ -37,18 +39,78 @@ export interface SqlSuggestion {
   sql: string;
 }
 
-export const getSqlCatalog = () => v1Get<{ items: SqlCatalogGroup[] }>('/sql/catalog');
+export const getSqlCatalog = async (): Promise<{ items: SqlCatalogGroup[] }> => {
+  try {
+    return await v1Get<{ items: SqlCatalogGroup[] }>('/sql/catalog');
+  } catch (error) {
+    if (!(error instanceof V1Error) || error.status !== 404) throw error;
+    const datasets = await v1Get<Page<DatasetRow>>('/datasets', { page_size: 500 });
+    const sourceNames = new Map<string, string>();
+    await Promise.all(
+      [...new Set(datasets.items.map((dataset) => dataset.source_id).filter(Boolean))].map(
+        async (sourceId) => {
+          const source = await v1Get<{ id: string; name: string }>(`/sources/${pathId(sourceId!)}`);
+          sourceNames.set(source.id, source.name);
+        },
+      ),
+    );
+    const groups = new Map<string, SqlCatalogGroup>();
+    for (const dataset of datasets.items) {
+      const key = dataset.source_id ?? 'derived';
+      const group = groups.get(key) ?? {
+        id: key,
+        name: dataset.source_id ? (sourceNames.get(key) ?? 'Nguồn dữ liệu') : 'Bảng dẫn xuất',
+        tables: [],
+      };
+      group.tables.push(tableName(dataset));
+      groups.set(key, group);
+    }
+    return { items: [...groups.values()] };
+  }
+};
 
-/** PROPOSAL: POST /v1/sql:run — read-only, permissions of the caller, at most `limit` rows. */
-export const runSql = (sql: string, limit = 500) =>
-  v1Send<SqlResult>('POST', '/sql:run', { sql, limit });
+/** Read-only SQL through the canonical query-run worker and policy path. */
+export const runSql = async (sql: string, limit = 500): Promise<SqlResult> => {
+  try {
+    return await v1Send<SqlResult>('POST', '/sql:run', { sql, limit });
+  } catch (error) {
+    if (!(error instanceof V1Error) || error.status !== 404) throw error;
+    const run = await v1Send<components['schemas']['QueryRunView']>('POST', '/query-runs', {
+      sql,
+      limit,
+    });
+    const finished = await awaitQueryRun(run);
+    const rows = await getQueryRows(finished.id, limit);
+    return {
+      columns: rows.columns.map((column) => column.name),
+      rows: rows.rows as SqlResult['rows'],
+      row_count: finished.row_count ?? rows.rows.length,
+      duration_ms: finished.duration_ms ?? 0,
+      permission_scope: currentDataSpace() ?? 'Data Space hiện tại',
+      masked_columns: [],
+    };
+  }
+};
 
-/** PROPOSAL: POST /v1/sql:format — the server formats, so the editor and pipelines agree. */
-export const formatSql = (sql: string) => v1Send<{ sql: string }>('POST', '/sql:format', { sql });
+/** Server formatting when available; otherwise keep a deterministic read-only fallback. */
+export const formatSql = async (sql: string): Promise<{ sql: string }> => {
+  try {
+    return await v1Send<{ sql: string }>('POST', '/sql:format', { sql });
+  } catch (error) {
+    if (!(error instanceof V1Error) || error.status !== 404) throw error;
+    return { sql: sql.trim().replace(/\s+/g, ' ') };
+  }
+};
 
-/** PROPOSAL: POST /v1/sql:suggest — null when the agent has nothing to add. */
-export const suggestSql = (sql: string) =>
-  v1Send<{ suggestion: SqlSuggestion | null }>('POST', '/sql:suggest', { sql });
+/** Optional agent hint; a missing suggestion service must not block a valid query. */
+export const suggestSql = async (sql: string) => {
+  try {
+    return await v1Send<{ suggestion: SqlSuggestion | null }>('POST', '/sql:suggest', { sql });
+  } catch (error) {
+    if (error instanceof V1Error && error.status === 404) return { suggestion: null };
+    throw error;
+  }
+};
 
 /* ─── Bảng dẫn xuất (UC-06-02) ────────────────────────────────────────── */
 
@@ -79,7 +141,18 @@ export const createDerivedTable = (body: {
 
 /* ─── Pipeline (UC-06-01, UC-06-03) ───────────────────────────────────── */
 
-export type PipelineStatus = 'succeeded' | 'failed' | 'running' | 'waiting_input' | 'draft';
+/**
+ * The last run's outcome when the PROPOSAL run summary says it; otherwise the pipeline's own
+ * state in A2 (draft, active, paused).
+ */
+export type PipelineStatus =
+  | 'succeeded'
+  | 'failed'
+  | 'running'
+  | 'waiting_input'
+  | 'draft'
+  | 'active'
+  | 'paused';
 
 /** GET /v1/pipelines — one row of "P06 · Pipeline · Danh sách". */
 export interface Pipeline {
@@ -98,11 +171,108 @@ export interface Pipeline {
   status: PipelineStatus;
 }
 
-export const listPipelines = () => v1Get<Page<Pipeline>>('/pipelines', { page_size: 500 });
+export type PipelineDetailWire = components['schemas']['PipelineDetail'];
+type PipelineWire = components['schemas']['PipelineView'] & { display?: Pipeline };
+type DatasetRow = components['schemas']['services__api__modules__catalog__schemas__DatasetView'];
 
-/** A2: POST /v1/pipelines — a draft on one input; the conversation starts empty. */
-export const createPipeline = (body: { name: string; input_table: string }) =>
-  v1Send<Pipeline>('POST', '/pipelines', body);
+/** The schedule in words from cron, the job it follows, or the pipelines it waits for. */
+const scheduleOf = (raw: components['schemas']['PipelineView']) =>
+  raw.trigger_on_job_id
+    ? 'Sau job nạp'
+    : raw.depends_on_pipeline_ids.length
+      ? `Sau ${raw.depends_on_pipeline_ids.length} pipeline`
+      : raw.cron
+        ? `Theo lịch ${raw.cron}`
+        : 'Chạy tay';
+
+/*
+ * PipelineView names its inputs by dataset id and says nothing of the last run (PROPOSAL): the
+ * inputs are named from the datasets, the status is the pipeline's own.
+ */
+function readPipeline(raw: PipelineWire, tables: Map<string, string>): Pipeline {
+  if (raw.display) return raw.display;
+  return {
+    id: raw.id,
+    name: raw.name,
+    owner_name: '',
+    step_count: Array.isArray(raw.steps) ? raw.steps.length : 0,
+    inputs: raw.input_dataset_ids.map((id) => tables.get(id) ?? id),
+    output_table: raw.target_dataset_id ? (tables.get(raw.target_dataset_id) ?? null) : null,
+    schedule_text: scheduleOf(raw),
+    last_run: null,
+    status: raw.status as PipelineStatus,
+  };
+}
+
+const readPipelineSteps = (raw: PipelineDetailWire): PipelineStep[] =>
+  (Array.isArray(raw.steps) ? raw.steps : []).flatMap((value, index) => {
+    if (typeof value !== 'object' || value === null) return [];
+    const step = value as Record<string, unknown>;
+    const title = typeof step.description === 'string' ? step.description : `Bước ${index + 1}`;
+    const sql = typeof step.code === 'string' ? step.code : '';
+    return [
+      {
+        seq: index + 1,
+        title,
+        sql,
+        rows_in: 0,
+        rows_out: 0,
+        is_new: false,
+        kind_label: typeof step.kind === 'string' ? step.kind : null,
+      },
+    ];
+  });
+
+/** Adapt A3's PipelineDetail to the richer presentation shape used by the pipeline screens. */
+export function readPipelineDetail(
+  raw: PipelineDetailWire,
+  tables: Map<string, string>,
+): PipelineDetail {
+  // Unit/demo handlers already return the screen shape; keep them usable while the real API is
+  // switched on, but adapt A3's PipelineDetail below when input_dataset_ids is present.
+  if (!Array.isArray(raw.input_dataset_ids)) return raw as unknown as PipelineDetail;
+  const base = readPipeline(raw, tables);
+  const lastRun = raw.last_run ?? null;
+  return {
+    ...base,
+    input_table: raw.input_dataset_ids.map((id) => tables.get(id) ?? id).join(', '),
+    input_rows: lastRun?.rows_in ?? 0,
+    preview_sample: lastRun?.sample_rows ?? 10_000,
+    steps: readPipelineSteps(raw),
+    messages: [],
+  };
+}
+
+const tableName = (d: DatasetRow) => `${d.schema_name}.${d.table_name}`;
+
+export const listPipelines = async (): Promise<Page<Pipeline>> => {
+  const [page, datasets] = await Promise.all([
+    v1Get<Page<PipelineWire>>('/pipelines', { page_size: 500 }),
+    v1Get<Page<DatasetRow>>('/datasets', { page_size: 500 }).catch(() => null),
+  ]);
+  const tables = new Map<string, string>(datasets?.items.map((d) => [d.id, tableName(d)]) ?? []);
+  return { ...page, items: page.items.map((p) => readPipeline(p, tables)) };
+};
+
+/**
+ * A2: POST /v1/pipelines (PipelineCreate) — a draft on its input datasets; the conversation starts
+ * empty. The screen names the input table ("raw.ld_loans"), so it is found among the datasets
+ * first; 422 when no dataset has that name.
+ */
+export const createPipeline = async (body: { name: string; input_table: string }) => {
+  const wanted = body.input_table.trim();
+  const found = await v1Get<Page<DatasetRow>>('/datasets', {
+    q: wanted.split('.').pop(),
+    page_size: 50,
+  });
+  const dataset = found.items.find((d) => tableName(d) === wanted || d.table_name === wanted);
+  if (!dataset) throw new V1Error(422, 'validation_failed', `Không tìm thấy bảng ${wanted}.`);
+  const created = await v1Send<PipelineWire>('POST', '/pipelines', {
+    name: body.name,
+    input_dataset_ids: [dataset.id],
+  } satisfies Omit<components['schemas']['PipelineCreate'], 'scope'>);
+  return readPipeline(created, new Map([[dataset.id, tableName(dataset)]]));
+};
 
 /** A2: POST /v1/pipelines/{id}/runs (202); 409 while a run is going (no overlapping runs). */
 export const runPipeline = async (id: string) =>
@@ -148,7 +318,14 @@ export interface StepPreview {
   rows: { key: string; before: string; after: string; note: string }[];
 }
 
-export const getPipeline = async (id: string) => v1Get<PipelineDetail>(`/pipelines/${pathId(id)}`);
+export const getPipeline = async (id: string): Promise<PipelineDetail> => {
+  const [raw, datasets] = await Promise.all([
+    v1Get<PipelineDetailWire>(`/pipelines/${pathId(id)}`),
+    v1Get<Page<DatasetRow>>('/datasets', { page_size: 500 }).catch(() => null),
+  ]);
+  const tables = new Map<string, string>(datasets?.items.map((d) => [d.id, tableName(d)]) ?? []);
+  return readPipelineDetail(raw, tables);
+};
 
 export const getStepPreview = async (id: string, seq: number) =>
   v1Get<StepPreview>(`/pipelines/${pathId(id)}/steps/${seq}/preview`);
@@ -161,11 +338,32 @@ export const sendPrepMessage = async (id: string, text: string) =>
   v1Send<PipelineDetail>('POST', `/pipelines/${pathId(id)}/messages`, { text });
 
 /** PROPOSAL: POST /v1/pipelines/{id}:test-run — every step on the full input, nothing written. */
-export const testRunPipeline = async (id: string) =>
-  v1Send<{ rows_out: number; excluded_rows: number; duration_s: number }>(
-    'POST',
-    `/pipelines/${pathId(id)}:test-run`,
-  );
+export const testRunPipeline = async (id: string) => {
+  try {
+    return await v1Send<{ rows_out: number; excluded_rows: number; duration_s: number }>(
+      'POST',
+      `/pipelines/${pathId(id)}:test-run`,
+    );
+  } catch (error) {
+    if (!(error instanceof V1Error) || error.status !== 404) throw error;
+    const run = await v1Send<components['schemas']['PipelineRunView']>(
+      'POST',
+      `/pipelines/${pathId(id)}:preview`,
+      { sample_rows: null },
+    );
+    const started = new Date(run.started_at).getTime();
+    const finished = run.finished_at ? new Date(run.finished_at).getTime() : started;
+    const dropped =
+      typeof run.rows_dropped === 'object' && run.rows_dropped !== null
+        ? (run.rows_dropped as { total?: unknown }).total
+        : 0;
+    return {
+      rows_out: run.rows_out ?? 0,
+      excluded_rows: typeof dropped === 'number' ? dropped : 0,
+      duration_s: Math.max(0, finished - started) / 1000,
+    };
+  }
+};
 
 /* ─── Lưu thành bảng & lịch chạy (UC-06-02, UC-06-03) ─────────────────── */
 
@@ -218,7 +416,7 @@ export const publishPipeline = async (id: string, body: PublishPipeline) =>
 
 export type ScheduleKind = 'daily' | 'after_source' | 'business_hours' | 'cron';
 
-/** PROPOSAL: GET/PUT /v1/pipelines/{id}/schedule. */
+/** PUT /v1/pipelines/{id}/schedule; GET remains a frontend compatibility projection. */
 export interface PipelineSchedule {
   kind: ScheduleKind;
   cron: string | null;
@@ -232,14 +430,41 @@ export interface PipelineSchedule {
 }
 
 export const getPipelineSchedule = async (id: string) =>
-  v1Get<PipelineSchedule>(`/pipelines/${pathId(id)}/schedule`);
+  v1Get<components['schemas']['ScheduleRequest']>(`/pipelines/${pathId(id)}/schedule`).then(
+    (schedule) => ({
+      kind: schedule.cron
+        ? ('cron' as const)
+        : schedule.trigger_on_job_id
+          ? ('after_source' as const)
+          : ('daily' as const),
+      cron: schedule.cron,
+      skip_holidays: false,
+      no_overlap: schedule.no_overlap,
+      retry_and_notify: schedule.on_failure === 'retry_then_notify',
+      after_source_label: schedule.trigger_on_job_id ?? 'job nạp dữ liệu',
+      notify_label: schedule.on_failure === 'skip' ? 'Không thông báo' : 'Người phụ trách pipeline',
+    }),
+  );
 
 /** PROPOSAL: the coming runs in words, from the server's business calendar. */
 export const previewSchedule = async (id: string, schedule: PipelineSchedule) =>
-  v1Send<{ text: string }>('POST', `/pipelines/${pathId(id)}/schedule:preview`, schedule);
+  v1Send<{ text: string }>('POST', `/pipelines/${pathId(id)}/schedule:preview`, {
+    cron: schedule.kind === 'cron' ? schedule.cron : null,
+    no_overlap: schedule.no_overlap,
+    on_failure: schedule.retry_and_notify ? 'retry_then_notify' : 'notify',
+  });
 
 export const savePipelineSchedule = async (id: string, schedule: PipelineSchedule) =>
-  v1Send<{ schedule_text: string }>('PUT', `/pipelines/${pathId(id)}/schedule`, schedule);
+  v1Send<components['schemas']['PipelineView']>('PUT', `/pipelines/${pathId(id)}/schedule`, {
+    cron: schedule.kind === 'cron' ? schedule.cron : null,
+    work_calendar_id: null,
+    trigger_on_job_id: schedule.kind === 'after_source' ? null : null,
+    depends_on_pipeline_ids: [],
+    no_overlap: schedule.no_overlap,
+    on_failure: schedule.retry_and_notify ? 'retry_then_notify' : 'notify',
+  }).then((view) => ({
+    schedule_text: view.cron ? `Theo lịch cron ${view.cron}` : 'Chạy thủ công',
+  }));
 
 /* ─── Ghi ngược có duyệt (UC-06-04) ───────────────────────────────────── */
 
@@ -277,10 +502,86 @@ export interface Writeback {
   rollback_text: string;
 }
 
+export type WritebackWire = components['schemas']['WritebackView'];
+
+const objectOf = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+
+const textOf = (value: unknown, fallback = '') => (typeof value === 'string' ? value : fallback);
+
+const numberOf = (value: unknown, fallback = 0) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+const changesOf = (value: unknown): Writeback['changes'] => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const row = objectOf(item);
+    if (typeof row.subject !== 'string' || typeof row.after !== 'string') return [];
+    return [
+      {
+        subject: row.subject,
+        before: typeof row.before === 'string' ? row.before : null,
+        after: row.after,
+        reason: textOf(row.reason),
+      },
+    ];
+  });
+};
+
+const checksOf = (value: unknown): Writeback['checks'] => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const row = objectOf(item);
+    if (typeof row.ok !== 'boolean' || typeof row.text !== 'string') return [];
+    return [{ ok: row.ok, text: row.text }];
+  });
+};
+
+/** Adapt A3's auditable writeback request to the richer approval screen shape. */
+export function readWriteback(raw: WritebackWire): Writeback {
+  // Unit/demo handlers already return the screen shape; keep them usable while the API is enabled.
+  if ('code' in raw || 'title' in raw) return raw as unknown as Writeback;
+
+  const summary = objectOf(raw.diff_summary);
+  const checks = checksOf(summary.checks);
+  const totals = objectOf(raw.totals_check);
+  if (typeof totals.ok === 'boolean' && typeof totals.text === 'string') {
+    checks.push({ ok: totals.ok, text: totals.text });
+  }
+  const rowCount = numberOf(summary.row_count, numberOf(summary.rows, 0));
+  const status = raw.status as WritebackStatus;
+  return {
+    id: raw.id,
+    code: raw.id,
+    title: `Ghi ngược vào ${raw.target_table}`,
+    status: ['pending_approval', 'changes_requested', 'rejected', 'approved', 'written'].includes(
+      status,
+    )
+      ? status
+      : 'pending_approval',
+    summary_text: `Yêu cầu ghi ngược ${rowCount.toLocaleString('vi-VN')} dòng vào ${raw.target_table}.`,
+    target_table: raw.target_table,
+    row_count: rowCount,
+    changes: changesOf(summary.changes ?? summary.sample),
+    checks,
+    approvers: [],
+    can_decide: false,
+    after_approval_text: 'Yêu cầu sẽ được xử lý theo quy trình phê duyệt của tổ chức.',
+    rollback_text: raw.snapshot_ref
+      ? `Có thể khôi phục từ snapshot ${raw.snapshot_ref}.`
+      : 'Snapshot khôi phục chưa được cung cấp.',
+  };
+}
+
 export const listOpenWritebacks = () =>
   v1Get<Page<Writeback>>('/writebacks', { status: 'pending_approval', page_size: 50 });
 
-export const getWriteback = async (id: string) => v1Get<Writeback>(`/writebacks/${pathId(id)}`);
+export const getWriteback = async (id: string) => {
+  const raw = await v1Get<WritebackWire>(`/writebacks/${pathId(id)}`);
+  return readWriteback(raw);
+};
 
 /** A2: :approve — the caller's step; the second approval writes to the staging table. */
 export const approveWriteback = async (id: string) =>
@@ -316,7 +617,7 @@ export interface LineageNode {
 }
 
 /**
- * PROPOSAL: GET /v1/lineage?target={id} — the target, everything it is built from, and what
+ * GET /v1/lineage — the target, everything it is built from, and what
  * uses it one step down. Only objects the caller may see are returned (BR).
  */
 export interface LineageGraph {
@@ -331,6 +632,6 @@ export interface LineageGraph {
 export const getLineage = (target?: string) =>
   v1Get<LineageGraph>('/lineage', target ? { target } : undefined);
 
-/** PROPOSAL: GET /v1/lineage/targets — the tables, metrics and reports lineage can start from. */
+/** Frontend target-picker projection; A2 exposes the graph endpoint, not this convenience list. */
 export const listLineageTargets = () =>
   v1Get<{ items: { id: string; label: string }[] }>('/lineage/targets');

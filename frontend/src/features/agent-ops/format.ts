@@ -4,8 +4,10 @@ import type { RunStatus } from '../../lib/v1/types';
 
 type Tone = 'success' | 'warning' | 'error' | 'info' | 'primary' | 'neutral' | 'idle';
 
-/** "97,5%", "100%", "8.400 đ", "6 phút" as in the eval table of 2311:20138. */
-export function formatMeasure(value: number, unit: EvalUnit): string {
+/** "97,5%", "100%", "2 câu", "8.400 đ", "6 phút" as in the eval table of 2311:20138; null "—". */
+export function formatMeasure(value: number | null, unit: EvalUnit): string {
+  if (value === null) return '—';
+  if (unit === 'count') return `${formatNumber(value, { maxFractionDigits: 0 })} câu`;
   if (unit === 'vnd') return formatMoneyShort(value);
   if (unit === 'minutes') return `${formatNumber(value, { maxFractionDigits: 0 })} phút`;
   // Rates under 100 keep one decimal so "95,0%" and "97,5%" line up in the column.
@@ -15,8 +17,9 @@ export function formatMeasure(value: number, unit: EvalUnit): string {
 
 const OP = { gte: '≥ ', lte: '≤ ', eq: '' } as const;
 
-/** "≥ 95%", "100%", "≤ 15.000 đ". Thresholds are round numbers, written without decimals. */
+/** "≥ 95%", "100%", "≤ 15.000 đ"; "—" for a measure the gate does not judge. */
 export function formatThreshold({ threshold, unit }: EvalCriterion): string {
+  if (!threshold) return '—';
   const value =
     unit === 'percent'
       ? `${formatNumber(threshold.value, { maxFractionDigits: 1 })}%`
@@ -25,24 +28,32 @@ export function formatThreshold({ threshold, unit }: EvalCriterion): string {
 }
 
 export function passes({ candidate, threshold }: EvalCriterion): boolean {
+  if (!threshold) return true;
   if (threshold.op === 'gte') return candidate >= threshold.value;
   if (threshold.op === 'lte') return candidate <= threshold.value;
   return candidate === threshold.value;
 }
 
-/** The quality gate the widen dialog quotes: "Cổng chất lượng đã đạt 4/4". */
+/** The quality gate the widen dialog quotes, over the criteria with a threshold: "đã đạt 1/1". */
 export function gateOf(rollout: Rollout) {
-  const criteria = rollout.eval_set.criteria;
+  const criteria = (rollout.eval_set?.criteria ?? []).filter((c) => c.threshold !== null);
   const passed = criteria.filter(passes).length;
   return { passed, total: criteria.length, open: passed === criteria.length };
 }
 
 export function rolloutStatus(r: Rollout): { tone: Tone; label: string } {
   switch (r.status) {
+    case 'pending_approval':
+      return { tone: 'warning', label: 'Chờ duyệt triển khai' };
     case 'completed':
       return { tone: 'success', label: `Đã triển khai ${r.candidate_share_pct}%` };
     case 'rolled_back':
-      return { tone: 'neutral', label: `Đã lùi về v${r.baseline_version}` };
+      return {
+        tone: 'neutral',
+        label: r.baseline_version === null ? 'Đã lùi lại' : `Đã lùi về v${r.baseline_version}`,
+      };
+    case 'cancelled':
+      return { tone: 'neutral', label: 'Đã huỷ triển khai' };
     default:
       return { tone: 'info', label: `Triển khai ${r.candidate_share_pct}%` };
   }

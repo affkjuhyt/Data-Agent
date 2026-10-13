@@ -1,4 +1,5 @@
 import { http, HttpResponse } from 'msw';
+import { documentApi } from './documents';
 import type {
   ActivateSource,
   ApiFieldMapping,
@@ -367,6 +368,7 @@ function profileOf(table: SourceTable, source: SourceRow): TableProfile {
   return {
     id: table.id,
     name: table.name,
+    table_ref: `${source.name}.${table.name}`,
     source: { id: source.id, name: source.name },
     row_count: table.row_count ?? 0,
     column_count: table.column_count ?? 0,
@@ -771,7 +773,7 @@ function collectionsFixture(): Collection[] {
 const SUMMARY: CollectionsSummary = {
   ingesting_files: 312,
   recognition_errors: 4,
-  pii_batches_pending: 2,
+  pii_issues_pending: 2,
   index_coverage: 0.992,
 };
 
@@ -981,6 +983,16 @@ function sourceDriftFixture(): SourceDrift {
   };
 }
 
+const driftWire = (value: SourceDrift) => ({
+  id: value.id,
+  source_id: value.source_id,
+  created_at: '2026-10-13T08:00:00+07:00',
+  resolution: value.status === 'accepted' ? 'approved_new' : value.status === 'rejected' ? 'reverted' : null,
+  action: value.job_paused ? 'quarantine' : 'none',
+  signals: { table: value.table_name, changes: value.changes },
+  display: value,
+});
+
 function errorGroupsFixture(): ErrorRecordGroup[] {
   return [
     {
@@ -1034,6 +1046,8 @@ function jobCandidatesFixture(): JobCandidate[] {
   return [
     {
       dataset_id: 'tbl-card-transactions',
+      source_id: null,
+      source_object: 'dbo.card_transactions',
       table_name: 'card_transactions',
       source_name: 'Thẻ tín dụng',
       cursor_columns: [
@@ -1056,6 +1070,8 @@ function jobCandidatesFixture(): JobCandidate[] {
     },
     {
       dataset_id: 'tbl-card-statements',
+      source_id: null,
+      source_object: 'dbo.card_statements',
       table_name: 'card_statements',
       source_name: 'Thẻ tín dụng',
       cursor_columns: [{ name: 'stmt_date', data_type: 'DATE', hint: null }],
@@ -1248,6 +1264,13 @@ export function createSourcesHandlers() {
   const configs: Record<string, NewSource> = {};
   const tests: Record<string, number> = {};
   const passed: Record<string, boolean> = {};
+  // What the last connection test found, which the structure scan turns into the source's tables.
+  const found: Record<string, ReturnType<typeof testResult>['tables']> = {};
+  // Personal-data columns of the scanned tables, by dataset id (catalog.column_meta.pii_label).
+  const scannedPii: Record<
+    string,
+    { id: string; name: string; pii_label: string; pii_confirmed: boolean }[]
+  > = {};
   let jobs = jobsFixture();
   const uploads: Record<string, UploadAnalysis> = {};
   const collections = collectionsFixture();
@@ -1268,6 +1291,12 @@ export function createSourcesHandlers() {
 
   return [
     http.get('*/v1/sources', () => page(sources)),
+    http.get('*/v1/sources/:id', ({ params }) => {
+      const source = sources.find((s) => s.id === params.id);
+      return source
+        ? HttpResponse.json(source)
+        : problem(404, 'not_found', 'Không tìm thấy nguồn.');
+    }),
     // A source's tables are its datasets (A2 has no GET /v1/sources/{id}); without source_id the
     // dataset list of handlers.ts answers.
     http.get('*/v1/datasets', ({ request }) => {
@@ -1366,6 +1395,74 @@ export function createSourcesHandlers() {
         ? HttpResponse.json(source)
         : problem(404, 'not_found', 'Không tìm thấy nguồn.');
     }),
+    // The structure scan before activation finishes at once here.
+    http.post('*/v1/sources/:id/scans', ({ params }) => {
+      const id = String(params.id);
+      if (!sources.some((s) => s.id === id))
+        return problem(404, 'not_found', 'Không tìm thấy nguồn.');
+      tables[id] = (found[id] ?? []).map((t, i) => {
+        const datasetId = `${id}-t${i}`;
+        if (t.personal_data)
+          scannedPii[datasetId] = [
+            {
+              id: `${datasetId}-c0`,
+              name: 'so_the',
+              pii_label: 'account_no',
+              pii_confirmed: false,
+            },
+          ];
+        return {
+          id: datasetId,
+          name: t.name,
+          description: t.description,
+          row_count: t.estimated_rows,
+          column_count: null,
+          refreshed_at: null,
+        };
+      });
+      return HttpResponse.json(
+        { id: `scan-${id}`, status: 'running', poll_after_ms: 0 },
+        { status: 202 },
+      );
+    }),
+    http.get('*/v1/scan-runs/:id', ({ params }) => {
+      const id = String(params.id);
+      const sourceId = id.replace(/^scan-/, '');
+      const count = tables[sourceId]?.length ?? 0;
+      return HttpResponse.json({
+        id,
+        source_id: sourceId,
+        kind: 'schema',
+        trigger: 'manual',
+        workflow_id: null,
+        status: 'succeeded',
+        tables_total: count,
+        tables_scanned: count,
+        tables_skipped: [],
+        resume_from: null,
+        started_at: new Date().toISOString(),
+        finished_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+      });
+    }),
+    // A scanned table's detail: only its personal-data columns matter to the connect flow.
+    http.get('*/v1/datasets/:id', ({ params }) => {
+      const columns = scannedPii[String(params.id)];
+      if (columns === undefined) return undefined;
+      return HttpResponse.json({ id: String(params.id), columns });
+    }),
+    http.patch('*/v1/datasets/:id', async ({ params, request }) => {
+      const columns = scannedPii[String(params.id)];
+      if (columns === undefined) return undefined;
+      const body = (await request.json()) as {
+        columns?: { id: string; pii_confirmed?: boolean }[];
+      };
+      for (const patch of body.columns ?? []) {
+        const column = columns.find((c) => c.id === patch.id);
+        if (column && patch.pii_confirmed) column.pii_confirmed = true;
+      }
+      return HttpResponse.json({ id: String(params.id), columns });
+    }),
     http.post('*/v1/sources/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
       const source = sources.find((s) => s.id === id);
@@ -1386,6 +1483,7 @@ export function createSourcesHandlers() {
         tests[id] = (tests[id] ?? 0) + 1;
         const result = testResult(config, tests[id] > 1 || !configs[id]);
         passed[id] = result.checks.every((c) => c.ok);
+        found[id] = result.tables;
         return HttpResponse.json(result);
       }
       if (verb === 'activate') {
@@ -1449,6 +1547,64 @@ export function createSourcesHandlers() {
       });
     }),
 
+    http.get('*/v1/datasets/:id', ({ params }) => {
+      const found = findTable(String(params.id));
+      if (!found) return problem(404, 'not_found', 'Không tìm thấy bảng.');
+      const profile = profileOf(found.table, found.source);
+      return HttpResponse.json({
+        id: found.table.id,
+        source_id: found.source.id,
+        data_space_id: found.source.data_space_id,
+        origin: 'source',
+        schema_name: 'dbo',
+        table_name: found.table.name,
+        object_kind: 'table',
+        display_name: found.table.name,
+        column_count: found.table.column_count,
+        profile_review: profile.review,
+        description: found.table.description,
+        description_status: 'none',
+        row_estimate: found.table.row_count,
+        history_kind: 'none',
+        business_date_col: null,
+        knowledge_time_col: null,
+        enabled: true,
+        steward_id: null,
+        scope: 'data_space',
+        expires_at: null,
+        current_version: 1,
+        quality_state: 'unknown',
+        created_at: at(8, 0),
+        updated_at: at(8, 0),
+        columns: profile.columns.map((column, ordinal) => ({
+          id: `${found.table.id}-column-${ordinal}`,
+          dataset_version: 1,
+          name: column.name,
+          ordinal,
+          data_type: column.data_type,
+          normalized_type: 'string',
+          is_nullable: true,
+          is_key: false,
+          display_name: null,
+          description: column.note,
+          description_status: 'none',
+          unit: null,
+          pii_label: column.histogram_note === 'che' ? 'other' : null,
+          pii_confirmed: false,
+          profile: {
+            scan_run_id: 'scan-1',
+            sample_rows: found.table.row_count ?? 0,
+            null_ratio: column.null_ratio,
+            distinct_est: typeof column.distinct === 'number' ? column.distinct : null,
+            min_value: null,
+            max_value: null,
+            top_values: null,
+            pattern_hint: null,
+            created_at: profile.refreshed_at ?? at(8, 0),
+          },
+        })),
+      });
+    }),
     http.get('*/v1/datasets/:id/profile', ({ params }) => {
       const found = findTable(String(params.id));
       return found
@@ -1509,8 +1665,30 @@ export function createSourcesHandlers() {
       page(new URL(request.url).searchParams.get('kind') === 'api' ? API_SECRET_REFS : SECRET_REFS),
     ),
 
-    http.get('*/v1/ingestion-jobs', () => page(jobs)),
-    http.post('*/v1/ingestion-jobs/:action', ({ params }) => {
+    http.get('*/v1/jobs', () =>
+      page(
+        jobs.map((job) => ({
+          id: job.id,
+          name: job.source_name,
+          mode:
+            job.method === 'cdc' ? 'cdc' : job.method === 'incremental' ? 'incremental' : 'full',
+          source_object: job.table_name,
+          status: job.status === 'error' ? 'failed' : job.status,
+          paused_reason: job.status_reason,
+          lag_seconds: job.lag_seconds,
+          last_run: {
+            status:
+              job.hours.at(-1) === 'error'
+                ? 'failed'
+                : job.hours.at(-1) === 'none'
+                  ? null
+                  : 'succeeded',
+            rows_loaded: job.rows_today,
+          },
+        })),
+      ),
+    ),
+    http.post('*/v1/jobs/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
       const job = jobs.find((j) => j.id === id);
       if (!job) return problem(404, 'not_found', 'Không tìm thấy job.');
@@ -1535,10 +1713,10 @@ export function createSourcesHandlers() {
     }),
 
     http.post('*/v1/uploads', async ({ request }) => {
-      const body = (await request.json()) as { file_name: string; size_bytes: number };
-      if (!/\.(xlsx|xls|csv)$/i.test(body.file_name ?? ''))
+      const fileName = request.headers.get('X-Upload-Filename') ?? '';
+      if (!/\.(xlsx|xls|csv)$/i.test(fileName))
         return problem(415, 'unsupported_media_type', 'Chỉ nhận tệp CSV hoặc Excel.');
-      const analysis = uploadAnalysis(body.file_name);
+      const analysis = uploadAnalysis(fileName);
       uploads[analysis.id] = analysis;
       return HttpResponse.json(analysis, { status: 201 });
     }),
@@ -1550,7 +1728,28 @@ export function createSourcesHandlers() {
       return HttpResponse.json({ table: upload.target.table });
     }),
 
-    http.get('*/v1/collections', () => page(collections)),
+    // CollectionView with the screen's card under display.
+    http.get('*/v1/collections', () =>
+      page(
+        collections.map((c) => ({
+          id: c.id,
+          code: c.id,
+          name: c.name,
+          purpose: c.name,
+          media_kinds: [],
+          status: c.archived ? 'archived' : 'active',
+          extraction_schema_id: null,
+          pii_policy: 'mask',
+          embed_model: 'bge-m3',
+          qdrant_collection: c.id,
+          retention_days: null,
+          data_space_id: 'ds-rui-ro-tin-dung',
+          created_at: '2026-09-01T09:00:00+07:00',
+          updated_at: '2026-10-01T09:00:00+07:00',
+          display: c,
+        })),
+      ),
+    ),
     http.get('*/v1/document-pipeline', () => HttpResponse.json(SUMMARY)),
     http.get('*/v1/collections/:id', ({ params }) => {
       const collection = collections.find((c) => c.id === params.id);
@@ -1603,17 +1802,19 @@ export function createSourcesHandlers() {
       const doc = Object.values(documents)
         .flat()
         .find((d) => d.id === params.id);
-      return doc ? HttpResponse.json(doc) : problem(404, 'not_found', 'Không tìm thấy tài liệu.');
+      return doc
+        ? HttpResponse.json(documentApi(doc.id, doc.title, doc))
+        : problem(404, 'not_found', 'Không tìm thấy tài liệu.');
     }),
 
     // Schema drifts of connected sources. P14's mock serves the same paths for crawled sources:
     // answer only our ids (and the origin=source list) and fall through otherwise.
     http.get('*/v1/schema-drifts', ({ request }) => {
       if (new URL(request.url).searchParams.get('origin') !== 'source') return undefined;
-      return page(drift.status === 'pending' ? [drift] : []);
+      return page(drift.status === 'pending' ? [driftWire(drift)] : []);
     }),
     http.get('*/v1/schema-drifts/:id', ({ params }) =>
-      params.id === drift.id ? HttpResponse.json(drift) : undefined,
+      params.id === drift.id ? HttpResponse.json(driftWire(drift)) : undefined,
     ),
     http.post('*/v1/schema-drifts/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
@@ -1659,7 +1860,7 @@ export function createSourcesHandlers() {
             : g,
         );
       }
-      return HttpResponse.json(drift);
+      return HttpResponse.json(driftWire(drift));
     }),
 
     http.get('*/v1/ingestion-job-candidates', () => page(candidates)),

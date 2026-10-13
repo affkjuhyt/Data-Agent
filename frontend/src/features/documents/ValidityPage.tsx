@@ -103,7 +103,7 @@ function ValidityView({ v, onChanged }: { v: DocumentValidity; onChanged: () => 
               <StatusDot tone={v.status.tone}>{v.status.text}</StatusDot>
             </span>
           }
-          description={v.owner_text}
+          description={v.owner_text ?? undefined}
           actions={
             v.can_confirm ? (
               <>
@@ -149,25 +149,32 @@ function ValidityView({ v, onChanged }: { v: DocumentValidity; onChanged: () => 
               </li>
             ))}
           </ol>
-          <h2 className="text-foreground da-heading-3">Ảnh hưởng tới câu trả lời</h2>
-          <table className="w-full table-fixed border-collapse">
-            <thead>
-              <tr className={cn(HEAD_ROW, 'bg-transparent')}>
-                <th className="px-da-lg py-da-md font-normal">Đối tượng</th>
-                <th className="w-[384px] px-da-lg py-da-md font-normal">Ảnh hưởng</th>
-              </tr>
-            </thead>
-            <tbody>
-              {v.impact.map((row) => (
-                <tr key={row.subject} className={cn(ROW, 'last:border-b')}>
-                  <td className="px-da-lg py-da-md text-foreground da-body-strong">
-                    {row.subject}
-                  </td>
-                  <td className="px-da-lg py-da-md text-foreground da-body-small">{row.effect}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {/* What the change does to answers is the agent's (PROPOSAL): hidden without it. */}
+          {v.impact.length > 0 && (
+            <>
+              <h2 className="text-foreground da-heading-3">Ảnh hưởng tới câu trả lời</h2>
+              <table className="w-full table-fixed border-collapse">
+                <thead>
+                  <tr className={cn(HEAD_ROW, 'bg-transparent')}>
+                    <th className="px-da-lg py-da-md font-normal">Đối tượng</th>
+                    <th className="w-[384px] px-da-lg py-da-md font-normal">Ảnh hưởng</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {v.impact.map((row) => (
+                    <tr key={row.subject} className={cn(ROW, 'last:border-b')}>
+                      <td className="px-da-lg py-da-md text-foreground da-body-strong">
+                        {row.subject}
+                      </td>
+                      <td className="px-da-lg py-da-md text-foreground da-body-small">
+                        {row.effect}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
         </div>
       </div>
       {v.finding && (

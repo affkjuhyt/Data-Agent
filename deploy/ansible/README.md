@@ -48,7 +48,7 @@ overridden by the inventory's `group_vars/all/`.
 | 5 | **Secrets**: render `secrets.env` from the vault (every run), then reapply every Secret and `kafka-jaas` | reapply only when a path in `secret_paths` changed |
 | 6 | **Base manifests**: namespaces, RBAC, NetworkPolicies, `configmap.yaml` (every run); rerun `create-configmaps.sh` | file-backed ConfigMaps only when a path in `config_paths` changed |
 | 7 | **Database tier**: apply `database/`, wait for every store and pgbouncer | `apply_databases` **and** a file under `database/` or `deploy/ansible/` changed (or `deploy_full`) |
-| 8 | **OpenBao** (`k8s_openbao`): unseal, KV v2 + transit, read policy, demo warehouse password (if `seed_demo`), AppRole. A secret-id is minted only on the first run or with `openbao_rotate_approle` | `apply_databases` |
+| 8 | **OpenBao** (`k8s_openbao`): status and unseal on every run; then KV v2 + transit, read policy, demo warehouse password (if `seed_demo`), AppRole (`configure.yml`). A secret-id is minted only on the first run or with `openbao_rotate_approle` | `apply_databases`; the configure half only when OpenBao was uninitialised or sealed, the database tier or `deploy/ansible/` changed, `secrets_changed`, `openbao_rotate_approle`, or the minted credentials file is missing |
 | 9 | **Service tier**: apply `service/`, wait for Keycloak and Kong | `apply_services` **and** a file under `service/` or `deploy/ansible/` changed (or `deploy_full`); a new image is restarted by digest in step 11 either way |
 | 10 | **Jobs**: delete and rerun, migrations (`kong-migration`, `migrate`) first, then the init Jobs (`db-init`, `minio-init`, `kafka-topics`, `seed`) — **only the ones whose inputs changed**: the Job's own manifest or an entry in `job_inputs` (e.g. `migrate` ← `backend/alembic`, `seed` ← the seed files, `kong-migration` ← the kong image, `db-init` ← its SQL and a `migrate` rerun). Each wait ends at `Complete` **or** `Failed` (polled every `job_poll` s), so a failing Job shows its logs within seconds instead of after `wait_job` | `apply_jobs` **and** (a Job's inputs changed, a full deploy, or `jobs_force`) |
 | 11 | **Restart** every Deployment/StatefulSet running a rebuilt image **whose running pods are on a different digest** — a rebuild that came out identical restarts nothing | an image was built |
@@ -123,7 +123,7 @@ outside the server fail with "Connecting to Keycloak…" and
 | `images_only=eval` | build an on-demand image (`images_on_demand`) — before applying the online-eval Job |
 | `deploy_full=true` | treat everything as changed: rebuild **all** images, reapply all Secrets and ConfigMaps, rerun Jobs (with `apply_jobs`). Images whose digest comes out unchanged are neither pushed nor restarted. Needs tens of GB of free disk — check `df -h /data` first |
 | `seed_demo=false` | run the `seed` Job without demo data |
-| `openbao_rotate_approle=true` | mint a new AppRole secret-id and reapply the Secrets that carry it; restart `workflow-runtime` and `auth-api` afterwards |
+| `openbao_rotate_approle=true` | mint new workload AppRole secret-ids and reapply the Secrets that carry them; restart worker-agent, sandbox-executor and platform workers afterwards |
 | `openbao_allow_reset=true` | allow re-initialising OpenBao when the keys file is missing. **Destroys every secret in the vault** — throwaway clusters only |
 | `git_sync_enabled=true` | pull before deploying (see step 2) |
 
@@ -150,8 +150,8 @@ outside the server fail with "Connecting to Keycloak…" and
   roles (`app_user`, `runtime_writer`, `sandbox_reader`, `kb_backend`,
   `pgbouncer_auth`, `kb_ingestion_worker`) are different: the `db-init` Job sets
   their passwords on every run.
-- `OPENBAO_TOKEN` / `OPENBAO_ROLE_ID` / `OPENBAO_SECRET_ID` are not in the vault;
-  `k8s_openbao` writes them to `deploy/k8s/dev/.openbao-env.yml`.
+- OpenBao's root token and the three workload AppRole credential pairs are not in
+  the vault; `k8s_openbao` writes them to `deploy/k8s/dev/.openbao-env.yml`.
 - `.secrets/secrets.env.vault` is a leftover from the previous pipeline. Nothing reads it.
 - Do not run `create-secrets.sh` by hand from some other env file. Every Secret
   is overwritten from that file; if it came from a different generation, the
@@ -184,7 +184,6 @@ Commit, then run. If you cannot commit yet:
 | --- | --- |
 | `-e deploy_full=true` | rebuilds every image — slow and disk-heavy |
 | `-e secrets_changed=true -e config_changed=true` | reapplies every Secret and file-backed ConfigMap, restarts the Deployments whose Secret/ConfigMap content changed; builds nothing |
-| add `-e '{"changed_paths": ["deploy/k8s/dev/job/seed.yaml"]}'` (with `apply_jobs=true`) | also lets the Jobs rerun |
 
 These overrides work because `-e` outranks the diff result. The checkpoint
 still advances to `HEAD`, so the next run will not see those files as changed
@@ -203,7 +202,7 @@ ansible-playbook plan.yml -e '{"changed_paths": ["backend/alembic/versions/x.py"
 ```
 
 The logic lives in [`filter_plugins/deploy_plan.py`](filter_plugins/deploy_plan.py)
-and is unit-tested in `tests/unit/workflow_runtime/test_deploy_plan.py`.
+and is unit-tested in `tests/unit/repo/test_deploy_plan.py`.
 
 ## Logs and timings
 
@@ -236,6 +235,7 @@ Done once, when the stack moved from `~/Data-Agent-k8s` to `~/Data-Agent`:
 | Symptom | Fix |
 | --- | --- |
 | A run failed — were those changes skipped? | No. The checkpoint only advances on success; fix the cause and rerun |
+| `Not ready in 180s` and a pod Pending with `Insufficient memory` | The one-node cluster is at its memory requests; the run prints each Pending pod's scheduling message. Dev `api`, `worker-agent`, `frontend` and `keycloak` use `strategy: Recreate` so a restart needs no second pod; free memory (OrbStack settings, or stop stores the slice does not use) for anything else |
 | Run succeeded but nothing changed in the cluster | The change isn't committed — see [Uncommitted changes](#uncommitted-changes) |
 | `Wait for the … Jobs` fails | The Job reached `Failed` (after `backoffLimit: 2` retries); its logs are printed right after. If it times out instead, the pod never ran: `kubectl -n dataagent-service get pods -l job-name=<job>`; `ImagePullBackOff` means the image is gone (e.g. `minio/mc`, now replaced by the pinned MinIO server image) |
 | `Build the images` fails | The task prints the last 40 lines of each failed image's log; the full log is `<build_log_dir>/<image>.log`. The other images finished building, so the rerun is mostly cache hits |

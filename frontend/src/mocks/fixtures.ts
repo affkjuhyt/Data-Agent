@@ -27,6 +27,24 @@ const DS = 'ds-rui-ro-tin-dung';
 
 const agent = (id: string, name: string) => ({ id, name });
 
+/** One step of a review chain (ApprovalStepView); `decidedMinutes` is relative to now. */
+const approvalStep = (
+  step: number,
+  role: string,
+  approverId: string | null,
+  decision: string | null,
+  decidedMinutes?: number,
+) => ({
+  id: `approval-step-${step}-${role.length}`,
+  step,
+  approver_role: role,
+  approver_id: approverId,
+  decision,
+  note: null,
+  decided_at: decidedMinutes === undefined ? null : minutesFromNow(decidedMinutes),
+  created_at: minutesFromNow(-40),
+});
+
 export function inboxFixture(): HitlRequest[] {
   const base = {
     data_space_id: DS,
@@ -34,6 +52,7 @@ export function inboxFixture(): HitlRequest[] {
     parent_run_label: null,
     assignee_id: 'me',
     assignee_group: null,
+    assignee_capability: null,
     status: 'open' as const,
     response: null,
     remember_as_rule: false,
@@ -84,6 +103,12 @@ export function inboxFixture(): HitlRequest[] {
       due_at: minutesFromNow(5 * 60),
       created_at: minutesFromNow(-40),
       agent: agent('agent-reconcile', 'Agent Đối soát'),
+      // The chain of "Cộng tác · Duyệt nhiều người" (2084:7085): step 2 is the caller's.
+      approval_steps: [
+        approvalStep(1, 'Người lập kiểm tra', 'u-minh-chau', 'approve', -20),
+        approvalStep(2, 'Chủ sở hữu dữ liệu · bắt buộc', null, null),
+        approvalStep(3, 'Kiểm soát · bắt buộc vì kỳ đã nộp', 'u-duc-long', null),
+      ],
     },
     {
       ...base,
@@ -99,6 +124,10 @@ export function inboxFixture(): HitlRequest[] {
       due_at: minutesFromNow(3 * 24 * 60),
       created_at: minutesFromNow(-120),
       agent: agent('agent-analysis', 'Agent Phân tích'),
+      approval_steps: [
+        approvalStep(1, 'Chủ sở hữu chỉ số', null, null),
+        approvalStep(2, 'Kiểm soát báo cáo · bắt buộc vì chạm số đã nộp', 'u-hai-yen', null),
+      ],
     },
     {
       ...base,
@@ -739,13 +768,35 @@ export function metricsFixture(): Metric[] {
     // NPL_RATIO shares its id with the detail mock (mocks/metrics.ts).
     id: i === 0 ? 'metric-npl-ratio' : `metric-${i}`,
     code: i === 0 ? 'NPL_RATIO' : i === 1 ? 'LOAN_BALANCE' : `METRIC_${i}`,
-    status: 'active' as const,
+    display_name: null,
+    status: 'active',
     current_version: 1,
+    certified: i < 120,
+    data_space_id: DS,
+    owner_id: 'u-long',
+    canonical_dataset_id: null,
+    consumer_group: null,
+    in_filed_report: i === 0,
+    pack_metric_id: null,
+    created_at: minutesFromNow(-90 * 24 * 60),
+    updated_at: minutesFromNow(-24 * 60),
   }));
 }
 
 export function termsFixture(): GlossaryTerm[] {
-  return Array.from({ length: 612 }, (_, i) => ({ id: `term-${i}`, term: `Thuật ngữ ${i}` }));
+  return Array.from({ length: 612 }, (_, i) => ({
+    id: `term-${i}`,
+    term: `Thuật ngữ ${i}`,
+    term_norm: `thuat ngu ${i}`,
+    definition: '',
+    meanings: [],
+    default_meaning: null,
+    legal_basis: null,
+    status: 'active',
+    data_space_id: DS,
+    created_at: minutesFromNow(-90 * 24 * 60),
+    updated_at: minutesFromNow(-24 * 60),
+  }));
 }
 
 export function dataSpacesFixture(): DataSpace[] {
@@ -777,6 +828,26 @@ export function dataSpacesFixture(): DataSpace[] {
     },
   ];
 }
+
+/**
+ * GET /v1/admin/users as the api sends it (AdminUser): a person is kind "human" there. The
+ * screen's display fields, when the fixture has them, travel alongside.
+ */
+export const userWire = <T extends AppUser>(u: T) => ({
+  ...u,
+  kind: u.kind === 'person' ? 'human' : 'agent',
+  username: 'username' in u ? String(u.username) : u.id,
+  email: null,
+  department: null,
+  default_data_space_id: null,
+  owner_user_id: null,
+  last_login_at: null,
+  last_synced_at: 'last_synced_at' in u ? (u.last_synced_at as string | null) : null,
+  org_roles: [],
+  data_space_roles: [],
+  created_at: minutesFromNow(-365 * 24 * 60),
+  updated_at: minutesFromNow(-24 * 60),
+});
 
 export function usersFixture(): AppUser[] {
   const people = Array.from({ length: 1284 }, (_, i) => ({
@@ -980,13 +1051,14 @@ export function proposalsFixture(): ProposalWire[] {
       expires_at: minutesFromNow(5 * 60),
       requires_compliance: false,
       ...proposalColumns('dw', 'dataset-overdue-loans'),
+      proposed_by: 'agent-doi-soat',
       checks: [
         { ok: true, text: '214/214 khoản có bằng chứng từ Core banking' },
         { ok: true, text: 'Khớp số đã nộp ngày 05/10' },
       ],
       approval: {
         reason: 'Ghi đè số nội bộ của kỳ đã nộp',
-        // The chain of "Cộng tác · Duyệt nhiều người" (2084:7085), mocks/collaboration.ts.
+        // The chain of "Cộng tác · Duyệt nhiều người" (2084:7085) is hitl-adjust-214's approval_steps.
         steps: [
           { name: 'Nguyễn Thu Hà', role: 'người lập kiểm tra' },
           { name: 'Bạn', role: 'chủ sở hữu dữ liệu' },

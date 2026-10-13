@@ -6,6 +6,8 @@ import type { ExploreExplanation, ExploreResult, NextStep } from '../../lib/v1/e
  * "Agent giải thích" (2140:15691), the 340px right column of Khám phá: what the agent reads in
  * the result (a bordered box; "Agent đang đọc kết quả…" while it reads, as in "Khám phá · Đang
  * tải"), the next steps it suggests, and a success line when the figures match a filed report.
+ * The reading is the decomposition skill run on the result (SCR-06); A3 has no next steps nor
+ * reconciliation for an explorer result yet, so those two blocks stay hidden until it does.
  */
 const STEP_ICON: Record<NextStep['kind'], IconName> = {
   drill: 'layers',
@@ -20,7 +22,8 @@ export function ExplainPanel({
   onStep,
 }: {
   result: ExploreResult | undefined;
-  explanation: V1State<ExploreExplanation>;
+  /** null: no decomposition skill in the Data Space, or its run had nothing to say. */
+  explanation: V1State<ExploreExplanation | null>;
   onStep: (step: NextStep) => void;
 }) {
   return (
@@ -36,6 +39,10 @@ export function ExplainPanel({
       >
         {!result ? (
           <p className="text-muted-foreground">Thêm chỉ số và chiều để agent đọc kết quả.</p>
+        ) : explanation.data === null && !explanation.loading ? (
+          <p className="text-muted-foreground">
+            Data Space này chưa có kỹ năng phân rã biến động để agent đọc kết quả.
+          </p>
         ) : explanation.data && !explanation.loading ? (
           <>
             <p className="da-body-strong">{explanation.data.headline}</p>

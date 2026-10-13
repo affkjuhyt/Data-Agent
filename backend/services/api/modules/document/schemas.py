@@ -15,7 +15,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 Media = Literal["pdf", "image", "docx", "email", "audio", "html"]
-SourceKind = Literal["smb_folder", "sharepoint", "imap_mailbox", "call_recording_api", "object_store"]
+SourceKind = Literal[
+    "smb_folder", "sharepoint", "imap_mailbox", "call_recording_api", "object_store"
+]
 Resolution = Literal["corrected", "confirmed_mask", "page_dropped", "value_fixed"]
 
 # Five cron fields; the scheduler checks the values themselves.
@@ -137,6 +139,21 @@ class DocumentDetail(DocumentView):
     progress: Progress
     open_quality_issues: int
     blocking_quality_issues: int
+
+
+# The preprocessing step a document is at, read from its status and the rows the worker has
+# written so far (no column records the step): queued until doc_ingest picks it up, then pages,
+# passages, vectors; quality_review while a blocking issue waits for a person.
+PreprocessingStep = Literal[
+    "queued", "reading_pages", "chunking", "indexing", "quality_review", "done", "failed", "removed"
+]
+
+
+class DocumentListItem(DocumentView):
+    """A row of GET /v1/documents: the document with its current preprocessing step."""
+
+    step: PreprocessingStep
+    progress: Progress
 
 
 class ValidityChange(BaseModel):

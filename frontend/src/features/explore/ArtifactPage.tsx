@@ -3,32 +3,29 @@ import { useAppState } from '../../AppStateContext';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
-import { Icon } from '../../design-system/Icon';
 import { Segmented } from '../../design-system/Segmented';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { csvCell } from '../../lib/csv';
 import {
   getArtifact,
-  restoreArtifactVersion,
-  saveArtifact,
-  updateArtifactUsages,
-  watchArtifact,
+  getQuerySql,
+  saveArtifactToSession,
   type Artifact,
 } from '../../lib/v1/explore';
 import { useV1 } from '../../lib/v1/useV1';
 import { cn } from '../../lib/utils';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
+import { SaveToSessionDialog } from './SaveToSessionDialog';
 
 /*
- * "v3.1 · Chi tiết · Artifact toàn màn" (2074:4442, UC-01-01): one chart or table produced in
- * an answer or a notebook, opened full screen at /analysis/artifact/<id>. Main column (24px
- * sides): the session breadcrumb, title with version and "Đã kiểm tra số", the provenance line,
- * Lưu · Theo dõi · Xuất · Chia sẻ; Biểu đồ / Bảng / SQL; the horizontal bars (chart-3 over the
- * watch threshold, chart-1 for a decrease) and the table. The 380px side column holds the
- * version history with restore, what changed from the previous version, where the artifact is
- * used, and a warning when a snapshot still shows an older version.
- * /v1/artifacts is a PROPOSAL (lib/v1/explore.ts).
+ * "v3.1 · Chi tiết · Artifact toàn màn" (2074:4442, UC-01-01): one answer opened full screen at
+ * /analysis/artifact/<answer id> (GET /v1/answers/{id}). The question as title with "Đã kiểm tra
+ * số", the provenance line, Lưu · Theo dõi · Xuất · Chia sẻ; Biểu đồ / Bảng / SQL; the
+ * horizontal bars of the figures (chart-1 for a decrease) and the table. "Lưu" keeps it as a
+ * tile of a session, "Theo dõi" opens Tạo theo dõi (POST /v1/monitors needs a rule), SQL is the
+ * run's (GET /v1/query-runs/{id}/sql). The frame's side column (version history, restore, where
+ * it is used) is not drawn: no use case versions an artifact, a report figure follows its tile.
  */
 type Mode = 'chart' | 'table' | 'sql';
 
@@ -57,31 +54,20 @@ export default function ArtifactPage() {
   );
 }
 
-function ArtifactView({ artifact: initial }: { artifact: Artifact }) {
+function ArtifactView({ artifact }: { artifact: Artifact }) {
   const { navigate } = useAppState();
   const toast = useToast();
-  const [artifact, setArtifact] = useState(initial);
-  const [mode, setMode] = useState<Mode>('chart');
-  const [busy, setBusy] = useState<string | null>(null);
-
-  const act = async (key: string, run: () => Promise<Artifact>, done: string) => {
-    setBusy(key);
-    try {
-      setArtifact(await run());
-      toast({ tone: 'success', message: done });
-    } catch (e) {
-      toast({ tone: 'error', message: `Không thực hiện được: ${(e as Error).message}` });
-    } finally {
-      setBusy(null);
-    }
-  };
+  const [mode, setMode] = useState<Mode>(artifact.chart ? 'chart' : 'table');
+  const [saving, setSaving] = useState(false);
+  const runId = artifact.query_run_id;
+  const sql = useV1(mode === 'sql' && runId ? () => getQuerySql(runId) : null, [mode, runId]);
 
   const exportCsv = () => {
     const lines = [
       artifact.table.columns.map(csvCell).join(','),
-      ...artifact.table.rows.map((r) => r.cells.map(csvCell).join(',')),
+      ...artifact.table.rows.map((r) => r.map(csvCell).join(',')),
     ];
-    const blob = new Blob([`﻿${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob([`\uFEFF${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -102,9 +88,11 @@ function ArtifactView({ artifact: initial }: { artifact: Artifact }) {
     }
   };
 
-  const stale = artifact.used_in.filter(
-    (u) => u.pinned_version !== null && u.pinned_version < artifact.version,
-  );
+  const modes: { value: Mode; label: string }[] = [
+    ...(artifact.chart ? [{ value: 'chart' as const, label: 'Biểu đồ' }] : []),
+    { value: 'table', label: 'Bảng' },
+    ...(runId ? [{ value: 'sql' as const, label: 'SQL' }] : []),
+  ];
 
   return (
     <div className="flex h-full min-h-0">
@@ -112,177 +100,77 @@ function ArtifactView({ artifact: initial }: { artifact: Artifact }) {
         <header className="flex items-center gap-da-md">
           <div className="flex min-w-0 flex-1 flex-col">
             <nav aria-label="Vị trí" className="text-muted-foreground da-caption">
-              {artifact.session ? (
-                <button
-                  type="button"
-                  onClick={() => navigate('analysis', 'SESSIONS', artifact.session!.id)}
-                  className="hover:text-foreground hover:underline"
-                >
-                  {artifact.session.title}
-                </button>
-              ) : (
-                'Câu trả lời'
-              )}
-              {' › Artifact'}
+              Câu trả lời › Artifact
             </nav>
             <div className="flex flex-wrap items-center gap-da-md">
               <h1 className="text-foreground da-heading-1">{artifact.title}</h1>
-              <StatusDot tone="primary">v{artifact.version}</StatusDot>
               {artifact.checked && <StatusDot tone="success">Đã kiểm tra số</StatusDot>}
             </div>
-            <p className="text-muted-foreground da-caption">{artifact.meta_text}</p>
+            {artifact.meta_text && (
+              <p className="text-muted-foreground da-caption">{artifact.meta_text}</p>
+            )}
           </div>
-          <Button
-            kind="ghost"
-            icon="bookmark"
-            loading={busy === 'save'}
-            disabled={artifact.saved}
-            onClick={() =>
-              void act('save', () => saveArtifact(artifact.id), 'Đã lưu vào mục của bạn')
-            }
-          >
-            {artifact.saved ? 'Đã lưu' : 'Lưu'}
+          <Button kind="ghost" icon="bookmark" onClick={() => setSaving(true)}>
+            Lưu
           </Button>
-          <Button
-            kind="ghost"
-            icon="bell"
-            loading={busy === 'watch'}
-            disabled={artifact.watching}
-            onClick={() =>
-              void act('watch', () => watchArtifact(artifact.id), 'Sẽ báo bạn khi số này thay đổi')
-            }
-          >
-            {artifact.watching ? 'Đang theo dõi' : 'Theo dõi'}
+          <Button kind="ghost" icon="bell" onClick={() => navigate('analysis', 'WATCH_NEW')}>
+            Theo dõi
           </Button>
           <Button onClick={exportCsv}>Xuất</Button>
           <Button onClick={() => void share()}>Chia sẻ</Button>
         </header>
 
-        <Segmented<Mode>
-          label="Chế độ"
-          value={mode}
-          onChange={setMode}
-          items={[
-            { value: 'chart', label: 'Biểu đồ' },
-            { value: 'table', label: 'Bảng' },
-            { value: 'sql', label: 'SQL' },
-          ]}
-        />
+        {artifact.text && <p className="text-foreground da-body">{artifact.text}</p>}
 
-        {mode === 'chart' && <Bars artifact={artifact} />}
+        {modes.length > 1 && (
+          <Segmented<Mode> label="Chế độ" value={mode} onChange={setMode} items={modes} />
+        )}
+
+        {mode === 'chart' && artifact.chart && <Bars bars={artifact.chart.bars} />}
         {mode !== 'sql' && <Table artifact={artifact} />}
         {mode === 'sql' && (
-          <pre className="overflow-x-auto rounded-lg border border-border bg-subtle px-da-xl py-da-lg text-foreground da-mono">
-            {artifact.sql}
-          </pre>
+          <AsyncRegion state={sql} what="SQL" skeletonRows={3}>
+            {(q) => (
+              <pre className="overflow-x-auto rounded-lg border border-border bg-subtle px-da-xl py-da-lg text-foreground da-mono">
+                {q.sql_executed || q.sql_generated || '—'}
+              </pre>
+            )}
+          </AsyncRegion>
         )}
       </main>
 
-      <aside
-        aria-label="Phiên bản và nơi dùng"
-        className="flex w-[380px] shrink-0 flex-col gap-da-lg overflow-y-auto border-l border-border bg-card p-da-xl max-[1279px]:hidden"
-      >
-        <h2 className="uppercase text-muted-foreground da-overline">Lịch sử phiên bản</h2>
-        <ol className="flex flex-col gap-da-lg">
-          {artifact.versions.map((v) => {
-            const current = v.version === artifact.version;
-            return (
-              <li
-                key={v.version}
-                aria-current={current || undefined}
-                className={cn(
-                  'flex items-start gap-da-md rounded-md px-da-md py-da-sm',
-                  current && 'border border-border',
-                )}
-              >
-                <span className="text-primary da-mono">v{v.version}</span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-foreground da-body-small">{v.summary}</span>
-                  <span className="text-muted-foreground da-caption">{v.author_text}</span>
-                </span>
-                {!current && (
-                  <button
-                    type="button"
-                    aria-label={`Khôi phục v${v.version}`}
-                    title={`Khôi phục v${v.version}`}
-                    disabled={busy !== null}
-                    onClick={() =>
-                      void act(
-                        `restore-${v.version}`,
-                        () => restoreArtifactVersion(artifact.id, v.version),
-                        `Đã khôi phục v${v.version} thành phiên bản mới`,
-                      )
-                    }
-                    className="inline-flex text-muted-foreground hover:text-foreground"
-                  >
-                    <Icon name="rollback" />
-                  </button>
-                )}
-              </li>
-            );
-          })}
-        </ol>
-        {artifact.compare && (
-          <div className="flex flex-col gap-da-xs rounded-md border border-border px-da-lg py-da-md">
-            <span className="text-muted-foreground da-mono">{artifact.compare.label}</span>
-            <p className="text-foreground da-body-small">{artifact.compare.text}</p>
-          </div>
-        )}
-
-        {artifact.used_in.length > 0 && (
-          <>
-            <h2 className="uppercase text-muted-foreground da-overline">Đang dùng ở</h2>
-            <ul className="flex flex-col gap-da-sm">
-              {artifact.used_in.map((u) => (
-                <li key={u.id} className="text-foreground da-body-small">
-                  · {u.text}
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-        {stale.length > 0 && (
-          <button
-            type="button"
-            disabled={busy !== null}
-            onClick={() =>
-              void act(
-                'usages',
-                () =>
-                  updateArtifactUsages(
-                    artifact.id,
-                    stale.map((u) => u.id),
-                  ),
-                `Đã cập nhật lên v${artifact.version}`,
-              )
-            }
-            className="flex items-start gap-da-md rounded-md bg-warning-subtle px-da-md py-da-sm text-left text-foreground da-caption"
-          >
-            <Icon name="alert" className="text-warning" />
-            <span>
-              {stale
-                .map((u) => `${u.text.split(' · ')[0]} đang dùng v${u.pinned_version} đã cũ`)
-                .join('; ')}
-              . Cập nhật lên v{artifact.version}?
-            </span>
-          </button>
-        )}
-      </aside>
+      {saving && (
+        <SaveToSessionDialog
+          onClose={() => setSaving(false)}
+          onSave={(workspaceId) => saveArtifactToSession(workspaceId, artifact)}
+          onSaved={(workspaceId, title) => {
+            setSaving(false);
+            toast({
+              tone: 'success',
+              message: `Đã lưu vào ${title}`,
+              action: {
+                label: 'Mở phiên',
+                onClick: () => navigate('analysis', 'SESSIONS', workspaceId),
+              },
+            });
+          }}
+        />
+      )}
     </div>
   );
 }
 
-const BAR_TONE = { above: 'bg-chart-3', normal: 'bg-chart-6', down: 'bg-chart-1' } as const;
+const BAR_TONE = { normal: 'bg-chart-6', down: 'bg-chart-1' } as const;
 
-function Bars({ artifact }: { artifact: Artifact }) {
-  const max = Math.max(...artifact.chart.bars.map((b) => Math.abs(b.value))) || 1;
+function Bars({ bars }: { bars: NonNullable<Artifact['chart']>['bars'] }) {
+  const max = Math.max(...bars.map((b) => Math.abs(b.value))) || 1;
   return (
     <section
       aria-label="Biểu đồ"
       className="flex flex-col gap-da-md rounded-lg border border-border bg-card px-da-2xl py-da-xl"
     >
       <ul className="flex flex-col gap-da-md">
-        {artifact.chart.bars.map((b) => (
+        {bars.map((b) => (
           <li key={b.label} className="flex items-center gap-da-md">
             <span className="w-[150px] shrink-0 truncate text-foreground da-body-small">
               {b.label}
@@ -293,20 +181,19 @@ function Bars({ artifact }: { artifact: Artifact }) {
                 style={{ width: `${Math.max(3, (Math.abs(b.value) / max) * 85)}%` }}
                 aria-hidden
               />
-              <span className={cn('da-mono', b.value > 0 ? 'text-error' : 'text-success')}>
-                {b.value_text}
-              </span>
+              <span className="text-foreground da-mono">{b.value_text}</span>
             </span>
           </li>
         ))}
       </ul>
-      <p className="text-muted-foreground da-caption">{artifact.chart.caption}</p>
     </section>
   );
 }
 
 function Table({ artifact }: { artifact: Artifact }) {
-  const { columns, rows, change_column } = artifact.table;
+  const { columns, rows } = artifact.table;
+  if (rows.length === 0)
+    return <p className="text-muted-foreground da-body-small">Câu trả lời này không có số.</p>;
   return (
     <table className="w-full border-separate border-spacing-0 overflow-hidden rounded-lg border border-border bg-card">
       <thead>
@@ -322,9 +209,9 @@ function Table({ artifact }: { artifact: Artifact }) {
         </tr>
       </thead>
       <tbody>
-        {rows.map((r) => (
-          <tr key={r.cells[0]}>
-            {r.cells.map((cell, i) => (
+        {rows.map((r, n) => (
+          <tr key={n}>
+            {r.map((cell, i) => (
               <td
                 key={columns[i] ?? i}
                 className={cn(
@@ -332,15 +219,7 @@ function Table({ artifact }: { artifact: Artifact }) {
                   i === 0 ? 'da-body-small' : 'text-right da-mono',
                 )}
               >
-                {i === change_column ? (
-                  <StatusDot
-                    tone={r.trend === 'up' ? 'error' : r.trend === 'down' ? 'success' : 'idle'}
-                  >
-                    {cell}
-                  </StatusDot>
-                ) : (
-                  cell
-                )}
+                {cell}
               </td>
             ))}
           </tr>

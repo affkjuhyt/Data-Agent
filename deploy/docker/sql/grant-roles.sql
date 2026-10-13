@@ -32,13 +32,37 @@ GRANT EXECUTE ON FUNCTION public.pgbouncer_get_auth(TEXT) TO pgbouncer_auth;
 
 -- Every service role may connect; what it may touch is the migration's grants and row-level
 -- security. Stated explicitly: one BYPASSRLS would silently disable every policy for that role.
+-- SELECT on alembic_version lets a workload's wait-for-migrations init container check the
+-- schema is at head over its own login instead of the migrator's owner URL.
 DO $$
 DECLARE
   r record;
+  has_alembic_version boolean := to_regclass('public.alembic_version') IS NOT NULL;
 BEGIN
   FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'svc\_%' LOOP
     EXECUTE format('GRANT CONNECT ON DATABASE dataagent TO %I', r.rolname);
     EXECUTE format('ALTER ROLE %I NOSUPERUSER NOBYPASSRLS', r.rolname);
+    IF has_alembic_version THEN
+      EXECUTE format('GRANT SELECT ON public.alembic_version TO %I', r.rolname);
+    END IF;
   END LOOP;
 END
 $$;
+
+-- The audit log lives in its own database, <db>_audit (v3_0002, design tab 3 D1 item 1). PgBouncer
+-- runs its auth_query in the database a client asks for, so that database needs the same lookup,
+-- and svc_audit (the api's audit module) plus the outbox relay (worker-agent) must reach it.
+SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = current_database() || '_audit') AS has_audit_db,
+       current_database() || '_audit' AS audit_db \gset
+\if :has_audit_db
+\connect :audit_db
+GRANT CONNECT ON DATABASE :"audit_db" TO pgbouncer_auth;
+CREATE OR REPLACE FUNCTION public.pgbouncer_get_auth(p_usename TEXT)
+RETURNS TABLE(usename NAME, passwd TEXT)
+LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog AS $$
+  SELECT usename, passwd FROM pg_shadow WHERE usename = p_usename;
+$$;
+REVOKE ALL ON FUNCTION public.pgbouncer_get_auth(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.pgbouncer_get_auth(TEXT) TO pgbouncer_auth;
+GRANT CONNECT ON DATABASE :"audit_db" TO svc_audit, svc_audit_worker, svc_outbox_relay;
+\endif

@@ -17,6 +17,7 @@ import uuid
 from typing import Annotated, Any, Literal
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
     BeforeValidator,
     ConfigDict,
@@ -42,6 +43,17 @@ Bytes = Annotated[
     PlainSerializer(lambda b: base64.b64encode(b).decode("ascii"), return_type=str),
     WithJsonSchema({"type": "string", "format": "byte"}),
 ]
+
+
+def _uuid7(value: uuid.UUID) -> uuid.UUID:
+    if value.version != 7:
+        raise ValueError("must be a UUIDv7")
+    return value
+
+
+# The device generates the id of what it encrypts: the id is in the ciphertext's AAD, so a row
+# the api numbered itself could never be decrypted (A3, 13/10/2026).
+DeviceId = Annotated[uuid.UUID, AfterValidator(_uuid7)]
 
 KeyWrapKind = Literal["passkey_prf", "hardware_key", "recovery_code"]
 Kdf = Literal["hkdf_sha256", "argon2id"]
@@ -146,6 +158,7 @@ class TransitKeyView(BaseModel):
 
 
 class ThesisCreate(BaseModel):
+    id: DeviceId
     content_ct: Bytes
     wrapped_dek: Bytes
     content_version: int = Field(ge=1, le=32_767)
@@ -225,6 +238,7 @@ class KeyAccessView(_Row):
 
 
 class MemoryItemCreate(BaseModel):
+    id: DeviceId
     kind: MemoryKind
     content_ct: Bytes
     wrapped_dek: Bytes

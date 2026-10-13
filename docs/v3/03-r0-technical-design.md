@@ -87,34 +87,34 @@ UNIT_SUITES=workflow_runtime:workflow_runtime` xanh; `db_results` không còn tr
 
 ## 2. R0-2 MCP chuẩn
 
-**Vì sao.** `nodes/sandbox/mcp.py:34` so `endpoint_name`, planner trả `tool_name`
-(`prompts/planner_system.txt:22`); planner không được cho biết server/tool nào tồn tại; giao thức là
-`POST {url}/execute` tự chế. Không lời gọi nào khớp.
+**Vì sao.** Phần MCP từng bị đặt nhầm trong `workflow_runtime`, nơi sắp bỏ khỏi V3. Worker-agent
+mới là owner của vòng đời hỏi–lập kế hoạch–thực thi; adapter phải nhận endpoint và tool từ plan đã
+được kiểm quyền, không đọc config legacy hay lưu token vào state.
 
 **Thiết kế.**
 
-- Dependency: `mcp>=1.0` (SDK chính thức) trong `workflow_runtime/requirements.txt`.
-- `infrastructure/mcp_client.py`: `MCPRegistry` theo tenant: `list_tools(endpoint)` qua Streamable HTTP,
+- Dependency: `mcp>=1.0,<2.0` (SDK chính thức) trong `worker_agent/requirements.txt`.
+- `worker_agent/tools/mcp.py`: `MCPRegistry` theo tenant: `list_tools(endpoint)` qua Streamable HTTP,
   cache 60 s (Redis, key `mcp:tools:{endpoint_id}`), `call_tool(endpoint, tool, arguments, timeout)`.
-  Auth: `Authorization: Bearer` từ `api_key_ref` của bảng `MCP` qua OpenBao (`warehouse_secrets.py`
-  đã có pattern `_resolve_warehouse_secret`); token không bao giờ nằm trong config agent hay Postgres
-  (đã chốt ở commit 371b9c4).
-- `config_loader.load_agent_config`: `mcp_endpoints` → `mcp_tools: [{server_id, server_name, tool,
-  description, input_schema}]` đã lọc `allowed_tools`.
-- Planner: khối "MCP TOOLS" trong prompt liệt kê `server/tool` + `input_schema` rút gọn; schema
-  `tool_calls[]` cho `type="mcp"`: `{server_id, tool, arguments}`; validator Pydantic từ chối tool không
+-  Auth: `Authorization: Bearer` được resolve transient từ `api_key_ref`; token không bao giờ nằm trong
+  config agent, Postgres, cache tool hay log.
+- Endpoint registry và tool schema được truyền vào adapter bởi worker's validated plan; adapter lọc
+  `allowed_tools` trước discovery/call. Không copy `MCPORM`, `config_loader` hay state của runtime cũ.
+- Worker planner (khi R0-2 được nối vào vòng hỏi hiện tại): khối "MCP TOOLS" liệt kê `server/tool` +
+  `input_schema`; schema `tool_calls[]` là `{server_id, tool, arguments}`; validator từ chối tool không
   có trong danh sách (lỗi có cấu trúc, không rơi về kb_search — xem R0-7).
-- `mcp.py`: gọi `call_tool`; content blocks `text` → `MCPResult.content`, `resource`/`image` → bỏ qua
+- `worker_agent/tools/mcp.py`: gọi `call_tool`; content blocks `text` → result content, `resource`/`image` → bỏ qua
   có log; lỗi → `mcp_errors[{code: TOOL_UNAVAILABLE, server, tool, detail}]`.
-- Bảng `MCP`: cột `protocol` mặc định `mcp`; bản ghi cũ `legacy_http` bị **từ chối khi publish agent**
-  (409 `MCP_PROTOCOL_UNSUPPORTED`) với thông báo cấu hình lại; không giữ đường POST cũ trong runtime.
+- V3 chưa có bảng `MCP` trong generated schema; đăng ký client MCP hiện thuộc `integration.api_client`.
+  Không thêm bảng legacy chỉ để phục vụ adapter; việc gắn endpoint vào agent sẽ đi qua API/plan contract
+  riêng ở bước nối planner.
 
-**Test.** `test_mcp_client.py` dùng `mcp.server.fastmcp.FastMCP` chạy in-process (ASGI qua httpx
-`ASGITransport`): list_tools → planner prompt chứa tool; planner trả `{type: mcp, server_id, tool}` →
-kết quả về `mcp_results`; tool không whitelist → lỗi có mã; token không xuất hiện trong state/log.
+**Test.** `tests/unit/worker_agent/test_mcp.py` kiểm tra Streamable HTTP adapter, allow-list, cache,
+  lỗi có cấu trúc và token không xuất hiện trong tool/state data. Khi planner contract được nối vào worker,
+  bổ sung FastMCP in-process (ASGI qua httpx `ASGITransport`) cho chuỗi discovery → plan → call.
 
-**Xong khi.** Một MCP server mẫu (ví dụ `filesystem` hoặc server test của repo) gọi được từ Playground;
-không còn chuỗi `"/execute"` trong `nodes/sandbox/mcp.py`.
+**Xong khi.** Adapter worker-agent gọi được một MCP server mẫu qua Streamable HTTP; sau bước nối planner,
+  Playground gọi được tool và không còn bất kỳ đường `"/execute"` legacy nào trong V3.
 
 ## 3. R0-3 Checkpointer bền cho agent đơn
 

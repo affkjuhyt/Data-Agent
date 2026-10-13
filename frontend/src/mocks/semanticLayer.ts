@@ -2,17 +2,66 @@ import { http, HttpResponse } from 'msw';
 import type {
   ContextEval,
   EntityDetail,
+  EntityDetailWire,
   EntityModel,
+  EntityPageWire,
+  EntityViewWire,
+  EvalSetRowWire,
+  EvalSetWire,
   GlossaryEntry,
-  RelationshipSuggestion,
+  GlossaryWire,
   UnknownPhrase,
+  UnknownPhraseWire,
 } from '../lib/v1/semanticLayer';
+
+const AT = '2026-10-01T09:00:00+07:00';
+
+/*
+ * The glossary and the unknown phrases are kept in the screen's shape and answered in the api's
+ * (TermView, UnmappedPhraseView) with the PROPOSAL reading fields alongside.
+ */
+const termWire = (e: GlossaryEntry): GlossaryWire => ({
+  id: e.id,
+  term: e.term,
+  term_norm: e.term.toLowerCase(),
+  definition: e.maps_to,
+  meanings: e.meanings.map((m) => ({ label: m.label, expression: m.expression })),
+  default_meaning:
+    e.meanings.findIndex((m) => m.default) >= 0 ? e.meanings.findIndex((m) => m.default) : null,
+  legal_basis: null,
+  status: e.status === 'draft' ? 'pending_review' : 'active',
+  data_space_id: 'ds-rui-ro-tin-dung',
+  created_at: AT,
+  updated_at: AT,
+  maps_to: e.maps_to,
+  synonyms: e.synonyms,
+  data_space_text: e.data_space_text,
+  ambiguity_rule: e.ambiguity_rule,
+  owner_name: e.owner_name,
+  usage_text: e.usage_text,
+});
+
+const unknownWire = (u: UnknownPhrase): UnknownPhraseWire => ({
+  id: u.id,
+  phrase_norm: u.phrase,
+  ask_count: u.count,
+  sample_questions: [],
+  suggested_target: null,
+  status: 'open',
+  data_space_id: 'ds-rui-ro-tin-dung',
+  first_seen_at: AT,
+  last_seen_at: AT,
+  suggestion: u.suggestion,
+  draft: u.draft,
+});
 
 /*
  * The semantic layer of P07 for the dev mock: the retail-bank entity model of "Semantic · Mô hình
- * thực thể" (2087:8090) and its relationship suggestions ("Hộp thoại · suggestRel", 2095:9259),
- * the glossary of "Từ điển nghiệp vụ" (2088:7308), and "Đánh giá lớp ngữ cảnh" (2232:15323).
- * GET /v1/terms answers here only with ?view=glossary; the plain list stays with handlers.ts.
+ * thực thể" (2087:8090), the glossary of "Từ điển nghiệp vụ" (2088:7308), and "Đánh giá lớp
+ * ngữ cảnh" (2232:15323). The entities and the evaluation are kept in the screens' shape and
+ * answered in the api's (EntityView, EntityDetail, EvalSetView, EvalSetDetail) with the screen's
+ * fields under `display`. GET /v1/terms answers here only with ?view=glossary; the plain list
+ * stays with handlers.ts.
  */
 const problem = (status: number, code: string, detail: string) =>
   HttpResponse.json(
@@ -76,12 +125,13 @@ function modelFixture(): EntityModel {
         y: 80,
       },
     ],
+    // relationship.cardinality as A3 names it; the collateral link waits for review (BR-100).
     relationships: [
-      { from: 'customer', to: 'loan', cardinality: '1 — n' },
-      { from: 'product', to: 'loan', cardinality: 'n — 1' },
-      { from: 'branch', to: 'loan', cardinality: 'n — 1' },
-      { from: 'collateral', to: 'loan', cardinality: 'n — n' },
-      { from: 'contract', to: 'loan', cardinality: '1 — 1' },
+      { from: 'customer', to: 'loan', cardinality: 'one_to_many', pending: false },
+      { from: 'product', to: 'loan', cardinality: 'many_to_one', pending: false },
+      { from: 'branch', to: 'loan', cardinality: 'many_to_one', pending: false },
+      { from: 'collateral', to: 'loan', cardinality: 'many_to_one', pending: true },
+      { from: 'contract', to: 'loan', cardinality: 'one_to_one', pending: false },
     ],
   };
 }
@@ -121,41 +171,6 @@ function entityFixture(key: string): EntityDetail | null {
     metrics: ['NPL_RATIO v4', 'LOAN_BALANCE v2', 'COST_OF_RISK v1'],
     more_metrics: 11,
   };
-}
-
-function suggestionsFixture(): RelationshipSuggestion[] {
-  return [
-    {
-      id: 'rs-collateral',
-      from_label: 'Khoản vay.collateral_id',
-      to_label: 'Tài sản bảo đảm',
-      arrow: '→',
-      match_pct: 99.1,
-      needs_owner: null,
-      body: {
-        from_dataset_id: 'ds-ld-loans',
-        from_columns: ['collateral_id'],
-        to_dataset_id: 'ds-collateral',
-        to_columns: ['collateral_id'],
-        cardinality: 'n:1',
-      },
-    },
-    {
-      id: 'rs-crm',
-      from_label: 'Khách hàng.customer_id',
-      to_label: 'CRM.cust_no',
-      arrow: '↔',
-      match_pct: 96.4,
-      needs_owner: 'chủ sở hữu CRM',
-      body: {
-        from_dataset_id: 'ds-customers',
-        from_columns: ['customer_id'],
-        to_dataset_id: 'ds-crm',
-        to_columns: ['cust_no'],
-        cardinality: '1:1',
-      },
-    },
-  ];
 }
 
 function glossaryFixture(): GlossaryEntry[] {
@@ -341,29 +356,99 @@ function evalFixture(): ContextEval {
   };
 }
 
+const DS = 'ds-rui-ro-tin-dung';
+const datasetId = (key: string) => `dataset-${key}`;
+
+/* One EntityView per node, each with the relationships its primary table takes part in. */
+function entityPageWire(): EntityPageWire {
+  const model = modelFixture();
+  return {
+    items: model.entities.map(
+      (node): EntityViewWire => ({
+        id: `entity-${node.key}`,
+        key: node.key,
+        name: node.name,
+        description: null,
+        key_columns: node.columns.slice(0, 1),
+        canonical_entity_id: null,
+        status: 'active',
+        data_space_id: DS,
+        primary_dataset: { id: datasetId(node.key), name: node.source_text },
+        relationships: model.relationships
+          .filter((r) => r.from === node.key || r.to === node.key)
+          .map((r) => ({
+            id: `rel-${r.from}-${r.to}`,
+            from_dataset_id: datasetId(r.from),
+            from_columns: [`${r.from}_id`],
+            from_entity: r.from,
+            to_dataset_id: datasetId(r.to),
+            to_columns: [`${r.from}_id`],
+            to_entity: r.to,
+            cardinality: r.cardinality,
+            origin: r.pending ? 'inferred' : 'declared',
+            status: r.pending ? 'pending_review' : 'active',
+          })),
+        created_at: AT,
+        updated_at: AT,
+        display: { x: node.x, y: node.y, columns: node.columns },
+      }),
+    ),
+    next_page_token: '',
+    display: { title: model.title, focus: model.focus },
+  };
+}
+
+const entityDetailWire = (detail: EntityDetail): EntityDetailWire => ({
+  id: `entity-${detail.key}`,
+  key: detail.key,
+  name: detail.name,
+  description: detail.description,
+  key_columns: [],
+  canonical_entity_id: null,
+  status: 'active',
+  data_space_id: DS,
+  primary_dataset: null,
+  relationships: [],
+  dimensions: [],
+  measures: [],
+  metrics: [],
+  created_at: AT,
+  updated_at: AT,
+  display: detail,
+});
+
+const evalRowWire = (e: ContextEval): EvalSetRowWire => ({
+  id: e.id,
+  name: e.data_space_name,
+  subject_type: 'context',
+  subject_id: null,
+  data_space_id: DS,
+  item_count: 120,
+  min_items: 100,
+  pass_threshold: 0.9,
+  status: 'active',
+  created_at: AT,
+  updated_at: AT,
+});
+
+const evalDetailWire = (e: ContextEval): EvalSetWire => ({ ...evalRowWire(e), display: e });
+
 export function createSemanticLayerHandlers() {
   let glossary = glossaryFixture();
   let unknown = unknownFixture();
   return [
-    http.get('*/v1/entities', () => HttpResponse.json(modelFixture())),
+    http.get('*/v1/entities', () => HttpResponse.json(entityPageWire())),
     http.get('*/v1/entities/:key', ({ params }) => {
       const detail = entityFixture(String(params.key));
       return detail
-        ? HttpResponse.json(detail)
+        ? HttpResponse.json(entityDetailWire(detail))
         : problem(404, 'not_found', 'Không có thực thể này.');
     }),
-    http.post('*/v1/entities\\:suggest-relationships', () =>
-      HttpResponse.json({
-        items: suggestionsFixture(),
-        note: 'Quan hệ thứ hai cần chủ sở hữu CRM xác nhận vì khác mã.',
-      }),
-    ),
-    http.post('*/v1/relationships', () =>
-      HttpResponse.json({ id: `rel-${Date.now()}`, status: 'pending_review' }, { status: 201 }),
-    ),
-    http.get('*/v1/terms/unknown', () => page(unknown)),
+    http.get('*/v1/unmapped-phrases', () => page(unknown.map(unknownWire))),
     http.get('*/v1/terms', ({ request }) =>
-      new URL(request.url).searchParams.get('view') === 'glossary' ? page(glossary) : undefined,
+      new URL(request.url).searchParams.get('view') === 'glossary'
+        ? page(glossary.map(termWire))
+        : undefined,
     ),
     http.post('*/v1/terms', async ({ request }) => {
       const body = (await request.json()) as { term: string; definition: string };
@@ -383,16 +468,16 @@ export function createSemanticLayerHandlers() {
       };
       glossary = [...glossary, created];
       unknown = unknown.filter((u) => u.draft.term !== body.term);
-      return HttpResponse.json(created, { status: 201 });
+      return HttpResponse.json(termWire(created), { status: 201 });
     }),
-    http.get('*/v1/eval-sets', () =>
-      page([{ id: 'eval-credit-risk', data_space_name: 'Rủi ro tín dụng' }]),
-    ),
+    http.get('*/v1/eval-sets', () => page([evalRowWire(evalFixture())])),
     http.get('*/v1/eval-sets/:id', ({ params }) =>
       params.id === 'eval-credit-risk'
-        ? HttpResponse.json(evalFixture())
+        ? HttpResponse.json(evalDetailWire(evalFixture()))
         : problem(404, 'not_found', 'Không có bộ đánh giá này.'),
     ),
-    http.post('*/v1/eval-sets/:id/runs', () => HttpResponse.json({ id: 'er-59' }, { status: 202 })),
+    http.post('*/v1/eval-sets/:id/runs', () =>
+      HttpResponse.json({ id: 'er-59', status: 'queued', poll_after_ms: 1000 }, { status: 202 }),
+    ),
   ];
 }

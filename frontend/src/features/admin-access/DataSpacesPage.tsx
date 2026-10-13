@@ -87,7 +87,7 @@ function DataSpaceList() {
                       </button>
                     </td>
                     <td className="px-da-lg py-da-md text-foreground da-body-small">{s.steward_name}</td>
-                    <td className="px-da-lg py-da-md text-muted-foreground da-mono">{count(s.member_count)}</td>
+                    <td className="px-da-lg py-da-md text-muted-foreground da-mono">{s.member_count === null ? '—' : count(s.member_count)}</td>
                     <td className="px-da-lg py-da-md">
                       <StatusDot tone={STATUS[s.status].tone}>{STATUS[s.status].label}</StatusDot>
                     </td>

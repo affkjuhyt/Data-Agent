@@ -11,7 +11,7 @@ from __future__ import annotations
 import datetime
 import decimal
 import uuid
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -81,6 +81,11 @@ class SourcePatch(_Limits):
     scan_window: dict[str, Any] | None = None
     status: SettableSourceStatus | None = None
     credentials: SecretReference | None = None
+    # UC-06-04: the tables a writeback may target, schema.table each; [] allows none.
+    writeback_tables: (
+        list[Annotated[str, Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$")]]
+        | None
+    ) = Field(default=None, max_length=500)
 
 
 class ScheduleUpdate(BaseModel):
@@ -96,6 +101,19 @@ class ScanRequest(BaseModel):
     kind: Literal["schema", "profile"] = "schema"
     # Only these tables (schema.table); all tables of scan_schemas when absent.
     tables: list[str] | None = Field(default=None, max_length=10_000)
+
+
+class ActivateTable(BaseModel):
+    name: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$")
+    data_space_id: uuid.UUID
+    owner_id: uuid.UUID
+
+
+class ActivateRequest(BaseModel):
+    tables: list[ActivateTable] = Field(default_factory=list, max_length=10_000)
+    schema_scan: str = Field(default="daily_0200", max_length=200)
+    profiling: str = Field(default="weekly_sun_0300", max_length=200)
+    on_schema_change: Literal["pause_and_ask", "continue_and_notify"] = "pause_and_ask"
 
 
 class Accepted(BaseModel):
@@ -120,6 +138,7 @@ class SourceView(BaseModel):
     # response only says whether one is set.
     has_credentials: bool = False
     has_writeback_credentials: bool = False
+    writeback_tables: list[str] = Field(default_factory=list)
     mode: str
     authority_level: str
     freshness_sla: datetime.timedelta | None
@@ -143,6 +162,45 @@ class SourceView(BaseModel):
         view.has_credentials = bool(row.secret_ref)
         view.has_writeback_credentials = bool(row.writeback_secret_ref)
         return view
+
+
+class ConnectorForm(BaseModel):
+    database_label: str
+    default_port: int
+
+
+class ConnectorView(BaseModel):
+    """A connector the connection wizard may offer; no credentials are included."""
+
+    code: str
+    name: str
+    category: Literal["database", "warehouse", "app", "file", "document"]
+    subtitle: str | None
+    connected_count: int
+    badge: Literal["new", "upload", "engineering"] | None
+    form: ConnectorForm | None
+    prep_notes: list[str]
+    sample_sql: str | None
+
+
+class SecretRefView(BaseModel):
+    """A labelled OpenBao reference already used in this Data Space, never its value."""
+
+    ref: str
+    label: str
+
+
+class ApiConfigPut(BaseModel):
+    """The request/mapping kept with a REST source; credentials remain references only."""
+
+    request: dict[str, Any]
+    mapping: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ApiConfigView(ApiConfigPut):
+    source_id: uuid.UUID
+    name: str
+    health: dict[str, Any] | None = None
 
 
 class SourceSchedule(SourceView):
@@ -247,6 +305,17 @@ class DatasetPatch(BaseModel):
     business_date_col: str | None = Field(default=None, max_length=200)
     knowledge_time_col: str | None = Field(default=None, max_length=200)
     columns: list[ColumnPatch] | None = Field(default=None, max_length=5_000)
+
+
+class DatasetDeriveRequest(BaseModel):
+    filters: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
+    drop_duplicates: bool = False
+
+
+class DerivedDatasetAccepted(BaseModel):
+    id: uuid.UUID
+    name: str
+    row_count: int
 
 
 class DatasetVersionView(BaseModel):

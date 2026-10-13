@@ -51,7 +51,7 @@ const REDIRECT_MAP: Record<string, Redirect> = {
       CONVERSATIONS: { module: 'analysis', sub: 'SESSIONS' },
       TRACES:        { module: 'agents', sub: 'RUNS' },
       REVIEWS:       { module: 'needs-you', sub: '' },
-      ANALYTICS:     { module: 'analysis', sub: 'DASHBOARD' },
+      ANALYTICS:     { module: 'analysis', sub: 'SESSIONS' },
     },
   },
   settings: {
@@ -69,8 +69,8 @@ const REDIRECT_MAP: Record<string, Redirect> = {
     },
   },
   // Older IAs
-  'dashboard':          { module: 'analysis', sub: 'DASHBOARD' },
-  'national-ops':       { module: 'analysis', sub: 'DASHBOARD' },
+  'dashboard':          { module: 'analysis', sub: 'SESSIONS' },
+  'national-ops':       { module: 'analysis', sub: 'SESSIONS' },
   'knowledge-ops':      { module: 'data', sub: 'SOURCES' },
   'ai-runtime':         { module: 'agents', sub: 'TEAM' },
   'release-management': { module: 'agents', sub: 'TEAM' },
@@ -82,7 +82,7 @@ const REDIRECT_MAP: Record<string, Redirect> = {
     module: 'analysis', sub: 'SESSIONS',
     subs: {
       TRACES:    { module: 'agents', sub: 'RUNS' },
-      ANALYTICS: { module: 'analysis', sub: 'DASHBOARD' },
+      ANALYTICS: { module: 'analysis', sub: 'SESSIONS' },
     },
   },
 };

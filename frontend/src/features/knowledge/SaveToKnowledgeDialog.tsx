@@ -11,10 +11,10 @@ import { useV1 } from '../../lib/v1/useV1';
 
 /*
  * "P07 · Lưu câu trả lời thành tri thức" (2405:15399, UC-07-12): a dialog opened from an answer.
- * It shows what would be proposed — the target page (changeable), the paragraph whose figures are
- * placeholders bound to the query rather than fixed numbers (BR-162), its source and validity —
- * and sends it for review. The paragraph is not editable here: changing its words could unbind a
- * figure; the reviewer edits the page version instead.
+ * It shows the answer and the target page the knowledge index suggests (changeable), and sends it
+ * for review. The server turns the answer into a paragraph whose figures are placeholders bound
+ * to the query rather than fixed numbers (BR-162); nothing is edited here, since changing the
+ * words could unbind a figure — the reviewer edits the page version instead.
  */
 const box =
   'rounded-sm border border-border-strong bg-card px-[10px] py-da-md text-foreground da-body-small';
@@ -94,13 +94,7 @@ export function SaveToKnowledgeDialog({
             options={options}
           />
         </div>
-        {draft.data && (
-          <>
-            <Field label="Đoạn đề xuất" value={draft.data.paragraph} />
-            <Field label="Nguồn" value={draft.data.source_text} />
-            <Field label="Hiệu lực" value={draft.data.validity_text} />
-          </>
-        )}
+        {draft.data && <Field label="Câu trả lời" value={draft.data.answer_text} />}
         {/* StatusDot does not wrap; this sentence is longer than one line of the dialog. */}
         <p className="flex items-start gap-[6px] text-foreground da-body-small">
           <span className="mt-[6px] size-[7px] shrink-0 rounded-full bg-info" aria-hidden />

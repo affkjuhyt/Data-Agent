@@ -45,6 +45,31 @@ def _urls(value: list[str]) -> list[str]:
 # ---------------------------------------------------------------- crawl sources
 
 
+class CrawlSourceSuggest(_Body):
+    """UC-14-01: what data is wanted, in words; the agent proposes where to collect it."""
+
+    goal: str = Field(min_length=1, max_length=4_000)
+    # Pages or records that look like the wanted data, for the agent to search from.
+    examples: list[str] | None = Field(default=None, max_length=20)
+
+    @field_validator("goal")
+    @classmethod
+    def _goal(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("goal must not be blank")
+        return value.strip()
+
+    @field_validator("examples")
+    @classmethod
+    def _examples(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        cleaned = [v.strip() for v in value]
+        if any(not v or len(v) > 2_000 for v in cleaned):
+            raise ValueError("each example is 1 to 2,000 characters")
+        return cleaned
+
+
 class CrawlSourceCreate(_Body):
     name: str = Field(min_length=1, max_length=200)
     goal: str = Field(min_length=1, max_length=4_000)

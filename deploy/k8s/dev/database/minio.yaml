@@ -8,6 +8,18 @@ metadata:
     app: minio
     app.kubernetes.io/part-of: dataagent
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: minio-env
+  namespace: dataagent-database
+  labels:
+    app: minio
+    app.kubernetes.io/part-of: dataagent
+data:
+  MINIO_API_PORT_NUMBER: "8360"
+  MINIO_CONSOLE_PORT_NUMBER: "8361"
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -70,13 +82,10 @@ spec:
         - name: tmp
           mountPath: /tmp
         envFrom:
+        - configMapRef:
+            name: minio-env
         - secretRef:
             name: minio-secrets
-        env:
-        - name: MINIO_API_PORT_NUMBER
-          value: "8360"
-        - name: MINIO_CONSOLE_PORT_NUMBER
-          value: "8361"
       volumes:
       - name: tmp
         emptyDir: {}

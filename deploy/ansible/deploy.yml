@@ -267,8 +267,30 @@
     - name: Default the OpenBao credentials
       ansible.builtin.set_fact:
         openbao_env: >-
-          {{ {'OPENBAO_TOKEN': '', 'OPENBAO_ROLE_ID': '', 'OPENBAO_SECRET_ID': ''}
+          {{ {'OPENBAO_TOKEN': '',
+              'WORKER_AGENT_OPENBAO_ROLE_ID': '', 'WORKER_AGENT_OPENBAO_SECRET_ID': '',
+              'SANDBOX_EXECUTOR_OPENBAO_ROLE_ID': '', 'SANDBOX_EXECUTOR_OPENBAO_SECRET_ID': '',
+              'PLATFORM_WORKERS_OPENBAO_ROLE_ID': '', 'PLATFORM_WORKERS_OPENBAO_SECRET_ID': ''}
              | combine((openbao_state | default({}, true)).openbao_env | default({}, true)) }}
+      no_log: true
+
+    # Every role the api and worker-agent connect as needs its password in the vault: a missing
+    # one renders a URL with an empty password, and the module fails only when first called.
+    - name: Check the vault holds a password for every V3 service role
+      ansible.builtin.assert:
+        that: missing_db_roles | length == 0
+        fail_msg: "vault_db_role_passwords lacks: {{ missing_db_roles | join(', ') }}"
+        quiet: true
+      vars:
+        missing_db_roles: >-
+          {{ v3_db_roles | reject('in', (vault_db_role_passwords | default({})).keys() | list) | list }}
+        v3_db_roles: [svc_acquire, svc_agent, svc_audit, svc_audit_worker, svc_catalog, svc_conflict, svc_context, svc_document, svc_eval, svc_exec, svc_forecast, svc_governance, svc_inbox, svc_ingest, svc_integration, svc_monitor, svc_notify, svc_org, svc_outbox_relay, svc_pack, svc_period, svc_pipeline, svc_qa, svc_query, svc_skill, svc_workspace]
+
+    - name: Check the vault holds worker-agent's own MinIO password
+      ansible.builtin.assert:
+        that: (vault_worker_agent_minio_password | default('')) | length >= 8
+        fail_msg: "vault_worker_agent_minio_password is missing or shorter than MinIO's 8 characters"
+        quiet: true
       no_log: true
 
     - name: Render secrets.env from the vault
@@ -316,7 +338,6 @@
           jaas=$(mktemp); trap 'rm -f "$jaas"' EXIT
           sed -e "s|REPLACE_WITH_KAFKA_ADMIN_PASSWORD|${KAFKA_ADMIN_PASSWORD}|g" \
               -e "s|REPLACE_WITH_AUDIT_CONSUMER_PASSWORD|${AUDIT_CONSUMER_KAFKA_PASSWORD}|g" \
-              -e "s|REPLACE_WITH_WORKFLOW_RUNTIME_PASSWORD|${WORKFLOW_RUNTIME_KAFKA_PASSWORD}|g" \
               -e "s|REPLACE_WITH_MEMORY_CONSUMER_PASSWORD|${MEMORY_CONSUMER_KAFKA_PASSWORD}|g" \
               -e "s|REPLACE_WITH_SCHEMA_CRAWLER_WORKER_PASSWORD|${SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD}|g" \
               -e "s|REPLACE_WITH_WEB_CRAWLER_WORKER_PASSWORD|${WEB_CRAWLER_WORKER_KAFKA_PASSWORD}|g" \
@@ -422,6 +443,30 @@
       register: svc_apply
       changed_when: "'created' in svc_apply.stdout or 'configured' in svc_apply.stdout"
       when: (apply_services | bool) and (services_changed | bool)
+
+    - name: Remove the retired workflow-runtime workload in a V3 service slice
+      ansible.builtin.command:
+        cmd: >-
+          {{ kubectl }} -n {{ ns_service }} delete
+          deployment/workflow-runtime service/workflow-runtime
+          serviceaccount/workflow-runtime configmap/workflow-runtime-env
+          secret/workflow-runtime-secrets
+          --ignore-not-found=true
+      register: legacy_runtime_delete
+      changed_when: >-
+        'deleted' in legacy_runtime_delete.stdout
+        or 'deleted' in legacy_runtime_delete.stderr
+      when:
+        - apply_services | bool
+        - "'workflow-runtime' not in service_manifests"
+
+    - name: Remove the retired legacy seed Job
+      ansible.builtin.command: >-
+        {{ kubectl }} -n {{ ns_service }} delete
+        job/seed serviceaccount/seed configmap/seed-env configmap/seed-sql configmap/seed-mongo
+        --ignore-not-found=true
+      changed_when: false
+      when: apply_jobs | bool
 
     # After the service tier, whose manifests carry per-workload env ConfigMaps
     # of their own, so a change there is seen too.
@@ -697,6 +742,23 @@
       ansible.builtin.debug:
         msg: "Not ready in {{ wait_rollout }}s: {{ svc_rollout.stdout_lines | join(', ') }}"
       when: (svc_rollout.stdout_lines | default([]) | length) > 0
+
+    # "Not ready" alone hid the usual cause on the one-node cluster: the new pod
+    # never scheduled (Insufficient memory) while the old one kept serving.
+    - name: Say why pods are still Pending
+      ansible.builtin.command:
+        cmd: >-
+          {{ kubectl }} get pods -A --field-selector=status.phase=Pending -o
+          jsonpath={% raw %}'{range .items[*]}{.metadata.namespace}/{.metadata.name}: {.status.conditions[?(@.type=="PodScheduled")].message}{"\n"}{end}'{% endraw %}
+      register: pending_pods
+      changed_when: false
+      failed_when: false
+      when: (svc_rollout.stdout_lines | default([]) | length) > 0
+
+    - name: Report the Pending pods
+      ansible.builtin.debug:
+        msg: "{{ pending_pods.stdout_lines }}"
+      when: (pending_pods.stdout_lines | default([]) | length) > 0
 
     - name: Run the gateway setup Job
       ansible.builtin.import_role:

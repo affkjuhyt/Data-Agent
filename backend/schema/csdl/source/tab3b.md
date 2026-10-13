@@ -541,6 +541,7 @@ Kết nối tới một nguồn dữ liệu của tổ chức (CSDL, kho dữ li
 | conn\_options | jsonb, bắt buộc, mặc định '{}' | TLS, schema mặc định, tham số riêng của từng loại |
 | secret\_ref | text, bắt buộc | Đường dẫn OpenBao (BR-14); không lưu mật khẩu |
 | writeback\_secret\_ref | text | Tài khoản ghi ngược riêng (UC-06-04); null là không cho ghi ngược |
+| writeback\_tables | text\[\], bắt buộc, mặc định '{}' | Bảng đích được phép ghi ngược (schema.bảng); rỗng là không bảng nào (UC-06-04, thêm 12/10/2026) |
 | mode | text, bắt buộc, mặc định 'federated' | federated (truy vấn tại chỗ) hoặc ingest (nạp về) |
 | authority\_level | text, bắt buộc, mặc định 'reference' | level\_1, level\_2, level\_3, reference |
 | freshness\_sla | interval | Hạn độ mới; quá hạn thì trạng thái needs\_fix (BR-56) |
@@ -1376,7 +1377,7 @@ Một lần chạy SQL: SQL đã viết lại theo chính sách, nguồn, thời
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
 | data\_space\_id | uuid, bắt buộc |  |
-| caller\_kind | text, bắt buộc | question, tile, skill\_run, agent\_run, pipeline, period, eval, receipt\_replay (UC-01-07) |
+| caller\_kind | text, bắt buộc | question, tile, skill\_run, agent\_run, pipeline, period, eval, receipt\_replay (UC-01-07), ad\_hoc (SQL người dùng gửi qua POST /v1/query-runs, thêm 12/10/2026) |
 | caller\_id | uuid, bắt buộc |  |
 | principal\_id | uuid, bắt buộc | Danh tính chạy truy vấn (người hoặc giao quyền của agent) |
 | source\_id | uuid | logic → catalog.source; null khi đọc kỳ chốt |
@@ -1395,7 +1396,7 @@ Một lần chạy SQL: SQL đã viết lại theo chính sách, nguồn, thời
 | error | text |  |
 | started\_at | timestamptz, bắt buộc, mặc định now() |  |
 
-Cột chung: id, org\_id. Phân vùng theo tháng trên started\_at. Ràng buộc: CHECK (caller\_kind IN ('question','tile','skill\_run','agent\_run','pipeline','period','eval','receipt\_replay')); CHECK (route IN ('live','history','period\_snapshot')); CHECK (route <> 'period\_snapshot' OR period\_close\_id IS NOT NULL); CHECK (status IN ('queued','running','succeeded','failed','cancelled','timeout')). Chỉ mục: (caller\_kind, caller\_id); (source\_id, started\_at) WHERE status = 'running'.
+Cột chung: id, org\_id. Phân vùng theo tháng trên started\_at. Ràng buộc: CHECK (caller\_kind IN ('question','tile','skill\_run','agent\_run','pipeline','period','eval','receipt\_replay','ad\_hoc')); CHECK (route IN ('live','history','period\_snapshot')); CHECK (route <> 'period\_snapshot' OR period\_close\_id IS NOT NULL); CHECK (status IN ('queued','running','succeeded','failed','cancelled','timeout')). Chỉ mục: (caller\_kind, caller\_id); (source\_id, started\_at) WHERE status = 'running'.
 
 #### query.query\_result
 
@@ -1427,13 +1428,14 @@ Agent: tên, loại, chủ sở hữu, tài khoản agent, trạng thái; cấu 
 | account\_user\_id | uuid, bắt buộc | Tài khoản agent (app\_user.kind = agent) |
 | template\_ref | uuid | logic → pack.pack\_skill nếu tạo từ agent mẫu |
 | current\_config\_version | integer |  |
-| status | text, bắt buộc, mặc định 'draft' | draft, testing, running, paused, retired |
+| status | text, bắt buộc, mặc định 'draft' | draft, testing, running, paused, retired, locked (khoá khẩn cấp qua POST /v1/agents/{id}:lock, thêm 12/10/2026) |
 | paused\_reason | text | Ví dụ chủ sở hữu rời tổ chức |
+| status\_before\_lock | text | Trạng thái trước khi khoá, mở khoá trả về trạng thái này; chỉ có giá trị khi locked (thêm 12/10/2026) |
 | monthly\_budget | numeric(14,2) | Ngân sách tháng (BR-71) |
 | spent\_this\_month | numeric(14,2), bắt buộc, mặc định 0 |  |
 | deleted\_at | timestamptz | Xoá mềm |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (data\_space\_id, code); CHECK (kind IN ('analysis','monitor','report','reconcile','data\_prep','data\_quality','document','custom')); CHECK (status IN ('draft','testing','running','paused','retired')).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (data\_space\_id, code); CHECK (kind IN ('analysis','monitor','report','reconcile','data\_prep','data\_quality','document','custom')); CHECK (status IN ('draft','testing','running','paused','retired','locked')); CHECK ((status = 'locked') = (status\_before\_lock IS NOT NULL)).
 
 #### agent.agent\_config
 
@@ -1470,6 +1472,28 @@ Công cụ một phiên bản cấu hình được dùng và mức quyền. Use 
 | allowed\_targets | uuid\[\] | Với agent.call: danh sách agent được gọi |
 
 Cột chung: id, org\_id, created\_at. Ràng buộc: UNIQUE (agent\_config\_id, tool); CHECK (permission\_level IN ('read','write\_derived','send\_external')); CHECK (permission\_level <> 'send\_external' OR requires\_checkpoint); FOREIGN KEY (agent\_config\_id) REFERENCES agent.agent\_config(id) ON DELETE CASCADE.
+
+#### agent.tool\_def
+
+Sổ công cụ của agent (tab 5 G2, G2.1): một dòng mỗi công cụ, là nguồn cho mô tả gửi mô hình, bộ công cụ theo ý định, quyền lộ ra MCP và bài kiểm phủ use case. Bảng dùng chung cho mọi tổ chức, nạp bằng migration cùng bản phát hành; không sửa qua API. Use case: UC-12-02, UC-13-01, UC-13-02.
+
+| Cột | Kiểu | Ý nghĩa |
+| --- | --- | --- |
+| code | text, bắt buộc | Mã công cụ, ví dụ query.semantic |
+| permission\_level | text, bắt buộc | read, write\_derived, send\_external |
+| owner\_service | text, bắt buộc | Dịch vụ sở hữu, ví dụ Context service |
+| endpoints | text\[\], bắt buộc | Endpoint ở tab 4 mà công cụ gọi, ví dụ {POST /v1/search/documents} |
+| model\_description | text, bắt buộc | Mô tả cho mô hình, viết tay: dùng khi nào, không dùng khi nào; tối đa 400 ký tự |
+| toolsets | text\[\], bắt buộc, mặc định '{}' | Bộ công cụ theo ý định của Planner kiểu A: metric\_lookup, explain\_change, document, forecast, provenance, explore\_sql |
+| execution\_kinds | text\[\], bắt buộc | interactive, plan, workflow |
+| restricted\_agent\_kinds | text\[\], bắt buộc, mặc định '{}' | Chỉ cấp cho các loại agent này; rỗng là không hạn chế |
+| mcp\_exposed | boolean, bắt buộc, mặc định false | Lộ ra cho client MCP có phạm vi phù hợp (UC-12-02) |
+| default\_checkpoint | text, bắt buộc | none, on\_condition, before, always |
+| use\_cases | text\[\], bắt buộc | UC dùng công cụ, khớp ma trận tab 2 mục 11.4 |
+| schema\_sha256 | text | Băm JSON Schema sinh từ OpenAPI ở lần build gần nhất (ADR-48) |
+| status | text, bắt buộc, mặc định 'active' | draft, active, deprecated |
+
+Cột chung: id, created\_at, updated\_at (không có org\_id). Ràng buộc: UNIQUE (code); CHECK (code \~ '^\[a-z\]+(\\.\[a-z\_\]+)+$'); CHECK (permission\_level IN ('read','write\_derived','send\_external')); CHECK (default\_checkpoint IN ('none','on\_condition','before','always')); CHECK (status IN ('draft','active','deprecated')); CHECK (execution\_kinds <@ ARRAY\['interactive','plan','workflow'\] AND cardinality(execution\_kinds) > 0); CHECK (char\_length(model\_description) <= 400); CHECK (permission\_level <> 'send\_external' OR (default\_checkpoint = 'always' AND NOT mcp\_exposed)); CHECK (status <> 'active' OR cardinality(use\_cases) > 0); CHECK (NOT mcp\_exposed OR code !\~ '^exec\\.'). Chỉ mục: GIN (toolsets); GIN (use\_cases). Quyền: mọi vai trò svc\_\* đọc; chỉ vai trò migration ghi. Dữ liệu khởi tạo: 59 dòng của tab 5 G2, gồm use\_cases lấy từ ma trận tab 2 mục 11.4.
 
 #### agent.agent\_trigger
 
@@ -1541,8 +1565,9 @@ Một lượt chạy của agent (màn Lượt chạy); lượt con của điề
 | stop\_reason | text | completed, loop\_detected, no\_progress, budget\_steps, budget\_tokens, budget\_cost, budget\_duration, user\_cancelled, waiting\_timeout, error; bắt buộc khi succeeded, failed, cancelled (BR-170) |
 | stop\_detail | jsonb, bắt buộc, mặc định '{}' | Chi tiết dừng: công cụ và call\_fingerprint lặp, số lần, bước cuối có tiến triển, ngân sách đã dùng so với trần |
 | snapshot\_refs | jsonb, bắt buộc, mặc định '\[\]' | Phiên bản kỹ năng, mô hình, bản chụp đã đọc để chạy lại cho cùng kết quả (BR-75) |
+| retry\_of | uuid | Lượt thất bại mà lượt này chạy lại với cùng đầu vào và phiên bản cấu hình (POST /v1/runs/{id}:retry, thêm 12/10/2026) |
 
-Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (trigger\_kind IN ('schedule','event','threshold','agent\_call','manual','test')); CHECK (status IN ('queued','planning','running','waiting\_human','paused','succeeded','failed','cancelled')); CHECK (depth BETWEEN 0 AND 3); CHECK ((parent\_run\_id IS NULL) = (depth = 0)); FOREIGN KEY (agent\_id) REFERENCES agent.agent\_def(id); FOREIGN KEY (parent\_run\_id) REFERENCES agent.agent\_run(id). Chỉ mục: (agent\_id) WHERE status IN ('queued','planning','running','waiting\_human','paused'); (parent\_run\_id) WHERE parent\_run\_id IS NOT NULL.
+Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (trigger\_kind IN ('schedule','event','threshold','agent\_call','manual','test')); CHECK (status IN ('queued','planning','running','waiting\_human','paused','succeeded','failed','cancelled')); CHECK (depth BETWEEN 0 AND 3); CHECK ((parent\_run\_id IS NULL) = (depth = 0)); FOREIGN KEY (agent\_id) REFERENCES agent.agent\_def(id); FOREIGN KEY (retry\_of) REFERENCES agent.agent\_run(id); FOREIGN KEY (parent\_run\_id) REFERENCES agent.agent\_run(id). Chỉ mục: (agent\_id) WHERE status IN ('queued','planning','running','waiting\_human','paused'); (parent\_run\_id) WHERE parent\_run\_id IS NOT NULL.
 
 Bổ sung 10/10/2026 (BR-170): CHECK (stop\_reason IS NULL OR stop\_reason IN ('completed','loop\_detected','no\_progress','budget\_steps','budget\_tokens','budget\_cost','budget\_duration','user\_cancelled','waiting\_timeout','error')); CHECK (status NOT IN ('succeeded','failed','cancelled') OR stop\_reason IS NOT NULL); chỉ mục (agent\_id, stop\_reason) WHERE stop\_reason IN ('loop\_detected','no\_progress'). DDL ở dataagent.sql (sinh bằng csdl/gen\_ddl.py, 10/10/2026). Trigger agent\_run\_depth\_guard (BR-77): lượt gốc depth = 0, lượt con depth = depth lượt cha + 1, giá trị dịch vụ gửi lên bị ghi đè; lượt cha khác tổ chức hoặc tầng thứ tư thì chặn.
 
@@ -1795,7 +1820,7 @@ Yêu cầu người quyết định trong Cần bạn; mọi dịch vụ tạo y
 
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
-| data\_space\_id | uuid, bắt buộc |  |
+| data\_space\_id | uuid | Rỗng với yêu cầu toàn tổ chức (bản xuất nhật ký kiểm toán, quyền khẩn cấp); khi đó năng lực của người duyệt xét ở cấp tổ chức. Sửa 12/10/2026 |
 | kind | text, bắt buộc | approve\_proposal, conflict, clarification, checkpoint, budget, access, export, writeback, period\_exception, retro\_change, deploy, memory\_share, schema\_drift, report\_publish, data\_review, entity\_match, forecast\_assumption, forecast\_model, legal\_review, knowledge\_finding |
 | risk | text, bắt buộc, mặc định 'medium' | low, medium, high |
 | title | text, bắt buộc |  |
@@ -1806,6 +1831,7 @@ Yêu cầu người quyết định trong Cần bạn; mọi dịch vụ tạo y
 | parent\_run\_label | text | Tên lượt chạy cha khi từ lượt con (BR-77) |
 | assignee\_id | uuid |  |
 | assignee\_group | text |  |
+| assignee\_capability | text | Năng lực của người duyệt (steward, compliance, audit\_read…): ai có năng lực này trong Data Space của yêu cầu, hoặc ở cấp tổ chức khi data\_space\_id rỗng, thấy và duyệt được. Thêm 12/10/2026 |
 | due\_at | timestamptz |  |
 | status | text, bắt buộc, mặc định 'open' | open, answered, approved, rejected, changes\_requested, reassigned, expired, cancelled |
 | response | jsonb | Phương án chọn và ghi chú |
@@ -1814,7 +1840,7 @@ Yêu cầu người quyết định trong Cần bạn; mọi dịch vụ tạo y
 | resolved\_at | timestamptz |  |
 | channel\_card\_ids | uuid\[\], bắt buộc, mặc định '{}' | logic → notify.channel\_delivery |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('approve\_proposal','conflict','clarification','checkpoint','budget','access','export','writeback','period\_exception','retro\_change','deploy','memory\_share','schema\_drift','report\_publish','data\_review','entity\_match','forecast\_assumption','forecast\_model','legal\_review','knowledge\_finding','formula\_component')); CHECK (risk IN ('low','medium','high')); CHECK (status IN ('open','answered','approved','rejected','changes\_requested','reassigned','expired','cancelled')); CHECK (status IN ('open','reassigned') OR resolved\_at IS NOT NULL); CHECK (assignee\_id IS NOT NULL OR assignee\_group IS NOT NULL). Chỉ mục: (assignee\_id, status, due\_at) WHERE status = 'open'; (source\_service, source\_ref).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (kind IN ('approve\_proposal','conflict','clarification','checkpoint','budget','access','export','writeback','period\_exception','retro\_change','deploy','memory\_share','schema\_drift','report\_publish','data\_review','entity\_match','forecast\_assumption','forecast\_model','legal\_review','knowledge\_finding','formula\_component')); CHECK (risk IN ('low','medium','high')); CHECK (status IN ('open','answered','approved','rejected','changes\_requested','reassigned','expired','cancelled')); CHECK (status IN ('open','reassigned') OR resolved\_at IS NOT NULL); CHECK (assignee\_id IS NOT NULL OR assignee\_group IS NOT NULL OR assignee\_capability IS NOT NULL). Chỉ mục: (assignee\_id, status, due\_at) WHERE status = 'open'; (source\_service, source\_ref).
 
 #### inbox.hitl\_approval\_step
 
@@ -1824,7 +1850,7 @@ Một bước trong chuỗi duyệt nhiều người, ví dụ ngoại lệ kỳ
 | --- | --- | --- |
 | hitl\_request\_id | uuid, bắt buộc | FK hitl\_request |
 | step | smallint, bắt buộc |  |
-| approver\_role | text, bắt buộc | Ví dụ AC03, AC06 |
+| approver\_role | text, bắt buộc | Năng lực người duyệt bước này phải có, ví dụ steward, compliance; mỗi bước một người khác (BR-132) |
 | approver\_id | uuid |  |
 | decision | text | approve, reject |
 | note | text |  |
@@ -2045,8 +2071,9 @@ Một lần chạy kỹ năng với tham số cụ thể. Use case: UC-03-01, UC
 | started\_at | timestamptz |  |
 | finished\_at | timestamptz |  |
 | error | text |  |
+| mode | text, bắt buộc, mặc định 'run' | run, try: try là chạy thử từ màn soạn kỹ năng (POST /v1/skill-versions/{id}:try), kết quả không dùng cho ô, cảnh báo hay agent (thêm 12/10/2026) |
 
-Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (caller\_kind IN ('user','tile','agent\_run','alert','eval')); CHECK (status IN ('queued','running','succeeded','failed','cancelled')); FOREIGN KEY (skill\_version\_id) REFERENCES skill.skill\_version(id). Chỉ mục: (skill\_version\_id, created\_at DESC).
+Cột chung: id, org\_id, created\_at. Ràng buộc: CHECK (caller\_kind IN ('user','tile','agent\_run','alert','eval')); CHECK (mode IN ('run','try')); CHECK (status IN ('queued','running','succeeded','failed','cancelled')); FOREIGN KEY (skill\_version\_id) REFERENCES skill.skill\_version(id). Chỉ mục: (skill\_version\_id, created\_at DESC).
 
 #### skill.skill\_run\_step
 
@@ -2071,7 +2098,7 @@ Kỹ năng agent đề xuất từ chuỗi bước người dùng lặp lại; c
 | Cột | Kiểu | Ý nghĩa |
 | --- | --- | --- |
 | data\_space\_id | uuid, bắt buộc |  |
-| pattern | jsonb, bắt buộc | Chuỗi bước đã khái quát |
+| pattern | jsonb, bắt buộc | Chuỗi bước đã khái quát, chỉ cấu trúc: loại bước, tên tham số, params\_schema; không có giá trị, kết quả, mẫu dòng hay nội dung ô của phiên (BR-98, sửa 12/10/2026) |
 | session\_ids | uuid\[\], bắt buộc, mặc định '{}' | logic → workspace.workspace |
 | user\_count | integer, bắt buộc |  |
 | status | text, bắt buộc, mặc định 'open' | open, accepted, dismissed |
@@ -2642,9 +2669,9 @@ Thứ tự ưu tiên nguồn theo loại dữ liệu và ngưỡng trọng yếu
 | backtest | jsonb | Kết quả chạy thử trên xung đột 90 ngày |
 | approved\_by | uuid |  |
 | approved\_at | timestamptz |  |
-| status | text, bắt buộc, mặc định 'draft' | draft, active |
+| status | text, bắt buộc, mặc định 'draft' | draft, active, superseded |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (data\_space\_id, data\_kind); CHECK (status IN ('draft','active')); CHECK (status <> 'active' OR approved\_by IS NOT NULL).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (status IN ('draft','active','superseded')); CHECK (status NOT IN ('active','superseded') OR approved\_by IS NOT NULL). Chỉ mục: duy nhất (data\_space\_id, data\_kind) WHERE status = 'active'; duy nhất (data\_space\_id, data\_kind) WHERE status = 'draft'. Sửa bảng xếp hạng đang dùng tạo bản nháp mới; bản active vẫn áp dụng tới khi bản nháp được duyệt, lúc đó bản cũ thành superseded (UC-07-05, sửa 12/10/2026).
 
 ### D4.17 Schema period
 
@@ -2771,10 +2798,11 @@ Gói ngành do nhà cung cấp hoặc khối kiến trúc phát hành. Use case:
 | name | text, bắt buộc |  |
 | industry\_code | text, bắt buộc |  |
 | publisher | text, bắt buộc | Nhà cung cấp hoặc khối kiến trúc của tổ chức |
-| publisher\_key\_id | text, bắt buộc | Khoá công khai dùng kiểm chữ ký (BR-128) |
+| publisher\_key\_id | text | Khoá công khai dùng kiểm chữ ký (BR-128); bắt buộc với gói vendor, gói của tổ chức có khoá khi phát hành phiên bản đầu (sửa 12/10/2026) |
+| origin | text, bắt buộc, mặc định 'vendor' | vendor, organisation: organisation là gói tổ chức tự soạn qua POST /v1/packs; industry\_code lấy theo organization.industry\_code (thêm 12/10/2026) |
 | description | text |  |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (org\_id, code).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (org\_id, code); CHECK (origin IN ('vendor','organisation')); CHECK (origin = 'organisation' OR publisher\_key\_id IS NOT NULL).
 
 #### pack.pack\_version
 
@@ -2936,8 +2964,9 @@ Hiệu chỉnh chỉ số ở lớp tổ chức kèm lý do; tham gia gộp ba c
 | status | text, bắt buộc, mặc định 'draft' | draft, pending\_review, active, superseded |
 | approved\_by | uuid |  |
 | compliance\_approved\_by | uuid | Chỉ số báo cáo cơ quan quản lý cần thêm AC06 |
+| calibration\_run\_id | uuid | FK calibration\_run; lần chạy thử công thức trên dữ liệu thật (UC-09-03 bước 3, thêm 12/10/2026) |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (status IN ('draft','pending\_review','active','superseded')); CHECK (status <> 'active' OR approved\_by IS NOT NULL); FOREIGN KEY (pack\_install\_id) REFERENCES pack.pack\_install(id). Chỉ mục: duy nhất (pack\_install\_id, pack\_metric\_code) WHERE status = 'active'.
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (status IN ('draft','pending\_review','active','superseded')); CHECK (status <> 'active' OR approved\_by IS NOT NULL); FOREIGN KEY (pack\_install\_id) REFERENCES pack.pack\_install(id); FOREIGN KEY (calibration\_run\_id) REFERENCES pack.calibration\_run(id). Chỉ mục: duy nhất (pack\_install\_id, pack\_metric\_code) WHERE status = 'active'.
 
 #### pack.calibration\_run
 
@@ -3084,6 +3113,7 @@ Data mart mô hình sao: bảng sự kiện, hạt, độ đo, chiều, kiểm t
 | dimensions | jsonb, bắt buộc |  |
 | relations | jsonb, bắt buộc |  |
 | checks | jsonb, bắt buộc, mặc định '\[\]' | Tổng khớp nguồn, độ mới, khoá chiều duy nhất |
+| suggested\_dimensions | jsonb | Chiều gợi ý từ quan hệ của bảng sự kiện, sinh khi tạo mart; người soạn chọn vào dimensions (UC-06-06, thêm 12/10/2026) |
 | relation\_check\_passed | boolean, bắt buộc, mặc định false | Thất bại thì không phát hành được |
 | status | text, bắt buộc, mặc định 'draft' | draft, active, retired |
 
@@ -3103,12 +3133,13 @@ Sản phẩm dữ liệu có hợp đồng, phiên bản và danh sách bên dù
 | data\_mart\_id | uuid | FK data\_mart |
 | contract | jsonb, bắt buộc | Cột, kiểu, ý nghĩa, SLA |
 | consumers | uuid\[\], bắt buộc, mặc định '{}' | Data Space đăng ký dùng |
+| owner\_id | uuid, bắt buộc | logic → org.app\_user; người phụ trách duyệt phát hành, khác người soạn (thêm 12/10/2026) |
 | status | text, bắt buộc, mặc định 'draft' | draft, published, deprecated, retired |
 | breaking\_notice\_at | timestamptz |  |
 | retire\_after | timestamptz |  |
 | approved\_by | uuid |  |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (data\_space\_id, code, version); CHECK (status IN ('draft','published','deprecated','retired')); CHECK (dataset\_id IS NOT NULL OR data\_mart\_id IS NOT NULL); CHECK (status <> 'published' OR approved\_by IS NOT NULL); CHECK (retire\_after IS NULL OR breaking\_notice\_at IS NULL OR retire\_after >= breaking\_notice\_at + interval '30 days'); FOREIGN KEY (data\_mart\_id) REFERENCES pipeline.data\_mart(id).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: UNIQUE (data\_space\_id, code, version); CHECK (status IN ('draft','published','deprecated','retired')); CHECK (dataset\_id IS NOT NULL OR data\_mart\_id IS NOT NULL); CHECK (status <> 'published' OR approved\_by IS NOT NULL); CHECK (approved\_by IS NULL OR approved\_by = owner\_id); CHECK (retire\_after IS NULL OR breaking\_notice\_at IS NULL OR retire\_after >= breaking\_notice\_at + interval '30 days'); FOREIGN KEY (data\_mart\_id) REFERENCES pipeline.data\_mart(id).
 
 #### pipeline.writeback\_request
 
@@ -3128,11 +3159,11 @@ Yêu cầu ghi ngược về nguồn qua xem trước, duyệt, bảng tạm, ki
 | snapshot\_ref | text | Ảnh chụp bảng đích để hoàn tác 30 ngày |
 | approved\_by | uuid | Phải khác người yêu cầu (BR-24) |
 | proposal\_id | uuid | logic → inbox.proposal |
-| status | text, bắt buộc, mặc định 'draft' | draft, previewed, submitted, approved, rejected, scheduled, executing, executed, cancelled\_mismatch, failed, undone |
+| status | text, bắt buộc, mặc định 'draft' | draft, previewed, submitted, approved, rejected, scheduled, executing, executed, cancelled\_mismatch, failed, undo\_requested, undone |
 | executed\_at | timestamptz |  |
 | totals\_check | jsonb |  |
 
-Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (status IN ('draft','previewed','submitted','approved','rejected','scheduled','executing','executed','cancelled\_mismatch','failed','undone')); CHECK (deletes = 0); CHECK (approved\_by IS NULL OR approved\_by <> requested\_by); CHECK (status NOT IN ('approved','scheduled','executing','executed') OR approved\_by IS NOT NULL).
+Cột chung: id, org\_id, created\_at, created\_by, updated\_at, updated\_by. Ràng buộc: CHECK (status IN ('draft','previewed','submitted','approved','rejected','scheduled','executing','executed','cancelled\_mismatch','failed','undo\_requested','undone')); CHECK (deletes = 0); CHECK (approved\_by IS NULL OR approved\_by <> requested\_by); CHECK (status NOT IN ('approved','scheduled','executing','executed') OR approved\_by IS NOT NULL).
 
 ### D4.20 Schema ingest
 
@@ -3255,9 +3286,11 @@ Kết quả một lần chạy quy tắc chất lượng sau nạp hoặc pipeli
 | violations | bigint, bắt buộc, mặc định 0 |  |
 | sample\_ref | text | Mẫu dòng vi phạm, đã che |
 | acknowledged\_by | uuid | Người xác nhận dùng tiếp khi vi phạm mức cao |
+| acknowledged\_at | timestamptz | Thêm 12/10/2026 |
+| acknowledged\_note | text | Lý do dùng tiếp, bắt buộc khi có acknowledged\_by (BR-116, thêm 12/10/2026) |
 | checked\_at | timestamptz, bắt buộc, mặc định now() |  |
 
-Cột chung: id, org\_id. Ràng buộc: CHECK (run\_kind IN ('job\_run','pipeline\_run','scheduled','manual')); FOREIGN KEY (rule\_id) REFERENCES ingest.quality\_rule(id). Chỉ mục: (rule\_id, checked\_at DESC).
+Cột chung: id, org\_id. Ràng buộc: CHECK (run\_kind IN ('job\_run','pipeline\_run','scheduled','manual')); CHECK (acknowledged\_by IS NULL OR (acknowledged\_at IS NOT NULL AND acknowledged\_note IS NOT NULL)); FOREIGN KEY (rule\_id) REFERENCES ingest.quality\_rule(id). Chỉ mục: (rule\_id, checked\_at DESC).
 
 ### D4.21 Schema audit (CSDL dataagent\_audit)
 

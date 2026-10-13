@@ -20,6 +20,7 @@ from typing import Any
 import httpx
 import pytest
 
+from libs.dataagent_db import uuid7
 from services.api.app import create_app
 from services.api.config import Settings
 from services.api.kernel.sse import Event
@@ -273,6 +274,8 @@ def vault_body(**extra: Any) -> dict[str, Any]:
 
 def thesis_body(**extra: Any) -> dict[str, Any]:
     body = {
+        # The device numbers what it encrypts (the id is in the AAD).
+        "id": str(uuid7()),
         "content_ct": random_b64(120),
         "wrapped_dek": random_b64(72),
         "content_version": 1,
@@ -286,6 +289,7 @@ def thesis_body(**extra: Any) -> dict[str, Any]:
 
 def memory_body(**extra: Any) -> dict[str, Any]:
     body = {
+        "id": str(uuid7()),
         "kind": "priority",
         "content_ct": random_b64(80),
         "wrapped_dek": random_b64(72),
@@ -534,6 +538,13 @@ async def test_leader_commits_a_thesis_as_ciphertext_and_the_event_has_no_conten
         vault = await make_vault(api, w, "leader")
         body = thesis_body()
         made = await api.post("/v1/exec/theses", json=body, headers=h)
+        assert made.status_code == 201, made.text
+        assert made.json()["id"] == body["id"]
+        # The id is the device's: not a UUIDv7, or one already used, is refused.
+        v4 = await api.post("/v1/exec/theses", json=thesis_body(id=str(uuid.uuid4())), headers=h)
+        assert v4.status_code == 422, v4.text
+        twice = await api.post("/v1/exec/theses", json=thesis_body(id=body["id"]), headers=h)
+        assert twice.status_code == 409, twice.text
         assert made.status_code == 201, made.text
         thesis = made.json()
         assert thesis["status"] == "open" and thesis["evidence_state"] == "pending"

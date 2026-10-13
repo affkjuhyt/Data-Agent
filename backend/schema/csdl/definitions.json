@@ -69,7 +69,7 @@
    "owner_service": "Agent runtime (quản lý agent)",
    "content": "Định nghĩa, cấu hình, công cụ, trigger, triển khai, lượt chạy, bước, bộ nhớ",
    "modules": "P08, P13",
-   "table_count": 10,
+   "table_count": 11,
    "database": "dataagent",
    "intro": ""
   },
@@ -336,7 +336,8 @@
   ],
   "svc_org": [],
   "svc_exec": [],
-  "svc_exec_worker": []
+  "svc_exec_worker": [],
+  "svc_audit_worker": []
  },
  "common_columns": {
   "id": {
@@ -4638,6 +4639,17 @@
      "default": null,
      "unique": false,
      "comment": "Tài khoản ghi ngược riêng (UC-06-04); null là không cho ghi ngược",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "writeback_tables",
+     "type": "text[]",
+     "not_null": true,
+     "default": "'{}'",
+     "unique": false,
+     "comment": "Bảng đích được phép ghi ngược (schema.bảng); rỗng là không bảng nào (UC-06-04, thêm 12/10/2026)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -12077,7 +12089,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "question, tile, skill_run, agent_run, pipeline, period, eval, receipt_replay (UC-01-07)",
+     "comment": "question, tile, skill_run, agent_run, pipeline, period, eval, receipt_replay (UC-01-07), ad_hoc (SQL người dùng gửi qua POST /v1/query-runs, thêm 12/10/2026)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -12277,7 +12289,7 @@
    "constraints": [
     {
      "kind": "check",
-     "sql": "CHECK (caller_kind IN ('question','tile','skill_run','agent_run','pipeline','period','eval','receipt_replay'))"
+     "sql": "CHECK (caller_kind IN ('question','tile','skill_run','agent_run','pipeline','period','eval','receipt_replay','ad_hoc'))"
     },
     {
      "kind": "check",
@@ -12509,7 +12521,7 @@
      "not_null": true,
      "default": "'draft'",
      "unique": false,
-     "comment": "draft, testing, running, paused, retired",
+     "comment": "draft, testing, running, paused, retired, locked (khoá khẩn cấp qua POST /v1/agents/{id}:lock, thêm 12/10/2026)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -12521,6 +12533,17 @@
      "default": null,
      "unique": false,
      "comment": "Ví dụ chủ sở hữu rời tổ chức",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "status_before_lock",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Trạng thái trước khi khoá, mở khoá trả về trạng thái này; chỉ có giá trị khi locked (thêm 12/10/2026)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -12578,7 +12601,11 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (status IN ('draft','testing','running','paused','retired'))"
+     "sql": "CHECK (status IN ('draft','testing','running','paused','retired','locked'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK ((status = 'locked') = (status_before_lock IS NOT NULL))"
     }
    ],
    "indexes": [],
@@ -12866,6 +12893,231 @@
    "partition": null,
    "immutable": false,
    "notes": []
+  },
+  {
+   "schema": "agent",
+   "name": "tool_def",
+   "qualified": "agent.tool_def",
+   "description": "Sổ công cụ của agent (tab 5 G2, G2.1): một dòng mỗi công cụ, là nguồn cho mô tả gửi mô hình, bộ công cụ theo ý định, quyền lộ ra MCP và bài kiểm phủ use case. Bảng dùng chung cho mọi tổ chức, nạp bằng migration cùng bản phát hành; không sửa qua API. Use case: UC-12-02, UC-13-01, UC-13-02.",
+   "use_cases": [
+    "UC-12-02",
+    "UC-13-01",
+    "UC-13-02"
+   ],
+   "columns": [
+    {
+     "name": "code",
+     "type": "text",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "Mã công cụ, ví dụ query.semantic",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "permission_level",
+     "type": "text",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "read, write_derived, send_external",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "owner_service",
+     "type": "text",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "Dịch vụ sở hữu, ví dụ Context service",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "endpoints",
+     "type": "text[]",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "Endpoint ở tab 4 mà công cụ gọi, ví dụ {POST /v1/search/documents}",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "model_description",
+     "type": "text",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "Mô tả cho mô hình, viết tay: dùng khi nào, không dùng khi nào; tối đa 400 ký tự",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "toolsets",
+     "type": "text[]",
+     "not_null": true,
+     "default": "'{}'",
+     "unique": false,
+     "comment": "Bộ công cụ theo ý định của Planner kiểu A: metric_lookup, explain_change, document, forecast, provenance, explore_sql",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "execution_kinds",
+     "type": "text[]",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "interactive, plan, workflow",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "restricted_agent_kinds",
+     "type": "text[]",
+     "not_null": true,
+     "default": "'{}'",
+     "unique": false,
+     "comment": "Chỉ cấp cho các loại agent này; rỗng là không hạn chế",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "mcp_exposed",
+     "type": "boolean",
+     "not_null": true,
+     "default": "false",
+     "unique": false,
+     "comment": "Lộ ra cho client MCP có phạm vi phù hợp (UC-12-02)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "default_checkpoint",
+     "type": "text",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "none, on_condition, before, always",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "use_cases",
+     "type": "text[]",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "UC dùng công cụ, khớp ma trận tab 2 mục 11.4",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "schema_sha256",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Băm JSON Schema sinh từ OpenAPI ở lần build gần nhất (ADR-48)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "status",
+     "type": "text",
+     "not_null": true,
+     "default": "'active'",
+     "unique": false,
+     "comment": "draft, active, deprecated",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    }
+   ],
+   "common_columns": [
+    "id",
+    "created_at",
+    "updated_at"
+   ],
+   "constraints": [
+    {
+     "kind": "unique",
+     "sql": "UNIQUE (code)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (code ~ '^[a-z]+(\\.[a-z_]+)+$')"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (permission_level IN ('read','write_derived','send_external'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (default_checkpoint IN ('none','on_condition','before','always'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (status IN ('draft','active','deprecated'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (execution_kinds <@ ARRAY['interactive','plan','workflow'] AND cardinality(execution_kinds) > 0)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (char_length(model_description) <= 400)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (permission_level <> 'send_external' OR (default_checkpoint = 'always' AND NOT mcp_exposed))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (status <> 'active' OR cardinality(use_cases) > 0)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (NOT mcp_exposed OR code !~ '^exec\\.')"
+    }
+   ],
+   "indexes": [
+    {
+     "unique": false,
+     "method": "gin",
+     "expr": "toolsets",
+     "where": null,
+     "comment": null
+    },
+    {
+     "unique": false,
+     "method": "gin",
+     "expr": "use_cases",
+     "where": null,
+     "comment": null
+    }
+   ],
+   "partition": null,
+   "immutable": false,
+   "notes": [
+    "Quyền: mọi vai trò svc_* đọc; chỉ vai trò migration ghi. Dữ liệu khởi tạo: 59 dòng của tab 5 G2, gồm use_cases lấy từ ma trận tab 2 mục 11.4."
+   ],
+   "common_note": "không có org_id"
   },
   {
    "schema": "agent",
@@ -13481,6 +13733,17 @@
      "fk": null,
      "logic_ref": null,
      "pii": false
+    },
+    {
+     "name": "retry_of",
+     "type": "uuid",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Lượt thất bại mà lượt này chạy lại với cùng đầu vào và phiên bản cấu hình (POST /v1/runs/{id}:retry, thêm 12/10/2026)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
     }
    ],
    "common_columns": [
@@ -13508,6 +13771,10 @@
     {
      "kind": "fk",
      "sql": "FOREIGN KEY (agent_id) REFERENCES agent.agent_def(id)"
+    },
+    {
+     "kind": "fk",
+     "sql": "FOREIGN KEY (retry_of) REFERENCES agent.agent_run(id)"
     },
     {
      "kind": "fk",
@@ -15659,10 +15926,10 @@
     {
      "name": "data_space_id",
      "type": "uuid",
-     "not_null": true,
+     "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "",
+     "comment": "Rỗng với yêu cầu toàn tổ chức (bản xuất nhật ký kiểm toán, quyền khẩn cấp); khi đó năng lực của người duyệt xét ở cấp tổ chức. Sửa 12/10/2026",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -15778,6 +16045,17 @@
      "pii": false
     },
     {
+     "name": "assignee_capability",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Năng lực của người duyệt (steward, compliance, audit_read…): ai có năng lực này trong Data Space của yêu cầu, hoặc ở cấp tổ chức khi data_space_id rỗng, thấy và duyệt được. Thêm 12/10/2026",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "due_at",
      "type": "timestamptz",
      "not_null": false,
@@ -15882,7 +16160,7 @@
     },
     {
      "kind": "check",
-     "sql": "CHECK (assignee_id IS NOT NULL OR assignee_group IS NOT NULL)"
+     "sql": "CHECK (assignee_id IS NOT NULL OR assignee_group IS NOT NULL OR assignee_capability IS NOT NULL)"
     }
    ],
    "indexes": [
@@ -15943,7 +16221,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "Ví dụ AC03, AC06",
+     "comment": "Năng lực người duyệt bước này phải có, ví dụ steward, compliance; mỗi bước một người khác (BR-132)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -17733,6 +18011,17 @@
      "fk": null,
      "logic_ref": null,
      "pii": false
+    },
+    {
+     "name": "mode",
+     "type": "text",
+     "not_null": true,
+     "default": "'run'",
+     "unique": false,
+     "comment": "run, try: try là chạy thử từ màn soạn kỹ năng (POST /v1/skill-versions/{id}:try), kết quả không dùng cho ô, cảnh báo hay agent (thêm 12/10/2026)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
     }
    ],
    "common_columns": [
@@ -17744,6 +18033,10 @@
     {
      "kind": "check",
      "sql": "CHECK (caller_kind IN ('user','tile','agent_run','alert','eval'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (mode IN ('run','try'))"
     },
     {
      "kind": "check",
@@ -17904,7 +18197,7 @@
      "not_null": true,
      "default": null,
      "unique": false,
-     "comment": "Chuỗi bước đã khái quát",
+     "comment": "Chuỗi bước đã khái quát, chỉ cấu trúc: loại bước, tên tham số, params_schema; không có giá trị, kết quả, mẫu dòng hay nội dung ô của phiên (BR-98, sửa 12/10/2026)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -22462,7 +22755,7 @@
      "not_null": true,
      "default": "'draft'",
      "unique": false,
-     "comment": "draft, active",
+     "comment": "draft, active, superseded",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -22478,22 +22771,35 @@
    ],
    "constraints": [
     {
-     "kind": "unique",
-     "sql": "UNIQUE (data_space_id, data_kind)"
+     "kind": "check",
+     "sql": "CHECK (status IN ('draft','active','superseded'))"
     },
     {
      "kind": "check",
-     "sql": "CHECK (status IN ('draft','active'))"
-    },
-    {
-     "kind": "check",
-     "sql": "CHECK (status <> 'active' OR approved_by IS NOT NULL)"
+     "sql": "CHECK (status NOT IN ('active','superseded') OR approved_by IS NOT NULL)"
     }
    ],
-   "indexes": [],
+   "indexes": [
+    {
+     "unique": true,
+     "method": "btree",
+     "expr": "data_space_id, data_kind",
+     "where": "status = 'active'",
+     "comment": null
+    },
+    {
+     "unique": true,
+     "method": "btree",
+     "expr": "data_space_id, data_kind",
+     "where": "status = 'draft'",
+     "comment": null
+    }
+   ],
    "partition": null,
    "immutable": false,
-   "notes": []
+   "notes": [
+    "Sửa bảng xếp hạng đang dùng tạo bản nháp mới; bản active vẫn áp dụng tới khi bản nháp được duyệt, lúc đó bản cũ thành superseded (UC-07-05, sửa 12/10/2026)."
+   ]
   },
   {
    "schema": "period",
@@ -23412,10 +23718,21 @@
     {
      "name": "publisher_key_id",
      "type": "text",
-     "not_null": true,
+     "not_null": false,
      "default": null,
      "unique": false,
-     "comment": "Khoá công khai dùng kiểm chữ ký (BR-128)",
+     "comment": "Khoá công khai dùng kiểm chữ ký (BR-128); bắt buộc với gói vendor, gói của tổ chức có khoá khi phát hành phiên bản đầu (sửa 12/10/2026)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "origin",
+     "type": "text",
+     "not_null": true,
+     "default": "'vendor'",
+     "unique": false,
+     "comment": "vendor, organisation: organisation là gói tổ chức tự soạn qua POST /v1/packs; industry_code lấy theo organization.industry_code (thêm 12/10/2026)",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -23444,6 +23761,14 @@
     {
      "kind": "unique",
      "sql": "UNIQUE (org_id, code)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (origin IN ('vendor','organisation'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (origin = 'organisation' OR publisher_key_id IS NOT NULL)"
     }
    ],
    "indexes": [],
@@ -24621,6 +24946,17 @@
      "fk": null,
      "logic_ref": null,
      "pii": false
+    },
+    {
+     "name": "calibration_run_id",
+     "type": "uuid",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "FK calibration_run; lần chạy thử công thức trên dữ liệu thật (UC-09-03 bước 3, thêm 12/10/2026)",
+     "fk": "calibration_run",
+     "logic_ref": null,
+     "pii": false
     }
    ],
    "common_columns": [
@@ -24643,6 +24979,10 @@
     {
      "kind": "fk",
      "sql": "FOREIGN KEY (pack_install_id) REFERENCES pack.pack_install(id)"
+    },
+    {
+     "kind": "fk",
+     "sql": "FOREIGN KEY (calibration_run_id) REFERENCES pack.calibration_run(id)"
     }
    ],
    "indexes": [
@@ -25760,6 +26100,17 @@
      "pii": false
     },
     {
+     "name": "suggested_dimensions",
+     "type": "jsonb",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Chiều gợi ý từ quan hệ của bảng sự kiện, sinh khi tạo mart; người soạn chọn vào dimensions (UC-06-06, thêm 12/10/2026)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "relation_check_passed",
      "type": "boolean",
      "not_null": true,
@@ -25903,6 +26254,17 @@
      "pii": false
     },
     {
+     "name": "owner_id",
+     "type": "uuid",
+     "not_null": true,
+     "default": null,
+     "unique": false,
+     "comment": "logic → org.app_user; người phụ trách duyệt phát hành, khác người soạn (thêm 12/10/2026)",
+     "fk": null,
+     "logic_ref": "org.app_user",
+     "pii": false
+    },
+    {
      "name": "status",
      "type": "text",
      "not_null": true,
@@ -25971,6 +26333,10 @@
     {
      "kind": "check",
      "sql": "CHECK (status <> 'published' OR approved_by IS NOT NULL)"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (approved_by IS NULL OR approved_by = owner_id)"
     },
     {
      "kind": "check",
@@ -26133,7 +26499,7 @@
      "not_null": true,
      "default": "'draft'",
      "unique": false,
-     "comment": "draft, previewed, submitted, approved, rejected, scheduled, executing, executed, cancelled_mismatch, failed, undone",
+     "comment": "draft, previewed, submitted, approved, rejected, scheduled, executing, executed, cancelled_mismatch, failed, undo_requested, undone",
      "fk": null,
      "logic_ref": null,
      "pii": false
@@ -26172,7 +26538,7 @@
    "constraints": [
     {
      "kind": "check",
-     "sql": "CHECK (status IN ('draft','previewed','submitted','approved','rejected','scheduled','executing','executed','cancelled_mismatch','failed','undone'))"
+     "sql": "CHECK (status IN ('draft','previewed','submitted','approved','rejected','scheduled','executing','executed','cancelled_mismatch','failed','undo_requested','undone'))"
     },
     {
      "kind": "check",
@@ -27189,6 +27555,28 @@
      "pii": false
     },
     {
+     "name": "acknowledged_at",
+     "type": "timestamptz",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Thêm 12/10/2026",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
+     "name": "acknowledged_note",
+     "type": "text",
+     "not_null": false,
+     "default": null,
+     "unique": false,
+     "comment": "Lý do dùng tiếp, bắt buộc khi có acknowledged_by (BR-116, thêm 12/10/2026)",
+     "fk": null,
+     "logic_ref": null,
+     "pii": false
+    },
+    {
      "name": "checked_at",
      "type": "timestamptz",
      "not_null": true,
@@ -27208,6 +27596,10 @@
     {
      "kind": "check",
      "sql": "CHECK (run_kind IN ('job_run','pipeline_run','scheduled','manual'))"
+    },
+    {
+     "kind": "check",
+     "sql": "CHECK (acknowledged_by IS NULL OR (acknowledged_at IS NOT NULL AND acknowledged_note IS NOT NULL))"
     },
     {
      "kind": "fk",

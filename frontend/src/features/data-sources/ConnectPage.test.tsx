@@ -76,24 +76,29 @@ describe('ConnectPage', () => {
     expect(screen.queryByText('Vì sao không đi tiếp được')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Tiếp: chọn dữ liệu' }));
 
-    fireEvent.click(screen.getByRole('checkbox', { name: /card_accounts/ }));
+    // The tables appear once the structure scan has listed them.
+    fireEvent.click(await screen.findByRole('checkbox', { name: /card_accounts/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Tiếp: Data Space & lịch' }));
 
     const save = screen.getByRole('button', { name: 'Lưu và bắt đầu' });
     expect(save).toHaveAttribute('aria-disabled', 'true');
-    const row = screen.getByText('card_accounts').closest('tr')!;
-    expect(within(row).getByText('Số thẻ · che')).toBeInTheDocument();
+    const row = screen.getByText('dbo.card_accounts').closest('tr')!;
+    expect(within(row).getByText('Số tài khoản · che')).toBeInTheDocument();
     await waitFor(() =>
       expect(
-        screen.getByRole('combobox', { name: 'Data Space của card_accounts' }),
+        screen.getByRole('combobox', { name: 'Data Space của dbo.card_accounts' }),
       ).toBeInTheDocument(),
     );
     await screen.findAllByText('Chọn người');
-    pick('Data Space của card_accounts', 'Rủi ro tín dụng');
+    pick('Data Space của dbo.card_accounts', 'Rủi ro tín dụng');
     // Any person from the user list will do; the fixture's names are not what this test checks.
-    fireEvent.click(screen.getByRole('combobox', { name: 'Người phụ trách card_accounts' }));
+    fireEvent.click(screen.getByRole('combobox', { name: 'Người phụ trách dbo.card_accounts' }));
     fireEvent.click((await screen.findAllByRole('option'))[0]);
     expect(screen.getByText('Nạp lần đầu khoảng 2 triệu dòng')).toBeInTheDocument();
+    // A personal table is enabled only once its masking is confirmed (UC-04-04 step 3).
+    expect(save).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(screen.getByRole('checkbox', { name: /xác nhận các cột dữ liệu cá nhân/ }));
+    await waitFor(() => expect(save).not.toHaveAttribute('aria-disabled', 'true'));
 
     fireEvent.click(save);
     await waitFor(() => expect(app.navigate).toHaveBeenCalledWith('data', 'SOURCE', 'src-new-1'));

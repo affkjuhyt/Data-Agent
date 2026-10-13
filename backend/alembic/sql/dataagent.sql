@@ -1127,6 +1127,7 @@ CREATE TABLE catalog.source (
   conn_options jsonb NOT NULL DEFAULT '{}',
   secret_ref text NOT NULL,
   writeback_secret_ref text,
+  writeback_tables text[] NOT NULL DEFAULT '{}',
   mode text NOT NULL DEFAULT 'federated',
   authority_level text NOT NULL DEFAULT 'reference',
   freshness_sla interval,
@@ -1163,6 +1164,7 @@ COMMENT ON COLUMN catalog.source.connector_icon IS 'Mã biểu tượng Connecto
 COMMENT ON COLUMN catalog.source.conn_options IS 'TLS, schema mặc định, tham số riêng của từng loại';
 COMMENT ON COLUMN catalog.source.secret_ref IS 'Đường dẫn OpenBao (BR-14); không lưu mật khẩu';
 COMMENT ON COLUMN catalog.source.writeback_secret_ref IS 'Tài khoản ghi ngược riêng (UC-06-04); null là không cho ghi ngược';
+COMMENT ON COLUMN catalog.source.writeback_tables IS 'Bảng đích được phép ghi ngược (schema.bảng); rỗng là không bảng nào (UC-06-04, thêm 12/10/2026)';
 COMMENT ON COLUMN catalog.source.mode IS 'federated (truy vấn tại chỗ) hoặc ingest (nạp về)';
 COMMENT ON COLUMN catalog.source.authority_level IS 'level_1, level_2, level_3, reference';
 COMMENT ON COLUMN catalog.source.freshness_sla IS 'Hạn độ mới; quá hạn thì trạng thái needs_fix (BR-56)';
@@ -2615,14 +2617,14 @@ CREATE TABLE query.query_run (
   error text,
   started_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT query_run_pkey PRIMARY KEY (id, started_at),
-  CHECK (caller_kind IN ('question','tile','skill_run','agent_run','pipeline','period','eval','receipt_replay')),
+  CHECK (caller_kind IN ('question','tile','skill_run','agent_run','pipeline','period','eval','receipt_replay','ad_hoc')),
   CHECK (route IN ('live','history','period_snapshot')),
   CHECK (route <> 'period_snapshot' OR period_close_id IS NOT NULL),
   CHECK (status IN ('queued','running','succeeded','failed','cancelled','timeout'))
 ) PARTITION BY RANGE (started_at);
 CREATE TABLE query.query_run_default PARTITION OF query.query_run DEFAULT;
 COMMENT ON TABLE query.query_run IS 'Một lần chạy SQL: SQL đã viết lại theo chính sách, nguồn, thời điểm, số dòng, thời gian. Use case: UC-01-01, UC-01-02, UC-01-03, UC-01-04, UC-01-06, UC-02-02, UC-03-01, UC-03-02, UC-10-01, UC-10-05, UC-12-02.';
-COMMENT ON COLUMN query.query_run.caller_kind IS 'question, tile, skill_run, agent_run, pipeline, period, eval, receipt_replay (UC-01-07)';
+COMMENT ON COLUMN query.query_run.caller_kind IS 'question, tile, skill_run, agent_run, pipeline, period, eval, receipt_replay (UC-01-07), ad_hoc (SQL người dùng gửi qua POST /v1/query-runs, thêm 12/10/2026)';
 COMMENT ON COLUMN query.query_run.principal_id IS 'Danh tính chạy truy vấn (người hoặc giao quyền của agent)';
 COMMENT ON COLUMN query.query_run.source_id IS 'logic → catalog.source; null khi đọc kỳ chốt';
 COMMENT ON COLUMN query.query_run.route IS 'live, history, period_snapshot (bộ định tuyến thời điểm)';
@@ -2686,6 +2688,7 @@ CREATE TABLE agent.agent_def (
   current_config_version integer,
   status text NOT NULL DEFAULT 'draft',
   paused_reason text,
+  status_before_lock text,
   monthly_budget numeric(14,2),
   spent_this_month numeric(14,2) NOT NULL DEFAULT 0,
   deleted_at timestamptz,
@@ -2696,7 +2699,8 @@ CREATE TABLE agent.agent_def (
   CONSTRAINT agent_def_pkey PRIMARY KEY (id),
   UNIQUE (data_space_id, code),
   CHECK (kind IN ('analysis','monitor','report','reconcile','data_prep','data_quality','document','custom')),
-  CHECK (status IN ('draft','testing','running','paused','retired'))
+  CHECK (status IN ('draft','testing','running','paused','retired','locked')),
+  CHECK ((status = 'locked') = (status_before_lock IS NOT NULL))
 );
 COMMENT ON TABLE agent.agent_def IS 'Agent: tên, loại, chủ sở hữu, tài khoản agent, trạng thái; cấu hình chi tiết nằm ở agent_config. Use case: UC-08-01, UC-13-01.';
 COMMENT ON COLUMN agent.agent_def.data_space_id IS 'logic → org.data_space';
@@ -2705,8 +2709,9 @@ COMMENT ON COLUMN agent.agent_def.kind IS 'analysis, monitor, report, reconcile,
 COMMENT ON COLUMN agent.agent_def.owner_user_id IS 'Người thật sở hữu (BR-147); logic → org.app_user';
 COMMENT ON COLUMN agent.agent_def.account_user_id IS 'Tài khoản agent (app_user.kind = agent)';
 COMMENT ON COLUMN agent.agent_def.template_ref IS 'logic → pack.pack_skill nếu tạo từ agent mẫu';
-COMMENT ON COLUMN agent.agent_def.status IS 'draft, testing, running, paused, retired';
+COMMENT ON COLUMN agent.agent_def.status IS 'draft, testing, running, paused, retired, locked (khoá khẩn cấp qua POST /v1/agents/{id}:lock, thêm 12/10/2026)';
 COMMENT ON COLUMN agent.agent_def.paused_reason IS 'Ví dụ chủ sở hữu rời tổ chức';
+COMMENT ON COLUMN agent.agent_def.status_before_lock IS 'Trạng thái trước khi khoá, mở khoá trả về trạng thái này; chỉ có giá trị khi locked (thêm 12/10/2026)';
 COMMENT ON COLUMN agent.agent_def.monthly_budget IS 'Ngân sách tháng (BR-71)';
 COMMENT ON COLUMN agent.agent_def.deleted_at IS 'Xoá mềm';
 
@@ -2766,6 +2771,50 @@ COMMENT ON COLUMN agent.agent_tool.tool IS 'Ví dụ query, run_skill, create_pr
 COMMENT ON COLUMN agent.agent_tool.permission_level IS 'read, write_derived, send_external';
 COMMENT ON COLUMN agent.agent_tool.requires_checkpoint IS 'Bắt buộc true với write_derived trừ khi act_then_report và có chính sách; luôn true với send_external (BR-70)';
 COMMENT ON COLUMN agent.agent_tool.allowed_targets IS 'Với agent.call: danh sách agent được gọi';
+
+CREATE TABLE agent.tool_def (
+  id uuid NOT NULL,
+  code text NOT NULL,
+  permission_level text NOT NULL,
+  owner_service text NOT NULL,
+  endpoints text[] NOT NULL,
+  model_description text NOT NULL,
+  toolsets text[] NOT NULL DEFAULT '{}',
+  execution_kinds text[] NOT NULL,
+  restricted_agent_kinds text[] NOT NULL DEFAULT '{}',
+  mcp_exposed boolean NOT NULL DEFAULT false,
+  default_checkpoint text NOT NULL,
+  use_cases text[] NOT NULL,
+  schema_sha256 text,
+  status text NOT NULL DEFAULT 'active',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT tool_def_pkey PRIMARY KEY (id),
+  UNIQUE (code),
+  CHECK (code ~ '^[a-z]+(\.[a-z_]+)+$'),
+  CHECK (permission_level IN ('read','write_derived','send_external')),
+  CHECK (default_checkpoint IN ('none','on_condition','before','always')),
+  CHECK (status IN ('draft','active','deprecated')),
+  CHECK (execution_kinds <@ ARRAY['interactive','plan','workflow'] AND cardinality(execution_kinds) > 0),
+  CHECK (char_length(model_description) <= 400),
+  CHECK (permission_level <> 'send_external' OR (default_checkpoint = 'always' AND NOT mcp_exposed)),
+  CHECK (status <> 'active' OR cardinality(use_cases) > 0),
+  CHECK (NOT mcp_exposed OR code !~ '^exec\.')
+);
+COMMENT ON TABLE agent.tool_def IS 'Sổ công cụ của agent (tab 5 G2, G2.1): một dòng mỗi công cụ, là nguồn cho mô tả gửi mô hình, bộ công cụ theo ý định, quyền lộ ra MCP và bài kiểm phủ use case. Bảng dùng chung cho mọi tổ chức, nạp bằng migration cùng bản phát hành; không sửa qua API. Use case: UC-12-02, UC-13-01, UC-13-02.';
+COMMENT ON COLUMN agent.tool_def.code IS 'Mã công cụ, ví dụ query.semantic';
+COMMENT ON COLUMN agent.tool_def.permission_level IS 'read, write_derived, send_external';
+COMMENT ON COLUMN agent.tool_def.owner_service IS 'Dịch vụ sở hữu, ví dụ Context service';
+COMMENT ON COLUMN agent.tool_def.endpoints IS 'Endpoint ở tab 4 mà công cụ gọi, ví dụ {POST /v1/search/documents}';
+COMMENT ON COLUMN agent.tool_def.model_description IS 'Mô tả cho mô hình, viết tay: dùng khi nào, không dùng khi nào; tối đa 400 ký tự';
+COMMENT ON COLUMN agent.tool_def.toolsets IS 'Bộ công cụ theo ý định của Planner kiểu A: metric_lookup, explain_change, document, forecast, provenance, explore_sql';
+COMMENT ON COLUMN agent.tool_def.execution_kinds IS 'interactive, plan, workflow';
+COMMENT ON COLUMN agent.tool_def.restricted_agent_kinds IS 'Chỉ cấp cho các loại agent này; rỗng là không hạn chế';
+COMMENT ON COLUMN agent.tool_def.mcp_exposed IS 'Lộ ra cho client MCP có phạm vi phù hợp (UC-12-02)';
+COMMENT ON COLUMN agent.tool_def.default_checkpoint IS 'none, on_condition, before, always';
+COMMENT ON COLUMN agent.tool_def.use_cases IS 'UC dùng công cụ, khớp ma trận tab 2 mục 11.4';
+COMMENT ON COLUMN agent.tool_def.schema_sha256 IS 'Băm JSON Schema sinh từ OpenAPI ở lần build gần nhất (ADR-48)';
+COMMENT ON COLUMN agent.tool_def.status IS 'draft, active, deprecated';
 
 CREATE TABLE agent.agent_trigger (
   id uuid NOT NULL,
@@ -2857,6 +2906,7 @@ CREATE TABLE agent.agent_run (
   stop_reason text,
   stop_detail jsonb NOT NULL DEFAULT '{}',
   snapshot_refs jsonb NOT NULL DEFAULT '[]',
+  retry_of uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT agent_run_pkey PRIMARY KEY (id),
   CHECK (trigger_kind IN ('schedule','event','threshold','agent_call','manual','test')),
@@ -2883,6 +2933,7 @@ COMMENT ON COLUMN agent.agent_run.waiting_since IS 'Chờ người quá 7 ngày 
 COMMENT ON COLUMN agent.agent_run.stop_reason IS 'completed, loop_detected, no_progress, budget_steps, budget_tokens, budget_cost, budget_duration, user_cancelled, waiting_timeout, error; bắt buộc khi succeeded, failed, cancelled (BR-170)';
 COMMENT ON COLUMN agent.agent_run.stop_detail IS 'Chi tiết dừng: công cụ và call_fingerprint lặp, số lần, bước cuối có tiến triển, ngân sách đã dùng so với trần';
 COMMENT ON COLUMN agent.agent_run.snapshot_refs IS 'Phiên bản kỹ năng, mô hình, bản chụp đã đọc để chạy lại cho cùng kết quả (BR-75)';
+COMMENT ON COLUMN agent.agent_run.retry_of IS 'Lượt thất bại mà lượt này chạy lại với cùng đầu vào và phiên bản cấu hình (POST /v1/runs/{id}:retry, thêm 12/10/2026)';
 
 CREATE TABLE agent.agent_step (
   id uuid NOT NULL,
@@ -3018,6 +3069,8 @@ GRANT USAGE ON SCHEMA agent TO svc_outbox_relay;
 GRANT SELECT, UPDATE (published_at) ON agent.outbox TO svc_outbox_relay;
 CREATE POLICY outbox_relay_read ON agent.outbox FOR SELECT TO svc_outbox_relay USING (true);
 CREATE POLICY outbox_relay_publish ON agent.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
+CREATE INDEX tool_def_toolsets_idx ON agent.tool_def USING gin (toolsets);
+CREATE INDEX tool_def_use_cases_idx ON agent.tool_def USING gin (use_cases);
 CREATE UNIQUE INDEX agent_deployment_agent_id_key ON agent.agent_deployment (agent_id) WHERE status IN ('pending_approval','rolling');
 CREATE INDEX agent_run_agent_id_idx ON agent.agent_run (agent_id) WHERE status IN ('queued','planning','running','waiting_human','paused');
 CREATE INDEX agent_run_parent_run_id_idx ON agent.agent_run (parent_run_id) WHERE parent_run_id IS NOT NULL;
@@ -3322,7 +3375,7 @@ COMMENT ON COLUMN inbox.proposal_review.reviewed_regressions IS 'Đã xem từng
 CREATE TABLE inbox.hitl_request (
   id uuid NOT NULL,
   org_id uuid NOT NULL,
-  data_space_id uuid NOT NULL,
+  data_space_id uuid,
   kind text NOT NULL,
   risk text NOT NULL DEFAULT 'medium',
   title text NOT NULL,
@@ -3333,6 +3386,7 @@ CREATE TABLE inbox.hitl_request (
   parent_run_label text,
   assignee_id uuid,
   assignee_group text,
+  assignee_capability text,
   due_at timestamptz,
   status text NOT NULL DEFAULT 'open',
   response jsonb,
@@ -3349,15 +3403,17 @@ CREATE TABLE inbox.hitl_request (
   CHECK (risk IN ('low','medium','high')),
   CHECK (status IN ('open','answered','approved','rejected','changes_requested','reassigned','expired','cancelled')),
   CHECK (status IN ('open','reassigned') OR resolved_at IS NOT NULL),
-  CHECK (assignee_id IS NOT NULL OR assignee_group IS NOT NULL)
+  CHECK (assignee_id IS NOT NULL OR assignee_group IS NOT NULL OR assignee_capability IS NOT NULL)
 );
 COMMENT ON TABLE inbox.hitl_request IS 'Yêu cầu người quyết định trong Cần bạn; mọi dịch vụ tạo yêu cầu qua đây. Use case: UC-01-05, UC-01-06, UC-02-07, UC-03-05, UC-04-07, UC-06-04, UC-07-03, UC-07-04, UC-07-07, UC-07-08, UC-08-04, UC-08-06, UC-10-02, UC-10-04, UC-11-07, UC-13-05, UC-13-07, UC-13-08.';
+COMMENT ON COLUMN inbox.hitl_request.data_space_id IS 'Rỗng với yêu cầu toàn tổ chức (bản xuất nhật ký kiểm toán, quyền khẩn cấp); khi đó năng lực của người duyệt xét ở cấp tổ chức. Sửa 12/10/2026';
 COMMENT ON COLUMN inbox.hitl_request.kind IS 'approve_proposal, conflict, clarification, checkpoint, budget, access, export, writeback, period_exception, retro_change, deploy, memory_share, schema_drift, report_publish, data_review, entity_match, forecast_assumption, forecast_model, legal_review, knowledge_finding';
 COMMENT ON COLUMN inbox.hitl_request.risk IS 'low, medium, high';
 COMMENT ON COLUMN inbox.hitl_request.context IS 'Dữ liệu để người quyết định, ví dụ hai nguồn và mức lệch';
 COMMENT ON COLUMN inbox.hitl_request.options IS 'Các phương án';
 COMMENT ON COLUMN inbox.hitl_request.source_ref IS 'Ví dụ agent_run, proposal, conflict';
 COMMENT ON COLUMN inbox.hitl_request.parent_run_label IS 'Tên lượt chạy cha khi từ lượt con (BR-77)';
+COMMENT ON COLUMN inbox.hitl_request.assignee_capability IS 'Năng lực của người duyệt (steward, compliance, audit_read…): ai có năng lực này trong Data Space của yêu cầu, hoặc ở cấp tổ chức khi data_space_id rỗng, thấy và duyệt được. Thêm 12/10/2026';
 COMMENT ON COLUMN inbox.hitl_request.status IS 'open, answered, approved, rejected, changes_requested, reassigned, expired, cancelled';
 COMMENT ON COLUMN inbox.hitl_request.response IS 'Phương án chọn và ghi chú';
 COMMENT ON COLUMN inbox.hitl_request.remember_as_rule IS 'Bật “Ghi nhớ thành quy tắc” (UC-07-08)';
@@ -3381,7 +3437,7 @@ CREATE TABLE inbox.hitl_approval_step (
 );
 COMMENT ON TABLE inbox.hitl_approval_step IS 'Một bước trong chuỗi duyệt nhiều người, ví dụ ngoại lệ kỳ chốt cần hai người (BR-132). Use case: UC-07-07, UC-10-02.';
 COMMENT ON COLUMN inbox.hitl_approval_step.hitl_request_id IS 'FK hitl_request';
-COMMENT ON COLUMN inbox.hitl_approval_step.approver_role IS 'Ví dụ AC03, AC06';
+COMMENT ON COLUMN inbox.hitl_approval_step.approver_role IS 'Năng lực người duyệt bước này phải có, ví dụ steward, compliance; mỗi bước một người khác (BR-132)';
 COMMENT ON COLUMN inbox.hitl_approval_step.decision IS 'approve, reject';
 
 CREATE TABLE inbox.outbox (
@@ -3740,9 +3796,11 @@ CREATE TABLE skill.skill_run (
   started_at timestamptz,
   finished_at timestamptz,
   error text,
+  mode text NOT NULL DEFAULT 'run',
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT skill_run_pkey PRIMARY KEY (id),
   CHECK (caller_kind IN ('user','tile','agent_run','alert','eval')),
+  CHECK (mode IN ('run','try')),
   CHECK (status IN ('queued','running','succeeded','failed','cancelled'))
 );
 COMMENT ON TABLE skill.skill_run IS 'Một lần chạy kỹ năng với tham số cụ thể. Use case: UC-03-01, UC-03-02, UC-03-04, UC-08-02.';
@@ -3750,6 +3808,7 @@ COMMENT ON COLUMN skill.skill_run.skill_version_id IS 'FK skill_version';
 COMMENT ON COLUMN skill.skill_run.caller_kind IS 'user, tile, agent_run, alert, eval';
 COMMENT ON COLUMN skill.skill_run.status IS 'queued, running, succeeded, failed, cancelled';
 COMMENT ON COLUMN skill.skill_run.result IS 'Kết luận và số chính';
+COMMENT ON COLUMN skill.skill_run.mode IS 'run, try: try là chạy thử từ màn soạn kỹ năng (POST /v1/skill-versions/{id}:try), kết quả không dùng cho ô, cảnh báo hay agent (thêm 12/10/2026)';
 
 CREATE TABLE skill.skill_run_step (
   id uuid NOT NULL,
@@ -3790,7 +3849,7 @@ CREATE TABLE skill.skill_suggestion (
   CHECK (status <> 'dismissed' OR dismissed_until IS NOT NULL)
 );
 COMMENT ON TABLE skill.skill_suggestion IS 'Kỹ năng agent đề xuất từ chuỗi bước người dùng lặp lại; chỉ dựa trên cấu trúc, không dùng dữ liệu của người khác. Use case: UC-03-07.';
-COMMENT ON COLUMN skill.skill_suggestion.pattern IS 'Chuỗi bước đã khái quát';
+COMMENT ON COLUMN skill.skill_suggestion.pattern IS 'Chuỗi bước đã khái quát, chỉ cấu trúc: loại bước, tên tham số, params_schema; không có giá trị, kết quả, mẫu dòng hay nội dung ô của phiên (BR-98, sửa 12/10/2026)';
 COMMENT ON COLUMN skill.skill_suggestion.session_ids IS 'logic → workspace.workspace';
 COMMENT ON COLUMN skill.skill_suggestion.status IS 'open, accepted, dismissed';
 COMMENT ON COLUMN skill.skill_suggestion.dismissed_until IS 'Không đề xuất lại trong 90 ngày';
@@ -4748,16 +4807,15 @@ CREATE TABLE conflict.source_authority (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
   CONSTRAINT source_authority_pkey PRIMARY KEY (id),
-  UNIQUE (data_space_id, data_kind),
-  CHECK (status IN ('draft','active')),
-  CHECK (status <> 'active' OR approved_by IS NOT NULL)
+  CHECK (status IN ('draft','active','superseded')),
+  CHECK (status NOT IN ('active','superseded') OR approved_by IS NOT NULL)
 );
 COMMENT ON TABLE conflict.source_authority IS 'Thứ tự ưu tiên nguồn theo loại dữ liệu và ngưỡng trọng yếu. Use case: UC-07-04, UC-07-05.';
 COMMENT ON COLUMN conflict.source_authority.data_kind IS 'Ví dụ dư nợ, số khách, văn bản pháp quy';
 COMMENT ON COLUMN conflict.source_authority.ranking IS 'Danh sách source_id theo thứ tự ưu tiên; nguồn tải tay và bên ngoài không đứng trên cấp 1 (BR-121)';
 COMMENT ON COLUMN conflict.source_authority.materiality IS 'Ngưỡng trọng yếu (BR-120)';
 COMMENT ON COLUMN conflict.source_authority.backtest IS 'Kết quả chạy thử trên xung đột 90 ngày';
-COMMENT ON COLUMN conflict.source_authority.status IS 'draft, active';
+COMMENT ON COLUMN conflict.source_authority.status IS 'draft, active, superseded';
 
 CREATE TABLE conflict.outbox (
   id uuid NOT NULL,
@@ -4780,6 +4838,8 @@ CREATE POLICY outbox_relay_read ON conflict.outbox FOR SELECT TO svc_outbox_rela
 CREATE POLICY outbox_relay_publish ON conflict.outbox FOR UPDATE TO svc_outbox_relay USING (published_at IS NULL) WITH CHECK (published_at IS NOT NULL);
 CREATE INDEX claim_data_space_id_subject_key_attribute_idx ON conflict.claim (data_space_id, subject_key, attribute);
 CREATE INDEX conflict_data_space_id_idx ON conflict.conflict (data_space_id) WHERE status = 'open';
+CREATE UNIQUE INDEX source_authority_data_space_id_data_kind_key ON conflict.source_authority (data_space_id, data_kind) WHERE status = 'active';
+CREATE UNIQUE INDEX source_authority_data_space_id_data_kind_key_2 ON conflict.source_authority (data_space_id, data_kind) WHERE status = 'draft';
 
 -- ═══ schema pack ═══
 CREATE TABLE pack.industry_pack (
@@ -4789,19 +4849,23 @@ CREATE TABLE pack.industry_pack (
   name text NOT NULL,
   industry_code text NOT NULL,
   publisher text NOT NULL,
-  publisher_key_id text NOT NULL,
+  publisher_key_id text,
+  origin text NOT NULL DEFAULT 'vendor',
   description text,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
   CONSTRAINT industry_pack_pkey PRIMARY KEY (id),
-  UNIQUE (org_id, code)
+  UNIQUE (org_id, code),
+  CHECK (origin IN ('vendor','organisation')),
+  CHECK (origin = 'organisation' OR publisher_key_id IS NOT NULL)
 );
 COMMENT ON TABLE pack.industry_pack IS 'Gói ngành do nhà cung cấp hoặc khối kiến trúc phát hành. Use case: UC-09-01.';
 COMMENT ON COLUMN pack.industry_pack.code IS 'Ví dụ banking, retail, hospitality';
 COMMENT ON COLUMN pack.industry_pack.publisher IS 'Nhà cung cấp hoặc khối kiến trúc của tổ chức';
-COMMENT ON COLUMN pack.industry_pack.publisher_key_id IS 'Khoá công khai dùng kiểm chữ ký (BR-128)';
+COMMENT ON COLUMN pack.industry_pack.publisher_key_id IS 'Khoá công khai dùng kiểm chữ ký (BR-128); bắt buộc với gói vendor, gói của tổ chức có khoá khi phát hành phiên bản đầu (sửa 12/10/2026)';
+COMMENT ON COLUMN pack.industry_pack.origin IS 'vendor, organisation: organisation là gói tổ chức tự soạn qua POST /v1/packs; industry_code lấy theo organization.industry_code (thêm 12/10/2026)';
 
 CREATE TABLE pack.pack_version (
   id uuid NOT NULL,
@@ -5012,6 +5076,7 @@ CREATE TABLE pack.metric_override (
   status text NOT NULL DEFAULT 'draft',
   approved_by uuid,
   compliance_approved_by uuid,
+  calibration_run_id uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid,
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -5026,6 +5091,7 @@ COMMENT ON COLUMN pack.metric_override.pack_metric_code IS 'Mã chỉ số chu�
 COMMENT ON COLUMN pack.metric_override.scope_condition IS 'Chỉ áp cho một phạm vi (UC-09-03 2a)';
 COMMENT ON COLUMN pack.metric_override.status IS 'draft, pending_review, active, superseded';
 COMMENT ON COLUMN pack.metric_override.compliance_approved_by IS 'Chỉ số báo cáo cơ quan quản lý cần thêm AC06';
+COMMENT ON COLUMN pack.metric_override.calibration_run_id IS 'FK calibration_run; lần chạy thử công thức trên dữ liệu thật (UC-09-03 bước 3, thêm 12/10/2026)';
 
 CREATE TABLE pack.calibration_run (
   id uuid NOT NULL,
@@ -5423,6 +5489,7 @@ CREATE TABLE pipeline.data_mart (
   dimensions jsonb NOT NULL,
   relations jsonb NOT NULL,
   checks jsonb NOT NULL DEFAULT '[]',
+  suggested_dimensions jsonb,
   relation_check_passed boolean NOT NULL DEFAULT false,
   status text NOT NULL DEFAULT 'draft',
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -5436,6 +5503,7 @@ CREATE TABLE pipeline.data_mart (
 COMMENT ON TABLE pipeline.data_mart IS 'Data mart mô hình sao: bảng sự kiện, hạt, độ đo, chiều, kiểm tra. Use case: UC-06-06.';
 COMMENT ON COLUMN pipeline.data_mart.grain IS 'Ví dụ khoản vay × ngày';
 COMMENT ON COLUMN pipeline.data_mart.checks IS 'Tổng khớp nguồn, độ mới, khoá chiều duy nhất';
+COMMENT ON COLUMN pipeline.data_mart.suggested_dimensions IS 'Chiều gợi ý từ quan hệ của bảng sự kiện, sinh khi tạo mart; người soạn chọn vào dimensions (UC-06-06, thêm 12/10/2026)';
 COMMENT ON COLUMN pipeline.data_mart.relation_check_passed IS 'Thất bại thì không phát hành được';
 COMMENT ON COLUMN pipeline.data_mart.status IS 'draft, active, retired';
 
@@ -5450,6 +5518,7 @@ CREATE TABLE pipeline.data_product (
   data_mart_id uuid,
   contract jsonb NOT NULL,
   consumers uuid[] NOT NULL DEFAULT '{}',
+  owner_id uuid NOT NULL,
   status text NOT NULL DEFAULT 'draft',
   breaking_notice_at timestamptz,
   retire_after timestamptz,
@@ -5463,6 +5532,7 @@ CREATE TABLE pipeline.data_product (
   CHECK (status IN ('draft','published','deprecated','retired')),
   CHECK (dataset_id IS NOT NULL OR data_mart_id IS NOT NULL),
   CHECK (status <> 'published' OR approved_by IS NOT NULL),
+  CHECK (approved_by IS NULL OR approved_by = owner_id),
   CHECK (retire_after IS NULL OR breaking_notice_at IS NULL OR retire_after >= breaking_notice_at + interval '30 days')
 );
 COMMENT ON TABLE pipeline.data_product IS 'Sản phẩm dữ liệu có hợp đồng, phiên bản và danh sách bên dùng; thay đổi phá vỡ báo trước 30 ngày (BR-60). Use case: UC-06-06.';
@@ -5470,6 +5540,7 @@ COMMENT ON COLUMN pipeline.data_product.data_space_id IS 'Data Space cung cấp'
 COMMENT ON COLUMN pipeline.data_product.data_mart_id IS 'FK data_mart';
 COMMENT ON COLUMN pipeline.data_product.contract IS 'Cột, kiểu, ý nghĩa, SLA';
 COMMENT ON COLUMN pipeline.data_product.consumers IS 'Data Space đăng ký dùng';
+COMMENT ON COLUMN pipeline.data_product.owner_id IS 'logic → org.app_user; người phụ trách duyệt phát hành, khác người soạn (thêm 12/10/2026)';
 COMMENT ON COLUMN pipeline.data_product.status IS 'draft, published, deprecated, retired';
 
 CREATE TABLE pipeline.writeback_request (
@@ -5495,7 +5566,7 @@ CREATE TABLE pipeline.writeback_request (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
   CONSTRAINT writeback_request_pkey PRIMARY KEY (id),
-  CHECK (status IN ('draft','previewed','submitted','approved','rejected','scheduled','executing','executed','cancelled_mismatch','failed','undone')),
+  CHECK (status IN ('draft','previewed','submitted','approved','rejected','scheduled','executing','executed','cancelled_mismatch','failed','undo_requested','undone')),
   CHECK (deletes = 0),
   CHECK (approved_by IS NULL OR approved_by <> requested_by),
   CHECK (status NOT IN ('approved','scheduled','executing','executed') OR approved_by IS NOT NULL)
@@ -5508,7 +5579,7 @@ COMMENT ON COLUMN pipeline.writeback_request.deletes IS 'Phải bằng 0 (BR-113
 COMMENT ON COLUMN pipeline.writeback_request.snapshot_ref IS 'Ảnh chụp bảng đích để hoàn tác 30 ngày';
 COMMENT ON COLUMN pipeline.writeback_request.approved_by IS 'Phải khác người yêu cầu (BR-24)';
 COMMENT ON COLUMN pipeline.writeback_request.proposal_id IS 'logic → inbox.proposal';
-COMMENT ON COLUMN pipeline.writeback_request.status IS 'draft, previewed, submitted, approved, rejected, scheduled, executing, executed, cancelled_mismatch, failed, undone';
+COMMENT ON COLUMN pipeline.writeback_request.status IS 'draft, previewed, submitted, approved, rejected, scheduled, executing, executed, cancelled_mismatch, failed, undo_requested, undone';
 
 CREATE TABLE pipeline.outbox (
   id uuid NOT NULL,
@@ -5703,15 +5774,20 @@ CREATE TABLE ingest.quality_result (
   violations bigint NOT NULL DEFAULT 0,
   sample_ref text,
   acknowledged_by uuid,
+  acknowledged_at timestamptz,
+  acknowledged_note text,
   checked_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT quality_result_pkey PRIMARY KEY (id),
-  CHECK (run_kind IN ('job_run','pipeline_run','scheduled','manual'))
+  CHECK (run_kind IN ('job_run','pipeline_run','scheduled','manual')),
+  CHECK (acknowledged_by IS NULL OR (acknowledged_at IS NOT NULL AND acknowledged_note IS NOT NULL))
 );
 COMMENT ON TABLE ingest.quality_result IS 'Kết quả một lần chạy quy tắc chất lượng sau nạp hoặc pipeline. Use case: UC-04-09, UC-06-07.';
 COMMENT ON COLUMN ingest.quality_result.rule_id IS 'FK quality_rule';
 COMMENT ON COLUMN ingest.quality_result.run_kind IS 'job_run, pipeline_run, scheduled, manual';
 COMMENT ON COLUMN ingest.quality_result.sample_ref IS 'Mẫu dòng vi phạm, đã che';
 COMMENT ON COLUMN ingest.quality_result.acknowledged_by IS 'Người xác nhận dùng tiếp khi vi phạm mức cao';
+COMMENT ON COLUMN ingest.quality_result.acknowledged_at IS 'Thêm 12/10/2026';
+COMMENT ON COLUMN ingest.quality_result.acknowledged_note IS 'Lý do dùng tiếp, bắt buộc khi có acknowledged_by (BR-116, thêm 12/10/2026)';
 
 CREATE TABLE ingest.outbox (
   id uuid NOT NULL,
@@ -7165,6 +7241,7 @@ ALTER TABLE agent.agent_tool ADD CONSTRAINT agent_tool_agent_config_id_fkey FORE
 ALTER TABLE agent.agent_trigger ADD CONSTRAINT agent_trigger_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES agent.agent_def(id);
 ALTER TABLE agent.agent_deployment ADD CONSTRAINT agent_deployment_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES agent.agent_def(id);
 ALTER TABLE agent.agent_run ADD CONSTRAINT agent_run_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES agent.agent_def(id);
+ALTER TABLE agent.agent_run ADD CONSTRAINT agent_run_retry_of_fkey FOREIGN KEY (retry_of) REFERENCES agent.agent_run(id);
 ALTER TABLE agent.agent_run ADD CONSTRAINT agent_run_parent_run_id_fkey FOREIGN KEY (parent_run_id) REFERENCES agent.agent_run(id);
 ALTER TABLE agent.agent_checkpoint_hit ADD CONSTRAINT agent_checkpoint_hit_run_id_fkey FOREIGN KEY (run_id) REFERENCES agent.agent_run(id);
 ALTER TABLE agent.agent_memory ADD CONSTRAINT agent_memory_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES agent.agent_def(id);
@@ -7238,6 +7315,7 @@ ALTER TABLE pack.entity_mapping ADD CONSTRAINT entity_mapping_attribute_id_fkey 
 ALTER TABLE pack.code_mapping ADD CONSTRAINT code_mapping_pack_install_id_fkey FOREIGN KEY (pack_install_id) REFERENCES pack.pack_install(id);
 ALTER TABLE pack.code_mapping ADD CONSTRAINT code_mapping_attribute_id_fkey FOREIGN KEY (attribute_id) REFERENCES pack.canonical_attribute(id);
 ALTER TABLE pack.metric_override ADD CONSTRAINT metric_override_pack_install_id_fkey FOREIGN KEY (pack_install_id) REFERENCES pack.pack_install(id);
+ALTER TABLE pack.metric_override ADD CONSTRAINT metric_override_calibration_run_id_fkey FOREIGN KEY (calibration_run_id) REFERENCES pack.calibration_run(id);
 ALTER TABLE pack.calibration_run ADD CONSTRAINT calibration_run_pack_install_id_fkey FOREIGN KEY (pack_install_id) REFERENCES pack.pack_install(id);
 ALTER TABLE pack.calibration_item ADD CONSTRAINT calibration_item_calibration_run_id_fkey FOREIGN KEY (calibration_run_id) REFERENCES pack.calibration_run(id) ON DELETE CASCADE;
 ALTER TABLE pack.pack_upgrade ADD CONSTRAINT pack_upgrade_pack_install_id_fkey FOREIGN KEY (pack_install_id) REFERENCES pack.pack_install(id);
@@ -7854,6 +7932,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON agent.agent_config TO svc_agent;
 GRANT SELECT ON agent.agent_config TO agent_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON agent.agent_tool TO svc_agent;
 GRANT SELECT ON agent.agent_tool TO agent_read;
+GRANT SELECT, INSERT, UPDATE, DELETE ON agent.tool_def TO svc_agent;
+GRANT SELECT ON agent.tool_def TO agent_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON agent.agent_trigger TO svc_agent;
 GRANT SELECT ON agent.agent_trigger TO agent_read;
 GRANT SELECT, INSERT, UPDATE, DELETE ON agent.agent_deployment TO svc_agent;
@@ -9689,6 +9769,19 @@ CREATE TRIGGER agent_run_depth_guard BEFORE INSERT OR UPDATE OF parent_run_id, d
 CREATE INDEX agent_step_run_id_call_fingerprint_idx ON agent.agent_step (run_id, call_fingerprint)
   WHERE call_fingerprint IS NOT NULL;
 
+-- covers: agent.tool_def#0
+-- ADR-54: the tool register is shared by every organisation and written only by migrations
+-- (its rows ship with a release); every service reads it to describe, check and expose tools.
+REVOKE INSERT, UPDATE, DELETE ON agent.tool_def FROM svc_agent;
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'svc\_%' LOOP
+    EXECUTE format('GRANT USAGE ON SCHEMA agent TO %I', r.rolname);
+    EXECUTE format('GRANT SELECT ON agent.tool_def TO %I', r.rolname);
+  END LOOP;
+END $$;
+
 -- ─── routines/eval.sql ───
 -- routines/eval.sql: what D4.9 (tab 3b) writes in words for schema eval: the Error Book (BR-179):
 -- entry numbering, the status machine with its regression proof, the opened/reopened events and the
@@ -9872,6 +9965,25 @@ CREATE TRIGGER external_event_changed AFTER UPDATE ON monitor.external_event
 -- covers: document.chunk#0
 -- 'simple' configuration: no stemming dictionary fits Vietnamese, so words are matched as written.
 CREATE INDEX chunk_text_idx ON document.chunk USING gin (to_tsvector('simple', text));
+
+-- ─── routines/conflict.sql ───
+-- routines/conflict.sql: what the conflict schema enforces beyond its CHECKs (tab 3b D4.16).
+
+-- covers: conflict.source_authority#0
+-- UC-07-05: editing an active ranking makes a new draft; the active one keeps applying until the
+-- draft is approved. Approving the draft supersedes the active one in the same statement, before
+-- the partial unique index (one active per data_space_id, data_kind) checks the new row.
+CREATE FUNCTION conflict.source_authority_supersede() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE conflict.source_authority SET status = 'superseded', updated_at = now()
+   WHERE data_space_id = NEW.data_space_id AND data_kind = NEW.data_kind
+     AND status = 'active' AND id <> NEW.id;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER source_authority_supersede BEFORE UPDATE OF status ON conflict.source_authority
+  FOR EACH ROW WHEN (NEW.status = 'active' AND OLD.status IS DISTINCT FROM 'active')
+  EXECUTE FUNCTION conflict.source_authority_supersede();
 
 -- ─── routines/acquire.sql ───
 -- routines/acquire.sql: what D4.22 (tab 3b) writes in words for the acquire schema (P14 crawl

@@ -15,6 +15,7 @@ release as evidence of what was measured rather than a claim that it was.
     python -m model.eval.run --tier offline --out eval-report.json
     python -m model.eval.gate --report eval-report.json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,18 +40,23 @@ def run_offline() -> dict[str, Any]:
     }
 
 
-async def run_online(agent_url: str, agent_id: str, tenant_id: str) -> dict[str, Any]:
+async def run_online(agent_url: str, agent_id: str, data_space_id: str) -> dict[str, Any]:
     from model.eval import agent_client
 
     intent_report = await intent.score(corpus.load_cases("intent"), intent.planner_classifier)
 
     async def answer(case: dict[str, Any]) -> str:
         return await agent_client.ask(
-            case, agent_url=agent_url, agent_id=agent_id, tenant_id=tenant_id,
+            case,
+            agent_url=agent_url,
+            agent_id=agent_id,
+            data_space_id=data_space_id,
         )
 
     grounding_report = await grounding.score(
-        corpus.load_cases("grounding"), answer, grounding.ragas_faithfulness(),
+        corpus.load_cases("grounding"),
+        answer,
+        grounding.ragas_faithfulness(),
     )
     return {
         "intent": intent_report,
@@ -67,7 +73,9 @@ def _print_summary(report: dict[str, Any]) -> None:
         bar = "#" * round(value * 20)
         print(f"  {name:<28} {value:.4f}  {bar}")
     for section in ("policy", "sql", "intent", "grounding"):
-        failures = [r for r in report.get(section, {}).get("results", []) if not r.get("passed", True)]
+        failures = [
+            r for r in report.get(section, {}).get("results", []) if not r.get("passed", True)
+        ]
         if failures:
             print(f"\n  {section} — {len(failures)} failing case(s):")
             for item in failures[:20]:
@@ -80,9 +88,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run the Data Agent evaluation corpus.")
     parser.add_argument("--tier", choices=["offline", "online", "all"], default="offline")
     parser.add_argument("--out", default="eval-report.json")
-    parser.add_argument("--agent-url", default=os.getenv("WORKFLOW_RUNTIME_URL", "http://localhost:8240"))
+    parser.add_argument(
+        "--agent-url", default=os.getenv("EVAL_AGENT_URL", "http://localhost:30100")
+    )
     parser.add_argument("--agent-id", default=os.getenv("AGENT_ID", ""))
-    parser.add_argument("--tenant-id", default=os.getenv("EVAL_TENANT_ID", "dev-tenant"))
+    parser.add_argument(
+        "--tenant-id",
+        dest="data_space_id",
+        default=os.getenv("EVAL_DATA_SPACE_ID", "a0000000-0000-0000-0000-000000000001"),
+    )
     args = parser.parse_args()
 
     report: dict[str, Any] = {"tiers": [], "metrics": {}}
@@ -97,7 +111,7 @@ def main() -> int:
         if not args.agent_id:
             print("--agent-id (or AGENT_ID) is required for the online tier", file=sys.stderr)
             return 2
-        online = asyncio.run(run_online(args.agent_url, args.agent_id, args.tenant_id))
+        online = asyncio.run(run_online(args.agent_url, args.agent_id, args.data_space_id))
         report["tiers"].append("online")
         report["metrics"].update(online.pop("metrics"))
         report.update(online)

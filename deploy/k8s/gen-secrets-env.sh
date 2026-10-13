@@ -3,9 +3,8 @@
 # with random values, once. Re-running never rotates an existing value — same
 # "generate once, persist" pattern.
 #
-# OPENBAO_TOKEN / OPENBAO_ROLE_ID / OPENBAO_SECRET_ID are left blank here —
-# bootstrap-openbao.sh mints them after OpenBao is actually running and
-# rewrites just those three lines in place.
+# OpenBao credentials are left blank here — bootstrap-openbao.sh mints them
+# after OpenBao is actually running and rewrites these lines in place.
 #
 #   bash deploy/k8s/gen-secrets-env.sh
 #   set -a; . deploy/k8s/secrets.env; set +a
@@ -35,7 +34,6 @@ GATEWAY_KEY="$(rand)"
 SERVICE_AUTH_SECRET="$(rand)"
 KAFKA_ADMIN_PASSWORD="$(rand)"
 AUDIT_CONSUMER_KAFKA_PASSWORD="$(rand)"
-WORKFLOW_RUNTIME_KAFKA_PASSWORD="$(rand)"
 MEMORY_CONSUMER_KAFKA_PASSWORD="$(rand)"
 SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD="$(rand)"
 LITELLM_API_KEY="sk-$(rand 16)"
@@ -59,6 +57,7 @@ CLICKHOUSE_PASSWORD=$CLICKHOUSE_PASSWORD
 CLICKHOUSE_USER=$CLICKHOUSE_USER
 DATABASE_URL=postgresql://admin:$POSTGRES_PASSWORD@postgres.dataagent-database.svc.cluster.local:8300/dataagent
 EVAL_AGENT_ID=
+EVAL_ACCESS_TOKEN=
 GATEWAY_KEY=$GATEWAY_KEY
 GEMINI_API_KEY=
 GRAFANA_ADMIN_PASSWORD=$GRAFANA_ADMIN_PASSWORD
@@ -86,18 +85,20 @@ MINIO_URL=http://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@minio.dataagent-database.
 # unauthenticated server. Real auth needs that connector fixed first.
 NEO4J_AUTH=none
 OPENAI_API_KEY=
-OPENBAO_ROLE_ID=
-OPENBAO_SECRET_ID=
 OPENBAO_TOKEN=
+WORKER_AGENT_OPENBAO_ROLE_ID=
+WORKER_AGENT_OPENBAO_SECRET_ID=
+SANDBOX_EXECUTOR_OPENBAO_ROLE_ID=
+SANDBOX_EXECUTOR_OPENBAO_SECRET_ID=
+PLATFORM_WORKERS_OPENBAO_ROLE_ID=
+PLATFORM_WORKERS_OPENBAO_SECRET_ID=
 PGPASSWORD=$POSTGRES_PASSWORD
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 PUBLIC_API_URL=$PUBLIC_API_URL
 REMOTE_API_KEY=
 REMOTE_LLM_KEY=
-RUNTIME_DB_URL=postgresql+asyncpg://runtime_writer:runtime_dev_pw@postgres.dataagent-database.svc.cluster.local:8300/dataagent
 SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD=$SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD
 SERVICE_AUTH_SECRET=$SERVICE_AUTH_SECRET
-WORKFLOW_RUNTIME_KAFKA_PASSWORD=$WORKFLOW_RUNTIME_KAFKA_PASSWORD
 EOF
 chmod 600 "$OUT"
 echo "wrote $OUT"

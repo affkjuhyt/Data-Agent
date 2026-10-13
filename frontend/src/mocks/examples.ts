@@ -1,7 +1,11 @@
 import { http, HttpResponse } from 'msw';
-import type { ExampleQuery, Synonym } from '../lib/v1/examples';
+import type { ExampleQuery, ExampleWire, Synonym, SynonymWire } from '../lib/v1/examples';
 
-/* The examples and synonyms of "P07 · Câu hỏi mẫu & đồng nghĩa" (2301:19194). */
+/*
+ * The examples and synonyms of "P07 · Câu hỏi mẫu & đồng nghĩa" (2301:19194), kept in the
+ * screen's shape and answered in the api's (ExampleView, SynonymView) with the screen-only fields
+ * under `display`.
+ */
 function examplesFixture(): ExampleQuery[] {
   const verified = (id: string, question: string, usage: string, by: string): ExampleQuery => ({
     id,
@@ -83,54 +87,89 @@ const problem = (status: number, code: string, detail: string) =>
     { status, headers: { 'Content-Type': 'application/problem+json' } },
   );
 
+const AT = '2026-10-01T09:00:00+07:00';
+
+const exampleWire = (e: ExampleQuery): ExampleWire => ({
+  id: e.id,
+  question: e.question,
+  sql: e.sql,
+  status: e.status === 'verified' ? 'active' : 'pending_review',
+  origin: e.source_label.startsWith('Agent') ? 'agent_suggested' : 'manual',
+  metric_ids: [],
+  data_space_id: 'ds-rui-ro-tin-dung',
+  last_verified_at: e.status === 'verified' ? AT : null,
+  created_at: AT,
+  updated_at: AT,
+  display: {
+    usage_text: e.usage_text,
+    source_label: e.source_label,
+    reason: e.reason,
+    result_text: e.result_text,
+  },
+});
+
+/* A group of phrases is one SynonymView per phrase on the api; the mock sends the group whole. */
+const synonymWire = (s: Synonym): SynonymWire => ({
+  id: s.id,
+  phrase: s.phrases[0],
+  phrase_norm: s.phrases[0].toLowerCase(),
+  target_kind: 'metric',
+  target_id: `metric-${s.id}`,
+  target_value: null,
+  origin: 'manual',
+  status: 'active',
+  data_space_id: 'ds-rui-ro-tin-dung',
+  created_at: AT,
+  updated_at: AT,
+  display: s,
+});
+
+const READ_ONLY = /^\s*(select|with)\b/i;
+
 export function createExampleHandlers() {
   let examples = examplesFixture();
   const synonyms = synonymsFixture();
   const page = <T>(items: T[]) => HttpResponse.json({ items, next_page_token: '' });
 
   return [
-    http.get('*/v1/examples', () => page(examples)),
-    http.get('*/v1/synonyms', () => page(synonyms)),
+    http.get('*/v1/examples', () => page(examples.map(exampleWire))),
+    http.get('*/v1/synonyms', () => page(synonyms.map(synonymWire))),
     http.post('*/v1/examples', async ({ request }) => {
       const body = (await request.json()) as { question: string; sql: string };
       if (!body.question?.trim() || !body.sql?.trim())
         return problem(422, 'validation_failed', 'Cần câu hỏi và SQL.');
-      if (!/^\s*select\b/i.test(body.sql))
+      if (!READ_ONLY.test(body.sql))
         return problem(422, 'validation_failed', 'SQL không chạy được: chỉ nhận câu SELECT.');
       const created: ExampleQuery = {
         id: `ex-${examples.length + 1}`,
         question: body.question.trim(),
         sql: body.sql.trim(),
-        usage_text: '—',
-        source_label: 'Bạn',
-        status: 'verified',
+        usage_text: null,
+        source_label: 'Thêm thủ công',
+        status: 'pending',
         reason: null,
         result_text: null,
       };
       examples = [...examples, created];
-      return HttpResponse.json(created, { status: 201 });
+      return HttpResponse.json(exampleWire(created), { status: 201 });
     }),
+    // A2 PATCH: a new SQL is run again before it is saved; status active confirms the example.
     http.patch('*/v1/examples/:id', async ({ params, request }) => {
       const item = examples.find((e) => e.id === params.id);
       if (!item) return problem(404, 'not_found', 'Không tìm thấy câu hỏi mẫu.');
-      const { sql } = (await request.json()) as { sql: string };
-      if (!/^\s*select\b/i.test(sql ?? ''))
+      const body = (await request.json()) as { sql?: string; status?: 'active' | 'rejected' };
+      if (body.sql !== undefined && !READ_ONLY.test(body.sql))
         return problem(422, 'validation_failed', 'SQL không chạy được: chỉ nhận câu SELECT.');
-      const saved = { ...item, sql };
-      examples = examples.map((e) => (e.id === item.id ? saved : e));
-      return HttpResponse.json(saved);
-    }),
-    http.post('*/v1/examples\\:suggest', () =>
-      HttpResponse.json({ status: 'queued' }, { status: 202 }),
-    ),
-    http.post('*/v1/examples/:action', ({ params }) => {
-      const [id, verb] = String(params.action).split(':');
-      const item = examples.find((e) => e.id === id);
-      if (!item || verb !== 'verify')
-        return problem(404, 'not_found', 'Không tìm thấy câu hỏi mẫu.');
-      const verified: ExampleQuery = { ...item, status: 'verified' };
-      examples = examples.map((e) => (e.id === id ? verified : e));
-      return HttpResponse.json(verified);
+      const saved: ExampleQuery = {
+        ...item,
+        sql: body.sql ?? item.sql,
+        status: body.status === 'active' ? 'verified' : item.status,
+      };
+      examples =
+        body.status === 'rejected'
+          ? examples.filter((e) => e.id !== item.id)
+          : examples.map((e) => (e.id === item.id ? saved : e));
+      return HttpResponse.json(exampleWire(saved));
     }),
   ];
 }

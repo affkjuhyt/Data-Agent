@@ -1,18 +1,14 @@
 import { http, HttpResponse } from 'msw';
-import type {
-  McpServer,
-  Skill,
-  SkillSuggestion,
-  SkillVersion,
-  SkillVersionReview,
-  Tool,
-  ToolLevel,
-} from '../lib/v1/skills';
+import type { components } from '../lib/v1/schema';
+import type { Skill, SkillSuggestion, SkillVersion } from '../lib/v1/skills';
+
+type Schemas = components['schemas'];
 
 /*
  * P03 Kỹ năng, the library side: skills of "P03 · Kỹ năng · Thư viện" (2293:17995) and the
  * skill cards of "v3.1 · Kỹ năng & công cụ" (2057:1270), the versions of "Phân nhóm khách hàng"
- * (2294:18535), the suggestions of 2294:18728, tools and MCP servers of 2099:9862 / 2099:10149.
+ * (2294:18535) with v3's skill_publish proposal in Cần bạn and the eval runs of its versions, the
+ * suggestions of 2294:18728, and the tool catalogue of 2099:9862 as GET /v1/tools sends it.
  */
 const YEN = { id: 'u-yen', name: 'Đỗ Hải Yến' };
 const LONG = { id: 'u-long', name: 'Phạm Đức Long' };
@@ -253,39 +249,72 @@ function versionsFixture(): SkillVersion[] {
   ];
 }
 
-const REVIEW: SkillVersionReview = {
-  version_id: 'skv-segment-3',
-  version: 3,
-  current: { id: 'skv-segment-2', version: 2, agent_count: 4, session_count: 9 },
-  checks: [
-    { text: 'Kiểm định 12/12 đạt', ok: true },
-    { text: 'Chỉ gọi chỉ số đã chứng nhận', ok: true },
-    { text: 'Không dùng dữ liệu cá nhân trực tiếp', ok: true },
-    { text: 'Người duyệt khác người tạo', ok: true },
-  ],
-  scope_options: [
-    { value: 'ds-credit-retail', label: 'Rủi ro tín dụng, Kinh doanh bán lẻ' },
-    { value: 'ds-credit', label: 'Rủi ro tín dụng' },
-    { value: 'organization', label: 'Toàn tổ chức' },
-  ],
-  scope_value: 'ds-credit-retail',
-  deprecate_options: [
-    { value: 'p30d', label: '30 ngày sau khi phát hành v3 · 07/11' },
-    { value: 'p7d', label: '7 ngày sau khi phát hành v3 · 15/10' },
-    { value: 'now', label: 'Ngay khi phát hành v3' },
-  ],
-  replacement_options: [{ value: 'v3', label: 'v3 · tham số giữ nguyên' }],
-  consumers: [
-    { name: 'Agent Giám sát rủi ro', kind: 'agent', action_text: 'Chủ sở hữu duyệt nâng lên v3' },
-    { name: 'Agent Báo cáo', kind: 'agent', action_text: 'Chủ sở hữu duyệt nâng lên v3' },
-    {
-      name: '9 phiên làm việc',
-      kind: 'session',
-      action_text: 'Giữ v2 cho kết quả cũ; lần chạy mới dùng v3',
-    },
-  ],
-  can_approve: { allowed: true, reason: null },
-};
+/** The versions of "Phân nhóm khách hàng" as SkillDetail.versions sends them. */
+const SEGMENT_VERSIONS: Schemas['VersionSummary'][] = [
+  ['skv-segment-3', 3, 'pending_review'],
+  ['skv-segment-2', 2, 'published'],
+  ['skv-segment-1', 1, 'retired'],
+].map(([id, version, status]) => ({
+  id: id as string,
+  version: version as number,
+  status: status as string,
+  eval_run_id: `er-${id as string}`,
+  approved_at: null,
+  retire_at: null,
+  created_at: '2026-09-01T09:00:00+07:00',
+}));
+
+const evalRun = (id: string, passed: number): Schemas['EvalRunDetail'] => ({
+  id,
+  eval_set_id: 'eval-skill-segment',
+  subject_version: id,
+  trigger: 'skill_version',
+  trigger_ref: null,
+  item_count: 12,
+  passed,
+  failed: 12 - passed,
+  correct_refusals: 0,
+  pass_rate: passed / 12,
+  baseline_run_id: null,
+  regressions: 0,
+  status: 'succeeded',
+  started_at: '2026-10-01T09:00:00+07:00',
+  finished_at: '2026-10-01T09:05:00+07:00',
+  created_at: '2026-10-01T09:00:00+07:00',
+  baseline: null,
+  results: [],
+});
+
+const PROPOSAL_ID = 'proposal-skv-segment-3';
+
+/** The skill_publish proposal the worker opens for v3 (target_ref = the version). */
+function publishProposalFixture(): Schemas['ProposalDetail'] {
+  return {
+    id: PROPOSAL_ID,
+    data_space_id: 'ds-rui-ro-tin-dung',
+    kind: 'skill_publish',
+    target_service: 'skill',
+    target_ref: 'skv-segment-3',
+    title: 'Phát hành kỹ năng phiên bản 3',
+    diff: { action: 'publish', skill_id: 'sk-segment', version: 3, scope: 'data_space' },
+    reason: null,
+    evidence: [],
+    impact: null,
+    impact_level: 'medium',
+    proposed_by: 'u-yen',
+    assignee_id: null,
+    eval_run_id: 'er-skv-segment-3',
+    requires_compliance: false,
+    status: 'pending_review',
+    expires_at: '2026-12-31T00:00:00+07:00',
+    applied_at: null,
+    created_at: '2026-10-08T09:00:00+07:00',
+    updated_at: '2026-10-08T09:00:00+07:00',
+    changed_results: [],
+    reviews: [],
+    eval_run: null,
+  };
+}
 
 function suggestionsFixture(): SkillSuggestion[] {
   return [
@@ -348,65 +377,24 @@ function suggestionsFixture(): SkillSuggestion[] {
   ];
 }
 
-function toolsFixture(): Tool[] {
+function toolsFixture(): Schemas['services__api__modules__skill__schemas__ToolView'][] {
   const t = (
-    id: string,
-    level: ToolLevel,
+    code: string,
+    level: 'read' | 'write_derived' | 'external_send' | 'system_action',
     description: string,
-    agent_count: number,
-    calls_30d: number,
-    mcp_server_id: string | null = null,
-  ): Tool => ({ id, name: id, level, description, agent_count, calls_30d, mcp_server_id });
+    executedBy: string,
+    checkpoint: string | null = null,
+  ) => ({ code, level, description, executed_by: executedBy, default_checkpoint: checkpoint });
   return [
-    t('query.run', 'read', 'Truy vấn dữ liệu trong phạm vi', 8, 2418),
-    t('metric.query', 'read', 'Truy vấn qua semantic layer', 6, 1904),
-    t('doc.search', 'read', 'Tìm trong tài liệu, bộ sưu tập', 4, 611),
-    t('snapshot.compare', 'read', 'So hai bản chụp dữ liệu đã chốt', 3, 140),
-    t('proposal.create', 'write_derived', 'Tạo bản điều chỉnh có phiên bản', 2, 14),
-    t('artifact.save', 'write_derived', 'Lưu bảng, biểu đồ vào phiên', 5, 380),
-    t('notify.send', 'external', 'Gửi Teams, email', 3, 212),
-    t('report.publish', 'external', 'Phát hành báo cáo đã duyệt', 1, 9),
-    t('source.connect', 'system', 'Kết nối nguồn mới', 0, 0),
-  ];
-}
-
-function mcpFixture(): McpServer[] {
-  return [
-    {
-      id: 'mcp-ticket',
-      name: 'Ticket nội bộ',
-      tools: ['ticket.create', 'ticket.search'],
-      auth: 'oauth2',
-      status: 'active',
-    },
-    {
-      id: 'mcp-calendar',
-      name: 'Lịch tổ chức',
-      tools: ['calendar.events'],
-      auth: 'sso',
-      status: 'active',
-    },
-    {
-      id: 'mcp-sharepoint',
-      name: 'SharePoint',
-      tools: ['sp.search', 'sp.read'],
-      auth: 'sso',
-      status: 'active',
-    },
-    {
-      id: 'mcp-regdoc',
-      name: 'Cổng văn bản pháp quy',
-      tools: ['regdoc.fetch'],
-      auth: 'api_key',
-      status: 'auth_error',
-    },
-    {
-      id: 'mcp-crm',
-      name: 'CRM',
-      tools: ['crm.customer'],
-      auth: 'oauth2',
-      status: 'pending_pii_review',
-    },
+    t('query.run', 'read', 'Truy vấn dữ liệu trong phạm vi', 'query'),
+    t('metric.query', 'read', 'Truy vấn qua semantic layer', 'semantic'),
+    t('doc.search', 'read', 'Tìm trong tài liệu, bộ sưu tập', 'document'),
+    t('snapshot.compare', 'read', 'So hai bản chụp dữ liệu đã chốt', 'query'),
+    t('proposal.create', 'write_derived', 'Tạo bản điều chỉnh có phiên bản', 'inbox', 'approve'),
+    t('artifact.save', 'write_derived', 'Lưu bảng, biểu đồ vào phiên', 'workspace'),
+    t('notify.send', 'external_send', 'Gửi Teams, email', 'notify', 'approve'),
+    t('report.publish', 'external_send', 'Phát hành báo cáo đã duyệt', 'report', 'approve'),
+    t('source.connect', 'system_action', 'Kết nối nguồn mới', 'catalog', 'admin'),
   ];
 }
 
@@ -418,23 +406,40 @@ const problem = (status: number, code: string, detail: string) =>
     { status, headers: { 'Content-Type': 'application/problem+json' } },
   );
 
+/** SkillView as the api sends it, with the screen's card under display. */
+const skillWire = (s: Skill) => ({
+  id: s.id,
+  code: s.id,
+  name: s.name,
+  description: s.description,
+  category: 'custom',
+  origin: s.scope === 'domain_pack' ? 'pack' : 'manual',
+  origin_ref: null,
+  scope: s.scope === 'organization' ? 'org' : 'data_space',
+  owner_id: s.owner.id,
+  current_version: s.status === 'draft' ? null : s.version,
+  replaced_by_skill_id: null,
+  run_count_30d: s.runs_30d ?? 0,
+  data_space_id: 'ds-rui-ro-tin-dung',
+  created_at: '2026-09-01T09:00:00+07:00',
+  updated_at: '2026-10-01T09:00:00+07:00',
+  display: s,
+});
+
 export function createSkillsHandlers() {
   const skills = skillsFixture();
   let versions = versionsFixture();
-  let review = { ...REVIEW };
+  let proposal = publishProposalFixture();
   let suggestions = suggestionsFixture();
   const tools = toolsFixture();
-  const servers = mcpFixture();
   let created = 0;
 
   return [
+    // SkillView, filtered by A2's scope (org, data_space); the screen's card under display.
     http.get('*/v1/skills', ({ request }) => {
-      const url = new URL(request.url);
-      const scope = url.searchParams.get('scope');
-      const status = url.searchParams.get('status');
-      return page(
-        skills.filter((s) => (!scope || s.scope === scope) && (!status || s.status === status)),
-      );
+      const scope = new URL(request.url).searchParams.get('scope');
+      const wanted = scope === 'org' ? 'organization' : scope;
+      return page(skills.filter((s) => !wanted || s.scope === wanted).map(skillWire));
     }),
     http.post('*/v1/skills', async ({ request }) => {
       const { name } = (await request.json()) as { name: string };
@@ -458,28 +463,32 @@ export function createSkillsHandlers() {
         pending_version_id: null,
       };
       skills.unshift(skill);
-      return HttpResponse.json(skill, { status: 201 });
+      return HttpResponse.json(skillWire(skill), { status: 201 });
     }),
-    // Sub-paths of one skill other than these belong to the authoring mock: fall through.
+    // SkillDetail with its versions (A2 has no GET /skills/{id}/versions); the screen's rows
+    // ride under display and display_versions. Other sub-paths fall through to authoring.
     http.get('*/v1/skills/:id', ({ params }) => {
       const skill = skills.find((s) => s.id === params.id);
-      return skill ? HttpResponse.json(skill) : undefined;
-    }),
-    http.get('*/v1/skills/:id/versions', ({ params }) => {
-      if (params.id === 'sk-segment') return page(versions);
-      const skill = skills.find((s) => s.id === params.id);
       if (!skill) return undefined;
-      return page<SkillVersion>([
-        {
-          id: `skv-${skill.id}-${skill.version}`,
-          version: skill.version,
-          change_text: 'Bản hiện tại',
-          eval_passed: 0,
-          eval_total: 0,
-          status: skill.status === 'certified' ? 'active' : 'draft',
-          status_text: skill.status_text,
-        },
-      ]);
+      const rows: SkillVersion[] =
+        skill.id === 'sk-segment'
+          ? versions
+          : [
+              {
+                id: `skv-${skill.id}-${skill.version}`,
+                version: skill.version,
+                change_text: 'Bản hiện tại',
+                eval_passed: 0,
+                eval_total: 0,
+                status: skill.status === 'certified' ? 'active' : 'draft',
+                status_text: skill.status_text,
+              },
+            ];
+      return HttpResponse.json({
+        ...skillWire(skill),
+        versions: skill.id === 'sk-segment' ? SEGMENT_VERSIONS : [],
+        display_versions: rows,
+      });
     }),
     http.post('*/v1/skills/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
@@ -488,42 +497,81 @@ export function createSkillsHandlers() {
       if (!skill) return undefined;
       if (skill.status !== 'certified')
         return problem(409, 'invalid_state', 'Chỉ chia sẻ được kỹ năng đã chứng nhận.');
-      const { data_space_id } = (await request.json()) as { data_space_id: string | null };
-      return HttpResponse.json({ status: data_space_id ? 'shared' : 'pending_admin' });
+      // ShareRequest names the scope; org-wide waits for an administrator, so until then the
+      // skill keeps the Data Space scope it has.
+      await request.json();
+      return HttpResponse.json({ ...skillWire(skill), scope: 'data_space' });
     }),
-    http.get('*/v1/skill-versions/:id/review', ({ params }) =>
-      params.id === review.version_id
-        ? HttpResponse.json(review)
-        : problem(404, 'not_found', 'Không có phiên bản chờ duyệt này.'),
+    // The caller's open approve_proposal requests: v3's publish proposal. Every other inbox
+    // read falls through to the inbox mock.
+    http.get('*/v1/inbox', ({ request }) => {
+      if (new URL(request.url).searchParams.get('kind') !== 'approve_proposal') return undefined;
+      return page(
+        proposal.status === 'pending_review'
+          ? [
+              {
+                id: 'hitl-skv-segment-3',
+                data_space_id: 'ds-rui-ro-tin-dung',
+                kind: 'approve_proposal',
+                risk: 'medium',
+                title: proposal.title,
+                context: {},
+                options: [],
+                source_service: 'inbox',
+                source_ref: PROPOSAL_ID,
+                parent_run_label: null,
+                assignee_id: 'me',
+                assignee_group: null,
+                assignee_capability: null,
+                due_at: null,
+                status: 'open',
+                response: null,
+                remember_as_rule: false,
+                resolved_by: null,
+                resolved_at: null,
+                channel_card_ids: [],
+                created_at: proposal.created_at,
+                updated_at: proposal.updated_at,
+              },
+            ]
+          : [],
+      );
+    }),
+    http.get('*/v1/proposals/:id', ({ params }) =>
+      params.id === PROPOSAL_ID ? HttpResponse.json(proposal) : undefined,
     ),
-    http.post('*/v1/skill-versions/:action', async ({ params, request }) => {
-      const [id, verb] = String(params.action).split(':');
-      const target = versions.find((v) => v.id === id);
-      if (!target) return problem(404, 'not_found', 'Không tìm thấy phiên bản.');
-      if (target.status !== 'pending_review')
-        return problem(409, 'invalid_state', 'Phiên bản không còn chờ duyệt.');
-      if (verb === 'request-changes') {
-        const { comment } = (await request.json()) as { comment: string };
-        if (!comment?.trim()) return problem(422, 'validation_failed', 'Ghi điều cần sửa.');
-        target.status = 'changes_requested';
-        target.status_text = 'Trả về người tạo';
-        const skill = skills.find((s) => s.pending_version_id === id);
+    http.get('*/v1/eval-runs/:id', ({ params }) => {
+      const version = SEGMENT_VERSIONS.find((v) => v.eval_run_id === params.id);
+      return version
+        ? HttpResponse.json(evalRun(String(params.id), version.version === 1 ? 8 : 12))
+        : undefined;
+    }),
+    // Deciding the proposal is what publishes v3 or sends it back (worker_agent/proposals.py).
+    http.post('*/v1/proposals/:action', async ({ params, request }) => {
+      const [id] = String(params.action).split(':');
+      if (id !== PROPOSAL_ID) return undefined;
+      if (proposal.status !== 'pending_review')
+        return problem(409, 'invalid_state', 'Đề xuất đã được xử lý.');
+      const body = (await request.json()) as Schemas['ProposalDecision'];
+      const skill = skills.find((s) => s.id === 'sk-segment');
+      if (body.decision === 'request_changes') {
+        if (!body.note?.trim()) return problem(422, 'validation_failed', 'Ghi điều cần sửa.');
+        versions = versions.map((v) =>
+          v.id === 'skv-segment-3'
+            ? { ...v, status: 'changes_requested', status_text: 'Trả về người tạo' }
+            : v,
+        );
         if (skill) skill.pending_version_id = null;
-        return HttpResponse.json(target);
+        proposal = { ...proposal, status: 'open' };
+        return HttpResponse.json(proposal);
       }
-      if (verb !== 'approve') return problem(404, 'not_found', 'Không có thao tác này.');
-      const { scope } = (await request.json()) as { scope: string };
-      if (scope === 'organization')
-        return problem(403, 'forbidden', 'Phát hành toàn tổ chức cần quản trị viên.');
       versions = versions.map((v) =>
-        v.id === id
+        v.id === 'skv-segment-3'
           ? { ...v, status: 'active', status_text: 'Đang dùng' }
           : v.status === 'active'
             ? { ...v, status_text: 'Ngừng 07/11 · thay bằng v3' }
             : v,
       );
-      review = { ...review, can_approve: { allowed: false, reason: 'Đã phát hành.' } };
-      const skill = skills.find((s) => s.id === 'sk-segment');
       if (skill)
         Object.assign(skill, {
           version: 3,
@@ -531,9 +579,26 @@ export function createSkillsHandlers() {
           status_text: 'Đã chứng nhận',
           pending_version_id: null,
         });
-      return HttpResponse.json(versions.find((v) => v.id === id));
+      proposal = { ...proposal, status: 'accepted' };
+      return HttpResponse.json(proposal);
     }),
-    http.get('*/v1/skill-suggestions', () => page(suggestions)),
+    http.get('*/v1/skill-suggestions', () =>
+      page(
+        suggestions.map((sg) => ({
+          id: sg.id,
+          pattern: { steps: sg.steps },
+          session_ids: sg.session_ids,
+          user_count: sg.used_by.length,
+          status: 'open',
+          accepted_skill_id: null,
+          dismissed_until: null,
+          data_space_id: 'ds-rui-ro-tin-dung',
+          created_at: '2026-10-01T09:00:00+07:00',
+          updated_at: '2026-10-01T09:00:00+07:00',
+          display: sg,
+        })),
+      ),
+    ),
     http.post('*/v1/skill-suggestions/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
       if (verb !== 'dismiss' || !suggestions.some((s) => s.id === id))
@@ -542,36 +607,5 @@ export function createSkillsHandlers() {
       return new HttpResponse(null, { status: 204 });
     }),
     http.get('*/v1/tools', () => page(tools)),
-    http.post('*/v1/tools', async ({ request }) => {
-      const body = (await request.json()) as {
-        name: string;
-        provider: string;
-        level: ToolLevel;
-        description: string;
-        agent_ids: string[];
-      };
-      if (!/^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/.test(body.name ?? ''))
-        return problem(
-          422,
-          'validation_failed',
-          'Tên công cụ dạng nhóm.hành_động, ví dụ ticket.create.',
-        );
-      if (tools.some((t) => t.name === body.name))
-        return problem(409, 'conflict', 'Đã có công cụ cùng tên.');
-      if (body.level === 'system' && body.agent_ids.length > 0)
-        return problem(422, 'business_rule_violated', 'Công cụ hệ thống không gán cho agent.');
-      const tool: Tool = {
-        id: body.name,
-        name: body.name,
-        level: body.level,
-        description: body.description,
-        mcp_server_id: body.provider === 'builtin' ? null : body.provider,
-        agent_count: body.agent_ids.length,
-        calls_30d: 0,
-      };
-      tools.push(tool);
-      return HttpResponse.json(tool, { status: 201 });
-    }),
-    http.get('*/v1/mcp-servers', () => page(servers)),
   ];
 }

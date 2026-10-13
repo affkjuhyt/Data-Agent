@@ -63,12 +63,13 @@ function StudioBody({ bench, onChanged }: { bench: ForecastWorkbench; onChanged:
   const toast = useToast();
   const [tab, setTab] = useState<Tab>('backtest');
   const [busy, setBusy] = useState<'rerun' | 'card' | null>(null);
-  const cardLabel = `thẻ mô hình ${bench.next_version_label}`;
+  const cardLabel = `thẻ mô hình ${bench.next_version_label}`.trim();
 
   const rerun = async () => {
+    if (!bench.forecast_model_id) return;
     setBusy('rerun');
     try {
-      await rerunBacktest(bench.job_id);
+      await rerunBacktest(bench.forecast_model_id);
       toast({ tone: 'success', message: 'Agent Dự báo đang chạy lại backtest' });
       onChanged();
     } catch (e) {
@@ -79,9 +80,10 @@ function StudioBody({ bench, onChanged }: { bench: ForecastWorkbench; onChanged:
   };
 
   const createCard = async () => {
+    if (!bench.version_id) return;
     setBusy('card');
     try {
-      const { model_id } = await createModelCard(bench.job_id);
+      const { model_id } = await createModelCard(bench.version_id);
       navigate('analysis', 'FORECAST_MODEL', model_id);
     } catch (e) {
       toast({ tone: 'error', message: (e as Error).message });
@@ -118,12 +120,16 @@ function StudioBody({ bench, onChanged }: { bench: ForecastWorkbench; onChanged:
     <div className="flex min-h-full flex-col">
       <PageHeader
         bordered
-        breadcrumb={['Phân tích', 'Dự báo', `${bench.metric_name} · việc ${bench.job_code}`]}
+        breadcrumb={['Phân tích', 'Dự báo', bench.metric_name]}
         title={`Xưởng dự báo · ${bench.metric_name}`}
         description={bench.summary_text}
         actions={
           <>
-            <Button loading={busy === 'rerun'} onClick={rerun}>
+            <Button
+              loading={busy === 'rerun'}
+              disabled={!bench.forecast_model_id}
+              onClick={rerun}
+            >
               Chạy lại backtest
             </Button>
             {cardButton}
@@ -132,7 +138,16 @@ function StudioBody({ bench, onChanged }: { bench: ForecastWorkbench; onChanged:
       />
       <div className="flex flex-col gap-da-xl px-da-3xl pb-da-2xl pt-da-xl">
         <Tabs<Tab> label="Xưởng dự báo" items={TABS} value={tab} onChange={setTab} />
-        {tab === 'data' && stats}
+        {tab === 'data' &&
+          (bench.series_stats.length ? (
+            stats
+          ) : (
+            <EmptyState
+              icon="chart"
+              title="Chưa có phiên bản mô hình"
+              description="Agent Dự báo chưa huấn luyện xong phiên bản nào cho việc này."
+            />
+          ))}
         {tab === 'variables' && <VariablesCard bench={bench} />}
         {tab === 'backtest' && (
           <>
@@ -147,7 +162,7 @@ function StudioBody({ bench, onChanged }: { bench: ForecastWorkbench; onChanged:
           (bench.model_id ? (
             <LinkCard
               icon="file"
-              title={`Thẻ mô hình ${bench.next_version_label}`}
+              title={`Thẻ mô hình ${bench.next_version_label}`.trim()}
               corner="chevron"
               onOpen={openModel}
             >
@@ -233,7 +248,7 @@ function BacktestCard({ bench }: { bench: ForecastWorkbench }) {
             head: 'MASE',
             cell: (r) => (
               <span className={r.role === 'selected' ? 'font-semibold' : undefined}>
-                {formatTwo(r.mase)}
+                {r.mase === null ? '—' : formatTwo(r.mase)}
               </span>
             ),
           },

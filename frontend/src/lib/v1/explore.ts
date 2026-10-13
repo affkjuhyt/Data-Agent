@@ -1,5 +1,6 @@
 import type { Page } from './client';
-import { pathId, v1Get, v1Send } from './client';
+import { pathId, V1Error, v1Get, v1Send } from './client';
+import type { components } from './schema';
 import type { DataSpace } from './types';
 import { getMe } from './me';
 
@@ -7,21 +8,101 @@ import { getMe } from './me';
  * Khám phá (UC-01-04), the full-screen artifact (UC-01-01) and the global first-visit screens
  * (UC-11-08: Chọn Data Space, onboarding, "Data Agent hoạt động thế nào").
  *
- * A2 has no endpoint for self-service exploration over the semantic layer, artifacts outside a
- * notebook tile, the first-visit flow or the viewer's Data Space list with access states, so
- * every path below is a PROPOSAL; each field the screens need is marked where it sits.
+ * Khám phá works on the certified metrics of the Data Space (SCR-02 "cây chỉ số và chiều đã chứng
+ * nhận"), not on tables: the fields are GET /v1/metrics?certified=true, the dimensions a metric
+ * may be split by are its current version's allowed_dimensions, named from the semantic layer's
+ * entities. A query is POST /v1/explore/queries, a query_run (A2 Truy vấn) read back through
+ * GET /v1/query-runs/{id}/rows. The artifact is an answer (GET /v1/answers/{id}). Onboarding is
+ * still a PROPOSAL (no A2 endpoint).
  */
 
-/* ─── Khám phá: bộ dữ liệu, chỉ số, chiều ──────────────────────────────── */
+type Schemas = components['schemas'];
 
-/** PROPOSAL: GET /v1/explore/datasets — certified datasets the viewer may explore. */
-export interface ExploreDataset {
-  id: string;
-  display_name: string;
-  certified: boolean;
-  /** PROPOSAL: "dữ liệu tới 30/09" */
-  data_until_text: string;
+/* ─── Truy vấn: a query_run and its rows (A2) ─────────────────────────── */
+
+export type QueryRunWire = Schemas['QueryRunView'];
+type QueryRowsWire = Schemas['QueryRowsPage'];
+
+const FINISHED = new Set(['succeeded', 'failed', 'cancelled', 'timeout']);
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * A query_run is recorded `queued` with 202 and run by worker-agent (A1.6): poll it until it is
+ * finished. A run that did not succeed is thrown with the worker's reason, as the 422 a refused
+ * query would be, so the screens show it the same way.
+ */
+export async function awaitQueryRun(
+  run: QueryRunWire,
+  { intervalMs = 500, timeoutMs = 60_000 } = {},
+): Promise<QueryRunWire> {
+  let current = run;
+  const deadline = Date.now() + timeoutMs;
+  while (!FINISHED.has(current.status)) {
+    if (Date.now() > deadline)
+      throw new V1Error(504, 'timeout', 'Truy vấn chạy quá lâu, thử lại sau.');
+    await sleep(intervalMs);
+    current = await v1Get<QueryRunWire>(`/query-runs/${pathId(current.id)}`);
+  }
+  if (current.status !== 'succeeded')
+    throw new V1Error(
+      422,
+      current.status === 'timeout' ? 'timeout' : 'query_failed',
+      current.error ?? 'Truy vấn không chạy được.',
+    );
+  return current;
 }
+
+export interface QueryRows {
+  columns: { name: string; type: string | null }[];
+  /** One array per row, in column order. */
+  rows: unknown[][];
+  truncated: boolean;
+  next_page_token: string;
+}
+
+/** The worker stores columns as {name, type} and rows as arrays; both forms are read. */
+export function readQueryRows(raw: QueryRowsWire): QueryRows {
+  const columns = (Array.isArray(raw.columns) ? raw.columns : []).map((c: unknown) =>
+    typeof c === 'string'
+      ? { name: c, type: null }
+      : {
+          name: String((c as { name?: unknown }).name ?? ''),
+          type:
+            typeof (c as { type?: unknown }).type === 'string'
+              ? ((c as { type: string }).type ?? null)
+              : null,
+        },
+  );
+  const rows = raw.items.map((item: unknown) =>
+    Array.isArray(item)
+      ? item
+      : typeof item === 'object' && item !== null
+        ? columns.map((c) => (item as Record<string, unknown>)[c.name])
+        : [item],
+  );
+  return {
+    columns,
+    rows,
+    truncated: raw.truncated,
+    next_page_token: raw.next_page_token ?? '',
+  };
+}
+
+export const getQueryRows = async (queryRunId: string, pageSize = 500) =>
+  readQueryRows(
+    await v1Get<QueryRowsWire>(`/query-runs/${pathId(queryRunId)}/rows`, {
+      page_size: pageSize,
+    }),
+  );
+
+/** The SQL as written and as run after the policy rewrite (audited by the api). */
+export const getQuerySql = async (queryRunId: string) =>
+  v1Get<Schemas['QuerySqlView']>(`/query-runs/${pathId(queryRunId)}/sql`);
+
+/* ─── Khám phá: chỉ số và chiều ─────────────────────────────────────────── */
+
+type Unit = 'percent' | 'count' | 'amount';
 
 export interface ExploreMetric {
   id: string;
@@ -29,26 +110,35 @@ export interface ExploreMetric {
   code: string;
   /** The ✓ in the field list: the metric has a certified version. */
   certified: boolean;
+  /** The current version, for "NPL_RATIO v4". */
+  version: number | null;
+  unit: Unit;
+  /** direction lower_better: a rise is bad news, so increases show in the error colour. */
+  increase_is_bad: boolean;
+  /** The dimensions the owner allows (BR-81); time dimensions are always allowed. */
+  allowed_dimension_ids: string[];
 }
 
 export interface ExploreDimension {
   id: string;
+  /** The column name the compiler gives it in a result. */
+  code: string;
   label: string;
-  /** The group heading in the field list: "Chi nhánh", "Thời gian", "Khoản vay". */
+  /** The group heading in the field list: the entity it belongs to. */
   group_label: string;
+  /** The values seen in results so far (A3 has no list of a dimension's values). */
   values: { value: string; label: string }[];
-  /** PROPOSAL: metrics this dimension cannot split, and why (shown dimmed with the reason). */
+  /** Chosen metrics that may not be split by it, shown dimmed with the reason. */
   incompatible_metric_ids: string[];
   incompatible_reason: string | null;
+  /** The coarser dimension it refines (chi nhánh → vùng): a click on a column drills into it. */
+  parent_id: string | null;
+  is_time: boolean;
 }
 
-/** PROPOSAL: GET /v1/explore/datasets/{id}/model — the semantic model behind the field list. */
 export interface ExploreModel {
-  dataset: ExploreDataset;
   metrics: ExploreMetric[];
   dimensions: ExploreDimension[];
-  /** PROPOSAL: the view the dataset opens on; null = empty shelves. */
-  default_query: ExploreQueryInput | null;
 }
 
 export interface ExploreFilter {
@@ -58,10 +148,88 @@ export interface ExploreFilter {
 }
 
 export interface ExploreQueryInput {
-  dataset_id: string;
   metric_ids: string[];
   dimension_ids: string[];
   filters: ExploreFilter[];
+}
+
+const unitOf = (unit: string | null | undefined): Unit =>
+  unit === '%' || unit?.toLowerCase() === 'percent'
+    ? 'percent'
+    : unit && /vnd|đồng|tỷ|triệu/i.test(unit)
+      ? 'amount'
+      : 'count';
+
+function readMetric(row: Schemas['MetricView'], detail: Schemas['MetricDetail'] | null) {
+  const version = detail?.versions?.find((v) => v.version === row.current_version) ?? null;
+  return {
+    id: row.id,
+    label: version?.display_name ?? row.display_name ?? row.code,
+    code: row.code,
+    certified: row.certified ?? false,
+    version: row.current_version,
+    unit: unitOf(version?.unit),
+    increase_is_bad: version?.direction === 'lower_better',
+    allowed_dimension_ids: version?.allowed_dimensions ?? [],
+  } satisfies ExploreMetric;
+}
+
+/**
+ * The model behind the field list: the certified metrics with their current version (one GET
+ * per metric: the list does not carry allowed_dimensions), and the dimensions of the active
+ * entities (one GET per entity: the list does not carry them).
+ */
+export async function getExploreModel(): Promise<ExploreModel> {
+  const [metricPage, entityPage] = await Promise.all([
+    v1Get<Page<Schemas['MetricView']>>('/metrics', { certified: true, page_size: 100 }),
+    v1Get<Page<Schemas['EntityView']>>('/entities', { status: 'active', page_size: 100 }),
+  ]);
+  const [details, entities] = await Promise.all([
+    Promise.all(
+      metricPage.items.map((m) =>
+        v1Get<Schemas['MetricDetail']>(`/metrics/${pathId(m.id)}`).catch(() => null),
+      ),
+    ),
+    Promise.all(
+      entityPage.items.map((e) =>
+        v1Get<Schemas['EntityDetail']>(`/entities/${pathId(e.key)}`).catch(() => null),
+      ),
+    ),
+  ]);
+  const metrics = metricPage.items
+    .map((m, i) => readMetric(m, details[i]))
+    .filter((m) => m.version !== null);
+  const dimensions = entities.flatMap((entity) =>
+    (entity?.dimensions ?? []).map(
+      (d): ExploreDimension => ({
+        id: d.id,
+        code: d.code,
+        label: d.name,
+        group_label: entity!.name,
+        values: [],
+        incompatible_metric_ids: d.is_time
+          ? []
+          : metrics.filter((m) => !m.allowed_dimension_ids.includes(d.id)).map((m) => m.id),
+        incompatible_reason: d.is_time ? null : 'Chỉ số đã chọn không được chia theo chiều này.',
+        parent_id: d.parent_dimension_id,
+        is_time: d.is_time,
+      }),
+    ),
+  );
+  return { metrics, dimensions };
+}
+
+/* ─── Khám phá: kết quả ─────────────────────────────────────────────────── */
+
+export interface ExploreRow {
+  key: string;
+  label: string;
+  /** The axis label under a column. */
+  short_label: string;
+  /** One value per series, in series order. */
+  values: (number | null)[];
+  /** Last series minus the first, in the value's unit; null with one series. */
+  delta: number | null;
 }
 
 export type NextStep =
@@ -75,155 +243,407 @@ export type NextStep =
     }
   | { kind: 'rows' | 'lineage' | 'watch'; title: string; detail: string };
 
-export interface ExploreRow {
-  key: string;
-  label: string;
-  /** The axis label under a column: "ĐB s.Hồng" for "ĐB sông Hồng". */
-  short_label: string;
-  /** One value per series, in series order. */
-  values: (number | null)[];
-  /** Last series minus the first, in the value's unit; null with one series. */
-  delta: number | null;
-}
-
-/** PROPOSAL: POST /v1/explore/queries — runs the shelves against the semantic layer (a query_run). */
+/** A finished query_run of the explorer, read into the chart and the value table. */
 export interface ExploreResult {
+  /** The query_run id. */
   id: string;
   title: string;
   /** "NPL_RATIO v4 · 0,8 giây" */
   subtitle_text: string;
   /** The dimension of the categories (columns of the chart, rows of the table). */
   category_label: string;
+  category_dimension_id: string | null;
   series: { key: string; label: string }[];
   rows: ExploreRow[];
-  unit: 'percent' | 'count' | 'amount';
-  /** PROPOSAL: a rise is bad news for this metric (NPL), so increases show in the error colour. */
+  unit: Unit;
   increase_is_bad: boolean;
-  /** How many detail rows sit behind the figures ("Xem 3.412 dòng gốc"). */
-  detail_row_count: number;
+  /** Rows the run returned; null when the api does not say. */
+  row_count: number | null;
   /** The dimension a click on a column drills into, if any. */
   drill_dimension_id: string | null;
+  /** PROPOSAL: no A3 field suggests next steps; always empty until one does. */
   next_steps: NextStep[];
-  /** "Khớp số đã nộp và Báo cáo rủi ro tháng 9", when the figures match a filed report. */
+  /** PROPOSAL: no A3 field says the figures match a filed report; always null. */
   reconciliation_text: string | null;
   data_space_id: string;
 }
 
-/** PROPOSAL: GET /v1/explore/queries/{id}/explanation — the agent reads the result. */
+const numberOf = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value)))
+    return Number(value);
+  return null;
+};
+
+/**
+ * The compiler's result is long: a `metric` column (the metric code), the dimensions asked for
+ * by their code, then `value`. The first dimension is the category; a second one, with a single
+ * metric, becomes the series (Q2 and Q3 side by side); with several metrics they are the series.
+ */
+export function readExploreResult(
+  run: QueryRunWire,
+  data: QueryRows,
+  input: ExploreQueryInput,
+  model: ExploreModel,
+): ExploreResult {
+  const names = data.columns.map((c) => c.name);
+  const metricAt = names.indexOf('metric');
+  const valueAt = names.lastIndexOf('value') >= 0 ? names.lastIndexOf('value') : names.length - 1;
+  const dimAt = names.map((_, i) => i).filter((i) => i !== metricAt && i !== valueAt);
+  const dimensionOf = (column: string) => model.dimensions.find((d) => d.code === column);
+  const chosen = input.metric_ids
+    .map((id) => model.metrics.find((m) => m.id === id))
+    .filter((m): m is ExploreMetric => m !== undefined);
+  const metricByCode = new Map(chosen.map((m) => [m.code, m]));
+  const categoryAt = dimAt[0] ?? -1;
+  const seriesAt = chosen.length > 1 ? metricAt : (dimAt[1] ?? -1);
+
+  const seriesKeys: string[] = [];
+  const categories = new Map<string, Map<string, number | null>>();
+  for (const row of data.rows) {
+    const category = categoryAt >= 0 ? String(row[categoryAt] ?? '—') : 'Tổng';
+    const series = seriesAt >= 0 ? String(row[seriesAt] ?? '—') : (chosen[0]?.code ?? 'value');
+    if (!seriesKeys.includes(series)) seriesKeys.push(series);
+    const values = categories.get(category) ?? new Map<string, number | null>();
+    // A third dimension is not drawn: the first value of a category and series is kept.
+    if (!values.has(series)) values.set(series, numberOf(row[valueAt]));
+    categories.set(category, values);
+  }
+  const seriesLabel = (key: string) =>
+    chosen.length > 1 ? (metricByCode.get(key)?.label ?? key) : key;
+  const series = seriesKeys.map((key) => ({
+    key,
+    label: seriesAt >= 0 ? seriesLabel(key) : (chosen[0]?.label ?? key),
+  }));
+  const rows = [...categories].map(([key, values]): ExploreRow => {
+    const list = seriesKeys.map((s) => values.get(s) ?? null);
+    const first = list[0];
+    const last = list[list.length - 1];
+    return {
+      key,
+      label: key,
+      short_label: key,
+      values: list,
+      delta: list.length > 1 && first !== null && last !== null ? last - first : null,
+    };
+  });
+
+  const category = categoryAt >= 0 ? dimensionOf(names[categoryAt]) : undefined;
+  const categoryLabel = category?.label ?? (categoryAt >= 0 ? names[categoryAt] : 'Tổng');
+  const metricText = chosen.map((m) => m.label).join(', ');
+  const seriesText =
+    series.length > 1 && chosen.length === 1
+      ? ` · ${series.map((s) => s.label).join(' so với ')}`
+      : '';
+  const seconds =
+    run.duration_ms !== null && run.duration_ms !== undefined
+      ? ` · ${(run.duration_ms / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} giây`
+      : '';
+  return {
+    id: run.id,
+    title: `${metricText} theo ${categoryLabel.toLowerCase()}${seriesText}`,
+    subtitle_text: `${chosen.map((m) => `${m.code}${m.version ? ` v${m.version}` : ''}`).join(', ')}${seconds}`,
+    category_label: categoryLabel,
+    category_dimension_id: category?.id ?? null,
+    series,
+    rows,
+    unit: chosen[0]?.unit ?? 'count',
+    increase_is_bad: chosen[0]?.increase_is_bad ?? false,
+    row_count: run.row_count ?? null,
+    drill_dimension_id: category
+      ? (model.dimensions.find((d) => d.parent_id === category.id)?.id ?? null)
+      : null,
+    next_steps: [],
+    reconciliation_text: null,
+    data_space_id: run.data_space_id,
+  };
+}
+
+/**
+ * POST /v1/explore/queries, then the run's rows. 422 `business_rule_violated` when a dimension
+ * cannot split a chosen metric (BR-81), with the reason as detail.
+ */
+export async function runExploreQuery(
+  input: ExploreQueryInput,
+  model: ExploreModel,
+): Promise<ExploreResult> {
+  const accepted = await v1Send<QueryRunWire>('POST', '/explore/queries', {
+    metric_ids: input.metric_ids,
+    dimensions: input.dimension_ids,
+    filters: input.filters,
+  } satisfies Schemas['ExploreQueryCreate']);
+  const run = await awaitQueryRun(accepted);
+  return readExploreResult(run, await getQueryRows(run.id), input, model);
+}
+
+/** The rows behind the chart, as the table under "Xem dòng kết quả". */
+export interface ExploreRows {
+  columns: string[];
+  rows: string[][];
+  /** null when there are more pages than this one. */
+  total: number | null;
+}
+
+export const getExploreRows = async (queryRunId: string): Promise<ExploreRows> => {
+  const data = await getQueryRows(queryRunId, 50);
+  return {
+    columns: data.columns.map((c) => c.name),
+    rows: data.rows.map((r) =>
+      r.map((cell) => (cell === null || cell === undefined ? '—' : String(cell))),
+    ),
+    total: data.next_page_token ? null : data.rows.length,
+  };
+};
+
+/* ─── Agent giải thích: kỹ năng phân rã biến động trên kết quả ─────────── */
+
 export interface ExploreExplanation {
   headline: string;
   body: string;
 }
 
+const textOf = (value: unknown) => (typeof value === 'string' && value.trim() ? value : null);
+
 /**
- * PROPOSAL: GET /v1/explore/queries/{id}/rows — the detail rows behind the figures; 403
- * `aggregate_only` when the viewer's role sees aggregates only.
+ * SCR-06 "Agent giải thích" is the decomposition skill run on the result (POST
+ * /v1/skills/{id}/runs → GET /v1/skill-runs/{id}). null when the Data Space has no published
+ * decomposition skill, or when its result carries no text to show.
  */
-export interface ExploreRows {
-  columns: string[];
-  rows: string[][];
-  total: number;
+export async function getExploreExplanation(
+  result: ExploreResult,
+  metricIds: string[],
+  { intervalMs = 1_000, timeoutMs = 60_000 } = {},
+): Promise<ExploreExplanation | null> {
+  const skills = await v1Get<Page<Schemas['SkillView']>>('/skills', {
+    category: 'decomposition',
+    page_size: 20,
+  });
+  const skill = skills.items.find((s) => s.current_version !== null);
+  if (!skill) return null;
+  const accepted = await v1Send<Schemas['services__api__modules__skill__schemas__Accepted']>(
+    'POST',
+    `/skills/${pathId(skill.id)}/runs`,
+    {
+      params: { query_run_id: result.id, metric_id: metricIds[0] },
+    } as unknown as Schemas['RunCreate'],
+  );
+  const deadline = Date.now() + timeoutMs;
+  let run = await v1Get<Schemas['RunDetail']>(`/skill-runs/${pathId(accepted.id)}`);
+  while (!['succeeded', 'failed', 'cancelled', 'partial'].includes(run.status)) {
+    if (Date.now() > deadline) throw new V1Error(504, 'timeout', 'Kỹ năng chạy quá lâu.');
+    await sleep(Math.max(intervalMs, accepted.poll_after_ms ?? 0));
+    run = await v1Get<Schemas['RunDetail']>(`/skill-runs/${pathId(accepted.id)}`);
+  }
+  if (run.status === 'failed' || run.status === 'cancelled')
+    throw new V1Error(422, 'skill_failed', run.error ?? 'Kỹ năng không chạy được.');
+  const out =
+    typeof run.result === 'object' && run.result !== null
+      ? (run.result as Record<string, unknown>)
+      : {};
+  const headline = textOf(out.headline) ?? textOf(out.title);
+  const body = textOf(out.summary) ?? textOf(out.text) ?? textOf(out.body);
+  if (!headline && !body) return null;
+  return { headline: headline ?? '', body: body ?? '' };
 }
 
-export const listExploreDatasets = () =>
-  v1Get<Page<ExploreDataset>>('/explore/datasets', { page_size: 100 });
+/* ─── Hỏi bằng lời: câu hỏi purpose explore, kệ điền từ chip cách hiểu ─── */
 
-export const getExploreModel = async (datasetId: string) =>
-  v1Get<ExploreModel>(`/explore/datasets/${pathId(datasetId)}/model`);
+type QuestionView = Schemas['QuestionView'];
 
-/** 422 `incompatible_dimension` when the shelves cannot be answered, with the reason as detail. */
-export const runExploreQuery = (input: ExploreQueryInput) =>
-  v1Send<ExploreResult>('POST', '/explore/queries', input);
+const UNDERSTOOD_END = new Set(['answered', 'refused', 'failed', 'clarifying', 'cancelled']);
 
-export const getExploreExplanation = async (queryId: string) =>
-  v1Get<ExploreExplanation>(`/explore/queries/${pathId(queryId)}/explanation`);
+/**
+ * "Hỏi bằng lời": POST /v1/questions {purpose: explore}; the plan's chips (what the system
+ * understood: metric, dimension, filter "code=value") fill the shelves for the viewer to check.
+ * 422 when no chip names a metric of the model.
+ */
+export async function interpretQuestion(
+  question: string,
+  model: ExploreModel,
+  { intervalMs = 500, timeoutMs = 30_000 } = {},
+): Promise<ExploreQueryInput> {
+  const accepted = await v1Send<Schemas['QuestionAccepted']>('POST', '/questions', {
+    text: question,
+    purpose: 'explore',
+    knowledge_mode: 'latest',
+    stream: false,
+  } satisfies Schemas['QuestionCreate']);
+  const deadline = Date.now() + timeoutMs;
+  let view = await v1Get<QuestionView>(`/questions/${pathId(accepted.question_id)}`);
+  while (!view.plan && !UNDERSTOOD_END.has(view.status)) {
+    if (Date.now() > deadline) throw new V1Error(504, 'timeout', 'Agent đọc câu hỏi quá lâu.');
+    await sleep(Math.max(intervalMs, accepted.poll_after_ms ?? 0));
+    view = await v1Get<QuestionView>(`/questions/${pathId(accepted.question_id)}`);
+  }
+  const chips = (Array.isArray(view.plan?.chips) ? view.plan.chips : []) as {
+    kind?: unknown;
+    value?: unknown;
+  }[];
+  const of = (kind: string) =>
+    chips
+      .filter((c) => c.kind === kind && typeof c.value === 'string')
+      .map((c) => c.value as string);
+  const metric_ids = of('metric')
+    .map((code) => model.metrics.find((m) => m.code === code)?.id)
+    .filter((id): id is string => id !== undefined);
+  if (metric_ids.length === 0)
+    throw new V1Error(422, 'not_understood', 'Agent không nhận ra chỉ số nào trong câu hỏi.');
+  const dimensionId = (code: string) => model.dimensions.find((d) => d.code === code)?.id;
+  const dimension_ids = of('dimension')
+    .map(dimensionId)
+    .filter((id): id is string => id !== undefined);
+  const filters = new Map<string, string[]>();
+  for (const chip of of('filter')) {
+    const [code, ...rest] = chip.split('=');
+    const id = dimensionId(code);
+    if (id && rest.length) filters.set(id, [...(filters.get(id) ?? []), rest.join('=')]);
+  }
+  return {
+    metric_ids,
+    dimension_ids,
+    filters: [...filters].map(([dimension_id, values]) => ({
+      dimension_id,
+      op: values.length === 1 ? 'eq' : 'in',
+      values,
+    })),
+  };
+}
 
-export const getExploreRows = async (queryId: string) =>
-  v1Get<ExploreRows>(`/explore/queries/${pathId(queryId)}/rows`, { page_size: 50 });
+/* ─── Lưu kết quả vào phiên (P02) ───────────────────────────────────────── */
 
-/** PROPOSAL: "Hỏi bằng lời" — the agent fills the shelves from a question for the viewer to check. */
-export const interpretQuestion = (datasetId: string, question: string) =>
-  v1Send<ExploreQueryInput>('POST', '/explore/queries:interpret', {
-    dataset_id: datasetId,
-    question,
-  });
+/**
+ * There are no dashboards in the design: a result is kept as a tile of a session
+ * (POST /v1/workspaces/{id}/tiles). The tile records the query run and the shelves.
+ */
+export const saveExploreToSession = (
+  workspaceId: string,
+  result: ExploreResult,
+  input: ExploreQueryInput,
+) =>
+  v1Send<Schemas['TileView']>('POST', `/workspaces/${pathId(workspaceId)}/tiles`, {
+    kind: 'chart',
+    title: result.title,
+    spec: {
+      query_run_id: result.id,
+      metric_ids: input.metric_ids,
+      dimensions: input.dimension_ids,
+      filters: input.filters,
+    },
+  } as unknown as Schemas['TileCreate']);
 
-/** PROPOSAL: adds the current query as a tile of a dashboard. */
-export const saveQueryToDashboard = async (queryId: string, dashboardId: string) =>
-  v1Send<{ dashboard_id: string; tile_id: string }>(
-    'POST',
-    `/explore/queries/${pathId(queryId)}:save-to-dashboard`,
-    { dashboard_id: dashboardId },
-  );
-
-/* ─── Artifact toàn màn (UC-01-01) ─────────────────────────────────────── */
+/* ─── Artifact toàn màn (UC-01-01): một câu trả lời ─────────────────────── */
 
 export interface ArtifactBar {
   label: string;
   value: number;
   value_text: string;
-  /** above = over the watch threshold (chart-3), down = a decrease (chart-1). */
-  tone: 'above' | 'normal' | 'down';
+  tone: 'normal' | 'down';
 }
 
-export interface ArtifactRow {
-  cells: string[];
-  /** Direction of the change cell, for its status dot. */
-  trend: 'up' | 'down' | 'flat';
-}
-
-export interface ArtifactVersion {
-  version: number;
-  summary: string;
-  /** "Agent Phân tích · 09:58" */
-  author_text: string;
-}
-
-export interface ArtifactUsage {
-  id: string;
-  /** "Báo cáo rủi ro T9 · Hình 1 · tự cập nhật" */
-  text: string;
-  /** PROPOSAL: the version a snapshot is pinned to; null = follows the current one. */
-  pinned_version: number | null;
-}
-
-/** PROPOSAL: GET /v1/artifacts/{id} — one answer or notebook artifact with its versions. */
 export interface Artifact {
+  /** The answer id. */
   id: string;
+  /** The question asked; "Câu trả lời" when it cannot be read. */
   title: string;
-  session: { id: string; title: string } | null;
-  version: number;
-  /** The figures passed the checks ("Đã kiểm tra số"). */
+  /** Every number in the text traced to a figure (number_check). */
   checked: boolean;
-  /** "Agent Phân tích · 09:58 · NPL_RATIO v4 · snapshot 30/09 v3 · dữ liệu tới 30/09 23:59" */
+  /** "Agent Phân tích · 09:58" */
   meta_text: string;
-  chart: { bars: ArtifactBar[]; caption: string };
-  table: { columns: string[]; rows: ArtifactRow[]; change_column: number };
-  sql: string;
-  /** Newest first. */
-  versions: ArtifactVersion[];
-  /** What changed from the previous version. */
-  compare: { label: string; text: string } | null;
-  used_in: ArtifactUsage[];
-  saved: boolean;
-  watching: boolean;
+  /** The answer's text. */
+  text: string;
+  /** Bars of the figures with a value; null with fewer than two. */
+  chart: { bars: ArtifactBar[] } | null;
+  table: { columns: string[]; rows: string[][] };
+  /** The run behind the figures, for the SQL tab; null when the answer has none. */
+  query_run_id: string | null;
 }
 
-export const getArtifact = async (id: string) => v1Get<Artifact>(`/artifacts/${pathId(id)}`);
+interface FigureWire {
+  label?: unknown;
+  value?: unknown;
+  unit?: unknown;
+  decimals?: unknown;
+  display_state?: unknown;
+  query_run_id?: unknown;
+}
 
-/** PROPOSAL: makes an older version current again (a new version with its content). */
-export const restoreArtifactVersion = async (id: string, version: number) =>
-  v1Send<Artifact>('POST', `/artifacts/${pathId(id)}:restore`, { version });
+function figureText(f: FigureWire): string {
+  const value = numberOf(f.value);
+  if (value === null) return '—';
+  const digits = typeof f.decimals === 'number' ? f.decimals : 2;
+  const text = value.toLocaleString('vi-VN', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+  return typeof f.unit === 'string' && f.unit
+    ? `${text}${f.unit === '%' ? '' : ' '}${f.unit}`
+    : text;
+}
 
-export const saveArtifact = async (id: string) =>
-  v1Send<Artifact>('POST', `/artifacts/${pathId(id)}:save`);
+export function readArtifact(answer: Schemas['AnswerView'], question: string | null): Artifact {
+  const figures = (Array.isArray(answer.figures) ? answer.figures : []).filter(
+    (f: FigureWire) => f.display_state === undefined || f.display_state === 'shown',
+  ) as FigureWire[];
+  const check =
+    typeof answer.number_check === 'object' && answer.number_check !== null
+      ? (answer.number_check as Record<string, unknown>)
+      : {};
+  const bars = figures.flatMap((f): ArtifactBar[] => {
+    const value = numberOf(f.value);
+    return value === null
+      ? []
+      : [
+          {
+            label: String(f.label ?? '—'),
+            value,
+            value_text: figureText(f),
+            tone: value < 0 ? 'down' : 'normal',
+          },
+        ];
+  });
+  const at = new Date(answer.created_at);
+  const time = Number.isNaN(at.getTime())
+    ? null
+    : at.toLocaleString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+      });
+  return {
+    id: answer.id,
+    title: question ?? 'Câu trả lời',
+    checked:
+      numberOf(check.numbers_total) !== null &&
+      (numberOf(check.numbers_total) ?? 0) > 0 &&
+      numberOf(check.untraceable_final) === 0,
+    meta_text: [answer.agent_name, time].filter(Boolean).join(' · '),
+    text: answer.text,
+    chart: bars.length > 1 ? { bars } : null,
+    table: {
+      columns: ['Chỉ tiêu', 'Giá trị'],
+      rows: figures.map((f) => [String(f.label ?? '—'), figureText(f)]),
+    },
+    query_run_id:
+      figures.map((f) => f.query_run_id).find((id): id is string => typeof id === 'string') ?? null,
+  };
+}
 
-export const watchArtifact = async (id: string) =>
-  v1Send<Artifact>('POST', `/artifacts/${pathId(id)}:watch`);
+export const getArtifact = async (id: string): Promise<Artifact> => {
+  const answer = await v1Get<Schemas['AnswerView']>(`/answers/${pathId(id)}`);
+  const question = await v1Get<QuestionView>(`/questions/${pathId(answer.question_id)}`).catch(
+    () => null,
+  );
+  return readArtifact(answer, question?.text ?? null);
+};
 
-/** PROPOSAL: moves the given usages to the current version. */
-export const updateArtifactUsages = async (id: string, usageIds: string[]) =>
-  v1Send<Artifact>('POST', `/artifacts/${pathId(id)}:update-usages`, { usage_ids: usageIds });
+/** "Lưu": the answer becomes a question tile of a session (POST /v1/workspaces/{id}/tiles). */
+export const saveArtifactToSession = (workspaceId: string, artifact: Artifact) =>
+  v1Send<Schemas['TileView']>('POST', `/workspaces/${pathId(workspaceId)}/tiles`, {
+    kind: 'question',
+    title: artifact.title,
+    spec: { question: artifact.title, answer_id: artifact.id },
+  } as unknown as Schemas['TileCreate']);
 
 /* ─── Lần đầu vào: Chọn Data Space (UC-11-08) ─────────────────────────── */
 

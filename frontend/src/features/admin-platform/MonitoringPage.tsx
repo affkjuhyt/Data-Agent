@@ -3,6 +3,7 @@ import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
+import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
 import { formatNumber } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
@@ -74,9 +75,18 @@ export default function MonitoringPage() {
 }
 
 function HealthBody({ data }: { data: SystemHealth }) {
-  const errorUp = data.error_rate_delta_pp > 0;
+  const delta = data.error_rate_delta_pp;
+  const errorUp = delta !== null && delta > 0;
+  const latency = data.latency_p95_ms;
+  const target = data.latency_target_ms;
   return (
     <>
+      {data.no_data && (
+        <Notice tone="warning">
+          Chưa đọc được số liệu giám sát: api chưa nối Prometheus (PROMETHEUS_URL) hoặc Prometheus
+          không trả lời.
+        </Notice>
+      )}
       <div className="grid grid-cols-4 gap-da-lg max-[1279px]:grid-cols-2">
         <MiniKpi
           label="Dịch vụ hoạt động"
@@ -86,9 +96,11 @@ function HealthBody({ data }: { data: SystemHealth }) {
         />
         <MiniKpi
           label="Độ trễ trả lời p95"
-          value={formatLatency(data.latency_p95_ms, true)}
-          note={`mục tiêu ≤ ${formatLatency(data.latency_target_ms, true)}`}
-          noteTone={data.latency_p95_ms <= data.latency_target_ms ? 'success' : 'error'}
+          value={formatLatency(latency, true)}
+          note={target === null ? undefined : `mục tiêu ≤ ${formatLatency(target, true)}`}
+          noteTone={
+            latency === null || target === null ? 'muted' : latency <= target ? 'success' : 'error'
+          }
         />
         <MiniKpi
           label="GPU đang dùng"
@@ -98,8 +110,12 @@ function HealthBody({ data }: { data: SystemHealth }) {
         <MiniKpi
           label="Lỗi 24 giờ"
           value={pct(data.error_rate_24h)}
-          note={`${errorUp ? '▲' : '▼'} ${formatNumber(Math.abs(data.error_rate_delta_pp), { maxFractionDigits: 1 })} điểm`}
-          noteTone={errorUp ? 'warning' : 'success'}
+          note={
+            delta === null
+              ? undefined
+              : `${errorUp ? '▲' : '▼'} ${formatNumber(Math.abs(delta), { maxFractionDigits: 1 })} điểm`
+          }
+          noteTone={delta === null ? 'muted' : errorUp ? 'warning' : 'success'}
         />
       </div>
 
@@ -130,6 +146,13 @@ function HealthBody({ data }: { data: SystemHealth }) {
         head={['Mô hình', 'Tác vụ', 'Token hôm nay', 'Hàng đợi', 'GPU']}
         widths={['w-[200px]', '', 'w-[140px]', 'w-[100px]', 'w-[140px]']}
       >
+        {data.models.length === 0 && (
+          <tr>
+            <td colSpan={5} className="px-[14px] py-da-md text-muted-foreground da-caption">
+              Chưa có số liệu tải theo mô hình.
+            </td>
+          </tr>
+        )}
         {data.models.map((model) => (
           <tr key={model.name}>
             <Cell>{model.name}</Cell>

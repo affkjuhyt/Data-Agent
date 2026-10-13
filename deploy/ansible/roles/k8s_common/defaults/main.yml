@@ -103,13 +103,6 @@ config_paths:
   - deploy/docker/kong
   - deploy/docker/litellm
   - deploy/docker/monitoring
-  # The seed files only feed the seed-sql / seed-mongo ConfigMaps, which only
-  # the seed Job mounts. They stay here so those ConfigMaps are refreshed; no
-  # Deployment reads them, so changing one no longer restarts anything.
-  - backend/services/workflow_runtime/migrations/seed.sql
-  - tests/e2e/seed.sql
-  - tests/e2e/seed-governance.sql
-  - tests/e2e/seed-flow.js
 
 apply_databases: true
 apply_jobs: false
@@ -136,7 +129,6 @@ service_workloads:
   - worker-agent
   - litellm
   - auth-api
-  - workflow-runtime
   - kb-backend
   - kb-promote-silver
   - kb-promote-gold
@@ -144,7 +136,6 @@ service_workloads:
   - kb-structured-data
   - model-service
   - sandbox-executor
-  - indicator-api
   - platform-workers-audit
   - platform-workers-memory
   - platform-workers-schema-crawler
@@ -163,7 +154,7 @@ service_workloads:
 service_manifests: []
 
 migration_jobs: [kong-migration, migrate]
-job_workloads: [db-init, minio-init, kafka-topics, seed]
+job_workloads: [db-init, minio-init, kafka-topics]
 # With apply_jobs, a Job reruns only when its own manifest
 # (deploy/k8s/<env>/job/<name>.yaml) or one of these changed: a path prefix,
 # `image:<name>` (that image is being rebuilt) or `job:<name>` (that Job
@@ -177,11 +168,6 @@ job_inputs:
   db-init: [deploy/docker/sql/grant-roles.sql, deploy/docker/sql/kb-seed.sql, "job:migrate"]
   minio-init: []
   kafka-topics: []
-  seed:
-    - backend/services/workflow_runtime/migrations/seed.sql
-    - tests/e2e/seed.sql
-    - tests/e2e/seed-governance.sql
-    - tests/e2e/seed-flow.js
 jobs_force: false
 seed_demo: false
 seed_demo_tenant: a0000000-0000-0000-0000-000000000001

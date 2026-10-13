@@ -1,13 +1,13 @@
 /**
  * Trung tâm thông báo against the v1 mock: grouping by day, the category filter, opening a row
- * (marks it read, leads to the resource) and the channel summary from the user's preferences.
+ * (drops its unread outline, leads to the resource) and the channel summary from the user's preferences.
  */
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { listNotifications, type AppNotification } from '../../lib/v1/notifications';
-import { notificationPreferencesFixture } from '../../mocks/adminPlatform';
+import type { AppNotification } from '../../lib/v1/notifications';
+import { notificationPreferencesFixture, prefsWire } from '../../mocks/adminPlatform';
 import { createNotificationHandlers } from '../../mocks/notifications';
 import { NotificationDrawer } from './NotificationDrawer';
 import { dayGroupOf, routeOf } from './notificationRoute';
@@ -17,8 +17,8 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 beforeEach(() =>
   server.resetHandlers(
     ...createNotificationHandlers(),
-    http.get('*/v1/me/notification-preferences', () =>
-      HttpResponse.json(notificationPreferencesFixture()),
+    http.get('*/v1/me/notification-prefs', () =>
+      HttpResponse.json(prefsWire(notificationPreferencesFixture())),
     ),
   ),
 );
@@ -45,7 +45,7 @@ describe('NotificationDrawer', () => {
     expect(screen.getByText(/mất kết nối DWH/)).toBeInTheDocument();
   });
 
-  it('opening a row marks it read and leads to its resource', async () => {
+  it('opening a row drops its unread outline and leads to its resource', async () => {
     const onOpenTarget = vi.fn();
     const onClose = vi.fn();
     drawer({ onOpenTarget, onClose });
@@ -55,10 +55,6 @@ describe('NotificationDrawer', () => {
       area: 'needs-you',
       page: 'PROPOSAL',
       id: 'proposal-214',
-    });
-    await waitFor(async () => {
-      const feed = await listNotifications();
-      expect(feed.items.find((n) => n.id === 'ntf-adjust-214')?.read_at).not.toBeNull();
     });
   });
 

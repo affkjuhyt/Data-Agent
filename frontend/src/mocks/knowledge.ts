@@ -1,11 +1,15 @@
 import { http, HttpResponse } from 'msw';
 import type {
+  FindingWire,
   KnowledgeFinding,
   KnowledgeLintRun,
   KnowledgePage,
   KnowledgePageSummary,
   KnowledgePageVersion,
+  LintRunWire,
+  RenderedWire,
 } from '../lib/v1/knowledge';
+import type { components } from '../lib/v1/schema';
 
 /* The knowledge pages of "P07 · Trang tri thức" (2405:14761). */
 function pagesFixture(): KnowledgePageSummary[] {
@@ -121,7 +125,6 @@ const LINT_RUN: KnowledgeLintRun = {
   finished_at: '2026-10-10T01:30:00+07:00',
   page_count: 412,
   open_findings: 38,
-  high_findings: 6,
   stale_pages: 17,
   skipped_source_pct: 61,
   duration_minutes: 11,
@@ -211,6 +214,193 @@ function findingsFixture(): KnowledgeFinding[] {
   ];
 }
 
+/*
+ * The pages, runs and findings are kept in the screens' shapes and answered in the api's
+ * (KnowledgePageView, RenderedKnowledgePage, KnowledgeRunView, FindingView), with the PROPOSAL
+ * display fields alongside.
+ */
+const DS = 'ds-thi-truong';
+const AT = '2026-10-08T10:00:00+07:00';
+
+const pageView = (
+  p: KnowledgePageSummary,
+  versions = 1,
+): components['schemas']['KnowledgePageView'] => ({
+  id: p.id,
+  title: p.title,
+  kind: p.kind,
+  status: p.status,
+  slug: p.id,
+  subject_kind: p.kind === 'source' ? 'dataset' : p.kind === 'entity' ? 'organization' : p.kind,
+  subject_ref: null,
+  index_summary: '',
+  tags: [],
+  classification: 'internal',
+  current_version_id: `kpv-${p.id}-${versions}`,
+  has_external_source: false,
+  certification_suspended: p.status === 'decertified',
+  data_space_id: DS,
+  owner_id: 'u-ha',
+  latest_version_no: versions,
+  last_read_at: null,
+  read_count_30d: 0,
+  pii_column_refs: [],
+  policy_state: 'current',
+  policy_computed_at: AT,
+  required_data_space_ids: [DS],
+  stale_reason: null,
+  created_at: AT,
+  updated_at: AT,
+});
+
+const renderedWire = (page: KnowledgePage): RenderedWire => ({
+  page: { ...pageView(page, page.version_count), has_external_source: page.external_source },
+  version: {
+    id: `kpv-${page.id}-${page.version}`,
+    page_id: page.id,
+    version: page.version,
+    status: page.certified_at ? 'certified' : 'draft',
+    summary: '',
+    body: '',
+    body_sha256: '0'.repeat(64),
+    change_note: null,
+    change_size: 'minor',
+    origin: 'ingest',
+    certified_at: page.certified_at,
+    certified_by: null,
+    reviewed_at: null,
+    reviewed_by: null,
+    parent_version_id: null,
+    proposal_id: null,
+    agent_run_id: null,
+    knowledge_run_id: null,
+    source_answer_id: null,
+    created_at: AT,
+  },
+  claims: [],
+  figures: [],
+  links: [],
+  sources: [],
+  labels: [],
+  render: 'template',
+  as_of: AT,
+  diff: null,
+  parent_body: null,
+  display: {
+    summary: page.summary,
+    claims: page.claims,
+    policy: page.policy,
+    links: page.links,
+    certified_by_name: page.certified_by_name,
+  },
+});
+
+const versionWire = (v: KnowledgePageVersion) => ({
+  ...renderedWire(plain(pagesFixture()[0])).version!,
+  id: v.id,
+  version: v.version,
+  status: v.status,
+  change_note: v.change_note,
+  created_at: v.created_at,
+});
+
+const runWire = (r: KnowledgeLintRun): LintRunWire => ({
+  ...r,
+  kind: 'lint',
+  status: 'succeeded',
+  trigger: 'schedule',
+  trigger_event: null,
+  data_space_id: DS,
+  agent_run_id: null,
+  cost: null,
+  findings_count: r.open_findings,
+  hitl_count: 0,
+  page_limit: 50,
+  pages_analyzed: r.page_count,
+  pages_changed: 0,
+  pages_deferred: 0,
+  source_kind: null,
+  source_ref: null,
+  sources_seen: 100,
+  sources_skipped_unchanged: r.skipped_source_pct,
+  started_at: AT,
+  created_at: AT,
+});
+
+/** The api's kind names for the two the screen calls differently. */
+const API_KIND: Partial<Record<KnowledgeFinding['kind'], string>> = {
+  orphan: 'orphan_page',
+  decertified_source: 'source_decertified',
+};
+
+const findingWire = (f: KnowledgeFinding): FindingWire => ({
+  ...f,
+  kind: API_KIND[f.kind] ?? f.kind,
+  detail: f.detail,
+  data_space_id: DS,
+  run_id: LINT_RUN.id,
+  fingerprint: f.id,
+  page_id: null,
+  page_version_id: null,
+  related_page_id: null,
+  proposal_id: null,
+  hitl_request_id: null,
+  action: null,
+  action_reason: null,
+  resolved_at: null,
+  resolved_by: null,
+  suppressed_until: null,
+  created_at: AT,
+});
+
+/* "Lưu câu trả lời thành tri thức" (2405:15399): the answers the dialog is opened on. */
+const SAVED_ANSWERS: Record<string, string> = {
+  'answer-npl-t9':
+    'Nợ xấu bán lẻ T9 tăng 0,12 điểm so với T8, chủ yếu từ khoản vay tiêu dùng tín chấp ở vùng Đông Nam Bộ.',
+  'answer-typed-number': 'Lãi suất huy động 12 tháng của Ngân hàng B là 4,9%.',
+};
+
+const answerWire = (id: string, text: string): components['schemas']['AnswerView'] => ({
+  id,
+  text,
+  kind: 'data',
+  question_id: `q-${id}`,
+  plan_id: `plan-${id}`,
+  figures: [],
+  citations: [],
+  chart_spec: null,
+  filed_vs_current: null,
+  reconcile_badge: null,
+  agent_name: 'Agent Hỏi đáp',
+  latency_ms: 1200,
+  lineage_hash: null,
+  data_product_id: null,
+  product_scope: 'not_applicable',
+  forecast_job_id: null,
+  number_check: {},
+  created_at: '2026-10-09T09:12:00+07:00',
+});
+
+const NPL_INDEX_ENTRY: components['schemas']['KnowledgeIndexEntry'] = {
+  id: 'kp-npl',
+  slug: 'no-xau-ban-le',
+  title: 'Nợ xấu bán lẻ (chỉ số NPL_RATIO)',
+  kind: 'metric',
+  status: 'certified',
+  subject_kind: 'metric',
+  subject_ref: 'NPL_RATIO',
+  index_summary: 'Định nghĩa và diễn biến nợ xấu bán lẻ.',
+  classification: 'internal',
+  has_external_source: false,
+  certification_suspended: false,
+  current_version_id: null,
+  tags: [],
+  updated_at: '2026-10-08T10:00:00+07:00',
+};
+
+const accepted = (id: string) =>
+  HttpResponse.json({ id, status: 'queued', poll_after_ms: 1000 }, { status: 202 });
+
 const problem = (status: number, code: string, detail: string) =>
   HttpResponse.json(
     { title: code, status, code, detail },
@@ -221,17 +411,19 @@ export function createKnowledgeHandlers() {
   const pages = pagesFixture();
   let findings = findingsFixture();
   return [
-    http.get('*/v1/answers/:id/knowledge-draft', ({ params }) =>
-      params.id === 'answer-npl-t9'
-        ? HttpResponse.json({
-            target_page: { id: 'kp-npl', title: 'Nợ xấu bán lẻ (chỉ số NPL_RATIO)' },
-            paragraph:
-              'Nợ xấu bán lẻ T9 tăng {npl_ratio_delta} so với T8, chủ yếu từ khoản vay tiêu dùng tín chấp ở vùng Đông Nam Bộ.',
-            source_text: 'Lượt truy vấn QR-2026-1009-118 · chỉ số NPL_RATIO v4 đã chứng nhận',
-            validity_text: 'Kỳ T9/2026',
-          })
-        : problem(404, 'not_found', 'Không có câu trả lời này.'),
-    ),
+    // AnswerView of the two answers the save dialog is opened on; other ids fall through.
+    http.get('*/v1/answers/:id', ({ params }) => {
+      const text = SAVED_ANSWERS[String(params.id)];
+      return text ? HttpResponse.json(answerWire(String(params.id), text)) : undefined;
+    }),
+    // The index ranks NPL_RATIO's page first for an answer about bad debt, and finds no other.
+    http.get('*/v1/knowledge/index', ({ request }) => {
+      const q = (new URL(request.url).searchParams.get('q') ?? '').toLowerCase();
+      return HttpResponse.json({
+        items: q.includes('nợ xấu') ? [NPL_INDEX_ENTRY] : [],
+        next_page_token: '',
+      });
+    }),
     http.post('*/v1/knowledge-pages\\:from-answer', async ({ request }) => {
       const body = (await request.json()) as { answer_id: string };
       // An answer with a hand-typed figure cannot be saved (BR-167).
@@ -241,23 +433,14 @@ export function createKnowledgeHandlers() {
           'business_rule_violated',
           'Câu trả lời có số không gắn với lượt truy vấn nên không lưu được (BR-167).',
         );
-      return HttpResponse.json(
-        {
-          id: 'kpv-saveback-' + Date.now(),
-          version: 1,
-          status: 'pending_review',
-          change_note: 'Lưu từ câu trả lời',
-          created_at: new Date().toISOString(),
-        },
-        { status: 201 },
-      );
+      return accepted('kpv-saveback-' + Date.now());
     }),
     http.get('*/v1/knowledge-runs', () =>
-      HttpResponse.json({ items: [LINT_RUN], next_page_token: '' }),
+      HttpResponse.json({ items: [runWire(LINT_RUN)], next_page_token: '' }),
     ),
     http.get('*/v1/knowledge-findings', () =>
       HttpResponse.json({
-        items: findings.filter((x) => x.status === 'open'),
+        items: findings.filter((x) => x.status === 'open').map(findingWire),
         next_page_token: '',
       }),
     ),
@@ -280,23 +463,25 @@ export function createKnowledgeHandlers() {
         status: body.action === 'dismiss' ? 'dismissed' : 'resolved',
       };
       findings = findings.map((x) => (x.id === id ? done : x));
-      return HttpResponse.json(done);
+      return HttpResponse.json(findingWire(done));
     }),
     http.get('*/v1/knowledge-pages', () =>
-      HttpResponse.json({ items: pages, next_page_token: '' }),
+      HttpResponse.json({ items: pages.map((p) => pageView(p)), next_page_token: '' }),
     ),
     http.get('*/v1/knowledge-pages/:id/versions', ({ params }) =>
       params.id === 'kp-bank-b'
-        ? HttpResponse.json({ items: VERSIONS, next_page_token: '' })
+        ? HttpResponse.json({ items: VERSIONS.map(versionWire), next_page_token: '' })
         : HttpResponse.json({ items: [], next_page_token: '' }),
     ),
     http.get('*/v1/knowledge-pages/:id', ({ params }) => {
       const summary = pages.find((p) => p.id === params.id);
       if (!summary) return problem(404, 'not_found', 'Không có trang hoặc bạn thiếu quyền.');
-      return HttpResponse.json(summary.id === 'kp-bank-b' ? bankB() : plain(summary));
+      return HttpResponse.json(renderedWire(summary.id === 'kp-bank-b' ? bankB() : plain(summary)));
     }),
-    http.post('*/v1/knowledge-runs', () =>
-      HttpResponse.json({ id: 'kr-' + Date.now() }, { status: 202 }),
-    ),
+    http.post('*/v1/knowledge-runs', async ({ request }) => {
+      const body = (await request.json()) as { data_space_id?: string };
+      if (!body.data_space_id) return problem(422, 'validation_failed', 'Thiếu data_space_id.');
+      return accepted('kr-' + Date.now());
+    }),
   ];
 }

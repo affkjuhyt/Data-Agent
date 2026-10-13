@@ -25,7 +25,6 @@ data:
   KAFKA_URL: kafka.dataagent-database.svc.cluster.local:8352
   LITELLM_BASE_URL: http://litellm.dataagent-service.svc.cluster.local:8500
   MODEL_SERVICE_URL: http://model-service.dataagent-service.svc.cluster.local:8230
-  WORKFLOW_RUNTIME_URL: http://workflow-runtime.dataagent-service.svc.cluster.local:8240
   SANDBOX_EXECUTOR_URL: http://sandbox-executor.dataagent-service.svc.cluster.local:8260
   KB_ENDPOINT: http://kb-backend.dataagent-service.svc.cluster.local:8220
   KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101
@@ -34,7 +33,6 @@ data:
   KEYCLOAK_NETWORK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
   KEYCLOAK_REALM: aeroflow
   KC_REALM: aeroflow
-  WORKFLOW_RUNTIME_HOST: workflow-runtime
   AUTH_API_HOST: auth-api
   API_HOST: api
   LANGFUSE_HOST: http://langfuse.dataagent-service.svc.cluster.local:8420
@@ -46,7 +44,7 @@ data:
   REMOTE_LLM_MODEL: agent-fast
   EMBEDDING_DIM: '1024'
   RUNTIME_ALLOWED_SERVICES: ''
-  KB_ALLOWED_SERVICES: workflow_runtime
+  KB_ALLOWED_SERVICES: api,worker-agent
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -74,7 +72,6 @@ data:
   KAFKA_URL: kafka.dataagent-database.svc.cluster.local:8352
   LITELLM_BASE_URL: http://litellm.dataagent-service.svc.cluster.local:8500
   MODEL_SERVICE_URL: http://model-service.dataagent-service.svc.cluster.local:8230
-  WORKFLOW_RUNTIME_URL: http://workflow-runtime.dataagent-service.svc.cluster.local:8240
   SANDBOX_EXECUTOR_URL: http://sandbox-executor.dataagent-service.svc.cluster.local:8260
   KB_ENDPOINT: http://kb-backend.dataagent-service.svc.cluster.local:8220
   KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101
@@ -91,4 +88,4 @@ data:
   REMOTE_LLM_MODEL: agent-fast
   EMBEDDING_DIM: '1024'
   RUNTIME_ALLOWED_SERVICES: ''
-  KB_ALLOWED_SERVICES: workflow_runtime
+  KB_ALLOWED_SERVICES: api,worker-agent

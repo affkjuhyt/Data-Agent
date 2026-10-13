@@ -9,14 +9,15 @@ and its rows stays here; opening the SQL or the rows is audited (UC-01-02).
 from __future__ import annotations
 
 import datetime
+import re
 import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Path, Query, Response
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from libs.dataagent_db import uuid7
-from libs.dataagent_db.models import context
+from libs.dataagent_db.models import catalog, context
 from libs.dataagent_db.models import query as query_models
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
@@ -33,6 +34,7 @@ from services.api.modules.qa import scope
 from services.api.modules.qa.schemas import (
     ExploreQueryCreate,
     QueryRowsPage,
+    QueryRunCreate,
     QueryRunView,
     QuerySqlView,
 )
@@ -152,6 +154,149 @@ async def explore_query(
                 "filters": [f.model_dump() for f in body.filters],
                 "as_of": body.as_of,
                 "compare": body.compare,
+                "status": "queued",
+            },
+        )
+    response.headers["Location"] = f"/v1/query-runs/{run.id}"
+    return QueryRunView.model_validate(run)
+
+
+# BR-22: what the caller sends is one read-only statement. The query worker runs it on a
+# read-only connection after the policy rewrite (BR-45); refusing here tells the author at once.
+# Same lexical approach as the pipeline module's step check (pipeline/rules.py), stricter: a
+# statement starts with SELECT or WITH and SELECT ... INTO (a table write) is refused too.
+_WRITE_WORDS = re.compile(
+    r"\b(insert|update|delete|merge|upsert|truncate|drop|alter|create|grant|revoke|copy|call"
+    r"|execute|into|lock|vacuum|refresh|listen|notify|prepare|reindex)\b",
+    re.IGNORECASE,
+)
+_LEXEMES = re.compile(r"--[^\n]*|/\*.*?\*/|'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"", re.DOTALL)
+
+
+def read_only_problem(sql: str) -> str | None:
+    """Why `sql` is not a single read-only statement, None when it is."""
+    # Dollar quoting ($tag$...$tag$) and backslash escapes (E'\'') make Postgres end a literal
+    # somewhere other than this lexer does, which could hide a second statement: refuse both.
+    if "$" in sql or "\\" in sql:
+        return "Dollar quoting and backslash escapes are not supported here (BR-22)."
+    # Comments and literals cannot hide a second statement or a write; what is left after
+    # removing them must not open another quote or comment (fail closed).
+    bare = _LEXEMES.sub(lambda m: " " if m.group().startswith(("--", "/*")) else " '' ", sql)
+    if re.search(r"/\*|\*/|'|\"", _LEXEMES.sub(" ", sql)):
+        return "The SQL has an unterminated quote or comment."
+    statements = [s for s in bare.split(";") if s.strip()]
+    if len(statements) != 1:
+        return "Send exactly one statement (BR-22)."
+    first = re.match(r"[\s(]*(\w*)", statements[0])
+    if first is None or first.group(1).lower() not in ("select", "with"):
+        return "Only a SELECT or WITH query runs here (BR-22)."
+    writes = sorted({m.group(1).lower() for m in _WRITE_WORDS.finditer(statements[0])})
+    if writes:
+        return f"A read-only query does not use {', '.join(writes)} (BR-22)."
+    return None
+
+
+@router.post(
+    "/v1/query-runs",
+    response_model=QueryRunView,
+    status_code=202,
+    **endpoint("POST", "/v1/query-runs", operation_id="createQueryRun"),
+)
+async def create_query_run(
+    body: QueryRunCreate,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    response: Response,
+) -> QueryRunView:
+    if body.sql is not None:
+        problem = read_only_problem(body.sql)
+        if problem:
+            raise Problem(
+                422,
+                "validation_failed",
+                problem,
+                errors=[FieldError(field="sql", code="not_read_only", message=problem)],
+            )
+    async with transaction(ROLE, principal) as session:
+        dataset = None
+        if body.dataset_id is not None:
+            ds = catalog.Dataset
+            dataset = await session.scalar(
+                select(ds).where(
+                    ds.id == body.dataset_id,
+                    ds.org_id == principal.org_id,
+                    ds.data_space_id == data_space,
+                    ds.deleted_at.is_(None),
+                    # BR-102: only an enabled table is queried; BR-111: a personal one is its
+                    # creator's. Anything else is out of the caller's rights: 404 (A1.7).
+                    ds.enabled.is_(True),
+                    or_(ds.scope != "personal", ds.created_by == principal.user_id),
+                )
+            )
+            if dataset is None:
+                raise Problem(404, "not_found", "Dataset not found.")
+            if body.filters:
+                col = catalog.ColumnMeta
+                known = set(
+                    (
+                        await session.scalars(
+                            select(col.name).where(
+                                col.dataset_id == dataset.id,
+                                col.removed_in_version.is_(None),
+                            )
+                        )
+                    ).all()
+                )
+                unknown = sorted({f.column for f in body.filters} - known)
+                if unknown:
+                    raise Problem(
+                        422,
+                        "validation_failed",
+                        "Unknown column in filters.",
+                        errors=[
+                            FieldError(
+                                field="filters", code="not_found", message=", ".join(unknown)
+                            )
+                        ],
+                    )
+        run = query_models.QueryRun(
+            id=uuid7(),
+            org_id=principal.org_id,
+            data_space_id=data_space,
+            # SQL or a dataset sent straight to the api, not a question; caller_id is the caller.
+            caller_kind="ad_hoc",
+            caller_id=principal.user_id,
+            # BR-07: the run carries the caller's identity; the worker rewrites under its policy.
+            principal_id=principal.user_id,
+            source_id=dataset.source_id if dataset is not None else None,
+            route="live" if body.as_of is None else "history",
+            # The SQL the caller wrote; for a dataset the worker builds it from the filters.
+            # sql_executed is the worker's, after the policy rewrite (BR-45).
+            sql_generated=body.sql or "",
+            sql_executed="",
+            as_of=body.as_of,
+            status="queued",
+        )
+        session.add(run)
+        await session.flush()
+        await session.refresh(run)
+        scope.emit(
+            session,
+            query_models.Outbox,
+            principal,
+            aggregate_type="query_run",
+            aggregate_id=run.id,
+            event_type="query_run.requested",
+            payload={
+                "query_run_id": run.id,
+                "started_at": run.started_at,
+                "data_space_id": data_space,
+                "principal_id": principal.user_id,
+                "mode": "sql" if body.sql is not None else "dataset",
+                "dataset_id": body.dataset_id,
+                "filters": [f.model_dump() for f in body.filters],
+                "limit": body.limit,
+                "as_of": body.as_of,
                 "status": "queued",
             },
         )

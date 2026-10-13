@@ -116,10 +116,13 @@ export default function CrawlSourcesPage() {
             />
             <Stat
               label="Độ chính xác mẫu ngẫu nhiên"
-              value={pct(summary.data.sample_accuracy_pct)}
-              note={summary.data.accuracy_delta_text}
+              value={
+                summary.data.sample_accuracy_pct === null
+                  ? '—'
+                  : pct(summary.data.sample_accuracy_pct)
+              }
+              note={summary.data.sample_text}
               tone="success"
-              foot={summary.data.sample_text}
             />
             <Stat
               label="Bản ghi chờ duyệt"
@@ -288,9 +291,9 @@ function Stat({
 }: {
   label: string;
   value: string;
-  note: string;
+  note: string | null;
   tone?: 'warning' | 'success';
-  foot: string;
+  foot?: string | null;
   action?: { label: string; onClick: () => void };
 }) {
   return (
@@ -307,9 +310,9 @@ function Stat({
               : 'text-foreground',
         )}
       >
-        {note}
+        {note ?? '—'}
       </p>
-      <p className="text-muted-foreground da-caption">{foot}</p>
+      {foot && <p className="text-muted-foreground da-caption">{foot}</p>}
       {action && (
         <button
           type="button"

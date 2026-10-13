@@ -16,7 +16,7 @@ import zoneinfo
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Response
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -39,25 +39,34 @@ from services.api.kernel.problems import FieldError, Problem
 from services.api.modules.catalog import rules
 from services.api.modules.catalog.schemas import (
     Accepted,
+    ActivateRequest,
+    ApiConfigPut,
+    ApiConfigView,
     CertificationView,
     CertifiedVersion,
     CertifyRequest,
     ColumnProfileView,
     ColumnView,
+    ConnectorForm,
+    ConnectorView,
+    DatasetDeriveRequest,
     DatasetDetail,
     DatasetPatch,
     DatasetVersionView,
     DatasetView,
+    DerivedDatasetAccepted,
     RevokeRequest,
     ScanRequest,
     ScanRunView,
     ScheduleUpdate,
     SecretReference,
+    SecretRefView,
     SourceCreate,
     SourcePatch,
     SourceSchedule,
     SourceView,
 )
+from services.api.modules.org import capabilities_of
 
 router = APIRouter()
 ROLE = "svc_catalog"
@@ -69,9 +78,130 @@ DEFAULT_ZONE = "Asia/Ho_Chi_Minh"
 # A source is scanned while it can be read (UC-04-02 precondition: the source is active).
 SCANNABLE = ("active", "needs_fix")
 
+CONNECTORS: tuple[ConnectorView, ...] = (
+    ConnectorView(
+        code="postgresql",
+        name="PostgreSQL",
+        category="database",
+        subtitle="Cơ sở dữ liệu quan hệ",
+        connected_count=0,
+        badge=None,
+        form=ConnectorForm(database_label="Database", default_port=5432),
+        prep_notes=["Tài khoản đọc chỉ cần quyền CONNECT và SELECT."],
+        sample_sql="GRANT CONNECT ON DATABASE <db> TO <user>;",
+    ),
+    ConnectorView(
+        code="clickhouse",
+        name="ClickHouse",
+        category="warehouse",
+        subtitle="Kho phân tích cột",
+        connected_count=0,
+        badge=None,
+        form=ConnectorForm(database_label="Database", default_port=8123),
+        prep_notes=["Tài khoản chỉ đọc trên database cần dùng."],
+        sample_sql="GRANT SELECT ON <database>.* TO <user>;",
+    ),
+    ConnectorView(
+        code="snowflake",
+        name="Snowflake",
+        category="warehouse",
+        subtitle="Kho dữ liệu đám mây",
+        connected_count=0,
+        badge=None,
+        form=ConnectorForm(database_label="Warehouse / database", default_port=443),
+        prep_notes=["Dùng role chỉ đọc và warehouse có resource monitor."],
+        sample_sql=None,
+    ),
+    ConnectorView(
+        code="rest_api",
+        name="REST API",
+        category="app",
+        subtitle="Bằng HTTP hoặc MCP",
+        connected_count=0,
+        badge="new",
+        form=None,
+        prep_notes=["Lưu API key trong OpenBao; không nhập secret trực tiếp vào Data Agent."],
+        sample_sql=None,
+    ),
+    ConnectorView(
+        code="file",
+        name="Tệp CSV / thư mục",
+        category="file",
+        subtitle="Tải tệp theo lịch",
+        connected_count=0,
+        badge="upload",
+        form=None,
+        prep_notes=["Chọn thư mục hoặc tải tệp ở bước tiếp theo."],
+        sample_sql=None,
+    ),
+)
+
 
 def _now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
+
+
+@router.get(
+    "/v1/connectors",
+    response_model=Page[ConnectorView],
+    **endpoint("GET", "/v1/connectors", operation_id="listConnectors"),
+)
+async def list_connectors(principal: CurrentPrincipal) -> Page[ConnectorView]:
+    """Return the safe connector catalogue and counts for this organisation."""
+    source = catalog.Source
+    async with transaction(ROLE, principal) as session:
+        counts = dict(
+            (
+                await session.execute(
+                    select(source.kind, func.count(source.id))
+                    .where(source.org_id == principal.org_id, source.deleted_at.is_(None))
+                    .group_by(source.kind)
+                )
+            )
+            .tuples()
+            .all()
+        )
+    return Page(
+        items=[
+            item.model_copy(update={"connected_count": counts.get(item.code, 0)})
+            for item in CONNECTORS
+        ],
+        next_page_token="",
+    )
+
+
+@router.get(
+    "/v1/secret-refs",
+    response_model=Page[SecretRefView],
+    **endpoint("GET", "/v1/secret-refs", operation_id="listSecretRefs"),
+)
+async def list_secret_refs(
+    principal: CurrentPrincipal, space: CurrentDataSpace
+) -> Page[SecretRefView]:
+    """List labels for references already used in the selected Data Space.
+
+    OpenBao is deliberately not queried here: the API only exposes a reference that can be
+    selected by the connection form, never credentials or arbitrary vault paths.
+    """
+    source = catalog.Source
+    async with transaction(ROLE, principal) as session:
+        rows = (
+            await session.execute(
+                select(source.secret_ref, func.min(source.name))
+                .where(
+                    source.org_id == principal.org_id,
+                    source.data_space_id == space,
+                    source.deleted_at.is_(None),
+                    source.secret_ref != "",
+                )
+                .group_by(source.secret_ref)
+                .order_by(source.secret_ref)
+            )
+        ).all()
+    return Page(
+        items=[SecretRefView(ref=ref, label=str(label)) for ref, label in rows],
+        next_page_token="",
+    )
 
 
 def _event(
@@ -196,6 +326,83 @@ async def list_sources(
     )
 
 
+@router.get(
+    "/v1/sources/{id}",
+    response_model=SourceView,
+    **endpoint("GET", "/v1/sources/{id}", operation_id="getSource"),
+)
+async def get_source(
+    source_id: PathId, principal: CurrentPrincipal, space: CurrentDataSpace
+) -> SourceView:
+    # Where :test's Location points (A3, 12/10/2026): the outcome the connector worker wrote.
+    async with transaction(ROLE, principal) as session:
+        return SourceView.of(await _source(session, principal, space, source_id))
+
+
+def _api_config(row: catalog.Source) -> ApiConfigView:
+    config = row.conn_options if isinstance(row.conn_options, dict) else {}
+    saved_value = config.get("api")
+    saved: dict[str, Any] = saved_value if isinstance(saved_value, dict) else {}
+    request_value = saved.get("request")
+    request: dict[str, Any] = request_value if isinstance(request_value, dict) else {}
+    mapping_value = saved.get("mapping")
+    mapping: list[dict[str, Any]] = (
+        [item for item in mapping_value if isinstance(item, dict)]
+        if isinstance(mapping_value, list)
+        else []
+    )
+    health_value = saved.get("health")
+    health: dict[str, Any] | None = health_value if isinstance(health_value, dict) else None
+    return ApiConfigView(
+        source_id=row.id,
+        name=row.name,
+        request=request,
+        mapping=mapping,
+        health=health,
+    )
+
+
+@router.get(
+    "/v1/sources/{id}/api-config",
+    response_model=ApiConfigView,
+    **endpoint("GET", "/v1/sources/{id}/api-config", operation_id="getSourceApiConfig"),
+)
+async def get_source_api_config(
+    source_id: PathId, principal: CurrentPrincipal, space: CurrentDataSpace
+) -> ApiConfigView:
+    async with transaction(ROLE, principal) as session:
+        row = await _source(session, principal, space, source_id)
+        if row.kind != "rest_api":
+            raise Problem(422, "business_rule_violated", "The source is not a REST API source.")
+        return _api_config(row)
+
+
+@router.put(
+    "/v1/sources/{id}/api-config",
+    response_model=ApiConfigView,
+    **endpoint("PUT", "/v1/sources/{id}/api-config", operation_id="putSourceApiConfig"),
+)
+async def put_source_api_config(
+    body: ApiConfigPut,
+    source_id: PathId,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+) -> ApiConfigView:
+    if not str(body.request.get("url", "")).startswith("https://"):
+        raise Problem(422, "validation_failed", "request.url must start with https://.")
+    async with transaction(ROLE, principal) as session:
+        row = await _source(session, principal, space, source_id, lock=True)
+        if row.kind != "rest_api":
+            raise Problem(422, "business_rule_violated", "The source is not a REST API source.")
+        options = dict(row.conn_options) if isinstance(row.conn_options, dict) else {}
+        options["api"] = {"request": body.request, "mapping": body.mapping}
+        row.conn_options = options
+        row.updated_by = principal.user_id
+        await session.flush()
+        await session.refresh(row)
+        return _api_config(row)
+
+
 @router.post(
     "/v1/sources",
     status_code=201,
@@ -277,7 +484,14 @@ async def update_source(
     body: SourcePatch, source_id: PathId, principal: CurrentPrincipal, space: CurrentDataSpace
 ) -> SourceView:
     sent = body.model_fields_set
-    for name in ("name", "authority_level", "max_concurrency", "query_timeout_s", "scan_schemas"):
+    for name in (
+        "name",
+        "authority_level",
+        "max_concurrency",
+        "query_timeout_s",
+        "scan_schemas",
+        "writeback_tables",
+    ):
         if name in sent and getattr(body, name) is None:
             raise Problem(422, "validation_failed", f"{name} cannot be null.")
     if "credentials" in sent and body.credentials is None:
@@ -295,11 +509,14 @@ async def update_source(
             "query_timeout_s",
             "scan_schemas",
             "scan_window",
+            "writeback_tables",
         ):
             if name in sent:
                 value = getattr(body, name)
                 if name == "name":
                     value = value.strip()
+                elif name == "writeback_tables":
+                    value = sorted(set(value))
                 if getattr(row, name) != value:
                     setattr(row, name, value)
                     changed.append(name)
@@ -377,8 +594,118 @@ async def test_source(
                 requested_by=principal.user_id,
             )
         )
-    response.headers["Location"] = f"/v1/sources?status={row.status}"
+    response.headers["Location"] = f"/v1/sources/{row.id}"
     return Accepted(id=row.id, status=row.status, poll_after_ms=POLL_AFTER_MS)
+
+
+@router.post(
+    "/v1/sources/{id}:activate",
+    response_model=SourceView,
+    **endpoint("POST", "/v1/sources/{id}:activate", operation_id="activateSource"),
+)
+async def activate_source(
+    body: ActivateRequest,
+    source_id: PathId,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+) -> SourceView:
+    """Enable the tables selected after the initial structure scan."""
+    async with transaction(ROLE, principal) as session:
+        source = await _source(session, principal, space, source_id, lock=True)
+        if source.status not in SCANNABLE:
+            raise Problem(409, "invalid_state", "The source must pass its connection test first.")
+        # UC-04-04 E1: one source may serve several Data Spaces, each enabling its own tables, so
+        # a table may be assigned elsewhere; but only where the caller administers the data too,
+        # or this would be a way to put tables into a Data Space they have no right over.
+        for target in sorted({t.data_space_id for t in body.tables if t.data_space_id != space}):
+            held = await capabilities_of(principal.org_id, principal.user_id, target)
+            if not held or "admin_data" not in held:
+                raise Problem(
+                    403,
+                    "forbidden",
+                    "tables[].data_space_id names a Data Space whose data you do not administer.",
+                )
+        owners = {t.owner_id for t in body.tables}
+        if owners:
+            active = set(
+                (
+                    await session.scalars(
+                        select(org.AppUser.id).where(
+                            org.AppUser.id.in_(owners),
+                            org.AppUser.org_id == principal.org_id,
+                            org.AppUser.status == "active",
+                        )
+                    )
+                ).all()
+            )
+            if owners - active:
+                raise Problem(422, "validation_failed", "tables[].owner_id is not an active user.")
+        names = {item.name for item in body.tables}
+        datasets = (
+            await session.scalars(
+                select(catalog.Dataset)
+                .where(
+                    catalog.Dataset.org_id == principal.org_id,
+                    catalog.Dataset.source_id == source.id,
+                    catalog.Dataset.data_space_id == space,
+                    catalog.Dataset.deleted_at.is_(None),
+                )
+                .with_for_update()
+            )
+        ).all()
+        # UC-04-04 step 3, as PATCH /v1/datasets/{id} holds it: a table enters the context only
+        # once its personal-data columns' masking is confirmed.
+        unconfirmed = []
+        for dataset in datasets:
+            if f"{dataset.schema_name}.{dataset.table_name}" in names and not dataset.enabled:
+                pending = [
+                    c.name
+                    for c in await _columns(session, dataset.id)
+                    if c.pii_label and not c.pii_confirmed
+                ]
+                if pending:
+                    unconfirmed.append(
+                        f"{dataset.schema_name}.{dataset.table_name} ({', '.join(sorted(pending))})"
+                    )
+        if unconfirmed:
+            raise Problem(
+                422,
+                "business_rule_violated",
+                "Confirm the masking of the personal-data columns before enabling: "
+                + "; ".join(sorted(unconfirmed)),
+            )
+        for dataset in datasets:
+            selected = f"{dataset.schema_name}.{dataset.table_name}" in names
+            assignment = next(
+                (
+                    item
+                    for item in body.tables
+                    if item.name == f"{dataset.schema_name}.{dataset.table_name}"
+                ),
+                None,
+            )
+            dataset.enabled = selected
+            if selected and assignment is not None:
+                dataset.data_space_id = assignment.data_space_id
+                dataset.steward_id = assignment.owner_id
+                dataset.updated_by = principal.user_id
+        source.scan_cron = body.schema_scan
+        source.profile_cron = body.profiling
+        source.updated_at, source.updated_by = _now(), principal.user_id
+        session.add(
+            _event(
+                principal,
+                "source",
+                source.id,
+                "source.activated",
+                source_id=source.id,
+                data_space_id=source.data_space_id,
+                tables=sorted(names),
+            )
+        )
+        await session.flush()
+        await session.refresh(source)
+        return SourceView.of(source)
 
 
 async def _skip_days(
@@ -713,6 +1040,58 @@ async def get_dataset(
     async with transaction(ROLE, principal) as session:
         row = await _dataset(session, principal, space, dataset_id)
         return await _detail(session, row)
+
+
+@router.post(
+    "/v1/datasets/{id}:derive",
+    response_model=DerivedDatasetAccepted,
+    status_code=201,
+    **endpoint("POST", "/v1/datasets/{id}:derive", operation_id="deriveDataset"),
+)
+async def derive_dataset(
+    body: DatasetDeriveRequest,
+    dataset_id: PathId,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+) -> DerivedDatasetAccepted:
+    """Register a filtered/deduplicated derived table and let the worker materialize it."""
+    async with transaction(ROLE, principal) as session:
+        source = await _dataset(session, principal, space, dataset_id)
+        derived_id = uuid7()
+        table_name = f"derived_{str(derived_id).replace('-', '')[:20]}"
+        row = catalog.Dataset(
+            id=derived_id,
+            org_id=principal.org_id,
+            source_id=None,
+            data_space_id=space,
+            origin="derived",
+            schema_name="derived",
+            table_name=table_name,
+            object_kind="table",
+            display_name=f"{source.display_name or source.table_name} · dẫn xuất",
+            description=f"Từ {source.schema_name}.{source.table_name}",
+            enabled=False,
+            steward_id=principal.user_id,
+            created_by=principal.user_id,
+            updated_by=principal.user_id,
+        )
+        session.add(row)
+        session.add(
+            _event(
+                principal,
+                "dataset",
+                row.id,
+                "dataset.derive_requested",
+                dataset_id=row.id,
+                source_dataset_id=source.id,
+                data_space_id=space,
+                filters=body.filters,
+                drop_duplicates=body.drop_duplicates,
+                requested_by=principal.user_id,
+            )
+        )
+        await session.flush()
+    return DerivedDatasetAccepted(id=row.id, name=row.table_name, row_count=0)
 
 
 @router.patch(

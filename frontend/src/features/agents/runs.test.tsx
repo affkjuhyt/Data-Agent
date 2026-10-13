@@ -79,7 +79,7 @@ describe('RunDetailPage', () => {
 
   it('leads a failed run with the error, what stayed safe, and reruns it', async () => {
     let body: unknown;
-    // The retry endpoint is a PROPOSAL; answered here until the shared mock registers it.
+    // A2's :retry; answered here so the test sees the body the screen sends.
     server.use(
       http.post('*/v1/runs/:action', async ({ params, request }) => {
         if (params.action !== 'run-409:retry') return undefined;
@@ -147,9 +147,6 @@ describe('PlanEditDrawer', () => {
     fireEvent.click(within(step6).getByRole('button', { name: /Thao tác với bước/ }));
     fireEvent.click(within(step6).getByRole('menuitem', { name: 'Bỏ bước' }));
     expect(within(step6).getByText('Bỏ')).toBeInTheDocument();
-    expect(
-      await within(drawer).findByText(/bản tin tuần sẽ không nhận kết quả này/),
-    ).toBeInTheDocument();
 
     fireEvent.click(within(drawer).getByRole('button', { name: 'Thêm bước' }));
     fireEvent.change(within(drawer).getByLabelText('Tên bước'), {

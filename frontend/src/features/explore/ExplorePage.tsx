@@ -7,21 +7,18 @@ import { Icon } from '../../design-system/Icon';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { Segmented } from '../../design-system/Segmented';
-import { Select } from '../../design-system/Select';
 import { SkeletonRows } from '../../design-system/SkeletonRow';
 import { useToast } from '../../design-system/Toast';
 import { csvCell } from '../../lib/csv';
 import { requestAccess } from '../../lib/v1/adminAccess';
 import { V1Error } from '../../lib/v1/client';
-import { listDashboards } from '../../lib/v1/dashboards';
 import {
   getExploreExplanation,
   getExploreModel,
   getExploreRows,
   interpretQuestion,
-  listExploreDatasets,
   runExploreQuery,
-  saveQueryToDashboard,
+  saveExploreToSession,
   type ExploreModel,
   type ExploreResult,
   type ExploreRow,
@@ -30,61 +27,44 @@ import {
 } from '../../lib/v1/explore';
 import { useV1 } from '../../lib/v1/useV1';
 import { cn } from '../../lib/utils';
-import { Dialog } from '../../design-system/Dialog';
 import { ExplainPanel } from './ExplainPanel';
 import { FieldList, type FieldRef } from './FieldList';
 import { ResultChart, ValueTable, type ChartKind } from './ResultChart';
+import { SaveToSessionDialog } from './SaveToSessionDialog';
 import { Shelves, type ShelfState } from './Shelves';
 
 /*
  * "v3.1 · Khám phá" (2140:15461, UC-01-04): self-service exploration over the certified semantic
- * layer. Left the dataset and its fields (280px), right "Agent giải thích" (340px), in between
+ * layer. Left the certified metrics and their dimensions (280px), right "Agent giải thích"
+ * (340px), in between
  * the mode switch, the shelves, the chart card and the value table. States: "Khám phá · Đang
  * tải" (2165:17536), "Lỗi truy vấn" (2165:17822), "Thiếu quyền" (2165:18122); interactions as
  * "Tương tác · Khám phá" (2168:18414) and its "Đặc tả" (2168:18624).
  *
- * Under 1280px ("Khám phá · 1024", 2167:18020) both side columns fold away: the dataset name
+ * Under 1280px ("Khám phá · 1024", 2167:18020) both side columns fold away: "Chỉ số và chiều"
  * opens the field list and "Agent giải thích" opens the explanation, each as an overlay.
- * Every endpoint is a PROPOSAL (lib/v1/explore.ts).
+ * A result is kept as a tile of a session ("Lưu vào phiên"): the design has no dashboards.
  */
 type Mode = 'drag' | 'ask';
 const EMPTY: ShelfState = { metric_ids: [], dimension_ids: [], filters: [] };
 
 export default function ExplorePage() {
-  const datasets = useV1(listExploreDatasets, []);
-  const [datasetId, setDatasetId] = useState<string | null>(null);
-  const firstId = datasets.data?.items.find((d) => d.certified)?.id ?? null;
-  const currentId = datasetId ?? firstId;
-  const model = useV1(currentId ? () => getExploreModel(currentId) : null, [currentId]);
+  const model = useV1(getExploreModel, []);
 
   return (
     <div className="flex h-full min-h-0">
-      {datasets.data?.items.length === 0 ? (
+      {model.data?.metrics.length === 0 ? (
         <div className="flex-1 p-da-xl">
           <EmptyState
             icon="database"
-            title="Chưa có bộ dữ liệu nào để khám phá"
-            description="Khám phá chỉ dùng bộ dữ liệu đã chứng nhận mà bạn có quyền. Khi người phụ trách chứng nhận một bộ, nó sẽ hiện ở đây."
+            title="Chưa có chỉ số nào để khám phá"
+            description="Khám phá chỉ dùng chỉ số đã chứng nhận mà bạn có quyền. Khi người phụ trách chứng nhận một chỉ số, nó sẽ hiện ở đây."
           />
         </div>
       ) : (
-        <AsyncRegion state={model} what="bộ dữ liệu" skeletonRows={6}>
-          {(m) => (
-            <Explorer
-              key={m.dataset.id}
-              model={m}
-              datasets={datasets.data?.items ?? [m.dataset]}
-              onDataset={setDatasetId}
-            />
-          )}
+        <AsyncRegion state={model} what="chỉ số và chiều" skeletonRows={6}>
+          {(m) => <Explorer model={m} />}
         </AsyncRegion>
-      )}
-      {datasets.error && !datasets.data && (
-        <div className="flex-1 p-da-xl">
-          <AsyncRegion state={datasets} what="danh sách bộ dữ liệu">
-            {() => null}
-          </AsyncRegion>
-        </div>
       )}
     </div>
   );
@@ -95,26 +75,25 @@ type View =
   | { kind: 'rows'; rows: ExploreRows }
   | { kind: 'locked'; reason: string };
 
-function Explorer({
-  model,
-  datasets,
-  onDataset,
-}: {
-  model: ExploreModel;
-  datasets: { id: string; display_name: string; certified: boolean; data_until_text: string }[];
-  onDataset: (id: string) => void;
-}) {
+function Explorer({ model: base }: { model: ExploreModel }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [mode, setMode] = useState<Mode>('drag');
   const [question, setQuestion] = useState('');
   const [interpreting, setInterpreting] = useState(false);
-  const [shelves, setShelves] = useState<ShelfState>(() => {
-    const d = model.default_query;
-    return d
-      ? { metric_ids: d.metric_ids, dimension_ids: d.dimension_ids, filters: d.filters }
-      : EMPTY;
-  });
+  const [shelves, setShelves] = useState<ShelfState>(EMPTY);
+  // A3 lists no values of a dimension: the filter offers the values results have shown so far.
+  const [seen, setSeen] = useState<Record<string, string[]>>({});
+  const model = useMemo(
+    () => ({
+      ...base,
+      dimensions: base.dimensions.map((d) => ({
+        ...d,
+        values: (seen[d.id] ?? []).map((value) => ({ value, label: value })),
+      })),
+    }),
+    [base, seen],
+  );
   const [kind, setKind] = useState<ChartKind>('bar');
   const [result, setResult] = useState<ExploreResult>();
   const [error, setError] = useState<Error>();
@@ -139,21 +118,27 @@ function Explorer({
     const mine = ++seq.current;
     setRunning(true);
     setView({ kind: 'chart' });
-    runExploreQuery({ dataset_id: model.dataset.id, ...shelves })
+    runExploreQuery(shelves, base)
       .then((r) => {
         if (mine !== seq.current) return;
         setResult(r);
         setError(undefined);
+        const category = r.category_dimension_id;
+        if (category)
+          setSeen((s) => ({
+            ...s,
+            [category]: [...new Set([...(s[category] ?? []), ...r.rows.map((row) => row.key)])],
+          }));
       })
       .catch((e: Error) => mine === seq.current && setError(e))
       .finally(() => mine === seq.current && setRunning(false));
     // shelves are captured through queryKey.
-  }, [queryKey, model.dataset.id, ready, tick]);
+  }, [queryKey, base, ready, tick]);
 
-  const explanation = useV1(result && !running ? () => getExploreExplanation(result.id) : null, [
-    result?.id,
-    running,
-  ]);
+  const explanation = useV1(
+    result && !running ? () => getExploreExplanation(result, shelves.metric_ids) : null,
+    [result?.id, running],
+  );
 
   const selected = useMemo(
     () => new Set([...shelves.metric_ids, ...shelves.dimension_ids]),
@@ -183,8 +168,7 @@ function Explorer({
       ],
     }));
 
-  const categoryId = (r: ExploreResult) =>
-    model.dimensions.find((d) => d.label === r.category_label)?.id ?? shelves.dimension_ids[0];
+  const categoryId = (r: ExploreResult) => r.category_dimension_id ?? shelves.dimension_ids[0];
 
   const drillColumn = (row: ExploreRow) => {
     if (!result?.drill_dimension_id) return;
@@ -245,7 +229,7 @@ function Explorer({
     if (!text) return;
     setInterpreting(true);
     try {
-      const filled = await interpretQuestion(model.dataset.id, text);
+      const filled = await interpretQuestion(text, base);
       setShelves({
         metric_ids: filled.metric_ids,
         dimension_ids: filled.dimension_ids,
@@ -270,7 +254,7 @@ function Explorer({
       await requestAccess({
         data_space_id: result.data_space_id,
         capability: 'view_detail',
-        reason: `Xem dòng gốc của “${result.title}” trong Khám phá. ${reason}`,
+        reason: `Xem dòng kết quả của “${result.title}” trong Khám phá. ${reason}`,
         requested_until: until,
       });
       toast({ tone: 'success', message: 'Đã gửi yêu cầu quyền tới người phụ trách.' });
@@ -282,7 +266,9 @@ function Explorer({
   const links = result && (
     <>
       <LinkButton onClick={() => void openRows()}>
-        Xem {result.detail_row_count.toLocaleString('vi-VN')} dòng gốc
+        {result.row_count === null
+          ? 'Xem dòng kết quả'
+          : `Xem ${result.row_count.toLocaleString('vi-VN')} dòng kết quả`}
       </LinkButton>
       <LinkButton onClick={whyThisNumber}>Vì sao số này?</LinkButton>
       <LinkButton onClick={downloadCsv}>Tải CSV</LinkButton>
@@ -294,7 +280,7 @@ function Explorer({
   return (
     <div className="relative flex min-h-0 w-full flex-1">
       <aside
-        aria-label="Bộ dữ liệu và trường"
+        aria-label="Chỉ số và chiều"
         className={cn(
           'w-[280px] shrink-0 overflow-y-auto border-r border-border bg-card p-da-lg',
           fieldsOpen
@@ -302,14 +288,7 @@ function Explorer({
             : 'max-[1279px]:hidden',
         )}
       >
-        <FieldList
-          datasets={datasets}
-          model={model}
-          selected={selected}
-          metricIds={shelves.metric_ids}
-          onDataset={onDataset}
-          onAdd={add}
-        />
+        <FieldList model={model} selected={selected} metricIds={shelves.metric_ids} onAdd={add} />
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col gap-da-lg overflow-y-auto px-da-xl py-da-lg">
@@ -320,7 +299,7 @@ function Explorer({
             aria-expanded={fieldsOpen}
             className="flex shrink-0 items-center gap-da-xs rounded-md border border-border px-da-lg py-da-md text-foreground da-body-strong min-[1280px]:hidden"
           >
-            {model.dataset.display_name}
+            Chỉ số và chiều
             <Icon name="chevron-down" size={12} />
           </button>
           <Segmented<Mode>
@@ -378,7 +357,7 @@ function Explorer({
             onClick={() => setSaving(true)}
             className="shrink-0"
           >
-            Lưu vào dashboard
+            Lưu vào phiên
           </Button>
           <Button
             kind="secondary"
@@ -400,14 +379,14 @@ function Explorer({
           <EmptyState
             icon="lock"
             title="Bạn chỉ xem được số tổng hợp"
-            description={`Bộ dữ liệu này có chi tiết từng khoản vay; ${lowerFirst(view.reason).replace(/\.$/, '')}. Biểu đồ theo ${(result?.category_label ?? 'vùng').toLowerCase()} vẫn dùng được.`}
+            description={`${view.reason.replace(/\.$/, '')}. Biểu đồ theo ${(result?.category_label ?? 'chiều đã chọn').toLowerCase()} vẫn dùng được.`}
             action={
               <div className="flex gap-da-md">
                 <Button kind="primary" onClick={() => void requestDetail(view.reason)}>
                   Yêu cầu quyền
                 </Button>
                 <Button onClick={() => setView({ kind: 'chart' })}>
-                  Xem theo {(result?.category_label ?? 'vùng').toLowerCase()}
+                  Xem theo {(result?.category_label ?? 'chiều đã chọn').toLowerCase()}
                 </Button>
               </div>
             }
@@ -455,17 +434,17 @@ function Explorer({
       </aside>
 
       {saving && result && (
-        <SaveDialog
-          queryId={result.id}
+        <SaveToSessionDialog
           onClose={() => setSaving(false)}
-          onSaved={(dashboardId, title) => {
+          onSave={(workspaceId) => saveExploreToSession(workspaceId, result, shelves)}
+          onSaved={(workspaceId, title) => {
             setSaving(false);
             toast({
               tone: 'success',
               message: `Đã lưu vào ${title}`,
               action: {
-                label: 'Mở dashboard',
-                onClick: () => navigate('analysis', 'DASHBOARD', dashboardId),
+                label: 'Mở phiên',
+                onClick: () => navigate('analysis', 'SESSIONS', workspaceId),
               },
             });
           }}
@@ -474,8 +453,6 @@ function Explorer({
     </div>
   );
 }
-
-const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 
 function LinkButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   return (
@@ -490,7 +467,9 @@ function DetailRows({ rows, onBack }: { rows: ExploreRows; onBack: () => void })
     <section aria-label="Dòng gốc" className="flex flex-col gap-da-md">
       <div className="flex items-center gap-da-md">
         <p className="flex-1 text-muted-foreground da-caption">
-          {rows.rows.length.toLocaleString('vi-VN')} / {rows.total.toLocaleString('vi-VN')} dòng
+          {rows.total === null
+            ? `${rows.rows.length.toLocaleString('vi-VN')} dòng đầu`
+            : `${rows.total.toLocaleString('vi-VN')} dòng`}
         </p>
         <Button size="sm" onClick={onBack}>
           Quay lại biểu đồ
@@ -524,61 +503,5 @@ function DetailRows({ rows, onBack }: { rows: ExploreRows; onBack: () => void })
         </table>
       </div>
     </section>
-  );
-}
-
-function SaveDialog({
-  queryId,
-  onClose,
-  onSaved,
-}: {
-  queryId: string;
-  onClose: () => void;
-  onSaved: (dashboardId: string, title: string) => void;
-}) {
-  const dashboards = useV1(listDashboards, []);
-  const [target, setTarget] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string>();
-  const save = async () => {
-    if (!target) return;
-    setBusy(true);
-    try {
-      await saveQueryToDashboard(queryId, target);
-      onSaved(target, dashboards.data?.items.find((d) => d.id === target)?.title ?? 'dashboard');
-    } catch (e) {
-      setFailure((e as Error).message);
-      setBusy(false);
-    }
-  };
-  return (
-    <Dialog
-      open
-      title="Lưu vào dashboard"
-      onClose={onClose}
-      footer={
-        <>
-          <Button kind="ghost" onClick={onClose}>
-            Huỷ
-          </Button>
-          <Button kind="primary" disabled={!target} loading={busy} onClick={() => void save()}>
-            Lưu
-          </Button>
-        </>
-      }
-    >
-      <AsyncRegion state={dashboards} what="danh sách dashboard" skeletonRows={2}>
-        {(page) => (
-          <Select
-            label="Dashboard đích"
-            placeholder="Chọn dashboard…"
-            value={target}
-            onChange={setTarget}
-            options={page.items.map((d) => ({ value: d.id, label: d.title }))}
-          />
-        )}
-      </AsyncRegion>
-      {failure && <p className="text-error da-caption">Không lưu được: {failure}</p>}
-    </Dialog>
   );
 }

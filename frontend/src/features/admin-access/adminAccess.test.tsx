@@ -153,16 +153,19 @@ describe('CreateDataSpacePage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Tạo Data Space' }));
 
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('admin', 'DATA_SPACES', 'ds-6'));
+    // DataSpaceCreate, then the chosen sources in their own PUT (A2).
     expect(sent).toContainEqual({
       path: '/data-spaces',
       body: expect.objectContaining({
+        code: 'THE_TIN_DUNG',
         name: 'Thẻ tín dụng',
         steward_id: 'u-duc-long',
-        source_ids: ['src-core'],
-        group_ids: ['grp-risk-head'],
-        status: 'onboarding',
         default_policy: expect.objectContaining({ mask_pii: true, allow_external_channels: false }),
       }),
+    });
+    expect(sent).toContainEqual({
+      path: '/data-spaces/ds-6/sources',
+      body: { source_ids: ['src-core'] },
     });
   });
 });
@@ -276,14 +279,48 @@ describe('PoliciesPage', () => {
 });
 
 describe('AuditPage', () => {
-  it('lists the log with blocked actions in warning, and filters by channel', async () => {
+  it('lists the log with blocked actions in warning, and filters by outcome', async () => {
     wrap(<AuditPage />);
     expect(await screen.findByText('Bị chặn: xem cột id_number')).toHaveClass('text-warning');
     expect(screen.getAllByRole('row')).toHaveLength(7);
-    fireEvent.click(screen.getByRole('combobox', { name: 'Kênh' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Kênh: MCP' }));
+    fireEvent.click(screen.getByRole('combobox', { name: 'Kết quả' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Kết quả: bị chặn' }));
     await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(2));
-    expect(screen.getByText('Gọi công cụ get_metric')).toBeInTheDocument();
+    expect(screen.getByText('Bị chặn: xem cột id_number')).toBeInTheDocument();
+  });
+
+  it("exports the day's rows as the api's filters and follows the job until it is signed", async () => {
+    wrap(<AuditPage />);
+    await screen.findByText('Bị chặn: xem cột id_number');
+    fireEvent.click(screen.getByRole('button', { name: 'Xuất cho kiểm toán' }));
+    expect(await screen.findByText(/Tệp CSV 6 dòng đã ký/)).toBeInTheDocument();
+    const body = sent.find((s) => s.path === '/audit:export')?.body as {
+      filters: Record<string, string>;
+      format: string;
+    };
+    expect(body.format).toBe('csv');
+    expect(Object.keys(body.filters).sort()).toEqual(['from', 'to']);
+  });
+
+  it('says an export over 100.000 rows waits for a second person', async () => {
+    wrap(<AuditPage />);
+    await screen.findByText('Bị chặn: xem cột id_number');
+    fireEvent.change(screen.getByLabelText('Ngày'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Xuất cho kiểm toán' }));
+    expect(
+      await screen.findByText(/Bản xuất 1\.240\.000 dòng vượt 100\.000 dòng trong ngày/),
+    ).toBeInTheDocument();
+  });
+
+  it('verifies the hash chain and lists the security events', async () => {
+    wrap(<AuditPage />);
+    await screen.findByText('Bị chặn: xem cột id_number');
+    fireEvent.click(screen.getByRole('button', { name: 'Kiểm chuỗi băm' }));
+    expect(await screen.findByText(/Chuỗi băm nguyên vẹn/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Sự kiện bảo mật' }));
+    expect(await screen.findByText('Chèn lệnh vào tài liệu')).toBeInTheDocument();
+    expect(screen.getByText('Cao')).toBeInTheDocument();
+    expect(screen.getByText('audit_log · denied: 14 · window_minutes: 10')).toBeInTheDocument();
   });
 });
 

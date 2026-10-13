@@ -251,7 +251,7 @@ function DefinitionTab({ profile, onOpen }: { profile: MetricProfile; onOpen: ()
         <Card title="Lineage">
           <ol aria-label="Lineage" className="flex items-stretch gap-da-xs max-[1279px]:flex-wrap">
             {profile.lineage.map((l, i) => (
-              <li key={l.kind} className="flex items-center gap-da-xs">
+              <li key={`${i}-${l.title}`} className="flex items-center gap-da-xs">
                 {i > 0 && <Icon name="chevron-right" className="text-muted-foreground" />}
                 <span
                   className={cn(
@@ -265,7 +265,9 @@ function DefinitionTab({ profile, onOpen }: { profile: MetricProfile; onOpen: ()
                   >
                     {l.title}
                   </span>
-                  {l.detail && <span className="break-all text-muted-foreground da-mono">{l.detail}</span>}
+                  {l.detail && (
+                    <span className="break-all text-muted-foreground da-mono">{l.detail}</span>
+                  )}
                 </span>
               </li>
             ))}

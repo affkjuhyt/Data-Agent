@@ -45,7 +45,7 @@ deploy riêng, CLAUDE.md §3):
 | `sandbox_executor`, `sandbox-runner` | sandbox của `worker-agent` (tab 1 §7.2) |
 | `kb_backend`, `kb-worker` (`kb-promote-*`, `kb-structured-data`, `kb-conflict-resolution`) | `api` (document, catalog, conflict) + `worker-ingest` |
 | `platform_workers` (audit, memory, schema-crawler, web-crawler), `llm-exporter` | audit: Audit service ghi `dataagent_audit`; memory: `worker-agent`; schema-crawler: `worker-ingest`; web-crawler: `crawler`; llm-exporter: chỉ số vLLM qua OpenTelemetry (ADR-40) |
-| `indicator_api` | module của `api` khi nhóm A2 tương ứng được làm (hiện chỉ trả 501) |
+| `indicator_api` | đã xoá 12/10/2026: `api` phục vụ đủ A2, mọi route của nó chỉ trả 501 |
 | `model_service` | TEI hoặc Infinity cho embedding, rerank (ADR-35); sinh văn bản qua vLLM sau Model gateway (ADR-41) |
 
 ## 3. Lộ trình dọn mã cũ
@@ -59,7 +59,7 @@ Xoá theo năng lực, không theo tên.
 | G1 · Hỏi đáp chạy trên V3 | `worker-agent` khung: nhận câu hỏi từ outbox `qa`, Plan IR + bộ thực thi tất định, ghi `qa.answer`, đẩy tiến độ SSE qua Redis `sse:{question_id}`; màn Hỏi đáp gọi `/v1/questions` thay `/api/orchestrate` | Route Kong `/api/orchestrate*`, `/api/ask*`, `/api/catalog`; sau đó `workflow_runtime`, `sandbox_executor`, CronJob `memory-cleanup`, `libs/semantic` (phần eval chuyển theo) | E2E Hỏi đáp qua gateway; eval gate ≥ 90 % (O6.5) |
 | G2 · Quản trị | Nhóm A2 Quản trị và Tích hợp: `/v1/me*`, người dùng, vai trò, khoá API, danh sách IP, bí mật | `auth_api`, route `/api/auth*`, `AppStateContext` gọi `/api/auth/me` | Đăng nhập, khoá API, MCP client qua `/v1` |
 | G3 · Dữ liệu | `worker-ingest`: tài liệu, quét nguồn (`catalog.scan_run`), biên soạn tri thức; nhóm A2 Nguồn và danh mục, Tài liệu, Nạp dữ liệu, Lớp ngữ cảnh, Xung đột | `kb_backend`, `kb-worker`, `platform-workers-schema-crawler`, `libs/ingestion`, Neo4j (ADR-04) | Tài liệu mẫu đi hết Bronze → Silver → Gold trên V3; tìm kiếm Qdrant đạt |
-| G4 · Thu thập, dự báo | `crawler` và `ml-forecast`; nhóm A2 Thu thập, Dự báo | `platform-workers-web-crawler`, `indicator_api` | Lượt thu thật qua egress proxy; backtest chạy |
+| G4 · Thu thập, dự báo | `crawler` và `ml-forecast`; nhóm A2 Thu thập, Dự báo | `platform-workers-web-crawler` (`indicator_api` đã xoá 12/10/2026) | Lượt thu thật qua egress proxy; backtest chạy |
 | G5 · Dọn cuối | Audit service và ghi `dataagent_audit`; outbox qua Debezium thay `libs/shared/outbox.relay_loop` | `platform_workers`, `model_service`, `llm-exporter`, `libs/{basemodel,database_connector,shared,contracts}`, MongoDB nếu không còn canvas; test toàn repo đang nằm trong `tests/unit/workflow_runtime` chuyển sang `tests/unit/repo` trước khi xoá suite | `rg` cả tên gói lẫn tên runtime không còn kết quả |
 
 **Xung đột cần chốt:** backlog R0 (R0-8, R0-10, R0-11, đã commit) vẫn thêm tính năng vào
@@ -92,8 +92,11 @@ tính năng mới trong dịch vụ cũ, phần còn lại của R0 làm thẳng
 2. **Migration không dùng superuser.** Job `migrate` đang chạy bằng `admin`; tab 1 §8.14 yêu cầu vai trò
    `migrator` không phải superuser. Vai trò `da_owner`, `svc_*` tạo một lần bằng tài khoản quản trị (bước
    bootstrap của Ansible), sau đó `migrator` chạy Alembic.
-3. **Lệch dev và production.** Container init của `api` dùng `migrate-secrets` ở dev nhưng `api-secrets` ở
-   production. *Đề xuất:* `deploy/k8s/base` + overlay `dev`/`production` bằng Kustomize (có sẵn trong
+3. **Lệch dev và production.** Container init của `api` từng dùng `migrate-secrets` ở dev nhưng `api-secrets` ở
+   production (ở đó `alembic current` không có URL nào để đọc, nên chờ mãi). Đã sửa: `wait-for-migrations`
+   của `api` và `worker-agent` ở cả hai bộ manifest đọc Secret của chính khối, lấy head từ các revision trong
+   image `migrate` (`alembic heads`, không cần CSDL) và đọc `alembic_version` bằng vai trò của khối
+   (`svc_org`, `svc_qa`); `grant-roles.sql` cấp `SELECT` trên bảng đó cho mọi vai trò `svc_`. *Đề xuất còn lại:* `deploy/k8s/base` + overlay `dev`/`production` bằng Kustomize (có sẵn trong
    kubectl) thay cho hai thư mục chép tay; Ansible vẫn là đường deploy duy nhất.
 4. **Bí mật.** Thiết kế đặt bí mật ứng dụng ở OpenBao (KV, AppRole); hiện `DATAAGENT_DB_URL__*` dựng từ
    ansible-vault. Giữ ansible-vault cho bootstrap, chuyển URL CSDL của từng khối sang OpenBao khi khối thứ

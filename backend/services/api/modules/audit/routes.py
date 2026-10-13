@@ -50,6 +50,8 @@ from services.api.modules.audit.schemas import (
     VerifyIn,
     VerifyResult,
 )
+from services.api.modules.inbox.public import EVENT_TYPE as HITL_REQUESTED
+from services.api.modules.inbox.public import hitl_requested
 
 router = APIRouter()
 ROLE = "svc_audit"
@@ -220,8 +222,23 @@ async def export_audit_log(
                 )
             )
         ).one()
+        # BR-138 counts what one person takes out, not one request: exports split under the
+        # threshold add up over a day, so cutting a large export into pieces still needs approval.
+        # One requester's exports are judged one at a time, or parallel requests would each see
+        # the day's total before the others commit.
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))"),
+            {"k": f"audit.export:{principal.org_id}:{principal.user_id}"},
+        )
+        taken_today = await session.scalar(
+            select(func.coalesce(func.sum(audit.ExportJob.row_count), 0)).where(
+                audit.ExportJob.requested_by == principal.user_id,
+                audit.ExportJob.created_at >= func.now() - text("interval '24 hours'"),
+                audit.ExportJob.status.not_in(("failed", "expired")),
+            )
+        )
         status: Literal["queued", "waiting_approval"] = (
-            "waiting_approval" if row_count > APPROVAL_ROWS else "queued"
+            "waiting_approval" if int(taken_today or 0) + row_count > APPROVAL_ROWS else "queued"
         )
         job = audit.ExportJob(
             id=uuid7(),
@@ -233,6 +250,36 @@ async def export_audit_log(
             requested_by=principal.user_id,
         )
         session.add(job)
+        if status == "waiting_approval":
+            # BR-138: a second person with audit_read, never the requester, approves it in Cần bạn.
+            # Org-wide: an export of the audit log belongs to no Data Space.
+            job.hitl_request_id = uuid7()
+            session.add(
+                audit.Outbox(
+                    id=uuid7(),
+                    org_id=principal.org_id,
+                    aggregate_type="export_job",
+                    aggregate_id=job.id,
+                    event_type=HITL_REQUESTED,
+                    payload=hitl_requested(
+                        hitl_request_id=job.hitl_request_id,
+                        data_space_id=None,
+                        kind="export",
+                        risk="high",
+                        title=f"Xuất {int(row_count):,} dòng nhật ký kiểm toán".replace(",", "."),
+                        source_service="audit",
+                        source_ref=job.id,
+                        created_by=principal.user_id,
+                        context={
+                            "filters": filters,
+                            "row_count": int(row_count),
+                            "format": body.format,
+                        },
+                        assignee_capability="audit_read",
+                        excluded_approver_ids=[principal.user_id],
+                    ),
+                )
+            )
         _record(
             session,
             principal,

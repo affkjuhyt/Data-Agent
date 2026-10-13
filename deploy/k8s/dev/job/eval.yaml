@@ -17,11 +17,8 @@ metadata:
     app: eval
     app.kubernetes.io/part-of: dataagent
 data:
-  # The literal seeded dev tenant (deploy/docker/sql), not a slug — workflow_runtime's
-  # X-Tenant-Id is read verbatim into a `tenant_id::uuid` filter, so "dev-tenant"
-  # here never actually ran the online tier (no case reached ask_live_agent
-  # successfully before this).
-  EVAL_TENANT_ID: a0000000-0000-0000-0000-000000000001
+  EVAL_AGENT_URL: http://kong.dataagent-service.svc.cluster.local:8000
+  EVAL_DATA_SPACE_ID: a0000000-0000-0000-0000-000000000001
   EVAL_JUDGE_MODEL: judge
 ---
 apiVersion: batch/v1

@@ -13,7 +13,7 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, Path, Query, Response
-from sqlalchemy import func, select, tuple_
+from sqlalchemy import func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
@@ -23,11 +23,15 @@ from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
+    Order,
     Page,
     PageRequest,
     decode_page_token,
     encode_page_token,
     invalid_page_token,
+    keyset,
+    next_page,
+    order_by,
     page_request,
 )
 from services.api.kernel.problems import Problem
@@ -39,6 +43,7 @@ from services.api.modules.eval.schemas import (
     ErrorBookDetail,
     ErrorBookPatch,
     ErrorBookView,
+    EvalFailure,
     EvalItemCreate,
     EvalItemView,
     EvalResultView,
@@ -46,6 +51,8 @@ from services.api.modules.eval.schemas import (
     EvalRunCreate,
     EvalRunDetail,
     EvalRunView,
+    EvalSetDetail,
+    EvalSetView,
     MarkFixed,
     ProposeToPack,
 )
@@ -92,6 +99,176 @@ async def _eval_set(
     if eval_set.status != "active":
         raise Problem(409, "invalid_state", "The eval set is archived.")
     return eval_set
+
+
+# Eval sets (reads, UC-07-06, UC-13-04)
+
+# The runs GET /v1/eval-sets/{id} lists; older ones stay readable at GET /v1/eval-runs/{id}.
+RECENT_RUNS = 20
+
+
+def _readable_sets(principal: Principal, data_space: uuid.UUID) -> tuple[Any, ...]:
+    """The Data Space's sets and the organisation-wide ones (pack sets have no Data Space)."""
+    return (
+        evaluation.EvalSet.org_id == principal.org_id,
+        or_(
+            evaluation.EvalSet.data_space_id == data_space,
+            evaluation.EvalSet.data_space_id.is_(None),
+        ),
+    )
+
+
+async def _set_views(session: AsyncSession, rows: list[evaluation.EvalSet]) -> list[EvalSetView]:
+    ids = [r.id for r in rows]
+    if not ids:
+        return []
+    # eval_run has no Data Space: a run of an organisation-wide set (a pack's) ran on some Data
+    # Space's data, maybe another's, so only runs of the caller's own Data Space's sets are shown.
+    own = [r.id for r in rows if r.data_space_id is not None]
+    counts = dict(
+        (
+            await session.execute(
+                select(evaluation.EvalItem.eval_set_id, func.count())
+                .where(
+                    evaluation.EvalItem.eval_set_id.in_(ids),
+                    evaluation.EvalItem.status == "active",
+                )
+                .group_by(evaluation.EvalItem.eval_set_id)
+            )
+        )
+        .tuples()
+        .all()
+    )
+    latest = {
+        run.eval_set_id: run
+        for run in (
+            await session.scalars(
+                select(evaluation.EvalRun)
+                .where(evaluation.EvalRun.eval_set_id.in_(own))
+                .order_by(
+                    evaluation.EvalRun.eval_set_id,
+                    evaluation.EvalRun.started_at.desc(),
+                    evaluation.EvalRun.id.desc(),
+                )
+                .distinct(evaluation.EvalRun.eval_set_id)
+            )
+        ).all()
+    }
+    views = []
+    for row in rows:
+        view = EvalSetView.model_validate(row, from_attributes=True)
+        view.item_count = int(counts.get(row.id, 0))
+        run = latest.get(row.id)
+        view.latest_run = EvalRunView.model_validate(run, from_attributes=True) if run else None
+        views.append(view)
+    return views
+
+
+@router.get(
+    "/v1/eval-sets",
+    response_model=Page[EvalSetView],
+    **endpoint("GET", "/v1/eval-sets", operation_id="listEvalSets"),
+)
+async def list_eval_sets(
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(order_by("created_at", "updated_at", "name", "status", default="created_at desc")),
+    ],
+    subject_type: Annotated[str | None, Query(max_length=40)] = None,
+    subject_id: uuid.UUID | None = None,
+    status: Annotated[str | None, Query(max_length=40)] = None,
+) -> Page[EvalSetView]:
+    es = evaluation.EvalSet
+    query = select(es).where(*_readable_sets(principal, data_space))
+    for column, value in ((es.subject_type, subject_type), (es.subject_id, subject_id)):
+        if value is not None:
+            query = query.where(column == value)
+    if status is not None:
+        query = query.where(es.status == status)
+    query = keyset(
+        query,
+        columns={
+            "created_at": es.created_at,
+            "updated_at": es.updated_at,
+            "name": es.name,
+            "status": es.status,
+        },
+        tiebreak=es.id,
+        order=order,
+        page=page,
+    )
+    async with transaction(ROLE, principal) as session:
+        rows = list((await session.scalars(query)).all())
+        rows, token = next_page(rows, order=order, page=page)
+        items = await _set_views(session, rows)
+    return Page(items=items, next_page_token=token)
+
+
+@router.get(
+    "/v1/eval-sets/{id}",
+    response_model=EvalSetDetail,
+    **endpoint("GET", "/v1/eval-sets/{id}", operation_id="getEvalSet"),
+)
+async def get_eval_set(
+    eval_set_id: Annotated[uuid.UUID, Path(alias="id")],
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> EvalSetDetail:
+    async with transaction(ROLE, principal) as session:
+        row = await session.scalar(
+            select(evaluation.EvalSet).where(
+                evaluation.EvalSet.id == eval_set_id, *_readable_sets(principal, data_space)
+            )
+        )
+        if row is None:
+            raise Problem(404, "not_found", "Eval set not found.")
+        (view,) = await _set_views(session, [row])
+        # Runs of an organisation-wide set are not told apart by Data Space (see _set_views).
+        runs = (
+            (
+                await session.scalars(
+                    select(evaluation.EvalRun)
+                    .where(evaluation.EvalRun.eval_set_id == row.id)
+                    .order_by(evaluation.EvalRun.started_at.desc(), evaluation.EvalRun.id.desc())
+                    .limit(RECENT_RUNS)
+                )
+            ).all()
+            if row.data_space_id is not None
+            else []
+        )
+        judged = next((r for r in runs if r.status == "completed"), None)
+        failures: list[EvalFailure] = []
+        if judged is not None:
+            missed = (
+                await session.execute(
+                    select(evaluation.EvalResult, evaluation.EvalItem)
+                    .join(
+                        evaluation.EvalItem,
+                        evaluation.EvalItem.id == evaluation.EvalResult.eval_item_id,
+                    )
+                    .where(
+                        evaluation.EvalResult.eval_run_id == judged.id,
+                        evaluation.EvalResult.passed.is_(False),
+                    )
+                    .order_by(evaluation.EvalResult.created_at, evaluation.EvalResult.id)
+                )
+            ).all()
+            failures = [
+                EvalFailure(
+                    item=EvalItemView.model_validate(item, from_attributes=True),
+                    result=EvalResultView.model_validate(result, from_attributes=True),
+                )
+                for result, item in missed
+            ]
+        return EvalSetDetail(
+            **view.model_dump(),
+            runs=[EvalRunView.model_validate(r, from_attributes=True) for r in runs],
+            failures_run_id=judged.id if judged else None,
+            failures=failures,
+        )
 
 
 @router.post(

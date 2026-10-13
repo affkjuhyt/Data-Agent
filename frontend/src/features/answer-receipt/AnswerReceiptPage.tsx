@@ -12,7 +12,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { formatDateTime } from '../../lib/formatVN';
 import {
   getAnswerReceipt,
-  rerunAnswer,
+  rerunReceipt,
   type AnswerReceipt,
   type ReceiptFigure,
   type ReceiptRerun,
@@ -25,9 +25,10 @@ import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 /*
  * "P01 · Biên nhận câu trả lời" (2420:15098, UC-01-07, SCR-68). Figma draws it as a 480px drawer
  * over the session; here it is its own page (/analysis/receipt/<answer id>) so a receipt can be
- * linked and audited without the conversation. Order as drawn: code + lock, date · data product ·
- * who asked, the receipt hash, one card per figure (F1, F2…) back to its query or compute run,
- * the model that wrote the words, and "Chạy lại tại thời điểm cũ".
+ * linked and audited without the conversation. Order as drawn: code + lock, date · data product,
+ * the receipt hash, one card per figure (F1, F2…) back to its query or compute run, the models
+ * that wrote the words, and "Chạy lại tại thời điểm cũ". The frame's "who asked" and the dataset's
+ * load time are not in the api's receipt, so they are not drawn.
  *
  * The frame's "Biến thể số" and "Biến thể frontier" are not blocks of their own: they show how a
  * figure past its update window or without a value reads, and the line an external model adds;
@@ -36,11 +37,11 @@ import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 
 // Dates without a time are calendar days: parsing "2026-06-15" as a Date would shift it by the
 // viewer's UTC offset.
-const day = (iso: string) => iso.split('-').reverse().join('/');
+const day = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
 const dayMonth = (iso: string) => iso.slice(0, 10).split('-').reverse().slice(0, 2).join('/');
 const hourMinute = (iso: string) => iso.slice(11, 16);
-const shortHash = (hash: string, head: number, tail: number) =>
-  `${hash.slice(0, head)}…${hash.slice(-tail)}`;
+const shortHash = (hash: string | null, head: number, tail: number) =>
+  hash ? `${hash.slice(0, head)}…${hash.slice(-tail)}` : '—';
 
 const RERUN_NOTE: Record<RerunMode, string> = {
   figures:
@@ -86,7 +87,12 @@ export function ReceiptDrawer({
   onClose: () => void;
 }) {
   return (
-    <Drawer open={answerId !== null} width="receipt" title="Biên nhận câu trả lời" onClose={onClose}>
+    <Drawer
+      open={answerId !== null}
+      width="receipt"
+      title="Biên nhận câu trả lời"
+      onClose={onClose}
+    >
       <div className="flex flex-col gap-da-lg">
         <ReceiptView answerId={answerId ?? undefined} />
       </div>
@@ -117,9 +123,10 @@ export default function AnswerReceiptPage() {
 function ReceiptBody({ receipt }: { receipt: AnswerReceipt }) {
   const toast = useToast();
   const { navigate } = useAppState();
+  const external = receipt.models.filter((m) => m.external).map((m) => m.provider_label);
   const copyHash = async () => {
     try {
-      await navigator.clipboard.writeText(receipt.receipt_sha256);
+      await navigator.clipboard.writeText(receipt.receipt_sha256 ?? '');
       toast({ tone: 'success', message: 'Đã chép mã SHA-256 của biên nhận' });
     } catch {
       toast({ tone: 'error', message: 'Trình duyệt không cho chép. Hãy chọn và chép thủ công.' });
@@ -140,18 +147,19 @@ function ReceiptBody({ receipt }: { receipt: AnswerReceipt }) {
           onClick={() => navigate('data', 'ANSWER_PRODUCTS', receipt.data_product.id)}
         >
           {receipt.data_product.name}
-        </button>{' '}
-        · {receipt.asked_by_name}
+        </button>
       </p>
 
-      <div className="flex items-center gap-da-md rounded-sm bg-subtle py-da-sm pl-[10px] pr-da-sm">
-        <span className="min-w-0 flex-1 truncate whitespace-pre text-foreground da-mono">
-          {`SHA-256 biên nhận  ${shortHash(receipt.receipt_sha256, 8, 4)}`}
-        </span>
-        <Button size="sm" onClick={copyHash} aria-label="Chép mã SHA-256 của biên nhận">
-          Chép
-        </Button>
-      </div>
+      {receipt.receipt_sha256 && (
+        <div className="flex items-center gap-da-md rounded-sm bg-subtle py-da-sm pl-[10px] pr-da-sm">
+          <span className="min-w-0 flex-1 truncate whitespace-pre text-foreground da-mono">
+            {`SHA-256 biên nhận  ${shortHash(receipt.receipt_sha256, 8, 4)}`}
+          </span>
+          <Button size="sm" onClick={copyHash} aria-label="Chép mã SHA-256 của biên nhận">
+            Chép
+          </Button>
+        </div>
+      )}
 
       <section aria-labelledby="receipt-figures" className="flex flex-col gap-da-lg">
         <h2 id="receipt-figures" className="text-foreground da-body-strong font-semibold">
@@ -166,16 +174,23 @@ function ReceiptBody({ receipt }: { receipt: AnswerReceipt }) {
         </ul>
       </section>
 
-      <dl className="m-0 flex items-start gap-da-md da-caption">
-        <dt className="w-[110px] shrink-0 text-muted-foreground">Mô hình viết câu</dt>
-        <dd className="m-0 text-foreground da-label">
-          {receipt.model.name} · {receipt.model.provider_label}
-        </dd>
-      </dl>
-      {receipt.model.external && (
+      {receipt.models.length > 0 && (
+        <dl className="m-0 flex items-start gap-da-md da-caption">
+          <dt className="w-[110px] shrink-0 text-muted-foreground">Mô hình viết câu</dt>
+          <dd className="m-0 flex flex-col text-foreground da-label">
+            {receipt.models.map((m) => (
+              <span key={`${m.name}|${m.provider_label}`}>
+                {m.name} · {m.provider_label}
+              </span>
+            ))}
+          </dd>
+        </dl>
+      )}
+      {receipt.frontier_used && (
+        // A frontier provider only ever receives public data (its max_classification is public).
         <p className="rounded-sm bg-accent px-da-lg py-da-md text-foreground da-caption">
-          Có dùng mô hình bên ngoài: {receipt.model.provider_label}
-          {receipt.model.external_scope_text ? `, ${receipt.model.external_scope_text}` : ''}
+          Có dùng mô hình bên ngoài
+          {external.length ? `: ${external.join(', ')}` : ''}, chỉ với dữ liệu công khai
         </p>
       )}
 
@@ -184,43 +199,54 @@ function ReceiptBody({ receipt }: { receipt: AnswerReceipt }) {
   );
 }
 
-function FigureCard({ figure }: { figure: ReceiptFigure }) {
+function sourceRows(figure: ReceiptFigure): { label: string; value: string; mono?: boolean }[] {
   const { source } = figure;
-  const rows: { label: string; value: string; mono?: boolean }[] =
-    source.kind === 'query_run'
-      ? [
-          {
-            label: 'Chỉ số',
-            value: `${source.metric.code} v${source.metric.version} · ký bởi ${source.metric.signed_by_name} ${day(source.metric.signed_at)}`,
-          },
-          {
-            label: 'Dataset',
-            value: `${source.dataset.code} v${source.dataset.version} · as_of ${day(source.dataset.as_of)}`,
-          },
-          {
-            label: 'Truy vấn',
-            value: `SHA ${shortHash(source.query.sql_sha256, 4, 2)} · ${source.query.compiler}`,
-            mono: true,
-          },
-          {
-            label: 'Độ tươi',
-            value: `nạp ${dayMonth(source.freshness.loaded_at)} ${hourMinute(source.freshness.loaded_at)} · hạn ${hourMinute(source.freshness.due_at)}`,
-          },
-        ]
-      : [
-          { label: 'Nguồn', value: `compute_run · ${source.description}` },
-          { label: 'Đầu vào', value: source.inputs_text },
-        ];
+  if (source.kind === 'compute_run')
+    return [
+      { label: 'Nguồn', value: 'compute_run · phép tính trên các số khác' },
+      { label: 'Phép tính', value: `SHA ${shortHash(source.expr_sha256, 4, 2)}`, mono: true },
+    ];
+  if (source.kind === 'period_result')
+    return [{ label: 'Nguồn', value: 'Số đã công bố của kỳ chốt' }];
+  const rows: { label: string; value: string; mono?: boolean }[] = [];
+  if (source.metric)
+    rows.push({
+      label: 'Chỉ số',
+      value: [
+        source.metric.version != null ? `v${source.metric.version}` : null,
+        source.metric.certified_at ? `ký ${day(source.metric.certified_at)}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    });
+  if (source.datasets.length)
+    rows.push({
+      label: 'Dataset',
+      value: source.datasets
+        .map((d) =>
+          [d.version != null ? `v${d.version}` : null, d.as_of && `as_of ${day(d.as_of)}`]
+            .filter(Boolean)
+            .join(' · '),
+        )
+        .join('; '),
+    });
+  rows.push({
+    label: 'Truy vấn',
+    value: [`SHA ${shortHash(source.query.sql_sha256, 4, 2)}`, source.query.compiler]
+      .filter(Boolean)
+      .join(' · '),
+    mono: true,
+  });
+  if (figure.due_at)
+    rows.push({
+      label: 'Độ tươi',
+      value: `hạn ${dayMonth(figure.due_at)} ${hourMinute(figure.due_at)}`,
+    });
+  return rows;
+}
 
-  const due =
-    source.kind === 'query_run'
-      ? `${dayMonth(source.freshness.due_at)} ${hourMinute(source.freshness.due_at)}`
-      : null;
-  const until =
-    source.kind === 'query_run' && source.freshness.data_until
-      ? day(source.freshness.data_until)
-      : null;
-
+function FigureCard({ figure }: { figure: ReceiptFigure }) {
+  const rows = sourceRows(figure);
   return (
     <article
       aria-label={`Số ${figure.key}`}
@@ -234,10 +260,10 @@ function FigureCard({ figure }: { figure: ReceiptFigure }) {
         <span className="flex-1" />
         {figure.state === 'fresh' && <Badge tone="success">Còn hạn</Badge>}
       </div>
+      <p className="text-muted-foreground da-caption">{figure.label}</p>
       {figure.state === 'stale' && (
         <StatusDot tone="warning" className="whitespace-normal da-caption">
-          {figure.key} · dữ liệu đến {until ?? '—'}, đã quá hạn cập nhật
-          {due ? ` (hạn ${due})` : ''}
+          {figure.key} · {figure.stale_note ?? 'đã quá hạn cập nhật'}
         </StatusDot>
       )}
       {figure.state === 'missing' && (
@@ -260,6 +286,9 @@ function FigureCard({ figure }: { figure: ReceiptFigure }) {
 }
 
 function rerunSummary(run: ReceiptRerun): string {
+  // copy: provisional — Figma draws only the matching outcome.
+  if (run.failed) return 'Lượt chạy lại không hoàn tất';
+  if (run.outcome === 'not_reproducible') return 'Không tái lập được số tại thời điểm cũ';
   const head =
     run.figures_matched === run.figures_total
       ? `${run.figures_matched}/${run.figures_total} số tái lập y hệt (${run.values_text.join('; ')})`
@@ -271,20 +300,20 @@ function rerunSummary(run: ReceiptRerun): string {
     ? 'SHA-256 SQL và kết quả khớp'
     : // copy: provisional
       'SHA-256 SQL hoặc kết quả không khớp';
-  return `${head} · ${hashes}`;
+  return [head, hashes, run.cause_summary].filter(Boolean).join(' · ');
 }
 
 function Rerun({ receipt }: { receipt: AnswerReceipt }) {
   const toast = useToast();
   const [mode, setMode] = useState<RerunMode>('figures');
   const [busy, setBusy] = useState(false);
-  const [latest, setLatest] = useState<ReceiptRerun | null>(null);
-  const run = latest ?? receipt.last_rerun;
+  // The receipt does not say whether it was re-run before: only this visit's re-run is shown.
+  const [run, setRun] = useState<ReceiptRerun | null>(null);
 
   const start = async () => {
     setBusy(true);
     try {
-      setLatest(await rerunAnswer(receipt.answer_id, mode));
+      setRun(await rerunReceipt(receipt.id, mode));
     } catch (e) {
       toast({ tone: 'error', message: `Không chạy lại được: ${(e as Error).message}` });
     } finally {
@@ -292,7 +321,8 @@ function Rerun({ receipt }: { receipt: AnswerReceipt }) {
     }
   };
 
-  const reproduced = run && run.figures_matched === run.figures_total && run.hashes_match;
+  const reproduced =
+    run && !run.failed && run.figures_matched === run.figures_total && run.hashes_match;
 
   return (
     <section
@@ -323,7 +353,12 @@ function Rerun({ receipt }: { receipt: AnswerReceipt }) {
           </Radio>
         </fieldset>
         <span className="flex-1" />
-        <Button kind="primary" loading={busy} disabled={busy} onClick={start}>
+        <Button
+          kind="primary"
+          loading={busy}
+          disabled={busy || receipt.status !== 'locked'}
+          onClick={start}
+        >
           Chạy lại
         </Button>
       </div>

@@ -66,11 +66,10 @@ jobs:
           for target in \
             backend/libs/basemodel backend/libs/database_connector backend/libs/shared \
             backend/libs/contracts \
-            backend/services/kb_backend backend/services/workflow_runtime \
+            backend/services/kb_backend \
             backend/services/auth_api backend/services/model_service \
             backend/services/sandbox_executor \
-            backend/services/platform_workers \
-            backend/services/indicator_api; do
+            backend/services/platform_workers; do
             echo "== mypy strict: $target =="
             mypy --disallow-untyped-defs --disallow-any-generics \
                  --ignore-missing-imports --follow-imports=silent \
@@ -97,9 +96,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - suite: workflow_runtime
-            python: "3.11"
-            install: -r backend/services/workflow_runtime/requirements.txt
           - suite: kb_backend
             python: "3.13"
             install: -r backend/services/kb_backend/requirements.txt
@@ -129,9 +125,6 @@ jobs:
           - suite: model_service
             python: "3.11"
             install: -r backend/services/model_service/requirements.txt
-          - suite: indicator_api
-            python: "3.11"
-            install: -r backend/services/indicator_api/requirements.txt
           # The `api` block (ADR-28); its suite also holds the OpenAPI to tab 4 A2 (ADR-48).
           - suite: api
             python: "3.12"
@@ -140,6 +133,13 @@ jobs:
           - suite: worker_agent
             python: "3.12"
             install: -r backend/services/worker_agent/requirements.txt
+          # Repo-wide tests (deploy/, k8s, Ansible, model/, cross-service policy): the
+          # environment of tests/dev-tools.Dockerfile, which `make test-unit` runs them on.
+          - suite: repo
+            python: "3.12"
+            install: >-
+              -r backend/services/api/requirements.txt -r backend/services/worker_agent/requirements.txt
+              pyyaml==6.0.3 sqlparse==0.5.1
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -205,10 +205,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - suite: workflow_runtime
-            python: "3.11"
-            install: -r backend/services/workflow_runtime/requirements.txt -r tests/integration/workflow_runtime/requirements.txt
-            sandbox: true
           - suite: sandbox_executor
             python: "3.11"
             install: -r backend/services/sandbox_executor/requirements.txt
@@ -368,7 +364,7 @@ jobs:
       - name: Schema-validate every manifest against the k8s API
         run: kubeconform -strict -summary -ignore-missing-schemas deploy/k8s/
       - name: Structure, pod security and drift checks
-        run: pytest tests/unit/workflow_runtime/test_k8s_manifests.py -q
+        run: pytest tests/unit/repo/test_k8s_manifests.py -q
 
   quality-gates:
     # Phase 0 guardrails for the SRS (architecture + dead code + strict types).

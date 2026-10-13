@@ -38,10 +38,20 @@ class IndustryPackView(_View):
     name: str
     industry_code: str
     publisher: str
-    publisher_key_id: str
+    # Null for an organisation's own pack until its first version is published and signed.
+    publisher_key_id: str | None
+    origin: Literal["vendor", "organisation"]
     description: str | None
     created_at: datetime.datetime
     updated_at: datetime.datetime
+
+
+class PackCreate(_Body):
+    """POST /v1/packs: the organisation's own pack (UC-09-05), versions come later."""
+
+    code: str = Field(min_length=1, max_length=200, pattern=r"^[a-z0-9][a-z0-9_.-]*$")
+    name: str = Field(min_length=1, max_length=500)
+    description: str | None = Field(default=None, max_length=20_000)
 
 
 class PackVersionView(_View):
@@ -194,6 +204,87 @@ class EntityMappingView(_View):
     updated_at: datetime.datetime
 
 
+class EntityProgress(BaseModel):
+    """Mapping progress of one canonical entity (the "112/124" of Đưa vào ngành · Ánh xạ)."""
+
+    code: str
+    name: str
+    mapped: int
+    total: int
+    required_mapped: int
+    required_total: int
+
+
+class CalibrationSummary(_View):
+    id: uuid.UUID
+    trigger: str
+    status: str
+    passed: int
+    failed: int
+    finished_at: datetime.datetime | None
+    created_at: datetime.datetime
+
+
+class PackInstallDetail(PackInstallView):
+    """GET /v1/pack-installs/{id}: the install with its pack, mapping progress and activation."""
+
+    pack_id: uuid.UUID
+    pack_code: str
+    pack_name: str
+    version: str
+    entities: list[EntityProgress] = Field(default_factory=list)
+    mapped: int = 0
+    total: int = 0
+    # The last reconciliation: activation waits for it to pass (BR-36).
+    latest_calibration_run: CalibrationSummary | None = None
+
+
+class CodeMappingView(_View):
+    id: uuid.UUID
+    source_code: str
+    canonical_code: str
+    valid_from: datetime.datetime
+
+
+class MappingView(EntityMappingView):
+    """GET /v1/pack-installs/{id}/mappings: a current mapping with the attribute it maps and,
+    for a code attribute, its source-to-canonical code table."""
+
+    entity_code: str
+    attribute_code: str
+    attribute_name: str
+    required: bool
+    code_mappings: list[CodeMappingView] = Field(default_factory=list)
+
+
+class CalibrationItemView(_View):
+    id: uuid.UUID
+    item_kind: str
+    item_code: str
+    period: str | None
+    computed_value: decimal.Decimal | None
+    filed_value: decimal.Decimal | None
+    delta: decimal.Decimal | None
+    passed: bool
+    suggested_cause: str | None
+
+
+class CalibrationRunView(_View):
+    """GET /v1/calibration-runs/{id}: each metric and rule against the filed numbers."""
+
+    id: uuid.UUID
+    pack_install_id: uuid.UUID
+    trigger: str
+    periods: list[str]
+    tolerance_pp: decimal.Decimal
+    passed: int
+    failed: int
+    status: str
+    finished_at: datetime.datetime | None
+    created_at: datetime.datetime
+    items: list[CalibrationItemView] = Field(default_factory=list)
+
+
 class CalibrateRequest(_Body):
     # Periods to reconcile, e.g. ["2026-08", "2026-09"]; empty: the worker takes the last two.
     periods: list[str] | None = Field(default=None, max_length=24)
@@ -220,8 +311,22 @@ class MetricOverrideView(_View):
     status: str
     approved_by: uuid.UUID | None
     compliance_approved_by: uuid.UUID | None
+    calibration_run_id: uuid.UUID | None = None
     created_at: datetime.datetime
     updated_at: datetime.datetime
+
+
+class MetricOverrideDetail(MetricOverrideView):
+    """GET /v1/metric-overrides/{id}: the pack's formula next to the organisation's, and where
+    the approval stands (a regulatory metric also needs compliance, AC-09-03-07)."""
+
+    metric_name: str | None
+    base_expression: str | None
+    in_regulatory_report: bool
+    # The approval still missing: "approve", "compliance" or None once decided.
+    awaiting: Literal["approve", "compliance"] | None
+    # The trial of the formula on real data (UC-09-03 step 3), once one has run.
+    calibration_run: CalibrationSummary | None = None
 
 
 # --- upgrades -----------------------------------------------------------------------------------
@@ -265,3 +370,12 @@ class PackUpgradeView(_View):
     dry_run: bool = False
     created_at: datetime.datetime | None
     updated_at: datetime.datetime | None
+
+
+class PackUpgradeDetail(PackUpgradeView):
+    """GET /v1/pack-upgrades/{id}: the three-way merge split into what needs a person and what
+    was decided, and the test run of workflow pack_upgrade."""
+
+    conflicts: list[dict[str, Any]] = Field(default_factory=list)
+    decisions: list[dict[str, Any]] = Field(default_factory=list)
+    calibration_run: CalibrationSummary | None = None

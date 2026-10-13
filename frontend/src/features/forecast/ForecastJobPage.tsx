@@ -71,21 +71,28 @@ export default function ForecastJobPage() {
 function JobBody({ job, onChanged }: { job: ForecastJob; onChanged: () => void }) {
   const { navigate } = useAppState();
   const done = job.status === 'done';
+  const title = job.session?.title ?? `Việc dự báo · ${job.metric_name}`;
   return (
     <div className="flex min-h-full flex-col">
       <PageHeader
         bordered
-        breadcrumb={['Phân tích', 'Phiên', job.session.title]}
-        title={job.session.title}
-        description={`Phiên của ${job.session.owner_name} · ${job.session.question_count} câu hỏi · câu hỏi về tương lai được trả lời bất đồng bộ khi chưa có dự báo còn hiệu lực`}
+        breadcrumb={['Phân tích', job.session ? 'Phiên' : 'Dự báo', title]}
+        title={title}
+        description={
+          job.session
+            ? `Phiên của ${job.session.owner_name} · ${job.session.question_count} câu hỏi · câu hỏi về tương lai được trả lời bất đồng bộ khi chưa có dự báo còn hiệu lực`
+            : 'Câu hỏi về tương lai được trả lời bất đồng bộ khi chưa có dự báo còn hiệu lực'
+        }
       />
       <div className="flex flex-wrap items-start gap-da-xl px-da-3xl pb-da-2xl pt-da-xl">
         <div className="flex min-w-[480px] flex-1 flex-col gap-da-xl">
-          <div className="flex justify-end">
-            <p className="max-w-[448px] rounded-md bg-accent px-[14px] py-[10px] text-foreground da-body-small">
-              {job.question}
-            </p>
-          </div>
+          {job.question && (
+            <div className="flex justify-end">
+              <p className="max-w-[448px] rounded-md bg-accent px-[14px] py-[10px] text-foreground da-body-small">
+                {job.question}
+              </p>
+            </div>
+          )}
           <Card
             size="sm"
             title={
@@ -108,7 +115,7 @@ function JobBody({ job, onChanged }: { job: ForecastJob; onChanged: () => void }
                   <RunStep
                     state={STEP_STATE[step.state]}
                     title={step.title}
-                    detail={step.detail}
+                    detail={step.detail || undefined}
                     duration={step.at_text ?? undefined}
                   />
                 </li>
@@ -149,6 +156,14 @@ function JobBody({ job, onChanged }: { job: ForecastJob; onChanged: () => void }
               onEditVariables={() => navigate('analysis', 'FORECAST_STUDIO', job.id)}
               onAnswered={onChanged}
             />
+          )}
+          {job.status === 'waiting_human' && !job.assumption_request && (
+            <Notice
+              tone="warning"
+              action={<Button onClick={() => navigate('needs-you')}>Mở Cần bạn</Button>}
+            >
+              Agent Dự báo đang chờ bạn xác nhận giả định trong Cần bạn.
+            </Notice>
           )}
           <p className="text-muted-foreground da-caption">
             Câu hỏi dự báo chưa có dự báo còn hiệu lực được trả lời bất đồng bộ; không trả con số

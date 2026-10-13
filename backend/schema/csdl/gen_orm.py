@@ -206,9 +206,9 @@ PG_NAMES = ["DATERANGE", "INET", "JSONB", "TSTZRANGE", "UUID"]
 def module(schema: dict, tables: list[dict], common: dict) -> str:
     classes = [class_name(t["name"]) for t in tables]
     blocks = ["\n".join(table_class(t, common)) for t in tables]
-    if schema["database"] == "dataagent":
-        classes.append("Outbox")
-        blocks.append("\n".join(outbox_class(schema["name"])))
+    # Every schema has an outbox (tab 3 D1 item 13), audit's included since 12/10/2026.
+    classes.append("Outbox")
+    blocks.append("\n".join(outbox_class(schema["name"])))
     body = "\n\n\n".join(blocks)
     # Import only what the classes use, so the generated file is ruff-clean (F401).
     used = lambda name: re.search(rf"\b{name}\b", body) is not None  # noqa: E731

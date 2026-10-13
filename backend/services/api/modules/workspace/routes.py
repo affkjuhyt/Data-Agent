@@ -14,10 +14,12 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Path, Query, Response
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import and_, exists, func, or_, select, update
+from sqlalchemy import ColumnElement, and_, any_, exists, func, literal, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
+from libs.dataagent_db.models import org
+from libs.dataagent_db.models import query as query_models
 from libs.dataagent_db.models import workspace as ws
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
@@ -32,18 +34,25 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import FieldError, Problem
+from services.api.modules.org import capabilities_of
 from services.api.modules.workspace import rules
+from services.api.modules.workspace.report_storage import REPORT_BUCKET, ReportStore, report_store
 from services.api.modules.workspace.schemas import (
     Accepted,
     CommentCreate,
     CommentPatch,
     CommentView,
+    HiddenReason,
+    HiddenTile,
     ParticipantCreate,
     ParticipantView,
     PublishRequest,
+    RecipientPreview,
     RefreshRequest,
     ReportCreate,
+    ReportDocumentView,
     ReportView,
+    ShareGrant,
     SharesPut,
     ShareView,
     TileCreate,
@@ -153,6 +162,33 @@ async def _open(
     return item, permission
 
 
+def _visible(principal: Principal, space: uuid.UUID) -> ColumnElement[bool]:
+    """Workspaces of the Data Space the caller holds any level on, as one SQL condition."""
+    me = principal.user_id
+    share = ws.WorkspaceShare
+    mine = and_(
+        share.workspace_id == ws.Workspace.id,
+        share.principal_type == "user",
+        share.principal_id == me,
+    )
+    live_share = exists().where(
+        mine, or_(share.expires_at.is_(None), share.expires_at > func.now())
+    )
+    seat = exists().where(
+        ws.WsParticipant.workspace_id == ws.Workspace.id,
+        ws.WsParticipant.principal_type == "user",
+        ws.WsParticipant.principal_id == me,
+        ws.WsParticipant.role.in_(tuple(rules.ROLE_PERMISSION)),
+    )
+    # Same rule as rules.permission_of: a user share, when there is one, decides (BR-89).
+    return and_(
+        ws.Workspace.org_id == principal.org_id,
+        ws.Workspace.data_space_id == space,
+        ws.Workspace.deleted_at.is_(None),
+        or_(ws.Workspace.owner_id == me, live_share, and_(seat, ~exists().where(mine))),
+    )
+
+
 def _writable(item: ws.Workspace) -> None:
     if item.status != "active":
         raise Problem(409, "invalid_state", "The workspace is archived; reactivate it first.")
@@ -231,29 +267,7 @@ async def list_workspaces(
     status: Literal["active", "archived"] | None = None,
 ) -> Page[WorkspaceView]:
     me = principal.user_id
-    share = ws.WorkspaceShare
-    mine = and_(
-        share.workspace_id == ws.Workspace.id,
-        share.principal_type == "user",
-        share.principal_id == me,
-    )
-    live_share = exists().where(
-        mine, or_(share.expires_at.is_(None), share.expires_at > func.now())
-    )
-    seat = exists().where(
-        ws.WsParticipant.workspace_id == ws.Workspace.id,
-        ws.WsParticipant.principal_type == "user",
-        ws.WsParticipant.principal_id == me,
-        ws.WsParticipant.role.in_(tuple(rules.ROLE_PERMISSION)),
-    )
-    # Same rule as rules.permission_of: a user share, when there is one, decides (BR-89).
-    visible = or_(ws.Workspace.owner_id == me, live_share, and_(seat, ~exists().where(mine)))
-    query = select(ws.Workspace).where(
-        ws.Workspace.org_id == principal.org_id,
-        ws.Workspace.data_space_id == space,
-        ws.Workspace.deleted_at.is_(None),
-        visible,
-    )
+    query = select(ws.Workspace).where(_visible(principal, space))
     if owner is not None:
         query = query.where(ws.Workspace.owner_id == (me if owner == "me" else owner))
     if status is not None:
@@ -806,6 +820,198 @@ async def revoke_workspace_share(
     return Response(status_code=204)
 
 
+@router.get(
+    "/v1/workspaces/{id}/shares",
+    response_model=Page[ShareView],
+    **endpoint("GET", "/v1/workspaces/{id}/shares", operation_id="listWorkspaceShares"),
+)
+async def list_workspace_shares(
+    workspace_id: PathId, principal: CurrentPrincipal, space: CurrentDataSpace
+) -> Page[ShareView]:
+    # A1.3: the set PUT replaces is readable by whoever sees the workspace, expired grants
+    # included (expires_at says so), so the share dialog starts from what is stored.
+    async with transaction(ROLE, principal) as session:
+        item, _ = await _open(session, principal, space, workspace_id, "view")
+        shares = (
+            await session.scalars(
+                select(ws.WorkspaceShare)
+                .where(ws.WorkspaceShare.workspace_id == item.id)
+                .order_by(ws.WorkspaceShare.created_at, ws.WorkspaceShare.id)
+            )
+        ).all()
+        return Page(items=[ShareView.model_validate(s) for s in shares])
+
+
+def _member_of(principal_type: str, principal_id: uuid.UUID) -> ColumnElement[bool]:
+    """The data_space_member rows still valid that make this user or group a member."""
+    member = org.DataSpaceMember
+    if principal_type == "user":
+        groups = select(org.UserGroupMember.group_id).where(
+            org.UserGroupMember.user_id == principal_id
+        )
+        who = or_(
+            and_(member.principal_type == "user", member.principal_id == principal_id),
+            and_(member.principal_type == "group", member.principal_id.in_(groups)),
+        )
+    else:
+        who = and_(member.principal_type == "group", member.principal_id == principal_id)
+    return and_(who, or_(member.valid_until.is_(None), member.valid_until > func.now()))
+
+
+async def _recipient(
+    session: AsyncSession,
+    principal: Principal,
+    grant: ShareGrant,
+    home: uuid.UUID,
+    others: set[uuid.UUID],
+) -> tuple[HiddenReason | None, bool, set[uuid.UUID]]:
+    """(why the recipient cannot open the session or None, row scope on its membership,
+    the other Data Spaces it can read) for one share not saved yet."""
+    member = org.DataSpaceMember
+    if grant.principal_type == "user":
+        known = await session.scalar(
+            select(org.AppUser.id).where(
+                org.AppUser.id == grant.principal_id,
+                org.AppUser.org_id == principal.org_id,
+                org.AppUser.status == "active",
+            )
+        )
+        if known is None:
+            return "not_in_organisation", False, set()
+        # The org module resolves capabilities the way a signed-in request would (org-wide
+        # roles, group mappings, Data Space roles, expiries), so the preview cannot drift from it.
+        capabilities = await capabilities_of(principal.org_id, grant.principal_id, home)
+        if capabilities is None:
+            return "not_data_space_member", False, set()
+        if "ask" not in capabilities:
+            return "missing_capability", False, set()
+        readable = {
+            other
+            for other in others
+            if await capabilities_of(principal.org_id, grant.principal_id, other) is not None
+        }
+    else:
+        known = await session.scalar(
+            select(org.UserGroup.id).where(
+                org.UserGroup.id == grant.principal_id,
+                org.UserGroup.org_id == principal.org_id,
+            )
+        )
+        if known is None:
+            return "not_in_organisation", False, set()
+        # A group is judged on its own memberships: what each person also holds alone does
+        # not widen what the share gives the group as a whole.
+        roles = (
+            await session.scalars(
+                select(member.role_id).where(
+                    member.data_space_id == home,
+                    _member_of("group", grant.principal_id),
+                )
+            )
+        ).all()
+        if not roles:
+            return "not_data_space_member", False, set()
+        asks = await session.scalar(
+            select(func.count())
+            .select_from(org.Role)
+            .where(org.Role.id.in_(roles), literal("ask") == any_(org.Role.capabilities))
+        )
+        if not asks:
+            return "missing_capability", False, set()
+        readable = set(
+            (
+                await session.scalars(
+                    select(member.data_space_id).where(
+                        member.data_space_id.in_(others),
+                        _member_of("group", grant.principal_id),
+                    )
+                )
+            ).all()
+        )
+    limited = await session.scalar(
+        select(
+            exists().where(
+                member.data_space_id == home,
+                member.row_scope.is_not(None),
+                _member_of(grant.principal_type, grant.principal_id),
+            )
+        )
+    )
+    return None, bool(limited), readable
+
+
+@router.post(
+    "/v1/workspaces/{id}/shares:preview",
+    response_model=Page[RecipientPreview],
+    **endpoint("POST", "/v1/workspaces/{id}/shares:preview", operation_id="previewWorkspaceShares"),
+)
+# UC-02-03 step 4 before step 3: what each recipient would see, from its own rights (BR-07,
+# BR-89). Only the owner shares, so only the owner previews; nothing is written.
+async def preview_workspace_shares(
+    body: SharesPut,
+    workspace_id: PathId,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+) -> Page[RecipientPreview]:
+    async with transaction(ROLE, principal) as session:
+        item, _ = await _open(session, principal, space, workspace_id, "owner")
+        tiles = await _tiles(session, item.id)
+        # A tile reads the Data Spaces its last result's query runs read (tile_snapshot →
+        # query_run); a tile never run reads only the workspace's own.
+        snapshots = {
+            s.tile_id: list(s.query_run_ids or [])
+            for s in (
+                await session.scalars(
+                    select(ws.TileSnapshot).where(
+                        ws.TileSnapshot.id.in_(
+                            [t.latest_snapshot_id for t in tiles if t.latest_snapshot_id]
+                        )
+                    )
+                )
+            ).all()
+        }
+        run_ids = {r for runs in snapshots.values() for r in runs}
+        run_space: dict[uuid.UUID, uuid.UUID] = {}
+        if run_ids:
+            qr = query_models.QueryRun
+            found = await session.execute(
+                select(qr.id, qr.data_space_id).where(
+                    qr.id.in_(run_ids), qr.org_id == principal.org_id
+                )
+            )
+            run_space = {row.id: row.data_space_id for row in found}
+        reads = {
+            t.id: {run_space[r] for r in snapshots.get(t.id, []) if r in run_space} - {space}
+            for t in tiles
+        }
+        others = set().union(*reads.values()) if reads else set()
+        previews = []
+        for grant in body.shares:
+            reason, limited, readable = await _recipient(session, principal, grant, space, others)
+            if reason is not None:
+                visible, hidden = [], [HiddenTile(tile_id=t.id, reason=reason) for t in tiles]
+            else:
+                visible = [t.id for t in tiles if reads[t.id] <= readable]
+                hidden = [
+                    HiddenTile(tile_id=t.id, reason="other_data_space")
+                    for t in tiles
+                    if not reads[t.id] <= readable
+                ]
+            previews.append(
+                RecipientPreview(
+                    principal_type=grant.principal_type,
+                    principal_id=grant.principal_id,
+                    permission=grant.permission,
+                    can_open=reason is None,
+                    reason=reason,
+                    row_scope_limited=limited,
+                    visible_tile_ids=visible,
+                    hidden_tiles=hidden,
+                )
+            )
+    return Page(items=previews)
+
+
 @router.post(
     "/v1/workspaces/{id}/participants",
     status_code=201,
@@ -928,6 +1134,36 @@ async def create_comment(
         await session.flush()
         await session.refresh(comment)
         return CommentView.model_validate(comment)
+
+
+@router.get(
+    "/v1/tiles/{id}/comments",
+    response_model=Page[CommentView],
+    **endpoint("GET", "/v1/tiles/{id}/comments", operation_id="listTileComments"),
+)
+async def list_tile_comments(
+    tile_id: PathId,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order, Depends(order_by("created_at", "updated_at", default="created_at asc"))
+    ],
+) -> Page[CommentView]:
+    # UC-02-05: the thread in the order it was written, replies (parent_id) included, and the
+    # tasks given in it (assignee_id, due_at, status) on the same rows.
+    c = ws.WsComment
+    async with transaction(ROLE, principal) as session:
+        tile, _ = await _tile(session, principal, space, tile_id, "view")
+        query = keyset(
+            select(c).where(c.tile_id == tile.id, c.deleted_at.is_(None)),
+            columns={"created_at": c.created_at, "updated_at": c.updated_at},
+            tiebreak=c.id,
+            order=order,
+            page=page,
+        )
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+        return Page(items=[CommentView.model_validate(r) for r in rows], next_page_token=token)
 
 
 @router.patch(
@@ -1180,3 +1416,136 @@ async def publish_report(
         report.updated_by = principal.user_id
         await session.flush()
         return ReportView.model_validate(report)
+
+
+# The approver of a report acts for the Data Space (publish_report), so it reads the reports
+# waiting for it, and the published ones, without a share of the workspace.
+_APPROVER_SEES = ("pending_approval", "published")
+
+
+def _readable_reports(principal: Principal, space: uuid.UUID) -> ColumnElement[bool]:
+    in_space = select(ws.Workspace.id).where(
+        ws.Workspace.org_id == principal.org_id,
+        ws.Workspace.data_space_id == space,
+        ws.Workspace.deleted_at.is_(None),
+    )
+    mine = ws.SessionReport.workspace_id.in_(
+        select(ws.Workspace.id).where(_visible(principal, space))
+    )
+    if "approve" not in principal.capabilities:
+        return mine
+    return or_(
+        mine,
+        and_(
+            ws.SessionReport.workspace_id.in_(in_space),
+            ws.SessionReport.status.in_(_APPROVER_SEES),
+        ),
+    )
+
+
+ReportStatus = Literal[
+    "draft", "checking", "ready", "pending_approval", "published", "failed_checks"
+]
+
+
+@router.get(
+    "/v1/session-reports",
+    response_model=Page[ReportView],
+    **endpoint("GET", "/v1/session-reports", operation_id="listSessionReports"),
+)
+async def list_session_reports(
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(order_by("created_at", "updated_at", "version", default="created_at desc")),
+    ],
+    workspace_id: uuid.UUID | None = None,
+    status: ReportStatus | None = None,
+) -> Page[ReportView]:
+    r = ws.SessionReport
+    query = select(r).where(r.org_id == principal.org_id, _readable_reports(principal, space))
+    if workspace_id is not None:
+        query = query.where(r.workspace_id == workspace_id)
+    if status is not None:
+        query = query.where(r.status == status)
+    query = keyset(
+        query,
+        columns={"created_at": r.created_at, "updated_at": r.updated_at, "version": r.version},
+        tiebreak=r.id,
+        order=order,
+        page=page,
+    )
+    async with transaction(ROLE, principal) as session:
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+        return Page(items=[ReportView.model_validate(row) for row in rows], next_page_token=token)
+
+
+@router.get(
+    "/v1/session-reports/{id}",
+    response_model=ReportView,
+    **endpoint("GET", "/v1/session-reports/{id}", operation_id="getSessionReport"),
+)
+async def get_session_report(
+    report_id: PathId, principal: CurrentPrincipal, space: CurrentDataSpace
+) -> ReportView:
+    # Where the Location of :check points: the checks object is the worker's result of the four
+    # checks (grounding of each number, filed numbers, recipients' rights, personal data).
+    r = ws.SessionReport
+    async with transaction(ROLE, principal) as session:
+        report = await session.scalar(
+            select(r).where(
+                r.id == report_id,
+                r.org_id == principal.org_id,
+                _readable_reports(principal, space),
+            )
+        )
+        if report is None:
+            raise Problem(404, "not_found", "Session report not found.")
+        return ReportView.model_validate(report)
+
+
+@router.get(
+    "/v1/session-reports/{id}/document",
+    response_model=ReportDocumentView,
+    **endpoint(
+        "GET",
+        "/v1/session-reports/{id}/document",
+        operation_id="getSessionReportDocument",
+    ),
+)
+async def get_session_report_document(
+    report_id: PathId,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+    store: Annotated[ReportStore, Depends(report_store)],
+) -> ReportDocumentView:
+    r = ws.SessionReport
+    async with transaction(ROLE, principal) as session:
+        report = await session.scalar(
+            select(r).where(
+                r.id == report_id,
+                r.org_id == principal.org_id,
+                _readable_reports(principal, space),
+            )
+        )
+        if report is None:
+            raise Problem(404, "not_found", "Session report not found.")
+        body_ref = report.body_ref
+    if not body_ref or body_ref.startswith("/") or ".." in body_ref.split("/"):
+        raise Problem(500, "internal_error", "The report document reference is invalid.")
+    try:
+        content = await store.download(REPORT_BUCKET, body_ref)
+    except FileNotFoundError as exc:
+        raise Problem(404, "not_found", "The report document is not available yet.") from exc
+    try:
+        markdown = content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise Problem(500, "internal_error", "The report document is not valid UTF-8.") from exc
+    return ReportDocumentView(
+        report_id=report.id,
+        body_ref=body_ref,
+        content_type="text/markdown",
+        markdown=markdown,
+    )

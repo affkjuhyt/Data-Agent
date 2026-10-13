@@ -291,7 +291,7 @@ async def test_reassign_hands_the_request_over(team: Team) -> None:
 async def test_approval_chain_needs_two_people(team: Team) -> None:
     # AC-07-07-04: step 2 opens only once step 1 is decided; BR-132: by another person.
     request = _hitl(team, kind="period_exception", risk="high", assignee_id=team.users["reviewer"])
-    for step, role in ((1, "AC03"), (2, "AC06")):
+    for step, role in ((1, "steward"), (2, "compliance")):
         team.seed.row(
             "inbox.hitl_approval_step",
             org_id=team.org,
@@ -760,3 +760,111 @@ async def test_add_regression_and_dismiss(team: Team) -> None:
         "eval.error_book.opened",
         "error_book_entry.dismissed",
     ]
+
+
+async def test_a_chain_routed_by_capability_moves_to_the_next_holders(team: Team) -> None:
+    # Decided 12/10/2026: a request may go to a capability, and each step names the capability
+    # its approver must hold (steward, then compliance), decided by different people (BR-132).
+    request = _hitl(team, kind="period_exception", risk="high", assignee_capability="steward")
+    for step, role in ((1, "steward"), (2, "compliance")):
+        team.seed.row(
+            "inbox.hitl_approval_step",
+            org_id=team.org,
+            hitl_request_id=request,
+            step=step,
+            approver_role=role,
+        )
+    async with client(team) as api:
+        listed = await api.get("/v1/inbox", headers=team.headers("reviewer"))
+        assert str(request) in [i["id"] for i in listed.json()["items"]]
+        first = await api.post(
+            f"/v1/hitl-requests/{request}:resolve",
+            headers=team.headers("reviewer"),
+            json={"decision": "approve"},
+        )
+        assert first.status_code == 200, first.text
+        assert first.json()["assignee_capability"] == "compliance"
+        # The reviewer holds no compliance: step 2 is not theirs, and no longer in their inbox.
+        again = await api.post(
+            f"/v1/hitl-requests/{request}:resolve",
+            headers=team.headers("reviewer"),
+            json={"decision": "approve"},
+        )
+        assert again.status_code == 403
+        assert str(request) not in [
+            i["id"]
+            for i in (await api.get("/v1/inbox", headers=team.headers("reviewer"))).json()["items"]
+        ]
+        second = await api.post(
+            f"/v1/hitl-requests/{request}:resolve",
+            headers=team.headers("controller"),
+            json={"decision": "approve"},
+        )
+    assert second.status_code == 200, second.text
+    assert second.json()["status"] == "approved"
+
+
+async def test_an_org_wide_request_is_decided_on_org_level_capabilities(team: Team) -> None:
+    # An audit export over 100 000 rows belongs to no Data Space (data_space_id null).
+    request = _hitl(
+        team, kind="export", risk="high", data_space_id=None, assignee_capability="compliance"
+    )
+    async with client(team) as api:
+        seen = await api.get("/v1/inbox", headers=team.headers("controller"))
+        hidden = await api.get("/v1/inbox", headers=team.headers("reviewer"))
+        refused = await api.post(
+            f"/v1/hitl-requests/{request}:resolve",
+            headers=team.headers("reviewer"),
+            json={"decision": "approve"},
+        )
+        done = await api.post(
+            f"/v1/hitl-requests/{request}:resolve",
+            headers=team.headers("controller"),
+            json={"decision": "approve"},
+        )
+    assert str(request) in [i["id"] for i in seen.json()["items"]]
+    assert seen.json()["items"][0]["data_space_id"] is None
+    assert str(request) not in [i["id"] for i in hidden.json()["items"]]
+    assert refused.status_code == 404  # not theirs to see, let alone decide
+    assert done.status_code == 200 and done.json()["status"] == "approved"
+
+
+async def test_an_org_wide_request_is_hidden_from_those_it_does_not_concern(team: Team) -> None:
+    # An audit export carries its filters in context: no one outside the request may read it.
+    request = _hitl(
+        team,
+        kind="export",
+        risk="high",
+        data_space_id=None,
+        assignee_capability="compliance",
+        created_by=team.users["proposer"],
+    )
+    async with client(team) as api:
+        outsider = await api.get(f"/v1/hitl-requests/{request}", headers=team.headers("reviewer"))
+        by_id = await api.get(
+            "/v1/inbox",
+            params={"assignee": str(team.users["controller"])},
+            headers=team.headers("reviewer"),
+        )
+        requester = await api.get(f"/v1/hitl-requests/{request}", headers=team.headers("proposer"))
+        approver = await api.get(f"/v1/hitl-requests/{request}", headers=team.headers("controller"))
+    assert outsider.status_code == 404
+    assert str(request) not in [i["id"] for i in by_id.json()["items"]]
+    assert requester.status_code == approver.status_code == 200
+
+
+async def test_an_excluded_approver_cannot_even_reassign(team: Team) -> None:
+    request = _hitl(
+        team,
+        kind="export",
+        data_space_id=None,
+        assignee_capability="compliance",
+        context=Json({"excluded_approver_ids": [str(team.users["controller"])]}),
+    )
+    async with client(team) as api:
+        r = await api.post(
+            f"/v1/hitl-requests/{request}:resolve",
+            headers=team.headers("controller"),
+            json={"decision": "reassign", "reassign_to": str(team.users["reviewer"])},
+        )
+    assert r.status_code == 403

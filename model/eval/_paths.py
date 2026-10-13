@@ -1,7 +1,7 @@
 """sys.path entries for the service modules the scorers evaluate.
 
-Several services live in hyphenated directories (`backend/services/sandbox_executor`,
-`backend/services/workflow_runtime`) which are not importable package names, and they
+Several services live in hyphenated directories (`backend/services/sandbox_executor`)
+which are not importable package names, and they
 use bare imports that assume their own directory is on sys.path. Same problem
 tests/unit/_loader.py solves for the test suite; kept separate because the eval
 harness ships in the ragas image, where the test package is not present.
@@ -9,6 +9,7 @@ harness ships in the ragas image, where the test package is not present.
 The scorers import the REAL modules deliberately. An eval that re-implemented
 the rule it is measuring would measure the re-implementation.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -18,7 +19,7 @@ from types import ModuleType
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SANDBOX_EXECUTOR = REPO_ROOT / "backend" / "services" / "sandbox_executor"
-WORKFLOW_RUNTIME = REPO_ROOT / "backend" / "services" / "workflow_runtime"
+WORKER_AGENT = REPO_ROOT / "backend" / "services" / "worker_agent"
 
 
 def ensure(*directories: Path) -> None:

@@ -213,8 +213,8 @@ function Similar({
   const investigate = async () => {
     setBusy(true);
     try {
-      await investigateDocument(doc.id);
-      toast({ tone: 'success', message: 'Agent Phân tích đã mở lượt điều tra nguyên nhân.' });
+      await investigateDocument(doc);
+      toast({ tone: 'success', message: 'Đã giao Agent Phân tích tìm nguyên nhân hệ thống.' });
     } catch (e) {
       toast({ tone: 'error', message: `Không mở được lượt điều tra. ${(e as Error).message}` });
     } finally {

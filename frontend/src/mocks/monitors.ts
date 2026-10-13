@@ -1,11 +1,13 @@
 import { http, HttpResponse } from 'msw';
-import type { Monitor, MonitorDraft, MonitorOptions, MonitorPreview } from '../lib/v1/monitors';
+import type { Monitor, MonitorWire } from '../lib/v1/monitors';
+import type { components } from '../lib/v1/schema';
+
+type Schemas = components['schemas'];
 
 /*
  * Theo dõi (P08, UC-08-01) for the dev mock: the 14 monitors of "P08 · Theo dõi · Danh sách"
- * (2270:15950), the choices of "Tạo theo dõi" (2270:16233) — NPL_RATIO has 90 days, OVERDUE_30
- * only 12, so Bất thường waits on it (2272:16634) — and a 90-day preview that rises past the
- * threshold in DH Bắc Bộ only.
+ * (2270:15950) as MonitorView, with the names and words the frame draws added beside it (A3 has
+ * no monitor name). "Tạo theo dõi" reads the metrics of the shared mock (GET /v1/metrics).
  */
 const at = (daysAgo: number, hh: number, mm: number) => {
   const d = new Date();
@@ -18,7 +20,7 @@ const monitor = (m: Partial<Monitor> & Pick<Monitor, 'id' | 'name' | 'metric_tex
   rule_kind: 'threshold',
   condition_text: '',
   state: 'normal',
-  muted_until: null,
+  noise_warning: null,
   last_fired_at: null,
   last_alert_id: null,
   channels_text: 'Teams',
@@ -75,8 +77,7 @@ function monitorsFixture(): Monitor[] {
       id: 'mon-casa',
       name: 'CASA toàn hàng',
       metric_text: 'CASA_RATIO v3',
-      rule_kind: 'forecast',
-      condition_text: '< 20% · dự báo 30 ngày',
+      condition_text: '< 20%',
       channels_text: 'Email',
       owner_name: 'Phạm Đức Long',
       owner_is_me: false,
@@ -96,7 +97,6 @@ function monitorsFixture(): Monitor[] {
       rule_kind: 'change_vs_previous',
       condition_text: 'tăng > 0,1 điểm so với tháng trước',
       state: 'muted',
-      muted_until: at(-1, 0, 0),
       last_fired_at: at(13, 8, 0),
       channels_text: 'Teams, Zalo',
       owner_name: 'Phạm Đức Long',
@@ -159,159 +159,67 @@ function monitorsFixture(): Monitor[] {
       metric_text: 'LTV_AVG',
       condition_text: '> 70%',
       state: 'muted',
-      muted_until: at(-5, 0, 0),
       owner_name: 'Phạm Đức Long',
       owner_is_me: false,
     }),
   ];
 }
 
-function monitorOptionsFixture(): MonitorOptions {
+const ME = '01920000-0000-7000-8000-00000000a5c1';
+
+/** The row as the api sends it (MonitorView), the frame's words beside it. */
+function wire(m: Monitor): MonitorWire {
   return {
-    metrics: [
-      {
-        id: 'metric-npl-ratio',
-        label: 'Nợ xấu (%) · NPL_RATIO v4 · đã chứng nhận',
-        certified: true,
-        unit: '%',
-        history_days: 900,
-      },
-      {
-        id: 'metric-overdue-30',
-        label: 'Nợ quá hạn 30+ (%) · OVERDUE_30 · chưa chứng nhận',
-        certified: false,
-        unit: '%',
-        history_days: 12,
-      },
-      {
-        id: 'metric-casa',
-        label: 'CASA (%) · CASA_RATIO v3 · đã chứng nhận',
-        certified: true,
-        unit: '%',
-        history_days: 400,
-      },
-    ],
-    scopes: [
-      { value: 'segment=retail', label: 'Phân khúc = Bán lẻ' },
-      { value: 'segment=sme', label: 'Phân khúc = SME' },
-      { value: 'all', label: 'Toàn hàng' },
-    ],
-    splits: [
-      {
-        value: 'region',
-        label: 'Vùng (6 nhóm)',
-        groups: [
-          'DH Bắc Bộ',
-          'ĐB sông Hồng',
-          'Bắc Trung Bộ',
-          'Tây Nguyên',
-          'Đông Nam Bộ',
-          'ĐB sông Cửu Long',
-        ],
-      },
-      { value: 'none', label: 'Không tách', groups: ['Toàn bộ'] },
-    ],
-    recipients: [
-      { value: 'me,long', label: 'Tôi, Phạm Đức Long' },
-      { value: 'me', label: 'Tôi' },
-      { value: 'team-risk', label: 'Nhóm Rủi ro tín dụng' },
-    ],
-    channels: [
-      { value: 'teams,email', label: 'Teams, email' },
-      { value: 'teams', label: 'Teams' },
-      { value: 'email', label: 'Email' },
-      { value: 'zalo', label: 'Zalo' },
-    ],
-    analysis_cost_text: 'Khoảng 2–4 phút và 9.000 đ mỗi lần.',
-  };
-}
-
-// Ninety days of a gently waving ratio; DH Bắc Bộ climbs past 2,0% on the last three.
-const CLIMB = [1.72, 1.85, 1.95, 2.08, 2.18, 2.26];
-function series(group: string) {
-  return Array.from({ length: 90 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (89 - i));
-    const wave = 1.62 + 0.1 * Math.sin(i / 9) + 0.03 * Math.sin(i / 3);
-    const value = group === 'DH Bắc Bộ' && i >= 84 ? CLIMB[i - 84] : wave;
-    return { date: d.toISOString().slice(0, 10), value: Math.round(value * 100) / 100 };
-  });
-}
-
-const WORD = ['không', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu'];
-const fmt = (n: number) => n.toFixed(1).replace('.', ',');
-
-function preview(draft: MonitorDraft & { group: string }): MonitorPreview {
-  const metric = monitorOptionsFixture().metrics.find((m) => m.id === draft.metric_id);
-  const needs = { seasonal_anomaly: 30, forecast: 60 }[draft.rule_kind as string] ?? 7;
-  if (!metric || metric.history_days < needs)
-    return {
-      series: null,
-      thresholds: [],
-      fires: 0,
-      periods: 0,
-      text: 'Chưa đủ dữ liệu để xem trước.',
-      note: null,
-    };
-  const points = series(draft.group);
-  const value = Number(draft.rule.value ?? 2);
-  const early = draft.rule.early === undefined ? null : Number(draft.rule.early);
-  const above = draft.rule.direction !== 'below';
-  const crossed = (v: number) => (above ? v > value : v < value);
-  const fires = draft.rule_kind === 'threshold' ? points.filter((p) => crossed(p.value)).length : 0;
-  // The note speaks of the other groups: did any of them ever cross the early warning?
-  const othersCross =
-    early !== null &&
-    series(draft.group === 'Toàn bộ' ? 'Toàn bộ' : 'other').some((p) =>
-      above ? p.value > early : p.value < early,
-    );
-  return {
-    series: points,
-    thresholds: [
-      { label: `Ngưỡng ${fmt(value)}%`, value, tone: 'error' },
-      ...(early !== null
-        ? [{ label: `Cảnh báo sớm ${fmt(early)}%`, value: early, tone: 'warning' as const }]
-        : []),
-    ],
-    fires,
-    periods: points.length,
-    text: fires
-      ? `Nếu bật từ 90 ngày trước, theo dõi này sẽ cảnh báo ${fires} lần, cả ${WORD[fires] ?? fires} trong 6 ngày gần đây và chỉ ở ${draft.group}.`
-      : `Nếu bật từ 90 ngày trước, theo dõi này chưa cảnh báo lần nào ở ${draft.group}.`,
-    note:
-      early !== null && !othersCross
-        ? `Các vùng khác chưa từng vượt ${fmt(early)}%, nên ngưỡng này ít gây báo nhầm.`
-        : null,
+    ...m,
+    data_space_id: 'ds-rui-ro-tin-dung',
+    owner_id: m.owner_is_me ? ME : 'u-long',
+    agent_def_id: null,
+    metric_id: 'metric-npl-ratio',
+    scope_filter: {},
+    rule: { text: m.condition_text },
+    schedule_cron: '0 7 * * *',
+    notify_mode: 'with_analysis',
+    recipients: [],
+    backtest: null,
+    status: m.state === 'muted' ? 'paused' : 'active',
+    paused_reason: null,
+    created_at: at(30, 9, 0),
+    updated_at: at(1, 9, 0),
   };
 }
 
 export function createMonitorHandlers() {
   let monitors = monitorsFixture();
   return [
-    http.get('*/v1/monitors/options', () => HttpResponse.json(monitorOptionsFixture())),
     http.get('*/v1/monitors', () =>
-      HttpResponse.json({ items: monitors, next_cursor: null, total: monitors.length }),
-    ),
-    http.post('*/v1/monitors\\:preview', async ({ request }) =>
-      HttpResponse.json(preview((await request.json()) as MonitorDraft & { group: string })),
+      HttpResponse.json({ items: monitors.map(wire), next_page_token: '' }),
     ),
     http.post('*/v1/monitors', async ({ request }) => {
-      const draft = (await request.json()) as MonitorDraft;
-      const metric = monitorOptionsFixture().metrics.find((m) => m.id === draft.metric_id);
-      const created = monitor({
+      const body = (await request.json()) as Schemas['MonitorCreate'];
+      const now = new Date().toISOString();
+      const created: MonitorWire = {
         id: `mon-new-${monitors.length}`,
-        name: metric?.label.split(' · ')[0] ?? 'Theo dõi mới',
-        metric_text: metric?.label.split(' · ')[1] ?? '',
-        rule_kind: draft.rule_kind,
-        condition_text: String(draft.rule.text ?? ''),
-        channels_text: metric?.certified ? draft.recipients.channels : 'Chỉ trong ứng dụng',
-        last_checked_at: new Date().toISOString(),
-      });
-      monitors = [created, ...monitors];
+        data_space_id: 'ds-rui-ro-tin-dung',
+        owner_id: ME,
+        agent_def_id: null,
+        metric_id: body.metric_id,
+        scope_filter: body.scope_filter ?? {},
+        rule_kind: body.rule_kind,
+        rule: body.rule,
+        schedule_cron: body.schedule_cron,
+        notify_mode: body.notify_mode ?? 'alert_only',
+        recipients: body.recipients ?? [],
+        backtest: { status: 'pending', periods: 12, requested_at: now },
+        noise_warning: null,
+        status: 'active',
+        paused_reason: null,
+        created_at: now,
+        updated_at: now,
+      };
       return HttpResponse.json(created, { status: 201 });
     }),
     http.patch('*/v1/monitors/:id', async ({ params, request }) => {
-      const body = (await request.json()) as { muted_until: string | null };
+      const body = (await request.json()) as Schemas['MonitorPatch'];
       const found = monitors.find((m) => m.id === params.id);
       if (!found)
         return HttpResponse.json(
@@ -325,11 +233,10 @@ export function createMonitorHandlers() {
         );
       const updated: Monitor = {
         ...found,
-        muted_until: body.muted_until,
-        state: body.muted_until ? 'muted' : 'normal',
+        state: body.status === 'paused' ? 'muted' : body.status === 'active' ? 'normal' : found.state,
       };
       monitors = monitors.map((m) => (m.id === found.id ? updated : m));
-      return HttpResponse.json(updated);
+      return HttpResponse.json(wire(updated));
     }),
   ];
 }

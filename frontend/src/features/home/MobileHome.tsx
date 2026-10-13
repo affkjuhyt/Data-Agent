@@ -82,7 +82,7 @@ export function MobileHome({
           ? ` · ${lead.agent_name} ở bước ${lead.current_step}/${lead.total_steps}`
           : ''}
       </LinkCard>
-      {home && <p className="text-muted-foreground da-caption">{home.data_note}</p>}
+      {home?.data_note && <p className="text-muted-foreground da-caption">{home.data_note}</p>}
     </div>
   );
 }

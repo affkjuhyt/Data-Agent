@@ -2,9 +2,8 @@ import { pathId, v1Get, v1Send, type Page } from './client';
 
 /*
  * Báo cáo định kỳ and Bản tin (monitor service, P08, UC-08-03, UC-08-04, UC-02-04, UC-02-07).
- * A2 has POST /v1/reports, PATCH /v1/reports/{id}, :pause, :run-now and GET /v1/report-runs/{id};
- * reading one schedule, the list, its sections and recent sends, and the reader's own digests are
- * PROPOSALs (docs/v3/05-ui-v3.md §4).
+ * A2 serves the schedule list/detail, mutations and run detail. The UI keeps a smaller view model
+ * here and derives its summary fields from the canonical schedule/run rows.
  */
 
 export interface ReportSection {
@@ -24,7 +23,7 @@ export type ReportRunStatus =
   | 'blocked_by_checks'
   | 'failed';
 
-/** PROPOSAL: GET /v1/reports/{id} — monitor.report_schedule as "Thiết lập" reads it. */
+/** GET /v1/reports/{id} — monitor.report_schedule as "Thiết lập" reads it. */
 export interface ReportSchedule {
   id: string;
   title: string;
@@ -48,7 +47,7 @@ export interface ReportSchedule {
 }
 
 export const listReports = async () =>
-  v1Get<Page<Pick<ReportSchedule, 'id' | 'title' | 'status'>>>('/reports', { limit: 50 });
+  v1Get<Page<Pick<ReportSchedule, 'id' | 'title' | 'status'>>>('/reports', { page_size: 50 });
 
 export const getReport = async (id: string) => v1Get<ReportSchedule>(`/reports/${pathId(id)}`);
 
@@ -65,7 +64,7 @@ export const pauseReport = async (id: string) =>
 export const sendReportTest = async (id: string) =>
   v1Send<{ id: string }>('POST', `/reports/${pathId(id)}:run-now`, { only_me: true });
 
-/** PROPOSAL: GET /v1/me/digests — reports and digests sent to the reader, newest first. */
+/** The digest endpoint is not in the current A2 catalogue; callers should use notifications. */
 export interface DigestItem {
   id: string;
   title: string;
@@ -74,7 +73,26 @@ export interface DigestItem {
   unread: boolean;
 }
 
-export const listMyDigests = async () => v1Get<Page<DigestItem>>('/me/digests', { limit: 50 });
+export const listMyDigests = async (): Promise<Page<DigestItem>> => {
+  const page = await v1Get<
+    Page<{
+      id: string;
+      title: string;
+      body: string | null;
+      created_at: string;
+      read_at: string | null;
+    }>
+  >('/me/notifications', { kind: 'digest', page_size: 50 });
+  return {
+    ...page,
+    items: page.items.map((item) => ({
+      id: item.id,
+      title: item.title,
+      meta_text: item.body ?? item.created_at,
+      unread: item.read_at === null,
+    })),
+  };
+};
 
 /** A2: GET /v1/report-runs/{id} — ReportRun; the reading shape is PROPOSAL. */
 export interface ReportRun {

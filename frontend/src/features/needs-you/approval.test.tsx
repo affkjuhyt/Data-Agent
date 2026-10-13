@@ -1,6 +1,7 @@
 /**
- * Duyệt nhiều người against the v1 mock: the chain and discussion of a proposal several people
- * review, commenting with an @mention, asking for changes only with a note, and approving.
+ * Duyệt nhiều người against the v1 mock: the chain of a proposal several people review, read
+ * from the proposal and the caller's review request, asking for changes only with a note, and
+ * approving.
  */
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { setupServer } from 'msw/node';
@@ -26,22 +27,26 @@ afterAll(() => server.close());
 const wrap = (ui: React.ReactNode) => render(<ToastProvider>{ui}</ToastProvider>);
 
 describe('ApprovalChainPage', () => {
-  it('shows the chain with me reviewing, and an @mention gets the agent to answer', async () => {
+  it('reads the chain from the proposal and my review request, me on the open step', async () => {
     wrap(<ApprovalChainPage />);
     const chain = await screen.findByRole('list', { name: 'Người duyệt' });
+    const steps = within(chain).getAllByRole('listitem');
+    expect(steps.map((s) => s.textContent)).toEqual([
+      expect.stringContaining('Agent Đối soát'),
+      expect.stringContaining('Lê Minh Châu'),
+      expect.stringContaining('Chủ sở hữu dữ liệu'),
+      expect.stringContaining('Phạm Đức Long'),
+    ]);
+    expect(within(steps[1]).getByText('Đồng ý')).toBeInTheDocument();
     expect(within(chain).getByText('Đang xem').closest('li')).toHaveAttribute(
       'aria-current',
       'step',
     );
-    expect(screen.getByText('Thảo luận · 4')).toBeInTheDocument();
-
-    fireEvent.change(screen.getByPlaceholderText('Bình luận, @nhắc người hoặc agent…'), {
-      target: { value: '@Agent Đối soát cho tôi xem 5 khoản mẫu' },
-    });
-    fireEvent.keyDown(screen.getByPlaceholderText('Bình luận, @nhắc người hoặc agent…'), {
-      key: 'Enter',
-    });
-    expect(await screen.findByText('Thảo luận · 6')).toBeInTheDocument();
+    expect(within(steps[3]).getByText('Chờ')).toBeInTheDocument();
+    expect(screen.getByText(/^Hạn duyệt /)).toBeInTheDocument();
+    expect(screen.getByText(/Agent Đối soát tạo đề xuất/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Chuyển người duyệt' })).toBeInTheDocument();
+    expect(screen.queryByText(/Thảo luận/)).not.toBeInTheDocument();
   });
 
   it('asks for changes only with a note, then approves', async () => {

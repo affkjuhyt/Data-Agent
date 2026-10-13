@@ -2,12 +2,14 @@ import { pathId, v1Send } from './client';
 import type { AgentDef } from './types';
 
 /*
- * PROPOSAL: locking an agent ("Xác nhận · lockAgent", 2094:8344). A2 has no endpoint for it; the
- * screen needs one that stops every run and trigger of the agent and hands its open HITL requests
- * to the owner. The agent comes back paused with paused_reason "locked"; :unlock reverses it.
+ * Locking an agent stops every run and trigger of the agent and hands its open HITL requests to
+ * the owner. The API requires a reason; the confirmation dialog currently supplies the standard
+ * UI reason because it does not collect a separate free-text explanation.
  */
 export const lockAgent = async (id: string) =>
-  v1Send<AgentDef>('POST', `/agents/${pathId(id)}:lock`);
+  v1Send<AgentDef>('POST', `/agents/${pathId(id)}:lock`, {
+    reason: 'Khoá theo yêu cầu của người dùng.',
+  });
 
 export const unlockAgent = async (id: string) =>
   v1Send<AgentDef>('POST', `/agents/${pathId(id)}:unlock`);

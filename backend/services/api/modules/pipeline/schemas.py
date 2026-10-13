@@ -70,6 +70,10 @@ class PreviewRequest(_Body):
     sample_rows: int = Field(default=MAX_SAMPLE_ROWS, ge=1, le=MAX_SAMPLE_ROWS)
 
 
+class PipelineMessage(_Body):
+    text: str = Field(min_length=1, max_length=4_000)
+
+
 class MaterializeRequest(_Body):
     # The table lands in the Data Space's work schema ws_{data_space}; a plain identifier.
     table_name: str = Field(pattern=r"^[a-z_][a-z0-9_]{0,62}$")
@@ -85,6 +89,29 @@ class ScheduleRequest(_Body):
     depends_on_pipeline_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
     no_overlap: bool = True
     on_failure: OnFailure = "notify"
+
+
+class SchedulePreview(_Body):
+    cron: str | None = Field(default=None, max_length=200)
+    no_overlap: bool = True
+    on_failure: OnFailure = "notify"
+
+
+class StepPreview(BaseModel):
+    seq: int
+    key_column: str
+    column: str
+    rows: list[dict[str, str]] = Field(default_factory=list)
+
+
+class OutputDraft(BaseModel):
+    table_name: str
+    data_space_id: uuid.UUID
+    write_mode: Literal["replace", "append", "merge"] = "replace"
+    columns: list[dict[str, Any]] = Field(default_factory=list)
+    consumers_text: str | None = None
+    input_jobs: list[dict[str, str]] = Field(default_factory=list)
+    notify_options: list[dict[str, str]] = Field(default_factory=list)
 
 
 class PipelineView(_View):
@@ -122,6 +149,12 @@ class PipelineRunView(_View):
     finished_at: datetime.datetime | None
     error: str | None
     created_at: datetime.datetime
+
+
+class PipelineDetail(PipelineView):
+    """GET /v1/pipelines/{id}: the pipeline with its latest run (UC-06-02, UC-06-03)."""
+
+    last_run: PipelineRunView | None = None
 
 
 class Accepted(BaseModel):
@@ -174,6 +207,16 @@ class MartCreate(_Body):
     checks: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class MartPatch(_Body):
+    """A3: name, dimensions, measures, relations. A list sent replaces the mart's list, so
+    accepting an agent-suggested dimension is the current list plus that one (A1.3)."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    dimensions: list[dict[str, Any]] | None = None
+    measures: list[dict[str, Any]] | None = None
+    relations: list[dict[str, Any]] | None = None
+
+
 class DataMartView(_View):
     id: uuid.UUID
     data_space_id: uuid.UUID
@@ -184,6 +227,8 @@ class DataMartView(_View):
     dimensions: Any
     relations: Any
     checks: Any
+    # Dimensions proposed from the fact table's relations (UC-06-06); null until proposed.
+    suggested_dimensions: Any = None
     relation_check_passed: bool
     status: str
     created_at: datetime.datetime
@@ -206,6 +251,7 @@ class DataProductView(_View):
     status: str
     breaking_notice_at: datetime.datetime | None
     retire_after: datetime.datetime | None
+    owner_id: uuid.UUID
     approved_by: uuid.UUID | None
     created_at: datetime.datetime
     updated_at: datetime.datetime

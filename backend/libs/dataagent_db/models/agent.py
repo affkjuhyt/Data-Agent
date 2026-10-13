@@ -32,6 +32,7 @@ __all__ = [
     "AgentDef",
     "AgentConfig",
     "AgentTool",
+    "ToolDef",
     "AgentTrigger",
     "AgentDeployment",
     "AgentRun",
@@ -71,10 +72,17 @@ class AgentDef(Base):
     )
     current_config_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(
-        Text, server_default=sql_text("'draft'"), comment="draft, testing, running, paused, retired"
+        Text,
+        server_default=sql_text("'draft'"),
+        comment="draft, testing, running, paused, retired, locked (khoá khẩn cấp qua POST /v1/agents/{id}:lock, thêm 12/10/2026)",
     )
     paused_reason: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Ví dụ chủ sở hữu rời tổ chức"
+    )
+    status_before_lock: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Trạng thái trước khi khoá, mở khoá trả về trạng thái này; chỉ có giá trị khi locked (thêm 12/10/2026)",
     )
     monthly_budget: Mapped[decimal.Decimal | None] = mapped_column(
         Numeric(14, 2), nullable=True, comment="Ngân sách tháng (BR-71)"
@@ -183,6 +191,65 @@ class AgentTool(Base):
         ARRAY(UUID(as_uuid=True)), nullable=True, comment="Với agent.call: danh sách agent được gọi"
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=sql_text("now()")
+    )
+
+
+class ToolDef(Base):
+    """Sổ công cụ của agent (tab 5 G2, G2.1): một dòng mỗi công cụ, là nguồn cho mô tả gửi mô hình, bộ công cụ theo ý định, quyền lộ ra MCP và bài kiểm phủ use case. Bảng dùng chung cho mọi tổ chức, nạp bằng migration cùng bản phát hành; không sửa qua API. Use case: UC-12-02, UC-13-01, UC-13-02."""
+
+    __tablename__ = "tool_def"
+    __table_args__ = ({"schema": "agent"},)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
+    code: Mapped[str] = mapped_column(Text, comment="Mã công cụ, ví dụ query.semantic")
+    permission_level: Mapped[str] = mapped_column(
+        Text, comment="read, write_derived, send_external"
+    )
+    owner_service: Mapped[str] = mapped_column(
+        Text, comment="Dịch vụ sở hữu, ví dụ Context service"
+    )
+    endpoints: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), comment="Endpoint ở tab 4 mà công cụ gọi, ví dụ {POST /v1/search/documents}"
+    )
+    model_description: Mapped[str] = mapped_column(
+        Text,
+        comment="Mô tả cho mô hình, viết tay: dùng khi nào, không dùng khi nào; tối đa 400 ký tự",
+    )
+    toolsets: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        server_default=sql_text("'{}'"),
+        comment="Bộ công cụ theo ý định của Planner kiểu A: metric_lookup, explain_change, document, forecast, provenance, explore_sql",
+    )
+    execution_kinds: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), comment="interactive, plan, workflow"
+    )
+    restricted_agent_kinds: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        server_default=sql_text("'{}'"),
+        comment="Chỉ cấp cho các loại agent này; rỗng là không hạn chế",
+    )
+    mcp_exposed: Mapped[bool] = mapped_column(
+        Boolean,
+        server_default=sql_text("false"),
+        comment="Lộ ra cho client MCP có phạm vi phù hợp (UC-12-02)",
+    )
+    default_checkpoint: Mapped[str] = mapped_column(
+        Text, comment="none, on_condition, before, always"
+    )
+    use_cases: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), comment="UC dùng công cụ, khớp ma trận tab 2 mục 11.4"
+    )
+    schema_sha256: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Băm JSON Schema sinh từ OpenAPI ở lần build gần nhất (ADR-48)"
+    )
+    status: Mapped[str] = mapped_column(
+        Text, server_default=sql_text("'active'"), comment="draft, active, deprecated"
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=sql_text("now()")
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")
     )
 
@@ -357,6 +424,12 @@ class AgentRun(Base):
         JSONB,
         server_default=sql_text("'[]'"),
         comment="Phiên bản kỹ năng, mô hình, bản chụp đã đọc để chạy lại cho cùng kết quả (BR-75)",
+    )
+    retry_of: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("agent.agent_run.id"),
+        nullable=True,
+        comment="Lượt thất bại mà lượt này chạy lại với cùng đầu vào và phiên bản cấu hình (POST /v1/runs/{id}:retry, thêm 12/10/2026)",
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")

@@ -44,9 +44,6 @@ data:
   #Model Service
   MODEL_SERVICE_URL: http://model-service.dataagent-service.svc.cluster.local:8230
 
-  #Workflow Run Time
-  WORKFLOW_RUNTIME_URL: http://workflow-runtime.dataagent-service.svc.cluster.local:8240
-
   #Sandbox-executor
   SANDBOX_EXECUTOR_URL: http://sandbox-executor.dataagent-service.svc.cluster.local:8260
 
@@ -75,7 +72,6 @@ data:
   # are named with hyphens — override here so Kong's upstream DNS lookup resolves.
   # Without this, JWT/CORS checks can pass fine (they don't touch the
   # upstream) but the request 503s the moment Kong actually proxies it.
-  WORKFLOW_RUNTIME_HOST: workflow-runtime
   AUTH_API_HOST: auth-api
   API_HOST: api
 
@@ -95,7 +91,7 @@ data:
   RUNTIME_ALLOWED_SERVICES: ''
 
   #Others
-  KB_ALLOWED_SERVICES: workflow_runtime
+  KB_ALLOWED_SERVICES: api,worker-agent
 
 ---
 apiVersion: v1
@@ -144,9 +140,6 @@ data:
   #Model Service
   MODEL_SERVICE_URL: http://model-service.dataagent-service.svc.cluster.local:8230
 
-  #Workflow
-  WORKFLOW_RUNTIME_URL: http://workflow-runtime.dataagent-service.svc.cluster.local:8240
-
   #Sandbox-Executor
   SANDBOX_EXECUTOR_URL: http://sandbox-executor.dataagent-service.svc.cluster.local:8260
 
@@ -178,4 +171,4 @@ data:
   RUNTIME_ALLOWED_SERVICES: ''
 
   #Others
-  KB_ALLOWED_SERVICES: workflow_runtime
+  KB_ALLOWED_SERVICES: api,worker-agent

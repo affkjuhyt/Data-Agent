@@ -36,3 +36,16 @@ CREATE TRIGGER agent_run_depth_guard BEFORE INSERT OR UPDATE OF parent_run_id, d
 -- BR-170: Agent runtime counts repeated calls per run; the database only provides the index.
 CREATE INDEX agent_step_run_id_call_fingerprint_idx ON agent.agent_step (run_id, call_fingerprint)
   WHERE call_fingerprint IS NOT NULL;
+
+-- covers: agent.tool_def#0
+-- ADR-54: the tool register is shared by every organisation and written only by migrations
+-- (its rows ship with a release); every service reads it to describe, check and expose tools.
+REVOKE INSERT, UPDATE, DELETE ON agent.tool_def FROM svc_agent;
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'svc\_%' LOOP
+    EXECUTE format('GRANT USAGE ON SCHEMA agent TO %I', r.rolname);
+    EXECUTE format('GRANT SELECT ON agent.tool_def TO %I', r.rolname);
+  END LOOP;
+END $$;

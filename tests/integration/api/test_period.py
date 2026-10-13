@@ -538,8 +538,14 @@ async def test_an_exception_is_a_high_risk_request_for_two_other_people(ps: Spac
             )
             == out["id"]
         )
-        [(event, payload)] = ps.events(item)
-        assert event == "period.exception_requested"
+        events = dict(ps.events(item))
+        assert set(events) == {"period.exception_requested", "hitl.requested"}
+        payload = events["period.exception_requested"]
+        # The inbox opens the request from hitl.requested, under the same id, as a chain.
+        opened = events["hitl.requested"]
+        assert opened["hitl_request_id"] == out["id"]
+        assert opened["approval_steps"] == ["steward", "compliance"]
+        assert opened["assignee_capability"] == "steward"
         assert payload["hitl_request_id"] == out["id"]
         assert payload["reason"] == "Sổ cái ghi nhận trễ 3 khách hàng"
         assert payload["delta"] == "-9.50" and payload["risk"] == "high"
@@ -721,7 +727,12 @@ async def test_a_manual_number_is_approved_by_the_controller_the_filer_names(ps:
         filed = await api.post(url, json=body(), headers=ps.headers("steward"))
         assert filed.status_code == 200, filed.text
         events = dict(ps.events(sept))
-        assert set(events) == {"period.publish_requested", "period.override_approval_requested"}
+        assert set(events) == {
+            "period.publish_requested",
+            "period.override_approval_requested",
+            "hitl.requested",
+        }
+        assert events["hitl.requested"]["assignee_id"] == str(ps.users["controller"])
         requested = events["period.publish_requested"]
         approval = events["period.override_approval_requested"]
         [frozen] = requested["overrides"]

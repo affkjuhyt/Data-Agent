@@ -1,10 +1,8 @@
 import { http, HttpResponse } from 'msw';
 import type {
   CallRecording,
-  CollectionSuggestion,
   DocumentAnswer,
   DocumentChunk,
-  DocumentLink,
   DocumentPage,
   DocumentRow,
   DocumentSource,
@@ -17,6 +15,7 @@ import type {
   QualityIssue,
   ResolveIssue,
 } from '../lib/v1/documents';
+import { DOCUMENT_ANSWER_PURPOSE } from '../lib/v1/documents';
 import type { StepState } from '../lib/v1/sources';
 
 /*
@@ -706,49 +705,24 @@ const CHUNKS: Record<string, DocumentChunk[]> = {
   ],
 };
 
-const LINKS: Record<string, DocumentLink[]> = {
+/** Who read or changed a document (audit_log rows, GET /v1/audit?object_kind=document). */
+const AUDIT: Record<
+  string,
+  { id: string; action: string; actor_kind: string; occurred_at: string }[]
+> = {
   'doc-hs-0187': [
     {
-      id: 'lk-loan',
-      target_label: 'LD2409-0187',
-      target_is_code: true,
-      kind_label: 'Khoản vay',
-      target_document_id: null,
-      state: { tone: 'warning', text: 'Lệch số tiền' },
+      id: 'au-1',
+      action: 'document.read',
+      actor_kind: 'user',
+      occurred_at: '2026-10-08T10:42:00+07:00',
     },
     {
-      id: 'lk-customer',
-      target_label: 'KH ••••4821',
-      target_is_code: true,
-      kind_label: 'Khách hàng',
-      target_document_id: null,
-      state: { tone: 'success', text: 'Khớp' },
+      id: 'au-2',
+      action: 'document.update',
+      actor_kind: 'agent',
+      occurred_at: '2026-10-08T06:05:00+07:00',
     },
-    {
-      id: 'lk-collateral',
-      target_label: 'TSBD_HN_2291',
-      target_is_code: true,
-      kind_label: 'Tài sản bảo đảm',
-      target_document_id: null,
-      state: { tone: 'error', text: 'Ảnh lỗi' },
-    },
-    {
-      id: 'lk-tt31',
-      target_label: 'Thông tư phân loại nợ',
-      target_is_code: false,
-      kind_label: 'Văn bản',
-      target_document_id: 'doc-tt31',
-      state: null,
-    },
-  ],
-};
-
-const ACTIVITY: Record<string, { id: string; when_text: string; text: string }[]> = {
-  'doc-hs-0187': [
-    { id: 'a1', when_text: '08/10 10:42', text: 'Trần Quốc An xem trường loan_amount' },
-    { id: 'a2', when_text: '08/10 06:05', text: 'Agent Tài liệu trích lại theo lược đồ v2' },
-    { id: 'a3', when_text: '02/10', text: 'Nạp từ thư mục quét chi nhánh Hà Nội' },
-    { id: 'a4', when_text: '02/10', text: 'Che CCCD, số tài khoản' },
   ],
 };
 
@@ -1025,28 +999,40 @@ const DOCUMENT_SOURCES: DocumentSource[] = [
   { id: 'dsrc-mail', label: 'Hộp thư · khieunai@' },
 ];
 
-const SUGGESTIONS: CollectionSuggestion[] = [
-  {
-    id: 'sg-1',
-    label: 'Biên bản kiểm tra sau cho vay · 2.140 tệp · SharePoint',
-    name: 'Biên bản kiểm tra sau cho vay',
-    source_id: 'dsrc-kiemtra',
-  },
-  {
-    id: 'sg-2',
-    label: 'Thư xác nhận nợ · 860 tệp · thư mục quét',
-    name: 'Thư xác nhận nợ',
-    source_id: 'dsrc-scan-hn',
-  },
-  {
-    id: 'sg-3',
-    label: 'Hợp đồng bảo lãnh · 410 tệp · lẫn trong Hợp đồng & phụ lục',
-    name: 'Hợp đồng bảo lãnh',
-    source_id: 'dsrc-phapche',
-  },
-];
-
 /* ─── Handlers ─────────────────────────────────────────────────────────── */
+
+const AT = '2026-10-08T08:00:00+07:00';
+
+/**
+ * GET /v1/documents/{id} as the api sends it (DocumentDetail), with the screen's row under
+ * `display`; the collection page's mock uses it too.
+ */
+export const documentApi = (id: string, title: string, display: unknown) => ({
+  id,
+  collection_id: 'col-mock',
+  file_name: title,
+  title,
+  media: 'pdf',
+  status: 'ready',
+  step: 'done',
+  progress: { chunks: 0, chunks_indexed: 0, pages_read: 0, pages_total: null, pages_usable: 0 },
+  blocking_quality_issues: 0,
+  open_quality_issues: 0,
+  sha256: '',
+  size_bytes: 0,
+  page_count: null,
+  doc_no: null,
+  document_source_id: null,
+  effective_from: null,
+  effective_to: null,
+  error: null,
+  issued_on: null,
+  parent_document_id: null,
+  supersedes_id: null,
+  created_at: AT,
+  updated_at: AT,
+  display,
+});
 
 export function createDocumentHandlers() {
   let library = libraryFixture();
@@ -1056,6 +1042,8 @@ export function createDocumentHandlers() {
   const validity = validityFixture();
   let schemas = schemasFixture();
   const created: { id: string; name: string }[] = [];
+  // Questions recorded with the documents purpose, and the answer each one gets.
+  const asked = new Map<string, DocumentAnswer>();
 
   const findView = (id: string) => views.find((v) => v.id === id);
   const saveView = (next: DocumentView) => {
@@ -1063,44 +1051,30 @@ export function createDocumentHandlers() {
   };
 
   return [
+    // DocumentListItem with the library row under display; the category and the validity review
+    // are filtered by the client. Other collections' documents are the collection mock's.
     http.get('*/v1/documents', ({ request }) => {
       const q = new URL(request.url).searchParams;
-      if (q.get('collection_id') === 'col-complaints') return page(mails);
-      if (q.get('collection_id')) return page([]);
-      let rows = library;
-      if (q.get('category')) rows = rows.filter((r) => r.category === q.get('category'));
-      if (q.get('state') === 'processing') rows = rows.filter((r) => r.processing);
-      if (q.get('validity_review') === 'true') rows = rows.filter((r) => validity[r.id]?.pending);
-      return page(rows);
+      const collection = q.get('collection_id');
+      if (collection && collection !== 'col-complaints') return undefined;
+      let rows = collection ? mails : library;
+      if (q.get('status') === 'processing') rows = rows.filter((r) => r.processing);
+      return page(
+        rows.map((r) => ({
+          ...documentApi(r.id, r.title, {
+            ...r,
+            ...(validity[r.id]?.pending ? { validity_pending: true } : {}),
+          }),
+          status: r.processing ? 'processing' : 'ready',
+        })),
+      );
     }),
-    http.get('*/v1/document-counts', () =>
-      HttpResponse.json({
-        all: library.length,
-        regulation: library.filter((r) => r.category === 'regulation').length,
-        internal: library.filter((r) => r.category === 'internal').length,
-        processing: library.filter((r) => r.processing).length,
-      }),
-    ),
-    http.post('*/v1/documents\\:precheck', async ({ request }) => {
-      const body = (await request.json()) as { files: { file_name: string }[] };
-      const known = new Set(views.map((v) => v.file_name));
-      const duplicates = (body.files ?? []).filter((x) => known.has(x.file_name)).length;
-      return HttpResponse.json({
-        duplicates,
-        note: duplicates
-          ? `Agent Tài liệu phát hiện ${duplicates} tệp trùng với tệp đã có; sẽ bỏ qua.`
-          : null,
-      });
-    }),
-    http.post('*/v1/documents', async ({ request }) => {
-      const body = (await request.json()) as {
-        collection_id?: string;
-        files?: { file_name: string }[];
-      };
-      if (!body.collection_id) return problem(422, 'validation_failed', 'Chọn bộ sưu tập.');
-      if (!body.files?.length) return problem(422, 'validation_failed', 'Chọn ít nhất một tệp.');
-      const known = new Set(views.map((v) => v.file_name));
-      const fresh = body.files.filter((x) => !known.has(x.file_name));
+    // Multipart, one file per request (A2). The body is not read: under MSW in the jsdom unit
+    // tests a multipart body never settles, so the mock accepts each file; the real api answers a
+    // duplicate 200 with the document it holds.
+    http.post('*/v1/documents', () => {
+      const file = `tệp ${library.length + 1}`;
+      const fresh = [{ file_name: file }];
       library = [
         ...fresh.map(
           (x, i): DocumentRow => ({
@@ -1121,10 +1095,7 @@ export function createDocumentHandlers() {
         ),
         ...library,
       ];
-      return HttpResponse.json(
-        { accepted: fresh.length, skipped: body.files.length - fresh.length },
-        { status: 202 },
-      );
+      return HttpResponse.json({ id: library[0].id, status: 'received' }, { status: 202 });
     }),
     http.get('*/v1/documents/:id/pages/:n', ({ params }) => {
       const doc = findView(String(params.id));
@@ -1132,66 +1103,148 @@ export function createDocumentHandlers() {
       if (!doc) return problem(404, 'not_found', 'Không tìm thấy tài liệu.');
       if (!Number.isInteger(n) || n < 1 || n > doc.page_count)
         return problem(404, 'not_found', 'Không có trang này.');
-      return HttpResponse.json(pageOf(doc, n));
+      return HttpResponse.json({
+        id: `page-${doc.id}-${n}`,
+        document_id: doc.id,
+        page_no: n,
+        text: null,
+        text_layer: true,
+        usable: true,
+        human_corrected: false,
+        ocr_conf: null,
+        page_hash: '',
+        created_at: AT,
+        updated_at: AT,
+        chunks: (CHUNKS[doc.id] ?? [])
+          .filter((c) => c.page === n)
+          .map((c) => ({
+            id: c.id,
+            document_id: doc.id,
+            collection_id: doc.collection?.id ?? 'col-mock',
+            page_from: c.page,
+            page_to: c.page,
+            text: c.text,
+            section_path: null,
+            context_header: null,
+            effective_from: null,
+            effective_to: null,
+            human_corrected: false,
+            injection_suspected: false,
+            pii_masked: false,
+            tokens: 120,
+            created_at: AT,
+          })),
+        display: pageOf(doc, n),
+      });
     }),
-    http.get('*/v1/documents/:id/chunks', ({ params }) =>
-      findView(String(params.id))
-        ? page(CHUNKS[String(params.id)] ?? [])
-        : problem(404, 'not_found', 'Không tìm thấy tài liệu.'),
-    ),
-    http.get('*/v1/documents/:id/links', ({ params }) =>
-      findView(String(params.id))
-        ? page(LINKS[String(params.id)] ?? [])
-        : problem(404, 'not_found', 'Không tìm thấy tài liệu.'),
-    ),
-    http.get('*/v1/documents/:id/activity', ({ params }) =>
-      findView(String(params.id))
-        ? page(ACTIVITY[String(params.id)] ?? [])
-        : problem(404, 'not_found', 'Không tìm thấy tài liệu.'),
-    ),
+    // DocumentView rows of the document's versions, with the validity screen's view under display.
     http.get('*/v1/documents/:id/versions', ({ params }) => {
-      const v = validity[String(params.id)];
-      return v
-        ? HttpResponse.json(v)
-        : problem(404, 'not_found', 'Văn bản chưa có quan hệ hiệu lực.');
-    }),
-    http.patch('*/v1/documents/:id', async ({ params }) => {
       const id = String(params.id);
+      const doc = findView(id);
       const v = validity[id];
-      if (!v)
-        return findView(id)
-          ? problem(409, 'invalid_state', 'Văn bản chưa có quan hệ hiệu lực.')
-          : undefined;
-      if (!v.can_confirm)
-        return problem(
-          403,
-          'forbidden',
-          'Chỉ người phụ trách văn bản xác nhận được quan hệ hiệu lực.',
-        );
-      validity[id] = { ...v, pending: null };
-      return HttpResponse.json(validity[id]);
+      if (!doc && !v) return problem(404, 'not_found', 'Không tìm thấy tài liệu.');
+      const title = doc?.title ?? v?.title ?? id;
+      return HttpResponse.json({
+        items: [
+          {
+            ...documentApi(id, title, undefined),
+            display: undefined,
+            created_at: '2026-10-02T09:00:00+07:00',
+            doc_no: null,
+            effective_from: null,
+          },
+        ],
+        next_page_token: '',
+        ...(v ? { display: v } : {}),
+      });
     }),
-    http.post('*/v1/documents/:action', ({ params }) => {
-      const [id, verb] = String(params.action).split(':');
-      if (!findView(id)) return undefined;
-      if (verb !== 'investigate') return problem(404, 'not_found', 'Không có thao tác này.');
-      return HttpResponse.json({ run_id: `run-investigate-${id}` }, { status: 202 });
+    http.get('*/v1/audit', ({ request }) => {
+      const q = new URL(request.url).searchParams;
+      if (q.get('object_kind') !== 'document') return undefined;
+      return page(AUDIT[q.get('object_id') ?? ''] ?? []);
+    }),
+    // DocumentPatch: the replacing document records what it supersedes (the confirmation of the
+    // relation the agent proposed), the replaced one its effective_to.
+    http.patch('*/v1/documents/:id', async ({ params, request }) => {
+      const id = String(params.id);
+      const body = (await request.json()) as { supersedes_id?: string; effective_to?: string };
+      const replaced = body.supersedes_id ? validity[body.supersedes_id] : undefined;
+      if (replaced) {
+        if (!replaced.can_confirm)
+          return problem(
+            403,
+            'forbidden',
+            'Chỉ người phụ trách văn bản xác nhận được quan hệ hiệu lực.',
+          );
+        validity[replaced.document_id] = { ...replaced, pending: null };
+        return HttpResponse.json({ ...documentApi(id, id, undefined), display: undefined });
+      }
+      if (!validity[id] && !findView(id)) return undefined;
+      return HttpResponse.json({
+        ...documentApi(id, id, undefined),
+        display: undefined,
+        effective_to: body.effective_to ?? null,
+      });
+    }),
+    // A background task for an agent (UC-08-05): the email viewer's "Mở lượt điều tra".
+    http.post('*/v1/tasks', async ({ request }) => {
+      const body = (await request.json()) as { description?: string };
+      if (!body.description?.trim())
+        return problem(422, 'validation_failed', 'Mô tả việc cần làm.');
+      return HttpResponse.json(
+        { id: `task-${Date.now().toString(36)}`, status: 'queued', poll_after_ms: 1000 },
+        { status: 202 },
+      );
     }),
     // Ids this mock does not hold fall through to mocks/sources.ts.
     http.get('*/v1/documents/:id', ({ params }) => {
       const doc = findView(String(params.id));
-      return doc ? HttpResponse.json(doc) : undefined;
+      return doc ? HttpResponse.json(documentApi(doc.id, doc.title, doc)) : undefined;
     }),
 
-    http.get('*/v1/quality-issues', () => page(issues)),
+    // QualityIssueView with the side-by-side review under display.
+    http.get('*/v1/quality-issues', () =>
+      page(
+        issues.map((i) => ({
+          id: i.id,
+          document_id: i.document.id,
+          page_no: i.page,
+          kind: 'low_ocr',
+          severity: 'blocking',
+          status: 'open',
+          detail: i.reason_text,
+          old_value: null,
+          chunk_id: null,
+          extracted_record_id: null,
+          requires_role: null,
+          resolution: null,
+          resolved_at: null,
+          resolved_by: null,
+          created_at: AT,
+          updated_at: AT,
+          display: i,
+        })),
+      ),
+    ),
     http.post('*/v1/quality-issues/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
       if (verb !== 'resolve') return problem(404, 'not_found', 'Không có thao tác này.');
       const issue = issues.find((i) => i.id === id);
       if (!issue) return problem(404, 'not_found', 'Vấn đề đã được xử lý.');
-      const body = (await request.json()) as ResolveIssue;
-      if (body.action === 'drop' && !body.reason?.trim())
-        return problem(422, 'validation_failed', 'Ghi lý do bỏ trang.');
+      // A2's resolution, or the screen's PROPOSAL keep_and_conflict.
+      const raw = (await request.json()) as
+        | { resolution: string; corrected_text?: string }
+        | { action: 'keep_and_conflict' };
+      const body: ResolveIssue =
+        'action' in raw
+          ? raw
+          : raw.resolution === 'corrected'
+            ? { action: 'edit', text: raw.corrected_text ?? '' }
+            : raw.resolution === 'value_fixed'
+              ? { action: 'correct', value: raw.corrected_text ?? '' }
+              : raw.resolution === 'page_dropped'
+                ? { action: 'drop', reason: '' }
+                : { action: 'confirm' };
       if (body.action === 'edit' && !body.text?.trim())
         return problem(422, 'validation_failed', 'Văn bản sửa không được trống.');
       issues = issues.filter((i) => i.id !== id);
@@ -1217,14 +1270,67 @@ export function createDocumentHandlers() {
       return HttpResponse.json({ status: 'resolved' });
     }),
 
-    http.post('*/v1/document-answers', async ({ request }) => {
-      const body = (await request.json()) as { question?: string; collection_id?: string | null };
-      if (!body.question?.trim()) return problem(422, 'validation_failed', 'Nhập câu hỏi.');
-      const scope =
-        body.collection_id === 'col-regulation' || !body.collection_id
-          ? 'Tìm trong: Văn bản pháp quy tín dụng · chỉ văn bản đang hiệu lực'
-          : 'Tìm trong: bộ sưu tập đã chọn · chỉ văn bản đang hiệu lực';
-      return HttpResponse.json(answerTo(body.question, scope));
+    // Answers from documents: the question is Hỏi đáp's, recorded with the documents purpose (the
+    // others fall through to its mock), and the passages are the hybrid search's.
+    http.post('*/v1/questions', async ({ request }) => {
+      const body = (await request.clone().json()) as { text?: string; purpose?: string };
+      if (body.purpose !== DOCUMENT_ANSWER_PURPOSE) return undefined;
+      const id = `q-doc-${asked.size + 1}`;
+      asked.set(id, answerTo(body.text ?? '', ''));
+      return HttpResponse.json(
+        {
+          id,
+          question_id: id,
+          conversation_id: `conv-${id}`,
+          status: 'received',
+          poll_after_ms: 0,
+        },
+        { status: 202 },
+      );
+    }),
+    http.get('*/v1/questions/:id', ({ params }) => {
+      const answer = asked.get(String(params.id));
+      return answer
+        ? HttpResponse.json({ id: params.id, status: 'answered', answer_id: answer.id })
+        : undefined;
+    }),
+    http.get('*/v1/answers/:id', ({ params }) => {
+      const answer = [...asked.values()].find((a) => a.id === params.id);
+      return answer
+        ? HttpResponse.json({
+            id: answer.id,
+            kind: answer.not_found ? 'refusal' : 'document',
+            text: answer.answer,
+            agent_name: 'Agent Tài liệu',
+            latency_ms: 3400,
+            citations: [],
+          })
+        : undefined;
+    }),
+    http.post('*/v1/search/documents', async ({ request }) => {
+      const body = (await request.json()) as { query?: string };
+      return page(
+        answerTo(body.query ?? '', '').citations.map((c) => ({
+          id: `hit-${c.document_id}`,
+          document_id: c.document_id,
+          collection_id: 'col-regulation',
+          document_title: c.title,
+          doc_no: null,
+          section_path: c.locator.split(' · ')[0],
+          page_from: c.page,
+          page_to: c.page,
+          text: c.quote,
+          effective_from: null,
+          effective_to: c.superseded ? '2026-09-01' : null,
+          score: 0.9,
+          context_header: null,
+          human_corrected: false,
+          injection_suspected: false,
+          pii_masked: false,
+          tokens: 80,
+          created_at: AT,
+        })),
+      );
     }),
 
     http.get('*/v1/extraction-schemas', () => page(schemas)),
@@ -1253,19 +1359,18 @@ export function createDocumentHandlers() {
     }),
 
     http.get('*/v1/document-sources', () => page(DOCUMENT_SOURCES)),
-    http.post('*/v1/collections\\:suggest', () =>
-      HttpResponse.json({
-        suggestions: SUGGESTIONS,
-        note: 'Đề xuất 3 cần tách khỏi bộ sưu tập hiện có; lược đồ cũ vẫn dùng được.',
-      }),
-    ),
+    // CollectionCreate: code, name, purpose and the media kinds.
     http.post('*/v1/collections', async ({ request }) => {
-      const body = (await request.json()) as NewCollection;
+      const body = (await request.json()) as { code: string; name: string; purpose: string };
       if (!body.name?.trim()) return problem(422, 'validation_failed', 'Đặt tên bộ sưu tập.');
-      if (!body.source_id) return problem(422, 'validation_failed', 'Chọn nguồn nạp.');
+      if (!body.code || !body.purpose)
+        return problem(422, 'validation_failed', 'Thiếu mã hoặc mục đích.');
       const item = { id: `col-new-${created.length + 1}`, name: body.name.trim() };
       created.push(item);
-      return HttpResponse.json(item, { status: 201 });
+      return HttpResponse.json(
+        { ...item, code: body.code, purpose: body.purpose },
+        { status: 201 },
+      );
     }),
 
     // The thread's review is answered with the ordinary HITL :resolve; other ids fall through.

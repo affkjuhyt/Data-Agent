@@ -1,6 +1,6 @@
 /**
- * The semantic layer against the v1 mock: the entity model and saving the agent's relationship
- * suggestions, the glossary with an ambiguous term and an unknown phrase turned into a term, and
+ * The semantic layer against the v1 mock: the entity model with a relationship waiting for
+ * review, the glossary with an ambiguous term and an unknown phrase turned into a term, and
  * the context-layer evaluation.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -24,21 +24,16 @@ afterAll(() => server.close());
 const wrap = (ui: React.ReactNode) => render(<ToastProvider>{ui}</ToastProvider>);
 
 describe('EntityModelPage', () => {
-  it('shows the model, switches the entity on the right, and saves suggested relationships', async () => {
+  it('shows the model with a pending relationship and switches the entity on the right', async () => {
     wrap(<EntityModelPage />);
     expect(await screen.findByRole('heading', { level: 2, name: 'Khoản vay' })).toBeInTheDocument();
     expect(screen.getByText('NPL_RATIO v4')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^Chi nhánh/ }));
     expect(await screen.findByRole('heading', { level: 2, name: 'Chi nhánh' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Nhờ agent đề xuất quan hệ' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Agent đề xuất quan hệ' });
-    expect(
-      await within(dialog).findByText('Quan hệ thứ hai cần chủ sở hữu CRM xác nhận vì khác mã.'),
-    ).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole('checkbox', { name: /CRM.cust_no/ }));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Thêm quan hệ đã chọn' }));
-    expect(await screen.findByText('Đã gửi 1 quan hệ chờ duyệt')).toBeInTheDocument();
+    expect(screen.getByText('1 — n')).toBeInTheDocument();
+    expect(screen.getByText('n — 1 · chờ duyệt')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nhờ agent đề xuất quan hệ' })).toBeNull();
   });
 });
 

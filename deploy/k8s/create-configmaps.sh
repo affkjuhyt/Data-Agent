@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# ConfigMaps built from files that live in deploy/docker/ (and the runtime's
-# migrations). Those files stay where they are — there is one copy in the repo —
+# ConfigMaps built from files that live in deploy/docker/. Those files stay where
+# they are — there is one copy in the repo —
 # so these have to be created imperatively rather than committed as manifests.
 #
 #   bash deploy/k8s/create-configmaps.sh
@@ -32,16 +32,8 @@ cm "$DB" postgres-initdb \
 # a ConfigMap has to live where the pod that mounts it runs.
 cm "$SVC" db-init-sql \
   --from-file=01-grants.sql=$K/sql/grant-roles.sql \
-  --from-file=02-kb-seed.sql=$K/sql/kb-seed.sql
-
-# demo*.sql run only when the seed Job has SEED_DEMO=1 (Ansible: seed_demo).
-cm "$SVC" seed-sql \
-  --from-file=seed.sql=backend/services/workflow_runtime/migrations/seed.sql \
-  --from-file=demo.sql=tests/e2e/seed.sql \
-  --from-file=demo-governance.sql=tests/e2e/seed-governance.sql
-
-cm "$SVC" seed-mongo \
-  --from-file=seed-flow.js=tests/e2e/seed-flow.js
+  --from-file=02-kb-seed.sql=$K/sql/kb-seed.sql \
+  --from-file=03-v3-demo-seed.sql=$K/sql/v3-demo-seed.sql
 
 cm "$SVC" keycloak-realm   --from-file=$K/keycloak/realm-export.json
 cm "$SVC" keycloak-scripts --from-file=$K/keycloak/setup-audience-mappers.sh

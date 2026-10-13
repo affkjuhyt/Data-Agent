@@ -180,6 +180,11 @@ class DataMart(Base):
         server_default=sql_text("'[]'"),
         comment="Tổng khớp nguồn, độ mới, khoá chiều duy nhất",
     )
+    suggested_dimensions: Mapped[Any | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="Chiều gợi ý từ quan hệ của bảng sự kiện, sinh khi tạo mart; người soạn chọn vào dimensions (UC-06-06, thêm 12/10/2026)",
+    )
     relation_check_passed: Mapped[bool] = mapped_column(
         Boolean, server_default=sql_text("false"), comment="Thất bại thì không phát hành được"
     )
@@ -222,6 +227,10 @@ class DataProduct(Base):
         ARRAY(UUID(as_uuid=True)),
         server_default=sql_text("'{}'"),
         comment="Data Space đăng ký dùng",
+    )
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        comment="logic → org.app_user; người phụ trách duyệt phát hành, khác người soạn (thêm 12/10/2026)",
     )
     status: Mapped[str] = mapped_column(
         Text, server_default=sql_text("'draft'"), comment="draft, published, deprecated, retired"
@@ -282,7 +291,7 @@ class WritebackRequest(Base):
     status: Mapped[str] = mapped_column(
         Text,
         server_default=sql_text("'draft'"),
-        comment="draft, previewed, submitted, approved, rejected, scheduled, executing, executed, cancelled_mismatch, failed, undone",
+        comment="draft, previewed, submitted, approved, rejected, scheduled, executing, executed, cancelled_mismatch, failed, undo_requested, undone",
     )
     executed_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

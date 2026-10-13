@@ -24,7 +24,7 @@ import { useV1 } from '../../lib/v1/useV1';
  * pages. A field the agent could not map with confidence waits for a person to pick its canonical
  * attribute; approval needs that choice and 95% of required fields right (BR-151).
  */
-const fmt = (n: number) => n.toFixed(2).replace('.', ',');
+const fmt = (n: number | null) => (n === null ? '—' : n.toFixed(2).replace('.', ','));
 const pct = (n: number) => `${n.toFixed(1).replace('.', ',')}%`;
 const THRESHOLD = 95;
 
@@ -66,8 +66,9 @@ function SchemaBody({
   const [selected, setSelected] = useState<string>();
   const [busy, setBusy] = useState<'test' | 'approve' | null>(null);
   const [error, setError] = useState<string>();
-  const draft = schema.status === 'draft';
-  const unsure = schema.fields.filter((f) => !f.canonical);
+  const draft = schema.status === 'draft' || schema.status === 'testing';
+  // Only a field the agent offers choices for waits on a person; the api offers none yet.
+  const unsure = schema.fields.filter((f) => !f.canonical && f.canonical_options.length > 0);
   const missing = unsure.filter((f) => !choices[f.name]);
   const test = schema.test;
   const passes = test ? test.required_correct_pct >= THRESHOLD : false;
@@ -136,46 +137,50 @@ function SchemaBody({
       />
       <div className="flex items-start gap-da-xl px-da-3xl pb-da-2xl pt-da-xl max-[1279px]:flex-col">
         <div className="flex w-[430px] shrink-0 flex-col gap-da-xl max-[1279px]:w-full">
-          <Card title={`Bản gốc · ${schema.sample.url}`}>
-            <p className="text-muted-foreground da-mono">{schema.sample.fetched_text}</p>
-            <table className="w-full border-collapse overflow-hidden rounded-md border border-border da-body-small">
-              <thead>
-                <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                  {schema.sample.columns.map((c) => (
-                    <th key={c} className="px-da-lg py-da-md font-normal">
-                      {c}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {schema.sample.rows.map((r, i) => (
-                  <tr
-                    key={r.join('|')}
-                    className={cn(
-                      'border-b border-border last:border-b-0 text-foreground',
-                      i === schema.sample.highlighted_row && 'bg-accent',
-                    )}
-                  >
-                    {r.map((cell, j) => (
-                      <td key={j} className="px-da-lg py-[10px]">
-                        {cell}
-                      </td>
+          {schema.sample && (
+            <Card title={`Bản gốc · ${schema.sample.url}`}>
+              <p className="text-muted-foreground da-mono">{schema.sample.fetched_text}</p>
+              <table className="w-full border-collapse overflow-hidden rounded-md border border-border da-body-small">
+                <thead>
+                  <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
+                    {schema.sample.columns.map((c) => (
+                      <th key={c} className="px-da-lg py-da-md font-normal">
+                        {c}
+                      </th>
                     ))}
                   </tr>
+                </thead>
+                <tbody>
+                  {schema.sample.rows.map((r, i) => (
+                    <tr
+                      key={r.join('|')}
+                      className={cn(
+                        'border-b border-border last:border-b-0 text-foreground',
+                        i === schema.sample?.highlighted_row && 'bg-accent',
+                      )}
+                    >
+                      {r.map((cell, j) => (
+                        <td key={j} className="px-da-lg py-[10px]">
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="text-muted-foreground da-caption">{schema.sample.footer_text}</p>
+              <p className="text-foreground da-mono">{schema.sample.repeat_text}</p>
+            </Card>
+          )}
+          {schema.samples_read.length > 0 && (
+            <Card title="Mẫu đã đọc">
+              <ul className="flex flex-col gap-da-lg text-foreground da-body-small">
+                {schema.samples_read.map((line) => (
+                  <li key={line}>· {line}</li>
                 ))}
-              </tbody>
-            </table>
-            <p className="text-muted-foreground da-caption">{schema.sample.footer_text}</p>
-            <p className="text-foreground da-mono">{schema.sample.repeat_text}</p>
-          </Card>
-          <Card title="Mẫu đã đọc">
-            <ul className="flex flex-col gap-da-lg text-foreground da-body-small">
-              {schema.samples_read.map((line) => (
-                <li key={line}>· {line}</li>
-              ))}
-            </ul>
-          </Card>
+              </ul>
+            </Card>
+          )}
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-da-xl max-[1279px]:w-full">
           {error && <Notice tone="error">Không thực hiện được: {error}</Notice>}
@@ -202,7 +207,7 @@ function SchemaBody({
                     onClick={() => setSelected(f.name)}
                     className={cn(
                       'border-b border-border last:border-b-0 text-foreground',
-                      (selected === f.name || (!selected && !f.canonical)) && 'bg-accent',
+                      (selected === f.name || (!selected && unsure.includes(f))) && 'bg-accent',
                     )}
                   >
                     <td className="truncate px-da-lg py-[10px] da-mono">{f.name}</td>
@@ -212,20 +217,25 @@ function SchemaBody({
                     <td className="px-da-lg py-[10px]">{f.key ? 'Có' : '—'}</td>
                     <td className="px-da-lg py-[10px]">{f.locator}</td>
                     <td className="px-da-lg py-[6px]">
-                      {f.canonical ?? (
-                        <Select
-                          label={`Thuộc tính chuẩn của ${f.name}`}
-                          value={choices[f.name] ?? null}
-                          placeholder="Chưa chắc · chọn"
-                          onChange={(v) => setChoices({ ...choices, [f.name]: v })}
-                          options={f.canonical_options.map((o) => ({ value: o, label: o }))}
-                        />
-                      )}
+                      {f.canonical ??
+                        (!draft || !unsure.includes(f) ? (
+                          '—'
+                        ) : (
+                          <Select
+                            label={`Thuộc tính chuẩn của ${f.name}`}
+                            value={choices[f.name] ?? null}
+                            placeholder="Chưa chắc · chọn"
+                            onChange={(v) => setChoices({ ...choices, [f.name]: v })}
+                            options={f.canonical_options.map((o) => ({ value: o, label: o }))}
+                          />
+                        ))}
                     </td>
                     <td
                       className={cn(
                         'px-da-lg py-[10px]',
-                        f.confidence < 0.8 ? 'text-warning' : 'text-foreground',
+                        f.confidence !== null && f.confidence < 0.8
+                          ? 'text-warning'
+                          : 'text-foreground',
                       )}
                     >
                       {fmt(f.confidence)}
@@ -241,7 +251,7 @@ function SchemaBody({
                 <Stat
                   label="Trang giữ lại"
                   value={String(test.pages)}
-                  note={`${test.records} bản ghi trích được`}
+                  note={test.records === null ? '' : `${test.records} bản ghi trích được`}
                 />
                 <Stat
                   label="Trường bắt buộc đúng"

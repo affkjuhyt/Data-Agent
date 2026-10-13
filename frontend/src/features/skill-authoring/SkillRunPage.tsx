@@ -3,6 +3,7 @@ import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
+import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
@@ -58,7 +59,7 @@ function Runner({ form, latest }: { form: SkillRunForm; latest: V1State<Page<Ski
     setBusy('run');
     setError(undefined);
     try {
-      setRun(await runSkill(form.skill_id, next));
+      setRun(await runSkill(form.skill_id, next, form.kind));
     } catch (e) {
       setError(`Không chạy được: ${(e as Error).message}`);
     } finally {
@@ -116,6 +117,7 @@ function Runner({ form, latest }: { form: SkillRunForm; latest: V1State<Page<Ski
   }
 
   const result = current?.decomposition;
+  const outcome = current?.outcome;
   return (
     <div className="flex min-h-full flex-col">
       <PageHeader
@@ -153,12 +155,23 @@ function Runner({ form, latest }: { form: SkillRunForm; latest: V1State<Page<Ski
               <span aria-hidden className="text-muted-foreground da-caption">
                 {p.label}
               </span>
-              <Select
-                label={p.label}
-                options={p.options}
-                value={params[p.key] ?? null}
-                onChange={(v) => setParams((prev) => ({ ...prev, [p.key]: v }))}
-              />
+              {p.options.length ? (
+                <Select
+                  label={p.label}
+                  options={p.options}
+                  value={params[p.key] ?? null}
+                  onChange={(v) => setParams((prev) => ({ ...prev, [p.key]: v }))}
+                />
+              ) : (
+                <Input
+                  aria-label={p.label}
+                  value={params[p.key] ?? ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setParams((prev) => ({ ...prev, [p.key]: value }));
+                  }}
+                />
+              )}
             </div>
           ))}
           <p className="text-muted-foreground da-caption">{form.params_note}</p>
@@ -172,7 +185,7 @@ function Runner({ form, latest }: { form: SkillRunForm; latest: V1State<Page<Ski
                 : { ...latest, data: { items: run ? [run] : [], next_page_token: '' } }
             }
             what="kết quả chạy"
-            isEmpty={() => !result}
+            isEmpty={() => !result && !outcome}
             empty={
               <p className="text-muted-foreground da-body-small">
                 Chưa có lần chạy nào. Chọn tham số rồi bấm “Chạy lại”.
@@ -180,43 +193,72 @@ function Runner({ form, latest }: { form: SkillRunForm; latest: V1State<Page<Ski
             }
           >
             {() =>
-              result && (
-                <>
-                  <p className="text-foreground da-reading">{result.summary}</p>
-                  <Waterfall start={result.start} steps={result.steps} end={result.end} />
-                  <table className="w-full table-fixed border-collapse">
-                    <thead>
-                      <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                        <th className="px-da-lg py-da-md font-normal">Đóng góp</th>
-                        <th className="w-[80px] px-da-lg py-da-md font-normal">Điểm</th>
-                        <th className="w-[80px] px-da-lg py-da-md font-normal">Tỷ trọng</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {result.contributions.map((c) => (
-                        <tr key={c.label} className="border-b border-border">
-                          <td className="px-da-lg py-[9px] text-foreground da-body-small">
-                            {c.label}
-                          </td>
-                          <td className="px-da-lg py-[9px] text-foreground da-mono">
-                            {c.points_text}
-                          </td>
-                          <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
-                            {c.share_text}
-                          </td>
+              outcome ? (
+                <Outcome outcome={outcome} />
+              ) : (
+                result && (
+                  <>
+                    <p className="text-foreground da-reading">{result.summary}</p>
+                    <Waterfall start={result.start} steps={result.steps} end={result.end} />
+                    <table className="w-full table-fixed border-collapse">
+                      <thead>
+                        <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                          <th className="px-da-lg py-da-md font-normal">Đóng góp</th>
+                          <th className="w-[80px] px-da-lg py-da-md font-normal">Điểm</th>
+                          <th className="w-[80px] px-da-lg py-da-md font-normal">Tỷ trọng</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <p className="text-muted-foreground da-caption">
-                    Chạy theo quyền của người chạy; mỗi lần chạy lưu tham số và phiên bản kỹ năng
-                  </p>
-                </>
+                      </thead>
+                      <tbody>
+                        {result.contributions.map((c) => (
+                          <tr key={c.label} className="border-b border-border">
+                            <td className="px-da-lg py-[9px] text-foreground da-body-small">
+                              {c.label}
+                            </td>
+                            <td className="px-da-lg py-[9px] text-foreground da-mono">
+                              {c.points_text}
+                            </td>
+                            <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
+                              {c.share_text}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="text-muted-foreground da-caption">
+                      Chạy theo quyền của người chạy; mỗi lần chạy lưu tham số và phiên bản kỹ năng
+                    </p>
+                  </>
+                )
               )
             }
           </AsyncRegion>
         </section>
       </div>
     </div>
+  );
+}
+
+/** A skill A2 serves: its result has no designed view, so the conclusion and figures as written. */
+function Outcome({ outcome }: { outcome: NonNullable<SkillRun['outcome']> }) {
+  if (outcome.status === 'running')
+    return <StatusDot tone="info">Đang chạy · kết quả hiện khi lượt chạy xong</StatusDot>;
+  if (outcome.status === 'failed')
+    return <Notice tone="error">Lượt chạy lỗi{outcome.error ? `: ${outcome.error}` : ''}</Notice>;
+  return (
+    <>
+      {outcome.summary && <p className="text-foreground da-reading">{outcome.summary}</p>}
+      {outcome.figures.length > 0 && (
+        <table className="w-full table-fixed border-collapse">
+          <tbody>
+            {outcome.figures.map((f) => (
+              <tr key={f.label} className="border-b border-border">
+                <td className="px-da-lg py-[9px] text-muted-foreground da-body-small">{f.label}</td>
+                <td className="px-da-lg py-[9px] text-foreground da-mono">{f.value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </>
   );
 }

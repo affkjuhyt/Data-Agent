@@ -47,7 +47,7 @@ function ProfileView({ profile }: { profile: TableProfile }) {
 
   const reprofile = async () => {
     try {
-      await reprofileTable(profile.id);
+      await reprofileTable(profile);
       setQueued(true);
       toast({ tone: 'success', message: `Đã xếp lịch lập hồ sơ lại ${profile.name}.` });
     } catch (e) {

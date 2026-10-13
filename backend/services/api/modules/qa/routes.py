@@ -16,7 +16,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Path, Query, Response
+from fastapi import APIRouter, Depends, Path, Query, Request, Response
 from sqlalchemy import func, select, text
 
 from libs.dataagent_db import uuid7
@@ -39,6 +39,7 @@ from services.api.kernel.sse import Event, event_stream
 from services.api.kernel.sse import last_event_id as get_last_event_id
 from services.api.modules.eval.public import eval_set_accepts_items
 from services.api.modules.qa import progress, scope
+from services.api.modules.qa.export_storage import export_links
 from services.api.modules.qa.questions import insert_question
 from services.api.modules.qa.schemas import (
     AnswerView,
@@ -870,7 +871,7 @@ async def create_answer_export(
     **endpoint("GET", "/v1/exports/{id}", operation_id="getExport"),
 )
 async def get_export(
-    export_id: IdPath, principal: CurrentPrincipal, data_space: CurrentDataSpace
+    export_id: IdPath, principal: CurrentPrincipal, data_space: CurrentDataSpace, request: Request
 ) -> ExportView:
     async with transaction(ROLE, principal) as session:
         # BR-86: only the person who exported can fetch the file.
@@ -879,13 +880,31 @@ async def get_export(
                 qa.ExportJob.id == export_id, qa.ExportJob.requested_by == principal.user_id
             )
         )
-    if export is None:
-        raise Problem(404, "not_found", "Export not found.")
-    if export.status == "expired" or (
-        export.expires_at is not None and export.expires_at <= _now()
-    ):
-        raise Problem(410, "gone", "The download link has expired (BR-86).")
-    return ExportView.model_validate(export)
+        if export is None:
+            raise Problem(404, "not_found", "Export not found.")
+        if export.status == "expired" or (
+            export.expires_at is not None and export.expires_at <= _now()
+        ):
+            raise Problem(410, "gone", "The download link has expired (BR-86).")
+        view = ExportView.model_validate(export)
+        key = export.object_key
+        # The worker writes da-exports/{org_id}/{job_id}.{ext}; a key outside the caller's
+        # organisation is never signed, whatever the row says.
+        if export.status == "ready" and key and key.startswith(f"{principal.org_id}/"):
+            links = getattr(request.app.state, "export_links", None) or export_links()
+            view.download_url = await links.sign(key)
+            if view.download_url is not None:
+                # AC-01-06-05: every download link handed out is in the audit log.
+                scope.audit(
+                    session,
+                    qa.Outbox,
+                    principal,
+                    action="export.download_link_issued",
+                    object_kind="export_job",
+                    object_id=export.id,
+                    after={"format": export.format, "row_count": export.row_count},
+                )
+    return view
 
 
 # ─── receipts and replays ───

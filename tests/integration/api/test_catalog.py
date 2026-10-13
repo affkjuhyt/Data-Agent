@@ -202,6 +202,33 @@ async def _create_source(api: httpx.AsyncClient, o: Org, **extra: Any) -> dict[s
     return out
 
 
+async def test_connection_picker_lists_catalogue_and_org_secret_refs_only(o: Org) -> None:
+    _source_row(o, name="Core banking", secret_ref=f"secret/tenants/{o.org}/core")
+    _source_row(o, space=o.other, name="Market data", secret_ref=f"secret/tenants/{o.org}/market")
+    async with client(o) as api:
+        connectors = await api.get("/v1/connectors", headers=o.headers("admin"))
+        refs = await api.get("/v1/secret-refs", headers=o.headers("admin"))
+
+    assert connectors.status_code == 200, connectors.text
+    connector_items = connectors.json()["items"]
+    assert {item["code"] for item in connector_items} >= {"postgresql", "clickhouse", "snowflake"}
+    assert all("password" not in str(item).lower() for item in connector_items)
+
+    assert refs.status_code == 200, refs.text
+    assert {item["ref"] for item in refs.json()["items"]} == {f"secret/tenants/{o.org}/core"}
+    assert all(set(item) == {"ref", "label"} for item in refs.json()["items"])
+    assert "secret_value" not in refs.text
+
+
+async def test_connection_catalogue_and_secret_refs_require_admin_data(o: Org) -> None:
+    async with client(o) as api:
+        denied_catalogue = await api.get("/v1/connectors", headers=o.headers("analyst"))
+        denied_refs = await api.get("/v1/secret-refs", headers=o.headers("analyst"))
+
+    assert denied_catalogue.status_code == 403
+    assert denied_refs.status_code == 403
+
+
 def _source_row(o: Org, space: uuid.UUID | None = None, **values: Any) -> uuid.UUID:
     values.setdefault("name", f"src-{uuid.uuid4().hex[:6]}")
     values.setdefault("kind", "postgresql")
@@ -811,6 +838,27 @@ async def test_enabling_a_table_needs_its_personal_columns_confirmed(o: Org) -> 
         assert o.one("SELECT enabled FROM catalog.dataset WHERE id = %s", dataset) is True
 
 
+async def test_dataset_derive_registers_worker_request(o: Org) -> None:
+    source = _source_row(o)
+    dataset = _dataset(o, source, table_name="khoan_vay")
+    async with client(o) as api:
+        response = await api.post(
+            f"/v1/datasets/{dataset}:derive",
+            headers=o.headers("analyst"),
+            json={
+                "filters": [{"column": "status", "op": "eq", "value": "open"}],
+                "drop_duplicates": True,
+            },
+        )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["id"] and body["name"].startswith("derived_") and body["row_count"] == 0
+    event = o.events(body["id"])
+    assert event and event[-1][0] == "dataset.derive_requested"
+    assert event[-1][1]["source_dataset_id"] == str(dataset)
+    assert event[-1][1]["drop_duplicates"] is True
+
+
 async def test_dataset_versions_newest_first(o: Org) -> None:
     source = _source_row(o)
     dataset = _dataset(o, source)
@@ -960,3 +1008,93 @@ async def test_certification_refusals(o: Org) -> None:
         unknown = await api.post(f"/v1/dataset-versions/{uuid.uuid4()}:certify", headers=h)
         assert unknown.status_code == 404
     assert o.events(elsewhere) == []
+
+
+async def test_one_source_is_read_and_names_its_writeback_tables(o: Org) -> None:
+    # 12/10/2026: GET /v1/sources/{id} is where :test's Location points; writeback_tables lists
+    # the tables a writeback may write (UC-06-04).
+    source = _source_row(o, writeback_secret_ref=f"secret/tenants/{o.org}/wb")
+    elsewhere = _source_row(o, o.other)
+    async with client(o) as api:
+        h = o.headers("admin")
+        got = await api.get(f"/v1/sources/{source}", headers=h)
+        assert got.status_code == 200, got.text
+        _no_secret(got.json())
+        assert got.json()["has_writeback_credentials"] is True
+        assert got.json()["writeback_tables"] == []
+        patched = await api.patch(
+            f"/v1/sources/{source}",
+            json={"writeback_tables": ["core.du_no", "core.du_no", "core.tai_khoan"]},
+            headers=h,
+        )
+        assert patched.status_code == 200, patched.text
+        assert patched.json()["writeback_tables"] == ["core.du_no", "core.tai_khoan"]
+        bad = await api.patch(
+            f"/v1/sources/{source}", json={"writeback_tables": ["du_no; drop"]}, headers=h
+        )
+        assert bad.status_code == 422
+        tested = await api.post(f"/v1/sources/{source}:test", headers=h)
+        assert tested.headers["Location"] == f"/v1/sources/{source}"
+        hidden = await api.get(f"/v1/sources/{elsewhere}", headers=h)
+        assert hidden.status_code == 404
+        no_admin = await api.get(f"/v1/sources/{source}", headers=o.headers("steward"))
+        assert no_admin.status_code == 403
+
+
+async def test_activation_assigns_tables_only_where_the_caller_administers_data(o: Org) -> None:
+    source = _source_row(o)
+    plain = _dataset(o, source, table_name="du_no")
+    shared = _dataset(o, source, table_name="ty_gia")
+    personal = _dataset(o, source, table_name="khach_hang")
+    _column(o, personal, "so_cccd", 1, pii_label="national_id")
+    url = f"/v1/sources/{source}:activate"
+
+    def table(name: str, **extra: Any) -> dict[str, Any]:
+        row = {"name": f"credit.{name}", "data_space_id": str(o.space)}
+        row["owner_id"] = str(o.users["steward"])
+        row.update(extra)
+        return row
+
+    async with client(o) as api:
+        h = o.headers("admin")
+        # Another organisation's Data Space, or one where the caller does not administer the data.
+        foreign = await api.post(
+            url, json={"tables": [table("du_no", data_space_id=str(o.foreign_space))]}, headers=h
+        )
+        assert foreign.status_code == 403, foreign.text
+        not_theirs = await api.post(
+            url,
+            json={"tables": [table("du_no", data_space_id=str(o.other))]},
+            headers=o.headers("adminonly"),
+        )
+        assert not_theirs.status_code == 403, not_theirs.text
+        stranger = await api.post(
+            url, json={"tables": [table("du_no", owner_id=str(o.users["foreign"]))]}, headers=h
+        )
+        assert stranger.status_code == 422, stranger.text
+        # UC-04-04 step 3 holds here as on PATCH /v1/datasets/{id}.
+        unmasked = await api.post(
+            url, json={"tables": [table("du_no"), table("khach_hang")]}, headers=h
+        )
+        assert unmasked.status_code == 422, unmasked.text
+        assert unmasked.json()["code"] == "business_rule_violated"
+        assert "so_cccd" in unmasked.json()["detail"]
+        assert o.one("SELECT enabled FROM catalog.dataset WHERE id = %s", plain) is False
+
+        # UC-04-04 E1: a table may go to another Data Space the caller also administers.
+        done = await api.post(
+            url,
+            json={"tables": [table("du_no"), table("ty_gia", data_space_id=str(o.other))]},
+            headers=h,
+        )
+        assert done.status_code == 200, done.text
+        assert o.one("SELECT enabled FROM catalog.dataset WHERE id = %s", plain) is True
+        assert o.one("SELECT enabled FROM catalog.dataset WHERE id = %s", personal) is False
+        assert o.one("SELECT data_space_id FROM catalog.dataset WHERE id = %s", plain) == str(
+            o.space
+        )
+        assert o.one("SELECT data_space_id FROM catalog.dataset WHERE id = %s", shared) == str(
+            o.other
+        )
+        denied = await api.post(url, json={"tables": []}, headers=o.headers("analyst"))
+        assert denied.status_code == 403

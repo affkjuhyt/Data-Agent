@@ -9,12 +9,9 @@ these is that a change to `planner_system.txt` shows up in the next run.
 Prompt size is the whole story for time-to-first-token, and the six roles differ
 by more than an order of magnitude in it, so they cannot share one measurement:
 
-    guardrail     ~0.6k prefix   64 out    fast tier   every request, blocking
-    planner       ~2.5k prefix  256 out    fast tier   every request, blocking
-    judge         ~0.5k prefix  128 out    fast tier   after the answer
-    text_to_sql   schema-sized  512 out    main tier   data path
-    responder     retrieval-sized 1000 out main tier   the streamed answer
-    orch-planner  ~1.0k prefix  256 out    main tier   multi-agent path
+    guardrail     ~0.6k prefix  64 out    fast tier   every request, blocking
+    planner       catalogue-sized 400 out fast tier   question understanding
+    responder     figures-sized 600 out  main tier   the final answer
 
 The user turn varies per `variant` while the system prefix stays byte-identical,
 because that is the shape production sends and therefore the shape vLLM's prefix
@@ -29,10 +26,18 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-_WR_PROMPTS = REPO_ROOT / "backend" / "services" / "workflow_runtime" / "prompts"
-_ORCH_PROMPTS = REPO_ROOT / "backend" / "services" / "workflow_runtime" / "application" / "orchestrator" / "prompts"
 _SHARED_PROMPTS = REPO_ROOT / "backend" / "libs" / "shared" / "prompts"
 _EVAL_CASES = REPO_ROOT / "model" / "eval" / "cases"
+
+_PLANNER_SYSTEM = """Bạn đọc một câu hỏi số liệu tiếng Việt và chọn đúng các mã trong danh mục được cho.
+Chỉ dùng mã có trong danh mục; không đoán mã mới. Trả về JSON đúng dạng:
+{"metric": "<mã chỉ số hoặc null>", "alternatives": ["<mã chỉ số khác nếu câu hỏi mơ hồ>"],
+ "group_by": ["<mã chiều>"], "filters": {"<mã chiều>": ["<mã giá trị>"]}, "period": "<cụm từ chỉ kỳ hoặc null>"}
+Nếu câu hỏi khớp nhiều chỉ số như nhau, đặt metric = null và liệt kê chúng trong alternatives."""
+_RESPONDER_SYSTEM = """Bạn viết câu trả lời số liệu ngắn bằng tiếng Việt (1 đến 3 câu) từ các số được cho.
+Chỉ được viết số dưới dạng thẻ {{F<n>}} của số đó; không viết chữ số nào khác, không tự tính toán.
+Có thể so sánh hoặc nêu cao nhất, thấp nhất bằng lời nhưng mọi con số phải là thẻ.
+Trả về JSON: {"text": "<câu trả lời>"}"""
 
 
 class ProfileError(Exception):
@@ -259,35 +264,18 @@ def _responder_turns() -> tuple[str, ...]:
 def load() -> dict[str, Profile]:
     """Every profile, keyed by name. Built at call time, not import time, so a
     missing prompt file fails the run that needs it with a path in the message."""
-    schema = _schema_text()
     profiles = [
         # guardrail_check.py: max_tokens 64, temperature 0, alias "guardrail".
         Profile("guardrail", "guardrail", "fast",
                 _prompt(_SHARED_PROMPTS / "guardrail_system.txt"), 64, 0.0,
                 _guardrail_turns()),
-        # nodes/model_harness/planner.py: max_tokens 256, temperature 0.
+        # worker-agent understander: max_tokens 400, temperature 0.
         Profile("planner", "planner", "fast",
-                _prompt(_WR_PROMPTS / "planner_system.txt"), 256, 0.0,
+                _PLANNER_SYSTEM, 400, 0.0,
                 _questions()),
-        # nodes/model_harness/judge.py: max_tokens 128, temperature 0.
-        Profile("judge", "judge", "fast",
-                _prompt(_WR_PROMPTS / "judge_system.txt"), 128, 0.0,
-                _judge_turns()),
-        # handlers/data.py text_to_sql: max_tokens 512, temperature 0. That call
-        # sends no system turn — the schema rides in the user turn — so the
-        # system prefix here is the responder's short one, matching production's
-        # much weaker prefix-cache position on this path.
-        Profile("text_to_sql", "text_to_sql", "main",
-                _prompt(_WR_PROMPTS / "responder_system.txt"), 512, 0.0,
-                _sql_turns(schema)),
-        # nodes/model_harness/responder.py: max_tokens 1000, temperature 0.2.
+        # worker-agent narrator: max_tokens 600, temperature 0.
         Profile("responder", "responder", "main",
-                _prompt(_WR_PROMPTS / "responder_system.txt")
-                + "\n" + _prompt(_WR_PROMPTS / "responder_citation_suffix.txt"),
-                1000, 0.2, _responder_turns()),
-        # orchestrator/planner — the multi-agent path's blocking plan step.
-        Profile("orchestrator-planner", "orchestrator-planner", "main",
-                _prompt(_ORCH_PROMPTS / "planner_system.txt"), 256, 0.0,
+                _RESPONDER_SYSTEM, 600, 0.0,
                 _questions()),
     ]
     return {profile.name: profile for profile in profiles}

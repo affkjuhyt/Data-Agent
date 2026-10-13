@@ -3,37 +3,24 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Badge } from '../../design-system/Badge';
 import { Button } from '../../design-system/Button';
-import { Checkbox } from '../../design-system/Checkbox';
-import { Dialog } from '../../design-system/Dialog';
 import { Icon } from '../../design-system/Icon';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
-import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
-import {
-  createRelationship,
-  getEntity,
-  getEntityModel,
-  suggestRelationships,
-  type EntityModel,
-  type RelationshipSuggestion,
-} from '../../lib/v1/semanticLayer';
+import { getEntity, getEntityModel, type EntityModel } from '../../lib/v1/semanticLayer';
 import { useV1 } from '../../lib/v1/useV1';
 
 /*
  * "v3.1 · Semantic · Mô hình thực thể" (2087:8090, UC-07-02): the business concepts of a Data
  * Space and how they connect to real data — the diagram of entities with their key columns and
  * relationship cardinalities, and on the right the selected entity: its key and grain, the sources
- * it maps to, its synonyms and the metrics built on it. "Nhờ agent đề xuất quan hệ" opens
- * "Hộp thoại · suggestRel" (2095:9259): candidates from matching key names, values and frequent
- * queries; ticked ones are saved pending review (BR-100), and one across different codes waits on
- * the other dataset's owner.
+ * it maps to, its synonyms and the metrics built on it. The relationships the agent infers arrive
+ * pending review (BR-100) on their own and are drawn dashed, marked "chờ duyệt"; the design's
+ * "Nhờ agent đề xuất quan hệ" dialog (2095:9259) has no endpoint behind it and is left out.
  */
 const NODE_W = 28; // % of the canvas width
 const NODE_H = 18; // % of the canvas height, for the line anchors only
-
-const pct = (n: number) => `${n.toFixed(1).replace('.', ',')}%`;
 
 export default function EntityModelPage() {
   const model = useV1(getEntityModel, []);
@@ -46,7 +33,6 @@ export default function EntityModelPage() {
 
 function ModelBody({ model }: { model: EntityModel }) {
   const [focus, setFocus] = useState(model.focus);
-  const [suggesting, setSuggesting] = useState(false);
   const detail = useV1(() => getEntity(focus), [focus]);
   const node = (key: string) => model.entities.find((e) => e.key === key);
 
@@ -57,16 +43,11 @@ function ModelBody({ model }: { model: EntityModel }) {
           breadcrumb={['Dữ liệu', 'Ngữ nghĩa', 'Mô hình thực thể']}
           title={`Mô hình thực thể · ${model.title}`}
           actions={
-            <>
-              <Button kind="ghost" icon="agent" onClick={() => setSuggesting(true)}>
-                Nhờ agent đề xuất quan hệ
+            <Tooltip content="Trình tạo thực thể đang được làm.">
+              <Button kind="primary" disabled>
+                Thêm thực thể
               </Button>
-              <Tooltip content="Trình tạo thực thể đang được làm.">
-                <Button kind="primary" disabled>
-                  Thêm thực thể
-                </Button>
-              </Tooltip>
-            </>
+            </Tooltip>
           }
         />
         <Notice tone="info">
@@ -97,6 +78,7 @@ function ModelBody({ model }: { model: EntityModel }) {
                   y2={b.y + NODE_H / 2}
                   stroke="var(--border-strong)"
                   strokeWidth={1}
+                  strokeDasharray={r.pending ? '4 3' : undefined}
                   vectorEffect="non-scaling-stroke"
                 />
               );
@@ -115,7 +97,7 @@ function ModelBody({ model }: { model: EntityModel }) {
                   top: `${(a.y + b.y) / 2 + NODE_H / 2}%`,
                 }}
               >
-                {r.cardinality}
+                {r.pending ? `${r.cardinality} · chờ duyệt` : r.cardinality}
               </span>
             );
           })}
@@ -212,76 +194,6 @@ function ModelBody({ model }: { model: EntityModel }) {
           )}
         </AsyncRegion>
       </aside>
-      {suggesting && <SuggestRelationsDialog onClose={() => setSuggesting(false)} />}
     </div>
-  );
-}
-
-function SuggestRelationsDialog({ onClose }: { onClose: () => void }) {
-  const toast = useToast();
-  const suggestions = useV1(suggestRelationships, []);
-  const [skipped, setSkipped] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-  const picked = (suggestions.data?.items ?? []).filter((s) => !skipped.has(s.id));
-
-  const save = async () => {
-    if (picked.length === 0) {
-      setError('Chọn ít nhất một quan hệ.');
-      return;
-    }
-    setBusy(true);
-    setError(undefined);
-    try {
-      for (const s of picked) await createRelationship(s.body);
-      toast({ tone: 'success', message: `Đã gửi ${picked.length} quan hệ chờ duyệt` });
-      onClose();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Dialog
-      open
-      size="md"
-      title="Agent đề xuất quan hệ"
-      description="Dựa trên khoá trùng tên, giá trị khớp và truy vấn thường dùng."
-      submitLabel="Thêm quan hệ đã chọn"
-      submitting={busy}
-      canSubmit={!!suggestions.data}
-      error={error}
-      onClose={onClose}
-      onSubmit={save}
-    >
-      <div className="flex flex-col gap-da-md">
-        <AsyncRegion state={suggestions} what="đề xuất quan hệ">
-          {(s) => (
-            <>
-              <ul className="flex flex-col gap-da-sm">
-                {s.items.map((r: RelationshipSuggestion) => (
-                  <li key={r.id} className="rounded-md border border-border px-da-md py-da-sm">
-                    <Checkbox
-                      checked={!skipped.has(r.id)}
-                      onChange={(on) => {
-                        const next = new Set(skipped);
-                        if (on) next.delete(r.id);
-                        else next.add(r.id);
-                        setSkipped(next);
-                      }}
-                    >
-                      Đề xuất · {r.from_label} {r.arrow} {r.to_label} · khớp {pct(r.match_pct)}
-                    </Checkbox>
-                  </li>
-                ))}
-              </ul>
-              {s.note && <p className="text-muted-foreground da-caption">{s.note}</p>}
-            </>
-          )}
-        </AsyncRegion>
-      </div>
-    </Dialog>
   );
 }

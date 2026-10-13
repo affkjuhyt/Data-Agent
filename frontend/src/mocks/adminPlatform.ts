@@ -4,19 +4,27 @@ import type {
   AiPolicy,
   AiProvider,
   ChannelRules,
+  ClientWire,
   GpuLoad,
-  Integration,
-  IntegrationUsage,
   ModelRoute,
-  NewIntegration,
   NewModel,
   NewProvider,
   NotificationPreferences,
   OpsPeriod,
+  ProviderWire,
   RoutingLogEntry,
   SystemHealth,
 } from '../lib/v1/adminPlatform';
 import type { Me } from '../lib/v1/me';
+import type { components } from '../lib/v1/schema';
+import type { ModelConfig } from '../lib/v1/types';
+
+type Schemas = components['schemas'];
+type ApiClientCreate = Schemas['ApiClientCreate'];
+type ApiClientIssued = Schemas['ApiClientIssued'];
+type UsageRow = Schemas['UsageRow'];
+type WebhookCreate = Schemas['WebhookCreate'];
+type WebhookIssued = Schemas['WebhookIssued'];
 
 /*
  * MSW handlers for lib/v1/adminPlatform.ts. Data is the data drawn in the Figma frames
@@ -43,6 +51,7 @@ const problem = (status: number, code: string, detail: string) =>
 export function systemHealthFixture(): SystemHealth {
   return {
     as_of: '2026-10-10T08:15:00+07:00',
+    no_data: false,
     services_up: 15,
     services_total: 16,
     services_note: 'Ingestion khởi động lại 07:42',
@@ -319,7 +328,7 @@ export function modelRoutesFixture(): ModelRoute[] {
       latency_p95_ms: 3200,
       eval_score: 0.89,
       latest_eval_delta: -4,
-      previous: { model_name: 'LLM-L 32B', cost_ratio: 3.5 },
+      previous: { model_name: 'LLM-L 32B', endpoint: 'https://llm.internal/v1', cost_ratio: 3.5 },
       eval_suite_name: 'Agent Báo cáo',
     }),
     route({
@@ -374,6 +383,7 @@ export function aiPolicyFixture(): AiPolicy {
       },
     ],
     frontier_allowed: true,
+    frontier: { tasks: [], data_space_ids: [] },
     routing_rules: [
       'Mặc định mọi lời gọi chạy trên vLLM tại chỗ.',
       'Chỉ gửi frontier khi mọi dữ liệu trong ngữ cảnh có nhãn Công khai, hoặc câu hỏi ngoài phạm vi data product và không kèm dữ liệu nội bộ.',
@@ -508,6 +518,9 @@ export function gpuLoadFixture(): GpuLoad {
     0.8, 0.72, 0.64, 0.6, 0.58, 0.56, 0.55, 0.54,
   ];
   return {
+    checked_at: '2026-10-10T08:15:00+07:00',
+    cards: [],
+    average: null,
     points: load.map((utilization, hour) => ({
       at: `2026-10-09T${String(hour).padStart(2, '0')}:00:00+07:00`,
       utilization,
@@ -517,85 +530,143 @@ export function gpuLoadFixture(): GpuLoad {
   };
 }
 
-export function integrationsFixture(): Integration[] {
+const daysAhead = (days: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString();
+};
+
+const DS_RISK_ID = 'ds-rui-ro-tin-dung';
+
+/* ApiClientListed as GET /v1/admin/clients sends it; the owner's name and 7-day figures under `display` (PROPOSAL). */
+function clientRow(
+  row: Pick<ClientWire, 'id' | 'name' | 'kind' | 'tools' | 'expires_at' | 'status'> &
+    Partial<ClientWire>,
+): ClientWire {
+  const at = '2026-09-01T02:00:00Z';
+  return {
+    identity_mode: 'on_behalf_of_user',
+    owner_user_id: '00000000-0000-4000-8000-0000000000b1',
+    keycloak_client_id: `da-${row.id}`,
+    data_space_ids: [DS_RISK_ID],
+    quota_per_minute: 60,
+    quota_per_day: 5000,
+    calls_24h: 0,
+    errors_24h: 0,
+    owner_confirmed_at: row.status === 'pending_owner' ? null : at,
+    secret_rotated_at: null,
+    revoked_at: row.status === 'revoked' ? at : null,
+    created_at: at,
+    updated_at: at,
+    ...row,
+  };
+}
+
+export function integrationsFixture(): ClientWire[] {
   return [
-    {
+    clientRow({
       id: 'cli-copilot',
       name: 'Copilot nội bộ',
       kind: 'mcp',
-      owner_name: 'Ngô Thanh Bình',
-      scopes: ['ask', 'get_metric', 'run_skill'],
-      calls_7d: 12480,
-      error_rate_7d: 0.004,
-      expires_at: '2026-12-31T00:00:00+07:00',
+      tools: ['ask_question', 'get_metric_definition', 'run_skill'],
+      expires_at: daysAhead(80),
       status: 'active',
-    },
-    {
+      display: { owner_name: 'Ngô Thanh Bình', calls_7d: 12480, error_rate_7d: 0.004 },
+    }),
+    clientRow({
       id: 'cli-excel',
       name: 'Excel add-in',
-      kind: 'api',
-      owner_name: 'Lê Minh Châu',
-      scopes: ['get_metric', 'query'],
-      calls_7d: 3204,
-      error_rate_7d: 0.011,
-      expires_at: '2027-03-31T00:00:00+07:00',
+      kind: 'rest',
+      tools: ['get_metric_definition', 'search_metrics'],
+      expires_at: daysAhead(170),
       status: 'active',
-    },
-    {
+      display: { owner_name: 'Lê Minh Châu', calls_7d: 3204, error_rate_7d: 0.011 },
+    }),
+    clientRow({
       id: 'cli-sbv',
       name: 'Hệ thống báo cáo NHNN',
-      kind: 'api',
-      owner_name: 'Trần Quốc An',
-      scopes: ['get_frozen_values'],
-      calls_7d: 62,
-      error_rate_7d: 0,
-      expires_at: '2027-06-30T00:00:00+07:00',
+      kind: 'rest',
+      tools: ['get_published_result'],
+      expires_at: daysAhead(260),
       status: 'active',
-    },
-    {
+      display: { owner_name: 'Trần Quốc An', calls_7d: 62, error_rate_7d: 0 },
+    }),
+    clientRow({
       id: 'cli-zalo',
       name: 'Bot Zalo OA',
-      kind: 'webhook',
-      owner_name: 'Pháp chế',
-      scopes: ['hitl.*'],
-      calls_7d: 840,
-      error_rate_7d: 0.026,
-      expires_at: '2026-11-15T00:00:00+07:00',
-      status: 'expiring',
-    },
-    {
+      kind: 'mcp',
+      tools: ['ask_question'],
+      expires_at: daysAhead(20),
+      status: 'active',
+      display: { owner_name: 'Pháp chế', calls_7d: 840, error_rate_7d: 0.026 },
+    }),
+    clientRow({
       id: 'cli-hackathon',
       name: 'Thử nghiệm Hackathon',
       kind: 'mcp',
-      owner_name: 'Phạm Đức Long',
-      scopes: ['ask'],
-      calls_7d: 0,
-      error_rate_7d: null,
-      expires_at: '2026-10-01T00:00:00+07:00',
+      tools: ['ask_question'],
+      expires_at: daysAhead(-11),
       status: 'expired',
-    },
+      display: { owner_name: 'Phạm Đức Long', calls_7d: 0, error_rate_7d: null },
+    }),
   ];
 }
 
-const usageFixture = (id: string): IntegrationUsage =>
-  id === 'cli-copilot'
-    ? {
-        daily_calls: [1600, 1720, 1880, 1690, 2010, 1820, 1760],
-        top_tools: [
-          { name: 'ask', share: 0.71 },
-          { name: 'get_metric', share: 0.24 },
-        ],
-        quota_per_day: 5000,
-        quota_used_ratio: 0.41,
-        blocked_by_permission: 52,
-      }
-    : {
-        daily_calls: [0, 0, 0, 0, 0, 0, 0],
-        top_tools: [],
-        quota_per_day: 1000,
-        quota_used_ratio: 0,
-        blocked_by_permission: 0,
-      };
+/* Per local day, the copilot's calls split over its tools; one row at noon per day and tool. */
+const COPILOT_DAYS = [1600, 1720, 1880, 1690, 2010, 1820, 2050];
+const COPILOT_TOOLS: [string, number][] = [
+  ['ask_question', 0.71],
+  ['get_metric_definition', 0.24],
+  ['run_skill', 0.05],
+];
+
+function usageRows(id: string): UsageRow[] {
+  if (id !== 'cli-copilot') return [];
+  const today = new Date();
+  return COPILOT_DAYS.flatMap((calls, i) =>
+    COPILOT_TOOLS.map(([tool, share]) => ({
+      bucket: new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate() - 6 + i,
+        12,
+      ).toISOString(),
+      tool,
+      data_space_id: DS_RISK_ID,
+      calls: Math.round(calls * share),
+      errors: 0,
+      blocked_by_permission: tool === 'ask_question' && i === 6 ? 52 : 0,
+      blocked_by_quota: 0,
+      p95_ms: 820,
+    })),
+  );
+}
+
+/* The clients the signed-in person (meFixture) answers for. */
+export function myClientsFixture(): ClientWire[] {
+  const me = '01920000-0000-7000-8000-00000000a5c1';
+  return [
+    clientRow({
+      id: 'cli-power-bi',
+      name: 'Power BI phòng Rủi ro',
+      kind: 'rest',
+      owner_user_id: me,
+      tools: ['get_metric_definition', 'search_metrics'],
+      expires_at: daysAhead(180),
+      status: 'pending_owner',
+      updated_at: '2026-10-12T03:15:00.123456Z',
+    }),
+    clientRow({
+      id: 'cli-teams-bot',
+      name: 'Bot Teams của tôi',
+      kind: 'mcp',
+      owner_user_id: me,
+      tools: ['ask_question'],
+      expires_at: daysAhead(90),
+      status: 'active',
+    }),
+  ];
+}
 
 export function meFixture(): Me {
   return {
@@ -610,7 +681,11 @@ export function meFixture(): Me {
     time_zone: 'Asia/Ho_Chi_Minh',
     roles: [
       {
-        role: { id: '01920000-0000-7000-8000-0000000000a1', code: 'AC01', name: 'Chuyên viên phân tích' },
+        role: {
+          id: '01920000-0000-7000-8000-0000000000a1',
+          code: 'AC01',
+          name: 'Chuyên viên phân tích',
+        },
         source: 'group_mapping',
         group_name: 'GRP-RISK-ANALYST',
         valid_until: null,
@@ -781,32 +856,153 @@ export function channelRulesFixture(): ChannelRules {
 
 const PERIODS: OpsPeriod[] = ['24h', '7d', '30d'];
 
+/*
+ * Where A2 has the resource, the mock answers at its path in its shape (ModelConfigView,
+ * ModelProviderView, ModelRouteDecisionView, PrefView) and sends the screen's richer row under
+ * `display`, which the client prefers when present.
+ */
+const AT = '2026-10-01T09:00:00+07:00';
+
+export const modelWire = (m: ModelConfig & Partial<ModelRoute>) => ({
+  ...m,
+  id: m.id ?? `model-${m.task}`,
+  provider_id: 'prov-1',
+  endpoint: 'http://llm.noibo.local',
+  route_role: 'primary',
+  rollout_pct: 100,
+  version: 1,
+  limits: {},
+  fallback_model: m.fallback_name ?? null,
+  latest_eval: null,
+  eval_run_id: null,
+  activated_at: AT,
+  activated_by: null,
+  created_at: AT,
+  updated_at: AT,
+});
+
+const providerWire = (p: AiProvider): ProviderWire => ({
+  id: p.id,
+  code: p.id,
+  display_name: p.name,
+  kind: p.kind === 'local' ? 'on_prem' : 'frontier',
+  api_style: 'openai_compatible',
+  endpoint: `https://${p.endpoint_label}`,
+  data_region: p.region_text,
+  zero_retention: p.zero_retention === 'committed',
+  max_classification: p.kind === 'local' ? 'restricted' : 'public',
+  enabled: p.ac06_status === 'approved',
+  approved_at: p.ac06_status === 'approved' ? AT : null,
+  approved_by: null,
+  contract_ref: null,
+  monthly_budget_vnd: p.month_budget_vnd,
+  monthly_cost_vnd: p.month_cost_vnd ?? 0,
+  price: { [p.model_name]: {} },
+  status: 'active',
+  created_at: AT,
+  updated_at: AT,
+  display: p,
+});
+
+export const prefsWire = (p: NotificationPreferences) => ({
+  items: p.events.map((e) => ({
+    id: null,
+    kind: e.key,
+    channels: Object.entries(e.channels)
+      .filter(([c, on]) => on && c !== 'digest')
+      .map(([c]) => c),
+    batch_mode: e.channels.digest ? 'daily' : 'instant',
+    quiet_hours: null,
+    created_at: null,
+    updated_at: null,
+  })),
+  next_page_token: '',
+  display: p,
+});
+
 export function createAdminPlatformHandlers() {
   let models = modelRoutesFixture();
   let integrations = integrationsFixture();
+  let myClients = myClientsFixture();
   let preferences = notificationPreferencesFixture();
   let policy = aiPolicyFixture();
   let providers = providersFixture();
   const routingLog = routingLogFixture();
 
   return [
-    http.get('*/v1/admin/system-health', () => HttpResponse.json(systemHealthFixture())),
+    // A2's SystemHealth (Prometheus series by section) with the designed snapshot under display.
+    http.get('*/v1/admin/system/health', () =>
+      HttpResponse.json({
+        checked_at: new Date().toISOString(),
+        status: 'ok',
+        sections: {
+          gpu: {
+            series: Array.from({ length: 24 }, (_, hour) => ({
+              labels: { at: `2026-10-09T${String(hour).padStart(2, '0')}:00:00+07:00` },
+              value: [
+                42, 40, 38, 37, 38, 40, 46, 55, 66, 74, 78, 80, 79, 77, 79, 83, 80, 72, 64, 60, 58,
+                56, 55, 54,
+              ][hour],
+            })),
+          },
+        },
+        display: systemHealthFixture(),
+      }),
+    ),
 
     http.get('*/v1/agent-ops/summary', ({ request }) => {
       const period = new URL(request.url).searchParams.get('period') as OpsPeriod;
       if (!PERIODS.includes(period)) return problem(422, 'validation_failed', 'Kỳ không hợp lệ.');
       return HttpResponse.json(agentOpsFixture(period));
     }),
+    http.get('*/v1/admin/agent-usage', ({ request }) => {
+      const url = new URL(request.url);
+      const summary = agentOpsFixture('7d');
+      const day = (label: string) => ({
+        day: `2026-10-${label}`,
+        runs: 41,
+        needs_person: 2,
+        errors: 1,
+        error_rate: 0.02,
+        cost: '600000',
+      });
+      return HttpResponse.json({
+        from: url.searchParams.get('from'),
+        to: url.searchParams.get('to'),
+        granularity: 'day',
+        totals: {
+          runs: summary.runs,
+          needs_person: summary.hitl_requests,
+          errors: summary.errors,
+          error_rate: summary.error_rate,
+          cost: 4200000,
+          avg_duration_s: 360,
+        },
+        days: ['07', '08', '09', '10', '11', '12', '13'].map(day),
+        agents: summary.agents.map((a) => ({
+          agent_id: a.agent_id,
+          name: a.name,
+          runs: a.runs,
+          needs_person: a.hitl_requests,
+          errors: 0,
+          avg_duration_s: a.avg_duration_s,
+          cost: a.cost,
+          monthly_budget: '2000000',
+          spent_this_month: a.cost,
+          budget_used_ratio: 0.62,
+        })),
+      });
+    }),
 
     // Before the generic "/admin/models" handler of handlers.ts: this one serves the P11 fields.
-    http.get('*/v1/admin/models', () => page(models)),
+    http.get('*/v1/admin/models', () => HttpResponse.json(models.map(modelWire))),
     http.post('*/v1/admin/models', async ({ request }) => {
       const body = (await request.json()) as NewModel;
       if (!body.name?.trim() || !/^https?:\/\//.test(body.endpoint ?? ''))
         return problem(422, 'validation_failed', 'Cần tên và địa chỉ http(s) của mô hình.');
       const added: ModelRoute = {
         id: `trial-${models.length + 1}`,
-        task: body.trial_tasks || 'Chưa định tuyến',
+        task: body.task || 'Chưa định tuyến',
         model_name: body.name,
         status: 'evaluating',
         placement: null,
@@ -819,6 +1015,38 @@ export function createAdminPlatformHandlers() {
       };
       models = [...models, added];
       return HttpResponse.json(added, { status: 201 });
+    }),
+    http.put('*/v1/admin/models/:task', async ({ params, request }) => {
+      const body = (await request.json()) as { model_name: string; endpoint: string };
+      const task = String(params.task);
+      const taskLabel: Record<string, string> = {
+        planning: 'Lập kế hoạch, điều phối agent',
+        sql_generation: 'Sinh SQL',
+        answer_writing: 'Soạn báo cáo',
+      };
+      const current = models.find((m) => m.task === task || m.task === taskLabel[task]);
+      const isRollback = Boolean(current?.previous && body.model_name === current.previous.model_name);
+      const updated: ModelRoute = {
+        ...(current ?? {
+          id: `trial-${models.length + 1}`,
+          task,
+          model_name: body.model_name,
+          status: 'evaluating' as const,
+          placement: null,
+          fallback_name: null,
+          latency_p95_ms: null,
+          eval_score: null,
+          latest_eval_delta: null,
+          previous: null,
+          eval_suite_name: null,
+        }),
+        model_name: body.model_name,
+        status: isRollback ? 'active' : 'evaluating',
+      };
+      models = current
+        ? models.map((m) => (m.task === task || m.task === taskLabel[task] ? updated : m))
+        : [...models, updated];
+      return HttpResponse.json({ version: 1 });
     }),
     http.post('*/v1/admin/models\\:evaluate', () =>
       HttpResponse.json({ eval_run_id: 'eval-mock' }, { status: 202 }),
@@ -833,13 +1061,47 @@ export function createAdminPlatformHandlers() {
       const back: ModelRoute = {
         ...route,
         model_name: route.previous.model_name,
-        previous: { model_name: route.model_name, cost_ratio: 1 / route.previous.cost_ratio },
+        previous: {
+          model_name: route.model_name,
+          endpoint: route.previous.endpoint,
+          cost_ratio: 1 / route.previous.cost_ratio,
+        },
         latest_eval_delta: 0,
       };
       models = models.map((m) => (m.id === id ? back : m));
       return HttpResponse.json(back);
     }),
     http.get('*/v1/admin/ai-policy', () => HttpResponse.json(policy)),
+    http.get('*/v1/admin/ai-settings', () =>
+      HttpResponse.json([
+        { key: 'max_cost_per_run', value: 50000 },
+        { key: 'input_filter', value: 'Chặn yêu cầu lấy dữ liệu cá nhân hàng loạt' },
+        { key: 'output_filter', value: 'Chặn gửi dữ liệu cá nhân ra ngoài' },
+        { key: 'prompt_log_retention_days', value: 30 },
+        {
+          key: 'frontier_routing',
+          value: {
+            enabled: policy.frontier_allowed,
+            tasks: policy.frontier.tasks,
+            data_space_ids: policy.frontier.data_space_ids,
+          },
+        },
+      ]),
+    ),
+    http.put('*/v1/admin/ai-settings/frontier_routing', async ({ request }) => {
+      const body = (await request.json()) as {
+        value?: { enabled?: boolean; tasks?: string[]; data_space_ids?: string[] };
+      };
+      policy = {
+        ...policy,
+        frontier_allowed: body.value?.enabled === true,
+        frontier: {
+          tasks: body.value?.tasks ?? [],
+          data_space_ids: body.value?.data_space_ids ?? [],
+        },
+      };
+      return HttpResponse.json({ key: 'frontier_routing', value: body.value ?? {} });
+    }),
     http.put('*/v1/admin/ai-policy', async ({ request }) => {
       const body = (await request.json()) as AiPolicy;
       const approved = providers.some((p) => p.kind === 'frontier' && p.ac06_status === 'approved');
@@ -849,9 +1111,24 @@ export function createAdminPlatformHandlers() {
       return HttpResponse.json(policy);
     }),
 
-    http.get('*/v1/admin/providers', () => page(providers)),
-    http.post('*/v1/admin/providers', async ({ request }) => {
-      const body = (await request.json()) as NewProvider;
+    http.get('*/v1/admin/model-providers', () => page(providers.map(providerWire))),
+    http.post('*/v1/admin/model-providers', async ({ request }) => {
+      const raw = (await request.json()) as {
+        display_name: string;
+        kind: 'on_prem' | 'frontier';
+        endpoint: string;
+        data_region: string | null;
+        monthly_budget_vnd: number | null;
+        price: Record<string, unknown>;
+      };
+      const body: NewProvider = {
+        name: raw.display_name,
+        kind: raw.kind === 'on_prem' ? 'local' : 'frontier',
+        model_name: Object.keys(raw.price ?? {})[0] ?? '',
+        endpoint: raw.endpoint,
+        region: raw.data_region ?? '',
+        month_budget_vnd: raw.monthly_budget_vnd,
+      };
       if (
         !body.name?.trim() ||
         !body.model_name?.trim() ||
@@ -874,35 +1151,54 @@ export function createAdminPlatformHandlers() {
         budget_month: '2026-10',
       };
       providers = [...providers, added];
-      return HttpResponse.json(added, { status: 201 });
+      return HttpResponse.json(providerWire(added), { status: 201 });
     }),
-    http.post('*/v1/admin/providers/:action', ({ params }) => {
+    // ModelProviderTestResult: one call through the provider with the model named in the body.
+    http.post('*/v1/admin/model-providers/:action', ({ params }) => {
       // MSW reads ":test" as part of the segment: "<id>:test".
       const [id, verb] = String(params.action).split(':');
       if (verb !== 'test') return problem(404, 'not_found', 'Không có thao tác này.');
       const provider = providers.find((p) => p.id === id);
       if (!provider) return problem(404, 'not_found', 'Không tìm thấy provider.');
+      const result = { provider_id: provider.id, model_name: provider.model_name };
       if (provider.zero_retention === 'verifying')
         return HttpResponse.json({
-          ok: false,
-          latency_ms: null,
-          detail: 'Endpoint chưa xác nhận vùng dữ liệu nên chưa nhận lời gọi.',
+          ...result,
+          outcome: 'error',
+          latency_ms: 0,
+          error: 'Endpoint chưa xác nhận vùng dữ liệu nên chưa nhận lời gọi.',
         });
       return HttpResponse.json({
-        ok: true,
+        ...result,
+        outcome: 'ok',
         latency_ms: provider.kind === 'local' ? 640 : 1280,
-        detail: null,
+        error: null,
       });
     }),
-    http.get('*/v1/admin/routing-log', ({ request }) => {
+    // The fixture's week whatever from/to asks; the screen's rows and totals ride along.
+    http.get('*/v1/admin/model-route-decisions', ({ request }) => {
       const params = new URL(request.url).searchParams;
-      const week = params.get('week') ?? '2026-W41';
-      if (week !== '2026-W41') return problem(404, 'not_found', 'Chưa có nhật ký của tuần này.');
+      const week = '2026-W41';
       const size = Number(params.get('page_size') ?? 50);
       const start = Number(params.get('page_token') || 0);
       const end = start + size;
+      const API_DECISION = {
+        frontier: 'frontier_allowed',
+        blocked: 'frontier_blocked',
+        local: 'on_prem_default',
+      } as const;
       return HttpResponse.json({
-        items: routingLog.slice(start, end),
+        items: routingLog.slice(start, end).map((e) => ({
+          id: e.id,
+          decided_at: e.at,
+          task: 'answer',
+          decision: API_DECISION[e.decision],
+          reasons: [e.reason],
+          chosen_provider_id: 'prov-1',
+          model_name: e.provider_name,
+          caller_kind: 'user',
+          display: e,
+        })),
         next_page_token: end < routingLog.length ? String(end) : '',
         week,
         frontier_calls: 412,
@@ -912,51 +1208,103 @@ export function createAdminPlatformHandlers() {
     }),
     http.get('*/v1/admin/gpu-load', () => HttpResponse.json(gpuLoadFixture())),
 
-    http.get('*/v1/admin/integrations', () => page(integrations)),
-    http.get('*/v1/admin/integrations/:id/usage', ({ params }) =>
+    // PROPOSAL: GET /v1/admin/clients (A2 has the writes and the usage, not the list).
+    http.get('*/v1/admin/clients', () => page(integrations)),
+    http.get('*/v1/admin/clients/:id/usage', ({ params }) =>
       integrations.some((i) => i.id === params.id)
-        ? HttpResponse.json(usageFixture(String(params.id)))
+        ? page(usageRows(String(params.id)))
         : problem(404, 'not_found', 'Không tìm thấy client.'),
     ),
-    http.post('*/v1/admin/integrations', async ({ request }) => {
-      const body = (await request.json()) as NewIntegration;
-      let host: string;
-      try {
-        host = new URL(body.endpoint).host;
-      } catch {
-        return problem(422, 'validation_failed', 'Địa chỉ không hợp lệ.');
-      }
-      const added: Integration = {
+    http.post('*/v1/admin/clients', async ({ request }) => {
+      const body = (await request.json()) as ApiClientCreate;
+      if (!body.tools?.length)
+        return problem(422, 'validation_failed', 'Chọn ít nhất một công cụ.');
+      // Granted to someone else, the client waits for its owner (BR-48).
+      const mine = body.owner_user_id === meFixture().id;
+      const added = clientRow({
         id: `cli-${integrations.length + 1}`,
-        name: host,
+        name: body.name,
         kind: body.kind,
-        owner_name: 'Đỗ Hải Yến',
-        scopes: body.tools,
-        calls_7d: 0,
-        error_rate_7d: null,
-        expires_at: '2027-10-10T00:00:00+07:00',
-        status: 'active',
-      };
+        owner_user_id: body.owner_user_id,
+        tools: body.tools,
+        data_space_ids: body.data_space_ids ?? [],
+        expires_at: body.expires_at,
+        status: mine ? 'active' : 'pending_owner',
+      });
       integrations = [...integrations, added];
-      return HttpResponse.json(added, { status: 201 });
+      const issued: ApiClientIssued = { ...added, client_secret: 'da_sk_live_9f3c1b7e2a' };
+      return HttpResponse.json(issued, { status: 201 });
+    }),
+    http.post(/\/v1\/admin\/clients\/[^/:]+:(rotate-secret|revoke)$/, ({ request }) => {
+      const [, id, verb] = /clients\/([^/:]+):([a-z-]+)$/.exec(new URL(request.url).pathname)!;
+      const client = integrations.find((c) => c.id === id);
+      if (!client) return problem(404, 'not_found', 'Không tìm thấy client.');
+      if (verb === 'revoke') {
+        const revoked = { ...client, status: 'revoked', revoked_at: new Date().toISOString() };
+        integrations = integrations.map((c) => (c.id === id ? revoked : c));
+        return HttpResponse.json(revoked);
+      }
+      return HttpResponse.json({ ...client, client_secret: 'da_sk_live_rotated_51d0' });
+    }),
+    http.post('*/v1/webhooks', async ({ request }) => {
+      const body = (await request.json()) as WebhookCreate;
+      const issued: WebhookIssued = {
+        id: 'wh-1',
+        ...body,
+        status: 'active',
+        consecutive_failures: 0,
+        paused_reason: null,
+        created_at: new Date().toISOString(),
+        signing_key: 'whsec_4b8e0c2d',
+      };
+      return HttpResponse.json(issued, { status: 201 });
+    }),
+    http.get('*/v1/me/clients', () => page(myClients)),
+    http.post(/\/v1\/me\/clients\/[^/:]+:confirm$/, ({ request }) => {
+      const id = /clients\/([^/:]+):confirm$/.exec(new URL(request.url).pathname)![1];
+      const client = myClients.find((c) => c.id === id);
+      if (!client) return problem(404, 'not_found', 'No such client of yours.');
+      if (client.status !== 'pending_owner')
+        return problem(409, 'invalid_state', `The client is ${client.status}, not pending_owner.`);
+      // The api compares instants; the mock sends updated_at back exactly as listed.
+      if (request.headers.get('If-Match') !== `"${client.updated_at}"`)
+        return problem(
+          412,
+          'precondition_failed',
+          "If-Match must be the client's ETag as you saw it.",
+        );
+      const now = new Date().toISOString();
+      const confirmed = { ...client, status: 'active', owner_confirmed_at: now, updated_at: now };
+      myClients = myClients.map((c) => (c.id === id ? confirmed : c));
+      return HttpResponse.json(confirmed, { headers: { ETag: `"${now}"` } });
     }),
 
     http.get('*/v1/me', () => HttpResponse.json(meFixture())),
-    http.get('*/v1/me/notification-preferences', () => HttpResponse.json(preferences)),
-    http.put('*/v1/me/notification-preferences', async ({ request }) => {
-      const body = (await request.json()) as NotificationPreferences;
+    // PrefView rows (one per kind) with the screen's labels and locks under display.
+    http.get('*/v1/me/notification-prefs', () => HttpResponse.json(prefsWire(preferences))),
+    http.put('*/v1/me/notification-prefs', async ({ request }) => {
+      const body = (await request.json()) as {
+        prefs: { kind: string; channels: string[]; batch_mode: string }[];
+      };
       // Locked channels stay on whatever the client sends.
       preferences = {
-        ...body,
-        events: body.events.map((event) => ({
-          ...event,
-          channels: {
-            ...event.channels,
-            ...Object.fromEntries(event.locked.map((channel) => [channel, true])),
-          },
-        })),
+        ...preferences,
+        events: preferences.events.map((event) => {
+          const pref = body.prefs.find((p) => p.kind === event.key);
+          if (!pref) return event;
+          const channels = Object.fromEntries(
+            Object.keys(event.channels).map((c) => [
+              c,
+              c === 'digest' ? pref.batch_mode === 'daily' : pref.channels.includes(c),
+            ]),
+          ) as typeof event.channels;
+          return {
+            ...event,
+            channels: { ...channels, ...Object.fromEntries(event.locked.map((c) => [c, true])) },
+          };
+        }),
       };
-      return HttpResponse.json(preferences);
+      return HttpResponse.json(prefsWire(preferences));
     }),
     http.post('*/v1/me/notification-preferences\\:test', () =>
       HttpResponse.json({ channels: ['in_app', 'teams', 'email'] }),

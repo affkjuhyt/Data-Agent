@@ -7,9 +7,9 @@
   of UC-16-02. Question text and answers live there for at most 15 minutes and never in a table,
   the outbox or a log (BR-193), so they cannot go through exec.outbox like other work.
 
-Neither adapter exists in the api yet. Without one the routes answer 503 (source_unavailable for
-Transit, model_unavailable for private questions) instead of pretending: tests and the deploy
-wiring set them on app.state.
+The adapters are transit.py (OpenBao) and private_channel.py (Redis); app.py sets them when
+OPENBAO_ADDR/OPENBAO_TOKEN and REDIS_URL are configured. Without one the routes answer 503
+(source_unavailable for Transit, model_unavailable for private questions) instead of pretending.
 """
 
 from __future__ import annotations
@@ -46,6 +46,8 @@ class PrivateQuestion:
     text: str
     context: list[str] = field(default_factory=list)
     as_of: str | None = None
+    # The Data Space named by X-Data-Space, whose semantic layer the run reads; None without it.
+    data_space_id: uuid.UUID | None = None
 
 
 class ModelUnavailable(Exception):

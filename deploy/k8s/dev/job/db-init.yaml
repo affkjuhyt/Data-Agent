@@ -57,8 +57,10 @@ spec:
           # DB_ROLE_PASSWORDS is a JSON object {"svc_qa": "...", ...} from the vault; each role
           # named there becomes a login with that password (design tab 3 D5.1).
           psql -v ON_ERROR_STOP=1 -v passwords="$DB_ROLE_PASSWORDS" \
-            -v pgbouncer_auth_password="$PGBOUNCER_AUTH_PASSWORD" <<'SQL'
+            -v pgbouncer_auth_password="$PGBOUNCER_AUTH_PASSWORD" \
+            -v app_user_password="$APP_USER_PASSWORD" <<'SQL'
           ALTER ROLE pgbouncer_auth WITH LOGIN PASSWORD :'pgbouncer_auth_password';
+          ALTER ROLE app_user WITH LOGIN PASSWORD :'app_user_password';
           SELECT format('ALTER ROLE %I WITH LOGIN PASSWORD %L', key, value)
           FROM jsonb_each_text(:'passwords'::jsonb)
           WHERE key LIKE 'svc\_%'

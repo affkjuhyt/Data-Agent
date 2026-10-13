@@ -120,7 +120,6 @@ function MetricBody({ metric, onChanged }: { metric: MetricDetail; onChanged: ()
   const titleStatus = inUse
     ? { label: 'Đã chứng nhận', tone: 'success' as const }
     : { label: 'Chưa chứng nhận', tone: 'warning' as const };
-  const usage = metric.usage;
 
   return (
     <div className="flex min-h-full flex-col">
@@ -137,7 +136,7 @@ function MetricBody({ metric, onChanged }: { metric: MetricDetail; onChanged: ()
           inUse
             ? `v${inUse.version} đang dùng · chứng nhận bởi ${inUse.certified_by_name ?? '—'} ${inUse.certified_at ? formatDate(inUse.certified_at).slice(0, 5) : ''}`
             : 'Chưa có phiên bản được chứng nhận',
-          `dùng ở ${usage.artifacts} artifact, ${usage.agents} agent, ${usage.reports} báo cáo định kỳ`,
+          metric.usage_text,
         ].join(' · ')}
         actions={
           <>
@@ -166,27 +165,32 @@ function MetricBody({ metric, onChanged }: { metric: MetricDetail; onChanged: ()
               busy={busy === 'preview'}
             />
           )}
-          <section className="flex flex-col gap-[10px] border-b border-border py-da-xl">
-            <h2 className="text-foreground da-heading-3">Người phụ trách và chứng nhận</h2>
-            <table className="w-full table-fixed border-collapse">
-              <thead>
-                <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="w-[160px] px-da-lg py-da-md font-normal">Vai trò</th>
-                  <th className="px-da-lg py-da-md font-normal">Người</th>
-                  <th className="w-[300px] px-da-lg py-da-md font-normal">Ghi chú</th>
-                </tr>
-              </thead>
-              <tbody>
-                {metric.stewardship.map((row) => (
-                  <tr key={row.role} className="border-b border-border da-body-small">
-                    <td className="px-da-lg py-da-md text-muted-foreground">{row.role}</td>
-                    <td className="px-da-lg py-da-md text-foreground da-body-strong">{row.who}</td>
-                    <td className="px-da-lg py-da-md text-foreground">{row.note}</td>
+          {/* PROPOSAL: the api does not send who looks after the metric; the block waits for it. */}
+          {metric.stewardship.length > 0 && (
+            <section className="flex flex-col gap-[10px] border-b border-border py-da-xl">
+              <h2 className="text-foreground da-heading-3">Người phụ trách và chứng nhận</h2>
+              <table className="w-full table-fixed border-collapse">
+                <thead>
+                  <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                    <th className="w-[160px] px-da-lg py-da-md font-normal">Vai trò</th>
+                    <th className="px-da-lg py-da-md font-normal">Người</th>
+                    <th className="w-[300px] px-da-lg py-da-md font-normal">Ghi chú</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+                </thead>
+                <tbody>
+                  {metric.stewardship.map((row) => (
+                    <tr key={row.role} className="border-b border-border da-body-small">
+                      <td className="px-da-lg py-da-md text-muted-foreground">{row.role}</td>
+                      <td className="px-da-lg py-da-md text-foreground da-body-strong">
+                        {row.who}
+                      </td>
+                      <td className="px-da-lg py-da-md text-foreground">{row.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
         </div>
         <aside className="flex w-[340px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pt-[20px] max-[1279px]:hidden">
           <h2 className="text-foreground da-heading-3">Phiên bản</h2>

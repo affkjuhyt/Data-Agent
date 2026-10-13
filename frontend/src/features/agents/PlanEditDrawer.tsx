@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '../../design-system/Button';
 import { Drawer } from '../../design-system/Drawer';
 import { Icon } from '../../design-system/Icon';
@@ -7,16 +7,15 @@ import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
 import { cn } from '../../lib/utils';
-import { estimateRunPlan, updateRunPlan, type PlanEdit } from '../../lib/v1/runPlan';
+import { updateRunPlan, type PlanEdit } from '../../lib/v1/runPlan';
 import type { AgentRun } from '../../lib/v1/types';
 
 /*
  * "P13 · Can thiệp kế hoạch" (2070:3221, UC-13-06): a 560px drawer over the run, opened while the
  * run is stopped at a step boundary. Finished steps keep their results and cannot change; the rest
  * can be edited, reordered (drag the handle, or the row menu), dropped, and new steps added. A note
- * for the agent travels with the edit. Before applying, the server estimates what the change costs
- * and what it puts at risk downstream; applying saves the next plan version and runs on from the
- * first step not yet done.
+ * for the agent travels with the edit. Applying saves the next plan version and runs on from the
+ * first step not yet done (UC-13-06 has no cost estimate before the edit is applied).
  */
 type Change = 'kept' | 'edited' | 'added' | 'removed';
 interface DraftStep {
@@ -33,7 +32,6 @@ const TAG: Partial<Record<Change, { label: string; tone: 'success' | 'error' }>>
   added: { label: 'Thêm', tone: 'success' },
   removed: { label: 'Bỏ', tone: 'error' },
 };
-const ESTIMATE_DELAY_MS = 300;
 
 export function PlanEditDrawer({
   run,
@@ -66,7 +64,6 @@ export function PlanEditDrawer({
   const [note, setNote] = useState('');
   const [editing, setEditing] = useState<string>();
   const [dragging, setDragging] = useState<string>();
-  const [estimate, setEstimate] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -94,25 +91,6 @@ export function PlanEditDrawer({
     ],
     edit_note: note.trim() || undefined,
   };
-  const editKey = JSON.stringify(edit);
-
-  // The estimate follows the draft; a stale answer is dropped rather than shown over a newer one.
-  useEffect(() => {
-    if (!changed) {
-      setEstimate(undefined);
-      return;
-    }
-    let live = true;
-    const timer = window.setTimeout(() => {
-      estimateRunPlan(run.id, JSON.parse(editKey) as PlanEdit)
-        .then((r) => live && setEstimate(r.text))
-        .catch(() => live && setEstimate(undefined));
-    }, ESTIMATE_DELAY_MS);
-    return () => {
-      live = false;
-      window.clearTimeout(timer);
-    };
-  }, [editKey, changed, run.id]);
 
   const update = (key: string, patch: Partial<DraftStep>) =>
     setSteps((all) =>
@@ -326,15 +304,6 @@ export function PlanEditDrawer({
             className="rounded-md border border-border-strong bg-card px-da-md py-da-sm text-foreground da-body-small"
           />
         </label>
-        {estimate && (
-          <p
-            role="status"
-            className="flex items-center gap-da-sm rounded-md border border-border px-da-md py-da-sm text-foreground da-caption"
-          >
-            <Icon name="agent" size={16} className="shrink-0 text-info" />
-            {estimate}
-          </p>
-        )}
       </div>
     </Drawer>
   );

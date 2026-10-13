@@ -161,7 +161,7 @@ async def current_principal(
         raise Problem(403, "forbidden", "No active account in this organisation.")
     actor = claims.get("act")
     client_id = str(actor.get("sub")) if isinstance(actor, dict) and actor.get("sub") else None
-    return Principal(
+    principal = Principal(
         user_id=identity.user_id,
         org_id=org_id,
         external_id=str(claims["sub"]),
@@ -169,9 +169,32 @@ async def current_principal(
         capabilities=identity.capabilities & CAPABILITIES,
         data_space_id=identity.data_space_id,
     )
+    # Read back by the access log (kernel/access_log.py) once the response is known.
+    request.state.principal = principal
+    return principal
 
 
 CurrentPrincipal = Annotated[Principal, Depends(current_principal)]
+
+
+async def bearer_claims(request: Request) -> dict[str, Any] | None:
+    """The verified claims of the request's bearer token, or None; read once per request.
+
+    For the kernel's middlewares (rate limit, idempotency, access log), which run before the
+    route and must not refuse a request themselves: a missing or invalid token is the route's
+    own authentication to answer."""
+    if hasattr(request.state, "bearer_claims"):
+        cached: dict[str, Any] | None = request.state.bearer_claims
+        return cached
+    scheme, _, token = request.headers.get("Authorization", "").partition(" ")
+    claims: dict[str, Any] | None = None
+    if scheme.lower() == "bearer" and token:
+        try:
+            claims = await run_in_threadpool(request.app.state.token_verifier.claims, token)
+        except Exception:  # noqa: BLE001 - any failure means "no verified caller" here
+            claims = None
+    request.state.bearer_claims = claims
+    return claims
 
 
 def require(*any_of: str) -> Any:

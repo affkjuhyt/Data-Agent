@@ -1,4 +1,4 @@
-"""Getting an answer out of the system under test, for the online tier.
+"""Getting an answer out of the V3 system under test, for the online tier.
 
 Two ways in, because they answer different questions and the corpus needs the
 first one:
@@ -13,20 +13,17 @@ first one:
   * **`ask_live_agent`** — the whole pipeline over SSE, for cases with no
     contexts of their own. End to end, including retrieval.
 
-Both reuse what ships: the prompt template from backend/services/workflow_runtime/
-prompts, and the real planner for the analysis type, so the guidance a forecast
-question gets here is the guidance it gets in production. An eval that wrote its
-own prompt would measure a system nobody runs.
+The live tier uses the public V3 question contract. Context-only cases use the same neutral
+answer contract as the worker; they do not import a legacy runtime prompt.
 """
+
 from __future__ import annotations
 
-import json
+import asyncio
 import os
 from typing import Any
 
 import httpx
-
-from model.eval import _paths
 
 _LITELLM_BASE = os.getenv("LITELLM_BASE_URL", "http://localhost:8500")
 _LITELLM_KEY = os.getenv("LITELLM_API_KEY", "anything")
@@ -43,24 +40,18 @@ _BASE_SYSTEM_PROMPT = (
 )
 
 
-def _prompts_dir():
-    return _paths.WORKFLOW_RUNTIME / "prompts"
-
-
 def _responder_system(analysis_type: str) -> str:
-    """The shipped responder system prompt, plus the shipped per-type guidance."""
-    _paths.ensure(_paths.WORKFLOW_RUNTIME)
-    template = (_prompts_dir() / "responder_system.txt").read_text(encoding="utf-8")
-    system = template.replace("{SYSTEM_PROMPT}", _BASE_SYSTEM_PROMPT)
-
-    from nodes.model_harness.intent import guidance
-    from nodes.model_harness.intent import parse as parse_analysis_type
-
-    extra = guidance(parse_analysis_type(analysis_type))
-    return system + ("\n\n" + extra if extra else "")
+    """The V3 answer contract; worker-agent owns execution and evidence."""
+    guidance = {
+        "forecast": "Không dự báo nếu chưa có forecast job và bằng chứng được phê duyệt.",
+        "anomaly": "Không kết luận bất thường nếu nguồn không có bằng chứng tương ứng.",
+    }.get(analysis_type, "")
+    return _BASE_SYSTEM_PROMPT + (f"\n\n{guidance}" if guidance else "")
 
 
-async def answer_with_contexts(question: str, contexts: list[str], analysis_type: str = "other") -> str:
+async def answer_with_contexts(
+    question: str, contexts: list[str], analysis_type: str = "other"
+) -> str:
     import litellm
 
     sources = "\n\n".join(f"[{i + 1}] {c}" for i, c in enumerate(contexts))
@@ -79,69 +70,59 @@ async def answer_with_contexts(question: str, contexts: list[str], analysis_type
     return response.choices[0].message.content or ""
 
 
-async def ask_live_agent(agent_url: str, agent_id: str, tenant_id: str, question: str) -> str:
-    """The whole pipeline, over the same SSE endpoint the product uses.
+async def ask_live_agent(agent_url: str, agent_id: str, data_space_id: str, question: str) -> str:
+    """Run one question through the public V3 API and worker-agent.
 
-    workflow_runtime's `/api/conversations/run` only trusts a caller Kong itself
-    verified (`backend/libs/shared/auth.py`'s `resolve_caller`) — a bare
-    `X-Tenant-ID` header is not enough and gets a 401. Calling it directly (as
-    this harness does, bypassing Kong) needs the same three headers
-    `model/bench/e2e.py`'s `_headers()` already sends for the same reason.
+    ``agent_id`` remains in the function signature for the release-gate CLI contract; V3
+    resolves the running analysis agent from the Data Space rather than accepting it on
+    ``POST /v1/questions``.
     """
-    gateway_key = os.environ.get("GATEWAY_KEY") or os.environ.get("KB_GATEWAY_KEY")
-    if not gateway_key:
-        raise RuntimeError(
-            "set GATEWAY_KEY (or KB_GATEWAY_KEY) — the runtime rejects a request "
-            "the gateway did not verify (backend/libs/shared/auth.py)"
-        )
-    payload = {"query": question, "agent_id": agent_id}
+    del agent_id
+    access_token = os.environ.get("EVAL_ACCESS_TOKEN")
+    if not access_token:
+        raise RuntimeError("set EVAL_ACCESS_TOKEN to a Keycloak access token for the online eval")
     headers = {
-        "X-Kong-Verified": "true",
-        "X-Gateway-Key": gateway_key,
-        "X-User-Id": os.environ.get("EVAL_USER_ID", "eval"),
-        # A role kb-backend's RolePermissions catalog actually grants
-        # retrieveKnowledge to (dependencies/permissions.py) — "admin" canonicalises
-        # to "ADMIN", which is not one of the four seeded roles and gets a bare 403.
-        "X-User-Roles": os.environ.get("EVAL_USER_ROLES", "platform-admin"),
-        "X-Tenant-Id": tenant_id,
+        "Authorization": f"Bearer {access_token}",
+        "X-Data-Space": data_space_id,
         "Content-Type": "application/json",
     }
-    chunks: list[str] = []
-
-    async with (
-        httpx.AsyncClient(timeout=120) as client,
-        client.stream(
-            "POST", f"{agent_url}/api/conversations/run", json=payload, headers=headers,
-        ) as response,
-    ):
-        response.raise_for_status()
-        async for line in response.aiter_lines():
-            if not line.startswith("data: "):
-                continue
-            raw = line[6:]
-            if raw.startswith("[DONE]") or raw.startswith("[ERROR]"):
+    async with httpx.AsyncClient(timeout=30) as client:
+        accepted = await client.post(
+            f"{agent_url.rstrip('/')}/v1/questions",
+            json={"text": question, "stream": True},
+            headers=headers,
+        )
+        accepted.raise_for_status()
+        question_id = accepted.json()["question_id"]
+        deadline = asyncio.get_running_loop().time() + 240
+        while True:
+            view = await client.get(
+                f"{agent_url.rstrip('/')}/v1/questions/{question_id}", headers=headers
+            )
+            view.raise_for_status()
+            body = view.json()
+            if body["status"] in {"answered", "clarifying", "refused", "failed"}:
                 break
-            try:
-                piece = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(piece, str):
-                chunks.append(piece)
+            if asyncio.get_running_loop().time() >= deadline:
+                raise RuntimeError(f"V3 question timed out: {question_id}")
+            await asyncio.sleep(0.5)
+        if body["status"] != "answered":
+            return str(body.get("status") or "question was not answered")
+        answer = await client.get(
+            f"{agent_url.rstrip('/')}/v1/answers/{body['answer_id']}", headers=headers
+        )
+        answer.raise_for_status()
+        return str(answer.json().get("text") or "")
 
-    return "".join(chunks)
 
-
-async def ask(case: dict[str, Any], *, agent_url: str, agent_id: str, tenant_id: str) -> str:
+async def ask(case: dict[str, Any], *, agent_url: str, agent_id: str, data_space_id: str) -> str:
     """Answer one grounding case the way production would.
 
-    Classified first by the REAL planner, because the answer shaping a forecast
-    question receives is a consequence of that classification — evaluating the
-    responder without it would measure a responder that was never told what kind
-    of question it had.
+    Context-backed cases are classified through the V3 gateway contract before answering.
     """
     contexts = case.get("contexts") or []
     if not contexts:
-        return await ask_live_agent(agent_url, agent_id, tenant_id, case["question"])
+        return await ask_live_agent(agent_url, agent_id, data_space_id, case["question"])
 
     from model.eval.scorers.intent import planner_classifier
 

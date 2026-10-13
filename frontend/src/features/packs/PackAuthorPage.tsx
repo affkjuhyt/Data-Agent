@@ -24,7 +24,8 @@ import { useV1 } from '../../lib/v1/useV1';
  * what it holds and how much changed since the version it builds on; middle, the last test on the
  * sample data set — benchmark questions, metrics computable, check rules, and what did not pass;
  * right, the conditions for publishing. Publishing signs the version; organisations on the older
- * one are told, none is upgraded automatically. Opened from the rail, the first draft.
+ * one are told, none is upgraded automatically. Opened from the rail, the first draft. The api
+ * does not record the version a draft builds on, so what changed since it is not shown.
  */
 const TONE = { success: 'text-success', warning: 'text-warning', neutral: 'text-foreground' };
 
@@ -100,11 +101,13 @@ function AuthorBody({ draft, onChanged }: { draft: PackDraft; onChanged: () => v
         description={draft.summary_text}
         actions={
           <>
-            <Tooltip content="Màn so sánh hai phiên bản đang được làm.">
-              <Button kind="ghost" disabled>
-                So với {draft.base_version}
-              </Button>
-            </Tooltip>
+            {draft.base_version && (
+              <Tooltip content="Màn so sánh hai phiên bản đang được làm.">
+                <Button kind="ghost" disabled>
+                  So với {draft.base_version}
+                </Button>
+              </Tooltip>
+            )}
             <Button
               loading={busy === 'validate'}
               disabled={busy !== null}
@@ -139,7 +142,7 @@ function AuthorBody({ draft, onChanged }: { draft: PackDraft; onChanged: () => v
               className="flex items-center gap-da-sm px-da-xl py-[8px] da-body-small"
             >
               <span className="text-foreground">{s.label}</span>
-              {s.changed > 0 && (
+              {s.changed !== null && s.changed > 0 && (
                 <span className="ml-auto text-warning da-caption">{s.changed} đổi</span>
               )}
               <span

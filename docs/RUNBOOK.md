@@ -75,7 +75,7 @@ kubectl -n dataagent-service get secret grafana-secrets \
 
 | Change | Extra flags |
 | --- | --- |
-| Code in `backend/services/<svc>/` or `frontend/` | none — that image is rebuilt and its workload restarted. A `backend/services/` change also rebuilds `auth_api`, `kb-backend`, `workflow_runtime` and `migrate` (their Dockerfiles copy all of `backend/services/`) |
+| Code in `backend/services/<svc>/` or `frontend/` | none — that image is rebuilt and its workload restarted. A `backend/services/` change also rebuilds `api`, `worker-agent` and `migrate` (their Dockerfiles copy all of `backend/services/`) |
 | `backend/libs/` | none — every image that copies `backend/libs` rebuilds (11 of 19) — check disk first (§9) |
 | `pyproject.toml`, `requirements-test.txt` | none — no image copies them, so nothing rebuilds |
 | New Alembic revision | `-e apply_jobs=true` (reruns `migrate`, then `db-init` for the grants) |
@@ -123,18 +123,17 @@ curl -s "http://10.10.55.101:30101/plugins?size=1000" \
 `kb-backend` is **fail-closed**: calling it directly on `:30220` returns `401`.
 That is expected; application traffic goes through Kong.
 
-**Agent turn routes.** The orchestrator runs inside `workflow-runtime`; every
-path goes through Kong (`$API`) with `Authorization: Bearer $TOKEN`. Kong clears
-and re-injects the identity headers from the token, so sending your own is
-pointless.
+**Agent turn routes.** `worker-agent` consumes `question.received` from the V3
+outbox; every request goes through Kong (`$API`) with `Authorization: Bearer
+$TOKEN` and `X-Data-Space`. Kong clears and re-injects identity headers from the
+token, so sending your own identity headers is pointless.
 
 | Method + path | Purpose |
 | --- | --- |
-| `GET /api/orchestrate/health` | liveness, no token needed |
-| `POST /api/orchestrate/stream` | the agent turn, as SSE. Body `{query, agent_id?, session_id?, conversation_id?}`: with `agent_id` one agent answers, without it the multi-agent planner splits the question. Frames: `{"__session_id":…}`, text tokens, `{"__suggestions":…}` / `{"__chart":…}` / `{"__clarification":…}`, then `[DONE]`. Over `ORCHESTRATOR_MAX_CONCURRENT_TURNS` it answers `429` + `Retry-After` |
-| `POST /api/orchestrate/resume/stream` | answer a `{"__clarification":…}` frame, streamed like `/stream` (what the UI uses). Body `{session_id, clarification}`. `POST /api/orchestrate/resume` is the same as one JSON body |
-| `GET /api/orchestrate/traces/{trace_id}` | the turn's trace |
-| `POST /api/conversations/run` | one agent's turn without the orchestrator layer, to separate agent latency from orchestration |
+| `POST /v1/questions` | records a question and returns `202` with `question_id`, `conversation_id` and `stream_url` |
+| `GET /v1/questions/{id}` | polls the durable question state: `answered`, `clarifying`, `refused` or `failed` |
+| `GET /v1/questions/{id}/stream` | SSE progress and terminal `done` event; reconnect with `Last-Event-ID` |
+| `GET /v1/answers/{id}` | reads the answer, figures, trust label and provenance after `done` |
 
 `make bench-e2e` breaks one real turn down per stage (`model/bench/e2e.py`).
 
@@ -144,10 +143,9 @@ With `seed_demo: true` (the dev inventory's setting) the `seed` Job loads:
 
 | Source | What |
 | --- | --- |
-| `backend/services/workflow_runtime/migrations/seed.sql` | always: Dev tenant, default LLM providers, system prompt, `Default Agent`, guardrail |
-| `tests/e2e/seed.sql` | demo `e2e-sql-agent` with a published workflow; semantic metrics `doanh_thu_gop` / `doanh_thu_thuan` and synonyms; `secrets_vault` row for the warehouse password; demo warehouse `sandbox_dev.fact_sales` (8 months × 4 regions × 3 products) |
-| `tests/e2e/seed-governance.sql` | warehouse registration for the schema crawler, `stg_orders_raw` (deliberately stale), `dim_region`, `dim_product`, owners/lineage/freshness SLAs |
-| `tests/e2e/seed-flow.js` | the demo agent's canvas in Mongo (planner → db_connector → rrf → reranker → visualization/responder → judge) |
+| `deploy/docker/sql/kb-seed.sql` | baseline tenant, roles and knowledge-base records |
+| `deploy/docker/sql/v3-demo-seed.sql` | V3 demo organisation directory: `helios-engineer`, `DS-DEMO` membership and Data Engineer capabilities |
+| `tests/e2e/seed*.sql` | optional extended warehouse/governance fixtures when a test explicitly needs them; these are not the V3 runtime seed path |
 | `k8s_openbao` role | OpenBao secret `secret/tenants/<tenant>/e2e_dw_password` = `sandbox_reader`'s password |
 
 Everything is idempotent. Knowledge-base **documents** are not seeded; upload them through the UI.
@@ -163,11 +161,10 @@ kubectl -n dataagent-database exec postgres-0 -- psql -U admin -d sandbox_dev \
 
 ```bash
 bash deploy/k8s/create-configmaps.sh        # only if a seed file changed
-kubectl -n dataagent-service delete job seed --ignore-not-found
-sed "s|SEED_DEMO: '0'|SEED_DEMO: '1'|" deploy/k8s/dev/job/seed.yaml | kubectl apply -f -
-kubectl -n dataagent-service wait --for=condition=complete job/seed --timeout=10m
-kubectl -n dataagent-service logs job/seed --all-containers --tail=30
-kubectl -n dataagent-service rollout restart deployment/workflow-runtime   # it caches graphs and metrics
+kubectl -n dataagent-service delete job db-init --ignore-not-found
+kubectl apply -f deploy/k8s/dev/job/db-init.yaml
+kubectl -n dataagent-service wait --for=condition=complete job/db-init --timeout=10m
+kubectl -n dataagent-service logs job/db-init --all-containers --tail=30
 ```
 
 The OpenBao demo password is written by the pipeline, not the Job: if the vault
@@ -213,8 +210,8 @@ Details and the full flow: [`deploy/ansible/README.md` → Secrets](../deploy/an
 ## 8. OpenBao
 
 OpenBao holds warehouse and connector passwords. It **seals itself whenever its
-pod restarts** (node reboot, eviction). While sealed, `workflow-runtime` can't
-read secrets: DB-connector nodes fail to authenticate and the logs show
+pod restarts** (node reboot, eviction). While sealed, `api`, `worker-agent` and
+the sandbox cannot read secrets: source calls fail to authenticate and the logs show
 `failed to read secret … from vault`.
 
 ```bash
@@ -292,23 +289,40 @@ Before adding a revision, check its id is unique:
 - RLS is enforced via `enable_tenant_rls` + `rls_kb_child_tables` (FK-chain
   EXISTS policies for child tables without their own `tenant_id`). Never disable
   RLS on a tenant table to "fix" a query — scope the query by tenant.
-- The chain is covered by `tests/integration/workflow_runtime/test_alembic_migrations.py`.
+- The chain is covered by the V3 migration suite under `tests/integration/migrate/`.
 
 ## 10a. Durable HITL reviews
 
-Agent graphs use the Postgres LangGraph checkpointer in schema `langgraph`; the
-schema is owned by `app_user` and workflow runtime reaches it only through the
-`runtime_writer` connection. Checkpoint rows use the tenant-prefixed
-`thread_id` (`<tenant_id>:<conversation_id>`), but the library tables have no
-tenant column and therefore are not RLS tables. Do not grant other service roles
-access to `langgraph`.
-
 Human-approval cards are recorded in `runtime.pending_review`, which is forced
-through RLS using the transaction-local `app.tenant_id`. A pod restart or a
-second replica can therefore list and resume the review. If a resume returns
-`503`, check that `RUNTIME_DB_URL` points at the V3 database and that Alembic
-revision `v3_0003` has run; do not delete the row manually before recovering the
-checkpoint.
+through RLS using the transaction-local `app.tenant_id`. `worker-agent` resumes
+by the durable conversation id, so a pod restart or a second replica does not
+lose the review. If a resume returns `503`, check that the API and worker point
+at the V3 database and that the pending-review migration has run; do not delete
+the row manually before recovering the run.
+
+## V3 MCP tool calls
+
+MCP calls belong to `worker-agent`, not the retired workflow runtime. The worker
+uses the official SDK over Streamable HTTP. A validated plan supplies the endpoint
+id, tool name and arguments; the registry filters tools by `allowed_tools` before
+discovery and execution. Legacy `POST .../execute` endpoints are refused.
+
+Credentials are transient: `api_key_ref` names an OpenBao secret and the bearer
+value must never be stored in Postgres, Redis, a plan, or logs. If discovery or a
+call fails, the worker returns the structured `TOOL_UNAVAILABLE` refusal; it must
+not silently fall back to another tool.
+
+Useful checks:
+
+```bash
+kubectl -n dataagent-service logs deployment/worker-agent --tail=100 \
+  | rg 'MCP|TOOL_UNAVAILABLE|OpenBao'
+kubectl -n dataagent-database exec statefulset/openbao -- bao status
+```
+
+When adding an MCP endpoint, verify its OpenBao `api_key_ref`, protocol and
+allow-list in the owning API/plan configuration. Never put the token itself in a
+manifest, ConfigMap, plan payload or test fixture.
 
 ## 10b. Kafka outbox (`OutboxEvents`)
 
@@ -322,7 +336,7 @@ therefore delays an event instead of losing it. Delivery is at-least-once; consu
 | `kb-backend` | kb-backend API relay | `kb.promote.silver/gold`, `kb.resolve.conflict`, `kb.structured.propose` |
 | `kb-promote-silver`, `kb-promote-gold` | the two workers | retries, DLQ, Gold hand-off |
 | `web-crawler` | platform-workers-web-crawler | `kb.promote.silver` (auto-promote, inserted with the Bronze registration) |
-| `workflow-runtime` | workflow-runtime | `memory.extraction.requested` |
+| `api` / `worker-agent` | V3 question outbox and worker | `question.received`, progress and terminal answer events |
 
 Not on the outbox: `audit.data.access` (best-effort `produce_event`, delivery errors are logged).
 
@@ -370,13 +384,13 @@ suspecting the pipeline.
 | DB-connector / warehouse nodes fail to authenticate | OpenBao sealed → §8 |
 | Many pods `Evicted` at once | Disk pressure → §9 |
 | `sandbox-executor` Pending (production set) | No `gvisor` RuntimeClass; preflight reports it. The dev set doesn't use gvisor |
-| `kb_search` returns no chunks, no error | `SERVICE_AUTH_SECRET` differs between `workflow-runtime` and `kb-backend` |
+| `worker-agent` does not answer a question | Check `kubectl -n dataagent-service logs deployment/worker-agent`; then inspect the question's terminal refusal and the `qa.outbox`/Redis SSE path |
 | Every `/api` call returns `503` but Kong `/status` is `200` | Kong is not at fault: kb-backend's Postgres pool stayed "not connected" after Postgres restarted. `/health` now returns `503` in that state so liveness restarts the pod; to fix by hand `kubectl -n dataagent-service rollout restart deploy/kb-backend` |
 | A worker's Kafka producer times out on metadata ("Failed to update metadata after 60 secs") though SASL login succeeds | Kafka's ACLs are gone (ACLs live in the broker's metadata, lost with it). Re-run the topics/ACL Job: `kubectl apply -f deploy/k8s/dev/job/kafka-topics.yaml` (delete the old Job first if it still exists) |
 | litellm `429 No deployments available` for `embedder`, or `401 Incorrect API key ... platform.openai.com` | `EMBEDDING_V1_BASE_URL` missing from `litellm-env`, so the embedder calls OpenAI and goes into cooldown |
 | Silver finishes but an Auto source never reaches Gold; Kafka logs `OutOfOrderSequenceException` for a producer id | The broker no longer agrees with an idempotent producer's id/sequence. `KafkaProducerClient.produce` now rebuilds the producer and retries once; on an image without that fix, restart the pod or publish `kb.promote.gold` by hand |
 | A document stays at Silver and shows "Ends at Silver" | Intended: Training/Evaluation data (Data Purpose) is parsed but never promoted to Gold (`libs/ingestion/purpose.py`); change the purpose to Production to send it to the knowledge base |
-| Ask / Playground shows the card "Không đọc được cấu hình của agent này…" (`AGENT_CONFIG_ERROR`) | `workflow-runtime` could not read the agent from Postgres (not connected, or the query failed). It refuses instead of answering with the built-in dev config. `kubectl -n dataagent-service logs deploy/workflow-runtime \| grep <lookup id>` gives the cause; the lookup id is on the card in the Playground. On a personal dev machine without Postgres, `RUNTIME_DEV_FALLBACK=1` brings the dev config back — never set it under `deploy/` |
+| `/v1/questions` returns `502` | Check `api` is Ready and not `OOMKilled`; then check Kong upstream logs and `worker-agent` logs. Do not restore the retired workflow runtime |
 | The card says "Hệ thống chưa lập được cách trả lời…" (`PLANNER_ERROR`) | The planner model returned no valid plan twice (the second time at temperature 0). Check the `planner \| response is not a valid plan` lines for that conversation; usually `planner_max_tokens` too low or the model endpoint degraded |
 | `Dockerfile cannot be empty` | A Dockerfile was truncated by a bad edit → `git checkout HEAD -- <path>` |
 

@@ -45,6 +45,7 @@ from services.api.modules.ingest.schemas import (
     DatasetView,
     DlqRecordView,
     FileUploadView,
+    IngestionJobDryRun,
     IngestionJobSummary,
     IngestionJobView,
     JobCreate,
@@ -185,9 +186,16 @@ def _job_view(row: ingest.IngestionJob) -> IngestionJobView:
     return IngestionJobView.model_validate(row, from_attributes=True)
 
 
+DRY_RUN_NOTE = (
+    "Configuration checked and nothing recorded. The 1,000-row trial on the source is run by "
+    "worker-ingest, which holds the source connection; the api cannot read the source, so no "
+    "sample or row errors are returned here."
+)
+
+
 @router.post(
     "/v1/sources/{id}/jobs",
-    response_model=IngestionJobView,
+    response_model=IngestionJobView | IngestionJobDryRun,
     status_code=201,
     **endpoint("POST", "/v1/sources/{id}/jobs", operation_id="createIngestionJob"),
 )
@@ -196,7 +204,11 @@ async def create_job(
     source_id: IdPath,
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
-) -> IngestionJobView:
+    response: Response,
+    dry_run: Annotated[
+        bool, Query(description="Check the job as create would, record nothing (200)")
+    ] = False,
+) -> IngestionJobView | IngestionJobDryRun:
     async with transaction(ROLE, principal) as session:
         source = await session.scalar(
             select(catalog.Source).where(
@@ -236,6 +248,17 @@ async def create_job(
         )
         if body.dlq_retention_days is not None:
             row.dlq_retention_days = body.dlq_retention_days
+        if dry_run:
+            # The same insert as a create, so the table's own checks and defaults apply too, in
+            # a savepoint that is rolled back: no row, no event (A3 ?dry_run).
+            savepoint = await session.begin_nested()
+            session.add(row)
+            await session.flush()
+            await session.refresh(row)
+            would_be = _job_view(row)
+            await savepoint.rollback()
+            response.status_code = 200
+            return IngestionJobDryRun(**would_be.model_dump(), note=DRY_RUN_NOTE)
         session.add(row)
         await session.flush()
         await session.refresh(row)
@@ -1066,6 +1089,8 @@ def _result_view(result: ingest.QualityResult, rule: ingest.QualityRule) -> Qual
         violations=result.violations,
         sample_ref=result.sample_ref,
         acknowledged_by=result.acknowledged_by,
+        acknowledged_at=result.acknowledged_at,
+        acknowledged_note=result.acknowledged_note,
         checked_at=result.checked_at,
         dataset_id=rule.dataset_id,
         severity=rule.severity,
@@ -1151,7 +1176,10 @@ async def acknowledge_quality_result(
         if res.acknowledged_by is not None:
             raise Problem(409, "invalid_state", "The result is already acknowledged.")
         res.acknowledged_by = principal.user_id
-        # The note has no column on quality_result yet; the event carries ids only (no free text).
+        # BR-116: the reason to keep using the data is kept with the acknowledgement (12/10/2026);
+        # the event carries ids only.
+        res.acknowledged_at = _now()
+        res.acknowledged_note = body.note.strip()
         session.add(
             _event(
                 principal,

@@ -71,6 +71,7 @@ const SCENARIO_DISCLAIMER =
 
 function scenario(text: string): Forecast['scenario'] {
   return {
+    id: `scenario-${text.length}`,
     text,
     saved: false,
     disclaimer: SCENARIO_DISCLAIMER,
@@ -91,6 +92,7 @@ function forecast(): Forecast {
   return {
     id: FORECAST_ID,
     metric_name: 'Số dư huy động bán lẻ',
+    frequency: 'month',
     horizon_label: 'T11/2026 – T1/2027',
     unit_label: 'nghìn tỷ đồng',
     model: {
@@ -412,6 +414,8 @@ function workbench(): ForecastWorkbench {
     next_version_label: 'v7',
     can_create_card: { allowed: true, reason: null },
     model_id: null,
+    version_id: null,
+    forecast_model_id: null,
   };
 }
 
@@ -553,6 +557,47 @@ const FUELS: FuelProduct[] = [
 const fuelForecastId = (f: FuelProduct) => `fpf-2026-07-09-${f.code}`;
 const seriesId = (f: FuelProduct) => `fs-ceiling-${f.code}`;
 const FUEL_BASE = FUELS[0].previous;
+const FORMULA_MODEL_ID = 'formula-mc-v2';
+
+const formulaModelWire = (fuel: FuelProduct) => ({
+  id: FORMULA_MODEL_ID,
+  metric_version_id: 'mv-ceiling-price',
+  model_id: MODEL_ID,
+  model_version_id: V7_ID,
+  product_code: fuel.key,
+  owner_id: 'u-long',
+  formula: { kind: 'weighted_components' },
+  input_series: { product_code: fuel.key },
+  nowcast_method: 'latest_published',
+  fund_model: { kind: 'probabilistic' },
+  n_draws: 10000,
+  miss_abs_threshold: 300,
+  rounding: 'nearest_unit',
+  version_status: 'published',
+  reconstruction_mae: null,
+  created_at: '2026-09-01T09:00:00+07:00',
+  updated_at: '2026-10-06T09:00:00+07:00',
+});
+
+const ledgerFuelLines = () =>
+  FUELS.map((fuel) => ({
+    id: `ledger-${fuel.code}`,
+    forecast_model_id: MODEL_ID,
+    job_id: JOB_ID,
+    model_version_id: V7_ID,
+    period: '2026-07-09',
+    issued_at: '2026-07-08T18:02:00+07:00',
+    issued_via: 'bulletin',
+    point: fuel.previous,
+    quantiles: {},
+    actual: null,
+    in80: null,
+    in95: null,
+    miss: false,
+    miss_attribution: null,
+    error_book_entry_id: null,
+    scope: { product_code: fuel.key },
+  }));
 
 /** A two-sided normal density whose 10th/50th/90th percentiles are the forecast's. */
 function density(median: number, lo80: number, hi80: number, from: number, to: number) {
@@ -578,7 +623,13 @@ function fuelForecast(fuel: FuelProduct): FuelPriceForecast {
   const hi80 = at(20190);
   return {
     id: fuelForecastId(fuel),
-    series_id: seriesId(fuel),
+    job_id: JOB_ID,
+    product_code: fuel.key,
+    formula_model_id: 'formula-mc-v2',
+    model_id: MODEL_ID,
+    // Mirror the id produced by the real ledger adapter; the legacy endpoint is only a
+    // compatibility response for older fixtures.
+    series_id: `ledger~${MODEL_ID}~${fuel.key}`,
     product_label: fuel.label,
     products: FUELS.map((f) => ({ forecast_id: fuelForecastId(f), label: f.label })),
     period_date: '2026-07-09',
@@ -615,10 +666,10 @@ function fuelForecast(fuel: FuelProduct): FuelPriceForecast {
         'Nguồn: giá thế giới bình quân Bộ Công Thương 25/6–02/7 + chuỗi công khai · tỷ giá trung tâm NHNN · thuế phí theo NQ 34/2026/NQ-CP · Quỹ theo mô hình xác suất.',
     },
     fund_levels: [
-      { label: `Trích 0 ${fuel.unit}`, probability: 0.12 },
-      { label: `Trích 200 ${fuel.unit}`, probability: 0.7 },
-      { label: `Trích 300 ${fuel.unit}`, probability: 0.18 },
-      { label: `Chi 300 ${fuel.unit}`, probability: 0.08 },
+      { label: `Trích 0 ${fuel.unit}`, probability: 0.12, value: 0 },
+      { label: `Trích 200 ${fuel.unit}`, probability: 0.7, value: 200 },
+      { label: `Trích 300 ${fuel.unit}`, probability: 0.18, value: 300 },
+      { label: `Chi 300 ${fuel.unit}`, probability: 0.08, value: -300 },
     ],
     parameters: [
       {
@@ -627,6 +678,7 @@ function fuelForecast(fuel: FuelProduct): FuelPriceForecast {
         effective_from: '2026-01-01',
         legal_ref: { label: 'NQ 34/2026/NQ-CP', document_id: 'doc-nq-34-2026' },
         certified_by_name: 'Lê Thu Hà',
+        certified: true,
       },
       {
         key: fuel.key === 'xang' ? 'thue_ttdb_xang_e5' : `thue_ttdb_${fuel.key}`,
@@ -634,6 +686,7 @@ function fuelForecast(fuel: FuelProduct): FuelPriceForecast {
         effective_from: '2026-01-01',
         legal_ref: { label: 'Luật 66/2025/QH15', document_id: 'doc-luat-66-2025' },
         certified_by_name: 'Lê Thu Hà',
+        certified: true,
       },
       {
         key: `thue_nk_bq_${fuel.key}`,
@@ -641,6 +694,7 @@ function fuelForecast(fuel: FuelProduct): FuelPriceForecast {
         effective_from: '2026-06-26',
         legal_ref: { label: 'CV 9017/BTC-QLG', document_id: 'doc-cv-9017-btc' },
         certified_by_name: 'Nguyễn Thị Hạnh',
+        certified: true,
       },
       {
         key: `chi_phi_dinh_muc_${fuel.key}`,
@@ -648,6 +702,7 @@ function fuelForecast(fuel: FuelProduct): FuelPriceForecast {
         effective_from: '2026-06-26',
         legal_ref: { label: 'CV 9149/BTC-QLG', document_id: 'doc-cv-9149-btc' },
         certified_by_name: 'Nguyễn Thị Hạnh',
+        certified: true,
       },
     ],
     world_price: { known_days: 5, total_days: 7, simulated_range_text: '03/7–08/7' },
@@ -762,7 +817,9 @@ function fuelHandlers() {
   let fuelForecasts = FUELS.map(fuelForecast);
   // Following is per fuel, shared by the forecast and the ledger of that fuel.
   const following = new Set<string>();
-  const findFuel = (id: string) => fuelForecasts.find((f) => f.id === id);
+  const findFuel = (id: string) =>
+    fuelForecasts.find((f) => f.id === id) ??
+    fuelForecasts.find((f) => id.endsWith(`__${f.product_code}`));
   const withFollow = (f: FuelPriceForecast) => ({
     ...f,
     following_schedule: following.has(f.series_id),
@@ -812,6 +869,48 @@ function fuelHandlers() {
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),
 
+    // The fuel screen now discovers products through A2's formula models and ledger.
+    // Keep these rows in the wire shape so the same code path is exercised in dev and tests.
+    http.get('*/v1/forecast-ledger', ({ request }) => {
+      const url = new URL(request.url);
+      const product = url.searchParams.get('product_code');
+      const periods = Number(url.searchParams.get('page_size')) || 20;
+      const fuel = FUELS.find((item) => item.key === product) ?? FUELS[0];
+      if (!url.searchParams.has('forecast_model_id'))
+        return HttpResponse.json({ items: ledgerFuelLines(), next_page_token: '' });
+      const served = ledger(fuel, periods);
+      return HttpResponse.json({
+        items: served.rows.map((row) => ({
+          id: `ledger-${fuel.code}-${row.period_date}`,
+          forecast_model_id: MODEL_ID,
+          job_id: JOB_ID,
+          model_version_id: V7_ID,
+          period: row.period_date,
+          issued_at: row.published_at,
+          issued_via: 'bulletin',
+          point: row.median,
+          quantiles: { p10: row.lo80, p90: row.hi80, p02_5: row.lo95, p97_5: row.hi95 },
+          actual: row.actual,
+          in80: row.inside80,
+          in95: row.inside95,
+          miss: row.missed,
+          miss_attribution: row.main_driver ? { component: 'fund' } : null,
+          error_book_entry_id: row.error_book_ref,
+          scope: { product_code: fuel.key },
+        })),
+        next_page_token: '',
+        calibration: {
+          n_scored: served.calibration.periods,
+          coverage80: served.calibration.inside80 / served.calibration.periods,
+          coverage95: served.calibration.inside95 / served.calibration.periods,
+          mae: served.calibration.mae,
+          crps: -0.38,
+          crps_naive: 1,
+          miss_count: served.calibration.missed,
+          insufficient: false,
+        },
+      });
+    }),
     http.get('*/v1/forecast-series', () =>
       HttpResponse.json({
         items: FUELS.map((f) => ({ id: seriesId(f), label: f.label })),
@@ -840,12 +939,30 @@ function fuelHandlers() {
   ];
 }
 
+/** ForecastModelDetail as the api sends it, with the screen's model under display. */
+const modelWire = (m: ForecastModel) => ({
+  id: m.id,
+  metric_code: m.metric_name,
+  frequency: 'month',
+  status: 'active',
+  scope: {},
+  owner_id: 'u-long',
+  current_version_id: m.candidate?.version_id ?? null,
+  retrain_cron: null,
+  data_space_id: 'ds-nang-luong',
+  created_at: '2026-09-01T09:00:00+07:00',
+  updated_at: '2026-10-06T09:00:00+07:00',
+  display: m,
+});
+
 export function createForecastHandlers() {
   let currentJob = job();
   let polls = 0;
   let forecasts = [forecast(), staleForecast()];
   let bench = workbench();
   let currentModel = model();
+  let calendarFollowing = false;
+  const scenarios = new Map<string, { modelId: string; product: string; level: number }>();
 
   const saveForecast = (next: Forecast) => {
     forecasts = forecasts.map((f) => (f.id === next.id ? next : f));
@@ -953,12 +1070,124 @@ export function createForecastHandlers() {
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),
 
+    // Forecast fuel discovery uses the A2 formula/ledger resources, not the old fuel aggregate.
+    http.get('*/v1/formula-models', ({ request }) => {
+      const product = new URL(request.url).searchParams.get('product_code');
+      const items = FUELS.filter((fuel) => !product || fuel.key === product).map(formulaModelWire);
+      return HttpResponse.json({ items, next_page_token: '' });
+    }),
+    http.get('*/v1/formula-models/:id', ({ params }) => {
+      const fuel = FUELS.find((item) => item.key === params.id);
+      return fuel
+        ? HttpResponse.json(formulaModelWire(fuel))
+        : params.id === FORMULA_MODEL_ID
+          ? HttpResponse.json(formulaModelWire(FUELS[0]))
+          : problem(404, 'not_found', 'Không tìm thấy mô hình công thức.');
+    }),
+    http.get('*/v1/forecast-models/:id/predictions', ({ params, request }) => {
+      const url = new URL(request.url);
+      const scenarioId = url.searchParams.get('scenario_id');
+      const scenario = scenarioId ? scenarios.get(scenarioId) : null;
+      const fuel = FUELS.find((item) => item.key === scenario?.product) ?? FUELS[0];
+      const found = fuelForecast(fuel);
+      const base = found?.distribution.median ?? 19910;
+      const shift = scenario?.level === 300 ? 130 : scenario?.level === 200 ? 30 : -170;
+      return HttpResponse.json({
+        items: [
+          {
+            id: `prediction-${scenarioId ?? 'base'}`,
+            job_id: JOB_ID,
+            model_version_id: V7_ID,
+            period: '2026-07-09',
+            point: base + shift,
+            lo80: base + shift - 230,
+            hi80: base + shift + 240,
+            lo95: base + shift - 340,
+            hi95: base + shift + 440,
+            cutoff_at: '2026-07-07T00:00:00+07:00',
+            created_at: '2026-07-08T18:02:00+07:00',
+            interval_method: 'empirical',
+            exog_uncertainty: 'included',
+            is_experimental: false,
+            contributions: {},
+          },
+        ],
+        next_page_token: '',
+        notice: 'Kịch bản đã chạy với giả định Quỹ cố định.',
+      });
+    }),
+    http.post('*/v1/forecast-models/:id/scenarios', async ({ params, request }) => {
+      const body = (await request.json()) as {
+        assumptions?: { value?: number; from_period?: string }[];
+      };
+      const assumption = body.assumptions?.[0];
+      const scenarioId = `scenario-fund-${Date.now()}`;
+      const product = new URL(request.url).searchParams.get('product_code') ?? 'xang';
+      scenarios.set(scenarioId, {
+        modelId: String(params.id),
+        product,
+        level: Number(assumption?.value ?? 0),
+      });
+      return HttpResponse.json(
+        {
+          id: scenarioId,
+          status: 'queued',
+          poll_after_ms: 1,
+          model_id: String(params.id),
+          model_version_id: V7_ID,
+          name: 'Kịch bản Quỹ',
+          assumptions: body.assumptions ?? [],
+          notice: 'Kịch bản đã được xếp hàng.',
+        },
+        { status: 202 },
+      );
+    }),
+    http.get('*/v1/external-calendars', () =>
+      HttpResponse.json({
+        items: [
+          {
+            id: 'calendar-fuel-bulletins',
+            code: 'fuel-bulletins',
+            name: 'Bản tin giá xăng dầu',
+            data_space_id: 'ds-nang-luong',
+            owner_id: 'u-long',
+            forecast_model_ids: [MODEL_ID],
+            status: 'active',
+            default_local_time: '15:00',
+            detection_source_id: null,
+            forecast_lead: 'P1D',
+            legal_basis: null,
+            post_bulletin: true,
+            post_wait_max: 'PT6H',
+            pre_bulletin_days_before: 1,
+            pre_bulletin_local_time: '09:00',
+            created_at: '2026-09-01T09:00:00+07:00',
+            updated_at: '2026-10-06T09:00:00+07:00',
+            subscription_status: calendarFollowing ? 'active' : 'paused',
+          },
+        ],
+        next_page_token: '',
+      }),
+    ),
+    http.put('*/v1/external-calendars/:id/subscription', async ({ request }) => {
+      const body = (await request.json()) as { status?: string };
+      calendarFollowing = body.status === 'active';
+      return HttpResponse.json({
+        id: 'subscription-fuel-bulletins',
+        calendar_id: 'calendar-fuel-bulletins',
+        status: calendarFollowing ? 'active' : 'paused',
+        kinds: ['pre', 'post'],
+        channels: ['in_app'],
+      });
+    }),
+
+    // ForecastModelView/Detail with the screen's model under display.
     http.get('*/v1/forecast-models', () =>
-      HttpResponse.json({ items: [currentModel], next_page_token: '' }),
+      HttpResponse.json({ items: [modelWire(currentModel)], next_page_token: '' }),
     ),
     http.get('*/v1/forecast-models/:id', ({ params }) =>
       params.id === MODEL_ID
-        ? HttpResponse.json(currentModel)
+        ? HttpResponse.json(modelWire(currentModel))
         : problem(404, 'not_found', 'Không tìm thấy mô hình.'),
     ),
     http.post('*/v1/forecast-model-versions/:action', async ({ params, request }) => {
@@ -982,7 +1211,7 @@ export function createForecastHandlers() {
           can_approve: { allowed: false, reason: 'Phiên bản đã được duyệt.' },
           monitoring: currentModel.monitoring && { ...currentModel.monitoring, status: 'retired' },
         };
-        return HttpResponse.json(currentModel);
+        return HttpResponse.json({ id: candidate.version_id, status: 'published' });
       }
       if (verb === 'reject') {
         const { reason = '' } = (await request.json()) as { reason?: string };
@@ -993,7 +1222,7 @@ export function createForecastHandlers() {
           candidate: { ...candidate, status: 'rejected', rejection_reason: reason.trim() },
           can_approve: { allowed: false, reason: 'Phiên bản đã bị từ chối.' },
         };
-        return HttpResponse.json(currentModel);
+        return HttpResponse.json({ id: candidate.version_id, status: 'rejected' });
       }
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),

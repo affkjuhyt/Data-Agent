@@ -76,10 +76,14 @@ export default function DocumentAnswerPage() {
               trigger={
                 collection === ALL_COLLECTIONS
                   ? 'Chọn bộ sưu tập'
-                  : (collections.data?.items.find((c) => c.id === collection)?.name ?? 'Chọn bộ sưu tập')
+                  : (collections.data?.items.find((c) => c.id === collection)?.name ??
+                    'Chọn bộ sưu tập')
               }
               items={[
-                { label: 'Mọi bộ sưu tập được đọc', onSelect: () => setCollection(ALL_COLLECTIONS) },
+                {
+                  label: 'Mọi bộ sưu tập được đọc',
+                  onSelect: () => setCollection(ALL_COLLECTIONS),
+                },
                 ...(collections.data?.items ?? [])
                   .filter((c) => !c.archived)
                   .map((c) => ({ label: c.name, onSelect: () => setCollection(c.id) })),

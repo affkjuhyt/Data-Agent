@@ -37,6 +37,8 @@ const STATUS: Record<
   running: { tone: 'info', label: 'Đang chạy' },
   waiting_input: { tone: 'warning', label: 'Chờ job nạp' },
   draft: { tone: 'idle', label: 'Bản nháp' },
+  active: { tone: 'success', label: 'Đang bật' },
+  paused: { tone: 'warning', label: 'Tạm dừng' },
 };
 
 const isToday = (iso: string) => new Date(iso).toDateString() === new Date().toDateString();

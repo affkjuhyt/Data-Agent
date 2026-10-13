@@ -9,14 +9,13 @@ import { DataToday } from './DataToday';
 import { MobileHome } from './MobileHome';
 import { MyMetrics } from './MyMetrics';
 import { NeedsYouCard } from './NeedsYouCard';
-import { YourDashboards } from './YourDashboards';
 import { recentQuestions } from './api';
 
 /*
  * "v3.1 · Trang chủ" (2132:15338, UC-01-01, UC-08-05): the page everyone lands on.
  * Two columns under 16×32 padding with a 24px gap: the main column (greeting, question bar,
  * the metrics the viewer follows, what agents are doing, today's data) and a 380px right column
- * (what needs you, their dashboards, the guide). Narrower, the columns stack (1280, 1024, 768
+ * (what needs you, the guide). Narrower, the columns stack (1280, 1024, 768
  * tablet frames); under 768px the page is the mobile read (MobileHome, 2231:15114).
  */
 const WEEKDAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
@@ -88,7 +87,6 @@ export default function HomePage() {
             onOpen={() => navigate('needs-you')}
             onOpenDetail={(detail) => navigate(detail.area, detail.page, detail.id)}
           />
-          <YourDashboards onOpen={(id) => navigate('analysis', 'DASHBOARD', id)} />
           <button
             type="button"
             onClick={() => navigate('home', 'HOW_IT_WORKS')}

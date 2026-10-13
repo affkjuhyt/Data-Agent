@@ -12,7 +12,6 @@ import {
   addExample,
   listExamples,
   listSynonyms,
-  suggestExamples,
   updateExampleSql,
   verifyExample,
   type ExampleQuery,
@@ -25,6 +24,8 @@ import { useV1 } from '../../lib/v1/useV1';
  * The selected example — by default the first one waiting for review — opens on the right with
  * why the agent suggested it, its SQL and what running it gave; it is corrected or marked right
  * there. Verified examples join the standard question set used to evaluate the context layer.
+ * Suggestions arrive on their own, from real questions reported wrong; there is no button asking
+ * the agent for them.
  */
 const fieldClass =
   'rounded-md border border-border-strong bg-card px-da-md py-da-sm text-foreground da-body-small';
@@ -33,27 +34,13 @@ export default function ExamplesPage() {
   const { dataSpace } = useAppState();
   const examples = useV1(listExamples, []);
   const synonyms = useV1(listSynonyms, []);
-  const toast = useToast();
   const [selectedId, setSelectedId] = useState<string>();
   const [adding, setAdding] = useState(false);
-  const [suggesting, setSuggesting] = useState(false);
 
   const items = examples.data?.items ?? [];
   const selected =
     items.find((e) => e.id === selectedId) ?? items.find((e) => e.status === 'pending') ?? items[0];
   const scope = dataSpace?.name ?? 'Data Space này';
-
-  const suggest = async () => {
-    setSuggesting(true);
-    try {
-      await suggestExamples();
-      toast({ tone: 'info', message: 'Agent đang đọc câu hỏi thật; gợi ý mới hiện ở “Chờ xem”.' });
-    } catch (e) {
-      toast({ tone: 'error', message: `Không gửi được: ${(e as Error).message}` });
-    } finally {
-      setSuggesting(false);
-    }
-  };
 
   return (
     <div className="flex min-h-full flex-col">
@@ -67,14 +54,9 @@ export default function ExamplesPage() {
             : 'Agent dùng câu hỏi mẫu kèm SQL đúng để hiểu câu hỏi mới'
         }
         actions={
-          <>
-            <Button loading={suggesting} onClick={suggest}>
-              Agent gợi ý từ câu hỏi thật
-            </Button>
-            <Button kind="primary" onClick={() => setAdding(true)}>
-              Thêm câu hỏi mẫu
-            </Button>
-          </>
+          <Button kind="primary" onClick={() => setAdding(true)}>
+            Thêm câu hỏi mẫu
+          </Button>
         }
       />
       <div className="flex min-h-0 flex-1">
@@ -112,7 +94,7 @@ export default function ExamplesPage() {
                         </button>
                       </td>
                       <td className="px-da-lg py-da-md text-muted-foreground da-mono">
-                        {e.usage_text}
+                        {e.usage_text ?? '—'}
                       </td>
                       <td className="px-da-lg py-da-md text-muted-foreground da-body-small">
                         {e.source_label}
@@ -148,7 +130,7 @@ export default function ExamplesPage() {
                       </td>
                       <td className="px-da-lg py-da-md text-foreground da-mono">{s.target_text}</td>
                       <td className="px-da-lg py-da-md text-muted-foreground da-body-small">
-                        {s.scope_label}
+                        {s.scope_label ?? scope}
                       </td>
                     </tr>
                   ))}

@@ -1,6 +1,5 @@
 import { http, HttpResponse } from 'msw';
 import type {
-  AcquireSummary,
   CrawlRun,
   CrawlSchemaVersion,
   ConsolidationRun,
@@ -171,24 +170,32 @@ function sourcesFixture(): CrawlSource[] {
   ];
 }
 
-const SUMMARY: AcquireSummary = {
-  active: 7,
-  total: 9,
-  paused: 1,
-  blocked: 1,
-  last_agent_run_text: 'Agent Thu thập · 10/10 08:05',
-  sample_accuracy_pct: 98.6,
-  accuracy_delta_text: '+0,4 điểm so với tuần trước',
-  sample_text: '2% bản ghi mỗi lượt, 4 lượt gần nhất',
-  pending_records: 23,
-  blocking_records: 4,
-  latest_dataset: {
-    published_at: '2026-10-10T08:20:00+07:00',
-    title: 'Lãi suất huy động tuần 41',
-    detail: 'Dataset v41 · 30 ngân hàng',
-    consolidation_run_id: 'cons-deposit-w41',
-  },
+/*
+ * The active consolidation spec and the versions of the dataset it writes, which say the newest
+ * consolidated data over the list (A2 ConsolidationSpecView, DatasetVersionView).
+ */
+const DEPOSIT_DATASET_ID = 'dset-deposit-rates';
+const CONSOLIDATION_SPEC = {
+  id: 'cspec-deposit',
+  name: 'Lãi suất huy động tuần 41',
+  entity_type: 'bank',
+  grain: 'week',
+  status: 'active',
+  source_ids: ['cs-deposit-a', 'cs-deposit-b', 'cs-deposit-c'],
+  target_dataset_id: DEPOSIT_DATASET_ID,
 };
+const DEPOSIT_VERSIONS = [
+  {
+    id: 'dsv-deposit-41',
+    dataset_id: DEPOSIT_DATASET_ID,
+    version: 41,
+    change_kind: 'data',
+    valid_from: '2026-10-10T08:20:00+07:00',
+    valid_to: null,
+    certified_at: '2026-10-10T09:00:00+07:00',
+    certified_by: 'u-steward',
+  },
+];
 
 const SUGGESTION: SourceSuggestion = {
   suggested_name: 'Lãi suất huy động · 30 ngân hàng',
@@ -310,6 +317,7 @@ function driftFixture(): SchemaDrift {
     summary_text:
       'Điểm lệch 0,62 vượt ngưỡng 0,4: nguồn đã tạm ngưng, dữ liệu lượt bị cách ly, chờ người quyết (BR-152) · loại: cấu trúc',
     drift_kind: 'structural',
+    severity: 'major',
     drift_score: 0.62,
     thresholds: { light: 0.15, heavy: 0.4 },
     signals: [
@@ -430,6 +438,7 @@ function recordsFixture(): ExtractedRecord[] {
     reason_text,
     blocking,
     status: 'pending',
+    source_url: null,
     raw: raw([['12 tháng', value_text.replace('%', '')]], 0, null, 'Bản gốc'),
     values: [{ field: 'rate', value: value_text, confidence: 0.9 }],
     evidence: null,
@@ -511,7 +520,8 @@ function consolidationFixture(): ConsolidationRun {
     title: 'Hợp nhất dữ liệu · tuần 41',
     summary_text: '3 nguồn thu · 30 ngân hàng · 412 bản ghi vào, 148 dòng hợp nhất',
     status: 'pending_review',
-    next_dataset_version: 42,
+    dataset_version_id: 'dsv-deposit-42',
+    dataset_version: 42,
     steps: [
       { label: 'Chuẩn hoá', state: 'done' },
       { label: 'Thực thể', state: 'waiting' },
@@ -567,6 +577,50 @@ function consolidationFixture(): ConsolidationRun {
   };
 }
 
+/*
+ * The served reads answer in their api shape with the screen's view under `display`, which the
+ * readers in lib/v1/crawl.ts take as is; the api-shaped path is tested in crawl.test.ts.
+ */
+const sourceWire = (v: CrawlSource) => ({
+  id: v.id,
+  name: v.name,
+  kind: v.kind,
+  status:
+    v.health === 'paused' ? 'paused' : v.health === 'drift_quarantined' ? 'quarantined' : 'active',
+  review_gate: v.review_gate,
+  pending_review: v.pending_review,
+  display: v,
+});
+const schemaWire = (sourceId: string, v: CrawlSchemaVersion) => ({
+  id: v.id,
+  source_id: sourceId,
+  version: v.version,
+  status: v.status,
+  fields: [],
+  display: v,
+});
+const runWire = (v: CrawlRun) => ({
+  id: v.id,
+  source_id: v.source_id,
+  status: v.status === 'published' ? 'published' : 'in_review',
+  records_extracted: v.record_count,
+  display: v,
+});
+const driftWire = (v: SchemaDrift) => ({
+  id: v.id,
+  source_id: v.source_id,
+  drift_kind: v.drift_kind,
+  severity: v.severity,
+  resolution: v.resolution,
+  display: v,
+});
+const recordWire = (v: ExtractedRecord) => ({
+  id: v.id,
+  status: v.status === 'confirmed' ? 'approved' : v.status,
+  review_reasons: v.reasons,
+  display: v,
+});
+
 const problem = (status: number, code: string, detail: string) =>
   HttpResponse.json(
     { title: code, status, code, detail },
@@ -597,14 +651,21 @@ export function createCrawlHandlers() {
   return [
     http.get('*/v1/consolidation-runs/:id', ({ params }) =>
       params.id === consolidation.id
-        ? HttpResponse.json(consolidation)
+        ? HttpResponse.json({
+            id: consolidation.id,
+            status: consolidation.status === 'published' ? 'published' : 'running',
+            display: consolidation,
+          })
         : problem(404, 'not_found', 'Không tìm thấy lượt hợp nhất.'),
     ),
-    http.post('*/v1/entity-matches/:action', async ({ params, request }) => {
+    // A2 EntityLinkDecision: confirmed merges the alias into the entity, rejected keeps it apart.
+    http.post('*/v1/entity-links/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
       const match = consolidation.entity_matches.find((m) => m.id === id);
       if (!match || verb !== 'decide') return problem(404, 'not_found', 'Không tìm thấy liên kết.');
-      const { decision } = (await request.json()) as { decision: 'merge' | 'split' };
+      if (match.decision) return problem(409, 'invalid_state', 'Liên kết đã được quyết.');
+      const { status } = (await request.json()) as { status: 'confirmed' | 'rejected' };
+      const decision = status === 'confirmed' ? 'merge' : 'split';
       consolidation = {
         ...consolidation,
         entity_matches: consolidation.entity_matches.map((m) =>
@@ -619,29 +680,47 @@ export function createCrawlHandlers() {
             st.label === 'Thực thể' ? { ...st, state: 'done' } : st,
           ),
         };
-      return HttpResponse.json({ id, decision });
+      return HttpResponse.json({ id, status, method: 'human' });
     }),
-    http.post('*/v1/consolidation-runs/:action', ({ params }) => {
+    // A2 certification of the version the run wrote; it waits on the links and conflicts.
+    http.post('*/v1/dataset-versions/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
-      if (id !== consolidation.id || verb !== 'publish')
-        return problem(404, 'not_found', 'Không tìm thấy lượt hợp nhất.');
+      if (id !== consolidation.dataset_version_id || verb !== 'certify')
+        return problem(404, 'not_found', 'Không tìm thấy phiên bản dataset.');
       const waiting =
         consolidation.entity_matches.filter((m) => !m.decision).length +
         consolidation.conflicts.filter((c) => c.open).length;
       if (waiting)
-        return problem(409, 'invalid_state', `Còn ${waiting} mục chờ trước khi phát hành.`);
-      consolidation = { ...consolidation, status: 'published' };
-      return HttpResponse.json(consolidation);
+        return problem(409, 'invalid_state', `Còn ${waiting} mục chờ trước khi chứng nhận.`);
+      return HttpResponse.json({
+        id,
+        version: consolidation.dataset_version,
+        certified_at: new Date().toISOString(),
+      });
     }),
+    http.get('*/v1/consolidation-specs', () =>
+      HttpResponse.json({ items: [CONSOLIDATION_SPEC], next_page_token: '' }),
+    ),
+    http.get('*/v1/datasets/:id/versions', ({ params }) =>
+      params.id === DEPOSIT_DATASET_ID
+        ? HttpResponse.json({ items: DEPOSIT_VERSIONS, next_page_token: '' })
+        : undefined,
+    ),
     http.get('*/v1/crawl-runs/:id/records', ({ params }) =>
       params.id === run.id
-        ? HttpResponse.json({ items: pending(), next_page_token: '' })
+        ? HttpResponse.json({ items: records.map(recordWire), next_page_token: '' })
         : problem(404, 'not_found', 'Không tìm thấy lượt.'),
     ),
     http.get('*/v1/crawl-runs/:id', ({ params }) =>
       params.id === run.id
-        ? HttpResponse.json(run)
+        ? HttpResponse.json(runWire(run))
         : problem(404, 'not_found', 'Không tìm thấy lượt.'),
+    ),
+    http.get('*/v1/crawl-runs', () =>
+      HttpResponse.json({
+        items: run.status === 'published' ? [] : [runWire(run)],
+        next_page_token: '',
+      }),
     ),
     http.post('*/v1/crawl-runs/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
@@ -654,24 +733,27 @@ export function createCrawlHandlers() {
           `Còn ${run.blocking_count} mục chặn trong hàng duyệt (BR-153).`,
         );
       run = { ...run, status: 'published' };
-      return HttpResponse.json(run);
+      return HttpResponse.json(runWire(run));
     }),
     http.post('*/v1/extracted-records\\:bulk-review', async ({ request }) => {
       const body = (await request.json()) as {
-        review_reasons: string[];
         decision: string;
+        filter: { run_id: string; review_reasons: string[] };
         reason: string;
       };
       if (run.status === 'published') return problem(409, 'invalid_state', 'Lượt đã phát hành.');
       let updated = 0;
       records = records.map((x) => {
-        if (x.status !== 'pending' || !x.reasons.some((rr) => body.review_reasons.includes(rr)))
+        if (
+          x.status !== 'pending' ||
+          !x.reasons.some((rr) => body.filter.review_reasons.includes(rr))
+        )
           return x;
         updated += 1;
         return { ...x, status: body.decision === 'reject' ? 'rejected' : 'confirmed' };
       });
       recount();
-      return HttpResponse.json({ updated });
+      return HttpResponse.json({ updated, by_status: {} });
     }),
     http.post('*/v1/extracted-records/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
@@ -693,16 +775,16 @@ export function createCrawlHandlers() {
       const done: ExtractedRecord = { ...rec, status };
       records = records.map((x) => (x.id === id ? done : x));
       recount();
-      return HttpResponse.json(done);
+      return HttpResponse.json({ decision: body.decision, record: recordWire(done) });
     }),
-    http.get('*/v1/schema-drifts', () =>
-      HttpResponse.json({ items: drift.resolution ? [] : [drift], next_page_token: '' }),
-    ),
-    http.get('*/v1/schema-drifts/:id', ({ params }) =>
-      params.id === drift.id
-        ? HttpResponse.json(drift)
-        : problem(404, 'not_found', 'Không tìm thấy sự cố.'),
-    ),
+    // A2 lists drifts only; the drift screen finds its own in the list.
+    http.get('*/v1/schema-drifts', ({ request }) => {
+      const open = new URL(request.url).searchParams.get('resolution') === 'open';
+      return HttpResponse.json({
+        items: open && drift.resolution ? [] : [driftWire(drift)],
+        next_page_token: '',
+      });
+    }),
     http.post('*/v1/schema-drifts/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
       if (id !== drift.id || verb !== 'resolve')
@@ -721,12 +803,15 @@ export function createCrawlHandlers() {
         source.health_text = 'Đúng lịch';
         source.drift_id = null;
       }
-      return HttpResponse.json(drift);
+      return HttpResponse.json(driftWire(drift));
     }),
     http.get('*/v1/crawl-sources/:id/schemas', ({ params }) => {
       const source = sources.find((x) => x.id === params.id);
       if (!source) return problem(404, 'not_found', 'Không tìm thấy nguồn.');
-      return HttpResponse.json({ items: [schemaOf(source.id)], next_page_token: '' });
+      return HttpResponse.json({
+        items: [schemaWire(source.id, schemaOf(source.id))],
+        next_page_token: '',
+      });
     }),
     http.get('*/v1/crawl-sources/:id', ({ params }) => {
       const source = sources.find((x) => x.id === params.id);
@@ -745,31 +830,18 @@ export function createCrawlHandlers() {
       if (!schema.test) return problem(409, 'invalid_state', 'Chưa chạy thử.');
       if (schema.test.required_correct_pct < 95)
         return problem(422, 'business_rule_violated', 'Dưới 95% trường bắt buộc đúng (BR-151).');
-      const { field_mappings } = (await request.json()) as {
-        field_mappings: Record<string, string>;
-      };
-      const unresolved = schema.fields.filter((x) => !x.canonical && !field_mappings?.[x.name]);
-      if (unresolved.length)
-        return problem(
-          422,
-          'validation_failed',
-          `Chọn thuộc tính chuẩn cho ${unresolved.map((x) => x.name).join(', ')}.`,
-        );
-      const approved: CrawlSchemaVersion = {
-        ...schema,
-        status: 'active',
-        fields: schema.fields.map((x) => ({
-          ...x,
-          canonical: x.canonical ?? field_mappings[x.name],
-        })),
-      };
+      // A3's SchemaApproveRequest is {note}: the choices travel in it, the fields stay as inferred.
+      const body = (await request.json()) as Record<string, unknown>;
+      if (Object.keys(body).some((k) => k !== 'note'))
+        return problem(422, 'validation_failed', 'Chỉ nhận ghi chú.');
+      const approved: CrawlSchemaVersion = { ...schema, status: 'active' };
       schemas.set(sourceId, approved);
       const source = sources.find((x) => x.id === sourceId);
       if (source && source.health === 'pending_schema') {
         source.health = 'on_schedule';
         source.health_text = 'Đúng lịch';
       }
-      return HttpResponse.json(approved);
+      return HttpResponse.json(schemaWire(sourceId, approved));
     }),
     http.post('*/v1/crawl-sources\\:suggest', async ({ request }) => {
       const { goal } = (await request.json()) as { goal: string };
@@ -814,9 +886,8 @@ export function createCrawlHandlers() {
       HttpResponse.json({ id: 'arun-infer-' + Date.now() }, { status: 202 }),
     ),
     http.get('*/v1/crawl-sources', () =>
-      HttpResponse.json({ items: sources, next_page_token: '' }),
+      HttpResponse.json({ items: sources.map(sourceWire), next_page_token: '' }),
     ),
-    http.get('*/v1/acquire/summary', () => HttpResponse.json(SUMMARY)),
     http.post('*/v1/crawl-sources/:id/runs', ({ params }) => {
       const source = sources.find((x) => x.id === params.id);
       if (!source) return problem(404, 'not_found', 'Không tìm thấy nguồn.');

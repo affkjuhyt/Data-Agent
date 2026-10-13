@@ -564,7 +564,8 @@ async def test_put_source_authority_drafts_it_with_a_90_day_backtest(s: Space) -
         assert event["ranking"] == body["ranking"] and event["previous_status"] is None
         assert event["drafted_by"] == str(s.users["steward"])
 
-        # Approved, then changed: the new ranking is a draft again until approved.
+        # Approved, then changed (UC-07-05): the change is a new draft beside the active ranking,
+        # which keeps applying until the draft is approved.
         s.execute(
             "UPDATE conflict.source_authority SET status = 'active', approved_by = %s,"
             " approved_at = now() WHERE id = %s",
@@ -577,15 +578,34 @@ async def test_put_source_authority_drafts_it_with_a_90_day_backtest(s: Space) -
             headers=h,
         )
         assert changed.status_code == 200, changed.text
-        assert changed.json()["id"] == view["id"] and changed.json()["status"] == "draft"
-        assert changed.json()["approved_by"] is None
-        assert changed.json()["materiality"] == {"amount_pct": 0.001, "count": 1}
-        drafted = [p for e, p in s.events(view["id"]) if e == "source_authority.drafted"]
-        assert drafted[-1]["previous_status"] == "active"
+        draft = changed.json()
+        assert draft["id"] != view["id"] and draft["status"] == "draft"
+        assert draft["approved_by"] is None
+        assert draft["materiality"] == {"amount_pct": 0.001, "count": 1}
+        assert (
+            s.one("SELECT status FROM conflict.source_authority WHERE id = %s", view["id"])
+            == "active"
+        )
+        drafted = dict(s.events(draft["id"]))["source_authority.drafted"]
+        assert drafted["active_id"] == view["id"]
+        # A second edit updates the same draft.
+        again = await api.put("/v1/source-authorities", json=body, headers=h)
+        assert again.json()["id"] == draft["id"]
+        # Approving the draft supersedes the active one (routines/conflict.sql).
+        s.execute(
+            "UPDATE conflict.source_authority SET status = 'active', approved_by = %s,"
+            " approved_at = now() WHERE id = %s",
+            s.users["steward"],
+            draft["id"],
+        )
+        assert (
+            s.one("SELECT status FROM conflict.source_authority WHERE id = %s", view["id"])
+            == "superseded"
+        )
 
         listed = await api.get("/v1/source-authorities", headers=s.headers("analyst"))
         assert listed.status_code == 200
-        assert [a["id"] for a in listed.json()["items"]] == [view["id"]]
+        assert {a["id"] for a in listed.json()["items"]} == {view["id"], draft["id"]}
         filtered = await api.get(
             "/v1/source-authorities?data_kind=so_khach", headers=s.headers("analyst")
         )

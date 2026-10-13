@@ -8,7 +8,7 @@ import keycloak from '../keycloak';
  * In development `VITE_MOCK_V1=1` answers these calls from src/mocks (MSW) until the backend
  * serves them; nothing here knows about the mock.
  */
-const BASE = `${(import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8100'}/v1`;
+const BASE = `${(import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:30100'}/v1`;
 
 /** A1.4: one page of a list. An empty next_page_token means the last page. */
 export interface Page<T> {
@@ -97,6 +97,9 @@ export function setDataSpace(id: string | null) {
   dataSpace = id;
 }
 
+/** The Data Space set above, for the bodies that carry data_space_id as well as the header. */
+export const currentDataSpace = () => dataSpace;
+
 type Query = Record<string, string | number | boolean | undefined | null>;
 
 function headers(extra?: Record<string, string>): Record<string, string> {
@@ -164,10 +167,17 @@ export async function v1Send<T = unknown>(
 }
 
 /** POST multipart/form-data (a file upload); the browser sets the boundary, so no Content-Type here. */
-export async function v1Upload<T = unknown>(path: string, form: FormData): Promise<T> {
+export async function v1Upload<T = unknown>(
+  path: string,
+  form: FormData,
+  options: { fileName?: string } = {},
+): Promise<T> {
   const res = await fetch(`${BASE}${safePath(path)}`, {
     method: 'POST',
-    headers: headers({ 'Idempotency-Key': crypto.randomUUID() }),
+    headers: headers({
+      'Idempotency-Key': crypto.randomUUID(),
+      ...(options.fileName ? { 'X-Upload-Filename': options.fileName } : {}),
+    }),
     body: form,
     signal: AbortSignal.timeout(60_000),
   });

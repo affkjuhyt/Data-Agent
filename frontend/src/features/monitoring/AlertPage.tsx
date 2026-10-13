@@ -23,7 +23,6 @@ import { Tooltip } from '../../design-system/Tooltip';
 import {
   assignAlert,
   closeAlert,
-  disputeAlertAnalysis,
   getAlert,
   investigateAlert,
   listAlerts,
@@ -39,12 +38,12 @@ import { whenText } from './whenText';
  * "P08 · Cảnh báo · Chi tiết" (2271:16093, UC-08-02): one alert — the 30 days around it with the
  * days past the threshold shaded, the cause the Agent Phân tích attached and what each factor
  * contributed, and on the right its details, what happened since and how it ends. The person
- * mutes the monitor for a day, hands the alert to someone else, or opens an investigation. Closing
+ * pauses the monitor, hands the alert to someone else, or opens an investigation. Closing
  * it as a false alarm needs a note the agent learns from ("Đã đóng do báo nhầm", 2272:16850); an
  * alert that fired more than twice needs a note however it is closed (BR-124). Opened from the
  * rail without an id, the page shows the newest open alert.
  */
-type Dialog = 'assign' | 'resolve' | 'false_positive' | 'dispute' | null;
+type Dialog = 'assign' | 'resolve' | 'false_positive' | 'reopen' | null;
 
 const STATUS = {
   open: { label: 'Đang cảnh báo', tone: 'error' },
@@ -128,7 +127,7 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
     setBusy('investigate');
     setError(undefined);
     try {
-      const { workspace_id } = await investigateAlert(alert.id);
+      const { workspace_id } = await investigateAlert(alert);
       navigate('analysis', 'SESSIONS', workspace_id);
     } catch (e) {
       setError((e as Error).message);
@@ -136,12 +135,12 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
     }
   };
 
+  // A2 pauses a monitor until it is resumed from the list; there is no end date.
   const mute = () => {
-    const until = new Date(Date.now() + 24 * 3600_000).toISOString();
     act(
       'mute',
-      () => muteMonitor(alert.monitor_id, until),
-      `Đã tắt tiếng ${alert.monitor_name} 24 giờ`,
+      () => muteMonitor(alert.monitor_id, true),
+      `Đã tạm dừng ${alert.monitor_name || 'theo dõi'}`,
     );
   };
 
@@ -170,7 +169,7 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
             <Button
               loading={busy === 'reopen'}
               disabled={busy !== null}
-              onClick={() => act('reopen', () => reopenAlert(alert.id), `Đã mở lại ${alert.code}`)}
+              onClick={() => dialogOpen('reopen')}
             >
               Mở lại
             </Button>
@@ -182,7 +181,7 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
                 disabled={busy !== null}
                 onClick={mute}
               >
-                Tắt tiếng 24 giờ
+                Tạm dừng theo dõi
               </Button>
               <Button disabled={busy !== null} onClick={() => dialogOpen('assign')}>
                 Giao cho người khác
@@ -217,15 +216,26 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
               )}
             </section>
           )}
-          <section className="flex flex-col gap-da-md border-b border-border py-da-xl">
-            <div className="flex items-baseline gap-da-md">
-              <h2 className="text-foreground da-heading-3">Giá trị 30 ngày</h2>
-              <span className="ml-auto text-muted-foreground da-caption">
-                {alert.chart.metric_label} · {alert.chart.cutoff_text}
-              </span>
-            </div>
-            <AlertChart alert={alert} />
-          </section>
+          {/* PROPOSAL: the series behind the alert; without it the api's summary says what changed. */}
+          {alert.chart ? (
+            <section className="flex flex-col gap-da-md border-b border-border py-da-xl">
+              <div className="flex items-baseline gap-da-md">
+                <h2 className="text-foreground da-heading-3">Giá trị 30 ngày</h2>
+                <span className="ml-auto text-muted-foreground da-caption">
+                  {alert.chart.metric_label} · {alert.chart.cutoff_text}
+                </span>
+              </div>
+              <AlertChart chart={alert.chart} />
+            </section>
+          ) : (
+            !alert.analysis &&
+            alert.summary && (
+              <section className="flex flex-col gap-da-md border-b border-border py-da-xl">
+                <h2 className="text-foreground da-heading-3">Tóm tắt</h2>
+                <p className="whitespace-pre-line text-foreground da-body">{alert.summary}</p>
+              </section>
+            )
+          )}
           {alert.analysis && (
             <section className="flex flex-col gap-da-md border-b border-border py-da-xl">
               <div className="flex items-baseline gap-da-md">
@@ -275,13 +285,6 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
                   className="text-primary hover:underline"
                 >
                   {showSql ? 'Ẩn truy vấn' : 'Xem truy vấn'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => dialogOpen('dispute')}
-                  className="text-primary hover:underline"
-                >
-                  Báo phân tích này sai
                 </button>
               </div>
               {showSql && (
@@ -368,46 +371,47 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
         />
       </ConfirmDialog>
       <ConfirmDialog
-        open={dialog === 'resolve' || dialog === 'false_positive' || dialog === 'dispute'}
+        open={dialog === 'resolve' || dialog === 'false_positive' || dialog === 'reopen'}
         title={
-          dialog === 'false_positive'
-            ? `Đóng ${alert.code} do báo nhầm?`
-            : dialog === 'dispute'
-              ? 'Báo phân tích này sai'
+          dialog === 'reopen'
+            ? `Mở lại ${alert.code}?`
+            : dialog === 'false_positive'
+              ? `Đóng ${alert.code} do báo nhầm?`
               : `Đánh dấu ${alert.code} đã xử lý?`
         }
-        confirmLabel={dialog === 'dispute' ? 'Gửi' : 'Đóng cảnh báo'}
+        confirmLabel={dialog === 'reopen' ? 'Mở lại' : 'Đóng cảnh báo'}
         tone="primary"
         cancelLabel="Quay lại"
         loading={busy === dialog}
         error={dialog ? error : undefined}
         onCancel={() => setDialog(null)}
         onConfirm={() => {
-          if (dialog === 'dispute') {
+          if (dialog === 'reopen') {
+            // A2 :reopen requires the reason; it is kept with the alert's history.
             if (!note.trim()) {
-              setError('Ghi phân tích sai ở đâu.');
+              setError('Ghi vì sao mở lại.');
               return;
             }
-            act(
-              'dispute',
-              () => disputeAlertAnalysis(alert.id, note.trim()),
-              'Đã gửi; phân tích này vào bộ đánh giá của agent',
-            );
+            act('reopen', () => reopenAlert(alert.id, note.trim()), `Đã mở lại ${alert.code}`);
           } else if (dialog === 'resolve') close('resolved');
           else if (dialog === 'false_positive') close('false_positive');
         }}
       >
         <div className="flex flex-col gap-da-sm">
           <p>
-            {dialog === 'false_positive'
-              ? 'Agent ghi nhớ điều bạn viết để lần sau giải thích đúng hơn; ngưỡng theo dõi giữ nguyên.'
-              : dialog === 'dispute'
-                ? 'Phân tích sai đi vào bộ đánh giá của Agent Phân tích.'
+            {dialog === 'reopen'
+              ? 'Cảnh báo mở lại và vào lại hàng việc của người được giao.'
+              : dialog === 'false_positive'
+                ? 'Agent ghi nhớ điều bạn viết để lần sau giải thích đúng hơn; ngưỡng theo dõi giữ nguyên.'
                 : 'Cảnh báo đóng lại; theo dõi vẫn chạy.'}
           </p>
           <label className="flex flex-col gap-da-xs">
             <span className="text-foreground da-label">
-              {dialog === 'resolve' && alert.occurrences <= 2 ? 'Ghi chú' : 'Ghi chú (bắt buộc)'}
+              {dialog === 'reopen'
+                ? 'Lý do (bắt buộc)'
+                : dialog === 'resolve' && alert.occurrences <= 2
+                  ? 'Ghi chú'
+                  : 'Ghi chú (bắt buộc)'}
             </span>
             <textarea
               value={note}
@@ -422,8 +426,8 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
   );
 }
 
-function AlertChart({ alert }: { alert: Alert }) {
-  const { series, threshold, breach_from, unit } = alert.chart;
+function AlertChart({ chart }: { chart: NonNullable<Alert['chart']> }) {
+  const { series, threshold, breach_from, unit } = chart;
   const last = series[series.length - 1]?.date;
   return (
     <div

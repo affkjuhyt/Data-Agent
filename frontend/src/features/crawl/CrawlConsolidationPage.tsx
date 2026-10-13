@@ -11,7 +11,7 @@ import { cn } from '../../lib/utils';
 import {
   decideEntityMatch,
   getConsolidationRun,
-  publishConsolidationRun,
+  certifyDatasetVersion,
   type ConsolidationRun,
 } from '../../lib/v1/crawl';
 import { useV1 } from '../../lib/v1/useV1';
@@ -21,9 +21,10 @@ import { useV1 } from '../../lib/v1/useV1';
  * The steps it went through, the consolidated table and the paragraph that will be embedded — only
  * the table, its claims and that paragraph are, never raw pages (BR-154) — then what still waits on
  * a person: entity links the agent was unsure of, and gaps between sources above the materiality
- * threshold, which already opened a Cần bạn request (BR-155). Publishing waits on both.
+ * threshold, which already opened a Cần bạn request (BR-155). The run writes the dataset version
+ * itself; certifying it is the person's gate (BR-156) and waits on both.
  */
-const fmt = (n: number) => n.toFixed(2).replace('.', ',');
+const fmt = (n: number | null) => (n === null ? '—' : n.toFixed(2).replace('.', ','));
 
 const STEP_TONE = { done: 'success', waiting: 'warning', pending: 'neutral' } as const;
 
@@ -48,7 +49,10 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
     pendingMatches.length && `${pendingMatches.length} liên kết thực thể`,
     openConflicts.length && `${openConflicts.length} xung đột`,
   ].filter(Boolean);
-  const version = run.next_dataset_version;
+  const version = run.dataset_version;
+  const versionId = run.dataset_version_id;
+  const named = version === null ? 'dataset' : `dataset v${version}`;
+  const [certified, setCertified] = useState(false);
 
   const act = async (key: string, call: () => Promise<unknown>, message: string) => {
     setBusy(key);
@@ -64,16 +68,23 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
     }
   };
 
-  const publishButton = (
+  const certifyButton = versionId && (
     <Button
       kind="primary"
-      loading={busy === 'publish'}
+      loading={busy === 'certify'}
       disabled={busy !== null || waiting.length > 0}
       onClick={() =>
-        act('publish', () => publishConsolidationRun(run.id), `Đã phát hành dataset v${version}`)
+        act(
+          'certify',
+          async () => {
+            await certifyDatasetVersion(versionId);
+            setCertified(true);
+          },
+          `Đã chứng nhận ${named}`,
+        )
       }
     >
-      Phát hành dataset v{version}
+      Chứng nhận {named}
     </Button>
   );
 
@@ -84,78 +95,95 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
         breadcrumb={['Dữ liệu', 'Thu thập ngoài', `Hợp nhất · ${run.spec_name}`]}
         title={run.title}
         description={
-          published
-            ? `${run.summary_text} · đã phát hành v${version}`
+          certified
+            ? `${run.summary_text} · đã chứng nhận ${named}`
             : waiting.length
-              ? `${run.summary_text} · chờ ${waiting.join(' và ')} trước khi phát hành`
-              : `${run.summary_text} · sẵn sàng phát hành`
+              ? `${run.summary_text} · chờ ${waiting.join(' và ')} trước khi chứng nhận`
+              : `${run.summary_text} · sẵn sàng chứng nhận`
         }
         actions={
           <>
             <Tooltip content="Trình sửa đặc tả hợp nhất đang được làm.">
               <Button disabled>Sửa đặc tả hợp nhất</Button>
             </Tooltip>
-            {!published &&
+            {certifyButton &&
+              !certified &&
               (waiting.length ? (
                 <Tooltip content={`Còn ${waiting.join(' và ')} chờ quyết định.`}>
-                  {publishButton}
+                  {certifyButton}
                 </Tooltip>
               ) : (
-                publishButton
+                certifyButton
               ))}
           </>
         }
       />
       <div className="flex flex-col gap-da-xl px-da-3xl pb-da-2xl pt-da-xl">
-        {published && <Notice tone="success">Đã phát hành dataset v{version}; đang nhúng.</Notice>}
+        {published && (
+          <Notice tone="success">
+            Lượt hợp nhất đã ghi {named}
+            {certified ? ' và bạn đã chứng nhận.' : '; chờ chứng nhận.'}
+          </Notice>
+        )}
+        {run.status === 'failed' && <Notice tone="error">Lượt hợp nhất thất bại.</Notice>}
         {error && <Notice tone="error">Không thực hiện được: {error}</Notice>}
-        <ol aria-label="Các bước hợp nhất" className="flex gap-da-sm max-[1023px]:flex-wrap">
-          {run.steps.map((s) => (
-            <li
-              key={s.label}
-              className="min-w-[120px] flex-1 rounded-sm border border-border bg-card px-da-md py-[5px] da-caption"
-            >
-              <StatusDot tone={STEP_TONE[s.state]}>{stepLabel(run, s.label, s.state)}</StatusDot>
-            </li>
-          ))}
-        </ol>
+        {run.steps.length > 0 && (
+          <ol aria-label="Các bước hợp nhất" className="flex gap-da-sm max-[1023px]:flex-wrap">
+            {run.steps.map((s) => (
+              <li
+                key={s.label}
+                className="min-w-[120px] flex-1 rounded-sm border border-border bg-card px-da-md py-[5px] da-caption"
+              >
+                <StatusDot tone={STEP_TONE[s.state]}>{stepLabel(run, s.label, s.state)}</StatusDot>
+              </li>
+            ))}
+          </ol>
+        )}
         <div className="flex items-start gap-da-xl max-[1279px]:flex-col">
-          <Card title={run.table.title} className="min-w-0 flex-1">
-            <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border da-body-small">
-              <thead>
-                <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                  {run.table.columns.map((c) => (
-                    <th key={c} className="px-da-lg py-da-md font-normal">
-                      {c}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {run.table.rows.map((r, i) => (
-                  <tr
-                    key={r[0]}
-                    className={cn(
-                      'border-b border-border last:border-b-0 text-foreground',
-                      i === run.table.highlighted_row && 'bg-accent',
-                    )}
-                  >
-                    {r.map((cell, j) => (
-                      <td key={j} className="px-da-lg py-[10px]">
-                        {cell}
-                      </td>
+          {run.table && (
+            <Card title={run.table.title} className="min-w-0 flex-1">
+              <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border da-body-small">
+                <thead>
+                  <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
+                    {run.table.columns.map((c) => (
+                      <th key={c} className="px-da-lg py-da-md font-normal">
+                        {c}
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {run.table.note && <p className="text-muted-foreground da-caption">{run.table.note}</p>}
-          </Card>
-          <div className="flex w-[476px] shrink-0 flex-col gap-da-xl max-[1279px]:w-full">
-            <Card title="Đoạn tóm tắt sẽ nhúng">
-              <p className="text-foreground da-body-small">{run.summary_paragraph.text}</p>
-              <p className="text-muted-foreground da-caption">{run.summary_paragraph.provenance}</p>
+                </thead>
+                <tbody>
+                  {run.table.rows.map((r, i) => (
+                    <tr
+                      key={r[0]}
+                      className={cn(
+                        'border-b border-border last:border-b-0 text-foreground',
+                        i === run.table?.highlighted_row && 'bg-accent',
+                      )}
+                    >
+                      {r.map((cell, j) => (
+                        <td key={j} className="px-da-lg py-[10px]">
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {run.table.note && (
+                <p className="text-muted-foreground da-caption">{run.table.note}</p>
+              )}
             </Card>
+          )}
+          <div className="flex w-[476px] shrink-0 flex-col gap-da-xl max-[1279px]:w-full">
+            {run.summary_paragraph && (
+              <Card title="Đoạn tóm tắt sẽ nhúng">
+                <p className="text-foreground da-body-small">{run.summary_paragraph.text}</p>
+                <p className="text-muted-foreground da-caption">
+                  {run.summary_paragraph.provenance}
+                </p>
+              </Card>
+            )}
             <Card title={`Nhận diện thực thể chờ duyệt · ${pendingMatches.length}`}>
               {run.entity_matches.length === 0 ? (
                 <p className="text-muted-foreground da-body-small">Không có liên kết chờ.</p>
@@ -183,7 +211,7 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
                         <div className="flex shrink-0 gap-da-sm">
                           <Button
                             size="sm"
-                            disabled={busy !== null || published}
+                            disabled={busy !== null || certified}
                             loading={busy === `${m.id}:split`}
                             onClick={() =>
                               act(
@@ -198,7 +226,7 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
                           <Button
                             size="sm"
                             kind="primary"
-                            disabled={busy !== null || published}
+                            disabled={busy !== null || certified}
                             loading={busy === `${m.id}:merge`}
                             onClick={() =>
                               act(

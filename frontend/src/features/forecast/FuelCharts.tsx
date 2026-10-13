@@ -136,18 +136,20 @@ export function DistributionChart({ forecast }: { forecast: FuelPriceForecast })
             dot={false}
             isAnimationActive={false}
           />
-          <ReferenceLine
-            x={forecast.previous.ceiling}
-            stroke="var(--foreground)"
-            strokeDasharray="3 3"
-            label={{
-              value: `Kỳ trước ${formatWhole(forecast.previous.ceiling)}`,
-              position: 'insideTopRight',
-              fill: 'var(--foreground)',
-              fontSize: 11,
-              offset: -14,
-            }}
-          />
+          {forecast.previous.ceiling !== null && (
+            <ReferenceLine
+              x={forecast.previous.ceiling}
+              stroke="var(--foreground)"
+              strokeDasharray="3 3"
+              label={{
+                value: `Kỳ trước ${formatWhole(forecast.previous.ceiling)}`,
+                position: 'insideTopRight',
+                fill: 'var(--foreground)',
+                fontSize: 11,
+                offset: -14,
+              }}
+            />
+          )}
           <ReferenceLine
             x={d.median}
             stroke="var(--info)"
@@ -181,6 +183,8 @@ interface WaterfallRow {
 export function waterfallRows(forecast: FuelPriceForecast): WaterfallRow[] {
   const { steps, expected, axis_from: axis } = forecast.decomposition;
   const previous = forecast.previous.ceiling;
+  // The steps start from the previous ceiling; without it there is nothing to decompose.
+  if (previous === null) return [];
   const rows: WaterfallRow[] = [
     {
       name: 'Kỳ trước',

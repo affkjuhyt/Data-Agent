@@ -59,8 +59,15 @@ class IndustryPack(Base):
     publisher: Mapped[str] = mapped_column(
         Text, comment="Nhà cung cấp hoặc khối kiến trúc của tổ chức"
     )
-    publisher_key_id: Mapped[str] = mapped_column(
-        Text, comment="Khoá công khai dùng kiểm chữ ký (BR-128)"
+    publisher_key_id: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Khoá công khai dùng kiểm chữ ký (BR-128); bắt buộc với gói vendor, gói của tổ chức có khoá khi phát hành phiên bản đầu (sửa 12/10/2026)",
+    )
+    origin: Mapped[str] = mapped_column(
+        Text,
+        server_default=sql_text("'vendor'"),
+        comment="vendor, organisation: organisation là gói tổ chức tự soạn qua POST /v1/packs; industry_code lấy theo organization.industry_code (thêm 12/10/2026)",
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
@@ -395,6 +402,12 @@ class MetricOverride(Base):
     approved_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     compliance_approved_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, comment="Chỉ số báo cáo cơ quan quản lý cần thêm AC06"
+    )
+    calibration_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("pack.calibration_run.id"),
+        nullable=True,
+        comment="FK calibration_run; lần chạy thử công thức trên dữ liệu thật (UC-09-03 bước 3, thêm 12/10/2026)",
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=sql_text("now()")

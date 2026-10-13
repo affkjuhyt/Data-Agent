@@ -14,20 +14,20 @@ import {
   type CollectionsSummary,
 } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
-import { CreateCollectionDialog, SuggestCollectionDialog } from '../documents/CollectionDialogs';
+import { CreateCollectionDialog } from '../documents/CollectionDialogs';
 
 /*
  * "v3.1 · Phi cấu trúc · Bộ sưu tập" (2068:3067, UC-05-06): files, mail, recordings and images
  * grouped into collections that run the same pipeline. A strip of pipeline health on top, then
  * one 385px card per collection; a card opens "P05 · Bộ sưu tập · Tài liệu & tiền xử lý".
- * The header follows the P04/P05 frames (breadcrumb "Dữ liệu / Tài liệu"). Creating a collection,
- * or asking the agent to propose one, has no flow yet.
+ * The header follows the P04/P05 frames (breadcrumb "Dữ liệu / Tài liệu"). "Tạo bộ sưu tập" opens
+ * its dialog; the agent does not propose collections (UC-05-06).
  */
 export default function CollectionsPage() {
   const { navigate } = useAppState();
   const collections = useV1(listCollections, []);
   const summary = useV1(getCollectionsSummary, []);
-  const [dialog, setDialog] = useState<'create' | 'suggest' | null>(null);
+  const [dialog, setDialog] = useState<'create' | null>(null);
 
   return (
     <div className="flex flex-col">
@@ -38,9 +38,6 @@ export default function CollectionsPage() {
         description="Tệp, văn bản, email, ghi âm và hình ảnh được nạp theo pipeline: nhận dạng, trích trường, chia đoạn, lập chỉ mục, liên kết với bản ghi có cấu trúc và che dữ liệu cá nhân."
         actions={
           <>
-            <Button icon="agent" onClick={() => setDialog('suggest')}>
-              Nhờ agent đề xuất bộ sưu tập
-            </Button>
             <Button kind="primary" onClick={() => setDialog('create')}>
               Tạo bộ sưu tập
             </Button>
@@ -106,15 +103,6 @@ export default function CollectionsPage() {
           navigate('data', 'COLLECTION', created.id);
         }}
       />
-      <SuggestCollectionDialog
-        open={dialog === 'suggest'}
-        onClose={() => setDialog(null)}
-        onCreated={() => {
-          setDialog(null);
-          collections.reload();
-          summary.reload();
-        }}
-      />
     </div>
   );
 }
@@ -134,12 +122,12 @@ function PipelineStrip({ summary }: { summary: CollectionsSummary }) {
     {
       tone: 'warning' as const,
       label: 'Chờ duyệt dữ liệu cá nhân',
-      value: `${formatNumber(summary.pii_batches_pending)} lô`,
+      value: `${formatNumber(summary.pii_issues_pending)} mục`,
     },
     {
       tone: 'success' as const,
       label: 'Độ phủ chỉ mục',
-      value: formatPercent(summary.index_coverage),
+      value: summary.index_coverage === null ? '—' : formatPercent(summary.index_coverage),
     },
   ];
   return (
