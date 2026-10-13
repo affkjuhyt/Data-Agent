@@ -28538,6 +28538,73 @@
     "title": "NotificationView",
     "type": "object"
    },
+   "OutputDraft": {
+    "properties": {
+     "columns": {
+      "items": {
+       "type": "object"
+      },
+      "title": "Columns",
+      "type": "array"
+     },
+     "consumers_text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Consumers Text"
+     },
+     "data_space_id": {
+      "format": "uuid",
+      "title": "Data Space Id",
+      "type": "string"
+     },
+     "input_jobs": {
+      "items": {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      "title": "Input Jobs",
+      "type": "array"
+     },
+     "notify_options": {
+      "items": {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      "title": "Notify Options",
+      "type": "array"
+     },
+     "table_name": {
+      "title": "Table Name",
+      "type": "string"
+     },
+     "write_mode": {
+      "default": "replace",
+      "enum": [
+       "replace",
+       "append",
+       "merge"
+      ],
+      "title": "Write Mode",
+      "type": "string"
+     }
+    },
+    "required": [
+     "table_name",
+     "data_space_id"
+    ],
+    "title": "OutputDraft",
+    "type": "object"
+   },
    "Override": {
     "additionalProperties": false,
     "description": "UC-10-03 3a: the number on the filed report differs from the system's.",
@@ -32406,6 +32473,22 @@
      "updated_at"
     ],
     "title": "PipelineDetail",
+    "type": "object"
+   },
+   "PipelineMessage": {
+    "additionalProperties": false,
+    "properties": {
+     "text": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "text"
+    ],
+    "title": "PipelineMessage",
     "type": "object"
    },
    "PipelinePatch": {
@@ -38963,55 +39046,6 @@
     "title": "ScenarioCreate",
     "type": "object"
    },
-   "SchedulePreview": {
-    "properties": {
-     "cron": {
-      "title": "Cron",
-      "type": "string"
-     },
-     "items": {
-      "items": {
-       "format": "date-time",
-       "type": "string"
-      },
-      "title": "Items",
-      "type": "array"
-     },
-     "skipped_days": {
-      "items": {
-       "format": "date",
-       "type": "string"
-      },
-      "title": "Skipped Days",
-      "type": "array"
-     },
-     "timezone": {
-      "title": "Timezone",
-      "type": "string"
-     },
-     "work_calendar_id": {
-      "anyOf": [
-       {
-        "format": "uuid",
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Work Calendar Id"
-     }
-    },
-    "required": [
-     "cron",
-     "timezone",
-     "work_calendar_id",
-     "items",
-     "skipped_days"
-    ],
-    "title": "SchedulePreview",
-    "type": "object"
-   },
    "SchedulePreviewIn": {
     "properties": {
      "count": {
@@ -41433,6 +41467,39 @@
      "code"
     ],
     "title": "Step",
+    "type": "object"
+   },
+   "StepPreview": {
+    "properties": {
+     "column": {
+      "title": "Column",
+      "type": "string"
+     },
+     "key_column": {
+      "title": "Key Column",
+      "type": "string"
+     },
+     "rows": {
+      "items": {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      "title": "Rows",
+      "type": "array"
+     },
+     "seq": {
+      "title": "Seq",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "seq",
+     "key_column",
+     "column"
+    ],
+    "title": "StepPreview",
     "type": "object"
    },
    "StepView": {
@@ -46711,6 +46778,55 @@
     "title": "Accepted",
     "type": "object"
    },
+   "services__api__modules__governance__admin_models__SchedulePreview": {
+    "properties": {
+     "cron": {
+      "title": "Cron",
+      "type": "string"
+     },
+     "items": {
+      "items": {
+       "format": "date-time",
+       "type": "string"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "skipped_days": {
+      "items": {
+       "format": "date",
+       "type": "string"
+      },
+      "title": "Skipped Days",
+      "type": "array"
+     },
+     "timezone": {
+      "title": "Timezone",
+      "type": "string"
+     },
+     "work_calendar_id": {
+      "anyOf": [
+       {
+        "format": "uuid",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Work Calendar Id"
+     }
+    },
+    "required": [
+     "cron",
+     "timezone",
+     "work_calendar_id",
+     "items",
+     "skipped_days"
+    ],
+    "title": "SchedulePreview",
+    "type": "object"
+   },
    "services__api__modules__ingest__schemas__Accepted": {
     "description": "A1.6: the body of a 202; Location names where the result appears.",
     "properties": {
@@ -47576,6 +47692,40 @@
      "updated_at"
     ],
     "title": "DataProductView",
+    "type": "object"
+   },
+   "services__api__modules__pipeline__schemas__SchedulePreview": {
+    "additionalProperties": false,
+    "properties": {
+     "cron": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cron"
+     },
+     "no_overlap": {
+      "default": true,
+      "title": "No Overlap",
+      "type": "boolean"
+     },
+     "on_failure": {
+      "default": "notify",
+      "enum": [
+       "notify",
+       "retry_then_notify",
+       "skip"
+      ],
+      "title": "On Failure",
+      "type": "string"
+     }
+    },
+    "title": "SchedulePreview",
     "type": "object"
    },
    "services__api__modules__qa__schemas__PlanView": {
@@ -100875,7 +101025,444 @@
     ]
    }
   },
+  "/v1/pipelines/{id}/messages": {
+   "post": {
+    "operationId": "sendPipelineMessage",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PipelineMessage"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PipelineDetail"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Gửi yêu cầu cho agent chuẩn bị dữ liệu",
+    "tags": [
+     "Biến đổi dữ liệu"
+    ],
+    "x-capability": [
+     "prepare_data"
+    ],
+    "x-use-cases": [
+     "UC-06-01"
+    ]
+   }
+  },
+  "/v1/pipelines/{id}/output-draft": {
+   "get": {
+    "operationId": "getPipelineOutputDraft",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OutputDraft"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Đọc bản nháp bảng đầu ra",
+    "tags": [
+     "Biến đổi dữ liệu"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-06-02"
+    ]
+   }
+  },
   "/v1/pipelines/{id}/schedule": {
+   "get": {
+    "operationId": "getPipelineSchedule",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ScheduleRequest"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Đọc lịch pipeline",
+    "tags": [
+     "Biến đổi dữ liệu"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-06-03"
+    ]
+   },
    "put": {
     "operationId": "schedulePipeline",
     "parameters": [
@@ -101025,6 +101612,315 @@
     ],
     "x-use-cases": [
      "UC-06-03"
+    ]
+   }
+  },
+  "/v1/pipelines/{id}/schedule:preview": {
+   "post": {
+    "operationId": "previewPipelineSchedule",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/services__api__modules__pipeline__schemas__SchedulePreview"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": {
+          "type": "string"
+         },
+         "title": "Response Previewpipelineschedule",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Xem trước lịch pipeline",
+    "tags": [
+     "Biến đổi dữ liệu"
+    ],
+    "x-capability": [
+     "prepare_data"
+    ],
+    "x-use-cases": [
+     "UC-06-03"
+    ]
+   }
+  },
+  "/v1/pipelines/{id}/steps/{seq}/preview": {
+   "get": {
+    "operationId": "previewPipelineStep",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "seq",
+      "required": true,
+      "schema": {
+       "title": "Seq",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/StepPreview"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Xem trước một bước",
+    "tags": [
+     "Biến đổi dữ liệu"
+    ],
+    "x-capability": [
+     "prepare_data"
+    ],
+    "x-use-cases": [
+     "UC-06-01"
     ]
    }
   },
@@ -109158,7 +110054,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "$ref": "#/components/schemas/SchedulePreview"
+         "$ref": "#/components/schemas/services__api__modules__governance__admin_models__SchedulePreview"
         }
        }
       },

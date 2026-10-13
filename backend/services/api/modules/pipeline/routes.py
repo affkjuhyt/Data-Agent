@@ -48,14 +48,18 @@ from services.api.modules.pipeline.schemas import (
     MartCreate,
     MartPatch,
     MaterializeRequest,
+    OutputDraft,
     PipelineCreate,
     PipelineDetail,
+    PipelineMessage,
     PipelinePatch,
     PipelineRunView,
     PipelineView,
     PreviewRequest,
+    SchedulePreview,
     ScheduleRequest,
     Step,
+    StepPreview,
     UndoRequest,
     WritebackCreate,
     WritebackView,
@@ -336,6 +340,36 @@ async def get_pipeline(
     )
 
 
+@router.get(
+    "/v1/pipelines/{id}/output-draft",
+    response_model=OutputDraft,
+    **endpoint("GET", "/v1/pipelines/{id}/output-draft", operation_id="getPipelineOutputDraft"),
+)
+async def get_pipeline_output_draft(
+    pipeline_id: PathId,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> OutputDraft:
+    async with transaction(ROLE, principal) as session:
+        row = await _pipeline(session, principal, data_space, pipeline_id)
+    columns: list[dict[str, Any]] = []
+    for seq, step in enumerate(row.steps if isinstance(row.steps, list) else [], start=1):
+        if isinstance(step, dict):
+            columns.append(
+                {
+                    "name": str(step.get("description") or f"step_{seq}"),
+                    "type": "unknown",
+                    "from_step": seq,
+                    "is_new": True,
+                }
+            )
+    return OutputDraft(
+        table_name=row.name.lower().replace(" ", "_")[:63],
+        data_space_id=row.data_space_id,
+        columns=columns,
+    )
+
+
 @router.patch(
     "/v1/pipelines/{id}",
     response_model=PipelineView,
@@ -450,6 +484,73 @@ async def preview_pipeline(
         # The worker fills rows_dropped per step and totals_check on this run (UC-06-01 step 3).
         response.headers["Location"] = f"/v1/pipeline-runs/{run.id}"
         return PipelineRunView.model_validate(run)
+
+
+@router.get(
+    "/v1/pipelines/{id}/steps/{seq}/preview",
+    response_model=StepPreview,
+    **endpoint("GET", "/v1/pipelines/{id}/steps/{seq}/preview", operation_id="previewPipelineStep"),
+)
+async def preview_pipeline_step(
+    pipeline_id: PathId,
+    seq: int,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> StepPreview:
+    async with transaction(ROLE, principal) as session:
+        row = await _pipeline(session, principal, data_space, pipeline_id)
+    steps = row.steps if isinstance(row.steps, list) else []
+    if seq < 1 or seq > len(steps):
+        raise Problem(404, "not_found", "Pipeline step not found.")
+    return StepPreview(
+        seq=seq,
+        key_column="id",
+        column="output",
+        rows=[
+            {
+                "key": "preview_pending",
+                "before": "—",
+                "after": "—",
+                "note": "Bản xem trước sẽ xuất hiện sau khi worker xử lý pipeline.",
+            }
+        ],
+    )
+
+
+@router.post(
+    "/v1/pipelines/{id}/messages",
+    response_model=PipelineDetail,
+    **endpoint("POST", "/v1/pipelines/{id}/messages", operation_id="sendPipelineMessage"),
+)
+async def send_pipeline_message(
+    body: PipelineMessage,
+    pipeline_id: PathId,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> PipelineDetail:
+    async with transaction(ROLE, principal) as session:
+        row = await _pipeline(session, principal, data_space, pipeline_id)
+        last = await session.scalar(
+            select(pl.PipelineRun)
+            .where(pl.PipelineRun.pipeline_id == row.id)
+            .order_by(pl.PipelineRun.started_at.desc(), pl.PipelineRun.id.desc())
+            .limit(1)
+        )
+        emit(
+            session,
+            principal,
+            "pipeline",
+            row.id,
+            "pipeline.message_requested",
+            pipeline_id=row.id,
+            data_space_id=data_space,
+            text=body.text.strip(),
+            requested_by=principal.user_id,
+        )
+    return PipelineDetail(
+        **PipelineView.model_validate(row).model_dump(),
+        last_run=PipelineRunView.model_validate(last) if last is not None else None,
+    )
 
 
 @router.post(
@@ -595,6 +696,51 @@ async def schedule_pipeline(
         )
         await session.flush()
         return PipelineView.model_validate(row)
+
+
+@router.get(
+    "/v1/pipelines/{id}/schedule",
+    response_model=ScheduleRequest,
+    **endpoint("GET", "/v1/pipelines/{id}/schedule", operation_id="getPipelineSchedule"),
+)
+async def get_pipeline_schedule(
+    pipeline_id: PathId,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> ScheduleRequest:
+    async with transaction(ROLE, principal) as session:
+        row = await _pipeline(session, principal, data_space, pipeline_id)
+    return ScheduleRequest(
+        cron=row.cron,
+        work_calendar_id=row.work_calendar_id,
+        trigger_on_job_id=row.trigger_on_job_id,
+        depends_on_pipeline_ids=list(row.depends_on_pipeline_ids or []),
+        no_overlap=row.no_overlap,
+        on_failure=row.on_failure,
+    )
+
+
+@router.post(
+    "/v1/pipelines/{id}/schedule:preview",
+    response_model=dict[str, str],
+    **endpoint(
+        "POST", "/v1/pipelines/{id}/schedule:preview", operation_id="previewPipelineSchedule"
+    ),
+)
+async def preview_pipeline_schedule(
+    body: SchedulePreview,
+    pipeline_id: PathId,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> dict[str, str]:
+    if body.cron is not None and not rules.valid_cron(body.cron):
+        raise invalid("cron", "cron takes five fields: minute hour day month weekday.")
+    async with transaction(ROLE, principal) as session:
+        await _pipeline(session, principal, data_space, pipeline_id)
+    text = f"Theo lịch cron {body.cron}" if body.cron else "Chạy thủ công"
+    if body.no_overlap:
+        text += "; không chạy chồng"
+    return {"text": text}
 
 
 # --- lineage -------------------------------------------------------------------------------------

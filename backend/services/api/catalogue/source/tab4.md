@@ -245,7 +245,7 @@ Dịch vụ: Document service (document). 15 endpoint.
 
 ### Biến đổi dữ liệu
 
-Dịch vụ: Pipeline service (pipeline). 13 endpoint.
+Dịch vụ: Pipeline service (pipeline). 18 endpoint.
 
 | Phương thức | Đường dẫn | Chức năng | Use case | Quyền |
 | --- | --- | --- | --- | --- |
@@ -253,8 +253,13 @@ Dịch vụ: Pipeline service (pipeline). 13 endpoint.
 | POST | /v1/pipelines | Tạo pipeline | 06-01 | prepare\_data |
 | PATCH | /v1/pipelines/{id} | Sửa các bước | 06-01 | prepare\_data |
 | POST | /v1/pipelines/{id}:preview | Chạy thử trên mẫu | 06-01 | prepare\_data |
+| GET | /v1/pipelines/{id}/steps/{seq}/preview | Xem trước một bước | 06-01 | prepare\_data |
+| POST | /v1/pipelines/{id}/messages | Gửi yêu cầu cho agent chuẩn bị dữ liệu | 06-01 | prepare\_data |
 | POST | /v1/pipelines/{id}:materialize | Lưu thành bảng | 06-02 | prepare\_data |
 | PUT | /v1/pipelines/{id}/schedule | Đặt lịch | 06-03 | prepare\_data |
+| GET | /v1/pipelines/{id}/schedule | Đọc lịch pipeline | 06-03 | ask |
+| POST | /v1/pipelines/{id}/schedule:preview | Xem trước lịch pipeline | 06-03 | prepare\_data |
+| GET | /v1/pipelines/{id}/output-draft | Đọc bản nháp bảng đầu ra | 06-02 | ask |
 | GET | /v1/lineage | Dòng dữ liệu của một đối tượng | 06-05 | ask |
 | POST | /v1/marts | Tạo data mart | 06-06 | admin\_data |
 | POST | /v1/data-products | Tạo sản phẩm dữ liệu | 06-06 | admin\_data |

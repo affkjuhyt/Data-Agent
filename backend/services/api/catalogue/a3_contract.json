@@ -2068,6 +2068,35 @@
    "errors": [],
    "request_text": "sample_rows"
   },
+  "GET /v1/pipelines/{id}/steps/{seq}/preview": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Xem trước một bước pipeline",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": ""
+  },
+  "POST /v1/pipelines/{id}/messages": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {
+    "text": true
+   },
+   "query": [],
+   "returns": "Pipeline sau khi agent tiếp nhận yêu cầu",
+   "errors": [],
+   "request_text": "text*"
+  },
   "POST /v1/pipelines/{id}:materialize": {
    "group": "Biến đổi dữ liệu",
    "groups": [
@@ -2104,6 +2133,43 @@
    "returns": "Pipeline",
    "errors": [],
    "request_text": "cron, work_calendar_id, trigger_on_job_id, depends_on_pipeline_ids, no_overlap, on_failure"
+  },
+  "GET /v1/pipelines/{id}/schedule": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Lịch pipeline",
+   "errors": [],
+   "request_text": ""
+  },
+  "POST /v1/pipelines/{id}/schedule:preview": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {
+    "cron": false,
+    "no_overlap": false,
+    "on_failure": false
+   },
+   "query": [],
+   "returns": "Mô tả lịch pipeline",
+   "errors": [],
+   "request_text": "cron, no_overlap, on_failure"
+  },
+  "GET /v1/pipelines/{id}/output-draft": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Bản nháp bảng đầu ra",
+   "errors": [],
+   "request_text": ""
   },
   "GET /v1/lineage": {
    "group": "Biến đổi dữ liệu",

@@ -1576,6 +1576,30 @@
   },
   {
    "group": "Biến đổi dữ liệu",
+   "method": "GET",
+   "path": "/v1/pipelines/{id}/steps/{seq}/preview",
+   "summary": "Xem trước một bước",
+   "use_cases": [
+    "06-01"
+   ],
+   "capability": [
+    "prepare_data"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "POST",
+   "path": "/v1/pipelines/{id}/messages",
+   "summary": "Gửi yêu cầu cho agent chuẩn bị dữ liệu",
+   "use_cases": [
+    "06-01"
+   ],
+   "capability": [
+    "prepare_data"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
    "method": "POST",
    "path": "/v1/pipelines/{id}:materialize",
    "summary": "Lưu thành bảng",
@@ -1596,6 +1620,42 @@
    ],
    "capability": [
     "prepare_data"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "GET",
+   "path": "/v1/pipelines/{id}/schedule",
+   "summary": "Đọc lịch pipeline",
+   "use_cases": [
+    "06-03"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "POST",
+   "path": "/v1/pipelines/{id}/schedule:preview",
+   "summary": "Xem trước lịch pipeline",
+   "use_cases": [
+    "06-03"
+   ],
+   "capability": [
+    "prepare_data"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
+   "method": "GET",
+   "path": "/v1/pipelines/{id}/output-draft",
+   "summary": "Đọc bản nháp bảng đầu ra",
+   "use_cases": [
+    "06-02"
+   ],
+   "capability": [
+    "ask"
    ]
   },
   {

@@ -70,6 +70,10 @@ class PreviewRequest(_Body):
     sample_rows: int = Field(default=MAX_SAMPLE_ROWS, ge=1, le=MAX_SAMPLE_ROWS)
 
 
+class PipelineMessage(_Body):
+    text: str = Field(min_length=1, max_length=4_000)
+
+
 class MaterializeRequest(_Body):
     # The table lands in the Data Space's work schema ws_{data_space}; a plain identifier.
     table_name: str = Field(pattern=r"^[a-z_][a-z0-9_]{0,62}$")
@@ -85,6 +89,29 @@ class ScheduleRequest(_Body):
     depends_on_pipeline_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
     no_overlap: bool = True
     on_failure: OnFailure = "notify"
+
+
+class SchedulePreview(_Body):
+    cron: str | None = Field(default=None, max_length=200)
+    no_overlap: bool = True
+    on_failure: OnFailure = "notify"
+
+
+class StepPreview(BaseModel):
+    seq: int
+    key_column: str
+    column: str
+    rows: list[dict[str, str]] = Field(default_factory=list)
+
+
+class OutputDraft(BaseModel):
+    table_name: str
+    data_space_id: uuid.UUID
+    write_mode: Literal["replace", "append", "merge"] = "replace"
+    columns: list[dict[str, Any]] = Field(default_factory=list)
+    consumers_text: str | None = None
+    input_jobs: list[dict[str, str]] = Field(default_factory=list)
+    notify_options: list[dict[str, str]] = Field(default_factory=list)
 
 
 class PipelineView(_View):
