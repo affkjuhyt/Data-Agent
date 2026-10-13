@@ -142,39 +142,60 @@ function DriftBody({ drift, onChanged }: { drift: SchemaDrift; onChanged: () => 
                   <tr key={s.name} className="border-b border-border text-foreground">
                     <td className="px-da-lg py-[10px]">{s.name}</td>
                     <td className="px-da-lg py-[10px]">{s.measure}</td>
-                    <td className="px-da-lg py-[10px]">{fmt(s.value)}</td>
-                    <td className="px-da-lg py-[10px]">{fmt1(s.weight)}</td>
+                    <td className="px-da-lg py-[10px]">
+                      {typeof s.value === 'number' ? fmt(s.value) : s.value}
+                    </td>
+                    <td className="px-da-lg py-[10px]">
+                      {s.weight === null ? '—' : fmt1(s.weight)}
+                    </td>
                   </tr>
                 ))}
-                <tr>
-                  <td className="px-da-lg py-[10px] text-foreground da-heading-3">Tổng</td>
-                  <td className="px-da-lg py-[10px] text-muted-foreground">
-                    Ngưỡng nhẹ {fmt(drift.thresholds.light)} · nặng {fmt1(drift.thresholds.heavy)}
-                  </td>
-                  <td
-                    className={cn(
-                      'px-da-lg py-[10px] da-heading-3',
-                      drift.drift_score >= drift.thresholds.heavy
-                        ? 'text-error'
-                        : 'text-foreground',
-                    )}
-                  >
-                    {fmt(drift.drift_score)}
-                  </td>
-                  <td />
-                </tr>
+                {drift.drift_score !== null && drift.thresholds ? (
+                  <tr>
+                    <td className="px-da-lg py-[10px] text-foreground da-heading-3">Tổng</td>
+                    <td className="px-da-lg py-[10px] text-muted-foreground">
+                      Ngưỡng nhẹ {fmt(drift.thresholds.light)} · nặng {fmt1(drift.thresholds.heavy)}
+                    </td>
+                    <td
+                      className={cn(
+                        'px-da-lg py-[10px] da-heading-3',
+                        drift.drift_score >= drift.thresholds.heavy
+                          ? 'text-error'
+                          : 'text-foreground',
+                      )}
+                    >
+                      {fmt(drift.drift_score)}
+                    </td>
+                    <td />
+                  </tr>
+                ) : (
+                  <tr>
+                    <td className="px-da-lg py-[10px] text-foreground da-heading-3">Mức</td>
+                    <td
+                      colSpan={3}
+                      className={cn(
+                        'px-da-lg py-[10px] da-heading-3',
+                        drift.severity === 'major' ? 'text-error' : 'text-foreground',
+                      )}
+                    >
+                      {drift.severity === 'major' ? 'Nặng' : 'Nhẹ'}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </Card>
-          <Card title="Ảnh hưởng" className="w-[520px] shrink-0 max-[1279px]:w-full">
-            <ul className="flex flex-col gap-da-lg">
-              {drift.impact.map((i) => (
-                <li key={i.text}>
-                  <StatusDot tone={i.tone}>{i.text}</StatusDot>
-                </li>
-              ))}
-            </ul>
-          </Card>
+          {drift.impact.length > 0 && (
+            <Card title="Ảnh hưởng" className="w-[520px] shrink-0 max-[1279px]:w-full">
+              <ul className="flex flex-col gap-da-lg">
+                {drift.impact.map((i) => (
+                  <li key={i.text}>
+                    <StatusDot tone={i.tone}>{i.text}</StatusDot>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
         </div>
         {proposed && (
           <Card
@@ -211,15 +232,17 @@ function DriftBody({ drift, onChanged }: { drift: SchemaDrift; onChanged: () => 
             </table>
           </Card>
         )}
-        <Card title={`Hoàn tác về v${drift.active_version.version} sẽ làm gì`}>
-          <ol className="flex flex-col gap-[6px] text-foreground da-body-small">
-            {drift.revert_steps.map((step, i) => (
-              <li key={step}>
-                {i + 1}. {step}
-              </li>
-            ))}
-          </ol>
-        </Card>
+        {drift.revert_steps.length > 0 && (
+          <Card title={`Hoàn tác về v${drift.active_version.version} sẽ làm gì`}>
+            <ol className="flex flex-col gap-[6px] text-foreground da-body-small">
+              {drift.revert_steps.map((step, i) => (
+                <li key={step}>
+                  {i + 1}. {step}
+                </li>
+              ))}
+            </ol>
+          </Card>
+        )}
       </div>
       <ConfirmDialog
         open={confirmRevert}

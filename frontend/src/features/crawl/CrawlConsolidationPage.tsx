@@ -23,7 +23,7 @@ import { useV1 } from '../../lib/v1/useV1';
  * a person: entity links the agent was unsure of, and gaps between sources above the materiality
  * threshold, which already opened a Cần bạn request (BR-155). Publishing waits on both.
  */
-const fmt = (n: number) => n.toFixed(2).replace('.', ',');
+const fmt = (n: number | null) => (n === null ? '—' : n.toFixed(2).replace('.', ','));
 
 const STEP_TONE = { done: 'success', waiting: 'warning', pending: 'neutral' } as const;
 
@@ -49,6 +49,8 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
     openConflicts.length && `${openConflicts.length} xung đột`,
   ].filter(Boolean);
   const version = run.next_dataset_version;
+  // Publishing by hand is PROPOSAL; A2's run publishes itself, so without a version there is no button.
+  const canPublish = !published && version !== null;
 
   const act = async (key: string, call: () => Promise<unknown>, message: string) => {
     setBusy(key);
@@ -85,7 +87,7 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
         title={run.title}
         description={
           published
-            ? `${run.summary_text} · đã phát hành v${version}`
+            ? `${run.summary_text} · đã phát hành${version === null ? '' : ` v${version}`}`
             : waiting.length
               ? `${run.summary_text} · chờ ${waiting.join(' và ')} trước khi phát hành`
               : `${run.summary_text} · sẵn sàng phát hành`
@@ -95,7 +97,7 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
             <Tooltip content="Trình sửa đặc tả hợp nhất đang được làm.">
               <Button disabled>Sửa đặc tả hợp nhất</Button>
             </Tooltip>
-            {!published &&
+            {canPublish &&
               (waiting.length ? (
                 <Tooltip content={`Còn ${waiting.join(' và ')} chờ quyết định.`}>
                   {publishButton}
@@ -107,55 +109,70 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
         }
       />
       <div className="flex flex-col gap-da-xl px-da-3xl pb-da-2xl pt-da-xl">
-        {published && <Notice tone="success">Đã phát hành dataset v{version}; đang nhúng.</Notice>}
+        {published && (
+          <Notice tone="success">
+            Đã phát hành dataset{version === null ? '' : ` v${version}`}; đang nhúng.
+          </Notice>
+        )}
+        {run.status === 'failed' && <Notice tone="error">Lượt hợp nhất thất bại.</Notice>}
         {error && <Notice tone="error">Không thực hiện được: {error}</Notice>}
-        <ol aria-label="Các bước hợp nhất" className="flex gap-da-sm max-[1023px]:flex-wrap">
-          {run.steps.map((s) => (
-            <li
-              key={s.label}
-              className="min-w-[120px] flex-1 rounded-sm border border-border bg-card px-da-md py-[5px] da-caption"
-            >
-              <StatusDot tone={STEP_TONE[s.state]}>{stepLabel(run, s.label, s.state)}</StatusDot>
-            </li>
-          ))}
-        </ol>
+        {run.steps.length > 0 && (
+          <ol aria-label="Các bước hợp nhất" className="flex gap-da-sm max-[1023px]:flex-wrap">
+            {run.steps.map((s) => (
+              <li
+                key={s.label}
+                className="min-w-[120px] flex-1 rounded-sm border border-border bg-card px-da-md py-[5px] da-caption"
+              >
+                <StatusDot tone={STEP_TONE[s.state]}>{stepLabel(run, s.label, s.state)}</StatusDot>
+              </li>
+            ))}
+          </ol>
+        )}
         <div className="flex items-start gap-da-xl max-[1279px]:flex-col">
-          <Card title={run.table.title} className="min-w-0 flex-1">
-            <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border da-body-small">
-              <thead>
-                <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                  {run.table.columns.map((c) => (
-                    <th key={c} className="px-da-lg py-da-md font-normal">
-                      {c}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {run.table.rows.map((r, i) => (
-                  <tr
-                    key={r[0]}
-                    className={cn(
-                      'border-b border-border last:border-b-0 text-foreground',
-                      i === run.table.highlighted_row && 'bg-accent',
-                    )}
-                  >
-                    {r.map((cell, j) => (
-                      <td key={j} className="px-da-lg py-[10px]">
-                        {cell}
-                      </td>
+          {run.table && (
+            <Card title={run.table.title} className="min-w-0 flex-1">
+              <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border da-body-small">
+                <thead>
+                  <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
+                    {run.table.columns.map((c) => (
+                      <th key={c} className="px-da-lg py-da-md font-normal">
+                        {c}
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {run.table.note && <p className="text-muted-foreground da-caption">{run.table.note}</p>}
-          </Card>
-          <div className="flex w-[476px] shrink-0 flex-col gap-da-xl max-[1279px]:w-full">
-            <Card title="Đoạn tóm tắt sẽ nhúng">
-              <p className="text-foreground da-body-small">{run.summary_paragraph.text}</p>
-              <p className="text-muted-foreground da-caption">{run.summary_paragraph.provenance}</p>
+                </thead>
+                <tbody>
+                  {run.table.rows.map((r, i) => (
+                    <tr
+                      key={r[0]}
+                      className={cn(
+                        'border-b border-border last:border-b-0 text-foreground',
+                        i === run.table?.highlighted_row && 'bg-accent',
+                      )}
+                    >
+                      {r.map((cell, j) => (
+                        <td key={j} className="px-da-lg py-[10px]">
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {run.table.note && (
+                <p className="text-muted-foreground da-caption">{run.table.note}</p>
+              )}
             </Card>
+          )}
+          <div className="flex w-[476px] shrink-0 flex-col gap-da-xl max-[1279px]:w-full">
+            {run.summary_paragraph && (
+              <Card title="Đoạn tóm tắt sẽ nhúng">
+                <p className="text-foreground da-body-small">{run.summary_paragraph.text}</p>
+                <p className="text-muted-foreground da-caption">
+                  {run.summary_paragraph.provenance}
+                </p>
+              </Card>
+            )}
             <Card title={`Nhận diện thực thể chờ duyệt · ${pendingMatches.length}`}>
               {run.entity_matches.length === 0 ? (
                 <p className="text-muted-foreground da-body-small">Không có liên kết chờ.</p>

@@ -6,7 +6,7 @@
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { createSource, getSource, listSourceRows, testSource } from './sources';
+import { createSource, getSource, listSourceDrifts, listSourceRows, testSource } from './sources';
 
 const at = '2026-10-12T08:00:00Z';
 const source = (extra: object = {}) => ({
@@ -162,5 +162,17 @@ describe('sources from the api', () => {
       { key: 'login', title: 'Kết nối và đăng nhập', ok: false, detail: 'Sai mật khẩu' },
     ]);
     expect(test.tables).toEqual([]);
+  });
+
+  it('leaves the crawl sources’ drifts out of the connected sources’ list', async () => {
+    server.use(
+      http.get('*/v1/schema-drifts', () =>
+        HttpResponse.json({
+          items: [{ id: 'd-1', source_id: 'cs-1', drift_kind: 'structural', severity: 'major' }],
+          next_page_token: '',
+        }),
+      ),
+    );
+    expect((await listSourceDrifts()).items).toEqual([]);
   });
 });

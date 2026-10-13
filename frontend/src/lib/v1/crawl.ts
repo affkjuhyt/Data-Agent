@@ -84,10 +84,13 @@ const ddmm = (iso: string) => {
 /*
  * The list row from CrawlSourceSummary. The health is the first of the source's problems the
  * server reports (has_issue's inputs); scope, format and schedule in words are PROPOSAL, so the
- * row shows the domains, the kind and the cron as stored. The open drift is not linked: its
- * screen reads GET /schema-drifts/{id}, which A2 does not serve.
+ * row shows the domains, the kind and the cron as stored.
  */
-function readCrawlSource(raw: CrawlSourceWire, reviewRunId: string | null): CrawlSource {
+function readCrawlSource(
+  raw: CrawlSourceWire,
+  reviewRunId: string | null,
+  driftId: string | null,
+): CrawlSource {
   if (raw.display) return raw.display;
   const blocked = raw.consecutive_blocked > 0;
   const health: CrawlHealth =
@@ -125,26 +128,37 @@ function readCrawlSource(raw: CrawlSourceWire, reviewRunId: string | null): Craw
         : Math.round(Number(raw.sample_accuracy) * 1000) / 10,
     pending_review: raw.pending_review ?? 0,
     review_gate: raw.review_gate as ReviewGate,
-    drift_id: null,
+    drift_id: driftId,
     review_run_id: reviewRunId,
   };
 }
 
 /*
- * The row links its review queue to a run; the summary has no run id, so one more read lists the
- * runs in review (newest first) and each source takes its newest.
+ * The row links its review queue to a run and its open drift; the summary carries neither id, so
+ * two more reads list the runs in review and the open drifts (newest first), each source taking
+ * its newest.
  */
 export const listCrawlSources = async (): Promise<Page<CrawlSource>> => {
-  const [sources, runs] = await Promise.all([
+  const [sources, runs, drifts] = await Promise.all([
     v1Get<Page<CrawlSourceWire>>('/crawl-sources', { page_size: 500 }),
     v1Get<Page<Schemas['CrawlRunView']>>('/crawl-runs', { status: 'in_review', page_size: 500 }),
+    v1Get<Page<Schemas['SchemaDriftItem']>>('/schema-drifts', {
+      resolution: 'open',
+      page_size: 500,
+    }),
   ]);
-  const reviewRun = new Map<string, string>();
-  for (const run of runs.items)
-    if (!reviewRun.has(run.source_id)) reviewRun.set(run.source_id, run.id);
+  const newest = (rows: { id: string; source_id: string }[]) => {
+    const by = new Map<string, string>();
+    for (const row of rows) if (!by.has(row.source_id)) by.set(row.source_id, row.id);
+    return by;
+  };
+  const reviewRun = newest(runs.items);
+  const openDrift = newest(drifts.items);
   return {
     ...sources,
-    items: sources.items.map((s) => readCrawlSource(s, reviewRun.get(s.id) ?? null)),
+    items: sources.items.map((s) =>
+      readCrawlSource(s, reviewRun.get(s.id) ?? null, openDrift.get(s.id) ?? null),
+    ),
   };
 };
 
@@ -342,9 +356,13 @@ export interface SchemaDrift {
   /** PROPOSAL: what happened and why the run is quarantined, in one line. */
   summary_text: string;
   drift_kind: 'structural' | 'semantic';
-  drift_score: number;
-  thresholds: { light: number; heavy: number };
-  signals: { name: string; measure: string; value: number; weight: number }[];
+  /** major: a key field lost, required fields under 80% or a format change. */
+  severity: 'minor' | 'major';
+  /** PROPOSAL: the score and the thresholds it is held against; signals carries no fixed key. */
+  drift_score: number | null;
+  thresholds: { light: number; heavy: number } | null;
+  /** The jsonb signals as recorded; measure and weight are PROPOSAL. */
+  signals: { name: string; measure: string; value: number | string; weight: number | null }[];
   /** PROPOSAL: what the drift touches, each line with a tone. */
   impact: { text: string; tone: 'warning' | 'info' | 'success' }[];
   active_version: { id: string; version: number };
@@ -362,9 +380,102 @@ export interface SchemaDrift {
   resolution: 'approved_new' | 'manual_fix' | 'reverted' | 'false_alarm' | null;
 }
 
-/** PROPOSAL: GET /v1/schema-drifts/{id} (A2 only lists them). */
-export const getSchemaDrift = async (id: string) =>
-  v1Get<SchemaDrift>(`/schema-drifts/${pathId(id)}`);
+type DriftWire = Schemas['SchemaDriftItem'] & { display?: SchemaDrift };
+
+const DRIFT_ACTION: Record<string, string> = {
+  auto_remap: 'Agent đã tự ánh xạ lại các trường',
+  revert: 'Nguồn đã hoàn tác về phiên bản trước',
+  paused: 'Nguồn tạm dừng đến khi có người quyết',
+  quarantine: 'Lượt thu bị cách ly, chưa phát hành',
+};
+
+type FieldMap = Map<string, SchemaField>;
+const fieldsOf = (raw: Schemas['CrawlSchemaVersionView'] | undefined | null): FieldMap =>
+  new Map(
+    (raw?.fields ?? [])
+      .map(readField)
+      .filter((f): f is SchemaField => f !== null)
+      .map((f) => [f.name, f]),
+  );
+const fieldText = (f: SchemaField) =>
+  [f.type, f.unit, f.locator !== '—' ? f.locator : null].filter(Boolean).join(' · ');
+
+/** Field by field between the version in use and the proposal, from both versions' fields. */
+function diffFields(before: FieldMap, after: FieldMap): SchemaDrift['changes'] {
+  const changes: SchemaDrift['changes'] = [];
+  for (const [name, f] of before) {
+    const next = after.get(name);
+    if (!next)
+      changes.push({
+        change: 'remove',
+        field: name,
+        before: fieldText(f),
+        after: '—',
+        test_text: '',
+      });
+    else if (fieldText(next) !== fieldText(f))
+      changes.push({
+        change: 'modify',
+        field: name,
+        before: fieldText(f),
+        after: fieldText(next),
+        test_text: '',
+      });
+  }
+  for (const [name, f] of after)
+    if (!before.has(name))
+      changes.push({ change: 'add', field: name, before: '—', after: fieldText(f), test_text: '' });
+  return changes;
+}
+
+/*
+ * One drift as its screen reads it. A2 only lists drifts, so it is found in the list; its source's
+ * name and the version numbers come from the source and its schemas. Title and summary say what
+ * the server recorded (kind, severity, the action taken); the impact and the revert steps are
+ * PROPOSAL, left empty.
+ */
+export const getSchemaDrift = async (id: string): Promise<SchemaDrift> => {
+  const page = await v1Get<Page<DriftWire>>('/schema-drifts', { page_size: 500 });
+  const raw = page.items.find((d) => d.id === id);
+  if (!raw) throw new Error('Không tìm thấy sự cố đổi cấu trúc.');
+  if (raw.display) return raw.display;
+  const [source, schemas] = await Promise.all([
+    v1Get<Schemas['CrawlSourceDetail']>(`/crawl-sources/${pathId(raw.source_id)}`),
+    v1Get<Page<Schemas['CrawlSchemaVersionView']>>(
+      `/crawl-sources/${pathId(raw.source_id)}/schemas`,
+      { page_size: 500 },
+    ),
+  ]);
+  const from = schemas.items.find((v) => v.id === raw.from_version_id);
+  const proposed =
+    raw.proposed_version ?? schemas.items.find((v) => v.id === raw.proposed_version_id) ?? null;
+  const signals = Object.entries((raw.signals ?? {}) as Record<string, unknown>).flatMap(
+    ([name, value]) =>
+      typeof value === 'number' || typeof value === 'string'
+        ? [{ name, measure: '', value, weight: null }]
+        : [],
+  );
+  const semantic = raw.drift_kind === 'semantic';
+  const major = raw.severity === 'major';
+  return {
+    id: raw.id,
+    source_id: raw.source_id,
+    source_name: source.name,
+    title: `${semantic ? 'Lệch ngầm' : 'Thay đổi cấu trúc'} ${major ? 'nặng' : 'nhẹ'} · lượt ${ddmm(raw.created_at).slice(0, 5)}`,
+    summary_text: DRIFT_ACTION[raw.action] ?? raw.action,
+    drift_kind: raw.drift_kind as SchemaDrift['drift_kind'],
+    severity: raw.severity as SchemaDrift['severity'],
+    drift_score: null,
+    thresholds: null,
+    signals,
+    impact: [],
+    active_version: { id: raw.from_version_id, version: from?.version ?? 0 },
+    proposed_version: proposed ? { id: proposed.id, version: proposed.version } : null,
+    changes: proposed ? diffFields(fieldsOf(from), fieldsOf(proposed)) : [],
+    revert_steps: [],
+    resolution: (raw.resolution ?? null) as SchemaDrift['resolution'],
+  };
+};
 
 /** A2: :resolve — closes the Cần bạn schema_drift request; the source runs again. */
 export const resolveSchemaDrift = async (
@@ -374,7 +485,7 @@ export const resolveSchemaDrift = async (
     proposed_version_id?: string;
     note?: string;
   },
-) => v1Send<SchemaDrift>('POST', `/schema-drifts/${pathId(id)}:resolve`, body);
+) => v1Send<Schemas['SchemaDriftItem']>('POST', `/schema-drifts/${pathId(id)}:resolve`, body);
 
 /* ─── Duyệt dữ liệu thu thập (UC-14-04) ───────────────────────────────── */
 
@@ -582,23 +693,30 @@ export interface ConsolidationRun {
   spec_name: string;
   title: string;
   summary_text: string;
-  status: 'pending_review' | 'published';
-  next_dataset_version: number;
+  status: 'pending_review' | 'published' | 'failed';
+  /**
+   * PROPOSAL, with :publish: the version a person publishes. A2's run publishes itself when the
+   * worker finishes (status published, dataset_version_id set), so null there and no button.
+   */
+  next_dataset_version: number | null;
+  /** PROPOSAL: the steps the run went through. */
   steps: { label: string; state: 'done' | 'waiting' | 'pending' }[];
+  /** PROPOSAL: the consolidated table. */
   table: {
     title: string;
     columns: string[];
     rows: string[][];
     highlighted_row: number | null;
     note: string | null;
-  };
-  /** Only the table, claims and this paragraph are embedded (BR-154). */
-  summary_paragraph: { text: string; provenance: string };
+  } | null;
+  /** Only the table, claims and this paragraph are embedded (BR-154). PROPOSAL. */
+  summary_paragraph: { text: string; provenance: string } | null;
+  /** A2 EntityLink, pending for the spec's entity type and sources. */
   entity_matches: {
     id: string;
     alias: string;
     canonical: string;
-    score: number;
+    score: number | null;
     reason: string;
     decision: 'merge' | 'split' | null;
   }[];
@@ -606,13 +724,76 @@ export interface ConsolidationRun {
   conflicts: { text: string; open: boolean }[];
 }
 
-export const getConsolidationRun = async (id: string) =>
-  v1Get<ConsolidationRun>(`/consolidation-runs/${pathId(id)}`);
+type ConsolidationWire = Schemas['ConsolidationRunView'] & { display?: ConsolidationRun };
 
-/** PROPOSAL: POST /v1/entity-matches/{id}:decide — merge the alias into the entity, or keep apart. */
+const LINK_METHOD: Record<string, string> = {
+  identifier: 'khớp mã định danh',
+  exact: 'khớp tên chính xác',
+  // BR-169: a fuzzy match under 0.95 waits for a person.
+  fuzzy: 'khớp gần đúng',
+  human: 'người quyết',
+};
+
+/*
+ * The run with what the api records of it (counts in and out, claims, embedded chunks, conflicts
+ * opened) and the entity links still waiting for its spec's entity type among its sources. The
+ * conflicts themselves are in Xung đột; the run only counts them.
+ */
+export const getConsolidationRun = async (id: string): Promise<ConsolidationRun> => {
+  const run = await v1Get<ConsolidationWire>(`/consolidation-runs/${pathId(id)}`);
+  if (run.display) return run.display;
+  const specs = await v1Get<Page<Schemas['ConsolidationSpecView']>>('/consolidation-specs', {
+    page_size: 500,
+  });
+  const spec = specs.items.find((s) => s.id === run.spec_id);
+  const links = spec
+    ? await v1Get<Page<Schemas['EntityLinkView']>>('/entity-links', {
+        entity_type: spec.entity_type,
+        status: 'pending',
+        page_size: 500,
+      })
+    : { items: [] };
+  const sources = new Set(spec?.source_ids ?? []);
+  const name = spec?.name ?? 'Đặc tả hợp nhất';
+  return {
+    id: run.id,
+    spec_name: name,
+    title: `Hợp nhất ${name} · ${ddmm(run.started_at)}`,
+    summary_text: [
+      `${run.records_in} bản ghi vào, ${run.records_out} ra`,
+      `${run.claims_created} khẳng định`,
+      `${run.chunks_embedded} đoạn nhúng`,
+    ].join(' · '),
+    status:
+      run.status === 'published'
+        ? 'published'
+        : run.status === 'failed'
+          ? 'failed'
+          : 'pending_review',
+    next_dataset_version: null,
+    steps: [],
+    table: null,
+    summary_paragraph: null,
+    entity_matches: links.items
+      .filter((l) => sources.has(l.source_id))
+      .map((l) => ({
+        id: l.id,
+        alias: l.source_key,
+        canonical: l.canonical_key,
+        score: l.match_score === null ? null : Number(l.match_score),
+        reason: LINK_METHOD[l.method] ?? l.method,
+        decision: null,
+      })),
+    conflicts: run.conflicts_opened
+      ? [{ text: `${run.conflicts_opened} xung đột giữa nguồn mở ở Xung đột (BR-155)`, open: true }]
+      : [],
+  };
+};
+
+/** A2: POST /v1/entity-links/{id}:decide — merge confirms the link, keeping apart rejects it. */
 export const decideEntityMatch = async (id: string, decision: 'merge' | 'split') =>
-  v1Send<{ id: string; decision: string }>('POST', `/entity-matches/${pathId(id)}:decide`, {
-    decision,
+  v1Send<Schemas['EntityLinkView']>('POST', `/entity-links/${pathId(id)}:decide`, {
+    status: decision === 'merge' ? 'confirmed' : 'rejected',
   });
 
 /** PROPOSAL: :publish — the dataset version, once no entity match or conflict is open. */

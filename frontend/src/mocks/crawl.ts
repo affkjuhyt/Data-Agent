@@ -310,6 +310,7 @@ function driftFixture(): SchemaDrift {
     summary_text:
       'Điểm lệch 0,62 vượt ngưỡng 0,4: nguồn đã tạm ngưng, dữ liệu lượt bị cách ly, chờ người quyết (BR-152) · loại: cấu trúc',
     drift_kind: 'structural',
+    severity: 'major',
     drift_score: 0.62,
     thresholds: { light: 0.15, heavy: 0.4 },
     signals: [
@@ -597,6 +598,14 @@ const runWire = (v: CrawlRun) => ({
   records_extracted: v.record_count,
   display: v,
 });
+const driftWire = (v: SchemaDrift) => ({
+  id: v.id,
+  source_id: v.source_id,
+  drift_kind: v.drift_kind,
+  severity: v.severity,
+  resolution: v.resolution,
+  display: v,
+});
 const recordWire = (v: ExtractedRecord) => ({
   id: v.id,
   status: v.status === 'confirmed' ? 'approved' : v.status,
@@ -634,14 +643,21 @@ export function createCrawlHandlers() {
   return [
     http.get('*/v1/consolidation-runs/:id', ({ params }) =>
       params.id === consolidation.id
-        ? HttpResponse.json(consolidation)
+        ? HttpResponse.json({
+            id: consolidation.id,
+            status: consolidation.status === 'published' ? 'published' : 'running',
+            display: consolidation,
+          })
         : problem(404, 'not_found', 'Không tìm thấy lượt hợp nhất.'),
     ),
-    http.post('*/v1/entity-matches/:action', async ({ params, request }) => {
+    // A2 EntityLinkDecision: confirmed merges the alias into the entity, rejected keeps it apart.
+    http.post('*/v1/entity-links/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
       const match = consolidation.entity_matches.find((m) => m.id === id);
       if (!match || verb !== 'decide') return problem(404, 'not_found', 'Không tìm thấy liên kết.');
-      const { decision } = (await request.json()) as { decision: 'merge' | 'split' };
+      if (match.decision) return problem(409, 'invalid_state', 'Liên kết đã được quyết.');
+      const { status } = (await request.json()) as { status: 'confirmed' | 'rejected' };
+      const decision = status === 'confirmed' ? 'merge' : 'split';
       consolidation = {
         ...consolidation,
         entity_matches: consolidation.entity_matches.map((m) =>
@@ -656,7 +672,7 @@ export function createCrawlHandlers() {
             st.label === 'Thực thể' ? { ...st, state: 'done' } : st,
           ),
         };
-      return HttpResponse.json({ id, decision });
+      return HttpResponse.json({ id, status, method: 'human' });
     }),
     http.post('*/v1/consolidation-runs/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
@@ -741,14 +757,14 @@ export function createCrawlHandlers() {
       recount();
       return HttpResponse.json({ decision: body.decision, record: recordWire(done) });
     }),
-    http.get('*/v1/schema-drifts', () =>
-      HttpResponse.json({ items: drift.resolution ? [] : [drift], next_page_token: '' }),
-    ),
-    http.get('*/v1/schema-drifts/:id', ({ params }) =>
-      params.id === drift.id
-        ? HttpResponse.json(drift)
-        : problem(404, 'not_found', 'Không tìm thấy sự cố.'),
-    ),
+    // A2 lists drifts only; the drift screen finds its own in the list.
+    http.get('*/v1/schema-drifts', ({ request }) => {
+      const open = new URL(request.url).searchParams.get('resolution') === 'open';
+      return HttpResponse.json({
+        items: open && drift.resolution ? [] : [driftWire(drift)],
+        next_page_token: '',
+      });
+    }),
     http.post('*/v1/schema-drifts/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
       if (id !== drift.id || verb !== 'resolve')
@@ -767,7 +783,7 @@ export function createCrawlHandlers() {
         source.health_text = 'Đúng lịch';
         source.drift_id = null;
       }
-      return HttpResponse.json(drift);
+      return HttpResponse.json(driftWire(drift));
     }),
     http.get('*/v1/crawl-sources/:id/schemas', ({ params }) => {
       const source = sources.find((x) => x.id === params.id);

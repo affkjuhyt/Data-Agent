@@ -852,9 +852,19 @@ export interface SourceDrift {
   approvals: { name: string; at: Timestamp }[];
 }
 
-/** PROPOSAL: GET /v1/schema-drifts?origin=source — open drifts of connected sources. */
-export const listSourceDrifts = () =>
-  v1Get<Page<SourceDrift>>('/schema-drifts', { ...ALL, origin: 'source', status: 'pending' });
+/**
+ * PROPOSAL: GET /v1/schema-drifts?origin=source — open drifts of connected sources. A2's list holds
+ * only crawl sources' drifts (P14) and ignores `origin`, so what comes back without the column
+ * changes is not a connected source's and is left out.
+ */
+export const listSourceDrifts = async (): Promise<Page<SourceDrift>> => {
+  const page = await v1Get<Page<SourceDrift>>('/schema-drifts', {
+    ...ALL,
+    origin: 'source',
+    status: 'pending',
+  });
+  return { ...page, items: page.items.filter((d) => Array.isArray(d.changes)) };
+};
 
 export const getSourceDrift = async (id: string) =>
   v1Get<SourceDrift>(`/schema-drifts/${pathId(id)}`);
