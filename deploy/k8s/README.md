@@ -107,7 +107,7 @@ directory therefore sets:
 | `capabilities.drop` | `["ALL"]` |
 
 No pod uses `hostNetwork`, `hostPID`, `hostIPC`, a `hostPath` volume, or
-`privileged`. `tests/unit/workflow_runtime/test_k8s_manifests.py` asserts all of it, plus every
+`privileged`. `tests/unit/repo/test_k8s_manifests.py` asserts all of it, plus every
 field against the API server's own OpenAPI models.
 
 `sandbox-executor` runs user-submitted code and additionally sets
@@ -141,9 +141,10 @@ names the code expects — so `kb-backend` gets four keys and never sees
 `GRAFANA_ADMIN_PASSWORD` or the Snowflake crawler password.
 
 `GATEWAY_KEY` and `SERVICE_AUTH_SECRET` go to the services that import
-`libs.shared.auth` (which imports `service_identity`): `auth-api`,
-`kb-backend`, `workflow-runtime` (`GATEWAY_KEY` also to the
-`setup` and `eval` Jobs). Nothing else needs them, and both fail *silently* when absent — an unset `GATEWAY_KEY` makes
+`libs.shared.auth` (which imports `service_identity`): `auth-api` and
+`kb-backend` (`GATEWAY_KEY` also to the `setup` Job, which writes it into the
+Kong plugin; `SERVICE_AUTH_SECRET` also to `sandbox-executor`, which verifies
+service assertions). Nothing else needs them, and both fail *silently* when absent — an unset `GATEWAY_KEY` makes
 `X-Kong-Verified` trusted on its own, and a mismatched `SERVICE_AUTH_SECRET`
 makes `kb_search` return no chunks. Check those two first if retrieval goes quiet.
 
@@ -363,7 +364,7 @@ Service DNS names are DNS-1123, so an underscore is not legal in a hostname:
 over whatever default the image ships, so the underscored defaults compiled into
 the Python services never apply in-cluster.
 
-`tests/unit/workflow_runtime/test_k8s_manifests.py` asserts the range, that no two Services share
+`tests/unit/repo/test_k8s_manifests.py` asserts the range, that no two Services share
 a port, that `8000–8099` stays empty, and that `port == targetPort ==
 containerPort` for every workload.
 

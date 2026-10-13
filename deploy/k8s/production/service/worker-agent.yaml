@@ -59,10 +59,23 @@ spec:
         command:
         - sh
         - -c
-        - until alembic -c alembic/alembic.ini current 2>/dev/null | grep -q '(head)'; do echo waiting for schema; sleep 2; done
+        - |
+          # Waits as svc_qa, not as the migrator: the head comes from the revision files in this
+          # image (offline, no database) and the applied revision from alembic_version, which
+          # db-init lets every svc_ role read. `alembic current` would need the owner's URL.
+          # python -B: the root filesystem is read-only, so no bytecode is written.
+          heads="$(python -B -m alembic -c alembic/alembic.ini heads | sed -n 's/ (head)$//p')"
+          [ -n "$heads" ] || { echo "no alembic head in the image"; exit 1; }
+          until python -B -c '
+          import os, sys, psycopg
+          url = "postgresql://" + os.environ[sys.argv[1]].split("://", 1)[1]
+          with psycopg.connect(url, connect_timeout=5, prepare_threshold=None) as conn:
+              applied = {row[0] for row in conn.execute("SELECT version_num FROM public.alembic_version")}
+          sys.exit(applied != set(sys.argv[2].split()))
+          ' DATAAGENT_DB_URL__SVC_QA "$heads" 2>/dev/null; do echo waiting for schema; sleep 2; done
         envFrom:
         - secretRef:
-            name: migrate-secrets
+            name: worker-agent-secrets
         resources:
           requests:
             cpu: 50m
@@ -80,6 +93,7 @@ spec:
       containers:
       - name: worker-agent
         image: dataagent/worker-agent:latest
+        command: ["python", "-m", "services.worker_agent.main"]
         envFrom:
         - configMapRef:
             name: dataagent-config

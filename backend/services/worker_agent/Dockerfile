@@ -14,4 +14,3 @@ COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/worker_agent/ ./services/worker_agent/
 RUN addgroup --system app && adduser --system --ingroup app app
 USER app
-CMD ["python", "-m", "services.worker_agent.main"]

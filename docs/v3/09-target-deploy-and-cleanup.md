@@ -92,8 +92,11 @@ tính năng mới trong dịch vụ cũ, phần còn lại của R0 làm thẳng
 2. **Migration không dùng superuser.** Job `migrate` đang chạy bằng `admin`; tab 1 §8.14 yêu cầu vai trò
    `migrator` không phải superuser. Vai trò `da_owner`, `svc_*` tạo một lần bằng tài khoản quản trị (bước
    bootstrap của Ansible), sau đó `migrator` chạy Alembic.
-3. **Lệch dev và production.** Container init của `api` dùng `migrate-secrets` ở dev nhưng `api-secrets` ở
-   production. *Đề xuất:* `deploy/k8s/base` + overlay `dev`/`production` bằng Kustomize (có sẵn trong
+3. **Lệch dev và production.** Container init của `api` từng dùng `migrate-secrets` ở dev nhưng `api-secrets` ở
+   production (ở đó `alembic current` không có URL nào để đọc, nên chờ mãi). Đã sửa: `wait-for-migrations`
+   của `api` và `worker-agent` ở cả hai bộ manifest đọc Secret của chính khối, lấy head từ các revision trong
+   image `migrate` (`alembic heads`, không cần CSDL) và đọc `alembic_version` bằng vai trò của khối
+   (`svc_org`, `svc_qa`); `grant-roles.sql` cấp `SELECT` trên bảng đó cho mọi vai trò `svc_`. *Đề xuất còn lại:* `deploy/k8s/base` + overlay `dev`/`production` bằng Kustomize (có sẵn trong
    kubectl) thay cho hai thư mục chép tay; Ansible vẫn là đường deploy duy nhất.
 4. **Bí mật.** Thiết kế đặt bí mật ứng dụng ở OpenBao (KV, AppRole); hiện `DATAAGENT_DB_URL__*` dựng từ
    ansible-vault. Giữ ansible-vault cho bootstrap, chuyển URL CSDL của từng khối sang OpenBao khi khối thứ

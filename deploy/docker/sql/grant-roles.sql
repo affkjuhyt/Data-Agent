@@ -32,13 +32,19 @@ GRANT EXECUTE ON FUNCTION public.pgbouncer_get_auth(TEXT) TO pgbouncer_auth;
 
 -- Every service role may connect; what it may touch is the migration's grants and row-level
 -- security. Stated explicitly: one BYPASSRLS would silently disable every policy for that role.
+-- SELECT on alembic_version lets a workload's wait-for-migrations init container check the
+-- schema is at head over its own login instead of the migrator's owner URL.
 DO $$
 DECLARE
   r record;
+  has_alembic_version boolean := to_regclass('public.alembic_version') IS NOT NULL;
 BEGIN
   FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'svc\_%' LOOP
     EXECUTE format('GRANT CONNECT ON DATABASE dataagent TO %I', r.rolname);
     EXECUTE format('ALTER ROLE %I NOSUPERUSER NOBYPASSRLS', r.rolname);
+    IF has_alembic_version THEN
+      EXECUTE format('GRANT SELECT ON public.alembic_version TO %I', r.rolname);
+    END IF;
   END LOOP;
 END
 $$;
