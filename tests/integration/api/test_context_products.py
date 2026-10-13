@@ -465,6 +465,45 @@ async def test_draft_version_opens_an_empty_proposal(ds: Space) -> None:
         assert ds.one("SELECT version FROM context.data_product WHERE id = %s", product) == 1
 
 
+async def test_request_use_creates_owner_space_access_request(ds: Space) -> None:
+    owner_dataset = ds.seed.row(
+        "catalog.dataset",
+        org_id=ds.org,
+        data_space_id=ds.other,
+        origin="derived",
+        schema_name="silver",
+        table_name="shared_catalogue_data",
+        history_kind="none",
+        enabled=True,
+    )
+    product = ds.seed.row(
+        "pipeline.data_product",
+        org_id=ds.org,
+        data_space_id=ds.other,
+        code="shared_catalogue",
+        name="Shared catalogue",
+        version=1,
+        dataset_id=owner_dataset,
+        contract=Json({"has_pii": False}),
+        owner_id=ds.users["owner"],
+        approved_by=ds.users["owner"],
+        status="published",
+    )
+    async with client(ds) as api:
+        response = await api.post(
+            "/v1/data-products:request-use",
+            headers=ds.headers("analyst"),
+            json={"product_ids": [str(product)], "data_space_id": str(ds.space)},
+        )
+    assert response.status_code == 202, response.text
+    request_id = response.json()["requests"][0]["id"]
+    assert response.json()["requests"][0]["product_id"] == str(product)
+    event = ds.events(product)[-1]
+    assert event[0] == "data_product.use_requested"
+    assert event[1]["request_id"] == request_id
+    assert event[1]["owner_data_space_id"] == str(ds.other)
+
+
 async def test_suspend_and_retire(ds: Space) -> None:
     async with client(ds) as api:
         product = (await _create(api, ds))["id"]

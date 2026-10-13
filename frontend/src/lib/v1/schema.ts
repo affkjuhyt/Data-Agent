@@ -1661,6 +1661,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/data-products:request-use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Xin quyền dùng sản phẩm dữ liệu của Data Space khác
+         * @description Create pending owner-space access requests for published products.
+         */
+        post: operations["requestDataProductUse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/data-spaces": {
         parameters: {
             query?: never;
@@ -18867,6 +18887,31 @@ export interface components {
             trace_id?: string | null;
             /** Type */
             type: string;
+        };
+        /** ProductUseRequestBody */
+        ProductUseRequestBody: {
+            /**
+             * Data Space Id
+             * Format: uuid
+             */
+            data_space_id: string;
+            /** Product Ids */
+            product_ids: string[];
+        };
+        /** ProductUseRequestView */
+        ProductUseRequestView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Product Id
+             * Format: uuid
+             */
+            product_id: string;
+            /** Status */
+            status: string;
         };
         /**
          * Progress
@@ -36552,6 +36597,122 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["services__api__modules__context__schemas__DataProductView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    requestDataProductUse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductUseRequestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["ProductUseRequestView"][];
+                    };
                 };
             };
             /** @description Invalid request */

@@ -5484,6 +5484,18 @@
    "errors": [],
    "request_text": "?cursor, ?page_size"
   },
+  "POST /v1/data-products:request-use": {
+   "group": "Lớp ngữ cảnh",
+   "groups": ["Lớp ngữ cảnh"],
+   "body": {
+    "product_ids": true,
+    "data_space_id": true
+   },
+   "query": [],
+   "returns": "202, các AccessRequest đang chờ steward của Data Space sở hữu sản phẩm quyết định",
+   "errors": [[404, "not_found"]],
+   "request_text": "product_ids*, data_space_id*"
+  },
   "GET /v1/admin/ai-settings": {
    "group": "Quản trị",
    "groups": [

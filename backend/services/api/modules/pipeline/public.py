@@ -8,6 +8,7 @@ layer "published" (P06, UC-06-06) it lands here, on svc_pipeline's own connectio
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder
@@ -22,6 +23,37 @@ from services.api.kernel.problems import Problem
 from services.api.modules.pipeline import rules
 from services.api.modules.pipeline.schemas import DataProductView
 from services.api.modules.pipeline.store import ROLE, emit, invalid, now, require_datasets
+
+
+@dataclass(frozen=True)
+class PublishedProductInfo:
+    id: uuid.UUID
+    data_space_id: uuid.UUID
+    code: str
+    name: str
+    version: int
+    contract: Any
+
+
+async def published_products(
+    principal: Principal,
+    current_data_space: uuid.UUID,
+    product_ids: set[uuid.UUID] | None = None,
+) -> list[PublishedProductInfo]:
+    """Read published products across an organisation through svc_pipeline's public boundary."""
+    query = select(pl.DataProduct).where(
+        pl.DataProduct.org_id == principal.org_id,
+        pl.DataProduct.status == "published",
+        pl.DataProduct.data_space_id != current_data_space,
+    )
+    if product_ids:
+        query = query.where(pl.DataProduct.id.in_(product_ids))
+    async with transaction(ROLE, principal) as session:
+        rows = list((await session.scalars(query.order_by(pl.DataProduct.code))).all())
+    return [
+        PublishedProductInfo(r.id, r.data_space_id, r.code, r.name, r.version, r.contract)
+        for r in rows
+    ]
 
 
 async def create_published_product(

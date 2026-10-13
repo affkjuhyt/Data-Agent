@@ -33813,6 +33813,56 @@
     "title": "ProblemBody",
     "type": "object"
    },
+   "ProductUseRequestBody": {
+    "properties": {
+     "data_space_id": {
+      "format": "uuid",
+      "title": "Data Space Id",
+      "type": "string"
+     },
+     "product_ids": {
+      "items": {
+       "format": "uuid",
+       "type": "string"
+      },
+      "maxItems": 100,
+      "minItems": 1,
+      "title": "Product Ids",
+      "type": "array"
+     }
+    },
+    "required": [
+     "product_ids",
+     "data_space_id"
+    ],
+    "title": "ProductUseRequestBody",
+    "type": "object"
+   },
+   "ProductUseRequestView": {
+    "properties": {
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "product_id": {
+      "format": "uuid",
+      "title": "Product Id",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "product_id",
+     "status"
+    ],
+    "title": "ProductUseRequestView",
+    "type": "object"
+   },
    "Progress": {
     "description": "How far preprocessing (UC-05-02) has got, from the rows it has written so far.",
     "properties": {
@@ -66392,6 +66442,156 @@
     ],
     "x-use-cases": [
      "UC-07-13"
+    ]
+   }
+  },
+  "/v1/data-products:request-use": {
+   "post": {
+    "description": "Create pending owner-space access requests for published products.",
+    "operationId": "requestDataProductUse",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProductUseRequestBody"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "202": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": {
+          "items": {
+           "$ref": "#/components/schemas/ProductUseRequestView"
+          },
+          "type": "array"
+         },
+         "title": "Response Requestdataproductuse",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Xin quyền dùng sản phẩm dữ liệu của Data Space khác",
+    "tags": [
+     "Lớp ngữ cảnh"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-07-13",
+     "UC-11-08"
     ]
    }
   },

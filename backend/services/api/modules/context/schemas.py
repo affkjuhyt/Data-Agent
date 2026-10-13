@@ -824,6 +824,17 @@ class PublishedCatalogProduct(BaseModel):
     has_pii: bool
 
 
+class ProductUseRequestBody(BaseModel):
+    product_ids: list[uuid.UUID] = Field(min_length=1, max_length=100)
+    data_space_id: uuid.UUID
+
+
+class ProductUseRequestView(BaseModel):
+    id: uuid.UUID
+    product_id: uuid.UUID
+    status: str
+
+
 MemberKind = Literal["dataset", "metric", "knowledge_page", "document_collection", "shared_product"]
 
 
