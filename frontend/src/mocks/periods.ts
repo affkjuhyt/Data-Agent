@@ -73,6 +73,8 @@ function september(): PeriodClose {
     frozen_note:
       'Số đóng băng được gắn vào báo cáo NHNN T9 và không sửa được nữa; chỉ có thể tạo bản điều chỉnh.',
     can_lock: { allowed: false, reason: 'Còn bước đối soát chờ bạn quyết định.' },
+    can_start_close: false,
+    can_cancel: true,
   };
 }
 
@@ -92,6 +94,8 @@ function plain(summary: PeriodSummary): PeriodClose {
     frozen_figures: [],
     frozen_note: '',
     can_lock: { allowed: false, reason: done ? 'Kỳ đã khoá.' : 'Kỳ chưa bắt đầu chốt.' },
+    can_start_close: summary.status === 'open',
+    can_cancel: false,
   };
 }
 
@@ -305,6 +309,18 @@ export function createPeriodHandlers() {
       const [id, verb] = String(params.action).split(':');
       const period = periods.find((p) => p.id === id);
       if (!period) return problem(404, 'not_found', 'Không tìm thấy kỳ.');
+      if (verb === 'close') {
+        // A2 :close (202): the worker snapshots and reconciles; the period locks itself after.
+        if (period.status !== 'open') return problem(409, 'invalid_state', 'Kỳ không còn mở.');
+        save({
+          ...period,
+          status: 'closing',
+          steps: period.steps.map((s, i) => ({ ...s, state: i === 0 ? 'running' : 'pending' })),
+          can_start_close: false,
+          can_cancel: true,
+        });
+        return HttpResponse.json({ id, status: 'closing', poll_after_ms: 1000 }, { status: 202 });
+      }
       if (period.status !== 'closing')
         return problem(409, 'invalid_state', 'Kỳ không ở trạng thái đang chốt.');
       if (verb === 'lock') {
@@ -326,6 +342,8 @@ export function createPeriodHandlers() {
             status: 'open',
             steps: period.steps.map((s) => ({ ...s, state: 'pending', issue: undefined })),
             can_lock: { allowed: false, reason: 'Kỳ chưa bắt đầu chốt.' },
+            can_start_close: true,
+            can_cancel: false,
           }),
         );
       }

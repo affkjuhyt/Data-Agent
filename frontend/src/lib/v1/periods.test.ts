@@ -7,7 +7,13 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { listSourceAuthorities, parseMateriality } from './authorities';
-import { comparePeriodVersions, decideRetroChange, getRetroChange, listPeriods } from './periods';
+import {
+  comparePeriodVersions,
+  decideRetroChange,
+  getPeriod,
+  getRetroChange,
+  listPeriods,
+} from './periods';
 
 const at = '2026-10-12T08:00:00Z';
 let decideBody: unknown;
@@ -122,6 +128,34 @@ describe('periods from the api', () => {
     const [sept, oct] = (await listPeriods()).items;
     expect(sept).toEqual({ id: 'pc-9', code: 'T9/2026', status: 'published', adjustment_count: 1 });
     expect(oct.status).toBe('closing');
+  });
+
+  it('reads the reconciliation by status and offers :close to an open period', async () => {
+    server.use(
+      http.get('*/v1/periods/:id', () =>
+        HttpResponse.json({
+          id: 'pc-10',
+          period_label: 'T10/2026',
+          status: 'close_failed',
+          version: 1,
+          business_date: '2026-10-31',
+          snapshot_hash: 'ab12',
+          closed_at: null,
+          filed_at: null,
+          filed_report_code: null,
+          reconciliation: { matched: 40, mismatched: 2, exception_pending: 1 },
+        }),
+      ),
+    );
+    const period = await getPeriod('pc-10');
+    expect(period.steps.map((s) => [s.title, s.state, s.detail])).toEqual([
+      ['Ảnh chụp dữ liệu', 'done', 'đã băm'],
+      ['Đối chiếu sổ cái', 'needs_you', '40 khớp · 2 lệch · 1 chờ duyệt ngoại lệ'],
+      ['Khoá kỳ', 'pending', 'chưa khoá'],
+      ['Nộp báo cáo', 'pending', 'chưa nộp'],
+    ]);
+    expect(period).toMatchObject({ can_start_close: true, can_cancel: false });
+    expect(period.can_lock.allowed).toBe(false);
   });
 
   it('finds a retro change among the periods and decides it as A3 names it', async () => {

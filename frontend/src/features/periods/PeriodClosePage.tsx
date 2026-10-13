@@ -15,6 +15,7 @@ import {
   getPeriod,
   listPeriods,
   lockPeriod,
+  startPeriodClose,
   type CloseStep,
   type PeriodClose,
   type PeriodSummary,
@@ -90,7 +91,7 @@ function PeriodBody({
   onChanged: () => void;
 }) {
   const toast = useToast();
-  const [busy, setBusy] = useState<'lock' | 'cancel' | null>(null);
+  const [busy, setBusy] = useState<'lock' | 'cancel' | 'start' | null>(null);
   const [confirm, setConfirm] = useState<'lock' | 'cancel' | null>(null);
   const [error, setError] = useState<string>();
   const closing = period.status === 'closing';
@@ -99,11 +100,14 @@ function PeriodBody({
     ? `${PERIOD_STATUS.closing.label} · bước ${current + 1}/${period.steps.length}`
     : periodLabel(period);
 
-  const act = async (verb: 'lock' | 'cancel') => {
+  const act = async (verb: 'lock' | 'cancel' | 'start') => {
     setBusy(verb);
     setError(undefined);
     try {
-      if (verb === 'lock') {
+      if (verb === 'start') {
+        await startPeriodClose(period.id);
+        toast({ tone: 'success', message: `Đang chốt kỳ ${period.code}` });
+      } else if (verb === 'lock') {
         await lockPeriod(period.id);
         toast({ tone: 'success', message: `Đã khoá kỳ ${period.code}` });
       } else {
@@ -132,21 +136,37 @@ function PeriodBody({
         }
         description={period.context_text}
         actions={
-          closing && (
-            <>
-              <Button kind="ghost" disabled={busy !== null} onClick={() => setConfirm('cancel')}>
-                Huỷ chốt
-              </Button>
-              {period.can_lock.allowed ? (
-                <Button kind="primary" loading={busy === 'lock'} onClick={() => setConfirm('lock')}>
-                  Khoá kỳ
-                </Button>
-              ) : (
-                <Tooltip content={period.can_lock.reason ?? 'Chưa khoá được.'}>
-                  <Button disabled>Khoá kỳ</Button>
-                </Tooltip>
-              )}
-            </>
+          period.can_start_close ? (
+            <Button kind="primary" loading={busy === 'start'} onClick={() => void act('start')}>
+              Chốt kỳ
+            </Button>
+          ) : (
+            closing && (
+              <>
+                {period.can_cancel && (
+                  <Button
+                    kind="ghost"
+                    disabled={busy !== null}
+                    onClick={() => setConfirm('cancel')}
+                  >
+                    Huỷ chốt
+                  </Button>
+                )}
+                {period.can_lock.allowed ? (
+                  <Button
+                    kind="primary"
+                    loading={busy === 'lock'}
+                    onClick={() => setConfirm('lock')}
+                  >
+                    Khoá kỳ
+                  </Button>
+                ) : (
+                  <Tooltip content={period.can_lock.reason ?? 'Chưa khoá được.'}>
+                    <Button disabled>Khoá kỳ</Button>
+                  </Tooltip>
+                )}
+              </>
+            )
           )
         }
       />

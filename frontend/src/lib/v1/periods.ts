@@ -54,6 +54,10 @@ export interface PeriodClose extends PeriodSummary {
    * person who ran the reconciliation (four eyes).
    */
   can_lock: { allowed: boolean; reason: string | null };
+  /** A2 :close starts the close of an open period (or one whose close failed). */
+  can_start_close: boolean;
+  /** PROPOSAL with :cancel-close. */
+  can_cancel: boolean;
 }
 
 /** period_close.status: open, closing, close_failed, closed, filed, retro_detected. */
@@ -78,8 +82,10 @@ const readSummary = (raw: PeriodWire): PeriodSummary =>
   };
 
 /*
- * Without the PROPOSAL close page: the steps are the close's own states (snapshot hashed,
- * reconciliation, filed), nothing is said frozen, and locking is the PROPOSAL :lock.
+ * Without the PROPOSAL close page: the steps are the close's own states (snapshot hashed, the
+ * reconciliation counted by status, locked, filed) and nothing is said frozen. On A2 the period
+ * locks itself once the reconciliation matches or its exceptions are approved (UC-10-02), so there
+ * is no lock to press and no close to cancel.
  */
 function readClose(raw: PeriodDetailWire): PeriodClose {
   if (raw.display) return raw.display;
@@ -104,6 +110,7 @@ function readClose(raw: PeriodDetailWire): PeriodClose {
         raw.snapshot_hash !== null,
         raw.snapshot_hash ? 'đã băm' : 'chưa chụp',
       ),
+      reconciliationStep(raw),
       step(
         'Khoá kỳ',
         raw.closed_at !== null,
@@ -117,7 +124,38 @@ function readClose(raw: PeriodDetailWire): PeriodClose {
     ],
     frozen_figures: [],
     frozen_note: '',
-    can_lock: { allowed: false, reason: 'Khoá kỳ chưa có trong API.' },
+    can_lock: {
+      allowed: false,
+      reason: 'Kỳ tự khoá khi đối chiếu khớp hoặc ngoại lệ được duyệt.',
+    },
+    can_start_close: raw.status === 'open' || raw.status === 'close_failed',
+    can_cancel: false,
+  };
+}
+
+/** period_reconciliation.status: matched, mismatched, exception_pending, exception_approved. */
+function reconciliationStep(raw: PeriodDetailWire): CloseStep {
+  const counts = (raw.reconciliation ?? {}) as Record<string, number>;
+  const n = (status: string) => counts[status] ?? 0;
+  const total = Object.values(counts).reduce((sum, v) => sum + v, 0);
+  const detail = [
+    n('matched') && `${n('matched')} khớp`,
+    n('mismatched') && `${n('mismatched')} lệch`,
+    n('exception_pending') && `${n('exception_pending')} chờ duyệt ngoại lệ`,
+    n('exception_approved') && `${n('exception_approved')} ngoại lệ đã duyệt`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return {
+    title: 'Đối chiếu sổ cái',
+    detail: total ? detail : 'chưa đối chiếu',
+    state: !total
+      ? 'pending'
+      : n('mismatched')
+        ? 'needs_you'
+        : n('exception_pending')
+          ? 'running'
+          : 'done',
   };
 }
 
@@ -128,6 +166,10 @@ export const listPeriods = async () => {
 
 export const getPeriod = async (id: string) =>
   readClose(await v1Get<PeriodDetailWire>(`/periods/${pathId(id)}`));
+
+/** A2: :close (202) — the worker snapshots, hashes and reconciles; the period then locks itself. */
+export const startPeriodClose = async (id: string) =>
+  v1Send<{ id: string; status: string }>('POST', `/periods/${pathId(id)}:close`);
 
 /** PROPOSAL: :lock freezes the figures; afterwards every change goes through a retro change. */
 export const lockPeriod = async (id: string) =>

@@ -80,6 +80,14 @@ describe('PeriodClosePage', () => {
       'true',
     );
   });
+
+  it('starts the close of an open period with :close', async () => {
+    routeId = 'period-2026-10';
+    page();
+    fireEvent.click(await screen.findByRole('button', { name: 'Chốt kỳ' }));
+    expect(await screen.findByText('Đang chốt kỳ T10/2026')).toBeInTheDocument();
+    await waitFor(async () => expect((await getPeriod('period-2026-10')).status).toBe('closing'));
+  });
 });
 
 describe('RetroChangePage', () => {
