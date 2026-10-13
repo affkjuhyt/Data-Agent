@@ -2198,6 +2198,14 @@
   },
   {
    "group": "Lớp ngữ cảnh",
+   "method": "POST",
+   "path": "/v1/data-products/{id}:draft-version",
+   "summary": "Mở bản nháp phiên bản kế tiếp để chỉnh sửa",
+   "use_cases": ["07-13"],
+   "capability": ["steward"]
+  },
+  {
+   "group": "Lớp ngữ cảnh",
    "method": "PATCH",
    "path": "/v1/data-products/{id}",
    "summary": "Sửa bản draft; bản active tạo phiên bản mới qua duyệt",

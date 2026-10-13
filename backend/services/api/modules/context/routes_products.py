@@ -515,6 +515,52 @@ async def get_data_product(
     return detail
 
 
+@router.post(
+    "/v1/data-products/{id}:draft-version",
+    response_model=DataProductDetail,
+    **endpoint(
+        "POST", "/v1/data-products/{id}:draft-version", operation_id="draftDataProductVersion"
+    ),
+)
+async def draft_data_product_version(
+    product_id: ProductId,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> DataProductDetail:
+    """Open an unchanged next-version proposal for the agent/editor to refine."""
+    async with transaction(ROLE, principal) as session:
+        row = await _product(session, product_id, principal, data_space, lock=True)
+        if row.status not in _VERSIONED:
+            raise Problem(409, "invalid_state", f"A {row.status} data product has no next version.")
+        if row.proposal_id is not None:
+            raise Problem(409, "invalid_state", "A change of this data product is in review.")
+        row.proposal_id = uuid7()
+        row.updated_by = principal.user_id
+        row.updated_at = now()
+        emit(
+            session,
+            principal,
+            "data_product",
+            row.id,
+            "data_product.change_proposed",
+            data_product_id=row.id,
+            data_space_id=data_space,
+            version=row.version + 1,
+            proposal_id=row.proposal_id,
+            proposal_kind="data_product",
+            target_service="context",
+            assignee_id=row.owner_id,
+            created_by=principal.user_id,
+            changes={},
+        )
+        await session.flush()
+        await session.refresh(row)
+        draft = _view(row)
+        draft.version = row.version + 1
+        draft.status = "pending_review"
+    return DataProductDetail(**draft.model_dump())
+
+
 @router.patch(
     "/v1/data-products/{id}",
     response_model=DataProductView,

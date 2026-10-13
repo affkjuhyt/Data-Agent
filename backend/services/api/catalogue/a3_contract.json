@@ -2990,6 +2990,15 @@
    ],
    "request_text": "?version"
   },
+  "POST /v1/data-products/{id}:draft-version": {
+   "group": "Lớp ngữ cảnh",
+   "groups": ["Lớp ngữ cảnh"],
+   "body": {},
+   "query": [],
+   "returns": "DataProduct bản nháp version + 1, proposal_id; bản đang phục vụ không đổi",
+   "errors": [[409, "invalid_state"]],
+   "request_text": "—"
+  },
   "PATCH /v1/data-products/{id}": {
    "group": "Lớp ngữ cảnh",
    "groups": [

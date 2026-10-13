@@ -450,6 +450,21 @@ async def test_a_change_to_an_active_product_is_a_new_version_in_review(ds: Spac
         assert kept.status_code == 422
 
 
+async def test_draft_version_opens_an_empty_proposal(ds: Space) -> None:
+    async with client(ds) as api:
+        product = (await _create(api, ds))["id"]
+        await _members(api, ds, product)
+        _activate(ds, product)
+        draft = await api.post(
+            f"/v1/data-products/{product}:draft-version", headers=ds.headers("steward")
+        )
+        assert draft.status_code == 200, draft.text
+        assert draft.json()["version"] == 2
+        assert draft.json()["status"] == "pending_review"
+        assert draft.json()["proposal_id"]
+        assert ds.one("SELECT version FROM context.data_product WHERE id = %s", product) == 1
+
+
 async def test_suspend_and_retire(ds: Space) -> None:
     async with client(ds) as api:
         product = (await _create(api, ds))["id"]
