@@ -4051,6 +4051,30 @@
   },
   {
    "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/admin/directory:sync",
+   "summary": "Đồng bộ thư mục danh tính",
+   "use_cases": [
+    "11-01"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
+   "method": "POST",
+   "path": "/v1/admin/invitations",
+   "summary": "Mời người dùng vào Data Space",
+   "use_cases": [
+    "11-01"
+   ],
+   "capability": [
+    "admin"
+   ]
+  },
+  {
+   "group": "Quản trị",
    "method": "GET",
    "path": "/v1/data-spaces/{id}/members",
    "summary": "Thành viên Data Space: vai trò, phạm vi dòng, hạn dùng (thêm 12/10/2026)",

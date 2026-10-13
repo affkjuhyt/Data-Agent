@@ -5482,6 +5482,36 @@
    "errors": [],
    "request_text": "—"
   },
+  "POST /v1/admin/directory:sync": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, DirectorySyncAccepted",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/admin/invitations": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "email": true,
+    "role_id": true,
+    "data_space_id": true,
+    "row_scope": false,
+    "valid_until": false
+   },
+   "query": [],
+   "returns": "202, InvitationAccepted",
+   "errors": [
+    [404, "not_found"]
+   ],
+   "request_text": "email*, role_id*, data_space_id*, row_scope, valid_until"
+  },
   "GET /v1/data-spaces/{id}/members": {
    "group": "Quản trị",
    "groups": [
