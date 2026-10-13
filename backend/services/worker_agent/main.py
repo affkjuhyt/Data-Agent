@@ -27,6 +27,7 @@ from libs.dataagent_db import unscoped_session
 from services.worker_agent import (
     hitl,
     private,
+    proposals,
     query_runs,
     questions,
     replay,
@@ -62,6 +63,7 @@ HANDLERS: dict[str, Handler] = {
     **schema_scans.HANDLERS,
     **query_runs.HANDLERS,
     **tiles.HANDLERS,
+    **proposals.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -87,13 +89,17 @@ async def sources() -> list[EventSource]:
         if schema == "inbox":
             # Claiming stamps published_at, so this worker is the one consumer of hitl.resolved
             # until Debezium gives each consumer its own group (ADR-06).
-            types |= set(resolutions.HANDLERS)
+            types |= set(resolutions.HANDLERS) | {proposals.DECIDED}
         if schema == "catalog":
             types |= set(source_tests.HANDLERS) | set(schema_scans.HANDLERS)
         if schema == "query":
             types |= set(query_runs.HANDLERS)
         if schema == "workspace":
             types |= set(tiles.HANDLERS)
+        if schema == "skill":
+            types |= {proposals.PUBLISH, proposals.SHARE}
+        if schema == "pack":
+            types |= {proposals.ACTIVATE}
         found.append(OutboxTableSource(schema=schema, event_types=frozenset(types)))
     try:
         audit = await _outbox_schemas(AUDIT_RELAY)
