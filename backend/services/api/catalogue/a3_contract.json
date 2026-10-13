@@ -1335,6 +1335,20 @@
    "errors": [],
    "request_text": "—"
   },
+  "GET /v1/datasets/{id}/columns/{column}": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ColumnStatsView",
+   "errors": [
+    [403, "masked_column"],
+    [404, "not_found"]
+   ],
+   "request_text": "—"
+  },
   "POST /v1/datasets/{id}:derive": {
    "group": "Nguồn và danh mục",
    "groups": ["Nguồn và danh mục"],

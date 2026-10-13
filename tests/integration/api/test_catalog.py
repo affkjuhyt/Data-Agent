@@ -719,10 +719,20 @@ async def test_dataset_detail_masks_the_values_of_personal_columns(o: Org) -> No
         )
     async with client(o) as api:
         got = await api.get(f"/v1/datasets/{dataset}", headers=o.headers("analyst"))
+        stats = await api.get(
+            f"/v1/datasets/{dataset}/columns/tinh", headers=o.headers("analyst")
+        )
+        masked = await api.get(
+            f"/v1/datasets/{dataset}/columns/so_cccd", headers=o.headers("analyst")
+        )
     assert got.status_code == 200, got.text
     columns = {c["name"]: c for c in got.json()["columns"]}
     # The removed column is not current.
     assert list(columns) == ["so_cccd", "tinh"]
+    assert stats.status_code == 200, stats.text
+    assert stats.json()["name"] == "tinh"
+    assert stats.json()["distinct"] == 0
+    assert masked.status_code == 403
     masked = columns["so_cccd"]["profile"]
     assert masked["top_values"] == [{"value": "***", "count": 7}]
     assert masked["min_value"] is None and masked["max_value"] is None

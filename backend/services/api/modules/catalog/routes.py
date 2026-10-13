@@ -47,6 +47,7 @@ from services.api.modules.catalog.schemas import (
     CertifiedVersion,
     CertifyRequest,
     ColumnProfileView,
+    ColumnStatsView,
     ColumnView,
     ConnectorForm,
     ConnectorView,
@@ -1088,6 +1089,50 @@ async def get_dataset(
     async with transaction(ROLE, principal) as session:
         row = await _dataset(session, principal, space, dataset_id)
         return await _detail(session, row)
+
+
+@router.get(
+    "/v1/datasets/{id}/columns/{column}",
+    response_model=ColumnStatsView,
+    **endpoint("GET", "/v1/datasets/{id}/columns/{column}", operation_id="getDatasetColumnStats"),
+)
+async def get_dataset_column_stats(
+    dataset_id: PathId,
+    column: Annotated[str, Path(min_length=1, max_length=200)],
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+) -> ColumnStatsView:
+    async with transaction(ROLE, principal) as session:
+        dataset = await _dataset(session, principal, space, dataset_id)
+        meta = await session.scalar(
+            select(catalog.ColumnMeta).where(
+                catalog.ColumnMeta.dataset_id == dataset.id,
+                catalog.ColumnMeta.name == column,
+                catalog.ColumnMeta.removed_in_version.is_(None),
+            )
+        )
+        if meta is None:
+            raise Problem(404, "not_found", "Column not found.")
+        if meta.pii_label:
+            raise Problem(403, "masked_column", "Personal-data columns are not profiled.")
+        profile = await session.scalar(
+            select(catalog.ColumnProfile)
+            .where(catalog.ColumnProfile.column_id == meta.id)
+            .order_by(catalog.ColumnProfile.created_at.desc(), catalog.ColumnProfile.id.desc())
+        )
+    if profile is None:
+        raise Problem(404, "not_found", "Column profile not found.")
+    return ColumnStatsView(
+        name=meta.name,
+        type_label=meta.normalized_type or meta.data_type,
+        null_ratio=float(profile.null_ratio or 0),
+        distinct=int(profile.distinct_est or 0),
+        min=profile.min_value or "—",
+        max=profile.max_value or "—",
+        median="—",
+        histogram=[],
+        buckets_text="Phân bố theo giá trị phổ biến",
+    )
 
 
 @router.post(

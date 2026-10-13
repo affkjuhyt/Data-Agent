@@ -1857,6 +1857,23 @@ export interface paths {
         patch: operations["updateDataset"];
         trace?: never;
     };
+    "/v1/datasets/{id}/columns/{column}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Thống kê một cột dữ liệu */
+        get: operations["getDatasetColumnStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/datasets/{id}/versions": {
         parameters: {
             query?: never;
@@ -9301,6 +9318,29 @@ export interface components {
             scan_run_id: string;
             /** Top Values */
             top_values: unknown;
+        };
+        /** ColumnStatsView */
+        ColumnStatsView: {
+            /** Buckets Text */
+            buckets_text: string;
+            /** Distinct */
+            distinct: number;
+            /** Histogram */
+            histogram?: {
+                [key: string]: boolean | number;
+            }[];
+            /** Max */
+            max: string;
+            /** Median */
+            median: string;
+            /** Min */
+            min: string;
+            /** Name */
+            name: string;
+            /** Null Ratio */
+            null_ratio: number;
+            /** Type Label */
+            type_label: string;
         };
         /** ColumnView */
         ColumnView: {
@@ -38281,6 +38321,119 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DatasetDetail"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    getDatasetColumnStats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                column: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ColumnStatsView"];
                 };
             };
             /** @description Invalid request */

@@ -1040,6 +1040,18 @@
   },
   {
    "group": "Nguồn và danh mục",
+   "method": "GET",
+   "path": "/v1/datasets/{id}/columns/{column}",
+   "summary": "Thống kê một cột dữ liệu",
+   "use_cases": [
+    "04-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Nguồn và danh mục",
    "method": "PATCH",
    "path": "/v1/datasets/{id}",
    "summary": "Bật, tắt, người phụ trách, mô tả",

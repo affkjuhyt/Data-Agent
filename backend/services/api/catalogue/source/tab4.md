@@ -787,6 +787,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/scan-runs/{id} | — | ScanRun | — |
 | GET /v1/datasets | ?source\_id, ?enabled, ?q, ?origin | Danh sách Dataset | — |
 | GET /v1/datasets/{id} | — | Dataset. Kèm column\_meta hiện hành và column\_profile mới nhất; giá trị phổ biến của cột cá nhân đã che | — |
+| GET /v1/datasets/{id}/columns/{column} | — | Thống kê cột: tỷ lệ null, distinct, min/max và phân bố | 403 masked\_column; 404 not\_found |
 | POST /v1/datasets/{id}:derive | filters, drop\_duplicates | Đăng ký bảng dẫn xuất; worker materialize theo outbox | 404 not\_found |
 | PATCH /v1/datasets/{id} | enabled, steward\_id, display\_name, description, description\_status, business\_date\_col, knowledge\_time\_col, columns | Dataset | 422 business\_rule\_violated (bật bảng có cột cá nhân chưa xác nhận cách che, BR-102) |
 | GET /v1/datasets/{id}/versions | — | Danh sách DatasetVersion | — |

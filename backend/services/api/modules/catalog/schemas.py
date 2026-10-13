@@ -292,6 +292,18 @@ class ColumnView(BaseModel):
     profile: ColumnProfileView | None = None
 
 
+class ColumnStatsView(BaseModel):
+    name: str
+    type_label: str
+    null_ratio: float
+    distinct: int
+    min: str
+    max: str
+    median: str
+    histogram: list[dict[str, bool | float]] = Field(default_factory=list)
+    buckets_text: str
+
+
 class DatasetDetail(DatasetView):
     # The current columns (not removed) with their latest profile.
     columns: list[ColumnView] = Field(default_factory=list)

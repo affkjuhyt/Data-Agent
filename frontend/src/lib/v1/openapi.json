@@ -6535,6 +6535,71 @@
     "title": "ColumnProfileView",
     "type": "object"
    },
+   "ColumnStatsView": {
+    "properties": {
+     "buckets_text": {
+      "title": "Buckets Text",
+      "type": "string"
+     },
+     "distinct": {
+      "title": "Distinct",
+      "type": "integer"
+     },
+     "histogram": {
+      "items": {
+       "additionalProperties": {
+        "anyOf": [
+         {
+          "type": "boolean"
+         },
+         {
+          "type": "number"
+         }
+        ]
+       },
+       "type": "object"
+      },
+      "title": "Histogram",
+      "type": "array"
+     },
+     "max": {
+      "title": "Max",
+      "type": "string"
+     },
+     "median": {
+      "title": "Median",
+      "type": "string"
+     },
+     "min": {
+      "title": "Min",
+      "type": "string"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "null_ratio": {
+      "title": "Null Ratio",
+      "type": "number"
+     },
+     "type_label": {
+      "title": "Type Label",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "type_label",
+     "null_ratio",
+     "distinct",
+     "min",
+     "max",
+     "median",
+     "buckets_text"
+    ],
+    "title": "ColumnStatsView",
+    "type": "object"
+   },
    "ColumnView": {
     "properties": {
      "data_type": {
@@ -68790,6 +68855,160 @@
     ],
     "x-use-cases": [
      "UC-04-04"
+    ]
+   }
+  },
+  "/v1/datasets/{id}/columns/{column}": {
+   "get": {
+    "operationId": "getDatasetColumnStats",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "column",
+      "required": true,
+      "schema": {
+       "maxLength": 200,
+       "minLength": 1,
+       "title": "Column",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ColumnStatsView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Thống kê một cột dữ liệu",
+    "tags": [
+     "Nguồn và danh mục"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-04-02"
     ]
    }
   },
