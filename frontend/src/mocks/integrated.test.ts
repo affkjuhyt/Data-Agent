@@ -14,6 +14,8 @@ describe('integrated groups', () => {
     expect(isIntegrated('POST', at('/v1/sources/s-1:test'), operations)).toBe(true);
     expect(isIntegrated('GET', at('/v1/unmapped-phrases'), operations)).toBe(true);
     expect(isIntegrated('GET', at('/v1/me/notifications'), operations)).toBe(true);
+    expect(isIntegrated('POST', at('/v1/audit:export'), operations)).toBe(true);
+    expect(isIntegrated('GET', at('/v1/security-events'), operations)).toBe(true);
   });
 
   it('always lets identity through, so X-Data-Space holds a real id', () => {

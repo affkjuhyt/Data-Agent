@@ -488,107 +488,141 @@ export const disablePolicy = async (id: string) =>
 
 /* ─── Kiểm toán (UC-11-03) ──────────────────────────────────────────── */
 
-export type AuditChannel = 'web' | 'agent' | 'teams' | 'mcp' | 'api';
-
 export interface AuditEntry {
   id: Uuid;
   at: Timestamp;
-  /** PROPOSAL: who, in words — "Agent Đối soát (của Đỗ Hải Yến)", "Client “Copilot nội bộ”". */
+  /** Who, in words — "Agent Đối soát (của Đỗ Hải Yến)"; the actor's kind and id without a name. */
   actor_label: string;
-  actor_kind: 'person' | 'agent' | 'client';
-  /** PROPOSAL: what happened, in words. */
+  actor_kind: 'person' | 'agent' | 'client' | 'system';
+  /** PROPOSAL: what happened, in words; the action code otherwise. */
   action_text: string;
-  /** PROPOSAL: the data touched, in words. */
+  /** PROPOSAL: the data touched, in words; the object's kind and id otherwise. */
   data_text: string;
-  channel: AuditChannel;
-  outcome: 'ok' | 'blocked';
+  /** The service that wrote the row (api, worker-agent, …). */
+  service: string;
+  outcome: 'ok' | 'blocked' | 'error';
 }
 
 export interface AuditQuery {
-  q?: string;
-  actor_kind?: AuditEntry['actor_kind'];
-  channel?: AuditChannel;
-  /** YYYY-MM-DD */
+  /** An action code, matched exactly (audit.audit_log.action). */
+  action?: string;
+  outcome?: 'ok' | 'denied' | 'error';
+  /** YYYY-MM-DD, a local day. */
   date?: string;
   page_token?: string;
 }
 
-/** PROPOSAL: who, what and which data in words, which the mock sends under `display`. */
-type AuditWire = Schemas['AuditLogView'] & { display?: AuditEntry };
+/** PROPOSAL: the row in words, which the mock sends under `display`. */
+export type AuditWire = Schemas['AuditLogView'] & { display?: AuditEntry };
 
-/** How a row came in: an MCP tool call, a client through the API, an agent, or the web app. */
-const channelOf = (raw: Schemas['AuditLogView']): AuditChannel =>
-  raw.action.startsWith('mcp.')
-    ? 'mcp'
-    : raw.actor_kind === 'client'
-      ? 'api'
-      : raw.actor_kind === 'agent'
-        ? 'agent'
-        : 'web';
+const ACTOR_KIND: Record<string, AuditEntry['actor_kind']> = {
+  user: 'person',
+  agent: 'agent',
+  client: 'client',
+  system: 'system',
+};
 
-function readAudit(raw: AuditWire, names: Map<string, string>): AuditEntry {
+const ACTOR_WORD: Record<AuditEntry['actor_kind'], string> = {
+  person: 'Người dùng',
+  agent: 'Agent',
+  client: 'Client',
+  system: 'Hệ thống',
+};
+
+/* The api's own audit actions; any other is shown by its code. */
+const ACTION_TEXT: Record<string, string> = {
+  'audit.searched': 'Tra cứu nhật ký kiểm toán',
+  'audit.verified': 'Kiểm chuỗi băm của nhật ký',
+  'audit.export_requested': 'Yêu cầu xuất nhật ký',
+};
+
+const shortId = (id: string | null) => (id ? id.slice(0, 8) : '');
+
+function readAuditEntry(raw: AuditWire, names: Map<string, string>): AuditEntry {
   if (raw.display) return raw.display;
-  const actor = (raw.actor_id && names.get(raw.actor_id)) || raw.actor_kind;
-  const behalf = raw.on_behalf_of ? names.get(raw.on_behalf_of) : undefined;
+  const kind = ACTOR_KIND[raw.actor_kind] ?? 'system';
+  const who =
+    (raw.actor_id ? names.get(raw.actor_id) : undefined) ??
+    [ACTOR_WORD[kind], shortId(raw.actor_id)].filter(Boolean).join(' ');
+  // An agent or a client acting for a person names that person (BR-48).
+  const forWhom = raw.on_behalf_of
+    ? ` (của ${names.get(raw.on_behalf_of) ?? shortId(raw.on_behalf_of)})`
+    : '';
   return {
     id: raw.id,
     at: raw.occurred_at,
-    actor_label: behalf ? `${actor} (của ${behalf})` : actor,
-    actor_kind:
-      raw.actor_kind === 'user' ? 'person' : raw.actor_kind === 'agent' ? 'agent' : 'client',
-    action_text: raw.action,
+    actor_label: who + forWhom,
+    actor_kind: kind,
+    action_text: ACTION_TEXT[raw.action] ?? raw.action,
     data_text: raw.object_kind
-      ? `${raw.object_kind} ${raw.object_id?.slice(0, 8) ?? ''}`.trim()
-      : '',
-    channel: channelOf(raw),
-    outcome: raw.outcome === 'ok' ? 'ok' : 'blocked',
+      ? [raw.object_kind, shortId(raw.object_id)].filter(Boolean).join(' · ')
+      : '—',
+    service: raw.service,
+    outcome: raw.outcome === 'denied' ? 'blocked' : raw.outcome === 'error' ? 'error' : 'ok',
   };
 }
 
-/** One day as from/to: the audit filters by time, not by date. */
-const dayRange = (date?: string) =>
-  date
-    ? {
-        from: new Date(`${date}T00:00:00`).toISOString(),
-        to: new Date(new Date(`${date}T00:00:00`).getTime() + 86_400_000).toISOString(),
-      }
-    : {};
+/** The screen's filters as GET /v1/audit's; a day is [local midnight, next midnight). */
+function auditFilters(query: AuditQuery): Schemas['AuditFilters'] {
+  const filters: Schemas['AuditFilters'] = {};
+  if (query.action) filters.action = query.action;
+  if (query.outcome) filters.outcome = query.outcome;
+  if (query.date) {
+    const [y, m, d] = query.date.split('-').map(Number);
+    filters.from = new Date(y, m - 1, d).toISOString();
+    filters.to = new Date(y, m - 1, d + 1).toISOString();
+  }
+  return filters;
+}
 
 /*
- * GET /v1/audit filters by time, actor, object and outcome. The screen's text search, actor kind
- * and channel are not filters of A2, so they apply to the page read.
+ * GET /v1/audit, newest first. The log keeps ids, not names: they are joined from the user list
+ * when the caller may read it, and an auditor without that right sees the actor's kind and id.
  */
 export const searchAudit = async (query: AuditQuery): Promise<Page<AuditEntry>> => {
   const [page, users] = await Promise.all([
     v1Get<Page<AuditWire>>('/audit', {
       page_size: 50,
       page_token: query.page_token,
-      ...dayRange(query.date),
+      ...auditFilters(query),
     }),
     listAdminUsers().catch(() => null),
   ]);
   const names = new Map<string, string>(users?.items.map((u) => [u.id, u.display_name]) ?? []);
-  const q = query.q?.trim().toLowerCase();
-  const items = page.items
-    .map((r) => readAudit(r, names))
-    .filter(
-      (e) =>
-        (!query.actor_kind || e.actor_kind === query.actor_kind) &&
-        (!query.channel || e.channel === query.channel) &&
-        (!q ||
-          [e.actor_label, e.action_text, e.data_text].some((t) => t.toLowerCase().includes(q))),
-    );
-  return { items, next_page_token: page.next_page_token };
+  return { ...page, items: page.items.map((e) => readAuditEntry(e, names)) };
 };
 
-/** 202: a signed CSV is prepared; over the threshold it waits for an approver (A2). */
-export const exportAudit = async (query: AuditQuery) => {
-  const accepted = await v1Send<Schemas['ExportAccepted']>('POST', '/audit:export', {
-    filters: dayRange(query.date),
+/**
+ * 202: a worker writes and signs the file (poll GET /v1/audit/exports/{id}). Over 100.000 rows
+ * taken by one person in a day the job waits in waiting_approval for a second person with
+ * audit_read, who approves it in Cần bạn (BR-138).
+ */
+export const exportAudit = (query: AuditQuery) =>
+  v1Send<Schemas['ExportAccepted']>('POST', '/audit:export', {
+    filters: auditFilters(query),
     format: 'csv',
   } satisfies Schemas['ExportIn']);
-  return { status: accepted.status, needs_approval: accepted.status === 'waiting_approval' };
+
+/* openapi-typescript writes a free jsonb object as Record<string, never>; it holds anything. */
+export type AuditExport = Omit<Schemas['ExportJobView'], 'filters'> & {
+  filters: Record<string, unknown>;
 };
+
+export const getAuditExport = (id: string) => v1Get<AuditExport>(`/audit/exports/${pathId(id)}`);
+
+/** Recomputes the hash chain; a break is also recorded as a security event. */
+export const verifyAuditChain = () =>
+  v1Send<Schemas['VerifyResult']>('POST', '/audit:verify', {} satisfies Schemas['VerifyIn']);
+
+export type SecurityEvent = Omit<Schemas['SecurityEventView'], 'detail'> & {
+  detail: Record<string, unknown>;
+};
+
+export const listSecurityEvents = (query: {
+  severity?: 'low' | 'medium' | 'high' | 'critical';
+  status?: 'open' | 'investigating' | 'closed';
+  page_token?: string;
+}) => v1Get<Page<SecurityEvent>>('/security-events', { page_size: 50, ...query });
 
 /* ─── Yêu cầu của chủ thể dữ liệu (UC-11-06) ───────────────────────── */
 

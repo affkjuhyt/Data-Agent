@@ -83,35 +83,38 @@ const server = setupServer(
       next_page_token: '',
     }),
   ),
-  http.get('*/v1/audit', () =>
-    HttpResponse.json({
-      items: [
-        {
-          id: 'au-1',
-          occurred_at: at,
-          actor_kind: 'agent',
-          actor_id: 'a-1',
-          on_behalf_of: 'u-1',
-          action: 'query.executed',
-          object_kind: 'dataset',
-          object_id: '0192f0aa-3333',
-          outcome: 'ok',
-        },
-        {
-          id: 'au-2',
-          occurred_at: at,
-          actor_kind: 'client',
-          actor_id: null,
-          on_behalf_of: null,
-          action: 'mcp.tools_call',
-          object_kind: null,
-          object_id: null,
-          outcome: 'denied',
-        },
-      ],
+  http.get('*/v1/audit', ({ request }) => {
+    // GET /v1/audit filters by outcome (and action, time); the client sends the filter.
+    const outcome = new URL(request.url).searchParams.get('outcome');
+    const items = [
+      {
+        id: 'au-1',
+        occurred_at: at,
+        actor_kind: 'agent',
+        actor_id: 'a-1',
+        on_behalf_of: 'u-1',
+        action: 'query.executed',
+        object_kind: 'dataset',
+        object_id: '0192f0aa-3333',
+        outcome: 'ok',
+      },
+      {
+        id: 'au-2',
+        occurred_at: at,
+        actor_kind: 'client',
+        actor_id: null,
+        on_behalf_of: null,
+        action: 'mcp.tools_call',
+        object_kind: null,
+        object_id: null,
+        outcome: 'denied',
+      },
+    ];
+    return HttpResponse.json({
+      items: items.filter((i) => !outcome || i.outcome === outcome),
       next_page_token: '',
-    }),
-  ),
+    });
+  }),
 );
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 afterEach(() => {
@@ -151,21 +154,19 @@ describe('governance from the api', () => {
     await expect(getDecisionRule('rule-2')).rejects.toMatchObject({ status: 404 });
   });
 
-  it('says an audit row from its actor, action and object, and filters the page', async () => {
+  it('says an audit row from its actor, action and object, and filters on the server', async () => {
     const all = await searchAudit({});
     expect(all.items[0]).toMatchObject({
       actor_label: 'Agent Đối soát (của Đỗ Hải Yến)',
       actor_kind: 'agent',
       action_text: 'query.executed',
-      data_text: 'dataset 0192f0aa',
-      channel: 'agent',
+      data_text: 'dataset · 0192f0aa',
       outcome: 'ok',
     });
     expect(all.items[1]).toMatchObject({
       actor_kind: 'client',
-      channel: 'mcp',
       outcome: 'blocked',
     });
-    expect((await searchAudit({ channel: 'mcp' })).items.map((e) => e.id)).toEqual(['au-2']);
+    expect((await searchAudit({ outcome: 'denied' })).items.map((e) => e.id)).toEqual(['au-2']);
   });
 });
