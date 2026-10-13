@@ -147,19 +147,20 @@ async def list_connectors(principal: CurrentPrincipal) -> Page[ConnectorView]:
     async with transaction(ROLE, principal) as session:
         counts = dict(
             (
-                kind,
-                count,
-            )
-            for kind, count in (
                 await session.execute(
                     select(source.kind, func.count(source.id))
                     .where(source.org_id == principal.org_id, source.deleted_at.is_(None))
                     .group_by(source.kind)
                 )
-            ).all()
+            )
+            .tuples()
+            .all()
         )
     return Page(
-        items=[item.model_copy(update={"connected_count": counts.get(item.code, 0)}) for item in CONNECTORS],
+        items=[
+            item.model_copy(update={"connected_count": counts.get(item.code, 0)})
+            for item in CONNECTORS
+        ],
         next_page_token="",
     )
 
@@ -544,26 +545,76 @@ async def activate_source(
         source = await _source(session, principal, space, source_id, lock=True)
         if source.status not in SCANNABLE:
             raise Problem(409, "invalid_state", "The source must pass its connection test first.")
+        # A source belongs to one Data Space, so its tables stay there; moving a dataset into
+        # another Data Space is not this endpoint's to do, and the caller may not administer it.
+        elsewhere = sorted({str(t.data_space_id) for t in body.tables if t.data_space_id != space})
+        if elsewhere:
+            raise Problem(
+                422,
+                "validation_failed",
+                "tables[].data_space_id must be the source's Data Space (X-Data-Space).",
+            )
+        owners = {t.owner_id for t in body.tables}
+        if owners:
+            active = set(
+                (
+                    await session.scalars(
+                        select(org.AppUser.id).where(
+                            org.AppUser.id.in_(owners),
+                            org.AppUser.org_id == principal.org_id,
+                            org.AppUser.status == "active",
+                        )
+                    )
+                ).all()
+            )
+            if owners - active:
+                raise Problem(422, "validation_failed", "tables[].owner_id is not an active user.")
         names = {item.name for item in body.tables}
         datasets = (
             await session.scalars(
-                select(catalog.Dataset).where(
+                select(catalog.Dataset)
+                .where(
                     catalog.Dataset.org_id == principal.org_id,
                     catalog.Dataset.source_id == source.id,
                     catalog.Dataset.data_space_id == space,
                     catalog.Dataset.deleted_at.is_(None),
-                ).with_for_update()
+                )
+                .with_for_update()
             )
         ).all()
+        # UC-04-04 step 3, as PATCH /v1/datasets/{id} holds it: a table enters the context only
+        # once its personal-data columns' masking is confirmed.
+        unconfirmed = []
+        for dataset in datasets:
+            if f"{dataset.schema_name}.{dataset.table_name}" in names and not dataset.enabled:
+                pending = [
+                    c.name
+                    for c in await _columns(session, dataset.id)
+                    if c.pii_label and not c.pii_confirmed
+                ]
+                if pending:
+                    unconfirmed.append(
+                        f"{dataset.schema_name}.{dataset.table_name} ({', '.join(sorted(pending))})"
+                    )
+        if unconfirmed:
+            raise Problem(
+                422,
+                "business_rule_violated",
+                "Confirm the masking of the personal-data columns before enabling: "
+                + "; ".join(sorted(unconfirmed)),
+            )
         for dataset in datasets:
             selected = f"{dataset.schema_name}.{dataset.table_name}" in names
             assignment = next(
-                (item for item in body.tables if item.name == f"{dataset.schema_name}.{dataset.table_name}"),
+                (
+                    item
+                    for item in body.tables
+                    if item.name == f"{dataset.schema_name}.{dataset.table_name}"
+                ),
                 None,
             )
             dataset.enabled = selected
             if selected and assignment is not None:
-                dataset.data_space_id = assignment.data_space_id
                 dataset.steward_id = assignment.owner_id
                 dataset.updated_by = principal.user_id
         source.scan_cron = body.schema_scan

@@ -721,11 +721,15 @@
    ],
    "body": {},
    "query": [],
-   "returns": "Nội dung markdown của SessionReport, qua quyền của phiên",
+   "returns": "Nội dung markdown của SessionReport do worker báo cáo lưu trong MinIO, qua quyền của phiên",
    "errors": [
     [
      404,
      "not_found"
+    ],
+    [
+     503,
+     "source_unavailable"
     ]
    ],
    "request_text": "—"
@@ -1035,7 +1039,7 @@
    ],
    "body": {},
    "query": [],
-   "returns": "Danh mục connector an toàn cho màn Kết nối dữ liệu; không có credential",
+   "returns": "Danh mục connector cho màn Kết nối dữ liệu kèm số nguồn đã nối của tổ chức; không có credential",
    "errors": [],
    "request_text": "—"
   },
@@ -1046,7 +1050,7 @@
    ],
    "body": {},
    "query": [],
-   "returns": "Các reference OpenBao đã dùng trong Data Space; không trả secret",
+   "returns": "Các reference OpenBao (secret/tenants/<org>/…) đã dùng trong tổ chức, {ref, label}; không trả secret",
    "errors": [],
    "request_text": "—"
   },
@@ -1162,6 +1166,35 @@
     ]
    ],
    "request_text": "—"
+  },
+  "POST /v1/sources/{id}:activate": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {
+    "tables": false,
+    "schema_scan": false,
+    "profiling": false,
+    "on_schema_change": false
+   },
+   "query": [],
+   "returns": "Source. Bật các bảng đã chọn, tắt các bảng còn lại của nguồn, đặt người phụ trách từng bảng và lịch quét; bảng ở lại Data Space của nguồn",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ],
+    [
+     422,
+     "validation_failed"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "tables[] {name*, data_space_id*, owner_id*}, schema_scan, profiling, on_schema_change"
   },
   "PUT /v1/sources/{id}/scan-schedule": {
    "group": "Nguồn và danh mục",
@@ -7041,6 +7074,7 @@
     "Lớp riêng lãnh đạo"
    ],
    "body": {
+    "id": true,
     "content_ct": true,
     "wrapped_dek": true,
     "content_version": true,
@@ -7065,7 +7099,7 @@
      "business_rule_violated"
     ]
    ],
-   "request_text": "content_ct*, wrapped_dek*, content_version*, cond_ct*, cond_key_version*, due_at*, supersedes_id"
+   "request_text": "id* (UUIDv7 do thiết bị sinh, nằm trong AAD của bản mã; thêm 13/10/2026), content_ct*, wrapped_dek*, content_version*, cond_ct*, cond_key_version*, due_at*, supersedes_id"
   },
   "GET /v1/exec/theses/{id}": {
    "group": "Lớp riêng lãnh đạo",
@@ -7194,6 +7228,7 @@
     "Lớp riêng lãnh đạo"
    ],
    "body": {
+    "id": true,
     "kind": true,
     "content_ct": true,
     "wrapped_dek": true,
@@ -7212,7 +7247,7 @@
      "business_rule_violated"
     ]
    ],
-   "request_text": "kind*, content_ct*, wrapped_dek*, content_version*, related_thesis_id"
+   "request_text": "id* (UUIDv7 do thiết bị sinh, nằm trong AAD của bản mã; thêm 13/10/2026), kind*, content_ct*, wrapped_dek*, content_version*, related_thesis_id"
   },
   "POST /v1/exec/memory-items/{id}:shred": {
    "group": "Lớp riêng lãnh đạo",

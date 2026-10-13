@@ -1018,3 +1018,51 @@ async def test_one_source_is_read_and_names_its_writeback_tables(o: Org) -> None
         assert hidden.status_code == 404
         no_admin = await api.get(f"/v1/sources/{source}", headers=o.headers("steward"))
         assert no_admin.status_code == 403
+
+
+async def test_activation_keeps_tables_in_the_sources_data_space_and_their_rules(o: Org) -> None:
+    source = _source_row(o)
+    plain = _dataset(o, source, table_name="du_no")
+    personal = _dataset(o, source, table_name="khach_hang")
+    _column(o, personal, "so_cccd", 1, pii_label="national_id")
+    url = f"/v1/sources/{source}:activate"
+
+    def table(name: str, **extra: Any) -> dict[str, Any]:
+        row = {"name": f"credit.{name}", "data_space_id": str(o.space)}
+        row["owner_id"] = str(o.users["steward"])
+        row.update(extra)
+        return row
+
+    async with client(o) as api:
+        h = o.headers("admin")
+        # A table cannot be moved into another Data Space, even one the caller also administers.
+        moved = await api.post(
+            url, json={"tables": [table("du_no", data_space_id=str(o.other))]}, headers=h
+        )
+        assert moved.status_code == 422, moved.text
+        foreign = await api.post(
+            url, json={"tables": [table("du_no", data_space_id=str(o.foreign_space))]}, headers=h
+        )
+        assert foreign.status_code == 422, foreign.text
+        stranger = await api.post(
+            url, json={"tables": [table("du_no", owner_id=str(o.users["foreign"]))]}, headers=h
+        )
+        assert stranger.status_code == 422, stranger.text
+        # UC-04-04 step 3 holds here as on PATCH /v1/datasets/{id}.
+        unmasked = await api.post(
+            url, json={"tables": [table("du_no"), table("khach_hang")]}, headers=h
+        )
+        assert unmasked.status_code == 422, unmasked.text
+        assert unmasked.json()["code"] == "business_rule_violated"
+        assert "so_cccd" in unmasked.json()["detail"]
+        assert o.one("SELECT enabled FROM catalog.dataset WHERE id = %s", plain) is False
+
+        done = await api.post(url, json={"tables": [table("du_no")]}, headers=h)
+        assert done.status_code == 200, done.text
+        assert o.one("SELECT enabled FROM catalog.dataset WHERE id = %s", plain) is True
+        assert o.one("SELECT enabled FROM catalog.dataset WHERE id = %s", personal) is False
+        assert str(o.one("SELECT data_space_id FROM catalog.dataset WHERE id = %s", plain)) == str(
+            o.space
+        )
+        denied = await api.post(url, json={"tables": []}, headers=o.headers("analyst"))
+        assert denied.status_code == 403

@@ -32,6 +32,7 @@ const INTEGRATED_GROUPS: readonly string[] = [
   'Gói ngành',
   'Thu thập',
   'Tích hợp',
+  'Lớp riêng lãnh đạo',
 ];
 
 const IDENTITY_OPERATIONS: readonly string[] = ['getMe', 'listMyDataSpaces'];

@@ -115,7 +115,7 @@ Dịch vụ: Query engine (query). 3 endpoint.
 
 ### Phiên làm việc
 
-Dịch vụ: Workspace service (workspace). 16 endpoint.
+Dịch vụ: Workspace service (workspace). 22 endpoint.
 
 | Phương thức | Đường dẫn | Chức năng | Use case | Quyền |
 | --- | --- | --- | --- | --- |
@@ -137,6 +137,7 @@ Dịch vụ: Workspace service (workspace). 16 endpoint.
 | POST | /v1/session-reports/{id}:publish | Gửi duyệt và phát hành báo cáo | 02-07 | approve |
 | GET | /v1/session-reports | Báo cáo của một phiên (thêm 12/10/2026) | 02-07 | ask |
 | GET | /v1/session-reports/{id} | Một báo cáo của phiên: mục, căn cứ từng số, kết quả bốn kiểm tra (thêm 12/10/2026) | 02-07 | ask |
+| GET | /v1/session-reports/{id}/document | Đọc nội dung markdown của báo cáo (thêm 13/10/2026) | 02-07 | ask |
 | GET | /v1/workspaces/{id}/shares | Danh sách chia sẻ hiện có của phiên (thêm 12/10/2026) | 02-03 | ask |
 | POST | /v1/workspaces/{id}/shares:preview | Xem trước mỗi người nhận thấy gì theo quyền của họ, chưa lưu (thêm 12/10/2026) | 02-03 | ask |
 | GET | /v1/tiles/{id}/comments | Bình luận và việc được giao của một ô (thêm 12/10/2026) | 02-05 | ask |
@@ -170,14 +171,14 @@ Dịch vụ: Connector service (catalog). 17 endpoint. Hai endpoint chứng nh�
 
 | Phương thức | Đường dẫn | Chức năng | Use case | Quyền |
 | --- | --- | --- | --- | --- |
-| GET | /v1/connectors | Danh mục connector cho màn Kết nối dữ liệu | 04-01 | admin\_data |
-| GET | /v1/secret-refs | Các reference OpenBao đã dùng trong Data Space, không trả bí mật | 04-01 | admin\_data |
+| GET | /v1/connectors | Danh mục connector cho màn Kết nối dữ liệu (thêm 13/10/2026) | 04-01 | admin\_data |
+| GET | /v1/secret-refs | Các reference OpenBao đã dùng trong tổ chức, không trả bí mật (thêm 13/10/2026) | 04-01 | admin\_data |
 | GET | /v1/sources | Danh sách nguồn | 04-01 | admin\_data |
 | GET | /v1/sources/{id} | Một nguồn: chế độ, kết quả kiểm tra, giới hạn tải, lịch quét; không có bí mật (thêm 12/10/2026) | 04-01 | admin\_data |
 | POST | /v1/sources | Đăng ký nguồn | 04-01 | admin\_data |
 | PATCH | /v1/sources/{id} | Sửa nguồn, giới hạn tải | 04-01 | admin\_data |
 | POST | /v1/sources/{id}:test | Kiểm tra kết nối và quyền tài khoản | 04-01 | admin\_data |
-| POST | /v1/sources/{id}:activate | Chọn bảng và kích hoạt nguồn | 04-01, 04-04 | admin\_data |
+| POST | /v1/sources/{id}:activate | Chọn bảng và kích hoạt nguồn sau lượt quét cấu trúc đầu (thêm 13/10/2026) | 04-01, 04-04 | admin\_data |
 | PUT | /v1/sources/{id}/scan-schedule | Đặt lịch quét | 04-05 | admin\_data |
 | POST | /v1/sources/{id}/scans | Quét ngay; 202 | 04-02 | admin\_data |
 | GET | /v1/scan-runs/{id} | Tiến độ lượt quét | 04-02 | admin\_data |
@@ -723,7 +724,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/session-reports/{id}:publish | recipients | SessionReport | 409 invalid\_state (chưa qua kiểm tra); 422 business\_rule\_violated (có số không căn cứ) |
 | GET /v1/session-reports | ?workspace\_id, ?status, ?cursor | Danh sách SessionReport | — |
 | GET /v1/session-reports/{id} | — | SessionReport (nơi Location của :check trỏ tới) | 404 not\_found |
-| GET /v1/session-reports/{id}/document | — | Nội dung markdown của SessionReport, qua quyền của phiên | 404 not\_found, 503 source\_unavailable |
+| GET /v1/session-reports/{id}/document | — | Nội dung markdown của SessionReport do worker báo cáo lưu trong MinIO, qua quyền của phiên | 404 not\_found; 503 source\_unavailable (kho tệp chưa cấu hình hoặc không tới được) |
 | GET /v1/workspaces/{id}/shares | — | Danh sách WorkspaceShare | 404 not\_found |
 | POST /v1/workspaces/{id}/shares:preview | shares\* | Mỗi người nhận: ô thấy được, ô bị che và lý do (BR-89); không ghi gì | 404 not\_found |
 | GET /v1/tiles/{id}/comments | ?cursor | Danh sách Comment | 404 not\_found |
@@ -753,13 +754,14 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 
 | Endpoint | Gửi lên | Trả về | Lỗi riêng |
 | --- | --- | --- | --- |
-| GET /v1/connectors | — | Danh mục connector an toàn cho màn Kết nối dữ liệu; không có credential | — |
-| GET /v1/secret-refs | — | Các reference OpenBao đã dùng trong Data Space; không trả secret | — |
+| GET /v1/connectors | — | Danh mục connector cho màn Kết nối dữ liệu kèm số nguồn đã nối của tổ chức; không có credential | — |
+| GET /v1/secret-refs | — | Các reference OpenBao (secret/tenants/<org>/…) đã dùng trong tổ chức, {ref, label}; không trả secret | — |
 | GET /v1/sources | ?status, ?kind | Danh sách Source | — |
 | GET /v1/sources/{id} | — | Source như trong danh sách: status, status\_reason, db\_version, last\_checked\_at, has\_credentials, has\_writeback\_credentials, writeback\_tables; không có secret\_ref | 404 not\_found |
 | POST /v1/sources | name\*, kind\*, host, port, database\_name, mode, authority\_level, freshness\_sla, max\_concurrency, query\_timeout\_s, scan\_schemas, scan\_window, work\_calendar\_id, credentials, writeback\_credentials | Source. credentials được lưu vào OpenBao, không lưu CSDL (BR-14) | 409 conflict (trùng tên trong Data Space); 422 business\_rule\_violated (mode = federated với nguồn không hỗ trợ) |
 | PATCH /v1/sources/{id} | name, authority\_level, freshness\_sla, max\_concurrency, query\_timeout\_s, scan\_schemas, scan\_window, status, credentials, writeback\_tables | Source | 412 precondition\_failed; 422 validation\_failed (giới hạn tải ngoài khoảng, BR-99) |
 | POST /v1/sources/{id}:test | — | 202, Location tới source. Connector worker mở kết nối bằng tài khoản ở secret\_ref (API không giữ mật khẩu kho), kiểm TLS, SELECT, quyền ghi, độ trễ, phiên bản rồi ghi status, status\_reason, db\_version, last\_checked\_at lên source; tài khoản có quyền ghi bị cảnh báo. Sửa 12/10/2026 | 409 invalid\_state (nguồn đã lưu trữ) |
+| POST /v1/sources/{id}:activate | tables\[\] {name\*, data\_space\_id\*, owner\_id\*}, schema\_scan, profiling, on\_schema\_change | Source. Bật các bảng đã chọn, tắt các bảng còn lại của nguồn, đặt người phụ trách từng bảng và lịch quét; bảng ở lại Data Space của nguồn | 409 invalid\_state (nguồn chưa qua kiểm tra kết nối); 422 validation\_failed (data\_space\_id khác Data Space của nguồn, owner\_id không phải người dùng còn hoạt động); 422 business\_rule\_violated (cột dữ liệu cá nhân chưa xác nhận che, UC-04-04 bước 3) |
 | PUT /v1/sources/{id}/scan-schedule | scan\_cron, profile\_cron, scan\_window, work\_calendar\_id | Source. Trả kèm 5 lần quét kế tiếp | — |
 | POST /v1/sources/{id}/scans | kind, tables | 202, Location tới scan\_run | 409 conflict (đang có lượt quét chạy, BR-103) |
 | GET /v1/scan-runs/{id} | — | ScanRun | — |
@@ -1192,7 +1194,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | DELETE /v1/exec/vault/key-wraps/{id} | — | 204 | 422 business\_rule\_violated (kho còn dưới 2 khoá hoặc mất khoá ngoại tuyến, BR-189) |
 | GET /v1/exec/transit-key | — | JSON. public\_key\_pem, key\_version, algorithm = RSA-OAEP-SHA256 | — |
 | GET /v1/exec/theses | ?status, ?due\_from, ?due\_to | Danh sách Thesis (cột vận hành và bản mã nội dung); không trả cond\_ct | — |
-| POST /v1/exec/theses | content\_ct\*, wrapped\_dek\*, content\_version\*, cond\_ct\*, cond\_key\_version\*, due\_at\*, supersedes\_id | 201, Thesis (status = open); khởi chạy ExecThesisWorkflow; sự kiện exec.thesis.committed không nội dung (BR-188) | 409 conflict (cond\_key\_version không còn hiện hành); 409 invalid\_state (kho sealed); 422 business\_rule\_violated (kho thiếu khoá bọc, due\_at dưới 1 ngày) |
+| POST /v1/exec/theses | id\* (UUIDv7 do thiết bị sinh, nằm trong AAD của bản mã; thêm 13/10/2026), content\_ct\*, wrapped\_dek\*, content\_version\*, cond\_ct\*, cond\_key\_version\*, due\_at\*, supersedes\_id | 201, Thesis (status = open); khởi chạy ExecThesisWorkflow; sự kiện exec.thesis.committed không nội dung (BR-188) | 409 conflict (cond\_key\_version không còn hiện hành); 409 invalid\_state (kho sealed); 422 business\_rule\_violated (kho thiếu khoá bọc, due\_at dưới 1 ngày) |
 | GET /v1/exec/theses/{id} | — | Thesis kèm evidence\_state, số lô bằng chứng, publication\_id | 404 not\_found (không phải chủ kho) |
 | POST /v1/exec/theses/{id}:withdraw | — | Thesis (status = withdrawn); workflow dừng | 409 invalid\_state (đã tới due\_at hoặc đã chấm) |
 | GET /v1/exec/theses/{id}/evidence | ?batch\_no | Danh sách ThesisEvidence theo lô (side, item\_kind, strength, freshness\_ok, sealed\_ct); mặc định lô mới nhất và lô liền trước | — |
@@ -1201,7 +1203,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/exec/scores | ?from, ?to | Danh sách ThesisScore của chủ kho kèm thesis\_id, committed\_at; thiết bị ghép với mức tự tin đã giải mã để tính Brier (tab 5 G10.5) | — |
 | GET /v1/exec/key-access-log | ?thesis\_id, ?from, ?to, ?action | Danh sách KeyAccessLog kèm correlation\_id để đối chiếu nhật ký audit OpenBao | — |
 | GET /v1/exec/memory-items | ?kind, ?from, ?to | Danh sách MemoryItem (bản mã); thiết bị tải hết để dựng chỉ mục tìm kiếm cục bộ (tab 5 G10.7) | — |
-| POST /v1/exec/memory-items | kind\*, content\_ct\*, wrapped\_dek\*, content\_version\*, related\_thesis\_id | 201, MemoryItem | 409 invalid\_state (kho sealed); 422 business\_rule\_violated (kho thiếu khoá bọc) |
+| POST /v1/exec/memory-items | id\* (UUIDv7 do thiết bị sinh, nằm trong AAD của bản mã; thêm 13/10/2026), kind\*, content\_ct\*, wrapped\_dek\*, content\_version\*, related\_thesis\_id | 201, MemoryItem | 409 invalid\_state (kho sealed); 422 business\_rule\_violated (kho thiếu khoá bọc) |
 | POST /v1/exec/memory-items/{id}:shred | — | MemoryItem (content\_ct, wrapped\_dek null, shredded\_at) | 409 invalid\_state (đã huỷ) |
 | POST /v1/exec/private-questions | text\*, context\_items (tối đa 8 mục đã giải mã, tối đa 4.000 token), as\_of | 202, Location tới luồng SSE. Không tạo qa.question; Model gateway chỉ dùng mô hình tại chỗ, không ghi prompt log (BR-193) | 503 model\_unavailable (mô hình tại chỗ quá tải; không chuyển frontier) |
 | GET /v1/exec/private-questions/{id}/stream | — | Luồng SSE. Sự kiện understood, progress, answer (văn bản, figures kèm query\_run\_id), done; trạng thái tạm xoá sau 15 phút | 410 gone (quá 15 phút) |

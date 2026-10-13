@@ -137,8 +137,7 @@ export const listTheses = async (): Promise<Page<Thesis>> => {
 
 /**
  * The content's AAD is id ‖ owner_id ‖ content_version (tab 3b), so the device makes the id
- * before it encrypts. PROPOSAL: `id` in the body. A3's ThesisCreate has none: the api makes its
- * own id and ignores this one, and the content would not open under the api's id.
+ * before it encrypts and sends it: A3's ThesisCreate takes it (a UUIDv7, since 13/10/2026).
  */
 export const createThesis = async (body: {
   id: string;
@@ -287,7 +286,7 @@ export interface MemoryItem {
 export const listMemoryItems = async () =>
   v1Get<Page<MemoryItem>>('/exec/memory-items', { page_size: 500 });
 
-/** The same AAD as a thesis: PROPOSAL `id` in the body, which A3's MemoryItemCreate lacks. */
+/** The same AAD as a thesis: the device's `id` (UUIDv7) in the body, as A3's MemoryItemCreate takes it. */
 export const createMemoryItem = async (body: {
   id: string;
   kind: MemoryKind;

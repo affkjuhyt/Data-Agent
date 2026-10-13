@@ -715,6 +715,67 @@
     "title": "Acknowledge",
     "type": "object"
    },
+   "ActivateRequest": {
+    "properties": {
+     "on_schema_change": {
+      "default": "pause_and_ask",
+      "enum": [
+       "pause_and_ask",
+       "continue_and_notify"
+      ],
+      "title": "On Schema Change",
+      "type": "string"
+     },
+     "profiling": {
+      "default": "weekly_sun_0300",
+      "maxLength": 200,
+      "title": "Profiling",
+      "type": "string"
+     },
+     "schema_scan": {
+      "default": "daily_0200",
+      "maxLength": 200,
+      "title": "Schema Scan",
+      "type": "string"
+     },
+     "tables": {
+      "items": {
+       "$ref": "#/components/schemas/ActivateTable"
+      },
+      "maxItems": 10000,
+      "title": "Tables",
+      "type": "array"
+     }
+    },
+    "title": "ActivateRequest",
+    "type": "object"
+   },
+   "ActivateTable": {
+    "properties": {
+     "data_space_id": {
+      "format": "uuid",
+      "title": "Data Space Id",
+      "type": "string"
+     },
+     "name": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$",
+      "title": "Name",
+      "type": "string"
+     },
+     "owner_id": {
+      "format": "uuid",
+      "title": "Owner Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "name",
+     "data_space_id",
+     "owner_id"
+    ],
+    "title": "ActivateTable",
+    "type": "object"
+   },
    "AddRegression": {
     "properties": {
      "as_of": {
@@ -25456,6 +25517,11 @@
       "title": "Content Version",
       "type": "integer"
      },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
      "kind": {
       "enum": [
        "priority",
@@ -25486,6 +25552,7 @@
      }
     },
     "required": [
+     "id",
      "kind",
      "content_ct",
      "wrapped_dek",
@@ -42019,6 +42086,11 @@
       "title": "Due At",
       "type": "string"
      },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
      "supersedes_id": {
       "anyOf": [
        {
@@ -42038,6 +42110,7 @@
      }
     },
     "required": [
+     "id",
      "content_ct",
      "wrapped_dek",
      "content_version",
@@ -58439,7 +58512,7 @@
       "HTTPBearer": []
      }
     ],
-    "summary": "Danh mục connector cho màn Kết nối dữ liệu",
+    "summary": "Danh mục connector cho màn Kết nối dữ liệu (thêm 13/10/2026)",
     "tags": [
      "Nguồn và danh mục"
     ],
@@ -109075,7 +109148,7 @@
       "HTTPBearer": []
      }
     ],
-    "summary": "Các reference OpenBao đã dùng trong Data Space, không trả bí mật",
+    "summary": "Các reference OpenBao đã dùng trong tổ chức, không trả bí mật (thêm 13/10/2026)",
     "tags": [
      "Nguồn và danh mục"
     ],
@@ -109850,7 +109923,7 @@
       "HTTPBearer": []
      }
     ],
-    "summary": "Đọc nội dung markdown của báo cáo",
+    "summary": "Đọc nội dung markdown của báo cáo (thêm 13/10/2026)",
     "tags": [
      "Phiên làm việc"
     ],
@@ -114029,6 +114102,161 @@
     ],
     "x-use-cases": [
      "UC-04-02"
+    ]
+   }
+  },
+  "/v1/sources/{id}:activate": {
+   "post": {
+    "description": "Enable the tables selected after the initial structure scan.",
+    "operationId": "activateSource",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ActivateRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/services__api__modules__catalog__schemas__SourceView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Chọn bảng và kích hoạt nguồn sau lượt quét cấu trúc đầu (thêm 13/10/2026)",
+    "tags": [
+     "Nguồn và danh mục"
+    ],
+    "x-capability": [
+     "admin_data"
+    ],
+    "x-use-cases": [
+     "UC-04-01",
+     "UC-04-04"
     ]
    }
   },

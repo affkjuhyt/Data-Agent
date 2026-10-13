@@ -507,7 +507,7 @@ async def create_thesis(body: ThesisCreate, principal: CurrentPrincipal) -> Thes
             # Loaded under the owner policy: a foreign key does not see RLS, so another leader's
             # thesis id would otherwise be accepted as the one this replaces (BR-188).
             await _thesis(session, body.supersedes_id, principal)
-        thesis_id = uuid7()
+        thesis_id = body.id
         # The triggers refuse a vault without 2 live wraps (one offline), a due_at off the whole
         # hour, and the CHECK one under a day away: 422 business_rule_violated (BR-188, BR-189).
         thesis = vaultdb.Thesis(
@@ -863,7 +863,7 @@ async def create_memory_item(body: MemoryItemCreate, principal: CurrentPrincipal
             # A foreign key does not see RLS: without this another leader's thesis id would do.
             await _thesis(session, body.related_thesis_id, principal)
         item = vaultdb.MemoryItem(
-            id=uuid7(),
+            id=body.id,
             org_id=principal.org_id,
             vault_id=vault.id,
             owner_id=principal.user_id,
@@ -964,6 +964,7 @@ async def ask_private_question(
                 text=body.text,
                 context=context,
                 as_of=body.as_of.isoformat() if body.as_of else None,
+                data_space_id=principal.data_space_id,
             )
         )
     except ModelUnavailable as exc:

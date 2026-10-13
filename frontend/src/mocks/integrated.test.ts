@@ -23,8 +23,12 @@ describe('integrated groups', () => {
     expect(isIntegrated('POST', at('/v1/data-spaces'), operations)).toBe(true);
   });
 
+  it('sends the vault to the api now that it takes the device ids', () => {
+    expect(isIntegrated('GET', at('/v1/exec/theses'), operations)).toBe(true);
+    expect(isIntegrated('POST', at('/v1/exec/memory-items'), operations)).toBe(true);
+  });
+
   it('keeps the other groups and the PROPOSAL endpoints on the mock', () => {
-    expect(isIntegrated('GET', at('/v1/exec/theses'), operations)).toBe(false);
     expect(isIntegrated('GET', at('/v1/proposals/p-1/collaboration'), operations)).toBe(false);
     expect(isIntegrated('GET', at('/v1/session-reports/r-1'), operations)).toBe(true);
     expect(isIntegrated('POST', at('/v1/runs/r-1:retry'), operations)).toBe(true);

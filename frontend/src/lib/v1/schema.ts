@@ -1010,7 +1010,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Danh mục connector cho màn Kết nối dữ liệu
+         * Danh mục connector cho màn Kết nối dữ liệu (thêm 13/10/2026)
          * @description Return the safe connector catalogue and counts for this organisation.
          */
         get: operations["listConnectors"];
@@ -5584,7 +5584,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Các reference OpenBao đã dùng trong Data Space, không trả bí mật
+         * Các reference OpenBao đã dùng trong tổ chức, không trả bí mật (thêm 13/10/2026)
          * @description List labels for references already used in the selected Data Space.
          *
          *     OpenBao is deliberately not queried here: the API only exposes a reference that can be
@@ -5657,7 +5657,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Đọc nội dung markdown của báo cáo */
+        /** Đọc nội dung markdown của báo cáo (thêm 13/10/2026) */
         get: operations["getSessionReportDocument"];
         put?: never;
         post?: never;
@@ -6039,6 +6039,26 @@ export interface paths {
         put?: never;
         /** Quét ngay; 202 */
         post: operations["startSourceScan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sources/{id}:activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Chọn bảng và kích hoạt nguồn sau lượt quét cấu trúc đầu (thêm 13/10/2026)
+         * @description Enable the tables selected after the initial structure scan.
+         */
+        post: operations["activateSource"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6829,6 +6849,42 @@ export interface components {
         Acknowledge: {
             /** Note */
             note: string;
+        };
+        /** ActivateRequest */
+        ActivateRequest: {
+            /**
+             * On Schema Change
+             * @default pause_and_ask
+             * @enum {string}
+             */
+            on_schema_change: "pause_and_ask" | "continue_and_notify";
+            /**
+             * Profiling
+             * @default weekly_sun_0300
+             */
+            profiling: string;
+            /**
+             * Schema Scan
+             * @default daily_0200
+             */
+            schema_scan: string;
+            /** Tables */
+            tables?: components["schemas"]["ActivateTable"][];
+        };
+        /** ActivateTable */
+        ActivateTable: {
+            /**
+             * Data Space Id
+             * Format: uuid
+             */
+            data_space_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
         };
         /** AddRegression */
         AddRegression: {
@@ -15304,6 +15360,11 @@ export interface components {
             /** Content Version */
             content_version: number;
             /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
              * Kind
              * @enum {string}
              */
@@ -21440,6 +21501,11 @@ export interface components {
              * Format: date-time
              */
             due_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
             /** Supersedes Id */
             supersedes_id?: string | null;
             /**
@@ -69446,6 +69512,122 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["services__api__modules__catalog__schemas__Accepted"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    activateSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["services__api__modules__catalog__schemas__SourceView"];
                 };
             };
             /** @description Invalid request */

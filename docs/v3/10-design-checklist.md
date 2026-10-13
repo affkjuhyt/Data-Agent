@@ -10,8 +10,8 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 1 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 270 có test nhắc mã AC | todo 778 |
-| Endpoint A2 (tab 4) | 431 (A2 ghi 432 dòng; POST /v1/data-products ở hai nhóm) | 431 được `api` phục vụ | — |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 271 có test nhắc mã AC | todo 778 |
+| Endpoint A2 (tab 4) | 435 (A2 ghi 436 dòng; POST /v1/data-products ở hai nhóm) | 435 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 222 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 160 có mã nhắc tới | todo 195 |
 | Màn hình (SCR) | 75 | 11 có mã nhắc tới | todo 75 |
@@ -219,7 +219,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
 | UC-16-01 | Ghi luận điểm | todo | 9/9 | 4/4 | 4/7 |  |
-| UC-16-02 | Bộ nhớ riêng và hỏi riêng | todo | 5/5 | 3/3 | 3/8 |  |
+| UC-16-02 | Bộ nhớ riêng và hỏi riêng | todo | 5/5 | 3/3 | 4/8 |  |
 | UC-16-03 | Xem bằng chứng hai phía | todo | 3/3 | 4/4 | 1/7 |  |
 | UC-16-04 | Tự chấm và xem độ hiệu chỉnh | todo | 3/3 | 4/4 | 0/5 |  |
 | UC-16-05 | Công bố luận điểm thành giả thuyết | todo | 4/4 | 5/5 | 4/6 |  |
@@ -231,9 +231,9 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | --- | --- | --- |
 | Hỏi đáp | 17/17 |  |
 | Truy vấn | 4/4 |  |
-| Phiên làm việc | 21/21 |  |
+| Phiên làm việc | 22/22 |  |
 | Kỹ năng | 16/16 |  |
-| Nguồn và danh mục | 14/14 |  |
+| Nguồn và danh mục | 17/17 |  |
 | Nạp dữ liệu | 18/18 |  |
 | Tài liệu | 19/19 |  |
 | Biến đổi dữ liệu | 18/18 |  |
@@ -335,8 +335,8 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-77 | UC-13-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/libs/dataagent_db/models/inbox.py` +5 |
 | BR-78 | UC-01-02 | todo |  |
 | BR-79 | UC-01-02 | todo |  |
-| BR-80 | UC-01-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-81 | UC-01-04 | todo | `backend/services/api/modules/qa/query.py`, `backend/services/worker_agent/semantic/compiler.py` |
+| BR-80 | UC-01-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-81 | UC-01-04 | todo | `backend/services/api/modules/qa/query.py`, `backend/services/worker_agent/semantic/compiler.py`, `tests/unit/worker_agent/test_compiler.py` |
 | BR-82 | UC-01-04 | todo |  |
 | BR-83 | UC-01-05 | todo | `backend/services/api/modules/qa/routes.py` |
 | BR-84 | UC-01-05 | todo |  |
@@ -410,7 +410,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-152 | UC-14-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +11 |
 | BR-153 | UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +11 |
 | BR-154 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +6 |
-| BR-155 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-155 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-156 | UC-02-07, UC-10-02, UC-14-01, UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/libs/dataagent_db/models/catalog.py` +19 |
 | BR-157 | UC-15-01, UC-15-02, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +13 |
 | BR-158 | UC-15-03, UC-15-04, UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +15 |
@@ -424,16 +424,16 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-166 | UC-07-10, UC-07-11 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +12 |
 | BR-167 | UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +11 |
 | BR-168 | UC-14-03, UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +9 |
-| BR-169 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-169 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +10 |
 | BR-170 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +9 |
-| BR-171 | UC-01-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
+| BR-171 | UC-01-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-172 | UC-15-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-173 | UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-174 | UC-14-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +12 |
-| BR-175 | UC-01-01, UC-01-07, UC-07-13 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/qa.py` +14 |
+| BR-175 | UC-01-01, UC-01-07, UC-07-13 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/qa.py` +15 |
 | BR-176 | UC-01-01, UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-177 | UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
-| BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +14 |
+| BR-177 | UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +6 |
+| BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +16 |
 | BR-179 | UC-01-05, UC-07-14, UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/schema/csdl/definitions.json` +13 |
 | BR-180 | UC-01-01, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/governance.py` +14 |
 | BR-181 | UC-01-07, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/qa.py` +9 |
@@ -444,11 +444,11 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-186 | UC-07-14, UC-15-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/libs/dataagent_db/models/forecast.py` +5 |
 | BR-187 | UC-08-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-188 | UC-16-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +9 |
-| BR-189 | UC-16-01, UC-16-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +14 |
+| BR-189 | UC-16-01, UC-16-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +17 |
 | BR-190 | UC-16-03, UC-16-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-191 | UC-16-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-192 | UC-16-03, UC-16-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +9 |
-| BR-193 | UC-16-02 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/exec/ports.py` +3 |
+| BR-193 | UC-16-02 | todo | `backend/services/api/app.py`, `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md` +10 |
 | BR-194 | UC-16-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/exec.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-195 | UC-16-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/versions/v3_0007_exec_handover_completion.py`, `backend/libs/dataagent_db/models/exec.py` +10 |
 
@@ -2119,7 +2119,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-16-02 Bộ nhớ riêng và hỏi riêng · 4/10</summary>
+<details><summary>UC-16-02 Bộ nhớ riêng và hỏi riêng · 5/10</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
@@ -2132,7 +2132,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | AC-16-02-07 | Ngoại lệ | Cho tổ chức đã bật frontier_routing cho answer_writing và mô hình tại chỗ quá tải / Khi gửi câu hỏi riêng / Thì câu hỏi chờ trong hàng đợi riêng và không có model_route_decision nào gọi provider frontier | API, CSDL | todo | `tests/integration/api/test_exec.py` |
 | AC-16-02-08 | Quy tắc | Cho 10 câu hỏi riêng / Khi xem Model gateway, prompt log và Langfuse / Thì cả 10 chạy mô hình tại chỗ, không có prompt log, vết Langfuse chỉ có số token và độ trễ, và nội dung không có trong eval_item, Error Book, age… | API, CSDL | todo |  |
 | AC-16-02-09 | Quy tắc | Cho AC02 nhận thông báo qua Teams và đẩy di động, và một agent chung của Data Space / Khi có câu trả lời riêng xong và khi agent chung gọi exec.memory.propose / Thì kênh ngoài chỉ nhận thông báo không nội dung và Tool… | API | todo |  |
-| AC-16-02-10 | Phi chức năng | Cho 20 mục bộ nhớ, câu hỏi và luận điểm mẫu có chuỗi đánh dấu biết trước / Khi quét CSDL, log ứng dụng, Langfuse và bản sao lưu / Thì tìm thấy 0 bản rõ của bất kỳ chuỗi đánh dấu nào | CSDL, API | todo |  |
+| AC-16-02-10 | Phi chức năng | Cho 20 mục bộ nhớ, câu hỏi và luận điểm mẫu có chuỗi đánh dấu biết trước / Khi quét CSDL, log ứng dụng, Langfuse và bản sao lưu / Thì tìm thấy 0 bản rõ của bất kỳ chuỗi đánh dấu nào | CSDL, API | todo | `tests/integration/worker_agent/test_private.py` |
 
 </details>
 

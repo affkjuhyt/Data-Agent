@@ -34,6 +34,7 @@ from services.api.kernel.ratelimit import (
 )
 from services.api.kernel.tracing import trace_middleware
 from services.api.modules import ROUTERS
+from services.api.modules.exec import private_questions_from_env, transit_from_env
 from services.api.modules.org import OrgIdentityResolver
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,10 @@ def create_app(
             token_verifier = UnconfiguredVerifier()
     app.state.token_verifier = token_verifier
     app.state.identity_resolver = identity_resolver or OrgIdentityResolver()
+    # The vault's Transit key (BR-189); without OpenBao the exec routes answer 503. Tests set their own.
+    app.state.exec_transit = transit_from_env()
+    # UC-16-02's ephemeral channel to worker-agent's local model (BR-193); 503 without Redis.
+    app.state.exec_private_questions = private_questions_from_env()
 
     install_problem_handlers(app)
     app.add_exception_handler(IdempotentAnswer, on_idempotent_answer)

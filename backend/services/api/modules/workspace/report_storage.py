@@ -53,7 +53,9 @@ class MinioReportStore:
                     if code in {"404", "NoSuchKey", "NoSuchBucket"}:
                         raise FileNotFoundError(key) from exc
                     raise
-                return await response["Body"].read()
+                # botocore types the body as Any; the object is a document of bytes.
+                body: bytes = await response["Body"].read()
+                return body
         except FileNotFoundError:
             raise
         except Problem:

@@ -1,5 +1,5 @@
 {
- "source": "Data Agent V3 — Tài liệu phân tích thiết kế hệ thống, tab 4 · Đặc tả API, A2 (rev 130)",
+ "source": "Data Agent V3 — Tài liệu phân tích thiết kế hệ thống, tab 4 · Đặc tả API, A2 (rev 151)",
  "as_of": "2026-10-12",
  "note": "Snapshot of A2. ADR-48: OpenAPI is generated from code and checked against this list; adding or removing an endpoint updates A2 and this file in the same PR.",
  "groups": {
@@ -597,7 +597,7 @@
    "group": "Phiên làm việc",
    "method": "GET",
    "path": "/v1/session-reports/{id}/document",
-   "summary": "Đọc nội dung markdown của báo cáo",
+   "summary": "Đọc nội dung markdown của báo cáo (thêm 13/10/2026)",
    "use_cases": [
     "02-07"
    ],
@@ -841,7 +841,7 @@
    "group": "Nguồn và danh mục",
    "method": "GET",
    "path": "/v1/connectors",
-   "summary": "Danh mục connector cho màn Kết nối dữ liệu",
+   "summary": "Danh mục connector cho màn Kết nối dữ liệu (thêm 13/10/2026)",
    "use_cases": [
     "04-01"
    ],
@@ -853,7 +853,7 @@
    "group": "Nguồn và danh mục",
    "method": "GET",
    "path": "/v1/secret-refs",
-   "summary": "Các reference OpenBao đã dùng trong Data Space, không trả bí mật",
+   "summary": "Các reference OpenBao đã dùng trong tổ chức, không trả bí mật (thêm 13/10/2026)",
    "use_cases": [
     "04-01"
    ],
@@ -925,7 +925,7 @@
    "group": "Nguồn và danh mục",
    "method": "POST",
    "path": "/v1/sources/{id}:activate",
-   "summary": "Chọn bảng và kích hoạt nguồn",
+   "summary": "Chọn bảng và kích hoạt nguồn sau lượt quét cấu trúc đầu (thêm 13/10/2026)",
    "use_cases": [
     "04-01",
     "04-04"
