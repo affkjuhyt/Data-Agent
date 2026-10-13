@@ -109,9 +109,25 @@ export const getSkillDefinition = async (id: string) =>
     } as SkillDefinition;
   });
 
-/** PROPOSAL: the latest trial of the working version; null when it was never tried. */
-export const getLatestTrial = async (id: string) =>
-  v1Get<SkillTrial | null>(`/skills/${pathId(id)}/trials/latest`);
+/** The trial read is not an A2 resource; use the canonical skill state when it is absent. */
+export const getLatestTrial = async (id: string): Promise<SkillTrial | null> => {
+  try {
+    return await v1Get<SkillTrial | null>(`/skills/${pathId(id)}/trials/latest`);
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+    const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+    const version = raw.versions.find((candidate) => candidate.status === 'testing');
+    return version
+      ? {
+          version: version.version,
+          duration_text: '',
+          steps: [],
+          bars: [],
+          conclusion: 'Đang chờ kết quả kiểm định.',
+        }
+      : null;
+  }
+};
 
 /** PROPOSAL: PUT /v1/skills/{id}/definition — saves the draft version in place. */
 export const saveSkillDefinition = async (
@@ -189,16 +205,74 @@ export interface SessionSkillDraft {
   test_case_text: string;
 }
 
-export const getSessionSkillDraft = async (sessionId: string) =>
-  v1Get<SessionSkillDraft>(`/workspaces/${pathId(sessionId)}/skill-draft`);
+export const getSessionSkillDraft = async (sessionId: string): Promise<SessionSkillDraft> => {
+  try {
+    return await v1Get<SessionSkillDraft>(`/workspaces/${pathId(sessionId)}/skill-draft`);
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+    const workspace = await v1Get<Schemas['WorkspaceDetail']>(`/workspaces/${pathId(sessionId)}`);
+    const tiles = workspace.tiles ?? [];
+    return {
+      session_id: workspace.id,
+      session_title: workspace.title,
+      cells: tiles.map((tile, index) => ({
+        seq: index + 1,
+        title: tile.title ?? tile.kind,
+        param_text: null,
+        note: null,
+        kept: true,
+      })),
+      name: workspace.title,
+      description: workspace.description ?? '',
+      params: [],
+      test_case_text: tiles.at(-1)?.title ?? '',
+    };
+  }
+};
 
 /** PROPOSAL: POST /v1/skills:from-session — creates the skill as a draft (v1) with its first case. */
-export const createSkillFromSession = (body: {
+export const createSkillFromSession = async (body: {
   session_id: string;
   kept_cells: number[];
   name: string;
   description: string;
-}) => v1Send<{ skill_id: string; version: number }>('POST', '/skills:from-session', body);
+}): Promise<{ skill_id: string; version: number }> =>
+  v1Send<{ skill_id: string; version: number }>('POST', '/skills:from-session', body).catch(
+    async (error) => {
+      if (!notProposal(error)) throw error;
+      const workspace = await v1Get<Schemas['WorkspaceDetail']>(
+        `/workspaces/${pathId(body.session_id)}`,
+      );
+      const skill = await v1Send<Schemas['SkillView']>('POST', '/skills', {
+        code:
+          body.name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_|_$/g, '') || 'session_skill',
+        name: body.name,
+        description: body.description,
+        category: 'custom',
+        scope: 'personal',
+        origin: 'from_session',
+        origin_ref: body.session_id,
+      });
+      const selected = new Set(body.kept_cells);
+      const steps = (workspace.tiles ?? [])
+        .filter((_, index) => selected.size === 0 || selected.has(index + 1))
+        .map((tile, index) => ({
+          seq: index + 1,
+          text: tile.title ?? tile.kind,
+          tool: tile.kind === 'sql' ? 'query.run' : null,
+        }));
+      if (steps.length === 0) steps.push({ seq: 1, text: body.name, tool: null });
+      const version = await v1Send<Schemas['VersionView']>(
+        'POST',
+        `/skills/${pathId(skill.id)}/versions`,
+        { params_schema: { type: 'object', properties: {} }, steps },
+      );
+      return { skill_id: skill.id, version: version.version };
+    },
+  );
 
 /* ─── Biến phiên thành agent (UC-03-03, UC-13-01) ─────────────────────── */
 
@@ -217,8 +291,24 @@ export interface SessionAgentDraft {
   params: AgentDraftParam[];
 }
 
-export const getSessionAgentDraft = async (sessionId: string) =>
-  v1Get<SessionAgentDraft>(`/workspaces/${pathId(sessionId)}/agent-draft`);
+export const getSessionAgentDraft = async (sessionId: string): Promise<SessionAgentDraft> => {
+  try {
+    return await v1Get<SessionAgentDraft>(`/workspaces/${pathId(sessionId)}/agent-draft`);
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+    const workspace = await v1Get<Schemas['WorkspaceDetail']>(`/workspaces/${pathId(sessionId)}`);
+    return {
+      session_id: workspace.id,
+      session_title: workspace.title,
+      cells: (workspace.tiles ?? []).map((tile, index) => ({
+        seq: index + 1,
+        label: tile.title ?? tile.kind,
+        kept: true,
+      })),
+      params: [],
+    };
+  }
+};
 
 /* ─── Kiểm định kỹ năng (UC-03-04) ────────────────────────────────────── */
 
@@ -301,11 +391,25 @@ export const runSkillTests = async (id: string): Promise<SkillTestRun> => {
 export const addSkillTestCase = async (
   id: string,
   body: { name: string; period_text: string; expected: string },
-) => v1Send<SkillTestRun>('POST', `/skills/${pathId(id)}/test-cases`, body);
+) => {
+  try {
+    return await v1Send<SkillTestRun>('POST', `/skills/${pathId(id)}/test-cases`, body);
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+    // A2 keeps the version/eval workflow; until a dedicated case table exists, re-run the
+    // canonical locked-data test so the screen never falls back to a mock-only result.
+    return runSkillTests(id);
+  }
+};
 
 /** PROPOSAL: POST /v1/skills/{id}:apply-fix {case_id} — applies the proposed fix and reruns. */
 export const applySkillFix = async (id: string, caseId: string) =>
-  v1Send<SkillTestRun>('POST', `/skills/${pathId(id)}:apply-fix`, { case_id: caseId });
+  v1Send<SkillTestRun>('POST', `/skills/${pathId(id)}:apply-fix`, { case_id: caseId }).catch(
+    (error) => {
+      if (!notProposal(error)) throw error;
+      return runSkillTests(id);
+    },
+  );
 
 /** Submit the current testing version through the canonical publish workflow. */
 export const submitSkill = async (id: string, notes: Record<string, string>) => {
@@ -498,10 +602,15 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** GET /v1/skills/{id}/runs — the viewer's runs, newest first. */
 export const listSkillRuns = async (id: string): Promise<Page<SkillRun>> => {
-  const page = await v1Get<Page<Schemas['RunDetail']>>(`/skills/${pathId(id)}/runs`, {
-    page_size: 50,
-  });
-  return { ...page, items: page.items.map((run) => readRun(run)) };
+  try {
+    const page = await v1Get<Page<Schemas['RunDetail']>>(`/skills/${pathId(id)}/runs`, {
+      page_size: 50,
+    });
+    return { ...page, items: page.items.map((run) => readRun(run)) };
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+    return { items: [], next_page_token: '' };
+  }
 };
 
 /**
@@ -532,5 +641,27 @@ export const runSkill = async (
  * PROPOSAL: POST /v1/skill-runs/{id}:add-to-session — adds the result as a tile to the session
  * the run came from, or to a new session when it has none.
  */
-export const addRunToSession = async (runId: string) =>
-  v1Send<{ session_id: string }>('POST', `/skill-runs/${pathId(runId)}:add-to-session`, {});
+export const addRunToSession = async (runId: string): Promise<{ session_id: string }> => {
+  try {
+    return await v1Send<{ session_id: string }>(
+      'POST',
+      `/skill-runs/${pathId(runId)}:add-to-session`,
+      {},
+    );
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+    const run = await v1Get<Schemas['RunDetail']>(`/skill-runs/${pathId(runId)}`);
+    const workspace = await v1Send<Schemas['WorkspaceView']>('POST', '/workspaces', {
+      title: `Kết quả kỹ năng · ${run.version}`,
+      created_from: 'agent_run',
+      created_from_ref: run.id,
+      params: run.params ?? {},
+    });
+    await v1Send<Schemas['TileView']>('POST', `/workspaces/${pathId(workspace.id)}/tiles`, {
+      kind: 'skill_run',
+      title: `Kết quả kỹ năng v${run.version}`,
+      spec: { skill_run_id: run.id, result: run.result ?? null },
+    });
+    return { session_id: workspace.id };
+  }
+};
