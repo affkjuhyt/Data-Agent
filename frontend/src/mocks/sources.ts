@@ -983,6 +983,16 @@ function sourceDriftFixture(): SourceDrift {
   };
 }
 
+const driftWire = (value: SourceDrift) => ({
+  id: value.id,
+  source_id: value.source_id,
+  created_at: '2026-10-13T08:00:00+07:00',
+  resolution: value.status === 'accepted' ? 'approved_new' : value.status === 'rejected' ? 'reverted' : null,
+  action: value.job_paused ? 'quarantine' : 'none',
+  signals: { table: value.table_name, changes: value.changes },
+  display: value,
+});
+
 function errorGroupsFixture(): ErrorRecordGroup[] {
   return [
     {
@@ -1801,10 +1811,10 @@ export function createSourcesHandlers() {
     // answer only our ids (and the origin=source list) and fall through otherwise.
     http.get('*/v1/schema-drifts', ({ request }) => {
       if (new URL(request.url).searchParams.get('origin') !== 'source') return undefined;
-      return page(drift.status === 'pending' ? [drift] : []);
+      return page(drift.status === 'pending' ? [driftWire(drift)] : []);
     }),
     http.get('*/v1/schema-drifts/:id', ({ params }) =>
-      params.id === drift.id ? HttpResponse.json(drift) : undefined,
+      params.id === drift.id ? HttpResponse.json(driftWire(drift)) : undefined,
     ),
     http.post('*/v1/schema-drifts/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
@@ -1850,7 +1860,7 @@ export function createSourcesHandlers() {
             : g,
         );
       }
-      return HttpResponse.json(drift);
+      return HttpResponse.json(driftWire(drift));
     }),
 
     http.get('*/v1/ingestion-job-candidates', () => page(candidates)),

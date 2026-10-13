@@ -82,7 +82,12 @@ const timeVN = (iso: string) =>
     timeZone: 'Asia/Ho_Chi_Minh',
   });
 
-const getDetail = (id: string) => v1Get<DetailWire>(`/forecasts/${pathId(id)}`);
+// Forecast jobs and issued forecasts share the screen model, but are separate resources in the
+// deployed API. Keep the job endpoint as a compatibility fallback for older gateways.
+const getDetail = (id: string) =>
+  v1Get<DetailWire>(`/forecasts/${pathId(id)}`).catch(() =>
+    v1Get<DetailWire>(`/forecast-jobs/${pathId(id)}`),
+  );
 
 const getVersion = (id: string) => v1Get<VersionView>(`/forecast-model-versions/${pathId(id)}`);
 
