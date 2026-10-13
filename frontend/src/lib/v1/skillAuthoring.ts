@@ -252,8 +252,25 @@ export interface SkillTestRun {
   failures: SkillTestFailure[];
 }
 
-export const getLatestTestRun = async (id: string) =>
-  v1Get<SkillTestRun>(`/skills/${pathId(id)}/test-runs/latest`);
+export const getLatestTestRun = async (id: string): Promise<SkillTestRun> => {
+  try {
+    return await v1Get<SkillTestRun>(`/skills/${pathId(id)}/test-runs/latest`);
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+    const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+    const version = raw.versions.find((candidate) => candidate.eval_run_id) ?? raw.versions[0];
+    if (!version) throw error;
+    return {
+      skill_id: raw.id,
+      skill_name: raw.name,
+      version: version.version,
+      status: version.status as SkillAuthoringStatus,
+      ran_at: version.created_at,
+      cases: [],
+      failures: [],
+    };
+  }
+};
 
 /** PROPOSAL: POST /v1/skills/{id}:test — reruns every case on locked data. */
 export const runSkillTests = async (id: string): Promise<SkillTestRun> => {
