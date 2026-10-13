@@ -5589,6 +5589,99 @@
     "title": "ChannelPut",
     "type": "object"
    },
+   "ChannelRuleCell": {
+    "properties": {
+     "text": {
+      "title": "Text",
+      "type": "string"
+     },
+     "tone": {
+      "enum": [
+       "success",
+       "warning",
+       "error",
+       "idle"
+      ],
+      "title": "Tone",
+      "type": "string"
+     }
+    },
+    "required": [
+     "text",
+     "tone"
+    ],
+    "title": "ChannelRuleCell",
+    "type": "object"
+   },
+   "ChannelRuleRow": {
+    "properties": {
+     "cells": {
+      "additionalProperties": {
+       "$ref": "#/components/schemas/ChannelRuleCell"
+      },
+      "title": "Cells",
+      "type": "object"
+     },
+     "kind": {
+      "title": "Kind",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "note": {
+      "title": "Note",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "label",
+     "cells",
+     "note"
+    ],
+    "title": "ChannelRuleRow",
+    "type": "object"
+   },
+   "ChannelRulesView": {
+    "properties": {
+     "channels": {
+      "items": {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      "title": "Channels",
+      "type": "array"
+     },
+     "principles": {
+      "items": {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      "title": "Principles",
+      "type": "array"
+     },
+     "rows": {
+      "items": {
+       "$ref": "#/components/schemas/ChannelRuleRow"
+      },
+      "title": "Rows",
+      "type": "array"
+     }
+    },
+    "required": [
+     "channels",
+     "rows",
+     "principles"
+    ],
+    "title": "ChannelRulesView",
+    "type": "object"
+   },
    "ChecklistItem": {
     "additionalProperties": false,
     "properties": {
@@ -42163,6 +42256,22 @@
     "title": "TermView",
     "type": "object"
    },
+   "TestNotificationView": {
+    "properties": {
+     "channels": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Channels",
+      "type": "array"
+     }
+    },
+    "required": [
+     "channels"
+    ],
+    "title": "TestNotificationView",
+    "type": "object"
+   },
    "ThesisCreate": {
     "properties": {
      "cond_ct": {
@@ -57685,6 +57794,138 @@
     ],
     "x-use-cases": [
      "UC-09-02"
+    ]
+   }
+  },
+  "/v1/channel-rules": {
+   "get": {
+    "description": "Return the policy matrix used to explain each delivery channel to administrators.",
+    "operationId": "getChannelRules",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ChannelRulesView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Quy tắc các kênh thông báo",
+    "tags": [
+     "Theo dõi, báo cáo, thông báo"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-08-07"
     ]
    }
   },
@@ -92254,6 +92495,137 @@
     ],
     "x-use-cases": [
      "UC-08-04"
+    ]
+   }
+  },
+  "/v1/me/notification-preferences:test": {
+   "post": {
+    "operationId": "testMyNotificationPreferences",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TestNotificationView"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Gửi thử thông báo",
+    "tags": [
+     "Theo dõi, báo cáo, thông báo"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-08-07"
     ]
    }
   },

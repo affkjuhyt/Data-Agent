@@ -174,6 +174,22 @@ async def test_prefs_start_from_the_defaults_and_put_replaces_them(ntf: Org) -> 
     )
 
 
+async def test_notification_test_and_channel_rules_are_canonical(ntf: Org) -> None:
+    async with api_for(ntf) as api:
+        test = await api.post("/v1/me/notification-preferences:test", headers=me("owner"))
+        assert test.status_code == 200, test.text
+        assert test.json()["channels"] == ["in_app"]
+
+        rules = await api.get("/v1/channel-rules", headers=me("owner"))
+        assert rules.status_code == 200, rules.text
+        assert {channel["key"] for channel in rules.json()["channels"]} >= {
+            "in_app",
+            "email",
+            "teams",
+        }
+        assert {row["kind"] for row in rules.json()["rows"]} >= {"hitl", "alert"}
+
+
 # AC-08-07-03
 async def test_hitl_always_reaches_the_app(ntf: Org) -> None:
     async with api_for(ntf) as api:

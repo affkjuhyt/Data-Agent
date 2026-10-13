@@ -394,6 +394,8 @@ Dịch vụ: Monitor & report (monitor), Notification (notify). 29 endpoint.
 | GET | /v1/me/notifications | Thông báo của tôi | 08-07 | ask |
 | GET | /v1/me/notification-prefs | Cài đặt nhận thông báo | 08-07 | ask |
 | PUT | /v1/me/notification-prefs | Đổi cài đặt | 08-07 | ask |
+| POST | /v1/me/notification-preferences:test | Gửi thử thông báo | 08-07 | ask |
+| GET | /v1/channel-rules | Quy tắc các kênh thông báo | 08-07 | ask |
 | PUT | /v1/me/channels/{channel} | Liên kết Teams, Zalo, email, di động | 08-06 | ask |
 | POST | /v1/channels/{kind}/callback | Nhận thao tác người dùng trên kênh ngoài (ký HMAC) | 08-06 | channel |
 | POST | /v1/tasks | Giao việc cho agent nền | 08-05 | run\_agent |

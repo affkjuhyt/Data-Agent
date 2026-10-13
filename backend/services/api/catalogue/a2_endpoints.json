@@ -2875,6 +2875,30 @@
   },
   {
    "group": "Theo dõi, báo cáo, thông báo",
+   "method": "POST",
+   "path": "/v1/me/notification-preferences:test",
+   "summary": "Gửi thử thông báo",
+   "use_cases": [
+    "08-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "method": "GET",
+   "path": "/v1/channel-rules",
+   "summary": "Quy tắc các kênh thông báo",
+   "use_cases": [
+    "08-07"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Theo dõi, báo cáo, thông báo",
    "method": "PUT",
    "path": "/v1/me/channels/{channel}",
    "summary": "Liên kết Teams, Zalo, email, di động",

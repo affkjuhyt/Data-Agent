@@ -3941,6 +3941,28 @@
    ],
    "request_text": "prefs*"
   },
+  "POST /v1/me/notification-preferences:test": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "TestNotification",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/channel-rules": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ChannelRules",
+   "errors": [],
+   "request_text": "—"
+  },
   "PUT /v1/me/channels/{channel}": {
    "group": "Theo dõi, báo cáo, thông báo",
    "groups": [

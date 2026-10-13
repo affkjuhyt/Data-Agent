@@ -80,6 +80,28 @@ class PrefView(BaseModel):
     updated_at: datetime.datetime | None
 
 
+class TestNotificationView(BaseModel):
+    channels: list[str]
+
+
+class ChannelRuleCell(BaseModel):
+    text: str
+    tone: Literal["success", "warning", "error", "idle"]
+
+
+class ChannelRuleRow(BaseModel):
+    kind: str
+    label: str
+    cells: dict[str, ChannelRuleCell]
+    note: str
+
+
+class ChannelRulesView(BaseModel):
+    channels: list[dict[str, str]]
+    rows: list[ChannelRuleRow]
+    principles: list[dict[str, str]]
+
+
 class ChannelPut(BaseModel):
     external_address: str | None = Field(default=None, min_length=1, max_length=320)
     verification_code: str | None = Field(default=None, min_length=4, max_length=12)

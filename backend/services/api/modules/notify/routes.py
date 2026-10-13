@@ -44,9 +44,11 @@ from services.api.modules.notify.schemas import (
     ChannelCallback,
     ChannelKind,
     ChannelPut,
+    ChannelRulesView,
     NotificationView,
     PrefsPut,
     PrefView,
+    TestNotificationView,
 )
 
 router = APIRouter()
@@ -257,6 +259,73 @@ async def put_prefs(body: PrefsPut, principal: CurrentPrincipal) -> Page[PrefVie
             )
         await session.flush()
         return await _prefs(session, principal)
+
+
+@router.post(
+    "/v1/me/notification-preferences:test",
+    response_model=TestNotificationView,
+    **endpoint(
+        "POST", "/v1/me/notification-preferences:test", operation_id="testMyNotificationPreferences"
+    ),
+)
+async def test_notification_preferences(principal: CurrentPrincipal) -> TestNotificationView:
+    async with transaction(ROLE, principal) as session:
+        prefs = await _prefs(session, principal)
+        channels = sorted(
+            {channel for pref in prefs.items for channel in pref.channels if channel != "in_app"}
+            | {"in_app"}
+        )
+        event_id = uuid7()
+        _emit(
+            session,
+            principal.org_id,
+            "notification_test",
+            event_id,
+            "notification.test_requested",
+            user_id=principal.user_id,
+            channels=channels,
+        )
+        await session.flush()
+    return TestNotificationView(channels=channels)
+
+
+@router.get(
+    "/v1/channel-rules",
+    response_model=ChannelRulesView,
+    **endpoint("GET", "/v1/channel-rules", operation_id="getChannelRules"),
+)
+async def get_channel_rules(principal: CurrentPrincipal) -> ChannelRulesView:
+    """Return the policy matrix used to explain each delivery channel to administrators."""
+    del principal
+    channels = [
+        {"key": "in_app", "label": "Trong ứng dụng"},
+        {"key": "email", "label": "Email"},
+        {"key": "teams", "label": "Microsoft Teams"},
+        {"key": "zalo", "label": "Zalo"},
+        {"key": "mobile_push", "label": "Thông báo đẩy"},
+    ]
+    cells = {
+        "in_app": {"text": "Luôn gửi", "tone": "success"},
+        "email": {"text": "Có thể gửi", "tone": "success"},
+        "teams": {"text": "Có thể gửi", "tone": "success"},
+        "zalo": {"text": "Cần liên kết", "tone": "warning"},
+        "mobile_push": {"text": "Cần liên kết", "tone": "warning"},
+    }
+    rows = [
+        {"kind": kind, "label": kind, "cells": cells, "note": "Phụ thuộc cài đặt cá nhân."}
+        for kind in KINDS
+    ]
+    return ChannelRulesView(
+        channels=channels,
+        rows=rows,
+        principles=[
+            {
+                "title": "HITL luôn vào ứng dụng",
+                "body": "Không thể tắt kênh in_app cho việc cần quyết.",
+            },
+            {"title": "Kênh ngoài cần liên kết", "body": "Chỉ gửi khi kênh đã được xác minh."},
+        ],
+    )
 
 
 # ---------------------------------------------------------------- channel bindings (UC-08-06)
