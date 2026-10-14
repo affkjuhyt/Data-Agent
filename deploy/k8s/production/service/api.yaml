@@ -18,6 +18,7 @@ metadata:
     app.kubernetes.io/part-of: dataagent
 data:
   OTEL_SERVICE_NAME: api
+  PROMETHEUS_URL: http://prometheus.dataagent-service.svc.cluster.local:8400
   API_OIDC_AUDIENCE: dataagent-api
   API_OIDC_JWKS_URL: http://keycloak.dataagent-service.svc.cluster.local:8110/realms/aeroflow/protocol/openid-connect/certs
 ---

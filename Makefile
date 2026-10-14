@@ -229,4 +229,4 @@ deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 deploy-local:  ## deploy the V3 local slice (api, worker-agent, web, migrate, gateway)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml \
 		-e apply_jobs=true -e image_registry=$(IMAGE_REGISTRY) -e image_push=true \
-		-e '{"deploy_image_allowlist":["api","worker-agent","migrate","frontend","kong","keycloak"],"service_manifests":["api","worker-agent","frontend","kong","keycloak"],"service_workloads":["api","worker-agent","frontend","kong","keycloak"]}'
+		-e '{"deploy_image_allowlist":["api","worker-agent","migrate","frontend","kong","keycloak"],"service_manifests":["api","worker-agent","frontend","kong","keycloak","prometheus"],"service_workloads":["api","worker-agent","frontend","kong","keycloak","prometheus"]}'
