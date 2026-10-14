@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useAppState } from '../../AppStateContext';
+import { DATA_SPACE_STORAGE_KEY, ORGANISATION_SCOPE, useAppState } from '../../AppStateContext';
 import { AREA_RAILS, AREAS, firstPageOf, isRailPage, railItemOf } from '../../constants';
 import { AppTopBar } from './AppTopBar';
 import { CommandPalette } from './CommandPalette';
@@ -61,15 +61,25 @@ export function AppShell({
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const pickedBeforeShell = useRef(initialSpaceId);
+  const storedSpace = typeof window !== 'undefined'
+    ? window.localStorage.getItem(DATA_SPACE_STORAGE_KEY)
+    : null;
+  const organisationScope = storedSpace === ORGANISATION_SCOPE;
+  const candidateId = pickedBeforeShell.current
+    || me?.default_data_space_id
+    || (storedSpace && storedSpace !== ORGANISATION_SCOPE ? storedSpace : '')
+    || spaces.data?.items[0]?.id
+    || '';
+
   useEffect(() => {
-    const id = pickedBeforeShell.current;
+    const id = candidateId;
     if (!id) return;
     const ds = spaces.data?.items.find((s) => s.id === id);
     if (ds) {
       pickedBeforeShell.current = '';
       setDataSpace({ id: ds.id, name: ds.name });
     }
-  }, [spaces.data, setDataSpace]);
+  }, [candidateId, spaces.data, setDataSpace]);
   const chooseSpace = (id: string) => {
     const ds = spaces.data?.items.find((s) => s.id === id);
     setDataSpace(ds ? { id: ds.id, name: ds.name } : null);
@@ -79,6 +89,11 @@ export function AppShell({
     ...(spaces.data?.items ?? []).map((ds) => ({ id: ds.id, name: ds.name })),
   ];
   const spaceName = dataSpace?.name ?? 'Toàn tổ chức';
+  // Data screens require X-Data-Space. Do not mount them during the bootstrap render where
+  // the list has arrived but the selected id has not yet reached the shared API client.
+  const spaceReady =
+    spaces.data !== undefined
+    && (organisationScope || dataSpace !== null || spaces.data.items.length === 0);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -123,7 +138,11 @@ export function AppShell({
           key={dataSpace?.id ?? ''}
           className="min-w-0 flex-1 overflow-y-auto max-[767px]:pb-[calc(57px+env(safe-area-inset-bottom))]"
         >
-          {children}
+          {spaceReady ? children : (
+            <div className="flex min-h-full items-center justify-center p-da-xl">
+              <p className="text-muted-foreground da-body">Đang mở Data Space…</p>
+            </div>
+          )}
         </main>
       </div>
       <MobileTabBar

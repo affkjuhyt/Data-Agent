@@ -24,6 +24,10 @@ interface AppStateContextType {
 
 const AppStateContext = createContext<AppStateContextType | undefined>(undefined);
 
+/** Keep the top-bar selection stable across a full page reload. */
+export const DATA_SPACE_STORAGE_KEY = 'dataagent.data-space';
+export const ORGANISATION_SCOPE = '__organisation__';
+
 /* ─── URL route helpers ────────────────────────────────────────────── */
 /* Module ids of earlier IAs → the six v3.1 areas (Trang chủ · Cần bạn · Agents · Phân tích ·
  * Dữ liệu · Quản trị). Applied in parseRoute + navigate so existing links and bookmarks keep
@@ -133,6 +137,9 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   const setDataSpace = useCallback((space: DataSpaceRef | null) => {
     // Every v1 call reads the header from the client, so it changes with the selection.
     setV1DataSpace(space?.id ?? null);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(DATA_SPACE_STORAGE_KEY, space?.id ?? ORGANISATION_SCOPE);
+    }
     setDataSpaceState(space);
   }, []);
 
