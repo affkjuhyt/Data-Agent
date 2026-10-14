@@ -94,9 +94,28 @@ export default function SqlPage() {
 
   const insertTable = (table: string) => {
     const el = editorRef.current;
-    const at = el?.selectionStart ?? sql.length;
-    setSql(sql.slice(0, at) + table + sql.slice(at));
-    el?.focus();
+    if (!el) return;
+    if (document.activeElement === el) {
+      const at = el.selectionStart;
+      setSql(sql.slice(0, at) + table + sql.slice(el.selectionEnd));
+      el.focus();
+      requestAnimationFrame(() => {
+        const next = at + table.length;
+        el.setSelectionRange(next, next);
+      });
+      return;
+    }
+
+    // Clicking the table browser moves focus to the sidebar button. In that case the browser's
+    // selectionStart falls back to zero, which used to produce `tableSELECT ...` and a misleading
+    // 422 from the read-only SQL validator. Replace the first FROM target as the useful fallback.
+    const fromTarget = /(\bfrom\s+)([a-zA-Z_][\w$]*(?:\.[a-zA-Z_][\w$]*)?)/i;
+    if (fromTarget.test(sql)) {
+      setSql(sql.replace(fromTarget, `$1${table}`));
+    } else {
+      setSql(`${sql.trimEnd()}\n${table}`);
+    }
+    el.focus();
   };
 
   const q = filter.trim().toLowerCase();
