@@ -48,7 +48,7 @@ spec:
         app: worker-agent
         app.kubernetes.io/part-of: dataagent
       annotations:
-        dataagent.dev/revision: a9435b97
+        dataagent.dev/revision: a9435b97-reconnect
     spec:
       securityContext:
         runAsNonRoot: true
