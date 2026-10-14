@@ -1245,6 +1245,18 @@
   },
   {
    "group": "Nạp dữ liệu",
+   "method": "GET",
+   "path": "/v1/uploads/{id}",
+   "summary": "Chi tiết tệp đã tải",
+   "use_cases": [
+    "04-08"
+   ],
+   "capability": [
+    "upload"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
    "method": "PATCH",
    "path": "/v1/uploads/{id}",
    "summary": "Sửa ánh xạ cột, bảng đích",

@@ -647,6 +647,18 @@ export interface RecentUpload {
   created_at: Timestamp;
 }
 
+export interface UploadDetail extends RecentUpload {
+  sheet: string | null;
+  header_row: number | null;
+  encoding: string | null;
+  decimal_sep: string | null;
+  column_map: unknown;
+  validation: unknown;
+  error_ratio: number | string | null;
+  expires_at: Timestamp;
+  updated_at: Timestamp;
+}
+
 interface FileUploadWire {
   id: Uuid;
   file_name: string;
@@ -654,11 +666,15 @@ interface FileUploadWire {
   sheet: string | null;
   header_row: number | null;
   column_map: unknown;
+  validation: unknown;
+  encoding: string | null;
+  decimal_sep: string | null;
   error_ratio: number | string | null;
   target_dataset_id: Uuid | null;
   expires_at: Timestamp;
   status: string;
   created_at: Timestamp;
+  updated_at: Timestamp;
 }
 
 function uploadColumns(value: unknown): UploadColumn[] {
@@ -726,6 +742,28 @@ export const listUploads = async (): Promise<Page<RecentUpload>> => {
       target_dataset_id: row.target_dataset_id,
       created_at: row.created_at,
     })),
+  };
+};
+
+/** GET /v1/uploads/{id}: reopen the real upload state from the document library. */
+export const getUpload = async (id: string): Promise<UploadDetail> => {
+  const row = await v1Get<FileUploadWire>(`/uploads/${pathId(id)}`);
+  return {
+    id: row.id,
+    file_name: row.file_name,
+    size_bytes: row.size_bytes,
+    status: row.status,
+    target_dataset_id: row.target_dataset_id,
+    created_at: row.created_at,
+    sheet: row.sheet,
+    header_row: row.header_row,
+    encoding: row.encoding,
+    decimal_sep: row.decimal_sep,
+    column_map: row.column_map,
+    validation: row.validation,
+    error_ratio: row.error_ratio,
+    expires_at: row.expires_at,
+    updated_at: row.updated_at,
   };
 };
 

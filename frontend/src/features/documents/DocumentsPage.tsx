@@ -19,6 +19,7 @@ import {
   type DocumentView,
   type LibraryQuery,
 } from '../../lib/v1/documents';
+import { getUpload, listUploads, type UploadDetail, type RecentUpload } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
 import { HEAD_ROW, KeyValue, ROW } from './parts';
 import { UploadDocumentsDialog } from './UploadDocumentsDialog';
@@ -29,9 +30,9 @@ import { UploadDocumentsDialog } from './UploadDocumentsDialog';
  * clauses and links. A row opens what the Document agent did on the right (400px); "Mở tài liệu"
  * goes to the viewer. "Nạp tài liệu" opens "Hộp thoại · upload".
  */
-type Tab = 'all' | 'regulation' | 'internal' | 'processing';
+type Tab = 'all' | 'regulation' | 'internal' | 'processing' | 'data_uploads';
 
-const QUERY: Record<Tab, LibraryQuery> = {
+const QUERY: Record<Exclude<Tab, 'data_uploads'>, LibraryQuery> = {
   all: {},
   regulation: { category: 'regulation' },
   internal: { category: 'internal' },
@@ -44,9 +45,13 @@ export default function DocumentsPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const counts = useV1(getDocumentCounts, []);
-  const rows = useV1(() => listLibrary(QUERY[tab]), [tab]);
+  const rows = useV1(tab === 'data_uploads' ? null : () => listLibrary(QUERY[tab]), [tab]);
+  const uploads = useV1(listUploads, []);
   // The panel opens on the first document until the reader picks one, as the frame draws it.
-  const shown = selected ?? rows.data?.items[0]?.id ?? null;
+  const shown =
+    selected ??
+    (tab === 'data_uploads' ? uploads.data?.items[0]?.id : rows.data?.items[0]?.id) ??
+    null;
 
   const categorised = !counts.data || counts.data.regulation !== undefined;
   const label = (text: string, n: number | undefined) =>
@@ -82,33 +87,60 @@ export default function DocumentsPage() {
                 ]
               : []),
             { value: 'processing' as const, label: label('Đang xử lý', counts.data?.processing) },
+            {
+              value: 'data_uploads' as const,
+              label: `Tệp dữ liệu${uploads.data ? ` · ${formatNumber(uploads.data.items.length)}` : ''}`,
+            },
           ]}
         />
         <div role="tabpanel">
-          <AsyncRegion
-            state={rows}
-            what="tài liệu"
-            skeletonRows={5}
-            isEmpty={(p) => p.items.length === 0}
-            empty={
-              <EmptyState
-                icon="file"
-                title={tab === 'processing' ? 'Không có tài liệu đang xử lý' : 'Chưa có tài liệu'}
-                description="Tài liệu xuất hiện khi nguồn đồng bộ hoặc khi bạn nạp tệp."
-              />
-            }
-          >
-            {(p) =>
-              tab === 'processing' ? (
-                <ProcessingTable rows={p.items} selected={shown} onSelect={setSelected} />
-              ) : (
-                <LibraryTable rows={p.items} selected={shown} onSelect={setSelected} />
-              )
-            }
-          </AsyncRegion>
+          {tab === 'data_uploads' ? (
+            <AsyncRegion
+              state={uploads}
+              what="tệp dữ liệu"
+              skeletonRows={5}
+              isEmpty={(p) => p.items.length === 0}
+              empty={
+                <EmptyState
+                  icon="file"
+                  title="Chưa có tệp dữ liệu"
+                  description="CSV và Excel đã tải lên trong Data Space sẽ xuất hiện ở đây."
+                />
+              }
+            >
+              {(p) => <UploadsTable rows={p.items} selected={shown} onSelect={setSelected} />}
+            </AsyncRegion>
+          ) : (
+            <AsyncRegion
+              state={rows}
+              what="tài liệu"
+              skeletonRows={5}
+              isEmpty={(p) => p.items.length === 0}
+              empty={
+                <EmptyState
+                  icon="file"
+                  title={tab === 'processing' ? 'Không có tài liệu đang xử lý' : 'Chưa có tài liệu'}
+                  description="Tài liệu xuất hiện khi nguồn đồng bộ hoặc khi bạn nạp tệp."
+                />
+              }
+            >
+              {(p) =>
+                tab === 'processing' ? (
+                  <ProcessingTable rows={p.items} selected={shown} onSelect={setSelected} />
+                ) : (
+                  <LibraryTable rows={p.items} selected={shown} onSelect={setSelected} />
+                )
+              }
+            </AsyncRegion>
+          )}
         </div>
       </div>
-      {shown && <DocumentPanel key={shown} id={shown} />}
+      {shown &&
+        (tab === 'data_uploads' ? (
+          <UploadPanel key={shown} id={shown} />
+        ) : (
+          <DocumentPanel key={shown} id={shown} />
+        ))}
       <UploadDocumentsDialog
         open={uploading}
         onClose={() => setUploading(false)}
@@ -123,6 +155,129 @@ export default function DocumentsPage() {
         }}
       />
     </div>
+  );
+}
+
+function UploadsTable({
+  rows,
+  selected,
+  onSelect,
+}: {
+  rows: RecentUpload[];
+  selected: string | null;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <table className="w-full table-fixed border-collapse">
+        <thead>
+          <tr className={HEAD_ROW}>
+            <th className={cn(LIB_CELL, 'py-da-sm font-medium')}>Tệp dữ liệu</th>
+            <th className={cn(LIB_CELL, 'w-[140px] py-da-sm font-medium')}>Trạng thái</th>
+            <th className={cn(LIB_CELL, 'w-[180px] py-da-sm font-medium')}>Tải lên</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr
+              key={row.id}
+              tabIndex={0}
+              aria-selected={selected === row.id}
+              onClick={() => onSelect(row.id)}
+              onKeyDown={(e) => e.key === 'Enter' && onSelect(row.id)}
+              className={cn(
+                ROW,
+                'cursor-pointer hover:bg-subtle focus-visible:bg-subtle',
+                selected === row.id && 'bg-subtle',
+              )}
+            >
+              <td className={cn(LIB_CELL, 'truncate py-da-md text-foreground da-body-strong')}>
+                {row.file_name}
+              </td>
+              <td className={cn(LIB_CELL, 'py-da-md text-muted-foreground da-body-small')}>
+                {uploadStatusLabel(row.status)}
+              </td>
+              <td className={cn(LIB_CELL, 'py-da-md text-muted-foreground da-body-small')}>
+                {new Date(row.created_at).toLocaleString('vi-VN')}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function UploadPanel({ id }: { id: string }) {
+  const upload = useV1(() => getUpload(id), [id]);
+  return (
+    <aside
+      aria-label="Chi tiết tệp dữ liệu"
+      className="flex w-[400px] shrink-0 flex-col gap-da-lg border-l border-border bg-card p-da-xl max-[1023px]:hidden"
+    >
+      <AsyncRegion state={upload} what="tệp dữ liệu" skeletonRows={5}>
+        {(data) => <UploadPanelBody upload={data} />}
+      </AsyncRegion>
+    </aside>
+  );
+}
+
+function UploadPanelBody({ upload }: { upload: UploadDetail }) {
+  const columns = Array.isArray(upload.column_map) ? upload.column_map : [];
+  return (
+    <>
+      <h2 className="truncate text-foreground da-heading-2">{upload.file_name}</h2>
+      <p className="text-muted-foreground da-caption">
+        Tệp CSV/Excel · {formatNumber(upload.size_bytes)} byte
+      </p>
+      <section className="flex flex-col gap-da-sm">
+        <h3 className="text-muted-foreground da-overline">Trạng thái nạp</h3>
+        <KeyValue label="Trạng thái">{uploadStatusLabel(upload.status)}</KeyValue>
+        <KeyValue label="Sheet">{upload.sheet ?? '—'}</KeyValue>
+        <KeyValue label="Dòng tiêu đề">{upload.header_row ?? '—'}</KeyValue>
+        <KeyValue label="Tỷ lệ lỗi">
+          {upload.error_ratio == null ? 'Chưa phân tích' : `${Number(upload.error_ratio) * 100}%`}
+        </KeyValue>
+        <KeyValue label="Hết hạn">{new Date(upload.expires_at).toLocaleString('vi-VN')}</KeyValue>
+      </section>
+      <section className="flex flex-col gap-da-sm">
+        <h3 className="text-muted-foreground da-overline">Ánh xạ cột thực tế</h3>
+        {columns.length === 0 ? (
+          <p className="text-muted-foreground da-body-small">Worker chưa trả về ánh xạ cột.</p>
+        ) : (
+          columns.map((column, index) => (
+            <div
+              key={index}
+              className="flex justify-between gap-da-md border-b border-border py-da-xs text-sm"
+            >
+              <span className="truncate text-foreground">
+                {String(
+                  (column as Record<string, unknown>).header ??
+                    (column as Record<string, unknown>).source ??
+                    'Cột',
+                )}
+              </span>
+              <span className="truncate text-muted-foreground">
+                {String((column as Record<string, unknown>).type ?? '—')}
+              </span>
+            </div>
+          ))
+        )}
+      </section>
+    </>
+  );
+}
+
+function uploadStatusLabel(status: string): string {
+  return (
+    {
+      uploaded: 'Đã tải lên',
+      analyzed: 'Đã phân tích',
+      mapped: 'Đã ánh xạ',
+      committed: 'Đã tạo bảng',
+      rejected: 'Bị từ chối',
+      expired: 'Hết hạn',
+    }[status] ?? status
   );
 }
 

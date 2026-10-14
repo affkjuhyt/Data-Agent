@@ -828,6 +828,20 @@ async def upload_file(
         return FileUploadView.model_validate(row, from_attributes=True)
 
 
+@router.get(
+    "/v1/uploads/{id}",
+    response_model=FileUploadView,
+    **endpoint("GET", "/v1/uploads/{id}", operation_id="getUpload"),
+)
+async def get_upload(
+    upload_id: IdPath, principal: CurrentPrincipal, data_space: CurrentDataSpace
+) -> FileUploadView:
+    """Return one upload so the history can reopen its real analysis state."""
+    async with transaction(ROLE, principal) as session:
+        row = await _upload(session, upload_id, principal, data_space)
+        return FileUploadView.model_validate(row, from_attributes=True)
+
+
 async def _upload(
     session: AsyncSession, upload_id: uuid.UUID, principal: Principal, data_space: uuid.UUID
 ) -> ingest.FileUpload:
