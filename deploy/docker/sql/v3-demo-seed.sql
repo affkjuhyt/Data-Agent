@@ -25,7 +25,7 @@ VALUES (
     'a0000000-0000-0000-0000-000000000001',
     'data-engineer',
     'Data Engineer',
-    ARRAY['ask', 'view_aggregate', 'view_detail', 'run_agent'],
+    ARRAY['ask', 'view_aggregate', 'view_detail', 'run_agent', 'create_agent', 'upload'],
     true
 )
 ON CONFLICT (id) DO UPDATE SET

@@ -379,7 +379,7 @@ upsert_plugin "$KONG_ADMIN/services/kb-backend/plugins" \
 # verification runs — without it every cross-origin request 401s on preflight.
 echo "🌐 Enabling CORS on kb-backend-route..."
 upsert_plugin "$KONG_ADMIN/routes/kb-backend-route/plugins" \
-  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:8150","http://localhost:30280","http://10.10.55.101:30280"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Authorization","Content-Type","X-Data-Space","X-Role","X-Request-ID","Idempotency-Key","X-Upload-Filename"],"credentials":true,"max_age":3600}}' \
+  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:8150","http://localhost:30280","http://10.10.55.101:30280"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Authorization","Content-Type","X-Data-Space","X-Role","X-Request-ID","Idempotency-Key","X-Upload-Filename","Last-Event-ID","Accept"],"credentials":true,"max_age":3600}}' \
   "cors"
 
 # ── 5. IP restriction ─────────────────────────────────────────────────
@@ -411,7 +411,7 @@ fi
 # so OPTIONS preflight returns 200 without needing a token.
 echo "🌐 Enabling global CORS plugin..."
 upsert_plugin "$KONG_ADMIN/plugins" \
-  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:8150","http://localhost:30280","http://10.10.55.101:30280"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Content-Type","Authorization","X-Data-Space","X-Tenant-ID","X-Conversation-Id","Accept","X-Role","Idempotency-Key","X-Upload-Filename"],"exposed_headers":["X-Conversation-Id","X-Kong-Request-Id"],"credentials":false,"max_age":3600,"preflight_continue":false}}' \
+  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:8150","http://localhost:30280","http://10.10.55.101:30280"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Content-Type","Authorization","X-Data-Space","X-Tenant-ID","X-Conversation-Id","Accept","X-Role","Idempotency-Key","X-Upload-Filename","Last-Event-ID","If-Match"],"exposed_headers":["X-Conversation-Id","X-Kong-Request-Id"],"credentials":false,"max_age":3600,"preflight_continue":false}}' \
   "cors" "global"
 
 # ── 9. Correlation ID (tracing) ────────────────────────────────────────

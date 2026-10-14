@@ -120,7 +120,7 @@ def _validate(rows: list[list[Any]], column_map: list[dict[str, Any]]) -> tuple[
 
 def _table_name(file_name: str, upload_id: uuid.UUID) -> str:
     stem = re.sub(r"[^a-z0-9]+", "_", os.path.splitext(file_name)[0].lower()).strip("_")
-    return f"upload_{stem[:45] or upload_id.hex[:8]}_{upload_id.hex[:8]}"
+    return f"upload_{stem[:40] or 'file'}_{upload_id.hex[-8:]}"
 
 
 def _identifier(value: Any, fallback: str) -> str:
