@@ -1100,6 +1100,18 @@
   },
   {
    "group": "Nạp dữ liệu",
+   "method": "GET",
+   "path": "/v1/uploads",
+   "summary": "Danh sách tệp đã tải",
+   "use_cases": [
+    "04-08"
+   ],
+   "capability": [
+    "upload"
+   ]
+  },
+  {
+   "group": "Nạp dữ liệu",
    "method": "POST",
    "path": "/v1/sources/{id}/jobs",
    "summary": "Tạo job nạp",

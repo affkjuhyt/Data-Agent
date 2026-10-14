@@ -12,10 +12,12 @@ import { cn } from '../../lib/utils';
 import {
   commitUpload,
   createUpload,
+  listUploads,
   type UploadAnalysis,
   type UploadColumn,
   type UploadColumnType,
 } from '../../lib/v1/sources';
+import { useV1 } from '../../lib/v1/useV1';
 
 /*
  * "P04 · Tải tệp · Kiểm tra cột" (2282:17099, UC-04-08): after a CSV/Excel file is chosen, the
@@ -40,6 +42,7 @@ export default function UploadPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const uploads = useV1(listUploads, []);
 
   const read = async (file: File | undefined) => {
     if (!file) return;
@@ -49,6 +52,7 @@ export default function UploadPage() {
       const result = await createUpload(file);
       setAnalysis(result);
       setColumns(result.columns);
+      uploads.reload();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -128,6 +132,37 @@ export default function UploadPage() {
               Chọn tệp
             </Button>
           </div>
+          {uploads.data && uploads.data.items.length > 0 && (
+            <section className="flex flex-col gap-da-md">
+              <h2 className="text-foreground da-heading-3">Tệp vừa tải</h2>
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                      <th className="px-da-lg py-da-md font-normal">Tên tệp</th>
+                      <th className="px-da-md py-da-md font-normal">Trạng thái</th>
+                      <th className="px-da-md py-da-md font-normal">Thời gian</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {uploads.data.items.map((upload) => (
+                      <tr key={upload.id} className="border-b border-border last:border-0">
+                        <td className="px-da-lg py-da-md text-foreground da-body-small">
+                          {upload.file_name}
+                        </td>
+                        <td className="px-da-md py-da-md text-muted-foreground da-body-small">
+                          {uploadStatusLabel(upload.status)}
+                        </td>
+                        <td className="px-da-md py-da-md text-muted-foreground da-body-small">
+                          {new Date(upload.created_at).toLocaleString('vi-VN')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
         </div>
       </div>
     );
@@ -253,6 +288,17 @@ export default function UploadPage() {
       </div>
     </div>
   );
+}
+
+function uploadStatusLabel(status: string): string {
+  return {
+    uploaded: 'Đã tải lên',
+    analyzed: 'Đã phân tích',
+    mapped: 'Đã ánh xạ',
+    committed: 'Đã tạo bảng',
+    rejected: 'Bị từ chối',
+    expired: 'Hết hạn',
+  }[status] ?? status;
 }
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {

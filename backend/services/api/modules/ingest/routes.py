@@ -740,6 +740,32 @@ async def _measure(upload: UploadFile) -> int:
     return size
 
 
+@router.get(
+    "/v1/uploads",
+    response_model=Page[FileUploadView],
+    **endpoint("GET", "/v1/uploads", operation_id="listUploads"),
+)
+async def list_uploads(
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+) -> Page[FileUploadView]:
+    """Recent uploads for the current Data Space, so the upload screen can recover its history."""
+    upload = ingest.FileUpload
+    query = (
+        select(upload)
+        .where(upload.org_id == principal.org_id, upload.data_space_id == data_space)
+        .order_by(upload.created_at.desc(), upload.id.desc())
+        .limit(page.page_size)
+    )
+    async with transaction(ROLE, principal) as session:
+        rows = list((await session.scalars(query)).all())
+    return Page(
+        items=[FileUploadView.model_validate(row, from_attributes=True) for row in rows],
+        next_page_token="",
+    )
+
+
 @router.post(
     "/v1/uploads",
     response_model=FileUploadView,

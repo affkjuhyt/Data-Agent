@@ -638,6 +638,15 @@ export interface UploadAnalysis {
   };
 }
 
+export interface RecentUpload {
+  id: Uuid;
+  file_name: string;
+  size_bytes: number;
+  status: string;
+  target_dataset_id: Uuid | null;
+  created_at: Timestamp;
+}
+
 interface FileUploadWire {
   id: Uuid;
   file_name: string;
@@ -648,6 +657,8 @@ interface FileUploadWire {
   error_ratio: number | string | null;
   target_dataset_id: Uuid | null;
   expires_at: Timestamp;
+  status: string;
+  created_at: Timestamp;
 }
 
 function uploadColumns(value: unknown): UploadColumn[] {
@@ -700,6 +711,22 @@ export const createUpload = async (file: File) => {
   form.append('file', file);
   const row = await v1Upload<FileUploadWire>('/uploads', form, { fileName: file.name });
   return 'columns' in row && 'target' in row ? (row as unknown as UploadAnalysis) : readUpload(row);
+};
+
+/** GET /v1/uploads: real upload history for the active Data Space. */
+export const listUploads = async (): Promise<Page<RecentUpload>> => {
+  const page = await v1Get<Page<FileUploadWire>>('/uploads', ALL);
+  return {
+    ...page,
+    items: page.items.map((row) => ({
+      id: row.id,
+      file_name: row.file_name,
+      size_bytes: row.size_bytes,
+      status: row.status,
+      target_dataset_id: row.target_dataset_id,
+      created_at: row.created_at,
+    })),
+  };
 };
 
 /** PROPOSAL: POST /v1/uploads/{id}:commit creates the table with the columns as edited. */

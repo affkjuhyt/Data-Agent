@@ -1654,6 +1654,17 @@
    "errors": [],
    "request_text": "reason*"
   },
+  "GET /v1/uploads": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Page<FileUpload>",
+   "errors": [],
+   "request_text": "—"
+  },
   "POST /v1/uploads": {
    "group": "Nạp dữ liệu",
    "groups": [

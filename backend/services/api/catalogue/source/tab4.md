@@ -209,6 +209,7 @@ Dịch vụ: Ingestion service (ingest). 18 endpoint.
 | POST | /v1/dlq/{id}:replay | Nạp lại bản ghi lỗi | 04-07 | admin\_data |
 | POST | /v1/dlq/{id}:discard | Bỏ bản ghi kèm lý do | 04-07 | admin\_data |
 | POST | /v1/uploads | Tải tệp CSV, Excel (multipart) | 04-08 | upload |
+| GET | /v1/uploads | Danh sách tệp đã tải | 04-08 | upload |
 | PATCH | /v1/uploads/{id} | Sửa ánh xạ cột, bảng đích | 04-08 | upload |
 | POST | /v1/uploads/{id}:commit | Ghi vào bảng | 04-08 | upload |
 | GET | /v1/quality-rules | Quy tắc chất lượng | 06-07 | ask |
@@ -813,6 +814,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/dlq/{id}:replay | — | 202, Location tới dlq\_record | 409 invalid\_state (đã khoá sau 3 lần lỗi) |
 | POST /v1/dlq/{id}:discard | reason\* | DlqRecord. BR-104 | — |
 | POST /v1/uploads | file\*, sheet | FileUpload. multipart/form-data; trả kết quả nhận dạng cấu trúc và kiểm tra | 413 payload\_too\_large; 422 validation\_failed (định dạng không hỗ trợ) |
+| GET /v1/uploads | — | Page<FileUpload> | — |
 | PATCH /v1/uploads/{id} | sheet, header\_row, encoding, decimal\_sep, column\_map, target\_dataset\_id, replace\_mode | FileUpload | — |
 | POST /v1/uploads/{id}:commit | — | Dataset. Bảng tải tay hết hạn sau 90 ngày (BR-105) | 422 business\_rule\_violated (dòng lỗi trên 5%) |
 | GET /v1/quality-rules | ?dataset\_id, ?severity | Danh sách QualityRule | — |
