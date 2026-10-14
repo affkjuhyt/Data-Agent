@@ -478,6 +478,46 @@ export function createDataPrepHandlers() {
       }
       return undefined;
     }),
+    /* The SQL screen uses the canonical query-run worker, not the legacy sql:run action. */
+    http.post('*/v1/query-runs', async ({ request }) => {
+      const body = (await request.json()) as { sql?: string };
+      const sql = body.sql ?? '';
+      if (!sql.trim()) return problem(400, 'invalid_request', 'Chưa có câu truy vấn.');
+      if (/\b(insert|update|delete|drop|alter|truncate)\b/i.test(sql))
+        return problem(403, 'read_only', 'Trình SQL chỉ chạy câu đọc dữ liệu.');
+      return HttpResponse.json(
+        {
+          id: 'qr-sql-001',
+          status: 'succeeded',
+          row_count: SQL_RESULT.row_count,
+          duration_ms: SQL_RESULT.duration_ms,
+          permission_scope: SQL_RESULT.permission_scope,
+          masked_columns: SQL_RESULT.masked_columns,
+          error: null,
+        },
+        { status: 202 },
+      );
+    }),
+    http.get('*/v1/query-runs/:id', () =>
+      HttpResponse.json({
+        id: 'qr-sql-001',
+        status: 'succeeded',
+        row_count: SQL_RESULT.row_count,
+        duration_ms: SQL_RESULT.duration_ms,
+        permission_scope: SQL_RESULT.permission_scope,
+        masked_columns: SQL_RESULT.masked_columns,
+        error: null,
+      }),
+    ),
+    http.get('*/v1/query-runs/:id/rows', () =>
+      HttpResponse.json({
+        columns: SQL_RESULT.columns.map((name) => ({ name, type: 'string' })),
+        items: SQL_RESULT.rows,
+        truncated: false,
+        next_page_token: '',
+        expires_at: '2026-10-15T00:00:00+07:00',
+      }),
+    ),
     http.post('*/v1/derived-tables', async ({ request }) => {
       const body = (await request.json()) as Omit<DerivedTable, 'id' | 'version' | 'write_mode'>;
       if (!/^[a-z][a-z0-9_.]{2,62}$/.test(body.name))
@@ -584,20 +624,36 @@ export function createDataPrepHandlers() {
       const id = String(params.id);
       const p = pipelines.find((x) => x.id === id);
       if (!p) return notFound();
-      const body = (await request.json()) as PipelineSchedule;
-      if (body.kind === 'cron' && !body.cron?.trim())
+      const body = (await request.json()) as PipelineSchedule & {
+        schedule_kind?: ScheduleKind;
+      };
+      const kind: ScheduleKind = body.schedule_kind ?? body.kind ?? (body.cron ? 'cron' : 'after_source');
+      if (kind === 'cron' && !body.cron?.trim())
         return problem(422, 'validation_failed', 'Nhập biểu thức cron.');
-      schedules.set(id, body);
-      return HttpResponse.json({ schedule_text: SCHEDULE_TEXT[body.kind] });
+      schedules.set(id, {
+        ...body,
+        kind,
+      });
+      return HttpResponse.json({
+        schedule_text:
+          kind === 'daily'
+            ? 'chạy hằng ngày lúc 06:30'
+            : kind === 'business_hours'
+              ? 'chạy mỗi giờ trong giờ làm việc'
+              : kind === 'after_source'
+                ? 'chạy sau job nạp Core banking'
+                : `Theo lịch cron ${body.cron}`,
+      });
     }),
     http.post('*/v1/pipelines/:id/:action', async ({ params, request }) => {
       const action = String(params.action);
       if (action === 'schedule:preview') {
-        const body = (await request.json()) as PipelineSchedule;
+        const body = (await request.json()) as PipelineSchedule & { schedule_kind?: ScheduleKind };
         const holidays = body.skip_holidays
           ? ' Ngày làm việc tới: Thứ Sáu 09/10, Thứ Hai 12/10 (bỏ 10–11/10).'
           : '';
-        return HttpResponse.json({ text: SCHEDULE_PREVIEW[body.kind] + holidays });
+        const kind = body.schedule_kind ?? body.kind ?? (body.cron ? 'cron' : 'after_source');
+        return HttpResponse.json({ text: SCHEDULE_PREVIEW[kind] + holidays });
       }
       return undefined;
     }),

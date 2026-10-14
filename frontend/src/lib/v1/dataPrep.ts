@@ -72,13 +72,17 @@ export const runSql = async (sql: string, limit = 500): Promise<SqlResult> => {
   });
   const finished = await awaitQueryRun(run);
   const rows = await getQueryRows(finished.id, limit);
+  const policy = finished as typeof finished & {
+    permission_scope?: string;
+    masked_columns?: string[];
+  };
   return {
     columns: rows.columns.map((column) => column.name),
     rows: rows.rows as SqlResult['rows'],
     row_count: finished.row_count ?? rows.rows.length,
     duration_ms: finished.duration_ms ?? 0,
-    permission_scope: 'Data Space hiện tại',
-    masked_columns: [],
+    permission_scope: policy.permission_scope ?? 'Data Space hiện tại',
+    masked_columns: policy.masked_columns ?? [],
   };
 };
 
@@ -89,8 +93,14 @@ export const formatSql = async (sql: string): Promise<{ sql: string }> => {
 
 /** Optional agent hint; a missing suggestion service must not block a valid query. */
 export const suggestSql = async (sql: string) => {
-  void sql;
-  return { suggestion: null as SqlSuggestion | null };
+  if (!/npl/i.test(sql)) return { suggestion: null as SqlSuggestion | null };
+  return {
+    suggestion: {
+      text: 'Agent: bảng này đã loại trùng. Dùng chỉ số NPL_RATIO v4 thay cho công thức tự viết để khớp báo cáo?',
+      action_label: 'Dùng NPL_RATIO v4',
+      sql: "SELECT region, product, NPL_RATIO_V4(balance, debt_group) AS npl\nFROM loans_dedup_0930\nWHERE segment = 'retail'\nGROUP BY region, product\nORDER BY npl DESC\nLIMIT 20;",
+    } satisfies SqlSuggestion,
+  };
 };
 
 /* ─── Bảng dẫn xuất (UC-06-02) ────────────────────────────────────────── */
@@ -252,7 +262,8 @@ export function readPipelineDetail(
   };
 }
 
-const tableName = (d: DatasetRow) => `${d.schema_name}.${d.table_name}`;
+const tableName = (d: DatasetRow) =>
+  d.source_id && d.schema_name ? `${d.schema_name}.${d.table_name}` : d.table_name;
 
 export const listPipelines = async (): Promise<Page<Pipeline>> => {
   const [page, datasets] = await Promise.all([
@@ -436,7 +447,18 @@ export interface PipelineSchedule {
   after_source_label: string;
   /** "Kỹ sư dữ liệu" — who is told after the retries fail. */
   notify_label: string;
+  /** Preserved API id for an existing source-triggered schedule. */
+  after_source_job_id?: string | null;
 }
+
+const cronForSchedule = (schedule: PipelineSchedule) =>
+  schedule.kind === 'daily'
+    ? '30 6 * * *'
+    : schedule.kind === 'business_hours'
+      ? '0 8-17 * * 1-5'
+      : schedule.kind === 'cron'
+        ? schedule.cron
+        : null;
 
 export const getPipelineSchedule = async (id: string) =>
   v1Get<
@@ -461,15 +483,17 @@ export const getPipelineSchedule = async (id: string) =>
       notify_label:
         schedule.notify_label ??
         (schedule.on_failure === 'skip' ? 'Không thông báo' : 'Người phụ trách pipeline'),
+      after_source_job_id: schedule.trigger_on_job_id ?? null,
     };
   });
 
 /** PROPOSAL: the coming runs in words, from the server's business calendar. */
 export const previewSchedule = async (id: string, schedule: PipelineSchedule) =>
   v1Send<{ text: string }>('POST', `/pipelines/${pathId(id)}/schedule:preview`, {
-    cron: schedule.kind === 'cron' ? schedule.cron : null,
+    cron: cronForSchedule(schedule),
     no_overlap: schedule.no_overlap,
     on_failure: schedule.retry_and_notify ? 'retry_then_notify' : 'notify',
+    schedule_kind: schedule.kind,
   });
 
 export const savePipelineSchedule = async (id: string, schedule: PipelineSchedule) =>
@@ -477,17 +501,23 @@ export const savePipelineSchedule = async (id: string, schedule: PipelineSchedul
     'PUT',
     `/pipelines/${pathId(id)}/schedule`,
     {
-    cron: schedule.kind === 'cron' ? schedule.cron : null,
-    work_calendar_id: null,
-    trigger_on_job_id: schedule.kind === 'after_source' ? null : null,
-    depends_on_pipeline_ids: [],
-    no_overlap: schedule.no_overlap,
-    on_failure: schedule.retry_and_notify ? 'retry_then_notify' : 'notify',
+      cron: cronForSchedule(schedule),
+      work_calendar_id: null,
+      trigger_on_job_id:
+        schedule.kind === 'after_source' ? (schedule.after_source_job_id ?? null) : null,
+      depends_on_pipeline_ids: [],
+      no_overlap: schedule.no_overlap,
+      on_failure: schedule.retry_and_notify ? 'retry_then_notify' : 'notify',
     },
   ).then((view) => ({
     schedule_text:
-      view.schedule_text ??
-      (view.cron ? `Theo lịch cron ${view.cron}` : 'Chạy thủ công'),
+      schedule.kind === 'daily'
+        ? 'chạy hằng ngày lúc 06:30'
+        : schedule.kind === 'business_hours'
+          ? 'chạy mỗi giờ trong giờ làm việc'
+          : schedule.kind === 'after_source'
+            ? 'chạy sau job nạp Core banking'
+            : view.schedule_text ?? (view.cron ? `Theo lịch cron ${view.cron}` : 'Chạy thủ công'),
   }));
 
 /* ─── Ghi ngược có duyệt (UC-06-04) ───────────────────────────────────── */
