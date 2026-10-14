@@ -69,6 +69,13 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=OPENBAO_SECRET_ID="${WORKER_AGENT_OPENBAO_SECRET_ID}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# worker-document: processes document.received from document.outbox and writes pages/chunks.
+kubectl -n dataagent-service create secret generic worker-document-secrets \
+  --from-literal=DATAAGENT_DB_URL__SVC_DOCUMENT="${DATAAGENT_DB_URL__SVC_DOCUMENT}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_OUTBOX_RELAY="${DATAAGENT_DB_URL__SVC_OUTBOX_RELAY}" \
+  --from-literal=MINIO_URL="${MINIO_URL}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 kubectl -n dataagent-service create secret generic kb-backend-secrets \
   --from-literal=KB_BACKEND_URL_ASYNC="${KB_BACKEND_URL_ASYNC}" \
   --from-literal=MINIO_URL="${MINIO_URL}" \
