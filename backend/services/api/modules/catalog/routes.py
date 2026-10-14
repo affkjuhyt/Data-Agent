@@ -878,19 +878,28 @@ async def start_scan(
 ) -> Accepted:
     async with transaction(ROLE, principal) as session:
         source = await _source(session, principal, space, source_id)
-        if source.status not in SCANNABLE:
+        # UC-04-02 precondition: the source is active. A needs_fix one failed its last test,
+        # perhaps on a write grant (UC-04-01 E1), and is not read until it passes again.
+        if source.status != "active":
             raise Problem(
                 409,
                 "invalid_state",
                 f"The source is {source.status}; only a source that passed its test is scanned.",
             )
+        # The first structure scan of a source is its initial one: the worker then profiles it
+        # too (UC-04-02 step 3), where a later scan follows its own schedule (UC-04-05).
+        catalogued = await session.scalar(
+            select(func.count())
+            .select_from(catalog.Dataset)
+            .where(catalog.Dataset.source_id == source.id, catalog.Dataset.deleted_at.is_(None))
+        )
         # BR-103: a second running scan of the same kind is the partial UNIQUE's 409 conflict.
         run = catalog.ScanRun(
             id=uuid7(),
             org_id=principal.org_id,
             source_id=source.id,
             kind=body.kind,
-            trigger="manual",
+            trigger="initial" if body.kind == "schema" and not catalogued else "manual",
         )
         session.add(run)
         await session.flush()

@@ -294,6 +294,8 @@ const LD_LOANS_COLUMNS: ColumnProfile[] = [
     histogram_note: 'duy nhất',
     note: 'Khoá chính',
     warn: false,
+    pattern: null,
+    suggested: false,
   },
   {
     name: 'customer_id',
@@ -304,6 +306,8 @@ const LD_LOANS_COLUMNS: ColumnProfile[] = [
     histogram_note: 'duy nhất',
     note: 'Nối Khách hàng',
     warn: false,
+    pattern: null,
+    suggested: false,
   },
   {
     name: 'outstanding_amt',
@@ -314,6 +318,8 @@ const LD_LOANS_COLUMNS: ColumnProfile[] = [
     histogram_note: null,
     note: '0 – 48,2 tỷ · trung vị 412 triệu',
     warn: false,
+    pattern: null,
+    suggested: false,
   },
   {
     name: 'debt_group',
@@ -324,6 +330,8 @@ const LD_LOANS_COLUMNS: ColumnProfile[] = [
     histogram_note: null,
     note: 'Nhóm 1: 93% · nhóm 3–5: 2,1%',
     warn: false,
+    pattern: null,
+    suggested: false,
   },
   {
     name: 'due_date',
@@ -334,6 +342,8 @@ const LD_LOANS_COLUMNS: ColumnProfile[] = [
     histogram_note: null,
     note: '2019 – 2041',
     warn: false,
+    pattern: null,
+    suggested: false,
   },
   {
     name: 'branch_code',
@@ -344,6 +354,8 @@ const LD_LOANS_COLUMNS: ColumnProfile[] = [
     histogram_note: null,
     note: '184 chi nhánh',
     warn: false,
+    pattern: null,
+    suggested: false,
   },
   {
     name: 'id_number',
@@ -354,6 +366,8 @@ const LD_LOANS_COLUMNS: ColumnProfile[] = [
     histogram_note: 'che',
     note: 'CCCD · đã che, không lập hồ sơ',
     warn: false,
+    pattern: null,
+    suggested: false,
   },
   {
     name: 'restructure_flag',
@@ -364,6 +378,8 @@ const LD_LOANS_COLUMNS: ColumnProfile[] = [
     histogram_note: null,
     note: '62% trống: nguồn chỉ ghi khi có cơ cấu',
     warn: true,
+    pattern: null,
+    suggested: false,
   },
 ];
 

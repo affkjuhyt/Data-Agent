@@ -617,7 +617,8 @@ async def test_scan_now_is_202_and_one_running_scan_per_kind(o: Org) -> None:
         run = started.json()["id"]
         assert started.json()["status"] == "running"
         assert started.headers["Location"] == f"/v1/scan-runs/{run}"
-        assert o.one("SELECT trigger FROM catalog.scan_run WHERE id = %s", run) == "manual"
+        # UC-04-02: the first structure scan of a source is its initial one (then profiled).
+        assert o.one("SELECT trigger FROM catalog.scan_run WHERE id = %s", run) == "initial"
         event = dict(o.events(run))["scan_run.created"]
         assert event["source_id"] == str(source) and event["tables"] == ["credit.loan"]
         assert event["kind"] == "schema"
@@ -630,14 +631,24 @@ async def test_scan_now_is_202_and_one_running_scan_per_kind(o: Org) -> None:
         assert profile.status_code == 202
         no_body = await api.post(f"/v1/sources/{_source_row(o)}/scans", headers=h)
         assert no_body.status_code == 202, no_body.text
+        # Once its tables are in the catalogue, a scan of the source is a manual one.
+        catalogued = _source_row(o)
+        _dataset(o, catalogued, table_name="du_no")
+        again = await api.post(f"/v1/sources/{catalogued}/scans", json={}, headers=h)
+        assert again.status_code == 202, again.text
+        assert (
+            o.one("SELECT trigger FROM catalog.scan_run WHERE id = %s", again.json()["id"])
+            == "manual"
+        )
 
         fetched = await api.get(f"/v1/scan-runs/{run}", headers=h)
         assert fetched.status_code == 200
         assert fetched.json()["source_id"] == str(source)
         assert fetched.json()["status"] == "running" and fetched.json()["tables_scanned"] == 0
 
-        # UC-04-02 precondition: a source that has not passed its test is not scanned.
-        for status in ("draft", "testing", "paused", "archived"):
+        # UC-04-02 precondition: only an active source is scanned; needs_fix failed its last
+        # test, perhaps on a write grant (UC-04-01 E1).
+        for status in ("draft", "testing", "needs_fix", "paused", "archived"):
             not_ready = _source_row(o, status=status)
             refused = await api.post(f"/v1/sources/{not_ready}/scans", json={}, headers=h)
             assert refused.status_code == 409, (status, refused.text)

@@ -10,10 +10,14 @@ import {
   createSource,
   getColumnStats,
   getSource,
+  getTableProfile,
   listSourceDrifts,
   listSourceRows,
   previewTable,
+  rescanSource,
+  scanSummary,
   testSource,
+  type ScanRun,
 } from './sources';
 
 const at = '2026-10-12T08:00:00Z';
@@ -276,5 +280,117 @@ describe('sources from the api', () => {
       min: '10',
       max: '1000',
     });
+  });
+});
+
+describe('UC-04-02 scans and profiles', () => {
+  const run = (extra: Partial<ScanRun> = {}): ScanRun => ({
+    id: 'r-1',
+    source_id: 's-1',
+    kind: 'schema',
+    trigger: 'manual',
+    workflow_id: null,
+    status: 'succeeded',
+    tables_total: 12,
+    tables_scanned: 12,
+    tables_skipped: [],
+    resume_from: null,
+    started_at: at,
+    finished_at: at,
+    created_at: at,
+    ...extra,
+  });
+
+  it('AC-04-02-04 says which tables a scan left aside and why', () => {
+    const summary = scanSummary(
+      run({
+        status: 'partial',
+        tables_scanned: 11,
+        tables_skipped: [
+          { table: 'credit.giao_dich', reason: 'timeout' },
+          { table: 'credit.khach_hang', reason: 'schema_changed', schema_hash: 'ab' },
+        ],
+      }),
+    );
+    expect(summary.text).toBe('Đã quét 11/12 bảng.');
+    expect(summary.skipped).toEqual([
+      'credit.giao_dich: thống kê quá thời gian cho phép',
+      'credit.khach_hang: cấu trúc đã đổi, chờ duyệt',
+    ]);
+  });
+
+  it('AC-04-02-05 says where the next scan goes on', () => {
+    const summary = scanSummary(
+      run({ status: 'partial', tables_scanned: 7, resume_from: 'credit.tai_san' }),
+    );
+    expect(summary.text).toBe('Đã quét 7/12 bảng. Lượt sau quét tiếp từ credit.tai_san.');
+  });
+
+  it('rescans a source and reads the run back until it ends', async () => {
+    let reads = 0;
+    server.use(
+      http.post('*/v1/sources/:id/scans', () =>
+        HttpResponse.json({ id: 'r-1', status: 'running', poll_after_ms: 1 }, { status: 202 }),
+      ),
+      http.get('*/v1/scan-runs/:id', () => {
+        reads += 1;
+        return HttpResponse.json(run({ status: reads < 3 ? 'running' : 'succeeded' }));
+      }),
+    );
+    await expect(rescanSource('s-1')).resolves.toMatchObject({ status: 'succeeded' });
+    expect(reads).toBe(3);
+  });
+
+  it('AC-04-02-07 reads the value pattern and marks an agent description as a suggestion', async () => {
+    server.use(
+      http.get('*/v1/datasets/:id', () =>
+        HttpResponse.json({
+          id: 'd-1',
+          data_space_id: 'ds-1',
+          source_id: 's-1',
+          origin: 'source',
+          schema_name: 'CORE',
+          table_name: 'CUSTOMER',
+          display_name: null,
+          row_estimate: 3,
+          columns: [
+            {
+              id: 'c-1',
+              name: 'lien_he',
+              data_type: 'text',
+              normalized_type: 'string',
+              description: 'Số liên hệ của khách',
+              description_status: 'suggested',
+              pii_label: 'phone',
+              profile: {
+                sample_rows: 3,
+                null_ratio: '0',
+                distinct_est: 3,
+                min_value: null,
+                max_value: null,
+                top_values: [],
+                pattern_hint: 'số điện thoại di động',
+                created_at: at,
+              },
+            },
+            {
+              id: 'c-2',
+              name: 'branch',
+              data_type: 'text',
+              normalized_type: 'string',
+              description: 'Chi nhánh',
+              description_status: 'approved',
+              pii_label: null,
+              profile: null,
+            },
+          ],
+        }),
+      ),
+    );
+    const profile = await getTableProfile('d-1');
+    expect(profile.columns.map((c) => [c.name, c.pattern, c.suggested, c.histogram_note])).toEqual([
+      ['lien_he', 'số điện thoại di động', true, 'che'],
+      ['branch', null, false, null],
+    ]);
   });
 });

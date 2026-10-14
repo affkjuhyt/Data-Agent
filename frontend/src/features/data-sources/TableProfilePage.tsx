@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
+import { Badge } from '../../design-system/Badge';
 import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Tabs } from '../../design-system/Tabs';
@@ -175,12 +176,30 @@ function ColumnsTable({ columns }: { columns: ColumnProfile[] }) {
                 column.warn ? 'text-warning' : 'text-muted-foreground',
               )}
             >
-              {column.note ?? ''}
+              <ColumnNote column={column} />
             </td>
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+/*
+ * The column's description, marked "gợi ý" while it is the agent's and not yet approved (BR-100),
+ * and the value pattern the profile recognised (UC-04-02 step 4).
+ */
+function ColumnNote({ column }: { column: ColumnProfile }) {
+  return (
+    <span className="flex flex-col gap-[2px]">
+      {column.note && (
+        <span className="flex items-center gap-da-sm">
+          <span className="truncate">{column.note}</span>
+          {column.suggested && <Badge tone="info">gợi ý</Badge>}
+        </span>
+      )}
+      {column.pattern && <span>Mẫu giá trị: {column.pattern}</span>}
+    </span>
   );
 }
 

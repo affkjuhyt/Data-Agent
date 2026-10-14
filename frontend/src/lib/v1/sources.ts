@@ -1,3 +1,4 @@
+import { formatNumber } from '../formatVN';
 import { listDataSpaces } from './api';
 import { pathId, V1Error, v1Get, v1Send, v1Upload, type Page } from './client';
 import type { components } from './schema';
@@ -173,6 +174,10 @@ export interface ColumnProfile {
   note: string | null;
   /** The note is a warning (e.g. 62% empty). */
   warn: boolean;
+  /** The value pattern the profile recognised ("số điện thoại di động"), or null. */
+  pattern: string | null;
+  /** The note is the agent's suggestion, not yet approved (BR-100: shown as "gợi ý"). */
+  suggested: boolean;
 }
 
 /**
@@ -246,6 +251,8 @@ export const getTableProfile = async (id: string): Promise<TableProfile> => {
         histogram_note: column.pii_label ? 'che' : null,
         note: column.description,
         warn: profile?.null_ratio != null && Number(profile.null_ratio) >= 0.5,
+        pattern: profile?.pattern_hint ?? null,
+        suggested: column.description != null && column.description_status === 'suggested',
       };
     }),
     review: dataset.profile_review ?? null,
@@ -503,6 +510,53 @@ export const startSourceScan = (id: string) =>
   );
 
 export const getScanRun = (id: string) => v1Get<ScanRun>(`/scan-runs/${pathId(id)}`);
+
+/** A table a scan left aside, and why (UC-04-02 E1; schema_changed is UC-04-03's to decide). */
+export interface SkippedTable {
+  table: string;
+  reason: string;
+}
+
+const skippedOf = (run: ScanRun): SkippedTable[] =>
+  Array.isArray(run.tables_skipped)
+    ? run.tables_skipped.filter(
+        (s): s is SkippedTable =>
+          !!s && typeof s === 'object' && 'table' in s && typeof s.table === 'string',
+      )
+    : [];
+
+const SKIP_REASON: Record<string, string> = {
+  timeout: 'thống kê quá thời gian cho phép',
+  schema_changed: 'cấu trúc đã đổi, chờ duyệt',
+};
+
+/** What a finished scan did, in words: how many tables, which were left aside and why, and
+ * where the next one goes on (E2, or the scan window closing, BR-15). */
+export function scanSummary(run: ScanRun): { text: string; skipped: string[] } {
+  const total = run.tables_total ?? run.tables_scanned;
+  const done =
+    run.status === 'failed'
+      ? 'Lượt quét lỗi trước khi đọc được bảng nào.'
+      : `Đã quét ${formatNumber(run.tables_scanned)}/${formatNumber(total)} bảng.`;
+  const resume = run.resume_from ? ` Lượt sau quét tiếp từ ${run.resume_from}.` : '';
+  return {
+    text: done + resume,
+    skipped: skippedOf(run).map((s) => `${s.table}: ${SKIP_REASON[s.reason] ?? `lỗi ${s.reason}`}`),
+  };
+}
+
+/** "Quét lại" (UC-04-02 trigger): a structure scan of the source, read back until it ends. */
+export const rescanSource = async (id: string): Promise<ScanRun> => {
+  const accepted = await startSourceScan(id);
+  let run = await getScanRun(accepted.id);
+  for (let attempt = 0; run.status === 'running' && attempt < 30; attempt += 1) {
+    await sleep(accepted.poll_after_ms ?? 2000);
+    run = await getScanRun(accepted.id);
+  }
+  if (run.status === 'running')
+    throw new V1Error(504, 'timeout', 'Lượt quét chưa xong, xem lại sau ít phút.');
+  return run;
+};
 
 export interface ActivateSource {
   tables: { name: string; data_space_id: string; owner_id: string }[];

@@ -11,6 +11,7 @@ import { ToastProvider } from '../../design-system/Toast';
 import { createHandlers } from '../../mocks/handlers';
 import CollectionPage from './CollectionPage';
 import JobsPage from './JobsPage';
+import SourceDetailPage from './SourceDetailPage';
 import SourcesPage from './SourcesPage';
 import TableProfilePage from './TableProfilePage';
 import UploadPage from './UploadPage';
@@ -75,6 +76,35 @@ describe('SourcesPage', () => {
     ).toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: /Oracle/ }));
     expect(app.navigate).toHaveBeenCalledWith('data', 'CONNECT', 'oracle');
+  });
+
+  it('UC-04-02 rescans an active source and says what the scan left aside', async () => {
+    server.use(
+      http.get('*/v1/scan-runs/:id', ({ params }) =>
+        HttpResponse.json({
+          id: params.id,
+          source_id: 'src-core',
+          kind: 'schema',
+          trigger: 'manual',
+          workflow_id: null,
+          status: 'succeeded',
+          tables_total: 46,
+          tables_scanned: 45,
+          tables_skipped: [{ table: 'core.ld_loans', reason: 'schema_changed', schema_hash: 'a' }],
+          resume_from: null,
+          started_at: '2026-10-15T01:00:00Z',
+          finished_at: '2026-10-15T01:02:00Z',
+          created_at: '2026-10-15T01:00:00Z',
+        }),
+      ),
+    );
+    app.routeId = 'src-core';
+    renderPage(<SourceDetailPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Quét lại' }));
+    expect(
+      await screen.findByText('Đã quét 45/46 bảng.', { selector: 'span' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('· core.ld_loans: cấu trúc đã đổi, chờ duyệt')).toBeInTheDocument();
   });
 
   it('says why the list did not load, with a retry', async () => {

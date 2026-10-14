@@ -7,7 +7,14 @@ import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber, formatTime } from '../../lib/formatVN';
-import { getSource, testSource, type SourceDetail } from '../../lib/v1/sources';
+import { useState } from 'react';
+import {
+  getSource,
+  rescanSource,
+  scanSummary,
+  testSource,
+  type SourceDetail,
+} from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
 import { dataSpacesText, freshnessText, modeLabel, sourceTone } from './sourceFormat';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
@@ -51,6 +58,23 @@ function SourceView({ source, reload }: { source: SourceDetail; reload: () => vo
       toast({ tone: 'error', message: `Không kiểm tra được kết nối. ${(e as Error).message}` });
     }
   };
+  // "Quét lại" (UC-04-02): the structure scan's outcome stays on the page, with any table it
+  // left aside and why (E1), or where the next scan goes on (E2).
+  const [scan, setScan] = useState<{ text: string; skipped: string[] } | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const rescan = async () => {
+    setScanning(true);
+    try {
+      const summary = scanSummary(await rescanSource(source.id));
+      setScan(summary);
+      toast({ tone: summary.skipped.length ? 'info' : 'success', message: summary.text });
+      reload();
+    } catch (e) {
+      toast({ tone: 'error', message: `Không quét lại được. ${(e as Error).message}` });
+    } finally {
+      setScanning(false);
+    }
+  };
   const tone = sourceTone(source);
 
   return (
@@ -68,6 +92,11 @@ function SourceView({ source, reload }: { source: SourceDetail; reload: () => vo
               </Button>
             )}
             <Button onClick={() => void check()}>Kiểm tra kết nối</Button>
+            {source.status === 'active' && (
+              <Button onClick={() => void rescan()} disabled={scanning}>
+                {scanning ? 'Đang quét…' : 'Quét lại'}
+              </Button>
+            )}
             {source.drift_id && (
               <Button kind="primary" onClick={() => navigate('data', 'DRIFT', source.drift_id!)}>
                 Duyệt thay đổi cấu trúc
@@ -82,6 +111,16 @@ function SourceView({ source, reload }: { source: SourceDetail; reload: () => vo
         </div>
         {source.status_reason && (tone === 'error' || tone === 'warning') && (
           <Notice tone={tone}>{source.status_reason}</Notice>
+        )}
+        {scan && (
+          <Notice tone={scan.skipped.length ? 'warning' : 'success'}>
+            <span className="flex flex-col gap-[2px]">
+              <span>{scan.text}</span>
+              {scan.skipped.map((line) => (
+                <span key={line}>· {line}</span>
+              ))}
+            </span>
+          </Notice>
         )}
         {source.tables.length === 0 ? (
           <EmptyState
