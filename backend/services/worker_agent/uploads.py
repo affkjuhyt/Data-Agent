@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import csv
+import datetime
 import io
+import json
 import os
 import re
 import uuid
@@ -11,7 +13,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import aioboto3
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog, ingest
@@ -23,6 +25,7 @@ BUCKET = "da-ingest"
 UPLOADED = "file_upload.uploaded"
 MAPPED = "file_upload.mapped"
 COMMITTED = "file_upload.committed"
+WORKSPACE_SCHEMA = "workspace"
 
 
 def _store_config() -> tuple[str, str, str]:
@@ -120,6 +123,71 @@ def _table_name(file_name: str, upload_id: uuid.UUID) -> str:
     return f"upload_{stem[:45] or upload_id.hex[:8]}_{upload_id.hex[:8]}"
 
 
+def _identifier(value: Any, fallback: str) -> str:
+    name = re.sub(r"[^a-zA-Z0-9_]+", "_", str(value or "").strip()).strip("_").lower()
+    return name or fallback
+
+
+def _column_names(header: list[Any], column_map: list[dict[str, Any]]) -> list[str]:
+    names: list[str] = []
+    for index, value in enumerate(header):
+        mapped = column_map[index].get("name") if index < len(column_map) else None
+        name = _identifier(mapped or value, f"column_{index + 1}")
+        if name in names:
+            name = f"{name}_{index + 1}"
+        names.append(name)
+    return names
+
+
+def _postgres_type(column_map: list[dict[str, Any]], index: int) -> str:
+    kind = str(column_map[index].get("type", "string")) if index < len(column_map) else "string"
+    return {"number": "numeric", "percent": "numeric", "boolean": "boolean", "date": "date"}.get(
+        kind, "text"
+    )
+
+
+def _value(value: Any, kind: str) -> Any:
+    if value in (None, ""):
+        return None
+    if kind in {"number", "percent"}:
+        return float(str(value).replace(",", "."))
+    if kind == "boolean":
+        return str(value).strip().lower() in {"true", "1", "yes"}
+    if kind == "date" and isinstance(value, datetime.datetime):
+        return value.date()
+    return value
+
+
+async def _materialize(session: Any, table_name: str, rows: list[list[Any]], column_map: list[dict[str, Any]]) -> None:
+    if not rows:
+        raise ValueError("the upload has no readable rows")
+    names = _column_names(rows[0], column_map)
+    columns = [
+        {"name": name, "type": _postgres_type(column_map, index)}
+        for index, name in enumerate(names)
+    ]
+    rows_json = [
+        [_value(row[index] if index < len(row) else None, str(column_map[index].get("type", "string")) if index < len(column_map) else "string") for index in range(len(names))]
+        for row in rows[1:]
+    ]
+    for start in range(0, len(rows_json), 1_000):
+        await session.execute(
+            text("SELECT public.da_materialize_upload(:table_name, CAST(:columns AS jsonb), CAST(:rows AS jsonb), :replace)"),
+            {
+                "table_name": table_name,
+                "columns": json.dumps(columns),
+                "rows": json.dumps(rows_json[start : start + 1_000], default=_json_value),
+                "replace": start == 0,
+            },
+        )
+
+
+def _json_value(value: Any) -> str:
+    if isinstance(value, datetime.datetime | datetime.date):
+        return value.isoformat()
+    return str(value)
+
+
 async def _validate_upload(event: Event) -> None:
     async with scoped_session(ROLE, event.org_id, event.payload.get("uploader_id")) as session:
         row = await session.scalar(select(ingest.FileUpload).where(ingest.FileUpload.id == event.aggregate_id))
@@ -144,6 +212,10 @@ async def _register_dataset(event: Event) -> None:
         expires_at = row.expires_at
         row_count = (row.validation or {}).get("row_count", 0)
         quality_state = "ok" if (row.error_ratio or 0) == 0 else "warning"
+        content = await _read_object(row.object_key)
+        upload_rows = _rows(content, row.file_name, row.sheet)
+        await _materialize(session, table_name, upload_rows, row.column_map or [])
+        row.validation = {**(row.validation or {}), "materialized": True, "table_name": table_name}
     async with scoped_session(CATALOG_ROLE, event.org_id, event.payload.get("uploader_id")) as session:
         if await session.get(catalog.Dataset, dataset_id) is None:
             session.add(

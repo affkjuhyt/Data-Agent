@@ -27,7 +27,8 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import asyncpg
-from sqlalchemy import update
+from sqlalchemy import text, update
+from sqlalchemy.exc import SQLAlchemyError
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog
@@ -43,6 +44,7 @@ from services.worker_agent.query.scope import datasets_read, default_schema
 from services.worker_agent.query.secrets import SecretReader, SecretUnavailable
 
 ROLE = "svc_query"
+INTERNAL_WORKSPACE = "internal://workspace"
 MAX_ROWS = 10_000  # BR-03
 STORED_ROWS = 1_000  # query.query_result keeps at most this many (D4)
 RESULT_DAYS = 30
@@ -340,14 +342,21 @@ async def run_query(
 
     timeout_s = int(source.query_timeout_s or 120)
     try:
-        credentials = await secrets.read(org_id, source.secret_ref)
         async with _slot(source):
-            columns, rows = await asyncio.wait_for(
-                driver_for(source.kind)(
-                    source, credentials.user, credentials.password, executed, timeout_s
-                ),
-                timeout=timeout_s + 5,
-            )
+            if source.secret_ref == INTERNAL_WORKSPACE:
+                async with scoped_session(ROLE, org_id, principal_id) as local_session:
+                    await local_session.execute(text("SET TRANSACTION READ ONLY"))
+                    result = await local_session.execute(text(executed))
+                    columns = [{"name": column, "type": "unknown"} for column in tuple(result.keys())]
+                    rows = [[_plain(value) for value in row] for row in result.fetchall()]
+            else:
+                credentials = await secrets.read(org_id, source.secret_ref)
+                columns, rows = await asyncio.wait_for(
+                    driver_for(source.kind)(
+                        source, credentials.user, credentials.password, executed, timeout_s
+                    ),
+                    timeout=timeout_s + 5,
+                )
         outcome.truncated = len(rows) > limit
         outcome.rows = rows[:limit]
         outcome.columns = columns
@@ -360,6 +369,8 @@ async def run_query(
         outcome.error = str(exc)
     except SourceDriverError as exc:
         outcome.error = str(exc)
+    except SQLAlchemyError as exc:
+        outcome.error = f"local query failed ({type(exc).__name__})"
     except (asyncpg.PostgresError, OSError) as exc:
         # The source's own message, without the SQL text or values it may quote.
         outcome.error = f"{type(exc).__name__}: {getattr(exc, 'sqlstate', '') or 'connection'}"

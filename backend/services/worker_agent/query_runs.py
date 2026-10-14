@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import os
 import uuid
 from typing import Any
 
@@ -40,11 +41,32 @@ from services.worker_agent.semantic.loader import load
 logger = logging.getLogger(__name__)
 
 EVENT_TYPE = "query_run.requested"
+INTERNAL_WORKSPACE = "internal://workspace"
+INTERNAL_SOURCE_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 HISTORY = "Truy vấn theo thời điểm tri thức (as_of) chưa chạy được: cần đường lịch sử của nguồn."
 
 
 class Unbuildable(ValueError):
     """The run cannot be turned into SQL on one source; the message is the run's error."""
+
+
+def _internal_source(data_space_id: uuid.UUID, org_id: uuid.UUID) -> catalog.Source:
+    return catalog.Source(
+        id=INTERNAL_SOURCE_ID,
+        org_id=org_id,
+        data_space_id=data_space_id,
+        name="Data Space workspace",
+        kind="postgresql",
+        host=os.environ.get("POSTGRES_HOST", "postgres"),
+        port=int(os.environ.get("PGPORT", "8300")),
+        database_name=os.environ.get("POSTGRES_DB", "dataagent"),
+        conn_options={"schema": "workspace"},
+        secret_ref=INTERNAL_WORKSPACE,
+        mode="federated",
+        status="active",
+        max_concurrency=4,
+        query_timeout_s=120,
+    )
 
 
 async def _claim(event: Event) -> q.QueryRun | None:
@@ -162,7 +184,11 @@ async def dataset_sql(
     dataset = await session.get(catalog.Dataset, uuid.UUID(str(p["dataset_id"])))
     if dataset is None or dataset.data_space_id != data_space_id:
         raise Unbuildable("Bảng không còn trong Data Space.")
-    source = _queryable(await session.get(catalog.Source, dataset.source_id))
+    source = (
+        _internal_source(data_space_id, dataset.org_id)
+        if dataset.origin == "upload" and dataset.source_id is None
+        else _queryable(await session.get(catalog.Source, dataset.source_id))
+    )
     query = exp.select(exp.Star()).from_(
         exp.table_(dataset.table_name, db=dataset.schema_name, quoted=True)
     )
@@ -180,10 +206,10 @@ async def sql_source(session: Any, data_space_id: uuid.UUID, sql: str) -> catalo
                 ds.data_space_id == data_space_id,
                 ds.deleted_at.is_(None),
                 ds.enabled.is_(True),
-                ds.source_id.is_not(None),
             )
         )
     ).all()
+    local_datasets = [d for d in datasets if d.origin == "upload" and d.source_id is None]
     sources = {
         s.id: s
         for s in (
@@ -193,6 +219,15 @@ async def sql_source(session: Any, data_space_id: uuid.UUID, sql: str) -> catalo
         ).all()
     }
     fits: list[catalog.Source] = []
+    local_source = _internal_source(data_space_id, uuid.UUID(str(local_datasets[0].org_id))) if local_datasets else None
+    if local_source is not None:
+        try:
+            tables = tables_of(check_read_only(sql, "postgres"), "postgres")
+            held = {(d.schema_name, d.table_name) for d in local_datasets}
+            if tables and all((t_schema or "workspace", name) in held for t_schema, name in tables):
+                fits.append(local_source)
+        except SqlRejected:
+            pass
     for source in sources.values():
         try:
             dialect = dialect_of(source.kind)

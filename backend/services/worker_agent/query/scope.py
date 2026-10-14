@@ -69,11 +69,13 @@ async def datasets_read(
     if not wanted:
         return []
     ds = catalog.Dataset
+    local = source.secret_ref == "internal://workspace"
     candidates = (
         await session.scalars(
             select(ds).where(
                 ds.data_space_id == data_space_id,
-                ds.source_id == source.id,
+                ds.source_id.is_(None) if local else ds.source_id == source.id,
+                ds.origin == "upload" if local else ds.origin != "upload",
                 ds.deleted_at.is_(None),
                 ds.enabled.is_(True),
                 or_(ds.scope != "personal", ds.created_by == principal_id),
