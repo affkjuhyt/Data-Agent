@@ -28,7 +28,7 @@ spec:
       restartPolicy: OnFailure
       containers:
       - name: migrate
-        image: localhost:5000/dataagent/migrate:latest
+        image: localhost:5001/dataagent/migrate:latest
         imagePullPolicy: IfNotPresent
         command:
         - alembic
