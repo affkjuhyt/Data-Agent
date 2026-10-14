@@ -1,14 +1,9 @@
-"""Object storage for uploaded files (MinIO bucket da-ingest, UC-04-08 step 1).
-
-The api has no MinIO client yet, so the routes depend on this small interface and the app
-answers 503 source_unavailable until one is wired in (`app.dependency_overrides[object_store]`,
-tests do the same with a fake). The original is written once and never rewritten: raw is
-immutable (invariant 1 of docs/v2/00-architecture-v2.md); every key carries the upload's own id.
-"""
+"""Object storage for uploaded files (MinIO bucket da-ingest, UC-04-08 step 1)."""
 
 from __future__ import annotations
 
 from typing import BinaryIO, Protocol
+from urllib.parse import urlparse
 
 from services.api.kernel.problems import Problem
 
@@ -31,6 +26,52 @@ class UnconfiguredStore:
 _UNCONFIGURED = UnconfiguredStore()
 
 
+class MinioObjectStore:
+    """Write the immutable upload stream to the configured S3-compatible store."""
+
+    def __init__(self, url: str) -> None:
+        parsed = urlparse(url)
+        self._endpoint = f"{parsed.scheme}://{parsed.hostname}"
+        if parsed.port:
+            self._endpoint += f":{parsed.port}"
+        self._key = parsed.username
+        self._secret = parsed.password
+
+    async def put(
+        self, bucket: str, key: str, data: BinaryIO, size: int, content_type: str
+    ) -> None:
+        # Keep this import lazy so API tests can override object_store without requiring a live
+        # MinIO endpoint. The upload stream is passed through; it is not duplicated in memory.
+        import aioboto3
+        from botocore.config import Config
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        try:
+            async with aioboto3.Session().client(
+                "s3",
+                endpoint_url=self._endpoint,
+                aws_access_key_id=self._key,
+                aws_secret_access_key=self._secret,
+                config=Config(signature_version="s3v4"),
+            ) as client:
+                await client.put_object(
+                    Bucket=bucket,
+                    Key=key,
+                    Body=data,
+                    ContentLength=size,
+                    ContentType=content_type,
+                )
+        except (BotoCoreError, ClientError) as exc:
+            raise Problem(503, "source_unavailable", "File storage is unavailable.") from exc
+
+
+def _configured_store() -> ObjectStore:
+    import os
+
+    url = os.getenv("MINIO_URL", "").strip()
+    return MinioObjectStore(url) if url else _UNCONFIGURED
+
+
 def object_store() -> ObjectStore:
-    """FastAPI dependency; replaced where a real store is configured."""
-    return _UNCONFIGURED
+    """FastAPI dependency; tests can replace it while deployed API uses MinIO."""
+    return _configured_store()
