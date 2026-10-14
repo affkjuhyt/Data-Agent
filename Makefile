@@ -54,10 +54,10 @@ type:  ## mypy strict on libs + services (same set as CI python-type)
 IMAGE_REGISTRY ?= localhost:5001
 UNIT_SUITES ?= kb_backend:kb-backend platform_workers:platform-workers \
                sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker \
-               model_service:model_service contracts:kb-backend api:api worker_agent:worker-agent \
+               model_service:model_service contracts:kb-backend api:api worker_agent:worker-agent worker_ingest:worker-ingest \
                repo:$(DEV_TOOLS_IMAGE)
 INTEGRATION_SUITES ?= sandbox_executor:sandbox_executor \
-                      contracts:kb-backend api:api migrate:migrate worker_agent:worker-agent
+                      contracts:kb-backend api:api migrate:migrate worker_agent:worker-agent worker_ingest:worker-ingest
 # The integration sandbox tests start real sandbox-runner containers; the tag
 # differs per host (tests/integration/_sandbox.py), override it to match.
 SANDBOX_RUNNER_IMAGE ?= dataagent/sandbox-runner:latest

@@ -40,7 +40,7 @@ MANIFEST_DIR = K8S_DIR / "production"
 
 # Deployments that reach Postgres through the ORM, and so must not serve traffic
 # on a schema older than their code.
-MIGRATION_GATED = {"api", "worker-agent"}
+MIGRATION_GATED = {"api", "worker-agent", "worker-ingest"}
 GATE_CONTAINER = "wait-for-migrations"
 
 # Queue consumers and pollers: no inbound traffic, so no Service and no HTTP probe.
@@ -55,6 +55,7 @@ HEADLESS_WORKERS = {
     "platform-workers-schema-crawler",
     "platform-workers-web-crawler",
     "worker-agent",
+    "worker-ingest",
 }
 
 

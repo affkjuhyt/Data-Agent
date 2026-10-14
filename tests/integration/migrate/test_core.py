@@ -1296,6 +1296,25 @@ def test_tile_positions_swap_inside_a_transaction(db):
     fails(db, "SET CONSTRAINTS workspace.tile_workspace_id_position_key IMMEDIATE", code=UNIQUE)
 
 
+def test_upload_materializer_accepts_a_column_named_value(db):
+    """The upload path must materialize ordinary headers without PL/pgSQL alias collisions."""
+    table_name = f"upload_regression_{new_id().hex[:8]}"
+    run(
+        db,
+        "SELECT public.da_materialize_upload(%s, %s::jsonb, %s::jsonb, true)",
+        (
+            table_name,
+            Json([{"name": "value", "type": "numeric"}, {"name": "label", "type": "text"}]),
+            Json([["12.5", "ok"], ["7", "retry"]]),
+        ),
+    )
+    with db.cursor() as cur:
+        cur.execute(
+            f'SELECT "value"::text, "label" FROM workspace."{table_name}" ORDER BY "value"::numeric'
+        )
+        assert cur.fetchall() == [("7", "retry"), ("12.5", "ok")]
+
+
 def _calendar(db, org):
     return ins(
         db,

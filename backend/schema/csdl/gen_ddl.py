@@ -266,6 +266,10 @@ def build(d: dict, database: str) -> str:
         role_block(roles),
         "CREATE EXTENSION IF NOT EXISTS pgcrypto;",
         "DO $$ BEGIN EXECUTE format('GRANT CREATE ON DATABASE %I TO da_owner', current_database()); END $$;",
+        # Fresh PostgreSQL databases do not grant CREATE on public to non-owner roles.
+        # The generated routine set includes SECURITY DEFINER helpers in public, so the
+        # trusted schema owner needs this privilege before SET LOCAL ROLE da_owner.
+        "GRANT CREATE ON SCHEMA public TO da_owner;",
     ]
     # Role membership needs the admin, so D5.2's cross-schema reads are granted before SET ROLE.
     for svc, reads in d["cross_reads"].items():

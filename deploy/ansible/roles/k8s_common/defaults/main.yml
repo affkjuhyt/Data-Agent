@@ -127,6 +127,7 @@ database_manifests: []
 service_workloads:
   - api
   - worker-agent
+  - worker-ingest
   - litellm
   - auth-api
   - kb-backend

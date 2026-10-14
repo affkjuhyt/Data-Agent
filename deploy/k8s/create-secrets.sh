@@ -69,6 +69,16 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=OPENBAO_SECRET_ID="${WORKER_AGENT_OPENBAO_SECRET_ID}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# worker-ingest: reads source credentials from OpenBao, claims ingest.outbox, writes workspace
+# tables as svc_ingest and registers them as svc_catalog. It has no MinIO or agent credentials.
+kubectl -n dataagent-service create secret generic worker-ingest-secrets \
+  --from-literal=DATAAGENT_DB_URL__SVC_INGEST="${DATAAGENT_DB_URL__SVC_INGEST}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_CATALOG="${DATAAGENT_DB_URL__SVC_CATALOG}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_OUTBOX_RELAY="${DATAAGENT_DB_URL__SVC_OUTBOX_RELAY}" \
+  --from-literal=OPENBAO_ROLE_ID="${WORKER_AGENT_OPENBAO_ROLE_ID}" \
+  --from-literal=OPENBAO_SECRET_ID="${WORKER_AGENT_OPENBAO_SECRET_ID}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 # worker-document: processes document.received from document.outbox and writes pages/chunks.
 kubectl -n dataagent-service create secret generic worker-document-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_DOCUMENT="${DATAAGENT_DB_URL__SVC_DOCUMENT}" \

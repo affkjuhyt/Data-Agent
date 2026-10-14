@@ -123,6 +123,55 @@ async def test_a_query_runs_in_place_and_is_recorded(
     )
 
 
+async def test_agent_reads_a_worker_ingest_workspace_dataset(
+    seed: Seed, warehouse: dict[str, object]
+) -> None:
+    org, space, user, _source_row, _secrets = _source(seed, warehouse)
+    table = f"ingest_agent_{uuid.uuid4().hex[:8]}"
+    with seed.conn.cursor() as cur:
+        cur.execute(f'CREATE TABLE workspace."{table}" (branch text, balance numeric)')
+        cur.execute(f'GRANT SELECT ON workspace."{table}" TO svc_query')
+        cur.execute(
+            f'INSERT INTO workspace."{table}" VALUES (%s, %s), (%s, %s)', ("HN", 10, "SG", 20)
+        )
+    seed.row(
+        "catalog.dataset",
+        org_id=org,
+        data_space_id=space,
+        origin="derived",
+        schema_name="workspace",
+        table_name=table,
+        enabled=True,
+    )
+    local = catalog.Source(
+        id=uuid.uuid4(),
+        org_id=org,
+        data_space_id=space,
+        name="Data Space workspace",
+        kind="postgresql",
+        host="unused",
+        database_name="unused",
+        conn_options={"schema": "workspace"},
+        secret_ref="internal://workspace",
+        mode="federated",
+        status="active",
+        max_concurrency=2,
+        query_timeout_s=5,
+    )
+    out = await run_query(
+        org_id=org,
+        data_space_id=space,
+        principal_id=user,
+        caller_kind="ad_hoc",
+        caller_id=user,
+        source=local,
+        secrets=_secrets,
+        sql=f'SELECT branch, balance FROM workspace."{table}" ORDER BY branch',
+    )
+    assert out.ok, out.error
+    assert out.rows == [["HN", "10"], ["SG", "20"]]
+
+
 async def test_a_write_never_reaches_the_source(seed: Seed, warehouse: dict[str, object]) -> None:
     org, space, user, source, secrets = _source(seed, warehouse)
     out = await run_query(

@@ -58,7 +58,7 @@ Xoá theo năng lực, không theo tên.
 | G0 · ngay | Dọn thứ đã chết: thư mục test rỗng `tests/integration/{auth_api,platform_workers}` và dòng CI trỏ tới chúng; mục sai trong `build-push-images.sh` (`llm_exporter` không có Dockerfile); README Ansible còn nói `migrate` chép `basemodel` | Như cột trái | Không có |
 | G1 · Hỏi đáp chạy trên V3 | `worker-agent` khung: nhận câu hỏi từ outbox `qa`, Plan IR + bộ thực thi tất định, ghi `qa.answer`, đẩy tiến độ SSE qua Redis `sse:{question_id}`; màn Hỏi đáp gọi `/v1/questions` thay `/api/orchestrate` | Route Kong `/api/orchestrate*`, `/api/ask*`, `/api/catalog`; sau đó `workflow_runtime`, `sandbox_executor`, CronJob `memory-cleanup`, `libs/semantic` (phần eval chuyển theo) | E2E Hỏi đáp qua gateway; eval gate ≥ 90 % (O6.5) |
 | G2 · Quản trị | Nhóm A2 Quản trị và Tích hợp: `/v1/me*`, người dùng, vai trò, khoá API, danh sách IP, bí mật | `auth_api`, route `/api/auth*`, `AppStateContext` gọi `/api/auth/me` | Đăng nhập, khoá API, MCP client qua `/v1` |
-| G3 · Dữ liệu | `worker-ingest`: tài liệu, quét nguồn (`catalog.scan_run`), biên soạn tri thức; nhóm A2 Nguồn và danh mục, Tài liệu, Nạp dữ liệu, Lớp ngữ cảnh, Xung đột | `kb_backend`, `kb-worker`, `platform-workers-schema-crawler`, `libs/ingestion`, Neo4j (ADR-04) | Tài liệu mẫu đi hết Bronze → Silver → Gold trên V3; tìm kiếm Qdrant đạt |
+| G3 · Dữ liệu | `worker-ingest`: trước mắt đọc bảng PostgreSQL theo `ingestion_job.created`/`job_run.backfill_requested`, materialize vào `workspace` và đăng ký dataset local; tài liệu, quét nguồn (`catalog.scan_run`), biên soạn tri thức tiếp theo | `kb_backend`, `kb-worker`, `platform-workers-schema-crawler`, `libs/ingestion`, Neo4j (ADR-04) | Vertical slice source table → workspace → agent query đã có integration test; Bronze → Silver → Gold và tìm kiếm Qdrant vẫn là điều kiện G3 đầy đủ |
 | G4 · Thu thập, dự báo | `crawler` và `ml-forecast`; nhóm A2 Thu thập, Dự báo | `platform-workers-web-crawler` (`indicator_api` đã xoá 12/10/2026) | Lượt thu thật qua egress proxy; backtest chạy |
 | G5 · Dọn cuối | Audit service và ghi `dataagent_audit`; outbox qua Debezium thay `libs/shared/outbox.relay_loop` | `platform_workers`, `model_service`, `llm-exporter`, `libs/{basemodel,database_connector,shared,contracts}`, MongoDB nếu không còn canvas; test toàn repo đang nằm trong `tests/unit/workflow_runtime` chuyển sang `tests/unit/repo` trước khi xoá suite | `rg` cả tên gói lẫn tên runtime không còn kết quả |
 
@@ -112,6 +112,10 @@ Theo mẫu `api` đã làm (06 §API-06): Dockerfile ở thư mục khối; mani
 `<khối>-env`, Secret `<khối>-secrets` chỉ chứa URL của đúng các vai trò ở bảng §1; mục trong
 `service_workloads`; NetworkPolicy riêng (`crawler` chỉ ra egress proxy); suite test `<khối>` trong
 `Makefile`, `run_suites.py`, CI.
+
+`worker-ingest` hiện đã có đủ Dockerfile, manifest dev/production, Secret wiring, migration gate và
+suite integration riêng cho vertical slice bảng PostgreSQL. Connector khác phải được triển khai thêm
+trước khi gọi G3 hoàn tất; worker ghi lỗi rõ ràng cho mode incremental/CDC và source kind chưa hỗ trợ.
 
 ## 5. API: tình trạng và việc tiếp
 

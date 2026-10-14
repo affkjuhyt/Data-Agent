@@ -35,12 +35,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # runs on the local dev-tools image (`make dev-tools` builds it) instead of a registry image.
 DEFAULT_UNIT = (
     "kb_backend:kb-backend platform_workers:platform-workers "
-    "sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker model_service:model_service api:api worker_agent:worker-agent "
+    "sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker model_service:model_service api:api worker_agent:worker-agent worker_ingest:worker-ingest "
     "repo:dataagent/dev-tools:local"
 )
 DEFAULT_INTEGRATION = (
     "sandbox_executor:sandbox_executor api:api migrate:migrate "
-    "worker_agent:worker-agent"
+    "worker_agent:worker-agent worker_ingest:worker-ingest"
 )
 
 # Which suites a change under backend/services/<service>/ can break: the suite of
@@ -49,6 +49,7 @@ DEFAULT_INTEGRATION = (
 SERVICE_SUITES: dict[str, set[tuple[str, str]]] = {
     "api": {("unit", "api"), ("integration", "api")},
     "worker_agent": {("unit", "worker_agent"), ("integration", "worker_agent")},
+    "worker_ingest": {("unit", "worker_ingest")},
     "auth_api": {("unit", "auth_api")},
     "kb_backend": {
         ("unit", "kb_backend"), ("unit", "kb_worker"),

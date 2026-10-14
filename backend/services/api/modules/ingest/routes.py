@@ -18,6 +18,7 @@ import uuid
 import warnings
 from collections.abc import Callable, Sequence
 from typing import Annotated, Any, TypeVar
+from zipfile import BadZipFile
 
 from fastapi import APIRouter, Depends, File, Form, Path, Query, Response, UploadFile
 from fastapi._compat import get_cached_model_fields
@@ -275,6 +276,7 @@ async def create_job(
                 job_id=row.id,
                 source_id=row.source_id,
                 data_space_id=data_space,
+                principal_id=principal.user_id,
                 mode=row.mode,
                 status=row.status,
             )
@@ -515,6 +517,7 @@ async def backfill_job(
                 job_run_id=run.id,
                 job_id=job.id,
                 data_space_id=data_space,
+                principal_id=principal.user_id,
                 cursor_from=run.cursor_from,
                 cursor_to=run.cursor_to,
                 status=run.status,
@@ -777,7 +780,21 @@ def _analyse_upload(content: bytes, file_name: str, requested_sheet: str | None)
     if extension in {".xlsx", ".xlsm"}:
         from openpyxl import load_workbook
 
-        workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        try:
+            workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        except BadZipFile:
+            # Macro-enabled uploads are retained before worker analysis. A worker can inspect
+            # them with the configured reader; the API must not turn a raw upload into a 500 just
+            # because the lightweight preview reader cannot open its container yet.
+            if extension == ".xlsm":
+                return {
+                    "sheet": requested_sheet,
+                    "header_row": None,
+                    "encoding": None,
+                    "column_map": [],
+                    "validation": {},
+                }
+            raise Problem(422, "validation_failed", "The Excel file is not readable.") from None
         sheet_name = requested_sheet or workbook.sheetnames[0]
         if sheet_name not in workbook.sheetnames:
             raise Problem(422, "validation_failed", "The selected sheet does not exist.")
@@ -790,7 +807,9 @@ def _analyse_upload(content: bytes, file_name: str, requested_sheet: str | None)
         try:
             import xlrd
         except ImportError as exc:
-            raise Problem(503, "source_unavailable", "Legacy Excel analysis is not configured.") from exc
+            raise Problem(
+                503, "source_unavailable", "Legacy Excel analysis is not configured."
+            ) from exc
         workbook = xlrd.open_workbook(file_contents=content, on_demand=True)
         sheet_name = requested_sheet or workbook.sheet_names()[0]
         if sheet_name not in workbook.sheet_names():
@@ -915,8 +934,10 @@ async def upload_file(
             encoding=analysis["encoding"],
             column_map=analysis["column_map"],
             validation=analysis["validation"],
-            error_ratio=0,
-            status="analyzed",
+            # Upload only records the immutable original. The ingest worker owns analysis and
+            # must advance the state after it has checked the bytes, schema and error ratio.
+            error_ratio=None,
+            status="uploaded",
             created_by=principal.user_id,
             updated_by=principal.user_id,
         )
@@ -986,7 +1007,9 @@ async def preview_upload(
         try:
             import xlrd
         except ImportError as exc:
-            raise Problem(503, "source_unavailable", "Legacy Excel preview is not configured.") from exc
+            raise Problem(
+                503, "source_unavailable", "Legacy Excel preview is not configured."
+            ) from exc
         workbook = xlrd.open_workbook(file_contents=content, on_demand=True)
         sheet_name = row.sheet or workbook.sheet_names()[0]
         if sheet_name not in workbook.sheet_names():
@@ -1119,16 +1142,23 @@ async def delete_upload(
     **endpoint("POST", "/v1/uploads/{id}:commit", operation_id="commitUpload"),
 )
 async def commit_upload(
-    body: UploadPatch,
     upload_id: IdPath,
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
+    body: UploadPatch | None = None,
 ) -> DatasetView:
+    body = body or UploadPatch()
     async with transaction(ROLE, principal) as session:
         row = await _upload(session, upload_id, principal, data_space)
         if row.status not in COMMITTABLE_UPLOAD:
             raise Problem(
                 409, "invalid_state", f"The upload is {row.status}; it is written once analysed."
+            )
+        if row.error_ratio is not None and row.error_ratio > decimal.Decimal("0.05"):
+            raise Problem(
+                422,
+                "business_rule_violated",
+                "More than 5% of the upload rows are invalid; the file cannot be written.",
             )
         if body.column_map is not None:
             row.column_map = body.column_map

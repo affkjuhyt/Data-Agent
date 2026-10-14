@@ -13,6 +13,7 @@ END $$;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 DO $$ BEGIN EXECUTE format('GRANT CREATE ON DATABASE %I TO da_owner', current_database()); END $$;
+GRANT CREATE ON SCHEMA public TO da_owner;
 
 -- D5.3: monthly partitions for the current month and the next `months_ahead`, for every table
 -- partitioned by month (default partitions catch rows before a month exists).

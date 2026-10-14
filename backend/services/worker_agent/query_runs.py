@@ -186,7 +186,7 @@ async def dataset_sql(
         raise Unbuildable("Bảng không còn trong Data Space.")
     source = (
         _internal_source(data_space_id, dataset.org_id)
-        if dataset.origin == "upload" and dataset.source_id is None
+        if dataset.schema_name == "workspace" and dataset.source_id is None
         else _queryable(await session.get(catalog.Source, dataset.source_id))
     )
     query = exp.select(exp.Star()).from_(
@@ -209,7 +209,7 @@ async def sql_source(session: Any, data_space_id: uuid.UUID, sql: str) -> catalo
             )
         )
     ).all()
-    local_datasets = [d for d in datasets if d.origin == "upload" and d.source_id is None]
+    local_datasets = [d for d in datasets if d.schema_name == "workspace" and d.source_id is None]
     sources = {
         s.id: s
         for s in (
@@ -219,7 +219,11 @@ async def sql_source(session: Any, data_space_id: uuid.UUID, sql: str) -> catalo
         ).all()
     }
     fits: list[catalog.Source] = []
-    local_source = _internal_source(data_space_id, uuid.UUID(str(local_datasets[0].org_id))) if local_datasets else None
+    local_source = (
+        _internal_source(data_space_id, uuid.UUID(str(local_datasets[0].org_id)))
+        if local_datasets
+        else None
+    )
     if local_source is not None:
         try:
             tables = tables_of(check_read_only(sql, "postgres"), "postgres")
