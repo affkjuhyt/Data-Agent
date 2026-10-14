@@ -51,7 +51,7 @@ def _chunks(text: str, limit: int = MAX_CHUNK_CHARS) -> Iterable[str]:
             paragraph = paragraph[cut:].lstrip()
         if not paragraph:
             continue
-        candidate = f"{current}\n{paragraph}" if current else paragraph
+        candidate = f"{current}\n\n{paragraph}" if current else paragraph
         if len(candidate) <= limit:
             current = candidate
         else:
@@ -104,6 +104,9 @@ def extract_pages(content: bytes, media: str) -> list[ExtractedPage]:
                                 )
                             )
                             blocks.append(LayoutBlock("picture", "", (rect.x0, rect.y0, rect.x1, rect.y1)))
+                    text = _layout_text(blocks)
+                if not text_layer:
+                    text = _join_wrapped_lines(text)
                 image = page.get_pixmap(dpi=144, alpha=False).tobytes("png")
                 result.append(ExtractedPage(text, image, text_layer, ocr_conf, blocks, images, page.rect.width, page.rect.height))
         return result
@@ -118,7 +121,7 @@ def page_hash(text: str) -> str:
 
 
 def page_chunks(text: str) -> list[str]:
-    return list(_chunks(text))
+    return [_join_wrapped_lines(chunk) for chunk in _chunks(text)]
 
 
 def _native_layout(page: pymupdf.Page) -> list[LayoutBlock]:
@@ -149,6 +152,34 @@ def _native_layout(page: pymupdf.Page) -> list[LayoutBlock]:
         bbox = tuple(float(value) for value in block["bbox"])
         blocks.append(LayoutBlock("heading" if heading else "paragraph", text, bbox, _heading_level(text, size, body_size) if heading else None))
     return blocks
+
+
+def _clean_block_text(text: str) -> str:
+    return " ".join(line.strip() for line in text.splitlines() if line.strip())
+
+
+def _layout_text(blocks: list[LayoutBlock]) -> str:
+    return "\n\n".join(_clean_block_text(block.text) for block in blocks if block.text.strip())
+
+
+def _join_wrapped_lines(text: str) -> str:
+    paragraphs = re.split(r"\n\s*\n", text)
+    cleaned = [
+        " ".join(line.strip() for line in paragraph.splitlines() if line.strip())
+        for paragraph in paragraphs
+        if paragraph.strip()
+    ]
+    merged: list[str] = []
+    for paragraph in cleaned:
+        if (
+            merged
+            and paragraph[:1].islower()
+            and merged[-1][-1:] not in ".:;?!"
+        ):
+            merged[-1] = f"{merged[-1]} {paragraph}"
+        else:
+            merged.append(paragraph)
+    return "\n\n".join(merged)
 
 
 def _looks_like_heading(text: str, size: float, body_size: float) -> bool:
