@@ -348,6 +348,7 @@ async def test_admin_creates_a_collection_with_its_purpose_and_pii_policy(ds: Sp
         assert bad_media.status_code == 422
         twice = await api.post("/v1/collections", json=body, headers=ds.headers("admin"))
         assert twice.status_code == 409
+        assert "already exists" in twice.json()["detail"]
         # Codes are unique per Data Space only.
         elsewhere = await api.post(
             "/v1/collections", json=body, headers=ds.headers("admin", ds.other)

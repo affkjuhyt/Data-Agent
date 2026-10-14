@@ -265,6 +265,19 @@ async def create_collection(
 ) -> CollectionView:
     collection_id = uuid7()
     async with transaction(ROLE, principal) as session:
+        existing = await session.scalar(
+            select(doc.Collection.id).where(
+                doc.Collection.org_id == principal.org_id,
+                doc.Collection.data_space_id == data_space,
+                doc.Collection.code == body.code,
+            )
+        )
+        if existing is not None:
+            raise Problem(
+                409,
+                "conflict",
+                f"A collection with code {body.code!r} already exists in this Data Space.",
+            )
         row = doc.Collection(
             id=collection_id,
             org_id=principal.org_id,
