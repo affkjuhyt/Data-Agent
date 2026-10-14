@@ -1,0 +1,6 @@
+[mcp_servers.dbx]
+command = "npx"
+args = [
+    "-y",
+    "@dbx-app/mcp-server",
+]

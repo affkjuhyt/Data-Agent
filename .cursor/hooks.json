@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "AGENT_HOOK_EVENT=sessionStart python3 .agent-hooks/agent_hook.py",
+        "timeout": 3
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "AGENT_HOOK_EVENT=afterFileEdit python3 .agent-hooks/agent_hook.py",
+        "matcher": "Write|TabWrite",
+        "timeout": 3
+      }
+    ],
+    "stop": [
+      {
+        "command": "AGENT_HOOK_EVENT=stop python3 .agent-hooks/agent_hook.py",
+        "timeout": 3
+      }
+    ]
+  }
+}
