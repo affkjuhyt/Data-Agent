@@ -195,6 +195,14 @@ class ChunkView(BaseModel):
     created_at: datetime.datetime
 
 
+class DocumentBlockView(BaseModel):
+    kind: Literal["title", "heading", "paragraph", "picture", "line"]
+    text: str
+    box: list[float]
+    level: int | None = None
+    image_url: str | None = None
+
+
 class DocumentPageView(BaseModel):
     id: uuid.UUID
     document_id: uuid.UUID
@@ -207,8 +215,11 @@ class DocumentPageView(BaseModel):
     usable: bool
     created_at: datetime.datetime
     updated_at: datetime.datetime
+    width: float | None = None
+    height: float | None = None
     # A short-lived signed link to the page image (A1.1); null when the page has none.
     image_url: str | None = None
+    blocks: list[DocumentBlockView] = Field(default_factory=list)
     chunks: list[ChunkView] = Field(default_factory=list)
 
 

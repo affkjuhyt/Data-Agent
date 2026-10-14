@@ -319,6 +319,30 @@ function PageImage({ page }: { page: DocumentPage }) {
 }
 
 function PageText({ page }: { page: DocumentPage }) {
+  if (page.blocks.length > 0) {
+    const structuredText = page.blocks.map((block) => block.text).join("\n");
+    return (
+      <div className="flex w-[560px] max-w-full shrink-0 flex-col gap-da-md border border-border bg-card p-da-3xl text-foreground">
+        {page.blocks.map((block, index) =>
+          block.kind === 'picture' && block.image_url ? (
+            <figure key={index} className="flex flex-col gap-da-xs">
+              <img src={block.image_url} alt="Hình trong tài liệu" className="max-h-[520px] max-w-full object-contain" />
+              {block.text && <figcaption className="text-muted-foreground da-caption">{block.text}</figcaption>}
+            </figure>
+          ) : block.kind === 'heading' || block.kind === 'title' ? (
+            <h3 key={index} className={cn('text-foreground', block.level === 1 ? 'da-heading-2' : block.level === 2 ? 'da-heading-3' : 'da-body-strong')}>
+              {block.text}
+            </h3>
+          ) : (
+            <p key={index} className="whitespace-pre-line da-body">{block.text}</p>
+          ),
+        )}
+        {page.text && !structuredText.includes(page.text) && (
+          <p className="whitespace-pre-line da-body">{page.text}</p>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="w-[560px] max-w-full shrink-0 whitespace-pre-line border border-border bg-card p-da-3xl text-foreground da-body">
       {page.text}

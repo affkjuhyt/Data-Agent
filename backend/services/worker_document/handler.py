@@ -12,7 +12,7 @@ from sqlalchemy import delete, select, update
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import document
 from libs.database_connector.minio_connector import MinIOClient
-from services.worker_document.processing import extract_pages, page_chunks, page_hash
+from services.worker_document.processing import extract_pages, layout_json, page_chunks, page_hash
 
 log = logging.getLogger(__name__)
 DOCUMENT_RECEIVED = "document.received"
@@ -69,10 +69,22 @@ async def process_document(event: Any) -> None:
                 if extracted.image:
                     image_ref = f"{org_id}/{document_id}/page-{page_no}.png"
                     await minio.upload("da-doc-derived", image_ref, extracted.image, "image/png")
+                embedded_refs: list[str] = []
+                for image_no, embedded in enumerate(extracted.images, start=1):
+                    embedded_ref = f"{org_id}/{document_id}/page-{page_no}-image-{image_no}.{embedded.extension}"
+                    await minio.upload("da-doc-derived", embedded_ref, embedded.data, f"image/{embedded.extension}")
+                    embedded_refs.append(embedded_ref)
+                layout_ref = f"{org_id}/{document_id}/page-{page_no}.layout.json"
+                await minio.upload(
+                    "da-doc-derived",
+                    layout_ref,
+                    layout_json(extracted, embedded_refs, extracted.width, extracted.height),
+                    "application/json",
+                )
                 page = document.DocumentPage(
                     id=uuid7(), org_id=org_id, document_id=document_id, page_no=page_no,
                     page_hash=page_hash(text), text_layer=extracted.text_layer, ocr_conf=extracted.ocr_conf,
-                    image_ref=image_ref, text=text or None,
+                    layout_ref=layout_ref, image_ref=image_ref, text=text or None,
                     usable=bool(text), created_by=row.created_by, updated_at=datetime.datetime.now(datetime.UTC),
                 )
                 session.add(page)

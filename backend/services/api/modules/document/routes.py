@@ -12,6 +12,7 @@ import contextlib
 import datetime
 import decimal
 import hashlib
+import json
 import logging
 import mimetypes
 import os
@@ -59,6 +60,7 @@ from services.api.modules.document.schemas import (
     ChunkView,
     CollectionCreate,
     CollectionView,
+    DocumentBlockView,
     DocumentDetail,
     DocumentListItem,
     DocumentPageView,
@@ -947,6 +949,9 @@ async def get_document_page(
             )
         ).all()
     image_url = None
+    blocks: list[DocumentBlockView] = []
+    layout_width = None
+    layout_height = None
     if page.image_ref:
         try:
             image_url = await store.presign_get(
@@ -955,6 +960,40 @@ async def get_document_page(
         except Problem:
             # The text and chunks are still worth serving without the image.
             logger.warning("document | page image link unavailable: storage not configured")
+    if page.layout_ref:
+        try:
+            layout = json.loads((await store.download(DERIVED_BUCKET, page.layout_ref)).decode("utf-8"))
+            layout_width = layout.get("width")
+            layout_height = layout.get("height")
+            for raw_block in layout.get("blocks", []):
+                image_link = None
+                if raw_block.get("image_ref"):
+                    try:
+                        image_link = await store.presign_get(
+                            DERIVED_BUCKET, raw_block["image_ref"], IMAGE_URL_TTL_SECONDS
+                        )
+                    except Problem:
+                        logger.warning("document | embedded image link unavailable")
+                blocks.append(
+                    DocumentBlockView(
+                        kind=raw_block.get("kind", "paragraph"),
+                        text=raw_block.get("text", ""),
+                        box=(
+                            [
+                                raw_block["box"][0],
+                                raw_block["box"][1],
+                                raw_block["box"][2] - raw_block["box"][0],
+                                raw_block["box"][3] - raw_block["box"][1],
+                            ]
+                            if len(raw_block.get("box", [])) == 4
+                            else []
+                        ),
+                        level=raw_block.get("level"),
+                        image_url=image_link,
+                    )
+                )
+        except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            logger.warning("document | page layout unavailable")
     view = DocumentPageView.model_validate(page, from_attributes=True)
     # The page text of a keep_for_authorized collection is not masked; there is no masked copy
     # to serve instead, so a caller without view_detail gets the image and masked chunks only.
@@ -963,6 +1002,9 @@ async def get_document_page(
         update={
             "text": None if withheld else view.text,
             "image_url": image_url,
+            "width": layout_width,
+            "height": layout_height,
+            "blocks": blocks,
             "chunks": [ChunkView.model_validate(c, from_attributes=True) for c in chunks],
         }
     )

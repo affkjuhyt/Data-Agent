@@ -354,13 +354,24 @@ export interface DocumentPage {
   /** presigned page image; null when only the layout is kept (then the layout is drawn). */
   image_url: string | null;
   /** title / heading / line boxes of the layout. */
-  blocks: { kind: 'title' | 'heading' | 'line'; text: string; box: PageBox }[];
+  blocks: {
+    kind: 'title' | 'heading' | 'paragraph' | 'picture' | 'line';
+    text: string;
+    box: PageBox;
+    level?: number | null;
+    image_url?: string | null;
+  }[];
   highlights: { field: string; label: string; review: boolean; box: PageBox }[];
   /** the OCR text of the page (personal data already masked). */
   text: string;
 }
 
-type PageWire = Schemas['DocumentPageView'] & { display?: DocumentPage };
+type PageWire = Schemas['DocumentPageView'] & {
+  width?: number | null;
+  height?: number | null;
+  blocks?: { kind: DocumentPage['blocks'][number]['kind']; text: string; box: number[]; level?: number | null; image_url?: string | null }[];
+  display?: DocumentPage;
+};
 
 /** Without the PROPOSAL layout the page is its image and text on an A4 sheet (595 × 842 pt). */
 export const getDocumentPage = async (id: string, n: number): Promise<DocumentPage> => {
@@ -368,10 +379,16 @@ export const getDocumentPage = async (id: string, n: number): Promise<DocumentPa
   return (
     raw.display ?? {
       number: raw.page_no,
-      width: 595,
-      height: 842,
+      width: raw.width ?? 595,
+      height: raw.height ?? 842,
       image_url: raw.image_url ?? null,
-      blocks: [],
+      blocks: (raw.blocks ?? []).map((block) => ({
+        kind: block.kind,
+        text: block.text,
+        box: { x: block.box[0], y: block.box[1], w: block.box[2], h: block.box[3] },
+        level: block.level,
+        image_url: block.image_url,
+      })),
       highlights: [],
       text: raw.text ?? '',
     }
