@@ -693,7 +693,11 @@ async def list_documents(
     )
     if collection_id is not None:
         query = query.where(d.collection_id == collection_id)
-    if status:
+    if status == "processing":
+        # The public filter represents unfinished preprocessing, while the persisted state moves
+        # through received, processing and waiting_review before reaching a terminal state.
+        query = query.where(d.status.not_in(("ready", "failed", "removed")))
+    elif status:
         query = query.where(d.status == status)
     if q and q.strip():
         # A literal substring of the name, title or document number, not a pattern.

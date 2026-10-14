@@ -162,6 +162,7 @@ export default function DocumentsPage() {
           });
           counts.reload();
           rows.reload();
+          uploads.reload();
         }}
       />
       <ConfirmDialog

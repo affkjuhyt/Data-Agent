@@ -653,6 +653,24 @@ async def test_document_shows_preprocessing_progress_and_open_issues(ds: Space) 
         assert gone.status_code == 404
 
 
+async def test_processing_filter_includes_documents_waiting_for_the_worker(ds: Space) -> None:
+    received = ds.document(status="received")
+    processing = ds.document(status="processing")
+    waiting_review = ds.document(status="waiting_review")
+    ready = ds.document(status="ready")
+    async with client(ds) as api:
+        response = await api.get(
+            "/v1/documents?status=processing&page_size=500", headers=ds.headers("analyst")
+        )
+    assert response.status_code == 200, response.text
+    assert {item["id"] for item in response.json()["items"]} >= {
+        str(received),
+        str(processing),
+        str(waiting_review),
+    }
+    assert str(ready) not in {item["id"] for item in response.json()["items"]}
+
+
 # AC-05-05-01
 async def test_validity_changes_are_proposed_not_applied(ds: Space) -> None:
     old = ds.document(doc_no="100/QĐ", effective_from="2025-01-01")
