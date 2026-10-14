@@ -1,9 +1,8 @@
 """What the document routes need from outside Postgres, behind small interfaces.
 
-The api has no MinIO, OpenBao or Qdrant client yet. Each port is a FastAPI dependency whose
-default refuses (503 source_unavailable) or, for vector search, contributes nothing, so search
-answers from the Postgres full-text index alone. A deployment wires real clients in with
-`app.dependency_overrides[...]`; the tests do the same with fakes.
+The document object store uses the deployment's S3-compatible MinIO endpoint. The secret and
+vector ports remain explicit dependencies: their defaults refuse or contribute nothing, and tests
+replace them with fakes.
 """
 
 from __future__ import annotations
@@ -11,6 +10,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from typing import BinaryIO, Protocol
+from urllib.parse import urlparse
 
 from services.api.kernel.problems import Problem
 
@@ -66,6 +66,74 @@ class UnconfiguredStore:
         raise _unavailable("File storage")
 
 
+class MinioObjectStore:
+    """S3-compatible store used for immutable originals and derived previews."""
+
+    def __init__(self, url: str) -> None:
+        parsed = urlparse(url)
+        self._endpoint = f"{parsed.scheme}://{parsed.hostname}"
+        if parsed.port:
+            self._endpoint += f":{parsed.port}"
+        self._key = parsed.username
+        self._secret = parsed.password
+
+    def _client(self):
+        import aioboto3
+        from botocore.config import Config
+
+        return aioboto3.Session().client(
+            "s3",
+            endpoint_url=self._endpoint,
+            aws_access_key_id=self._key,
+            aws_secret_access_key=self._secret,
+            config=Config(signature_version="s3v4"),
+        )
+
+    async def exists(self, bucket: str, key: str) -> bool:
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        try:
+            async with self._client() as client:
+                await client.head_object(Bucket=bucket, Key=key)
+                return True
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
+                return False
+            raise Problem(503, "source_unavailable", "File storage is unavailable.") from exc
+        except BotoCoreError as exc:
+            raise Problem(503, "source_unavailable", "File storage is unavailable.") from exc
+
+    async def put(
+        self, bucket: str, key: str, data: BinaryIO, size: int, content_type: str
+    ) -> None:
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        try:
+            async with self._client() as client:
+                await client.put_object(
+                    Bucket=bucket,
+                    Key=key,
+                    Body=data,
+                    ContentLength=size,
+                    ContentType=content_type,
+                )
+        except (BotoCoreError, ClientError) as exc:
+            raise Problem(503, "source_unavailable", "File storage is unavailable.") from exc
+
+    async def presign_get(self, bucket: str, key: str, ttl_seconds: int) -> str:
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        try:
+            async with self._client() as client:
+                return await client.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": bucket, "Key": key},
+                    ExpiresIn=ttl_seconds,
+                )
+        except (BotoCoreError, ClientError) as exc:
+            raise Problem(503, "source_unavailable", "File storage is unavailable.") from exc
+
+
 class UnconfiguredSecrets:
     async def write(self, org_id: uuid.UUID, name: str, values: dict[str, str]) -> str:
         raise _unavailable("The secret store")
@@ -82,7 +150,10 @@ _STORE, _SECRETS, _VECTORS = UnconfiguredStore(), UnconfiguredSecrets(), NoVecto
 
 
 def object_store() -> ObjectStore:
-    return _STORE
+    import os
+
+    url = os.getenv("MINIO_URL", "").strip()
+    return MinioObjectStore(url) if url else _STORE
 
 
 def secret_store() -> SecretStore:
