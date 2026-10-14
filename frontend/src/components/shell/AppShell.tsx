@@ -54,9 +54,6 @@ export function AppShell({
   const rail = isRailPage(area, page)
     ? railFor(AREA_RAILS[area], [...(me?.capabilities ?? []), ...(chosen?.my_capabilities ?? [])])
     : undefined;
-  // Only the area whose rail is on screen; a landing page draws no rail and loads no counts.
-  const railCounts = useRailCounts(rail ? area : undefined);
-  const counts = useShellCounts();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
@@ -94,6 +91,12 @@ export function AppShell({
   const spaceReady =
     spaces.data !== undefined
     && (organisationScope || dataSpace !== null || spaces.data.items.length === 0);
+  // Both the rail and the global badges call Data Space-scoped list APIs. They must follow the
+  // same bootstrap gate as the page content, otherwise the shell itself creates 400s on reload.
+  const dataSpaceReady = spaceReady && dataSpace !== null;
+  // Only the area whose rail is on screen; a landing page draws no rail and loads no counts.
+  const railCounts = useRailCounts(rail ? area : undefined, dataSpaceReady);
+  const counts = useShellCounts(dataSpaceReady);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

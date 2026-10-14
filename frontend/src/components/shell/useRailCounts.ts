@@ -85,12 +85,12 @@ const COUNTERS: Partial<Record<AreaId, Record<string, Counter>>> = {
   },
 };
 
-export function useRailCounts(area: AreaId | undefined): Record<string, number> {
+export function useRailCounts(area: AreaId | undefined, enabled = true): Record<string, number> {
   const [counts, setCounts] = useState<Record<string, number>>({});
   useEffect(() => {
     const counters = area ? COUNTERS[area] : undefined;
     setCounts({});
-    if (!counters) return;
+    if (!counters || !enabled) return;
     let alive = true;
     const entries = Object.entries(counters);
     void Promise.allSettled(entries.map(([, load]) => load())).then((results) => {
@@ -104,6 +104,6 @@ export function useRailCounts(area: AreaId | undefined): Record<string, number> 
     return () => {
       alive = false;
     };
-  }, [area]);
+  }, [area, enabled]);
   return counts;
 }

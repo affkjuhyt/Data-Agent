@@ -15,7 +15,7 @@ interface ShellCounts {
   agents?: number;
 }
 
-export function useShellCounts(): ShellCounts {
+export function useShellCounts(enabled = true): ShellCounts {
   const [counts, setCounts] = useState<ShellCounts>({});
   useEffect(() => {
     let cancelled = false;
@@ -35,12 +35,16 @@ export function useShellCounts(): ShellCounts {
         agents: agents.status === 'fulfilled' ? agents.value.items.length : undefined,
       });
     };
-    void load();
+    if (enabled) void load();
+    else setCounts({});
+    if (!enabled) return () => {
+      cancelled = true;
+    };
     const timer = window.setInterval(load, POLL_MS);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [enabled]);
   return counts;
 }
