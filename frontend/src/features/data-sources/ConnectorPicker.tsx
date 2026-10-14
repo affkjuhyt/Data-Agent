@@ -54,8 +54,10 @@ const MARK: Record<string, Mark> = {
   databricks: { text: 'DBX', tone: 'info' },
   clickhouse: { text: 'CH', tone: 'info' },
   rest: { icon: 'api', tone: 'subtle' },
+  rest_api: { icon: 'api', tone: 'subtle' },
   kafka: { icon: 'stream', tone: 'accent' },
   csv: { icon: 'sheet', tone: 'success' },
+  file: { icon: 'sheet', tone: 'success' },
   sharepoint: { text: 'SP', tone: 'success' },
   folder: { icon: 'folder', tone: 'success' },
   email: { icon: 'mail', tone: 'warning' },
@@ -89,8 +91,10 @@ function ConnectorIcon({ code, size = 40 }: { code: string; size?: 32 | 40 }) {
 
 /** Where a connector card leads, or null when it has no set-up screen yet. */
 function targetOf(connector: Connector): { page: string; id?: string } | null {
-  if (connector.code === 'csv') return { page: 'UPLOAD' };
-  if (connector.code === 'rest') return { page: 'CONNECT_API' };
+  // The live catalogue uses SourceCreate's canonical values (`file`, `rest_api`).
+  // Keep the old aliases so cached fixtures or an older gateway remain navigable.
+  if (connector.code === 'file' || connector.code === 'csv') return { page: 'UPLOAD' };
+  if (connector.code === 'rest_api' || connector.code === 'rest') return { page: 'CONNECT_API' };
   if (connector.form) return { page: 'CONNECT', id: connector.code };
   return null;
 }
