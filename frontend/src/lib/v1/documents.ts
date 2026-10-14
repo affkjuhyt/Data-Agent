@@ -415,7 +415,7 @@ export const listChunks = async (doc: {
 }): Promise<Page<DocumentChunk>> => {
   const page = await v1Get<Page<Schemas['ChunkView']>>(
     `/documents/${pathId(doc.id)}/chunks`,
-    { page_size: Math.max(500, Math.min(doc.page_count * 20, 5_000)) },
+    { page_size: 500 },
   );
   return {
     next_page_token: '',
