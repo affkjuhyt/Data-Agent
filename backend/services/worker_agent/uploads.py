@@ -90,13 +90,16 @@ def _matches(value: Any, kind: str) -> bool:
 def _validate(rows: list[list[Any]], column_map: list[dict[str, Any]]) -> tuple[dict[str, Any], float]:
     if not rows:
         raise ValueError("the upload has no readable rows")
-    expected = len(column_map) or len(rows[0])
+    expected = max(len(rows[0]), len(column_map))
+    # The first uploaded event can arrive before the user saves a mapping. Treat unmapped
+    # columns as strings so validation still produces a result for the review screen.
+    effective_map = [*column_map, *({} for _ in range(expected - len(column_map)))]
     invalid = 0
     for row in rows[1:]:
         if len(row) != expected or any(
             not _matches(
                 row[index] if index < len(row) else None,
-                str(column_map[index].get("type", "string")),
+                str(effective_map[index].get("type", "string")),
             )
             for index in range(expected)
         ):
