@@ -53,6 +53,7 @@ kubectl -n dataagent-service create secret generic api-secrets \
 # which may only write to da-exports (minio-init), never with the root credentials.
 kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_QA="${DATAAGENT_DB_URL__SVC_QA}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_INGEST="${DATAAGENT_DB_URL__SVC_INGEST}" \
   --from-literal=DATAAGENT_DB_URL__SVC_OUTBOX_RELAY="${DATAAGENT_DB_URL__SVC_OUTBOX_RELAY}" \
   --from-literal=DATAAGENT_DB_URL__SVC_INBOX="${DATAAGENT_DB_URL__SVC_INBOX}" \
   --from-literal=DATAAGENT_DB_URL__SVC_AUDIT_WORKER="${DATAAGENT_DB_URL__SVC_AUDIT_WORKER}" \

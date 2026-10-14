@@ -36,6 +36,7 @@ from services.worker_agent import (
     schema_scans,
     source_tests,
     tiles,
+    uploads,
 )
 from services.worker_agent.events import EventSource, Handler, OutboxTableSource
 
@@ -64,6 +65,7 @@ HANDLERS: dict[str, Handler] = {
     **schema_scans.HANDLERS,
     **query_runs.HANDLERS,
     **tiles.HANDLERS,
+    **uploads.HANDLERS,
     **proposals.HANDLERS,
     **exports.HANDLERS,
 }
@@ -104,6 +106,8 @@ async def sources() -> list[EventSource]:
             types |= {proposals.ACTIVATE}
         if schema == "pipeline":
             types |= {proposals.WRITEBACK}
+        if schema == "ingest":
+            types |= set(uploads.HANDLERS)
         found.append(OutboxTableSource(schema=schema, event_types=frozenset(types)))
     try:
         audit = await _outbox_schemas(AUDIT_RELAY)

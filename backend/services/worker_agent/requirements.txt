@@ -12,3 +12,4 @@ mcp>=1.0,<2.0
 # Answer exports: files to MinIO (da-exports), Excel workbooks (exports.py, storage.py).
 aioboto3==15.5.0
 openpyxl==3.1.5
+xlrd==2.0.1

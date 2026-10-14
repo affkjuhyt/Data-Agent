@@ -758,6 +758,18 @@ def _column_type(values: list[Any]) -> str:
     return "string"
 
 
+def _is_personal_column(name: str) -> bool:
+    tokens = set(name.lower().replace("-", "_").split("_"))
+    return bool(tokens & {"name", "email", "phone", "mobile", "cccd", "passport", "address"})
+
+
+def _masked_example(value: Any, personal: bool) -> str:
+    text = str(value)
+    if not personal or not text:
+        return text
+    return f"{text[:8]}… (đã che)"
+
+
 def _analyse_upload(content: bytes, file_name: str, requested_sheet: str | None) -> dict[str, Any]:
     """Derive the deterministic first read shown by P04 before the worker enriches it."""
     extension = os.path.splitext(file_name)[1].lower()
@@ -810,14 +822,15 @@ def _analyse_upload(content: bytes, file_name: str, requested_sheet: str | None)
         name = str(value or "").strip() or f"column_{index + 1}"
         values = [row[index] if index < len(row) else None for row in data]
         example = next((item for item in values if item not in (None, "")), "")
+        personal = _is_personal_column(name)
         columns.append(
             {
                 "header": name,
                 "name": name.lower().replace(" ", "_").replace(".", "_").replace("-", "_"),
                 "type": _column_type(values),
                 "unit": None,
-                "example": str(example),
-                "personal": False,
+                "example": _masked_example(example, personal),
+                "personal": personal,
                 "issue": None,
             }
         )
@@ -902,6 +915,7 @@ async def upload_file(
             encoding=analysis["encoding"],
             column_map=analysis["column_map"],
             validation=analysis["validation"],
+            error_ratio=0,
             status="analyzed",
             created_by=principal.user_id,
             updated_by=principal.user_id,
