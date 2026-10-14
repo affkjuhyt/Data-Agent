@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: worker-document
+  namespace: dataagent-service
+  labels: {app: worker-document, app.kubernetes.io/part-of: dataagent}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: worker-document-env
+  namespace: dataagent-service
+data:
+  WORKER_DOCUMENT_POLL_SECONDS: "1"
+  WORKER_DOCUMENT_BATCH: "4"
+  DOCUMENT_RAW_BUCKET: da-raw-docs
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-document
+  namespace: dataagent-service
+  labels: {app: worker-document, app.kubernetes.io/part-of: dataagent}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: worker-document}}
+  template:
+    metadata: {labels: {app: worker-document}}
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: worker-document
+        image: dataagent/worker-document:latest
+        imagePullPolicy: Never
+        command: ["python", "-m", "services.worker_document.main"]
+        envFrom:
+        - configMapRef: {name: dataagent-config}
+        - configMapRef: {name: worker-document-env}
+        - secretRef: {name: worker-document-secrets}
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {cpu: "2", memory: 2Gi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      enableServiceLinks: false
+      serviceAccountName: worker-document

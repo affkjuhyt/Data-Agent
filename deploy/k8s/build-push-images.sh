@@ -23,6 +23,7 @@ REGISTRY="${REGISTRY:-}"
 declare -A IMAGES=(
   [api]="backend/services/api/Dockerfile|."
   [worker-agent]="backend/services/worker_agent/Dockerfile|."
+  [worker-document]="backend/services/worker_document/Dockerfile|."
   [migrate]="backend/alembic/Dockerfile|."
   [kong]="deploy/docker/kong/Dockerfile|."
   [keycloak]="deploy/docker/keycloak/Dockerfile|."

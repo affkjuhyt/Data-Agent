@@ -1,0 +1,5 @@
+sqlalchemy[asyncio]==2.0.35
+asyncpg==0.30.0
+aioboto3
+pypdf==5.4.0
+pydantic==2.9.2
