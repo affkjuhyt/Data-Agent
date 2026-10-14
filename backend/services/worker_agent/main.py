@@ -6,8 +6,8 @@ Polls its event source, hands each event to the handler of its type, and acknowl
 batch only when every handler returned; a failing event is logged and left for the next
 claim (handlers are idempotent).
 
-It handles `question.received` from qa.outbox, `hitl.resolved` from inbox.outbox, and
-`hitl.requested` from the outbox of every
+It handles `question.received` from qa.outbox, `hitl.resolved` from inbox.outbox,
+`writeback.submitted` from pipeline.outbox, and `hitl.requested` from the outbox of every
 schema that has one, in the main database and in the audit database (whose outbox is read
 through its own connection key, svc_outbox_relay_audit).
 """
@@ -102,6 +102,8 @@ async def sources() -> list[EventSource]:
             types |= {proposals.PUBLISH, proposals.SHARE}
         if schema == "pack":
             types |= {proposals.ACTIVATE}
+        if schema == "pipeline":
+            types |= {proposals.WRITEBACK}
         found.append(OutboxTableSource(schema=schema, event_types=frozenset(types)))
     try:
         audit = await _outbox_schemas(AUDIT_RELAY)

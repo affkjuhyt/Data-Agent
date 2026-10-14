@@ -310,6 +310,78 @@ async def test_ac_09_02_05_an_activation_waits_for_a_closing_period(world: World
     assert w.seed.one("SELECT status FROM inbox.proposal WHERE id = %s", pid) == "applied"
 
 
+async def test_uc_06_04_writeback_opens_and_applies_a_real_proposal(world: World) -> None:
+    w = world
+    source = w.seed.row(
+        "catalog.source",
+        org_id=w.org,
+        data_space_id=w.space,
+        name="Core banking",
+        kind="postgresql",
+        secret_ref=f"kv/sources/{uuid.uuid4()}",
+        writeback_secret_ref=f"kv/writeback/{uuid.uuid4()}",
+        writeback_tables=["core.du_no_dieu_chinh"],
+    )
+    w.seed.row(
+        "catalog.dataset",
+        org_id=w.org,
+        data_space_id=w.space,
+        source_id=source,
+        origin="source",
+        schema_name="core",
+        table_name="du_no",
+        display_name="Dư nợ",
+        enabled=True,
+    )
+    derived = w.seed.row(
+        "catalog.dataset",
+        org_id=w.org,
+        data_space_id=w.space,
+        origin="derived",
+        schema_name="ws_tin_dung",
+        table_name="du_no_dieu_chinh",
+        display_name="Dư nợ điều chỉnh",
+        enabled=True,
+    )
+    writeback = w.seed.row(
+        "pipeline.writeback_request",
+        org_id=w.org,
+        data_space_id=w.space,
+        source_id=source,
+        target_table="core.du_no_dieu_chinh",
+        from_dataset_id=derived,
+        requested_by=w.author,
+        diff_summary=json.dumps({"inserts": 4, "updates": 2, "deletes": 0}),
+        status="submitted",
+        proposal_id=uuid.uuid4(),
+    )
+    proposal = w.seed.one(
+        "SELECT proposal_id FROM pipeline.writeback_request WHERE id = %s", writeback
+    )
+    _event(
+        w,
+        "pipeline",
+        proposals.WRITEBACK,
+        writeback,
+        writeback_request_id=writeback,
+        proposal_id=proposal,
+        data_space_id=w.space,
+        source_id=source,
+        target_table="core.du_no_dieu_chinh",
+        from_dataset_id=derived,
+        diff_summary={"inserts": 4, "updates": 2, "deletes": 0},
+        requested_by=w.author,
+    )
+    await _drain("pipeline")
+    assert _opened(w, writeback)[:3] == (proposal, "writeback", "open")
+    _decide(w, proposal, "accept")
+    await _drain("inbox")
+    assert w.seed.one(
+        "SELECT status, approved_by::text FROM pipeline.writeback_request WHERE id = %s", writeback
+    ) == ("approved", str(w.steward))
+    assert w.seed.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "applied"
+
+
 async def test_an_edited_diff_never_widens_what_is_applied(world: World) -> None:
     # accept_with_edit replaces the diff; a reviewer must not turn a Data Space share into an
     # org-wide one (BR-96 wants a second, administrator step for that).

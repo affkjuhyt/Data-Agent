@@ -37,7 +37,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from libs.dataagent_db import scoped_session, uuid7
-from libs.dataagent_db.models import inbox, pack, period, skill
+from libs.dataagent_db.models import inbox, pack, period, pipeline, skill
 from services.worker_agent.events import Event, Handler
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 PUBLISH = "skill_version.publish_requested"
 SHARE = "skill.share_requested"
 ACTIVATE = "pack_install.activation_requested"
+WRITEBACK = "writeback.submitted"
 DECIDED = "proposal.decided"
 NAMESPACE = uuid.UUID("6b1f0c55-5f5e-4c49-9a39-2f4f5c1f1d7e")
 TRANSITION = datetime.timedelta(days=30)  # BR-97, as services/api/modules/skill/routes.py
@@ -61,6 +62,8 @@ def _uuid(value: Any) -> uuid.UUID | None:
 
 
 def proposal_id(event: Event) -> uuid.UUID:
+    if event.payload.get("proposal_id"):
+        return uuid.UUID(str(event.payload["proposal_id"]))
     return uuid.uuid5(NAMESPACE, str(event.event_id))
 
 
@@ -200,6 +203,29 @@ async def activation_requested(event: Event) -> None:
             .where(pack.PackInstall.id == install_id, pack.PackInstall.proposal_id.is_(None))
             .values(proposal_id=pid)
         )
+
+
+async def writeback_submitted(event: Event) -> None:
+    """Open the real inbox proposal after the pipeline transaction submits a writeback."""
+    p = event.payload
+    writeback_id = uuid.UUID(str(p["writeback_request_id"]))
+    actor = uuid.UUID(str(p["requested_by"]))
+    await _open(
+        event,
+        data_space_id=uuid.UUID(str(p["data_space_id"])),
+        kind="writeback",
+        target_service="pipeline",
+        target_ref=writeback_id,
+        title=f"Duyệt ghi ngược vào {p.get('target_table') or 'bảng đích'}",
+        diff={
+            "source_id": p.get("source_id"),
+            "target_table": p.get("target_table"),
+            "from_dataset_id": p.get("from_dataset_id"),
+            "diff_summary": p.get("diff_summary") or {},
+        },
+        proposed_by=actor,
+        eval_run_id=None,
+    )
 
 
 # ---------------------------------------------------------------- decisions
@@ -388,6 +414,27 @@ async def _apply_pack(event: Event, proposal: dict[str, Any]) -> bool | None:
         return True
 
 
+async def _apply_writeback(event: Event, proposal: dict[str, Any]) -> bool:
+    """Reflect the inbox decision back into the pipeline aggregate."""
+    reviewer = uuid.UUID(str(event.payload["reviewer_id"]))
+    status = event.payload.get("status")
+    next_status = (
+        "approved" if status == "accepted" else "rejected" if status == "rejected" else "previewed"
+    )
+    async with scoped_session("svc_pipeline", event.org_id, reviewer) as session:
+        row = await session.get(
+            pipeline.WritebackRequest,
+            uuid.UUID(str(proposal["target_ref"])),
+            with_for_update=True,
+        )
+        if row is None or row.status != "submitted":
+            return False
+        row.status = next_status
+        row.approved_by = reviewer if next_status == "approved" else None
+        row.updated_by, row.updated_at = reviewer, _now()
+        return True
+
+
 async def _proposal(event: Event) -> dict[str, Any] | None:
     async with scoped_session("svc_inbox", event.org_id) as session:
         row = await session.get(inbox.Proposal, uuid.UUID(str(event.payload["proposal_id"])))
@@ -419,14 +466,16 @@ async def _finish(event: Event, pid: uuid.UUID, status: str) -> None:
 
 async def decided(event: Event) -> None:
     proposal = await _proposal(event)
-    if proposal is None or proposal["kind"] not in ("skill_publish", "pack_activate"):
+    if proposal is None or proposal["kind"] not in ("skill_publish", "pack_activate", "writeback"):
         return
     if proposal["status"] not in ("accepted", "open", "rejected"):
         return  # already applied, or no longer waiting
     if proposal["kind"] == "skill_publish":
         outcome: bool | None = await _apply_skill(event, proposal)
-    else:
+    elif proposal["kind"] == "pack_activate":
         outcome = await _apply_pack(event, proposal)
+    else:
+        outcome = await _apply_writeback(event, proposal)
     if outcome is None:
         logger.info("worker-agent | pack activation %s waits for the period close", proposal["id"])
         return
@@ -472,5 +521,6 @@ HANDLERS: dict[str, Handler] = {
     PUBLISH: publish_requested,
     SHARE: share_requested,
     ACTIVATE: activation_requested,
+    WRITEBACK: writeback_submitted,
     DECIDED: decided,
 }

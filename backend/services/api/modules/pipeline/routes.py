@@ -1259,7 +1259,8 @@ async def list_writebacks(
         "failed",
         "undo_requested",
         "undone",
-    ] | None = None,
+    ]
+    | None = None,
 ) -> Page[WritebackView]:
     w = pl.WritebackRequest
     query = select(w).where(
@@ -1499,7 +1500,9 @@ async def create_writeback(
             writeback_request_id=row.id,
             data_space_id=data_space,
             source_id=row.source_id,
+            target_table=row.target_table,
             from_dataset_id=row.from_dataset_id,
+            diff_summary=row.diff_summary,
             status=row.status,
             requested_by=principal.user_id,
         )
@@ -1544,7 +1547,9 @@ async def submit_writeback(
             proposal_id=row.proposal_id,
             data_space_id=data_space,
             source_id=row.source_id,
+            target_table=row.target_table,
             from_dataset_id=row.from_dataset_id,
+            diff_summary=row.diff_summary,
             status=row.status,
             requested_by=row.requested_by,
             excluded_reviewer_ids=[row.requested_by],
