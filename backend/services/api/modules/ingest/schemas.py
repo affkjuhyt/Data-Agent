@@ -181,6 +181,13 @@ class FileUploadView(BaseModel):
     updated_at: datetime.datetime
 
 
+class UploadPreview(BaseModel):
+    file_name: str
+    columns: list[str]
+    rows: list[list[Any]]
+    truncated: bool
+
+
 class UploadPatch(BaseModel):
     sheet: str | None = Field(default=None, max_length=200)
     header_row: int | None = Field(default=None, ge=0, le=1_000)

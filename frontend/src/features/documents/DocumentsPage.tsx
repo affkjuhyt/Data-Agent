@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Badge } from '../../design-system/Badge';
 import { Button } from '../../design-system/Button';
+import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { RunStep } from '../../design-system/RunStep';
 import { StatusDot } from '../../design-system/StatusDot';
@@ -19,7 +20,14 @@ import {
   type DocumentView,
   type LibraryQuery,
 } from '../../lib/v1/documents';
-import { getUpload, listUploads, type UploadDetail, type RecentUpload } from '../../lib/v1/sources';
+import {
+  deleteUpload,
+  getUpload,
+  listUploads,
+  previewUpload,
+  type UploadDetail,
+  type RecentUpload,
+} from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
 import { HEAD_ROW, KeyValue, ROW } from './parts';
 import { UploadDocumentsDialog } from './UploadDocumentsDialog';
@@ -44,6 +52,8 @@ export default function DocumentsPage() {
   const [tab, setTab] = useState<Tab>('all');
   const [selected, setSelected] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
   const counts = useV1(getDocumentCounts, []);
   const rows = useV1(tab === 'data_uploads' ? null : () => listLibrary(QUERY[tab]), [tab]);
   const uploads = useV1(listUploads, []);
@@ -137,7 +147,7 @@ export default function DocumentsPage() {
       </div>
       {shown &&
         (tab === 'data_uploads' ? (
-          <UploadPanel key={shown} id={shown} />
+          <UploadPanel key={shown} id={shown} onDelete={() => setDeleting(shown)} />
         ) : (
           <DocumentPanel key={shown} id={shown} />
         ))}
@@ -154,6 +164,33 @@ export default function DocumentsPage() {
           rows.reload();
         }}
       />
+      <ConfirmDialog
+        open={deleting !== null}
+        title="Xóa tệp dữ liệu?"
+        confirmLabel="Xóa tệp"
+        loading={deletingBusy}
+        onCancel={() => setDeleting(null)}
+        onConfirm={() => {
+          if (!deleting) return;
+          setDeletingBusy(true);
+          void deleteUpload(deleting)
+            .then(() => {
+              setDeleting(null);
+              setSelected(null);
+              uploads.reload();
+              toast({ tone: 'success', message: 'Đã xóa tệp dữ liệu.' });
+            })
+            .catch((error: unknown) => {
+              toast({
+                tone: 'error',
+                message: error instanceof Error ? error.message : 'Không thể xóa tệp dữ liệu.',
+              });
+            })
+            .finally(() => setDeletingBusy(false));
+        }}
+      >
+        Tệp sẽ bị xóa khỏi danh sách và kho lưu trữ. Thao tác này không thể hoàn tác.
+      </ConfirmDialog>
     </div>
   );
 }
@@ -208,7 +245,7 @@ function UploadsTable({
   );
 }
 
-function UploadPanel({ id }: { id: string }) {
+function UploadPanel({ id, onDelete }: { id: string; onDelete: () => void }) {
   const upload = useV1(() => getUpload(id), [id]);
   return (
     <aside
@@ -216,17 +253,27 @@ function UploadPanel({ id }: { id: string }) {
       className="flex w-[400px] shrink-0 flex-col gap-da-lg border-l border-border bg-card p-da-xl max-[1023px]:hidden"
     >
       <AsyncRegion state={upload} what="tệp dữ liệu" skeletonRows={5}>
-        {(data) => <UploadPanelBody upload={data} />}
+        {(data) => <UploadPanelBody upload={data} onDelete={onDelete} />}
       </AsyncRegion>
     </aside>
   );
 }
 
-function UploadPanelBody({ upload }: { upload: UploadDetail }) {
+function UploadPanelBody({ upload, onDelete }: { upload: UploadDetail; onDelete: () => void }) {
   const columns = Array.isArray(upload.column_map) ? upload.column_map : [];
+  const preview = useV1(() => previewUpload(upload.id), [upload.id]);
   return (
     <>
-      <h2 className="truncate text-foreground da-heading-2">{upload.file_name}</h2>
+      <div className="flex items-start justify-between gap-da-md">
+        <h2 className="truncate text-foreground da-heading-2">{upload.file_name}</h2>
+        <Button
+          kind="danger"
+          size="sm"
+          icon="trash"
+          aria-label="Xóa tệp dữ liệu"
+          onClick={onDelete}
+        />
+      </div>
       <p className="text-muted-foreground da-caption">
         Tệp CSV/Excel · {formatNumber(upload.size_bytes)} byte
       </p>
@@ -239,6 +286,42 @@ function UploadPanelBody({ upload }: { upload: UploadDetail }) {
           {upload.error_ratio == null ? 'Chưa phân tích' : `${Number(upload.error_ratio) * 100}%`}
         </KeyValue>
         <KeyValue label="Hết hạn">{new Date(upload.expires_at).toLocaleString('vi-VN')}</KeyValue>
+      </section>
+      <section className="flex min-h-0 flex-col gap-da-sm">
+        <h3 className="text-muted-foreground da-overline">Xem trước nội dung</h3>
+        <AsyncRegion state={preview} what="bản xem trước" skeletonRows={3}>
+          {(data) => (
+            <div className="max-h-[360px] overflow-auto rounded-md border border-border">
+              <table className="min-w-full border-collapse text-left text-xs">
+                <thead className="sticky top-0 bg-subtle">
+                  <tr>
+                    {data.columns.map((column) => (
+                      <th key={column} className="border-b border-border px-2 py-2 font-medium">
+                        {column}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.rows.map((row, rowIndex) => (
+                    <tr key={rowIndex} className="border-b border-border last:border-0">
+                      {data.columns.map((_, columnIndex) => (
+                        <td key={columnIndex} className="max-w-[180px] truncate px-2 py-2">
+                          {String(row[columnIndex] ?? '—')}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {data.truncated && (
+                <p className="border-t border-border px-2 py-2 text-muted-foreground">
+                  Hiển thị 25 dòng đầu tiên.
+                </p>
+              )}
+            </div>
+          )}
+        </AsyncRegion>
       </section>
       <section className="flex flex-col gap-da-sm">
         <h3 className="text-muted-foreground da-overline">Ánh xạ cột thực tế</h3>

@@ -1723,6 +1723,28 @@
    "errors": [],
    "request_text": "sheet, header_row, encoding, decimal_sep, column_map, target_dataset_id, replace_mode"
   },
+  "GET /v1/uploads/{id}/preview": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {},
+   "query": [
+    "limit"
+   ],
+   "returns": "UploadPreview",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "limit"
+  },
   "POST /v1/uploads/{id}:commit": {
    "group": "Nạp dữ liệu",
    "groups": [
@@ -1735,6 +1757,22 @@
     [
      422,
      "business_rule_violated"
+    ]
+   ],
+   "request_text": "—"
+  },
+  "DELETE /v1/uploads/{id}": {
+   "group": "Nạp dữ liệu",
+   "groups": [
+    "Nạp dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "—",
+   "errors": [
+    [
+     404,
+     "not_found"
     ]
    ],
    "request_text": "—"

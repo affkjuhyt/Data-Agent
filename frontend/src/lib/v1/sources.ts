@@ -659,6 +659,13 @@ export interface UploadDetail extends RecentUpload {
   updated_at: Timestamp;
 }
 
+export interface UploadPreview {
+  file_name: string;
+  columns: string[];
+  rows: unknown[][];
+  truncated: boolean;
+}
+
 interface FileUploadWire {
   id: Uuid;
   file_name: string;
@@ -766,6 +773,13 @@ export const getUpload = async (id: string): Promise<UploadDetail> => {
     updated_at: row.updated_at,
   };
 };
+
+/** GET /v1/uploads/{id}/preview: a bounded real sample read from the stored CSV/XLSX. */
+export const previewUpload = (id: string, limit = 25) =>
+  v1Get<UploadPreview>(`/uploads/${pathId(id)}/preview`, { limit });
+
+/** DELETE /v1/uploads/{id}: removes the object and its upload record. */
+export const deleteUpload = (id: string) => v1Send<void>('DELETE', `/uploads/${pathId(id)}`);
 
 /** PROPOSAL: POST /v1/uploads/{id}:commit creates the table with the columns as edited. */
 export const commitUpload = async (id: string, columns: UploadColumn[]) => {

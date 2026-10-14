@@ -210,8 +210,11 @@ Dịch vụ: Ingestion service (ingest). 18 endpoint.
 | POST | /v1/dlq/{id}:discard | Bỏ bản ghi kèm lý do | 04-07 | admin\_data |
 | POST | /v1/uploads | Tải tệp CSV, Excel (multipart) | 04-08 | upload |
 | GET | /v1/uploads | Danh sách tệp đã tải | 04-08 | upload |
+| GET | /v1/uploads/{id} | Chi tiết tệp đã tải | 04-08 | upload |
+| GET | /v1/uploads/{id}/preview | Xem trước tối đa 100 dòng | 04-08 | upload |
 | PATCH | /v1/uploads/{id} | Sửa ánh xạ cột, bảng đích | 04-08 | upload |
 | POST | /v1/uploads/{id}:commit | Ghi vào bảng | 04-08 | upload |
+| DELETE | /v1/uploads/{id} | Xóa tệp và object lưu trữ | 04-08 | upload |
 | GET | /v1/quality-rules | Quy tắc chất lượng | 06-07 | ask |
 | POST | /v1/quality-rules | Tạo quy tắc | 06-07 | admin\_data |
 | PATCH | /v1/quality-rules/{id} | Sửa quy tắc | 06-07 | admin\_data |

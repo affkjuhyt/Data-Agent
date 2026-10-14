@@ -9,7 +9,9 @@ catalog_read grant (definitions.json cross_reads) and never written.
 
 from __future__ import annotations
 
+import csv
 import datetime
+import io
 import os
 import uuid
 import warnings
@@ -59,6 +61,7 @@ from services.api.modules.ingest.schemas import (
     Reason,
     Severity,
     UploadPatch,
+    UploadPreview,
 )
 from services.api.modules.ingest.storage import BUCKET, ObjectStore, object_store
 
@@ -842,6 +845,64 @@ async def get_upload(
         return FileUploadView.model_validate(row, from_attributes=True)
 
 
+@router.get(
+    "/v1/uploads/{id}/preview",
+    response_model=UploadPreview,
+    **endpoint("GET", "/v1/uploads/{id}/preview", operation_id="previewUpload"),
+)
+async def preview_upload(
+    upload_id: IdPath,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    store: Annotated[ObjectStore, Depends(object_store)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> UploadPreview:
+    async with transaction(ROLE, principal) as session:
+        row = await _upload(session, upload_id, principal, data_space)
+    content = await store.get(BUCKET, row.object_key)
+    extension = os.path.splitext(row.file_name)[1].lower()
+    if extension in {".xlsx", ".xlsm"}:
+        try:
+            from openpyxl import load_workbook
+        except ImportError as exc:
+            raise Problem(503, "source_unavailable", "Excel preview is not configured.") from exc
+        workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        sheet_name = row.sheet or workbook.sheetnames[0]
+        if sheet_name not in workbook.sheetnames:
+            raise Problem(422, "validation_failed", "The selected sheet does not exist.")
+        values = workbook[sheet_name].iter_rows(values_only=True)
+        rows = [list(item) for item in values]
+    elif extension == ".csv":
+        encoding = row.encoding or "utf-8-sig"
+        try:
+            text = content.decode(encoding)
+        except UnicodeDecodeError as exc:
+            raise Problem(422, "validation_failed", "The file encoding is not readable.") from exc
+        try:
+            dialect = csv.Sniffer().sniff(text[:8192], delimiters=",;\t|")
+        except csv.Error:
+            dialect = csv.excel
+        rows = [list(item) for item in csv.reader(io.StringIO(text), dialect)]
+    else:
+        raise Problem(422, "validation_failed", "Only CSV and XLSX previews are supported.")
+    if not rows:
+        return UploadPreview(file_name=row.file_name, columns=[], rows=[], truncated=False)
+    header_index = row.header_row or 0
+    if header_index >= len(rows):
+        raise Problem(422, "validation_failed", "The configured header row is outside the file.")
+    columns = [
+        str(value or "").strip() or f"Cột {index + 1}"
+        for index, value in enumerate(rows[header_index])
+    ]
+    data = rows[header_index + 1 : header_index + 1 + limit]
+    return UploadPreview(
+        file_name=row.file_name,
+        columns=columns,
+        rows=[list(item) for item in data],
+        truncated=len(rows) > header_index + 1 + limit,
+    )
+
+
 async def _upload(
     session: AsyncSession, upload_id: uuid.UUID, principal: Principal, data_space: uuid.UUID
 ) -> ingest.FileUpload:
@@ -897,6 +958,35 @@ async def update_upload(
         )
         await session.flush()
         return FileUploadView.model_validate(row, from_attributes=True)
+
+
+@router.delete(
+    "/v1/uploads/{id}",
+    status_code=204,
+    **endpoint("DELETE", "/v1/uploads/{id}", operation_id="deleteUpload"),
+)
+async def delete_upload(
+    upload_id: IdPath,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    store: Annotated[ObjectStore, Depends(object_store)],
+) -> Response:
+    async with transaction(ROLE, principal) as session:
+        row = await _upload(session, upload_id, principal, data_space)
+        await store.delete(BUCKET, row.object_key)
+        session.add(
+            _event(
+                principal,
+                "file_upload",
+                row.id,
+                "file_upload.deleted",
+                file_upload_id=row.id,
+                data_space_id=data_space,
+                object_key=row.object_key,
+            )
+        )
+        await session.delete(row)
+    return Response(status_code=204)
 
 
 @router.post(

@@ -15,11 +15,21 @@ class ObjectStore(Protocol):
         self, bucket: str, key: str, data: BinaryIO, size: int, content_type: str
     ) -> None: ...
 
+    async def get(self, bucket: str, key: str) -> bytes: ...
+
+    async def delete(self, bucket: str, key: str) -> None: ...
+
 
 class UnconfiguredStore:
     async def put(
         self, bucket: str, key: str, data: BinaryIO, size: int, content_type: str
     ) -> None:
+        raise Problem(503, "source_unavailable", "File storage is not configured.")
+
+    async def get(self, bucket: str, key: str) -> bytes:
+        raise Problem(503, "source_unavailable", "File storage is not configured.")
+
+    async def delete(self, bucket: str, key: str) -> None:
         raise Problem(503, "source_unavailable", "File storage is not configured.")
 
 
@@ -61,6 +71,42 @@ class MinioObjectStore:
                     ContentLength=size,
                     ContentType=content_type,
                 )
+        except (BotoCoreError, ClientError) as exc:
+            raise Problem(503, "source_unavailable", "File storage is unavailable.") from exc
+
+    async def get(self, bucket: str, key: str) -> bytes:
+        import aioboto3
+        from botocore.config import Config
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        try:
+            async with aioboto3.Session().client(
+                "s3",
+                endpoint_url=self._endpoint,
+                aws_access_key_id=self._key,
+                aws_secret_access_key=self._secret,
+                config=Config(signature_version="s3v4"),
+            ) as client:
+                response = await client.get_object(Bucket=bucket, Key=key)
+                async with response["Body"] as body:
+                    return await body.read()
+        except (BotoCoreError, ClientError) as exc:
+            raise Problem(503, "source_unavailable", "File storage is unavailable.") from exc
+
+    async def delete(self, bucket: str, key: str) -> None:
+        import aioboto3
+        from botocore.config import Config
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        try:
+            async with aioboto3.Session().client(
+                "s3",
+                endpoint_url=self._endpoint,
+                aws_access_key_id=self._key,
+                aws_secret_access_key=self._secret,
+                config=Config(signature_version="s3v4"),
+            ) as client:
+                await client.delete_object(Bucket=bucket, Key=key)
         except (BotoCoreError, ClientError) as exc:
             raise Problem(503, "source_unavailable", "File storage is unavailable.") from exc
 
