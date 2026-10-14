@@ -290,6 +290,28 @@ export function createDataProductsHandlers() {
         ? HttpResponse.json(mart)
         : problem(404, 'not_found', 'Không tìm thấy data mart.'),
     ),
+    http.patch('*/v1/marts/:id', async ({ params, request }) => {
+      if (params.id !== mart.id) return problem(404, 'not_found', 'Không tìm thấy data mart.');
+      const body = (await request.json()) as {
+        dimensions?: Array<{ name?: string }>;
+        measures?: Array<{ name?: string }>;
+      };
+      const dimensionNames = new Set(
+        (body.dimensions ?? []).flatMap((d) => (d.name ? [d.name] : [])),
+      );
+      mart = {
+        ...mart,
+        dimensions: mart.dimensions
+          .filter((d) => !d.suggested || dimensionNames.has(d.name))
+          .map((d) =>
+            d.suggested && dimensionNames.has(d.name)
+              ? { ...d, suggested: false, lines: [d.lines[0], 'cán bộ tín dụng'] }
+              : d,
+          ),
+        suggestion: null,
+      };
+      return HttpResponse.json(mart);
+    }),
     http.post('*/v1/marts/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
       if (id !== mart.id || verb !== 'apply-suggestion')

@@ -439,21 +439,30 @@ export interface PipelineSchedule {
 }
 
 export const getPipelineSchedule = async (id: string) =>
-  v1Get<components['schemas']['ScheduleRequest']>(`/pipelines/${pathId(id)}/schedule`).then(
-    (schedule) => ({
-      kind: schedule.cron
-        ? ('cron' as const)
+  v1Get<
+    components['schemas']['ScheduleRequest'] &
+      Partial<PipelineSchedule>
+  >(`/pipelines/${pathId(id)}/schedule`).then((schedule) => {
+    const kind = schedule.kind ??
+      (schedule.cron
+        ? 'cron'
         : schedule.trigger_on_job_id
-          ? ('after_source' as const)
-          : ('daily' as const),
-      cron: schedule.cron,
+          ? 'after_source'
+          : 'daily');
+    return {
+      kind: kind as ScheduleKind,
+      cron: schedule.cron ?? null,
       skip_holidays: false,
-      no_overlap: schedule.no_overlap,
-      retry_and_notify: schedule.on_failure === 'retry_then_notify',
-      after_source_label: schedule.trigger_on_job_id ?? 'job nạp dữ liệu',
-      notify_label: schedule.on_failure === 'skip' ? 'Không thông báo' : 'Người phụ trách pipeline',
-    }),
-  );
+      no_overlap: schedule.no_overlap ?? true,
+      retry_and_notify:
+        schedule.on_failure === 'retry_then_notify' || schedule.retry_and_notify === true,
+      after_source_label:
+        schedule.after_source_label ?? schedule.trigger_on_job_id ?? 'job nạp dữ liệu',
+      notify_label:
+        schedule.notify_label ??
+        (schedule.on_failure === 'skip' ? 'Không thông báo' : 'Người phụ trách pipeline'),
+    };
+  });
 
 /** PROPOSAL: the coming runs in words, from the server's business calendar. */
 export const previewSchedule = async (id: string, schedule: PipelineSchedule) =>
@@ -464,15 +473,21 @@ export const previewSchedule = async (id: string, schedule: PipelineSchedule) =>
   });
 
 export const savePipelineSchedule = async (id: string, schedule: PipelineSchedule) =>
-  v1Send<components['schemas']['PipelineView']>('PUT', `/pipelines/${pathId(id)}/schedule`, {
+  v1Send<components['schemas']['PipelineView'] & { schedule_text?: string }>(
+    'PUT',
+    `/pipelines/${pathId(id)}/schedule`,
+    {
     cron: schedule.kind === 'cron' ? schedule.cron : null,
     work_calendar_id: null,
     trigger_on_job_id: schedule.kind === 'after_source' ? null : null,
     depends_on_pipeline_ids: [],
     no_overlap: schedule.no_overlap,
     on_failure: schedule.retry_and_notify ? 'retry_then_notify' : 'notify',
-  }).then((view) => ({
-    schedule_text: view.cron ? `Theo lịch cron ${view.cron}` : 'Chạy thủ công',
+    },
+  ).then((view) => ({
+    schedule_text:
+      view.schedule_text ??
+      (view.cron ? `Theo lịch cron ${view.cron}` : 'Chạy thủ công'),
   }));
 
 /* ─── Ghi ngược có duyệt (UC-06-04) ───────────────────────────────────── */

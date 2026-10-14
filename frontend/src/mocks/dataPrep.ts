@@ -499,7 +499,15 @@ export function createDataPrepHandlers() {
     // any other dataset list falls through to the catalog mock.
     http.get('*/v1/datasets', ({ request }) => {
       const q = new URL(request.url).searchParams.get('q');
-      if (!q) return undefined;
+      if (!q)
+        return page([
+          {
+            id: 'dataset-loans-dedup',
+            schema_name: 'mart',
+            table_name: 'loans_dedup_0930',
+            source_id: null,
+          },
+        ]);
       return page([{ id: `dataset-${q}`, schema_name: 'raw', table_name: q }]);
     }),
     // PipelineCreate: the name and the input dataset ids.
