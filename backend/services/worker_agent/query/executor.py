@@ -346,6 +346,10 @@ async def run_query(
             if source.secret_ref == INTERNAL_WORKSPACE:
                 async with scoped_session(ROLE, org_id, principal_id) as local_session:
                     await local_session.execute(text("SET TRANSACTION READ ONLY"))
+                    # Upload tables are materialized in the private workspace schema. The SQL
+                    # editor deliberately uses unqualified table names, so make resolution agree
+                    # with the scope checker without exposing any other schema to the query.
+                    await local_session.execute(text("SET LOCAL search_path TO workspace, pg_catalog"))
                     result = await local_session.execute(text(executed))
                     columns = [{"name": column, "type": "unknown"} for column in tuple(result.keys())]
                     rows = [[_plain(value) for value in row] for row in result.fetchall()]
