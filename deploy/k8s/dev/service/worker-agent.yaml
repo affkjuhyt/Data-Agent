@@ -47,6 +47,8 @@ spec:
       labels:
         app: worker-agent
         app.kubernetes.io/part-of: dataagent
+      annotations:
+        dataagent.dev/revision: a9435b97
     spec:
       securityContext:
         runAsNonRoot: true
