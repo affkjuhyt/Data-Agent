@@ -63,10 +63,16 @@ async def process_document(event: Any) -> None:
                 return
             await session.execute(delete(document.Chunk).where(document.Chunk.document_id == document_id))
             await session.execute(delete(document.DocumentPage).where(document.DocumentPage.document_id == document_id))
-            for page_no, text in enumerate(pages, start=1):
+            for page_no, extracted in enumerate(pages, start=1):
+                text = extracted.text
+                image_ref = None
+                if extracted.image:
+                    image_ref = f"{org_id}/{document_id}/page-{page_no}.png"
+                    await minio.upload("da-doc-derived", image_ref, extracted.image, "image/png")
                 page = document.DocumentPage(
                     id=uuid7(), org_id=org_id, document_id=document_id, page_no=page_no,
-                    page_hash=page_hash(text), text_layer=bool(text), text=text or None,
+                    page_hash=page_hash(text), text_layer=extracted.text_layer, ocr_conf=extracted.ocr_conf,
+                    image_ref=image_ref, text=text or None,
                     usable=bool(text), created_by=row.created_by, updated_at=datetime.datetime.now(datetime.UTC),
                 )
                 session.add(page)

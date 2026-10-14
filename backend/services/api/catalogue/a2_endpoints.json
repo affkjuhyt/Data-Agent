@@ -1437,6 +1437,30 @@
   },
   {
    "group": "Tài liệu",
+   "method": "GET",
+   "path": "/v1/documents/{id}/file",
+   "summary": "Tải bản gốc để xem hoặc tải xuống",
+   "use_cases": [
+    "05-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Tài liệu",
+   "method": "GET",
+   "path": "/v1/documents/{id}/chunks",
+   "summary": "Danh sách đoạn văn đã trích xuất",
+   "use_cases": [
+    "05-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Tài liệu",
    "method": "PATCH",
    "path": "/v1/documents/{id}",
    "summary": "Sửa số hiệu, hiệu lực, văn bản thay thế",

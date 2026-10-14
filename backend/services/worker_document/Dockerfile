@@ -3,6 +3,9 @@ FROM python:3.12-slim-bookworm
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/app
 WORKDIR /app
 COPY backend/services/worker_document/requirements.txt .
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        tesseract-ocr tesseract-ocr-eng tesseract-ocr-vie \
+    && rm -rf /var/lib/apt/lists/*
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 COPY backend/libs/__init__.py ./libs/__init__.py
 COPY backend/libs/basemodel/ ./libs/basemodel/

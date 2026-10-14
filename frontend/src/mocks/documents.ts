@@ -233,6 +233,7 @@ function view(d: Partial<DocumentView> & Pick<DocumentView, 'id' | 'title'>): Do
     fields: [],
     issue: null,
     index_text: null,
+    original_url: null,
     email: null,
     call: null,
     ...d,
@@ -1086,6 +1087,36 @@ export function createDocumentHandlers() {
         ...library,
       ];
       return HttpResponse.json({ id: library[0].id, status: 'received' }, { status: 202 });
+    }),
+    http.get('*/v1/documents/:id/file', ({ params }) => {
+      const doc = findView(String(params.id));
+      if (!doc) return problem(404, 'not_found', 'Không tìm thấy tài liệu.');
+      return new HttpResponse(new Blob(['%PDF-1.7 mock preview']), {
+        headers: { 'Content-Type': 'application/pdf' },
+      });
+    }),
+    http.get('*/v1/documents/:id/chunks', ({ params }) => {
+      const doc = findView(String(params.id));
+      if (!doc) return problem(404, 'not_found', 'Không tìm thấy tài liệu.');
+      return page(
+        (CHUNKS[doc.id] ?? []).map((c) => ({
+          id: c.id,
+          document_id: doc.id,
+          collection_id: doc.collection?.id ?? 'col-mock',
+          page_from: c.page,
+          page_to: c.page,
+          text: c.text,
+          section_path: null,
+          context_header: null,
+          effective_from: null,
+          effective_to: null,
+          human_corrected: false,
+          injection_suspected: false,
+          pii_masked: true,
+          tokens: 120,
+          created_at: AT,
+        })),
+      );
     }),
     http.get('*/v1/documents/:id/pages/:n', ({ params }) => {
       const doc = findView(String(params.id));

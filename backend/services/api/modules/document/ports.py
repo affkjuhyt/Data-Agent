@@ -28,6 +28,8 @@ class ObjectStore(Protocol):
 
     async def presign_get(self, bucket: str, key: str, ttl_seconds: int) -> str: ...
 
+    async def download(self, bucket: str, key: str) -> bytes: ...
+
 
 class SecretStore(Protocol):
     async def write(self, org_id: uuid.UUID, name: str, values: dict[str, str]) -> str:
@@ -63,6 +65,9 @@ class UnconfiguredStore:
         raise _unavailable("File storage")
 
     async def presign_get(self, bucket: str, key: str, ttl_seconds: int) -> str:
+        raise _unavailable("File storage")
+
+    async def download(self, bucket: str, key: str) -> bytes:
         raise _unavailable("File storage")
 
 
@@ -130,6 +135,16 @@ class MinioObjectStore:
                     Params={"Bucket": bucket, "Key": key},
                     ExpiresIn=ttl_seconds,
                 )
+        except (BotoCoreError, ClientError) as exc:
+            raise Problem(503, "source_unavailable", "File storage is unavailable.") from exc
+
+    async def download(self, bucket: str, key: str) -> bytes:
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        try:
+            async with self._client() as client:
+                response = await client.get_object(Bucket=bucket, Key=key)
+                return await response["Body"].read()
         except (BotoCoreError, ClientError) as exc:
             raise Problem(503, "source_unavailable", "File storage is unavailable.") from exc
 

@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 
-from pypdf import PdfReader
+import pymupdf
 
 MAX_CHUNK_CHARS = 4_000
+
+
+@dataclass(frozen=True)
+class ExtractedPage:
+    text: str
+    image: bytes | None
+    text_layer: bool
+    ocr_conf: float | None
 
 
 def _chunks(text: str, limit: int = MAX_CHUNK_CHARS) -> Iterable[str]:
@@ -33,16 +41,31 @@ def _chunks(text: str, limit: int = MAX_CHUNK_CHARS) -> Iterable[str]:
         yield current.strip()
 
 
-def extract_pages(content: bytes, media: str) -> list[str]:
+def extract_pages(content: bytes, media: str) -> list[ExtractedPage]:
     """Extract deterministic page text for the first production document path.
 
     PDF text extraction is intentionally local and deterministic; OCR for scanned pages is a
     separate quality path and must not pretend an image was successfully indexed as text.
     """
     if media == "pdf":
-        return [(page.extract_text() or "").strip() for page in PdfReader(io.BytesIO(content)).pages]
+        result: list[ExtractedPage] = []
+        with pymupdf.open(stream=content, filetype="pdf") as pdf:
+            for page in pdf:
+                text = page.get_text("text", sort=True).strip()
+                text_layer = len(text) >= 20
+                ocr_conf = None
+                if not text_layer:
+                    try:
+                        text = page.get_textpage_ocr(language="vie+eng", dpi=200, full=True).extractText().strip()
+                        ocr_conf = 0.90 if text else 0.0
+                    except Exception:  # OCR binaries vary by image/PDF; keep the page processable.  # noqa: BLE001
+                        text = ""
+                        ocr_conf = 0.0
+                image = page.get_pixmap(dpi=144, alpha=False).tobytes("png")
+                result.append(ExtractedPage(text, image, text_layer, ocr_conf))
+        return result
     if media == "html":
-        return [re.sub(r"<[^>]+>", " ", content.decode("utf-8", errors="replace")).strip()]
+        return [ExtractedPage(re.sub(r"<[^>]+>", " ", content.decode("utf-8", errors="replace")).strip(), None, True, None)]
     raise ValueError(f"No text extractor is configured for media={media}")
 
 

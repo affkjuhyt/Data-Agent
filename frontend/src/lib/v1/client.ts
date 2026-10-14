@@ -137,6 +137,15 @@ export async function v1Get<T>(path: string, query?: Query): Promise<T> {
   return (await res.json()) as T;
 }
 
+export async function v1GetBlob(path: string): Promise<string> {
+  const res = await fetch(`${BASE}${safePath(path)}`, {
+    headers: headers(),
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) throw await failure(res);
+  return URL.createObjectURL(await res.blob());
+}
+
 /** POST/PATCH/PUT/DELETE. `ifMatch` carries the ETag read before (A1.5); POST gets an idempotency key. */
 export async function v1Send<T = unknown>(
   method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',

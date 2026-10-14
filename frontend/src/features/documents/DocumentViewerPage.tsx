@@ -13,6 +13,7 @@ import { formatNumber } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
 import {
   getDocumentPage,
+  getDocumentOriginal,
   getDocumentView,
   listActivity,
   listChunks,
@@ -100,6 +101,7 @@ function FileViewer({ doc, onChanged }: { doc: DocumentView; onChanged: () => vo
   // to the API: its schema correctly rejects it, but the viewer should show the designed waiting
   // state instead of leaking a 422 to the user.
   const page = useV1(hasPages ? () => getDocumentPage(doc.id, pageNo) : null, [doc.id, pageNo]);
+  const original = useV1(() => getDocumentOriginal(doc.id), [doc.id]);
   const collection = doc.collection;
 
   return (
@@ -157,7 +159,15 @@ function FileViewer({ doc, onChanged }: { doc: DocumentView; onChanged: () => vo
         <div className="h-da-2xl shrink-0" />
         {hasPages ? (
           <AsyncRegion state={page} what="trang" skeletonRows={8}>
-            {(p) => (mode === 'original' ? <PageImage page={p} /> : <PageText page={p} />)}
+            {(p) =>
+              mode === 'original' && original.data ? (
+                <OriginalPdf url={original.data} fileName={doc.file_name} />
+              ) : mode === 'original' ? (
+                <PageImage page={p} />
+              ) : (
+                <PageText page={p} />
+              )
+            }
           </AsyncRegion>
         ) : (
           <EmptyState
@@ -202,6 +212,16 @@ function FileViewer({ doc, onChanged }: { doc: DocumentView; onChanged: () => vo
         </div>
       </aside>
     </div>
+  );
+}
+
+function OriginalPdf({ url, fileName }: { url: string; fileName: string }) {
+  return (
+    <iframe
+      title={`Bản gốc ${fileName}`}
+      src={url}
+      className="h-[842px] w-[595px] max-w-full border border-border bg-card"
+    />
   );
 }
 

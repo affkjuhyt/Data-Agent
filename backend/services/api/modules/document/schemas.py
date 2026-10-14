@@ -139,6 +139,7 @@ class DocumentDetail(DocumentView):
     progress: Progress
     open_quality_issues: int
     blocking_quality_issues: int
+    original_url: str | None = None
 
 
 # The preprocessing step a document is at, read from its status and the rows the worker has

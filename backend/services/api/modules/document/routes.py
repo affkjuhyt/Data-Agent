@@ -13,6 +13,7 @@ import datetime
 import decimal
 import hashlib
 import logging
+import mimetypes
 import os
 import uuid
 from collections.abc import Callable, Sequence
@@ -751,7 +752,10 @@ async def list_documents(
     **endpoint("GET", "/v1/documents/{id}", operation_id="getDocument"),
 )
 async def get_document(
-    document_id: IdPath, principal: CurrentPrincipal, data_space: CurrentDataSpace
+    document_id: IdPath,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    store: Annotated[ObjectStore, Depends(object_store)],
 ) -> DocumentDetail:
     page, chunk, issue = doc.DocumentPage, doc.Chunk, doc.QualityIssue
     async with transaction(ROLE, principal) as session:
@@ -777,6 +781,53 @@ async def get_document(
         progress=progress,
         open_quality_issues=open_issues,
         blocking_quality_issues=blocking,
+        original_url=f"/v1/documents/{row.id}/file",
+    )
+
+
+@router.get(
+    "/v1/documents/{id}/file",
+    **endpoint("GET", "/v1/documents/{id}/file", operation_id="downloadDocumentOriginal"),
+)
+async def download_document_original(
+    document_id: IdPath,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    store: Annotated[ObjectStore, Depends(object_store)],
+) -> Response:
+    async with transaction(ROLE, principal) as session:
+        row, _ = await _document(session, document_id, principal, data_space)
+    content = await store.download(RAW_BUCKET, row.object_key)
+    content_type = mimetypes.guess_type(row.file_name)[0] or "application/octet-stream"
+    return Response(content=content, media_type=content_type)
+
+
+@router.get(
+    "/v1/documents/{id}/chunks",
+    response_model=Page[ChunkView],
+    **endpoint("GET", "/v1/documents/{id}/chunks", operation_id="listDocumentChunks"),
+)
+async def list_document_chunks(
+    document_id: IdPath,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+    purpose: Purpose = None,
+) -> Page[ChunkView]:
+    async with transaction(ROLE, principal) as session:
+        row, collection = await _document(session, document_id, principal, data_space)
+        _check_purpose(collection, _purpose(purpose))
+        query = (
+            select(doc.Chunk)
+            .where(doc.Chunk.document_id == row.id, doc.Chunk.pii_masked.is_(True))
+            .order_by(doc.Chunk.page_from, doc.Chunk.created_at, doc.Chunk.id)
+            .limit(page.page_size + 1)
+        )
+        rows = list((await session.scalars(query)).all())
+    kept = rows[: page.page_size]
+    return Page(
+        items=[ChunkView.model_validate(chunk, from_attributes=True) for chunk in kept],
+        next_page_token="" if len(rows) <= page.page_size else str(page.page_size),
     )
 
 

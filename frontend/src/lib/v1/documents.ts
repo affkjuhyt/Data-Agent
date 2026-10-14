@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, v1Upload, type Page } from './client';
+import { pathId, v1Get, v1GetBlob, v1Send, v1Upload, type Page } from './client';
 import type { components } from './schema';
 import { listCollections, readCollectionDocument, type DocumentDetail, type Tone } from './sources';
 
@@ -267,12 +267,13 @@ export interface DocumentView extends DocumentDetail {
   issue: FieldIssue | null;
   /** "412 đoạn trong bộ sưu tập dùng tài liệu này · chỉ mục 06:00" */
   index_text: string | null;
+  original_url: string | null;
   email: EmailThread | null;
   call: CallRecording | null;
 }
 
 /** GET /v1/documents/{id} as the api sends it, with the viewer's row under `display`. */
-type DocumentWire = Schemas['DocumentDetail'] & { display?: DocumentView };
+type DocumentWire = Schemas['DocumentDetail'] & { original_url?: string | null; display?: DocumentView };
 
 const KIND: Record<string, DocumentKind> = { email: 'email', audio: 'call' };
 
@@ -308,6 +309,7 @@ function readDocumentView(raw: DocumentWire, collections: Map<string, string>): 
     fields: [],
     issue: null,
     index_text: p.chunks ? `${p.chunks_indexed}/${p.chunks} đoạn đã lập chỉ mục` : null,
+    original_url: raw.original_url ?? null,
     email: null,
     call: null,
   };
@@ -323,6 +325,9 @@ export const getDocumentView = async (id: string) => {
     new Map<string, string>(collections?.items.map((c) => [c.id, c.name]) ?? []),
   );
 };
+
+export const getDocumentOriginal = (id: string) =>
+  v1GetBlob(`/documents/${pathId(id)}/file`);
 
 /**
  * POST /v1/tasks (A2, UC-08-05): Agent Phân tích is given the document to look for a systemic
@@ -382,8 +387,6 @@ export interface DocumentChunk {
 }
 
 /** Pages read for the Đoạn văn tab; a longer document shows the chunks of its first pages. */
-const CHUNK_PAGES = 50;
-
 /*
  * The chunks of the document (tab Đoạn văn): A2 serves them with each page
  * (GET /v1/documents/{id}/pages/{n}), so the pages are read in order and their chunks listed
@@ -393,19 +396,13 @@ export const listChunks = async (doc: {
   id: Uuid;
   page_count: number;
 }): Promise<Page<DocumentChunk>> => {
-  const count = Math.min(doc.page_count, CHUNK_PAGES);
-  const pages = await Promise.all(
-    Array.from({ length: count }, (_, i) =>
-      v1Get<PageWire>(`/documents/${pathId(doc.id)}/pages/${pathId(String(i + 1))}`),
-    ),
+  const page = await v1Get<Page<Schemas['ChunkView']>>(
+    `/documents/${pathId(doc.id)}/chunks`,
+    { page_size: Math.max(500, Math.min(doc.page_count * 20, 5_000)) },
   );
-  const seen = new Set<string>();
-  const chunks = pages
-    .flatMap((p) => p.chunks ?? [])
-    .filter((c) => !seen.has(c.id) && Boolean(seen.add(c.id)));
   return {
     next_page_token: '',
-    items: chunks.map((c, i) => ({ id: c.id, page: c.page_from, ordinal: i + 1, text: c.text })),
+    items: page.items.map((c, i) => ({ id: c.id, page: c.page_from, ordinal: i + 1, text: c.text })),
   };
 };
 
