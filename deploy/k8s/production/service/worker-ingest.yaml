@@ -64,7 +64,7 @@ spec:
           [ -n "$heads" ] || exit 1
           until python -B -c 'import os,sys,psycopg; url="postgresql://"+os.environ[sys.argv[1]].split("://",1)[1]; conn=psycopg.connect(url,connect_timeout=5,prepare_threshold=None); applied={row[0] for row in conn.execute("SELECT version_num FROM public.alembic_version")}; conn.close(); sys.exit(applied != set(sys.argv[2].split()))' DATAAGENT_DB_URL__SVC_INGEST "$heads" 2>/dev/null; do sleep 2; done
         envFrom: [{secretRef: {name: worker-ingest-secrets}}]
-        resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {cpu: 250m, memory: 256Mi}}
+        resources: {requests: {cpu: 25m, memory: 32Mi}, limits: {cpu: 100m, memory: 128Mi}}
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false
@@ -79,7 +79,7 @@ spec:
         - configMapRef: {name: dataagent-config}
         - configMapRef: {name: worker-ingest-env}
         - secretRef: {name: worker-ingest-secrets}
-        resources: {requests: {cpu: 100m, memory: 192Mi}, limits: {cpu: "1", memory: 512Mi}}
+        resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: "1", memory: 256Mi}}
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false

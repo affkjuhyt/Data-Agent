@@ -68,8 +68,8 @@ spec:
         - secretRef:
             name: worker-ingest-secrets
         resources:
-          requests: {cpu: 50m, memory: 128Mi}
-          limits: {cpu: 250m, memory: 256Mi}
+          requests: {cpu: 25m, memory: 32Mi}
+          limits: {cpu: 100m, memory: 128Mi}
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false
@@ -85,8 +85,8 @@ spec:
         - configMapRef: {name: worker-ingest-env}
         - secretRef: {name: worker-ingest-secrets}
         resources:
-          requests: {cpu: 100m, memory: 192Mi}
-          limits: {cpu: "1", memory: 512Mi}
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {cpu: "1", memory: 256Mi}
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false
