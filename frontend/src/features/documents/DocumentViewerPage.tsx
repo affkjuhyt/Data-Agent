@@ -90,10 +90,16 @@ type Mode = 'original' | 'ocr';
 
 function FileViewer({ doc, onChanged }: { doc: DocumentView; onChanged: () => void }) {
   const { navigate } = useAppState();
-  const [pageNo, setPageNo] = useState(Math.min(Math.max(doc.focus_page, 1), doc.page_count));
+  const hasPages = doc.page_count > 0;
+  const [pageNo, setPageNo] = useState(
+    Math.min(Math.max(doc.focus_page, 1), Math.max(doc.page_count, 1)),
+  );
   const [mode, setMode] = useState<Mode>('original');
   const [tab, setTab] = useState<Tab>('fields');
-  const page = useV1(() => getDocumentPage(doc.id, pageNo), [doc.id, pageNo]);
+  // Newly uploaded documents have no pages until the ingest worker finishes. Do not send page 0
+  // to the API: its schema correctly rejects it, but the viewer should show the designed waiting
+  // state instead of leaking a 422 to the user.
+  const page = useV1(hasPages ? () => getDocumentPage(doc.id, pageNo) : null, [doc.id, pageNo]);
   const collection = doc.collection;
 
   return (
@@ -130,11 +136,11 @@ function FileViewer({ doc, onChanged }: { doc: DocumentView; onChanged: () => vo
               className="whitespace-nowrap text-muted-foreground da-body-small"
               aria-live="polite"
             >
-              Trang {pageNo} / {doc.page_count}
+              {hasPages ? `Trang ${pageNo} / ${doc.page_count}` : 'Đang chuẩn bị trang'}
             </span>
             <PageButton
               label="Trang sau"
-              disabled={pageNo >= doc.page_count}
+              disabled={!hasPages || pageNo >= doc.page_count}
               onClick={() => setPageNo((n) => n + 1)}
             />
           </span>
@@ -149,9 +155,18 @@ function FileViewer({ doc, onChanged }: { doc: DocumentView; onChanged: () => vo
           />
         </div>
         <div className="h-da-2xl shrink-0" />
-        <AsyncRegion state={page} what="trang" skeletonRows={8}>
-          {(p) => (mode === 'original' ? <PageImage page={p} /> : <PageText page={p} />)}
-        </AsyncRegion>
+        {hasPages ? (
+          <AsyncRegion state={page} what="trang" skeletonRows={8}>
+            {(p) => (mode === 'original' ? <PageImage page={p} /> : <PageText page={p} />)}
+          </AsyncRegion>
+        ) : (
+          <EmptyState
+            className="m-da-3xl"
+            icon="file"
+            title="Tài liệu đang được chuẩn bị"
+            description="Agent đang nhận dạng và tạo các trang đọc. Bạn có thể quay lại sau ít phút."
+          />
+        )}
       </section>
 
       <aside
