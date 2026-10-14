@@ -711,11 +711,15 @@ function uploadColumns(value: unknown): UploadColumn[] {
 
 function readUpload(row: FileUploadWire): UploadAnalysis {
   const ratio = row.error_ratio === null ? 0 : Number(row.error_ratio);
+  const validation =
+    row.validation && typeof row.validation === 'object'
+      ? (row.validation as Record<string, unknown>)
+      : {};
   return {
     id: row.id,
     file_name: row.file_name,
     sheet: row.sheet ?? '',
-    row_count: 0,
+    row_count: typeof validation.row_count === 'number' ? validation.row_count : 0,
     header_row: row.header_row ?? 0,
     columns: uploadColumns(row.column_map),
     issue_note: ratio > 0 ? `Tỷ lệ dòng cần kiểm tra: ${ratio * 100}%` : null,

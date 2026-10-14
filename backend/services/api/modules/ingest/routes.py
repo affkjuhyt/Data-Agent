@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import datetime
+import decimal
 import io
 import os
 import uuid
@@ -743,6 +744,77 @@ async def _measure(upload: UploadFile) -> int:
     return size
 
 
+def _column_type(values: list[Any]) -> str:
+    non_empty = [value for value in values if value not in (None, "")]
+    if not non_empty:
+        return "string"
+    if all(isinstance(value, bool) for value in non_empty):
+        return "boolean"
+    if all(
+        isinstance(value, (int, float, decimal.Decimal)) and not isinstance(value, bool)
+        for value in non_empty
+    ):
+        return "number"
+    return "string"
+
+
+def _analyse_upload(content: bytes, file_name: str, requested_sheet: str | None) -> dict[str, Any]:
+    """Derive the deterministic first read shown by P04 before the worker enriches it."""
+    extension = os.path.splitext(file_name)[1].lower()
+    sheet_name: str | None = requested_sheet
+    if extension in {".xlsx", ".xlsm"}:
+        from openpyxl import load_workbook
+
+        workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        sheet_name = requested_sheet or workbook.sheetnames[0]
+        if sheet_name not in workbook.sheetnames:
+            raise Problem(422, "validation_failed", "The selected sheet does not exist.")
+        worksheet = workbook[sheet_name]
+        row_count = max(0, (worksheet.max_row or 0) - 1)
+        rows = [list(values) for values in worksheet.iter_rows(max_row=1001, values_only=True)]
+        encoding: str | None = None
+    elif extension == ".csv":
+        encoding = "utf-8-sig"
+        try:
+            text = content.decode(encoding)
+        except UnicodeDecodeError as exc:
+            raise Problem(422, "validation_failed", "The file encoding is not readable.") from exc
+        try:
+            dialect = csv.Sniffer().sniff(text[:8192], delimiters=",;\t|")
+        except csv.Error:
+            dialect = csv.excel
+        rows = [list(values) for values in csv.reader(io.StringIO(text), dialect)]
+        row_count = max(0, len(rows) - 1)
+    else:
+        raise Problem(422, "validation_failed", "Only CSV and XLSX analysis is supported.")
+    if not rows:
+        raise Problem(422, "validation_failed", "The file has no readable rows.")
+    header, data = rows[0], rows[1:1001]
+    columns = []
+    for index, value in enumerate(header):
+        name = str(value or "").strip() or f"column_{index + 1}"
+        values = [row[index] if index < len(row) else None for row in data]
+        example = next((item for item in values if item not in (None, "")), "")
+        columns.append(
+            {
+                "header": name,
+                "name": name.lower().replace(" ", "_").replace(".", "_").replace("-", "_"),
+                "type": _column_type(values),
+                "unit": None,
+                "example": str(example),
+                "personal": False,
+                "issue": None,
+            }
+        )
+    return {
+        "sheet": sheet_name,
+        "header_row": 1,
+        "encoding": encoding,
+        "column_map": columns,
+        "validation": {"row_count": row_count, "sample_rows": len(data)},
+    }
+
+
 @router.get(
     "/v1/uploads",
     response_model=Page[FileUploadView],
@@ -789,6 +861,9 @@ async def upload_file(
     size = await _measure(file)
     if size == 0:
         raise Problem(422, "validation_failed", "The file is empty.")
+    content = await file.read()
+    await file.seek(0)
+    analysis = _analyse_upload(content, name, sheet)
     upload_id = uuid7()
     key = f"{principal.org_id}/{data_space}/{upload_id}{ext}"
     await store.put(
@@ -807,7 +882,12 @@ async def upload_file(
             file_name=name,
             object_key=key,
             size_bytes=size,
-            sheet=sheet,
+            sheet=analysis["sheet"],
+            header_row=analysis["header_row"],
+            encoding=analysis["encoding"],
+            column_map=analysis["column_map"],
+            validation=analysis["validation"],
+            status="analyzed",
             created_by=principal.user_id,
             updated_by=principal.user_id,
         )
@@ -887,7 +967,7 @@ async def preview_upload(
         raise Problem(422, "validation_failed", "Only CSV and XLSX previews are supported.")
     if not rows:
         return UploadPreview(file_name=row.file_name, columns=[], rows=[], truncated=False)
-    header_index = row.header_row or 0
+    header_index = max((row.header_row or 1) - 1, 0)
     if header_index >= len(rows):
         raise Problem(422, "validation_failed", "The configured header row is outside the file.")
     columns = [
@@ -995,7 +1075,10 @@ async def delete_upload(
     **endpoint("POST", "/v1/uploads/{id}:commit", operation_id="commitUpload"),
 )
 async def commit_upload(
-    upload_id: IdPath, principal: CurrentPrincipal, data_space: CurrentDataSpace
+    body: UploadPatch,
+    upload_id: IdPath,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
 ) -> DatasetView:
     async with transaction(ROLE, principal) as session:
         row = await _upload(session, upload_id, principal, data_space)
@@ -1003,6 +1086,8 @@ async def commit_upload(
             raise Problem(
                 409, "invalid_state", f"The upload is {row.status}; it is written once analysed."
             )
+        if body.column_map is not None:
+            row.column_map = body.column_map
         expires_at = _now() + datetime.timedelta(days=UPLOAD_TABLE_DAYS)
         existing = None
         if row.target_dataset_id is not None:
