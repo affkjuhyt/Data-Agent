@@ -24,6 +24,7 @@ import datetime
 import decimal
 import hashlib
 import logging
+import os
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -53,6 +54,7 @@ ROLE = "svc_qa"
 AGENT_NAME = "Agent Hỏi đáp"
 RUNTIME_VERSION = "worker-agent-r1"
 QUERYABLE = ("active", "testing")
+INTERNAL_WORKSPACE = "internal://workspace"
 
 # Trust labels of tab 5 G5.3 / G5.16: what the answer says about where its numbers come from.
 STANDARD = "Theo chỉ số chuẩn"
@@ -82,6 +84,26 @@ def gateway() -> Gateway | None:
     if not _gateway_read:
         _gateway, _gateway_read = gateway_from_env(), True
     return _gateway
+
+
+def _internal_workspace_source(data_space_id: uuid.UUID, org_id: uuid.UUID) -> catalog.Source:
+    """Represent materialized workspace tables as the local query source."""
+    return catalog.Source(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        org_id=org_id,
+        data_space_id=data_space_id,
+        name="Data Space workspace",
+        kind="postgresql",
+        host=os.environ.get("POSTGRES_HOST", "postgres"),
+        port=int(os.environ.get("PGPORT", "8300")),
+        database_name=os.environ.get("POSTGRES_DB", "dataagent"),
+        conn_options={"schema": "workspace"},
+        secret_ref=INTERNAL_WORKSPACE,
+        mode="federated",
+        status="active",
+        max_concurrency=4,
+        query_timeout_s=120,
+    )
 
 
 @dataclass
@@ -378,7 +400,11 @@ async def _understand_and_plan(
         source: catalog.Source | None = None
         if compiled is not None:
             dataset = layer.datasets[compiled.dataset_ids[0]]
-            source = await session.get(catalog.Source, dataset.source_id)
+            source = (
+                _internal_workspace_source(space_id, event.org_id)
+                if dataset.schema_name == "workspace" and dataset.source_id is None
+                else await session.get(catalog.Source, dataset.source_id)
+            )
             if source is None or source.mode != "federated" or source.status not in QUERYABLE:
                 problem = Refusal.of(
                     ErrorCode.TOOL_UNAVAILABLE,
