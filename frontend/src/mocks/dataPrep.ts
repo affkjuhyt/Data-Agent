@@ -299,6 +299,7 @@ function writebackFixture(): Writeback {
         text: '31 khách hàng đang có yêu cầu điều chỉnh thủ công trong CRM — sẽ bị bỏ qua',
       },
     ],
+    proposal_id: 'proposal-wb-0042',
     approvers: [
       { name: 'Trần Quốc An', role_label: 'Chủ sở hữu dữ liệu tín dụng', state: 'pending' },
       { name: 'Ngô Thanh Bình', role_label: 'Chủ sở hữu hệ thống CRM', state: 'waiting_previous' },
@@ -712,6 +713,44 @@ export function createDataPrepHandlers() {
         ? HttpResponse.json(writeback)
         : problem(404, 'not_found', 'Không tìm thấy lệnh ghi ngược.'),
     ),
+    http.post(/\/v1\/proposals\/[^/]+:decide$/, async ({ request }) => {
+      const proposalId = new URL(request.url).pathname.split('/').at(-1)?.split(':')[0];
+      if (proposalId !== writeback.proposal_id)
+        return problem(404, 'not_found', 'Không tìm thấy proposal ghi ngược.');
+      const body = (await request.json()) as { decision?: string; note?: string };
+      const current = writeback.approvers.findIndex((a) => a.state === 'pending');
+      if (body.decision === 'accept') {
+        const approvers = writeback.approvers.map((a, i) =>
+          i === current
+            ? { ...a, state: 'approved' as const }
+            : i === current + 1
+              ? { ...a, state: 'pending' as const }
+              : a,
+        );
+        const done = approvers.every((a) => a.state === 'approved');
+        writeback = {
+          ...writeback,
+          approvers,
+          status: done ? 'approved' : 'pending_approval',
+          can_decide: false,
+        };
+      } else if (body.decision === 'reject' || body.decision === 'request_changes') {
+        if (!body.note?.trim())
+          return problem(422, 'validation_failed', 'Ghi lý do để người đề xuất biết cần sửa gì.');
+        writeback = {
+          ...writeback,
+          status: body.decision === 'reject' ? 'rejected' : 'changes_requested',
+          approvers:
+            body.decision === 'reject'
+              ? writeback.approvers.map((a, i) =>
+                  i === current ? { ...a, state: 'rejected' as const } : a,
+                )
+              : writeback.approvers,
+          can_decide: false,
+        };
+      }
+      return HttpResponse.json({ id: writeback.proposal_id, status: 'pending_review' });
+    }),
     http.post('*/v1/writebacks/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
       if (id !== writeback.id) return problem(404, 'not_found', 'Không tìm thấy lệnh ghi ngược.');

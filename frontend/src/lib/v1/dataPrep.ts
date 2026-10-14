@@ -554,6 +554,7 @@ export interface Writeback {
   can_decide: boolean;
   after_approval_text: string;
   rollback_text: string;
+  proposal_id?: string | null;
 }
 
 export type WritebackWire = components['schemas']['WritebackView'];
@@ -605,7 +606,9 @@ export function readWriteback(raw: WritebackWire): Writeback {
     checks.push({ ok: totals.ok, text: totals.text });
   }
   const rowCount = numberOf(summary.row_count, numberOf(summary.rows, 0));
-  const status = raw.status as WritebackStatus;
+  const rawStatus = String(raw.status);
+  const status = rawStatus as WritebackStatus;
+  const pending = rawStatus === 'submitted' || rawStatus === 'pending_approval';
   return {
     id: raw.id,
     code: raw.id,
@@ -613,15 +616,25 @@ export function readWriteback(raw: WritebackWire): Writeback {
     status: ['pending_approval', 'changes_requested', 'rejected', 'approved', 'written'].includes(
       status,
     )
-      ? status
+      ? rawStatus === 'submitted'
+        ? 'pending_approval'
+        : status
       : 'pending_approval',
     summary_text: `Yêu cầu ghi ngược ${rowCount.toLocaleString('vi-VN')} dòng vào ${raw.target_table}.`,
     target_table: raw.target_table,
     row_count: rowCount,
     changes: changesOf(summary.changes ?? summary.sample),
     checks,
-    approvers: [],
-    can_decide: false,
+    approvers: pending
+      ? [
+          {
+            name: 'Người duyệt theo chính sách',
+            role_label: 'Phê duyệt ghi ngược trong Cần bạn',
+            state: 'pending',
+          },
+        ]
+      : [],
+    can_decide: pending && Boolean(raw.proposal_id),
     after_approval_text: 'Yêu cầu sẽ được xử lý theo quy trình phê duyệt của tổ chức.',
     rollback_text: raw.snapshot_ref
       ? `Có thể khôi phục từ snapshot ${raw.snapshot_ref}.`
@@ -630,7 +643,10 @@ export function readWriteback(raw: WritebackWire): Writeback {
 }
 
 export const listOpenWritebacks = () =>
-  v1Get<Page<Writeback>>('/writebacks', { status: 'pending_approval', page_size: 50 });
+  v1Get<Page<WritebackWire>>('/writebacks', { status: 'submitted', page_size: 50 }).then((page) => ({
+    ...page,
+    items: page.items.map(readWriteback),
+  }));
 
 export const getWriteback = async (id: string) => {
   const raw = await v1Get<WritebackWire>(`/writebacks/${pathId(id)}`);
@@ -639,13 +655,26 @@ export const getWriteback = async (id: string) => {
 
 /** A2: :approve — the caller's step; the second approval writes to the staging table. */
 export const approveWriteback = async (id: string) =>
-  v1Send<Writeback>('POST', `/writebacks/${pathId(id)}:approve`, {});
+  decideWriteback(id, { decision: 'accept' });
 
 export const rejectWriteback = async (id: string, reason: string) =>
-  v1Send<Writeback>('POST', `/writebacks/${pathId(id)}:reject`, { reason });
+  decideWriteback(id, { decision: 'reject', note: reason });
 
 export const requestWritebackChanges = async (id: string, note: string) =>
-  v1Send<Writeback>('POST', `/writebacks/${pathId(id)}:request-changes`, { note });
+  decideWriteback(id, { decision: 'request_changes', note });
+
+type WritebackDecision =
+  | { decision: 'accept' }
+  | { decision: 'reject'; note: string }
+  | { decision: 'request_changes'; note: string };
+
+async function decideWriteback(id: string, body: WritebackDecision): Promise<Writeback> {
+  const current = await getWriteback(id);
+  if (!current.proposal_id)
+    throw new Error('Lệnh ghi ngược chưa có proposal phê duyệt từ hệ thống.');
+  await v1Send('POST', `/proposals/${pathId(current.proposal_id)}:decide`, body);
+  return getWriteback(id);
+}
 
 /* ─── Dòng dữ liệu (UC-06-05) ─────────────────────────────────────────── */
 

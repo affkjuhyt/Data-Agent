@@ -1233,6 +1233,57 @@ async def publish_data_product(
 # --- writebacks ----------------------------------------------------------------------------------
 
 
+@router.get(
+    "/v1/writebacks",
+    response_model=Page[WritebackView],
+    **endpoint("GET", "/v1/writebacks", operation_id="listWritebacks"),
+)
+async def list_writebacks(
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+    order: Annotated[
+        Order,
+        Depends(order_by("created_at", "updated_at", "status", default="created_at desc")),
+    ],
+    status: Literal[
+        "draft",
+        "previewed",
+        "submitted",
+        "approved",
+        "rejected",
+        "scheduled",
+        "executing",
+        "executed",
+        "cancelled_mismatch",
+        "failed",
+        "undo_requested",
+        "undone",
+    ] | None = None,
+) -> Page[WritebackView]:
+    w = pl.WritebackRequest
+    query = select(w).where(
+        w.org_id == principal.org_id,
+        w.data_space_id == data_space,
+    )
+    if status:
+        query = query.where(w.status == status)
+    query = keyset(
+        query,
+        columns={
+            "created_at": w.created_at,
+            "updated_at": w.updated_at,
+            "status": w.status,
+        },
+        tiebreak=w.id,
+        order=order,
+        page=page,
+    )
+    async with transaction(ROLE, principal) as session:
+        rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
+    return Page(items=[_writeback_view(row) for row in rows], next_page_token=token)
+
+
 def _window(value: Any) -> WriteWindow | None:
     if value is None or getattr(value, "isempty", False):
         return None

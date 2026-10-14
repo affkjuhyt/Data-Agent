@@ -264,6 +264,7 @@ Dịch vụ: Pipeline service (pipeline). 18 endpoint.
 | POST | /v1/marts | Tạo data mart | 06-06 | admin\_data |
 | POST | /v1/data-products | Tạo sản phẩm dữ liệu | 06-06 | admin\_data |
 | POST | /v1/data-products/{id}:publish | Phát hành | 06-06 | approve |
+| GET | /v1/writebacks | Danh sách yêu cầu ghi ngược đang chờ xử lý | 06-04 | writeback |
 | POST | /v1/writebacks | Tạo yêu cầu ghi ngược (dry\_run để xem diff) | 06-04 | writeback |
 | POST | /v1/writebacks/{id}:submit | Gửi duyệt | 06-04 | writeback |
 | POST | /v1/writebacks/{id}:undo | Hoàn tác trong 30 ngày | 06-04 | writeback |

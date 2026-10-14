@@ -1752,6 +1752,18 @@
   },
   {
    "group": "Biến đổi dữ liệu",
+   "method": "GET",
+   "path": "/v1/writebacks",
+   "summary": "Danh sách yêu cầu ghi ngược đang chờ xử lý",
+   "use_cases": [
+    "06-04"
+   ],
+   "capability": [
+    "writeback"
+   ]
+  },
+  {
+   "group": "Biến đổi dữ liệu",
    "method": "POST",
    "path": "/v1/writebacks",
    "summary": "Tạo yêu cầu ghi ngược (dry_run để xem diff)",

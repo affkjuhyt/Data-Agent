@@ -1059,11 +1059,20 @@
   },
   "POST /v1/connectors/rest:try": {
    "group": "Nguồn và danh mục",
-   "groups": ["Nguồn và danh mục"],
-   "body": {"request": true},
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {
+    "request": true
+   },
    "query": [],
-   "returns": "202, trạng thái queued; request gửi worker không chứa header/body bí mật",
-   "errors": [[422, "validation_failed"]],
+   "returns": "Xếp hàng kiểm tra request REST; worker đọc OpenBao và không lưu secret",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
    "request_text": "request*"
   },
   "GET /v1/secret-refs": {
@@ -1123,29 +1132,6 @@
    ],
    "request_text": "—"
   },
-  "PUT /v1/sources/{id}/api-config": {
-   "group": "Nguồn và danh mục",
-   "groups": [
-    "Nguồn và danh mục"
-   ],
-   "body": {
-    "request": true,
-    "mapping": false
-   },
-   "query": [],
-   "returns": "Cấu hình request REST, mapping cột và health; credential chỉ là secret_ref",
-   "errors": [
-    [
-     422,
-     "validation_failed"
-    ],
-    [
-     422,
-     "business_rule_violated"
-    ]
-   ],
-   "request_text": "request*, mapping"
-  },
   "POST /v1/sources": {
    "group": "Nguồn và danh mục",
    "groups": [
@@ -1181,6 +1167,29 @@
     ]
    ],
    "request_text": "name*, kind*, host, port, database_name, mode, authority_level, freshness_sla, max_concurrency, query_timeout_s, scan_schemas, scan_window, work_calendar_id, credentials, writeback_credentials"
+  },
+  "PUT /v1/sources/{id}/api-config": {
+   "group": "Nguồn và danh mục",
+   "groups": [
+    "Nguồn và danh mục"
+   ],
+   "body": {
+    "request": true,
+    "mapping": false
+   },
+   "query": [],
+   "returns": "Cấu hình request REST, mapping cột và health; credential chỉ là secret_ref",
+   "errors": [
+    [
+     422,
+     "validation_failed"
+    ],
+    [
+     422,
+     "business_rule_violated"
+    ]
+   ],
+   "request_text": "request*, mapping"
   },
   "PATCH /v1/sources/{id}": {
    "group": "Nguồn và danh mục",
@@ -1342,39 +1351,59 @@
    ],
    "body": {},
    "query": [],
-   "returns": "ColumnStatsView",
+   "returns": "Thống kê cột: tỷ lệ null, distinct, min/max và phân bố",
    "errors": [
-    [403, "masked_column"],
-    [404, "not_found"]
+    [
+     403,
+     "masked_column"
+    ],
+    [
+     404,
+     "not_found"
+    ]
    ],
    "request_text": "—"
   },
   "POST /v1/datasets/{id}:derive": {
    "group": "Nguồn và danh mục",
-   "groups": ["Nguồn và danh mục"],
+   "groups": [
+    "Nguồn và danh mục"
+   ],
    "body": {
     "filters": false,
     "drop_duplicates": false
    },
    "query": [],
-   "returns": "201, Dataset dẫn xuất đã đăng ký; worker materialize theo outbox",
-   "errors": [[404, "not_found"]],
+   "returns": "Đăng ký bảng dẫn xuất; worker materialize theo outbox",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
    "request_text": "filters, drop_duplicates"
   },
   "POST /v1/derived-tables": {
    "group": "Nguồn và danh mục",
-   "groups": ["Nguồn và danh mục"],
+   "groups": [
+    "Nguồn và danh mục"
+   ],
    "body": {
-    "name": true,
-    "data_space_id": true,
-    "write_mode": true,
-    "refresh": true,
-    "access": true,
-    "sql": true
+    "name": false,
+    "data_space_id": false,
+    "write_mode": false,
+    "refresh": false,
+    "access": false,
+    "sql": false
    },
    "query": [],
-   "returns": "201, DerivedTableView",
-   "errors": [[404, "not_found"]],
+   "returns": "Lưu SQL thành bảng dẫn xuất; worker materialize theo outbox",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
    "request_text": "name, data_space_id, write_mode, refresh, access, sql"
   },
   "PATCH /v1/datasets/{id}": {
@@ -2126,40 +2155,14 @@
    ],
    "body": {},
    "query": [],
-   "returns": "202, Accepted; Location tới pipeline_run",
-   "errors": [
-    [409, "invalid_state"]
-   ],
-   "request_text": ""
-  },
-  "GET /v1/pipelines/{id}/steps/{seq}/preview": {
-   "group": "Biến đổi dữ liệu",
-   "groups": [
-    "Biến đổi dữ liệu"
-   ],
-   "body": {},
-   "query": [],
-   "returns": "Xem trước một bước pipeline",
+   "returns": "202, Location tới pipeline_run chạy đầy đủ",
    "errors": [
     [
-     404,
-     "not_found"
+     409,
+     "invalid_state"
     ]
    ],
-   "request_text": ""
-  },
-  "POST /v1/pipelines/{id}/messages": {
-   "group": "Biến đổi dữ liệu",
-   "groups": [
-    "Biến đổi dữ liệu"
-   ],
-   "body": {
-    "text": true
-   },
-   "query": [],
-   "returns": "Pipeline sau khi agent tiếp nhận yêu cầu",
-   "errors": [],
-   "request_text": "text*"
+   "request_text": "—"
   },
   "POST /v1/pipelines/{id}:materialize": {
    "group": "Biến đổi dữ liệu",
@@ -2198,43 +2201,6 @@
    "errors": [],
    "request_text": "cron, work_calendar_id, trigger_on_job_id, depends_on_pipeline_ids, no_overlap, on_failure"
   },
-  "GET /v1/pipelines/{id}/schedule": {
-   "group": "Biến đổi dữ liệu",
-   "groups": [
-    "Biến đổi dữ liệu"
-   ],
-   "body": {},
-   "query": [],
-   "returns": "Lịch pipeline",
-   "errors": [],
-   "request_text": ""
-  },
-  "POST /v1/pipelines/{id}/schedule:preview": {
-   "group": "Biến đổi dữ liệu",
-   "groups": [
-    "Biến đổi dữ liệu"
-   ],
-   "body": {
-    "cron": false,
-    "no_overlap": false,
-    "on_failure": false
-   },
-   "query": [],
-   "returns": "Mô tả lịch pipeline",
-   "errors": [],
-   "request_text": "cron, no_overlap, on_failure"
-  },
-  "GET /v1/pipelines/{id}/output-draft": {
-   "group": "Biến đổi dữ liệu",
-   "groups": [
-    "Biến đổi dữ liệu"
-   ],
-   "body": {},
-   "query": [],
-   "returns": "Bản nháp bảng đầu ra",
-   "errors": [],
-   "request_text": ""
-  },
   "GET /v1/lineage": {
    "group": "Biến đổi dữ liệu",
    "groups": [
@@ -2258,9 +2224,9 @@
    ],
    "body": {},
    "query": [],
-   "returns": "Danh sách LineageTarget",
+   "returns": "Danh sách dataset trong Data Space để chọn làm đối tượng xem dòng dữ liệu",
    "errors": [],
-   "request_text": ""
+   "request_text": "—"
   },
   "POST /v1/marts": {
    "group": "Biến đổi dữ liệu",
@@ -3055,11 +3021,18 @@
   },
   "POST /v1/data-products/{id}:draft-version": {
    "group": "Lớp ngữ cảnh",
-   "groups": ["Lớp ngữ cảnh"],
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
    "body": {},
    "query": [],
-   "returns": "DataProduct bản nháp version + 1, proposal_id; bản đang phục vụ không đổi",
-   "errors": [[409, "invalid_state"]],
+   "returns": "Mở bản nháp version + 1 và proposal để agent/editor chỉnh sửa; bản đang phục vụ không đổi",
+   "errors": [
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
    "request_text": "—"
   },
   "PATCH /v1/data-products/{id}": {
@@ -4091,28 +4064,6 @@
    ],
    "request_text": "prefs*"
   },
-  "POST /v1/me/notification-preferences:test": {
-   "group": "Theo dõi, báo cáo, thông báo",
-   "groups": [
-    "Theo dõi, báo cáo, thông báo"
-   ],
-   "body": {},
-   "query": [],
-   "returns": "TestNotification",
-   "errors": [],
-   "request_text": "—"
-  },
-  "GET /v1/channel-rules": {
-   "group": "Theo dõi, báo cáo, thông báo",
-   "groups": [
-    "Theo dõi, báo cáo, thông báo"
-   ],
-   "body": {},
-   "query": [],
-   "returns": "ChannelRules",
-   "errors": [],
-   "request_text": "—"
-  },
   "PUT /v1/me/channels/{channel}": {
    "group": "Theo dõi, báo cáo, thông báo",
    "groups": [
@@ -5018,38 +4969,58 @@
   },
   "GET /v1/me/onboarding": {
    "group": "Quản trị",
-   "groups": ["Quản trị"],
+   "groups": [
+    "Quản trị"
+   ],
    "body": {},
    "query": [],
    "returns": "Trạng thái hướng dẫn bắt đầu, các bước và mẫu agent",
-   "errors": [[403, "forbidden"]],
+   "errors": [
+    [
+     403,
+     "forbidden"
+    ]
+   ],
    "request_text": "—"
   },
   "POST /v1/me/onboarding:skip": {
    "group": "Quản trị",
-   "groups": ["Quản trị"],
+   "groups": [
+    "Quản trị"
+   ],
    "body": {},
    "query": [],
-   "returns": "Trạng thái hướng dẫn đã bỏ qua",
+   "returns": "Bỏ qua hướng dẫn bắt đầu",
    "errors": [],
    "request_text": "—"
   },
   "POST /v1/me/onboarding:complete": {
    "group": "Quản trị",
-   "groups": ["Quản trị"],
+   "groups": [
+    "Quản trị"
+   ],
    "body": {},
    "query": [],
-   "returns": "Trạng thái hướng dẫn đã hoàn tất",
+   "returns": "Hoàn tất hướng dẫn bắt đầu",
    "errors": [],
    "request_text": "—"
   },
   "POST /v1/me/onboarding:try-agent": {
    "group": "Quản trị",
-   "groups": ["Quản trị"],
-   "body": {"template_ref": true},
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "template_ref": true
+   },
    "query": [],
-   "returns": "AgentRun được tạo để chạy thử mẫu agent",
-   "errors": [[422, "invalid_request"]],
+   "returns": "Tạo agent mẫu và khởi chạy lượt thử",
+   "errors": [
+    [
+     422,
+     "invalid_request"
+    ]
+   ],
    "request_text": "template_ref*"
   },
   "POST /v1/data-spaces": {
@@ -5175,38 +5146,6 @@
     ]
    ],
    "request_text": "decision*, granted_scope, note"
-  },
-  "GET /v1/access-requests": {
-   "group": "Quản trị",
-   "groups": [
-    "Quản trị"
-   ],
-   "body": {},
-   "query": [
-    "status",
-    "data_space_id",
-    "cursor",
-    "page_size"
-   ],
-   "returns": "Page[AccessRequest]",
-   "errors": [],
-   "request_text": "?status, ?data_space_id, ?cursor, ?page_size"
-  },
-  "GET /v1/access-requests/{id}": {
-   "group": "Quản trị",
-   "groups": [
-    "Quản trị"
-   ],
-   "body": {},
-   "query": [],
-   "returns": "AccessRequest",
-   "errors": [
-    [
-     404,
-     "not_found"
-    ]
-   ],
-   "request_text": "—"
   },
   "GET /v1/admin/models": {
    "group": "Quản trị",
@@ -5487,47 +5426,6 @@
    "errors": [],
    "request_text": "—"
   },
-  "GET /v1/admin/groups": {
-   "group": "Quản trị",
-   "groups": [
-    "Quản trị"
-   ],
-   "body": {},
-   "query": [],
-   "returns": "Danh sách nhóm danh tính và số thành viên",
-   "errors": [],
-   "request_text": "—"
-  },
-  "POST /v1/admin/directory:sync": {
-   "group": "Quản trị",
-   "groups": [
-    "Quản trị"
-   ],
-   "body": {},
-   "query": [],
-   "returns": "202, DirectorySyncAccepted",
-   "errors": [],
-   "request_text": "—"
-  },
-  "POST /v1/admin/invitations": {
-   "group": "Quản trị",
-   "groups": [
-    "Quản trị"
-   ],
-   "body": {
-    "email": true,
-    "role_id": true,
-    "data_space_id": true,
-    "row_scope": false,
-    "valid_until": false
-   },
-   "query": [],
-   "returns": "202, InvitationAccepted",
-   "errors": [
-    [404, "not_found"]
-   ],
-   "request_text": "email*, role_id*, data_space_id*, row_scope, valid_until"
-  },
   "GET /v1/data-spaces/{id}/members": {
    "group": "Quản trị",
    "groups": [
@@ -5545,49 +5443,6 @@
     ]
    ],
    "request_text": "?cursor"
-  },
-  "GET /v1/data-spaces/{id}/permissions": {
-   "group": "Quản trị",
-   "groups": [
-    "Quản trị"
-   ],
-   "body": {},
-   "query": [],
-   "returns": "Ma trận vai trò, năng lực và quy tắc truy cập",
-   "errors": [
-    [
-     404,
-     "not_found"
-    ]
-   ],
-   "request_text": "—"
-  },
-  "GET /v1/data-products/catalog": {
-   "group": "Lớp ngữ cảnh",
-   "groups": [
-    "Lớp ngữ cảnh",
-    "Biến đổi dữ liệu"
-   ],
-   "body": {},
-   "query": [
-    "cursor",
-    "page_size"
-   ],
-   "returns": "Sản phẩm dữ liệu đã phát hành của Data Space khác; chỉ metadata và cảnh báo PII",
-   "errors": [],
-   "request_text": "?cursor, ?page_size"
-  },
-  "POST /v1/data-products:request-use": {
-   "group": "Lớp ngữ cảnh",
-   "groups": ["Lớp ngữ cảnh"],
-   "body": {
-    "product_ids": true,
-    "data_space_id": true
-   },
-   "query": [],
-   "returns": "202, các AccessRequest đang chờ steward của Data Space sở hữu sản phẩm quyết định",
-   "errors": [[404, "not_found"]],
-   "request_text": "product_ids*, data_space_id*"
   },
   "GET /v1/admin/ai-settings": {
    "group": "Quản trị",
