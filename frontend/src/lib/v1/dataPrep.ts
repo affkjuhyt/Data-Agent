@@ -17,7 +17,13 @@ import { awaitQueryRun, getQueryRows } from './explore';
 interface SqlCatalogGroup {
   id: string;
   name: string;
-  tables: string[];
+  tables: SqlCatalogTable[];
+}
+
+export interface SqlCatalogTable {
+  id: string;
+  name: string;
+  columns: { name: string; type: string | null }[];
 }
 
 export interface SqlResult {
@@ -32,33 +38,43 @@ export interface SqlResult {
   masked_columns: string[];
 }
 
-/** PROPOSAL: the agent's one-line hint about the query, with the rewrite it proposes. */
-export interface SqlSuggestion {
-  text: string;
-  action_label: string;
-  sql: string;
-}
-
 export const getSqlCatalog = async (): Promise<{ items: SqlCatalogGroup[] }> => {
   const datasets = await v1Get<Page<DatasetRow>>('/datasets', { page_size: 500 });
+  const details = await Promise.all(
+    datasets.items.map(async (dataset) => {
+      const detail = await v1Get<components['schemas']['DatasetDetail']>(
+        `/datasets/${pathId(dataset.id)}`,
+      ).catch(() => null);
+      return { dataset, detail };
+    }),
+  );
   const sourceNames = new Map<string, string>();
   await Promise.all(
     [...new Set(datasets.items.map((dataset) => dataset.source_id).filter(Boolean))].map(
       async (sourceId) => {
-        const source = await v1Get<{ id: string; name: string }>(`/sources/${pathId(sourceId!)}`);
-        sourceNames.set(source.id, source.name);
+        const source = await v1Get<{ id: string; name: string }>(
+          `/sources/${pathId(sourceId!)}`,
+        ).catch(() => null);
+        if (source) sourceNames.set(source.id, source.name);
       },
     ),
   );
   const groups = new Map<string, SqlCatalogGroup>();
-  for (const dataset of datasets.items) {
+  for (const { dataset, detail } of details) {
     const key = dataset.source_id ?? 'derived';
     const group = groups.get(key) ?? {
       id: key,
       name: dataset.source_id ? (sourceNames.get(key) ?? 'Nguồn dữ liệu') : 'Bảng dẫn xuất',
       tables: [],
     };
-    group.tables.push(tableName(dataset));
+    group.tables.push({
+      id: dataset.id,
+      name: tableName(dataset),
+      columns: (detail?.columns ?? []).map((column) => ({
+        name: column.name,
+        type: column.data_type,
+      })),
+    });
     groups.set(key, group);
   }
   return { items: [...groups.values()] };
@@ -89,18 +105,6 @@ export const runSql = async (sql: string, limit = 500): Promise<SqlResult> => {
 /** Server formatting when available; otherwise keep a deterministic read-only fallback. */
 export const formatSql = async (sql: string): Promise<{ sql: string }> => {
   return { sql: sql.trim().replace(/\s+/g, ' ') };
-};
-
-/** Optional agent hint; a missing suggestion service must not block a valid query. */
-export const suggestSql = async (sql: string) => {
-  if (!/npl/i.test(sql)) return { suggestion: null as SqlSuggestion | null };
-  return {
-    suggestion: {
-      text: 'Agent: bảng này đã loại trùng. Dùng chỉ số NPL_RATIO v4 thay cho công thức tự viết để khớp báo cáo?',
-      action_label: 'Dùng NPL_RATIO v4',
-      sql: "SELECT region, product, NPL_RATIO_V4(balance, debt_group) AS npl\nFROM loans_dedup_0930\nWHERE segment = 'retail'\nGROUP BY region, product\nORDER BY npl DESC\nLIMIT 20;",
-    } satisfies SqlSuggestion,
-  };
 };
 
 /* ─── Bảng dẫn xuất (UC-06-02) ────────────────────────────────────────── */
@@ -461,16 +465,12 @@ const cronForSchedule = (schedule: PipelineSchedule) =>
         : null;
 
 export const getPipelineSchedule = async (id: string) =>
-  v1Get<
-    components['schemas']['ScheduleRequest'] &
-      Partial<PipelineSchedule>
-  >(`/pipelines/${pathId(id)}/schedule`).then((schedule) => {
-    const kind = schedule.kind ??
-      (schedule.cron
-        ? 'cron'
-        : schedule.trigger_on_job_id
-          ? 'after_source'
-          : 'daily');
+  v1Get<components['schemas']['ScheduleRequest'] & Partial<PipelineSchedule>>(
+    `/pipelines/${pathId(id)}/schedule`,
+  ).then((schedule) => {
+    const kind =
+      schedule.kind ??
+      (schedule.cron ? 'cron' : schedule.trigger_on_job_id ? 'after_source' : 'daily');
     return {
       kind: kind as ScheduleKind,
       cron: schedule.cron ?? null,
@@ -517,7 +517,7 @@ export const savePipelineSchedule = async (id: string, schedule: PipelineSchedul
           ? 'chạy mỗi giờ trong giờ làm việc'
           : schedule.kind === 'after_source'
             ? 'chạy sau job nạp Core banking'
-            : view.schedule_text ?? (view.cron ? `Theo lịch cron ${view.cron}` : 'Chạy thủ công'),
+            : (view.schedule_text ?? (view.cron ? `Theo lịch cron ${view.cron}` : 'Chạy thủ công')),
   }));
 
 /* ─── Ghi ngược có duyệt (UC-06-04) ───────────────────────────────────── */
@@ -643,10 +643,12 @@ export function readWriteback(raw: WritebackWire): Writeback {
 }
 
 export const listOpenWritebacks = () =>
-  v1Get<Page<WritebackWire>>('/writebacks', { status: 'submitted', page_size: 50 }).then((page) => ({
-    ...page,
-    items: page.items.map(readWriteback),
-  }));
+  v1Get<Page<WritebackWire>>('/writebacks', { status: 'submitted', page_size: 50 }).then(
+    (page) => ({
+      ...page,
+      items: page.items.map(readWriteback),
+    }),
+  );
 
 export const getWriteback = async (id: string) => {
   const raw = await v1Get<WritebackWire>(`/writebacks/${pathId(id)}`);
@@ -654,8 +656,7 @@ export const getWriteback = async (id: string) => {
 };
 
 /** A2: :approve — the caller's step; the second approval writes to the staging table. */
-export const approveWriteback = async (id: string) =>
-  decideWriteback(id, { decision: 'accept' });
+export const approveWriteback = async (id: string) => decideWriteback(id, { decision: 'accept' });
 
 export const rejectWriteback = async (id: string, reason: string) =>
   decideWriteback(id, { decision: 'reject', note: reason });

@@ -438,48 +438,7 @@ export function createDataPrepHandlers() {
   const notFound = () => problem(404, 'not_found', 'Không tìm thấy pipeline.');
 
   return [
-    /* SQL */
-    http.get('*/v1/sql/catalog', () =>
-      HttpResponse.json({
-        items: [
-          { id: 'core', name: 'Core banking', tables: ['ld_loans', 'customers'] },
-          { id: 'dwh', name: 'DWH bán lẻ', tables: ['fact_loan_balance_daily', 'dim_branch'] },
-          { id: 'mart', name: 'Data mart rủi ro', tables: ['mart_npl_region'] },
-          { id: 'mine', name: 'Dẫn xuất của tôi', tables: ['loans_dedup_0930'] },
-        ],
-      }),
-    ),
-    http.post('*/v1/:action', async ({ params, request }) => {
-      const action = String(params.action);
-      if (!action.startsWith('sql:')) return undefined;
-      const body = (await request.json()) as { sql: string };
-      const sql = body.sql ?? '';
-      if (action === 'sql:run') {
-        if (!sql.trim()) return problem(400, 'invalid_request', 'Chưa có câu truy vấn.');
-        if (/\b(insert|update|delete|drop|alter|truncate)\b/i.test(sql))
-          return problem(403, 'read_only', 'Trình SQL chỉ chạy câu đọc dữ liệu.');
-        return HttpResponse.json(SQL_RESULT);
-      }
-      if (action === 'sql:format') {
-        const formatted = sql
-          .replace(/\s+/g, ' ')
-          .trim()
-          .replace(/\s+(FROM|WHERE|GROUP BY|ORDER BY|LIMIT|JOIN|LEFT JOIN|HAVING)\b/gi, '\n$1');
-        return HttpResponse.json({ sql: formatted });
-      }
-      if (action === 'sql:suggest') {
-        const suggestion = /npl/i.test(sql)
-          ? {
-              text: 'Agent: bảng này đã loại trùng. Dùng chỉ số NPL_RATIO v4 thay cho công thức tự viết để khớp báo cáo?',
-              action_label: 'Dùng NPL_RATIO v4',
-              sql: "SELECT region, product, NPL_RATIO_V4(balance, debt_group) AS npl\nFROM loans_dedup_0930\nWHERE segment = 'retail'\nGROUP BY region, product\nORDER BY npl DESC\nLIMIT 20;",
-            }
-          : null;
-        return HttpResponse.json({ suggestion });
-      }
-      return undefined;
-    }),
-    /* The SQL screen uses the canonical query-run worker, not the legacy sql:run action. */
+    /* The SQL screen uses the canonical query-run worker. */
     http.post('*/v1/query-runs', async ({ request }) => {
       const body = (await request.json()) as { sql?: string };
       const sql = body.sql ?? '';
@@ -538,6 +497,32 @@ export function createDataPrepHandlers() {
     http.get('*/v1/pipelines', () => page(pipelines.map(pipelineWire))),
     // The table the create dialog names, found by GET /v1/datasets?q= (the catalog's search);
     // any other dataset list falls through to the catalog mock.
+    http.get('*/v1/datasets/:id', ({ params }) => {
+      const id = String(params.id);
+      if (id !== 'dataset-loans-dedup') return problem(404, 'not_found', 'Không tìm thấy bảng.');
+      return HttpResponse.json({
+        id,
+        schema_name: 'mart',
+        table_name: 'loans_dedup_0930',
+        source_id: null,
+        columns: ['region', 'product', 'balance', 'debt_group', 'segment'].map((name, ordinal) => ({
+          id: `column-${name}`,
+          name,
+          data_type: name === 'balance' ? 'numeric' : 'text',
+          dataset_version: 1,
+          description: null,
+          description_status: 'none',
+          display_name: null,
+          is_key: false,
+          is_nullable: true,
+          normalized_type: name === 'balance' ? 'number' : 'string',
+          ordinal,
+          pii_confirmed: true,
+          pii_label: null,
+          unit: null,
+        })),
+      });
+    }),
     http.get('*/v1/datasets', ({ request }) => {
       const q = new URL(request.url).searchParams.get('q');
       if (!q)
@@ -628,7 +613,8 @@ export function createDataPrepHandlers() {
       const body = (await request.json()) as PipelineSchedule & {
         schedule_kind?: ScheduleKind;
       };
-      const kind: ScheduleKind = body.schedule_kind ?? body.kind ?? (body.cron ? 'cron' : 'after_source');
+      const kind: ScheduleKind =
+        body.schedule_kind ?? body.kind ?? (body.cron ? 'cron' : 'after_source');
       if (kind === 'cron' && !body.cron?.trim())
         return problem(422, 'validation_failed', 'Nhập biểu thức cron.');
       schedules.set(id, {

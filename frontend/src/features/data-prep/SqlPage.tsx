@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Button } from '../../design-system/Button';
 import { Icon } from '../../design-system/Icon';
 import { Input } from '../../design-system/Input';
@@ -6,14 +6,7 @@ import { Notice } from '../../design-system/Notice';
 import { SkeletonRows } from '../../design-system/SkeletonRow';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
-import {
-  formatSql,
-  getSqlCatalog,
-  runSql,
-  suggestSql,
-  type SqlResult,
-  type SqlSuggestion,
-} from '../../lib/v1/dataPrep';
+import { formatSql, getSqlCatalog, runSql, type SqlResult } from '../../lib/v1/dataPrep';
 import { useV1 } from '../../lib/v1/useV1';
 import { SaveDatasetDialog } from './SaveDatasetDialog';
 
@@ -24,37 +17,43 @@ import { SaveDatasetDialog } from './SaveDatasetDialog';
  * into a derived table. Runs and formatting go through the server so the editor, pipelines and
  * the permission check agree on one SQL dialect.
  */
-const STARTER = `SELECT region, product,
-       SUM(balance) FILTER (WHERE debt_group >= 3) / SUM(balance) AS npl
-FROM loans_dedup_0930
-WHERE segment = 'retail'
-GROUP BY region, product
-ORDER BY npl DESC
-LIMIT 20;`;
-
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1).replace('.', ',')}`;
+
+const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`;
+
+const starterFor = (table: { name: string; columns: { name: string }[] }) => {
+  const columns = table.columns
+    .slice(0, 12)
+    .map((column) => `  ${quoteIdentifier(column.name)}`)
+    .join(',\n');
+  return `SELECT\n${columns || '  *'}\nFROM ${table.name}\nLIMIT 100;`;
+};
 
 export default function SqlPage() {
   const catalog = useV1(getSqlCatalog, []);
   const toast = useToast();
-  const [sql, setSql] = useState(STARTER);
+  const [sql, setSql] = useState('');
   const [filter, setFilter] = useState('');
   const [result, setResult] = useState<SqlResult>();
-  const [suggestion, setSuggestion] = useState<SqlSuggestion | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (sql || !catalog.data) return;
+    const firstTable = catalog.data.items[0]?.tables[0];
+    if (firstTable) setSql(starterFor(firstTable));
+  }, [catalog.data, sql]);
+
   const run = async () => {
     if (running) return;
     setRunning(true);
     setError(undefined);
     try {
-      const [res, hint] = await Promise.all([runSql(sql), suggestSql(sql)]);
+      const res = await runSql(sql);
       setResult(res);
-      setSuggestion(hint.suggestion);
       toast({
         tone: 'success',
         message: `Truy vấn xong · ${res.row_count} dòng · ${seconds(res.duration_ms)} giây`,
@@ -123,7 +122,12 @@ export default function SqlPage() {
     .map((g) => ({
       ...g,
       tables: q
-        ? g.tables.filter((t) => t.includes(q) || g.name.toLowerCase().includes(q))
+        ? g.tables.filter(
+            (t) =>
+              t.name.toLowerCase().includes(q) ||
+              g.name.toLowerCase().includes(q) ||
+              t.columns.some((column) => column.name.toLowerCase().includes(q)),
+          )
         : g.tables,
     }))
     .filter((g) => g.tables.length > 0);
@@ -154,15 +158,28 @@ export default function SqlPage() {
               {g.name}
             </p>
             {g.tables.map((t) => (
-              <button
-                key={t}
-                type="button"
-                title="Chèn tên bảng vào câu truy vấn"
-                onClick={() => insertTable(t)}
-                className="rounded-sm pl-da-xl text-left text-foreground da-mono hover:bg-subtle"
-              >
-                {t}
-              </button>
+              <div key={t.id} className="flex flex-col gap-da-2xs pl-da-xl">
+                <button
+                  type="button"
+                  title="Chèn tên bảng vào câu truy vấn"
+                  onClick={() => insertTable(t.name)}
+                  className="rounded-sm text-left text-foreground da-mono hover:bg-subtle"
+                >
+                  {t.name}
+                </button>
+                {t.columns.map((column) => (
+                  <button
+                    key={`${t.id}-${column.name}`}
+                    type="button"
+                    title={`Chèn cột ${column.name}`}
+                    onClick={() => insertTable(column.name)}
+                    className="truncate rounded-sm pl-da-md text-left text-muted-foreground da-caption hover:bg-subtle"
+                  >
+                    {column.name}
+                    {column.type ? ` · ${column.type}` : ''}
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
         ))}
@@ -204,20 +221,6 @@ export default function SqlPage() {
           />
         </div>
         {error && <Notice tone="error">{error}</Notice>}
-        {suggestion && (
-          <div className="flex items-center gap-da-md rounded-md border border-border px-da-lg py-da-sm">
-            <Icon name="agent" className="text-primary" />
-            <p className="min-w-0 flex-1 text-foreground da-body-small">{suggestion.text}</p>
-            <Button
-              onClick={() => {
-                setSql(suggestion.sql);
-                setSuggestion(null);
-              }}
-            >
-              {suggestion.action_label}
-            </Button>
-          </div>
-        )}
         {result && (
           <div ref={resultRef} className="flex flex-col gap-da-md">
             <div className="flex items-center gap-da-md">

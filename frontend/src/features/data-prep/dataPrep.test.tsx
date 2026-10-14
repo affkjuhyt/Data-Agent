@@ -1,5 +1,5 @@
 /**
- * P06 Chuẩn bị dữ liệu against the v1 mock: the SQL editor and saving a dataset, the pipeline
+ * P06 Chuẩn bị dữ liệu against the v1 API contract: the SQL editor and saving a dataset, the pipeline
  * list and its schedule, cleaning by conversation, saving the output, approving a write-back,
  * and a lineage graph laid out from the API.
  */
@@ -33,19 +33,21 @@ afterAll(() => server.close());
 const wrap = (ui: React.ReactNode) => render(<ToastProvider>{ui}</ToastProvider>);
 
 describe('SqlPage', () => {
-  it('runs the query, offers the agent rewrite, and saves it as a dataset', async () => {
+  it('discovers the real table schema, runs the query, and saves it as a dataset', async () => {
     wrap(<SqlPage />);
     expect(await screen.findByRole('button', { name: 'loans_dedup_0930' })).toBeInTheDocument();
+    await waitFor(() =>
+      expect((screen.getByLabelText('Câu truy vấn SQL') as HTMLTextAreaElement).value).toContain(
+        'FROM loans_dedup_0930',
+      ),
+    );
 
     fireEvent.click(screen.getByRole('button', { name: /Chạy/ }));
     expect(await screen.findByText('Truy vấn xong · 20 dòng · 0,8 giây')).toBeInTheDocument();
     expect(screen.getByText('Quyền: Rủi ro tín dụng · cột customer_id đã che')).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: 'ĐB sông Hồng' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dùng NPL_RATIO v4' }));
-    expect((screen.getByLabelText('Câu truy vấn SQL') as HTMLTextAreaElement).value).toContain(
-      'NPL_RATIO_V4',
-    );
+    expect(screen.queryByRole('button', { name: 'Dùng NPL_RATIO v4' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Lưu thành dataset' }));
     const dialog = await screen.findByRole('dialog', { name: 'Lưu thành dataset' });
