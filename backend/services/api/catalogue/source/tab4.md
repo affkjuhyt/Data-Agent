@@ -820,7 +820,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/uploads | — | Page<FileUpload> | — |
 | GET /v1/uploads/{id} | — | FileUpload | 404 not_found |
 | PATCH /v1/uploads/{id} | sheet, header\_row, encoding, decimal\_sep, column\_map, target\_dataset\_id, replace\_mode | FileUpload | — |
-| POST /v1/uploads/{id}:commit | — | Dataset. Bảng tải tay hết hạn sau 90 ngày (BR-105) | 422 business\_rule\_violated (dòng lỗi trên 5%) |
+| POST /v1/uploads/{id}:commit | column_map | Dataset. Bảng tải tay hết hạn sau 90 ngày (BR-105) | 422 business\_rule\_violated (dòng lỗi trên 5%) |
 | GET /v1/quality-rules | ?dataset\_id, ?severity | Danh sách QualityRule | — |
 | POST /v1/quality-rules | dataset\_id\*, column\_name, kind\*, params, severity | QualityRule | — |
 | PATCH /v1/quality-rules/{id} | params, severity, status | QualityRule | — |

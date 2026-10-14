@@ -772,7 +772,22 @@ def _analyse_upload(content: bytes, file_name: str, requested_sheet: str | None)
         worksheet = workbook[sheet_name]
         row_count = max(0, (worksheet.max_row or 0) - 1)
         rows = [list(values) for values in worksheet.iter_rows(max_row=1001, values_only=True)]
+        workbook.close()
         encoding: str | None = None
+    elif extension == ".xls":
+        try:
+            import xlrd
+        except ImportError as exc:
+            raise Problem(503, "source_unavailable", "Legacy Excel analysis is not configured.") from exc
+        workbook = xlrd.open_workbook(file_contents=content, on_demand=True)
+        sheet_name = requested_sheet or workbook.sheet_names()[0]
+        if sheet_name not in workbook.sheet_names():
+            raise Problem(422, "validation_failed", "The selected sheet does not exist.")
+        worksheet = workbook.sheet_by_name(sheet_name)
+        row_count = max(0, worksheet.nrows - 1)
+        rows = [worksheet.row_values(index) for index in range(min(worksheet.nrows, 1001))]
+        workbook.release_resources()
+        encoding = None
     elif extension == ".csv":
         encoding = "utf-8-sig"
         try:
@@ -786,7 +801,7 @@ def _analyse_upload(content: bytes, file_name: str, requested_sheet: str | None)
         rows = [list(values) for values in csv.reader(io.StringIO(text), dialect)]
         row_count = max(0, len(rows) - 1)
     else:
-        raise Problem(422, "validation_failed", "Only CSV and XLSX analysis is supported.")
+        raise Problem(422, "validation_failed", "Only CSV and Excel analysis is supported.")
     if not rows:
         raise Problem(422, "validation_failed", "The file has no readable rows.")
     header, data = rows[0], rows[1:1001]
@@ -952,6 +967,21 @@ async def preview_upload(
             raise Problem(422, "validation_failed", "The selected sheet does not exist.")
         values = workbook[sheet_name].iter_rows(values_only=True)
         rows = [list(item) for item in values]
+        workbook.close()
+    elif extension == ".xls":
+        try:
+            import xlrd
+        except ImportError as exc:
+            raise Problem(503, "source_unavailable", "Legacy Excel preview is not configured.") from exc
+        workbook = xlrd.open_workbook(file_contents=content, on_demand=True)
+        sheet_name = row.sheet or workbook.sheet_names()[0]
+        if sheet_name not in workbook.sheet_names():
+            raise Problem(422, "validation_failed", "The selected sheet does not exist.")
+        rows = [
+            workbook.sheet_by_name(sheet_name).row_values(index)
+            for index in range(workbook.sheet_by_name(sheet_name).nrows)
+        ]
+        workbook.release_resources()
     elif extension == ".csv":
         encoding = row.encoding or "utf-8-sig"
         try:
@@ -964,7 +994,7 @@ async def preview_upload(
             dialect = csv.excel
         rows = [list(item) for item in csv.reader(io.StringIO(text), dialect)]
     else:
-        raise Problem(422, "validation_failed", "Only CSV and XLSX previews are supported.")
+        raise Problem(422, "validation_failed", "Only CSV and Excel previews are supported.")
     if not rows:
         return UploadPreview(file_name=row.file_name, columns=[], rows=[], truncated=False)
     header_index = max((row.header_row or 1) - 1, 0)

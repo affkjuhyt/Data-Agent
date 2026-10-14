@@ -1750,7 +1750,9 @@
    "groups": [
     "Nạp dữ liệu"
    ],
-   "body": {},
+   "body": {
+    "column_map": false
+   },
    "query": [],
    "returns": "Dataset. Bảng tải tay hết hạn sau 90 ngày (BR-105)",
    "errors": [
@@ -1759,7 +1761,7 @@
      "business_rule_violated"
     ]
    ],
-   "request_text": "—"
+   "request_text": "column_map"
   },
   "DELETE /v1/uploads/{id}": {
    "group": "Nạp dữ liệu",
