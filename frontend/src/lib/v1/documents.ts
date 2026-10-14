@@ -810,23 +810,13 @@ export const activateSchema = async (id: string) =>
 
 /* ─── Hộp thoại: upload, createCollection, suggestCollection ─────────── */
 
-/** PROPOSAL: GET /v1/document-sources (the spec has POST): folders, mailboxes, call stores. */
-export interface DocumentSource {
-  id: Uuid;
-  /** "SharePoint · /KiemTraSauVay" */
-  label: string;
-}
-
-export const listDocumentSources = () => v1Get<Page<DocumentSource>>('/document-sources', ALL);
-
-/** POST /v1/collections. PROPOSAL: the body. `schema_id` null = create after 20 samples. */
+/** POST /v1/collections. Sources and extraction schemas are configured after creation. */
 export interface NewCollection {
   name: string;
   file_types: string;
-  source_id: string;
-  schema_id: string | null;
-  /** defaults to the caller (a collection the agent suggested). */
-  owner_id?: string;
+  purpose: string;
+  pii_policy?: 'mask' | 'keep_for_authorized' | 'reject';
+  retention_days?: number;
 }
 
 /** "Hợp đồng tín dụng" → "hop_dong_tin_dung" (document.collection.code). */
@@ -858,17 +848,18 @@ const mediaOf = (fileTypes: string): MediaKind[] => {
 };
 
 /**
- * POST /v1/collections (CollectionCreate): the purpose is the name until the screen asks for
- * one. The source binding and the schema are PROPOSAL (A2 binds sources with
- * POST /v1/document-sources and sets the schema on the collection afterwards).
+ * POST /v1/collections (CollectionCreate). A source is bound separately through
+ * POST /v1/document-sources, and an extraction schema is created after sample documents exist.
  */
 export const createCollection = async (body: NewCollection) => {
   const media = mediaOf(body.file_types);
   const created = await v1Send<Schemas['CollectionView']>('POST', '/collections', {
     code: codeOf(body.name),
     name: body.name,
-    purpose: body.name,
+    purpose: body.purpose,
     ...(media.length ? { media_kinds: media } : {}),
+    ...(body.pii_policy ? { pii_policy: body.pii_policy } : {}),
+    ...(body.retention_days ? { retention_days: body.retention_days } : {}),
   } satisfies Schemas['CollectionCreate']);
   return { id: created.id, name: created.name };
 };

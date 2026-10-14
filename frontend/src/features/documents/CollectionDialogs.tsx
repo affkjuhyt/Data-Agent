@@ -5,21 +5,14 @@ import { Icon } from '../../design-system/Icon';
 import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
 import { SkeletonRows } from '../../design-system/SkeletonRow';
-import { listUsers } from '../../lib/v1/api';
-import { createCollection, listDocumentSources, listSchemas } from '../../lib/v1/documents';
-import { formatNumber } from '../../lib/formatVN';
-import { cn } from '../../lib/utils';
-import { useV1 } from '../../lib/v1/useV1';
+import { createCollection } from '../../lib/v1/documents';
 import { Dialog } from '../../design-system/Dialog';
 
 /*
  * "Hộp thoại · createCollection" (2095:8589) on "v3.1 · Phi cấu trúc · Bộ sưu tập" (UC-05-06): a
- * person makes a collection for a purpose. Figma's "suggestCollection" (2095:8645), where the
- * agent proposed collections, is not in the design: UC-05-06 has the person create collections and
- * the agent only propose the extraction schema.
+ * person makes a collection for a purpose. Sources and extraction schemas are separate follow-up
+ * steps, so this dialog never presents fields that POST /v1/collections cannot persist.
  */
-const NEW_SCHEMA = '__new';
-
 export function CreateCollectionDialog({
   open,
   onClose,
@@ -29,14 +22,11 @@ export function CreateCollectionDialog({
   onClose: () => void;
   onCreated: (collection: { id: string; name: string }) => void;
 }) {
-  const sources = useV1(open ? listDocumentSources : null, [open]);
-  const schemas = useV1(open ? listSchemas : null, [open]);
-  const users = useV1(open ? listUsers : null, [open]);
   const [name, setName] = useState('');
   const [types, setTypes] = useState('');
-  const [source, setSource] = useState<string | null>(null);
-  const [schema, setSchema] = useState<string>(NEW_SCHEMA);
-  const [owner, setOwner] = useState<string | null>(null);
+  const [purpose, setPurpose] = useState('');
+  const [piiPolicy, setPiiPolicy] = useState<'mask' | 'keep_for_authorized' | 'reject'>('mask');
+  const [retentionDays, setRetentionDays] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -44,15 +34,15 @@ export function CreateCollectionDialog({
     if (!open) return;
     setName('');
     setTypes('');
-    setSource(null);
-    setSchema(NEW_SCHEMA);
-    setOwner(null);
+    setPurpose('');
+    setPiiPolicy('mask');
+    setRetentionDays('');
     setError(undefined);
   }, [open]);
 
   const submit = async () => {
     if (!name.trim()) return setError('Đặt tên bộ sưu tập.');
-    if (!source || !owner) return setError('Chọn nguồn nạp và chủ sở hữu.');
+    if (!purpose.trim()) return setError('Đặt mục đích sử dụng.');
     setBusy(true);
     setError(undefined);
     try {
@@ -60,9 +50,9 @@ export function CreateCollectionDialog({
         await createCollection({
           name: name.trim(),
           file_types: types.trim(),
-          source_id: source,
-          schema_id: schema === NEW_SCHEMA ? null : schema,
-          owner_id: owner,
+          purpose: purpose.trim(),
+          pii_policy: piiPolicy,
+          ...(retentionDays.trim() ? { retention_days: Number(retentionDays) } : {}),
         }),
       );
     } catch (e) {
@@ -93,40 +83,33 @@ export function CreateCollectionDialog({
           onChange={(e) => setTypes(e.target.value)}
         />
       </Field>
-      <Field labelTone="muted" label="Nguồn nạp">
-        <Select
-          label="Nguồn nạp"
-          placeholder="Chọn nguồn"
-          options={(sources.data?.items ?? []).map((s) => ({ value: s.id, label: s.label }))}
-          value={source}
-          onChange={setSource}
+      <Field labelTone="muted" label="Mục đích sử dụng">
+        <Input
+          value={purpose}
+          placeholder="Ví dụ: thẩm định tín dụng"
+          onChange={(e) => setPurpose(e.target.value)}
         />
       </Field>
-      <Field labelTone="muted" label="Lược đồ trích xuất">
+      <Field labelTone="muted" label="Chính sách dữ liệu cá nhân">
         <Select
-          label="Lược đồ trích xuất"
+          label="Chính sách dữ liệu cá nhân"
           options={[
-            { value: NEW_SCHEMA, label: 'Tạo mới sau khi có 20 tệp mẫu' },
-            ...(schemas.data?.items ?? [])
-              .filter((s) => s.status === 'active')
-              .map((s) => ({
-                value: s.id,
-                label: `Dùng lại ${s.collection.name} · v${s.version}`,
-              })),
+            { value: 'mask', label: 'Che mặc định' },
+            { value: 'keep_for_authorized', label: 'Giữ cho người có quyền' },
+            { value: 'reject', label: 'Từ chối dữ liệu cá nhân' },
           ]}
-          value={schema}
-          onChange={setSchema}
+          value={piiPolicy}
+          onChange={(value) => setPiiPolicy(value as 'mask' | 'keep_for_authorized' | 'reject')}
         />
       </Field>
-      <Field labelTone="muted" label="Chủ sở hữu">
-        <Select
-          label="Chủ sở hữu"
-          placeholder="Chọn người"
-          options={(users.data?.items ?? [])
-            .filter((u) => u.kind === 'person')
-            .map((u) => ({ value: u.id, label: u.display_name }))}
-          value={owner}
-          onChange={setOwner}
+      <Field labelTone="muted" label="Thời hạn lưu (ngày)">
+        <Input
+          type="number"
+          min={1}
+          max={36500}
+          value={retentionDays}
+          placeholder="Không giới hạn"
+          onChange={(e) => setRetentionDays(e.target.value)}
         />
       </Field>
     </Dialog>

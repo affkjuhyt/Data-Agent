@@ -156,14 +156,17 @@ describe('documents from the api', () => {
     await createCollection({
       name: 'Biên bản kiểm tra',
       file_types: 'PDF, Word',
-      source_id: 's',
-      schema_id: null,
+      purpose: 'thẩm định tín dụng',
+      pii_policy: 'keep_for_authorized',
+      retention_days: 365,
     });
     expect(bodies[0]).toEqual({
       code: 'bien_ban_kiem_tra',
       name: 'Biên bản kiểm tra',
-      purpose: 'Biên bản kiểm tra',
+      purpose: 'thẩm định tín dụng',
       media_kinds: ['pdf', 'docx'],
+      pii_policy: 'keep_for_authorized',
+      retention_days: 365,
     });
   });
 

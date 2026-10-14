@@ -281,12 +281,9 @@ describe('Collection dialogs', () => {
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Tên' }), {
       target: { value: 'Biên bản kiểm tra sau cho vay' },
     });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Tạo' }));
-    expect(await within(dialog).findByText('Chọn nguồn nạp và chủ sở hữu.')).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Nguồn nạp' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'SharePoint · /KiemTraSauVay' }));
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Chủ sở hữu' }));
-    fireEvent.click((await screen.findAllByRole('option'))[0]);
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Mục đích sử dụng' }), {
+      target: { value: 'thẩm định tín dụng' },
+    });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Tạo' }));
     await waitFor(() =>
       expect(onCreated).toHaveBeenCalledWith({

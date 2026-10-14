@@ -5,7 +5,6 @@ import type {
   DocumentChunk,
   DocumentPage,
   DocumentRow,
-  DocumentSource,
   DocumentValidity,
   DocumentView,
   EmailThread,
@@ -990,15 +989,6 @@ function schemasFixture(): ExtractionSchema[] {
   ];
 }
 
-/* ─── Collections dialogs ──────────────────────────────────────────────── */
-
-const DOCUMENT_SOURCES: DocumentSource[] = [
-  { id: 'dsrc-kiemtra', label: 'SharePoint · /KiemTraSauVay' },
-  { id: 'dsrc-phapche', label: 'SharePoint · Pháp chế/Tín dụng' },
-  { id: 'dsrc-scan-hn', label: 'Thư mục quét · chi nhánh Hà Nội' },
-  { id: 'dsrc-mail', label: 'Hộp thư · khieunai@' },
-];
-
 /* ─── Handlers ─────────────────────────────────────────────────────────── */
 
 const AT = '2026-10-08T08:00:00+07:00';
@@ -1358,7 +1348,6 @@ export function createDocumentHandlers() {
       return HttpResponse.json(next, { status: verb === 'test' ? 202 : 200 });
     }),
 
-    http.get('*/v1/document-sources', () => page(DOCUMENT_SOURCES)),
     // CollectionCreate: code, name, purpose and the media kinds.
     http.post('*/v1/collections', async ({ request }) => {
       const body = (await request.json()) as { code: string; name: string; purpose: string };
