@@ -138,14 +138,26 @@ def parse_build_results(lines: Iterable[str]) -> dict[str, dict[str, str]]:
 
 
 def stale_images(
-    built: dict[str, dict[str, Any]], pod_images: Iterable[str], deploy_prefix: str, tag: str
+    built: dict[str, dict[str, Any]],
+    pod_images: Iterable[str],
+    deploy_prefix: str,
+    tag: str,
+    served: dict[str, str] | None = None,
 ) -> list[str]:
     """Built images that some pod is running at a different digest.
 
     `pod_images` are `<image ref> <imageID>` lines from the pods' container
-    statuses; the imageID ends in `@sha256:<digest>`, the same digest the
-    registry serves and `docker image inspect .Id` reports locally. An image no
-    pod runs (a Job's, the sandbox runner) is never stale: there is nothing to
+    statuses; the imageID is `[docker-pullable://]<repo>@sha256:<digest>`, the
+    manifest digest the registry serves. A pod is matched by its image ref or by
+    the repo of its imageID: some runtimes (OrbStack's) report the ref without
+    the registry (`dataagent/x:latest` for `localhost:5001/dataagent/x:latest`),
+    and matching on the ref alone then found no pod and restarted nothing.
+
+    The digest a pod must run is the one the registry `served` after the push.
+    The local `docker image inspect .Id` is a config digest under Docker's
+    classic image store, never equal to the manifest digest, so it is only the
+    fallback when no registry was asked (an imported image). An image no pod
+    runs (a Job's, the sandbox runner) is never stale: there is nothing to
     restart.
     """
     running: dict[str, set[str]] = {}
@@ -153,12 +165,15 @@ def stale_images(
         parts = line.split()
         if not parts:
             continue
-        digest = parts[1].rsplit("@", 1)[-1] if len(parts) > 1 else ""
-        running.setdefault(parts[0], set()).add(digest)
+        image_id = parts[1].split("://", 1)[-1] if len(parts) > 1 else ""
+        repo, _, digest = image_id.rpartition("@")
+        for key in {parts[0], f"{repo}:{tag}" if repo else parts[0]}:
+            running.setdefault(key, set()).add(digest)
     stale = []
     for name, result in sorted(built.items()):
         digests = running.get(f"{deploy_prefix}/{name}:{tag}", set())
-        if digests and digests != {result["after"]}:
+        expected = (served or {}).get(name) or result["after"]
+        if digests and digests != {expected}:
             stale.append(name)
     return stale
 

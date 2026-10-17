@@ -96,6 +96,34 @@
   when: (image_push | bool) and (built | length) > 0
   changed_when: push.stdout_lines | select('match', '^pushed ') | list | length > 0
 
+# What pods must run is the manifest digest the registry serves now, not the
+# local .Id (a config digest under Docker's classic store, which never matches
+# a pod's imageID): deploy.yml compares the pods with these to pick restarts.
+- name: Read the digests the registry serves for the built images
+  ansible.builtin.shell:
+    cmd: |
+      set -uo pipefail
+      for name in {{ built.keys() | map('quote') | join(' ') }}; do
+        digest=$(curl -fsSI \
+            -H 'Accept: application/vnd.oci.image.index.v1+json' \
+            -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+            -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json' \
+            -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+            "{{ image_registry_url }}/v2/{{ image_prefix }}/$name/manifests/{{ image_tag }}" 2>/dev/null \
+          | tr -d '\r' | awk 'tolower($1) == "docker-content-digest:" { print $2 }')
+        [ -n "$digest" ] && echo "$name $digest"
+      done
+      exit 0
+    executable: /bin/bash
+  register: served
+  when: (image_registry | length) > 0 and (built | length) > 0
+  changed_when: false
+
+- name: Record the served digests
+  ansible.builtin.set_fact:
+    registry_digests: >-
+      {{ dict(served.stdout_lines | default([]) | map('split', ' ') | list) }}
+
 - name: Report the build
   ansible.builtin.debug:
     msg:

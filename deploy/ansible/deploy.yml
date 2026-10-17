@@ -675,7 +675,8 @@
                         | map('regex_replace', '$', ':' ~ image_tag) | list) }}
       vars:
         outdated: >-
-          {{ (built | stale_images(pod_images.stdout_lines, image_deploy_prefix, image_tag))
+          {{ (built | stale_images(pod_images.stdout_lines, image_deploy_prefix, image_tag,
+                                   registry_digests | default({})))
              if (image_registry | length) > 0 else (built.keys() | list) }}
       when: built | length > 0
 

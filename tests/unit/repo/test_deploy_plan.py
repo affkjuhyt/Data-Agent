@@ -191,6 +191,21 @@ class TestBuildResults:
         ]
         assert plan.stale_images(built, pods, "localhost:5000/dataagent", "latest") == ["b"]
 
+    def test_pods_reported_without_the_registry_are_found_and_compared_to_the_served_digest(self):
+        # OrbStack reports the ref without the registry; the imageID keeps it. The local .Id
+        # (a config digest) never equals the manifest digest pods run: the registry's is used.
+        built = plan.parse_build_results(
+            ["built a sha256:old-id sha256:local-id 1", "built b sha256:b sha256:b-id 1"]
+        )
+        pods = [
+            "dataagent/a:latest docker-pullable://localhost:5001/dataagent/a@sha256:old",
+            "dataagent/b:latest docker-pullable://localhost:5001/dataagent/b@sha256:new-b",
+        ]
+        served = {"a": "sha256:new-a", "b": "sha256:new-b"}
+        assert plan.stale_images(built, pods, "localhost:5001/dataagent", "latest", served) == ["a"]
+        # Without the served digests the old behaviour stands: every built image looks stale.
+        assert plan.stale_images(built, pods, "localhost:5001/dataagent", "latest") == ["a", "b"]
+
     def test_workloads_running(self):
         lines = [
             "Deployment/x dataagent-service reg/dataagent/a:latest sidecar:1",
