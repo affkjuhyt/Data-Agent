@@ -26,6 +26,7 @@ from sqlalchemy import text
 
 from libs.dataagent_db import unscoped_session
 from services.worker_agent import (
+    derived,
     evaluation,
     exports,
     hitl,
@@ -38,12 +39,12 @@ from services.worker_agent import (
     questions,
     replay,
     resolutions,
-    runs,
     reviews,
+    runs,
     scheduler,
     schema_scans,
-    skill_runs,
     semantic_review,
+    skill_runs,
     source_tests,
     tiles,
     uploads,
@@ -84,6 +85,7 @@ HANDLERS: dict[str, Handler] = {
     **runs.HANDLERS,
     **skill_runs.HANDLERS,
     **evaluation.HANDLERS,
+    **derived.HANDLERS,
     **semantic_review.HANDLERS,
     **reviews.HANDLERS,
     **pipelines.HANDLERS,
@@ -120,7 +122,7 @@ async def sources() -> list[EventSource]:
         if schema == "notify":
             types |= channels.NOTIFY_EVENTS
         if schema == "catalog":
-            types |= set(source_tests.HANDLERS) | set(schema_scans.HANDLERS)
+            types |= set(source_tests.HANDLERS) | set(schema_scans.HANDLERS) | set(derived.HANDLERS)
         if schema == "query":
             types |= set(query_runs.HANDLERS)
         if schema == "workspace":

@@ -132,7 +132,10 @@ export const createDerivedTable = (body: {
   refresh: DatasetRefresh;
   access: DatasetAccess;
   sql: string;
-}) => v1Send<DerivedTable>('POST', '/derived-tables', body);
+  write_mode?: WriteMode;
+}) =>
+  // The api requires write_mode; a table saved from the editor is a new one.
+  v1Send<DerivedTable>('POST', '/derived-tables', { write_mode: 'replace', ...body });
 
 /* ─── Pipeline (UC-06-01, UC-06-03) ───────────────────────────────────── */
 
