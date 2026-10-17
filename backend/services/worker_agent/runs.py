@@ -8,11 +8,13 @@ each step boundary, so the api's pause and cancel (routes.py writes the status i
 without a message to this worker; and a redelivered event finds nothing left to do.
 
 The goal is read like a question (rule pass, then the planner model), planned as the semantic fast
-path's one-step Plan IR and run in place; an agent given notify.internal then tells the result in
+path's Plan IR and run in place. A goal of several lines is a report: one question per line
+(questions_of), one query step and chart each, the answer numbered by part. An agent given
+notify.internal then tells the result in
 the app, after its checkpoint was approved in Cần bạn when it has one. A wait is reminded and
 times out, and a passing failure is retried, on durable timers (TIMER). Deferred: the +50%
-budget request and the monthly budget alerts, no_progress, plan edits, the LLM Planner's
-multi-step plans, and recovering runs orphaned by a crash. Runs execute inline, so a long run holds this worker's poll loop for at most its BR-170
+budget request and the monthly budget alerts, no_progress, plan edits, plans the LLM Planner
+writes itself (steps that depend on one another), and recovering runs orphaned by a crash. Runs execute inline, so a long run holds this worker's poll loop for at most its BR-170
 duration.
 """
 
@@ -38,7 +40,7 @@ from sqlalchemy.exc import DBAPIError
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import agent, catalog, notify, qa
 from services.worker_agent.answer.insights import written
-from services.worker_agent.answer.narrate import figures_of, text_of
+from services.worker_agent.answer.narrate import chart_spec_of, figures_of, text_of
 from services.worker_agent.answer.thresholds import judged
 from services.worker_agent.answer.thresholds import load as load_threshold
 from services.worker_agent.events import Event, Handler
@@ -120,6 +122,30 @@ def is_transient(status: str, error: str | None) -> bool:
 
 def wait_timers(since: datetime.datetime) -> list[tuple[str, datetime.datetime]]:
     return [("reminder", since + d) for d in REMINDERS] + [("timeout", since + WAIT_LIMIT)]
+
+
+_MARKER = re.compile(r"^\s*(?:[-•*+]|\d+[.)])\s*")
+
+
+def questions_of(goal: str) -> list[str]:
+    """The questions a goal asks, one per line: a report's parts ("- Tỷ lệ nợ xấu theo vùng").
+    List markers go; a first line ending in ":" is the report's title, not a question. A goal of
+    one line is one question, as it was written."""
+    lines = [_MARKER.sub("", line).strip() for line in goal.splitlines()]
+    lines = [line for line in lines if line]
+    if len(lines) > 1 and lines[0].endswith(":"):
+        lines = lines[1:]
+    return lines if len(lines) > 1 else [goal.strip()]
+
+
+def retries_in_a_row(statuses: Sequence[str]) -> int:
+    """How often the question being asked was retried: query steps since the last one that ran."""
+    n = 0
+    for status in reversed(statuses):
+        if status != "retried":
+            break
+        n += 1
+    return n
 
 
 def needs_checkpoint(
@@ -239,6 +265,8 @@ class Planned:
     decimals: int
     period_semantics: str
     dimension_names: dict[str, str]
+    text: str = ""
+    time_dimensions: frozenset[str] = frozenset()
     tokens: int = 0
     models: list[dict[str, Any]] = field(default_factory=list)
 
@@ -333,9 +361,35 @@ async def _plan_step(
             decimals=version.decimals,
             period_semantics=version.period_semantics,
             dimension_names={d.code: d.name for d in layer.vocabulary.dimensions},
+            text=goal,
+            time_dimensions=frozenset(d.code for d in layer.vocabulary.dimensions if d.is_time),
             tokens=tokens,
             models=models,
         )
+
+
+async def _plan_all(
+    run: agent.AgentRun,
+    goal: str,
+    saved: list[dict[str, Any]] | None,
+    principal: uuid.UUID,
+) -> list[Planned]:
+    """Each question of the goal planned on its own; one the Data Space cannot read stops the plan
+    and is named. A resumed run plans from the chips it saved, question by question."""
+    asked: list[tuple[str, list[dict[str, Any]] | None]] = (
+        [(q["text"], q["chips"]) for q in saved]
+        if saved
+        else [(q, None) for q in questions_of(goal)]
+    )
+    planned: list[Planned] = []
+    for text, chips in asked:
+        try:
+            planned.append(await _plan_step(run, text, chips, principal))
+        except RunFailed as exc:
+            if len(asked) == 1:
+                raise
+            raise RunFailed(f"Câu “{text}”: {exc}", exc.stop_reason) from exc
+    return planned
 
 
 def _emit(run: agent.AgentRun, previous: str | None) -> agent.Outbox:
@@ -670,9 +724,9 @@ def _over_budget(
 
 
 def _stop_for_budget(
-    limits: Limits, done: Sequence[agent.AgentStep], run: agent.AgentRun, planned: Planned
+    limits: Limits, done: Sequence[agent.AgentStep], run: agent.AgentRun, tokens: int
 ) -> tuple[str, dict[str, Any]] | None:
-    return _over_budget(limits, len(done), int(run.tokens or 0) + planned.tokens, run.started_at)
+    return _over_budget(limits, len(done), int(run.tokens or 0) + tokens, run.started_at)
 
 
 async def _ended_by_budget(work: Run, over: tuple[str, dict[str, Any]] | None) -> bool:
@@ -745,15 +799,21 @@ async def _execute(work: Run, run: agent.AgentRun) -> None:
     # 1. Plan, once: a resumed run reads back the chips it planned with.
     plan_row = next((s for s in done if s.kind == "plan"), None)
     started = _now()
-    planned = await _plan_step(
+    saved = (plan_row.output or {}) if plan_row else {}
+    planned = await _plan_all(
         run,
         config.goal,
-        (plan_row.output or {}).get("chips") if plan_row else None,
+        saved.get("questions")
+        or ([{"text": config.goal, "chips": saved["chips"]}] if "chips" in saved else None),
         work.principal,
     )
+    tokens = sum(p.tokens for p in planned)
     if plan_row is None:
         plan_id = uuid7()
-        ir = _plan_ir(planned.understanding, planned.compiled, run.as_of)
+        irs = [_plan_ir(p.understanding, p.compiled, run.as_of) for p in planned]
+        steps = [{**ir["steps"][0], "id": f"s{i}"} for i, ir in enumerate(irs, start=1)]
+        chips = [chip for ir in irs for chip in ir["chips"]]
+        summary = "; ".join(p.summary for p in planned)
         async with scoped_session(QA_ROLE, run.org_id, work.principal) as session:
             session.add(
                 qa.Plan(
@@ -761,20 +821,39 @@ async def _execute(work: Run, run: agent.AgentRun) -> None:
                     org_id=run.org_id,
                     agent_run_id=run.id,
                     version=1,
-                    chips=ir["chips"],
-                    steps=ir,
-                    confidence=decimal.Decimal(str(round(planned.understanding.confidence, 4))),
+                    chips=chips,
+                    steps={
+                        **irs[0],
+                        "chips": chips,
+                        "steps": steps,
+                        "outputs": [{"step": st["id"], "as": "table"} for st in steps],
+                    },
+                    confidence=decimal.Decimal(
+                        str(round(min(p.understanding.confidence for p in planned), 4))
+                    ),
                 )
             )
         status = await work.record(
             kind="plan",
             name="plan",
             status="ok",
-            summary=planned.summary,
-            told=f"Lập kế hoạch: {planned.summary}.",
+            summary=summary,
+            told=(
+                f"Lập kế hoạch: {summary}."
+                if len(planned) == 1
+                else f"Lập kế hoạch {len(planned)} phần: {summary}."
+            ),
             input={"goal": config.goal},
-            output={"plan_id": str(plan_id), "chips": ir["chips"], "steps": ir["steps"]},
-            tokens=planned.tokens,
+            output={
+                "plan_id": str(plan_id),
+                "chips": irs[0]["chips"],
+                "questions": [
+                    {"text": p.text, "chips": ir["chips"]}
+                    for p, ir in zip(planned, irs, strict=True)
+                ],
+                "steps": steps,
+            },
+            tokens=tokens,
             then="running",
             started=started,
         )
@@ -784,31 +863,35 @@ async def _execute(work: Run, run: agent.AgentRun) -> None:
             row.snapshot_refs = [
                 {
                     "config_version": run.config_version,
-                    "metric_version_ids": [str(planned.compiled.metric_version_id)],
-                    "models": planned.models,
+                    "metric_version_ids": [str(p.compiled.metric_version_id) for p in planned],
+                    "models": [m for p in planned for m in p.models],
                 }
             ]
         if status != "running":
             return
         done = await work.steps()
 
-    # 2. The query step, unless an earlier pass already ran it.
-    queried = next((s for s in done if s.kind == "query" and s.status == "ok"), None)
-    if queried is not None:
-        answer = queried.summary or ""
-    else:
-        if await _ended_by_budget(work, _stop_for_budget(limits, done, run, planned)):
+    # 2. One query step per question, from the first one not answered yet.
+    answers = [s.summary or "" for s in done if s.kind == "query" and s.status == "ok"]
+    for i in range(len(answers), len(planned)):
+        if await _ended_by_budget(work, _stop_for_budget(limits, done, run, tokens)):
             return
-        ran = await _query_step(work, run, planned, granted)
+        ran = await _query_step(work, run, planned[i], granted, part=(i + 1, len(planned)))
         if ran is None:
             return
-        answer, done = ran, await work.steps()
+        answers.append(ran)
+        done = await work.steps()
+    answer = (
+        answers[0]
+        if len(planned) == 1
+        else "\n".join(f"{i}. {a}" for i, a in enumerate(answers, start=1))
+    )
 
     # 3. Tell the result inside the organisation, when the agent was given that tool.
     if NOTIFY_TOOL in granted and not any(
         s.name == NOTIFY_TOOL and s.kind == "tool_call" for s in done
     ):
-        if await _ended_by_budget(work, _stop_for_budget(limits, done, run, planned)):
+        if await _ended_by_budget(work, _stop_for_budget(limits, done, run, tokens)):
             return
         if not await _notify_step(work, run, config, owner, granted, requires, answer):
             return
@@ -816,7 +899,12 @@ async def _execute(work: Run, run: agent.AgentRun) -> None:
 
 
 async def _query_step(
-    work: Run, run: agent.AgentRun, planned: Planned, granted: Mapping[str, str]
+    work: Run,
+    run: agent.AgentRun,
+    planned: Planned,
+    granted: Mapping[str, str],
+    *,
+    part: tuple[int, int] = (1, 1),
 ) -> str | None:
     """Runs the planned query; returns the answer, or None when the run stopped here."""
     compiled, u = planned.compiled, planned.understanding
@@ -863,7 +951,7 @@ async def _query_step(
             else f"Chưa truy vấn được nguồn {planned.source.name}; người phụ trách dữ liệu có thể "
             "xem lượt chạy trong lịch sử truy vấn."
         )
-        tried = sum(1 for s in await work.steps() if s.kind == "query" and s.status == "retried")
+        tried = retries_in_a_row([s.status for s in await work.steps() if s.kind == "query"])
         if is_transient(outcome.status, outcome.error) and tried < len(RETRY_DELAYS):
             delay = RETRY_DELAYS[tried]
             minutes = int(delay.total_seconds() // 60)
@@ -934,7 +1022,12 @@ async def _query_step(
         name="query.semantic",
         status="ok",
         summary=answer,
-        told=f"Đã truy vấn {planned.source.name}: {len(outcome.rows)} dòng.",
+        told=(
+            f"Đã truy vấn {planned.source.name}: {len(outcome.rows)} dòng."
+            if part[1] == 1
+            else f"Phần {part[0]}/{part[1]}: đã truy vấn {planned.source.name}, "
+            f"{len(outcome.rows)} dòng."
+        ),
         input={
             "sql": compiled.sql,
             "args": _normal(args),
@@ -946,6 +1039,16 @@ async def _query_step(
             "columns": list(compiled.columns),
             "rows": [[_plain(v) for v in row] for row in outcome.rows[:ROWS_KEPT]],
             "truncated": outcome.truncated,
+            "question": planned.text,
+            # How the result is drawn (AC-01-01-01): a line along time, bars otherwise.
+            "chart_spec": chart_spec_of(
+                figures,
+                group_by=list(u.group_by),
+                dimension_names=planned.dimension_names,
+                time_dimensions=set(planned.time_dimensions),
+                metric_name=planned.metric_name,
+                unit=planned.unit,
+            ),
         },
         fingerprint=call,
         result_hash=outcome.result_hash,
@@ -1081,7 +1184,7 @@ async def on_timer(event: Event) -> None:
         work = Run(event.aggregate_id, event.org_id)
         last = (await work.steps())[-1:]
         attempt = int(p.get("attempt") or 0)
-        tried = sum(1 for s in await work.steps() if s.kind == "query" and s.status == "retried")
+        tried = retries_in_a_row([s.status for s in await work.steps() if s.kind == "query"])
         if not last or last[0].status != "retried" or tried != attempt:
             return
         run = await work.claim("retry")

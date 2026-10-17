@@ -659,3 +659,89 @@ async def test_a_run_judges_its_answer_against_the_metrics_threshold(
     status, _, _, narrative, *_ = run_row(seed, run)
     assert status == "succeeded"
     assert "cảnh báo sớm (từ 8,00%): Miền Bắc (10,00%); Miền Nam (10,00%)" in narrative[-1]["text"]
+
+
+REPORT = """Báo cáo nợ xấu tháng 9/2026:
+- Tỷ lệ nợ xấu theo vùng tháng 9/2026
+- Dư nợ theo vùng tháng 9/2026
+- Tỷ lệ nợ xấu tháng 9/2026"""
+
+
+async def test_a_goal_of_several_questions_runs_one_step_each_with_its_chart(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    run = agent_run(bank, goal=REPORT)
+    await drain()
+    status, stop, current, narrative, *_ = run_row(seed, run)
+    assert (status, stop) == ("succeeded", "completed")
+    recorded = steps(seed, run)
+    assert [(s[1], s[3]) for s in recorded] == [("plan", "ok")] + [("query", "ok")] * 3
+    assert current == 4
+    # Each cut is drawn; the single number has nothing to compare, so no chart.
+    charts = [s[6].get("chart_spec") for s in recorded[1:]]
+    assert [c and (c["type"], c["x"]) for c in charts] == [("bar", "vung"), ("bar", "vung"), None]
+    # The plan names every question, and the run's answer gathers them in order.
+    plan = recorded[0][6]
+    assert [q["text"] for q in plan["questions"]] == [
+        "Tỷ lệ nợ xấu theo vùng tháng 9/2026",
+        "Dư nợ theo vùng tháng 9/2026",
+        "Tỷ lệ nợ xấu tháng 9/2026",
+    ]
+    answer = narrative[-1]["text"]
+    assert answer.index("1. Tỷ lệ nợ xấu") < answer.index("2. Dư nợ") < answer.index("3. Tỷ lệ")
+    assert (
+        seed.one(
+            "SELECT jsonb_array_length(steps->'steps') FROM qa.plan WHERE agent_run_id = %s", run
+        )
+        == 3
+    )
+
+
+async def test_a_question_the_space_cannot_read_stops_the_plan_and_names_it(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    run = agent_run(bank, goal="Tỷ lệ nợ xấu theo vùng tháng 9/2026\nLợi nhuận theo quý")
+    await drain()
+    status, stop, _, _, error, *_ = run_row(seed, run)
+    assert (status, stop) == ("failed", "error")
+    assert "Lợi nhuận theo quý" in error and steps(seed, run) == []
+
+
+async def test_a_paused_report_carries_on_with_its_next_question(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    run = agent_run(bank, goal=REPORT)
+    real = runs.run_query
+    calls = {"n": 0}
+
+    async def pause_after_first(**kwargs: Any) -> Any:
+        calls["n"] += 1
+        out = await real(**kwargs)
+        if calls["n"] == 1:
+            with seed.conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE agent.agent_run SET status = 'paused' WHERE id = %s", (str(run),)
+                )
+        return out
+
+    monkeypatch.setattr(runs, "run_query", pause_after_first)
+    await drain()
+    assert run_row(seed, run)[0] == "paused"
+    assert [s[1] for s in steps(seed, run)] == ["plan", "query"]
+
+    with seed.conn.cursor() as cur:
+        cur.execute("UPDATE agent.agent_run SET status = 'running' WHERE id = %s", (str(run),))
+    created(bank, run, status="running", previous="paused")
+    await drain()
+    assert run_row(seed, run)[:2] == ("succeeded", "completed")
+    assert [s[1] for s in steps(seed, run)] == ["plan", "query", "query", "query"]
+    assert calls["n"] == 3

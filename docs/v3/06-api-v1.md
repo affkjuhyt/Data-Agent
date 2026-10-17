@@ -183,7 +183,9 @@ của ADR-28) trả lời. Bước G1 của [09](09-target-deploy-and-cleanup.md
   `run.timer` trong `agent.outbox` có `not_before` (`events.OutboxTableSource` chưa nhận trước giờ đó): chờ duyệt
   được nhắc ngày 1 và 3, ngày 7 tự huỷ với `waiting_timeout` (AC-13-06-05); lỗi tạm thời của nguồn được thử lại sau
   5, 15, 60 phút rồi `failed` và báo chủ sở hữu (AC-13-06-04). Đây là bản thay tạm ADR-37 (Temporal, R3) theo ba
-  bảo đảm của tab 5 G1.1; chưa có xin thêm ngân sách, sửa kế hoạch, kế hoạch nhiều bước (docstring `runs.py`).
+  bảo đảm của tab 5 G1.1. Mục tiêu nhiều dòng là một báo cáo: mỗi dòng một câu hỏi, một bước truy vấn và một biểu đồ
+  (`chart_spec` trong output của bước), câu trả lời đánh số theo phần. Chưa có xin thêm ngân sách, sửa kế hoạch, kế
+  hoạch do mô hình tự lập với các bước phụ thuộc nhau (docstring `runs.py`).
 - **Ngưỡng theo dõi.** Câu trả lời của Hỏi đáp và của lượt chạy agent nói kết quả đứng đâu so với ngưỡng mà người
   phụ trách đặt cho chỉ số trên cả Data Space (`monitor.monitor`, `rule_kind = threshold`, `scope_filter` rỗng, đọc
   như `svc_monitor`): thành viên nào vượt ngưỡng, nào ở vùng cảnh báo sớm (`answer/thresholds.py`). Ngưỡng và mức

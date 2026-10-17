@@ -159,3 +159,27 @@ def test_a_wait_is_reminded_on_day_1_and_3_and_ends_on_day_7() -> None:
         ("reminder", datetime.datetime(2026, 10, 4, 9, 0, tzinfo=datetime.UTC)),
         ("timeout", datetime.datetime(2026, 10, 8, 9, 0, tzinfo=datetime.UTC)),
     ]
+
+
+@pytest.mark.parametrize(
+    ("goal", "questions"),
+    [
+        # One line is one question, as before.
+        ("Tỷ lệ nợ xấu theo vùng", ["Tỷ lệ nợ xấu theo vùng"]),
+        (
+            "Báo cáo tháng 9:\n- Tỷ lệ nợ xấu theo vùng\n• Dư nợ theo sản phẩm\n\n3. Nợ xấu",
+            ["Tỷ lệ nợ xấu theo vùng", "Dư nợ theo sản phẩm", "Nợ xấu"],
+        ),
+        ("1) Dư nợ\n2) Nợ xấu", ["Dư nợ", "Nợ xấu"]),
+        # A header alone is still the goal.
+        ("Tỷ lệ nợ xấu theo vùng:", ["Tỷ lệ nợ xấu theo vùng:"]),
+    ],
+)
+def test_a_goal_lists_its_questions_one_per_line(goal: str, questions: list[str]) -> None:
+    assert runs.questions_of(goal) == questions
+
+
+def test_retries_count_from_the_question_being_asked() -> None:
+    assert runs.retries_in_a_row(["ok", "retried", "retried"]) == 2
+    assert runs.retries_in_a_row(["retried", "ok"]) == 0
+    assert runs.retries_in_a_row([]) == 0

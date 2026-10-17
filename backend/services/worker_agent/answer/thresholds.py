@@ -18,13 +18,16 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import monitor
 from services.worker_agent.answer.insights import Insights
 from services.worker_agent.answer.narrate import Figure
 
+# The monitor module's role: worker-agent holds it as the monitor agent (the api's monitor routes
+# leave rule evaluation and alerts to it). Reading a threshold for an answer only reads, so this
+# path runs in a read-only transaction whatever the role may write.
 ROLE = "svc_monitor"
 State = Literal["breach", "early", "ok"]
 
@@ -129,6 +132,7 @@ async def load(
 ) -> Threshold | None:
     """The metric's active threshold watch over the whole Data Space, the oldest when several."""
     async with scoped_session(ROLE, org_id, principal) as session:
+        await session.execute(text("SET TRANSACTION READ ONLY"))
         rows = (
             await session.execute(
                 select(monitor.Monitor.rule, monitor.Monitor.scope_filter)
