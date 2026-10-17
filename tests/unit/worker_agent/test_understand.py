@@ -112,3 +112,9 @@ def test_by_the_period_asked_is_about_time_not_a_missing_cut() -> None:
 def test_the_persons_own_words_are_found_for_a_normalised_phrase() -> None:
     assert words_of("Tỷ lệ nợ xấu theo Khu Vực tháng 9", "khu vuc") == "Khu Vực"
     assert words_of("abc", "khu vuc") == "khu vuc"
+
+
+def test_latest_is_not_read_as_a_cut() -> None:
+    # "mới" (new) and "mỗi" (each) are both "moi" without accents: only "theo" asks for a cut.
+    u = understand("Báo tỷ lệ nợ xấu mới nhất cho chủ sở hữu", VOCAB, today=TODAY)
+    assert u.unplaced_cut is None and u.decision == "proceed"

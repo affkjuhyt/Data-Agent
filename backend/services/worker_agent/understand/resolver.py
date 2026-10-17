@@ -28,7 +28,9 @@ MAX_OPTIONS = 3
 _BY = re.compile(r"\b(?:theo|tung|moi|chia theo)\s+")
 # The words after "theo" that no phrase placed: up to three, before the next placed phrase.
 # "theo kỳ …" ("theo kỳ được hỏi") speaks of the period, which find_period reads, not of a cut.
-_UNPLACED_CUT = re.compile(r"\b(?:theo|tung|moi|chia theo)\s+(?!ky\b)([^#\s]+(?:\s+[^#\s]+){0,2})")
+# Only "theo": without accents "moi" is both "mỗi" (each) and "mới" (new, "mới nhất") and "tung"
+# is not only "từng", so they ask for a cut only when a dimension's name follows (_BY above).
+_UNPLACED_CUT = re.compile(r"\b(?:chia )?theo\s+(?!ky\b)([^#\s]+(?:\s+[^#\s]+){0,2})")
 
 
 @dataclass(frozen=True)
