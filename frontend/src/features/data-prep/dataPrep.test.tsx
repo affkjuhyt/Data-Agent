@@ -35,7 +35,9 @@ const wrap = (ui: React.ReactNode) => render(<ToastProvider>{ui}</ToastProvider>
 describe('SqlPage', () => {
   it('discovers the real table schema, runs the query, and saves it as a dataset', async () => {
     wrap(<SqlPage />);
-    expect(await screen.findByRole('button', { name: 'mart.loans_dedup_0930' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('button', { name: 'mart.loans_dedup_0930' }),
+    ).toBeInTheDocument();
     await waitFor(() =>
       expect((screen.getByLabelText('Câu truy vấn SQL') as HTMLTextAreaElement).value).toContain(
         'FROM mart.loans_dedup_0930',
@@ -147,8 +149,8 @@ describe('PipelineSavePage', () => {
 
     fireEvent.click(screen.getByRole('radio', { name: 'Theo giờ' }));
     fireEvent.click(screen.getByRole('button', { name: 'Lưu và lên lịch' }));
-    expect(await screen.findByText('Đã tạo bảng prep.loans_retail')).toBeInTheDocument();
-    expect(screen.getByText('Đã lên lịch · chạy mỗi 2 giờ')).toBeInTheDocument();
+    expect(await screen.findByText('Đã tạo bảng loans_retail')).toBeInTheDocument();
+    expect(screen.getByText('Đã lên lịch · chạy theo lịch 0 */2 * * *')).toBeInTheDocument();
     expect(navigate).toHaveBeenCalledWith('data', 'PIPELINES');
   });
 });

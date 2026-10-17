@@ -453,13 +453,59 @@ export interface PublishPipeline {
 export const getOutputDraft = async (id: string) =>
   v1Get<OutputDraft>(`/pipelines/${pathId(id)}/output-draft`);
 
-/** A2: :publish — creates or versions the derived table and turns the schedule on. */
-export const publishPipeline = async (id: string, body: PublishPipeline) =>
-  v1Send<{ table: DerivedTable; schedule_text: string }>(
-    'POST',
-    `/pipelines/${pathId(id)}:publish`,
-    body,
-  );
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * A2 saves in two calls: POST :materialize (the table, in the pipeline's own Data Space, always
+ * replaced by the worker) and PUT /schedule. The run is followed on GET /v1/pipelines/{id}
+ * (last_run) until it has written the table; a failed run's reason is the error shown.
+ */
+export const publishPipeline = async (id: string, body: PublishPipeline) => {
+  // The table lands in the work schema: the api takes a plain name, not schema.table.
+  const tableName = body.table_name.split('.').at(-1)?.trim() ?? '';
+  const run = await v1Send<
+    components['schemas']['services__api__modules__pipeline__schemas__Accepted']
+  >('POST', `/pipelines/${pathId(id)}:materialize`, { table_name: tableName });
+  const cron = body.schedule.mode === 'cron' ? body.schedule.cron : null;
+  await v1Send('PUT', `/pipelines/${pathId(id)}/schedule`, {
+    cron,
+    work_calendar_id: null,
+    trigger_on_job_id:
+      body.schedule.mode === 'after_source' ? (body.schedule.after_job_id ?? null) : null,
+    depends_on_pipeline_ids: [],
+    no_overlap: true,
+    on_failure: body.schedule.retries > 0 ? 'retry_then_notify' : 'notify',
+  });
+  const deadline = Date.now() + 120_000;
+  for (;;) {
+    const raw = await v1Get<PipelineDetailWire>(`/pipelines/${pathId(id)}`);
+    const last = raw.last_run;
+    if (last && last.id === run.id && last.status !== 'running') {
+      if (last.status !== 'succeeded' || !raw.target_dataset_id)
+        throw new V1Error(422, 'run_failed', last.error ?? 'Pipeline chạy không thành công.');
+      return {
+        table: {
+          id: raw.target_dataset_id,
+          name: tableName,
+          data_space_id: raw.data_space_id,
+          write_mode: 'replace' as WriteMode,
+          refresh: 'manual' as DatasetRefresh,
+          access: 'inherit' as DatasetAccess,
+          version: 1,
+        } satisfies DerivedTable,
+        schedule_text:
+          body.schedule.mode === 'manual'
+            ? 'chạy thủ công'
+            : body.schedule.mode === 'cron'
+              ? `chạy theo lịch ${cron}`
+              : 'chạy sau job nạp dữ liệu',
+      };
+    }
+    if (Date.now() > deadline)
+      throw new V1Error(504, 'timeout', 'Pipeline chạy quá lâu; xem lại trong danh sách pipeline.');
+    await sleep(1000);
+  }
+};
 
 /* ─── Hộp thoại · Lịch chạy (UC-06-03) ────────────────────────────────── */
 

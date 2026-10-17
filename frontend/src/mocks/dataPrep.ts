@@ -7,7 +7,6 @@ import type {
   PipelineDetail,
   PipelineSchedule,
   PipelineStep,
-  PublishPipeline,
   ScheduleKind,
   SqlResult,
   Writeback,
@@ -466,6 +465,7 @@ export function createDataPrepHandlers() {
     return detail;
   };
   const notFound = () => problem(404, 'not_found', 'Không tìm thấy pipeline.');
+  const materialized = new Map<string, { runId: string; tableId: string }>();
 
   return [
     /* The SQL screen uses the canonical query-run worker. */
@@ -706,39 +706,34 @@ export function createDataPrepHandlers() {
           excluded_rows: 8,
           duration_s: 41,
         });
-      if (verb === 'publish') {
-        const body = (await request.json()) as PublishPipeline;
-        if (!body.table_name.includes('.'))
-          return problem(
-            422,
-            'validation_failed',
-            'Tên bảng cần có schema, ví dụ prep.loans_retail.',
-          );
+      if (verb === 'materialize') {
+        const body = (await request.json()) as { table_name: string };
+        if (!/^[a-z_][a-z0-9_]{0,62}$/.test(body.table_name))
+          return problem(422, 'validation_failed', 'Tên bảng chỉ gồm chữ thường, số và _.');
+        const runId = `run-${++seq}`;
+        const tableId = `dt-${seq}`;
+        materialized.set(id, { runId, tableId });
         const p = pipelines.find((x) => x.id === id);
         if (p) p.output_table = body.table_name;
-        return HttpResponse.json({
-          table: {
-            id: `dt-${++seq}`,
-            name: body.table_name,
-            data_space_id: body.data_space_id,
-            write_mode: body.write_mode,
-            refresh: 'after_etl',
-            access: 'inherit',
-            version: 1,
-          } satisfies DerivedTable,
-          schedule_text:
-            body.schedule.mode === 'manual'
-              ? 'chạy thủ công'
-              : body.schedule.mode === 'cron'
-                ? 'chạy mỗi 2 giờ'
-                : 'chạy sau job nạp ld_loans',
-        });
+        return HttpResponse.json({ id: runId, status: 'running' }, { status: 202 });
       }
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),
     http.get('*/v1/pipelines/:id', ({ params }) => {
       const detail = detailOf(String(params.id));
-      return detail ? HttpResponse.json(detail) : notFound();
+      if (!detail) return notFound();
+      // After :materialize the worker has run: the last run and the table it wrote.
+      const saved = materialized.get(String(params.id));
+      return HttpResponse.json(
+        saved
+          ? {
+              ...detail,
+              data_space_id: 'ds-tin-dung',
+              target_dataset_id: saved.tableId,
+              last_run: { id: saved.runId, status: 'succeeded', error: null },
+            }
+          : detail,
+      );
     }),
 
     /* Ghi ngược */
