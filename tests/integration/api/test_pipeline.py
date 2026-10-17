@@ -1398,3 +1398,52 @@ async def test_a_writeback_goes_only_to_a_declared_target(pp: Space) -> None:
             headers=pp.headers("eng"),
         )
         assert other.status_code == 422 and other.json()["code"] == "business_rule_violated"
+
+
+async def test_the_output_draft_is_read_from_the_steps_run_on_the_source(pp: Space) -> None:
+    async with client(pp) as api:
+        made = await _create(api, pp, scope="data_space")
+        pipeline_id = made["id"]
+        first = await api.get(
+            f"/v1/pipelines/{pipeline_id}/output-draft", headers=pp.headers("eng")
+        )
+        assert first.status_code == 200, first.text
+        draft = first.json()
+        # The steps are run on the source first: nothing is guessed meanwhile.
+        assert draft["columns_status"] == "pending" and draft["columns"] == []
+        assert draft["table_name"] == "lam_sach_du_no"
+        assert draft["notify_options"] == [{"value": "owner", "label": "Người phụ trách pipeline"}]
+        # What worker-agent leaves for each step's preview run.
+        runs = pp.one(
+            "SELECT array_agg(id ORDER BY started_at, id) FROM query.query_run WHERE caller_id = %s",
+            pipeline_id,
+        )
+        assert len(runs) == len(STEPS)
+        for run in runs:
+            pp.run("UPDATE query.query_run SET status = 'succeeded' WHERE id = %s", run)
+            pp.seed.row(
+                "query.query_result",
+                org_id=pp.org,
+                query_run_id=run,
+                columns=Json(
+                    [{"name": "ma_chi_nhanh", "type": "text"}, {"name": "du_no", "type": "numeric"}]
+                ),
+                rows=Json([]),
+            )
+        pp.seed.row(
+            "catalog.column_meta",
+            org_id=pp.org,
+            dataset_id=pp.raw,
+            dataset_version=1,
+            name="ma_chi_nhanh",
+            ordinal=1,
+            data_type="text",
+            normalized_type="string",
+        )
+        read = await api.get(f"/v1/pipelines/{pipeline_id}/output-draft", headers=pp.headers("eng"))
+    draft = read.json()
+    assert draft["columns_status"] == "ready"
+    assert draft["columns"] == [
+        {"name": "ma_chi_nhanh", "type": "text", "from_step": 0, "is_new": False},
+        {"name": "du_no", "type": "numeric", "from_step": 1, "is_new": True},
+    ]

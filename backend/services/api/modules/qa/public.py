@@ -155,3 +155,24 @@ async def pipeline_step_preview(
             },
         )
         return QueryRunView.model_validate(run)
+
+
+async def query_result_columns(
+    principal: Principal, query_run_id: uuid.UUID
+) -> list[dict[str, Any]] | None:
+    """The columns ({name, type}) a finished run returned, None while it has no result."""
+    async with transaction("svc_query", principal) as session:
+        columns = await session.scalar(
+            select(query_models.QueryResult.columns).where(
+                query_models.QueryResult.query_run_id == query_run_id,
+                query_models.QueryResult.org_id == principal.org_id,
+            )
+        )
+    if not isinstance(columns, list):
+        return None
+    return [
+        {"name": str(c.get("name")), "type": str(c.get("type") or "unknown")}
+        if isinstance(c, dict)
+        else {"name": str(c), "type": "unknown"}
+        for c in columns
+    ]

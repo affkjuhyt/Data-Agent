@@ -112,7 +112,10 @@ class OutputDraft(BaseModel):
     table_name: str
     data_space_id: uuid.UUID
     write_mode: Literal["replace", "append", "merge"] = "replace"
+    # {name, type, from_step, is_new}: read from the step previews run on the source; `pending`
+    # while those runs have not finished (read the draft again), `failed` when one could not run.
     columns: list[dict[str, Any]] = Field(default_factory=list)
+    columns_status: Literal["ready", "pending", "failed"] = "ready"
     consumers_text: str | None = None
     input_jobs: list[dict[str, str]] = Field(default_factory=list)
     notify_options: list[dict[str, str]] = Field(default_factory=list)

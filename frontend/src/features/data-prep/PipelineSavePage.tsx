@@ -244,7 +244,15 @@ export default function PipelineSavePage() {
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-[10px] bg-background px-da-3xl pt-[20px]">
               <h2 className="text-foreground da-heading-3">Cấu trúc bảng</h2>
-              <ColumnTable columns={d.columns} />
+              {d.columns_status === 'failed' ? (
+                <Notice tone="warning">
+                  Chưa đọc được cấu trúc: một bước không chạy được trên nguồn. Sửa bước rồi mở lại.
+                </Notice>
+              ) : d.columns_status === 'pending' ? (
+                <p className="text-muted-foreground da-caption">Đang chạy các bước trên nguồn…</p>
+              ) : (
+                <ColumnTable columns={d.columns} />
+              )}
               {d.consumers_text && (
                 <>
                   <h2 className="text-foreground da-heading-3">Ai dùng bảng này</h2>
@@ -276,10 +284,18 @@ function ColumnTable({ columns }: { columns: OutputDraft['columns'] }) {
       <table className="w-full table-fixed border-collapse">
         <thead>
           <tr className="border-b border-border text-left text-muted-foreground da-caption">
-            <SortableTh view={view} column="name" className="w-[204px] px-da-lg py-da-md font-normal">
+            <SortableTh
+              view={view}
+              column="name"
+              className="w-[204px] px-da-lg py-da-md font-normal"
+            >
               Cột
             </SortableTh>
-            <SortableTh view={view} column="type" className="w-[164px] px-da-lg py-da-md font-normal">
+            <SortableTh
+              view={view}
+              column="type"
+              className="w-[164px] px-da-lg py-da-md font-normal"
+            >
               Kiểu
             </SortableTh>
             <SortableTh view={view} column="from" className="px-da-lg py-da-md font-normal">
@@ -293,7 +309,7 @@ function ColumnTable({ columns }: { columns: OutputDraft['columns'] }) {
               <td className="px-da-lg py-[9px] text-foreground da-mono">{c.name}</td>
               <td className="px-da-lg py-[9px] text-muted-foreground da-mono">{c.type}</td>
               <td className="px-da-lg py-[9px] text-muted-foreground da-body-small">
-                {c.from_step}
+                {c.from_step === 0 ? 'đầu vào' : c.from_step}
                 {c.is_new && ' · tính mới'}
               </td>
             </tr>

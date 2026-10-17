@@ -17124,6 +17124,12 @@ export interface components {
         OutputDraft: {
             /** Columns */
             columns?: Record<string, never>[];
+            /**
+             * Columns Status
+             * @default ready
+             * @enum {string}
+             */
+            columns_status: "ready" | "pending" | "failed";
             /** Consumers Text */
             consumers_text?: string | null;
             /**

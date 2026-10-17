@@ -436,7 +436,9 @@ export interface OutputDraft {
   table_name: string;
   data_space_id: string;
   write_mode: WriteMode;
+  /** from_step 0: the column is one of the inputs'. */
   columns: { name: string; type: string; from_step: number; is_new: boolean }[];
+  columns_status?: 'ready' | 'pending' | 'failed';
   /** PROPOSAL: who reads the table now or will ("Pipeline “Mart rủi ro tín dụng” sẽ đọc…"). */
   consumers_text: string | null;
   /** The ingestion jobs the pipeline can run after. */
@@ -458,8 +460,18 @@ export interface PublishPipeline {
   };
 }
 
-export const getOutputDraft = async (id: string) =>
-  v1Get<OutputDraft>(`/pipelines/${pathId(id)}/output-draft`);
+/**
+ * A2: GET /v1/pipelines/{id}/output-draft. Its columns are read from the steps previewed on the
+ * source; while those runs are going (`columns_status` pending) the draft is read again.
+ */
+export const getOutputDraft = async (id: string) => {
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    const draft = await v1Get<OutputDraft>(`/pipelines/${pathId(id)}/output-draft`);
+    if (draft.columns_status !== 'pending' || Date.now() > deadline) return draft;
+    await sleep(1000);
+  }
+};
 
 /**
  * A2 saves in two calls: POST :materialize (the table, in the pipeline's own Data Space, always
