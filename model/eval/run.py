@@ -27,16 +27,22 @@ from pathlib import Path
 from typing import Any
 
 from model.eval import corpus
-from model.eval.scorers import grounding, intent, policy, sql
+from model.eval.scorers import causal, grounding, intent, policy, sql
 
 
 def run_offline() -> dict[str, Any]:
     policy_report = policy.score(corpus.load_cases("policy"))
     sql_report = sql.score(corpus.load_cases("sql"), corpus.load_catalogs())
+    why_report = causal.score(corpus.load_cases("why"))
     return {
         "policy": policy_report,
         "sql": sql_report,
-        "metrics": {**policy_report["metrics"], **sql_report["metrics"]},
+        "why": why_report,
+        "metrics": {
+            **policy_report["metrics"],
+            **sql_report["metrics"],
+            **why_report["metrics"],
+        },
     }
 
 
