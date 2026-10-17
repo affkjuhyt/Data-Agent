@@ -906,6 +906,7 @@ async def get_lineage(
                 names[ds.id] = ds.display_name or f"{ds.schema_name}.{ds.table_name}"
                 if ds.source_id is not None and direction in ("upstream", "both"):
                     end = ("source", ds.source_id)
+                    # Hidden unless both the table and (below) its source are this space's.
                     nodes.setdefault(end, ds.data_space_id == data_space)
                     if ((end), ("dataset", ds.id)) not in derived:
                         derived.append((end, ("dataset", ds.id)))

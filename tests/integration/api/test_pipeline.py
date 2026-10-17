@@ -775,6 +775,18 @@ async def test_lineage_reads_source_to_table_from_the_catalog(pp: Space) -> None
         assert f"dataset:{pp.raw}" in {n["key"] for n in down.json()["nodes"]}
         assert f"dataset:{pp.other_dataset}" not in {n["key"] for n in down.json()["nodes"]}
 
+    # A table of this space read from another space's source: the source stays anonymous.
+    pp.run("UPDATE catalog.dataset SET source_id = %s WHERE id = %s", pp.other_source, pp.raw)
+    async with client(pp) as api:
+        up = await api.get(
+            "/v1/lineage",
+            params={"object_kind": "dataset", "object_id": str(pp.raw)},
+            headers=pp.headers("analyst"),
+        )
+    nodes = {n["kind"]: n for n in up.json()["nodes"]}
+    assert nodes["source"]["hidden"] and nodes["source"]["id"] is None
+    assert nodes["source"]["name"] == "Đối tượng bạn không có quyền xem"
+
 
 async def test_lineage_hides_a_source_another_data_space_owns(pp: Space) -> None:
     # Our table reads a source the other Data Space owns: the source is a hidden node.
