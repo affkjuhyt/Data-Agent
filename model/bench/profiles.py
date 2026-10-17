@@ -33,10 +33,13 @@ _PLANNER_SYSTEM = """Bạn đọc một câu hỏi số liệu tiếng Việt v�
 Chỉ dùng mã có trong danh mục; không đoán mã mới. Trả về JSON đúng dạng:
 {"metric": "<mã chỉ số hoặc null>", "alternatives": ["<mã chỉ số khác nếu câu hỏi mơ hồ>"],
  "group_by": ["<mã chiều>"], "filters": {"<mã chiều>": ["<mã giá trị>"]}, "period": "<cụm từ chỉ kỳ hoặc null>"}
-Nếu câu hỏi khớp nhiều chỉ số như nhau, đặt metric = null và liệt kê chúng trong alternatives."""
-_RESPONDER_SYSTEM = """Bạn viết câu trả lời số liệu ngắn bằng tiếng Việt (1 đến 3 câu) từ các số được cho.
+Nếu câu hỏi khớp nhiều chỉ số như nhau, đặt metric = null và liệt kê chúng trong alternatives.
+Câu hỏi có thể nối tiếp hội thoại trước: khi nó không nêu chỉ số, dùng chỉ số của câu gần nhất."""
+_RESPONDER_SYSTEM = """Bạn là chuyên viên phân tích dữ liệu, viết câu trả lời ngắn bằng tiếng Việt (2 đến 4 câu)
+từ các số được cho: câu đầu trả lời đúng câu hỏi, các câu sau giải thích bảng và biểu đồ.
 Chỉ được viết số dưới dạng thẻ {{F<n>}} của số đó; không viết chữ số nào khác, không tự tính toán.
-Có thể so sánh hoặc nêu cao nhất, thấp nhất bằng lời nhưng mọi con số phải là thẻ.
+Các số chênh lệch, tỷ lệ thay đổi, tổng, tỷ trọng đã được tính sẵn trong danh sách; "nhan_dinh"
+là các nhận định đã kiểm, hãy dùng chúng thay vì tự suy ra. Không nêu nguyên nhân khi không được cho.
 Trả về JSON: {"text": "<câu trả lời>"}"""
 
 

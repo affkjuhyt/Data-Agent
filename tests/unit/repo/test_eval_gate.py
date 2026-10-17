@@ -278,6 +278,9 @@ def test_gate_passes_a_report_inside_every_bound():
             "policy_violation_rate": 0.0,
             "false_refusal_rate": 0.0,
             "sql_accuracy": 1.0,
+            "causal_claim_rate": 0.0,
+            "why_method_coverage": 1.0,
+            "why_decomposition_accuracy": 1.0,
         },
     }
 
@@ -293,6 +296,9 @@ def test_gate_fails_a_metric_over_its_maximum():
             "policy_violation_rate": 0.02,
             "false_refusal_rate": 0.0,
             "sql_accuracy": 1.0,
+            "causal_claim_rate": 0.0,
+            "why_method_coverage": 1.0,
+            "why_decomposition_accuracy": 1.0,
         },
     }
 
@@ -311,6 +317,9 @@ def test_gate_fails_a_metric_under_its_minimum():
             "policy_violation_rate": 0.0,
             "false_refusal_rate": 0.0,
             "sql_accuracy": 0.96,
+            "causal_claim_rate": 0.0,
+            "why_method_coverage": 1.0,
+            "why_decomposition_accuracy": 1.0,
         },
     }
 
