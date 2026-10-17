@@ -174,6 +174,7 @@ class Planned:
     metric_name: str
     unit: str | None
     decimals: int
+    period_semantics: str
     dimension_names: dict[str, str]
     tokens: int = 0
     models: list[dict[str, Any]] = field(default_factory=list)
@@ -266,6 +267,7 @@ async def _plan_step(
             metric_name=u.metric.name,
             unit=version.unit,
             decimals=version.decimals,
+            period_semantics=version.period_semantics,
             dimension_names={d.code: d.name for d in layer.vocabulary.dimensions},
             tokens=tokens,
             models=models,
@@ -419,6 +421,15 @@ class Run:
             if told:
                 run.narrative = [*(run.narrative or []), narrative(told, "done", run.finished_at)]
             session.add(_emit(run, previous))
+
+
+def _latest_note(planned: Planned) -> str | None:
+    """What a goal without a period was answered with (compiler: a balance's last day)."""
+    if planned.understanding.period is not None:
+        return None
+    if planned.period_semantics == "end_of_period":
+        return "Không nêu kỳ: số liệu ngày mới nhất có dữ liệu trong nguồn."
+    return "Không nêu kỳ: cộng trên toàn bộ dữ liệu có trong nguồn."
 
 
 def _over_budget(
@@ -625,7 +636,7 @@ async def _query_step(
             group_by_names=[planned.dimension_names.get(g, g) for g in u.group_by],
             period_label=u.period.label if u.period else None,
             filters_label=None,
-            latest_note=None,
+            latest_note=_latest_note(planned),
             truncated=outcome.truncated,
         )
         if outcome.rows

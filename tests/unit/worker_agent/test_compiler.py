@@ -144,6 +144,20 @@ def test_a_text_time_column_aligned_on_years_compares_years() -> None:
     assert "AS DATE" not in out.sql and ">= '2026'" in out.sql and "< '2027'" in out.sql
 
 
+def test_a_balance_without_a_period_is_read_on_the_last_day_with_data() -> None:
+    # "the latest data" for a price or balance is its last day, never the max over all history.
+    out = compile_metric(Request(metric(filters=())), LAYER, dialect="postgres")
+    assert "t0.as_of_date = ((SELECT MAX(l.as_of_date) FROM" in out.sql
+    assert "AS DATE" not in out.sql  # no range: the whole table's last day
+
+
+def test_a_flow_without_a_period_is_not_cut_to_a_day() -> None:
+    out = compile_metric(
+        Request(metric(period_semantics="sum_over_period", filters=())), LAYER, dialect="postgres"
+    )
+    assert "MAX(" not in out.sql and "WHERE" not in out.sql
+
+
 def test_a_filter_value_is_quoted_never_spliced() -> None:
     out = compile_metric(
         Request(metric(), filters={"vung": ["Miền Bắc'; DROP TABLE x; --"]}),

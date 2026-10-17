@@ -293,3 +293,19 @@ async def test_a_goal_cut_by_a_dimension_the_space_lacks_names_it_in_the_goals_w
     status, stop, _, _, error, *_ = run_row(seed, run)
     assert (status, stop) == ("failed", "error")
     assert "“khu vực”" in error and "khu vuc" not in error
+
+
+async def test_a_goal_without_a_period_reads_the_last_day_and_says_so(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A balance read over all history would mix August into Miền Bắc (200 / 2500 = 8%).
+    bank = build(seed, credit, monkeypatch)
+    run = agent_run(bank, goal="Tỷ lệ nợ xấu theo vùng")
+    await drain()
+    status, _, _, narrative, *_ = run_row(seed, run)
+    assert status == "succeeded"
+    answer = narrative[-1]["text"]
+    assert "8,00%" not in answer and answer.count("10,00%") == 2
+    assert "ngày mới nhất có dữ liệu" in answer

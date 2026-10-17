@@ -314,6 +314,22 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
             raise CompileError("UNSUPPORTED", "averages over a period are not compiled yet")
         else:
             conditions.append(in_range)
+    elif metric.period_semantics == "end_of_period":
+        # No period asked: "the latest data" of a balance or price is its last day with data,
+        # not its maximum over all history. A cut along time keeps every day.
+        time_dim = next(
+            (d for d in layer.dimensions.values() if d.is_time and d.entity_id == base_entity), None
+        )
+        if time_dim is not None and time_dim.code not in request.group_by:
+            last = exp.select(exp.Max(this=_qualify(time_dim.expression, "l"))).from_(
+                _table(base, "l")
+            )
+            conditions.append(
+                exp.EQ(
+                    this=_qualify(time_dim.expression, "t0"),
+                    expression=exp.paren(last.subquery(), copy=False),
+                )
+            )
 
     # FROM and JOINs last: a filter on another table's dimension adds its join too.
     select = select.from_(_table(base, "t0"))
