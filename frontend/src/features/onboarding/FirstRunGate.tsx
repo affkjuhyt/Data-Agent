@@ -19,11 +19,19 @@ type Stage =
   | { kind: 'app'; spaceId: string };
 
 export function FirstRunGate({ children }: { children: (spaceId: string) => ReactNode }) {
-  const { user, navigate } = useAppState();
+  const { user, navigate, setDataSpace } = useAppState();
   const { logout } = useAuth();
   const [stage, setStage] = useState<Stage>({ kind: 'loading' });
   const [spaceId, setSpaceId] = useState('');
   const [onboarding, setOnboarding] = useState<Onboarding | null>(null);
+
+  // Onboarding is rendered before AppShell, so it must activate the selected Data Space itself.
+  // Otherwise the first-agent request has no X-Data-Space header and its scoped capability is
+  // evaluated against the organisation-wide (empty) capability set.
+  const activateSpace = (id: string, name?: string) => {
+    setSpaceId(id);
+    if (id) setDataSpace({ id, name: name ?? id });
+  };
 
   useEffect(() => {
     let alive = true;
@@ -37,7 +45,7 @@ export function FirstRunGate({ children }: { children: (spaceId: string) => Reac
       }
       const last = spaces.value.items.find((s) => s.access === 'member' && s.last_used_text);
       if (spaces.value.open_last_used && last) {
-        setSpaceId(last.id);
+        activateSpace(last.id, last.name);
         setStage(pending ? { kind: 'onboarding' } : { kind: 'app', spaceId: last.id });
         return;
       }
@@ -56,7 +64,8 @@ export function FirstRunGate({ children }: { children: (spaceId: string) => Reac
         userName={user.name}
         onLogout={logout}
         onOpen={({ id }) => {
-          setSpaceId(id);
+          const selected = stage.spaces.items.find((space) => space.id === id);
+          activateSpace(id, selected?.name);
           setStage(onboarding ? { kind: 'onboarding' } : { kind: 'app', spaceId: id });
         }}
       />
