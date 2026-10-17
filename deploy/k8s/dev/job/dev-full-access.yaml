@@ -1,0 +1,98 @@
+# DEV ONLY: gives the demo test account helios-engineer every capability, organisation-wide,
+# and a membership in every active Data Space, so a person testing the dev cluster is not stopped
+# by a permission (asked for by the user on 17/10/2026). It lives under deploy/k8s/dev only: never
+# copy it to production, where the demo accounts keep their ordinary roles. It is not in
+# job_workloads, so a deploy does not run it; apply it by hand (idempotent):
+#
+#   kubectl -n dataagent-service delete job dev-full-access --ignore-not-found
+#   kubectl apply -f deploy/k8s/dev/job/dev-full-access.yaml
+#
+# Separation of duties still holds (a filer does not approve their own number, BR-133): those
+# checks compare people, not capabilities.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dev-full-access
+  namespace: dataagent-service
+  labels:
+    # The database's network policy admits db-init's pods; this Job is one of its kind.
+    app: db-init
+    app.kubernetes.io/part-of: dataagent
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: db-init
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      serviceAccountName: db-init
+      containers:
+      - name: dev-full-access
+        image: postgres:16-alpine
+        command:
+        - sh
+        - -c
+        - |
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          BEGIN;
+          -- Every capability of services/api/kernel/auth.py CAPABILITIES, and view_aggregate.
+          INSERT INTO org.role (id, org_id, code, name, capabilities, is_system)
+          VALUES (
+              'a0000000-0000-0000-0000-0000000000ff',
+              'a0000000-0000-0000-0000-000000000001',
+              'dev-full-access',
+              'Kiểm thử dev · toàn quyền',
+              ARRAY['ask', 'view_aggregate', 'view_detail', 'upload', 'prepare_data', 'admin_data',
+                    'steward', 'approve', 'create_skill', 'run_agent', 'create_agent', 'writeback',
+                    'pack_author', 'admin', 'compliance', 'audit_read', 'exec_vault'],
+              true
+          )
+          ON CONFLICT (id) DO UPDATE SET capabilities = EXCLUDED.capabilities, name = EXCLUDED.name;
+
+          -- Organisation-wide: the only way admin, compliance, audit_read, exec_vault and
+          -- pack_author are granted (ORG_ONLY_CAPABILITIES).
+          INSERT INTO org.user_role (id, org_id, user_id, role_id, source)
+          VALUES (
+              'a0000000-0000-0000-0000-0000000000fe',
+              'a0000000-0000-0000-0000-000000000001',
+              'a0000000-0000-0000-0000-000000000022',
+              'a0000000-0000-0000-0000-0000000000ff',
+              'manual'
+          )
+          ON CONFLICT (id) DO NOTHING;
+
+          -- An org-wide role does not open a Data Space: a membership in each is still needed.
+          INSERT INTO org.data_space_member (
+              id, org_id, data_space_id, principal_type, principal_id, role_id, source
+          )
+          SELECT gen_random_uuid(), s.org_id, s.id, 'user',
+                 'a0000000-0000-0000-0000-000000000022', 'a0000000-0000-0000-0000-0000000000ff',
+                 'manual'
+          FROM org.data_space s
+          WHERE s.org_id = 'a0000000-0000-0000-0000-000000000001'
+            AND s.deleted_at IS NULL AND s.status <> 'archived'
+          ON CONFLICT (data_space_id, principal_type, principal_id, role_id) DO NOTHING;
+          COMMIT;
+
+          SELECT 'capabilities', cardinality(capabilities) FROM org.role
+          WHERE id = 'a0000000-0000-0000-0000-0000000000ff';
+          SELECT 'spaces', count(*) FROM org.data_space_member
+          WHERE principal_id = 'a0000000-0000-0000-0000-000000000022'
+            AND role_id = 'a0000000-0000-0000-0000-0000000000ff';
+          SQL
+        resources:
+          # The dev node runs full: psql needs little, so the reservation is kept small.
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            memory: 128Mi
+        envFrom:
+        - configMapRef:
+            name: db-init-env
+        - secretRef:
+            name: db-init-secrets
