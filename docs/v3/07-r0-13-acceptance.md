@@ -20,3 +20,24 @@ và authenticated question stream đều đã đạt.
 API A3 đã được đồng bộ cho hai endpoint Connections đang có trong A2/code.
 Hai test skip là kiểm tra endpoint user-authenticated chưa được phục vụ trong
 toàn bộ A2, không thuộc đường chạy R0.
+
+## Kiểm tra lại 17/10/2026
+
+Trên commit `68eda4d5` (đã push), sau khoảng 40 commit kể từ lần kiểm 13/10. Môi trường như trên.
+
+| Phạm vi | Lệnh | Kết quả |
+| --- | --- | --- |
+| Toàn bộ unit, 12 suite | `make test-unit` | **PASS 12/12** (api, worker_agent, repo, kb_worker, kb_backend, platform_workers, auth_api, worker_document, sandbox_executor, model_service, contracts, worker_ingest) |
+| Toàn bộ integration, 7 suite | `make test-integration` | **6/7 PASS**; suite `api` lỗi 1 test: `test_document_lists.py::test_documents_list_with_their_preprocessing_step` (phần tài liệu, đang tìm nguyên nhân) |
+| Cổng eval offline | `python -m model.eval.run --tier offline` rồi `model.eval.gate` | **PASS**, gồm ba chỉ số "vì sao" mới (AC-03-01-07) |
+| E2E trên cụm | `make e2e` | **Chưa chạy lại**: cần mật khẩu `helios-engineer` (`E2E_USER`, `E2E_PASS`) |
+
+Còn mở trước khi ký:
+
+1. Test integration tài liệu ở trên.
+2. E2E trên cụm với tài khoản thật.
+3. **Bảo mật (cao):** service `api` nhận root token của OpenBao (`OPENBAO_TOKEN`, `create-secrets.sh` và
+   `deploy/k8s/dev/service/api.yaml`) chỉ để ghi mật khẩu nguồn. Cần một AppRole riêng chỉ ghi vào
+   `secret/data/tenants/*/sources/*`, như worker-agent đang có AppRole chỉ đọc (R0-6).
+
+Đã sửa trong lượt này: lineage để lộ id và tên nguồn của Data Space khác (`174c7bae`).
