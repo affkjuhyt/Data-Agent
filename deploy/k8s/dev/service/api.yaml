@@ -21,6 +21,8 @@ data:
   PROMETHEUS_URL: http://prometheus.dataagent-service.svc.cluster.local:8400
   API_OIDC_AUDIENCE: dataagent-api
   API_OIDC_JWKS_URL: http://keycloak.dataagent-service.svc.cluster.local:8110/realms/aeroflow/protocol/openid-connect/certs
+  # Document search embeds the query with the same bge-m3 TEI worker-document indexes with.
+  DOCUMENT_EMBED_URL: http://10.10.55.101:8003
 ---
 apiVersion: apps/v1
 kind: Deployment

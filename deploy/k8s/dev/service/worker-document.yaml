@@ -15,6 +15,8 @@ data:
   WORKER_DOCUMENT_POLL_SECONDS: "1"
   WORKER_DOCUMENT_BATCH: "4"
   DOCUMENT_RAW_BUCKET: da-raw-docs
+  # The local slice has no LiteLLM; chunks are embedded by the bge-m3 TEI directly.
+  DOCUMENT_EMBED_URL: http://10.10.55.101:8003
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -33,7 +35,7 @@ spec:
       containers:
       - name: worker-document
         image: dataagent/worker-document:latest
-        imagePullPolicy: Never
+        imagePullPolicy: IfNotPresent
         command: ["python", "-m", "services.worker_document.main"]
         envFrom:
         - configMapRef: {name: dataagent-config}

@@ -555,7 +555,7 @@ async def upload_document(
         session.add(row)
         await session.flush()
         await session.refresh(row)
-        # worker-ingest starts doc_ingest (UC-05-02) on this event.
+        # worker-document claims this event and runs doc_ingest (UC-05-02).
         session.add(
             _event(
                 principal,

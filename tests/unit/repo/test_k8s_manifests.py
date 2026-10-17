@@ -55,6 +55,7 @@ HEADLESS_WORKERS = {
     "platform-workers-schema-crawler",
     "platform-workers-web-crawler",
     "worker-agent",
+    "worker-document",
     "worker-ingest",
 }
 

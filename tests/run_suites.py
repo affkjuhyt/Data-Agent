@@ -36,11 +36,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_UNIT = (
     "kb_backend:kb-backend platform_workers:platform-workers "
     "sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker model_service:model_service api:api worker_agent:worker-agent worker_ingest:worker-ingest "
-    "repo:dataagent/dev-tools:local"
+    "worker_document:worker-document repo:dataagent/dev-tools:local"
 )
 DEFAULT_INTEGRATION = (
     "sandbox_executor:sandbox_executor api:api migrate:migrate "
-    "worker_agent:worker-agent worker_ingest:worker-ingest"
+    "worker_agent:worker-agent worker_ingest:worker-ingest worker_document:worker-document"
 )
 
 # Which suites a change under backend/services/<service>/ can break: the suite of
@@ -50,6 +50,7 @@ SERVICE_SUITES: dict[str, set[tuple[str, str]]] = {
     "api": {("unit", "api"), ("integration", "api")},
     "worker_agent": {("unit", "worker_agent"), ("integration", "worker_agent")},
     "worker_ingest": {("unit", "worker_ingest")},
+    "worker_document": {("unit", "worker_document"), ("integration", "worker_document")},
     "auth_api": {("unit", "auth_api")},
     "kb_backend": {
         ("unit", "kb_backend"), ("unit", "kb_worker"),

@@ -1,12 +1,14 @@
 """What the document routes need from outside Postgres, behind small interfaces.
 
-The document object store uses the deployment's S3-compatible MinIO endpoint. The secret and
-vector ports remain explicit dependencies: their defaults refuse or contribute nothing, and tests
-replace them with fakes.
+The document object store uses the deployment's S3-compatible MinIO endpoint and the vector port
+the deployment's Qdrant, with the query embedded through LiteLLM. The secret port is still an
+explicit dependency whose default refuses; tests replace every port with a fake.
 """
 
 from __future__ import annotations
 
+import logging
+import os
 import uuid
 from dataclasses import dataclass
 from typing import BinaryIO, Protocol
@@ -161,12 +163,68 @@ class NoVectors:
         return []
 
 
+class QdrantVectors:
+    """Nearest chunks over the collections' Qdrant indexes (worker_document writes them).
+
+    A failure here costs recall, not the answer: search still has its full-text half, so the
+    port logs and contributes nothing rather than failing the request.
+    """
+
+    def __init__(self, qdrant_url: str, embed_url: str, embed_key: str, embed_route: str) -> None:
+        self._qdrant = qdrant_url.rstrip("/")
+        self._embed_url = embed_url.rstrip("/")
+        self._embed_key = embed_key
+        self._route = embed_route
+
+    async def search(
+        self, targets: list[VectorTarget], query: str, limit: int
+    ) -> list[tuple[uuid.UUID, float]]:
+        import httpx
+
+        if not targets:
+            return []
+        hits: list[tuple[uuid.UUID, float]] = []
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(
+                    f"{self._embed_url}/v1/embeddings",
+                    headers={"Authorization": f"Bearer {self._embed_key}"},
+                    json={"model": self._route, "input": [query]},
+                )
+                response.raise_for_status()
+                vector = response.json()["data"][0]["embedding"]
+                for target in targets:
+                    found = await client.post(
+                        f"{self._qdrant}/collections/{target.qdrant_collection}/points/search",
+                        json={
+                            "vector": vector,
+                            "limit": limit,
+                            # BR-18: only points of the collection's current embedding model.
+                            "filter": {
+                                "must": [
+                                    {"key": "embed_model", "match": {"value": target.embed_model}}
+                                ]
+                            },
+                        },
+                    )
+                    if found.status_code == 404:
+                        continue  # nothing indexed in this collection yet
+                    found.raise_for_status()
+                    hits.extend(
+                        (uuid.UUID(str(p["id"])), float(p["score"])) for p in found.json()["result"]
+                    )
+        except (httpx.HTTPError, KeyError, IndexError, ValueError):
+            _log.warning("vector search unavailable; keyword results only", exc_info=True)
+            return []
+        hits.sort(key=lambda hit: -hit[1])
+        return hits[:limit]
+
+
+_log = logging.getLogger(__name__)
 _STORE, _SECRETS, _VECTORS = UnconfiguredStore(), UnconfiguredSecrets(), NoVectors()
 
 
 def object_store() -> ObjectStore:
-    import os
-
     url = os.getenv("MINIO_URL", "").strip()
     return MinioObjectStore(url) if url else _STORE
 
@@ -176,4 +234,15 @@ def secret_store() -> SecretStore:
 
 
 def vector_search() -> VectorSearch:
-    return _VECTORS
+    qdrant = os.getenv("QDRANT_URL", "").strip()
+    # Same endpoint worker_document embeds with (DOCUMENT_EMBED_URL, else the LiteLLM gateway).
+    embed = (os.getenv("DOCUMENT_EMBED_URL") or os.getenv("LITELLM_BASE_URL") or "").strip()
+    if not qdrant or not embed:
+        return _VECTORS
+    return QdrantVectors(
+        qdrant,
+        embed,
+        os.getenv("LITELLM_API_KEY", ""),
+        # The LiteLLM route serving collection.embed_model; the same one worker_document embeds with.
+        os.getenv("DOCUMENT_EMBED_ROUTE", "embedder"),
+    )

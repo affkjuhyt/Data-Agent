@@ -366,6 +366,17 @@ workloads after changing it). LiteLLM reaches both vLLM tiers through
 `deploy/docker/litellm/config.yaml` (ConfigMap `litellm-config`). Embeddings are `bge-m3` (1024-dim): a knowledge base
 ingested against another embedding model must be re-ingested.
 
+V3 documents (UC-05-02/04) use the same TEI services directly on the local slice,
+which has no LiteLLM: `DOCUMENT_EMBED_URL` (`:8003`) in `worker-document-env`,
+`api-env` and `worker-agent-env`, and `DOCUMENT_RERANK_URL` (`:8004`) in
+`worker-agent-env`; unset, both fall back to `LITELLM_BASE_URL` (embeddings) or to
+no reranker. worker-document writes one Qdrant collection per document collection
+(`collection.qdrant_collection`, point id = chunk id). When the embedding service
+is down a document still becomes ready, keyword-only, with `chunk.qdrant_point_id`
+NULL; the next processing of that document embeds those chunks. A scanned page
+below OCR confidence 0,85 leaves the document `waiting_review` with a `low_ocr`
+issue in the quality queue until someone corrects or drops the page.
+
 If retrieval quality is poor, first check the GPU services answer, before
 suspecting the pipeline.
 

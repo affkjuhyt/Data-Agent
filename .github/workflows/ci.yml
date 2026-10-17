@@ -133,6 +133,10 @@ jobs:
           - suite: worker_agent
             python: "3.12"
             install: -r backend/services/worker_agent/requirements.txt
+          # Page extraction, structured chunking and Qdrant indexing of uploaded documents.
+          - suite: worker_document
+            python: "3.12"
+            install: -r backend/services/worker_document/requirements.txt
           # Repo-wide tests (deploy/, k8s, Ansible, model/, cross-service policy): the
           # environment of tests/dev-tools.Dockerfile, which `make test-unit` runs them on.
           - suite: repo
@@ -225,6 +229,10 @@ jobs:
           - suite: worker_agent
             python: "3.12"
             install: -r backend/services/worker_agent/requirements.txt
+          # doc_ingest's writes (pages, chunks, quality issues, security events) on the V3 DDL.
+          - suite: worker_document
+            python: "3.12"
+            install: -r backend/services/worker_document/requirements.txt
           - suite: migrate
             python: "3.11"
             install: '"sqlalchemy[asyncio]==2.0.35"'

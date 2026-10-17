@@ -29,6 +29,7 @@ spec:
   template:
     metadata: {labels: {app: worker-document}}
     spec:
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: worker-document
@@ -42,6 +43,11 @@ spec:
         resources:
           requests: {cpu: 50m, memory: 64Mi}
           limits: {cpu: "2", memory: 2Gi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001

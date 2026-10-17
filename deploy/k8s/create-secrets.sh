@@ -43,6 +43,7 @@ kubectl -n dataagent-service create secret generic api-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_SKILL="${DATAAGENT_DB_URL__SVC_SKILL}" \
   --from-literal=DATAAGENT_DB_URL__SVC_AUDIT="${DATAAGENT_DB_URL__SVC_AUDIT}" \
   --from-literal=MINIO_URL="${MINIO_URL}" \
+  --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # worker-agent: answers as svc_qa, opens HITL requests as svc_inbox, releases approved audit exports
@@ -79,11 +80,15 @@ kubectl -n dataagent-service create secret generic worker-ingest-secrets \
   --from-literal=OPENBAO_SECRET_ID="${WORKER_AGENT_OPENBAO_SECRET_ID}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# worker-document: processes document.received from document.outbox and writes pages/chunks.
+# worker-document: processes document.received and quality_issue.resolved from document.outbox,
+# writes pages/chunks/quality issues, embeds the chunks into Qdrant, and records a suspected
+# prompt injection as audit.security_event (svc_audit, the audit database).
 kubectl -n dataagent-service create secret generic worker-document-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_DOCUMENT="${DATAAGENT_DB_URL__SVC_DOCUMENT}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_AUDIT="${DATAAGENT_DB_URL__SVC_AUDIT}" \
   --from-literal=DATAAGENT_DB_URL__SVC_OUTBOX_RELAY="${DATAAGENT_DB_URL__SVC_OUTBOX_RELAY}" \
   --from-literal=MINIO_URL="${MINIO_URL}" \
+  --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic kb-backend-secrets \

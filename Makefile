@@ -55,9 +55,10 @@ IMAGE_REGISTRY ?= localhost:5001
 UNIT_SUITES ?= kb_backend:kb-backend platform_workers:platform-workers \
                sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker \
                model_service:model_service contracts:kb-backend api:api worker_agent:worker-agent worker_ingest:worker-ingest \
-               repo:$(DEV_TOOLS_IMAGE)
+               worker_document:worker-document repo:$(DEV_TOOLS_IMAGE)
 INTEGRATION_SUITES ?= sandbox_executor:sandbox_executor \
-                      contracts:kb-backend api:api migrate:migrate worker_agent:worker-agent worker_ingest:worker-ingest
+                      contracts:kb-backend api:api migrate:migrate worker_agent:worker-agent worker_ingest:worker-ingest \
+                      worker_document:worker-document
 # The integration sandbox tests start real sandbox-runner containers; the tag
 # differs per host (tests/integration/_sandbox.py), override it to match.
 SANDBOX_RUNNER_IMAGE ?= dataagent/sandbox-runner:latest
@@ -226,7 +227,7 @@ e2e:  ## pytest -m e2e against the deployed V3 dev cluster (LAN NodePorts; URLs 
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml
 
-deploy-local:  ## deploy the V3 local slice (api, worker-agent, worker-ingest, web, migrate, gateway)
+deploy-local:  ## deploy the V3 local slice (api, worker-agent, worker-ingest, worker-document, web, migrate, gateway)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml \
 		-e apply_jobs=true -e image_registry=$(IMAGE_REGISTRY) -e image_push=true \
-		-e '{"deploy_image_allowlist":["api","worker-agent","worker-ingest","migrate","frontend","kong","keycloak"],"service_manifests":["api","worker-agent","worker-ingest","frontend","kong","keycloak","prometheus"],"service_workloads":["api","worker-agent","worker-ingest","frontend","kong","keycloak","prometheus"]}'
+		-e '{"deploy_image_allowlist":["api","worker-agent","worker-ingest","worker-document","migrate","frontend","kong","keycloak"],"service_manifests":["api","worker-agent","worker-ingest","worker-document","frontend","kong","keycloak","prometheus"],"service_workloads":["api","worker-agent","worker-ingest","worker-document","frontend","kong","keycloak","prometheus"]}'
