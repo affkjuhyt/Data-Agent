@@ -92,7 +92,8 @@ async def test_a_rule_that_cannot_run_fails_closed(
     passed, ref = seed.one(
         "SELECT passed, sample_ref FROM ingest.quality_result WHERE rule_id = %s", rid
     )
-    assert passed is False and ref.startswith("error:")
+    # A fixed category is stored, never the refusal's text (it can name what is out of reach).
+    assert passed is False and ref == "error: query did not run"
     assert (
         seed.one("SELECT quality_state FROM catalog.dataset WHERE id = %s", bank.loans) == "blocked"
     )
@@ -204,3 +205,25 @@ async def test_a_due_pipeline_runs_and_a_running_one_is_not_overlapped(
         )
         == 1
     )
+
+
+async def test_a_rule_touched_by_someone_else_runs_under_both(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    admin = seed.row(
+        "org.app_user", org_id=bank.org, external_id="kc-adm", username="adm", display_name="Adm"
+    )
+    rid = rule(bank, "not_null", "product_code", {}, "low")
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE ingest.quality_rule SET updated_by = %s WHERE id = %s", (str(admin), str(rid))
+        )
+    await drain()
+    principals = {
+        str(r[0])
+        for r in seed.all("SELECT principal_id FROM query.query_run WHERE caller_id = %s", rid)
+    }
+    assert principals == {str(bank.user), str(admin)}

@@ -125,42 +125,48 @@ async def evaluate(
         rule = await session.get(ingest.QualityRule, rule_id)
         if rule is None or rule.status != "active":
             return None
-        author = rule.updated_by or rule.created_by
-    if author is None:
+        # Who wrote the rule is not recorded apart from who last touched it (an admin enabling
+        # it is updated_by too): it runs under both, and passes only if both may run it.
+        principals = list(dict.fromkeys(p for p in (rule.created_by, rule.updated_by) if p))
+    if not principals:
         return None
+    author = principals[0]
     async with scoped_session("svc_catalog", org_id, author) as session:
         dataset = await session.get(catalog.Dataset, rule.dataset_id)
         source = await _source(session, dataset, org_id) if dataset else None
     if dataset is None:
         return None
-    failure: str | None = None
+    failure: str | None = None  # a fixed category, stored; the detail goes to the log only
+    detail: str | None = None
     violations = 0
     query_run: uuid.UUID | None = None
     if source is None:
-        failure = "the dataset's source is gone"
+        failure = "source unavailable"
     else:
         table = f"{_ident(dataset.schema_name)}.{_ident(dataset.table_name)}"
         try:
             sql = violation_sql(rule, table)
         except (KeyError, ValueError) as exc:
-            failure = f"the rule is incomplete: {exc}"
+            failure, detail = "rule incomplete", str(exc)
         else:
-            outcome = await run_query(
-                org_id=org_id,
-                data_space_id=dataset.data_space_id,
-                principal_id=author,
-                caller_kind="ad_hoc",
-                caller_id=rule_id,
-                source=source,
-                sql=sql,
-                secrets=secrets(),
-                limit=1,
-            )
-            query_run = outcome.query_run_id
-            if not outcome.ok or not outcome.rows:
-                failure = outcome.error or outcome.status
-            else:
-                violations = int(outcome.rows[0][0] or 0)
+            for principal in principals:
+                outcome = await run_query(
+                    org_id=org_id,
+                    data_space_id=dataset.data_space_id,
+                    principal_id=principal,
+                    caller_kind="ad_hoc",
+                    caller_id=rule_id,
+                    source=source,
+                    sql=sql,
+                    secrets=secrets(),
+                    limit=1,
+                )
+                if not outcome.ok or not outcome.rows:
+                    failure, detail = "query did not run", outcome.error or outcome.status
+                    break
+                if principal == author:
+                    query_run = outcome.query_run_id
+                    violations = int(outcome.rows[0][0] or 0)
     passed = failure is None and violations == 0
     async with scoped_session(ROLE, org_id, author) as session:
         session.add(
@@ -172,11 +178,11 @@ async def evaluate(
                 run_ref=run_ref,
                 passed=passed,
                 violations=violations,
-                sample_ref=f"error: {failure}"[:1000] if failure else str(query_run),
+                sample_ref=f"error: {failure}" if failure else str(query_run),
             )
         )
     if failure:
-        logger.info("worker-agent | quality rule %s could not run: %s", rule_id, failure)
+        logger.info("worker-agent | quality rule %s: %s (%s)", rule_id, failure, detail)
     await refresh_state(org_id, dataset.id, author)
     return passed
 
