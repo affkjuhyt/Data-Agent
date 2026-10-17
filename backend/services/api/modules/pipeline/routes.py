@@ -419,9 +419,12 @@ async def get_pipeline_output_draft(
             (
                 await session.scalars(
                     select(pl.Pipeline.name).where(
+                        pl.Pipeline.org_id == principal.org_id,
                         pl.Pipeline.data_space_id == data_space,
                         pl.Pipeline.deleted_at.is_(None),
                         pl.Pipeline.id != row.id,
+                        # Another person's personal pipeline is not named (BR-111).
+                        _visible(principal),
                         literal(row.target_dataset_id) == func.any(pl.Pipeline.input_dataset_ids),
                     )
                 )

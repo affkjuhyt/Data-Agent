@@ -1447,3 +1447,16 @@ async def test_the_output_draft_is_read_from_the_steps_run_on_the_source(pp: Spa
         {"name": "ma_chi_nhanh", "type": "text", "from_step": 0, "is_new": False},
         {"name": "du_no", "type": "numeric", "from_step": 1, "is_new": True},
     ]
+
+
+async def test_the_output_draft_names_only_readers_the_caller_may_see(pp: Space) -> None:
+    async with client(pp) as api:
+        made = await _create(api, pp, scope="data_space")
+        _activate(pp, made["id"])
+        shared = await _create(
+            api, pp, name="Mart chung", input_dataset_ids=[str(pp.derived)], scope="data_space"
+        )
+        await _create(api, pp, who="eng2", name="Nháp riêng", input_dataset_ids=[str(pp.derived)])
+        draft = await api.get(f"/v1/pipelines/{made['id']}/output-draft", headers=pp.headers("eng"))
+    assert shared["name"] == "Mart chung"
+    assert draft.json()["consumers_text"] == "Đang được đọc bởi pipeline “Mart chung”."
