@@ -343,21 +343,37 @@ def period_range(kind: str, business_date: datetime.date) -> c.Period:
     return c.Period(start=start, end=business_date + datetime.timedelta(days=1))
 
 
-async def _overrides(org_id: uuid.UUID, close: pd.PeriodClose) -> list[inbox.HitlRequest]:
-    """The approvals the filing asked for: the override requests opened since it was recorded."""
-    async with scoped_session("svc_inbox", org_id) as session:
-        return list(
-            (
-                await session.scalars(
-                    select(inbox.HitlRequest).where(
-                        inbox.HitlRequest.source_service == "period",
-                        inbox.HitlRequest.kind == "period_exception",
-                        inbox.HitlRequest.source_ref == close.id,
-                        inbox.HitlRequest.created_at >= close.updated_at,
-                    )
-                )
-            ).all()
+async def _overrides(
+    org_id: uuid.UUID, close_id: uuid.UUID
+) -> tuple[list[dict[str, Any]], dict[uuid.UUID, inbox.HitlRequest]]:
+    """The manual numbers the filing asked for, from its own period.publish_requested (the
+    latest for the period), and the approval requests opened for them so far, by id."""
+    async with scoped_session(ROLE, org_id) as session:
+        payload = await session.scalar(
+            select(pd.Outbox.payload)
+            .where(
+                pd.Outbox.aggregate_id == close_id,
+                pd.Outbox.event_type == PUBLISH,
+            )
+            .order_by(pd.Outbox.created_at.desc(), pd.Outbox.id.desc())
+            .limit(1)
         )
+    expected = list((payload or {}).get("overrides") or [])
+    ids = [uuid.UUID(str(o["approval_id"])) for o in expected]
+    if not ids:
+        return expected, {}
+    async with scoped_session("svc_inbox", org_id) as session:
+        found = (
+            await session.scalars(
+                select(inbox.HitlRequest).where(
+                    inbox.HitlRequest.id.in_(ids),
+                    inbox.HitlRequest.source_service == "period",
+                    inbox.HitlRequest.kind == "period_exception",
+                    inbox.HitlRequest.source_ref == close_id,
+                )
+            )
+        ).all()
+    return expected, {r.id: r for r in found}
 
 
 async def _unfile(org_id: uuid.UUID, close_id: uuid.UUID, why: str) -> None:
@@ -463,13 +479,29 @@ async def publish(org_id: uuid.UUID, close_id: uuid.UUID) -> str | None:
     if calendar is None or filer is None:
         await _unfile(org_id, close_id, "the period has no calendar or filer")
         return "closed"
-    requests = await _overrides(org_id, close)
-    if any(r.status in ("open", "reassigned") for r in requests):
-        return None  # an approval is still to be decided
-    refused = [r for r in requests if r.status != "approved" or r.resolved_by in (None, filer)]
-    if refused:
-        await _unfile(org_id, close_id, "a manual number was not approved (BR-133)")
-        return "closed"
+    expected, requests = await _overrides(org_id, close_id)
+    # Every manual number waits for its own request, opened and decided: one not opened yet (the
+    # inbox has not caught up with the filing) is waited for like one still open.
+    if any(
+        uuid.UUID(str(o["approval_id"])) not in requests
+        or requests[uuid.UUID(str(o["approval_id"]))].status in ("open", "reassigned")
+        for o in expected
+    ):
+        return None
+    overrides: dict[uuid.UUID, tuple[dict[str, Any], inbox.HitlRequest]] = {}
+    for o in expected:
+        r = requests[uuid.UUID(str(o["approval_id"]))]
+        ctx = r.context or {}
+        if (
+            r.status != "approved"
+            or r.resolved_by in (None, filer)
+            # What was approved is what is frozen: the request shows the same metric and number.
+            or str(ctx.get("metric_version_id")) != str(o["metric_version_id"])
+            or str(ctx.get("reported_value")) != str(o["reported_value"])
+        ):
+            await _unfile(org_id, close_id, "a manual number was not approved (BR-133)")
+            return "closed"
+        overrides[uuid.UUID(str(o["metric_version_id"]))] = (o, r)
     # The numbers are the snapshot's only while the tables still hold its rows (BR-42).
     capture = await _capture(org_id, close, calendar, filer, written, write=False)
     if isinstance(capture, str):
@@ -482,7 +514,12 @@ async def publish(org_id: uuid.UUID, close_id: uuid.UUID) -> str | None:
     if isinstance(values, str):
         await _unfile(org_id, close_id, values)
         return "closed"
-    overrides = {uuid.UUID(str(r.context["metric_version_id"])): r for r in requests}
+    # The metrics were read from the live tables: they are the snapshot's only if the tables
+    # still hold its rows after the reads as well as before.
+    after = await _capture(org_id, close, calendar, filer, written, write=False)
+    if isinstance(after, str) or after[1] != capture[1]:
+        await _unfile(org_id, close_id, "the tables moved while the numbers were computed")
+        return "closed"
     missing = set(overrides) - set(values)
     if missing:
         await _unfile(org_id, close_id, f"no computed number for {sorted(map(str, missing))}")
@@ -494,8 +531,11 @@ async def publish(org_id: uuid.UUID, close_id: uuid.UUID) -> str | None:
         if locked is None or locked.status != "closed":
             return None  # another delivery filed it
         for version_id, value in sorted(values.items(), key=lambda kv: str(kv[0])):
-            o = overrides.get(version_id)
-            reported = decimal.Decimal(str(o.context["reported_value"])) if o else None
+            asked: dict[str, Any] | None = None
+            approval: inbox.HitlRequest | None = None
+            if version_id in overrides:
+                asked, approval = overrides[version_id]
+            reported = decimal.Decimal(str(asked["reported_value"])) if asked else None
             session.add(
                 pd.PublishedResult(
                     id=uuid7(),
@@ -504,10 +544,10 @@ async def publish(org_id: uuid.UUID, close_id: uuid.UUID) -> str | None:
                     metric_version_id=version_id,
                     value=value,
                     reported_value=reported,
-                    manual_override=o is not None,
-                    override_reason=str(o.context["override_reason"]) if o else None,
+                    manual_override=asked is not None,
+                    override_reason=str(asked["override_reason"]) if asked else None,
                     # The controller who decided, never a value the filer sent (BR-133).
-                    approved_by=o.resolved_by if o else None,
+                    approved_by=approval.resolved_by if approval else None,
                     report_ref=str(close.filed_report_code),
                     sha256=hashlib.sha256(
                         f"{version_id}|{value}|{reported}|{close.snapshot_hash}".encode()

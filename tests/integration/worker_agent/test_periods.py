@@ -247,12 +247,25 @@ def closed(bank: Bank, monkeypatch: pytest.MonkeyPatch) -> uuid.UUID:
     return pid
 
 
-def file(bank: Bank, pid: uuid.UUID) -> None:
-    """What :publish records: the report, its date, the filer, then period.publish_requested."""
+def file(bank: Bank, pid: uuid.UUID, approval: uuid.UUID | None = None) -> None:
+    """What :publish records: the report, its date, the filer, then period.publish_requested
+    naming the approval of each manual number."""
     bank.seed.conn.cursor().execute(
         "UPDATE period.period_close SET filed_report_code = 'BC_NO_XAU', filed_at = '2026-10-10',"
-        " updated_by = %s, updated_at = now() - interval '1 second' WHERE id = %s",
+        " updated_by = %s, updated_at = now() WHERE id = %s",
         (str(bank.user), str(pid)),
+    )
+    overrides = (
+        [
+            {
+                "metric_version_id": str(npl_version(bank)),
+                "reported_value": "31.5",
+                "override_reason": "Số trên báo cáo đã nộp",
+                "approval_id": str(approval),
+            }
+        ]
+        if approval
+        else []
     )
     bank.seed.row(
         "period.outbox",
@@ -260,7 +273,9 @@ def file(bank: Bank, pid: uuid.UUID) -> None:
         aggregate_type="period_close",
         aggregate_id=pid,
         event_type=periods.PUBLISH,
-        payload=json.dumps({"period_close_id": str(pid), "data_space_id": str(bank.space)}),
+        payload=json.dumps(
+            {"period_close_id": str(pid), "data_space_id": str(bank.space), "overrides": overrides}
+        ),
     )
 
 
@@ -371,8 +386,8 @@ async def test_a_manual_number_waits_for_its_controller(
     bank = build(seed, warehouse, monkeypatch)
     pid = closed(bank, monkeypatch)
     await drain()
-    file(bank, pid)
     request = override(bank, pid)
+    file(bank, pid, request)
     await drain()
     assert seed.one("SELECT status FROM period.period_close WHERE id = %s", pid) == "closed"
     assert (
@@ -399,8 +414,8 @@ async def test_a_refused_manual_number_leaves_the_period_to_file_again(
     bank = build(seed, warehouse, monkeypatch)
     pid = closed(bank, monkeypatch)
     await drain()
-    file(bank, pid)
     request = override(bank, pid)
+    file(bank, pid, request)
     await drain()
     await decide(bank, request, "rejected", pid)
     status, report = seed.one(
@@ -468,3 +483,21 @@ async def test_an_exception_decided_in_the_inbox_moves_its_item(
     )
     await decide(bank, request, decision, item)
     assert seed.one("SELECT status FROM period.period_reconciliation WHERE id = %s", item) == after
+
+
+async def test_a_filing_waits_for_an_approval_not_opened_yet(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    pid = closed(bank, monkeypatch)
+    await drain()
+    # The filing names its approval before the inbox has opened the request.
+    file(bank, pid, uuid.uuid4())
+    await drain()
+    assert seed.one("SELECT status FROM period.period_close WHERE id = %s", pid) == "closed"
+    assert (
+        seed.one("SELECT count(*) FROM period.published_result WHERE period_close_id = %s", pid)
+        == 0
+    )
