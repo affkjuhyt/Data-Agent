@@ -74,6 +74,7 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_AGENT="${DATAAGENT_DB_URL__SVC_AGENT}" \
   --from-literal=DATAAGENT_DB_URL__SVC_NOTIFY="${DATAAGENT_DB_URL__SVC_NOTIFY}" \
   --from-literal=DATAAGENT_DB_URL__SVC_MONITOR="${DATAAGENT_DB_URL__SVC_MONITOR}" \
+  --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \
   --from-literal=MINIO_URL="${WORKER_AGENT_MINIO_URL}" \
   --from-literal=OPENBAO_ROLE_ID="${WORKER_AGENT_OPENBAO_ROLE_ID}" \
   --from-literal=OPENBAO_SECRET_ID="${WORKER_AGENT_OPENBAO_SECRET_ID}" \
@@ -210,8 +211,11 @@ kubectl -n dataagent-service create secret generic keycloak-secrets \
   --from-literal=KC_HOSTNAME_URL="${KEYCLOAK_PUBLIC_URL}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# LiteLLM's master key is the key its callers present (LITELLM_API_KEY): without it the gateway
+# answers anyone in the cluster.
 kubectl -n dataagent-service create secret generic litellm-secrets \
   --from-literal=DATABASE_URL="${LITELLM_DATABASE_URL}" \
+  --from-literal=LITELLM_MASTER_KEY="${LITELLM_API_KEY}" \
   --from-literal=OPENAI_API_KEY="${OPENAI_API_KEY}" \
   --from-literal=GEMINI_API_KEY="${GEMINI_API_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
