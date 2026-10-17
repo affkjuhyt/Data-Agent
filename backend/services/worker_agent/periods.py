@@ -5,10 +5,11 @@ period.close_requested (the api set the period to closing):
    rows of that date for a snapshot table, the rows up to it for one with a business date
    column, the whole table otherwise) through the query executor (caller_kind "period"), and
    written to da-period-close as gzipped JSON lines, one object per row, with its SHA-256 and
-   row count (period_snapshot_file). The bucket has object lock (AC-10-02-07). A file already
-   written for this close is kept as it is, so a retry carries on from the table that failed
-   with the earlier files' hashes unchanged (AC-10-02-05). The design names Parquet; the worker
-   writes JSON lines until it carries a Parquet writer.
+   row count (period_snapshot_file). The bucket has object lock (AC-10-02-07). The lines are
+   sorted, so the same rows always give the same file and hash: a retry re-reads every table,
+   keeps a file already written when its rows are unchanged (AC-10-02-05), and fails the close
+   when they are not, since the locked file and the rows reconciled would no longer agree. The
+   design names Parquet; the worker writes JSON lines until it carries a Parquet writer.
 2. each reconciliation item of the calendar is computed on the rows just captured and compared
    with its ledger value within its tolerance (period_reconciliation). An item is
    {"code", "dataset_id", "aggregate": "sum"|"count"|"count_distinct", "column",
@@ -30,7 +31,7 @@ import os
 import uuid
 from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, literal, select, update
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog
@@ -187,18 +188,23 @@ async def close_requested(event: Event) -> None:
             await _end(event, close_id, "close_failed", None)
             return
         captured[str(dataset_id)] = rows
-        if dataset_id in written:
-            hashes[str(dataset_id)] = written[dataset_id].sha256
-            continue
-        body = gzip.compress(
-            "".join(
-                json.dumps({k: _plain(v) for k, v in r.items()}, ensure_ascii=False, sort_keys=True)
-                + "\n"
-                for r in rows
-            ).encode("utf-8"),
-            mtime=0,
+        lines = sorted(
+            json.dumps({k: _plain(v) for k, v in r.items()}, ensure_ascii=False, sort_keys=True)
+            for r in rows
         )
+        body = gzip.compress("".join(f"{line}\n" for line in lines).encode("utf-8"), mtime=0)
         sha = hashlib.sha256(body).hexdigest()
+        hashes[str(dataset_id)] = sha
+        if dataset_id in written:
+            if written[dataset_id].sha256 != sha:
+                logger.info(
+                    "worker-agent | period %s: %s changed since its snapshot was written",
+                    close_id,
+                    dataset.table_name,
+                )
+                await _end(event, close_id, "close_failed", None)
+                return
+            continue
         key = (
             f"{event.org_id}/{close.data_space_id}/{close.period_label}/v{close.version}/"
             f"{dataset_id}.jsonl.gz"
@@ -217,7 +223,6 @@ async def close_requested(event: Event) -> None:
                     sha256=sha,
                 )
             )
-        hashes[str(dataset_id)] = sha
     results = []
     for item in calendar.reconciliation_items or []:
         code = str(item.get("code"))
@@ -252,33 +257,37 @@ async def close_requested(event: Event) -> None:
             )
         )
     async with scoped_session(ROLE, event.org_id, actor) as session:
-        # A close run again reconciles again: the earlier mismatches are replaced, approved
-        # exceptions (a person's decision) are kept.
+        # A close run again reconciles again. A person's exception (pending or approved) stands
+        # only for the variance it was asked on: when the delta moved, it is replaced by the new
+        # mismatch and a new exception is needed. Earlier matched/mismatched rows are replaced.
+        decided = {
+            r.item_code: r
+            for r in (
+                await session.scalars(
+                    select(pd.PeriodReconciliation).where(
+                        pd.PeriodReconciliation.period_close_id == close_id,
+                        pd.PeriodReconciliation.status.in_(
+                            ("exception_pending", "exception_approved")
+                        ),
+                    )
+                )
+            ).all()
+        }
+        kept = {
+            r.item_code: decided[r.item_code].status
+            for r in results
+            if r.item_code in decided and decided[r.item_code].delta == r.delta
+        }
         await session.execute(
             delete(pd.PeriodReconciliation).where(
                 pd.PeriodReconciliation.period_close_id == close_id,
-                pd.PeriodReconciliation.status.in_(("matched", "mismatched")),
+                pd.PeriodReconciliation.item_code.not_in(kept) if kept else literal(True),
             )
-        )
-        kept = dict(
-            (
-                await session.execute(
-                    select(pd.PeriodReconciliation.item_code, pd.PeriodReconciliation.status).where(
-                        pd.PeriodReconciliation.period_close_id == close_id
-                    )
-                )
-            )
-            .tuples()
-            .all()
         )
         session.add_all(r for r in results if r.item_code not in kept)
     # An approved exception lets its item stand; a pending one still holds the close.
-    mismatched = (
-        any(
-            r.status == "mismatched" and kept.get(r.item_code) != "exception_approved"
-            for r in results
-        )
-        or "exception_pending" in kept.values()
+    mismatched = any(
+        r.status == "mismatched" and kept.get(r.item_code) != "exception_approved" for r in results
     )
     snapshot_hash = hashlib.sha256(
         "\n".join(f"{k}:{v}" for k, v in sorted(hashes.items())).encode()

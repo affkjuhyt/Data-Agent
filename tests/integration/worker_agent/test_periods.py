@@ -146,6 +146,21 @@ async def test_a_ledger_mismatch_fails_the_close(
     assert status == "mismatched" and delta == 1000
 
 
+def again(bank: Bank, pid: uuid.UUID) -> None:
+    """The close asked once more, as after a failure."""
+    bank.seed.conn.cursor().execute(
+        "UPDATE period.period_close SET status = 'closing' WHERE id = %s", (str(pid),)
+    )
+    bank.seed.row(
+        "period.outbox",
+        org_id=bank.org,
+        aggregate_type="period_close",
+        aggregate_id=pid,
+        event_type="period.close_requested",
+        payload=json.dumps({"period_close_id": str(pid), "data_space_id": str(bank.space)}),
+    )
+
+
 @pytest.mark.req("AC-10-02-05")
 async def test_a_retry_keeps_the_files_already_written(
     seed: Seed,
@@ -154,6 +169,26 @@ async def test_a_retry_keeps_the_files_already_written(
 ) -> None:
     bank = build(seed, warehouse, monkeypatch)
     pid, store = close(bank, 8000, monkeypatch)
+    await drain()
+    first = seed.one("SELECT snapshot_hash FROM period.period_close WHERE id = %s", pid)
+    again(bank, pid)
+    # The Store refuses a second write of the same file; the rows are the same, so the hash is.
+    await drain()
+    assert len(store.objects) == 1
+    status, snapshot_hash = seed.one(
+        "SELECT status, snapshot_hash FROM period.period_close WHERE id = %s", pid
+    )
+    assert (status, snapshot_hash) == ("closed", first)
+
+
+async def test_a_retry_on_changed_rows_does_not_close(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    pid, store = close(bank, 8000, monkeypatch)
+    # A file written by an earlier attempt, on rows that are no longer what the source holds.
     seed.row(
         "period.period_snapshot_file",
         org_id=bank.org,
@@ -166,9 +201,38 @@ async def test_a_retry_keeps_the_files_already_written(
     )
     await drain()
     assert store.objects == {}
-    assert (
-        seed.one("SELECT count(*) FROM period.period_snapshot_file WHERE period_close_id = %s", pid)
-        == 1
+    assert seed.one("SELECT status FROM period.period_close WHERE id = %s", pid) == "close_failed"
+
+
+@pytest.mark.parametrize(("approved_delta", "closed"), [(1000, "closed"), (500, "close_failed")])
+async def test_an_approved_exception_stands_only_for_its_variance(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+    approved_delta: int,
+    closed: str,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    pid, _ = close(bank, 7000, monkeypatch)
+    seed.row(
+        "period.period_reconciliation",
+        org_id=bank.org,
+        period_close_id=pid,
+        item_code="tong_du_no",
+        snapshot_value=7000 + approved_delta,
+        ledger_value=7000,
+        tolerance=1,
+        delta=approved_delta,
+        status="exception_approved",
+        hitl_request_id=uuid.uuid4(),
     )
-    expected = hashlib.sha256(f"{bank.loans}:{'a' * 64}".encode()).hexdigest()
-    assert seed.one("SELECT snapshot_hash FROM period.period_close WHERE id = %s", pid) == expected
+    await drain()
+    assert seed.one("SELECT status FROM period.period_close WHERE id = %s", pid) == closed
+    status, delta = seed.one(
+        "SELECT status, delta FROM period.period_reconciliation"
+        " WHERE period_close_id = %s AND item_code = 'tong_du_no'",
+        pid,
+    )
+    # A variance that moved needs its own exception: the old approval is not carried over.
+    expected = "exception_approved" if approved_delta == 1000 else "mismatched"
+    assert (status, delta) == (expected, 1000)
