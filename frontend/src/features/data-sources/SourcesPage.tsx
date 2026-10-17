@@ -97,10 +97,10 @@ export default function SourcesPage() {
           </>
         }
       />
-      <div className="flex flex-col gap-da-lg px-da-3xl pt-da-xl">
+      <div className="flex flex-col gap-da-lg px-da-3xl pt-da-xl max-[767px]:px-da-lg">
         <div className="flex flex-wrap items-center gap-da-md">
           <Input
-            className="w-[300px]"
+            className="w-[300px] max-[639px]:w-full"
             icon="search"
             placeholder="Tìm nguồn, bảng…"
             aria-label="Tìm nguồn"
@@ -108,7 +108,7 @@ export default function SourcesPage() {
             onChange={(e) => setQuery(e.target.value)}
           />
           <Select
-            className="w-[180px]"
+            className="w-[180px] max-[639px]:w-full"
             label="Lọc theo loại"
             value={kind}
             onChange={setKind}
@@ -118,7 +118,7 @@ export default function SourcesPage() {
             ]}
           />
           <Select
-            className="w-[200px]"
+            className="w-[200px] max-[639px]:w-full"
             label="Lọc theo chế độ"
             value={mode}
             onChange={setMode}
@@ -129,7 +129,7 @@ export default function SourcesPage() {
             ]}
           />
           <Select
-            className="w-[220px]"
+            className="w-[220px] max-[639px]:w-full"
             label="Lọc theo Data Space"
             value={space}
             onChange={setSpace}
@@ -144,13 +144,21 @@ export default function SourcesPage() {
             <table className="w-full table-fixed border-collapse">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="px-da-lg py-da-md font-normal">Nguồn</th>
+                  <th className="px-da-lg py-da-md font-normal max-[639px]:px-da-sm">Nguồn</th>
                   <th className="w-[120px] px-da-md py-da-md font-normal max-[1279px]:hidden">
                     Loại
                   </th>
-                  <th className="w-[150px] px-da-md py-da-md font-normal">Chế độ</th>
-                  <th className="w-[190px] px-da-md py-da-md font-normal">Trạng thái</th>
-                  <th className="w-[140px] px-da-md py-da-md font-normal">Dữ liệu mới nhất</th>
+                  {/* Narrower screens drop columns from the right; what a dropped column said
+                      moves under the source's name, so the name column never collapses. */}
+                  <th className="w-[150px] px-da-md py-da-md font-normal max-[1023px]:hidden">
+                    Chế độ
+                  </th>
+                  <th className="w-[190px] px-da-md py-da-md font-normal max-[639px]:w-[132px]">
+                    Trạng thái
+                  </th>
+                  <th className="w-[140px] px-da-md py-da-md font-normal max-[767px]:hidden">
+                    Dữ liệu mới nhất
+                  </th>
                   <th className="w-[150px] px-da-md py-da-md font-normal max-[1279px]:hidden">
                     Data Space
                   </th>
@@ -172,7 +180,7 @@ export default function SourcesPage() {
                     }
                     className="cursor-pointer border-b border-border hover:bg-subtle focus-visible:bg-subtle"
                   >
-                    <td className="px-da-lg py-[10px]">
+                    <td className="px-da-lg py-[10px] max-[639px]:px-da-sm">
                       <div className="flex min-w-0 flex-col gap-[2px]">
                         <span className="truncate text-foreground da-body-strong">
                           {source.name}
@@ -180,18 +188,27 @@ export default function SourcesPage() {
                         <span className="truncate text-muted-foreground da-mono">
                           {source.connector} · {source.endpoint}
                         </span>
+                        <span className="hidden truncate text-muted-foreground da-caption max-[1023px]:block">
+                          {modeLabel(source)}
+                          <span className="hidden max-[767px]:inline"> · {freshnessText(source)}</span>
+                        </span>
                       </div>
                     </td>
                     <td className="px-da-md py-[10px] text-foreground da-body-small max-[1279px]:hidden">
                       {source.connector_label}
                     </td>
-                    <td className="px-da-md py-[10px] text-foreground da-body-small">
+                    <td className="px-da-md py-[10px] text-foreground da-body-small max-[1023px]:hidden">
                       {modeLabel(source)}
                     </td>
                     <td className="px-da-md py-[10px]">
-                      <StatusDot tone={sourceTone(source)}>{source.status_label}</StatusDot>
+                      <StatusDot
+                        tone={sourceTone(source)}
+                        className="max-[639px]:items-start max-[639px]:whitespace-normal"
+                      >
+                        {source.status_label}
+                      </StatusDot>
                     </td>
-                    <td className="px-da-md py-[10px] text-muted-foreground da-body-small">
+                    <td className="px-da-md py-[10px] text-muted-foreground da-body-small max-[767px]:hidden">
                       {freshnessText(source)}
                     </td>
                     <td className="truncate px-da-md py-[10px] text-muted-foreground da-body-small max-[1279px]:hidden">

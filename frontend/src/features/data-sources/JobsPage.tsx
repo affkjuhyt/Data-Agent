@@ -90,8 +90,9 @@ export default function JobsPage() {
           </>
         }
       />
-      <div className="flex flex-col gap-da-lg px-da-3xl pt-da-xl">
-        <div className="flex items-center gap-da-md">
+      <div className="flex flex-col gap-da-lg px-da-3xl pt-da-xl max-[767px]:px-da-lg">
+        {/* On a phone the filter scrolls sideways instead of pushing the page wider. */}
+        <div className="flex items-center gap-da-md max-[639px]:overflow-x-auto">
           <Segmented<JobFilter>
             label="Lọc job"
             value={filter}
@@ -104,7 +105,9 @@ export default function JobsPage() {
             ]}
           />
           <span className="flex-1" />
-          <span className="text-muted-foreground da-body-small">24 giờ qua</span>
+          <span className="whitespace-nowrap text-muted-foreground da-body-small max-[639px]:hidden">
+            24 giờ qua
+          </span>
         </div>
         <AsyncRegion
           state={jobs}
@@ -123,14 +126,24 @@ export default function JobsPage() {
             <table className="w-full table-fixed border-collapse">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="px-da-lg py-da-md font-normal">Job</th>
-                  <th className="w-[120px] px-da-md py-da-md font-normal">Cách nạp</th>
+                  {/* Narrower screens drop columns from the right; what a dropped column said
+                      moves under the job's name, so the name column never collapses. */}
+                  <th className="px-da-lg py-da-md font-normal max-[639px]:px-da-sm">Job</th>
+                  <th className="w-[120px] px-da-md py-da-md font-normal max-[1023px]:hidden">
+                    Cách nạp
+                  </th>
                   <th className="w-[316px] px-da-md py-da-md font-normal max-[1279px]:hidden">
                     24 giờ qua
                   </th>
-                  <th className="w-[110px] px-da-md py-da-md font-normal">Độ trễ</th>
-                  <th className="w-[110px] px-da-md py-da-md font-normal">Dòng hôm nay</th>
-                  <th className="w-[200px] px-da-md py-da-md font-normal">Trạng thái</th>
+                  <th className="w-[110px] px-da-md py-da-md font-normal max-[639px]:hidden">
+                    Độ trễ
+                  </th>
+                  <th className="w-[110px] px-da-md py-da-md font-normal max-[767px]:hidden">
+                    Dòng hôm nay
+                  </th>
+                  <th className="w-[200px] px-da-md py-da-md font-normal max-[639px]:w-[132px]">
+                    Trạng thái
+                  </th>
                   <th className="w-[44px] px-da-md py-da-md">
                     <span className="sr-only">Thao tác</span>
                   </th>
@@ -141,15 +154,26 @@ export default function JobsPage() {
                   const status = jobStatus(job);
                   return (
                     <tr key={job.id} className="border-b border-border">
-                      <td className="px-da-lg py-[9px]">
+                      <td className="px-da-lg py-[9px] max-[639px]:px-da-sm">
                         <div className="flex min-w-0 flex-col gap-[2px]">
                           <span className="truncate text-foreground da-mono">{job.table_name}</span>
                           <span className="truncate text-muted-foreground da-caption">
                             {job.source_name}
                           </span>
+                          <span className="hidden truncate text-muted-foreground da-caption max-[1023px]:block">
+                            {methodLabel(job)}
+                            <span className="hidden max-[767px]:inline">
+                              {' · '}
+                              {formatRows(job.rows_today)} dòng
+                            </span>
+                            <span className="hidden max-[639px]:inline">
+                              {' · trễ '}
+                              {job.lag_seconds === null ? '—' : formatLag(job.lag_seconds)}
+                            </span>
+                          </span>
                         </div>
                       </td>
-                      <td className="px-da-md py-[9px] text-foreground da-body-small">
+                      <td className="px-da-md py-[9px] text-foreground da-body-small max-[1023px]:hidden">
                         {methodLabel(job)}
                       </td>
                       <td className="px-da-md py-[9px] max-[1279px]:hidden">
@@ -168,17 +192,22 @@ export default function JobsPage() {
                       </td>
                       <td
                         className={cn(
-                          'px-da-md py-[9px] da-mono',
+                          'px-da-md py-[9px] da-mono max-[639px]:hidden',
                           job.late ? 'text-warning' : 'text-foreground',
                         )}
                       >
                         {job.lag_seconds === null ? '—' : formatLag(job.lag_seconds)}
                       </td>
-                      <td className="px-da-md py-[9px] text-foreground da-mono">
+                      <td className="px-da-md py-[9px] text-foreground da-mono max-[767px]:hidden">
                         {formatRows(job.rows_today)}
                       </td>
                       <td className="px-da-md py-[9px]">
-                        <StatusDot tone={status.tone}>{status.label}</StatusDot>
+                        <StatusDot
+                          tone={status.tone}
+                          className="max-[639px]:items-start max-[639px]:whitespace-normal"
+                        >
+                          {status.label}
+                        </StatusDot>
                       </td>
                       <td className="px-da-md py-[9px]">
                         <Menu

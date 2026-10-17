@@ -63,8 +63,8 @@ export function AppTopBar({
         <span className="inline-flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground max-[767px]:hidden">
           <Icon name="agent" />
         </span>
-        <span className="text-foreground da-heading-3 max-[767px]:hidden">Data Agent</span>
-        <span className="text-border-strong da-body max-[767px]:hidden" aria-hidden>
+        <span className="text-foreground da-heading-3 max-[1023px]:hidden">Data Agent</span>
+        <span className="text-border-strong da-body max-[1023px]:hidden" aria-hidden>
           /
         </span>
         <WorkspaceSwitcher name={workspaceName} workspaces={workspaces} onSelect={onWorkspace} />
@@ -102,7 +102,7 @@ export function AppTopBar({
       </button>
 
       {runningAgents !== undefined && runningAgents > 0 && (
-        <span className="inline-flex shrink-0 items-center gap-da-sm rounded-full bg-accent px-da-md py-da-xs text-primary da-label max-[767px]:hidden">
+        <span className="inline-flex shrink-0 items-center gap-da-sm rounded-full bg-accent px-da-md py-da-xs text-primary da-label max-[1023px]:hidden">
           <span className="size-1.5 rounded-full bg-primary" aria-hidden />
           {runningAgents} agent đang chạy
         </span>

@@ -26,7 +26,7 @@ export function PageHeader({
     <header
       className={cn(
         'flex flex-col gap-da-xs',
-        bordered && 'border-b border-border px-da-3xl pb-da-xl pt-[20px]',
+        bordered && 'border-b border-border px-da-3xl pb-da-xl pt-[20px] max-[767px]:px-da-lg',
         className,
       )}
     >
@@ -35,10 +35,11 @@ export function PageHeader({
           {breadcrumb.join(' / ')}
         </nav>
       )}
-      <div className="flex items-center gap-[10px]">
+      {/* The actions wrap under the title when both do not fit (a phone), not beside it. */}
+      <div className="flex flex-wrap items-center gap-[10px]">
         <h1 className="text-foreground da-heading-1">{title}</h1>
         <span className="flex-1" />
-        {actions && <div className="flex shrink-0 items-center gap-da-md">{actions}</div>}
+        {actions && <div className="flex shrink-0 flex-wrap items-center gap-da-md">{actions}</div>}
       </div>
       {description && <p className="text-muted-foreground da-body-small">{description}</p>}
     </header>

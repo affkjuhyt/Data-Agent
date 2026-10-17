@@ -35,9 +35,10 @@ describe('SourcesPage', () => {
     renderPage(<SourcesPage />);
     const core = (await screen.findByText('Core banking')).closest('tr')!;
     expect(within(core).getByText('oracle · core-db.noibo')).toBeInTheDocument();
-    expect(within(core).getByText('Nạp về · CDC')).toBeInTheDocument();
+    // Its column, and again under the name for narrow screens (jsdom applies no media query).
+    expect(within(core).getAllByText('Nạp về · CDC')).toHaveLength(2);
     expect(within(core).getByText('Đang đồng bộ')).toBeInTheDocument();
-    expect(within(core).getByText(/· trễ 12 giây$/)).toBeInTheDocument();
+    expect(within(core).getAllByText(/· trễ 12 giây$/)).toHaveLength(2);
     expect(within(core).getByText('Rủi ro tín dụng +2')).toBeInTheDocument();
     expect(screen.getByText('Cần sửa · đăng nhập lỗi')).toBeInTheDocument();
     expect(
