@@ -144,3 +144,18 @@ def test_examples_and_joins_name_only_readable_tables() -> None:
     kept = readable(full, "postgres")
     assert [q for q, _ in kept.examples] == ["Dư nợ theo chi nhánh"]
     assert kept.fks == SCHEMA.fks
+
+
+@pytest.mark.parametrize(
+    ("sql", "dialect"),
+    [
+        # A name in another database or catalog: `other.workspace.credit_loan` is not ours.
+        ("SELECT balance FROM other.workspace.credit_loan", "postgres"),
+        ("SELECT balance FROM otherdb.workspace.credit_loan", "tsql"),
+        # A table function reads outside the source (ClickHouse url/remote).
+        ("SELECT a FROM url('http://x/data.csv', CSV, 'a String')", "clickhouse"),
+        ("SELECT a FROM remote('host:9000', db.t)", "clickhouse"),
+    ],
+)
+def test_nothing_outside_the_linked_tables_is_read(sql: str, dialect: str) -> None:
+    assert problems(sql, CHECKED, dialect), sql

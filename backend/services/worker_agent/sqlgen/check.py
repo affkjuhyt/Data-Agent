@@ -39,6 +39,13 @@ def problems(sql: str, linked: Linked, dialect: str) -> list[str]:
         return [f"Chỉ được viết một câu SELECT chỉ đọc ({exc})."]
     if not isinstance(tree, exp.Query):
         return ["Chỉ được viết một câu SELECT chỉ đọc."]
+    # A source is one database: a name in another catalog or database (other.dw.loan,
+    # otherdb.dbo.salary on SQL Server) is refused, never shortened to its schema and table.
+    elsewhere = sorted({t.sql(dialect=dialect) for t in tree.find_all(exp.Table) if t.catalog})
+    if elsewhere:
+        return [
+            f"Không đọc bảng ở cơ sở dữ liệu khác ({', '.join(elsewhere)}); chỉ dùng schema.bảng."
+        ]
     allowed = {t.qualified: t for t in linked.tables}
     used = {f"{t.db}.{t.name}" if t.db else t.name for t in tree.find_all(exp.Table)}
     outside = sorted(u for u in used if u not in allowed)
