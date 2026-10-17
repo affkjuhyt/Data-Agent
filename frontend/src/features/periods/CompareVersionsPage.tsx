@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Select } from '../../design-system/Select';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Tooltip } from '../../design-system/Tooltip';
 import { csvCell } from '../../lib/csv';
 import { cn } from '../../lib/utils';
@@ -85,55 +86,10 @@ export default function CompareVersionsPage() {
             </Tooltip>
           </div>
           <div className="flex flex-col gap-da-lg px-da-3xl pt-da-xl">
-            <table className="w-full table-fixed border-collapse">
-              <thead>
-                <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="px-da-lg py-da-md font-normal">Chỉ số</th>
-                  <th className="w-[130px] px-da-lg py-da-md font-normal">Bản 1</th>
-                  <th className="w-[130px] px-da-lg py-da-md font-normal">Bản 2</th>
-                  <th className="w-[120px] px-da-lg py-da-md font-normal">Chênh</th>
-                  <th className="w-[360px] px-da-lg py-da-md font-normal max-[1279px]:w-[240px]">
-                    Vì sao
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {r.rows.map((row, i) => (
-                  <tr key={row.metric} className="border-b border-border">
-                    <td className="px-da-lg py-da-md text-foreground da-body-strong">
-                      {row.metric}
-                    </td>
-                    <td className="px-da-lg py-da-md text-foreground da-mono">{row.left}</td>
-                    <td className="px-da-lg py-da-md text-foreground da-mono">{row.right}</td>
-                    <td
-                      className={cn(
-                        'px-da-lg py-da-md da-mono',
-                        row.changed ? 'text-warning' : 'text-muted-foreground',
-                      )}
-                    >
-                      {row.delta}
-                    </td>
-                    <td className="px-da-lg py-da-md text-muted-foreground da-body-small">
-                      {row.retro_change_id &&
-                      // Only the first row of a retro change links to it; the rest say "như trên".
-                      r.rows.findIndex((x) => x.retro_change_id === row.retro_change_id) === i ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            navigate('data', 'RETRO', row.retro_change_id ?? undefined)
-                          }
-                          className="text-left text-primary hover:underline"
-                        >
-                          {row.reason}
-                        </button>
-                      ) : (
-                        (row.reason ?? '—')
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <ComparisonTable
+              rows={r.rows}
+              onRetro={(id) => navigate('data', 'RETRO', id)}
+            />
             <p className="text-muted-foreground da-caption">
               Mỗi chênh lệch nối về thay đổi hồi tố hoặc lần chạy đã tạo ra nó.
             </p>
@@ -141,6 +97,92 @@ export default function CompareVersionsPage() {
         </div>
       )}
     </AsyncRegion>
+  );
+}
+
+function ComparisonTable({
+  rows,
+  onRetro,
+}: {
+  rows: PeriodComparison['rows'];
+  onRetro: (id: string) => void;
+}) {
+  const view = useTableView(rows, {
+    search: (row) => `${row.metric} ${row.left} ${row.right} ${row.delta} ${row.reason ?? ''}`,
+    filters: [
+      { id: 'changed', label: 'Chênh', value: (row) => (row.changed ? 'Có chênh' : 'Không đổi') },
+    ],
+    sorts: [
+      { id: 'metric', value: (row) => row.metric },
+      { id: 'left', value: (row) => row.left },
+      { id: 'right', value: (row) => row.right },
+      { id: 'delta', value: (row) => row.delta },
+      { id: 'reason', value: (row) => row.reason },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm chỉ số…" searchLabel="Tìm chỉ số" />
+      <table className="w-full table-fixed border-collapse">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="metric" className="px-da-lg py-da-md font-normal">
+              Chỉ số
+            </SortableTh>
+            <SortableTh view={view} column="left" className="w-[130px] px-da-lg py-da-md font-normal">
+              Bản 1
+            </SortableTh>
+            <SortableTh view={view} column="right" className="w-[130px] px-da-lg py-da-md font-normal">
+              Bản 2
+            </SortableTh>
+            <SortableTh view={view} column="delta" className="w-[120px] px-da-lg py-da-md font-normal">
+              Chênh
+            </SortableTh>
+            <SortableTh
+              view={view}
+              column="reason"
+              className="w-[360px] px-da-lg py-da-md font-normal max-[1279px]:w-[240px]"
+            >
+              Vì sao
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((row) => (
+            <tr key={row.metric} className="border-b border-border">
+              <td className="px-da-lg py-da-md text-foreground da-body-strong">{row.metric}</td>
+              <td className="px-da-lg py-da-md text-foreground da-mono">{row.left}</td>
+              <td className="px-da-lg py-da-md text-foreground da-mono">{row.right}</td>
+              <td
+                className={cn(
+                  'px-da-lg py-da-md da-mono',
+                  row.changed ? 'text-warning' : 'text-muted-foreground',
+                )}
+              >
+                {row.delta}
+              </td>
+              <td className="px-da-lg py-da-md text-muted-foreground da-body-small">
+                {row.retro_change_id &&
+                // Only the first row of a retro change links to it; the rest say "như trên".
+                rows.find((x) => x.retro_change_id === row.retro_change_id) === row ? (
+                  <button
+                    type="button"
+                    onClick={() => onRetro(row.retro_change_id ?? '')}
+                    className="text-left text-primary hover:underline"
+                  >
+                    {row.reason}
+                  </button>
+                ) : (
+                  (row.reason ?? '—')
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
   );
 }
 

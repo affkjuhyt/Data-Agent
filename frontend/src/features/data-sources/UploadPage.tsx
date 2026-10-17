@@ -6,6 +6,7 @@ import { Icon } from '../../design-system/Icon';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
@@ -33,6 +34,10 @@ const TYPES: { value: UploadColumnType; label: string }[] = [
   { value: 'boolean', label: 'Đúng/sai' },
 ];
 
+function columnTypeLabel(type: UploadColumnType): string {
+  return TYPES.find((item) => item.value === type)?.label ?? type;
+}
+
 export default function UploadPage() {
   const { navigate } = useAppState();
   const toast = useToast();
@@ -43,6 +48,36 @@ export default function UploadPage() {
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const uploads = useV1(listUploads, []);
+  const recentView = useTableView(uploads.data?.items ?? [], {
+    search: (upload) =>
+      `${upload.file_name} ${uploadStatusLabel(upload.status)} ${new Date(upload.created_at).toLocaleString('vi-VN')}`,
+    filters: [
+      { id: 'status', label: 'Trạng thái', value: (upload) => uploadStatusLabel(upload.status) },
+    ],
+    sorts: [
+      { id: 'name', value: (upload) => upload.file_name },
+      { id: 'status', value: (upload) => uploadStatusLabel(upload.status) },
+      { id: 'created', value: (upload) => upload.created_at },
+    ],
+    pageSize: 50,
+  });
+  const columnsView = useTableView(columns, {
+    search: (column) =>
+      `${column.header} ${column.name} ${columnTypeLabel(column.type)} ${column.unit ?? ''} ${column.example} ${column.issue ?? ''} ${column.personal ? 'Có' : 'Không'}`,
+    filters: [{ id: 'type', label: 'Kiểu', value: (column) => columnTypeLabel(column.type) }],
+    sorts: [
+      { id: 'header', value: (column) => column.header },
+      { id: 'name', value: (column) => column.name },
+      { id: 'type', value: (column) => columnTypeLabel(column.type) },
+      { id: 'unit', value: (column) => column.unit },
+      {
+        id: 'example',
+        value: (column) => `${column.example}${column.issue ? ` · ${column.issue}` : ''}`,
+      },
+      { id: 'personal', value: (column) => (column.personal ? 'Có' : 'Không') },
+    ],
+    pageSize: 50,
+  });
 
   const read = async (file: File | undefined) => {
     if (!file) return;
@@ -135,17 +170,24 @@ export default function UploadPage() {
           {uploads.data && uploads.data.items.length > 0 && (
             <section className="flex flex-col gap-da-md">
               <h2 className="text-foreground da-heading-3">Tệp vừa tải</h2>
+              <TableToolbar view={recentView} placeholder="Tìm tệp…" searchLabel="Tìm tệp" />
               <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                      <th className="px-da-lg py-da-md font-normal">Tên tệp</th>
-                      <th className="px-da-md py-da-md font-normal">Trạng thái</th>
-                      <th className="px-da-md py-da-md font-normal">Thời gian</th>
+                      <SortableTh view={recentView} column="name" className="px-da-lg py-da-md font-normal">
+                        Tên tệp
+                      </SortableTh>
+                      <SortableTh view={recentView} column="status" className="px-da-md py-da-md font-normal">
+                        Trạng thái
+                      </SortableTh>
+                      <SortableTh view={recentView} column="created" className="px-da-md py-da-md font-normal">
+                        Thời gian
+                      </SortableTh>
                     </tr>
                   </thead>
                   <tbody>
-                    {uploads.data.items.map((upload) => (
+                    {recentView.rows.map((upload) => (
                       <tr key={upload.id} className="border-b border-border last:border-0">
                         <td className="px-da-lg py-da-md text-foreground da-body-small">
                           {upload.file_name}
@@ -161,6 +203,7 @@ export default function UploadPage() {
                   </tbody>
                 </table>
               </div>
+              <TablePager view={recentView} />
             </section>
           )}
         </div>
@@ -197,23 +240,40 @@ export default function UploadPage() {
         <div className="flex min-w-0 flex-1 flex-col gap-da-lg pl-da-3xl pr-da-2xl pt-da-xl">
           {error && <Notice tone="error">{error}</Notice>}
           <h2 className="text-foreground da-heading-3">Cột trong tệp</h2>
+          <TableToolbar view={columnsView} placeholder="Tìm cột…" searchLabel="Tìm cột" />
           <table className="w-full table-fixed border-collapse">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="w-[170px] px-da-lg py-da-md font-normal">Cột trong tệp</th>
-                <th className="w-[180px] px-da-md py-da-md font-normal">Tên cột</th>
-                <th className="w-[140px] px-da-md py-da-md font-normal">Kiểu</th>
-                <th className="w-[100px] px-da-md py-da-md font-normal max-[1279px]:hidden">
+                <SortableTh view={columnsView} column="header" className="w-[170px] px-da-lg py-da-md font-normal">
+                  Cột trong tệp
+                </SortableTh>
+                <SortableTh view={columnsView} column="name" className="w-[180px] px-da-md py-da-md font-normal">
+                  Tên cột
+                </SortableTh>
+                <SortableTh view={columnsView} column="type" className="w-[140px] px-da-md py-da-md font-normal">
+                  Kiểu
+                </SortableTh>
+                <SortableTh
+                  view={columnsView}
+                  column="unit"
+                  className="w-[100px] px-da-md py-da-md font-normal max-[1279px]:hidden"
+                >
                   Đơn vị
-                </th>
-                <th className="px-da-md py-da-md font-normal">Ví dụ</th>
-                <th className="w-[80px] px-da-md py-da-md font-normal">Cá nhân</th>
+                </SortableTh>
+                <SortableTh view={columnsView} column="example" className="px-da-md py-da-md font-normal">
+                  Ví dụ
+                </SortableTh>
+                <SortableTh view={columnsView} column="personal" className="w-[80px] px-da-md py-da-md font-normal">
+                  Cá nhân
+                </SortableTh>
               </tr>
             </thead>
             <tbody>
-              {columns.map((column, i) => {
+              {columnsView.rows.map((column) => {
                 const update = (patch: Partial<UploadColumn>) =>
-                  setColumns((list) => list.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+                  setColumns((list) =>
+                    list.map((item) => (item.header === column.header ? { ...item, ...patch } : item)),
+                  );
                 return (
                   <tr
                     key={column.header}
@@ -266,6 +326,7 @@ export default function UploadPage() {
               })}
             </tbody>
           </table>
+          <TablePager view={columnsView} />
           {analysis.issue_note && <p className="text-warning da-caption">{analysis.issue_note}</p>}
         </div>
         <aside className="flex w-[360px] shrink-0 flex-col gap-da-lg border-l border-border bg-background px-da-2xl pt-[20px] max-[1023px]:w-full max-[1023px]:border-l-0 max-[1023px]:border-t max-[1023px]:pb-da-xl">

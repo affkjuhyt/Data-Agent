@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Icon } from '../../design-system/Icon';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -77,6 +78,19 @@ function SchemaView({ schema, onChanged }: { schema: ExtractionSchema; onChanged
   const [error, setError] = useState<string>();
   const published = schema.status === 'active' || schema.status === 'superseded';
   const v = `v${schema.version}`;
+  const fields = useTableView(schema.fields, {
+    search: (f) => `${f.name} ${f.type_label} ${f.description} ${f.target_column}`,
+    filters: [{ id: 'required', label: 'Bắt buộc', value: (f) => (f.required ? 'Có' : 'Không') }],
+    sorts: [
+      { id: 'name', value: (f) => f.name },
+      { id: 'type', value: (f) => f.type_label },
+      { id: 'desc', value: (f) => f.description },
+      { id: 'required', value: (f) => (f.required ? 1 : 0) },
+      { id: 'accuracy', value: (f) => f.accuracy },
+      { id: 'target', value: (f) => f.target_column },
+    ],
+    pageSize: 50,
+  });
 
   const runTest = async () => {
     setBusy('test');
@@ -159,20 +173,33 @@ function SchemaView({ schema, onChanged }: { schema: ExtractionSchema; onChanged
             Đang chạy thử trên {formatNumber(schema.test_size)} tệp mẫu
           </StatusDot>
         )}
+        <TableToolbar view={fields} placeholder="Tìm trường…" searchLabel="Tìm trường" />
         <div className="overflow-x-auto rounded-lg border border-border bg-card">
           <table className="w-full min-w-[720px] table-fixed border-collapse">
             <thead>
               <tr className={HEAD_ROW}>
-                <th className={cn(CELL, 'w-[156px] font-medium')}>Trường</th>
-                <th className={cn(CELL, 'w-[98px] font-medium')}>Kiểu</th>
-                <th className={cn(CELL, 'font-medium')}>Mô tả</th>
-                <th className={cn(CELL, 'w-[78px] font-medium')}>Bắt buộc</th>
-                <th className={cn(CELL, 'w-[88px] font-medium')}>Chính xác</th>
-                <th className={cn(CELL, 'w-[166px] font-medium')}>Cột đích</th>
+                <SortableTh view={fields} column="name" className={cn(CELL, 'w-[156px] font-medium')}>
+                  Trường
+                </SortableTh>
+                <SortableTh view={fields} column="type" className={cn(CELL, 'w-[98px] font-medium')}>
+                  Kiểu
+                </SortableTh>
+                <SortableTh view={fields} column="desc" className={cn(CELL, 'font-medium')}>
+                  Mô tả
+                </SortableTh>
+                <SortableTh view={fields} column="required" className={cn(CELL, 'w-[78px] font-medium')}>
+                  Bắt buộc
+                </SortableTh>
+                <SortableTh view={fields} column="accuracy" className={cn(CELL, 'w-[88px] font-medium')}>
+                  Chính xác
+                </SortableTh>
+                <SortableTh view={fields} column="target" className={cn(CELL, 'w-[166px] font-medium')}>
+                  Cột đích
+                </SortableTh>
               </tr>
             </thead>
             <tbody>
-              {schema.fields.map((f) => (
+              {fields.rows.map((f) => (
                 <tr key={f.name} className={ROW}>
                   <td className={cn(CELL, 'truncate text-foreground da-mono')}>{f.name}</td>
                   <td className={cn(CELL, 'text-foreground da-body-small')}>{f.type_label}</td>
@@ -199,6 +226,7 @@ function SchemaView({ schema, onChanged }: { schema: ExtractionSchema; onChanged
             </tbody>
           </table>
         </div>
+        <TablePager view={fields} />
       </div>
       <SidePanel label="Kết quả có cấu trúc" width="w-[360px]">
         <h2 className="text-foreground da-heading-3">Kết quả có cấu trúc</h2>

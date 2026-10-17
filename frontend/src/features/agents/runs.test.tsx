@@ -31,7 +31,7 @@ describe('RunsPage', () => {
   it('lists runs, filters by status and search, and opens one', async () => {
     wrap(<RunsPage />);
     expect(await screen.findByText('#427')).toBeInTheDocument();
-    expect(screen.getAllByRole('row')).toHaveLength(9);
+    expect(screen.getAllByRole('row')).toHaveLength(13);
 
     fireEvent.click(screen.getByRole('radio', { name: 'Lỗi · 1' }));
     expect(screen.getAllByRole('row')).toHaveLength(2);

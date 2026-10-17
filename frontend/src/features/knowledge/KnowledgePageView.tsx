@@ -5,6 +5,7 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Badge } from '../../design-system/Badge';
 import { Button } from '../../design-system/Button';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Tabs } from '../../design-system/Tabs';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -15,6 +16,7 @@ import {
   listKnowledgePages,
   listKnowledgePageVersions,
   recompileKnowledgePage,
+  type KnowledgeClaim,
   type KnowledgeKind,
   type KnowledgePage,
   type KnowledgePageStatus,
@@ -272,53 +274,77 @@ function Content({ page }: { page: KnowledgePage }) {
       </Card>
       {page.claims.length > 0 && (
         <Card title={`Khẳng định · ${valid} còn hiệu lực`}>
-          <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border">
-            <thead>
-              <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                <th className="px-da-lg py-da-md font-normal">Khẳng định</th>
-                <th className="px-da-lg py-da-md font-normal">Nguồn</th>
-                <th className="w-[120px] px-da-lg py-da-md font-normal">Hiệu lực</th>
-                <th className="w-[100px] px-da-lg py-da-md font-normal">Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody>
-              {page.claims.map((c) => {
-                const expired = c.status === 'expired';
-                return (
-                  <tr key={c.text} className="border-b border-border last:border-b-0 da-body-small">
-                    <td
-                      className={cn(
-                        'px-da-lg py-[10px]',
-                        expired ? 'text-muted-foreground' : 'text-foreground',
-                      )}
-                    >
-                      {c.text}
-                    </td>
-                    <td className="px-da-lg py-[10px]">
-                      <p className="text-foreground da-body-strong">{c.source_title}</p>
-                      <p className="text-muted-foreground da-caption">{c.source_detail}</p>
-                    </td>
-                    <td
-                      className={cn(
-                        'px-da-lg py-[10px]',
-                        expired ? 'text-muted-foreground' : 'text-foreground',
-                      )}
-                    >
-                      {c.valid_text}
-                    </td>
-                    <td className="px-da-lg py-[10px]">
-                      <StatusDot tone={expired ? 'neutral' : 'success'}>
-                        {expired ? 'Hết hạn' : 'Hiệu lực'}
-                      </StatusDot>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <ClaimsTable claims={page.claims} />
         </Card>
       )}
     </>
+  );
+}
+
+function ClaimsTable({ claims }: { claims: KnowledgeClaim[] }) {
+  const view = useTableView(claims, {
+    search: (row) => `${row.text} ${row.source_title} ${row.source_detail}`,
+    filters: [
+      {
+        id: 'status',
+        label: 'Trạng thái',
+        value: (row) => row.status,
+        text: (status) => (status === 'expired' ? 'Hết hạn' : 'Hiệu lực'),
+      },
+    ],
+    sorts: [
+      { id: 'text', value: (row) => row.text },
+      { id: 'source', value: (row) => row.source_title },
+      { id: 'valid', value: (row) => row.valid_text },
+      { id: 'status', value: (row) => row.status },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <div className="flex flex-col gap-da-md">
+      <TableToolbar view={view} placeholder="Tìm khẳng định…" searchLabel="Tìm khẳng định" />
+      <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border">
+        <thead>
+          <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="text" className="px-da-lg py-da-md font-normal">
+              Khẳng định
+            </SortableTh>
+            <SortableTh view={view} column="source" className="px-da-lg py-da-md font-normal">
+              Nguồn
+            </SortableTh>
+            <SortableTh view={view} column="valid" className="w-[120px] px-da-lg py-da-md font-normal">
+              Hiệu lực
+            </SortableTh>
+            <SortableTh view={view} column="status" className="w-[100px] px-da-lg py-da-md font-normal">
+              Trạng thái
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((c) => {
+            const expired = c.status === 'expired';
+            return (
+              <tr key={c.text} className="border-b border-border last:border-b-0 da-body-small">
+                <td className={cn('px-da-lg py-[10px]', expired ? 'text-muted-foreground' : 'text-foreground')}>
+                  {c.text}
+                </td>
+                <td className="px-da-lg py-[10px]">
+                  <p className="text-foreground da-body-strong">{c.source_title}</p>
+                  <p className="text-muted-foreground da-caption">{c.source_detail}</p>
+                </td>
+                <td className={cn('px-da-lg py-[10px]', expired ? 'text-muted-foreground' : 'text-foreground')}>
+                  {c.valid_text}
+                </td>
+                <td className="px-da-lg py-[10px]">
+                  <StatusDot tone={expired ? 'neutral' : 'success'}>{expired ? 'Hết hạn' : 'Hiệu lực'}</StatusDot>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </div>
   );
 }
 

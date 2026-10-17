@@ -6,6 +6,7 @@ import { EmptyState } from '../../design-system/EmptyState';
 import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { formatTime } from '../../lib/formatVN';
@@ -65,6 +66,17 @@ export function lastUsedText(iso: string | null, now = new Date()): string {
 export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; adding: boolean; onAddingDone: () => void }) {
   const toast = useToast();
   const memories = useV1(() => listMemories(agentId), [agentId]);
+  const view = useTableView(memories.data?.items ?? [], {
+    search: (m) => `${m.content} ${m.source_text} ${m.scope_text}`,
+    filters: [{ id: 'scope', label: 'Phạm vi', value: (m) => m.scope_text }],
+    sorts: [
+      { id: 'content', value: (m) => m.content },
+      { id: 'source', value: (m) => m.source_text },
+      { id: 'scope', value: (m) => m.scope_text },
+      { id: 'used', value: (m) => m.last_used_at },
+    ],
+    pageSize: 50,
+  });
   const [forgetting, setForgetting] = useState<AgentMemory | null>(null);
   const [editing, setEditing] = useState<AgentMemory | null>(null);
   const [busy, setBusy] = useState(false);
@@ -116,21 +128,31 @@ export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; 
           />
         }
       >
-        {(page) => (
+        {() => (
+          <>
+          <TableToolbar view={view} placeholder="Tìm ghi nhớ…" searchLabel="Tìm ghi nhớ" />
           <table className="w-full table-fixed border-collapse">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="px-da-lg py-da-md font-normal">Ghi nhớ</th>
-                <th className="w-[230px] px-da-lg py-da-md font-normal">Từ đâu</th>
-                <th className="w-[150px] px-da-lg py-da-md font-normal">Phạm vi</th>
-                <th className="w-[120px] px-da-lg py-da-md font-normal">Dùng gần nhất</th>
-                <th className="w-[110px] px-da-lg py-da-md">
+                <SortableTh view={view} column="content" className="px-da-lg py-da-md font-normal">
+                  Ghi nhớ
+                </SortableTh>
+                <SortableTh view={view} column="source" className="w-[230px] px-da-lg py-da-md font-normal">
+                  Từ đâu
+                </SortableTh>
+                <SortableTh view={view} column="scope" className="w-[150px] px-da-lg py-da-md font-normal">
+                  Phạm vi
+                </SortableTh>
+                <SortableTh view={view} column="used" className="w-[120px] px-da-lg py-da-md font-normal">
+                  Dùng gần nhất
+                </SortableTh>
+                <SortableTh view={view} className="w-[110px] px-da-lg py-da-md">
                   <span className="sr-only">Thao tác</span>
-                </th>
+                </SortableTh>
               </tr>
             </thead>
             <tbody>
-              {page.items.map((memory) => {
+              {view.rows.map((memory) => {
                 const pending = memory.status === 'pending_review';
                 return (
                   <tr key={memory.id} className="border-b border-border align-middle da-body-small">
@@ -165,6 +187,8 @@ export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; 
               })}
             </tbody>
           </table>
+          <TablePager view={view} />
+          </>
         )}
       </AsyncRegion>
       <p className="text-muted-foreground da-caption">

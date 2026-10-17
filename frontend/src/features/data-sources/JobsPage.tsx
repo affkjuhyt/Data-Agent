@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
@@ -9,6 +9,7 @@ import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Menu } from '../../design-system/Menu';
 import { Segmented } from '../../design-system/Segmented';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -44,7 +45,18 @@ export default function JobsPage() {
   const [filter, setFilter] = useState<JobFilter>('all');
   const items = jobs.data?.items ?? [];
   const count = (f: JobFilter) => items.filter((j) => matchesJobFilter(j, f)).length;
-  const visible = useMemo(() => items.filter((j) => matchesJobFilter(j, filter)), [items, filter]);
+  const view = useTableView(items, {
+    search: (job) => `${job.table_name} ${job.source_name} ${methodLabel(job)} ${jobStatus(job).label}`,
+    predicate: (job) => matchesJobFilter(job, filter),
+    filters: [{ id: 'method', label: 'Cách nạp', value: (job) => methodLabel(job) }],
+    sorts: [
+      { id: 'name', value: (job) => job.table_name },
+      { id: 'method', value: (job) => methodLabel(job) },
+      { id: 'lag', value: (job) => job.lag_seconds },
+      { id: 'rows', value: (job) => job.rows_today },
+      { id: 'status', value: (job) => jobStatus(job).label },
+    ],
+  });
 
   const [pausing, setPausing] = useState<IngestionJob | null>(null);
   const [reason, setReason] = useState('');
@@ -92,7 +104,8 @@ export default function JobsPage() {
       />
       <div className="flex flex-col gap-da-lg px-da-3xl pt-da-xl max-[767px]:px-da-lg">
         {/* On a phone the filter scrolls sideways instead of pushing the page wider. */}
-        <div className="flex items-center gap-da-md max-[639px]:overflow-x-auto">
+        <div className="flex flex-wrap items-center gap-da-md max-[639px]:overflow-x-auto">
+          <TableToolbar view={view} placeholder="Tìm job, nguồn…" searchLabel="Tìm job" />
           <Segmented<JobFilter>
             label="Lọc job"
             value={filter}
@@ -128,29 +141,31 @@ export default function JobsPage() {
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
                   {/* Narrower screens drop columns from the right; what a dropped column said
                       moves under the job's name, so the name column never collapses. */}
-                  <th className="px-da-lg py-da-md font-normal max-[639px]:px-da-sm">Job</th>
-                  <th className="w-[120px] px-da-md py-da-md font-normal max-[1023px]:hidden">
+                  <SortableTh view={view} column="name" className="px-da-lg py-da-md font-normal max-[639px]:px-da-sm">
+                    Job
+                  </SortableTh>
+                  <SortableTh view={view} column="method" className="w-[120px] px-da-md py-da-md font-normal max-[1023px]:hidden">
                     Cách nạp
-                  </th>
+                  </SortableTh>
                   <th className="w-[316px] px-da-md py-da-md font-normal max-[1279px]:hidden">
                     24 giờ qua
                   </th>
-                  <th className="w-[110px] px-da-md py-da-md font-normal max-[639px]:hidden">
+                  <SortableTh view={view} column="lag" className="w-[110px] px-da-md py-da-md font-normal max-[639px]:hidden">
                     Độ trễ
-                  </th>
-                  <th className="w-[110px] px-da-md py-da-md font-normal max-[767px]:hidden">
+                  </SortableTh>
+                  <SortableTh view={view} column="rows" className="w-[110px] px-da-md py-da-md font-normal max-[767px]:hidden">
                     Dòng hôm nay
-                  </th>
-                  <th className="w-[200px] px-da-md py-da-md font-normal max-[639px]:w-[132px]">
+                  </SortableTh>
+                  <SortableTh view={view} column="status" className="w-[200px] px-da-md py-da-md font-normal max-[639px]:w-[132px]">
                     Trạng thái
-                  </th>
-                  <th className="w-[44px] px-da-md py-da-md">
+                  </SortableTh>
+                  <SortableTh view={view} className="w-[44px] px-da-md py-da-md">
                     <span className="sr-only">Thao tác</span>
-                  </th>
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {visible.map((job) => {
+                {view.rows.map((job) => {
                   const status = jobStatus(job);
                   return (
                     <tr key={job.id} className="border-b border-border">
@@ -239,7 +254,7 @@ export default function JobsPage() {
                     </tr>
                   );
                 })}
-                {visible.length === 0 && (
+                {view.total === 0 && (
                   <tr>
                     <td
                       colSpan={7}
@@ -253,6 +268,7 @@ export default function JobsPage() {
             </table>
           )}
         </AsyncRegion>
+        <TablePager view={view} />
         <p className="text-muted-foreground da-caption">
           Mỗi ô là một giờ: xanh là chạy thành công, đỏ là lỗi, xám là không có lần chạy. Job trễ
           quá hạn độ mới sẽ báo người phụ trách nguồn và đánh dấu số liệu liên quan là “có thể cũ”.

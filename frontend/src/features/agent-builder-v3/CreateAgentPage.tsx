@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -248,24 +249,39 @@ export default function CreateAgentPage() {
 }
 
 function Proposal({ proposal, onCorrect }: { proposal: AgentDraft; onCorrect: (field: DraftField, text: string) => void }) {
+  const view = useTableView(proposal.lines, {
+    search: (line) => `${line.label} ${line.text}`,
+    filters: [{ id: 'part', label: 'Phần', value: (line) => line.label }],
+    sorts: [
+      { id: 'part', value: (line) => line.label },
+      { id: 'text', value: (line) => line.text },
+    ],
+    pageSize: 50,
+  });
   return (
     <>
+      <TableToolbar view={view} placeholder="Tìm phần…" searchLabel="Tìm phần đề xuất" />
       <table className="w-full table-fixed border-collapse">
         <thead>
           <tr className="border-b border-border text-left text-muted-foreground da-caption">
-            <th className="w-[150px] px-da-lg py-da-md font-normal">Phần</th>
-            <th className="px-da-lg py-da-md font-normal">Đề xuất</th>
-            <th className="w-[90px] px-da-lg py-da-md">
+            <SortableTh view={view} column="part" className="w-[150px] px-da-lg py-da-md font-normal">
+              Phần
+            </SortableTh>
+            <SortableTh view={view} column="text" className="px-da-lg py-da-md font-normal">
+              Đề xuất
+            </SortableTh>
+            <SortableTh view={view} className="w-[90px] px-da-lg py-da-md">
               <span className="sr-only">Lưu ý</span>
-            </th>
+            </SortableTh>
           </tr>
         </thead>
         <tbody>
-          {proposal.lines.map((line) => (
+          {view.rows.map((line) => (
             <ProposalRow key={line.field} line={line} onCorrect={(text) => onCorrect(line.field, text)} />
           ))}
         </tbody>
       </table>
+      <TablePager view={view} />
       <div className="flex flex-col gap-da-sm pt-[14px]">
         {proposal.warning && <p className="text-warning da-body-small">{proposal.warning}</p>}
         <p className="text-muted-foreground da-caption">

@@ -7,6 +7,7 @@ import { Checkbox } from '../../design-system/Checkbox';
 import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
@@ -146,30 +147,54 @@ function FromSession({ draft }: { draft: SessionSkillDraft }) {
             />
           </Field>
           <h2 className="text-foreground da-heading-3">Tham số agent nhận ra</h2>
-          <table className="w-full table-fixed border-collapse">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="w-[110px] px-da-lg py-da-md font-normal">Tên</th>
-                <th className="px-da-lg py-da-md font-normal">Kiểu</th>
-                <th className="w-[110px] px-da-lg py-da-md font-normal">Mặc định</th>
-              </tr>
-            </thead>
-            <tbody>
-              {draft.params.map((p) => (
-                <tr key={p.name} className="border-b border-border">
-                  <td className="px-da-lg py-[9px] text-foreground da-mono">{p.name}</td>
-                  <td className="px-da-lg py-[9px] text-muted-foreground da-body-small">
-                    {p.type_label}
-                  </td>
-                  <td className="px-da-lg py-[9px] text-foreground da-mono">{p.default_text}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ParamTable params={draft.params} />
           <h2 className="text-foreground da-heading-3">Ca kiểm thử tạo sẵn</h2>
           <p className="text-foreground da-body-small">{draft.test_case_text}</p>
         </aside>
       </div>
     </div>
+  );
+}
+
+function ParamTable({ params }: { params: SessionSkillDraft['params'] }) {
+  const view = useTableView(params, {
+    search: (p) => `${p.name} ${p.type_label} ${p.default_text}`,
+    filters: [{ id: 'type', label: 'Kiểu', value: (p) => p.type_label }],
+    sorts: [
+      { id: 'name', value: (p) => p.name },
+      { id: 'type', value: (p) => p.type_label },
+      { id: 'default', value: (p) => p.default_text },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm tham số…" searchLabel="Tìm tham số" />
+      <table className="w-full table-fixed border-collapse">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="name" className="w-[110px] px-da-lg py-da-md font-normal">
+              Tên
+            </SortableTh>
+            <SortableTh view={view} column="type" className="px-da-lg py-da-md font-normal">
+              Kiểu
+            </SortableTh>
+            <SortableTh view={view} column="default" className="w-[110px] px-da-lg py-da-md font-normal">
+              Mặc định
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((p) => (
+            <tr key={p.name} className="border-b border-border">
+              <td className="px-da-lg py-[9px] text-foreground da-mono">{p.name}</td>
+              <td className="px-da-lg py-[9px] text-muted-foreground da-body-small">{p.type_label}</td>
+              <td className="px-da-lg py-[9px] text-foreground da-mono">{p.default_text}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
   );
 }

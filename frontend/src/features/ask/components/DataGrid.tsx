@@ -7,7 +7,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../../../design-system/Button';
 import { Icon } from '../../../design-system/Icon';
+import { Input } from '../../../design-system/Input';
+import { Pagination } from '../../../design-system/Pagination';
 import { Segmented } from '../../../design-system/Segmented';
+import { Select } from '../../../design-system/Select';
 import { cn } from '../../../lib/utils';
 import { formatCell, formatNumber, isNumericColumn, toNumber } from '../../../lib/formatVN';
 import { TRUNCATION_LABELS } from '../labels';
@@ -53,7 +56,9 @@ function compare(a: unknown, b: unknown): number {
 
 export function DataGrid({ columns, columnUnits, rows, rowCount, capped, truncation, pageSize = 10, title = 'Bảng dữ liệu', onExport, fullResult }: DataGridProps) {
   const [sort, setSort] = useState<Sort>(null);
-  const [visible, setVisible] = useState(pageSize);
+  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState('');
+  const [valueFilter, setValueFilter] = useState('_all');
   const [mode, setMode] = useState<Mode>('preview');
   const [fullOffset, setFullOffset] = useState(0);
   const [fullRows, setFullRows] = useState<Record<string, unknown>[]>([]);
@@ -98,22 +103,41 @@ export function DataGrid({ columns, columnUnits, rows, rowCount, capped, truncat
     return () => { cancelled = true; };
   }, [columns, fullOffset, fullPageSize, fullResult, mode, sort]);
 
+  const filterColumn = columns[0] ?? '';
+  const filterOptions = useMemo(() => {
+    const values = [...new Set(rows.map((row) => String(row[filterColumn] ?? '')).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b, 'vi', { numeric: true }),
+    );
+    return [{ value: '_all', label: 'Giá trị: tất cả' }, ...values.map((value) => ({ value, label: value }))];
+  }, [filterColumn, rows]);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((row) => {
+      if (valueFilter !== '_all' && String(row[filterColumn] ?? '') !== valueFilter) return false;
+      if (!q) return true;
+      return columns.some((column) => String(row[column] ?? '').toLowerCase().includes(q));
+    });
+  }, [columns, filterColumn, query, rows, valueFilter]);
   const sorted = useMemo(() => {
-    if (mode === 'full') return fullRows;
-    if (!sort) return rows;
-    const copy = [...rows];
+    const source = mode === 'full' ? fullRows : filtered;
+    if (mode === 'full' || !sort) return source;
+    const copy = [...source];
     copy.sort((a, b) => {
       const v = compare(a[sort.column], b[sort.column]);
       return sort.dir === 'asc' ? v : -v;
     });
     return copy;
-  }, [fullRows, mode, rows, sort]);
+  }, [filtered, fullRows, mode, sort]);
 
   const activeColumns = mode === 'full' ? fullColumns : columns;
-  const shown = mode === 'full' ? sorted : sorted.slice(0, visible);
+  const previewTotal = sorted.length;
+  const previewPages = Math.max(1, Math.ceil(previewTotal / pageSize));
+  const previewPage = Math.min(page, previewPages);
+  const shown = mode === 'full' ? sorted : sorted.slice((previewPage - 1) * pageSize, previewPage * pageSize);
   const total = mode === 'full' ? fullTotal : rowCount ?? rows.length;
   const toggleSort = (column: string) => {
     setSort(prev => (prev?.column !== column ? { column, dir: 'asc' } : prev.dir === 'asc' ? { column, dir: 'desc' } : null));
+    setPage(1);
     if (mode === 'full') setFullOffset(0);
   };
   const exportXlsx = async () => {
@@ -141,6 +165,30 @@ export function DataGrid({ columns, columnUnits, rows, rowCount, capped, truncat
         <span className="text-foreground da-body-strong">
           {title} · {formatNumber(total)} dòng
         </span>
+        <Input
+          className="w-[220px]"
+          icon="search"
+          placeholder="Tìm trong bảng…"
+          aria-label="Tìm trong bảng"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setPage(1);
+          }}
+        />
+        {mode === 'preview' && filterColumn && (
+          <Select
+            className="w-[180px]"
+            size="sm"
+            label={`Lọc theo ${filterColumn}`}
+            value={valueFilter}
+            onChange={(value) => {
+              setValueFilter(value);
+              setPage(1);
+            }}
+            options={filterOptions}
+          />
+        )}
         <span className="flex-1" />
         {fullResult?.loadRows && (
           <Segmented
@@ -226,13 +274,8 @@ export function DataGrid({ columns, columnUnits, rows, rowCount, capped, truncat
         </span>
         {fullLoading && <span>Đang tải toàn bộ kết quả…</span>}
         {truncNote && <span className="text-warning">{truncNote}</span>}
-        {mode === 'preview' && visible < sorted.length && (
-          <button type="button" className={linkClass} onClick={() => setVisible(v => v + pageSize * 2)}>
-            Xem thêm {formatNumber(Math.min(pageSize * 2, sorted.length - visible))} dòng
-          </button>
-        )}
-        {mode === 'preview' && visible > pageSize && sorted.length > pageSize && (
-          <button type="button" className={linkClass} onClick={() => setVisible(pageSize)}>Thu gọn</button>
+        {mode === 'preview' && (
+          <Pagination page={previewPage} pageSize={pageSize} total={previewTotal} onPage={setPage} />
         )}
         {mode === 'full' && fullOffset > 0 && (
           <button type="button" className={linkClass} onClick={() => setFullOffset(Math.max(0, fullOffset - fullPageSize))}>

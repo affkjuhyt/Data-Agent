@@ -991,6 +991,7 @@ export function createAdminPlatformHandlers() {
           spent_this_month: a.cost,
           budget_used_ratio: 0.62,
         })),
+        issues: summary.issues,
       });
     }),
 
@@ -1072,6 +1073,18 @@ export function createAdminPlatformHandlers() {
       return HttpResponse.json(back);
     }),
     http.get('*/v1/admin/ai-policy', () => HttpResponse.json(policy)),
+    http.get('*/v1/admin/ai-settings', () =>
+      HttpResponse.json([
+        { key: 'max_cost_per_run', value: 50000 },
+        { key: 'input_filter', value: 'Chặn yêu cầu lấy dữ liệu cá nhân hàng loạt' },
+        { key: 'output_filter', value: 'Không trả số tài khoản, CCCD đầy đủ' },
+        { key: 'prompt_log_retention_days', value: 30 },
+        {
+          key: 'frontier_routing',
+          value: { enabled: policy.frontier_allowed, tasks: [], data_space_ids: [] },
+        },
+      ]),
+    ),
     http.get('*/v1/admin/ai-settings', () =>
       HttpResponse.json([
         { key: 'max_cost_per_run', value: 50000 },

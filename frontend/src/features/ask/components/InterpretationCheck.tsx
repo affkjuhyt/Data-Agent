@@ -10,6 +10,7 @@ import { Button } from '../../../design-system/Button';
 import { Checkbox } from '../../../design-system/Checkbox';
 import { Icon } from '../../../design-system/Icon';
 import { StatusDot } from '../../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../../design-system/tableView';
 import { cn } from '../../../lib/utils';
 import type { Understanding } from '../types';
 
@@ -35,6 +36,17 @@ export function InterpretationCheck({
 }) {
   const [meaning, setMeaning] = useState(understanding.ambiguity?.selected);
   const [remember, setRemember] = useState(false);
+  const slots = useTableView(understanding.slots, {
+    search: (row) => `${row.slot} ${row.value} ${row.source}`,
+    filters: [{ id: 'slot', label: 'Ô', value: (row) => row.slot }],
+    sorts: [
+      { id: 'slot', value: (row) => row.slot },
+      { id: 'value', value: (row) => row.value },
+      { id: 'source', value: (row) => row.source },
+      { id: 'confidence', value: (row) => row.confidence },
+    ],
+    pageSize: 50,
+  });
   const chosen = understanding.ambiguity?.options.find((o) => o.key === meaning);
   const open = understanding.check_required;
 
@@ -71,9 +83,26 @@ export function InterpretationCheck({
             ),
           )}
         </p>
+        <TableToolbar view={slots} placeholder="Tìm ô…" searchLabel="Tìm ô cách hiểu" />
         <table className="w-full border-collapse da-body-small">
+          <thead>
+            <tr className="text-left text-muted-foreground da-caption">
+              <SortableTh view={slots} column="slot" className="py-da-xs font-normal">
+                Ô
+              </SortableTh>
+              <SortableTh view={slots} column="value" className="py-da-xs font-normal">
+                Giá trị
+              </SortableTh>
+              <SortableTh view={slots} column="source" className="py-da-xs font-normal">
+                Nguồn
+              </SortableTh>
+              <SortableTh view={slots} column="confidence" className="py-da-xs font-normal">
+                Độ tin
+              </SortableTh>
+            </tr>
+          </thead>
           <tbody>
-            {understanding.slots.map((s) => (
+            {slots.rows.map((s) => (
               <tr
                 key={`${s.slot}-${s.value}`}
                 className={cn(s.divider && 'border-t border-border')}
@@ -94,6 +123,7 @@ export function InterpretationCheck({
             ))}
           </tbody>
         </table>
+        <TablePager view={slots} />
         {understanding.ambiguity && (
           <div
             role="radiogroup"

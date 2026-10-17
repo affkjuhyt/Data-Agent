@@ -8,6 +8,7 @@ import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Menu } from '../../design-system/Menu';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { formatDate, formatTime } from '../../lib/formatVN';
@@ -60,6 +61,19 @@ export default function PipelinesPage() {
 
   const items = pipelines.data?.items ?? [];
   const count = (s: PipelineStatus) => items.filter((p) => p.status === s).length;
+  const view = useTableView(items, {
+    search: (p) =>
+      `${p.name} ${p.owner_name} ${p.inputs.join(' ')} ${p.output_table ?? ''} ${p.schedule_text}`,
+    filters: [{ id: 'status', label: 'Trạng thái', value: (p) => STATUS[p.status].label }],
+    sorts: [
+      { id: 'name', value: (p) => p.name },
+      { id: 'io', value: (p) => `${p.inputs.join(' + ')} → ${p.output_table ?? ''}` },
+      { id: 'schedule', value: (p) => p.schedule_text },
+      { id: 'last', value: (p) => p.last_run?.started_at },
+      { id: 'status', value: (p) => STATUS[p.status].label },
+    ],
+    pageSize: 50,
+  });
 
   const runNow = async (p: Pipeline) => {
     try {
@@ -112,21 +126,33 @@ export default function PipelinesPage() {
           }
         >
           {() => (
+            <>
+            <TableToolbar view={view} placeholder="Tìm pipeline…" searchLabel="Tìm pipeline" />
             <table className="w-full table-fixed border-collapse">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="px-da-lg py-da-md font-normal">Pipeline</th>
-                  <th className="w-[300px] px-da-lg py-da-md font-normal">Đầu vào → đầu ra</th>
-                  <th className="w-[170px] px-da-lg py-da-md font-normal">Lịch</th>
-                  <th className="w-[150px] px-da-lg py-da-md font-normal">Lần chạy gần nhất</th>
-                  <th className="w-[170px] px-da-lg py-da-md font-normal">Trạng thái</th>
-                  <th className="w-[52px] px-da-lg py-da-md font-normal">
+                  <SortableTh view={view} column="name" className="px-da-lg py-da-md font-normal">
+                    Pipeline
+                  </SortableTh>
+                  <SortableTh view={view} column="io" className="w-[300px] px-da-lg py-da-md font-normal">
+                    Đầu vào → đầu ra
+                  </SortableTh>
+                  <SortableTh view={view} column="schedule" className="w-[170px] px-da-lg py-da-md font-normal">
+                    Lịch
+                  </SortableTh>
+                  <SortableTh view={view} column="last" className="w-[150px] px-da-lg py-da-md font-normal">
+                    Lần chạy gần nhất
+                  </SortableTh>
+                  <SortableTh view={view} column="status" className="w-[170px] px-da-lg py-da-md font-normal">
+                    Trạng thái
+                  </SortableTh>
+                  <SortableTh view={view} className="w-[52px] px-da-lg py-da-md font-normal">
                     <span className="sr-only">Thao tác</span>
-                  </th>
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {items.map((p) => (
+                {view.rows.map((p) => (
                   <tr key={p.id} className="border-b border-border da-body-small">
                     <td className="px-da-lg py-[9px]">
                       <button
@@ -175,6 +201,8 @@ export default function PipelinesPage() {
                 ))}
               </tbody>
             </table>
+            <TablePager view={view} />
+            </>
           )}
         </AsyncRegion>
         <p className="text-muted-foreground da-caption">

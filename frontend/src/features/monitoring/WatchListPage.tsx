@@ -5,9 +5,9 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Checkbox } from '../../design-system/Checkbox';
 import { EmptyState } from '../../design-system/EmptyState';
-import { Input } from '../../design-system/Input';
 import { Menu } from '../../design-system/Menu';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -110,19 +110,27 @@ function WatchList({ items, onChanged }: { items: Monitor[]; onChanged: () => vo
     owner: new Set(),
     kind: new Set(),
   });
-  const [query, setQuery] = useState('');
   const [error, setError] = useState<string>();
 
-  const q = query.trim().toLowerCase();
-  const shown = items
-    .filter(
-      (m) =>
-        (filters.state.size === 0 || filters.state.has(m.state)) &&
-        (filters.owner.size === 0 || filters.owner.has(ownerOf(m))) &&
-        (filters.kind.size === 0 || filters.kind.has(m.rule_kind)) &&
-        (!q || `${m.name} ${m.metric_text}`.toLowerCase().includes(q)),
-    )
-    .sort((a, b) => (b.last_fired_at ?? '').localeCompare(a.last_fired_at ?? ''));
+  const ordered = [...items].sort((a, b) =>
+    (b.last_fired_at ?? '').localeCompare(a.last_fired_at ?? ''),
+  );
+  const view = useTableView(ordered, {
+    search: (m) => `${m.name} ${m.metric_text} ${m.condition_text} ${m.channels_text}`,
+    filters: [{ id: 'channel', label: 'Kênh', value: (m) => m.channels_text }],
+    predicate: (m) =>
+      (filters.state.size === 0 || filters.state.has(m.state)) &&
+      (filters.owner.size === 0 || filters.owner.has(ownerOf(m))) &&
+      (filters.kind.size === 0 || filters.kind.has(m.rule_kind)),
+    sorts: [
+      { id: 'name', value: (m) => m.name },
+      { id: 'condition', value: (m) => m.condition_text },
+      { id: 'state', value: (m) => STATE[m.state].label },
+      { id: 'fired', value: (m) => m.last_fired_at },
+      { id: 'channels', value: (m) => m.channels_text },
+    ],
+    pageSize: 50,
+  });
 
   const toggle = <K extends keyof Filters>(group: K, value: string, on: boolean) =>
     setFilters((f) => {
@@ -193,21 +201,13 @@ function WatchList({ items, onChanged }: { items: Monitor[]; onChanged: () => vo
         </FilterGroup>
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-da-md">
-        <div className="flex items-center gap-da-lg">
-          <Input
-            icon="search"
-            aria-label="Tìm theo dõi"
-            placeholder="Tìm theo tên, chỉ số…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="w-[320px] max-w-full"
-          />
+        <TableToolbar view={view} placeholder="Tìm theo tên, chỉ số…" searchLabel="Tìm theo dõi">
           <span className="ml-auto text-muted-foreground da-body-small">
             Sắp xếp: Kích hoạt gần nhất
           </span>
-        </div>
+        </TableToolbar>
         {error && <Notice tone="error">Không thực hiện được: {error}</Notice>}
-        {shown.length === 0 ? (
+        {view.total === 0 ? (
           <EmptyState
             title="Không có theo dõi khớp bộ lọc"
             description="Bỏ bớt bộ lọc hoặc đổi từ khoá tìm."
@@ -216,16 +216,26 @@ function WatchList({ items, onChanged }: { items: Monitor[]; onChanged: () => vo
           <table className="w-full table-fixed border-collapse da-body-small">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="px-da-md py-da-md font-normal">Tên</th>
-                <th className="w-[236px] px-da-md py-da-md font-normal">Điều kiện</th>
-                <th className="w-[166px] px-da-md py-da-md font-normal">Trạng thái</th>
-                <th className="w-[156px] px-da-md py-da-md font-normal">Kích hoạt gần nhất</th>
-                <th className="w-[136px] px-da-md py-da-md font-normal">Gửi tới</th>
-                <th className="w-[40px]" />
+                <SortableTh view={view} column="name" className="px-da-md py-da-md font-normal">
+                  Tên
+                </SortableTh>
+                <SortableTh view={view} column="condition" className="w-[236px] px-da-md py-da-md font-normal">
+                  Điều kiện
+                </SortableTh>
+                <SortableTh view={view} column="state" className="w-[166px] px-da-md py-da-md font-normal">
+                  Trạng thái
+                </SortableTh>
+                <SortableTh view={view} column="fired" className="w-[156px] px-da-md py-da-md font-normal">
+                  Kích hoạt gần nhất
+                </SortableTh>
+                <SortableTh view={view} column="channels" className="w-[136px] px-da-md py-da-md font-normal">
+                  Gửi tới
+                </SortableTh>
+                <SortableTh view={view} className="w-[40px]" />
               </tr>
             </thead>
             <tbody>
-              {shown.map((m) => (
+              {view.rows.map((m) => (
                 <tr key={m.id} className="border-b border-border text-foreground">
                   <td className="px-da-md py-[10px]">
                     <p className="truncate">{m.name}</p>
@@ -267,6 +277,7 @@ function WatchList({ items, onChanged }: { items: Monitor[]; onChanged: () => vo
             </tbody>
           </table>
         )}
+        <TablePager view={view} />
         <p className="text-muted-foreground da-caption">
           Theo dõi trên chỉ số chưa chứng nhận vẫn tạo được nhưng chỉ báo trong ứng dụng, không gửi
           ra Teams, Zalo hay email.

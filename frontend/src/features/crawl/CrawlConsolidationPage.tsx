@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Notice } from '../../design-system/Notice';
+import { MatrixTable } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -142,34 +143,13 @@ function ConsolidationBody({ run, onChanged }: { run: ConsolidationRun; onChange
         <div className="flex items-start gap-da-xl max-[1279px]:flex-col">
           {run.table && (
             <Card title={run.table.title} className="min-w-0 flex-1">
-              <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border da-body-small">
-                <thead>
-                  <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                    {run.table.columns.map((c) => (
-                      <th key={c} className="px-da-lg py-da-md font-normal">
-                        {c}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {run.table.rows.map((r, i) => (
-                    <tr
-                      key={r[0]}
-                      className={cn(
-                        'border-b border-border last:border-b-0 text-foreground',
-                        i === run.table?.highlighted_row && 'bg-accent',
-                      )}
-                    >
-                      {r.map((cell, j) => (
-                        <td key={j} className="px-da-lg py-[10px]">
-                          {cell}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <MatrixTable
+                columns={run.table.columns}
+                rows={run.table.rows}
+                highlightRow={run.table.highlighted_row}
+                className="w-full table-fixed border-collapse da-body-small"
+                searchLabel="Tìm trong bảng hợp nhất"
+              />
               {run.table.note && (
                 <p className="text-muted-foreground da-caption">{run.table.note}</p>
               )}

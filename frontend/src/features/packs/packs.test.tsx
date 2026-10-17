@@ -162,7 +162,8 @@ describe('MetricOverridePage', () => {
     expect(screen.getByText('2 điểm khác')).toBeInTheDocument();
     expect(screen.getByText(/Chờ người phụ trách chỉ số duyệt trong Cần bạn/)).toBeInTheDocument();
     expect(screen.getByText('Đối chiếu với số đã nộp: 2/2 khớp.')).toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Chấp nhận' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Từ chối' })).not.toBeInTheDocument();
   });
 });
 

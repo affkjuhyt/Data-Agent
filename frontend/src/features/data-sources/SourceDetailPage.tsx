@@ -4,6 +4,7 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber, formatTime } from '../../lib/formatVN';
@@ -52,6 +53,22 @@ function SourceView({ source, reload }: { source: SourceDetail; reload: () => vo
     }
   };
   const tone = sourceTone(source);
+  const view = useTableView(source.tables, {
+    search: (table) =>
+      `${table.name} ${table.description ?? ''} ${
+        table.row_count === null ? '' : formatNumber(table.row_count)
+      } ${table.column_count ?? ''} ${table.refreshed_at ? formatTime(table.refreshed_at) : ''}`,
+    filters: [
+      { id: 'description', label: 'Mô tả', value: (table) => table.description ?? 'Không mô tả' },
+    ],
+    sorts: [
+      { id: 'name', value: (table) => table.name },
+      { id: 'rows', value: (table) => table.row_count },
+      { id: 'columns', value: (table) => table.column_count },
+      { id: 'refreshed', value: (table) => table.refreshed_at },
+    ],
+    pageSize: 50,
+  });
 
   return (
     <div className="flex flex-col">
@@ -90,17 +107,27 @@ function SourceView({ source, reload }: { source: SourceDetail; reload: () => vo
             description="Bảng hiện ở đây sau khi nguồn được kiểm tra và bạn chọn dữ liệu để dùng."
           />
         ) : (
+          <>
+          <TableToolbar view={view} placeholder="Tìm bảng…" searchLabel="Tìm bảng" />
           <table className="w-full table-fixed border-collapse">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="px-da-lg py-da-md font-normal">Bảng</th>
-                <th className="w-[140px] px-da-md py-da-md font-normal">Dòng</th>
-                <th className="w-[100px] px-da-md py-da-md font-normal">Cột</th>
-                <th className="w-[120px] px-da-md py-da-md font-normal">Cập nhật</th>
+                <SortableTh view={view} column="name" className="px-da-lg py-da-md font-normal">
+                  Bảng
+                </SortableTh>
+                <SortableTh view={view} column="rows" className="w-[140px] px-da-md py-da-md font-normal">
+                  Dòng
+                </SortableTh>
+                <SortableTh view={view} column="columns" className="w-[100px] px-da-md py-da-md font-normal">
+                  Cột
+                </SortableTh>
+                <SortableTh view={view} column="refreshed" className="w-[120px] px-da-md py-da-md font-normal">
+                  Cập nhật
+                </SortableTh>
               </tr>
             </thead>
             <tbody>
-              {source.tables.map((table) => (
+              {view.rows.map((table) => (
                 <tr
                   key={table.id}
                   tabIndex={0}
@@ -131,6 +158,8 @@ function SourceView({ source, reload }: { source: SourceDetail; reload: () => vo
               ))}
             </tbody>
           </table>
+          <TablePager view={view} />
+          </>
         )}
       </div>
     </div>

@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { Icon } from '../../design-system/Icon';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { decideProposal, getProposal, listInbox } from '../../lib/v1/api';
 import type { DecideProposal, Proposal, ProposalImpact } from '../../lib/v1/types';

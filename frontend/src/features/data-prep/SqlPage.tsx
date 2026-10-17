@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Button } from '../../design-system/Button';
+import { MatrixTable } from '../../design-system/tableView';
 import { Icon } from '../../design-system/Icon';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
@@ -233,33 +234,12 @@ export default function SqlPage() {
                   ` · cột ${result.masked_columns.join(', ')} đã che`}
               </p>
             </div>
-            <div className="overflow-x-auto rounded-md border border-border bg-card">
-              <table className="border-collapse da-mono">
-                <thead>
-                  <tr className="bg-subtle text-left text-foreground">
-                    {result.columns.map((c) => (
-                      <th
-                        key={c}
-                        className="min-w-[140px] border-r border-border px-da-md py-da-sm font-normal"
-                      >
-                        {c}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.rows.map((row, i) => (
-                    <tr key={i} className="border-t border-border text-foreground">
-                      {row.map((cell, j) => (
-                        <td key={j} className="border-r border-border px-da-md py-da-xs">
-                          {cell ?? '—'}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <MatrixTable
+              columns={result.columns}
+              rows={result.rows}
+              className="border-collapse da-mono"
+              searchLabel="Tìm trong kết quả"
+            />
           </div>
         )}
       </div>

@@ -5,6 +5,7 @@ import { Button } from '../../design-system/Button';
 import { Icon } from '../../design-system/Icon';
 import { StatusDot } from '../../design-system/StatusDot';
 import { Tabs } from '../../design-system/Tabs';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { formatTime } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
@@ -103,6 +104,16 @@ function ContractTab({
 }) {
   const toast = useToast();
   const [drafting, setDrafting] = useState(false);
+  const contract = useTableView(product.contract, {
+    search: (row) => `${row.name} ${row.type} ${row.description}`,
+    filters: [{ id: 'type', label: 'Kiểu', value: (row) => row.type }],
+    sorts: [
+      { id: 'name', value: (row) => row.name },
+      { id: 'type', value: (row) => row.type },
+      { id: 'description', value: (row) => row.description },
+    ],
+    pageSize: 50,
+  });
 
   const draft = async () => {
     setDrafting(true);
@@ -121,16 +132,24 @@ function ContractTab({
   return (
     <>
       {product.contract.length > 0 ? (
+        <>
+        <TableToolbar view={contract} placeholder="Tìm trường…" searchLabel="Tìm trường" />
         <table className="w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-lg border border-border da-caption">
           <thead>
             <tr className="bg-subtle text-left text-muted-foreground da-label">
-              <th className="w-[118px] px-da-md py-da-sm font-medium">Trường</th>
-              <th className="w-[100px] px-da-md py-da-sm font-medium">Kiểu</th>
-              <th className="px-da-md py-da-sm font-medium">Mô tả</th>
+              <SortableTh view={contract} column="name" className="w-[118px] px-da-md py-da-sm font-medium">
+                Trường
+              </SortableTh>
+              <SortableTh view={contract} column="type" className="w-[100px] px-da-md py-da-sm font-medium">
+                Kiểu
+              </SortableTh>
+              <SortableTh view={contract} column="description" className="px-da-md py-da-sm font-medium">
+                Mô tả
+              </SortableTh>
             </tr>
           </thead>
           <tbody>
-            {product.contract.map((c) => (
+            {contract.rows.map((c) => (
               <tr key={c.name}>
                 <td
                   className={cn(
@@ -150,6 +169,8 @@ function ContractTab({
             ))}
           </tbody>
         </table>
+        <TablePager view={contract} />
+        </>
       ) : (
         <p className="text-muted-foreground da-body-small">Chưa có contract.</p>
       )}
@@ -221,19 +242,37 @@ function QualityTab({ product }: { product: DataProductDetail }) {
 }
 
 function ConsumersTab({ product }: { product: DataProductDetail }) {
+  const view = useTableView(product.consumers, {
+    search: (row) => `${row.data_space_name} ${row.used_for} ${row.version}`,
+    filters: [{ id: 'use', label: 'Dùng cho', value: (row) => row.used_for }],
+    sorts: [
+      { id: 'space', value: (row) => row.data_space_name },
+      { id: 'use', value: (row) => row.used_for },
+      { id: 'version', value: (row) => row.version },
+    ],
+    pageSize: 50,
+  });
   return (
     <div className="flex flex-col gap-da-lg">
       {product.consumers.length > 0 && (
+        <>
+        <TableToolbar view={view} placeholder="Tìm Data Space…" searchLabel="Tìm Data Space" />
         <table className="w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-md border border-border bg-card">
           <thead>
             <tr className="bg-subtle text-left text-muted-foreground da-label">
-              <th className="px-da-md py-da-sm font-medium">Data Space</th>
-              <th className="w-[140px] px-da-md py-da-sm font-medium">Dùng cho</th>
-              <th className="w-[82px] px-da-md py-da-sm font-medium">Phiên bản</th>
+              <SortableTh view={view} column="space" className="px-da-md py-da-sm font-medium">
+                Data Space
+              </SortableTh>
+              <SortableTh view={view} column="use" className="w-[140px] px-da-md py-da-sm font-medium">
+                Dùng cho
+              </SortableTh>
+              <SortableTh view={view} column="version" className="w-[82px] px-da-md py-da-sm font-medium">
+                Phiên bản
+              </SortableTh>
             </tr>
           </thead>
           <tbody>
-            {product.consumers.map((c) => (
+            {view.rows.map((c) => (
               <tr key={c.data_space_name}>
                 <td className="border-t border-border px-da-md py-da-sm text-foreground da-body-strong">
                   {c.data_space_name}
@@ -248,6 +287,8 @@ function ConsumersTab({ product }: { product: DataProductDetail }) {
             ))}
           </tbody>
         </table>
+        <TablePager view={view} />
+        </>
       )}
       <p className="text-muted-foreground da-caption">
         {product.consumer_spaces_total} Data Space
@@ -266,17 +307,35 @@ const VERSION: Record<VersionState, { dot?: 'warning' | 'success'; label: string
 };
 
 function VersionsTab({ product }: { product: DataProductDetail }) {
+  const view = useTableView(product.versions, {
+    search: (row) => `${row.version} ${row.change} ${VERSION[row.state].label}`,
+    filters: [{ id: 'state', label: 'Trạng thái', value: (row) => VERSION[row.state].label }],
+    sorts: [
+      { id: 'version', value: (row) => row.version },
+      { id: 'change', value: (row) => row.change },
+      { id: 'state', value: (row) => VERSION[row.state].label },
+    ],
+    pageSize: 50,
+  });
   return (
+    <div className="flex flex-col gap-da-md">
+    <TableToolbar view={view} placeholder="Tìm phiên bản…" searchLabel="Tìm phiên bản" />
     <table className="w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-md border border-border bg-card">
       <thead>
         <tr className="bg-subtle text-left text-muted-foreground da-label">
-          <th className="w-[92px] px-da-md py-da-sm font-medium">Phiên bản</th>
-          <th className="px-da-md py-da-sm font-medium">Thay đổi</th>
-          <th className="w-[122px] px-da-md py-da-sm font-medium">Trạng thái</th>
+          <SortableTh view={view} column="version" className="w-[92px] px-da-md py-da-sm font-medium">
+            Phiên bản
+          </SortableTh>
+          <SortableTh view={view} column="change" className="px-da-md py-da-sm font-medium">
+            Thay đổi
+          </SortableTh>
+          <SortableTh view={view} column="state" className="w-[122px] px-da-md py-da-sm font-medium">
+            Trạng thái
+          </SortableTh>
         </tr>
       </thead>
       <tbody>
-        {product.versions.map((v) => {
+        {view.rows.map((v) => {
           const state = VERSION[v.state];
           return (
             <tr key={v.version}>
@@ -298,5 +357,7 @@ function VersionsTab({ product }: { product: DataProductDetail }) {
         })}
       </tbody>
     </table>
+    <TablePager view={view} />
+    </div>
   );
 }

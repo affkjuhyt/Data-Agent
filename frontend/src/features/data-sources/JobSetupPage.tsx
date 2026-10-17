@@ -8,6 +8,7 @@ import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Segmented } from '../../design-system/Segmented';
 import { Select } from '../../design-system/Select';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import {
@@ -120,6 +121,17 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
   const [job, setJob] = useState<NewJob>(() => draftFor(initial));
   const [dryRun, setDryRun] = useState<DryRunResult | null>(null);
   const [busy, setBusy] = useState<'dry' | 'save' | null>(null);
+  const checksView = useTableView(dryRun?.checks ?? [], {
+    search: (check) => `${check.title} ${check.result}`,
+    filters: [
+      { id: 'result', label: 'Kết quả', value: (check) => (check.ok ? 'Đạt' : 'Chưa đạt') },
+    ],
+    sorts: [
+      { id: 'title', value: (check) => check.title },
+      { id: 'result', value: (check) => check.result },
+    ],
+    pageSize: 50,
+  });
 
   // Any change makes the last dry run stale: it was read with another config.
   const update = (patch: Partial<NewJob>) => {
@@ -342,15 +354,29 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
             <>
               <h2 className="text-foreground da-heading-3">Chạy thử 1.000 dòng</h2>
               {dryRun ? (
+                <>
+                <TableToolbar
+                  view={checksView}
+                  placeholder="Tìm kiểm tra…"
+                  searchLabel="Tìm kiểm tra"
+                />
                 <table className="w-full table-fixed border-collapse">
                   <thead>
                     <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                      <th className="px-da-lg py-da-md font-normal">Kiểm tra</th>
-                      <th className="w-[216px] px-da-md py-da-md font-normal">Kết quả</th>
+                      <SortableTh view={checksView} column="title" className="px-da-lg py-da-md font-normal">
+                        Kiểm tra
+                      </SortableTh>
+                      <SortableTh
+                        view={checksView}
+                        column="result"
+                        className="w-[216px] px-da-md py-da-md font-normal"
+                      >
+                        Kết quả
+                      </SortableTh>
                     </tr>
                   </thead>
                   <tbody>
-                    {dryRun.checks.map((check) => (
+                    {checksView.rows.map((check) => (
                       <tr key={check.title} className="border-b border-border">
                         <td className="px-da-lg py-[9px] text-foreground da-body-small">
                           {check.title}
@@ -367,6 +393,8 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
                     ))}
                   </tbody>
                 </table>
+                <TablePager view={checksView} />
+                </>
               ) : (
                 <p className="text-muted-foreground da-body-small">
                   Chưa chạy thử. Chạy thử đọc 1.000 dòng theo cấu hình bên trái và không ghi gì vào

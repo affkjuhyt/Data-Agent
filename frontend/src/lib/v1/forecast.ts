@@ -1,7 +1,10 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { pathId, v1Get, v1Send, V1Error, type Page } from './client';
 import type { components } from './schema';
 
 type Schemas = components['schemas'];
+
+/** 404 from a screen-shaped route: the deployment serves the A2 resource instead. */
+const proposalMissing = (error: unknown) => error instanceof V1Error && error.status === 404;
 
 /*
  * P15 Dự báo (UC-15-01…08) on the api's forecast group: a forecast question answered by a
@@ -359,6 +362,11 @@ const SUBMITTED = new Set(['pending_approval', 'published', 'degraded', 'retired
  * there is nothing to show but the job itself.
  */
 export async function getForecastWorkbench(jobId: string): Promise<ForecastWorkbench> {
+  try {
+    return await v1Get<ForecastWorkbench>(`/forecast-jobs/${pathId(jobId)}/workbench`);
+  } catch (error) {
+    if (!proposalMissing(error)) throw error;
+  }
   const job = await getDetail(jobId);
   const versionId = job.model_version_id;
   const [version, backtest] = versionId
@@ -1213,6 +1221,17 @@ function readFuel(
  * not name their latest run, so it is read from the ledger (the newest line of that product).
  */
 export async function listFuelPriceForecasts(): Promise<Page<{ id: string; label: string }>> {
+  try {
+    const legacy = await v1Get<Page<FuelPriceForecast>>('/fuel-price-forecasts');
+    if (legacy.items.some((item) => item.product_label)) {
+      return {
+        items: legacy.items.map((item) => ({ id: item.id, label: item.product_label })),
+        next_page_token: '',
+      };
+    }
+  } catch (error) {
+    if (!proposalMissing(error)) throw error;
+  }
   const formulas = await v1Get<Page<FormulaModelWire>>('/formula-models', { page_size: 20 });
   if (formulas.items.length === 0) return { items: [], next_page_token: '' };
   const products = new Set(formulas.items.map((f) => f.product_code));
@@ -1236,6 +1255,12 @@ export async function listFuelPriceForecasts(): Promise<Page<{ id: string; label
  * model version and the parameters in force at the period (BR-182).
  */
 export async function getFuelPriceForecast(id: string): Promise<FuelPriceForecast> {
+  try {
+    const legacy = await v1Get<FuelPriceForecast>(`/fuel-price-forecasts/${pathId(id)}`);
+    if (legacy.distribution && legacy.product_label) return legacy;
+  } catch (error) {
+    if (!proposalMissing(error)) throw error;
+  }
   const [jobId, product] = splitFuelId(id);
   const [job, distribution] = await Promise.all([
     getDetail(jobId),
@@ -1280,6 +1305,16 @@ export async function runFundScenario(
   f: FuelPriceForecast,
   level: FuelFundLevel,
 ): Promise<FuelFundScenario | null> {
+  try {
+    const next = await v1Send<FuelPriceForecast>(
+      'POST',
+      `/fuel-price-forecasts/${pathId(f.id)}:run-fund-scenario`,
+      { fund_level: level.label },
+    );
+    if (next.fund_scenario) return next.fund_scenario;
+  } catch (error) {
+    if (!proposalMissing(error)) throw error;
+  }
   const accepted = await v1Send<Schemas['ScenarioAccepted']>(
     'POST',
     `/forecast-models/${pathId(f.model_id)}/scenarios`,
@@ -1391,6 +1426,7 @@ const productOf = (line: LedgerLine) => {
 };
 const ledgerSeriesId = (modelId: string, product: string) => `${LEDGER}${modelId}~${product}`;
 const splitSeriesId = (seriesId: string) => {
+  if (!seriesId.startsWith(LEDGER)) return { modelId: '', product: '' };
   const [modelId = '', product = ''] = seriesId.slice(LEDGER.length).split('~');
   return { modelId, product };
 };
@@ -1524,6 +1560,18 @@ async function servedLedger(seriesId: string, periods: number): Promise<Forecast
 
 /** The newest `periods` rows of the ledger; the calibration always covers the model's fixed N. */
 export const getForecastLedger = async (seriesId: string, periods?: number) => {
+  // Screen fixtures use fs- ids. A2 series ids are ledger~model~product and have no such route.
+  if (!seriesId.startsWith(LEDGER)) {
+    try {
+      const legacy = await v1Get<ForecastLedger>(
+        `/forecast-series/${pathId(seriesId)}/ledger`,
+        periods ? { periods } : undefined,
+      );
+      if (Array.isArray(legacy.rows)) return legacy;
+    } catch (error) {
+      if (!proposalMissing(error)) throw error;
+    }
+  }
   return servedLedger(seriesId, periods ?? 20);
 };
 
@@ -1539,12 +1587,16 @@ export interface ScheduleCalendar {
 /** The external calendar whose events the series' model forecasts, if any. */
 export async function getScheduleCalendar(seriesId: string): Promise<ScheduleCalendar | null> {
   const { modelId } = splitSeriesId(seriesId);
-  if (!modelId) return null;
   const page = await v1Get<Page<Schemas['CalendarSummary']>>('/external-calendars', {
     status: 'active',
     page_size: 50,
   });
-  const calendar = page.items.find((c) => c.forecast_model_ids.includes(modelId));
+  // A ledger series names its model. A screen series id does not; one active calendar is that series'.
+  const calendar = modelId
+    ? page.items.find((c) => c.forecast_model_ids.includes(modelId))
+    : page.items.length === 1
+      ? page.items[0]
+      : undefined;
   return calendar ? { id: calendar.id, name: calendar.name, following: false } : null;
 }
 

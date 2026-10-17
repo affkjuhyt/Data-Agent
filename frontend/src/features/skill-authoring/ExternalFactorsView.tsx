@@ -5,6 +5,7 @@ import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
 import { SkeletonRows } from '../../design-system/SkeletonRow';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { cn } from '../../lib/utils';
 import type {
@@ -157,20 +158,47 @@ function FactorTable({
   current: string | undefined;
   onSelect: (id: string) => void;
 }) {
+  const view = useTableView(factors, {
+    search: (f) => `${f.name} ${f.source_text} ${f.lag_text} ${f.correlation_text} ${f.test_text}`,
+    filters: [{ id: 'verdict', label: 'Kết luận', value: (f) => VERDICT[f.verdict].label }],
+    sorts: [
+      { id: 'name', value: (f) => f.name },
+      { id: 'source', value: (f) => f.source_text },
+      { id: 'lag', value: (f) => f.lag_text },
+      { id: 'corr', value: (f) => f.correlation_text },
+      { id: 'test', value: (f) => f.test_text },
+      { id: 'verdict', value: (f) => VERDICT[f.verdict].label },
+    ],
+    pageSize: 50,
+  });
   return (
+    <>
+    <TableToolbar view={view} placeholder="Tìm chuỗi…" searchLabel="Tìm chuỗi" />
     <table className="w-full table-fixed border-collapse">
       <thead>
         <tr className="border-b border-border text-left text-muted-foreground da-caption">
-          <th className="px-da-lg py-da-md font-normal">Chuỗi</th>
-          <th className="w-[150px] px-da-lg py-da-md font-normal">Nguồn</th>
-          <th className="w-[80px] px-da-lg py-da-md font-normal">Độ trễ</th>
-          <th className="w-[90px] px-da-lg py-da-md font-normal">Tương quan</th>
-          <th className="w-[110px] px-da-lg py-da-md font-normal">Kiểm định</th>
-          <th className="w-[130px] px-da-lg py-da-md font-normal">Kết luận</th>
+          <SortableTh view={view} column="name" className="px-da-lg py-da-md font-normal">
+            Chuỗi
+          </SortableTh>
+          <SortableTh view={view} column="source" className="w-[150px] px-da-lg py-da-md font-normal">
+            Nguồn
+          </SortableTh>
+          <SortableTh view={view} column="lag" className="w-[80px] px-da-lg py-da-md font-normal">
+            Độ trễ
+          </SortableTh>
+          <SortableTh view={view} column="corr" className="w-[90px] px-da-lg py-da-md font-normal">
+            Tương quan
+          </SortableTh>
+          <SortableTh view={view} column="test" className="w-[110px] px-da-lg py-da-md font-normal">
+            Kiểm định
+          </SortableTh>
+          <SortableTh view={view} column="verdict" className="w-[130px] px-da-lg py-da-md font-normal">
+            Kết luận
+          </SortableTh>
         </tr>
       </thead>
       <tbody>
-        {factors.map((f) => {
+        {view.rows.map((f) => {
           const v = VERDICT[f.verdict];
           return (
             <tr
@@ -208,6 +236,8 @@ function FactorTable({
         })}
       </tbody>
     </table>
+    <TablePager view={view} />
+    </>
   );
 }
 

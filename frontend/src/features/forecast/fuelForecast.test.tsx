@@ -148,6 +148,10 @@ describe('fuel forecast shapes', () => {
 });
 
 describe('ForecastLedgerPage', () => {
+  beforeEach(() => {
+    routeId = 'fs-ceiling-e5ron92';
+  });
+
   it('scores calibration over the fixed N and keeps the missed periods', async () => {
     show(<ForecastLedgerPage />);
     expect(await screen.findByText(/Sổ dự báo · Giá trần E5RON92/)).toBeInTheDocument();

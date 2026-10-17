@@ -6,6 +6,7 @@ import { Badge } from '../../design-system/Badge';
 import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { Notice } from '../../design-system/Notice';
+import { MatrixTable, SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Radio } from '../../design-system/Radio';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
@@ -274,6 +275,16 @@ function RecordCard({
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const extracted = useTableView(record.values, {
+    search: (row) => `${row.field} ${row.value}`,
+    filters: [{ id: 'field', label: 'Trường', value: (row) => row.field }],
+    sorts: [
+      { id: 'field', value: (row) => row.field },
+      { id: 'value', value: (row) => row.value },
+      { id: 'confidence', value: (row) => row.confidence },
+    ],
+    pageSize: 50,
+  });
 
   const decide = async (
     decision: 'confirm' | 'correct' | 'reject',
@@ -322,34 +333,13 @@ function RecordCard({
           {record.raw ? (
             <>
               <p className="text-muted-foreground da-mono">{record.raw.caption}</p>
-              <table className="w-full border-collapse overflow-hidden rounded-md border border-border bg-card da-body-small">
-                <thead>
-                  <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                    {record.raw.columns.map((c) => (
-                      <th key={c} className="px-da-lg py-da-md font-normal">
-                        {c}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {record.raw.rows.map((row, i) => (
-                    <tr
-                      key={row.join('|')}
-                      className={cn(
-                        'border-b border-border last:border-b-0 text-foreground',
-                        i === record.raw?.highlighted_row && 'bg-accent',
-                      )}
-                    >
-                      {row.map((cell, j) => (
-                        <td key={j} className="px-da-lg py-[10px]">
-                          {cell}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <MatrixTable
+                columns={record.raw.columns}
+                rows={record.raw.rows}
+                highlightRow={record.raw.highlighted_row}
+                className="w-full border-collapse bg-card da-body-small"
+                searchLabel="Tìm trong bản gốc"
+              />
               {record.raw.footnote && (
                 <p className="text-muted-foreground da-caption">{record.raw.footnote}</p>
               )}
@@ -361,16 +351,23 @@ function RecordCard({
           )}
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-[10px]">
+          <TableToolbar view={extracted} placeholder="Tìm trường…" searchLabel="Tìm trường trích" />
           <table className="w-full border-collapse overflow-hidden rounded-md border border-border da-body-small">
             <thead>
               <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                <th className="px-da-lg py-da-md font-normal">Trường</th>
-                <th className="px-da-lg py-da-md font-normal">Giá trị trích</th>
-                <th className="w-[68px] px-da-lg py-da-md font-normal">Độ tin</th>
+                <SortableTh view={extracted} column="field" className="px-da-lg py-da-md font-normal">
+                  Trường
+                </SortableTh>
+                <SortableTh view={extracted} column="value" className="px-da-lg py-da-md font-normal">
+                  Giá trị trích
+                </SortableTh>
+                <SortableTh view={extracted} column="confidence" className="w-[68px] px-da-lg py-da-md font-normal">
+                  Độ tin
+                </SortableTh>
               </tr>
             </thead>
             <tbody>
-              {record.values.map((v) => (
+              {extracted.rows.map((v) => (
                 <tr
                   key={v.field}
                   className="border-b border-border last:border-b-0 text-foreground"
@@ -393,6 +390,7 @@ function RecordCard({
               ))}
             </tbody>
           </table>
+          <TablePager view={extracted} />
           {record.evidence && <StatusDot tone="warning">{record.evidence}</StatusDot>}
           {record.agent_note && (
             <p className="text-foreground da-body-small">Agent: {record.agent_note}</p>

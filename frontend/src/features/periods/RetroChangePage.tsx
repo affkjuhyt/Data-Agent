@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
@@ -66,6 +67,35 @@ function RetroBody({ change, onChanged }: { change: RetroChange; onChanged: () =
   const [error, setError] = useState<string>();
   const status = STATUS[change.status];
   const open = change.status === 'open';
+  const sources = useTableView(change.source_changes, {
+    search: (row) => `${row.table} ${row.fields} ${row.changed_at_text}`,
+    filters: [{ id: 'table', label: 'Bảng', value: (row) => row.table }],
+    sorts: [
+      { id: 'table', value: (row) => row.table },
+      { id: 'rows', value: (row) => row.rows },
+      { id: 'fields', value: (row) => row.fields },
+      { id: 'when', value: (row) => row.changed_at_text },
+    ],
+    pageSize: 50,
+  });
+  const impact = useTableView(change.impact, {
+    search: (row) => `${row.metric} ${row.locked} ${row.recalculated} ${row.delta} ${row.published_to ?? ''}`,
+    filters: [
+      {
+        id: 'published',
+        label: 'Đã công bố',
+        value: (row) => (row.published_to ? 'Có' : 'Không'),
+      },
+    ],
+    sorts: [
+      { id: 'metric', value: (row) => row.metric },
+      { id: 'locked', value: (row) => row.locked },
+      { id: 'recalc', value: (row) => row.recalculated },
+      { id: 'delta', value: (row) => row.delta },
+      { id: 'published', value: (row) => row.published_to },
+    ],
+    pageSize: 50,
+  });
 
   const decide = async () => {
     if (!deciding) return;
@@ -124,17 +154,26 @@ function RetroBody({ change, onChanged }: { change: RetroChange; onChanged: () =
             <Notice tone="info">Lý do quyết định: {change.decision_note}</Notice>
           )}
           <h2 className="text-foreground da-heading-3">Thay đổi trong nguồn</h2>
+          <TableToolbar view={sources} placeholder="Tìm bảng…" searchLabel="Tìm thay đổi nguồn" />
           <table className="w-full table-fixed border-collapse">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="w-[200px] px-da-lg py-da-md font-normal">Bảng</th>
-                <th className="w-[100px] px-da-lg py-da-md font-normal">Dòng đổi</th>
-                <th className="px-da-lg py-da-md font-normal">Trường</th>
-                <th className="w-[180px] px-da-lg py-da-md font-normal">Thời điểm sửa ở nguồn</th>
+                <SortableTh view={sources} column="table" className="w-[200px] px-da-lg py-da-md font-normal">
+                  Bảng
+                </SortableTh>
+                <SortableTh view={sources} column="rows" className="w-[100px] px-da-lg py-da-md font-normal">
+                  Dòng đổi
+                </SortableTh>
+                <SortableTh view={sources} column="fields" className="px-da-lg py-da-md font-normal">
+                  Trường
+                </SortableTh>
+                <SortableTh view={sources} column="when" className="w-[180px] px-da-lg py-da-md font-normal">
+                  Thời điểm sửa ở nguồn
+                </SortableTh>
               </tr>
             </thead>
             <tbody>
-              {change.source_changes.map((row) => (
+              {sources.rows.map((row) => (
                 <tr key={row.table} className="border-b border-border">
                   <td className="px-da-lg py-da-md text-foreground da-mono">{row.table}</td>
                   <td className="px-da-lg py-da-md text-foreground da-mono">{row.rows}</td>
@@ -146,20 +185,32 @@ function RetroBody({ change, onChanged }: { change: RetroChange; onChanged: () =
               ))}
             </tbody>
           </table>
+          <TablePager view={sources} />
 
           <h2 className="text-foreground da-heading-3">Ảnh hưởng tới số đã khoá</h2>
+          <TableToolbar view={impact} placeholder="Tìm chỉ số…" searchLabel="Tìm ảnh hưởng" />
           <table className="w-full table-fixed border-collapse">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="px-da-lg py-da-md font-normal">Chỉ số</th>
-                <th className="w-[110px] px-da-lg py-da-md font-normal">Đã khoá</th>
-                <th className="w-[110px] px-da-lg py-da-md font-normal">Nếu tính lại</th>
-                <th className="w-[110px] px-da-lg py-da-md font-normal">Lệch</th>
-                <th className="w-[140px] px-da-lg py-da-md font-normal">Đã công bố?</th>
+                <SortableTh view={impact} column="metric" className="px-da-lg py-da-md font-normal">
+                  Chỉ số
+                </SortableTh>
+                <SortableTh view={impact} column="locked" className="w-[110px] px-da-lg py-da-md font-normal">
+                  Đã khoá
+                </SortableTh>
+                <SortableTh view={impact} column="recalc" className="w-[110px] px-da-lg py-da-md font-normal">
+                  Nếu tính lại
+                </SortableTh>
+                <SortableTh view={impact} column="delta" className="w-[110px] px-da-lg py-da-md font-normal">
+                  Lệch
+                </SortableTh>
+                <SortableTh view={impact} column="published" className="w-[140px] px-da-lg py-da-md font-normal">
+                  Đã công bố?
+                </SortableTh>
               </tr>
             </thead>
             <tbody>
-              {change.impact.map((row) => (
+              {impact.rows.map((row) => (
                 <tr key={row.metric} className="border-b border-border">
                   <td className="px-da-lg py-da-md text-foreground da-body-strong">{row.metric}</td>
                   <td className="px-da-lg py-da-md text-foreground da-mono">{row.locked}</td>
@@ -177,6 +228,7 @@ function RetroBody({ change, onChanged }: { change: RetroChange; onChanged: () =
               ))}
             </tbody>
           </table>
+          <TablePager view={impact} />
         </div>
         <aside className="flex w-[340px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pt-[20px] max-[1279px]:hidden">
           <h2 className="text-foreground da-heading-3">Nếu tạo bản điều chỉnh</h2>

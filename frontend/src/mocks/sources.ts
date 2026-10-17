@@ -1566,8 +1566,7 @@ export function createSourcesHandlers() {
           : found.table.id === 'tbl-card-statements'
             ? []
             : profile.columns.map((column) => ({
-                name: column.name,
-                data_type: column.data_type,
+                ...column,
                 normalized_type: 'string',
               }));
       return HttpResponse.json({
@@ -1605,19 +1604,26 @@ export function createSourcesHandlers() {
           is_nullable: true,
           is_key: false,
           display_name: null,
-          description: null,
+          description: 'note' in column ? column.note : null,
           description_status: 'none',
           unit: null,
-          pii_label: column.name === 'card_no' ? 'other' : null,
+          pii_label:
+            column.name === 'card_no' || ('histogram_note' in column && column.histogram_note === 'che')
+              ? 'other'
+              : null,
           pii_confirmed: false,
           profile: {
             scan_run_id: 'scan-1',
             sample_rows: found.table.row_count ?? 0,
-            null_ratio: null,
-            distinct_est: null,
+            null_ratio: 'null_ratio' in column ? column.null_ratio : null,
+            distinct_est:
+              'distinct' in column && typeof column.distinct === 'number' ? column.distinct : null,
             min_value: null,
             max_value: null,
-            top_values: null,
+            top_values:
+              'histogram' in column && column.histogram
+                ? column.histogram.map((count) => ({ count }))
+                : null,
             pattern_hint: null,
             created_at: profile.refreshed_at ?? at(8, 0),
           },
@@ -1794,6 +1800,7 @@ export function createSourcesHandlers() {
       return HttpResponse.json(updated);
     }),
 
+    http.get('*/v1/uploads', () => page([])),
     http.post('*/v1/uploads', async ({ request }) => {
       const fileName = request.headers.get('X-Upload-Filename') ?? '';
       if (!/\.(xlsx|xls|csv)$/i.test(fileName))
@@ -1828,7 +1835,7 @@ export function createSourcesHandlers() {
           data_space_id: 'ds-rui-ro-tin-dung',
           created_at: '2026-09-01T09:00:00+07:00',
           updated_at: '2026-10-01T09:00:00+07:00',
-          display: c,
+          display: { ...c, ...(COLLECTION_DETAIL[c.id] ?? {}) },
         })),
       ),
     ),
@@ -1843,6 +1850,13 @@ export function createSourcesHandlers() {
         pages_pending_review: 0,
       };
       return HttpResponse.json({ ...collection, ...detail });
+    }),
+    http.get('*/v1/documents', ({ request }) => {
+      const collection = new URL(request.url).searchParams.get('collection_id');
+      if (!collection || !(collection in documents)) return undefined;
+      return page(
+        (documents[collection] ?? []).map((doc) => documentApi(doc.id, doc.title, doc)),
+      );
     }),
     http.get('*/v1/collections/:id/documents', ({ params }) => {
       const list = documents[String(params.id)] ?? [];
@@ -1904,8 +1918,14 @@ export function createSourcesHandlers() {
       if (verb !== 'resolve') return problem(404, 'not_found', 'Không có thao tác này.');
       if (drift.status !== 'pending')
         return problem(409, 'conflict', 'Thay đổi này đã được xử lý.');
-      const body = (await request.json()) as { resolution: 'accept' | 'reject'; note?: string };
-      if (body.resolution === 'accept') {
+      const body = (await request.json()) as { resolution: string; note?: string };
+      const resolution =
+        body.resolution === 'accept' || body.resolution === 'approved_new'
+          ? 'accept'
+          : body.resolution === 'reject' || body.resolution === 'reverted'
+            ? 'reject'
+            : null;
+      if (resolution === 'accept') {
         if (drift.approvals.some((a) => a.name === 'Bạn'))
           return problem(
             409,
@@ -1918,7 +1938,7 @@ export function createSourcesHandlers() {
           approvals,
           status: approvals.length >= drift.approvals_required ? 'accepted' : 'pending',
         };
-      } else if (body.resolution === 'reject') {
+      } else if (resolution === 'reject') {
         drift = { ...drift, status: 'rejected' };
       } else return problem(422, 'validation_failed', 'Chọn chấp nhận hoặc từ chối.');
       if (drift.status !== 'pending') {

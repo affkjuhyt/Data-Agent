@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { Composer } from '../../design-system/Composer';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
@@ -16,6 +17,7 @@ import {
   testRunPipeline,
   type PipelineDetail,
   type PipelineStep,
+  type StepPreview,
 } from '../../lib/v1/dataPrep';
 import { useV1 } from '../../lib/v1/useV1';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
@@ -177,74 +179,12 @@ export default function PipelinePage() {
                     Chưa có bước nào. Mô tả việc cần làm ở khung hội thoại bên trái.
                   </p>
                 ) : (
-                  <table className="w-full table-fixed border-collapse">
-                    <thead>
-                      <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                        <th className="w-[48px] px-da-lg py-da-md font-normal">#</th>
-                        <th className="px-da-lg py-da-md font-normal">Bước</th>
-                        <th className="w-[124px] px-da-lg py-da-md font-normal">Dòng vào</th>
-                        <th className="w-[124px] px-da-lg py-da-md font-normal">Dòng ra</th>
-                        <th className="w-[84px] px-da-lg py-da-md font-normal">
-                          <span className="sr-only">Thay đổi</span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {steps.map((s) => {
-                        const change = changeText(s);
-                        return (
-                          <Fragment key={s.seq}>
-                            <tr
-                              aria-selected={s.seq === previewSeq}
-                              tabIndex={0}
-                              onClick={() => setSelected(s.seq)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
-                                  setSelected(s.seq);
-                                }
-                              }}
-                              className={cn(
-                                'cursor-pointer border-b border-border',
-                                s.seq === previewSeq ? 'bg-accent' : 'hover:bg-subtle',
-                              )}
-                            >
-                              <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
-                                {s.seq}
-                              </td>
-                              <td className="px-da-lg py-[9px] text-foreground da-body-small">
-                                {s.title}
-                              </td>
-                              <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
-                                {formatNumber(s.rows_in)}
-                              </td>
-                              <td className="px-da-lg py-[9px] text-foreground da-mono">
-                                {formatNumber(s.rows_out)}
-                              </td>
-                              <td
-                                className={cn(
-                                  'px-da-lg py-[9px] da-caption',
-                                  change?.tone === 'new' ? 'text-primary' : 'text-muted-foreground',
-                                )}
-                              >
-                                {change?.text}
-                              </td>
-                            </tr>
-                            {showSql && (
-                              <tr className="border-b border-border bg-subtle">
-                                <td />
-                                <td colSpan={4} className="px-da-lg py-da-md">
-                                  <pre className="whitespace-pre-wrap text-foreground da-mono">
-                                    {s.sql}
-                                  </pre>
-                                </td>
-                              </tr>
-                            )}
-                          </Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  <StepTable
+                    steps={steps}
+                    previewSeq={previewSeq}
+                    showSql={showSql}
+                    onSelect={setSelected}
+                  />
                 )}
                 {previewSeq !== undefined && (
                   <>
@@ -252,47 +192,7 @@ export default function PipelinePage() {
                       Xem trước bước {previewSeq} · trước và sau
                     </h2>
                     <AsyncRegion state={preview} what="bản xem trước" skeletonRows={3}>
-                      {(p) => (
-                        <table className="w-full table-fixed border-collapse">
-                          <thead>
-                            <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                              <th className="w-[164px] px-da-lg py-da-md font-normal">
-                                {p.key_column}
-                              </th>
-                              <th className="w-[174px] px-da-lg py-da-md font-normal">
-                                {p.column} trước
-                              </th>
-                              <th className="w-[174px] px-da-lg py-da-md font-normal">
-                                {p.column} sau
-                              </th>
-                              <th className="px-da-lg py-da-md font-normal">Ghi chú</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {p.rows.map((r) => (
-                              <tr key={r.key} className="border-b border-border">
-                                <td className="px-da-lg py-[9px] text-foreground da-mono">
-                                  {r.key}
-                                </td>
-                                <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
-                                  {r.before}
-                                </td>
-                                <td
-                                  className={cn(
-                                    'px-da-lg py-[9px] da-mono',
-                                    r.before === r.after ? 'text-foreground' : 'text-primary',
-                                  )}
-                                >
-                                  {r.after}
-                                </td>
-                                <td className="px-da-lg py-[9px] text-muted-foreground da-body-small">
-                                  {r.note}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
+                      {(p) => <PreviewTable preview={p} />}
                     </AsyncRegion>
                   </>
                 )}
@@ -305,5 +205,173 @@ export default function PipelinePage() {
         }
       </AsyncRegion>
     </div>
+  );
+}
+
+function StepTable({
+  steps,
+  previewSeq,
+  showSql,
+  onSelect,
+}: {
+  steps: PipelineStep[];
+  previewSeq: number | undefined;
+  showSql: boolean;
+  onSelect: (seq: number) => void;
+}) {
+  const view = useTableView(steps, {
+    search: (s) => `${s.seq} ${s.title} ${changeText(s)?.text ?? ''} ${s.sql}`,
+    filters: [
+      {
+        id: 'change',
+        label: 'Thay đổi',
+        value: (s) => (changeText(s) ? 'Có thay đổi' : 'Giữ nguyên'),
+      },
+    ],
+    sorts: [
+      { id: 'seq', value: (s) => s.seq },
+      { id: 'title', value: (s) => s.title },
+      { id: 'in', value: (s) => s.rows_in },
+      { id: 'out', value: (s) => s.rows_out },
+      { id: 'change', value: (s) => changeText(s)?.text },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm bước…" searchLabel="Tìm bước" />
+      <table className="w-full table-fixed border-collapse">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="seq" className="w-[48px] px-da-lg py-da-md font-normal">
+              #
+            </SortableTh>
+            <SortableTh view={view} column="title" className="px-da-lg py-da-md font-normal">
+              Bước
+            </SortableTh>
+            <SortableTh view={view} column="in" className="w-[124px] px-da-lg py-da-md font-normal">
+              Dòng vào
+            </SortableTh>
+            <SortableTh view={view} column="out" className="w-[124px] px-da-lg py-da-md font-normal">
+              Dòng ra
+            </SortableTh>
+            <SortableTh view={view} column="change" className="w-[84px] px-da-lg py-da-md font-normal">
+              <span className="sr-only">Thay đổi</span>
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((s) => {
+            const change = changeText(s);
+            return (
+              <Fragment key={s.seq}>
+                <tr
+                  aria-selected={s.seq === previewSeq}
+                  tabIndex={0}
+                  onClick={() => onSelect(s.seq)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onSelect(s.seq);
+                    }
+                  }}
+                  className={cn(
+                    'cursor-pointer border-b border-border',
+                    s.seq === previewSeq ? 'bg-accent' : 'hover:bg-subtle',
+                  )}
+                >
+                  <td className="px-da-lg py-[9px] text-muted-foreground da-mono">{s.seq}</td>
+                  <td className="px-da-lg py-[9px] text-foreground da-body-small">{s.title}</td>
+                  <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
+                    {formatNumber(s.rows_in)}
+                  </td>
+                  <td className="px-da-lg py-[9px] text-foreground da-mono">
+                    {formatNumber(s.rows_out)}
+                  </td>
+                  <td
+                    className={cn(
+                      'px-da-lg py-[9px] da-caption',
+                      change?.tone === 'new' ? 'text-primary' : 'text-muted-foreground',
+                    )}
+                  >
+                    {change?.text}
+                  </td>
+                </tr>
+                {showSql && (
+                  <tr className="border-b border-border bg-subtle">
+                    <td />
+                    <td colSpan={4} className="px-da-lg py-da-md">
+                      <pre className="whitespace-pre-wrap text-foreground da-mono">{s.sql}</pre>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
+  );
+}
+
+function PreviewTable({ preview }: { preview: StepPreview }) {
+  const view = useTableView(preview.rows, {
+    search: (r) => `${r.key} ${r.before} ${r.after} ${r.note}`,
+    filters: [
+      {
+        id: 'changed',
+        label: 'Thay đổi',
+        value: (r) => (r.before === r.after ? 'Giữ nguyên' : 'Đổi giá trị'),
+      },
+    ],
+    sorts: [
+      { id: 'key', value: (r) => r.key },
+      { id: 'before', value: (r) => r.before },
+      { id: 'after', value: (r) => r.after },
+      { id: 'note', value: (r) => r.note },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm dòng xem trước…" searchLabel="Tìm dòng xem trước" />
+      <table className="w-full table-fixed border-collapse">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="key" className="w-[164px] px-da-lg py-da-md font-normal">
+              {preview.key_column}
+            </SortableTh>
+            <SortableTh view={view} column="before" className="w-[174px] px-da-lg py-da-md font-normal">
+              {preview.column} trước
+            </SortableTh>
+            <SortableTh view={view} column="after" className="w-[174px] px-da-lg py-da-md font-normal">
+              {preview.column} sau
+            </SortableTh>
+            <SortableTh view={view} column="note" className="px-da-lg py-da-md font-normal">
+              Ghi chú
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((r) => (
+            <tr key={r.key} className="border-b border-border">
+              <td className="px-da-lg py-[9px] text-foreground da-mono">{r.key}</td>
+              <td className="px-da-lg py-[9px] text-muted-foreground da-mono">{r.before}</td>
+              <td
+                className={cn(
+                  'px-da-lg py-[9px] da-mono',
+                  r.before === r.after ? 'text-foreground' : 'text-primary',
+                )}
+              >
+                {r.after}
+              </td>
+              <td className="px-da-lg py-[9px] text-muted-foreground da-body-small">{r.note}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
   );
 }

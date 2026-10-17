@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Icon } from '../../design-system/Icon';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -179,26 +180,7 @@ function AuthorBody({ draft, onChanged }: { draft: PackDraft; onChanged: () => v
                   </div>
                 ))}
               </dl>
-              {draft.test.failures.length > 0 && (
-                <table className="w-full table-fixed border-collapse da-body-small">
-                  <thead>
-                    <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                      <th className="w-[98px] px-da-md py-da-sm font-normal">Chưa đạt</th>
-                      <th className="w-[132px] px-da-md py-da-sm font-normal">Loại</th>
-                      <th className="px-da-md py-da-sm font-normal">Chi tiết</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {draft.test.failures.map((f) => (
-                      <tr key={f.item} className="border-b border-border text-foreground">
-                        <td className="px-da-md py-[10px]">{f.item}</td>
-                        <td className="px-da-md py-[10px] text-muted-foreground">{f.kind}</td>
-                        <td className="px-da-md py-[10px]">{f.detail}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+              {draft.test.failures.length > 0 && <FailureTable rows={draft.test.failures} />}
             </>
           ) : (
             <p className="text-muted-foreground da-body-small">Chưa kiểm thử bản nháp này.</p>
@@ -223,5 +205,48 @@ function AuthorBody({ draft, onChanged }: { draft: PackDraft; onChanged: () => v
         </aside>
       </div>
     </div>
+  );
+}
+
+function FailureTable({ rows }: { rows: { item: string; kind: string; detail: string }[] }) {
+  const view = useTableView(rows, {
+    search: (f) => `${f.item} ${f.kind} ${f.detail}`,
+    filters: [{ id: 'kind', label: 'Loại', value: (f) => f.kind }],
+    sorts: [
+      { id: 'item', value: (f) => f.item },
+      { id: 'kind', value: (f) => f.kind },
+      { id: 'detail', value: (f) => f.detail },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm mục chưa đạt…" searchLabel="Tìm mục chưa đạt" />
+      <table className="w-full table-fixed border-collapse da-body-small">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="item" className="w-[98px] px-da-md py-da-sm font-normal">
+              Chưa đạt
+            </SortableTh>
+            <SortableTh view={view} column="kind" className="w-[132px] px-da-md py-da-sm font-normal">
+              Loại
+            </SortableTh>
+            <SortableTh view={view} column="detail" className="px-da-md py-da-sm font-normal">
+              Chi tiết
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((f) => (
+            <tr key={f.item} className="border-b border-border text-foreground">
+              <td className="px-da-md py-[10px]">{f.item}</td>
+              <td className="px-da-md py-[10px] text-muted-foreground">{f.kind}</td>
+              <td className="px-da-md py-[10px]">{f.detail}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
   );
 }

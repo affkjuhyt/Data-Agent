@@ -7,6 +7,13 @@ import { Avatar } from '../../design-system/Avatar';
 import { Button } from '../../design-system/Button';
 import { Icon } from '../../design-system/Icon';
 import { StatusDot } from '../../design-system/StatusDot';
+import {
+  SortableTh,
+  TablePager,
+  TableToolbar,
+  tableEmptyRow,
+  useTableView,
+} from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import {
@@ -84,7 +91,8 @@ export default function DataSpaceMembers({ id }: { id: string }) {
         </div>
         <aside className="flex w-[340px] shrink-0 flex-col gap-da-md border-l border-border bg-card px-da-xl py-da-lg max-[1279px]:hidden">
           <h2 className="text-foreground da-heading-3">
-            Thành viên{space.data?.member_count != null ? ` · ${count(space.data.member_count)}` : ''}
+            Thành viên
+            {space.data?.member_count != null ? ` · ${count(space.data.member_count)}` : ''}
           </h2>
           <AsyncRegion state={members} what="thành viên">
             {(p) => (
@@ -127,6 +135,13 @@ export default function DataSpaceMembers({ id }: { id: string }) {
   );
 }
 
+function cellLabel(value: PermissionCell): string {
+  if (value === 'yes') return 'Được';
+  if (value === 'approval') return 'cần duyệt';
+  if (value === 'never') return 'không bao giờ';
+  return '—';
+}
+
 function Cell({ value }: { value: PermissionCell }) {
   if (value === 'yes')
     return (
@@ -135,7 +150,8 @@ function Cell({ value }: { value: PermissionCell }) {
       </span>
     );
   if (value === 'approval') return <StatusDot tone="warning">cần duyệt</StatusDot>;
-  if (value === 'never') return <span className="text-muted-foreground da-caption">không bao giờ</span>;
+  if (value === 'never')
+    return <span className="text-muted-foreground da-caption">không bao giờ</span>;
   return (
     <span className="text-muted-foreground da-body-small" aria-label="Không">
       —
@@ -144,38 +160,67 @@ function Cell({ value }: { value: PermissionCell }) {
 }
 
 function MatrixTable({ matrix }: { matrix: PermissionMatrix }) {
+  const view = useTableView(matrix.roles, {
+    search: (r) =>
+      `${r.name} ${r.member_count} ${r.member_unit} ${CAPABILITIES.map((c) => cellLabel(r.cells[c.key])).join(' ')}`,
+    filters: [{ id: 'unit', label: 'Thành viên', value: (r) => r.member_unit }],
+    sorts: [
+      { id: 'role', value: (r) => r.name },
+      ...CAPABILITIES.map((c) => ({
+        id: c.key,
+        value: (r: PermissionMatrix['roles'][number]) => cellLabel(r.cells[c.key]),
+      })),
+    ],
+    pageSize: 50,
+  });
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card">
-      <table className="w-full border-collapse">
-        <thead>
-          <tr className="bg-subtle text-muted-foreground da-label">
-            <th className="w-[200px] px-da-lg py-da-sm text-left font-medium">Vai trò</th>
-            {CAPABILITIES.map((c) => (
-              <th key={c.key} className="whitespace-nowrap px-da-xs py-da-sm text-center font-medium">
-                {c.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {matrix.roles.map((r) => (
-            <tr key={r.role_id} className="border-t border-border">
-              <th scope="row" className="px-da-lg py-da-sm text-left font-normal">
-                <span className="block text-foreground da-body-strong">{r.name}</span>
-                <span className="block text-muted-foreground da-caption">
-                  {r.member_count} {r.member_unit}
-                </span>
-              </th>
+    <>
+      <TableToolbar view={view} placeholder="Tìm vai trò…" searchLabel="Tìm vai trò" />
+      <div className="overflow-x-auto rounded-lg border border-border bg-card">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="bg-subtle text-muted-foreground da-label">
+              <SortableTh
+                view={view}
+                column="role"
+                className="w-[200px] px-da-lg py-da-sm text-left font-medium"
+              >
+                Vai trò
+              </SortableTh>
               {CAPABILITIES.map((c) => (
-                <td key={c.key} className="px-da-xs py-da-sm text-center">
-                  <Cell value={r.cells[c.key]} />
-                </td>
+                <SortableTh
+                  key={c.key}
+                  view={view}
+                  column={c.key}
+                  className="whitespace-nowrap px-da-xs py-da-sm text-center font-medium"
+                >
+                  {c.label}
+                </SortableTh>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {view.rows.map((r) => (
+              <tr key={r.role_id} className="border-t border-border">
+                <th scope="row" className="px-da-lg py-da-sm text-left font-normal">
+                  <span className="block text-foreground da-body-strong">{r.name}</span>
+                  <span className="block text-muted-foreground da-caption">
+                    {r.member_count} {r.member_unit}
+                  </span>
+                </th>
+                {CAPABILITIES.map((c) => (
+                  <td key={c.key} className="px-da-xs py-da-sm text-center">
+                    <Cell value={r.cells[c.key]} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {view.total === 0 && tableEmptyRow(1 + CAPABILITIES.length)}
+          </tbody>
+        </table>
+      </div>
+      <TablePager view={view} />
+    </>
   );
 }
 
@@ -184,7 +229,9 @@ function MemberRow({ member }: { member: DataSpaceMember }) {
   // A temporary grant shows its expiry where a permanent one shows its row scope.
   const detail = [
     member.role_name,
-    member.valid_until ? `Hết hạn ${dayMonth(member.valid_until)}` : (member.row_scope_text ?? 'Toàn bộ'),
+    member.valid_until
+      ? `Hết hạn ${dayMonth(member.valid_until)}`
+      : (member.row_scope_text ?? 'Toàn bộ'),
     member.access_note,
   ]
     .filter(Boolean)
@@ -210,14 +257,15 @@ function MemberRow({ member }: { member: DataSpaceMember }) {
             <Avatar name={member.display_name} />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-foreground da-body-strong">{member.display_name}</span>
-              <span className="text-muted-foreground da-caption">
-                {detail}
-              </span>
+              <span className="text-muted-foreground da-caption">{detail}</span>
             </span>
           </>
         )}
         <span className="flex-1" />
-        <Icon name="chevron-down" className={cn('text-foreground transition-transform', open && 'rotate-180')} />
+        <Icon
+          name="chevron-down"
+          className={cn('text-foreground transition-transform', open && 'rotate-180')}
+        />
       </button>
       {open && <p className="pl-[36px] text-muted-foreground da-caption">{source}</p>}
     </li>

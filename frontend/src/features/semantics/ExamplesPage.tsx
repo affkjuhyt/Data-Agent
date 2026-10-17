@@ -5,6 +5,7 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
@@ -38,9 +39,36 @@ export default function ExamplesPage() {
   const [adding, setAdding] = useState(false);
 
   const items = examples.data?.items ?? [];
+  const scope = dataSpace?.name ?? 'Data Space này';
+  const exampleView = useTableView(items, {
+    search: (e) => `${e.question} ${e.usage_text ?? ''} ${e.source_label}`,
+    filters: [
+      {
+        id: 'status',
+        label: 'Trạng thái',
+        value: (e) => (e.status === 'verified' ? 'Đã kiểm tra' : 'Chờ xem'),
+      },
+    ],
+    sorts: [
+      { id: 'question', value: (e) => e.question },
+      { id: 'usage', value: (e) => e.usage_text },
+      { id: 'source', value: (e) => e.source_label },
+      { id: 'status', value: (e) => (e.status === 'verified' ? 'Đã kiểm tra' : 'Chờ xem') },
+    ],
+    pageSize: 50,
+  });
+  const synonymView = useTableView(synonyms.data?.items ?? [], {
+    search: (s) => `${s.phrases.join(' ')} ${s.target_text} ${s.scope_label ?? ''}`,
+    filters: [{ id: 'scope', label: 'Phạm vi', value: (s) => s.scope_label ?? scope }],
+    sorts: [
+      { id: 'phrases', value: (s) => s.phrases.join(', ') },
+      { id: 'target', value: (s) => s.target_text },
+      { id: 'scope', value: (s) => s.scope_label ?? scope },
+    ],
+    pageSize: 50,
+  });
   const selected =
     items.find((e) => e.id === selectedId) ?? items.find((e) => e.status === 'pending') ?? items[0];
-  const scope = dataSpace?.name ?? 'Data Space này';
 
   return (
     <div className="flex min-h-full flex-col">
@@ -63,18 +91,28 @@ export default function ExamplesPage() {
         <div className="flex min-w-0 flex-1 flex-col gap-da-lg pl-da-3xl pr-da-2xl pt-da-xl">
           <h2 className="text-foreground da-heading-3">Câu hỏi mẫu</h2>
           <AsyncRegion state={examples} what="câu hỏi mẫu">
-            {(page) => (
+            {() => (
+              <>
+              <TableToolbar view={exampleView} placeholder="Tìm câu hỏi…" searchLabel="Tìm câu hỏi mẫu" />
               <table className="w-full table-fixed border-collapse">
                 <thead>
                   <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                    <th className="px-da-lg py-da-md font-normal">Câu hỏi</th>
-                    <th className="w-[200px] px-da-lg py-da-md font-normal">Dùng</th>
-                    <th className="w-[150px] px-da-lg py-da-md font-normal">Nguồn</th>
-                    <th className="w-[150px] px-da-lg py-da-md font-normal">Trạng thái</th>
+                    <SortableTh view={exampleView} column="question" className="px-da-lg py-da-md font-normal">
+                      Câu hỏi
+                    </SortableTh>
+                    <SortableTh view={exampleView} column="usage" className="w-[200px] px-da-lg py-da-md font-normal">
+                      Dùng
+                    </SortableTh>
+                    <SortableTh view={exampleView} column="source" className="w-[150px] px-da-lg py-da-md font-normal">
+                      Nguồn
+                    </SortableTh>
+                    <SortableTh view={exampleView} column="status" className="w-[150px] px-da-lg py-da-md font-normal">
+                      Trạng thái
+                    </SortableTh>
                   </tr>
                 </thead>
                 <tbody>
-                  {page.items.map((e) => (
+                  {exampleView.rows.map((e) => (
                     <tr
                       key={e.id}
                       aria-selected={e.id === selected?.id}
@@ -108,22 +146,32 @@ export default function ExamplesPage() {
                   ))}
                 </tbody>
               </table>
+              <TablePager view={exampleView} />
+              </>
             )}
           </AsyncRegion>
 
           <h2 className="text-foreground da-heading-3">Cách gọi khác</h2>
           <AsyncRegion state={synonyms} what="cách gọi khác">
-            {(page) => (
+            {() => (
+              <>
+              <TableToolbar view={synonymView} placeholder="Tìm cách gọi…" searchLabel="Tìm cách gọi" />
               <table className="w-full table-fixed border-collapse">
                 <thead>
                   <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                    <th className="px-da-lg py-da-md font-normal">Người dùng nói</th>
-                    <th className="w-[260px] px-da-lg py-da-md font-normal">Hệ thống hiểu là</th>
-                    <th className="w-[150px] px-da-lg py-da-md font-normal">Phạm vi</th>
+                    <SortableTh view={synonymView} column="phrases" className="px-da-lg py-da-md font-normal">
+                      Người dùng nói
+                    </SortableTh>
+                    <SortableTh view={synonymView} column="target" className="w-[260px] px-da-lg py-da-md font-normal">
+                      Hệ thống hiểu là
+                    </SortableTh>
+                    <SortableTh view={synonymView} column="scope" className="w-[150px] px-da-lg py-da-md font-normal">
+                      Phạm vi
+                    </SortableTh>
                   </tr>
                 </thead>
                 <tbody>
-                  {page.items.map((s) => (
+                  {synonymView.rows.map((s) => (
                     <tr key={s.id} className="border-b border-border">
                       <td className="px-da-lg py-da-md text-foreground da-body-small">
                         {s.phrases.map((p) => `“${p}”`).join(', ')}
@@ -136,6 +184,8 @@ export default function ExamplesPage() {
                   ))}
                 </tbody>
               </table>
+              <TablePager view={synonymView} />
+              </>
             )}
           </AsyncRegion>
         </div>

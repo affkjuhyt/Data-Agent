@@ -9,6 +9,13 @@ import { EmptyState } from '../../design-system/EmptyState';
 import { RunStep } from '../../design-system/RunStep';
 import { StatusDot } from '../../design-system/StatusDot';
 import { Tabs } from '../../design-system/Tabs';
+import {
+  MatrixTable,
+  SortableTh,
+  TablePager,
+  TableToolbar,
+  useTableView,
+} from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber, formatPercent, formatTime } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
@@ -205,18 +212,36 @@ function UploadsTable({
   selected: string | null;
   onSelect: (id: string) => void;
 }) {
+  const view = useTableView(rows, {
+    search: (row) => `${row.file_name} ${uploadStatusLabel(row.status)}`,
+    filters: [{ id: 'status', label: 'Trạng thái', value: (row) => uploadStatusLabel(row.status) }],
+    sorts: [
+      { id: 'name', value: (row) => row.file_name },
+      { id: 'status', value: (row) => uploadStatusLabel(row.status) },
+      { id: 'created', value: (row) => row.created_at },
+    ],
+    pageSize: 50,
+  });
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="flex flex-col gap-da-md">
+      <TableToolbar view={view} placeholder="Tìm tệp…" searchLabel="Tìm tệp dữ liệu" />
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
       <table className="w-full table-fixed border-collapse">
         <thead>
           <tr className={HEAD_ROW}>
-            <th className={cn(LIB_CELL, 'py-da-sm font-medium')}>Tệp dữ liệu</th>
-            <th className={cn(LIB_CELL, 'w-[140px] py-da-sm font-medium')}>Trạng thái</th>
-            <th className={cn(LIB_CELL, 'w-[180px] py-da-sm font-medium')}>Tải lên</th>
+            <SortableTh view={view} column="name" className={cn(LIB_CELL, 'py-da-sm font-medium')}>
+              Tệp dữ liệu
+            </SortableTh>
+            <SortableTh view={view} column="status" className={cn(LIB_CELL, 'w-[140px] py-da-sm font-medium')}>
+              Trạng thái
+            </SortableTh>
+            <SortableTh view={view} column="created" className={cn(LIB_CELL, 'w-[180px] py-da-sm font-medium')}>
+              Tải lên
+            </SortableTh>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {view.rows.map((row) => (
             <tr
               key={row.id}
               tabIndex={0}
@@ -242,6 +267,8 @@ function UploadsTable({
           ))}
         </tbody>
       </table>
+      </div>
+      <TablePager view={view} />
     </div>
   );
 }
@@ -293,28 +320,16 @@ function UploadPanelBody({ upload, onDelete }: { upload: UploadDetail; onDelete:
         <AsyncRegion state={preview} what="bản xem trước" skeletonRows={3}>
           {(data) => (
             <div className="max-h-[360px] overflow-auto rounded-md border border-border">
-              <table className="min-w-full border-collapse text-left text-xs">
-                <thead className="sticky top-0 bg-subtle">
-                  <tr>
-                    {data.columns.map((column) => (
-                      <th key={column} className="border-b border-border px-2 py-2 font-medium">
-                        {column}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.rows.map((row, rowIndex) => (
-                    <tr key={rowIndex} className="border-b border-border last:border-0">
-                      {data.columns.map((_, columnIndex) => (
-                        <td key={columnIndex} className="max-w-[180px] truncate px-2 py-2">
-                          {String(row[columnIndex] ?? '—')}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <MatrixTable
+                columns={data.columns}
+                rows={data.rows.map((row) =>
+                  row.map((cell) =>
+                    typeof cell === 'number' || typeof cell === 'string' ? cell : cell == null ? '' : String(cell),
+                  ),
+                )}
+                className="min-w-full border-collapse text-left text-xs"
+                searchLabel="Tìm trong bản xem trước"
+              />
               {data.truncated && (
                 <p className="border-t border-border px-2 py-2 text-muted-foreground">
                   Hiển thị 25 dòng đầu tiên.
@@ -406,24 +421,43 @@ function LibraryTable({
   selected: string | null;
   onSelect: (id: string) => void;
 }) {
+  const view = useTableView(rows, {
+    search: (row) => `${row.title} ${row.category_label} ${row.validity?.text ?? ''} ${row.links_text ?? ''}`,
+    filters: [{ id: 'kind', label: 'Loại', value: (row) => row.category_label }],
+    sorts: [
+      { id: 'title', value: (row) => row.title },
+      { id: 'kind', value: (row) => row.category_label },
+      { id: 'validity', value: (row) => row.validity?.text ?? '' },
+      { id: 'clauses', value: (row) => row.clause_count ?? 0 },
+    ],
+    pageSize: 50,
+  });
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="flex flex-col gap-da-md">
+      <TableToolbar view={view} placeholder="Tìm tài liệu…" searchLabel="Tìm tài liệu" />
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
       <table className="w-full table-fixed border-collapse">
         <thead>
           <tr className={HEAD_ROW}>
-            <th className={cn(LIB_CELL, 'py-da-sm font-medium')}>Tài liệu</th>
-            <th className={cn(LIB_CELL, 'w-[108px] py-da-sm font-medium')}>Loại</th>
-            <th className={cn(LIB_CELL, 'w-[128px] py-da-sm font-medium')}>Hiệu lực</th>
-            <th className={cn(LIB_CELL, 'w-[88px] py-da-sm font-medium max-[1279px]:hidden')}>
+            <SortableTh view={view} column="title" className={cn(LIB_CELL, 'py-da-sm font-medium')}>
+              Tài liệu
+            </SortableTh>
+            <SortableTh view={view} column="kind" className={cn(LIB_CELL, 'w-[108px] py-da-sm font-medium')}>
+              Loại
+            </SortableTh>
+            <SortableTh view={view} column="validity" className={cn(LIB_CELL, 'w-[128px] py-da-sm font-medium')}>
+              Hiệu lực
+            </SortableTh>
+            <SortableTh view={view} column="clauses" className={cn(LIB_CELL, 'w-[88px] py-da-sm font-medium max-[1279px]:hidden')}>
               Điều khoản
-            </th>
+            </SortableTh>
             <th className={cn(LIB_CELL, 'w-[166px] py-da-sm font-medium max-[1279px]:hidden')}>
               Liên kết
             </th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {view.rows.map((row) => (
             <SelectableRow
               key={row.id}
               row={row}
@@ -462,6 +496,8 @@ function LibraryTable({
           ))}
         </tbody>
       </table>
+      </div>
+      <TablePager view={view} />
     </div>
   );
 }
@@ -475,19 +511,40 @@ function ProcessingTable({
   selected: string | null;
   onSelect: (id: string) => void;
 }) {
+  const view = useTableView(rows, {
+    search: (row) => `${row.title} ${row.processing?.step_text ?? ''}`,
+    filters: [{ id: 'step', label: 'Bước', value: (row) => row.processing?.step_text ?? '—' }],
+    sorts: [
+      { id: 'title', value: (row) => row.title },
+      { id: 'step', value: (row) => row.processing?.step_text ?? '' },
+      { id: 'progress', value: (row) => row.processing?.progress ?? 0 },
+      { id: 'started', value: (row) => row.processing?.started_at ?? '' },
+    ],
+    pageSize: 50,
+  });
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-card">
+    <div className="flex flex-col gap-da-md">
+      <TableToolbar view={view} placeholder="Tìm tài liệu đang xử lý…" searchLabel="Tìm tài liệu đang xử lý" />
+      <div className="overflow-hidden rounded-md border border-border bg-card">
       <table className="w-full table-fixed border-collapse">
         <thead>
           <tr className={HEAD_ROW}>
-            <th className={cn(RUN_CELL, 'font-medium')}>Tài liệu</th>
-            <th className={cn(RUN_CELL, 'w-[212px] font-medium')}>Bước hiện tại</th>
-            <th className={cn(RUN_CELL, 'w-[132px] font-medium')}>Tiến độ</th>
-            <th className={cn(RUN_CELL, 'w-[104px] font-medium')}>Bắt đầu</th>
+            <SortableTh view={view} column="title" className={cn(RUN_CELL, 'font-medium')}>
+              Tài liệu
+            </SortableTh>
+            <SortableTh view={view} column="step" className={cn(RUN_CELL, 'w-[212px] font-medium')}>
+              Bước hiện tại
+            </SortableTh>
+            <SortableTh view={view} column="progress" className={cn(RUN_CELL, 'w-[132px] font-medium')}>
+              Tiến độ
+            </SortableTh>
+            <SortableTh view={view} column="started" className={cn(RUN_CELL, 'w-[104px] font-medium')}>
+              Bắt đầu
+            </SortableTh>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {view.rows.map((row) => (
             <SelectableRow
               key={row.id}
               row={row}
@@ -521,6 +578,8 @@ function ProcessingTable({
           ))}
         </tbody>
       </table>
+      </div>
+      <TablePager view={view} />
     </div>
   );
 }

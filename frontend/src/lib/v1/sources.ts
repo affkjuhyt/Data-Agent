@@ -950,12 +950,17 @@ export const getCollection = async (id: string): Promise<CollectionDetail> => {
       .filter((i) => ids.has(i.document_id))
       .map((i) => `${i.document_id}|${i.page_no ?? 0}`),
   );
+  const shown = readCollection(raw);
+  // The list row's display carries the screen's sync line and counts when the API has no
+  // collection-detail resource. Otherwise count the documents just loaded.
+  const proposed = raw.display as (Collection & Partial<CollectionDetail>) | undefined;
   return {
-    ...readCollection(raw),
-    document_count: docs.items.length,
-    sync_text: null,
-    data_space_name: spaces.find((d) => d.id === raw.data_space_id)?.name ?? null,
-    pages_pending_review: pages.size,
+    ...shown,
+    document_count: proposed?.document_count ?? docs.items.length,
+    sync_text: proposed?.sync_text ?? null,
+    data_space_name:
+      proposed?.data_space_name ?? spaces.find((d) => d.id === raw.data_space_id)?.name ?? null,
+    pages_pending_review: proposed?.pages_pending_review ?? pages.size,
   };
 };
 

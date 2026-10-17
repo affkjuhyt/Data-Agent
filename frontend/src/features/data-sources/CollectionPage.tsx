@@ -7,6 +7,7 @@ import { EmptyState } from '../../design-system/EmptyState';
 import { Icon } from '../../design-system/Icon';
 import { RunStep } from '../../design-system/RunStep';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
@@ -73,6 +74,18 @@ function CollectionView({ collection }: { collection: CollectionDetail }) {
   const documents = useV1(() => listDocuments(collection.id), [collection.id]);
   const [selected, setSelected] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const view = useTableView(documents.data?.items ?? [], {
+    search: (doc) => `${doc.title} ${doc.type_text} ${doc.validity?.text ?? ''} ${doc.status.text}`,
+    filters: [{ id: 'kind', label: 'Loại', value: (doc) => doc.type_text.split(' · ')[0] }],
+    sorts: [
+      { id: 'title', value: (doc) => doc.title },
+      { id: 'kind', value: (doc) => doc.type_text },
+      { id: 'steps', value: (doc) => doc.steps.join(' ') },
+      { id: 'validity', value: (doc) => doc.validity?.text ?? null },
+      { id: 'status', value: (doc) => doc.status.text },
+    ],
+    pageSize: 50,
+  });
 
   const upload = async (file: File | undefined) => {
     if (!file) return;
@@ -148,21 +161,35 @@ function CollectionView({ collection }: { collection: CollectionDetail }) {
               />
             }
           >
-            {(page) => (
+            {() => (
+              <>
+              <TableToolbar view={view} placeholder="Tìm tài liệu…" searchLabel="Tìm tài liệu" />
               <table className="w-full table-fixed border-collapse">
                 <thead>
                   <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                    <th className="px-da-lg py-da-md font-normal">Tài liệu</th>
-                    <th className="w-[110px] px-da-md py-da-md font-normal">Loại</th>
-                    <th className="w-[220px] px-da-md py-da-md font-normal max-[1279px]:hidden">
+                    <SortableTh view={view} column="title" className="px-da-lg py-da-md font-normal">
+                      Tài liệu
+                    </SortableTh>
+                    <SortableTh view={view} column="kind" className="w-[110px] px-da-md py-da-md font-normal">
+                      Loại
+                    </SortableTh>
+                    <SortableTh
+                      view={view}
+                      column="steps"
+                      className="w-[220px] px-da-md py-da-md font-normal max-[1279px]:hidden"
+                    >
                       Tiền xử lý
-                    </th>
-                    <th className="w-[150px] px-da-md py-da-md font-normal">Hiệu lực</th>
-                    <th className="w-[230px] px-da-md py-da-md font-normal">Trạng thái</th>
+                    </SortableTh>
+                    <SortableTh view={view} column="validity" className="w-[150px] px-da-md py-da-md font-normal">
+                      Hiệu lực
+                    </SortableTh>
+                    <SortableTh view={view} column="status" className="w-[230px] px-da-md py-da-md font-normal">
+                      Trạng thái
+                    </SortableTh>
                   </tr>
                 </thead>
                 <tbody>
-                  {page.items.map((doc) => (
+                  {view.rows.map((doc) => (
                     <tr
                       key={doc.id}
                       tabIndex={0}
@@ -210,6 +237,8 @@ function CollectionView({ collection }: { collection: CollectionDetail }) {
                   ))}
                 </tbody>
               </table>
+              <TablePager view={view} />
+              </>
             )}
           </AsyncRegion>
           <p className="text-muted-foreground da-caption">

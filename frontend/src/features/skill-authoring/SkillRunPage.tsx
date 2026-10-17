@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import {
@@ -200,30 +201,14 @@ function Runner({ form, latest }: { form: SkillRunForm; latest: V1State<Page<Ski
                   <>
                     <p className="text-foreground da-reading">{result.summary}</p>
                     <Waterfall start={result.start} steps={result.steps} end={result.end} />
-                    <table className="w-full table-fixed border-collapse">
-                      <thead>
-                        <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                          <th className="px-da-lg py-da-md font-normal">Đóng góp</th>
-                          <th className="w-[80px] px-da-lg py-da-md font-normal">Điểm</th>
-                          <th className="w-[80px] px-da-lg py-da-md font-normal">Tỷ trọng</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {result.contributions.map((c) => (
-                          <tr key={c.label} className="border-b border-border">
-                            <td className="px-da-lg py-[9px] text-foreground da-body-small">
-                              {c.label}
-                            </td>
-                            <td className="px-da-lg py-[9px] text-foreground da-mono">
-                              {c.points_text}
-                            </td>
-                            <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
-                              {c.share_text}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <ContributionTable rows={result.contributions} />
+                    {(result.method || result.confidence) && (
+                      <p className="text-muted-foreground da-body-small">
+                        {[result.method, result.confidence && `Mức tin cậy: ${result.confidence}.`]
+                          .filter(Boolean)
+                          .join(' ')}
+                      </p>
+                    )}
                     <p className="text-muted-foreground da-caption">
                       Chạy theo quyền của người chạy; mỗi lần chạy lưu tham số và phiên bản kỹ năng
                     </p>
@@ -239,6 +224,53 @@ function Runner({ form, latest }: { form: SkillRunForm; latest: V1State<Page<Ski
 }
 
 /** A skill A2 serves: its result has no designed view, so the conclusion and figures as written. */
+function ContributionTable({
+  rows,
+}: {
+  rows: { label: string; points_text: string; share_text: string }[];
+}) {
+  const view = useTableView(rows, {
+    search: (c) => `${c.label} ${c.points_text} ${c.share_text}`,
+    filters: [{ id: 'share', label: 'Tỷ trọng', value: (c) => c.share_text }],
+    sorts: [
+      { id: 'label', value: (c) => c.label },
+      { id: 'points', value: (c) => c.points_text },
+      { id: 'share', value: (c) => c.share_text },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm đóng góp…" searchLabel="Tìm đóng góp" />
+      <table className="w-full table-fixed border-collapse">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="label" className="px-da-lg py-da-md font-normal">
+              Đóng góp
+            </SortableTh>
+            <SortableTh view={view} column="points" className="w-[80px] px-da-lg py-da-md font-normal">
+              Điểm
+            </SortableTh>
+            <SortableTh view={view} column="share" className="w-[80px] px-da-lg py-da-md font-normal">
+              Tỷ trọng
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((c) => (
+            <tr key={c.label} className="border-b border-border">
+              <td className="px-da-lg py-[9px] text-foreground da-body-small">{c.label}</td>
+              <td className="px-da-lg py-[9px] text-foreground da-mono">{c.points_text}</td>
+              <td className="px-da-lg py-[9px] text-muted-foreground da-mono">{c.share_text}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
+  );
+}
+
 function Outcome({ outcome }: { outcome: NonNullable<SkillRun['outcome']> }) {
   if (outcome.status === 'running')
     return <StatusDot tone="info">Đang chạy · kết quả hiện khi lượt chạy xong</StatusDot>;

@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Icon } from '../../design-system/Icon';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
@@ -115,6 +116,17 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
   };
 
   const active = versions.find((v) => v.status === 'active');
+  const view = useTableView(versions, {
+    search: (v) => `${v.version} ${v.change_text} ${v.status_text}`,
+    filters: [{ id: 'status', label: 'Trạng thái', value: (v) => v.status_text }],
+    sorts: [
+      { id: 'version', value: (v) => v.version },
+      { id: 'change', value: (v) => v.change_text },
+      { id: 'eval', value: (v) => (v.eval_total > 0 ? v.eval_passed / v.eval_total : null) },
+      { id: 'status', value: (v) => v.status_text },
+    ],
+    pageSize: 50,
+  });
   const summary = [
     `${versions.length} phiên bản`,
     pending && `v${pending.version} chờ duyệt`,
@@ -162,17 +174,26 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
         <div className="flex min-w-0 flex-1 flex-col pl-da-3xl pr-da-2xl">
           <section className="flex flex-col gap-[10px] border-b border-border py-da-xl">
             <h2 className="text-foreground da-heading-3">Phiên bản</h2>
+            <TableToolbar view={view} placeholder="Tìm phiên bản…" searchLabel="Tìm phiên bản" />
             <table className="w-full table-fixed border-collapse">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="w-[72px] py-da-md pl-da-lg font-normal">Bản</th>
-                  <th className="py-da-md pl-da-lg font-normal">Thay đổi</th>
-                  <th className="w-[132px] py-da-md pl-da-lg font-normal">Kiểm định</th>
-                  <th className="w-[214px] px-da-lg py-da-md font-normal">Trạng thái</th>
+                  <SortableTh view={view} column="version" className="w-[72px] py-da-md pl-da-lg font-normal">
+                    Bản
+                  </SortableTh>
+                  <SortableTh view={view} column="change" className="py-da-md pl-da-lg font-normal">
+                    Thay đổi
+                  </SortableTh>
+                  <SortableTh view={view} column="eval" className="w-[132px] py-da-md pl-da-lg font-normal">
+                    Kiểm định
+                  </SortableTh>
+                  <SortableTh view={view} column="status" className="w-[214px] px-da-lg py-da-md font-normal">
+                    Trạng thái
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {versions.map((v) => (
+                {view.rows.map((v) => (
                   <tr key={v.id} className="border-b border-border">
                     <td className="py-[9px] pl-da-lg text-foreground da-mono">v{v.version}</td>
                     <td className="py-[9px] pl-da-lg text-foreground da-body-small">
@@ -188,6 +209,7 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
                 ))}
               </tbody>
             </table>
+            <TablePager view={view} />
           </section>
 
           {review && pending && current && (

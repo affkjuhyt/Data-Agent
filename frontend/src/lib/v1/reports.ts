@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { pathId, v1Get, v1Send, V1Error, type Page } from './client';
 
 /*
  * Báo cáo định kỳ and Bản tin (monitor service, P08, UC-08-03, UC-08-04, UC-02-04, UC-02-07).
@@ -74,6 +74,11 @@ export interface DigestItem {
 }
 
 export const listMyDigests = async (): Promise<Page<DigestItem>> => {
+  try {
+    return await v1Get<Page<DigestItem>>('/me/digests');
+  } catch (error) {
+    if (!(error instanceof V1Error) || error.status !== 404) throw error;
+  }
   const page = await v1Get<
     Page<{
       id: string;

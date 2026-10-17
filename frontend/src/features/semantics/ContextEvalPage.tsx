@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -46,6 +47,29 @@ function EvalBody({ evaluation }: { evaluation: ContextEval }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const runs = useTableView(evaluation.runs, {
+    search: (r) => `${r.label} ${r.change} ${r.correct} ${RESULT[r.result].label}`,
+    filters: [{ id: 'result', label: 'Kết quả', value: (r) => RESULT[r.result].label }],
+    sorts: [
+      { id: 'label', value: (r) => r.label },
+      { id: 'change', value: (r) => r.change },
+      { id: 'correct', value: (r) => r.correct },
+      { id: 'delta', value: (r) => r.delta },
+      { id: 'result', value: (r) => RESULT[r.result].label },
+    ],
+    pageSize: 50,
+  });
+  const misses = useTableView(evaluation.misses, {
+    search: (m) => `${m.question} ${m.expected} ${m.understood} ${m.cause}`,
+    filters: [{ id: 'cause', label: 'Nguyên nhân', value: (m) => m.cause }],
+    sorts: [
+      { id: 'question', value: (m) => m.question },
+      { id: 'expected', value: (m) => m.expected },
+      { id: 'understood', value: (m) => m.understood },
+      { id: 'cause', value: (m) => m.cause },
+    ],
+    pageSize: 50,
+  });
   const [error, setError] = useState<string>();
 
   const rerun = async () => {
@@ -91,18 +115,29 @@ function EvalBody({ evaluation }: { evaluation: ContextEval }) {
         ))}
       </dl>
       <h2 className="text-foreground da-heading-3">Các lượt đánh giá</h2>
+      <TableToolbar view={runs} placeholder="Tìm lượt đánh giá…" searchLabel="Tìm lượt đánh giá" />
       <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border da-body-small">
         <thead>
           <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-            <th className="w-[104px] px-da-md py-da-sm font-normal">Lượt</th>
-            <th className="px-da-md py-da-sm font-normal">Thay đổi được thử</th>
-            <th className="w-[90px] px-da-md py-da-sm font-normal">Đúng</th>
-            <th className="w-[120px] px-da-md py-da-sm font-normal">So với trước</th>
-            <th className="w-[220px] px-da-md py-da-sm font-normal">Kết quả</th>
+            <SortableTh view={runs} column="label" className="w-[104px] px-da-md py-da-sm font-normal">
+              Lượt
+            </SortableTh>
+            <SortableTh view={runs} column="change" className="px-da-md py-da-sm font-normal">
+              Thay đổi được thử
+            </SortableTh>
+            <SortableTh view={runs} column="correct" className="w-[90px] px-da-md py-da-sm font-normal">
+              Đúng
+            </SortableTh>
+            <SortableTh view={runs} column="delta" className="w-[120px] px-da-md py-da-sm font-normal">
+              So với trước
+            </SortableTh>
+            <SortableTh view={runs} column="result" className="w-[220px] px-da-md py-da-sm font-normal">
+              Kết quả
+            </SortableTh>
           </tr>
         </thead>
         <tbody>
-          {evaluation.runs.map((r) => (
+          {runs.rows.map((r) => (
             <tr key={r.id} className="border-b border-border text-foreground last:border-b-0">
               <td className="px-da-md py-[9px]">{r.label}</td>
               <td className="px-da-md py-[9px]">{r.change}</td>
@@ -117,20 +152,30 @@ function EvalBody({ evaluation }: { evaluation: ContextEval }) {
           ))}
         </tbody>
       </table>
+      <TablePager view={runs} />
       <h2 className="text-foreground da-heading-3">
         Câu trả lời sai ở lượt {evaluation.latest_run_label}
       </h2>
+      <TableToolbar view={misses} placeholder="Tìm câu sai…" searchLabel="Tìm câu sai" />
       <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border da-body-small">
         <thead>
           <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-            <th className="px-da-md py-da-sm font-normal">Câu hỏi</th>
-            <th className="px-da-md py-da-sm font-normal">Mong đợi</th>
-            <th className="px-da-md py-da-sm font-normal">Agent hiểu là</th>
-            <th className="w-[200px] px-da-md py-da-sm font-normal">Nguyên nhân</th>
+            <SortableTh view={misses} column="question" className="px-da-md py-da-sm font-normal">
+              Câu hỏi
+            </SortableTh>
+            <SortableTh view={misses} column="expected" className="px-da-md py-da-sm font-normal">
+              Mong đợi
+            </SortableTh>
+            <SortableTh view={misses} column="understood" className="px-da-md py-da-sm font-normal">
+              Agent hiểu là
+            </SortableTh>
+            <SortableTh view={misses} column="cause" className="w-[200px] px-da-md py-da-sm font-normal">
+              Nguyên nhân
+            </SortableTh>
           </tr>
         </thead>
         <tbody>
-          {evaluation.misses.map((m) => (
+          {misses.rows.map((m) => (
             <tr key={m.question} className="border-b border-border text-foreground last:border-b-0">
               <td className="px-da-md py-[9px]">{m.question}</td>
               <td className="px-da-md py-[9px]">{m.expected}</td>
@@ -140,6 +185,7 @@ function EvalBody({ evaluation }: { evaluation: ContextEval }) {
           ))}
         </tbody>
       </table>
+      <TablePager view={misses} />
       <div className="flex flex-wrap gap-da-md">
         <Button kind="primary" onClick={() => navigate('data', 'GLOSSARY')}>
           Sửa từ điển nghiệp vụ

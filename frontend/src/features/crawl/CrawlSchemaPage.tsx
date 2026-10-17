@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Notice } from '../../design-system/Notice';
+import { MatrixTable, SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Select } from '../../design-system/Select';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -66,6 +67,20 @@ function SchemaBody({
   const [selected, setSelected] = useState<string>();
   const [busy, setBusy] = useState<'test' | 'approve' | null>(null);
   const [error, setError] = useState<string>();
+  const fields = useTableView(schema.fields, {
+    search: (field) => `${field.name} ${field.type} ${field.locator} ${field.canonical ?? ''}`,
+    filters: [{ id: 'type', label: 'Kiểu', value: (field) => field.type }],
+    sorts: [
+      { id: 'name', value: (field) => field.name },
+      { id: 'type', value: (field) => field.type },
+      { id: 'unit', value: (field) => field.unit ?? '' },
+      { id: 'required', value: (field) => (field.required ? 'Có' : 'Không') },
+      { id: 'key', value: (field) => (field.key ? 'Có' : '') },
+      { id: 'locator', value: (field) => field.locator },
+      { id: 'confidence', value: (field) => field.confidence },
+    ],
+    pageSize: 50,
+  });
   const draft = schema.status === 'draft' || schema.status === 'testing';
   // Only a field the agent offers choices for waits on a person; the api offers none yet.
   const unsure = schema.fields.filter((f) => !f.canonical && f.canonical_options.length > 0);
@@ -140,34 +155,13 @@ function SchemaBody({
           {schema.sample && (
             <Card title={`Bản gốc · ${schema.sample.url}`}>
               <p className="text-muted-foreground da-mono">{schema.sample.fetched_text}</p>
-              <table className="w-full border-collapse overflow-hidden rounded-md border border-border da-body-small">
-                <thead>
-                  <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                    {schema.sample.columns.map((c) => (
-                      <th key={c} className="px-da-lg py-da-md font-normal">
-                        {c}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {schema.sample.rows.map((r, i) => (
-                    <tr
-                      key={r.join('|')}
-                      className={cn(
-                        'border-b border-border last:border-b-0 text-foreground',
-                        i === schema.sample?.highlighted_row && 'bg-accent',
-                      )}
-                    >
-                      {r.map((cell, j) => (
-                        <td key={j} className="px-da-lg py-[10px]">
-                          {cell}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <MatrixTable
+                columns={schema.sample.columns}
+                rows={schema.sample.rows}
+                highlightRow={schema.sample.highlighted_row}
+                className="w-full border-collapse da-body-small"
+                searchLabel="Tìm trong bản gốc"
+              />
               <p className="text-muted-foreground da-caption">{schema.sample.footer_text}</p>
               <p className="text-foreground da-mono">{schema.sample.repeat_text}</p>
             </Card>
@@ -187,21 +181,36 @@ function SchemaBody({
           <Card
             title={`Schema ${draft ? 'đề xuất' : 'đang dùng'} · ${schema.fields.length} trường`}
           >
+            <TableToolbar view={fields} placeholder="Tìm trường…" searchLabel="Tìm trường" />
             <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border da-body-small">
               <thead>
                 <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                  <th className="w-[120px] px-da-lg py-da-md font-normal">Trường</th>
-                  <th className="w-[72px] px-da-lg py-da-md font-normal">Kiểu</th>
-                  <th className="w-[64px] px-da-lg py-da-md font-normal">Đơn vị</th>
-                  <th className="w-[64px] px-da-lg py-da-md font-normal">Bắt buộc</th>
-                  <th className="w-[48px] px-da-lg py-da-md font-normal">Khoá</th>
-                  <th className="px-da-lg py-da-md font-normal">Vị trí trích</th>
+                  <SortableTh view={fields} column="name" className="w-[120px] px-da-lg py-da-md font-normal">
+                    Trường
+                  </SortableTh>
+                  <SortableTh view={fields} column="type" className="w-[72px] px-da-lg py-da-md font-normal">
+                    Kiểu
+                  </SortableTh>
+                  <SortableTh view={fields} column="unit" className="w-[64px] px-da-lg py-da-md font-normal">
+                    Đơn vị
+                  </SortableTh>
+                  <SortableTh view={fields} column="required" className="w-[64px] px-da-lg py-da-md font-normal">
+                    Bắt buộc
+                  </SortableTh>
+                  <SortableTh view={fields} column="key" className="w-[48px] px-da-lg py-da-md font-normal">
+                    Khoá
+                  </SortableTh>
+                  <SortableTh view={fields} column="locator" className="px-da-lg py-da-md font-normal">
+                    Vị trí trích
+                  </SortableTh>
                   <th className="w-[170px] px-da-lg py-da-md font-normal">Thuộc tính chuẩn</th>
-                  <th className="w-[56px] px-da-lg py-da-md font-normal">Độ tin</th>
+                  <SortableTh view={fields} column="confidence" className="w-[56px] px-da-lg py-da-md font-normal">
+                    Độ tin
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {schema.fields.map((f) => (
+                {fields.rows.map((f) => (
                   <tr
                     key={f.name}
                     onClick={() => setSelected(f.name)}
@@ -244,6 +253,7 @@ function SchemaBody({
                 ))}
               </tbody>
             </table>
+            <TablePager view={fields} />
           </Card>
           <Card title="Chạy thử trên mẫu giữ lại">
             {test ? (

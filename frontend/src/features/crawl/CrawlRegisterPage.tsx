@@ -7,6 +7,7 @@ import { Notice } from '../../design-system/Notice';
 import { Radio } from '../../design-system/Radio';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import {
   createCrawlSource,
@@ -69,6 +70,23 @@ export default function CrawlRegisterPage() {
   const more = suggestion?.more && picked.has('more') ? suggestion.more : null;
   const domainCount = chosen.length + (more?.allowed ?? 0);
   const forbidden = suggestion?.sources.filter((s) => s.robots === 'forbidden') ?? [];
+  const sources = useTableView(suggestion?.sources ?? [], {
+    search: (s) => `${s.label} ${s.seed_url} ${s.format_label}`,
+    filters: [
+      {
+        id: 'robots',
+        label: 'Điều khoản',
+        value: (s) => (s.robots === 'allowed' ? 'Cho phép' : 'Cấm thu tự động'),
+      },
+    ],
+    sorts: [
+      { id: 'label', value: (s) => s.label },
+      { id: 'url', value: (s) => s.seed_url },
+      { id: 'format', value: (s) => s.format_label },
+      { id: 'robots', value: (s) => (s.robots === 'allowed' ? 'Cho phép' : 'Cấm thu tự động') },
+    ],
+    pageSize: 50,
+  });
 
   const save = async () => {
     if (!suggestion || domainCount === 0) {

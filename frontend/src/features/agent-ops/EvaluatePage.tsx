@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -260,30 +261,13 @@ function RolloutView({
 
           <h2 className="text-foreground da-heading-3">Chạy thật song song</h2>
           {r.live ? (
-            <table className="w-full table-fixed border-collapse">
-              <thead>
-                <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="px-da-lg py-da-md font-normal">
-                    Chỉ số{r.live.window_days !== null && ` ${r.live.window_days} ngày`}
-                  </th>
-                  <th className="w-[120px] px-da-lg py-da-md font-normal">
-                    {baseline} · {baseShare}%
-                  </th>
-                  <th className="w-[120px] px-da-lg py-da-md font-normal">
-                    v{r.candidate_version} · {r.candidate_share_pct}%
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {LIVE_ROWS.map(([label, read]) => (
-                  <tr key={label} className="border-b border-border text-foreground">
-                    <td className="px-da-lg py-[9px] da-body-small">{label}</td>
-                    <td className="px-da-lg py-[9px] da-mono">{read(r.live!.baseline)}</td>
-                    <td className="px-da-lg py-[9px] da-mono">{read(r.live!.candidate)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <LiveTable
+              rows={LIVE_ROWS}
+              live={r.live}
+              windowDays={r.live.window_days}
+              baselineLabel={`${baseline} · ${baseShare}%`}
+              candidateLabel={`v${r.candidate_version} · ${r.candidate_share_pct}%`}
+            />
           ) : (
             <p className="text-muted-foreground da-body-small">
               Chưa có số đo lượt chạy thật trong cửa sổ quan sát.
@@ -402,6 +386,18 @@ function EvalTable({
   evalSet: NonNullable<Rollout['eval_set']>;
   onAddCase: () => void;
 }) {
+  const view = useTableView(evalSet.criteria, {
+    search: (c) =>
+      `${c.label} ${formatMeasure(c.baseline, c.unit)} ${formatMeasure(c.candidate, c.unit)} ${formatThreshold(c)}`,
+    filters: [{ id: 'unit', label: 'Đơn vị', value: (c) => c.unit || 'Không đơn vị' }],
+    sorts: [
+      { id: 'label', value: (c) => c.label },
+      { id: 'baseline', value: (c) => formatMeasure(c.baseline, c.unit) },
+      { id: 'candidate', value: (c) => formatMeasure(c.candidate, c.unit) },
+      { id: 'threshold', value: (c) => formatThreshold(c) },
+    ],
+    pageSize: 50,
+  });
   return (
     <>
       <div className="flex items-center gap-da-md">
@@ -412,19 +408,26 @@ function EvalTable({
           Thêm tình huống
         </Button>
       </div>
+      <TableToolbar view={view} placeholder="Tìm tiêu chí…" searchLabel="Tìm tiêu chí" />
       <table className="w-full table-fixed border-collapse">
         <thead>
           <tr className="border-b border-border text-left text-muted-foreground da-caption">
-            <th className="px-da-lg py-da-md font-normal">Tiêu chí</th>
-            <th className="w-[100px] px-da-lg py-da-md font-normal">
+            <SortableTh view={view} column="label" className="px-da-lg py-da-md font-normal">
+              Tiêu chí
+            </SortableTh>
+            <SortableTh view={view} column="baseline" className="w-[100px] px-da-lg py-da-md font-normal">
               {r.baseline_version === null ? 'Bản cũ' : `v${r.baseline_version}`}
-            </th>
-            <th className="w-[100px] px-da-lg py-da-md font-normal">v{r.candidate_version}</th>
-            <th className="w-[100px] px-da-lg py-da-md font-normal">Ngưỡng</th>
+            </SortableTh>
+            <SortableTh view={view} column="candidate" className="w-[100px] px-da-lg py-da-md font-normal">
+              v{r.candidate_version}
+            </SortableTh>
+            <SortableTh view={view} column="threshold" className="w-[100px] px-da-lg py-da-md font-normal">
+              Ngưỡng
+            </SortableTh>
           </tr>
         </thead>
         <tbody>
-          {evalSet.criteria.map((c) => (
+          {view.rows.map((c) => (
             <tr key={c.key} className="border-b border-border">
               <td className="px-da-lg py-[9px] text-foreground da-body-small">{c.label}</td>
               <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
@@ -440,6 +443,67 @@ function EvalTable({
           ))}
         </tbody>
       </table>
+      <TablePager view={view} />
+    </>
+  );
+}
+
+function LiveTable({
+  rows,
+  live,
+  windowDays,
+  baselineLabel,
+  candidateLabel,
+}: {
+  rows: [string, (s: LiveStats) => string][];
+  live: NonNullable<Rollout['live']>;
+  windowDays: number | null;
+  baselineLabel: string;
+  candidateLabel: string;
+}) {
+  const records = rows.map(([label, read]) => ({
+    label,
+    baseline: read(live.baseline),
+    candidate: read(live.candidate),
+  }));
+  const view = useTableView(records, {
+    search: (row) => `${row.label} ${row.baseline} ${row.candidate}`,
+    filters: [{ id: 'metric', label: 'Chỉ số', value: (row) => row.label }],
+    sorts: [
+      { id: 'metric', value: (row) => row.label },
+      { id: 'baseline', value: (row) => row.baseline },
+      { id: 'candidate', value: (row) => row.candidate },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm chỉ số…" searchLabel="Tìm chỉ số chạy thật" />
+      <table className="w-full table-fixed border-collapse">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="metric" className="px-da-lg py-da-md font-normal">
+              Chỉ số{windowDays !== null && ` ${windowDays} ngày`}
+            </SortableTh>
+            <SortableTh view={view} column="baseline" className="w-[120px] px-da-lg py-da-md font-normal">
+              {baselineLabel}
+            </SortableTh>
+            <SortableTh view={view} column="candidate" className="w-[120px] px-da-lg py-da-md font-normal">
+              {candidateLabel}
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((row) => (
+            <tr key={row.label} className="border-b border-border text-foreground">
+              <td className="px-da-lg py-[9px] da-body-small">{row.label}</td>
+              <td className="px-da-lg py-[9px] da-mono">{row.baseline}</td>
+              <td className="px-da-lg py-[9px] da-mono">{row.candidate}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
     </>
   );
 }

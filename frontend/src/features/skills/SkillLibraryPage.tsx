@@ -5,6 +5,7 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Menu } from '../../design-system/Menu';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { createSkill, listSkills, type Skill, type SkillScope } from '../../lib/v1/skills';
@@ -38,6 +39,21 @@ export default function SkillLibraryPage() {
   const [sharing, setSharing] = useState<Skill | null>(null);
   const items = skills.data?.items ?? [];
   const count = (f: Filter) => items.filter((s) => f === 'all' || s.scope === f).length;
+  const view = useTableView(items, {
+    search: (s) =>
+      `${s.name} ${s.description} ${s.scope_label} ${s.status_text} ${s.owner.name} v${s.version}`,
+    filters: [{ id: 'status', label: 'Trạng thái', value: (s) => s.status_text }],
+    predicate: (s) => filter === 'all' || s.scope === filter,
+    sorts: [
+      { id: 'name', value: (s) => s.name },
+      { id: 'version', value: (s) => s.version },
+      { id: 'scope', value: (s) => s.scope_label },
+      { id: 'status', value: (s) => s.status_text },
+      { id: 'runs', value: (s) => s.runs_30d },
+      { id: 'owner', value: (s) => s.owner.name },
+    ],
+    pageSize: 50,
+  });
 
   const create = () => {
     setCreating(true);
@@ -64,16 +80,18 @@ export default function SkillLibraryPage() {
         }
       />
       <div className="flex flex-col gap-da-lg px-da-3xl pt-da-xl">
-        <Segmented<Filter>
-          variant="chips"
-          label="Nguồn kỹ năng"
-          items={FILTERS.map((f) => ({
-            value: f.value,
-            label: skills.data ? `${f.label} ${count(f.value)}` : f.label,
-          }))}
-          value={filter}
-          onChange={setFilter}
-        />
+        <TableToolbar view={view} placeholder="Tìm kỹ năng…" searchLabel="Tìm kỹ năng">
+          <Segmented<Filter>
+            variant="chips"
+            label="Nguồn kỹ năng"
+            items={FILTERS.map((f) => ({
+              value: f.value,
+              label: skills.data ? `${f.label} ${count(f.value)}` : f.label,
+            }))}
+            value={filter}
+            onChange={setFilter}
+          />
+        </TableToolbar>
         <AsyncRegion
           state={skills}
           what="thư viện kỹ năng"
@@ -91,23 +109,35 @@ export default function SkillLibraryPage() {
             <table className="w-full table-fixed border-collapse">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="py-da-md pl-da-lg font-normal">Kỹ năng</th>
-                  <th className="w-[102px] py-da-md pl-da-lg font-normal">Phiên bản</th>
-                  <th className="w-[162px] py-da-md pl-da-lg font-normal">Phạm vi</th>
-                  <th className="w-[182px] py-da-md pl-da-lg font-normal">Trạng thái</th>
-                  <th className="w-[102px] py-da-md pl-da-lg font-normal">30 ngày</th>
-                  <th className="w-[152px] py-da-md pl-da-lg font-normal max-[1279px]:hidden">
+                  <SortableTh view={view} column="name" className="py-da-md pl-da-lg font-normal">
+                    Kỹ năng
+                  </SortableTh>
+                  <SortableTh view={view} column="version" className="w-[102px] py-da-md pl-da-lg font-normal">
+                    Phiên bản
+                  </SortableTh>
+                  <SortableTh view={view} column="scope" className="w-[162px] py-da-md pl-da-lg font-normal">
+                    Phạm vi
+                  </SortableTh>
+                  <SortableTh view={view} column="status" className="w-[182px] py-da-md pl-da-lg font-normal">
+                    Trạng thái
+                  </SortableTh>
+                  <SortableTh view={view} column="runs" className="w-[102px] py-da-md pl-da-lg font-normal">
+                    30 ngày
+                  </SortableTh>
+                  <SortableTh
+                    view={view}
+                    column="owner"
+                    className="w-[152px] py-da-md pl-da-lg font-normal max-[1279px]:hidden"
+                  >
                     Chủ sở hữu
-                  </th>
-                  <th className="w-[40px] py-da-md pl-da-lg pr-da-lg">
+                  </SortableTh>
+                  <SortableTh view={view} className="w-[40px] py-da-md pl-da-lg pr-da-lg">
                     <span className="sr-only">Thao tác</span>
-                  </th>
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {items
-                  .filter((s) => filter === 'all' || s.scope === filter)
-                  .map((skill) => (
+                {view.rows.map((skill) => (
                     <SkillRow
                       key={skill.id}
                       skill={skill}
@@ -116,11 +146,12 @@ export default function SkillLibraryPage() {
                       onVersions={() => navigate('agents', 'SKILL_VERSIONS', skill.id)}
                       onShare={() => setSharing(skill)}
                     />
-                  ))}
+                ))}
               </tbody>
             </table>
           )}
         </AsyncRegion>
+        <TablePager view={view} />
       </div>
       <ShareSkillDialog skill={sharing} onClose={() => setSharing(null)} />
     </div>

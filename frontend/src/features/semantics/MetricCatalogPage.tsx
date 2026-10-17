@@ -7,6 +7,7 @@ import { FilterChips } from '../../design-system/FilterChips';
 import { Icon } from '../../design-system/Icon';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { Tabs } from '../../design-system/Tabs';
 import { cn } from '../../lib/utils';
@@ -189,15 +190,7 @@ function ProfileView({ id }: { id: string }) {
           )}
           {tab === 'versions' && (
             <>
-              <Table
-                head={['Phiên bản', 'Thay đổi', 'Hiệu lực', 'Trạng thái']}
-                rows={p.versions.map((v) => [
-                  `v${v.version}`,
-                  v.change,
-                  v.effective,
-                  VERSION[v.status],
-                ])}
-              />
+              <VersionTable versions={p.versions} />
               {p.versions.length > 1 && (
                 <div>
                   <Button onClick={() => navigate('data', 'METRIC', p.id)}>
@@ -210,10 +203,7 @@ function ProfileView({ id }: { id: string }) {
           {tab === 'usage' &&
             (p.usage.length ? (
               <>
-                <Table
-                  head={['Nơi dùng', 'Loại', 'Phiên bản', 'Lần cuối']}
-                  rows={p.usage.map((u) => [u.place, u.kind, u.version, u.last])}
-                />
+                <UsageTable rows={p.usage} />
                 <p className="text-muted-foreground da-caption">{p.usage_note}</p>
               </>
             ) : (
@@ -317,29 +307,100 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   );
 }
 
-function Table({ head, rows }: { head: string[]; rows: React.ReactNode[][] }) {
+const VERSION_LABEL = { certified: 'Chứng nhận', draft: 'Nháp', archived: 'Lưu trữ' } as const;
+
+function VersionTable({ versions }: { versions: MetricProfile['versions'] }) {
+  const view = useTableView(versions, {
+    search: (v) => `v${v.version} ${v.change} ${v.effective} ${VERSION_LABEL[v.status]}`,
+    filters: [{ id: 'status', label: 'Trạng thái', value: (v) => VERSION_LABEL[v.status] }],
+    sorts: [
+      { id: 'version', value: (v) => v.version },
+      { id: 'change', value: (v) => v.change },
+      { id: 'effective', value: (v) => v.effective },
+      { id: 'status', value: (v) => VERSION_LABEL[v.status] },
+    ],
+    pageSize: 50,
+  });
   return (
-    <table className="w-full border-collapse overflow-hidden rounded-md border border-border da-body-small">
-      <thead>
-        <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-          {head.map((h) => (
-            <th key={h} className="px-da-sm py-da-sm font-normal">
-              {h}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r, i) => (
-          <tr key={i} className="border-b border-border text-foreground last:border-b-0">
-            {r.map((cell, j) => (
-              <td key={j} className="px-da-sm py-[7px]">
-                {cell}
-              </td>
-            ))}
+    <>
+      <TableToolbar view={view} placeholder="Tìm phiên bản…" searchLabel="Tìm phiên bản chỉ số" />
+      <table className="w-full border-collapse overflow-hidden rounded-md border border-border da-body-small">
+        <thead>
+          <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="version" className="px-da-sm py-da-sm font-normal">
+              Phiên bản
+            </SortableTh>
+            <SortableTh view={view} column="change" className="px-da-sm py-da-sm font-normal">
+              Thay đổi
+            </SortableTh>
+            <SortableTh view={view} column="effective" className="px-da-sm py-da-sm font-normal">
+              Hiệu lực
+            </SortableTh>
+            <SortableTh view={view} column="status" className="px-da-sm py-da-sm font-normal">
+              Trạng thái
+            </SortableTh>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {view.rows.map((v) => (
+            <tr key={v.version} className="border-b border-border text-foreground last:border-b-0">
+              <td className="px-da-sm py-[7px]">{`v${v.version}`}</td>
+              <td className="px-da-sm py-[7px]">{v.change}</td>
+              <td className="px-da-sm py-[7px]">{v.effective}</td>
+              <td className="px-da-sm py-[7px]">{VERSION[v.status]}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
+  );
+}
+
+function UsageTable({ rows }: { rows: MetricProfile['usage'] }) {
+  const view = useTableView(rows, {
+    search: (u) => `${u.place} ${u.kind} ${u.version} ${u.last}`,
+    filters: [{ id: 'kind', label: 'Loại', value: (u) => u.kind }],
+    sorts: [
+      { id: 'place', value: (u) => u.place },
+      { id: 'kind', value: (u) => u.kind },
+      { id: 'version', value: (u) => u.version },
+      { id: 'last', value: (u) => u.last },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm nơi dùng…" searchLabel="Tìm nơi dùng" />
+      <table className="w-full border-collapse overflow-hidden rounded-md border border-border da-body-small">
+        <thead>
+          <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="place" className="px-da-sm py-da-sm font-normal">
+              Nơi dùng
+            </SortableTh>
+            <SortableTh view={view} column="kind" className="px-da-sm py-da-sm font-normal">
+              Loại
+            </SortableTh>
+            <SortableTh view={view} column="version" className="px-da-sm py-da-sm font-normal">
+              Phiên bản
+            </SortableTh>
+            <SortableTh view={view} column="last" className="px-da-sm py-da-sm font-normal">
+              Lần cuối
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((u) => (
+            <tr key={`${u.place}-${u.kind}`} className="border-b border-border text-foreground last:border-b-0">
+              <td className="px-da-sm py-[7px]">{u.place}</td>
+              <td className="px-da-sm py-[7px]">{u.kind}</td>
+              <td className="px-da-sm py-[7px]">{u.version}</td>
+              <td className="px-da-sm py-[7px]">{u.last}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
   );
 }

@@ -1,4 +1,5 @@
 import type { Page } from './client';
+import { findDecompositionSkill } from './skillAuthoring';
 import { pathId, V1Error, v1Get, v1Send } from './client';
 import type { components } from './schema';
 import type { DataSpace } from './types';
@@ -405,27 +406,75 @@ export interface ExploreExplanation {
 const textOf = (value: unknown) => (typeof value === 'string' && value.trim() ? value : null);
 
 /**
- * SCR-06 "Agent giải thích" is the decomposition skill run on the result (POST
+ * The decomposition skill's params for what the explorer shows (worker-agent skill_runs.py):
+ * the first metric, cut by the shelf's non-time dimension, the last month against the one
+ * before. Null without a time dimension on the shelves and two months in the result, or without
+ * a dimension to cut by: there is no change to decompose.
+ */
+export function explanationParams(
+  result: ExploreResult,
+  input: ExploreQueryInput,
+  model: ExploreModel,
+): { metric: string; dimension: string; period: string; base_period: string } | null {
+  const metric = model.metrics.find((m) => m.id === input.metric_ids[0]);
+  const dims = input.dimension_ids
+    .map((id) => model.dimensions.find((d) => d.id === id))
+    .filter((d): d is ExploreDimension => !!d);
+  const time = dims.find((d) => d.is_time);
+  const cut = dims.find((d) => !d.is_time);
+  if (!metric || !time || !cut) return null;
+  const keys =
+    result.category_dimension_id === time.id
+      ? result.rows.map((r) => r.key)
+      : result.series.map((s) => s.key);
+  const periods = [...new Set(keys.map(periodKey))];
+  // One grain only: a month is not compared with a quarter.
+  if (periods.some((p) => p === null) || periods.length < 2) return null;
+  const sorted = (periods as string[]).sort();
+  if (new Set(sorted.map((p) => p.includes('Q'))).size > 1) return null;
+  return {
+    metric: metric.code,
+    dimension: cut.code,
+    period: sorted[sorted.length - 1],
+    base_period: sorted[sorted.length - 2],
+  };
+}
+
+/** A time member as the skill takes it: "YYYY-MM" or "YYYY-Qn" ("2026-09-30", "T9/2026",
+ *  "09/2026", "Q3/2026", "2026-Q3"); null for anything else. */
+export function periodKey(value: string): string | null {
+  const v = value.trim();
+  let m = /^(\d{4})-(\d{2})(?:-\d{2})?$/.exec(v);
+  if (m) return `${m[1]}-${m[2]}`;
+  m = /^(\d{4})-Q([1-4])$/i.exec(v);
+  if (m) return `${m[1]}-Q${m[2]}`;
+  m = /^Q([1-4])\/(\d{4})$/i.exec(v);
+  if (m) return `${m[2]}-Q${m[1]}`;
+  m = /^(?:T|tháng\s*)?(\d{1,2})\/(\d{4})$/i.exec(v);
+  if (m && Number(m[1]) >= 1 && Number(m[1]) <= 12) return `${m[2]}-${m[1].padStart(2, '0')}`;
+  return null;
+}
+
+/**
+ * SCR-06 "Agent giải thích" is the decomposition skill run on what the explorer shows (POST
  * /v1/skills/{id}/runs → GET /v1/skill-runs/{id}). null when the Data Space has no published
- * decomposition skill, or when its result carries no text to show.
+ * decomposition skill, when the shelves give no change to decompose, or when the result carries
+ * no text to show.
  */
 export async function getExploreExplanation(
   result: ExploreResult,
-  metricIds: string[],
+  input: ExploreQueryInput,
+  model: ExploreModel,
   { intervalMs = 1_000, timeoutMs = 60_000 } = {},
 ): Promise<ExploreExplanation | null> {
-  const skills = await v1Get<Page<Schemas['SkillView']>>('/skills', {
-    category: 'decomposition',
-    page_size: 20,
-  });
-  const skill = skills.items.find((s) => s.current_version !== null);
+  const params = explanationParams(result, input, model);
+  if (!params) return null;
+  const skill = await findDecompositionSkill();
   if (!skill) return null;
   const accepted = await v1Send<Schemas['services__api__modules__skill__schemas__Accepted']>(
     'POST',
-    `/skills/${pathId(skill.id)}/runs`,
-    {
-      params: { query_run_id: result.id, metric_id: metricIds[0] },
-    } as unknown as Schemas['RunCreate'],
+    `/skills/${pathId(skill)}/runs`,
+    { params } as unknown as Schemas['RunCreate'],
   );
   const deadline = Date.now() + timeoutMs;
   let run = await v1Get<Schemas['RunDetail']>(`/skill-runs/${pathId(accepted.id)}`);
@@ -440,10 +489,13 @@ export async function getExploreExplanation(
     typeof run.result === 'object' && run.result !== null
       ? (run.result as Record<string, unknown>)
       : {};
-  const headline = textOf(out.headline) ?? textOf(out.title);
-  const body = textOf(out.summary) ?? textOf(out.text) ?? textOf(out.body);
+  // The worker's summary leads with the change; the rest, and the method, are the body.
+  const summary = textOf(out.summary) ?? textOf(out.text) ?? textOf(out.body);
+  const [first, ...rest] = (summary ?? '').split(/(?<=\.)\s+/);
+  const headline = textOf(out.headline) ?? textOf(out.title) ?? textOf(first);
+  const body = [rest.join(' '), textOf(out.method)].filter(Boolean).join(' ');
   if (!headline && !body) return null;
-  return { headline: headline ?? '', body: body ?? '' };
+  return { headline: headline ?? '', body };
 }
 
 /* ─── Hỏi bằng lời: câu hỏi purpose explore, kệ điền từ chip cách hiểu ─── */

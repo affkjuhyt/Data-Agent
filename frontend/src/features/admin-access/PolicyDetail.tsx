@@ -4,6 +4,7 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
@@ -191,27 +192,51 @@ function Simulation({ policy }: { policy: AccessPolicy }) {
         <span className="text-muted-foreground da-body-small">hỏi “{question}”</span>
       </div>
       <AsyncRegion state={result} what="kết quả mô phỏng" skeletonRows={4}>
-        {(r) => (
-          <table className="w-full table-fixed border-collapse">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="px-da-lg py-da-md font-normal">Kết quả</th>
-                <th className="w-[160px] px-da-lg py-da-md font-normal">Không có chính sách</th>
-                <th className="w-[160px] px-da-lg py-da-md font-normal">Với chính sách</th>
-              </tr>
-            </thead>
-            <tbody>
-              {r.rows.map((row) => (
-                <tr key={row.label} className="border-b border-border">
-                  <td className="px-da-lg py-da-md text-foreground da-body-small">{row.label}</td>
-                  <td className="px-da-lg py-da-md text-muted-foreground da-mono">{row.without}</td>
-                  <td className="px-da-lg py-da-md text-foreground da-mono">{row.with}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        {(r) => <SimulationRows rows={r.rows} />}
       </AsyncRegion>
     </>
+  );
+}
+
+function SimulationRows({ rows }: { rows: { label: string; without: string; with: string }[] }) {
+  const view = useTableView(rows, {
+    search: (row) => `${row.label} ${row.without} ${row.with}`,
+    filters: [{ id: 'label', label: 'Kết quả', value: (row) => row.label }],
+    sorts: [
+      { id: 'label', value: (row) => row.label },
+      { id: 'without', value: (row) => row.without },
+      { id: 'with', value: (row) => row.with },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <div className="flex flex-col gap-da-md">
+      <TableToolbar view={view} placeholder="Tìm kết quả…" searchLabel="Tìm kết quả mô phỏng" />
+      <table className="w-full table-fixed border-collapse">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="label" className="px-da-lg py-da-md font-normal">
+              Kết quả
+            </SortableTh>
+            <SortableTh view={view} column="without" className="w-[160px] px-da-lg py-da-md font-normal">
+              Không có chính sách
+            </SortableTh>
+            <SortableTh view={view} column="with" className="w-[160px] px-da-lg py-da-md font-normal">
+              Với chính sách
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((row) => (
+            <tr key={row.label} className="border-b border-border">
+              <td className="px-da-lg py-da-md text-foreground da-body-small">{row.label}</td>
+              <td className="px-da-lg py-da-md text-muted-foreground da-mono">{row.without}</td>
+              <td className="px-da-lg py-da-md text-foreground da-mono">{row.with}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </div>
   );
 }

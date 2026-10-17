@@ -4,6 +4,7 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Icon } from '../../design-system/Icon';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import {
@@ -31,6 +32,24 @@ export default function SourceAuthorityPage() {
   const [error, setError] = useState<string>();
 
   const items = authorities.data?.items ?? [];
+  const view = useTableView(items, {
+    search: (a) =>
+      `${a.data_kind_label} ${a.decider_name} ${a.ranking.map((s) => s.name).join(' ')} ${a.materiality ?? ''}`,
+    filters: [
+      {
+        id: 'status',
+        label: 'Trạng thái',
+        value: (a) => (a.status === 'draft' ? 'Bản nháp' : 'Đang áp dụng'),
+      },
+    ],
+    sorts: [
+      { id: 'kind', value: (a) => a.data_kind_label },
+      { id: 'rank', value: (a) => a.ranking.map((s) => s.name).join(' → ') },
+      { id: 'threshold', value: (a) => edits[a.data_kind]?.materiality ?? a.materiality },
+      { id: 'decider', value: (a) => a.decider_name },
+    ],
+    pageSize: 50,
+  });
   const changed = items.filter((a) => isChanged(a, edits[a.data_kind]));
   const example = items.find((a) => a.last_conflict_text)?.last_conflict_text;
 
@@ -83,18 +102,28 @@ export default function SourceAuthorityPage() {
       <div className="flex flex-col gap-[14px] px-da-3xl pt-da-xl">
         {error && <Notice tone="error">Không lưu được: {error}</Notice>}
         <AsyncRegion state={authorities} what="thẩm quyền nguồn">
-          {(page) => (
+          {() => (
+            <>
+            <TableToolbar view={view} placeholder="Tìm loại dữ liệu…" searchLabel="Tìm loại dữ liệu" />
             <table className="w-full table-fixed border-collapse">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="w-[220px] px-da-lg py-da-md font-normal">Loại dữ liệu</th>
-                  <th className="px-da-lg py-da-md font-normal">Thứ tự ưu tiên</th>
-                  <th className="w-[200px] px-da-lg py-da-md font-normal">Ngưỡng trọng yếu</th>
-                  <th className="w-[180px] px-da-lg py-da-md font-normal">Người quyết khi lệch</th>
+                  <SortableTh view={view} column="kind" className="w-[220px] px-da-lg py-da-md font-normal">
+                    Loại dữ liệu
+                  </SortableTh>
+                  <SortableTh view={view} column="rank" className="px-da-lg py-da-md font-normal">
+                    Thứ tự ưu tiên
+                  </SortableTh>
+                  <SortableTh view={view} column="threshold" className="w-[200px] px-da-lg py-da-md font-normal">
+                    Ngưỡng trọng yếu
+                  </SortableTh>
+                  <SortableTh view={view} column="decider" className="w-[180px] px-da-lg py-da-md font-normal">
+                    Người quyết khi lệch
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {page.items.map((a) => {
+                {view.rows.map((a) => {
                   const edit = editOf(a);
                   const names = edit.ranking.map(
                     (id) => a.ranking.find((s) => s.source_id === id)?.name ?? id,
@@ -147,6 +176,8 @@ export default function SourceAuthorityPage() {
                 })}
               </tbody>
             </table>
+            <TablePager view={view} />
+            </>
           )}
         </AsyncRegion>
         {example && (

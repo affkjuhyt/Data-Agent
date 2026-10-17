@@ -9,6 +9,7 @@ import { FilterChips } from '../../design-system/FilterChips';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Tabs } from '../../design-system/Tabs';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
@@ -445,6 +446,16 @@ const RESULT = {
 
 function ScopeTab({ product }: { product: AnswerProduct }) {
   const primary = product.members.slice(0, 3);
+  const samples = useTableView(product.sample_questions, {
+    search: (s) => `${s.question} ${s.answer} ${RESULT[s.result].label}`,
+    filters: [{ id: 'result', label: 'Kết quả', value: (s) => RESULT[s.result].label }],
+    sorts: [
+      { id: 'question', value: (s) => s.question },
+      { id: 'answer', value: (s) => s.answer },
+      { id: 'result', value: (s) => RESULT[s.result].label },
+    ],
+    pageSize: 50,
+  });
   return (
     <div className="flex items-start gap-da-md max-[1279px]:flex-col">
       <section className="flex min-w-0 flex-1 flex-col gap-da-md rounded-md border border-border bg-card p-da-lg max-[1279px]:w-full">
@@ -460,18 +471,23 @@ function ScopeTab({ product }: { product: AnswerProduct }) {
             </li>
           ))}
         </ul>
+        <TableToolbar view={samples} placeholder="Tìm câu hỏi…" searchLabel="Tìm câu hỏi mẫu" />
         <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border da-body-small">
           <thead>
             <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-              <th className="px-da-md py-da-sm font-normal">
+              <SortableTh view={samples} column="question" className="px-da-md py-da-sm font-normal">
                 Câu hỏi mẫu · {product.sample_total} câu có đáp án
-              </th>
-              <th className="w-[160px] px-da-md py-da-sm font-normal">Đáp án</th>
-              <th className="w-[100px] px-da-md py-da-sm font-normal">Kết quả</th>
+              </SortableTh>
+              <SortableTh view={samples} column="answer" className="w-[160px] px-da-md py-da-sm font-normal">
+                Đáp án
+              </SortableTh>
+              <SortableTh view={samples} column="result" className="w-[100px] px-da-md py-da-sm font-normal">
+                Kết quả
+              </SortableTh>
             </tr>
           </thead>
           <tbody>
-            {product.sample_questions.map((s) => (
+            {samples.rows.map((s) => (
               <tr
                 key={s.question}
                 className="border-b border-border text-foreground last:border-b-0"
@@ -485,6 +501,7 @@ function ScopeTab({ product }: { product: AnswerProduct }) {
             ))}
           </tbody>
         </table>
+        <TablePager view={samples} />
         {product.sample_total > product.sample_questions.length && (
           <p className="text-muted-foreground da-caption">
             +{product.sample_total - product.sample_questions.length} câu khác. Câu trượt mở cách
@@ -556,19 +573,40 @@ function MembersTab({
   busy: string | null;
   onRemove: (memberId: string, label: string) => void;
 }) {
+  const view = useTableView(product.members, {
+    search: (m) => `${m.ref} ${KIND_LABEL[m.member_kind]} ${m.detail} ${m.role}`,
+    filters: [{ id: 'kind', label: 'Loại', value: (m) => KIND_LABEL[m.member_kind] }],
+    sorts: [
+      { id: 'ref', value: (m) => m.ref },
+      { id: 'kind', value: (m) => KIND_LABEL[m.member_kind] },
+      { id: 'detail', value: (m) => m.detail },
+      { id: 'role', value: (m) => m.role },
+    ],
+    pageSize: 50,
+  });
   return (
+    <>
+    <TableToolbar view={view} placeholder="Tìm thành phần…" searchLabel="Tìm thành phần" />
     <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border da-body-small">
       <thead>
         <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-          <th className="px-da-md py-da-sm font-normal">Thành phần</th>
-          <th className="w-[200px] px-da-md py-da-sm font-normal">Loại</th>
-          <th className="px-da-md py-da-sm font-normal">Chi tiết</th>
-          <th className="w-[130px] px-da-md py-da-sm font-normal">Vai trò</th>
-          <th className="w-[90px]" />
+          <SortableTh view={view} column="ref" className="px-da-md py-da-sm font-normal">
+            Thành phần
+          </SortableTh>
+          <SortableTh view={view} column="kind" className="w-[200px] px-da-md py-da-sm font-normal">
+            Loại
+          </SortableTh>
+          <SortableTh view={view} column="detail" className="px-da-md py-da-sm font-normal">
+            Chi tiết
+          </SortableTh>
+          <SortableTh view={view} column="role" className="w-[130px] px-da-md py-da-sm font-normal">
+            Vai trò
+          </SortableTh>
+          <SortableTh view={view} className="w-[90px]" />
         </tr>
       </thead>
       <tbody>
-        {product.members.map((m) => {
+        {view.rows.map((m) => {
           const locked = product.status === 'active' && m.role === 'primary';
           const remove = (
             <Button
@@ -603,6 +641,8 @@ function MembersTab({
         })}
       </tbody>
     </table>
+    <TablePager view={view} />
+    </>
   );
 }
 
@@ -671,6 +711,23 @@ function FreshnessTab({ id }: { id: string }) {
 }
 
 function MonitoringTab({ monitoring: m }: { monitoring: ProductMonitoring | null }) {
+  const weeks = useTableView(m?.weeks ?? [], {
+    search: (w) => `${w.label} ${pct(w.in_scope_pct)} ${pct(w.masked_pct)}`,
+    filters: [
+      {
+        id: 'masked',
+        label: 'Bị che',
+        value: (w) => (w.masked_pct > 0 ? 'Có dòng bị che' : 'Không bị che'),
+      },
+    ],
+    sorts: [
+      { id: 'week', value: (w) => w.label },
+      { id: 'in', value: (w) => w.in_scope_pct },
+      { id: 'out', value: (w) => 100 - w.in_scope_pct },
+      { id: 'masked', value: (w) => w.masked_pct },
+    ],
+    pageSize: 50,
+  });
   if (!m)
     return (
       <p className="text-muted-foreground da-body-small">
@@ -680,17 +737,26 @@ function MonitoringTab({ monitoring: m }: { monitoring: ProductMonitoring | null
   return (
     <section className="flex flex-col gap-da-sm rounded-md border border-border bg-card p-da-lg">
       <h2 className="text-foreground da-heading-3">{m.questions_30d} câu hỏi trong 30 ngày</h2>
+      <TableToolbar view={weeks} placeholder="Tìm tuần…" searchLabel="Tìm tuần" />
       <table className="w-full border-collapse da-body-small">
         <thead>
           <tr className="border-b border-border text-left text-muted-foreground da-caption">
-            <th className="py-da-sm font-normal">Tuần</th>
-            <th className="py-da-sm font-normal">Trong phạm vi</th>
-            <th className="py-da-sm font-normal">Ngoài phạm vi</th>
-            <th className="py-da-sm font-normal">Bị che</th>
+            <SortableTh view={weeks} column="week" className="py-da-sm font-normal">
+              Tuần
+            </SortableTh>
+            <SortableTh view={weeks} column="in" className="py-da-sm font-normal">
+              Trong phạm vi
+            </SortableTh>
+            <SortableTh view={weeks} column="out" className="py-da-sm font-normal">
+              Ngoài phạm vi
+            </SortableTh>
+            <SortableTh view={weeks} column="masked" className="py-da-sm font-normal">
+              Bị che
+            </SortableTh>
           </tr>
         </thead>
         <tbody>
-          {m.weeks.map((w) => (
+          {weeks.rows.map((w) => (
             <tr key={w.label} className="border-b border-border text-foreground last:border-b-0">
               <td className="py-[7px]">{w.label}</td>
               <td className="py-[7px]">{pct(w.in_scope_pct)}</td>
@@ -702,6 +768,7 @@ function MonitoringTab({ monitoring: m }: { monitoring: ProductMonitoring | null
           ))}
         </tbody>
       </table>
+      <TablePager view={weeks} />
     </section>
   );
 }

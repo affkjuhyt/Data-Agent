@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { cn } from '../../lib/utils';
 import type { ForecastStat } from '../../lib/v1/forecast';
 
@@ -31,6 +32,33 @@ export interface Column<T> {
   className?: string;
   /** Figma leaves some heads blank; the name stays for screen readers. */
   hideHead?: boolean;
+  /** Plain value for search, sort and the Select filter when the cell is markup. */
+  value?: (row: T) => string | number | null | undefined;
+  /** This column is the Select filter. Otherwise the column with the fewest distinct values is. */
+  filter?: boolean;
+}
+
+function columnValue<T>(column: Column<T>, row: T): string | number | null | undefined {
+  if (column.value) return column.value(row);
+  const rendered = column.cell(row);
+  if (typeof rendered === 'string' || typeof rendered === 'number') return rendered;
+  return undefined;
+}
+
+function filterColumn<T>(columns: Column<T>[], rows: readonly T[]): Column<T> | undefined {
+  const marked = columns.find((column) => column.filter);
+  if (marked) return marked;
+  let best: { column: Column<T>; count: number } | undefined;
+  for (const column of columns) {
+    const values = new Set<string>();
+    for (const row of rows) {
+      const value = columnValue(column, row);
+      if (value != null && value !== '') values.add(String(value));
+    }
+    if (values.size < 2) continue;
+    if (!best || values.size < best.count) best = { column, count: values.size };
+  }
+  return best?.column ?? columns[0];
 }
 
 /** The Figma "Table": radius 8, a subtle head row, 10px rows divided by the border. */
@@ -47,20 +75,48 @@ export function DataTable<T>({
   rowKey: (row: T) => string;
   rowClassName?: (row: T) => string | undefined;
 }) {
+  const chosen = filterColumn(columns, rows);
+  const view = useTableView(rows, {
+    search: (row) => columns.map((column) => columnValue(column, row) ?? '').join(' '),
+    filters: chosen
+      ? [
+          {
+            id: chosen.head,
+            label: chosen.head,
+            value: (row) => {
+              const value = columnValue(chosen, row);
+              return value == null ? '' : String(value);
+            },
+          },
+        ]
+      : [],
+    sorts: columns.map((column) => ({
+      id: column.head,
+      value: (row: T) => columnValue(column, row),
+    })),
+    pageSize: 50,
+  });
   return (
-    <div className="w-full overflow-x-auto rounded-md border border-border bg-card">
+    <div className="flex w-full flex-col gap-da-md">
+      <TableToolbar view={view} placeholder={`Tìm trong ${label}`} searchLabel={`Tìm ${label}`} />
+      <div className="w-full overflow-x-auto rounded-md border border-border bg-card">
       <table aria-label={label} className="w-full border-collapse text-left">
         <thead>
           <tr className="border-b border-border bg-subtle text-muted-foreground da-caption">
             {columns.map((c) => (
-              <th key={c.head} scope="col" className={cn('px-da-lg py-da-md font-normal', c.width)}>
+              <SortableTh
+                key={c.head}
+                view={view}
+                column={c.head}
+                className={cn('px-da-lg py-da-md font-normal', c.width)}
+              >
                 {c.hideHead ? <span className="sr-only">{c.head}</span> : c.head}
-              </th>
+              </SortableTh>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {view.rows.map((row) => (
             <tr
               key={rowKey(row)}
               className={cn('border-b border-border last:border-b-0', rowClassName?.(row))}
@@ -77,6 +133,8 @@ export function DataTable<T>({
           ))}
         </tbody>
       </table>
+      </div>
+      <TablePager view={view} />
     </div>
   );
 }

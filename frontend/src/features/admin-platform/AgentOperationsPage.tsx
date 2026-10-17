@@ -5,6 +5,13 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Notice } from '../../design-system/Notice';
 import { Segmented } from '../../design-system/Segmented';
+import {
+  SortableTh,
+  TablePager,
+  TableToolbar,
+  tableEmptyRow,
+  useTableView,
+} from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { formatElapsed, formatNumber } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
@@ -43,6 +50,10 @@ const BAR_MAX_PX = 171;
 const signed = (n: number, digits = 1) =>
   `${n > 0 ? '+' : n < 0 ? '−' : ''}${formatNumber(Math.abs(n), { maxFractionDigits: digits })}`;
 const duration = (s: number | null) => (s === null ? '—' : formatRunDuration(s));
+const costNumber = (value: string): number | null => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
 
 export default function AgentOperationsPage() {
   const { navigate } = useAppState();
@@ -84,6 +95,22 @@ function OpsBody({
   onAgent: () => void;
 }) {
   const maxDay = Math.max(1, ...data.series.map((d) => d.auto + d.human + d.error));
+  const view = useTableView(data.agents, {
+    search: (agent) =>
+      `${agent.name} ${agent.runs} ${pct(agent.auto_rate, 0)} ${agent.hitl_requests} ${duration(agent.avg_duration_s)} ${formatMillions(agent.cost)}`,
+    filters: [
+      { id: 'hitl', label: 'HITL', value: (agent) => (agent.hitl_requests > 0 ? 'Có' : 'Không') },
+    ],
+    sorts: [
+      { id: 'name', value: (agent) => agent.name },
+      { id: 'runs', value: (agent) => agent.runs },
+      { id: 'auto', value: (agent) => agent.auto_rate },
+      { id: 'hitl', value: (agent) => agent.hitl_requests },
+      { id: 'duration', value: (agent) => agent.avg_duration_s },
+      { id: 'cost', value: (agent) => costNumber(agent.cost) },
+    ],
+    pageSize: 50,
+  });
   return (
     <>
       <div className="grid grid-cols-5 gap-da-md max-[1279px]:grid-cols-3">
@@ -100,7 +127,9 @@ function OpsBody({
           label="Tự hoàn tất"
           value={pct(data.auto_rate)}
           note={
-            data.auto_rate_change_pp === null ? undefined : `${signed(data.auto_rate_change_pp)} điểm`
+            data.auto_rate_change_pp === null
+              ? undefined
+              : `${signed(data.auto_rate_change_pp)} điểm`
           }
           noteTone={(data.auto_rate_change_pp ?? 0) >= 0 ? 'success' : 'error'}
         />
@@ -113,10 +142,7 @@ function OpsBody({
               : `trung vị phản hồi ${formatElapsed(data.hitl_median_response_s)}`
           }
         />
-        <OpsKpi
-          label="Lỗi"
-          value={`${formatNumber(data.errors)} · ${pct(data.error_rate)}`}
-        />
+        <OpsKpi label="Lỗi" value={`${formatNumber(data.errors)} · ${pct(data.error_rate)}`} />
         <OpsKpi
           label="Chi phí"
           value={formatMillions(data.cost)}
@@ -172,44 +198,85 @@ function OpsBody({
             </div>
           </section>
 
-          <div className="overflow-hidden rounded-lg border border-border bg-card">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-subtle text-muted-foreground da-label">
-                  <th className="px-da-lg py-da-sm text-left font-medium">Agent</th>
-                  <th className="w-[60px] py-da-sm text-right font-medium">Lượt</th>
-                  <th className="w-[98px] py-da-sm text-right font-medium">Tự hoàn tất</th>
-                  <th className="w-[68px] py-da-sm text-right font-medium">HITL</th>
-                  <th className="w-[108px] py-da-sm text-right font-medium">Thời gian TB</th>
-                  <th className="w-[98px] py-da-sm pr-da-lg text-right font-medium">Chi phí</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.agents.map((agent) => {
-                  return (
-                    <tr
-                      key={agent.agent_id}
-                      className="border-t border-border text-foreground hover:bg-subtle"
+          <div className="flex flex-col gap-da-md">
+            <TableToolbar view={view} placeholder="Tìm agent…" searchLabel="Tìm agent" />
+            <div className="overflow-hidden rounded-lg border border-border bg-card">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-subtle text-muted-foreground da-label">
+                    <SortableTh
+                      view={view}
+                      column="name"
+                      className="px-da-lg py-da-sm text-left font-medium"
                     >
-                      <td className="px-da-lg py-da-sm da-body-small">
-                        <button type="button" onClick={onAgent} className="text-left">
-                          {agent.name}
-                        </button>
-                      </td>
-                      <td className="py-da-sm text-right da-mono">{agent.runs}</td>
-                      <td className="py-da-sm text-right da-mono">{pct(agent.auto_rate, 0)}</td>
-                      <td className="py-da-sm text-right da-mono">{agent.hitl_requests}</td>
-                      <td className="py-da-sm text-right da-mono">
-                        {duration(agent.avg_duration_s)}
-                      </td>
-                      <td className="py-da-sm pr-da-lg text-right da-mono">
-                        {formatMillions(agent.cost)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      Agent
+                    </SortableTh>
+                    <SortableTh
+                      view={view}
+                      column="runs"
+                      className="w-[60px] py-da-sm text-right font-medium"
+                    >
+                      Lượt
+                    </SortableTh>
+                    <SortableTh
+                      view={view}
+                      column="auto"
+                      className="w-[98px] py-da-sm text-right font-medium"
+                    >
+                      Tự hoàn tất
+                    </SortableTh>
+                    <SortableTh
+                      view={view}
+                      column="hitl"
+                      className="w-[68px] py-da-sm text-right font-medium"
+                    >
+                      HITL
+                    </SortableTh>
+                    <SortableTh
+                      view={view}
+                      column="duration"
+                      className="w-[108px] py-da-sm text-right font-medium"
+                    >
+                      Thời gian TB
+                    </SortableTh>
+                    <SortableTh
+                      view={view}
+                      column="cost"
+                      className="w-[98px] py-da-sm pr-da-lg text-right font-medium"
+                    >
+                      Chi phí
+                    </SortableTh>
+                  </tr>
+                </thead>
+                <tbody>
+                  {view.rows.map((agent) => {
+                    return (
+                      <tr
+                        key={agent.agent_id}
+                        className="border-t border-border text-foreground hover:bg-subtle"
+                      >
+                        <td className="px-da-lg py-da-sm da-body-small">
+                          <button type="button" onClick={onAgent} className="text-left">
+                            {agent.name}
+                          </button>
+                        </td>
+                        <td className="py-da-sm text-right da-mono">{agent.runs}</td>
+                        <td className="py-da-sm text-right da-mono">{pct(agent.auto_rate, 0)}</td>
+                        <td className="py-da-sm text-right da-mono">{agent.hitl_requests}</td>
+                        <td className="py-da-sm text-right da-mono">
+                          {duration(agent.avg_duration_s)}
+                        </td>
+                        <td className="py-da-sm pr-da-lg text-right da-mono">
+                          {formatMillions(agent.cost)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {view.total === 0 && tableEmptyRow(6)}
+                </tbody>
+              </table>
+            </div>
+            <TablePager view={view} />
           </div>
         </div>
 

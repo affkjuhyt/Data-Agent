@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AgentChip } from '../../design-system/AgentChip';
@@ -6,8 +6,8 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { FilterChips } from '../../design-system/FilterChips';
-import { Input } from '../../design-system/Input';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Tooltip } from '../../design-system/Tooltip';
 import { listRuns } from '../../lib/v1/api';
 import { useV1 } from '../../lib/v1/useV1';
@@ -23,18 +23,31 @@ export default function RunsPage() {
   const { navigate } = useAppState();
   const runs = useV1(() => listRuns(), []);
   const [filter, setFilter] = useState<RunFilter>('all');
-  const [query, setQuery] = useState('');
 
   const items = runs.data?.items ?? [];
   const count = (f: RunFilter) => items.filter((r) => matchesFilter(r, f)).length;
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return items
-      .filter((r) => matchesFilter(r, filter))
-      .filter(
-        (r) => !q || [r.title, r.agent_name, r.code].some((t) => t.toLowerCase().includes(q)),
-      );
-  }, [items, filter, query]);
+  const view = useTableView(items, {
+    search: (r) => `${r.title} ${r.agent_name} ${r.code} ${r.initiated_label ?? ''}`,
+    filters: [{ id: 'agent', label: 'Agent', value: (r) => r.agent_name }],
+    predicate: (r) => matchesFilter(r, filter),
+    sorts: [
+      { id: 'code', value: (r) => r.code },
+      { id: 'title', value: (r) => r.title },
+      { id: 'agent', value: (r) => r.agent_name },
+      { id: 'by', value: (r) => r.initiated_label },
+      { id: 'status', value: (r) => runStatus(r).label },
+      { id: 'duration', value: (r) => runDuration(r) },
+      { id: 'hitl', value: (r) => r.hitl_count },
+      {
+        id: 'cost',
+        value: (r) => {
+          const n = Number(r.cost);
+          return Number.isFinite(n) ? n : null;
+        },
+      },
+    ],
+    pageSize: 50,
+  });
 
   return (
     <div className="flex flex-col gap-da-lg px-da-3xl py-da-xl">
@@ -48,7 +61,11 @@ export default function RunsPage() {
           </Tooltip>
         }
       />
-      <div className="flex items-center gap-da-md">
+      <TableToolbar
+        view={view}
+        placeholder="Tìm theo mục tiêu, agent, #lượt"
+        searchLabel="Tìm lượt chạy"
+      >
         <FilterChips<RunFilter>
           label="Lọc lượt chạy"
           value={filter}
@@ -61,16 +78,7 @@ export default function RunsPage() {
             { value: 'done', label: 'Hoàn tất' },
           ]}
         />
-        <span className="flex-1" />
-        <Input
-          className="w-[260px]"
-          icon="search"
-          placeholder="Tìm theo mục tiêu, agent, #lượt"
-          aria-label="Tìm lượt chạy"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </div>
+      </TableToolbar>
       <AsyncRegion
         state={runs}
         what="lượt chạy"
@@ -89,20 +97,38 @@ export default function RunsPage() {
             <table className="w-full table-fixed border-collapse">
               <thead>
                 <tr className="bg-subtle text-left text-muted-foreground da-label">
-                  <th className="w-[76px] px-da-lg py-da-sm font-medium">Lượt</th>
-                  <th className="px-da-md py-da-sm font-medium">Mục tiêu</th>
-                  <th className="w-[230px] px-da-md py-da-sm font-medium">Agent chính</th>
-                  <th className="w-[150px] px-da-md py-da-sm font-medium max-[1279px]:hidden">
+                  <SortableTh view={view} column="code" className="w-[76px] px-da-lg py-da-sm font-medium">
+                    Lượt
+                  </SortableTh>
+                  <SortableTh view={view} column="title" className="px-da-md py-da-sm font-medium">
+                    Mục tiêu
+                  </SortableTh>
+                  <SortableTh view={view} column="agent" className="w-[230px] px-da-md py-da-sm font-medium">
+                    Agent chính
+                  </SortableTh>
+                  <SortableTh
+                    view={view}
+                    column="by"
+                    className="w-[150px] px-da-md py-da-sm font-medium max-[1279px]:hidden"
+                  >
                     Khởi tạo bởi
-                  </th>
-                  <th className="w-[130px] px-da-md py-da-sm font-medium">Trạng thái</th>
-                  <th className="w-[80px] px-da-md py-da-sm font-medium">Thời gian</th>
-                  <th className="w-[52px] px-da-md py-da-sm font-medium">HITL</th>
-                  <th className="w-[76px] px-da-md py-da-sm font-medium">Chi phí</th>
+                  </SortableTh>
+                  <SortableTh view={view} column="status" className="w-[130px] px-da-md py-da-sm font-medium">
+                    Trạng thái
+                  </SortableTh>
+                  <SortableTh view={view} column="duration" className="w-[80px] px-da-md py-da-sm font-medium">
+                    Thời gian
+                  </SortableTh>
+                  <SortableTh view={view} column="hitl" className="w-[52px] px-da-md py-da-sm font-medium">
+                    HITL
+                  </SortableTh>
+                  <SortableTh view={view} column="cost" className="w-[76px] px-da-md py-da-sm font-medium">
+                    Chi phí
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {visible.map((run) => {
+                {view.rows.map((run) => {
                   const status = runStatus(run);
                   return (
                     <tr
@@ -137,7 +163,7 @@ export default function RunsPage() {
                     </tr>
                   );
                 })}
-                {visible.length === 0 && (
+                {view.total === 0 && (
                   <tr>
                     <td
                       colSpan={8}
@@ -152,6 +178,7 @@ export default function RunsPage() {
           </div>
         )}
       </AsyncRegion>
+      <TablePager view={view} />
     </div>
   );
 }

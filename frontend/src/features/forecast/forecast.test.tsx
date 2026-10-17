@@ -92,23 +92,15 @@ describe('ForecastPage', () => {
     expect(navigate).toHaveBeenCalledWith('analysis', 'FORECAST_MODEL', 'fm-deposit-retail');
   });
 
-  it('refuses a scenario on a variable the model does not use, then clears and saves', async () => {
+  it('shows the saved scenario and offers only variables the model uses', async () => {
     routeId = 'fc-deposit-2026-11';
     show(<ForecastPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Lưu kịch bản' }));
-    expect(await screen.findByRole('button', { name: 'Đã lưu kịch bản' })).toBeInTheDocument();
-
-    const input = screen.getByLabelText('Giả định của kịch bản');
-    fireEvent.change(input, { target: { value: 'Tỷ giá USD +2%' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Chạy kịch bản' }));
-    expect(await screen.findByText(/kịch bản không áp dụng/)).toBeInTheDocument();
-
-    fireEvent.change(input, { target: { value: 'Lãi suất điều hành +0,5 điểm từ T12/2026' } });
+    expect(await screen.findByText('Đã lưu với tên này, mở lại được sau.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Bỏ kịch bản' }));
-    await waitFor(async () =>
-      expect((await getForecast('fc-deposit-2026-11')).scenario).toBeNull(),
-    );
     expect(await screen.findByRole('button', { name: 'Chạy kịch bản' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Biến của kịch bản' }));
+    expect(screen.getByRole('option', { name: 'lãi suất điều hành' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Tỷ giá/ })).toBeNull();
   });
 
   it('labels a stale forecast before anything else', async () => {

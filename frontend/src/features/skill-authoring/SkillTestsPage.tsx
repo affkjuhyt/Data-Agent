@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
@@ -58,6 +59,18 @@ function Tests({ initial }: { initial: SkillTestRun }) {
   const unexplained = failing.filter((c) => !notes[c.id]?.trim());
   const failure = run.failures.find((f) => f.case_id === selected) ?? run.failures[0];
   const failedCase = failure && run.cases.find((c) => c.id === failure.case_id);
+  const cases = useTableView(run.cases, {
+    search: (c) => `${c.name} ${c.period_text} ${c.expected} ${c.actual}`,
+    filters: [{ id: 'result', label: 'Kết quả', value: (c) => (c.passed ? 'Đạt' : 'Chưa đạt') }],
+    sorts: [
+      { id: 'name', value: (c) => c.name },
+      { id: 'period', value: (c) => c.period_text },
+      { id: 'expected', value: (c) => c.expected },
+      { id: 'actual', value: (c) => c.actual },
+      { id: 'result', value: (c) => (c.passed ? 'Đạt' : 'Chưa đạt') },
+    ],
+    pageSize: 50,
+  });
 
   const act = async (verb: 'test' | 'fix' | 'submit') => {
     setBusy(verb);
@@ -133,18 +146,29 @@ function Tests({ initial }: { initial: SkillTestRun }) {
       <div className="flex flex-1 max-[1279px]:flex-col">
         <section className="flex min-w-0 flex-1 flex-col gap-da-lg pl-da-3xl pr-da-2xl pt-da-xl">
           {error && <Notice tone="error">{error}</Notice>}
+          <TableToolbar view={cases} placeholder="Tìm ca kiểm thử…" searchLabel="Tìm ca kiểm thử" />
           <table className="w-full table-fixed border-collapse">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="px-da-lg py-da-md font-normal">Ca</th>
-                <th className="w-[110px] px-da-lg py-da-md font-normal">Kỳ</th>
-                <th className="w-[170px] px-da-lg py-da-md font-normal">Kỳ vọng</th>
-                <th className="w-[170px] px-da-lg py-da-md font-normal">Thực tế</th>
-                <th className="w-[100px] px-da-lg py-da-md font-normal">Kết quả</th>
+                <SortableTh view={cases} column="name" className="px-da-lg py-da-md font-normal">
+                  Ca
+                </SortableTh>
+                <SortableTh view={cases} column="period" className="w-[110px] px-da-lg py-da-md font-normal">
+                  Kỳ
+                </SortableTh>
+                <SortableTh view={cases} column="expected" className="w-[170px] px-da-lg py-da-md font-normal">
+                  Kỳ vọng
+                </SortableTh>
+                <SortableTh view={cases} column="actual" className="w-[170px] px-da-lg py-da-md font-normal">
+                  Thực tế
+                </SortableTh>
+                <SortableTh view={cases} column="result" className="w-[100px] px-da-lg py-da-md font-normal">
+                  Kết quả
+                </SortableTh>
               </tr>
             </thead>
             <tbody>
-              {run.cases.map((c) => (
+              {cases.rows.map((c) => (
                 <tr
                   key={c.id}
                   className={cn(
@@ -187,6 +211,7 @@ function Tests({ initial }: { initial: SkillTestRun }) {
               ))}
             </tbody>
           </table>
+          <TablePager view={cases} />
         </section>
 
         <aside className="flex w-[380px] shrink-0 flex-col items-start gap-[10px] border-l border-border bg-background px-da-2xl pb-da-2xl pt-[20px] max-[1279px]:w-full max-[1279px]:border-l-0 max-[1279px]:border-t">

@@ -2,6 +2,7 @@ import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { getMetricOverride, type MetricOverride } from '../../lib/v1/packs';
 import { useV1 } from '../../lib/v1/useV1';
@@ -37,6 +38,15 @@ export default function MetricOverridePage() {
 
 function OverrideBody({ override }: { override: MetricOverride }) {
   const status = STATUS[override.status];
+  const changes = useTableView(override.changes, {
+    search: (c) => `${c.change} ${c.reason}`,
+    filters: [{ id: 'reason', label: 'Lý do', value: (c) => c.reason }],
+    sorts: [
+      { id: 'change', value: (c) => c.change },
+      { id: 'reason', value: (c) => c.reason },
+    ],
+    pageSize: 50,
+  });
 
   return (
     <div className="flex min-h-full flex-col">
@@ -69,15 +79,20 @@ function OverrideBody({ override }: { override: MetricOverride }) {
               <Expression title="Bản gốc trong gói" text={override.base_expression} muted />
               <Expression title="Bản của tổ chức" text={override.org_expression} />
             </div>
+            <TableToolbar view={changes} placeholder="Tìm thay đổi…" searchLabel="Tìm thay đổi" />
             <table className="w-full table-fixed border-collapse da-body-small">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="px-da-md py-da-sm font-normal">Thay đổi</th>
-                  <th className="px-da-md py-da-sm font-normal">Lý do</th>
+                  <SortableTh view={changes} column="change" className="px-da-md py-da-sm font-normal">
+                    Thay đổi
+                  </SortableTh>
+                  <SortableTh view={changes} column="reason" className="px-da-md py-da-sm font-normal">
+                    Lý do
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {override.changes.map((c) => (
+                {changes.rows.map((c) => (
                   <tr key={c.change} className="border-b border-border text-foreground">
                     <td className="px-da-md py-[10px] da-mono">{c.change}</td>
                     <td className="px-da-md py-[10px]">{c.reason}</td>
@@ -85,6 +100,7 @@ function OverrideBody({ override }: { override: MetricOverride }) {
                 ))}
               </tbody>
             </table>
+            <TablePager view={changes} />
           </section>
           <section className="flex flex-col gap-da-md border-b border-border py-da-xl">
             <h2 className="text-foreground da-heading-3">Khi gói cập nhật bản gốc</h2>
@@ -95,28 +111,7 @@ function OverrideBody({ override }: { override: MetricOverride }) {
           <h2 className="text-foreground da-heading-3">Đối chiếu với số đã nộp</h2>
           {override.trial ? (
             <>
-              <table className="w-full border-collapse da-body-small">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                    <th className="px-da-md py-da-sm font-normal">Kỳ</th>
-                    <th className="px-da-md py-da-sm font-normal">Đã nộp</th>
-                    <th className="px-da-md py-da-sm font-normal">Bản tổ chức</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {override.trial.map((t) => (
-                    <tr key={t.period} className="border-b border-border">
-                      <td className="px-da-md py-[9px] text-muted-foreground da-mono">
-                        {t.period}
-                      </td>
-                      <td className="px-da-md py-[9px] text-muted-foreground da-mono">
-                        {t.reported}
-                      </td>
-                      <td className="px-da-md py-[9px] text-foreground da-mono">{t.org}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <TrialTable rows={override.trial} />
               {override.trial_note && (
                 <p className="text-foreground da-body-small">{override.trial_note}</p>
               )}
@@ -132,6 +127,53 @@ function OverrideBody({ override }: { override: MetricOverride }) {
         </aside>
       </div>
     </div>
+  );
+}
+
+function TrialTable({
+  rows,
+}: {
+  rows: { period: string; reported: string; org: string }[];
+}) {
+  const view = useTableView(rows, {
+    search: (t) => `${t.period} ${t.reported} ${t.org}`,
+    filters: [{ id: 'period', label: 'Kỳ', value: (t) => t.period }],
+    sorts: [
+      { id: 'period', value: (t) => t.period },
+      { id: 'reported', value: (t) => t.reported },
+      { id: 'org', value: (t) => t.org },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm kỳ…" searchLabel="Tìm kỳ đối chiếu" />
+      <table className="w-full border-collapse da-body-small">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="period" className="px-da-md py-da-sm font-normal">
+              Kỳ
+            </SortableTh>
+            <SortableTh view={view} column="reported" className="px-da-md py-da-sm font-normal">
+              Đã nộp
+            </SortableTh>
+            <SortableTh view={view} column="org" className="px-da-md py-da-sm font-normal">
+              Bản tổ chức
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((t) => (
+            <tr key={t.period} className="border-b border-border">
+              <td className="px-da-md py-[9px] text-muted-foreground da-mono">{t.period}</td>
+              <td className="px-da-md py-[9px] text-muted-foreground da-mono">{t.reported}</td>
+              <td className="px-da-md py-[9px] text-foreground da-mono">{t.org}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
   );
 }
 

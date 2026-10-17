@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Tabs } from '../../design-system/Tabs';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber, formatPercent, formatTime } from '../../lib/formatVN';
@@ -137,21 +138,60 @@ function distinctText(column: ColumnProfile): string {
   return column.distinct === null ? '—' : formatNumber(column.distinct);
 }
 
+function distinctSort(column: ColumnProfile): number | null {
+  if (column.distinct === 'unique') return Number.POSITIVE_INFINITY;
+  return column.distinct;
+}
+
 function ColumnsTable({ columns }: { columns: ColumnProfile[] }) {
+  const view = useTableView(columns, {
+    search: (column) =>
+      `${column.name} ${column.data_type} ${
+        column.null_ratio === null ? '—' : formatPercent(column.null_ratio)
+      } ${distinctText(column)} ${column.histogram_note ?? ''} ${column.note ?? ''}`,
+    filters: [{ id: 'type', label: 'Kiểu', value: (column) => column.data_type.split('(')[0] }],
+    sorts: [
+      { id: 'name', value: (column) => column.name },
+      { id: 'type', value: (column) => column.data_type },
+      { id: 'empty', value: (column) => column.null_ratio },
+      { id: 'distinct', value: (column) => distinctSort(column) },
+      { id: 'histogram', value: (column) => column.histogram_note ?? column.histogram?.[0] ?? null },
+      { id: 'note', value: (column) => column.note },
+    ],
+    pageSize: 50,
+  });
   return (
+    <div className="flex flex-col gap-da-lg">
+    <TableToolbar view={view} placeholder="Tìm cột…" searchLabel="Tìm cột" />
     <table className="w-full table-fixed border-collapse">
       <thead>
         <tr className="border-b border-border text-left text-muted-foreground da-caption">
-          <th className="w-[170px] px-da-lg py-da-md font-normal">Cột</th>
-          <th className="w-[110px] px-da-md py-da-md font-normal">Kiểu</th>
-          <th className="w-[70px] px-da-md py-da-md font-normal">Trống</th>
-          <th className="w-[90px] px-da-md py-da-md font-normal">Khác nhau</th>
-          <th className="w-[180px] px-da-md py-da-md font-normal max-[1279px]:hidden">Phân bố</th>
-          <th className="px-da-md py-da-md font-normal">Ghi chú</th>
+          <SortableTh view={view} column="name" className="w-[170px] px-da-lg py-da-md font-normal">
+            Cột
+          </SortableTh>
+          <SortableTh view={view} column="type" className="w-[110px] px-da-md py-da-md font-normal">
+            Kiểu
+          </SortableTh>
+          <SortableTh view={view} column="empty" className="w-[70px] px-da-md py-da-md font-normal">
+            Trống
+          </SortableTh>
+          <SortableTh view={view} column="distinct" className="w-[90px] px-da-md py-da-md font-normal">
+            Khác nhau
+          </SortableTh>
+          <SortableTh
+            view={view}
+            column="histogram"
+            className="w-[180px] px-da-md py-da-md font-normal max-[1279px]:hidden"
+          >
+            Phân bố
+          </SortableTh>
+          <SortableTh view={view} column="note" className="px-da-md py-da-md font-normal">
+            Ghi chú
+          </SortableTh>
         </tr>
       </thead>
       <tbody>
-        {columns.map((column) => (
+        {view.rows.map((column) => (
           <tr key={column.name} className="border-b border-border">
             <td className="truncate px-da-lg py-[9px] text-foreground da-mono">{column.name}</td>
             <td className="truncate px-da-md py-[9px] text-muted-foreground da-mono">
@@ -181,6 +221,8 @@ function ColumnsTable({ columns }: { columns: ColumnProfile[] }) {
         ))}
       </tbody>
     </table>
+    <TablePager view={view} />
+    </div>
   );
 }
 

@@ -3,6 +3,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
@@ -34,6 +35,29 @@ export default function QualityRulesPage() {
   const [adding, setAdding] = useState(false);
   const items = rules.data?.items ?? [];
   const failing = items.filter((r) => r.current && r.current.state !== 'pass').length;
+  const view = useTableView(items, {
+    search: (r) =>
+      `${r.name} ${r.target} ${r.severity === 'block' ? 'Chặn' : 'Cảnh báo'} ${r.owner.name} ${r.current ? CURRENT[r.current.state].label : 'Chưa chạy'}`,
+    filters: [
+      {
+        id: 'severity',
+        label: 'Mức',
+        value: (r) => (r.severity === 'block' ? 'Chặn' : 'Cảnh báo'),
+      },
+    ],
+    sorts: [
+      { id: 'name', value: (r) => r.name },
+      { id: 'target', value: (r) => r.target },
+      { id: 'severity', value: (r) => (r.severity === 'block' ? 'Chặn' : 'Cảnh báo') },
+      {
+        id: 'week',
+        value: (r) => r.last_7d.filter((s) => s === 'fail').length,
+      },
+      { id: 'current', value: (r) => (r.current ? CURRENT[r.current.state].label : 'Chưa chạy') },
+      { id: 'owner', value: (r) => r.owner.name },
+    ],
+    pageSize: 50,
+  });
 
   return (
     <div className="flex min-h-full flex-col">
@@ -66,24 +90,40 @@ export default function QualityRulesPage() {
             />
           }
         >
-          {(d) => (
-            <table className="w-full table-fixed border-collapse">
-              <thead>
-                <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="px-da-lg py-da-md font-normal">Quy tắc</th>
-                  <th className="w-[232px] px-da-lg py-da-md font-normal">Áp vào</th>
-                  <th className="w-[102px] px-da-lg py-da-md font-normal">Mức</th>
-                  <th className="w-[142px] px-da-lg py-da-md font-normal">7 ngày</th>
-                  <th className="w-[182px] px-da-lg py-da-md font-normal">Hiện tại</th>
-                  <th className="w-[154px] px-da-lg py-da-md font-normal">Người phụ trách</th>
-                </tr>
-              </thead>
-              <tbody>
-                {d.items.map((r) => (
-                  <RuleRow key={r.id} rule={r} />
-                ))}
-              </tbody>
-            </table>
+          {() => (
+            <>
+              <TableToolbar view={view} placeholder="Tìm quy tắc…" searchLabel="Tìm quy tắc" />
+              <table className="w-full table-fixed border-collapse">
+                <thead>
+                  <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                    <SortableTh view={view} column="name" className="px-da-lg py-da-md font-normal">
+                      Quy tắc
+                    </SortableTh>
+                    <SortableTh view={view} column="target" className="w-[232px] px-da-lg py-da-md font-normal">
+                      Áp vào
+                    </SortableTh>
+                    <SortableTh view={view} column="severity" className="w-[102px] px-da-lg py-da-md font-normal">
+                      Mức
+                    </SortableTh>
+                    <SortableTh view={view} column="week" className="w-[142px] px-da-lg py-da-md font-normal">
+                      7 ngày
+                    </SortableTh>
+                    <SortableTh view={view} column="current" className="w-[182px] px-da-lg py-da-md font-normal">
+                      Hiện tại
+                    </SortableTh>
+                    <SortableTh view={view} column="owner" className="w-[154px] px-da-lg py-da-md font-normal">
+                      Người phụ trách
+                    </SortableTh>
+                  </tr>
+                </thead>
+                <tbody>
+                  {view.rows.map((r) => (
+                    <RuleRow key={r.id} rule={r} />
+                  ))}
+                </tbody>
+              </table>
+              <TablePager view={view} />
+            </>
           )}
         </AsyncRegion>
         <div className="flex flex-col gap-da-sm rounded-md bg-background px-da-xl py-da-lg text-foreground da-body-small">

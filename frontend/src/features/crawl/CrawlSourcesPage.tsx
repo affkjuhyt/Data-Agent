@@ -3,6 +3,7 @@ import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -54,6 +55,21 @@ export default function CrawlSourcesPage() {
   const [running, setRunning] = useState(false);
 
   const items = sources.data?.items ?? [];
+  const view = useTableView(items, {
+    search: (s) => `${s.name} ${s.scope_text} ${s.format_label} ${s.schedule_text} ${s.health_text}`,
+    filters: [{ id: 'gate', label: 'Cổng duyệt', value: (s) => GATE[s.review_gate] }],
+    sorts: [
+      { id: 'name', value: (s) => s.name },
+      { id: 'format', value: (s) => s.format_label },
+      { id: 'schedule', value: (s) => s.schedule_text },
+      { id: 'health', value: (s) => s.health_text },
+      { id: 'last', value: (s) => s.last_run_text },
+      { id: 'accuracy', value: (s) => s.sample_accuracy_pct },
+      { id: 'pending', value: (s) => s.pending_review },
+      { id: 'gate', value: (s) => GATE[s.review_gate] },
+    ],
+    pageSize: 50,
+  });
   const chosen = items.find((s) => s.id === selected);
   const count = (h: CrawlHealth) => items.filter((s) => s.health === h).length;
 
@@ -151,21 +167,39 @@ export default function CrawlSourcesPage() {
         )}
         <AsyncRegion state={sources} what="nguồn thu thập" skeletonRows={6}>
           {() => (
+            <>
+            <TableToolbar view={view} placeholder="Tìm nguồn thu thập…" searchLabel="Tìm nguồn thu thập" />
             <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border">
               <thead>
                 <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                  <th className="w-[260px] px-da-lg py-da-md font-normal">Nguồn</th>
-                  <th className="px-da-lg py-da-md font-normal">Định dạng</th>
-                  <th className="px-da-lg py-da-md font-normal">Lịch</th>
-                  <th className="w-[190px] px-da-lg py-da-md font-normal">Trạng thái</th>
-                  <th className="px-da-lg py-da-md font-normal">Lần thu cuối</th>
-                  <th className="w-[80px] px-da-lg py-da-md font-normal">Chính xác</th>
-                  <th className="w-[56px] px-da-lg py-da-md font-normal">Chờ</th>
-                  <th className="w-[120px] px-da-lg py-da-md font-normal">Cổng duyệt</th>
+                  <SortableTh view={view} column="name" className="w-[260px] px-da-lg py-da-md font-normal">
+                    Nguồn
+                  </SortableTh>
+                  <SortableTh view={view} column="format" className="px-da-lg py-da-md font-normal">
+                    Định dạng
+                  </SortableTh>
+                  <SortableTh view={view} column="schedule" className="px-da-lg py-da-md font-normal">
+                    Lịch
+                  </SortableTh>
+                  <SortableTh view={view} column="health" className="w-[190px] px-da-lg py-da-md font-normal">
+                    Trạng thái
+                  </SortableTh>
+                  <SortableTh view={view} column="last" className="px-da-lg py-da-md font-normal">
+                    Lần thu cuối
+                  </SortableTh>
+                  <SortableTh view={view} column="accuracy" className="w-[80px] px-da-lg py-da-md font-normal">
+                    Chính xác
+                  </SortableTh>
+                  <SortableTh view={view} column="pending" className="w-[56px] px-da-lg py-da-md font-normal">
+                    Chờ
+                  </SortableTh>
+                  <SortableTh view={view} column="gate" className="w-[120px] px-da-lg py-da-md font-normal">
+                    Cổng duyệt
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {items.map((s) => (
+                {view.rows.map((s) => (
                   <SourceRow
                     key={s.id}
                     source={s}
@@ -178,6 +212,8 @@ export default function CrawlSourcesPage() {
                 ))}
               </tbody>
             </table>
+            <TablePager view={view} />
+            </>
           )}
         </AsyncRegion>
         <p className="text-muted-foreground da-caption">

@@ -8,6 +8,7 @@ import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { Segmented } from '../../design-system/Segmented';
 import { Select } from '../../design-system/Select';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { listDataSpaces } from '../../lib/v1/api';
 import {
@@ -243,27 +244,7 @@ export default function PipelineSavePage() {
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-[10px] bg-background px-da-3xl pt-[20px]">
               <h2 className="text-foreground da-heading-3">Cấu trúc bảng</h2>
-              <table className="w-full table-fixed border-collapse">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                    <th className="w-[204px] px-da-lg py-da-md font-normal">Cột</th>
-                    <th className="w-[164px] px-da-lg py-da-md font-normal">Kiểu</th>
-                    <th className="px-da-lg py-da-md font-normal">Từ bước</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {d.columns.map((c) => (
-                    <tr key={c.name} className="border-b border-border">
-                      <td className="px-da-lg py-[9px] text-foreground da-mono">{c.name}</td>
-                      <td className="px-da-lg py-[9px] text-muted-foreground da-mono">{c.type}</td>
-                      <td className="px-da-lg py-[9px] text-muted-foreground da-body-small">
-                        {c.from_step}
-                        {c.is_new && ' · tính mới'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <ColumnTable columns={d.columns} />
               {d.consumers_text && (
                 <>
                   <h2 className="text-foreground da-heading-3">Ai dùng bảng này</h2>
@@ -275,5 +256,51 @@ export default function PipelineSavePage() {
         )}
       </AsyncRegion>
     </div>
+  );
+}
+
+function ColumnTable({ columns }: { columns: OutputDraft['columns'] }) {
+  const view = useTableView(columns, {
+    search: (c) => `${c.name} ${c.type} ${c.from_step}`,
+    filters: [{ id: 'type', label: 'Kiểu', value: (c) => c.type }],
+    sorts: [
+      { id: 'name', value: (c) => c.name },
+      { id: 'type', value: (c) => c.type },
+      { id: 'from', value: (c) => c.from_step },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm cột…" searchLabel="Tìm cột" />
+      <table className="w-full table-fixed border-collapse">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="name" className="w-[204px] px-da-lg py-da-md font-normal">
+              Cột
+            </SortableTh>
+            <SortableTh view={view} column="type" className="w-[164px] px-da-lg py-da-md font-normal">
+              Kiểu
+            </SortableTh>
+            <SortableTh view={view} column="from" className="px-da-lg py-da-md font-normal">
+              Từ bước
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((c) => (
+            <tr key={c.name} className="border-b border-border">
+              <td className="px-da-lg py-[9px] text-foreground da-mono">{c.name}</td>
+              <td className="px-da-lg py-[9px] text-muted-foreground da-mono">{c.type}</td>
+              <td className="px-da-lg py-[9px] text-muted-foreground da-body-small">
+                {c.from_step}
+                {c.is_new && ' · tính mới'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
   );
 }

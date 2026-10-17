@@ -18,6 +18,7 @@ import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import {
@@ -245,33 +246,7 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
                 </span>
               </div>
               <p className="text-foreground da-body">{alert.analysis.summary}</p>
-              <table className="w-full table-fixed border-collapse da-body-small">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                    <th className="py-da-sm font-normal">Yếu tố</th>
-                    <th className="w-[106px] py-da-sm font-normal">Đóng góp</th>
-                    <th className="w-[260px] py-da-sm font-normal">
-                      <span className="sr-only">Tỷ phần</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {alert.analysis.factors.map((f) => (
-                    <tr key={f.label} className="border-b border-border text-foreground">
-                      <td className="py-[9px]">{f.label}</td>
-                      <td className="py-[9px] da-mono">{signed(f.contribution)}</td>
-                      <td className="py-[9px]">
-                        <span className="block h-2 w-full rounded-full bg-subtle">
-                          <span
-                            className="block h-full rounded-full bg-warning"
-                            style={{ width: `${total ? (f.contribution / total) * 100 : 0}%` }}
-                          />
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <FactorTable factors={alert.analysis.factors} total={total} />
               <div className="flex flex-wrap gap-da-lg da-body-small">
                 <Tooltip content="Bảng chi tiết khoản vay đang được làm.">
                   <button type="button" aria-disabled="true" className="text-primary opacity-60">
@@ -464,6 +439,61 @@ function AlertChart({ chart }: { chart: NonNullable<Alert['chart']> }) {
         </LineChart>
       </ResponsiveContainer>
     </div>
+  );
+}
+
+function FactorTable({
+  factors,
+  total,
+}: {
+  factors: NonNullable<Alert['analysis']>['factors'];
+  total: number;
+}) {
+  const view = useTableView(factors, {
+    search: (f) => `${f.label} ${signed(f.contribution)}`,
+    filters: [{ id: 'dir', label: 'Chiều', value: (f) => (f.contribution >= 0 ? 'Tăng' : 'Giảm') }],
+    sorts: [
+      { id: 'label', value: (f) => f.label },
+      { id: 'contribution', value: (f) => f.contribution },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm yếu tố…" searchLabel="Tìm yếu tố" />
+      <table className="w-full table-fixed border-collapse da-body-small">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="label" className="py-da-sm font-normal">
+              Yếu tố
+            </SortableTh>
+            <SortableTh view={view} column="contribution" className="w-[106px] py-da-sm font-normal">
+              Đóng góp
+            </SortableTh>
+            <SortableTh view={view} className="w-[260px] py-da-sm font-normal">
+              <span className="sr-only">Tỷ phần</span>
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((f) => (
+            <tr key={f.label} className="border-b border-border text-foreground">
+              <td className="py-[9px]">{f.label}</td>
+              <td className="py-[9px] da-mono">{signed(f.contribution)}</td>
+              <td className="py-[9px]">
+                <span className="block h-2 w-full rounded-full bg-subtle">
+                  <span
+                    className="block h-full rounded-full bg-warning"
+                    style={{ width: `${total ? (f.contribution / total) * 100 : 0}%` }}
+                  />
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
   );
 }
 

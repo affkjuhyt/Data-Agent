@@ -5,6 +5,7 @@ import { Button } from '../../design-system/Button';
 import { Dialog } from '../../design-system/Dialog';
 import { Icon } from '../../design-system/Icon';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -42,6 +43,17 @@ export default function GlossaryPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string>();
   const items = terms.data?.items ?? [];
+  const view = useTableView(items, {
+    search: (t) => `${t.term} ${t.maps_to} ${t.synonyms} ${t.data_space_text}`,
+    filters: [{ id: 'status', label: 'Trạng thái', value: (t) => STATUS[t.status].label }],
+    sorts: [
+      { id: 'term', value: (t) => t.term },
+      { id: 'maps', value: (t) => t.maps_to },
+      { id: 'space', value: (t) => t.data_space_text },
+      { id: 'status', value: (t) => STATUS[t.status].label },
+    ],
+    pageSize: 50,
+  });
   const selected =
     items.find((t) => t.id === picked) ?? items.find((t) => t.status === 'ambiguous') ?? items[0];
 
@@ -92,17 +104,27 @@ export default function GlossaryPage() {
         {error && !adding && <Notice tone="error">Không thêm được: {error}</Notice>}
         <AsyncRegion state={terms} what="từ điển" skeletonRows={6}>
           {() => (
+            <>
+            <TableToolbar view={view} placeholder="Tìm thuật ngữ…" searchLabel="Tìm thuật ngữ" />
             <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border da-body-small">
               <thead>
                 <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                  <th className="w-[170px] px-da-sm py-da-sm font-normal">Thuật ngữ</th>
-                  <th className="px-da-sm py-da-sm font-normal">Ánh xạ tới · Từ đồng nghĩa</th>
-                  <th className="w-[138px] px-da-sm py-da-sm font-normal">Data Space</th>
-                  <th className="w-[118px] px-da-sm py-da-sm font-normal">Trạng thái</th>
+                  <SortableTh view={view} column="term" className="w-[170px] px-da-sm py-da-sm font-normal">
+                    Thuật ngữ
+                  </SortableTh>
+                  <SortableTh view={view} column="maps" className="px-da-sm py-da-sm font-normal">
+                    Ánh xạ tới · Từ đồng nghĩa
+                  </SortableTh>
+                  <SortableTh view={view} column="space" className="w-[138px] px-da-sm py-da-sm font-normal">
+                    Data Space
+                  </SortableTh>
+                  <SortableTh view={view} column="status" className="w-[118px] px-da-sm py-da-sm font-normal">
+                    Trạng thái
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {items.map((t) => (
+                {view.rows.map((t) => (
                   <tr
                     key={t.id}
                     className={cn(
@@ -131,6 +153,8 @@ export default function GlossaryPage() {
                 ))}
               </tbody>
             </table>
+            <TablePager view={view} />
+            </>
           )}
         </AsyncRegion>
         <section

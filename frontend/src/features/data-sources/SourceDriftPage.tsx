@@ -5,6 +5,7 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -91,6 +92,51 @@ function DriftView({ drift, onChanged }: { drift: SourceDrift; onChanged: () => 
   const [rejectError, setRejectError] = useState<string>();
   const status = driftStatus(drift);
   const pending = drift.status === 'pending';
+  const changesView = useTableView(drift.changes, {
+    search: (change) => {
+      const kind = CHANGE[change.kind];
+      const label = change.note ? `${kind.label} · ${change.note}` : kind.label;
+      return `${change.column} ${change.before ?? ''} ${change.after ?? ''} ${label}`;
+    },
+    filters: [
+      {
+        id: 'kind',
+        label: 'Loại',
+        control: 'Lọc thay đổi theo loại',
+        value: (change) => CHANGE[change.kind].label,
+      },
+    ],
+    sorts: [
+      { id: 'column', value: (change) => change.column },
+      { id: 'before', value: (change) => change.before },
+      { id: 'after', value: (change) => change.after },
+      {
+        id: 'kind',
+        value: (change) => {
+          const kind = CHANGE[change.kind];
+          return change.note ? `${kind.label} · ${change.note}` : kind.label;
+        },
+      },
+    ],
+    pageSize: 50,
+  });
+  const impactView = useTableView(drift.impact, {
+    search: (item) => `${item.object} ${item.kind_label} ${item.effect}`,
+    filters: [
+      {
+        id: 'kind',
+        label: 'Loại',
+        control: 'Lọc ảnh hưởng theo loại',
+        value: (item) => item.kind_label,
+      },
+    ],
+    sorts: [
+      { id: 'object', value: (item) => item.object },
+      { id: 'kind', value: (item) => item.kind_label },
+      { id: 'effect', value: (item) => item.effect },
+    ],
+    pageSize: 50,
+  });
 
   const resolve = async (resolution: 'accept' | 'reject') => {
     setBusy(resolution);
@@ -178,17 +224,30 @@ function DriftView({ drift, onChanged }: { drift: SourceDrift; onChanged: () => 
                 {drift.changes.length} thay đổi trên {drift.table_name}
               </span>
             </div>
+            <TableToolbar
+              view={changesView}
+              placeholder="Tìm cột…"
+              searchLabel="Tìm cột thay đổi"
+            />
             <table className="w-full table-fixed border-collapse">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="w-[196px] px-da-lg py-da-md font-normal">Cột</th>
-                  <th className="w-[216px] px-da-md py-da-md font-normal">Trước</th>
-                  <th className="w-[216px] px-da-md py-da-md font-normal">Sau</th>
-                  <th className="px-da-md py-da-md font-normal">Loại</th>
+                  <SortableTh view={changesView} column="column" className="w-[196px] px-da-lg py-da-md font-normal">
+                    Cột
+                  </SortableTh>
+                  <SortableTh view={changesView} column="before" className="w-[216px] px-da-md py-da-md font-normal">
+                    Trước
+                  </SortableTh>
+                  <SortableTh view={changesView} column="after" className="w-[216px] px-da-md py-da-md font-normal">
+                    Sau
+                  </SortableTh>
+                  <SortableTh view={changesView} column="kind" className="px-da-md py-da-md font-normal">
+                    Loại
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {drift.changes.map((change) => {
+                {changesView.rows.map((change) => {
                   const kind = CHANGE[change.kind];
                   return (
                     <tr key={change.column} className="border-b border-border">
@@ -211,6 +270,7 @@ function DriftView({ drift, onChanged }: { drift: SourceDrift; onChanged: () => 
                 })}
               </tbody>
             </table>
+            <TablePager view={changesView} />
           </section>
           {drift.impact.length > 0 && (
             <section
@@ -227,16 +287,27 @@ function DriftView({ drift, onChanged }: { drift: SourceDrift; onChanged: () => 
                   </span>
                 )}
               </div>
+              <TableToolbar
+                view={impactView}
+                placeholder="Tìm đối tượng…"
+                searchLabel="Tìm đối tượng"
+              />
               <table className="w-full table-fixed border-collapse">
                 <thead>
                   <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                    <th className="px-da-lg py-da-md font-normal">Đối tượng</th>
-                    <th className="w-[136px] px-da-md py-da-md font-normal">Loại</th>
-                    <th className="w-[316px] px-da-md py-da-md font-normal">Ảnh hưởng</th>
+                    <SortableTh view={impactView} column="object" className="px-da-lg py-da-md font-normal">
+                      Đối tượng
+                    </SortableTh>
+                    <SortableTh view={impactView} column="kind" className="w-[136px] px-da-md py-da-md font-normal">
+                      Loại
+                    </SortableTh>
+                    <SortableTh view={impactView} column="effect" className="w-[316px] px-da-md py-da-md font-normal">
+                      Ảnh hưởng
+                    </SortableTh>
                   </tr>
                 </thead>
                 <tbody>
-                  {drift.impact.map((item) => (
+                  {impactView.rows.map((item) => (
                     <tr key={item.object} className="border-b border-border">
                       <td className="truncate px-da-lg py-[9px] text-foreground da-body-strong">
                         {item.object}
@@ -251,6 +322,7 @@ function DriftView({ drift, onChanged }: { drift: SourceDrift; onChanged: () => 
                   ))}
                 </tbody>
               </table>
+              <TablePager view={impactView} />
             </section>
           )}
         </div>

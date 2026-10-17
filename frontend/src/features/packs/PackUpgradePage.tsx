@@ -5,6 +5,7 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { Tabs } from '../../design-system/Tabs';
 import { useToast } from '../../design-system/Toast';
@@ -165,39 +166,14 @@ function UpgradeBody({ upgrade, onChanged }: { upgrade: PackUpgrade; onChanged: 
           </Notice>
         )}
         {tab === 'conflicts' ? (
-          <table className="w-full table-fixed border-collapse da-body-small">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="px-da-md py-da-sm font-normal">Phần tử</th>
-                <th className="px-da-md py-da-sm font-normal">Bản gói cũ {upgrade.from_version}</th>
-                <th className="px-da-md py-da-sm font-normal">Bản gói mới {upgrade.to_version}</th>
-                <th className="px-da-md py-da-sm font-normal">Phần tổ chức đã sửa</th>
-                <th className="w-[214px] px-da-md py-da-sm font-normal">Chọn</th>
-              </tr>
-            </thead>
-            <tbody>
-              {upgrade.conflicts.map((c) => (
-                <tr key={c.id} className="border-b border-border align-top text-foreground">
-                  <td className="px-da-md py-[12px]">{c.element}</td>
-                  <td className="px-da-md py-[12px] text-muted-foreground da-mono">
-                    {c.old ?? '—'}
-                  </td>
-                  <td className="px-da-md py-[12px] da-mono">{c.new ?? '—'}</td>
-                  <td className="px-da-md py-[12px] text-info da-mono">{c.org ?? '—'}</td>
-                  <td className="px-da-md py-[8px]">
-                    <Select<UpgradeChoice>
-                      label={`Chọn cho ${c.element}`}
-                      value={decisions[c.id] ?? null}
-                      placeholder="Chọn"
-                      disabled={!deciding}
-                      onChange={(v) => setDecisions({ ...decisions, [c.id]: v })}
-                      options={c.options}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ConflictTable
+            conflicts={upgrade.conflicts}
+            fromVersion={upgrade.from_version}
+            toVersion={upgrade.to_version}
+            decisions={decisions}
+            deciding={deciding}
+            onDecide={(id, value) => setDecisions({ ...decisions, [id]: value })}
+          />
         ) : (
           <ul className="flex flex-col border-t border-border">
             {(tab === 'auto'
@@ -221,5 +197,86 @@ function UpgradeBody({ upgrade, onChanged }: { upgrade: PackUpgrade; onChanged: 
         <p className="text-muted-foreground da-caption">Không tự ghi đè phần tổ chức đã sửa.</p>
       </div>
     </div>
+  );
+}
+
+function ConflictTable({
+  conflicts,
+  fromVersion,
+  toVersion,
+  decisions,
+  deciding,
+  onDecide,
+}: {
+  conflicts: PackUpgrade['conflicts'];
+  fromVersion: string;
+  toVersion: string;
+  decisions: Record<string, UpgradeChoice>;
+  deciding: boolean;
+  onDecide: (id: string, value: UpgradeChoice) => void;
+}) {
+  const view = useTableView(conflicts, {
+    search: (c) => `${c.element} ${c.old ?? ''} ${c.new ?? ''} ${c.org ?? ''}`,
+    filters: [
+      {
+        id: 'kind',
+        label: 'Loại',
+        value: (c) => (c.kind === 'metric' ? 'Chỉ số' : 'Ánh xạ'),
+      },
+    ],
+    sorts: [
+      { id: 'element', value: (c) => c.element },
+      { id: 'old', value: (c) => c.old },
+      { id: 'new', value: (c) => c.new },
+      { id: 'org', value: (c) => c.org },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm phần tử…" searchLabel="Tìm phần tử" />
+      <table className="w-full table-fixed border-collapse da-body-small">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="element" className="px-da-md py-da-sm font-normal">
+              Phần tử
+            </SortableTh>
+            <SortableTh view={view} column="old" className="px-da-md py-da-sm font-normal">
+              Bản gói cũ {fromVersion}
+            </SortableTh>
+            <SortableTh view={view} column="new" className="px-da-md py-da-sm font-normal">
+              Bản gói mới {toVersion}
+            </SortableTh>
+            <SortableTh view={view} column="org" className="px-da-md py-da-sm font-normal">
+              Phần tổ chức đã sửa
+            </SortableTh>
+            <SortableTh view={view} className="w-[214px] px-da-md py-da-sm font-normal">
+              Chọn
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((c) => (
+            <tr key={c.id} className="border-b border-border align-top text-foreground">
+              <td className="px-da-md py-[12px]">{c.element}</td>
+              <td className="px-da-md py-[12px] text-muted-foreground da-mono">{c.old ?? '—'}</td>
+              <td className="px-da-md py-[12px] da-mono">{c.new ?? '—'}</td>
+              <td className="px-da-md py-[12px] text-info da-mono">{c.org ?? '—'}</td>
+              <td className="px-da-md py-[8px]">
+                <Select<UpgradeChoice>
+                  label={`Chọn cho ${c.element}`}
+                  value={decisions[c.id] ?? null}
+                  placeholder="Chọn"
+                  disabled={!deciding}
+                  onChange={(v) => onDecide(c.id, v)}
+                  options={c.options}
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
   );
 }

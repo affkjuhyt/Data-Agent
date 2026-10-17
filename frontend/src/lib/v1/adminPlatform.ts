@@ -220,7 +220,7 @@ export interface OpsIssue {
   action: { kind: 'run' | 'eval' | 'budget'; label: string; target_id: Uuid };
 }
 
-type UsageReport = Schemas['AgentUsageReport'];
+type UsageReport = Schemas['AgentUsageReport'] & { issues?: OpsIssue[] };
 type Figures = Schemas['UsageFigures'];
 
 const PERIOD_MS: Record<OpsPeriod, number> = {
@@ -282,7 +282,9 @@ function readUsage(
       avg_duration_s: a.avg_duration_s ?? null,
       cost: String(a.cost ?? 0),
     })),
-    issues: report.agents
+    issues: report.issues?.length
+      ? report.issues
+      : report.agents
       .filter((a) => (a.budget_used_ratio ?? 0) >= BUDGET_WARNING)
       .map((a) => ({
         id: `budget-${a.agent_id}`,

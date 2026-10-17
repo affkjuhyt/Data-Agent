@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { Checkbox } from '../../design-system/Checkbox';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { Toggle } from '../../design-system/Toggle';
 import { cn } from '../../lib/utils';
@@ -246,22 +247,7 @@ function ReportBody({ report, onChanged }: { report: ReportSchedule; onChanged: 
           </section>
           <section className="flex flex-col gap-da-md border-b border-border py-da-xl">
             <h2 className="text-foreground da-heading-3">Lần gửi gần đây</h2>
-            <table className="w-full border-collapse da-body-small">
-              <tbody>
-                {report.recent_runs.map((r) => {
-                  const look = runLook(r);
-                  return (
-                    <tr key={r.id} className="border-b border-border text-foreground">
-                      <td className="w-[112px] py-[9px] da-mono">{r.at_text}</td>
-                      <td className="py-[9px]">
-                        <StatusDot tone={look.tone}>{look.label}</StatusDot>
-                      </td>
-                      <td className="py-[9px] text-muted-foreground">{r.detail}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <RecentRuns runs={report.recent_runs} />
             <p className="text-muted-foreground da-caption">
               Báo cáo chỉ phát hành khi mọi số có căn cứ và khớp số đã nộp.
             </p>
@@ -269,6 +255,54 @@ function ReportBody({ report, onChanged }: { report: ReportSchedule; onChanged: 
         </aside>
       </div>
     </div>
+  );
+}
+
+function RecentRuns({ runs }: { runs: ReportSchedule['recent_runs'] }) {
+  const view = useTableView(runs, {
+    search: (r) => `${r.at_text} ${runLook(r).label} ${r.detail}`,
+    filters: [{ id: 'status', label: 'Trạng thái', value: (r) => runLook(r).label }],
+    sorts: [
+      { id: 'at', value: (r) => r.at_text },
+      { id: 'status', value: (r) => runLook(r).label },
+      { id: 'detail', value: (r) => r.detail },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm lần gửi…" searchLabel="Tìm lần gửi" />
+      <table className="w-full border-collapse da-body-small">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="at" className="w-[112px] py-da-sm font-normal">
+              Thời điểm
+            </SortableTh>
+            <SortableTh view={view} column="status" className="py-da-sm font-normal">
+              Trạng thái
+            </SortableTh>
+            <SortableTh view={view} column="detail" className="py-da-sm font-normal">
+              Chi tiết
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((r) => {
+            const look = runLook(r);
+            return (
+              <tr key={r.id} className="border-b border-border text-foreground">
+                <td className="w-[112px] py-[9px] da-mono">{r.at_text}</td>
+                <td className="py-[9px]">
+                  <StatusDot tone={look.tone}>{look.label}</StatusDot>
+                </td>
+                <td className="py-[9px] text-muted-foreground">{r.detail}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
   );
 }
 

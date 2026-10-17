@@ -67,9 +67,9 @@ describe('CreateAgentPage', () => {
 
   it('starts from a template and cancels back to the team', async () => {
     wrap(<CreateAgentPage />);
-    fireEvent.click(await screen.findByRole('button', { name: /Soạn bản tin tuần/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Agent Báo cáo định kỳ/ }));
     expect(screen.getByLabelText('Bạn muốn agent làm gì?')).toHaveValue(
-      'Mỗi chiều thứ Sáu, soạn bản tin tuần từ các chỉ số chính và gửi cho nhóm qua Teams.',
+      'Soạn bản tin tuần từ chỉ số và biến động, bạn duyệt trước khi gửi',
     );
     expect(await screen.findByText('Phải hỏi bạn khi')).toBeInTheDocument();
 

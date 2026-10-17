@@ -10,6 +10,7 @@ import { Icon } from '../../design-system/Icon';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber, formatPercent } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
@@ -91,6 +92,22 @@ function ExploreView({
     () => preview.columns.find((c) => c.numeric && !c.masked)?.name ?? preview.columns[0]?.name,
   );
   const duplicates = new Set(preview.duplicate_rows);
+  const lines = preview.rows.map((cells, index) => ({ index, cells }));
+  const view = useTableView(lines, {
+    search: (line) => line.cells.map((cell) => cellText(cell)).join(' '),
+    filters: [
+      {
+        id: 'duplicate',
+        label: 'Trùng',
+        value: (line) => (duplicates.has(line.index) ? 'Trùng' : 'Không trùng'),
+      },
+    ],
+    sorts: preview.columns.map((column, index) => ({
+      id: column.name,
+      value: (line: (typeof lines)[number]) => line.cells[index],
+    })),
+    pageSize: 50,
+  });
 
   const derive = async (dropDuplicates: boolean) => {
     setDeriving(dropDuplicates ? 'dedup' : 'filtered');
@@ -166,14 +183,17 @@ function ExploreView({
             description="Bỏ bớt một bộ lọc để xem lại dữ liệu."
           />
         ) : (
+          <>
+          <TableToolbar view={view} placeholder="Tìm trong bảng…" searchLabel="Tìm trong bảng" />
           <div className="overflow-x-auto rounded-md border border-border bg-card">
             <table className="min-w-full border-collapse">
               <thead>
                 <tr className="bg-subtle text-left">
                   {preview.columns.map((c) => (
-                    <th
+                    <SortableTh
                       key={c.name}
-                      scope="col"
+                      view={view}
+                      column={c.name}
                       className="border-r border-border p-0 font-normal last:border-r-0"
                     >
                       <button
@@ -188,18 +208,23 @@ function ExploreView({
                         <span className="text-foreground da-mono">{c.name}</span>
                         <span className="text-muted-foreground da-caption">{c.type_label}</span>
                       </button>
-                    </th>
+                    </SortableTh>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {preview.rows.map((row, i) => (
+                {view.rows.map((line) => (
                   <tr
-                    key={i}
-                    className={cn('border-t border-border', duplicates.has(i) && 'bg-error-subtle')}
-                    aria-label={duplicates.has(i) ? `Dòng ${i + 1}, trùng` : undefined}
+                    key={line.index}
+                    className={cn(
+                      'border-t border-border',
+                      duplicates.has(line.index) && 'bg-error-subtle',
+                    )}
+                    aria-label={
+                      duplicates.has(line.index) ? `Dòng ${line.index + 1}, trùng` : undefined
+                    }
                   >
-                    {row.map((cell, j) => (
+                    {line.cells.map((cell, j) => (
                       <td
                         key={j}
                         className={cn(
@@ -215,6 +240,8 @@ function ExploreView({
               </tbody>
             </table>
           </div>
+          <TablePager view={view} />
+          </>
         )}
         {preview.quality && (
           <Notice

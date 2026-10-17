@@ -5,6 +5,13 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Avatar } from '../../design-system/Avatar';
 import { Button } from '../../design-system/Button';
 import { StatusDot } from '../../design-system/StatusDot';
+import {
+  SortableTh,
+  TablePager,
+  TableToolbar,
+  tableEmptyRow,
+  useTableView,
+} from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
@@ -25,10 +32,9 @@ import { addDays, isoDay } from './format';
  */
 export default function PermissionComparePage() {
   const { routeId } = useAppState();
-  const sim = useV1(
-    routeId ? () => simulatePermissions({ data_space_id: routeId }) : null,
-    [routeId],
-  );
+  const sim = useV1(routeId ? () => simulatePermissions({ data_space_id: routeId }) : null, [
+    routeId,
+  ]);
 
   return (
     <div className="flex flex-col gap-da-md px-da-2xl py-da-xl">
@@ -46,6 +52,70 @@ export default function PermissionComparePage() {
           </div>
         )}
       </AsyncRegion>
+    </div>
+  );
+}
+
+type SimulatedRow = { cells: string[]; muted: boolean[] };
+
+function CompareTable({ view }: { view: PermissionView }) {
+  const source: SimulatedRow[] = view.rows.map((cells, i) => ({
+    cells,
+    muted: view.muted[i] ?? [],
+  }));
+  const table = useTableView(source, {
+    search: (row) => row.cells.join(' '),
+    filters: [
+      {
+        id: 'col0',
+        label: view.columns[0] ?? 'Cột',
+        value: (row) => row.cells[0] ?? '',
+      },
+    ],
+    sorts: view.columns.map((_, index) => ({
+      id: `c${index}`,
+      value: (row: SimulatedRow) => row.cells[index] ?? '',
+    })),
+    pageSize: 50,
+  });
+  return (
+    <div className="flex flex-col gap-da-md">
+      <TableToolbar view={table} placeholder="Tìm trong bảng…" searchLabel="Tìm trong bảng" />
+      <table className="w-full table-fixed border-collapse border-b border-border">
+        <thead>
+          <tr className="bg-subtle text-left text-muted-foreground da-mono">
+            {view.columns.map((c, i) => (
+              <SortableTh
+                key={`${c}-${i}`}
+                view={table}
+                column={`c${i}`}
+                className="px-da-md py-da-sm font-normal"
+              >
+                {c}
+              </SortableTh>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {table.rows.map((row, i) => (
+            <tr key={i} className="border-t border-border da-mono">
+              {row.cells.map((cell, j) => (
+                <td
+                  key={j}
+                  className={cn(
+                    'truncate px-da-md py-da-sm',
+                    row.muted[j] ? 'text-muted-foreground' : 'text-foreground',
+                  )}
+                >
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+          {table.total === 0 && tableEmptyRow(Math.max(view.columns.length, 1))}
+        </tbody>
+      </table>
+      <TablePager view={table} />
     </div>
   );
 }
@@ -82,34 +152,7 @@ function ViewCard({ view, dataSpaceId }: { view: PermissionView; dataSpaceId: st
         </h2>
       </div>
       <StatusDot tone="primary">{view.scope_text}</StatusDot>
-      <table className="w-full table-fixed border-collapse border-b border-border">
-        <thead>
-          <tr className="bg-subtle text-left text-muted-foreground da-mono">
-            {view.columns.map((c) => (
-              <th key={c} className="px-da-md py-da-sm font-normal">
-                {c}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {view.rows.map((row, i) => (
-            <tr key={i} className="border-t border-border da-mono">
-              {row.map((cell, j) => (
-                <td
-                  key={j}
-                  className={cn(
-                    'truncate px-da-md py-da-sm',
-                    view.muted[i]?.[j] ? 'text-muted-foreground' : 'text-foreground',
-                  )}
-                >
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <CompareTable view={view} />
       <div className="flex items-center gap-da-sm">
         {view.actions.map((action, i) =>
           action.allowed ? (
@@ -120,9 +163,7 @@ function ViewCard({ view, dataSpaceId }: { view: PermissionView; dataSpaceId: st
             <Tooltip key={action.label} content={action.reason}>
               {/* A disabled Button swallows its own click but not the bubbling one: the wrapper sends the request. */}
               <span onClick={() => ask(action.label, action.request_capability)}>
-                <Button disabled>
-                  {action.label}
-                </Button>
+                <Button disabled>{action.label}</Button>
               </span>
             </Tooltip>
           ),

@@ -7,6 +7,7 @@ import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
@@ -107,6 +108,16 @@ function RequestDetail({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
   const pending = r.status === 'pending';
+  const impact = useTableView(r.impact, {
+    search: (row) => `${row.label} ${row.before} ${row.after}`,
+    filters: [{ id: 'label', label: 'Thay đổi', value: (row) => row.label }],
+    sorts: [
+      { id: 'label', value: (row) => row.label },
+      { id: 'before', value: (row) => row.before },
+      { id: 'after', value: (row) => row.after },
+    ],
+    pageSize: 50,
+  });
   const asked = Math.max(1, daysUntil(r.requested_until, new Date(r.created_at)));
 
   const decide = async (body: DecideAccess) => {
@@ -189,16 +200,23 @@ function RequestDetail({
             </>
           )}
           <h2 className="text-foreground da-heading-3">Nếu cấp</h2>
+          <TableToolbar view={impact} placeholder="Tìm thay đổi…" searchLabel="Tìm thay đổi" />
           <table className="w-full table-fixed border-collapse">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="px-da-lg py-da-md font-normal">Thay đổi</th>
-                <th className="w-[160px] px-da-lg py-da-md font-normal">Trước</th>
-                <th className="w-[220px] px-da-lg py-da-md font-normal">Sau</th>
+                <SortableTh view={impact} column="label" className="px-da-lg py-da-md font-normal">
+                  Thay đổi
+                </SortableTh>
+                <SortableTh view={impact} column="before" className="w-[160px] px-da-lg py-da-md font-normal">
+                  Trước
+                </SortableTh>
+                <SortableTh view={impact} column="after" className="w-[220px] px-da-lg py-da-md font-normal">
+                  Sau
+                </SortableTh>
               </tr>
             </thead>
             <tbody>
-              {r.impact.map((row) => (
+              {impact.rows.map((row) => (
                 <tr key={row.label} className="border-b border-border">
                   <td className="px-da-lg py-da-md text-foreground da-body-small">{row.label}</td>
                   <td className="px-da-lg py-da-md text-muted-foreground da-mono">{row.before}</td>
@@ -207,6 +225,7 @@ function RequestDetail({
               ))}
             </tbody>
           </table>
+          <TablePager view={impact} />
         </div>
         <aside className="flex w-[320px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pt-[20px] max-[1279px]:hidden">
           <h2 className="text-foreground da-heading-3">Hàng chờ của bạn</h2>

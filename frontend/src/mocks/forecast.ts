@@ -414,8 +414,8 @@ function workbench(): ForecastWorkbench {
     next_version_label: 'v7',
     can_create_card: { allowed: true, reason: null },
     model_id: null,
-    version_id: null,
-    forecast_model_id: null,
+    version_id: V7_ID,
+    forecast_model_id: MODEL_ID,
   };
 }
 
@@ -627,9 +627,7 @@ function fuelForecast(fuel: FuelProduct): FuelPriceForecast {
     product_code: fuel.key,
     formula_model_id: 'formula-mc-v2',
     model_id: MODEL_ID,
-    // Mirror the id produced by the real ledger adapter; the legacy endpoint is only a
-    // compatibility response for older fixtures.
-    series_id: `ledger~${MODEL_ID}~${fuel.key}`,
+    series_id: seriesId(fuel),
     product_label: fuel.label,
     products: FUELS.map((f) => ({ forecast_id: fuelForecastId(f), label: f.label })),
     period_date: '2026-07-09',
@@ -964,6 +962,25 @@ export function createForecastHandlers() {
   let calendarFollowing = false;
   const scenarios = new Map<string, { modelId: string; product: string; level: number }>();
 
+  const jobResponse = () => {
+    if (currentJob.status === 'running' && ++polls >= POLLS_TO_FINISH) {
+      currentJob = {
+        ...currentJob,
+        status: 'done',
+        message:
+          'Dự báo đã xong lúc 10:42. Mô hình v7 (Ensemble) thắng seasonal naive trên 6 điểm cắt; kết quả có khoảng 80% và 95%.',
+        steps: currentJob.steps.map((s) => ({
+          ...s,
+          state: 'done' as const,
+          at_text: s.at_text ?? '10:42',
+        })),
+        forecast_id: FORECAST_ID,
+        stale_forecast: null,
+      };
+    }
+    return HttpResponse.json(currentJob);
+  };
+
   const saveForecast = (next: Forecast) => {
     forecasts = forecasts.map((f) => (f.id === next.id ? next : f));
     return HttpResponse.json(next);
@@ -978,22 +995,7 @@ export function createForecastHandlers() {
     ),
     http.get('*/v1/forecast-jobs/:id', ({ params }) => {
       if (params.id !== JOB_ID) return problem(404, 'not_found', 'Không tìm thấy việc dự báo.');
-      if (currentJob.status === 'running' && ++polls >= POLLS_TO_FINISH) {
-        currentJob = {
-          ...currentJob,
-          status: 'done',
-          message:
-            'Dự báo đã xong lúc 10:42. Mô hình v7 (Ensemble) thắng seasonal naive trên 6 điểm cắt; kết quả có khoảng 80% và 95%.',
-          steps: currentJob.steps.map((s) => ({
-            ...s,
-            state: 'done',
-            at_text: s.at_text ?? '10:42',
-          })),
-          forecast_id: FORECAST_ID,
-          stale_forecast: null,
-        };
-      }
-      return HttpResponse.json(currentJob);
+      return jobResponse();
     }),
     http.post('*/v1/forecast-jobs/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
@@ -1036,6 +1038,7 @@ export function createForecastHandlers() {
 
     http.get('*/v1/forecasts', () => HttpResponse.json({ items: forecasts, next_page_token: '' })),
     http.get('*/v1/forecasts/:id', ({ params }) => {
+      if (params.id === currentJob.id) return jobResponse();
       const found = forecasts.find((f) => f.id === params.id);
       return found ? HttpResponse.json(found) : problem(404, 'not_found', 'Không tìm thấy dự báo.');
     }),
@@ -1195,6 +1198,12 @@ export function createForecastHandlers() {
       const candidate = currentModel.candidate;
       if (!candidate || candidate.version_id !== id)
         return problem(404, 'not_found', 'Không tìm thấy phiên bản mô hình.');
+      if (verb === 'submit')
+        return HttpResponse.json({
+          id: candidate.version_id,
+          model_id: currentModel.id,
+          status: 'pending_approval',
+        });
       if (!currentModel.can_approve.allowed)
         return problem(
           403,

@@ -108,7 +108,7 @@ function ForecastBody({ forecast }: { forecast: Forecast }) {
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
   // The scenario is the screen's: the api keeps it under its name, the base forecast is untouched.
-  const [scenario, setScenario] = useState<ForecastScenario | null>(null);
+  const [scenario, setScenario] = useState<ForecastScenario | null>(forecast.scenario);
   const f: Forecast = { ...forecast, scenario };
   const sessionId = f.session_id;
 

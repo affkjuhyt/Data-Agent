@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Icon } from '../../design-system/Icon';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { Tabs } from '../../design-system/Tabs';
 import { formatNumber } from '../../lib/formatVN';
@@ -227,48 +228,56 @@ function ToolsByLevel({ tools }: { tools: Tool[] }) {
 }
 
 function ToolTable({ tools }: { tools: Tool[] }) {
+  const view = useTableView(tools, {
+    search: (t) => `${t.name} ${t.description} ${t.executed_by} ${levelOf(t.level).short}`,
+    filters: [{ id: 'level', label: 'Mức quyền', value: (t) => levelOf(t.level).short }],
+    sorts: [
+      { id: 'name', value: (t) => t.name },
+      { id: 'level', value: (t) => levelOf(t.level).short },
+      { id: 'desc', value: (t) => t.description },
+      { id: 'by', value: (t) => t.executed_by },
+    ],
+    pageSize: 50,
+  });
   return (
-    <BorderedTable
-      head={[
-        ['Công cụ', 'w-[202px]'],
-        ['Mức quyền', 'w-[162px]'],
-        ['Mô tả', ''],
-        ['Thực thi bởi', 'w-[160px]'],
-      ]}
-    >
-      {tools.map((t) => {
-        const level = levelOf(t.level);
-        return (
-          <tr key={t.name} className="border-t border-border">
-            <td className="px-da-md py-[6px] text-foreground da-mono">{t.name}</td>
-            <td className="px-da-md py-[6px]">
-              <StatusDot tone={level.tone}>{level.short}</StatusDot>
-            </td>
-            <td className="px-da-md py-[6px] text-foreground da-body-small">{t.description}</td>
-            <td className="px-da-md py-[6px] text-foreground da-mono">{t.executed_by}</td>
-          </tr>
-        );
-      })}
-    </BorderedTable>
-  );
-}
-
-/* The compact bordered table of the tools tab: subtle header, 31px rows. */
-function BorderedTable({ head, children }: { head: [string, string][]; children: ReactNode }) {
-  return (
-    <div className="overflow-hidden rounded-lg border border-border">
-      <table className="w-full table-fixed border-collapse">
-        <thead>
-          <tr className="bg-subtle text-left text-muted-foreground da-caption">
-            {head.map(([label, width]) => (
-              <th key={label} className={cn('px-da-md py-da-md font-normal', width)}>
-                {label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>{children}</tbody>
-      </table>
+    <div className="flex flex-col gap-da-md">
+      <TableToolbar view={view} placeholder="Tìm công cụ…" searchLabel="Tìm công cụ" />
+      <div className="overflow-hidden rounded-lg border border-border">
+        <table className="w-full table-fixed border-collapse">
+          <thead>
+            <tr className="bg-subtle text-left text-muted-foreground da-caption">
+              <SortableTh view={view} column="name" className="w-[202px] px-da-md py-da-md font-normal">
+                Công cụ
+              </SortableTh>
+              <SortableTh view={view} column="level" className="w-[162px] px-da-md py-da-md font-normal">
+                Mức quyền
+              </SortableTh>
+              <SortableTh view={view} column="desc" className="px-da-md py-da-md font-normal">
+                Mô tả
+              </SortableTh>
+              <SortableTh view={view} column="by" className="w-[160px] px-da-md py-da-md font-normal">
+                Thực thi bởi
+              </SortableTh>
+            </tr>
+          </thead>
+          <tbody>
+            {view.rows.map((t) => {
+              const level = levelOf(t.level);
+              return (
+                <tr key={t.name} className="border-t border-border">
+                  <td className="px-da-md py-[6px] text-foreground da-mono">{t.name}</td>
+                  <td className="px-da-md py-[6px]">
+                    <StatusDot tone={level.tone}>{level.short}</StatusDot>
+                  </td>
+                  <td className="px-da-md py-[6px] text-foreground da-body-small">{t.description}</td>
+                  <td className="px-da-md py-[6px] text-foreground da-mono">{t.executed_by}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <TablePager view={view} />
     </div>
   );
 }

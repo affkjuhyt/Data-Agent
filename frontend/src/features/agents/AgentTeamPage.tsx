@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Menu } from '../../design-system/Menu';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -57,6 +58,20 @@ export default function AgentTeamPage() {
   const toast = useToast();
   const agents = useV1(listAgents, []);
   const items = agents.data?.items ?? [];
+  const view = useTableView(items, {
+    search: (a) =>
+      `${a.name} ${a.goal ?? ''} ${nowOf(a).text} ${a.trigger_text ?? ''} ${a.permission_text ?? ''} ${agentStatus(a).label}`,
+    filters: [{ id: 'status', label: 'Trạng thái', value: (a) => agentStatus(a).label }],
+    sorts: [
+      { id: 'name', value: (a) => a.name },
+      { id: 'now', value: (a) => nowOf(a).text },
+      { id: 'trigger', value: (a) => a.trigger_text },
+      { id: 'permission', value: (a) => a.permission_text },
+      { id: 'week', value: (a) => a.runs_7d?.count },
+      { id: 'status', value: (a) => agentStatus(a).label },
+    ],
+    pageSize: 50,
+  });
   const [pausing, setPausing] = useState<{ agent: AgentDef; run: AgentRun } | null>(null);
   const [locking, setLocking] = useState<AgentDef | null>(null);
   const [busy, setBusy] = useState(false);
@@ -123,6 +138,7 @@ export default function AgentTeamPage() {
         }
       />
       <div className="flex flex-col gap-da-lg px-da-3xl pt-da-xl">
+        <TableToolbar view={view} placeholder="Tìm agent…" searchLabel="Tìm agent" />
         <AsyncRegion
           state={agents}
           what="danh sách agent"
@@ -149,23 +165,39 @@ export default function AgentTeamPage() {
             <table className="w-full table-fixed border-collapse">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="px-da-lg py-da-md font-normal">Agent</th>
-                  <th className="w-[280px] px-da-lg py-da-md font-normal">Đang làm gì</th>
-                  <th className="w-[170px] px-da-lg py-da-md font-normal max-[1439px]:hidden">
+                  <SortableTh view={view} column="name" className="px-da-lg py-da-md font-normal">
+                    Agent
+                  </SortableTh>
+                  <SortableTh view={view} column="now" className="w-[280px] px-da-lg py-da-md font-normal">
+                    Đang làm gì
+                  </SortableTh>
+                  <SortableTh
+                    view={view}
+                    column="trigger"
+                    className="w-[170px] px-da-lg py-da-md font-normal max-[1439px]:hidden"
+                  >
                     Khi nào chạy
-                  </th>
-                  <th className="w-[150px] px-da-lg py-da-md font-normal max-[1439px]:hidden">
+                  </SortableTh>
+                  <SortableTh
+                    view={view}
+                    column="permission"
+                    className="w-[150px] px-da-lg py-da-md font-normal max-[1439px]:hidden"
+                  >
                     Được phép
-                  </th>
-                  <th className="w-[110px] px-da-lg py-da-md font-normal">7 ngày</th>
-                  <th className="w-[120px] px-da-lg py-da-md font-normal">Trạng thái</th>
-                  <th className="w-[40px] px-da-lg py-da-md">
+                  </SortableTh>
+                  <SortableTh view={view} column="week" className="w-[110px] px-da-lg py-da-md font-normal">
+                    7 ngày
+                  </SortableTh>
+                  <SortableTh view={view} column="status" className="w-[120px] px-da-lg py-da-md font-normal">
+                    Trạng thái
+                  </SortableTh>
+                  <SortableTh view={view} className="w-[40px] px-da-lg py-da-md">
                     <span className="sr-only">Thao tác</span>
-                  </th>
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {items.map((agent) => (
+                {view.rows.map((agent) => (
                   <AgentRow
                     key={agent.id}
                     agent={agent}
@@ -188,6 +220,7 @@ export default function AgentTeamPage() {
             </table>
           )}
         </AsyncRegion>
+        <TablePager view={view} />
         <p className="text-muted-foreground da-caption">
           Agent chỉ có quyền trong giới hạn của người sở hữu; mọi lượt chạy được ghi lại ở Lượt
           chạy.

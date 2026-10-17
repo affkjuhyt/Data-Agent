@@ -5,6 +5,7 @@ import { Button } from '../../design-system/Button';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { formatDate, formatTime } from '../../lib/formatVN';
@@ -191,45 +192,7 @@ export default function KnowledgeReviewPage() {
         >
           {() => (
             <div className="flex items-start gap-da-xl max-[1279px]:flex-col">
-              <table className="w-full min-w-0 flex-[1.6] table-fixed border-collapse overflow-hidden rounded-md border border-border">
-                <thead>
-                  <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                    <th className="w-[80px] px-da-lg py-da-md font-normal">Mức</th>
-                    <th className="w-[170px] px-da-lg py-da-md font-normal">Loại</th>
-                    <th className="w-[190px] px-da-lg py-da-md font-normal">Trang</th>
-                    <th className="px-da-lg py-da-md font-normal">Chi tiết</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {shown.map((f) => (
-                    <tr
-                      key={f.id}
-                      aria-selected={f.id === selected?.id}
-                      className={cn(
-                        'border-b border-border last:border-b-0 da-body-small',
-                        f.id === selected?.id ? 'bg-accent' : 'hover:bg-subtle',
-                      )}
-                    >
-                      <td className="px-da-lg py-[10px]">
-                        <StatusDot tone={SEVERITY[f.severity].tone}>
-                          {SEVERITY[f.severity].label}
-                        </StatusDot>
-                      </td>
-                      <td className="px-da-lg py-[10px] text-foreground">{KIND[f.kind]}</td>
-                      <td className="px-da-lg py-[10px]">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedId(f.id)}
-                          className="text-left text-foreground hover:underline"
-                        >
-                          {f.subject_text}
-                        </button>
-                      </td>
-                      <td className="px-da-lg py-[10px] text-foreground">{f.detail}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <FindingsTable findings={shown} onSelect={setSelectedId} selectedId={selected?.id} />
               {selected && (
                 <FindingCard
                   key={selected.id}
@@ -245,6 +208,83 @@ export default function KnowledgeReviewPage() {
           )}
         </AsyncRegion>
       </div>
+    </div>
+  );
+}
+
+function FindingsTable({
+  findings,
+  onSelect,
+  selectedId,
+}: {
+  findings: KnowledgeFinding[];
+  onSelect: (id: string) => void;
+  selectedId: string | undefined;
+}) {
+  const view = useTableView(findings, {
+    search: (row) => `${row.subject_text} ${row.detail} ${KIND[row.kind]}`,
+    filters: [
+      {
+        id: 'severity',
+        label: 'Mức',
+        value: (row) => row.severity,
+        text: (severity) => SEVERITY[severity as KnowledgeFinding['severity']].label,
+      },
+      { id: 'kind', label: 'Loại', value: (row) => row.kind, text: (kind) => KIND[kind as FindingKind] },
+    ],
+    sorts: [
+      { id: 'severity', value: (row) => row.severity },
+      { id: 'kind', value: (row) => KIND[row.kind] },
+      { id: 'subject', value: (row) => row.subject_text },
+      { id: 'detail', value: (row) => row.detail },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <div className="flex min-w-0 flex-[1.6] flex-col gap-da-md">
+      <TableToolbar view={view} placeholder="Tìm phát hiện…" searchLabel="Tìm phát hiện" />
+      <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border">
+        <thead>
+          <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="severity" className="w-[80px] px-da-lg py-da-md font-normal">
+              Mức
+            </SortableTh>
+            <SortableTh view={view} column="kind" className="w-[170px] px-da-lg py-da-md font-normal">
+              Loại
+            </SortableTh>
+            <SortableTh view={view} column="subject" className="w-[190px] px-da-lg py-da-md font-normal">
+              Trang
+            </SortableTh>
+            <SortableTh view={view} column="detail" className="px-da-lg py-da-md font-normal">
+              Chi tiết
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((f) => (
+            <tr
+              key={f.id}
+              aria-selected={f.id === selectedId}
+              className={cn(
+                'border-b border-border last:border-b-0 da-body-small',
+                f.id === selectedId ? 'bg-accent' : 'hover:bg-subtle',
+              )}
+            >
+              <td className="px-da-lg py-[10px]">
+                <StatusDot tone={SEVERITY[f.severity].tone}>{SEVERITY[f.severity].label}</StatusDot>
+              </td>
+              <td className="px-da-lg py-[10px] text-foreground">{KIND[f.kind]}</td>
+              <td className="px-da-lg py-[10px]">
+                <button type="button" onClick={() => onSelect(f.id)} className="text-left text-foreground hover:underline">
+                  {f.subject_text}
+                </button>
+              </td>
+              <td className="px-da-lg py-[10px] text-foreground">{f.detail}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
     </div>
   );
 }

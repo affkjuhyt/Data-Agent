@@ -3,10 +3,22 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
-import { Pagination } from '../../design-system/Pagination';
+import {
+  SortableTh,
+  TablePager,
+  TableToolbar,
+  tableEmptyRow,
+  useTableView,
+} from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
-import { listAdminUsers, listRoles, syncDirectory, type AdminUser, type Role } from '../../lib/v1/adminAccess';
+import {
+  listAdminUsers,
+  listRoles,
+  syncDirectory,
+  type AdminUser,
+  type Role,
+} from '../../lib/v1/adminAccess';
 import { useV1 } from '../../lib/v1/useV1';
 import { clock, count, dayMonth } from './format';
 import { InviteDialog } from './InviteDialog';
@@ -17,19 +29,17 @@ import { InviteDialog } from './InviteDialog';
  * scope and expiry; a narrowed row scope is drawn in warning. On the right, on --background,
  * what each role may do. "Thêm vào Data Space" opens "Hộp thoại · invite".
  */
-const PAGE_SIZE = 50;
-
 export default function UsersPage() {
   const toast = useToast();
   const users = useV1(listAdminUsers, []);
   const roles = useV1(listRoles, []);
-  const [page, setPage] = useState(1);
   const [inviting, setInviting] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
   const people = users.data?.items.filter((u) => u.kind === 'person') ?? [];
   const lastSync = people.reduce<string | null>(
-    (latest, u) => (u.last_synced_at && (!latest || u.last_synced_at > latest) ? u.last_synced_at : latest),
+    (latest, u) =>
+      u.last_synced_at && (!latest || u.last_synced_at > latest) ? u.last_synced_at : latest,
     null,
   );
   const summary = users.data
@@ -82,14 +92,7 @@ export default function UsersPage() {
               />
             }
           >
-            {(p) => (
-              <>
-                <UsersTable users={p.items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)} />
-                {p.items.length > PAGE_SIZE && (
-                  <Pagination page={page} pageSize={PAGE_SIZE} total={p.items.length} onPage={setPage} />
-                )}
-              </>
-            )}
+            {(p) => <UsersTable users={p.items} />}
           </AsyncRegion>
         </div>
         <aside className="flex w-[340px] shrink-0 flex-col gap-[10px] border-l border-border bg-background px-da-2xl pt-[20px] max-[1279px]:hidden">
@@ -98,8 +101,8 @@ export default function UsersPage() {
             {(p) => <RoleTable roles={p.items} />}
           </AsyncRegion>
           <p className="text-foreground da-body-small">
-            Quản trị hệ thống không xem được dữ liệu nghiệp vụ. Agent chỉ có quyền trong giới hạn của
-            người sở hữu agent.
+            Quản trị hệ thống không xem được dữ liệu nghiệp vụ. Agent chỉ có quyền trong giới hạn
+            của người sở hữu agent.
           </p>
           <p className="text-muted-foreground da-caption">UC-11-01 · UC-11-08</p>
         </aside>
@@ -119,41 +122,89 @@ export default function UsersPage() {
 }
 
 function UsersTable({ users }: { users: AdminUser[] }) {
+  const view = useTableView(users, {
+    search: (u) =>
+      `${u.display_name} ${u.group_label} ${u.role_name} ${u.data_space_text} ${u.row_scope_text} ${dayMonth(u.valid_until)}`,
+    filters: [{ id: 'role', label: 'Vai trò', value: (u) => u.role_name }],
+    sorts: [
+      { id: 'name', value: (u) => u.display_name },
+      { id: 'role', value: (u) => u.role_name },
+      { id: 'space', value: (u) => u.data_space_text },
+      { id: 'scope', value: (u) => u.row_scope_text },
+      { id: 'until', value: (u) => u.valid_until },
+    ],
+    pageSize: 50,
+  });
   return (
-    <table className="w-full table-fixed border-collapse">
-      <thead>
-        <tr className="border-b border-border text-left text-muted-foreground da-caption">
-          <th className="px-da-lg py-da-md font-normal">Người</th>
-          <th className="w-[170px] px-da-lg py-da-md font-normal">Vai trò</th>
-          <th className="w-[200px] px-da-lg py-da-md font-normal">Data Space</th>
-          <th className="w-[170px] px-da-lg py-da-md font-normal">Phạm vi dòng</th>
-          <th className="w-[90px] px-da-lg py-da-md font-normal">Hạn</th>
-        </tr>
-      </thead>
-      <tbody>
-        {users.map((u) => (
-          <tr key={u.id} className="border-b border-border align-middle">
-            <td className="px-da-lg py-da-md">
-              <div className="flex min-w-0 flex-col gap-[2px]">
-                <span className="truncate text-foreground da-body-strong">{u.display_name}</span>
-                <span className="truncate text-muted-foreground da-mono">{u.group_label}</span>
-              </div>
-            </td>
-            <td className="px-da-lg py-da-md text-foreground da-body-small">{u.role_name}</td>
-            <td className="px-da-lg py-da-md text-foreground da-body-small">{u.data_space_text}</td>
-            <td
-              className={cn(
-                'px-da-lg py-da-md da-body-small',
-                u.row_scope_limited ? 'text-warning' : 'text-foreground',
-              )}
+    <div className="flex flex-col gap-da-lg">
+      <TableToolbar view={view} placeholder="Tìm người, vai trò…" searchLabel="Tìm người" />
+      <table className="w-full table-fixed border-collapse">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="name" className="px-da-lg py-da-md font-normal">
+              Người
+            </SortableTh>
+            <SortableTh
+              view={view}
+              column="role"
+              className="w-[170px] px-da-lg py-da-md font-normal"
             >
-              {u.row_scope_text}
-            </td>
-            <td className="px-da-lg py-da-md text-muted-foreground da-mono">{dayMonth(u.valid_until)}</td>
+              Vai trò
+            </SortableTh>
+            <SortableTh
+              view={view}
+              column="space"
+              className="w-[200px] px-da-lg py-da-md font-normal"
+            >
+              Data Space
+            </SortableTh>
+            <SortableTh
+              view={view}
+              column="scope"
+              className="w-[170px] px-da-lg py-da-md font-normal"
+            >
+              Phạm vi dòng
+            </SortableTh>
+            <SortableTh
+              view={view}
+              column="until"
+              className="w-[90px] px-da-lg py-da-md font-normal"
+            >
+              Hạn
+            </SortableTh>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {view.rows.map((u) => (
+            <tr key={u.id} className="border-b border-border align-middle">
+              <td className="px-da-lg py-da-md">
+                <div className="flex min-w-0 flex-col gap-[2px]">
+                  <span className="truncate text-foreground da-body-strong">{u.display_name}</span>
+                  <span className="truncate text-muted-foreground da-mono">{u.group_label}</span>
+                </div>
+              </td>
+              <td className="px-da-lg py-da-md text-foreground da-body-small">{u.role_name}</td>
+              <td className="px-da-lg py-da-md text-foreground da-body-small">
+                {u.data_space_text}
+              </td>
+              <td
+                className={cn(
+                  'px-da-lg py-da-md da-body-small',
+                  u.row_scope_limited ? 'text-warning' : 'text-foreground',
+                )}
+              >
+                {u.row_scope_text}
+              </td>
+              <td className="px-da-lg py-da-md text-muted-foreground da-mono">
+                {dayMonth(u.valid_until)}
+              </td>
+            </tr>
+          ))}
+          {view.total === 0 && tableEmptyRow(5)}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </div>
   );
 }
 
@@ -164,33 +215,55 @@ const ROLE_COLUMNS = [
 ];
 
 function RoleTable({ roles }: { roles: Role[] }) {
+  const can = (role: Role, key: string) => role.capabilities.includes(key);
+  const view = useTableView(roles, {
+    search: (r) => r.name,
+    filters: [{ id: 'admin', label: 'Quản trị', value: (r) => (can(r, 'admin') ? 'Có' : 'Không') }],
+    sorts: [
+      { id: 'name', value: (r) => r.name },
+      ...ROLE_COLUMNS.map((c) => ({ id: c.key, value: (r: Role) => (can(r, c.key) ? 1 : 0) })),
+    ],
+    pageSize: 50,
+  });
   return (
-    <table className="w-full table-fixed border-collapse">
-      <thead>
-        <tr className="border-b border-border text-left text-muted-foreground da-caption">
-          <th className="px-da-lg py-da-md font-normal">Vai trò</th>
-          {ROLE_COLUMNS.map((c) => (
-            <th key={c.key} className={cn(c.width, 'box-content px-da-xs py-da-md font-normal')}>
-              {c.label}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {roles.map((r) => (
-          <tr key={r.id} className="border-b border-border text-foreground da-body-small">
-            <td className="px-da-lg py-da-md">{r.name}</td>
-            {ROLE_COLUMNS.map((c) => {
-              const can = r.capabilities.includes(c.key);
-              return (
-                <td key={c.key} className="px-da-xs py-da-md" aria-label={can ? 'Có' : 'Không'}>
-                  {can ? '✓' : '—'}
-                </td>
-              );
-            })}
+    <div className="flex flex-col gap-da-md">
+      <TableToolbar view={view} placeholder="Tìm vai trò…" searchLabel="Tìm vai trò" />
+      <table className="w-full table-fixed border-collapse">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="name" className="px-da-lg py-da-md font-normal">
+              Vai trò
+            </SortableTh>
+            {ROLE_COLUMNS.map((c) => (
+              <SortableTh
+                key={c.key}
+                view={view}
+                column={c.key}
+                className={cn(c.width, 'box-content px-da-xs py-da-md font-normal')}
+              >
+                {c.label}
+              </SortableTh>
+            ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {view.rows.map((r) => (
+            <tr key={r.id} className="border-b border-border text-foreground da-body-small">
+              <td className="px-da-lg py-da-md">{r.name}</td>
+              {ROLE_COLUMNS.map((c) => {
+                const can = r.capabilities.includes(c.key);
+                return (
+                  <td key={c.key} className="px-da-xs py-da-md" aria-label={can ? 'Có' : 'Không'}>
+                    {can ? '✓' : '—'}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+          {view.total === 0 && tableEmptyRow(1 + ROLE_COLUMNS.length)}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </div>
   );
 }

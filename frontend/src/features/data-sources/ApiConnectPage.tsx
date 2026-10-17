@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
@@ -122,6 +123,17 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
   const [request, setRequest] = useState<ApiRequest>(config?.request ?? EMPTY);
   const [headers, setHeaders] = useState(headersText(config?.request ?? EMPTY));
   const [mapping, setMapping] = useState<ApiFieldMapping[]>(config?.mapping ?? []);
+  const mappingView = useTableView(mapping, {
+    search: (field) => `${field.path} ${field.column} ${TYPE_LABEL[field.type]} ${field.note ?? ''}`,
+    filters: [{ id: 'type', label: 'Kiểu', value: (field) => TYPE_LABEL[field.type] }],
+    sorts: [
+      { id: 'path', value: (field) => field.path },
+      { id: 'column', value: (field) => field.column },
+      { id: 'type', value: (field) => TYPE_LABEL[field.type] },
+      { id: 'note', value: (field) => field.note },
+    ],
+    pageSize: 50,
+  });
   const [response, setResponse] = useState<{ status: number; ms: number; body: string } | null>(
     null,
   );
@@ -398,18 +410,40 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
               </section>
             </div>
             {mapping.length > 0 && (
+              <>
+              <TableToolbar view={mappingView} placeholder="Tìm trường…" searchLabel="Tìm trường" />
               <div className="overflow-hidden rounded-md border border-border bg-card">
                 <table className="w-full table-fixed border-collapse">
                   <thead>
                     <tr className="bg-subtle text-left text-muted-foreground da-label">
-                      <th className="w-[206px] px-da-md py-da-sm font-medium">Trường JSON</th>
-                      <th className="w-[206px] px-da-md py-da-sm font-medium">Cột đích</th>
-                      <th className="w-[108px] px-da-md py-da-sm font-medium">Kiểu</th>
-                      <th className="px-da-md py-da-sm font-medium">Ghi chú</th>
+                      <SortableTh
+                        view={mappingView}
+                        column="path"
+                        className="w-[206px] px-da-md py-da-sm font-medium"
+                      >
+                        Trường JSON
+                      </SortableTh>
+                      <SortableTh
+                        view={mappingView}
+                        column="column"
+                        className="w-[206px] px-da-md py-da-sm font-medium"
+                      >
+                        Cột đích
+                      </SortableTh>
+                      <SortableTh
+                        view={mappingView}
+                        column="type"
+                        className="w-[108px] px-da-md py-da-sm font-medium"
+                      >
+                        Kiểu
+                      </SortableTh>
+                      <SortableTh view={mappingView} column="note" className="px-da-md py-da-sm font-medium">
+                        Ghi chú
+                      </SortableTh>
                     </tr>
                   </thead>
                   <tbody>
-                    {mapping.map((m, i) => (
+                    {mappingView.rows.map((m) => (
                       <tr key={m.path} className="border-t border-border">
                         <td className="truncate px-da-md py-da-sm text-foreground da-mono">
                           {m.path}
@@ -421,7 +455,9 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
                             value={m.column}
                             onChange={(e) =>
                               setMapping((all) =>
-                                all.map((x, j) => (j === i ? { ...x, column: e.target.value } : x)),
+                                all.map((x) =>
+                                  x.path === m.path ? { ...x, column: e.target.value } : x,
+                                ),
                               )
                             }
                           />
@@ -437,6 +473,8 @@ function ApiForm({ config }: { config: ApiSourceConfig | null }) {
                   </tbody>
                 </table>
               </div>
+              <TablePager view={mappingView} />
+              </>
             )}
           </>
         )}

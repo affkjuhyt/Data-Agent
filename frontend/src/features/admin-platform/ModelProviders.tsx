@@ -9,6 +9,13 @@ import { Icon } from '../../design-system/Icon';
 import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
+import {
+  SortableTh,
+  TablePager,
+  TableToolbar,
+  tableEmptyRow,
+  useTableView,
+} from '../../design-system/tableView';
 import { Toggle } from '../../design-system/Toggle';
 import { useToast } from '../../design-system/Toast';
 import { formatDate, formatNumber } from '../../lib/formatVN';
@@ -71,19 +78,25 @@ function TwoLines({ main, sub }: { main: ReactNode; sub?: ReactNode }) {
   );
 }
 
-function ProviderCost({ provider }: { provider: AiProvider }) {
+function costLines(provider: AiProvider): { main: string; sub: string } {
   const { month_cost_vnd: cost, month_budget_vnd: budget } = provider;
-  if (budget === null || cost === null)
-    return <TwoLines main="Hạ tầng nội bộ" sub="tính theo giờ GPU" />;
+  if (budget === null || cost === null) return { main: 'Hạ tầng nội bộ', sub: 'tính theo giờ GPU' };
   const millions = (n: number) => formatNumber(n / 1e6, { maxFractionDigits: 1 });
   const month = Number(provider.budget_month.split('-')[1]);
-  return (
-    <TwoLines
-      main={`${millions(cost)} / ${millions(budget)} triệu đ`}
-      sub={cost === 0 ? 'chưa phát sinh' : `${pct(cost / budget, 0)} ngân sách tháng ${month}`}
-    />
-  );
+  return {
+    main: `${millions(cost)} / ${millions(budget)} triệu đ`,
+    sub: cost === 0 ? 'chưa phát sinh' : `${pct(cost / budget, 0)} ngân sách tháng ${month}`,
+  };
 }
+
+function ProviderCost({ provider }: { provider: AiProvider }) {
+  const lines = costLines(provider);
+  return <TwoLines main={lines.main} sub={lines.sub} />;
+}
+
+const kindLabel = (provider: AiProvider) => (provider.kind === 'local' ? 'Tại chỗ' : 'Frontier');
+const retentionLabel = (provider: AiProvider) =>
+  RETENTION[provider.zero_retention]?.label ?? 'Không áp dụng';
 
 export function ProvidersTab({
   policy,
@@ -131,69 +144,7 @@ export function ProvidersTab({
           isEmpty={(p) => p.items.length === 0}
           empty={<p className="text-muted-foreground da-body-small">Chưa có provider nào.</p>}
         >
-          {(p) => (
-            <div className="overflow-x-auto rounded-md border border-border">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="border-b border-border bg-subtle">
-                    <th className={TH}>Provider</th>
-                    <th className={TH}>Mô hình</th>
-                    <th className={TH}>Endpoint · vùng dữ liệu</th>
-                    <th className={TH}>Không lưu dữ liệu</th>
-                    <th className={TH}>Duyệt AC06</th>
-                    <th className={TH}>Chi phí tháng / ngân sách</th>
-                    <th className={TH}>
-                      <span className="sr-only">Thao tác</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {p.items.map((provider) => {
-                    const retention = RETENTION[provider.zero_retention];
-                    const ac06 = AC06[provider.ac06_status];
-                    return (
-                      <tr key={provider.id} className="border-b border-border last:border-b-0">
-                        <td className={TD}>
-                          <TwoLines
-                            main={provider.name}
-                            sub={provider.kind === 'local' ? 'Tại chỗ' : 'Frontier'}
-                          />
-                        </td>
-                        <td className={TD}>
-                          <TwoLines main={provider.model_name} sub={provider.model_note} />
-                        </td>
-                        <td className={TD}>
-                          <TwoLines main={provider.endpoint_label} sub={provider.region_text} />
-                        </td>
-                        <td className={`${TD} text-foreground da-body-small`}>
-                          {retention ? (
-                            <StatusDot tone={retention.tone}>{retention.label}</StatusDot>
-                          ) : (
-                            'Không áp dụng'
-                          )}
-                        </td>
-                        <td className={TD}>
-                          <StatusDot tone={ac06.tone}>{ac06.label}</StatusDot>
-                        </td>
-                        <td className={TD}>
-                          <ProviderCost provider={provider} />
-                        </td>
-                        <td className={`${TD} text-right`}>
-                          <Button
-                            onClick={() => callOnce(provider)}
-                            disabled={testing !== undefined}
-                            aria-label={`Gọi thử ${provider.name}`}
-                          >
-                            Gọi thử
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {(p) => <ProviderTable items={p.items} testing={testing} onTest={callOnce} />}
         </AsyncRegion>
       </Card>
 
@@ -352,45 +303,197 @@ function RoutingKpis({ log }: { log: RoutingLog }) {
   );
 }
 
+function ProviderTable({
+  items,
+  testing,
+  onTest,
+}: {
+  items: AiProvider[];
+  testing: string | undefined;
+  onTest: (provider: AiProvider) => void;
+}) {
+  const view = useTableView(items, {
+    search: (provider) => {
+      const cost = costLines(provider);
+      return `${provider.name} ${kindLabel(provider)} ${provider.model_name} ${provider.model_note ?? ''} ${provider.endpoint_label} ${provider.region_text} ${retentionLabel(provider)} ${AC06[provider.ac06_status].label} ${cost.main} ${cost.sub}`;
+    },
+    filters: [
+      { id: 'ac06', label: 'Duyệt AC06', value: (provider) => AC06[provider.ac06_status].label },
+    ],
+    sorts: [
+      { id: 'name', value: (provider) => provider.name },
+      { id: 'model', value: (provider) => provider.model_name },
+      { id: 'endpoint', value: (provider) => provider.endpoint_label },
+      { id: 'retention', value: (provider) => retentionLabel(provider) },
+      { id: 'ac06', value: (provider) => AC06[provider.ac06_status].label },
+      { id: 'cost', value: (provider) => provider.month_cost_vnd },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <div className="flex flex-col gap-da-lg">
+      <TableToolbar view={view} placeholder="Tìm provider…" searchLabel="Tìm provider" />
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b border-border bg-subtle">
+              <SortableTh view={view} column="name" className={TH}>
+                Provider
+              </SortableTh>
+              <SortableTh view={view} column="model" className={TH}>
+                Mô hình
+              </SortableTh>
+              <SortableTh view={view} column="endpoint" className={TH}>
+                Endpoint · vùng dữ liệu
+              </SortableTh>
+              <SortableTh view={view} column="retention" className={TH}>
+                Không lưu dữ liệu
+              </SortableTh>
+              <SortableTh view={view} column="ac06" className={TH}>
+                Duyệt AC06
+              </SortableTh>
+              <SortableTh view={view} column="cost" className={TH}>
+                Chi phí tháng / ngân sách
+              </SortableTh>
+              <SortableTh view={view} className={TH}>
+                <span className="sr-only">Thao tác</span>
+              </SortableTh>
+            </tr>
+          </thead>
+          <tbody>
+            {view.rows.map((provider) => {
+              const retention = RETENTION[provider.zero_retention];
+              const ac06 = AC06[provider.ac06_status];
+              return (
+                <tr key={provider.id} className="border-b border-border last:border-b-0">
+                  <td className={TD}>
+                    <TwoLines
+                      main={provider.name}
+                      sub={provider.kind === 'local' ? 'Tại chỗ' : 'Frontier'}
+                    />
+                  </td>
+                  <td className={TD}>
+                    <TwoLines main={provider.model_name} sub={provider.model_note} />
+                  </td>
+                  <td className={TD}>
+                    <TwoLines main={provider.endpoint_label} sub={provider.region_text} />
+                  </td>
+                  <td className={`${TD} text-foreground da-body-small`}>
+                    {retention ? (
+                      <StatusDot tone={retention.tone}>{retention.label}</StatusDot>
+                    ) : (
+                      'Không áp dụng'
+                    )}
+                  </td>
+                  <td className={TD}>
+                    <StatusDot tone={ac06.tone}>{ac06.label}</StatusDot>
+                  </td>
+                  <td className={TD}>
+                    <ProviderCost provider={provider} />
+                  </td>
+                  <td className={`${TD} text-right`}>
+                    <Button
+                      onClick={() => onTest(provider)}
+                      disabled={testing !== undefined}
+                      aria-label={`Gọi thử ${provider.name}`}
+                    >
+                      Gọi thử
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+            {view.total === 0 && tableEmptyRow(7)}
+          </tbody>
+        </table>
+      </div>
+      <TablePager view={view} />
+    </div>
+  );
+}
+
 /** The card shows the time only; the full log spans the week, so it adds the day and asker. */
 function RoutingTable({ entries, full = false }: { entries: RoutingLogEntry[]; full?: boolean }) {
+  const view = useTableView(entries, {
+    search: (entry) =>
+      [
+        full ? formatDate(entry.at).slice(0, 5) : '',
+        formatHour(entry.at),
+        entry.question,
+        DECISION[entry.decision].label,
+        entry.reason,
+        entry.provider_name,
+        full ? entry.asked_by_name : '',
+      ].join(' '),
+    filters: [
+      { id: 'decision', label: 'Quyết định', value: (entry) => DECISION[entry.decision].label },
+    ],
+    sorts: [
+      { id: 'at', value: (entry) => entry.at },
+      { id: 'question', value: (entry) => entry.question },
+      { id: 'decision', value: (entry) => DECISION[entry.decision].label },
+      { id: 'reason', value: (entry) => entry.reason },
+      { id: 'provider', value: (entry) => entry.provider_name },
+      ...(full ? [{ id: 'asker', value: (entry: RoutingLogEntry) => entry.asked_by_name }] : []),
+    ],
+    pageSize: 50,
+  });
   return (
-    <div className="overflow-x-auto rounded-md border border-border">
-      <table className="w-full border-collapse">
-        <thead>
-          <tr className="border-b border-border bg-subtle">
-            <th className={TH}>Lúc</th>
-            <th className={TH}>Câu hỏi</th>
-            <th className={TH}>Quyết định</th>
-            <th className={TH}>Lý do</th>
-            <th className={TH}>Provider</th>
-            {full && <th className={TH}>Người hỏi</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((entry) => {
-            const decision = DECISION[entry.decision];
-            return (
-              <tr
-                key={entry.id}
-                className="border-b border-border text-foreground da-body-small last:border-b-0"
-              >
-                <td className={`${TD} whitespace-nowrap da-mono`}>
-                  {full && `${formatDate(entry.at).slice(0, 5)} `}
-                  {formatHour(entry.at)}
-                </td>
-                <td className={TD}>{entry.question}</td>
-                <td className={TD}>
-                  <StatusDot tone={decision.tone}>{decision.label}</StatusDot>
-                </td>
-                <td className={TD}>{entry.reason}</td>
-                <td className={TD}>{entry.provider_name}</td>
-                {full && <td className={TD}>{entry.asked_by_name}</td>}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="flex flex-col gap-da-lg">
+      <TableToolbar view={view} placeholder="Tìm câu hỏi…" searchLabel="Tìm câu hỏi" />
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b border-border bg-subtle">
+              <SortableTh view={view} column="at" className={TH}>
+                Lúc
+              </SortableTh>
+              <SortableTh view={view} column="question" className={TH}>
+                Câu hỏi
+              </SortableTh>
+              <SortableTh view={view} column="decision" className={TH}>
+                Quyết định
+              </SortableTh>
+              <SortableTh view={view} column="reason" className={TH}>
+                Lý do
+              </SortableTh>
+              <SortableTh view={view} column="provider" className={TH}>
+                Provider
+              </SortableTh>
+              {full && (
+                <SortableTh view={view} column="asker" className={TH}>
+                  Người hỏi
+                </SortableTh>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {view.rows.map((entry) => {
+              const decision = DECISION[entry.decision];
+              return (
+                <tr
+                  key={entry.id}
+                  className="border-b border-border text-foreground da-body-small last:border-b-0"
+                >
+                  <td className={`${TD} whitespace-nowrap da-mono`}>
+                    {full && `${formatDate(entry.at).slice(0, 5)} `}
+                    {formatHour(entry.at)}
+                  </td>
+                  <td className={TD}>{entry.question}</td>
+                  <td className={TD}>
+                    <StatusDot tone={decision.tone}>{decision.label}</StatusDot>
+                  </td>
+                  <td className={TD}>{entry.reason}</td>
+                  <td className={TD}>{entry.provider_name}</td>
+                  {full && <td className={TD}>{entry.asked_by_name}</td>}
+                </tr>
+              );
+            })}
+            {view.total === 0 && tableEmptyRow(full ? 6 : 5)}
+          </tbody>
+        </table>
+      </div>
+      <TablePager view={view} />
     </div>
   );
 }

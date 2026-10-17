@@ -8,6 +8,7 @@ import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import {
@@ -193,78 +194,13 @@ function MappingBody({
               Agent Chuẩn bị dữ liệu chưa đề xuất ánh xạ cho thực thể này.
             </p>
           ) : (
-            <table className="w-full table-fixed border-collapse da-body-small">
-              <thead>
-                <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="w-[40px]">
-                    <span className="sr-only">Chọn</span>
-                  </th>
-                  <th className="py-da-sm font-normal">Thuộc tính chuẩn</th>
-                  <th className="w-[182px] py-da-sm font-normal">Cột của tổ chức</th>
-                  <th className="w-[62px] px-da-md py-da-sm font-normal">Độ tin</th>
-                  <th className="w-[170px] py-da-sm font-normal">Ghi chú</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mappings.rows.map((r) => {
-                  const column = columns[r.attr];
-                  return (
-                    <tr key={r.attr} className="border-b border-border text-foreground">
-                      <td className="px-da-sm py-[10px]">
-                        <Checkbox
-                          checked={picked.has(r.attr)}
-                          onChange={(on) => {
-                            const next = new Set(picked);
-                            if (on) next.add(r.attr);
-                            else next.delete(r.attr);
-                            setPicked(next);
-                          }}
-                        >
-                          <span className="sr-only">Chọn {r.attr}</span>
-                        </Checkbox>
-                      </td>
-                      <td className="py-[10px]">
-                        {r.attr}
-                        {r.required && ' · bắt buộc'}
-                      </td>
-                      <td className="py-[6px] pr-da-sm">
-                        <Select
-                          label={`Cột cho ${r.attr}`}
-                          value={column}
-                          placeholder="—"
-                          error={r.required && !column ? 'Bắt buộc' : undefined}
-                          onChange={(v) => setColumns({ ...columns, [r.attr]: v })}
-                          options={[
-                            ...r.options.map((o) => ({ value: o, label: o })),
-                            { value: NOT_APPLICABLE, label: 'Không áp dụng' },
-                          ]}
-                        />
-                      </td>
-                      <td
-                        className={cn(
-                          'px-da-md py-[10px] da-mono',
-                          r.confidence !== null && r.confidence < 0.8 ? 'text-warning' : '',
-                        )}
-                      >
-                        {r.confidence === null ? '—' : fmt(r.confidence)}
-                      </td>
-                      <td
-                        className={cn(
-                          'py-[10px] da-caption',
-                          !r.column && !column
-                            ? 'text-error'
-                            : r.unsure
-                              ? 'text-warning'
-                              : 'text-muted-foreground',
-                        )}
-                      >
-                        {r.note}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <MappingTable
+              rows={mappings.rows}
+              columns={columns}
+              picked={picked}
+              onPicked={setPicked}
+              onColumn={(attr, value) => setColumns({ ...columns, [attr]: value })}
+            />
           )}
         </div>
         <aside className="flex w-[320px] shrink-0 flex-col gap-da-md border-l border-border bg-background px-da-xl pt-da-xl max-[1023px]:w-full max-[1023px]:border-l-0">
@@ -284,5 +220,119 @@ function MappingBody({
         </aside>
       </div>
     </div>
+  );
+}
+
+function MappingTable({
+  rows,
+  columns,
+  picked,
+  onPicked,
+  onColumn,
+}: {
+  rows: EntityMappings['rows'];
+  columns: Record<string, string>;
+  picked: Set<string>;
+  onPicked: (next: Set<string>) => void;
+  onColumn: (attr: string, value: string) => void;
+}) {
+  const view = useTableView(rows, {
+    search: (r) => `${r.attr} ${columns[r.attr] ?? ''} ${r.note}`,
+    filters: [
+      { id: 'required', label: 'Bắt buộc', value: (r) => (r.required ? 'Bắt buộc' : 'Tuỳ chọn') },
+    ],
+    sorts: [
+      { id: 'attr', value: (r) => r.attr },
+      { id: 'column', value: (r) => columns[r.attr] },
+      { id: 'confidence', value: (r) => r.confidence },
+      { id: 'note', value: (r) => r.note },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm thuộc tính…" searchLabel="Tìm thuộc tính" />
+      <table className="w-full table-fixed border-collapse da-body-small">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} className="w-[40px]">
+              <span className="sr-only">Chọn</span>
+            </SortableTh>
+            <SortableTh view={view} column="attr" className="py-da-sm font-normal">
+              Thuộc tính chuẩn
+            </SortableTh>
+            <SortableTh view={view} column="column" className="w-[182px] py-da-sm font-normal">
+              Cột của tổ chức
+            </SortableTh>
+            <SortableTh view={view} column="confidence" className="w-[62px] px-da-md py-da-sm font-normal">
+              Độ tin
+            </SortableTh>
+            <SortableTh view={view} column="note" className="w-[170px] py-da-sm font-normal">
+              Ghi chú
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((r) => {
+            const column = columns[r.attr];
+            return (
+              <tr key={r.attr} className="border-b border-border text-foreground">
+                <td className="px-da-sm py-[10px]">
+                  <Checkbox
+                    checked={picked.has(r.attr)}
+                    onChange={(on) => {
+                      const next = new Set(picked);
+                      if (on) next.add(r.attr);
+                      else next.delete(r.attr);
+                      onPicked(next);
+                    }}
+                  >
+                    <span className="sr-only">Chọn {r.attr}</span>
+                  </Checkbox>
+                </td>
+                <td className="py-[10px]">
+                  {r.attr}
+                  {r.required && ' · bắt buộc'}
+                </td>
+                <td className="py-[6px] pr-da-sm">
+                  <Select
+                    label={`Cột cho ${r.attr}`}
+                    value={column}
+                    placeholder="—"
+                    error={r.required && !column ? 'Bắt buộc' : undefined}
+                    onChange={(v) => onColumn(r.attr, v)}
+                    options={[
+                      ...r.options.map((o) => ({ value: o, label: o })),
+                      { value: NOT_APPLICABLE, label: 'Không áp dụng' },
+                    ]}
+                  />
+                </td>
+                <td
+                  className={cn(
+                    'px-da-md py-[10px] da-mono',
+                    r.confidence !== null && r.confidence < 0.8 ? 'text-warning' : '',
+                  )}
+                >
+                  {r.confidence === null ? '—' : fmt(r.confidence)}
+                </td>
+                <td
+                  className={cn(
+                    'py-[10px] da-caption',
+                    !r.column && !column
+                      ? 'text-error'
+                      : r.unsure
+                        ? 'text-warning'
+                        : 'text-muted-foreground',
+                  )}
+                >
+                  {r.note}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
   );
 }

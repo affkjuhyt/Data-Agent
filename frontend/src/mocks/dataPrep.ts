@@ -561,7 +561,7 @@ export function createDataPrepHandlers() {
     http.get('*/v1/datasets', ({ request }) => {
       const url = new URL(request.url);
       // A connect scan lists datasets by source_id; that list belongs to the catalog mock.
-      if (url.searchParams.get('source_id')) return undefined;
+      if (url.searchParams.get('source_id') || url.searchParams.get('enabled')) return undefined;
       const q = url.searchParams.get('q');
       if (!q)
         return page([
@@ -739,8 +739,8 @@ export function createDataPrepHandlers() {
     ),
     http.post(/\/v1\/proposals\/[^/]+:decide$/, async ({ request }) => {
       const proposalId = new URL(request.url).pathname.split('/').at(-1)?.split(':')[0];
-      if (proposalId !== writeback.proposal_id)
-        return problem(404, 'not_found', 'Không tìm thấy proposal ghi ngược.');
+      // Other proposals (Cần bạn, skills) are decided by their own handlers.
+      if (proposalId !== writeback.proposal_id) return;
       const body = (await request.json()) as { decision?: string; note?: string };
       const current = writeback.approvers.findIndex((a) => a.state === 'pending');
       if (body.decision === 'accept') {

@@ -10,6 +10,7 @@ import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { Radio } from '../../design-system/Radio';
 import { Select } from '../../design-system/Select';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber, formatTime } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
@@ -568,6 +569,20 @@ function ChooseTables({
   chosen: Set<string>;
   onToggle: (name: string, on: boolean) => void;
 }) {
+  const view = useTableView(test.tables, {
+    search: (table) => `${table.name} ${table.description ?? ''}`,
+    filters: [
+      {
+        id: 'personal',
+        label: 'Dữ liệu cá nhân',
+        value: (table) => (table.personal_data ? 'Có' : 'Không'),
+      },
+    ],
+    sorts: [
+      { id: 'name', value: (table) => table.name },
+      { id: 'rows', value: (table) => table.estimated_rows },
+    ],
+  });
   return (
     <div className="flex flex-col gap-da-lg px-da-3xl pt-[20px]">
       <div className="flex items-center gap-[10px]">
@@ -582,27 +597,46 @@ function ChooseTables({
           Kiểm tra kết nối chưa liệt kê bảng. Danh sách bảng có sau lần quét cấu trúc đầu tiên.
         </p>
       )}
-      <ul className="flex flex-col">
-        {test.tables.map((table) => (
-          <li
-            key={table.name}
-            className="flex items-center gap-da-lg border-b border-border px-da-lg py-[9px]"
-          >
-            <Checkbox checked={chosen.has(table.name)} onChange={(on) => onToggle(table.name, on)}>
-              <span className="flex flex-col gap-[2px]">
-                <span className="text-foreground da-mono">{table.name}</span>
-                {table.description && (
-                  <span className="text-muted-foreground da-caption">{table.description}</span>
-                )}
-              </span>
-            </Checkbox>
-            <span className="flex-1" />
-            <span className="text-muted-foreground da-mono">
-              ~{formatNumber(table.estimated_rows)} dòng
-            </span>
-          </li>
-        ))}
-      </ul>
+      {test.tables.length > 0 && (
+        <>
+          <TableToolbar view={view} placeholder="Tìm bảng…" searchLabel="Tìm bảng" />
+          <table className="w-full table-fixed border-collapse">
+            <thead>
+              <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                <SortableTh view={view} column="name" className="px-da-lg py-da-md font-normal">
+                  Bảng
+                </SortableTh>
+                <SortableTh view={view} column="rows" className="w-[160px] px-da-md py-da-md font-normal">
+                  Dòng
+                </SortableTh>
+              </tr>
+            </thead>
+            <tbody>
+              {view.rows.map((table) => (
+                <tr key={table.name} className="border-b border-border">
+                  <td className="px-da-lg py-[9px]">
+                    <Checkbox
+                      checked={chosen.has(table.name)}
+                      onChange={(on) => onToggle(table.name, on)}
+                    >
+                      <span className="flex flex-col gap-[2px]">
+                        <span className="text-foreground da-mono">{table.name}</span>
+                        {table.description && (
+                          <span className="text-muted-foreground da-caption">{table.description}</span>
+                        )}
+                      </span>
+                    </Checkbox>
+                  </td>
+                  <td className="px-da-md py-[9px] text-muted-foreground da-mono">
+                    ~{formatNumber(table.estimated_rows)} dòng
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <TablePager view={view} />
+        </>
+      )}
     </div>
   );
 }
@@ -660,6 +694,20 @@ function Assign({
   );
   const tables = test.tables.filter((t) => chosen.has(t.name));
   const rows = tables.reduce((sum, t) => sum + t.estimated_rows, 0);
+  const view = useTableView(tables, {
+    search: (t) => `${t.name} ${t.description ?? ''} ${t.personal_data ?? ''}`,
+    filters: [
+      {
+        id: 'personal',
+        label: 'Dữ liệu cá nhân',
+        value: (t) => (t.personal_data ? 'Có' : 'Không'),
+      },
+    ],
+    sorts: [
+      { id: 'name', value: (t) => t.name },
+      { id: 'personal', value: (t) => t.personal_data ?? '' },
+    ],
+  });
   const pick = (table: string, key: 'data_space_id' | 'owner_id') => (value: string) =>
     setAssign((a) => ({
       ...a,
@@ -676,19 +724,26 @@ function Assign({
               {tables.length} bảng đã chọn ở bước 4
             </span>
           </div>
+          <TableToolbar view={view} placeholder="Tìm bảng đã chọn…" searchLabel="Tìm bảng đã chọn" />
           <table className="w-full table-fixed border-collapse">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="px-da-lg py-da-md font-normal">Bảng</th>
+                <SortableTh view={view} column="name" className="px-da-lg py-da-md font-normal">
+                  Bảng
+                </SortableTh>
                 <th className="w-[200px] px-da-md py-da-md font-normal">Data Space</th>
                 <th className="w-[200px] px-da-md py-da-md font-normal">Người phụ trách</th>
-                <th className="w-[150px] px-da-md py-da-md font-normal max-[1279px]:hidden">
+                <SortableTh
+                  view={view}
+                  column="personal"
+                  className="w-[150px] px-da-md py-da-md font-normal max-[1279px]:hidden"
+                >
                   Dữ liệu cá nhân
-                </th>
+                </SortableTh>
               </tr>
             </thead>
             <tbody>
-              {tables.map((t) => (
+              {view.rows.map((t) => (
                 <tr key={t.name} className="border-b border-border">
                   <td className="px-da-lg py-[9px]">
                     <div className="flex flex-col gap-[2px]">
@@ -731,6 +786,7 @@ function Assign({
               ))}
             </tbody>
           </table>
+          <TablePager view={view} />
           {needsMask && (
             <Checkbox checked={maskConfirmed} onChange={setMaskConfirmed}>
               Tôi xác nhận các cột dữ liệu cá nhân đánh dấu ở trên được che; bảng chỉ vào lớp ngữ

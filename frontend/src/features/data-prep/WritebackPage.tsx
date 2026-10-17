@@ -8,6 +8,7 @@ import { Field } from '../../design-system/Field';
 import { Icon } from '../../design-system/Icon';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber } from '../../lib/formatVN';
@@ -150,30 +151,7 @@ export default function WritebackPage() {
                       {formatNumber(wb.row_count)} dòng · hiển thị {wb.changes.length}
                     </p>
                   </div>
-                  <table className="w-full table-fixed border-collapse">
-                    <thead>
-                      <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                        <th className="w-[174px] px-da-lg py-da-md font-normal">Khách hàng</th>
-                        <th className="w-[144px] px-da-lg py-da-md font-normal">Hạng hiện tại</th>
-                        <th className="w-[144px] px-da-lg py-da-md font-normal">Hạng mới</th>
-                        <th className="px-da-lg py-da-md font-normal">Lý do</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {wb.changes.map((c) => (
-                        <tr key={c.subject} className="border-b border-border">
-                          <td className="px-da-lg py-[9px] text-foreground da-mono">{c.subject}</td>
-                          <td className="px-da-lg py-[9px] text-muted-foreground da-mono">
-                            {c.before ?? '—'}
-                          </td>
-                          <td className="px-da-lg py-[9px] text-foreground da-mono">{c.after}</td>
-                          <td className="px-da-lg py-[9px] text-foreground da-body-small">
-                            {c.reason}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <ChangeTable changes={wb.changes} />
                 </section>
                 <section className="flex flex-col gap-[10px] border-b border-border py-da-xl">
                   <h2 className="text-foreground da-heading-3">Chạy thử trên bảng chờ</h2>
@@ -304,5 +282,53 @@ function ReasonDialog({
         />
       </Field>
     </Dialog>
+  );
+}
+
+function ChangeTable({ changes }: { changes: Writeback['changes'] }) {
+  const view = useTableView(changes, {
+    search: (c) => `${c.subject} ${c.before ?? ''} ${c.after} ${c.reason}`,
+    filters: [{ id: 'after', label: 'Hạng mới', value: (c) => c.after }],
+    sorts: [
+      { id: 'subject', value: (c) => c.subject },
+      { id: 'before', value: (c) => c.before },
+      { id: 'after', value: (c) => c.after },
+      { id: 'reason', value: (c) => c.reason },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm thay đổi…" searchLabel="Tìm thay đổi" />
+      <table className="w-full table-fixed border-collapse">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="subject" className="w-[174px] px-da-lg py-da-md font-normal">
+              Khách hàng
+            </SortableTh>
+            <SortableTh view={view} column="before" className="w-[144px] px-da-lg py-da-md font-normal">
+              Hạng hiện tại
+            </SortableTh>
+            <SortableTh view={view} column="after" className="w-[144px] px-da-lg py-da-md font-normal">
+              Hạng mới
+            </SortableTh>
+            <SortableTh view={view} column="reason" className="px-da-lg py-da-md font-normal">
+              Lý do
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((c) => (
+            <tr key={c.subject} className="border-b border-border">
+              <td className="px-da-lg py-[9px] text-foreground da-mono">{c.subject}</td>
+              <td className="px-da-lg py-[9px] text-muted-foreground da-mono">{c.before ?? '—'}</td>
+              <td className="px-da-lg py-[9px] text-foreground da-mono">{c.after}</td>
+              <td className="px-da-lg py-[9px] text-foreground da-body-small">{c.reason}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
   );
 }

@@ -9,10 +9,12 @@ import { EmptyState } from '../../design-system/EmptyState';
 import { Notice } from '../../design-system/Notice';
 import { Segmented } from '../../design-system/Segmented';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Tabs } from '../../design-system/Tabs';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { listRuns } from '../../lib/v1/api';
+import type { AgentRun } from '../../lib/v1/types';
 import {
   activateAgent,
   getAgent,
@@ -317,6 +319,58 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
+function RunsTable({ runs, onOpen }: { runs: AgentRun[]; onOpen: (id: string) => void }) {
+  const view = useTableView(runs, {
+    search: (run) => `${run.code} ${run.title} ${runStatus(run).label}`,
+    filters: [{ id: 'status', label: 'Trạng thái', value: (run) => runStatus(run).label }],
+    sorts: [
+      { id: 'code', value: (run) => run.code },
+      { id: 'title', value: (run) => run.title },
+      { id: 'status', value: (run) => runStatus(run).label },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm lượt chạy…" searchLabel="Tìm lượt chạy" />
+      <table className="w-full table-fixed border-collapse">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="code" className="w-[80px] px-da-lg py-da-md font-normal">
+              Lượt
+            </SortableTh>
+            <SortableTh view={view} column="title" className="px-da-lg py-da-md font-normal">
+              Việc
+            </SortableTh>
+            <SortableTh view={view} column="status" className="w-[160px] px-da-lg py-da-md font-normal">
+              Trạng thái
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((run) => {
+            const s = runStatus(run);
+            return (
+              <tr key={run.id} className="border-b border-border align-middle da-body-small">
+                <td className="px-da-lg py-[9px] text-muted-foreground da-mono">{run.code}</td>
+                <td className="px-da-lg py-[9px]">
+                  <button type="button" onClick={() => onOpen(run.id)} className="text-left text-foreground hover:underline">
+                    {run.title}
+                  </button>
+                </td>
+                <td className="px-da-lg py-[9px]">
+                  <StatusDot tone={s.tone}>{s.label}</StatusDot>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
+  );
+}
+
 function TriggerTable({ triggers, onChange }: { triggers: AgentTrigger[]; onChange: (next: AgentTrigger[]) => void }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [value, setValue] = useState('');
@@ -333,19 +387,35 @@ function TriggerTable({ triggers, onChange }: { triggers: AgentTrigger[]; onChan
     );
   };
 
+  const view = useTableView(triggers, {
+    search: (trigger) => `${TRIGGER_KIND[trigger.kind]} ${trigger.description}`,
+    filters: [{ id: 'kind', label: 'Loại', value: (trigger) => TRIGGER_KIND[trigger.kind] }],
+    sorts: [
+      { id: 'kind', value: (trigger) => TRIGGER_KIND[trigger.kind] },
+      { id: 'condition', value: (trigger) => trigger.description },
+    ],
+    pageSize: 50,
+  });
+
   return (
+    <>
+    <TableToolbar view={view} placeholder="Tìm trigger…" searchLabel="Tìm trigger" />
     <table className="w-full table-fixed border-collapse">
       <thead>
         <tr className="border-b border-border text-left text-muted-foreground da-caption">
-          <th className="px-da-lg py-da-md font-normal">Trigger</th>
-          <th className="w-[300px] px-da-lg py-da-md font-normal">Điều kiện</th>
-          <th className="w-[60px] px-da-lg py-da-md">
+          <SortableTh view={view} column="kind" className="px-da-lg py-da-md font-normal">
+            Trigger
+          </SortableTh>
+          <SortableTh view={view} column="condition" className="w-[300px] px-da-lg py-da-md font-normal">
+            Điều kiện
+          </SortableTh>
+          <SortableTh view={view} className="w-[60px] px-da-lg py-da-md">
             <span className="sr-only">Thao tác</span>
-          </th>
+          </SortableTh>
         </tr>
       </thead>
       <tbody>
-        {triggers.map((trigger) => (
+        {view.rows.map((trigger) => (
           <tr key={trigger.id} className="border-b border-border align-middle da-body-small">
             <td className="px-da-lg py-[9px] text-foreground da-body-strong">{TRIGGER_KIND[trigger.kind]}</td>
             <td className="px-da-lg py-[9px] text-foreground">
@@ -385,6 +455,8 @@ function TriggerTable({ triggers, onChange }: { triggers: AgentTrigger[]; onChan
         ))}
       </tbody>
     </table>
+    <TablePager view={view} />
+    </>
   );
 }
 
@@ -402,35 +474,7 @@ function AgentRuns({ agentId, onOpen }: { agentId: string; onOpen: (id: string) 
         }
       >
         {(page) => (
-          <table className="w-full table-fixed border-collapse">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="w-[80px] px-da-lg py-da-md font-normal">Lượt</th>
-                <th className="px-da-lg py-da-md font-normal">Việc</th>
-                <th className="w-[160px] px-da-lg py-da-md font-normal">Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody>
-              {page.items
-                .filter((r) => r.agent_id === agentId)
-                .map((run) => {
-                  const s = runStatus(run);
-                  return (
-                    <tr key={run.id} className="border-b border-border align-middle da-body-small">
-                      <td className="px-da-lg py-[9px] text-muted-foreground da-mono">{run.code}</td>
-                      <td className="px-da-lg py-[9px]">
-                        <button type="button" onClick={() => onOpen(run.id)} className="text-left text-foreground hover:underline">
-                          {run.title}
-                        </button>
-                      </td>
-                      <td className="px-da-lg py-[9px]">
-                        <StatusDot tone={s.tone}>{s.label}</StatusDot>
-                      </td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
+          <RunsTable runs={page.items.filter((r) => r.agent_id === agentId)} onOpen={onOpen} />
         )}
       </AsyncRegion>
     </div>

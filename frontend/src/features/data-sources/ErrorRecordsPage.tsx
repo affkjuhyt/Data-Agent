@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber } from '../../lib/formatVN';
 import {
@@ -69,6 +70,18 @@ function ErrorGroups({ groups, onChanged }: { groups: ErrorRecordGroup[]; onChan
   const blockedCount = blocked.reduce((n, g) => n + g.count, 0);
   const sampleGroup =
     chosen.find((g) => g.sample) ?? groups.find((g) => g.sample && g.count > 0) ?? null;
+  const view = useTableView(groups, {
+    search: (group) =>
+      `${group.cause} ${group.table_name} ${formatNumber(group.count)} ${group.suggestion ?? ''}`,
+    filters: [{ id: 'job', label: 'Job', value: (group) => group.table_name }],
+    sorts: [
+      { id: 'cause', value: (group) => group.cause },
+      { id: 'job', value: (group) => group.table_name },
+      { id: 'count', value: (group) => group.count },
+      { id: 'suggestion', value: (group) => group.suggestion },
+    ],
+    pageSize: 50,
+  });
 
   const toggle = (id: string, on: boolean) =>
     setSelected((s) => {
@@ -145,22 +158,33 @@ function ErrorGroups({ groups, onChanged }: { groups: ErrorRecordGroup[]; onChan
       <div className="flex flex-1 max-[1023px]:flex-col">
         <div className="flex min-w-0 flex-1 flex-col gap-da-lg pl-da-3xl pr-da-2xl pt-da-xl">
           <h2 className="text-foreground da-heading-3">Gom theo nguyên nhân</h2>
+          <TableToolbar view={view} placeholder="Tìm nguyên nhân…" searchLabel="Tìm nguyên nhân" />
           <table className="w-full table-fixed border-collapse">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                <th className="w-[40px] py-da-md pl-da-lg font-normal">
+                <SortableTh view={view} className="w-[40px] py-da-md pl-da-lg font-normal">
                   <span className="sr-only">Chọn</span>
-                </th>
-                <th className="px-da-md py-da-md font-normal">Nguyên nhân</th>
-                <th className="w-[186px] px-da-md py-da-md font-normal">Job</th>
-                <th className="w-[116px] px-da-md py-da-md font-normal">Số bản ghi</th>
-                <th className="w-[276px] px-da-md py-da-md font-normal max-[1279px]:hidden">
+                </SortableTh>
+                <SortableTh view={view} column="cause" className="px-da-md py-da-md font-normal">
+                  Nguyên nhân
+                </SortableTh>
+                <SortableTh view={view} column="job" className="w-[186px] px-da-md py-da-md font-normal">
+                  Job
+                </SortableTh>
+                <SortableTh view={view} column="count" className="w-[116px] px-da-md py-da-md font-normal">
+                  Số bản ghi
+                </SortableTh>
+                <SortableTh
+                  view={view}
+                  column="suggestion"
+                  className="w-[276px] px-da-md py-da-md font-normal max-[1279px]:hidden"
+                >
                   Cách xử lý gợi ý
-                </th>
+                </SortableTh>
               </tr>
             </thead>
             <tbody>
-              {groups.map((group) => (
+              {view.rows.map((group) => (
                 <tr key={group.id} className="border-b border-border">
                   <td className="py-[9px] pl-da-lg">
                     <Checkbox
@@ -187,6 +211,7 @@ function ErrorGroups({ groups, onChanged }: { groups: ErrorRecordGroup[]; onChan
               ))}
             </tbody>
           </table>
+          <TablePager view={view} />
           {sampleGroup && (
             <>
               <h2 className="text-foreground da-heading-3">Mẫu bản ghi · {sampleGroup.cause}</h2>

@@ -4,6 +4,13 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Checkbox } from '../../design-system/Checkbox';
+import {
+  SortableTh,
+  TablePager,
+  TableToolbar,
+  tableEmptyRow,
+  useTableView,
+} from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import {
   getNotificationPreferences,
@@ -26,6 +33,99 @@ const CHANNELS: { key: NotificationChannel; label: string }[] = [
   { key: 'email', label: 'Email' },
   { key: 'digest', label: 'Bản tin ngày' },
 ];
+
+type NotificationEvent = NotificationPreferences['events'][number];
+
+const channelOn = (event: NotificationEvent, key: NotificationChannel) =>
+  event.locked.includes(key) || event.channels[key];
+
+function EventsTable({
+  events,
+  onToggle,
+}: {
+  events: NotificationEvent[];
+  onToggle: (eventKey: string, channel: NotificationChannel, on: boolean) => void;
+}) {
+  const view = useTableView(events, {
+    search: (event) => `${event.label} ${event.description}`,
+    filters: [
+      {
+        id: 'in_app',
+        label: 'Trong ứng dụng',
+        value: (event) => (channelOn(event, 'in_app') ? 'Bật' : 'Tắt'),
+      },
+    ],
+    sorts: [
+      { id: 'event', value: (event) => event.label },
+      ...CHANNELS.map((c) => ({
+        id: c.key,
+        value: (event: NotificationEvent) => (channelOn(event, c.key) ? 1 : 0),
+      })),
+    ],
+    pageSize: 50,
+  });
+  return (
+    <div className="flex flex-col gap-da-lg">
+      <TableToolbar view={view} placeholder="Tìm loại sự kiện…" searchLabel="Tìm loại sự kiện" />
+      <div className="overflow-hidden rounded-md border border-border">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b border-border bg-background text-muted-foreground da-caption">
+              <SortableTh
+                view={view}
+                column="event"
+                className="py-[10px] pl-da-xl text-left font-normal"
+              >
+                Loại sự kiện
+              </SortableTh>
+              {CHANNELS.map((c) => (
+                <SortableTh
+                  key={c.key}
+                  view={view}
+                  column={c.key}
+                  className="w-[120px] py-[10px] text-center font-normal"
+                >
+                  {c.label}
+                </SortableTh>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {view.rows.map((event) => (
+              <tr key={event.key} className="border-b border-border last:border-b-0">
+                <td className="py-[10px] pl-da-xl">
+                  <div className="flex flex-col gap-[2px]">
+                    <span className="text-foreground da-body-strong">{event.label}</span>
+                    <span className="text-muted-foreground da-caption">{event.description}</span>
+                  </div>
+                </td>
+                {CHANNELS.map((c) => {
+                  const locked = event.locked.includes(c.key);
+                  return (
+                    <td key={c.key} className="text-center">
+                      <Checkbox
+                        checked={locked || event.channels[c.key]}
+                        disabled={locked}
+                        onChange={(on) => onToggle(event.key, c.key, on)}
+                      >
+                        <span className="sr-only">
+                          {event.label} · {c.label}
+                          {locked ? ' (luôn bật)' : ''}
+                        </span>
+                      </Checkbox>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+            {view.total === 0 && tableEmptyRow(1 + CHANNELS.length)}
+          </tbody>
+        </table>
+      </div>
+      <TablePager view={view} />
+    </div>
+  );
+}
 
 export default function NotificationsPage() {
   const toast = useToast();
@@ -106,51 +206,7 @@ export default function NotificationsPage() {
           {() =>
             draft && (
               <>
-                <div className="overflow-hidden rounded-md border border-border">
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="border-b border-border bg-background text-muted-foreground da-caption">
-                        <th className="py-[10px] pl-da-xl text-left font-normal">Loại sự kiện</th>
-                        {CHANNELS.map((c) => (
-                          <th key={c.key} className="w-[120px] py-[10px] text-center font-normal">
-                            {c.label}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {draft.events.map((event) => (
-                        <tr key={event.key} className="border-b border-border last:border-b-0">
-                          <td className="py-[10px] pl-da-xl">
-                            <div className="flex flex-col gap-[2px]">
-                              <span className="text-foreground da-body-strong">{event.label}</span>
-                              <span className="text-muted-foreground da-caption">
-                                {event.description}
-                              </span>
-                            </div>
-                          </td>
-                          {CHANNELS.map((c) => {
-                            const locked = event.locked.includes(c.key);
-                            return (
-                              <td key={c.key} className="text-center">
-                                <Checkbox
-                                  checked={locked || event.channels[c.key]}
-                                  disabled={locked}
-                                  onChange={(on) => toggle(event.key, c.key, on)}
-                                >
-                                  <span className="sr-only">
-                                    {event.label} · {c.label}
-                                    {locked ? ' (luôn bật)' : ''}
-                                  </span>
-                                </Checkbox>
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <EventsTable events={draft.events} onToggle={toggle} />
                 <div className="flex gap-da-2xl max-[1023px]:flex-col">
                   <section className="flex min-w-0 flex-1 flex-col gap-da-md">
                     <h2 className="text-foreground da-heading-3">Giờ yên lặng</h2>

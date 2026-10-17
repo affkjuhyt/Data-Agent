@@ -8,6 +8,7 @@ import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
@@ -153,26 +154,7 @@ function ValidityView({ v, onChanged }: { v: DocumentValidity; onChanged: () => 
           {v.impact.length > 0 && (
             <>
               <h2 className="text-foreground da-heading-3">Ảnh hưởng tới câu trả lời</h2>
-              <table className="w-full table-fixed border-collapse">
-                <thead>
-                  <tr className={cn(HEAD_ROW, 'bg-transparent')}>
-                    <th className="px-da-lg py-da-md font-normal">Đối tượng</th>
-                    <th className="w-[384px] px-da-lg py-da-md font-normal">Ảnh hưởng</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {v.impact.map((row) => (
-                    <tr key={row.subject} className={cn(ROW, 'last:border-b')}>
-                      <td className="px-da-lg py-da-md text-foreground da-body-strong">
-                        {row.subject}
-                      </td>
-                      <td className="px-da-lg py-da-md text-foreground da-body-small">
-                        {row.effect}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <ImpactTable rows={v.impact} />
             </>
           )}
         </div>
@@ -261,5 +243,43 @@ function RelationDialog({
         <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
     </Dialog>
+  );
+}
+
+function ImpactTable({ rows }: { rows: DocumentValidity['impact'] }) {
+  const view = useTableView(rows, {
+    search: (row) => `${row.subject} ${row.effect}`,
+    filters: [{ id: 'subject', label: 'Đối tượng', value: (row) => row.subject }],
+    sorts: [
+      { id: 'subject', value: (row) => row.subject },
+      { id: 'effect', value: (row) => row.effect },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm ảnh hưởng…" searchLabel="Tìm ảnh hưởng" />
+      <table className="w-full table-fixed border-collapse">
+        <thead>
+          <tr className={cn(HEAD_ROW, 'bg-transparent')}>
+            <SortableTh view={view} column="subject" className="px-da-lg py-da-md font-normal">
+              Đối tượng
+            </SortableTh>
+            <SortableTh view={view} column="effect" className="w-[384px] px-da-lg py-da-md font-normal">
+              Ảnh hưởng
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((row) => (
+            <tr key={row.subject} className={cn(ROW, 'last:border-b')}>
+              <td className="px-da-lg py-da-md text-foreground da-body-strong">{row.subject}</td>
+              <td className="px-da-lg py-da-md text-foreground da-body-small">{row.effect}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
   );
 }

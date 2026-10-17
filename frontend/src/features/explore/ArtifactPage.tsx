@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
+import { MatrixTable } from '../../design-system/tableView';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Segmented } from '../../design-system/Segmented';
 import { StatusDot } from '../../design-system/StatusDot';
@@ -195,36 +196,11 @@ function Table({ artifact }: { artifact: Artifact }) {
   if (rows.length === 0)
     return <p className="text-muted-foreground da-body-small">Câu trả lời này không có số.</p>;
   return (
-    <table className="w-full border-separate border-spacing-0 overflow-hidden rounded-lg border border-border bg-card">
-      <thead>
-        <tr className="bg-subtle text-muted-foreground da-label">
-          {columns.map((c, i) => (
-            <th
-              key={c}
-              className={cn('px-da-lg py-da-sm font-medium', i === 0 ? 'text-left' : 'text-right')}
-            >
-              {c}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r, n) => (
-          <tr key={n}>
-            {r.map((cell, i) => (
-              <td
-                key={columns[i] ?? i}
-                className={cn(
-                  'border-t border-border px-da-lg py-da-sm text-foreground',
-                  i === 0 ? 'da-body-small' : 'text-right da-mono',
-                )}
-              >
-                {cell}
-              </td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <MatrixTable
+      columns={columns}
+      rows={rows}
+      className="w-full border-separate border-spacing-0 overflow-hidden rounded-lg border border-border bg-card"
+      searchLabel="Tìm trong kết quả"
+    />
   );
 }

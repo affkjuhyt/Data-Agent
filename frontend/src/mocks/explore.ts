@@ -603,9 +603,17 @@ export function createExploreHandlers() {
         : undefined,
     ),
     http.post('*/v1/skills/skill-explore-variance/runs', async ({ request }) => {
-      const body = (await request.json()) as { params: { query_run_id: string } };
+      // The skill's params (metric, dimension, period, base_period: worker-agent skill_runs.py);
+      // this mock reads them off the latest result, as the worker would query them again.
+      const body = (await request.json()) as { params: Record<string, string> };
       const id = `srun-explore-${skillRuns.size + 1}`;
-      skillRuns.set(id, body.params.query_run_id);
+      const latest = [...queryRuns.keys()].pop();
+      if (!body.params.metric || !body.params.period || !latest)
+        return HttpResponse.json(
+          { type: 'about:blank', title: 'validation_failed', status: 422, code: 'validation_failed' },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        );
+      skillRuns.set(id, latest);
       return HttpResponse.json(
         { id, status: 'queued', poll_after_ms: 0 },
         { status: 202, headers: { Location: `/v1/skill-runs/${id}` } },

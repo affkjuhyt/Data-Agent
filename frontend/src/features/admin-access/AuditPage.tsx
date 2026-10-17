@@ -7,6 +7,13 @@ import { EmptyState } from '../../design-system/EmptyState';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { Select } from '../../design-system/Select';
+import {
+  SortableTh,
+  TablePager,
+  TableToolbar,
+  tableEmptyRow,
+  useTableView,
+} from '../../design-system/tableView';
 import { Tabs } from '../../design-system/Tabs';
 import { useToast } from '../../design-system/Toast';
 import { formatDateTime, formatNumber, formatTime } from '../../lib/formatVN';
@@ -158,8 +165,8 @@ export default function AuditPage() {
           <SecurityEvents />
         )}
         <p className="text-muted-foreground da-caption">
-          UC-11-03 · kiểm toán viên chỉ xem được nhật ký, không xem dữ liệu nghiệp vụ; câu hỏi chứa dữ
-          liệu cá nhân được lưu dạng đã che
+          UC-11-03 · kiểm toán viên chỉ xem được nhật ký, không xem dữ liệu nghiệp vụ; câu hỏi chứa
+          dữ liệu cá nhân được lưu dạng đã che
         </p>
       </div>
     </div>
@@ -168,6 +175,20 @@ export default function AuditPage() {
 
 function AuditLog({ query, deps }: { query: AuditQuery; deps: unknown[] }) {
   const log = useV1(() => searchAudit(query), deps);
+  const items = log.data?.items ?? [];
+  const view = useTableView(items, {
+    search: (e) =>
+      `${formatTime(e.at, true)} ${e.actor_label} ${e.action_text} ${e.data_text} ${e.service}`,
+    filters: [{ id: 'service', label: 'Dịch vụ', value: (e) => e.service }],
+    sorts: [
+      { id: 'at', value: (e) => e.at },
+      { id: 'actor', value: (e) => e.actor_label },
+      { id: 'action', value: (e) => e.action_text },
+      { id: 'data', value: (e) => e.data_text },
+      { id: 'service', value: (e) => e.service },
+    ],
+    pageSize: 50,
+  });
   return (
     <AsyncRegion
       state={log}
@@ -182,40 +203,79 @@ function AuditLog({ query, deps }: { query: AuditQuery; deps: unknown[] }) {
         />
       }
     >
-      {(p) => (
-        <table className="w-full table-fixed border-collapse">
-          <thead>
-            <tr className="border-b border-border text-left text-muted-foreground da-caption">
-              <th className="w-[114px] px-da-lg py-da-md font-normal">Thời gian</th>
-              <th className="w-[202px] px-da-lg py-da-md font-normal">Ai</th>
-              <th className="px-da-lg py-da-md font-normal">Làm gì</th>
-              <th className="w-[232px] px-da-lg py-da-md font-normal">Dữ liệu</th>
-              <th className="w-[120px] px-da-lg py-da-md font-normal">Dịch vụ</th>
-            </tr>
-          </thead>
-          <tbody>
-            {p.items.map((e) => (
-              <tr key={e.id} className="border-b border-border align-middle">
-                <td className="px-da-lg py-da-md text-muted-foreground da-mono">
-                  {formatTime(e.at, true)}
-                </td>
-                <td className="px-da-lg py-da-md text-foreground da-body-small">{e.actor_label}</td>
-                <td
-                  className={cn(
-                    'px-da-lg py-da-md da-body-small',
-                    e.outcome === 'blocked' && 'text-warning',
-                    e.outcome === 'error' && 'text-error',
-                    e.outcome === 'ok' && 'text-foreground',
-                  )}
+      {() => (
+        <div className="flex flex-col gap-da-lg">
+          <TableToolbar
+            view={view}
+            placeholder="Tìm trong nhật ký…"
+            searchLabel="Tìm trong nhật ký"
+          />
+          <table className="w-full table-fixed border-collapse">
+            <thead>
+              <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                <SortableTh
+                  view={view}
+                  column="at"
+                  className="w-[114px] px-da-lg py-da-md font-normal"
                 >
-                  {e.action_text}
-                </td>
-                <td className="px-da-lg py-da-md text-muted-foreground da-mono">{e.data_text}</td>
-                <td className="px-da-lg py-da-md text-muted-foreground da-body-small">{e.service}</td>
+                  Thời gian
+                </SortableTh>
+                <SortableTh
+                  view={view}
+                  column="actor"
+                  className="w-[202px] px-da-lg py-da-md font-normal"
+                >
+                  Ai
+                </SortableTh>
+                <SortableTh view={view} column="action" className="px-da-lg py-da-md font-normal">
+                  Làm gì
+                </SortableTh>
+                <SortableTh
+                  view={view}
+                  column="data"
+                  className="w-[232px] px-da-lg py-da-md font-normal"
+                >
+                  Dữ liệu
+                </SortableTh>
+                <SortableTh
+                  view={view}
+                  column="service"
+                  className="w-[120px] px-da-lg py-da-md font-normal"
+                >
+                  Dịch vụ
+                </SortableTh>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {view.rows.map((e) => (
+                <tr key={e.id} className="border-b border-border align-middle">
+                  <td className="px-da-lg py-da-md text-muted-foreground da-mono">
+                    {formatTime(e.at, true)}
+                  </td>
+                  <td className="px-da-lg py-da-md text-foreground da-body-small">
+                    {e.actor_label}
+                  </td>
+                  <td
+                    className={cn(
+                      'px-da-lg py-da-md da-body-small',
+                      e.outcome === 'blocked' && 'text-warning',
+                      e.outcome === 'error' && 'text-error',
+                      e.outcome === 'ok' && 'text-foreground',
+                    )}
+                  >
+                    {e.action_text}
+                  </td>
+                  <td className="px-da-lg py-da-md text-muted-foreground da-mono">{e.data_text}</td>
+                  <td className="px-da-lg py-da-md text-muted-foreground da-body-small">
+                    {e.service}
+                  </td>
+                </tr>
+              ))}
+              {view.total === 0 && tableEmptyRow(5)}
+            </tbody>
+          </table>
+          <TablePager view={view} />
+        </div>
       )}
     </AsyncRegion>
   );
@@ -273,8 +333,8 @@ function ExportStatus({ id, poll_after_ms }: { id: string; poll_after_ms: number
         <Notice tone="success">
           Tệp CSV {rows} đã ký
           {job.signature ? ` (chữ ký ${job.signature.slice(0, 12)}…)` : ''}
-          {job.expires_at ? `, giữ đến ${dayMonth(job.expires_at)}` : ''}. Liên kết tải được gửi
-          cho bạn.
+          {job.expires_at ? `, giữ đến ${dayMonth(job.expires_at)}` : ''}. Liên kết tải được gửi cho
+          bạn.
         </Notice>
       );
     case 'failed':
@@ -296,12 +356,15 @@ const EVENT_KIND: Record<string, string> = {
   egress_blocked: 'Chặn gửi dữ liệu ra ngoài',
 };
 
-const SEVERITY: Record<string, { label: string; tone: 'neutral' | 'info' | 'warning' | 'error' }> = {
-  low: { label: 'Thấp', tone: 'neutral' },
-  medium: { label: 'Trung bình', tone: 'info' },
-  high: { label: 'Cao', tone: 'warning' },
-  critical: { label: 'Nghiêm trọng', tone: 'error' },
-};
+const SEVERITY: Record<string, { label: string; tone: 'neutral' | 'info' | 'warning' | 'error' }> =
+  {
+    low: { label: 'Thấp', tone: 'neutral' },
+    medium: { label: 'Trung bình', tone: 'info' },
+    high: { label: 'Cao', tone: 'warning' },
+    critical: { label: 'Nghiêm trọng', tone: 'error' },
+  };
+
+const SEVERITY_ORDER: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
 
 const EVENT_STATUS: Record<string, string> = {
   open: 'Chưa xử lý',
@@ -323,6 +386,26 @@ function detailText(event: SecurityEvent): string {
 
 function SecurityEvents() {
   const events = useV1(() => listSecurityEvents({}), []);
+  const items = events.data?.items ?? [];
+  const view = useTableView(items, {
+    search: (e) =>
+      `${formatDateTime(e.occurred_at)} ${EVENT_KIND[e.kind] ?? e.kind} ${SEVERITY[e.severity]?.label ?? e.severity} ${detailText(e)} ${EVENT_STATUS[e.status] ?? e.status}`,
+    filters: [
+      {
+        id: 'severity',
+        label: 'Mức độ',
+        value: (e) => SEVERITY[e.severity]?.label ?? e.severity,
+      },
+    ],
+    sorts: [
+      { id: 'at', value: (e) => e.occurred_at },
+      { id: 'kind', value: (e) => EVENT_KIND[e.kind] ?? e.kind },
+      { id: 'severity', value: (e) => SEVERITY_ORDER[e.severity] },
+      { id: 'detail', value: (e) => detailText(e) },
+      { id: 'status', value: (e) => EVENT_STATUS[e.status] ?? e.status },
+    ],
+    pageSize: 50,
+  });
   return (
     <AsyncRegion
       state={events}
@@ -337,40 +420,73 @@ function SecurityEvents() {
         />
       }
     >
-      {(p) => (
-        <table className="w-full table-fixed border-collapse">
-          <thead>
-            <tr className="border-b border-border text-left text-muted-foreground da-caption">
-              <th className="w-[150px] px-da-lg py-da-md font-normal">Thời gian</th>
-              <th className="w-[240px] px-da-lg py-da-md font-normal">Sự kiện</th>
-              <th className="w-[130px] px-da-lg py-da-md font-normal">Mức độ</th>
-              <th className="px-da-lg py-da-md font-normal">Chi tiết</th>
-              <th className="w-[130px] px-da-lg py-da-md font-normal">Trạng thái</th>
-            </tr>
-          </thead>
-          <tbody>
-            {p.items.map((e) => {
-              const severity = SEVERITY[e.severity] ?? { label: e.severity, tone: 'neutral' };
-              return (
-                <tr key={e.id} className="border-b border-border align-middle">
-                  <td className="px-da-lg py-da-md text-muted-foreground da-mono">
-                    {formatDateTime(e.occurred_at)}
-                  </td>
-                  <td className="px-da-lg py-da-md text-foreground da-body-small">
-                    {EVENT_KIND[e.kind] ?? e.kind}
-                  </td>
-                  <td className="px-da-lg py-da-md">
-                    <Badge tone={severity.tone}>{severity.label}</Badge>
-                  </td>
-                  <td className="px-da-lg py-da-md text-muted-foreground da-mono">{detailText(e)}</td>
-                  <td className="px-da-lg py-da-md text-muted-foreground da-body-small">
-                    {EVENT_STATUS[e.status] ?? e.status}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      {() => (
+        <div className="flex flex-col gap-da-lg">
+          <TableToolbar view={view} placeholder="Tìm sự kiện…" searchLabel="Tìm sự kiện" />
+          <table className="w-full table-fixed border-collapse">
+            <thead>
+              <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                <SortableTh
+                  view={view}
+                  column="at"
+                  className="w-[150px] px-da-lg py-da-md font-normal"
+                >
+                  Thời gian
+                </SortableTh>
+                <SortableTh
+                  view={view}
+                  column="kind"
+                  className="w-[240px] px-da-lg py-da-md font-normal"
+                >
+                  Sự kiện
+                </SortableTh>
+                <SortableTh
+                  view={view}
+                  column="severity"
+                  className="w-[130px] px-da-lg py-da-md font-normal"
+                >
+                  Mức độ
+                </SortableTh>
+                <SortableTh view={view} column="detail" className="px-da-lg py-da-md font-normal">
+                  Chi tiết
+                </SortableTh>
+                <SortableTh
+                  view={view}
+                  column="status"
+                  className="w-[130px] px-da-lg py-da-md font-normal"
+                >
+                  Trạng thái
+                </SortableTh>
+              </tr>
+            </thead>
+            <tbody>
+              {view.rows.map((e) => {
+                const severity = SEVERITY[e.severity] ?? { label: e.severity, tone: 'neutral' };
+                return (
+                  <tr key={e.id} className="border-b border-border align-middle">
+                    <td className="px-da-lg py-da-md text-muted-foreground da-mono">
+                      {formatDateTime(e.occurred_at)}
+                    </td>
+                    <td className="px-da-lg py-da-md text-foreground da-body-small">
+                      {EVENT_KIND[e.kind] ?? e.kind}
+                    </td>
+                    <td className="px-da-lg py-da-md">
+                      <Badge tone={severity.tone}>{severity.label}</Badge>
+                    </td>
+                    <td className="px-da-lg py-da-md text-muted-foreground da-mono">
+                      {detailText(e)}
+                    </td>
+                    <td className="px-da-lg py-da-md text-muted-foreground da-body-small">
+                      {EVENT_STATUS[e.status] ?? e.status}
+                    </td>
+                  </tr>
+                );
+              })}
+              {view.total === 0 && tableEmptyRow(5)}
+            </tbody>
+          </table>
+          <TablePager view={view} />
+        </div>
       )}
     </AsyncRegion>
   );

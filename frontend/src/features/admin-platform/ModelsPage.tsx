@@ -8,6 +8,13 @@ import { Input } from '../../design-system/Input';
 import { Menu } from '../../design-system/Menu';
 import { Icon } from '../../design-system/Icon';
 import { Select } from '../../design-system/Select';
+import {
+  SortableTh,
+  TablePager,
+  TableToolbar,
+  tableEmptyRow,
+  useTableView,
+} from '../../design-system/tableView';
 import { Tabs } from '../../design-system/Tabs';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber } from '../../lib/formatVN';
@@ -256,6 +263,20 @@ function ModelRoutesTable({
   state: V1State<Page<ModelRoute>>;
   onRollback: (route: ModelRoute) => void;
 }) {
+  const items = state.data?.items ?? [];
+  const view = useTableView(items, {
+    search: (route) =>
+      `${route.task} ${route.model_name} ${route.placement ?? ''} ${route.status === 'evaluating' ? 'đang đánh giá' : ''} ${route.fallback_name ?? ''} ${route.latency_p95_ms ? formatLatency(route.latency_p95_ms, true) : ''} ${pct(route.eval_score)}`,
+    filters: [{ id: 'model', label: 'Mô hình', value: (route) => route.model_name }],
+    sorts: [
+      { id: 'task', value: (route) => route.task },
+      { id: 'model', value: (route) => route.model_name },
+      { id: 'fallback', value: (route) => route.fallback_name },
+      { id: 'latency', value: (route) => route.latency_p95_ms },
+      { id: 'eval', value: (route) => route.eval_score },
+    ],
+    pageSize: 50,
+  });
   return (
     <AsyncRegion
       state={state}
@@ -264,64 +285,83 @@ function ModelRoutesTable({
       isEmpty={(p) => p.items.length === 0}
       empty={<p className="text-muted-foreground da-body-small">Chưa có tác vụ nào.</p>}
     >
-      {(p) => (
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="border-b border-border text-left text-muted-foreground da-caption">
-              <th className="px-da-lg py-da-md font-normal">Tác vụ</th>
-              <th className="w-[212px] py-da-md font-normal">Mô hình</th>
-              <th className="w-[192px] py-da-md font-normal">Dự phòng</th>
-              <th className="w-[112px] py-da-md font-normal">Độ trễ p95</th>
-              <th className="w-[110px] py-da-md font-normal">Bộ đánh giá</th>
-              <th className="w-[40px]">
-                <span className="sr-only">Thao tác</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {p.items.map((route) => (
-              <tr key={route.id} className="border-b border-border">
-                <td className="px-da-lg py-da-md text-foreground da-body-strong">{route.task}</td>
-                <td className="py-da-md text-foreground da-mono">
-                  {route.model_name}
-                  {route.placement && ` · ${route.placement}`}
-                  {route.status === 'evaluating' && (
-                    <span className="text-muted-foreground"> · đang đánh giá</span>
-                  )}
-                </td>
-                <td className="py-da-md text-muted-foreground da-mono">
-                  {route.fallback_name ?? '—'}
-                </td>
-                <td className="py-da-md text-foreground da-mono">
-                  {route.latency_p95_ms ? formatLatency(route.latency_p95_ms, true) : '—'}
-                </td>
-                <td className="py-da-md text-foreground da-mono">
-                  {pct(route.eval_score)}
-                  {(route.latest_eval_delta ?? 0) < 0 && (
-                    <span className="text-error">
-                      {' '}
-                      ↓<span className="sr-only">giảm</span>
-                    </span>
-                  )}
-                </td>
-                <td className="py-da-xs text-right">
-                  {route.previous && (
-                    <Menu
-                      label={`Thao tác với ${route.task}`}
-                      items={[
-                        {
-                          label: `Quay lại ${route.previous.model_name}`,
-                          icon: 'rollback',
-                          onSelect: () => onRollback(route),
-                        },
-                      ]}
-                    />
-                  )}
-                </td>
+      {() => (
+        <div className="flex flex-col gap-da-lg">
+          <TableToolbar view={view} placeholder="Tìm tác vụ, mô hình…" searchLabel="Tìm tác vụ" />
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                <SortableTh view={view} column="task" className="px-da-lg py-da-md font-normal">
+                  Tác vụ
+                </SortableTh>
+                <SortableTh view={view} column="model" className="w-[212px] py-da-md font-normal">
+                  Mô hình
+                </SortableTh>
+                <SortableTh
+                  view={view}
+                  column="fallback"
+                  className="w-[192px] py-da-md font-normal"
+                >
+                  Dự phòng
+                </SortableTh>
+                <SortableTh view={view} column="latency" className="w-[112px] py-da-md font-normal">
+                  Độ trễ p95
+                </SortableTh>
+                <SortableTh view={view} column="eval" className="w-[110px] py-da-md font-normal">
+                  Bộ đánh giá
+                </SortableTh>
+                <SortableTh view={view} className="w-[40px]">
+                  <span className="sr-only">Thao tác</span>
+                </SortableTh>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {view.rows.map((route) => (
+                <tr key={route.id} className="border-b border-border">
+                  <td className="px-da-lg py-da-md text-foreground da-body-strong">{route.task}</td>
+                  <td className="py-da-md text-foreground da-mono">
+                    {route.model_name}
+                    {route.placement && ` · ${route.placement}`}
+                    {route.status === 'evaluating' && (
+                      <span className="text-muted-foreground"> · đang đánh giá</span>
+                    )}
+                  </td>
+                  <td className="py-da-md text-muted-foreground da-mono">
+                    {route.fallback_name ?? '—'}
+                  </td>
+                  <td className="py-da-md text-foreground da-mono">
+                    {route.latency_p95_ms ? formatLatency(route.latency_p95_ms, true) : '—'}
+                  </td>
+                  <td className="py-da-md text-foreground da-mono">
+                    {pct(route.eval_score)}
+                    {(route.latest_eval_delta ?? 0) < 0 && (
+                      <span className="text-error">
+                        {' '}
+                        ↓<span className="sr-only">giảm</span>
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-da-xs text-right">
+                    {route.previous && (
+                      <Menu
+                        label={`Thao tác với ${route.task}`}
+                        items={[
+                          {
+                            label: `Quay lại ${route.previous.model_name}`,
+                            icon: 'rollback',
+                            onSelect: () => onRollback(route),
+                          },
+                        ]}
+                      />
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {view.total === 0 && tableEmptyRow(6)}
+            </tbody>
+          </table>
+          <TablePager view={view} />
+        </div>
       )}
     </AsyncRegion>
   );

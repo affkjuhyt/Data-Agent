@@ -1,4 +1,5 @@
 import { Segmented } from '../../design-system/Segmented';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import type { ExploreResult, ExploreRow } from '../../lib/v1/explore';
 import { cn } from '../../lib/utils';
 import { formatDelta, formatValue } from './format';
@@ -182,7 +183,32 @@ function CategoryLabels({ rows }: { rows: ExploreRow[] }) {
 /* "Bảng giá trị" (2143:15894): the category, one column per series, and the change. */
 export function ValueTable({ result, bare = false }: { result: ExploreResult; bare?: boolean }) {
   const hasDelta = result.series.length > 1;
+  const view = useTableView(result.rows, {
+    search: (row) =>
+      `${row.label} ${row.values.map((value) => formatValue(value, result.unit)).join(' ')} ${hasDelta ? formatDelta(row.delta, result.unit) : ''}`,
+    filters: [
+      hasDelta
+        ? {
+            id: 'delta',
+            label: 'Thay đổi',
+            value: (row: ExploreRow) =>
+              (row.delta ?? 0) > 0 ? 'Tăng' : (row.delta ?? 0) < 0 ? 'Giảm' : 'Không đổi',
+          }
+        : { id: 'category', label: result.category_label, value: (row: ExploreRow) => row.label },
+    ],
+    sorts: [
+      { id: 'label', value: (row: ExploreRow) => row.label },
+      ...result.series.map((series, index) => ({
+        id: series.key,
+        value: (row: ExploreRow) => row.values[index],
+      })),
+      ...(hasDelta ? [{ id: 'delta', value: (row: ExploreRow) => row.delta }] : []),
+    ],
+    pageSize: 50,
+  });
   return (
+    <div className="flex flex-col gap-da-md">
+    <TableToolbar view={view} placeholder="Tìm dòng…" searchLabel="Tìm trong bảng giá trị" />
     <table
       className={cn(
         'w-full border-separate border-spacing-0 overflow-hidden',
@@ -191,17 +217,23 @@ export function ValueTable({ result, bare = false }: { result: ExploreResult; ba
     >
       <thead>
         <tr className="bg-subtle text-left text-muted-foreground da-label">
-          <th className="px-da-lg py-da-sm font-medium">{result.category_label}</th>
+          <SortableTh view={view} column="label" className="px-da-lg py-da-sm font-medium">
+            {result.category_label}
+          </SortableTh>
           {result.series.map((s) => (
-            <th key={s.key} className="w-[110px] px-da-lg py-da-sm font-medium">
+            <SortableTh key={s.key} view={view} column={s.key} className="w-[110px] px-da-lg py-da-sm font-medium">
               {s.label}
-            </th>
+            </SortableTh>
           ))}
-          {hasDelta && <th className="w-[110px] px-da-lg py-da-sm font-medium">Thay đổi</th>}
+          {hasDelta && (
+            <SortableTh view={view} column="delta" className="w-[110px] px-da-lg py-da-sm font-medium">
+              Thay đổi
+            </SortableTh>
+          )}
         </tr>
       </thead>
       <tbody>
-        {result.rows.map((row) => (
+        {view.rows.map((row) => (
           <tr key={row.key}>
             <td className="border-t border-border px-da-lg py-da-sm text-foreground da-body-small">
               {row.label}
@@ -228,5 +260,7 @@ export function ValueTable({ result, bare = false }: { result: ExploreResult; ba
         ))}
       </tbody>
     </table>
+    <TablePager view={view} />
+    </div>
   );
 }

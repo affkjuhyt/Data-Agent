@@ -4,9 +4,15 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Notice } from '../../design-system/Notice';
+import {
+  SortableTh,
+  TablePager,
+  TableToolbar,
+  tableEmptyRow,
+  useTableView,
+} from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { formatNumber } from '../../lib/formatVN';
-import { cn } from '../../lib/utils';
 import { getSystemHealth, type ServiceHealth, type SystemHealth } from '../../lib/v1/adminPlatform';
 import { useV1 } from '../../lib/v1/useV1';
 import { formatLatency, formatTokens, pct } from './format';
@@ -75,6 +81,39 @@ export default function MonitoringPage() {
 }
 
 function HealthBody({ data }: { data: SystemHealth }) {
+  const services = useTableView(data.services, {
+    search: (service) =>
+      `${service.name} ${SERVICE_STATUS[service.status].label} ${service.version} ${formatLatency(service.latency_p95_ms)} ${pct(service.error_rate_24h)} ${service.note ?? ''}`,
+    filters: [
+      {
+        id: 'status',
+        label: 'Trạng thái',
+        value: (service) => SERVICE_STATUS[service.status].label,
+      },
+    ],
+    sorts: [
+      { id: 'name', value: (service) => service.name },
+      { id: 'status', value: (service) => SERVICE_STATUS[service.status].label },
+      { id: 'version', value: (service) => service.version },
+      { id: 'latency', value: (service) => service.latency_p95_ms },
+      { id: 'errors', value: (service) => service.error_rate_24h },
+      { id: 'note', value: (service) => service.note },
+    ],
+    pageSize: 50,
+  });
+  const models = useTableView(data.models, {
+    search: (model) =>
+      `${model.name} ${model.tasks_text} ${formatTokens(model.tokens_today)} ${model.queue_unit === 'page' ? `${formatNumber(model.queue)} trang` : model.queue} ${model.gpu_cards} ${pct(model.gpu_utilization, 0)}`,
+    filters: [{ id: 'tasks', label: 'Tác vụ', value: (model) => model.tasks_text }],
+    sorts: [
+      { id: 'name', value: (model) => model.name },
+      { id: 'tasks', value: (model) => model.tasks_text },
+      { id: 'tokens', value: (model) => model.tokens_today },
+      { id: 'queue', value: (model) => model.queue },
+      { id: 'gpu', value: (model) => model.gpu_utilization },
+    ],
+    pageSize: 50,
+  });
   const delta = data.error_rate_delta_pp;
   const errorUp = delta !== null && delta > 0;
   const latency = data.latency_p95_ms;
@@ -120,88 +159,153 @@ function HealthBody({ data }: { data: SystemHealth }) {
       </div>
 
       <SectionTitle>Dịch vụ</SectionTitle>
-      <Table
-        head={['Dịch vụ', 'Trạng thái', 'Phiên bản', 'p95', 'Lỗi 24 giờ', 'Ghi chú']}
-        widths={['w-[150px]', 'w-[140px]', 'w-[90px]', 'w-[80px]', 'w-[90px]', '']}
-      >
-        {data.services.map((service) => {
-          const status = SERVICE_STATUS[service.status];
-          return (
-            <tr key={service.name}>
-              <Cell>{service.name}</Cell>
-              <Cell>
-                <StatusDot tone={status.tone}>{status.label}</StatusDot>
-              </Cell>
-              <Cell>{service.version}</Cell>
-              <Cell>{formatLatency(service.latency_p95_ms)}</Cell>
-              <Cell>{pct(service.error_rate_24h)}</Cell>
-              <Cell>{service.note}</Cell>
-            </tr>
-          );
-        })}
-      </Table>
+      <div className="flex flex-col gap-da-lg">
+        <TableToolbar view={services} placeholder="Tìm dịch vụ…" searchLabel="Tìm dịch vụ" />
+        <div className="overflow-hidden rounded-md border border-border bg-card">
+          <table className="w-full table-fixed border-collapse">
+            <thead>
+              <tr className="bg-subtle text-left">
+                <SortableTh
+                  view={services}
+                  column="name"
+                  className="w-[150px] px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
+                >
+                  Dịch vụ
+                </SortableTh>
+                <SortableTh
+                  view={services}
+                  column="status"
+                  className="w-[140px] px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
+                >
+                  Trạng thái
+                </SortableTh>
+                <SortableTh
+                  view={services}
+                  column="version"
+                  className="w-[90px] px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
+                >
+                  Phiên bản
+                </SortableTh>
+                <SortableTh
+                  view={services}
+                  column="latency"
+                  className="w-[80px] px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
+                >
+                  p95
+                </SortableTh>
+                <SortableTh
+                  view={services}
+                  column="errors"
+                  className="w-[90px] px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
+                >
+                  Lỗi 24 giờ
+                </SortableTh>
+                <SortableTh
+                  view={services}
+                  column="note"
+                  className="px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
+                >
+                  Ghi chú
+                </SortableTh>
+              </tr>
+            </thead>
+            <tbody>
+              {services.rows.map((service) => {
+                const status = SERVICE_STATUS[service.status];
+                return (
+                  <tr key={service.name}>
+                    <Cell>{service.name}</Cell>
+                    <Cell>
+                      <StatusDot tone={status.tone}>{status.label}</StatusDot>
+                    </Cell>
+                    <Cell>{service.version}</Cell>
+                    <Cell>{formatLatency(service.latency_p95_ms)}</Cell>
+                    <Cell>{pct(service.error_rate_24h)}</Cell>
+                    <Cell>{service.note}</Cell>
+                  </tr>
+                );
+              })}
+              {services.total === 0 && tableEmptyRow(6)}
+            </tbody>
+          </table>
+        </div>
+        <TablePager view={services} />
+      </div>
 
       <SectionTitle>Mô hình AI</SectionTitle>
-      <Table
-        head={['Mô hình', 'Tác vụ', 'Token hôm nay', 'Hàng đợi', 'GPU']}
-        widths={['w-[200px]', '', 'w-[140px]', 'w-[100px]', 'w-[140px]']}
-      >
-        {data.models.length === 0 && (
-          <tr>
-            <td colSpan={5} className="px-[14px] py-da-md text-muted-foreground da-caption">
-              Chưa có số liệu tải theo mô hình.
-            </td>
-          </tr>
-        )}
-        {data.models.map((model) => (
-          <tr key={model.name}>
-            <Cell>{model.name}</Cell>
-            <Cell>{model.tasks_text}</Cell>
-            <Cell>{formatTokens(model.tokens_today)}</Cell>
-            <Cell>
-              {model.queue_unit === 'page' ? `${formatNumber(model.queue)} trang` : model.queue}
-            </Cell>
-            <Cell>
-              {model.gpu_cards} card · {pct(model.gpu_utilization, 0)}
-            </Cell>
-          </tr>
-        ))}
-      </Table>
+      <div className="flex flex-col gap-da-lg">
+        <TableToolbar view={models} placeholder="Tìm mô hình…" searchLabel="Tìm mô hình" />
+        <div className="overflow-hidden rounded-md border border-border bg-card">
+          <table className="w-full table-fixed border-collapse">
+            <thead>
+              <tr className="bg-subtle text-left">
+                <SortableTh
+                  view={models}
+                  column="name"
+                  className="w-[200px] px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
+                >
+                  Mô hình
+                </SortableTh>
+                <SortableTh
+                  view={models}
+                  column="tasks"
+                  className="px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
+                >
+                  Tác vụ
+                </SortableTh>
+                <SortableTh
+                  view={models}
+                  column="tokens"
+                  className="w-[140px] px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
+                >
+                  Token hôm nay
+                </SortableTh>
+                <SortableTh
+                  view={models}
+                  column="queue"
+                  className="w-[100px] px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
+                >
+                  Hàng đợi
+                </SortableTh>
+                <SortableTh
+                  view={models}
+                  column="gpu"
+                  className="w-[140px] px-[14px] py-da-md font-semibold text-muted-foreground da-caption"
+                >
+                  GPU
+                </SortableTh>
+              </tr>
+            </thead>
+            <tbody>
+              {data.models.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-[14px] py-da-md text-muted-foreground da-caption">
+                    Chưa có số liệu tải theo mô hình.
+                  </td>
+                </tr>
+              )}
+              {models.rows.map((model) => (
+                <tr key={model.name}>
+                  <Cell>{model.name}</Cell>
+                  <Cell>{model.tasks_text}</Cell>
+                  <Cell>{formatTokens(model.tokens_today)}</Cell>
+                  <Cell>
+                    {model.queue_unit === 'page'
+                      ? `${formatNumber(model.queue)} trang`
+                      : model.queue}
+                  </Cell>
+                  <Cell>
+                    {model.gpu_cards} card · {pct(model.gpu_utilization, 0)}
+                  </Cell>
+                </tr>
+              ))}
+              {data.models.length > 0 && models.total === 0 && tableEmptyRow(5)}
+            </tbody>
+          </table>
+        </div>
+        <TablePager view={models} />
+      </div>
     </>
-  );
-}
-
-/* The bordered tables of this frame: subtle head row, 14px side padding, 12px text. */
-function Table({
-  head,
-  widths,
-  children,
-}: {
-  head: string[];
-  widths: string[];
-  children: ReactNode;
-}) {
-  return (
-    <div className="overflow-hidden rounded-md border border-border bg-card">
-      <table className="w-full table-fixed border-collapse">
-        <thead>
-          <tr className="bg-subtle text-left">
-            {head.map((label, i) => (
-              <th
-                key={label}
-                className={cn(
-                  'px-[14px] py-da-md font-semibold text-muted-foreground da-caption',
-                  widths[i],
-                )}
-              >
-                {label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>{children}</tbody>
-      </table>
-    </div>
   );
 }
 

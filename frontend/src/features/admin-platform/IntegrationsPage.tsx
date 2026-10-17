@@ -8,6 +8,13 @@ import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
+import {
+  SortableTh,
+  TablePager,
+  TableToolbar,
+  tableEmptyRow,
+  useTableView,
+} from '../../design-system/tableView';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { formatNumber } from '../../lib/formatVN';
@@ -76,6 +83,22 @@ export default function IntegrationsPage() {
 
   const items = clients.data?.items ?? [];
   const current = items.find((c) => c.id === selected) ?? items[0];
+  const view = useTableView(items, {
+    search: (client) =>
+      `${client.name} ${KIND_LABEL[client.kind]} ${client.owner_name} ${client.scopes.join(' ')} ${client.calls_7d === null ? '' : formatNumber(client.calls_7d)} ${pct(client.error_rate_7d)} ${formatExpiry(client.expires_at)} ${STATUS[client.status].label}`,
+    filters: [
+      { id: 'status', label: 'Trạng thái', value: (client) => STATUS[client.status].label },
+    ],
+    sorts: [
+      { id: 'name', value: (client) => client.name },
+      { id: 'tools', value: (client) => client.scopes.join(', ') },
+      { id: 'calls', value: (client) => client.calls_7d },
+      { id: 'errors', value: (client) => client.error_rate_7d },
+      { id: 'expiry', value: (client) => client.expires_at },
+      { id: 'status', value: (client) => STATUS[client.status].label },
+    ],
+    pageSize: 50,
+  });
   const active = items.filter((c) => c.status === 'active' || c.status === 'expiring').length;
 
   return (
@@ -108,70 +131,111 @@ export default function IntegrationsPage() {
             }
           >
             {() => (
-              <table className="w-full table-fixed border-collapse">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                    <th className="px-da-lg py-da-md font-normal">Client</th>
-                    <th className="w-[232px] py-da-md font-normal">Công cụ</th>
-                    <th className="w-[132px] py-da-md font-normal">Lượt gọi 7 ngày</th>
-                    <th className="w-[82px] py-da-md font-normal">Lỗi</th>
-                    <th className="w-[112px] py-da-md font-normal">Hạn</th>
-                    <th className="w-[162px] py-da-md pr-da-lg font-normal">Trạng thái</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((client) => {
-                    const status = STATUS[client.status];
-                    const isCurrent = client.id === current?.id;
-                    return (
-                      <tr
-                        key={client.id}
-                        aria-selected={isCurrent}
-                        className={cn('border-b border-border', isCurrent && 'bg-subtle')}
+              <div className="flex flex-col gap-da-lg">
+                <TableToolbar view={view} placeholder="Tìm client…" searchLabel="Tìm client" />
+                <table className="w-full table-fixed border-collapse">
+                  <thead>
+                    <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                      <SortableTh
+                        view={view}
+                        column="name"
+                        className="px-da-lg py-da-md font-normal"
                       >
-                        <td className="px-da-lg py-da-md">
-                          <button
-                            type="button"
-                            onClick={() => setSelected(client.id)}
-                            className="flex w-full min-w-0 flex-col gap-[2px] text-left"
-                          >
-                            <span className="truncate text-foreground da-body-strong">
-                              {client.name}
-                            </span>
-                            <span className="truncate text-muted-foreground da-caption">
-                              {[KIND_LABEL[client.kind], client.owner_name]
-                                .filter(Boolean)
-                                .join(' · ')}
-                            </span>
-                          </button>
-                        </td>
-                        <td className="py-da-md text-foreground da-mono">
-                          {client.scopes.join(', ') || '—'}
-                        </td>
-                        <td className="py-da-md text-foreground da-mono">
-                          {client.calls_7d === null ? '—' : formatNumber(client.calls_7d)}
-                        </td>
-                        <td
-                          className={cn(
-                            'py-da-md da-mono',
-                            (client.error_rate_7d ?? 0) >= 0.02
-                              ? 'text-warning'
-                              : 'text-foreground',
-                          )}
+                        Client
+                      </SortableTh>
+                      <SortableTh
+                        view={view}
+                        column="tools"
+                        className="w-[232px] py-da-md font-normal"
+                      >
+                        Công cụ
+                      </SortableTh>
+                      <SortableTh
+                        view={view}
+                        column="calls"
+                        className="w-[132px] py-da-md font-normal"
+                      >
+                        Lượt gọi 7 ngày
+                      </SortableTh>
+                      <SortableTh
+                        view={view}
+                        column="errors"
+                        className="w-[82px] py-da-md font-normal"
+                      >
+                        Lỗi
+                      </SortableTh>
+                      <SortableTh
+                        view={view}
+                        column="expiry"
+                        className="w-[112px] py-da-md font-normal"
+                      >
+                        Hạn
+                      </SortableTh>
+                      <SortableTh
+                        view={view}
+                        column="status"
+                        className="w-[162px] py-da-md pr-da-lg font-normal"
+                      >
+                        Trạng thái
+                      </SortableTh>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {view.rows.map((client) => {
+                      const status = STATUS[client.status];
+                      const isCurrent = client.id === current?.id;
+                      return (
+                        <tr
+                          key={client.id}
+                          aria-selected={isCurrent}
+                          className={cn('border-b border-border', isCurrent && 'bg-subtle')}
                         >
-                          {pct(client.error_rate_7d)}
-                        </td>
-                        <td className="py-da-md text-muted-foreground da-mono">
-                          {formatExpiry(client.expires_at)}
-                        </td>
-                        <td className="py-da-md pr-da-lg">
-                          <StatusDot tone={status.tone}>{status.label}</StatusDot>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          <td className="px-da-lg py-da-md">
+                            <button
+                              type="button"
+                              onClick={() => setSelected(client.id)}
+                              className="flex w-full min-w-0 flex-col gap-[2px] text-left"
+                            >
+                              <span className="truncate text-foreground da-body-strong">
+                                {client.name}
+                              </span>
+                              <span className="truncate text-muted-foreground da-caption">
+                                {[KIND_LABEL[client.kind], client.owner_name]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                              </span>
+                            </button>
+                          </td>
+                          <td className="py-da-md text-foreground da-mono">
+                            {client.scopes.join(', ') || '—'}
+                          </td>
+                          <td className="py-da-md text-foreground da-mono">
+                            {client.calls_7d === null ? '—' : formatNumber(client.calls_7d)}
+                          </td>
+                          <td
+                            className={cn(
+                              'py-da-md da-mono',
+                              (client.error_rate_7d ?? 0) >= 0.02
+                                ? 'text-warning'
+                                : 'text-foreground',
+                            )}
+                          >
+                            {pct(client.error_rate_7d)}
+                          </td>
+                          <td className="py-da-md text-muted-foreground da-mono">
+                            {formatExpiry(client.expires_at)}
+                          </td>
+                          <td className="py-da-md pr-da-lg">
+                            <StatusDot tone={status.tone}>{status.label}</StatusDot>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {view.total === 0 && tableEmptyRow(6)}
+                  </tbody>
+                </table>
+                <TablePager view={view} />
+              </div>
             )}
           </AsyncRegion>
         </div>
@@ -500,7 +564,11 @@ function AddDialog({
       ) : (
         <>
           <Field label="Tên">
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Copilot nội bộ" />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Copilot nội bộ"
+            />
           </Field>
           <Field label="Người phụ trách">
             <Select

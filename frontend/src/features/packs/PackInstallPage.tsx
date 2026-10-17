@@ -5,6 +5,7 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Icon } from '../../design-system/Icon';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { useToast } from '../../design-system/Toast';
 import { getPackVersion, installPack, type PackVersion } from '../../lib/v1/packs';
 import { useV1 } from '../../lib/v1/useV1';
@@ -40,6 +41,16 @@ function InstallBody({ version }: { version: PackVersion }) {
   const [error, setError] = useState<string>();
   const passed = version.checks.filter((c) => c.ok).length;
   const pending = version.checks.length - passed;
+  const checks = useTableView(version.checks, {
+    search: (c) => `${c.item} ${c.result}`,
+    filters: [{ id: 'ok', label: 'Kết quả', value: (c) => (c.ok ? 'Đạt' : 'Cần xem') }],
+    sorts: [
+      { id: 'ok', value: (c) => (c.ok ? 1 : 0) },
+      { id: 'item', value: (c) => c.item },
+      { id: 'result', value: (c) => c.result },
+    ],
+    pageSize: 50,
+  });
 
   const install = async () => {
     setBusy(true);
@@ -107,18 +118,23 @@ function InstallBody({ version }: { version: PackVersion }) {
                 {passed} đạt{pending ? ` · ${pending} cần xem` : ''}
               </span>
             </div>
+            <TableToolbar view={checks} placeholder="Tìm kiểm tra…" searchLabel="Tìm kiểm tra" />
             <table className="w-full table-fixed border-collapse da-body-small">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="w-[42px]">
+                  <SortableTh view={checks} column="ok" className="w-[42px]">
                     <span className="sr-only">Kết quả kiểm tra</span>
-                  </th>
-                  <th className="py-da-sm font-normal">Mục</th>
-                  <th className="py-da-sm font-normal">Kết quả</th>
+                  </SortableTh>
+                  <SortableTh view={checks} column="item" className="py-da-sm font-normal">
+                    Mục
+                  </SortableTh>
+                  <SortableTh view={checks} column="result" className="py-da-sm font-normal">
+                    Kết quả
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {version.checks.map((c) => (
+                {checks.rows.map((c) => (
                   <tr key={c.item} className="border-b border-border text-foreground">
                     <td className="px-da-md py-[9px]">
                       <Icon
@@ -137,6 +153,7 @@ function InstallBody({ version }: { version: PackVersion }) {
                 ))}
               </tbody>
             </table>
+            <TablePager view={checks} />
           </section>
         </div>
         <aside className="flex w-[360px] shrink-0 flex-col gap-da-md border-l border-border bg-background px-da-xl pt-da-xl max-[1023px]:w-full max-[1023px]:border-l-0">

@@ -71,6 +71,11 @@ export interface SkillTrial {
 }
 
 export const getSkillDefinition = async (id: string): Promise<SkillDefinition> => {
+  try {
+    return await v1Get<SkillDefinition>(`/skills/${pathId(id)}/definition`);
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+  }
   const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
   const version = raw.published_version ?? raw.versions[0];
   const params = (version && 'params_schema' in version ? version.params_schema : {}) as {
@@ -109,6 +114,11 @@ export const getSkillDefinition = async (id: string): Promise<SkillDefinition> =
 
 /** The trial read is not an A2 resource; use the canonical skill state when it is absent. */
 export const getLatestTrial = async (id: string): Promise<SkillTrial | null> => {
+  try {
+    return await v1Get<SkillTrial>(`/skills/${pathId(id)}/trials/latest`);
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+  }
   const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
   const version = raw.versions.find((candidate) => candidate.status === 'testing');
   return version
@@ -127,6 +137,11 @@ export const saveSkillDefinition = async (
   id: string,
   body: { instructions: string; steps: SkillStepSpec[] },
 ) => {
+  try {
+    return await v1Send<SkillDefinition>('PUT', `/skills/${pathId(id)}/definition`, body);
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+  }
   const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
   const draft = raw.versions.find((version) => version.status === 'draft');
   const payload = {
@@ -194,6 +209,13 @@ export interface SessionSkillDraft {
 }
 
 export const getSessionSkillDraft = async (sessionId: string): Promise<SessionSkillDraft> => {
+  try {
+    return await v1Get<SessionSkillDraft>(`/workspaces/${pathId(sessionId)}/skill-draft`);
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+    // The proposal route answers 404 when the session has no cells; a missing route does not.
+    if (error instanceof V1Error && error.message.includes('ô tính')) throw error;
+  }
   const workspace = await v1Get<Schemas['WorkspaceDetail']>(`/workspaces/${pathId(sessionId)}`);
   const tiles = workspace.tiles ?? [];
   return {
@@ -221,6 +243,15 @@ export const createSkillFromSession = async (body: {
   description: string;
 }): Promise<{ skill_id: string; version: number }> =>
   (async () => {
+    try {
+      return await v1Send<{ skill_id: string; version: number }>(
+        'POST',
+        '/skills:from-session',
+        body,
+      );
+    } catch (error) {
+      if (!notProposal(error)) throw error;
+    }
     const workspace = await v1Get<Schemas['WorkspaceDetail']>(
       `/workspaces/${pathId(body.session_id)}`,
     );
@@ -272,6 +303,11 @@ export interface SessionAgentDraft {
 }
 
 export const getSessionAgentDraft = async (sessionId: string): Promise<SessionAgentDraft> => {
+  try {
+    return await v1Get<SessionAgentDraft>(`/workspaces/${pathId(sessionId)}/agent-draft`);
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+  }
   const workspace = await v1Get<Schemas['WorkspaceDetail']>(`/workspaces/${pathId(sessionId)}`);
   return {
     session_id: workspace.id,
@@ -318,6 +354,11 @@ export interface SkillTestRun {
 }
 
 export const getLatestTestRun = async (id: string): Promise<SkillTestRun> => {
+  try {
+    return await v1Get<SkillTestRun>(`/skills/${pathId(id)}/test-runs/latest`);
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+  }
   const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
   const version = raw.versions.find((candidate) => candidate.eval_run_id) ?? raw.versions[0];
   if (!version) throw new V1Error(404, 'not_found', 'Kỹ năng chưa có phiên bản.');
@@ -362,9 +403,11 @@ export const addSkillTestCase = async (
   id: string,
   body: { name: string; period_text: string; expected: string },
 ) => {
-  void body;
-  // A2 keeps the version/eval workflow; rerunning the locked-data test is the canonical
-  // operation until a dedicated case resource is added to the contract.
+  try {
+    return await v1Send<SkillTestRun>('POST', `/skills/${pathId(id)}/test-cases`, body);
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+  }
   return runSkillTests(id);
 };
 
@@ -433,6 +476,9 @@ export interface Decomposition {
   steps: WaterfallBar[];
   end: WaterfallBar;
   contributions: { label: string; points_text: string; share_text: string }[];
+  /** what the numbers are (a contribution by member, not a cause) and how far they can be trusted */
+  method?: string;
+  confidence?: string;
 }
 
 export type FactorVerdict = 'worth' | 'weak' | 'random';
@@ -496,6 +542,11 @@ const notProposal = (e: unknown) => e instanceof V1Error && e.status === 404;
  * first value, and the result is shown generically.
  */
 export const getSkillRunForm = async (id: string): Promise<SkillRunForm> => {
+  try {
+    return await v1Get<SkillRunForm>(`/skills/${pathId(id)}/run-form`);
+  } catch (error) {
+    if (!notProposal(error)) throw error;
+  }
   const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
   const version = raw.published_version ?? null;
   const schema = (version?.params_schema ?? {}) as {
@@ -533,9 +584,40 @@ const text = (v: unknown) =>
   v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
 
 /** result is "the conclusion and the main figures" (jsonb): a summary line, the rest as figures. */
+/** worker-agent skills/decomposition.py result_of: the waterfall and contributions it drew. */
+function decompositionOf(result: Record<string, unknown>): Decomposition | null {
+  const d = result.decomposition as Partial<Decomposition> | undefined;
+  if (!d || !d.start || !d.end || !Array.isArray(d.steps) || !Array.isArray(d.contributions))
+    return null;
+  return {
+    summary: typeof result.summary === 'string' ? result.summary : (d.summary ?? ''),
+    start: d.start,
+    steps: d.steps,
+    end: d.end,
+    contributions: d.contributions,
+    method: typeof result.method === 'string' ? result.method : undefined,
+    confidence: typeof result.confidence === 'string' ? result.confidence : undefined,
+  };
+}
+
 function readRun(raw: RunWire): SkillRun {
   if (raw.display) return raw.display;
   const result = (raw.result ?? {}) as Record<string, unknown>;
+  const decomposition = raw.status === 'succeeded' ? decompositionOf(result) : null;
+  if (decomposition)
+    return {
+      id: raw.id,
+      skill_id: raw.skill_id,
+      version: raw.version,
+      kind: 'decomposition',
+      params: Object.fromEntries(
+        Object.entries((raw.params ?? {}) as Record<string, unknown>).map(([k, v]) => [k, text(v)]),
+      ),
+      ran_at: raw.started_at ?? raw.created_at,
+      decomposition,
+      external: null,
+      outcome: null,
+    };
   const summaryKey = ['summary', 'conclusion', 'text'].find((k) => typeof result[k] === 'string');
   return {
     id: raw.id,
@@ -561,13 +643,27 @@ function readRun(raw: RunWire): SkillRun {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** The Data Space's decomposition skill ("Phân rã biến động") with a version to run, or null. */
+export const findDecompositionSkill = async (): Promise<string | null> => {
+  const skills = await v1Get<Page<Schemas['SkillView']>>('/skills', {
+    category: 'decomposition',
+    page_size: 20,
+  });
+  return skills.items.find((s) => s.current_version !== null)?.id ?? null;
+};
+
 /** GET /v1/skills/{id}/runs — the viewer's runs, newest first. */
 export const listSkillRuns = async (id: string): Promise<Page<SkillRun>> => {
   try {
-    const page = await v1Get<Page<Schemas['RunDetail']>>(`/skills/${pathId(id)}/runs`, {
+    const page = await v1Get<Page<RunWire | SkillRun>>(`/skills/${pathId(id)}/runs`, {
       page_size: 50,
     });
-    return { ...page, items: page.items.map((run) => readRun(run)) };
+    return {
+      ...page,
+      items: page.items.map((run) =>
+        'kind' in run && run.kind ? run : readRun(run as RunWire),
+      ),
+    };
   } catch (error) {
     if (!notProposal(error)) throw error;
     return { items: [], next_page_token: '' };

@@ -267,7 +267,7 @@ export function readPipelineDetail(
 }
 
 const tableName = (d: DatasetRow) =>
-  d.source_id && d.schema_name ? `${d.schema_name}.${d.table_name}` : d.table_name;
+  d.schema_name ? `${d.schema_name}.${d.table_name}` : d.table_name;
 
 export const listPipelines = async (): Promise<Page<Pipeline>> => {
   const [page, datasets] = await Promise.all([

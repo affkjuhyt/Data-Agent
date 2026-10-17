@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
+import { MatrixTable } from '../../design-system/tableView';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Icon } from '../../design-system/Icon';
 import { Input } from '../../design-system/Input';
@@ -136,7 +137,7 @@ function Explorer({ model: base }: { model: ExploreModel }) {
   }, [queryKey, base, ready, tick]);
 
   const explanation = useV1(
-    result && !running ? () => getExploreExplanation(result, shelves.metric_ids) : null,
+    result && !running && base ? () => getExploreExplanation(result, shelves, base) : null,
     [result?.id, running],
   );
 
@@ -475,33 +476,12 @@ function DetailRows({ rows, onBack }: { rows: ExploreRows; onBack: () => void })
           Quay lại biểu đồ
         </Button>
       </div>
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full border-separate border-spacing-0">
-          <thead>
-            <tr className="bg-subtle text-left text-muted-foreground da-label">
-              {rows.columns.map((c) => (
-                <th key={c} className="px-da-lg py-da-sm font-medium">
-                  {c}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.rows.map((r, i) => (
-              <tr key={i}>
-                {r.map((cell, j) => (
-                  <td
-                    key={j}
-                    className="border-t border-border px-da-lg py-da-sm text-foreground da-body-small"
-                  >
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <MatrixTable
+        columns={rows.columns}
+        rows={rows.rows}
+        className="w-full border-separate border-spacing-0"
+        searchLabel="Tìm dòng gốc"
+      />
     </section>
   );
 }

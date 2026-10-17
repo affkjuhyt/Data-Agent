@@ -4,6 +4,7 @@ import { Badge } from '../../design-system/Badge';
 import { Button } from '../../design-system/Button';
 import { KpiCard } from '../../design-system/KpiCard';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { formatDate, formatNumber, formatTime } from '../../lib/formatVN';
 import { cn } from '../../lib/utils';
 import {
@@ -31,6 +32,9 @@ import { useVault, type Frame } from './VaultPage';
  */
 const pct = (ratio: number) => `${Math.round(ratio * 100)}%`;
 
+const scoreOutcome = (outcome: ThesisScore['outcome']) =>
+  outcome === 'correct' ? 'Đúng' : outcome === 'incorrect' ? 'Sai' : 'Không chấm được';
+
 export function ScoresTab({ frame }: { frame: Frame }) {
   const { session, theses } = useVault();
   const scores = useV1(async () => (await listScores()).items, []);
@@ -51,6 +55,19 @@ export function ScoresTab({ frame }: { frame: Frame }) {
       .sort((a, b) => b.thesis.due_at.localeCompare(a.thesis.due_at));
   }, [scores.data, theses.data, session]);
 
+  const view = useTableView(rows, {
+    search: (r) => `${r.thesis.content?.statement ?? ''} ${r.sealed?.observed ?? ''}`,
+    filters: [{ id: 'outcome', label: 'Kết quả', value: (r) => scoreOutcome(r.score.outcome) }],
+    sorts: [
+      { id: 'statement', value: (r) => r.thesis.content?.statement },
+      { id: 'scored', value: (r) => r.score.scored_at },
+      { id: 'confidence', value: (r) => r.thesis.content?.confidence },
+      { id: 'observed', value: (r) => r.sealed?.observed },
+      { id: 'outcome', value: (r) => scoreOutcome(r.score.outcome) },
+      { id: 'receipt', value: (r) => r.sealed?.receipt },
+    ],
+    pageSize: 50,
+  });
   const judged = rows
     .filter((r) => r.score.outcome !== 'unresolvable')
     .map((r) => ({
@@ -158,25 +175,32 @@ export function ScoresTab({ frame }: { frame: Frame }) {
             aria-label="Luận điểm đã chấm"
             className="overflow-x-auto rounded-lg border border-border bg-card"
           >
+            <TableToolbar view={view} placeholder="Tìm luận điểm…" searchLabel="Tìm luận điểm" />
             <table className="w-full text-left da-body-small">
               <thead className="bg-subtle text-muted-foreground da-caption">
                 <tr>
-                  {[
-                    'Luận điểm · điều kiện',
-                    'Ngày chấm',
-                    'Tự tin',
-                    'Quan sát',
-                    'Kết quả',
-                    'Biên nhận',
-                  ].map((h) => (
-                    <th key={h} className="px-da-lg py-[10px] font-normal">
-                      {h}
-                    </th>
-                  ))}
+                  <SortableTh view={view} column="statement" className="px-da-lg py-[10px] font-normal">
+                    Luận điểm · điều kiện
+                  </SortableTh>
+                  <SortableTh view={view} column="scored" className="px-da-lg py-[10px] font-normal">
+                    Ngày chấm
+                  </SortableTh>
+                  <SortableTh view={view} column="confidence" className="px-da-lg py-[10px] font-normal">
+                    Tự tin
+                  </SortableTh>
+                  <SortableTh view={view} column="observed" className="px-da-lg py-[10px] font-normal">
+                    Quan sát
+                  </SortableTh>
+                  <SortableTh view={view} column="outcome" className="px-da-lg py-[10px] font-normal">
+                    Kết quả
+                  </SortableTh>
+                  <SortableTh view={view} column="receipt" className="px-da-lg py-[10px] font-normal">
+                    Biên nhận
+                  </SortableTh>
                 </tr>
               </thead>
               <tbody>
-                {rows.map(({ thesis, score, sealed }) => (
+                {view.rows.map(({ thesis, score, sealed }) => (
                   <tr key={thesis.id} className="border-t border-border text-foreground">
                     <td className="px-da-lg py-[10px]">{thesis.content!.statement}</td>
                     <td className="whitespace-nowrap px-da-lg">{shortDateTime(score.scored_at)}</td>
@@ -207,7 +231,7 @@ export function ScoresTab({ frame }: { frame: Frame }) {
                     </td>
                   </tr>
                 ))}
-                {rows.length === 0 && (
+                {view.total === 0 && (
                   <tr>
                     <td colSpan={6} className="px-da-lg py-da-lg text-muted-foreground">
                       Chưa có luận điểm nào được chấm.
@@ -216,6 +240,7 @@ export function ScoresTab({ frame }: { frame: Frame }) {
                 )}
               </tbody>
             </table>
+            <TablePager view={view} />
           </section>
         </div>
         <section

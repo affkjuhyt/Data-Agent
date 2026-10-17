@@ -8,6 +8,7 @@ import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { Textarea } from '../../design-system/Textarea';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -157,38 +158,7 @@ function CalibrationBody({
                 : 'Chưa có kết quả đối chiếu. Duyệt ánh xạ rồi chạy đối chiếu số.'}
             </p>
           ) : (
-            <table className="w-full table-fixed border-collapse da-body-small">
-              <thead>
-                <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <th className="px-da-md py-da-sm font-normal">Chỉ số</th>
-                  <th className="w-[92px] px-da-md py-da-sm font-normal">Kỳ</th>
-                  <th className="w-[132px] px-da-md py-da-sm font-normal">Tính từ dữ liệu</th>
-                  <th className="w-[122px] px-da-md py-da-sm font-normal">Đã báo cáo</th>
-                  <th className="w-[92px] px-da-md py-da-sm font-normal">Lệch</th>
-                  <th className="w-[130px] px-da-md py-da-sm font-normal">Kết quả</th>
-                </tr>
-              </thead>
-              <tbody>
-                {calibration.rows.map((r) => (
-                  <tr key={r.id} className="border-b border-border text-foreground">
-                    <td className="px-da-md py-[9px]">{r.metric}</td>
-                    <td className="px-da-md py-[9px] text-muted-foreground da-mono">{r.period}</td>
-                    <td className="px-da-md py-[9px] da-mono">{r.computed}</td>
-                    <td className="px-da-md py-[9px] da-mono">{r.reported}</td>
-                    <td className={cn('px-da-md py-[9px] da-mono', !r.ok && 'text-error')}>
-                      {r.diff}
-                    </td>
-                    <td className="px-da-md py-[9px]">
-                      {r.ok ? (
-                        <StatusDot tone="success">Khớp</StatusDot>
-                      ) : (
-                        <StatusDot tone="error">Lệch</StatusDot>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <CalibrationTable rows={calibration.rows} />
           )}
           {calibration.findings.map((f) => (
             <section
@@ -305,5 +275,69 @@ function OverrideDialog({
         </Field>
       </div>
     </Dialog>
+  );
+}
+
+function CalibrationTable({ rows }: { rows: Calibration['rows'] }) {
+  const view = useTableView(rows, {
+    search: (r) => `${r.metric} ${r.period} ${r.computed} ${r.reported} ${r.diff}`,
+    filters: [{ id: 'result', label: 'Kết quả', value: (r) => (r.ok ? 'Khớp' : 'Lệch') }],
+    sorts: [
+      { id: 'metric', value: (r) => r.metric },
+      { id: 'period', value: (r) => r.period },
+      { id: 'computed', value: (r) => r.computed },
+      { id: 'reported', value: (r) => r.reported },
+      { id: 'diff', value: (r) => r.diff },
+      { id: 'result', value: (r) => (r.ok ? 'Khớp' : 'Lệch') },
+    ],
+    pageSize: 50,
+  });
+  return (
+    <>
+      <TableToolbar view={view} placeholder="Tìm chỉ số…" searchLabel="Tìm chỉ số đối chiếu" />
+      <table className="w-full table-fixed border-collapse da-body-small">
+        <thead>
+          <tr className="border-b border-border text-left text-muted-foreground da-caption">
+            <SortableTh view={view} column="metric" className="px-da-md py-da-sm font-normal">
+              Chỉ số
+            </SortableTh>
+            <SortableTh view={view} column="period" className="w-[92px] px-da-md py-da-sm font-normal">
+              Kỳ
+            </SortableTh>
+            <SortableTh view={view} column="computed" className="w-[132px] px-da-md py-da-sm font-normal">
+              Tính từ dữ liệu
+            </SortableTh>
+            <SortableTh view={view} column="reported" className="w-[122px] px-da-md py-da-sm font-normal">
+              Đã báo cáo
+            </SortableTh>
+            <SortableTh view={view} column="diff" className="w-[92px] px-da-md py-da-sm font-normal">
+              Lệch
+            </SortableTh>
+            <SortableTh view={view} column="result" className="w-[130px] px-da-md py-da-sm font-normal">
+              Kết quả
+            </SortableTh>
+          </tr>
+        </thead>
+        <tbody>
+          {view.rows.map((r) => (
+            <tr key={r.id} className="border-b border-border text-foreground">
+              <td className="px-da-md py-[9px]">{r.metric}</td>
+              <td className="px-da-md py-[9px] text-muted-foreground da-mono">{r.period}</td>
+              <td className="px-da-md py-[9px] da-mono">{r.computed}</td>
+              <td className="px-da-md py-[9px] da-mono">{r.reported}</td>
+              <td className={cn('px-da-md py-[9px] da-mono', !r.ok && 'text-error')}>{r.diff}</td>
+              <td className="px-da-md py-[9px]">
+                {r.ok ? (
+                  <StatusDot tone="success">Khớp</StatusDot>
+                ) : (
+                  <StatusDot tone="error">Lệch</StatusDot>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <TablePager view={view} />
+    </>
   );
 }

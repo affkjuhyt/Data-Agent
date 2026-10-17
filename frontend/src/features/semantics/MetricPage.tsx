@@ -5,6 +5,7 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 import { Button } from '../../design-system/Button';
 import { Notice } from '../../design-system/Notice';
+import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
@@ -82,6 +83,16 @@ function MetricBody({ metric, onChanged }: { metric: MetricDetail; onChanged: ()
   const shown = metric.versions.find((v) => v.id === shownId) ?? inUse ?? metric.versions[0];
   const [busy, setBusy] = useState<'draft' | 'preview' | null>(null);
   const [error, setError] = useState<string>();
+  const stewards = useTableView(metric.stewardship, {
+    search: (row) => `${row.role} ${row.who} ${row.note}`,
+    filters: [{ id: 'role', label: 'Vai trò', value: (row) => row.role }],
+    sorts: [
+      { id: 'role', value: (row) => row.role },
+      { id: 'who', value: (row) => row.who },
+      { id: 'note', value: (row) => row.note },
+    ],
+    pageSize: 50,
+  });
 
   const edit = async () => {
     if (draft) {
@@ -169,16 +180,23 @@ function MetricBody({ metric, onChanged }: { metric: MetricDetail; onChanged: ()
           {metric.stewardship.length > 0 && (
             <section className="flex flex-col gap-[10px] border-b border-border py-da-xl">
               <h2 className="text-foreground da-heading-3">Người phụ trách và chứng nhận</h2>
+              <TableToolbar view={stewards} placeholder="Tìm vai trò…" searchLabel="Tìm vai trò" />
               <table className="w-full table-fixed border-collapse">
                 <thead>
                   <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                    <th className="w-[160px] px-da-lg py-da-md font-normal">Vai trò</th>
-                    <th className="px-da-lg py-da-md font-normal">Người</th>
-                    <th className="w-[300px] px-da-lg py-da-md font-normal">Ghi chú</th>
+                    <SortableTh view={stewards} column="role" className="w-[160px] px-da-lg py-da-md font-normal">
+                      Vai trò
+                    </SortableTh>
+                    <SortableTh view={stewards} column="who" className="px-da-lg py-da-md font-normal">
+                      Người
+                    </SortableTh>
+                    <SortableTh view={stewards} column="note" className="w-[300px] px-da-lg py-da-md font-normal">
+                      Ghi chú
+                    </SortableTh>
                   </tr>
                 </thead>
                 <tbody>
-                  {metric.stewardship.map((row) => (
+                  {stewards.rows.map((row) => (
                     <tr key={row.role} className="border-b border-border da-body-small">
                       <td className="px-da-lg py-da-md text-muted-foreground">{row.role}</td>
                       <td className="px-da-lg py-da-md text-foreground da-body-strong">
@@ -189,6 +207,7 @@ function MetricBody({ metric, onChanged }: { metric: MetricDetail; onChanged: ()
                   ))}
                 </tbody>
               </table>
+              <TablePager view={stewards} />
             </section>
           )}
         </div>
