@@ -6,7 +6,8 @@ guard apply). The result is a quality_result row, and the dataset's quality_stat
 rules: blocked while a high-severity rule fails (BR-116 holds such a table out of reports),
 warning while another fails, ok when all pass.
 
-- not_null: rows where the column is null;
+- not_null: rows where the column is null; with params.where {column: [values]} only in those
+  groups (a person's gender is required of individuals, not of companies);
 - range: rows outside params.min / params.max;
 - unique: rows beyond the first of each value;
 - in_list: rows whose value is not one of params.values;
@@ -14,8 +15,10 @@ warning while another fails, ok when all pass.
 - freshness: 1 when the newest value of the column is older than params.max_age_hours;
 - custom_sql: the rows params.sql returns (a query that selects the violating rows).
 
-quality_rule.created runs the new rule at once (the dry run of UC-06-07 step 2); the scheduler
-runs every active rule once a day, and a pipeline that saves a table runs that table's rules.
+quality_rule.created runs the new rule at once (the dry run of UC-06-07 step 2), and
+quality_rule.updated runs it again while it is active; the scheduler runs every active rule once a
+day, and a pipeline that saves a table runs that table's rules. A high-severity rule that newly
+fails asks the table's steward (or the Data Space's) to look, in Cần bạn (AC-06-07-03).
 """
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ from typing import Any
 from sqlalchemy import select, update
 
 from libs.dataagent_db import scoped_session, uuid7
-from libs.dataagent_db.models import catalog, ingest
+from libs.dataagent_db.models import catalog, ingest, org
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
 
@@ -36,6 +39,17 @@ logger = logging.getLogger(__name__)
 
 ROLE = "svc_ingest"
 CREATED = "quality_rule.created"
+UPDATED = "quality_rule.updated"
+# How a rule reads in the title of the request a failing high rule opens.
+KIND_TEXT = {
+    "not_null": "không rỗng",
+    "unique": "không trùng",
+    "range": "trong khoảng",
+    "in_list": "thuộc danh sách",
+    "sum_matches": "khớp tổng",
+    "freshness": "đủ mới",
+    "custom_sql": "SQL riêng",
+}
 
 
 def _ident(name: str) -> str:
@@ -59,7 +73,14 @@ def violation_sql(rule: ingest.QualityRule, table: str) -> str:
     if col is None:
         raise ValueError(f"a {rule.kind} rule names a column")
     if rule.kind == "not_null":
-        return f"SELECT count(*) AS n FROM {table} WHERE {col} IS NULL"
+        groups = []
+        for column, values in dict(p.get("where") or {}).items():
+            listed = ", ".join(_literal(str(v)) for v in values or [])
+            if not listed:
+                raise ValueError("a not_null rule's where names values")
+            groups.append(f"CAST({_ident(str(column))} AS text) IN ({listed})")
+        scope = "".join(f" AND {g}" for g in groups)
+        return f"SELECT count(*) AS n FROM {table} WHERE {col} IS NULL{scope}"
     if rule.kind == "range":
         bounds = []
         if p.get("min") is not None:
@@ -168,7 +189,19 @@ async def evaluate(
                     query_run = outcome.query_run_id
                     violations = int(outcome.rows[0][0] or 0)
     passed = failure is None and violations == 0
+    steward = dataset.steward_id
+    if not passed and rule.severity == "high" and steward is None:
+        async with scoped_session("svc_catalog", org_id, author) as session:
+            steward = await session.scalar(
+                select(org.DataSpace.steward_id).where(org.DataSpace.id == dataset.data_space_id)
+            )
     async with scoped_session(ROLE, org_id, author) as session:
+        before = await session.scalar(
+            select(ingest.QualityResult.passed)
+            .where(ingest.QualityResult.rule_id == rule_id)
+            .order_by(ingest.QualityResult.checked_at.desc())
+            .limit(1)
+        )
         session.add(
             ingest.QualityResult(
                 id=uuid7(),
@@ -181,6 +214,47 @@ async def evaluate(
                 sample_ref=f"error: {failure}" if failure else str(query_run),
             )
         )
+        if not passed and rule.severity == "high" and before is not False and steward:
+            # A high rule that starts failing asks the table's steward (or the Data Space's) in
+            # Cần bạn, once: not again on every check that still fails (AC-06-07-03).
+            name = dataset.display_name or dataset.table_name
+            session.add(
+                ingest.Outbox(
+                    id=uuid7(),
+                    org_id=org_id,
+                    aggregate_type="quality_rule",
+                    aggregate_id=rule.id,
+                    event_type="hitl.requested",
+                    payload={
+                        "hitl_request_id": str(uuid7()),
+                        "data_space_id": str(dataset.data_space_id),
+                        "kind": "data_review",
+                        "risk": "high",
+                        "title": (
+                            f"Bảng {name} bị chặn báo cáo: quy tắc {rule.column_name or ''} "
+                            f"{KIND_TEXT.get(rule.kind, rule.kind)} vi phạm {violations} dòng"
+                            if failure is None
+                            else f"Bảng {name} bị chặn báo cáo: quy tắc không kiểm được ({failure})"
+                        ),
+                        "context": {
+                            "dataset_id": str(rule.dataset_id),
+                            "quality_rule_id": str(rule.id),
+                            "violations": violations,
+                        },
+                        "options": [],
+                        "source_service": "ingest",
+                        "source_ref": str(rule.id),
+                        "created_by": str(author),
+                        "assignee_id": str(steward),
+                        "assignee_group": None,
+                        "assignee_capability": None,
+                        "approval_steps": [],
+                        "excluded_approver_ids": [],
+                        "due_at": None,
+                        "parent_run_label": None,
+                    },
+                )
+            )
     if failure:
         logger.info("worker-agent | quality rule %s: %s (%s)", rule_id, failure, detail)
     await refresh_state(org_id, dataset.id, author)
@@ -230,6 +304,11 @@ async def refresh_state(org_id: uuid.UUID, dataset_id: uuid.UUID, actor: uuid.UU
     return state
 
 
+async def rule_updated(event: Event) -> None:
+    """An edited rule is checked again while active; a disabled one is left as it is."""
+    await rule_created(event)
+
+
 async def rule_created(event: Event) -> None:
     async with scoped_session(ROLE, event.org_id) as session:
         rule = await session.get(ingest.QualityRule, event.aggregate_id)
@@ -259,4 +338,4 @@ async def evaluate_dataset(
     return len(ids)
 
 
-HANDLERS: dict[str, Handler] = {CREATED: rule_created}
+HANDLERS: dict[str, Handler] = {CREATED: rule_created, UPDATED: rule_updated}

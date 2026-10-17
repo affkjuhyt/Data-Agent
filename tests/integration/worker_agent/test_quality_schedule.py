@@ -227,3 +227,67 @@ async def test_a_rule_touched_by_someone_else_runs_under_both(
         for r in seed.all("SELECT principal_id FROM query.query_run WHERE caller_id = %s", rid)
     }
     assert principals == {str(bank.user), str(admin)}
+
+
+@pytest.mark.req("AC-06-07-03")
+async def test_a_failing_high_rule_asks_the_steward_once(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.worker_agent import hitl
+
+    bank = build(seed, warehouse, monkeypatch)
+    rid = rule(bank, "range", "balance", {"max": 4000}, "high")
+    await drain()
+    # Checked again (an edit, the daily pass): still failing, not asked a second time.
+    await quality.evaluate(bank.org, rid, run_kind="scheduled", run_ref=None)
+    source = OutboxTableSource(schema="ingest", event_types=frozenset({hitl.EVENT_TYPE}))
+    while await run_once(source, {hitl.EVENT_TYPE: hitl.open_request}, batch=20):
+        pass
+    asked = seed.one("SELECT count(*) FROM inbox.hitl_request WHERE source_ref = %s", rid)
+    kind, service, assignee, title = seed.one(
+        "SELECT kind, source_service, assignee_id, title FROM inbox.hitl_request"
+        " WHERE source_ref = %s",
+        rid,
+    )
+    steward = seed.one("SELECT steward_id FROM org.data_space WHERE id = %s", bank.space)
+    assert asked == 1
+    assert (kind, service, assignee) == ("data_review", "ingest", steward)
+    assert "vi phạm 1 dòng" in title
+
+
+async def test_an_edited_rule_is_checked_again_while_active(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    rid = rule(bank, "range", "balance", {"max": 4000}, "medium")
+    await drain()
+
+    def edited(status: str) -> None:
+        with seed.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE ingest.quality_rule SET params = %s, status = %s WHERE id = %s",
+                (json.dumps({"max": 6000}), status, str(rid)),
+            )
+        seed.row(
+            "ingest.outbox",
+            org_id=bank.org,
+            aggregate_type="quality_rule",
+            aggregate_id=rid,
+            event_type=quality.UPDATED,
+            payload=json.dumps({"quality_rule_id": str(rid)}),
+        )
+
+    edited("active")
+    await drain()
+    results = seed.one(
+        "SELECT array_agg(passed ORDER BY checked_at) FROM ingest.quality_result WHERE rule_id = %s",
+        rid,
+    )
+    assert results == [False, True]
+    edited("disabled")
+    await drain()
+    assert seed.one("SELECT count(*) FROM ingest.quality_result WHERE rule_id = %s", rid) == 2
