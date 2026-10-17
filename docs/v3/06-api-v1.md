@@ -184,6 +184,10 @@ của ADR-28) trả lời. Bước G1 của [09](09-target-deploy-and-cleanup.md
   được nhắc ngày 1 và 3, ngày 7 tự huỷ với `waiting_timeout` (AC-13-06-05); lỗi tạm thời của nguồn được thử lại sau
   5, 15, 60 phút rồi `failed` và báo chủ sở hữu (AC-13-06-04). Đây là bản thay tạm ADR-37 (Temporal, R3) theo ba
   bảo đảm của tab 5 G1.1; chưa có xin thêm ngân sách, sửa kế hoạch, kế hoạch nhiều bước (docstring `runs.py`).
+- **Ngưỡng theo dõi.** Câu trả lời của Hỏi đáp và của lượt chạy agent nói kết quả đứng đâu so với ngưỡng mà người
+  phụ trách đặt cho chỉ số trên cả Data Space (`monitor.monitor`, `rule_kind = threshold`, `scope_filter` rỗng, đọc
+  như `svc_monitor`): thành viên nào vượt ngưỡng, nào ở vùng cảnh báo sớm (`answer/thresholds.py`). Ngưỡng và mức
+  cảnh báo là hình số hằng (`expr`), nên câu không có con số không truy được; số bị che (BR-178) thì không xét.
 - **Giới hạn hiện tại.** Hỏi đáp trả lời một chỉ số qua lớp ngữ nghĩa (bộ biên dịch `semantic/compiler.py`, truy vấn
   tại chỗ); câu hỏi ngoài lớp đó kết thúc bằng lời từ chối có mã, không bao giờ bằng con số không truy được
   (BR-171). Text-to-SQL, so sánh kỳ và kế hoạch nhiều bước là việc R1.

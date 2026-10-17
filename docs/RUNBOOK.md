@@ -145,6 +145,7 @@ With `seed_demo: true` (the dev inventory's setting) the `seed` Job loads:
 | --- | --- |
 | `deploy/docker/sql/kb-seed.sql` | baseline tenant, roles and knowledge-base records |
 | `deploy/docker/sql/v3-demo-seed.sql` | V3 demo organisation directory: `helios-engineer`, `DS-DEMO` membership and Data Engineer capabilities |
+| `deploy/docker/sql/v3-credit-demo.sql` | `DS-TD` "Tín dụng": a synthetic loan book (`workspace.credit_loan_snapshot`, 2 400 loans × 6 month-ends) with its certified semantic layer (Dư nợ, Nợ xấu, Tỷ lệ nợ xấu), the NPL threshold watch (> 3%, early from 2%) and the "Phân rã biến động" skill. Rebuilt on every apply |
 | `tests/e2e/seed*.sql` | optional extended warehouse/governance fixtures when a test explicitly needs them; these are not the V3 runtime seed path |
 | `k8s_openbao` role | OpenBao secret `secret/tenants/<tenant>/e2e_dw_password` = `sandbox_reader`'s password |
 

@@ -42,6 +42,8 @@ from libs.dataagent_db.models import catalog, context, document, qa
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.insights import insights_of, is_additive, written
 from services.worker_agent.answer.narrate import chart_spec_of, figures_of, text_of
+from services.worker_agent.answer.thresholds import judged
+from services.worker_agent.answer.thresholds import load as load_threshold
 from services.worker_agent.documents import answer as document_answer
 from services.worker_agent.documents.retrieve import retrieve
 from services.worker_agent.documents.search import SearchServices, services_from_env
@@ -892,6 +894,8 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
         dimension_names=p.dimension_names,
         period_label=u.period.label if u.period else None,
     )
+    # The risk team's threshold on this metric, judged once the figures are masked (BR-178).
+    threshold = await load_threshold(p.org_id, p.space_id, p.metric_id, p.user_id)
     answer_id = uuid7()
     async with scoped_session(ROLE, p.org_id, p.user_id) as session:
         question = await session.get(qa.Question, question_id, with_for_update=True)
@@ -947,6 +951,15 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             decimals=p.version.decimals,
             additive=p.additive,
         )
+        if threshold is not None:
+            against = judged(
+                figures,
+                threshold,
+                metric_name=p.metric_name,
+                next_key=len(figures) + len(ins.figures) + 1,
+            )
+            ins.figures += against.figures
+            ins.sentences += against.sentences
         compute_run_id = uuid7() if ins.figures else None
         every = figures + ins.figures
         text = text_of(

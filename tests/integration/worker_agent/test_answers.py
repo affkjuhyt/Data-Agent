@@ -644,7 +644,11 @@ async def test_derived_figures_are_sealed_as_computations_and_recomputed_on_repl
         assert float(changed["F4"]) == 4000.0
     finally:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM bank.loan WHERE branch_code = 'HN2' AND group_code = 1")
+            # The added row only: the module's fixture has an identical one, which must stay.
+            cur.execute(
+                "DELETE FROM bank.loan WHERE ctid = (SELECT ctid FROM bank.loan"
+                " WHERE branch_code = 'HN2' AND group_code = 1 LIMIT 1)"
+            )
         conn.close()
 
 
@@ -866,3 +870,41 @@ async def test_a_cut_the_space_does_not_know_is_asked_about_not_dropped(
     # The metric only allows region and product cuts; nothing ran before the person picks.
     assert "theo sản phẩm" in text and "theo ngày" not in text
     assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", q) == 0
+
+
+def watch(bank: Bank, rule: dict[str, Any], scope: dict[str, Any] | None = None) -> None:
+    """The risk team's threshold watch on NPL (monitor.monitor, as WatchCreatePage writes it)."""
+    bank.seed.row(
+        "monitor.monitor",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        owner_id=bank.user,
+        metric_id=bank.npl,
+        scope_filter=json.dumps(scope or {}),
+        rule_kind="threshold",
+        rule=json.dumps(rule),
+        schedule_cron="0 8 * * *",
+        status="active",
+    )
+
+
+async def test_an_answer_says_which_members_are_over_the_metrics_threshold(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    watch(bank, {"direction": "above", "value": 3, "early": 2})
+    # A watch on one region only is not the threshold of the whole result.
+    watch(bank, {"direction": "above", "value": 50}, scope={"vung": ["Miền Bắc"]})
+    q = bank.ask("Tỷ lệ nợ xấu theo vùng tháng 9/2026")
+    await drain()
+    status, kind, text, figures, _, _ = answer_of(seed, q)
+    assert (status, kind) == ("answered", "data"), text
+    assert "So với ngưỡng theo dõi (3,00%): vượt ngưỡng: Miền Bắc (10,00%); Miền Nam (10,00%)." in (
+        text
+    )
+    # The threshold is a traced figure (a constant), never a bare number in the text.
+    assert {"expr": "3"} in [
+        {"expr": f.get("source", {}).get("expr")}
+        for f in figures
+        if f.get("source", {}).get("expr")
+    ]

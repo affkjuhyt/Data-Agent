@@ -37,7 +37,10 @@ from sqlalchemy.exc import DBAPIError
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import agent, catalog, notify, qa
+from services.worker_agent.answer.insights import written
 from services.worker_agent.answer.narrate import figures_of, text_of
+from services.worker_agent.answer.thresholds import judged
+from services.worker_agent.answer.thresholds import load as load_threshold
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.query.guard import SqlRejected
@@ -230,6 +233,7 @@ class Planned:
     understanding: Understanding
     compiled: c.Compiled
     source: catalog.Source
+    metric_id: uuid.UUID
     metric_name: str
     unit: str | None
     decimals: int
@@ -323,6 +327,7 @@ async def _plan_step(
             understanding=u,
             compiled=compiled,
             source=source,
+            metric_id=u.metric.metric_id,
             metric_name=u.metric.name,
             unit=version.unit,
             decimals=version.decimals,
@@ -901,6 +906,15 @@ async def _query_step(
         dimension_names=planned.dimension_names,
         period_label=u.period.label if u.period else None,
     )
+    # Where the result stands against the metric's threshold watch (answer/thresholds.py).
+    threshold = await load_threshold(
+        run.org_id, run.data_space_id, planned.metric_id, work.principal
+    )
+    against = (
+        judged(figures, threshold, metric_name=planned.metric_name, next_key=len(figures) + 1)
+        if threshold is not None
+        else None
+    )
     answer = (
         text_of(
             figures,
@@ -910,6 +924,7 @@ async def _query_step(
             filters_label=None,
             latest_note=_latest_note(planned),
             truncated=outcome.truncated,
+            insights=written(against.sentences, figures + against.figures) if against else None,
         )
         if outcome.rows
         else f"Không có dữ liệu {planned.metric_name} cho kỳ được hỏi."

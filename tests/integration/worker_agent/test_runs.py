@@ -19,6 +19,7 @@ from .test_answers import (
     Bank,
     build,
     warehouse,  # noqa: F401  (the fixture `credit` reads)
+    watch,
 )
 
 pytestmark = [pytest.mark.integration]
@@ -644,3 +645,17 @@ async def test_a_wrong_query_is_not_retried(
     run = agent_run(bank)
     await drain()
     assert run_row(seed, run)[:2] == ("failed", "error") and timers(seed, run) == []
+
+
+async def test_a_run_judges_its_answer_against_the_metrics_threshold(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    watch(bank, {"direction": "above", "value": 12, "early": 8})
+    run = agent_run(bank)
+    await drain()
+    status, _, _, narrative, *_ = run_row(seed, run)
+    assert status == "succeeded"
+    assert "cảnh báo sớm (từ 8,00%): Miền Bắc (10,00%); Miền Nam (10,00%)" in narrative[-1]["text"]
