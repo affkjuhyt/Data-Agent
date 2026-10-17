@@ -12869,14 +12869,20 @@
       "type": "string"
      },
      "row_count": {
-      "title": "Row Count",
-      "type": "integer"
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Row Count"
      }
     },
     "required": [
      "id",
-     "name",
-     "row_count"
+     "name"
     ],
     "title": "DerivedDatasetAccepted",
     "type": "object"

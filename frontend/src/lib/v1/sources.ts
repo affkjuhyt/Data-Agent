@@ -1662,12 +1662,12 @@ export const getColumnStats = async (id: string, column: string): Promise<Column
   }
 };
 
-/** Pending backend action: POST /v1/datasets/{id}:derive creates a derived table from filters. */
+/** A2: POST /v1/datasets/{id}:derive registers a derived table from filters; worker-agent builds it. */
 export const deriveTable = async (
   id: string,
   body: { filters: ExploreFilter[]; drop_duplicates: boolean },
 ) =>
-  v1Send<{ id: Uuid; name: string; row_count: number }>(
+  v1Send<{ id: Uuid; name: string; row_count: number | null }>(
     'POST',
     `/datasets/${pathId(id)}:derive`,
     body,

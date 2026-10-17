@@ -115,7 +115,10 @@ function ExploreView({
       const table = await deriveTable(id, { filters, drop_duplicates: dropDuplicates });
       toast({
         tone: 'success',
-        message: `Đã tạo bảng dẫn xuất ${table.name} · ${formatNumber(table.row_count)} dòng.`,
+        message:
+          table.row_count === null || table.row_count === undefined
+            ? `Đang tạo bảng dẫn xuất ${table.name} trên nguồn; bảng bật khi đã ghi xong.`
+            : `Đã tạo bảng dẫn xuất ${table.name} · ${formatNumber(table.row_count)} dòng.`,
       });
     } catch (e) {
       toast({ tone: 'error', message: `Không tạo được bảng dẫn xuất. ${(e as Error).message}` });
@@ -184,63 +187,63 @@ function ExploreView({
           />
         ) : (
           <>
-          <TableToolbar view={view} placeholder="Tìm trong bảng…" searchLabel="Tìm trong bảng" />
-          <div className="overflow-x-auto rounded-md border border-border bg-card">
-            <table className="min-w-full border-collapse">
-              <thead>
-                <tr className="bg-subtle text-left">
-                  {preview.columns.map((c) => (
-                    <SortableTh
-                      key={c.name}
-                      view={view}
-                      column={c.name}
-                      className="border-r border-border p-0 font-normal last:border-r-0"
-                    >
-                      <button
-                        type="button"
-                        aria-pressed={column === c.name}
-                        onClick={() => setColumn(c.name)}
-                        className={cn(
-                          'flex w-full min-w-[90px] flex-col items-start px-da-md py-da-sm text-left',
-                          column === c.name ? 'bg-accent' : 'hover:bg-background',
-                        )}
+            <TableToolbar view={view} placeholder="Tìm trong bảng…" searchLabel="Tìm trong bảng" />
+            <div className="overflow-x-auto rounded-md border border-border bg-card">
+              <table className="min-w-full border-collapse">
+                <thead>
+                  <tr className="bg-subtle text-left">
+                    {preview.columns.map((c) => (
+                      <SortableTh
+                        key={c.name}
+                        view={view}
+                        column={c.name}
+                        className="border-r border-border p-0 font-normal last:border-r-0"
                       >
-                        <span className="text-foreground da-mono">{c.name}</span>
-                        <span className="text-muted-foreground da-caption">{c.type_label}</span>
-                      </button>
-                    </SortableTh>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {view.rows.map((line) => (
-                  <tr
-                    key={line.index}
-                    className={cn(
-                      'border-t border-border',
-                      duplicates.has(line.index) && 'bg-error-subtle',
-                    )}
-                    aria-label={
-                      duplicates.has(line.index) ? `Dòng ${line.index + 1}, trùng` : undefined
-                    }
-                  >
-                    {line.cells.map((cell, j) => (
-                      <td
-                        key={j}
-                        className={cn(
-                          'whitespace-nowrap border-r border-border px-da-md py-da-xs da-mono last:border-r-0',
-                          cell === null ? 'text-muted-foreground' : 'text-foreground',
-                        )}
-                      >
-                        {cellText(cell)}
-                      </td>
+                        <button
+                          type="button"
+                          aria-pressed={column === c.name}
+                          onClick={() => setColumn(c.name)}
+                          className={cn(
+                            'flex w-full min-w-[90px] flex-col items-start px-da-md py-da-sm text-left',
+                            column === c.name ? 'bg-accent' : 'hover:bg-background',
+                          )}
+                        >
+                          <span className="text-foreground da-mono">{c.name}</span>
+                          <span className="text-muted-foreground da-caption">{c.type_label}</span>
+                        </button>
+                      </SortableTh>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <TablePager view={view} />
+                </thead>
+                <tbody>
+                  {view.rows.map((line) => (
+                    <tr
+                      key={line.index}
+                      className={cn(
+                        'border-t border-border',
+                        duplicates.has(line.index) && 'bg-error-subtle',
+                      )}
+                      aria-label={
+                        duplicates.has(line.index) ? `Dòng ${line.index + 1}, trùng` : undefined
+                      }
+                    >
+                      {line.cells.map((cell, j) => (
+                        <td
+                          key={j}
+                          className={cn(
+                            'whitespace-nowrap border-r border-border px-da-md py-da-xs da-mono last:border-r-0',
+                            cell === null ? 'text-muted-foreground' : 'text-foreground',
+                          )}
+                        >
+                          {cellText(cell)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <TablePager view={view} />
           </>
         )}
         {preview.quality && (

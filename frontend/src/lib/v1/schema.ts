@@ -11413,7 +11413,7 @@ export interface components {
             /** Name */
             name: string;
             /** Row Count */
-            row_count: number;
+            row_count?: number | null;
         };
         /** DerivedTableCreate */
         DerivedTableCreate: {
