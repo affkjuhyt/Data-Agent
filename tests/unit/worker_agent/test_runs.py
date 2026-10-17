@@ -19,6 +19,7 @@ pytestmark = [pytest.mark.unit]
         ("queued", None, True),  # created by the api (test run, trigger, onboarding)
         ("queued", "failed", True),  # a retry
         ("running", "paused", True),  # resumed mid-way
+        ("running", "waiting_human", True),  # its checkpoint was decided
         ("queued", "paused", True),  # resumed before it started
         ("planning", "queued", False),  # the executor's own transition
         ("running", "planning", False),
@@ -94,3 +95,27 @@ def test_a_narrative_entry_is_what_the_run_screen_draws() -> None:
         "text": "Đang tính Tỷ lệ nợ xấu",
         "state": "now",
     }
+
+
+@pytest.mark.parametrize(
+    ("level", "autonomy", "checkpoints", "requires", "expected"),
+    [
+        # BR-70: writing derived data stops for a person unless the agent acts then reports.
+        ("write_derived", "propose_approve", ["before_write_derived"], False, True),
+        ("write_derived", "suggest_only", [], True, True),
+        ("write_derived", "act_then_report", [], False, False),
+        ("write_derived", "propose_approve", [], False, False),
+        # Sending outside always stops (AC-13-02-05), whatever the autonomy.
+        ("send_external", "act_then_report", [], False, True),
+        ("read", "propose_approve", ["before_write_derived"], False, False),
+    ],
+)
+def test_which_steps_stop_at_a_checkpoint(
+    level: str, autonomy: str, checkpoints: list[str], requires: bool, expected: bool
+) -> None:
+    assert (
+        runs.needs_checkpoint(
+            level, autonomy=autonomy, checkpoints=checkpoints, requires_checkpoint=requires
+        )
+        is expected
+    )

@@ -7,11 +7,13 @@ run picks up after the last recorded step; the run's state lives in PostgreSQL a
 each step boundary, so the api's pause and cancel (routes.py writes the status itself) are obeyed
 without a message to this worker; and a redelivered event finds nothing left to do.
 
-First slice: the goal is read like a question (rule pass, then the planner model), planned as the
-semantic fast path's one-step Plan IR, and run in place. Deferred: checkpoints and waiting_human,
-the +50% budget request and the monthly budget alerts, retries, no_progress, plan edits, the LLM
-Planner's multi-step plans, and recovering runs orphaned by a crash. Runs execute inline, so a long
-run holds this worker's poll loop for at most its BR-170 duration.
+The goal is read like a question (rule pass, then the planner model), planned as the semantic fast
+path's one-step Plan IR and run in place; an agent given notify.internal then tells the result in
+the app, after its checkpoint was approved in Cần bạn when it has one. Deferred: the waiting
+reminders and timeout, the +50% budget request and the monthly budget alerts, retries,
+no_progress, plan edits, the LLM Planner's multi-step plans, and recovering runs orphaned by a
+crash. Runs execute inline, so a long run holds this worker's poll loop for at most its BR-170
+duration.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ import time
 import unicodedata
 import uuid
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -33,7 +35,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import DBAPIError
 
 from libs.dataagent_db import scoped_session, uuid7
-from libs.dataagent_db.models import agent, catalog, qa
+from libs.dataagent_db.models import agent, catalog, notify, qa
 from services.worker_agent.answer.narrate import figures_of, text_of
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import QueryOutcome, run_query
@@ -57,6 +59,8 @@ logger = logging.getLogger(__name__)
 EVENT_TYPE = "run.status_changed"
 ROLE = "svc_agent"
 QA_ROLE = "svc_qa"
+NOTIFY_ROLE = "svc_notify"
+NOTIFY_TOOL = "notify.internal"
 TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
 # Request noise a fingerprint leaves out (tab 5 G4.4): the same call twice is the same call.
 _NOISE = frozenset({"request_id", "idempotency_key", "timestamp", "at"})
@@ -79,11 +83,25 @@ CEILINGS = Limits(max_steps=60, max_tokens=400_000, max_duration_s=30 * 60)
 
 def wants_execution(payload: Mapping[str, Any]) -> bool:
     """A run is ready to go when the api queued it (create, retry, resume before it started) or
-    resumed it mid-way. This executor's own transitions and pause/cancel need nothing."""
+    resumed it mid-way, after a pause or once its checkpoint was decided. This executor's other
+    transitions and pause/cancel need nothing."""
     status, previous = payload.get("status"), payload.get("previous_status")
     if status == "queued":
         return previous in (None, "failed", "paused")
-    return status == "running" and previous == "paused"
+    return status == "running" and previous in ("paused", "waiting_human")
+
+
+def needs_checkpoint(
+    level: str, *, autonomy: str, checkpoints: Sequence[str], requires_checkpoint: bool
+) -> bool:
+    """Whether a tool call waits for a person (tab 5 G4.1). Sending outside always does
+    (AC-13-02-05); writing derived data does when the config names the checkpoint or the tool
+    requires one (BR-70 made the api ask for one unless the agent acts then reports)."""
+    if level == "send_external":
+        return True
+    if level != "write_derived":
+        return False
+    return requires_checkpoint or "before_write_derived" in checkpoints
 
 
 def effective_limits(limits: Mapping[str, Any]) -> Limits:
@@ -140,6 +158,15 @@ def authority(
 def narrative(text: str, state: str, at: datetime.datetime) -> dict[str, str]:
     """One entry of agent_run.narrative as the run screens draw it ({at, text, state})."""
     return {"at": at.isoformat(), "text": text, "state": state}
+
+
+def _told(entries: Sequence[Any] | None, text: str, state: str, at: datetime.datetime) -> list[Any]:
+    """The narrative with one more entry; what was going on ("now") is done once the run moves."""
+    past = [
+        {**e, "state": "done"} if isinstance(e, dict) and e.get("state") == "now" else e
+        for e in (entries or [])
+    ]
+    return [*past, narrative(text, state, at)]
 
 
 def _now() -> datetime.datetime:
@@ -323,7 +350,7 @@ class Run:
                 run.status = "planning"
                 run.started_at = run.started_at or _now()
                 session.add(_emit(run, "queued"))
-            elif not (run.status == "running" and previous == "paused"):
+            elif not (run.status == "running" and previous in ("paused", "waiting_human")):
                 return None
             await session.flush()
             session.expunge(run)
@@ -349,6 +376,7 @@ class Run:
         status: str,
         summary: str,
         told: str | None,
+        told_state: str = "done",
         input: dict[str, Any] | None = None,
         output: dict[str, Any] | None = None,
         fingerprint: str | None = None,
@@ -356,6 +384,7 @@ class Run:
         tokens: int = 0,
         then: str | None = None,
         started: datetime.datetime,
+        also: Callable[[Any, agent.AgentRun], None] | None = None,
     ) -> str:
         """Writes one step and what the run shows of it; returns the run's status after it, so a
         pause or cancel the api wrote meanwhile stops the run at this boundary."""
@@ -392,14 +421,114 @@ class Run:
                 )
             )
             if told:
-                run.narrative = [*(run.narrative or []), narrative(told, "done", now)]
+                run.narrative = _told(run.narrative, told, told_state, now)
             # The step the run has reached (agent_step.seq), what a resume carries on from.
             run.current_step = seq
             run.tokens = (run.tokens or 0) + tokens
             if then is not None and run.status not in ("paused", *TERMINAL):
                 previous, run.status = run.status, then
                 session.add(_emit(run, previous))
+                if also is not None:
+                    # Written with the step, so a run never waits on a request that was not made.
+                    also(session, run)
             return str(run.status)
+
+    async def checkpoint_outcome(self, checkpoint: str) -> str:
+        """The latest hit of this checkpoint: none, open, or its outcome."""
+        async with self._session() as session:
+            hit = await session.scalar(
+                select(agent.AgentCheckpointHit)
+                .where(
+                    agent.AgentCheckpointHit.run_id == self.id,
+                    agent.AgentCheckpointHit.checkpoint == checkpoint,
+                )
+                .order_by(agent.AgentCheckpointHit.created_at.desc())
+                .limit(1)
+            )
+            if hit is None:
+                return "none"
+            return hit.outcome or ("open" if hit.resolved_at is None else "expired")
+
+    async def ask(
+        self,
+        checkpoint: str,
+        owner: agent.AgentDef,
+        *,
+        title: str,
+        preview: str,
+        args: dict[str, Any],
+        started: datetime.datetime,
+    ) -> None:
+        """The run stops for a person: a checkpoint step, its hit and the HITL request in Cần bạn
+        (hitl.requested, opened by hitl.py), all with the move to waiting_human."""
+        request_id = uuid7()
+
+        def open_request(session: Any, run: agent.AgentRun) -> None:
+            run.waiting_since = _now()
+            session.add(
+                agent.AgentCheckpointHit(
+                    id=uuid7(),
+                    org_id=self.org_id,
+                    run_id=self.id,
+                    checkpoint=checkpoint,
+                    hitl_request_id=request_id,
+                )
+            )
+            session.add(
+                agent.Outbox(
+                    id=uuid7(),
+                    org_id=self.org_id,
+                    aggregate_type="agent_run",
+                    aggregate_id=self.id,
+                    event_type="hitl.requested",
+                    # The inbox contract (api inbox/public.hitl_requested); the agent's owner decides.
+                    payload={
+                        "hitl_request_id": str(request_id),
+                        "data_space_id": str(run.data_space_id),
+                        "kind": "checkpoint",
+                        "risk": "medium",
+                        "title": title,
+                        "context": {
+                            "run_id": str(self.id),
+                            "agent_id": str(run.agent_id),
+                            "checkpoint": checkpoint,
+                            "tool": NOTIFY_TOOL,
+                            "preview": preview,
+                        },
+                        "options": [],
+                        "source_service": "agent",
+                        "source_ref": str(self.id),
+                        "created_by": str(self.principal),
+                        "assignee_id": str(owner.owner_user_id),
+                        "assignee_group": None,
+                        "assignee_capability": None,
+                        "approval_steps": [],
+                        "excluded_approver_ids": [],
+                        "due_at": None,
+                        "parent_run_label": None,
+                    },
+                )
+            )
+
+        await self.record(
+            kind="checkpoint",
+            name=checkpoint,
+            status="ok",
+            summary=f"Chờ duyệt trước khi chạy {NOTIFY_TOOL}.",
+            told="Chờ chủ sở hữu agent duyệt trong Cần bạn trước khi gửi kết quả.",
+            told_state="now",
+            input=args,
+            then="waiting_human",
+            started=started,
+            also=open_request,
+        )
+
+    async def wait_again(self) -> None:
+        async with self._session() as session:
+            run = await session.get(agent.AgentRun, self.id, with_for_update=True)
+            if run is not None and run.status == "running":
+                run.status, run.waiting_since = "waiting_human", _now()
+                session.add(_emit(run, "running"))
 
     async def end(
         self,
@@ -419,7 +548,7 @@ class Run:
             run.finished_at = _now()
             run.stop_detail = detail or {}
             if told:
-                run.narrative = [*(run.narrative or []), narrative(told, "done", run.finished_at)]
+                run.narrative = _told(run.narrative, told, "done", run.finished_at)
             session.add(_emit(run, previous))
 
 
@@ -455,6 +584,21 @@ def _over_budget(
     return None
 
 
+def _stop_for_budget(
+    limits: Limits, done: Sequence[agent.AgentStep], run: agent.AgentRun, planned: Planned
+) -> tuple[str, dict[str, Any]] | None:
+    return _over_budget(limits, len(done), int(run.tokens or 0) + planned.tokens, run.started_at)
+
+
+async def _ended_by_budget(work: Run, over: tuple[str, dict[str, Any]] | None) -> bool:
+    if over is None:
+        return False
+    reason, detail = over
+    message = "Lượt chạy dừng vì đã chạm giới hạn của agent (BR-170)."
+    await work.end("failed", reason, told=message, error=message, detail=detail)
+    return True
+
+
 async def execute(event: Event) -> None:
     if not wants_execution(event.payload):
         return
@@ -486,14 +630,15 @@ async def _execute(work: Run, run: agent.AgentRun) -> None:
         )
         if config is None:
             raise RunFailed("Không tìm thấy phiên bản cấu hình của lượt chạy.")
-        granted = {
-            t.tool: t.permission_level
-            for t in (
-                await session.scalars(
-                    select(agent.AgentTool).where(agent.AgentTool.agent_config_id == config.id)
-                )
-            ).all()
-        }
+        owner = await session.get(agent.AgentDef, run.agent_id)
+        assert owner is not None
+        tools = (
+            await session.scalars(
+                select(agent.AgentTool).where(agent.AgentTool.agent_config_id == config.id)
+            )
+        ).all()
+        granted = {t.tool: t.permission_level for t in tools}
+        requires = {t.tool: t.requires_checkpoint for t in tools}
     limits = effective_limits(config.limits or {})
     done = await work.steps()
 
@@ -548,21 +693,32 @@ async def _execute(work: Run, run: agent.AgentRun) -> None:
         done = await work.steps()
 
     # 2. The query step, unless an earlier pass already ran it.
-    if any(s.kind == "query" and s.status == "ok" for s in done):
-        await work.end("succeeded", "completed", told=None)
-        return
-    over = _over_budget(limits, len(done), int(run.tokens or 0) + planned.tokens, run.started_at)
-    if over is not None:
-        reason, detail = over
-        raise_message = "Lượt chạy dừng vì đã chạm giới hạn của agent (BR-170)."
-        await work.end("failed", reason, told=raise_message, error=raise_message, detail=detail)
-        return
-    await _query_step(work, run, planned, granted)
+    queried = next((s for s in done if s.kind == "query" and s.status == "ok"), None)
+    if queried is not None:
+        answer = queried.summary or ""
+    else:
+        if await _ended_by_budget(work, _stop_for_budget(limits, done, run, planned)):
+            return
+        ran = await _query_step(work, run, planned, granted)
+        if ran is None:
+            return
+        answer, done = ran, await work.steps()
+
+    # 3. Tell the result inside the organisation, when the agent was given that tool.
+    if NOTIFY_TOOL in granted and not any(
+        s.name == NOTIFY_TOOL and s.kind == "tool_call" for s in done
+    ):
+        if await _ended_by_budget(work, _stop_for_budget(limits, done, run, planned)):
+            return
+        if not await _notify_step(work, run, config, owner, granted, requires, answer):
+            return
+    await work.end("succeeded", "completed", told=answer)
 
 
 async def _query_step(
     work: Run, run: agent.AgentRun, planned: Planned, granted: Mapping[str, str]
-) -> None:
+) -> str | None:
+    """Runs the planned query; returns the answer, or None when the run stopped here."""
     compiled, u = planned.compiled, planned.understanding
     args = {
         "metric_version_id": str(compiled.metric_version_id),
@@ -665,13 +821,128 @@ async def _query_step(
         started=started,
     )
     if status != "running":
-        return
+        return None
     calls = [(s.call_fingerprint, s.result_hash) for s in await work.steps() if s.kind == "query"]
     if is_loop(calls):
         message = "Lượt chạy lặp lại cùng một truy vấn với cùng kết quả; đã dừng (AC-13-02-09)."
         await work.end("failed", "loop_detected", told=message, error=message)
-        return
-    await work.end("succeeded", "completed", told=answer)
+        return None
+    return answer
+
+
+async def _notify_step(
+    work: Run,
+    run: agent.AgentRun,
+    config: agent.AgentConfig,
+    owner: agent.AgentDef,
+    granted: Mapping[str, str],
+    requires: Mapping[str, bool],
+    answer: str,
+) -> bool:
+    """notify.internal: the result goes to the agent's owner in the app (kind report). Returns
+    False when the run stopped here (waiting for a person, paused, cancelled)."""
+    level = granted[NOTIFY_TOOL]
+    recipients = sorted({owner.owner_user_id, *([run.initiated_by] if run.initiated_by else [])})
+    title = f"{owner.name}: kết quả lượt chạy"
+    link = f"/agents/run/{run.id}"
+    args = {"recipients": [str(r) for r in recipients], "title": title, "link": link}
+    started = _now()
+    if authority(NOTIFY_TOOL, granted, is_test=run.is_test) == "simulate":
+        await work.record(
+            kind="tool_call",
+            name=NOTIFY_TOOL,
+            status="simulated",
+            summary="Lượt chạy thử: sẽ gửi kết quả tới chủ sở hữu agent trong ứng dụng; chưa gửi.",
+            told="Lượt chạy thử: bỏ qua việc gửi thông báo (chỉ mô phỏng).",
+            input=args,
+            fingerprint=fingerprint(NOTIFY_TOOL, args),
+            started=started,
+        )
+        return True
+    if needs_checkpoint(
+        level,
+        autonomy=config.autonomy,
+        checkpoints=[str(c) for c in (config.checkpoints or [])],
+        requires_checkpoint=bool(requires.get(NOTIFY_TOOL)),
+    ):
+        name = "send_external" if level == "send_external" else "before_write_derived"
+        outcome = await work.checkpoint_outcome(name)
+        if outcome == "none":
+            await work.ask(
+                name,
+                owner,
+                title=f"{owner.name}: duyệt gửi kết quả",
+                preview=answer,
+                args=args,
+                started=started,
+            )
+            return False
+        if outcome == "open":
+            # Resumed from a pause while its request is still open: it goes back to waiting.
+            await work.wait_again()
+            return False
+        if outcome != "approved":
+            await work.record(
+                kind="tool_call",
+                name=NOTIFY_TOOL,
+                status="skipped",
+                summary="Người duyệt không đồng ý gửi kết quả; bước gửi được bỏ qua.",
+                told="Không gửi kết quả: người duyệt không đồng ý.",
+                input=args,
+                started=started,
+            )
+            return True
+    async with scoped_session(NOTIFY_ROLE, run.org_id, work.principal) as session:
+        for user in recipients:
+            session.add(
+                notify.Notification(
+                    id=uuid7(),
+                    org_id=run.org_id,
+                    user_id=user,
+                    data_space_id=run.data_space_id,
+                    kind="report",
+                    title=title,
+                    body=answer,
+                    link=link,
+                    source_ref=run.id,
+                )
+            )
+    status = await work.record(
+        kind="tool_call",
+        name=NOTIFY_TOOL,
+        status="ok",
+        summary=f"Đã gửi kết quả tới {len(recipients)} người trong ứng dụng.",
+        told=f"Đã gửi kết quả tới {len(recipients)} người trong ứng dụng.",
+        input=args,
+        fingerprint=fingerprint(NOTIFY_TOOL, args),
+        started=started,
+    )
+    return status == "running"
+
+
+async def resume_after_checkpoint(event: Event) -> None:
+    """hitl.resolved for an agent checkpoint (resolutions.ROUTES): records the decision on the
+    hit and puts a waiting run back to running, which this executor picks up again."""
+    p = event.payload
+    request_id = uuid.UUID(str(p["hitl_request_id"]))
+    decided = {"approved": "approved", "rejected": "rejected", "expired": "expired"}.get(
+        str(p.get("status")), "rejected"
+    )
+    async with scoped_session(ROLE, event.org_id) as session:
+        hit = await session.scalar(
+            select(agent.AgentCheckpointHit)
+            .where(agent.AgentCheckpointHit.hitl_request_id == request_id)
+            .with_for_update()
+        )
+        if hit is None or hit.resolved_at is not None:
+            return
+        hit.resolved_at, hit.outcome = _now(), decided
+        run = await session.get(agent.AgentRun, hit.run_id, with_for_update=True)
+        if run is None or run.status != "waiting_human":
+            # Paused or cancelled meanwhile: the decision waits on the hit for the resume.
+            return
+        run.status, run.waiting_since = "running", None
+        session.add(_emit(run, "waiting_human"))
 
 
 HANDLERS: dict[str, Handler] = {EVENT_TYPE: execute}

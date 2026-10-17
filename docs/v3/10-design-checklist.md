@@ -325,7 +325,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-67 | UC-08-06 | todo | `backend/services/api/modules/notify/routes.py`, `frontend/src/lib/v1/adminPlatform.ts`, `tests/integration/api/test_notify.py` |
 | BR-68 | UC-08-06 | todo | `backend/services/api/modules/notify/routes.py` |
 | BR-69 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +4 |
-| BR-70 | UC-13-02 | todo | `backend/alembic/seed/tool_def.json`, `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py` +8 |
+| BR-70 | UC-13-02 | todo | `backend/alembic/seed/tool_def.json`, `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py` +10 |
 | BR-71 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-72 | UC-13-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-73 | UC-13-04 | todo |  |
@@ -1791,8 +1791,8 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | AC-13-02-02 | Thay thế | Cho version 2 và 3 / Khi chọn so hai phiên bản / Thì màn hiện diff từng mục, có đúng công cụ mới thêm | E2E | todo |  |
 | AC-13-02-03 | Ngoại lệ | Cho công cụ mức hệ thống (kết nối nguồn) / Khi chọn cho agent / Thì bị từ chối; ghi agent_tool với permission_level ngoài read, write_derived, send_external thì CHECK agent_tool_permission_level_check từ chối | API, CSDL | todo | `tests/integration/api/test_agent.py` |
 | AC-13-02-04 | Quy tắc | Cho một lượt chạy bắt đầu bằng version 2 / Khi version 3 được lưu giữa lượt / Thì agent_run.config_version giữ 2 tới khi lượt kết thúc | API, CSDL | todo | `tests/integration/api/test_agent.py` |
-| AC-13-02-05 | Quy tắc | Cho agent_tool permission_level = send_external với requires_checkpoint = false / Khi ghi / Thì CHECK agent_tool_permission_level_requires_checkpoint_check từ chối | CSDL | todo | `tests/integration/api/test_agent.py` |
-| AC-13-02-06 | Quy tắc | Cho agent không ở mức Tự động / Khi lưu công cụ write_derived không có checkpoint / Thì bị từ chối; ở mức Tự động có chính sách cho phép thì lưu được | API | todo | `tests/integration/api/test_agent.py`, `tests/unit/api/test_agent_routes.py` |
+| AC-13-02-05 | Quy tắc | Cho agent_tool permission_level = send_external với requires_checkpoint = false / Khi ghi / Thì CHECK agent_tool_permission_level_requires_checkpoint_check từ chối | CSDL | todo | `tests/integration/api/test_agent.py`, `tests/unit/worker_agent/test_runs.py` |
+| AC-13-02-06 | Quy tắc | Cho agent không ở mức Tự động / Khi lưu công cụ write_derived không có checkpoint / Thì bị từ chối; ở mức Tự động có chính sách cho phép thì lưu được | API | todo | `tests/integration/api/test_agent.py`, `tests/integration/worker_agent/test_runs.py` +1 |
 | AC-13-02-07 | Quy tắc | Cho ngân sách tháng của agent / Khi mức dùng đạt 80% và khi đạt 100% giữa một lượt / Thì ở 80% chủ sở hữu nhận báo; ở 100% có hitl_request loại ngân sách và lượt đang chạy không bị cắt giữa bước | API, CSDL | todo |  |
 | AC-13-02-08 | Quy tắc | Cho trần tổ chức của lượt nền là 60 bước / Khi lưu agent_config.limits 70 bước và khi lưu 40 bước / Thì 70 bước bị từ chối, 40 bước được lưu | API | todo | `tests/integration/api/test_agent.py`, `tests/unit/api/test_agent_routes.py` |
 | AC-13-02-09 | Quy tắc | Cho một lượt gọi cùng công cụ, cùng tham số đã chuẩn hoá và nhận cùng băm kết quả lần thứ 3 / Khi Executor xét bước kế / Thì lượt dừng ở ranh giới bước với stop_reason = loop_detected, bước bù chạy, người nhận báo kèm… | CSDL, API | todo | `tests/unit/worker_agent/test_runs.py` |

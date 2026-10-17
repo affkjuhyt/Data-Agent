@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from services.worker_agent import runs
+from services.worker_agent import hitl, resolutions, runs
 from services.worker_agent.events import OutboxTableSource
 from services.worker_agent.main import run_once
 
@@ -37,6 +37,9 @@ def agent_run(
     tools: tuple[tuple[str, str], ...] = (("query.semantic", "read"),),
     limits: dict[str, Any] | None = None,
     status: str = "queued",
+    autonomy: str = "suggest_only",
+    checkpoints: tuple[str, ...] = (),
+    is_test: bool = True,
 ) -> uuid.UUID:
     seed = bank.seed
     agent_id = seed.row(
@@ -56,7 +59,8 @@ def agent_run(
         agent_id=agent_id,
         version=1,
         goal=goal,
-        autonomy="suggest_only",
+        autonomy=autonomy,
+        checkpoints=json.dumps(list(checkpoints)),
         limits=json.dumps(limits or {}),
     )
     for tool, level in tools:
@@ -74,9 +78,9 @@ def agent_run(
         agent_id=agent_id,
         config_version=1,
         data_space_id=bank.space,
-        trigger_kind="test",
+        trigger_kind="test" if is_test else "manual",
         initiated_by=bank.user,
-        is_test=True,
+        is_test=is_test,
         status=status,
         **(
             {"stop_reason": "user_cancelled", "finished_at": "2026-10-17T00:00:00Z"}
@@ -309,3 +313,160 @@ async def test_a_goal_without_a_period_reads_the_last_day_and_says_so(
     answer = narrative[-1]["text"]
     assert "8,00%" not in answer and answer.count("10,00%") == 2
     assert "ngày mới nhất có dữ liệu" in answer
+
+
+async def decide(bank: Bank, decision: str) -> None:
+    """A person decides the run's checkpoint in Cần bạn: the inbox records it and emits
+    hitl.resolved (api inbox routes), which the run's resume follows."""
+    seed = bank.seed
+    request, run, kind = seed.one(  # type: ignore[misc]
+        "SELECT id, source_ref, kind FROM inbox.hitl_request WHERE org_id = %s AND status = 'open'",
+        bank.org,
+    )
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE inbox.hitl_request SET status = %s, resolved_at = now(), resolved_by = %s"
+            " WHERE id = %s",
+            (decision, str(bank.user), str(request)),
+        )
+    seed.row(
+        "inbox.outbox",
+        org_id=bank.org,
+        aggregate_type="hitl_request",
+        aggregate_id=request,
+        event_type="hitl.resolved",
+        payload=json.dumps(
+            {
+                "hitl_request_id": str(request),
+                "kind": kind,
+                "status": decision,
+                "decision": "approve" if decision == "approved" else "reject",
+                "source_service": "agent",
+                "source_ref": str(run),
+                "resolved_by": str(bank.user),
+            }
+        ),
+    )
+    source = OutboxTableSource(schema="inbox", event_types=frozenset(resolutions.HANDLERS))
+    while await run_once(source, resolutions.HANDLERS, batch=50):
+        pass
+
+
+async def drain_with_inbox() -> None:
+    """The run and the HITL request it asks for, both from agent.outbox."""
+    handlers = {**runs.HANDLERS, **hitl.HANDLERS}
+    source = OutboxTableSource(schema="agent", event_types=frozenset(handlers))
+    while await run_once(source, handlers, batch=50):
+        pass
+
+
+def notifications(seed: Seed, org: uuid.UUID) -> list[tuple[Any, ...]]:
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "SELECT user_id, kind, title, body, link FROM notify.notification WHERE org_id = %s",
+            (str(org),),
+        )
+        return list(cur.fetchall())
+
+
+NOTIFY = (("query.semantic", "read"), ("notify.internal", "write_derived"))
+
+
+@pytest.mark.req("AC-13-02-06")
+async def test_a_write_waits_at_its_checkpoint_and_runs_once_approved(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    run = agent_run(
+        bank,
+        tools=NOTIFY,
+        autonomy="propose_approve",
+        checkpoints=("before_write_derived",),
+        is_test=False,
+    )
+    await drain_with_inbox()
+
+    status, _, _, narrative, *_ = run_row(seed, run)
+    assert status == "waiting_human"
+    assert [(s[1], s[3]) for s in steps(seed, run)] == [
+        ("plan", "ok"),
+        ("query", "ok"),
+        ("checkpoint", "ok"),
+    ]
+    assert narrative[-1]["state"] == "now" and "duyệt" in narrative[-1]["text"]
+    # The request is in Cần bạn, for the agent's owner, pointing at the run.
+    assert seed.one(
+        "SELECT kind, source_service, source_ref, assignee_id FROM inbox.hitl_request"
+        " WHERE org_id = %s",
+        bank.org,
+    ) == ("checkpoint", "agent", run, bank.user)
+    assert notifications(seed, bank.org) == []
+
+    await decide(bank, "approved")
+    await drain_with_inbox()
+
+    status, stop, *_ = run_row(seed, run)
+    assert (status, stop) == ("succeeded", "completed")
+    assert [(s[1], s[2], s[3]) for s in steps(seed, run)][-1] == (
+        "tool_call",
+        "notify.internal",
+        "ok",
+    )
+    [(user, kind, title, body, link)] = notifications(seed, bank.org)
+    assert (user, kind) == (bank.user, "report") and "10,00%" in body
+    assert link == f"/agents/run/{run}" and "Theo dõi nợ xấu" in title
+    assert seed.one(
+        "SELECT outcome, resolved_at IS NOT NULL FROM agent.agent_checkpoint_hit WHERE run_id = %s",
+        run,
+    ) == ("approved", True)
+
+
+async def test_a_rejected_write_is_skipped_and_the_run_still_ends(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    run = agent_run(
+        bank,
+        tools=NOTIFY,
+        autonomy="propose_approve",
+        checkpoints=("before_write_derived",),
+        is_test=False,
+    )
+    await drain_with_inbox()
+    await decide(bank, "rejected")
+    await drain_with_inbox()
+    status, stop, *_ = run_row(seed, run)
+    assert (status, stop) == ("succeeded", "completed")
+    assert steps(seed, run)[-1][1:4] == ("tool_call", "notify.internal", "skipped")
+    assert notifications(seed, bank.org) == []
+
+
+@pytest.mark.req("AC-13-04-01")
+async def test_a_test_run_simulates_the_write_without_asking_or_sending(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    run = agent_run(bank, tools=NOTIFY, checkpoints=("before_write_derived",))
+    await drain_with_inbox()
+    assert run_row(seed, run)[:2] == ("succeeded", "completed")
+    assert steps(seed, run)[-1][1:4] == ("tool_call", "notify.internal", "simulated")
+    assert notifications(seed, bank.org) == []
+    assert seed.one("SELECT count(*) FROM inbox.hitl_request WHERE org_id = %s", bank.org) == 0
+
+
+async def test_an_agent_that_acts_then_reports_writes_without_waiting(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    run = agent_run(bank, tools=NOTIFY, autonomy="act_then_report", is_test=False)
+    await drain_with_inbox()
+    assert run_row(seed, run)[:2] == ("succeeded", "completed")
+    assert len(notifications(seed, bank.org)) == 1
