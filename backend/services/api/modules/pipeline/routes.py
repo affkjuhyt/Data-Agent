@@ -855,15 +855,43 @@ async def get_lineage(
                 links[e.id] = e
         touches_space = any(e.data_space_id == data_space for e in links.values())
         if not touches_space:
-            in_space = root[0] == "dataset" and await session.scalar(
-                select(catalog.Dataset.id).where(
-                    catalog.Dataset.id == object_id,
-                    catalog.Dataset.org_id == principal.org_id,
-                    catalog.Dataset.data_space_id == data_space,
+            if root[0] == "dataset":
+                in_space = await session.scalar(
+                    select(catalog.Dataset.id).where(
+                        catalog.Dataset.id == object_id,
+                        catalog.Dataset.org_id == principal.org_id,
+                        catalog.Dataset.data_space_id == data_space,
+                    )
                 )
-            )
+            else:
+                in_space = root[0] == "source" and await session.scalar(
+                    select(catalog.Source.id).where(
+                        catalog.Source.id == object_id,
+                        catalog.Source.org_id == principal.org_id,
+                        catalog.Source.data_space_id == data_space,
+                    )
+                )
             if not in_space:
                 raise Problem(404, "not_found", "Object not found.")
+        # Edges the catalog already holds (UC-06-05 step 1): a source table's dataset is read
+        # from its source (catalog.dataset.source_id). No writer copies them into lineage_edge,
+        # so they are read here, where they cannot go stale.
+        derived: list[tuple[tuple[str, uuid.UUID], tuple[str, uuid.UUID]]] = []
+        if direction in ("downstream", "both") and root[0] == "source":
+            for ds_id in (
+                await session.scalars(
+                    select(catalog.Dataset.id)
+                    .where(
+                        catalog.Dataset.source_id == object_id,
+                        catalog.Dataset.org_id == principal.org_id,
+                        catalog.Dataset.data_space_id == data_space,
+                        catalog.Dataset.deleted_at.is_(None),
+                    )
+                    .limit(LINEAGE_MAX_NODES)
+                )
+            ).all():
+                nodes.setdefault(("dataset", ds_id), True)
+                derived.append((root, ("dataset", ds_id)))
         dataset_ids = [i for (k, i), shown in nodes.items() if k == "dataset" and shown]
         names: dict[uuid.UUID, str] = {}
         if dataset_ids:
@@ -876,6 +904,22 @@ async def get_lineage(
                 )
             ).all():
                 names[ds.id] = ds.display_name or f"{ds.schema_name}.{ds.table_name}"
+                if ds.source_id is not None and direction in ("upstream", "both"):
+                    end = ("source", ds.source_id)
+                    nodes.setdefault(end, ds.data_space_id == data_space)
+                    if ((end), ("dataset", ds.id)) not in derived:
+                        derived.append((end, ("dataset", ds.id)))
+        source_ids = [i for (k, i), shown in nodes.items() if k == "source" and shown]
+        if source_ids:
+            for source in (
+                await session.scalars(
+                    select(catalog.Source).where(
+                        catalog.Source.id.in_(source_ids),
+                        catalog.Source.org_id == principal.org_id,
+                    )
+                )
+            ).all():
+                names[source.id] = source.name
     keys: dict[tuple[str, uuid.UUID], str] = {}
     out_nodes: list[LineageNode] = []
     hidden = 0
@@ -899,6 +943,12 @@ async def get_lineage(
         )
         for e in links.values()
         if (e.from_kind, e.from_id) in keys and (e.to_kind, e.to_id) in keys
+    ]
+    stored = {(link.source, link.target) for link in out_edges}
+    out_edges += [
+        LineageLink(source=keys[a], target=keys[b], via="catalog", via_ref=None)
+        for a, b in derived
+        if a in keys and b in keys and (keys[a], keys[b]) not in stored
     ]
     root_node = out_nodes[0]
     if len(out_nodes) > LINEAGE_MAX_NODES:

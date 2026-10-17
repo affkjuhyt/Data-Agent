@@ -743,6 +743,39 @@ def _edge(
     )
 
 
+async def test_lineage_reads_source_to_table_from_the_catalog(pp: Space) -> None:
+    # No lineage_edge at all: a source table still shows where it comes from.
+    async with client(pp) as api:
+        up = await api.get(
+            "/v1/lineage",
+            params={"object_kind": "dataset", "object_id": str(pp.raw)},
+            headers=pp.headers("analyst"),
+        )
+        assert up.status_code == 200, up.text
+        graph = up.json()
+        assert {n["key"] for n in graph["nodes"]} == {f"dataset:{pp.raw}", f"source:{pp.source}"}
+        assert graph["edges"] == [
+            {
+                "source": f"source:{pp.source}",
+                "target": f"dataset:{pp.raw}",
+                "via": "catalog",
+                "via_ref": None,
+            }
+        ]
+        down = await api.get(
+            "/v1/lineage",
+            params={
+                "object_kind": "source",
+                "object_id": str(pp.source),
+                "direction": "downstream",
+            },
+            headers=pp.headers("analyst"),
+        )
+        assert down.status_code == 200, down.text
+        assert f"dataset:{pp.raw}" in {n["key"] for n in down.json()["nodes"]}
+        assert f"dataset:{pp.other_dataset}" not in {n["key"] for n in down.json()["nodes"]}
+
+
 # AC-06-05-01
 # AC-06-05-02
 @pytest.mark.req("AC-06-05-01", "AC-06-05-02")

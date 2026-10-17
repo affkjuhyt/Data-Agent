@@ -364,6 +364,40 @@ function lineageFixture(): LineageGraph {
   };
 }
 
+/** The fixture graph as GET /v1/lineage sends it (keys stand for kind:id). */
+const API_KIND: Record<string, string> = {
+  source: 'source',
+  raw_table: 'dataset',
+  pipeline_table: 'dataset',
+  mart: 'data_product',
+  metric: 'metric',
+  report: 'report',
+  agent: 'agent',
+};
+function lineageWire(g: LineageGraph) {
+  const nodes = g.nodes.map((n) => ({
+    key: n.id,
+    kind: API_KIND[n.kind],
+    id: n.id,
+    name: n.label,
+    hidden: false,
+  }));
+  return {
+    root: nodes.find((n) => n.key === g.focus_id),
+    direction: 'both',
+    depth: 3,
+    nodes,
+    edges: g.edges.map((e) => ({
+      source: e.from,
+      target: e.to,
+      via: e.to === 'prep-loans' ? 'pipeline' : null,
+      via_ref: null,
+    })),
+    grouped: false,
+    groups: [],
+  };
+}
+
 function prepTableLineage(): LineageGraph {
   const base = lineageFixture();
   const keep = new Set(['src-core', 'raw-loans', 'prep-loans', 'mart-credit']);
@@ -784,17 +818,15 @@ export function createDataPrepHandlers() {
 
     /* Dòng dữ liệu */
     http.get('*/v1/lineage/targets', () =>
-      HttpResponse.json({
-        items: [
-          { id: 'metric-npl', label: 'NPL_RATIO v4 · chỉ số' },
-          { id: 'prep-loans', label: 'prep.loans_retail · bảng' },
-        ],
-      }),
+      HttpResponse.json([
+        { id: 'metric-npl', label: 'NPL_RATIO v4 · chỉ số' },
+        { id: 'prep-loans', label: 'prep.loans_retail · bảng' },
+      ]),
     ),
     http.get('*/v1/lineage', ({ request }) => {
-      const target = new URL(request.url).searchParams.get('target');
-      if (!target || target === 'metric-npl') return HttpResponse.json(lineageFixture());
-      if (target === 'prep-loans') return HttpResponse.json(prepTableLineage());
+      const target = new URL(request.url).searchParams.get('object_id');
+      if (target === 'metric-npl') return HttpResponse.json(lineageWire(lineageFixture()));
+      if (target === 'prep-loans') return HttpResponse.json(lineageWire(prepTableLineage()));
       return problem(404, 'not_found', 'Không tìm thấy đối tượng hoặc bạn không có quyền xem.');
     }),
   ];

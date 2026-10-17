@@ -713,9 +713,93 @@ export interface LineageGraph {
   edges: { from: string; to: string }[];
 }
 
-export const getLineage = (target?: string) =>
-  v1Get<LineageGraph>('/lineage', target ? { target } : undefined);
+/** GET /v1/lineage as the api sends it (pipeline/schemas.py LineageGraph). */
+interface LineageWire {
+  root: LineageNodeWire;
+  nodes: LineageNodeWire[];
+  edges: { source: string; target: string; via: string | null; via_ref: string | null }[];
+  grouped: boolean;
+  groups: { kind: string; count: number }[];
+}
+interface LineageNodeWire {
+  key: string;
+  kind: string;
+  id: string | null;
+  name: string | null;
+  hidden: boolean;
+}
 
-/** Frontend target-picker projection; A2 exposes the graph endpoint, not this convenience list. */
-export const listLineageTargets = () =>
-  v1Get<{ items: { id: string; label: string }[] }>('/lineage/targets');
+const LINEAGE_KIND: Record<string, LineageKind> = {
+  source: 'source',
+  dataset: 'raw_table',
+  column: 'raw_table',
+  data_product: 'mart',
+  metric: 'metric',
+  tile: 'report',
+  report: 'report',
+  skill: 'agent',
+  agent: 'agent',
+};
+const KIND_TEXT: Record<string, string> = {
+  source: 'nguồn',
+  dataset: 'bảng',
+  column: 'cột',
+  data_product: 'sản phẩm dữ liệu',
+  metric: 'chỉ số',
+  tile: 'ô phiên',
+  report: 'báo cáo',
+  skill: 'kỹ năng',
+  agent: 'agent',
+};
+const VIA_TEXT: Record<string, string> = {
+  catalog: 'đọc từ nguồn',
+  pipeline: 'pipeline',
+  semantic: 'lớp ngữ nghĩa',
+  query: 'truy vấn',
+};
+
+function readLineage(raw: LineageWire): LineageGraph {
+  const into = new Map<string, string[]>();
+  for (const e of raw.edges) {
+    if (e.via) into.set(e.target, [...(into.get(e.target) ?? []), VIA_TEXT[e.via] ?? e.via]);
+  }
+  return {
+    focus_id: raw.root.key,
+    title: raw.root.name ?? 'Đối tượng',
+    nodes: raw.nodes.map((n) => ({
+      id: n.key,
+      label: n.name ?? KIND_TEXT[n.kind] ?? n.kind,
+      kind: LINEAGE_KIND[n.kind] ?? 'raw_table',
+      detail_text: KIND_TEXT[n.kind] ?? n.kind,
+      // No freshness is tracked per node yet: nothing is drawn as late rather than guessed.
+      late: false,
+      facts: [
+        { label: 'Loại', text: KIND_TEXT[n.kind] ?? n.kind },
+        ...(into.get(n.key)?.length
+          ? [{ label: 'Tạo ra qua', text: [...new Set(into.get(n.key))].join(', ') }]
+          : []),
+      ],
+    })),
+    edges: raw.edges.map((e) => ({ from: e.source, to: e.target })),
+  };
+}
+
+/** The objects a lineage graph can start from (datasets of the Data Space). */
+export const listLineageTargets = async () => ({
+  items: await v1Get<{ id: string; label: string }[]>('/lineage/targets'),
+});
+
+/**
+ * The graph of `target` (a dataset id), both ways: what it is built from and what uses it.
+ * Without a target, the first dataset of the Data Space; with none, an empty graph.
+ */
+export const getLineage = async (target?: string): Promise<LineageGraph> => {
+  const id = target ?? (await listLineageTargets()).items[0]?.id;
+  if (!id) return { focus_id: '', title: 'Chưa có bảng nào', nodes: [], edges: [] };
+  const raw = await v1Get<LineageWire>('/lineage', {
+    object_kind: 'dataset',
+    object_id: id,
+    direction: 'both',
+  });
+  return readLineage(raw);
+};

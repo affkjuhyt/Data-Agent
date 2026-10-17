@@ -191,13 +191,16 @@ describe('WritebackPage', () => {
 describe('LineagePage', () => {
   it('draws the graph from the API and explains the selected node', async () => {
     wrap(<LineagePage />);
-    expect(await screen.findByRole('heading', { name: 'NPL_RATIO đi từ đâu' })).toBeInTheDocument();
+    // Without a target the first dataset of the Data Space is drawn.
+    expect(
+      await screen.findByRole('heading', { name: 'NPL_RATIO v4 đi từ đâu' }),
+    ).toBeInTheDocument();
     const graph = screen.getByRole('group', { name: 'Sơ đồ dòng dữ liệu' });
     expect(within(graph).getAllByRole('button')).toHaveLength(9);
-    expect(screen.getByText(/DWH bán lẻ trễ 8 giờ — chỉ ảnh hưởng chiều/)).toBeInTheDocument();
 
-    fireEvent.click(within(graph).getByRole('button', { name: /DWH bán lẻ/ }));
-    expect(screen.getByText('02:10 · trễ 8 giờ so với cam kết')).toBeInTheDocument();
+    fireEvent.click(within(graph).getByRole('button', { name: /prep\.loans_retail/ }));
+    // What made the node, read from the edge into it.
+    expect(screen.getByText('pipeline')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Đổi đối tượng' }));
     const dialog = await screen.findByRole('dialog', { name: 'Đổi đối tượng' });
@@ -205,8 +208,8 @@ describe('LineagePage', () => {
     expect(navigate).toHaveBeenCalledWith('data', 'LINEAGE', 'metric-npl');
   });
 
-  it('lays nodes out by depth, consumers beside the focus, late edges marked', async () => {
-    const layout = layoutLineage(await getLineage());
+  it('lays nodes out by depth, consumers beside the focus', async () => {
+    const layout = layoutLineage(await getLineage('metric-npl'));
     const at = (id: string) => layout.nodes.find((n) => n.id === id);
     expect(at('src-core')?.x).toBe(20);
     expect(at('raw-sales')?.x).toBe(200);
@@ -219,9 +222,7 @@ describe('LineagePage', () => {
     // The mart sits between its two inputs.
     expect(at('mart-credit')!.y).toBeGreaterThan(at('prep-loans')!.y);
     expect(at('mart-credit')!.y).toBeLessThan(at('raw-sales')!.y);
-    expect(layout.edges.filter((e) => e.late).map((e) => `${e.from}>${e.to}`)).toEqual([
-      'src-dwh>raw-sales',
-      'raw-sales>mart-credit',
-    ]);
+    // Freshness per node is not tracked yet, so no edge is drawn as late.
+    expect(layout.edges.filter((e) => e.late)).toEqual([]);
   });
 });
