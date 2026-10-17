@@ -104,3 +104,43 @@ def test_the_vote_follows_the_design_thresholds(agreeing: int, decision: str) ->
     assert v.decision == decision
     if agreeing:
         assert v.confidence == pytest.approx(agreeing / 6) and v.winner == 0
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        # Every way of reading a whole row reads the columns the model was never shown.
+        "SELECT l.* FROM workspace.credit_loan AS l",
+        "SELECT COUNT(DISTINCT l.*) FROM workspace.credit_loan AS l",
+        "SELECT to_jsonb(l) FROM workspace.credit_loan AS l",
+        "SELECT l FROM workspace.credit_loan AS l",
+        "SELECT row_to_json(credit_loan) FROM workspace.credit_loan",
+    ],
+)
+def test_a_whole_row_is_never_read(sql: str) -> None:
+    assert problems(sql, CHECKED, "postgres"), sql
+
+
+def test_count_star_is_still_a_count() -> None:
+    assert problems("SELECT COUNT(*) AS n FROM workspace.credit_loan", CHECKED, "postgres") == []
+
+
+def test_examples_and_joins_name_only_readable_tables() -> None:
+    from services.worker_agent.sqlgen.schema import readable
+
+    hidden = Tbl(uuid.uuid4(), "workspace", "salary", "Lương", (Col("amount", "Lương", "decimal"),))
+    full = Schema(
+        tables=[LOANS, BRANCHES],
+        fks=[*SCHEMA.fks, Fk(LOANS.dataset_id, ("x",), hidden.dataset_id, ("y",))],
+        examples=[
+            (
+                "Dư nợ theo chi nhánh",
+                "SELECT branch_code, SUM(balance) FROM workspace.credit_loan GROUP BY 1",
+            ),
+            ("Lương trung bình", "SELECT AVG(amount) FROM workspace.salary"),
+            ("Không đọc được", "SELEC"),
+        ],
+    )
+    kept = readable(full, "postgres")
+    assert [q for q, _ in kept.examples] == ["Dư nợ theo chi nhánh"]
+    assert kept.fks == SCHEMA.fks

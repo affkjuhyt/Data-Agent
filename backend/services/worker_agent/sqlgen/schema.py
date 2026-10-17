@@ -11,6 +11,10 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 
+import sqlglot
+from sqlglot import exp
+from sqlglot.errors import ParseError
+
 from services.worker_agent.understand.text import norm
 
 MAX_TABLES = 4
@@ -60,6 +64,30 @@ class Linked:
     tables: list[Tbl]
     fks: list[Fk]
     values: list[tuple[str, str, str]]  # table, column, the value the question names
+
+
+def readable(schema: Schema, dialect: str | None = None) -> Schema:
+    """The schema with nothing about a table it does not hold: joins with both ends among its
+    tables, and only the verified examples whose SQL reads its tables alone (an example over a
+    table the asker may not read would show that table to the model)."""
+    ids = {t.dataset_id for t in schema.tables}
+    qualified = {t.qualified for t in schema.tables}
+    names = {t.name for t in schema.tables}
+    examples = []
+    for question, sql in schema.examples:
+        try:
+            tables = list(sqlglot.parse_one(sql, read=dialect).find_all(exp.Table))
+        except ParseError:
+            continue
+        if tables and all(
+            (f"{t.db}.{t.name}" in qualified) if t.db else (t.name in names) for t in tables
+        ):
+            examples.append((question, sql))
+    return Schema(
+        schema.tables,
+        [fk for fk in schema.fks if fk.from_table in ids and fk.to_table in ids],
+        examples,
+    )
 
 
 def _says(question: str, phrase: str) -> bool:

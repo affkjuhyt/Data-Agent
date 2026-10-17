@@ -46,9 +46,11 @@ def problems(sql: str, linked: Linked, dialect: str) -> list[str]:
         return [
             f"Bảng {', '.join(outside)} không có trong phạm vi; chỉ dùng: {', '.join(sorted(allowed))}."
         ]
-    for select in tree.find_all(exp.Select):
-        if any(isinstance(e, exp.Star) for e in select.expressions):
-            return ["Không dùng SELECT *; hãy nêu rõ các cột cần lấy."]
+    # A star reads every column, including those the model was never shown (personal data):
+    # SELECT *, t.*, COUNT(DISTINCT t.*). Only COUNT(*) counts rows without reading them.
+    for star in tree.find_all(exp.Star):
+        if not isinstance(star.parent, exp.Count):
+            return ["Không dùng SELECT * hay bảng.*; hãy nêu rõ các cột cần lấy."]
     mapping: dict[str, dict[str, dict[str, str]]] = {}
     for t in linked.tables:
         mapping.setdefault(t.schema, {})[t.name] = {

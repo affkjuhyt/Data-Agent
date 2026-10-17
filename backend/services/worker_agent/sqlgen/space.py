@@ -17,7 +17,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db.models import catalog, context, governance
-from services.worker_agent.sqlgen.schema import Col, Fk, Schema, Tbl
+from services.worker_agent.sqlgen.schema import Col, Fk, Schema, Tbl, readable
 
 MAX_SAMPLES = 20
 
@@ -150,13 +150,20 @@ async def load_space(session: AsyncSession, space_id: uuid.UUID, principal_id: u
         )
     ).all()
     return Space(
-        Schema(
-            tables,
-            [
-                Fk(j.from_dataset_id, tuple(j.from_columns), j.to_dataset_id, tuple(j.to_columns))
-                for j in joins
-            ],
-            [(str(q), str(s)) for q, s in examples],
+        readable(
+            Schema(
+                tables,
+                [
+                    Fk(
+                        j.from_dataset_id,
+                        tuple(j.from_columns),
+                        j.to_dataset_id,
+                        tuple(j.to_columns),
+                    )
+                    for j in joins
+                ],
+                [(str(q), str(s)) for q, s in examples],
+            )
         ),
         {d.id: d.source_id for d in datasets},
     )
