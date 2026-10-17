@@ -2,7 +2,7 @@ import type { Citation } from '../types';
 import { CITATION_TAGS } from '../labels';
 
 /** "Nguồn": the documents and tools an answer cites, numbered like the [n] markers in the text. */
-export function CitationPanel({ citations }: { citations: Citation[] }) {
+export function CitationPanel({ citations, onOpen }: { citations: Citation[]; onOpen?: (citation: Citation) => void }) {
   if (!citations.length) return null;
   return (
     <section aria-label="Nguồn" className="flex flex-col gap-da-xs">
@@ -17,7 +17,9 @@ export function CitationPanel({ citations }: { citations: Citation[] }) {
               </span>
               <div className="flex min-w-0 flex-1 flex-col">
                 <div className="flex flex-wrap items-baseline gap-da-sm">
-                  {href ? (
+                  {onOpen && c.type === 'document' && c.doc_id ? (
+                    <button type="button" onClick={() => onOpen(c)} className="cursor-pointer text-left text-primary hover:underline da-body-strong">{c.source}</button>
+                  ) : href ? (
                     <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline da-body-strong">{c.source}</a>
                   ) : (
                     <span className="text-foreground da-body-strong">{c.source}</span>

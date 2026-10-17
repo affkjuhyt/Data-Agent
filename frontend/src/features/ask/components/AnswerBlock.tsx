@@ -19,7 +19,7 @@ import { csvFileName, downloadCsv, toCsv } from '../exportCsv';
 import { interpretationChips } from '../interpretation';
 import { resultSetToEvidenceRun } from '../resultSets';
 import { answerTrust } from '../trust';
-import type { AskMessage, ClarificationReply, EvidenceRun } from '../types';
+import type { AskMessage, Citation, ClarificationReply, EvidenceRun } from '../types';
 import { CitationPanel } from './CitationPanel';
 import { ClarificationCard } from './ClarificationCard';
 import { DataGrid } from './DataGrid';
@@ -61,6 +61,8 @@ interface AnswerBlockProps {
   reported?: boolean;
   /** "Biên nhận": open P01 Biên nhận câu trả lời (UC-01-07) for this answer */
   onOpenReceipt?: () => void;
+  /** opens the document a citation points at, at its page */
+  onOpenCitation?: (citation: Citation) => void;
   /** "Lưu thành tri thức": open P07 Lưu câu trả lời thành tri thức for this answer */
   onSaveKnowledge?: () => void;
   /** "Dừng" on a result still arriving */
@@ -110,7 +112,7 @@ function CopyLink({ text }: { text: string }) {
 export function AnswerBlock({
   msg, question, busy, onSuggestion, onAnswerClarification, onSave, onOpenEvidence,
   showEvidenceStrip = true, showTimestamp = true, onRetry, onRephrase, showRefusalDetail,
-  onReport, reported, onOpenReceipt,
+  onReport, reported, onOpenReceipt, onOpenCitation,
   onSaveKnowledge, onStop, onConfirmUnderstanding, onEditUnderstanding,
 }: AnswerBlockProps) {
   const [exportOpen, setExportOpen] = useState(false);
@@ -175,7 +177,7 @@ export function AnswerBlock({
         </div>
       )}
 
-      {msg.content ? <MarkdownContent text={msg.content} citations={msg.citations} /> : streaming ? <TypingDots /> : null}
+      {msg.content ? <MarkdownContent text={msg.content} citations={msg.citations} onOpenCitation={onOpenCitation} /> : streaming ? <TypingDots /> : null}
 
       {streaming && msg.progress?.partial && <PartialResult partial={msg.progress.partial} onStop={onStop} />}
 
@@ -211,7 +213,7 @@ export function AnswerBlock({
 
       {!streaming && msg.verification && <VerifierBadge verification={msg.verification} />}
 
-      {msg.citations && msg.citations.length > 0 && <CitationPanel citations={msg.citations} />}
+      {msg.citations && msg.citations.length > 0 && <CitationPanel citations={msg.citations} onOpen={onOpenCitation} />}
 
       {answered && (
         <div className="flex flex-wrap items-center gap-x-da-xl gap-y-da-sm">

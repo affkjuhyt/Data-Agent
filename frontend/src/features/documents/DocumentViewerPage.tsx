@@ -28,6 +28,7 @@ import { useV1 } from '../../lib/v1/useV1';
 import { CallViewer } from './CallViewer';
 import { EmailViewer } from './EmailViewer';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
+import { takePage } from './focusPage';
 
 /*
  * "v3.1 · Phi cấu trúc · Trình xem tài liệu" (2069:3041, UC-05-04, UC-05-05) at /data/document/<id>:
@@ -92,8 +93,9 @@ type Mode = 'original' | 'ocr';
 function FileViewer({ doc, onChanged }: { doc: DocumentView; onChanged: () => void }) {
   const { navigate } = useAppState();
   const hasPages = doc.page_count > 0;
-  const [pageNo, setPageNo] = useState(
-    Math.min(Math.max(doc.focus_page, 1), Math.max(doc.page_count, 1)),
+  // A citation opens the page it cites (focusPage.ts); otherwise the document's focus page.
+  const [pageNo, setPageNo] = useState(() =>
+    Math.min(Math.max(takePage(doc.id) ?? doc.focus_page, 1), Math.max(doc.page_count, 1)),
   );
   const [mode, setMode] = useState<Mode>('original');
   const [tab, setTab] = useState<Tab>('fields');

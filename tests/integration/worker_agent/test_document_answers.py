@@ -152,11 +152,12 @@ async def test_nothing_relevant_in_the_documents_is_said_not_guessed(seed: Seed)
     add_document(seed, lib, RATE)
     question = ask(seed, lib, "Quy trình phê duyệt hạn mức thẻ tín dụng doanh nghiệp gồm mấy bước?")
     await drain()
-    assert seed.one("SELECT status FROM qa.question WHERE id = %s", question) == "refused"
+    # E1 is an answer, drawn as text, not a refusal card.
+    assert seed.one("SELECT status FROM qa.question WHERE id = %s", question) == "answered"
     kind, text, citations = seed.one(
         "SELECT kind, text, citations FROM qa.answer WHERE question_id = %s", question
     )
-    assert kind == "refusal" and citations == []
+    assert kind == "document" and citations == []
     assert "Không tìm thấy trong tài liệu được phép" in text
 
 
@@ -193,7 +194,7 @@ async def test_unusable_pages_and_suspected_injections_never_reach_the_answer(se
     kind, citations = seed.one(
         "SELECT kind, citations FROM qa.answer WHERE question_id = %s", question
     )
-    assert kind == "refusal" and citations == []
+    assert kind == "document" and citations == []
 
 
 @pytest.mark.req("AC-05-06-06")
@@ -205,7 +206,7 @@ async def test_a_question_of_another_purpose_reads_no_collection_of_this_one(see
     kind, citations = seed.one(
         "SELECT kind, citations FROM qa.answer WHERE question_id = %s", question
     )
-    assert kind == "refusal" and citations == []
+    assert kind == "document" and citations == []
 
 
 async def test_a_data_space_without_documents_keeps_the_metric_refusal(seed: Seed) -> None:

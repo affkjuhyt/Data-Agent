@@ -18,7 +18,7 @@ export interface ChartSpec {
   series?: Array<{ key: string; type: 'bar' | 'line' | 'area' }>;
 }
 
-export type CitationType = 'kb' | 'mcp' | 'db' | 'web' | 'tool';
+export type CitationType = 'kb' | 'mcp' | 'db' | 'web' | 'tool' | 'document';
 
 export interface Citation {
   index: number;
@@ -28,6 +28,8 @@ export interface Citation {
   snippet: string;
   url?: string | null;
   doc_id?: string | null;
+  /** first page of the cited passage, for a V3 document citation (type 'document'). */
+  page?: number | null;
   provenance?: DataProvenance | null;
   truncation?: Truncation | null;
   aggregation?: AggregationReport | null;

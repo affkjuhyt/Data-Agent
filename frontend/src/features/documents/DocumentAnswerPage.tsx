@@ -10,6 +10,7 @@ import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
 import { askDocuments, type Citation, type DocumentAnswer } from '../../lib/v1/documents';
 import { ReportDialog } from '../ask/components/ReportDialog';
+import { requestPage } from './focusPage';
 
 /*
  * "P05 · Trả lời từ tài liệu" (2300:19144, UC-04): a question answered only from documents the
@@ -176,7 +177,10 @@ function AnswerTurn({
             <button
               type="button"
               className="text-primary da-body-strong hover:underline"
-              onClick={() => navigate('data', 'DOCUMENT', open.document_id)}
+              onClick={() => {
+                requestPage(open.document_id, open.page);
+                navigate('data', 'DOCUMENT', open.document_id);
+              }}
             >
               Mở đoạn gốc
             </button>

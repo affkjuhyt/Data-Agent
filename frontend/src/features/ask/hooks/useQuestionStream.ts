@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { V1Error } from '../../../lib/v1/client';
 import { askQuestion, getAnswer, questionEvents, type Answer } from '../../../lib/v1/questions';
-import type { AskMessage, ClarificationReply } from '../types';
+import type { AskMessage, Citation, ClarificationReply } from '../types';
 
 const POLL_MS = 400;
 // A turn the worker has not finished in this long is shown as failed; the question stays
@@ -36,6 +36,40 @@ const STATUS_STEP: Record<string, string> = {
   running: 'Đang chạy kế hoạch',
 };
 
+/** One entry of qa.answer.citations as worker-agent writes it (documents/answer.py). */
+interface AnswerCitationWire {
+  n: number;
+  document_id: string;
+  document_title: string | null;
+  doc_no: string | null;
+  section_path: string | null;
+  page_from: number;
+  superseded_by: string | null;
+  quote: string;
+  score?: number | null;
+}
+
+/** A document citation numbered like the [n] markers of the answer text. */
+export function citationsOf(answer: Pick<Answer, 'citations'>): Citation[] {
+  const wire = Array.isArray(answer.citations) ? (answer.citations as AnswerCitationWire[]) : [];
+  return wire.map((c) => ({
+    index: c.n,
+    source: [
+      c.document_title ?? c.doc_no ?? 'Tài liệu',
+      c.section_path,
+      `trang ${c.page_from}`,
+      c.superseded_by ? `đã được thay thế bởi ${c.superseded_by}` : null,
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    type: 'document',
+    snippet: c.quote,
+    doc_id: c.document_id,
+    page: c.page_from,
+    score: c.score ?? null,
+  }));
+}
+
 /** The answer as the Ask screen draws it. A refusal has no code on the wire (qa.answer keeps
  *  kind and text only), so it is drawn as a refusal with the server's message. */
 function fromAnswer(answer: Answer): Partial<AskMessage> {
@@ -45,7 +79,8 @@ function fromAnswer(answer: Answer): Partial<AskMessage> {
       refusal: { code: 'REFUSED', message: answer.text, next_action: '' },
     };
   }
-  return { content: answer.text };
+  const citations = citationsOf(answer);
+  return citations.length ? { content: answer.text, citations } : { content: answer.text };
 }
 
 export function useQuestionStream() {

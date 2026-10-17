@@ -46,7 +46,7 @@ export const GENERATED_BY_LABELS: Record<string, string> = {
 };
 
 export const CITATION_TAGS: Record<string, string> = {
-  kb: 'Tài liệu', web: 'Web', mcp: 'MCP', tool: 'Công cụ', db: 'CSDL',
+  kb: 'Tài liệu', document: 'Tài liệu', web: 'Web', mcp: 'MCP', tool: 'Công cụ', db: 'CSDL',
 };
 
 export const optionLabel = (key: string): string => OPTION_LABELS[key] ?? key;

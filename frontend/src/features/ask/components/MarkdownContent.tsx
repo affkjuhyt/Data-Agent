@@ -9,7 +9,9 @@ import type { Citation } from '../types';
 
 const INLINE_RE = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\[\d+\])/g;
 
-function InlineText({ text, citations }: { text: string; citations?: Citation[] }) {
+type OpenCitation = (citation: Citation) => void;
+
+function InlineText({ text, citations, onOpenCitation }: { text: string; citations?: Citation[]; onOpenCitation?: OpenCitation }) {
   return (
     <>
       {text.split(INLINE_RE).map((part, i) => {
@@ -22,6 +24,20 @@ function InlineText({ text, citations }: { text: string; citations?: Citation[] 
           const c = citations.find(x => x.index === Number(cite[1]));
           if (c) {
             const scoreStr = typeof c.score === 'number' ? ` · điểm ${c.score.toFixed(2)}` : '';
+            if (onOpenCitation && c.type === 'document' && c.doc_id)
+              return (
+                <sup key={i} className="ml-px align-[2px]">
+                  <button
+                    type="button"
+                    title={`${c.source}${scoreStr}\n${c.snippet}`}
+                    aria-label={`Mở nguồn ${cite[1]}: ${c.source}`}
+                    onClick={() => onOpenCitation(c)}
+                    className="inline-flex h-4 min-w-4 cursor-pointer items-center justify-center rounded-sm bg-accent px-da-xs text-primary da-label hover:underline"
+                  >
+                    {cite[1]}
+                  </button>
+                </sup>
+              );
             return (
               <sup
                 key={i}
@@ -42,7 +58,7 @@ function InlineText({ text, citations }: { text: string; citations?: Citation[] 
   );
 }
 
-export function MarkdownContent({ text, citations }: { text: string; citations?: Citation[] }) {
+export function MarkdownContent({ text, citations, onOpenCitation }: { text: string; citations?: Citation[]; onOpenCitation?: OpenCitation }) {
   const lines = text.split('\n');
   const nodes: React.ReactNode[] = [];
   let i = 0;
@@ -65,7 +81,7 @@ export function MarkdownContent({ text, citations }: { text: string; citations?:
       const lvl = hm[1].length;
       nodes.push(
         <p key={`h${i}`} className={lvl <= 2 ? 'mt-da-md da-heading-2' : 'da-heading-3'}>
-          <InlineText text={hm[2]} citations={citations} />
+          <InlineText text={hm[2]} citations={citations} onOpenCitation={onOpenCitation} />
         </p>,
       );
       i++; continue;
@@ -75,7 +91,7 @@ export function MarkdownContent({ text, citations }: { text: string; citations?:
       while (i < lines.length && /^[-*]\s/.test(lines[i])) { items.push(lines[i].replace(/^[-*]\s/, '')); i++; }
       nodes.push(
         <ul key={`ul${i}`} className="m-0 list-disc pl-da-2xl da-reading">
-          {items.map((item, j) => <li key={j}><InlineText text={item} citations={citations} /></li>)}
+          {items.map((item, j) => <li key={j}><InlineText text={item} citations={citations} onOpenCitation={onOpenCitation} /></li>)}
         </ul>,
       );
       continue;
@@ -85,13 +101,13 @@ export function MarkdownContent({ text, citations }: { text: string; citations?:
       while (i < lines.length && /^\d+\.\s/.test(lines[i])) { items.push(lines[i].replace(/^\d+\.\s/, '')); i++; }
       nodes.push(
         <ol key={`ol${i}`} className="m-0 list-decimal pl-da-2xl da-reading">
-          {items.map((item, j) => <li key={j}><InlineText text={item} citations={citations} /></li>)}
+          {items.map((item, j) => <li key={j}><InlineText text={item} citations={citations} onOpenCitation={onOpenCitation} /></li>)}
         </ol>,
       );
       continue;
     }
     if (!line.trim()) { i++; continue; }
-    nodes.push(<p key={`p${i}`} className="m-0 da-reading"><InlineText text={line} citations={citations} /></p>);
+    nodes.push(<p key={`p${i}`} className="m-0 da-reading"><InlineText text={line} citations={citations} onOpenCitation={onOpenCitation} /></p>);
     i++;
   }
   return <div className="flex flex-col gap-da-sm text-foreground">{nodes}</div>;

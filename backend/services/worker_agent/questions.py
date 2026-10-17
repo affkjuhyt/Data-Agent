@@ -615,20 +615,12 @@ async def _answer_from_documents(
             len(told.dropped),
         )
     if not told.found:
-        await _refuse(
-            event,
-            question_id,
-            user_id,
-            plan_id,
-            Refusal.of(
-                ErrorCode.INSUFFICIENT_EVIDENCE,
-                message=told.text
-                + " Câu hỏi cũng không gọi tên chỉ số nào của Data Space; hãy hỏi lại cụ thể hơn.",
-                next_action=NextAction.REPHRASE,
-                detail_id=str(question_id),
-            ),
+        # E1: "not found in the documents you may read" is an answer, not a failure: it is
+        # written as one (no citations, so the trust label says there is no evidence) and drawn
+        # as plain text, not as a refusal card. The hint covers a question meant for a metric.
+        told.text += (
+            " Nếu bạn cần số liệu, hãy gọi tên chỉ số như trong danh mục chỉ số của Data Space."
         )
-        return True
     answer_id = uuid7()
     async with scoped_session(ROLE, event.org_id, user_id) as session:
         question = await session.get(qa.Question, question_id, with_for_update=True)
@@ -653,7 +645,9 @@ async def _answer_from_documents(
                 ),
                 lineage_hash=hashlib.sha256(
                     ",".join(sorted(str(c.passage.chunk_id) for c in told.citations)).encode()
-                ).hexdigest(),
+                ).hexdigest()
+                if told.citations
+                else None,
                 product_scope="not_applicable",
             )
         )

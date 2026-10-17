@@ -31,7 +31,8 @@ import { EvidencePanel } from './components/EvidencePanel';
 import { ReportDialog } from './components/ReportDialog';
 import { SaveToKnowledgeDialog } from '../knowledge/SaveToKnowledgeDialog';
 import { ReceiptDrawer } from '../answer-receipt/AnswerReceiptPage';
-import type { AskMessage } from './types';
+import { requestPage } from '../documents/focusPage';
+import type { AskMessage, Citation } from './types';
 
 /* ─── per-viewer convenience storage ─────────────────────────────── */
 
@@ -74,7 +75,12 @@ const EXAMPLES = [
 /* ─── page ────────────────────────────────────────────────────────── */
 
 export default function AskDataPage() {
-  const { user } = useAppState();
+  const { user, navigate } = useAppState();
+  const openCitation = (c: Citation) => {
+    if (!c.doc_id) return;
+    requestPage(c.doc_id, c.page);
+    navigate('data', 'DOCUMENT', c.doc_id);
+  };
   const [input, setInput] = useState('');
   const [saved, setSaved] = useState<StoredQuestion[]>(() => readList(SAVED_KEY));
   const [history, setHistory] = useState<StoredQuestion[]>(() => readList(HISTORY_KEY));
@@ -301,6 +307,7 @@ export default function AskDataPage() {
                     /* The stream gives no server answer id yet (docs/v3/05-ui-v3.md §4), so this is the
                        client message id: the receipt page shows "chưa có biên nhận" until it does. */
                     onOpenReceipt={msg.answerId && msg.content ? () => setReceiptFor(msg.answerId!) : undefined}
+                    onOpenCitation={openCitation}
                     reported={!!(msg.answerId && reported[msg.answerId])}
                     onStop={msg.status === 'streaming' ? stop : undefined}
                     onConfirmUnderstanding={choice => void confirmUnderstanding(msg.id, choice)}
