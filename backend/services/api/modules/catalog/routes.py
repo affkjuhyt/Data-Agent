@@ -10,6 +10,7 @@ here, so there is exactly one per history row.
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import uuid
 import zoneinfo
@@ -272,9 +273,9 @@ def _event(
     )
 
 
-def _secret_ref(ref: SecretReference, principal: Principal, field: str) -> str:
+def _checked_ref(ref: str, principal: Principal, field: str) -> str:
     try:
-        return rules.check_secret_ref(ref.secret_ref, principal.org_id)
+        return rules.check_secret_ref(ref, principal.org_id)
     except rules.SecretRefOutsideOrg as exc:
         raise Problem(
             422,
@@ -282,6 +283,27 @@ def _secret_ref(ref: SecretReference, principal: Principal, field: str) -> str:
             "The secret reference is not a path of your organisation in OpenBao (BR-14).",
             errors=[FieldError(field=f"{field}.secret_ref", code="secret_ref", message=str(exc))],
         ) from exc
+
+
+async def _credentials_path(
+    cred: SecretReference, principal: Principal, source_id: uuid.UUID, field: str
+) -> str:
+    """The OpenBao path to store. A typed account is written first; a path is only checked."""
+    if cred.secret_ref is not None:
+        return _checked_ref(cred.secret_ref, principal, field)
+    from services.api.modules.catalog.vault import SecretStoreError, put_account
+
+    try:
+        return await asyncio.to_thread(
+            put_account,
+            principal.org_id,
+            source_id,
+            cred.username or "",
+            cred.password or "",
+            writeback=field == "writeback_credentials",
+        )
+    except SecretStoreError as exc:
+        raise Problem(503, "source_unavailable", "The secret store is unavailable.") from exc
 
 
 # --- sources ------------------------------------------------------------------------------------
@@ -470,12 +492,7 @@ async def create_source(
             "business_rule_violated",
             f"A {body.kind} source cannot be queried in place; use mode ingest (UC-04-01).",
         )
-    secret_ref = _secret_ref(body.credentials, principal, "credentials") if body.credentials else ""
-    writeback_ref = (
-        _secret_ref(body.writeback_credentials, principal, "writeback_credentials")
-        if body.writeback_credentials
-        else None
-    )
+    source_id = uuid7()
     values: dict[str, Any] = {
         "name": body.name.strip(),
         "kind": body.kind,
@@ -494,10 +511,24 @@ async def create_source(
             values[name] = value
     async with transaction(ROLE, principal) as session:
         await _check_calendar(session, principal, body.work_calendar_id)
+        # After the calendar check, so a rejected body does not store an account. The path
+        # itself is a new version (vault.account_ref), never a path a source already uses.
+        secret_ref = (
+            await _credentials_path(body.credentials, principal, source_id, "credentials")
+            if body.credentials
+            else ""
+        )
+        writeback_ref = (
+            await _credentials_path(
+                body.writeback_credentials, principal, source_id, "writeback_credentials"
+            )
+            if body.writeback_credentials
+            else None
+        )
         # Saved as draft: nothing is read from the source before its connection test passes
         # (UC-04-01 step 2); the duplicate name in the Data Space is the UNIQUE's 409.
         row = catalog.Source(
-            id=uuid7(),
+            id=source_id,
             org_id=principal.org_id,
             data_space_id=space,
             secret_ref=secret_ref,
@@ -547,9 +578,20 @@ async def update_source(
             raise Problem(422, "validation_failed", f"{name} cannot be null.")
     if "credentials" in sent and body.credentials is None:
         raise Problem(422, "validation_failed", "credentials cannot be removed, only replaced.")
-    new_ref = _secret_ref(body.credentials, principal, "credentials") if body.credentials else None
+    # A path is only checked. A typed account is stored after _source locks the row, on a new
+    # version path, so a caller who cannot see the source never overwrites its account.
+    checked_ref = (
+        _checked_ref(body.credentials.secret_ref, principal, "credentials")
+        if body.credentials is not None and body.credentials.secret_ref is not None
+        else None
+    )
     async with transaction(ROLE, principal) as session:
         row = await _source(session, principal, space, source_id, lock=True)
+        new_ref = checked_ref
+        if body.credentials is not None and body.credentials.secret_ref is None:
+            if row.status == "archived":
+                raise Problem(409, "invalid_state", "An archived source cannot change account.")
+            new_ref = await _credentials_path(body.credentials, principal, source_id, "credentials")
         previous = row.status
         changed: list[str] = []
         for name in (

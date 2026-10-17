@@ -167,7 +167,7 @@ describe('sources from the api', () => {
         port: 443,
         database: '',
         username: 'agent_ro',
-        secret_ref: 'kv/core',
+        password: '',
       },
     });
     expect(body).toEqual({
@@ -177,7 +177,7 @@ describe('sources from the api', () => {
       host: 'api.noibo',
       port: 443,
       database_name: null,
-      credentials: { secret_ref: 'kv/core' },
+      credentials: { username: 'agent_ro', password: '' },
     });
   });
 

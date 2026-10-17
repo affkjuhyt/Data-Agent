@@ -45,13 +45,11 @@ describe('ConnectPage', () => {
     expect(
       screen.getByText('· Mở cổng từ máy chủ Data Agent tới card-db.noibo:1521'),
     ).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: 'Mật khẩu' })).not.toHaveAttribute(
-        'aria-disabled',
-        'true',
-      ),
-    );
-    pick('Mật khẩu', 'Lưu trong kho bí mật · openbao://db/card-ro');
+    // A source with no password (the public ClickHouse playground) can continue.
+    const password = screen.getByLabelText('Mật khẩu');
+    expect(password).toHaveAttribute('type', 'password');
+    expect(password).toHaveValue('');
+    await waitFor(() => expect(next).not.toHaveAttribute('aria-disabled', 'true'));
     fireEvent.click(next);
 
     expect(await screen.findByText('Kết quả kiểm tra')).toBeInTheDocument();

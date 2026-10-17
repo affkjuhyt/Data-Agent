@@ -19,7 +19,6 @@ import {
   confirmMasking,
   createSource,
   listConnectors,
-  listSecretRefs,
   getScanRun,
   listScannedTables,
   startSourceScan,
@@ -36,8 +35,8 @@ import { ConnectorPicker } from './ConnectorPicker';
 /*
  * "Kết nối nguồn" (UC-04-01, UC-04-04, UC-04-05). /data/connect is step 1, the connector
  * catalogue; /data/connect/<connector> runs steps 2–5:
- *   2 "Thông tin & chế độ" (2279:16775) — the form, a read-only account, the password only as
- *     a secret reference, and federated vs ingest;
+ *   2 "Thông tin & chế độ" (2279:16775) — the form, a read-only account, the password
+ *     (empty when the source has none) and federated vs ingest;
  *   3 "Kiểm tra" (2279:16968) — five checks; a write grant blocks the flow (the account must
  *     not be able to change the source) and shows the REVOKE that fixes it;
  *   4 "Chọn dữ liệu" — no frame in Figma: a checklist of the tables the test found;
@@ -87,7 +86,7 @@ function ConnectFlow({ connector }: { connector: Connector }) {
     port: String(form0.default_port),
     database: '',
     username: '',
-    secret_ref: '',
+    password: '',
     mode: 'ingest' as NewSource['mode'],
   });
   const [chosen, setChosen] = useState<Set<string>>(new Set());
@@ -112,14 +111,13 @@ function ConnectFlow({ connector }: { connector: Connector }) {
       port: Number(form.port),
       database: form.database.trim(),
       username: form.username.trim(),
-      secret_ref: form.secret_ref,
+      password: form.password,
     },
   });
   const formReady =
     form.name.trim() &&
     form.host.trim() &&
     form.username.trim() &&
-    form.secret_ref &&
     Number(form.port) > 0;
 
   const run = async (work: () => Promise<void>) => {
@@ -350,7 +348,7 @@ type FormState = {
   port: string;
   database: string;
   username: string;
-  secret_ref: string;
+  password: string;
   mode: NewSource['mode'];
 };
 
@@ -363,7 +361,6 @@ function ConnectionForm({
   form: FormState;
   set: (key: keyof FormState) => (value: string) => void;
 }) {
-  const secrets = useV1(listSecretRefs, []);
   const values = { host: form.host || '…', port: form.port, user: form.username || '…' };
   const modes: { value: NewSource['mode']; title: string; text: string }[] = [
     {
@@ -430,27 +427,15 @@ function ConnectionForm({
             <Field
               labelTone="muted"
               label="Mật khẩu"
-              hint="Không lưu mật khẩu trong Data Agent; nhập đường dẫn OpenBao do quản trị cấp."
+              hint="Để trống nếu nguồn không yêu cầu mật khẩu. Giá trị được cất vào kho bí mật, không ghi vào cơ sở dữ liệu."
             >
-              {(secrets.data?.items ?? []).length > 0 ? (
-                <Select
-                  label="Mật khẩu"
-                  placeholder="Chọn khoá trong kho bí mật"
-                  value={form.secret_ref || null}
-                  onChange={set('secret_ref')}
-                  options={(secrets.data?.items ?? []).map((s) => ({
-                    value: s.ref,
-                    label: s.label,
-                  }))}
-                />
-              ) : (
-                <Input
-                  aria-label="Đường dẫn OpenBao"
-                  value={form.secret_ref}
-                  placeholder="secret/tenants/<org-id>/demo-postgres"
-                  onChange={(e) => set('secret_ref')(e.target.value)}
-                />
-              )}
+              <Input
+                type="password"
+                autoComplete="new-password"
+                value={form.password}
+                placeholder="Để trống nếu không có"
+                onChange={(e) => set('password')(e.target.value)}
+              />
             </Field>
           </div>
         </div>

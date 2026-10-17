@@ -7,11 +7,13 @@ credentials; OpenBao is read through the same SecretReader used by in-place quer
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import logging
 import uuid
 
 import asyncpg
+import httpx
 from sqlalchemy import select
 
 from libs.dataagent_db import scoped_session
@@ -38,8 +40,63 @@ def _ssl_mode(source: catalog.Source) -> str:
     return mode
 
 
+def _clickhouse_url(host: str, port: int) -> str:
+    # The playground is HTTPS on 443/8443. A slash or userinfo in the host would retarget the
+    # request, so those are refused before the URL is built.
+    if not host or any(char in host for char in "/?#@"):
+        raise ValueError("host")
+    scheme = "https" if port in (443, 8443) else "http"
+    return f"{scheme}://{host}:{port}/"
+
+
+async def _clickhouse_sql(
+    client: httpx.AsyncClient, url: str, database: str | None, sql: str, auth: tuple[str, str]
+) -> httpx.Response:
+    params = {"database": database} if database else None
+    return await client.post(url, params=params, content=sql.encode(), auth=auth)
+
+
+async def _check_clickhouse(
+    source: catalog.Source, org_id: uuid.UUID
+) -> tuple[bool, str, str | None]:
+    """HTTP ping, a read, and a refused write. The reason never includes the driver text."""
+    try:
+        credentials = await secrets().read(org_id, source.secret_ref)
+        url = _clickhouse_url(source.host or "", source.port or 8123)
+    except (SecretUnavailable, ValueError) as exc:
+        return False, f"connection failed ({type(exc).__name__})", None
+    auth = (credentials.user, credentials.password)
+    database = source.database_name or None
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS, verify=True) as client:
+            version_response = await _clickhouse_sql(
+                client, url, database, "SELECT version()", auth
+            )
+            if version_response.status_code >= 400:
+                return False, "connection failed (HTTPStatusError)", None
+            version = version_response.text.strip()[:80] or None
+            # Drop the probe if the account can create it: the check must not leave a database.
+            created = await _clickhouse_sql(
+                client, url, database, "CREATE DATABASE da_connector_probe", auth
+            )
+            if created.status_code < 400:
+                with contextlib.suppress(httpx.HTTPError, OSError, TimeoutError):
+                    await _clickhouse_sql(
+                        client, url, database, "DROP DATABASE IF EXISTS da_connector_probe", auth
+                    )
+                return False, "the source account has write privileges", version
+            read = await _clickhouse_sql(client, url, database, "SELECT 1", auth)
+            if read.status_code >= 400:
+                return False, "read-only check failed (HTTPStatusError)", None
+    except (httpx.HTTPError, OSError, TimeoutError) as exc:
+        return False, f"connection failed ({type(exc).__name__})", None
+    return True, "connection, login, catalog and read-only checks passed", version
+
+
 async def _check(source: catalog.Source, org_id: uuid.UUID) -> tuple[bool, str, str | None]:
     """Open the source, run read-only capability checks, and return a safe failure reason."""
+    if source.kind == "clickhouse":
+        return await _check_clickhouse(source, org_id)
     if source.kind != "postgresql":
         return False, f"connector {source.kind} is not wired yet", None
     try:

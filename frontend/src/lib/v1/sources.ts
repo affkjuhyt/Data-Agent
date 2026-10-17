@@ -352,7 +352,7 @@ export interface NewSource {
   name: string;
   connector: string;
   mode: 'federated' | 'ingest';
-  config: { host: string; port: number; database: string; username: string; secret_ref: string };
+  config: { host: string; port: number; database: string; username: string; password: string };
 }
 
 type SourceKind = components['schemas']['SourceCreate']['kind'];
@@ -371,8 +371,8 @@ const KIND: Record<string, SourceKind> = {
 const kindOf = (connector: string): SourceKind => KIND[connector] ?? (connector as SourceKind);
 
 /*
- * The form as SourceCreate: the database is database_name, the password is a reference to the
- * secret in OpenBao (the user name lives in that secret, so it is not sent).
+ * The form as SourceCreate: the database is database_name. The account is sent once; the API
+ * writes it to OpenBao and stores only the path. An empty password is a source that has none.
  */
 const sourceBody = (body: Partial<NewSource>) => ({
   name: body.name,
@@ -381,7 +381,9 @@ const sourceBody = (body: Partial<NewSource>) => ({
         host: body.config.host || null,
         port: body.config.port || null,
         database_name: body.config.database || null,
-        credentials: body.config.secret_ref ? { secret_ref: body.config.secret_ref } : null,
+        credentials: body.config.username
+          ? { username: body.config.username, password: body.config.password ?? '' }
+          : null,
       }
     : {}),
 });

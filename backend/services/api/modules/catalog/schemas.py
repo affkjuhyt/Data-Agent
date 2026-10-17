@@ -2,8 +2,9 @@
 
 Responses are the table's columns minus org_id, created_by, updated_by, deleted_at and every
 secret reference (A3 "Trả về"). A source stores only OpenBao paths (secret_ref,
-writeback_secret_ref), never a password or token: the request takes `credentials` as a reference
-and refuses any other key (BR-14); the response says only whether one is set.
+writeback_secret_ref), never a password or token (BR-14). Credentials may be that path, or a
+username and password the API writes to OpenBao before it answers; the response says only
+whether one is set.
 """
 
 from __future__ import annotations
@@ -11,9 +12,9 @@ from __future__ import annotations
 import datetime
 import decimal
 import uuid
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SourceKind = Literal[
     "postgresql",
@@ -41,12 +42,32 @@ PiiLabel = Literal["national_id", "phone", "email", "account_no", "name", "addre
 
 
 class SecretReference(BaseModel):
-    """Where the account lives in OpenBao (BR-14): a path under the organisation's namespace
-    `secret/tenants/{org_id}/`. A password, token or any other key is refused."""
+    """An existing OpenBao path, or the account the API stores there (BR-14).
+
+    The source row keeps only the path. ``username`` and ``password`` are written to OpenBao
+    and never returned; ``password`` may be empty when the source does not use one. A path and
+    a password in the same object are refused, so a secret cannot be posted beside its reference.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    secret_ref: str = Field(min_length=1, max_length=512)
+    secret_ref: str | None = Field(default=None, min_length=1, max_length=512)
+    username: str | None = Field(default=None, min_length=1, max_length=200)
+    password: str | None = Field(default=None, max_length=1024)
+
+    @model_validator(mode="after")
+    def one_form(self) -> Self:
+        has_path = self.secret_ref is not None
+        has_account = self.username is not None or self.password is not None
+        if has_path and has_account:
+            raise ValueError("send a secret_ref or a username and password, not both")
+        if has_path:
+            return self
+        if self.username is None:
+            raise ValueError("credentials need a secret_ref or a username")
+        if self.password is None:
+            self.password = ""
+        return self
 
 
 class _Limits(BaseModel):

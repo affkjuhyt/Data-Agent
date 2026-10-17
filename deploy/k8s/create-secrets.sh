@@ -18,6 +18,7 @@ kubectl -n dataagent-service create secret generic auth-api-secrets \
 
 kubectl -n dataagent-service create secret generic api-secrets \
   --from-literal=API_OIDC_ISSUER="${API_OIDC_ISSUER}" \
+  --from-literal=OPENBAO_TOKEN="${OPENBAO_TOKEN}" \
   --from-literal=DATAAGENT_DB_URL__SVC_ORG="${DATAAGENT_DB_URL__SVC_ORG}" \
   --from-literal=DATAAGENT_DB_URL__SVC_QA="${DATAAGENT_DB_URL__SVC_QA}" \
   --from-literal=DATAAGENT_DB_URL__SVC_QUERY="${DATAAGENT_DB_URL__SVC_QUERY}" \

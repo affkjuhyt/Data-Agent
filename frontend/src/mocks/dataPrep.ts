@@ -499,7 +499,8 @@ export function createDataPrepHandlers() {
     // any other dataset list falls through to the catalog mock.
     http.get('*/v1/datasets/:id', ({ params }) => {
       const id = String(params.id);
-      if (id !== 'dataset-loans-dedup') return problem(404, 'not_found', 'Không tìm thấy bảng.');
+      // Only this dialog's table. A source scan's datasets are answered by the catalog mock.
+      if (id !== 'dataset-loans-dedup') return undefined;
       return HttpResponse.json({
         id,
         schema_name: 'mart',
@@ -524,7 +525,10 @@ export function createDataPrepHandlers() {
       });
     }),
     http.get('*/v1/datasets', ({ request }) => {
-      const q = new URL(request.url).searchParams.get('q');
+      const url = new URL(request.url);
+      // A connect scan lists datasets by source_id; that list belongs to the catalog mock.
+      if (url.searchParams.get('source_id')) return undefined;
+      const q = url.searchParams.get('q');
       if (!q)
         return page([
           {

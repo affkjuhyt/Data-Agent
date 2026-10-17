@@ -1355,7 +1355,7 @@ export function createSourcesHandlers() {
         host: string | null;
         port: number | null;
         database_name: string | null;
-        credentials: { secret_ref: string } | null;
+        credentials: { secret_ref?: string; username?: string; password?: string } | null;
       };
       if (!created_.name?.trim() || !created_.host?.trim())
         return problem(422, 'validation_failed', 'Cần tên và máy chủ.');
@@ -1371,8 +1371,8 @@ export function createSourcesHandlers() {
           host: created_.host,
           port: created_.port ?? 0,
           database: created_.database_name ?? '',
-          username: 'agent_ro',
-          secret_ref: created_.credentials?.secret_ref ?? '',
+          username: created_.credentials?.username ?? 'agent_ro',
+          password: created_.credentials?.password ?? '',
         },
       };
       const connector = connectors.find((c) => c.code === body.connector);
@@ -1482,7 +1482,7 @@ export function createSourcesHandlers() {
             port: 1521,
             database: '',
             username: 'agent_ro',
-            secret_ref: '',
+            password: '',
           },
         };
         tests[id] = (tests[id] ?? 0) + 1;
