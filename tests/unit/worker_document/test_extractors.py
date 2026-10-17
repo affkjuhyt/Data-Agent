@@ -147,6 +147,41 @@ def test_docx_pictures_are_kept() -> None:
     assert page.images[0].data == b"\x89PNG" and page.images[0].extension == "png"
 
 
+def test_docx_pictures_outside_word_or_of_odd_types_are_dropped() -> None:
+    blips = "".join(
+        f'<w:drawing><a:blip r:embed="{i}"/></w:drawing>' for i in ("up", "ext", "odd", "abs")
+    )
+    rels = (
+        '<Relationship Id="up" Target="../docProps/secret.png"/>'
+        '<Relationship Id="ext" Target="http://169.254.169.254/x.png" TargetMode="External"/>'
+        '<Relationship Id="odd" Target="media/x.png/../../evil"/>'
+        '<Relationship Id="abs" Target="/etc/passwd.png"/>'
+    )
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        z.writestr(
+            "word/document.xml",
+            f'<w:document {W} xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><w:body>'
+            f"<w:p><w:r>{blips}<w:t>Hình</w:t></w:r></w:p></w:body></w:document>",
+        )
+        z.writestr(
+            "word/_rels/document.xml.rels",
+            f'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{rels}</Relationships>',
+        )
+        z.writestr("docProps/secret.png", b"\x89PNG")
+        z.writestr("evil", b"\x89PNG")
+    page = extract_pages(out.getvalue(), "docx")[0]
+    assert page.images == [] and [b.kind for b in page.blocks] == ["paragraph"]
+
+
+def test_an_image_upload_that_is_really_a_pdf_is_refused() -> None:
+    doc = pymupdf.open()
+    doc.new_page()
+    with pytest.raises(ValueError, match="not a PNG"):
+        extract_pages(doc.tobytes(), "image")
+
+
 def test_a_docx_with_entities_is_refused_not_expanded() -> None:
     bomb = (
         '<?xml version="1.0"?><!DOCTYPE w [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;">]>'

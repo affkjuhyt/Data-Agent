@@ -22,6 +22,7 @@ from __future__ import annotations
 import email
 import email.policy
 import io
+import posixpath
 import re
 import zipfile
 from email.message import EmailMessage
@@ -42,6 +43,29 @@ from services.worker_document.processing import (
 NO_BOX = (0.0, 0.0, 0.0, 0.0)
 # A .docx is a zip: what it may inflate to is bounded, whatever its compressed size (zip bombs).
 MAX_DOCX_INFLATED = 300 * 1024 * 1024
+# The picture formats a page may show. A .docx names its pictures itself: anything else is not
+# kept, so a crafted name never reaches a storage key or a content type.
+PICTURE_TYPES = {
+    "png": "png",
+    "jpg": "jpeg",
+    "jpeg": "jpeg",
+    "gif": "gif",
+    "bmp": "bmp",
+    "webp": "webp",
+    "tif": "tiff",
+    "tiff": "tiff",
+}
+# What an upload marked as an image must start with, and the reader pymupdf is held to: without
+# it pymupdf guesses, and an "image" that is really a PDF, XPS or EPUB is parsed as one.
+IMAGE_MAGIC = (
+    (b"\x89PNG\r\n\x1a\n", "png"),
+    (b"\xff\xd8\xff", "jpeg"),
+    (b"II*\x00", "tiff"),
+    (b"MM\x00*", "tiff"),
+    (b"GIF87a", "gif"),
+    (b"GIF89a", "gif"),
+    (b"BM", "bmp"),
+)
 # A4 in points: the frame the viewer gives a page that has no geometry of its own.
 A4 = (595.0, 842.0)
 
@@ -320,7 +344,12 @@ def docx_pages(content: bytes) -> list[ExtractedPage]:
         for rel in ElementTree.fromstring(archive.read("word/_rels/document.xml.rels")).iter(
             f"{_REL}Relationship"
         ):
-            rels[rel.get("Id", "")] = rel.get("Target", "")
+            if rel.get("TargetMode") == "External":
+                continue  # a linked picture lives elsewhere and is never fetched
+            # Targets are relative to word/; one that climbs out of it, or is absolute, is dropped.
+            target = posixpath.normpath(posixpath.join("word", rel.get("Target", "")))
+            if target.startswith("word/"):
+                rels[rel.get("Id", "")] = target
     except KeyError:
         pass
     body = ElementTree.fromstring(body_xml).find(f"{_W}body")
@@ -353,12 +382,12 @@ def docx_pages(content: bytes) -> list[ExtractedPage]:
                 parts.append("\n")
             elif node.tag == f"{_A}blip":
                 target = rels.get(node.get(f"{_R}embed", ""), "")
+                extension = PICTURE_TYPES.get(posixpath.splitext(target)[1].lstrip(".").lower())
                 try:
-                    data = archive.read(f"word/{target}") if target else b""
+                    data = archive.read(target) if target and extension else b""
                 except KeyError:
                     data = b""
-                if data:
-                    extension = target.rsplit(".", 1)[-1].lower() if "." in target else "bin"
+                if data and extension:
                     pages[-1][1].append(ExtractedImage(data, extension, NO_BOX))
                     pages[-1][0].append(LayoutBlock("picture", "", NO_BOX))
         if parts:
@@ -445,8 +474,13 @@ def email_pages(content: bytes, file_name: str = "") -> list[ExtractedPage]:
 
 
 def image_pages(content: bytes) -> list[ExtractedPage]:
+    kind = next((name for magic, name in IMAGE_MAGIC if content.startswith(magic)), None)
+    if kind is None and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        kind = "webp"
+    if kind is None:
+        raise ValueError("The file is not a PNG, JPEG, TIFF, GIF, BMP or WebP image")
     try:
-        picture = pymupdf.open(stream=content)
+        picture = pymupdf.open(stream=content, filetype=kind)
     except (RuntimeError, ValueError) as exc:
         raise ValueError("The image could not be opened") from exc
     result: list[ExtractedPage] = []
