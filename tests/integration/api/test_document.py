@@ -59,6 +59,9 @@ class FakeStore:
     async def presign_get(self, bucket: str, key: str, ttl_seconds: int) -> str:
         return f"https://minio.test/{bucket}/{key}?ttl={ttl_seconds}"
 
+    async def download(self, bucket: str, key: str) -> bytes:
+        return self.objects[(bucket, key)]
+
 
 class FakeSecrets:
     def __init__(self) -> None:
@@ -749,6 +752,20 @@ async def test_versions_follow_the_supersedes_chain_both_ways(ds: Space) -> None
             f"/v1/documents/{second}/versions", headers=ds.headers("admin", ds.other)
         )
         assert other.status_code == 404
+
+
+async def test_an_uploaded_html_original_is_served_sandboxed(ds: Space) -> None:
+    document = ds.document(media="html", file_name="trang.html")
+    key = ds.one("SELECT object_key FROM document.document WHERE id = %s", document)
+    ds.store.objects[(RAW_BUCKET, key)] = b"<script>alert(document.cookie)</script><p>Xin chao</p>"
+    async with client(ds) as api:
+        original = await api.get(f"/v1/documents/{document}/file", headers=ds.headers("analyst"))
+    assert original.status_code == 200, original.text
+    assert original.headers["content-type"].startswith("text/html")
+    assert original.headers["x-content-type-options"] == "nosniff"
+    # No script runs in it, wherever the browser opens it.
+    assert original.headers["content-security-policy"].startswith("sandbox;")
+    assert "script-src" not in original.headers["content-security-policy"]
 
 
 # AC-05-04-01

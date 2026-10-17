@@ -28,15 +28,31 @@ class DocumentOutboxSource:
     @asynccontextmanager
     async def claim(self, batch: int) -> AsyncIterator[list[Event]]:
         async with unscoped_session("svc_outbox_relay") as session:
-            rows = (await session.execute(text(
-                "SELECT id, org_id, event_type, aggregate_type, aggregate_id, payload "
-                "FROM document.outbox WHERE event_type = ANY(:types) "
-                "AND (published_at IS NULL OR created_at >= now() - interval '5 minutes') "
-                "ORDER BY created_at LIMIT :batch FOR UPDATE SKIP LOCKED"
-            ), {"types": self._types, "batch": batch})).all()
-            events = [Event(r.id, r.org_id, r.event_type, r.aggregate_type, r.aggregate_id, dict(r.payload or {})) for r in rows]
+            rows = (
+                await session.execute(
+                    text(
+                        "SELECT id, org_id, event_type, aggregate_type, aggregate_id, payload "
+                        "FROM document.outbox WHERE event_type = ANY(:types) "
+                        "AND published_at IS NULL "
+                        "ORDER BY created_at LIMIT :batch FOR UPDATE SKIP LOCKED"
+                    ),
+                    {"types": self._types, "batch": batch},
+                )
+            ).all()
+            events = [
+                Event(
+                    r.id,
+                    r.org_id,
+                    r.event_type,
+                    r.aggregate_type,
+                    r.aggregate_id,
+                    dict(r.payload or {}),
+                )
+                for r in rows
+            ]
             yield events
             if events:
-                await session.execute(text(
-                    "UPDATE document.outbox SET published_at = now() WHERE id = ANY(:ids)"
-                ), {"ids": [event.event_id for event in events]})
+                await session.execute(
+                    text("UPDATE document.outbox SET published_at = now() WHERE id = ANY(:ids)"),
+                    {"ids": [event.event_id for event in events]},
+                )

@@ -47,6 +47,9 @@ from services.worker_document.processing import (
 
 log = logging.getLogger(__name__)
 DOCUMENT_RECEIVED = "document.received"
+# Queued by `python -m services.worker_document.reprocess`: extract a ready (or failed) document
+# again, e.g. after an extractor improved; the reconciliation keeps what did not change.
+DOCUMENT_REPROCESS = "document.reprocess"
 ISSUE_RESOLVED = "quality_issue.resolved"
 ROLE = "svc_document"
 AUDIT_ROLE = "svc_audit"
@@ -75,6 +78,7 @@ class Meta:
     created_by: uuid.UUID | None
     object_key: str
     media: str
+    file_name: str
     qdrant_collection: str
     embed_model: str
     pii_policy: str
@@ -115,6 +119,7 @@ async def _meta(session: Any, org_id: uuid.UUID, row: document.Document) -> Meta
         created_by=row.created_by,
         object_key=row.object_key,
         media=row.media,
+        file_name=row.file_name,
         qdrant_collection=collection.qdrant_collection,
         embed_model=collection.embed_model,
         pii_policy=collection.pii_policy,
@@ -308,14 +313,18 @@ async def _fail(org_id: uuid.UUID, document_id: uuid.UUID, error: str) -> None:
         )
 
 
-async def process_document(event: Any) -> None:
+async def reprocess_document(event: Any) -> None:
+    await process_document(event, again=True)
+
+
+async def process_document(event: Any, *, again: bool = False) -> None:
     document_id = uuid.UUID(str(event.aggregate_id))
     org_id = event.org_id
     async with scoped_session(ROLE, org_id) as session:
         row = await session.scalar(
             select(document.Document).where(document.Document.id == document_id)
         )
-        if row is None or row.status in SKIP:
+        if row is None or row.status in ({"removed"} if again else SKIP):
             return
         meta = await _meta(session, org_id, row)
         if meta is None:
@@ -349,7 +358,7 @@ async def process_document(event: Any) -> None:
     try:
         try:
             content = await minio.download(RAW_BUCKET, meta.object_key)
-            pages = extract_pages(content, meta.media)
+            pages = extract_pages(content, meta.media, meta.file_name)
             if not pages:
                 raise ValueError("The document has no readable pages")
         except Exception as exc:  # any extraction failure ends in `failed`, said
@@ -564,5 +573,6 @@ async def process_resolution(event: Any) -> None:
 
 HANDLERS: dict[str, Callable[[Any], Awaitable[None]]] = {
     DOCUMENT_RECEIVED: process_document,
+    DOCUMENT_REPROCESS: reprocess_document,
     ISSUE_RESOLVED: process_resolution,
 }

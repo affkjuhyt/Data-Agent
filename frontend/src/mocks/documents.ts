@@ -212,6 +212,7 @@ function processingOf(s: StepState[]): DocumentView['processing'] {
 function view(d: Partial<DocumentView> & Pick<DocumentView, 'id' | 'title'>): DocumentView {
   const s = d.steps ?? steps(8);
   return {
+    media: 'pdf',
     type_text: 'PDF',
     steps: s,
     validity: null,

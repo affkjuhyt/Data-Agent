@@ -251,6 +251,8 @@ export interface CallRecording {
  */
 export interface DocumentView extends DocumentDetail {
   kind: DocumentKind;
+  /** pdf, image, docx, email, audio, html: only a PDF is shown as the original file. */
+  media: string;
   file_name: string;
   /** null for a document outside any collection (an upload not yet assigned). */
   collection: { id: Uuid; name: string } | null;
@@ -294,11 +296,12 @@ function signalsOf(raw: Schemas['DocumentDetail']): DocumentView['signals'] {
  * `display`: the page shows the document's state, its pages and its index coverage.
  */
 function readDocumentView(raw: DocumentWire, collections: Map<string, string>): DocumentView {
-  if (raw.display) return raw.display;
+  if (raw.display) return { ...raw.display, media: raw.display.media ?? raw.media };
   const p = raw.progress;
   return {
     ...readCollectionDocument(raw),
     kind: KIND[raw.media] ?? 'file',
+    media: raw.media,
     file_name: raw.file_name,
     collection: { id: raw.collection_id, name: collections.get(raw.collection_id) ?? '' },
     page_count: raw.page_count ?? 0,

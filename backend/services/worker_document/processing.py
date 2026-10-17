@@ -100,7 +100,7 @@ def _chunks(text: str, limit: int = MAX_CHUNK_CHARS) -> Iterable[str]:
         yield current.strip()
 
 
-def extract_pages(content: bytes, media: str) -> list[ExtractedPage]:
+def extract_pages(content: bytes, media: str, file_name: str = "") -> list[ExtractedPage]:
     """Extract deterministic page text for the first production document path.
 
     PDF text extraction is intentionally local and deterministic; OCR for scanned pages is a
@@ -162,13 +162,19 @@ def extract_pages(content: bytes, media: str) -> list[ExtractedPage]:
                     )
                 )
         return result
+    # extractors builds on this module's page types, hence the import here rather than at the top.
+    from services.worker_document import extractors
+
     if media == "html":
-        text = normalize_text(re.sub(r"<[^>]+>", " ", content.decode("utf-8", errors="replace")))
-        return [
-            ExtractedPage(
-                text, None, True, None, [LayoutBlock("paragraph", text, (0, 0, 0, 0))], [], 595, 842
-            )
-        ]
+        return extractors.html_pages(content)
+    if media == "docx":
+        return extractors.docx_pages(content)
+    if media == "email":
+        return extractors.email_pages(content, file_name)
+    if media == "image":
+        return extractors.image_pages(content)
+    if media == "audio":
+        raise ValueError("Recordings are not transcribed yet")
     raise ValueError(f"No text extractor is configured for media={media}")
 
 

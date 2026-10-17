@@ -801,7 +801,16 @@ async def download_document_original(
         row, _ = await _document(session, document_id, principal, data_space)
     content = await store.download(RAW_BUCKET, row.object_key)
     content_type = mimetypes.guess_type(row.file_name)[0] or "application/octet-stream"
-    return Response(content=content, media_type=content_type)
+    # The original is whatever was uploaded, an HTML page with scripts included: the browser
+    # must neither guess another type nor run anything in it, wherever it is opened.
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'",
+        },
+    )
 
 
 @router.get(
@@ -962,7 +971,9 @@ async def get_document_page(
             logger.warning("document | page image link unavailable: storage not configured")
     if page.layout_ref:
         try:
-            layout = json.loads((await store.download(DERIVED_BUCKET, page.layout_ref)).decode("utf-8"))
+            layout = json.loads(
+                (await store.download(DERIVED_BUCKET, page.layout_ref)).decode("utf-8")
+            )
             layout_width = layout.get("width")
             layout_height = layout.get("height")
             for raw_block in layout.get("blocks", []):

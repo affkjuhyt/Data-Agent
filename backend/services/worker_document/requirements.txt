@@ -4,3 +4,5 @@ aioboto3
 pydantic==2.9.2
 pymupdf==1.26.5
 httpx==0.27.2
+# word/document.xml of an uploaded .docx is parsed without entity expansion.
+defusedxml==0.7.1

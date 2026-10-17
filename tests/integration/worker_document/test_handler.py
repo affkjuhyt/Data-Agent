@@ -90,7 +90,7 @@ def event(u: Uploaded, kind: str = handler.DOCUMENT_RECEIVED, **payload: Any) ->
 def pages(monkeypatch: pytest.MonkeyPatch) -> list[ExtractedPage]:
     given: list[ExtractedPage] = []
     monkeypatch.setattr(handler, "MinIOClient", FakeMinio)
-    monkeypatch.setattr(handler, "extract_pages", lambda content, media: list(given))
+    monkeypatch.setattr(handler, "extract_pages", lambda content, media, file_name="": list(given))
     return given
 
 

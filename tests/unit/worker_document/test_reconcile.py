@@ -25,6 +25,7 @@ def meta(policy: str = "mask") -> Meta:
         effective_from=None,
         created_by=None,
         object_key="k",
+        file_name="qd.pdf",
         media="pdf",
         qdrant_collection="doc_x",
         embed_model="bge-m3",

@@ -103,7 +103,12 @@ function FileViewer({ doc, onChanged }: { doc: DocumentView; onChanged: () => vo
   // to the API: its schema correctly rejects it, but the viewer should show the designed waiting
   // state instead of leaking a 422 to the user.
   const page = useV1(hasPages ? () => getDocumentPage(doc.id, pageNo) : null, [doc.id, pageNo]);
-  const original = useV1(() => getDocumentOriginal(doc.id), [doc.id]);
+  // Only a PDF is embedded as itself. Any other original (an uploaded HTML page above all) would
+  // run in the app's origin from a blob: URL and lose the styles it links to; it is shown as the
+  // text the worker extracted, in the document's own structure.
+  const pdf = doc.media === 'pdf';
+  const original = useV1(pdf ? () => getDocumentOriginal(doc.id) : null, [doc.id, pdf]);
+  const paged = pdf || doc.media === 'image';
   const collection = doc.collection;
 
   return (
@@ -148,23 +153,27 @@ function FileViewer({ doc, onChanged }: { doc: DocumentView; onChanged: () => vo
               onClick={() => setPageNo((n) => n + 1)}
             />
           </span>
-          <Segmented<Mode>
-            label="Cách xem trang"
-            value={mode}
-            onChange={setMode}
-            items={[
-              { value: 'original', label: 'Bản gốc' },
-              { value: 'ocr', label: 'Văn bản OCR' },
-            ]}
-          />
+          {paged && (
+            <Segmented<Mode>
+              label="Cách xem trang"
+              value={mode}
+              onChange={setMode}
+              items={[
+                { value: 'original', label: 'Bản gốc' },
+                { value: 'ocr', label: 'Văn bản OCR' },
+              ]}
+            />
+          )}
         </div>
         <div className="h-da-2xl shrink-0" />
         {hasPages ? (
           <AsyncRegion state={page} what="trang" skeletonRows={8}>
             {(p) =>
-              mode === 'original' && original.data ? (
+              !paged ? (
+                <PageText page={p} />
+              ) : mode === 'original' && original.data ? (
                 <OriginalPdf url={original.data} fileName={doc.file_name} />
-              ) : mode === 'original' ? (
+              ) : mode === 'original' && hasGeometry(p) ? (
                 <PageImage page={p} />
               ) : (
                 <PageText page={p} />
@@ -320,6 +329,23 @@ function PageImage({ page }: { page: DocumentPage }) {
   );
 }
 
+/* A page that can be drawn as a page: an image, or blocks placed on it. Text-based media
+   (html, docx, email) have neither and are read as reflowed text. */
+function hasGeometry(page: DocumentPage): boolean {
+  return (
+    !!page.image_url ||
+    page.highlights.length > 0 ||
+    page.blocks.some((b) => b.box.w > 0 && b.box.h > 0)
+  );
+}
+
+/* A table as the worker writes it into a block: one row per line, cells joined by " | ". */
+function tableRows(text: string): string[][] | null {
+  const lines = text.split('\n');
+  if (lines.length < 2 || !lines.every((line) => line.includes(' | '))) return null;
+  return lines.map((line) => line.split(' | '));
+}
+
 function PageText({ page }: { page: DocumentPage }) {
   if (page.blocks.length > 0) {
     const structuredText = page.blocks.map((block) => block.text).join("\n");
@@ -335,6 +361,18 @@ function PageText({ page }: { page: DocumentPage }) {
             <h3 key={index} className={cn('text-foreground', block.level === 1 ? 'da-heading-2' : block.level === 2 ? 'da-heading-3' : 'da-body-strong')}>
               {block.text}
             </h3>
+          ) : tableRows(block.text) ? (
+            <table key={index} className="w-full border-collapse da-body-small">
+              <tbody>
+                {tableRows(block.text)!.map((row, r) => (
+                  <tr key={r} className="border-b border-border">
+                    {row.map((cell, c) => (
+                      <td key={c} className="px-da-sm py-da-xs align-top">{cell}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : (
             <p key={index} className="whitespace-pre-line da-body">{block.text}</p>
           ),
