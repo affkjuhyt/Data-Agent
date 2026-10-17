@@ -10,7 +10,7 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 4 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 294 có test nhắc mã AC | todo 778 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 295 có test nhắc mã AC | todo 778 |
 | Endpoint A2 (tab 4) | 471 (A2 ghi 472 dòng; POST /v1/data-products ở hai nhóm) | 471 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 222 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 161 có mã nhắc tới | todo 195 |
@@ -58,7 +58,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-03-01 | Chạy kỹ năng | todo | 1/1 | 2/2 | 3/6 |  |
+| UC-03-01 | Chạy kỹ năng | todo | 1/1 | 2/2 | 4/6 |  |
 | UC-03-02 | Tìm yếu tố bên ngoài | todo | 1/1 | 1/1 | 0/5 |  |
 | UC-03-03 | Tạo kỹ năng từ phiên phân tích | todo | 2/2 | 3/3 | 0/3 |  |
 | UC-03-04 | Kiểm định kỹ năng | todo | 2/2 | 3/3 | 0/4 |  |
@@ -790,7 +790,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-03-01 Chạy kỹ năng · 4/7</summary>
+<details><summary>UC-03-01 Chạy kỹ năng · 5/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
@@ -800,7 +800,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | AC-03-01-04 | Ngoại lệ | Cho chiều sản phẩm thiếu dữ liệu / Khi chạy / Thì kết quả ghi rõ chiều sản phẩm bị bỏ qua | E2E | todo | `tests/integration/worker_agent/test_skill_runs.py` |
 | AC-03-01-05 | Quy tắc | Cho bước Python thử mở kết nối mạng và đọc /etc/passwd / Khi chạy trong sandbox / Thì cả hai bị chặn; giới hạn mặc định đọc được là 2 vCPU, 4 GB | API | todo |  |
 | AC-03-01-06 | Quy tắc | Cho kỹ năng chạy xong / Khi đối chiếu nhật ký kết nối nguồn / Thì mọi truy vấn nguồn của lượt đều có query_run qua Query engine, không có kết nối trực tiếp từ sandbox | CSDL | todo | `tests/integration/worker_agent/test_skill_runs.py` |
-| AC-03-01-07 | Quy tắc | Cho bộ câu hỏi “vì sao” chuẩn / Khi chấm nhận định / Thì 100% kết luận nhân quả có mức tin cậy và phương pháp kiểm định, không có câu viết tương quan thành nguyên nhân | Đánh giá agent | todo |  |
+| AC-03-01-07 | Quy tắc | Cho bộ câu hỏi “vì sao” chuẩn / Khi chấm nhận định / Thì 100% kết luận nhân quả có mức tin cậy và phương pháp kiểm định, không có câu viết tương quan thành nguyên nhân | Đánh giá agent | todo | `model/eval/README.md`, `model/eval/scorers/causal.py` +2 |
 | — | Cần làm rõ | BR-08 ghi giới hạn thời gian sandbox 300 giây, BR-94 ghi 120 giây mỗi bước. Cần chốt 300 giây là mỗi lượt hay mỗi bước | | | |
 
 </details>
