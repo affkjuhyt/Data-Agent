@@ -58,8 +58,8 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
     {
       label: 'Nguồn & nạp',
       items: [
-        { id: 'SOURCES', label: 'Nguồn' },
-        { id: 'JOBS', label: 'Job nạp' },
+        { id: 'SOURCES', label: 'Nguồn', requires: 'admin_data' },
+        { id: 'JOBS', label: 'Job nạp', requires: 'admin_data' },
         { id: 'DRIFT', label: 'Lệch cấu trúc' },
         { id: 'ERRORS', label: 'Bản ghi lỗi' },
         { id: 'UPLOAD', label: 'Tải tệp' },
