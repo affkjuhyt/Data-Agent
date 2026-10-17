@@ -99,6 +99,7 @@ export const AREA_RAILS: Partial<Record<AreaId, RailGroup[]>> = {
     {
       label: 'Ngữ nghĩa',
       items: [
+        { id: 'CATALOG', label: 'Danh mục' },
         { id: 'ENTITIES', label: 'Mô hình thực thể' },
         { id: 'METRIC_CATALOG', label: 'Chỉ số' },
         { id: 'GLOSSARY', label: 'Từ điển nghiệp vụ' },

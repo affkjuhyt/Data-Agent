@@ -25,6 +25,11 @@ from libs.dataagent_db.models import catalog, context
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.questions import secrets
 from services.worker_agent.source_tests import _clickhouse_sql, _clickhouse_url, _ssl_mode
+from services.worker_agent.understand.value_retrieval import (
+    MAX_CATEGORY_CARDINALITY,
+    IndexDimension,
+    index_writes,
+)
 
 _CLICKHOUSE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -61,6 +66,96 @@ def _profile_value(column_name: str, value: Any) -> str:
 def _is_sensitive_column(column_name: str) -> bool:
     name = column_name.lower().replace("-", "_")
     return any(part in name.split("_") for part in _PII_NAME_PARTS)
+
+
+async def _refresh_value_index(
+    session: Any,
+    org_id: uuid.UUID,
+    samples: list[tuple[uuid.UUID, str, object]],
+) -> None:
+    """Upsert category values onto the dimensions whose expression is that column.
+
+    A hand-seeded value the profile did not see is left in place: the top of a
+    column is not the whole domain. Time dimensions are skipped; a date is not a
+    category label.
+    """
+    dataset_ids = {dataset_id for dataset_id, _, _ in samples}
+    if not dataset_ids:
+        return
+    entities = (
+        await session.scalars(
+            select(context.SemanticEntity).where(
+                context.SemanticEntity.org_id == org_id,
+                context.SemanticEntity.primary_dataset_id.in_(tuple(dataset_ids)),
+                context.SemanticEntity.status == "active",
+            )
+        )
+    ).all()
+    entity_by_id = {entity.id: entity for entity in entities}
+    if not entity_by_id:
+        return
+    dimensions = (
+        await session.scalars(
+            select(context.SemanticDimension).where(
+                context.SemanticDimension.entity_id.in_(tuple(entity_by_id)),
+                context.SemanticDimension.value_index_enabled.is_(True),
+                context.SemanticDimension.is_time.is_(False),
+            )
+        )
+    ).all()
+    dimensions_for_match: list[IndexDimension] = []
+    for dimension in dimensions:
+        entity = entity_by_id.get(dimension.entity_id)
+        if entity is None:
+            continue
+        dimensions_for_match.append(
+            IndexDimension(
+                str(dimension.id),
+                str(dimension.data_space_id),
+                str(entity.primary_dataset_id),
+                dimension.expression,
+                dimension.value_index_enabled,
+                dimension.is_time,
+            )
+        )
+    if not dimensions_for_match:
+        return
+    dimension_ids = [uuid.UUID(item.dimension_id) for item in dimensions_for_match]
+    existing_rows = (
+        await session.scalars(
+            select(context.ValueIndex).where(context.ValueIndex.dimension_id.in_(dimension_ids))
+        )
+    ).all()
+    existing = {(row.dimension_id, row.value_code): row for row in existing_rows}
+    now = datetime.datetime.now(datetime.UTC)
+    paired = [
+        (str(dataset_id), column_name, top_values)
+        for dataset_id, column_name, top_values in samples
+    ]
+    writes = index_writes(paired, dimensions_for_match)
+    for write in writes:
+        dimension_id = uuid.UUID(write.dimension_id)
+        entry = write.entry
+        row = existing.get((dimension_id, entry.value_code))
+        if row is None:
+            session.add(
+                context.ValueIndex(
+                    id=uuid7(),
+                    org_id=org_id,
+                    data_space_id=uuid.UUID(write.data_space_id),
+                    dimension_id=dimension_id,
+                    value_code=entry.value_code,
+                    value_label=entry.label,
+                    label_norm=entry.label_norm,
+                    row_count=entry.row_count,
+                    refreshed_at=now,
+                )
+            )
+            continue
+        row.value_label = entry.label
+        row.label_norm = entry.label_norm
+        row.row_count = entry.row_count
+        row.refreshed_at = now
 
 
 def _cardinality_for_foreign_key(child_unique: bool) -> str:
@@ -397,6 +492,7 @@ async def scan_schema(event: Event) -> None:
         found = await _scan_source(source, requested if isinstance(requested, list) else None)
         profiles = await _profile_source(source, found) if run.kind == "profile" else {}
         relationship_proposals: list[dict[str, object]] = []
+        value_samples: list[tuple[uuid.UUID, str, object]] = []
         now = datetime.datetime.now(datetime.UTC)
         async with scoped_session(ROLE, event.org_id, event.payload.get("requested_by")) as session:
             run = await session.scalar(
@@ -531,6 +627,17 @@ async def scan_schema(event: Event) -> None:
                                 top_values=profile["top_values"],
                             )
                         )
+                        # Free text is not a category list. A dimension over it stays
+                        # hand-seeded rather than matching a question to a sentence.
+                        distinct_raw = profile["distinct_est"]
+                        distinct = distinct_raw if isinstance(distinct_raw, int) else 0
+                        top_values = profile["top_values"]
+                        if (
+                            distinct <= MAX_CATEGORY_CARDINALITY
+                            and isinstance(top_values, list)
+                            and top_values
+                        ):
+                            value_samples.append((dataset.id, column.name, top_values))
             run.tables_total = len(found)
             run.tables_scanned = len(found)
             run.status = "succeeded"
@@ -598,6 +705,11 @@ async def scan_schema(event: Event) -> None:
                             },
                         )
                     )
+        if value_samples:
+            async with scoped_session(
+                RELATIONSHIP_ROLE, event.org_id, event.payload.get("requested_by")
+            ) as index_session:
+                await _refresh_value_index(index_session, event.org_id, value_samples)
     except Exception:
         async with scoped_session(ROLE, event.org_id, event.payload.get("requested_by")) as session:
             run = await session.scalar(

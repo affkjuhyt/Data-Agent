@@ -204,7 +204,7 @@ fine-tune; Spider 2.0-Snow 50,5% so ReFoRCE 38,0%):
 | Bước | Làm gì | Ablation (điểm mất khi bỏ) | Nối vào repo |
 | --- | --- | --- | --- |
 | Verified / semantic trước | Khớp verified query hoặc semantic model → không cần sinh SQL | (dbt: semantic layer gần 100% trong phạm vi) | `libs/semantic`, Verified Query (00) |
-| Semantic value retrieval | Chỉ mục giá trị theo cột TEXT; từ khoá trong câu hỏi → giá trị thật | −2,1 | Catalog: chỉ mục giá trị (00 §7.1) |
+| Semantic value retrieval | Chỉ mục giá trị theo cột TEXT; từ khoá trong câu hỏi → giá trị thật | −2,1 | `sem_value_retrieval`; FTS trên `context.value_index` |
 | Schema linking hợp nhất | Trực tiếp ∪ "reverse" (viết SQL nháp rồi rút schema) ∪ theo giá trị, rồi **đóng bao PK/FK** | −1,7; recall cột 80,9 → 95,4, ngữ cảnh nhỏ 9× | Schema crawler thu PK/FK; `handlers/data.py` |
 | N-version | Ba cách sinh khác nhau (skeleton, ICL với câu hỏi che, chia-trị), nhiều mẫu | −2,5 (ICL) … −1,2; 10% câu đúng chỉ một cách sinh ra được | `text_to_sql` alias; thêm sinh song song |
 | Unit test tất định | Cú pháp → logic (JOIN, ORDER/LIMIT, hàm thời gian) → chất lượng (SELECT *, NULL trong sort, rỗng); **checker ra chỉ thị, LLM chỉ sửa** | −2,1 | `sql_guard` mở rộng thành tool-chain |

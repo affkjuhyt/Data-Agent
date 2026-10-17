@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from services.worker_agent.understand.text import FoundPeriod, find_period, norm
+from services.worker_agent.understand.value_retrieval import sem_value_retrieval, value_targets
 
 PROCEED_AT = 0.8
 MAX_OPTIONS = 3
@@ -110,8 +111,8 @@ def _phrases(vocab: Vocabulary) -> list[tuple[str, tuple[str, ...], float]]:
         add(m.code.replace("_", " "), ("metric", str(m.metric_id)), 1.0)
     for d in vocab.dimensions:
         add(d.name, ("dimension", str(d.dimension_id)), 1.0)
-    for v in vocab.values:
-        add(v.label, ("value", v.dimension_code, v.value_code), 1.0)
+    for phrase, target, score in value_targets(vocab.values):
+        add(phrase, target, score)
     for phrase, target in vocab.synonyms.items():
         add(phrase, target, 0.9)
     return sorted(((p, t, s) for p, (t, s) in found.items()), key=lambda x: -len(x[0]))
@@ -124,6 +125,11 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
         text = text.replace(period.span, " ")
     metrics = {str(m.metric_id): m for m in vocab.metrics}
     dims = {str(d.dimension_id): d for d in vocab.dimensions}
+    # Value hits come from sem_value_retrieval. The phrase pass still decides where a
+    # value sits against a longer metric name; a hit it did not place is not a filter.
+    retrieved = {
+        (hit.dimension_code, hit.value_code): hit for hit in sem_value_retrieval(text, vocab.values)
+    }
 
     hits: list[tuple[tuple[str, ...], float, int]] = []  # target, score, position
     taken = text
@@ -146,18 +152,13 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
                 out.chips.append(Chip("dimension", dim.code, dim.name, "default", score))
         elif target[0] == "value":
             dim_code, value = target[1], target[2]
-            label = next(
-                (
-                    v.label
-                    for v in vocab.values
-                    if v.dimension_code == dim_code and v.value_code == value
-                ),
-                value,
-            )
+            hit = retrieved.get((dim_code, value))
+            if hit is None:
+                continue
             out.filters.setdefault(dim_code, [])
             if value not in out.filters[dim_code]:
                 out.filters[dim_code].append(value)
-                out.chips.append(Chip("filter", f"{dim_code}={value}", label, "default", score))
+                out.chips.append(Chip("filter", f"{dim_code}={value}", hit.label, "default", score))
 
     cut = _UNPLACED_CUT.search(taken)
     out.unplaced_cut = cut.group(1).strip() if cut else None

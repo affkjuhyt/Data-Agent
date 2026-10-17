@@ -34,6 +34,7 @@ const ReportReviewPage = React.lazy(() => import('./features/sessions/ReportRevi
 const SourcesPage = React.lazy(() => import('./features/data-sources/SourcesPage'));
 const SourceDetailPage = React.lazy(() => import('./features/data-sources/SourceDetailPage'));
 const TableProfilePage = React.lazy(() => import('./features/data-sources/TableProfilePage'));
+const CatalogPage = React.lazy(() => import('./features/data/CatalogPage'));
 const ConnectPage = React.lazy(() => import('./features/data-sources/ConnectPage'));
 const JobsPage = React.lazy(() => import('./features/data-sources/JobsPage'));
 const UploadPage = React.lazy(() => import('./features/data-sources/UploadPage'));
@@ -202,6 +203,7 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     SOURCES:         { render: () => <SourcesPage /> },
     SOURCE:          { render: () => <SourceDetailPage /> },
     TABLE:           { render: () => <TableProfilePage /> },
+    CATALOG:         { render: () => <CatalogPage /> },
     CONNECT:         { render: () => <ConnectPage /> },
     JOBS:            { render: () => <JobsPage /> },
     UPLOAD:          { render: () => <UploadPage /> },
