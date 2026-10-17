@@ -251,7 +251,9 @@ def build(seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
     return Bank(org, space, user, npl, loans, seed)
 
 
-def activate(bank: Bank, *, freshness: str = "fresh") -> uuid.UUID:
+def activate(
+    bank: Bank, *, freshness: str = "fresh", metrics: tuple[str, ...] = ("NPL_RATIO",)
+) -> uuid.UUID:
     seed = bank.seed
     owner, steward = (
         seed.row("org.app_user", org_id=bank.org, external_id=f"kc-{n}", username=n, display_name=n)
@@ -280,13 +282,18 @@ def activate(bank: Bank, *, freshness: str = "fresh") -> uuid.UUID:
         scope_entities=json.dumps([]),
         status="draft",
     )
-    seed.row(
-        "context.data_product_member",
-        org_id=bank.org,
-        data_product_id=product,
-        member_kind="metric",
-        member_ref=bank.npl,
-    )
+    for code in metrics:
+        seed.row(
+            "context.data_product_member",
+            org_id=bank.org,
+            data_product_id=product,
+            member_kind="metric",
+            member_ref=seed.one(
+                "SELECT id FROM context.metric WHERE data_space_id = %s AND code = %s",
+                bank.space,
+                code,
+            ),
+        )
     seed.row(
         "context.data_product_member",
         org_id=bank.org,
@@ -462,10 +469,18 @@ async def test_uc_01_03_the_picked_metric_is_answered_from_the_edited_chips(
     )
     assert kind == "data" and str(plan_of_answer) == str(plan)
     # Dư nợ end of September by region, internal loans excluded: Bắc 2000, Nam 1000.
-    assert [(f["dimensions"]["vung"], float(f["value"])) for f in figures] == [
+    rows = [f for f in figures if "expr" not in f["source"]]
+    assert [(f["dimensions"]["vung"], float(f["value"])) for f in rows] == [
         ("Miền Bắc", 2000.0),
         ("Miền Nam", 1000.0),
     ]
+    # A summed balance adds up across regions: the gap, the total and the largest share follow,
+    # each computed from the rows' figures (answer/insights.py), never read from a row.
+    derived = {f["source"]["expr"]: float(f["value"]) for f in figures if f not in rows}
+    assert derived == pytest.approx(
+        {"F1 - F2": 1000, "F1 + F2": 3000, "F1 / (F1 + F2) * 100": 66.6667}
+    )
+    assert all(f["query_run_id"] is None and f["source"]["compute_run_id"] for f in figures[2:])
     assert seed.one("SELECT steps->>'version' FROM qa.plan WHERE id = %s", plan) == "2"
     assert seed.one("SELECT count(*) FROM qa.answer WHERE question_id = %s", q) == 2
 
@@ -550,6 +565,89 @@ async def test_uc_01_07_a_receipt_replays_identical_then_differs_after_the_sourc
         conn.close()
 
 
+async def test_derived_figures_are_sealed_as_computations_and_recomputed_on_replay(
+    seed: Seed,
+    warehouse: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    ddl_server: dict[str, str],
+) -> None:
+    from services.worker_agent import replay
+
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank, metrics=("DU_NO",))
+    q = bank.ask("Dư nợ theo vùng tháng 9/2026")
+    await drain()
+    status, kind, text, figures, scope, answer = answer_of(seed, q)
+    assert (status, kind, scope) == ("answered", "data", "in_scope"), text
+    # Bắc 2000, Nam 1000: the text says the gap, the total and the share, from figures F3 to F5.
+    assert "chênh 1.000,00 tỷ đồng" in text and "Miền Bắc chiếm 66,7%" in text, text
+    assert [f["key"] for f in figures] == ["F1", "F2", "F3", "F4", "F5"]
+    sealed = seed.one(
+        "SELECT json_agg(json_build_array(f.figure_key, f.source_kind, f.query_run_id IS NULL, "
+        "f.expr_sha256 IS NOT NULL) ORDER BY f.figure_key) "
+        "FROM qa.answer_receipt r JOIN qa.answer_receipt_figure f ON f.receipt_id = r.id "
+        "WHERE r.answer_id = %s",
+        answer,
+    )
+    assert sealed == [
+        ["F1", "query_run", False, False],
+        ["F2", "query_run", False, False],
+        ["F3", "compute_run", True, True],
+        ["F4", "compute_run", True, True],
+        ["F5", "compute_run", True, True],
+    ]
+    receipt = seed.one("SELECT id FROM qa.answer_receipt WHERE answer_id = %s", answer)
+
+    def ask_replay() -> uuid.UUID:
+        rid = seed.row(
+            "qa.receipt_replay",
+            org_id=bank.org,
+            receipt_id=receipt,
+            requested_by=bank.user,
+            mode="figures",
+            compiler_version_used="v3-compiler-1",
+            status="running",
+        )
+        seed.row(
+            "qa.outbox",
+            org_id=bank.org,
+            aggregate_type="receipt_replay",
+            aggregate_id=rid,
+            event_type="receipt_replay.requested",
+            payload=json.dumps({"replay_id": str(rid), "requested_by": str(bank.user)}),
+        )
+        return rid
+
+    source = OutboxTableSource(schema="qa", event_types=frozenset(replay.HANDLERS))
+    first = ask_replay()
+    while await run_once(source, replay.HANDLERS, batch=50):
+        pass
+    assert seed.one(
+        "SELECT status, outcome, differs_count FROM qa.receipt_replay WHERE id = %s", first
+    ) == ("completed", "identical", 0)
+
+    conn = psycopg2.connect(ddl_server["dataagent"])
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        # One more loan in the north: F1 moves, and so do the gap, the total and the share.
+        cur.execute("INSERT INTO bank.loan VALUES ('HN2',1,1000,'TD','2026-09-30')")
+    try:
+        second = ask_replay()
+        while await run_once(source, replay.HANDLERS, batch=50):
+            pass
+        outcome, results = seed.one(
+            "SELECT outcome, figure_results FROM qa.receipt_replay WHERE id = %s", second
+        )
+        assert outcome == "differs"
+        changed = {r["figure_key"]: r["replay_value"] for r in results if r["cause"]}
+        assert sorted(changed) == ["F1", "F3", "F4", "F5"]
+        assert float(changed["F4"]) == 4000.0
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM bank.loan WHERE branch_code = 'HN2' AND group_code = 1")
+        conn.close()
+
+
 class FakeGateway:
     """Stands in for LiteLLM: answers the planner's JSON from a fixed reading."""
 
@@ -578,7 +676,8 @@ async def test_g5_1_the_model_reads_what_the_rules_could_not(
     # The planner read it; the responder got no "text" back twice, so the template wrote it.
     assert (status, kind, scope) == ("answered", "data", "in_scope")
     assert fake.calls == ["planner", "responder", "responder"]
-    assert [f["dimensions"]["vung"] for f in figures] == ["Miền Bắc", "Miền Nam"]
+    rows = [f for f in figures if "expr" not in f["source"]]
+    assert [f["dimensions"]["vung"] for f in rows] == ["Miền Bắc", "Miền Nam"]
     # The plan says the reading is the model's, at the proceed threshold, and the receipt names it.
     assert seed.one(
         "SELECT confidence FROM qa.plan WHERE question_id = %s ORDER BY version DESC LIMIT 1", q

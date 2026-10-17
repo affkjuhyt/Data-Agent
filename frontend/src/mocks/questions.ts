@@ -12,6 +12,38 @@ interface Asked {
   text: string;
   reads: number;
   answerId: string;
+  seq: number;
+}
+
+/** The worker's plan for a question (questions.py _plan_ir, resolver follow_up): a follow-up
+ *  inherits the metric and the month; "vì sao" adds the decomposition awaiting a yes. */
+function planOf(q: Asked) {
+  const from = q.seq > 1 ? 'inherited' : 'default';
+  const steps: Record<string, unknown>[] = [
+    { id: 's1', kind: 'semantic_query', tool: 'query.semantic', checkpoint: 'none', explain: 'Tính Tỷ lệ nợ xấu' },
+  ];
+  if (/vì sao|tại sao/i.test(q.text))
+    steps.push({
+      id: 's2',
+      kind: 'skill',
+      tool: 'skill.run',
+      checkpoint: 'confirm',
+      depends_on: ['s1'],
+      explain: 'Phân rã biến động Tỷ lệ nợ xấu theo vùng so với tháng trước',
+      args: {
+        category: 'decomposition',
+        params: { metric: 'NPL_RATIO', dimension: 'vung', period: '2026-09', base_period: '2026-08' },
+      },
+    });
+  return {
+    version: 1,
+    chips: [
+      { kind: 'metric', value: 'NPL_RATIO', label: 'Tỷ lệ nợ xấu', source: from, confidence: 1 },
+      { kind: 'period', value: '2026-09-01/2026-10-01', label: 'tháng 9/2026', source: from, confidence: 1 },
+      { kind: 'dimension', value: 'vung', label: 'vùng', source: 'default', confidence: 1 },
+    ],
+    steps: { version: 2, steps },
+  };
 }
 
 const sse = (events: { id: string; event: string; data: unknown }[]) =>
@@ -20,8 +52,16 @@ const sse = (events: { id: string; event: string; data: unknown }[]) =>
     { headers: { 'Content-Type': 'text/event-stream' } },
   );
 
+const QUERY_RUN_ID = '0192f0c4-7a1e-7c00-9a51-5e1f00000001';
+const REGIONS: [string, string][] = [
+  ['Đồng bằng sông Hồng', '1.84'],
+  ['Duyên hải Bắc Bộ', '2.31'],
+  ['Đông Nam Bộ', '1.52'],
+];
+
 export function createQuestionHandlers() {
   const questions = new Map<string, Asked>();
+  const turns = new Map<string, number>();
   const answers = new Map<string, Answer>();
 
   return [
@@ -34,7 +74,9 @@ export function createQuestionHandlers() {
       const body = (await request.json()) as { text: string; conversation_id?: string | null };
       const id = crypto.randomUUID();
       const conversationId = body.conversation_id ?? crypto.randomUUID();
-      questions.set(id, { conversationId, text: body.text, reads: 0, answerId: crypto.randomUUID() });
+      const seq = (turns.get(conversationId) ?? 0) + 1;
+      turns.set(conversationId, seq);
+      questions.set(id, { conversationId, text: body.text, reads: 0, answerId: crypto.randomUUID(), seq });
       return HttpResponse.json(
         { id, question_id: id, conversation_id: conversationId, status: 'received', poll_after_ms: 250, stream_url: `/v1/questions/${id}/stream` },
         { status: 202, headers: { Location: `/v1/questions/${id}` } },
@@ -53,8 +95,28 @@ export function createQuestionHandlers() {
           plan_id: crypto.randomUUID(),
           kind: 'data',
           text: `Trả lời cho “${q.text}”: tỷ lệ nợ xấu bán lẻ tháng 9/2026 là 1,84%.`,
-          figures: [],
-          chart_spec: null,
+          figures: REGIONS.map(([vung, value], i) => ({
+            key: `F${i + 1}`,
+            label: `Tỷ lệ nợ xấu, Vùng ${vung}, tháng 9/2026`,
+            value,
+            unit: '%',
+            decimals: 2,
+            dimensions: { vung },
+            display_state: 'shown',
+            source: { query_run_id: QUERY_RUN_ID, row: i, col: 'value' },
+            query_run_id: QUERY_RUN_ID,
+            metric_version_id: 'mv-npl-3',
+            trust: 'Theo chỉ số chuẩn',
+          })),
+          chart_spec: {
+            type: 'bar',
+            x: 'vung',
+            x_label: 'Vùng',
+            y: 'value',
+            y_label: 'Tỷ lệ nợ xấu',
+            unit: '%',
+            drill: [{ code: 'chi_nhanh', name: 'chi nhánh' }],
+          },
           citations: [],
           filed_vs_current: null,
           reconcile_badge: null,
@@ -74,6 +136,35 @@ export function createQuestionHandlers() {
       }
       return sse(events.filter((e) => Number(e.id) > after));
     }),
+    http.get('*/v1/questions/:id', ({ params }) => {
+      const q = questions.get(String(params.id));
+      if (!q) return undefined;
+      return HttpResponse.json({
+        id: String(params.id),
+        conversation_id: q.conversationId,
+        seq: q.seq,
+        text: q.text,
+        parent_question_id: null,
+        as_of: null,
+        knowledge_mode: 'latest',
+        knowledge_at: null,
+        purpose: null,
+        status: q.reads > 1 ? 'answered' : 'planning',
+        received_at: new Date().toISOString(),
+        answered_at: null,
+        plan: { id: `plan-${String(params.id)}`, question_id: String(params.id), confidence: 1, edited_by_user: false, edit_note: null, created_at: new Date().toISOString(), ...planOf(q) },
+        answer_id: q.reads > 1 ? q.answerId : null,
+      });
+    }),
+    http.get('*/v1/query-runs/:id/sql', ({ params }) =>
+      params.id === QUERY_RUN_ID
+        ? HttpResponse.json({
+            sql_generated: 'SELECT vung, avg(npl) AS value FROM du_no GROUP BY vung',
+            sql_executed: 'SELECT vung, avg(npl) AS value FROM du_no GROUP BY vung',
+            policies_applied: [],
+          })
+        : undefined,
+    ),
     http.get('*/v1/answers/:id', ({ params }) => {
       const answer = answers.get(String(params.id));
       return answer ? HttpResponse.json(answer) : undefined;

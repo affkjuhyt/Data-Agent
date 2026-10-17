@@ -12,6 +12,10 @@ time travel to the answer's knowledge_at needs the history route (dataset histor
 period snapshots), which the executor does not take yet, so a source updated since the answer
 differs, and the cause says so. `figures_and_text` regenerates the text from the replayed figures
 with the same template the answer used.
+
+A figure computed from others (source_kind compute_run, answer/insights.py) is not read from a
+row: its expression, from the answer and checked against the receipt's expr_sha256, is evaluated
+again over the replayed figures.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from sqlalchemy import select
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog, qa
 from libs.dataagent_db.models import query as q
+from services.worker_agent.answer.insights import ExprError, evaluate
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.questions import secrets
@@ -63,6 +68,13 @@ async def replay_receipt(event: Event) -> None:
             )
         ).all()
         mode = replay.mode
+        receipt = await session.get(qa.AnswerReceipt, replay.receipt_id)
+        answer = await session.get(qa.Answer, receipt.answer_id) if receipt else None
+        exprs = {
+            str(x.get("key")): (x.get("source") or {}).get("expr")
+            for x in ((answer.figures if answer else None) or [])
+            if isinstance(x, dict)
+        }
     run_ids = sorted({f.query_run_id for f in figures if f.query_run_id is not None}, key=str)
     async with scoped_session("svc_query", event.org_id, requested_by) as session:
         originals = {
@@ -106,7 +118,10 @@ async def replay_receipt(event: Event) -> None:
 
     results: list[dict[str, Any]] = []
     differs, unreproducible = 0, False
+    derived = [f for f in figures if f.source_kind == "compute_run"]
     for f in figures:
+        if f.source_kind == "compute_run":
+            continue
         first_run = originals.get(f.query_run_id) if f.query_run_id else None
         rerun = reruns.get(f.query_run_id) if f.query_run_id else None
         if first_run is None or rerun is None or not rerun.ok:
@@ -143,6 +158,40 @@ async def replay_receipt(event: Event) -> None:
                 "sql_sha256_match": sql_match,
                 "result_sha256_match": result_match,
                 "cause": None if same else LIVE_ONLY,
+            }
+        )
+
+    replayed_values = {
+        r["figure_key"]: decimal.Decimal(r["replay_value"])
+        for r in results
+        if r["replay_value"] is not None
+    }
+    inputs_match = all(r["result_sha256_match"] for r in results)
+    for f in derived:
+        expr = exprs.get(f.figure_key)
+        value: decimal.Decimal | None = None
+        if expr and hashlib.sha256(expr.encode()).hexdigest() == f.expr_sha256:
+            try:
+                value = evaluate(expr, replayed_values)
+            except (ExprError, ArithmeticError):
+                value = None
+        if value is None:
+            unreproducible = True
+        same = value is not None and value == f.value
+        if value is not None and not same:
+            differs += 1
+        results.append(
+            {
+                "figure_key": f.figure_key,
+                "original_value": _str(f.value),
+                "replay_value": _str(value),
+                "sql_sha256_match": value is not None,
+                "result_sha256_match": inputs_match,
+                "cause": None
+                if same
+                else LIVE_ONLY
+                if value is not None
+                else "the figures it is computed from could not be replayed",
             }
         )
 

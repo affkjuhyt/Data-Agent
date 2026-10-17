@@ -22,6 +22,12 @@ export const askQuestion = (text: string, conversationId: string | null) =>
 
 export const getAnswer = async (id: string) => v1Get<Answer>(`/answers/${pathId(id)}`);
 
+export type QuestionWire = components['schemas']['QuestionView'];
+
+/** The question with its latest plan (chips and steps), for "Hệ thống hiểu là" and the steps
+ *  waiting for the person (UC-01-04, UC-03-01). */
+export const getQuestion = async (id: string) => v1Get<QuestionWire>(`/questions/${pathId(id)}`);
+
 /** The question's events after `lastEventId`; the server closes the stream after what it has. */
 export const questionEvents = async (id: string, lastEventId?: string, signal?: AbortSignal) =>
   v1Events(`/questions/${pathId(id)}/stream`, { lastEventId, signal });

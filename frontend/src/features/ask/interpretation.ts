@@ -12,6 +12,8 @@ export interface ReadingChip {
   key: string;
   label: string;
   value: string;
+  /** carried over from the question before (UC-01-04: "từ câu trước") */
+  inherited?: boolean;
 }
 
 export function interpretationChips(run: EvidenceRun | null | undefined): ReadingChip[] {

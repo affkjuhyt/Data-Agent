@@ -10,7 +10,23 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { V1Error } from '../../../lib/v1/client';
-import { askQuestion, getAnswer, questionEvents, type Answer } from '../../../lib/v1/questions';
+import { getQuerySql } from '../../../lib/v1/explore';
+import {
+  askQuestion,
+  getAnswer,
+  getQuestion,
+  questionEvents,
+  type Answer,
+} from '../../../lib/v1/questions';
+import {
+  figureChart,
+  figureDrill,
+  figureRun,
+  figureTrust,
+  readChartSpec,
+  readFigures,
+  readPlan,
+} from '../dataAnswer';
 import type { AskMessage, Citation, ClarificationReply } from '../types';
 
 const POLL_MS = 400;
@@ -80,7 +96,24 @@ function fromAnswer(answer: Answer): Partial<AskMessage> {
     };
   }
   const citations = citationsOf(answer);
-  return citations.length ? { content: answer.text, citations } : { content: answer.text };
+  const drawn: Partial<AskMessage> = citations.length
+    ? { content: answer.text, citations }
+    : { content: answer.text };
+  if (answer.kind !== 'data') return drawn;
+  // AC-01-01-01: the figures become the table, the chart and the trust label.
+  const figures = readFigures(answer.figures);
+  const spec = readChartSpec(answer.chart_spec);
+  const run = figureRun(figures, spec);
+  const chart = figureChart(figures, spec);
+  const trust = figureTrust(figures);
+  const drill = figureDrill(spec);
+  return {
+    ...drawn,
+    ...(drill && { drill }),
+    ...(run && { evidence: { runs: [run], clarifications: [], warnings: [] } }),
+    ...(chart && { chartSpecs: [chart] }),
+    ...(trust && { trust }),
+  };
 }
 
 export function useQuestionStream() {
@@ -122,7 +155,35 @@ export function useQuestionStream() {
             }));
           } else if (e.event === 'answer' && typeof data.answer_id === 'string') {
             const answer = await getAnswer(data.answer_id);
-            patch(assistantId, (m) => ({ ...m, ...fromAnswer(answer), answerId: answer.id }));
+            const drawn = fromAnswer(answer);
+            patch(assistantId, (m) => ({ ...m, ...drawn, answerId: answer.id }));
+            // The plan: what was understood (inherited chips marked) and a step awaiting a yes.
+            getQuestion(questionId)
+              .then((q) => {
+                const { reading, proposal } = readPlan(q.plan);
+                const inherited = reading.some((c) => c.inherited);
+                patch(assistantId, (m) => ({
+                  ...m,
+                  ...(reading.length && { reading }),
+                  ...(proposal && { proposal }),
+                  newQuestion: q.seq > 1 && reading.length > 0 && !inherited,
+                }));
+              })
+              .catch(() => undefined);
+            const run = drawn.evidence?.runs[0];
+            // "Cách tính" shows the SQL that ran; the answer does not carry it, the query run does.
+            if (run?.id)
+              getQuerySql(run.id)
+                .then((q) =>
+                  patch(assistantId, (m) => ({
+                    ...m,
+                    evidence: m.evidence && {
+                      ...m.evidence,
+                      runs: m.evidence.runs.map((r) => (r.id === run.id ? { ...r, sql: q.sql_executed } : r)),
+                    },
+                  })),
+                )
+                .catch(() => undefined);
           } else if (e.event === 'error') {
             patch(assistantId, (m) => ({
               ...m,

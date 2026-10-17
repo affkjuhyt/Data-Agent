@@ -22,6 +22,8 @@ import { answerTrust } from '../trust';
 import type { AskMessage, Citation, ClarificationReply, EvidenceRun } from '../types';
 import { CitationPanel } from './CitationPanel';
 import { ClarificationCard } from './ClarificationCard';
+import { DecompositionCard } from './DecompositionCard';
+import { DrillPicker } from './DrillPicker';
 import { DataGrid } from './DataGrid';
 import { EvidenceStrip } from './EvidenceStrip';
 import { hasEvidence, primaryRun } from './evidenceSummary';
@@ -116,6 +118,8 @@ export function AnswerBlock({
   onSaveKnowledge, onStop, onConfirmUnderstanding, onEditUnderstanding,
 }: AnswerBlockProps) {
   const [exportOpen, setExportOpen] = useState(false);
+  // UC-01-04: the bar picked on the chart, to drill into by one of the metric's other cuts.
+  const [picked, setPicked] = useState<string | null>(null);
   const resultRuns = useMemo(() => (msg.resultSets ?? []).map(resultSetToEvidenceRun), [msg.resultSets]);
   const run = resultRuns[0] ?? primaryRun(msg.evidence);
   const displayedRuns = resultRuns.length ? resultRuns : run ? [run] : [];
@@ -124,8 +128,8 @@ export function AnswerBlock({
     : msg.evidence, [msg.evidence, resultRuns]);
   const streaming = msg.status === 'streaming';
   const allRuns = displayEvidence?.runs ?? [];
-  const trust = useMemo(() => answerTrust(allRuns, msg.citations ?? []), [allRuns, msg.citations]);
-  const reading = useMemo(() => interpretationChips(run), [run]);
+  const trust = useMemo(() => msg.trust ?? answerTrust(allRuns, msg.citations ?? []), [msg.trust, allRuns, msg.citations]);
+  const reading = useMemo(() => msg.reading ?? interpretationChips(run), [msg.reading, run]);
 
   const exportCsv = (target: EvidenceRun | null = run) => {
     if (!target || !target.rows.length) return;
@@ -165,12 +169,15 @@ export function AnswerBlock({
 
       {reading.length > 0 && (
         <div className="flex flex-col gap-da-md">
-          <span className="text-muted-foreground da-caption">Hệ thống hiểu là</span>
+          <span className="text-muted-foreground da-caption">
+            Hệ thống hiểu là{msg.newQuestion ? ' · Câu hỏi mới' : ''}
+          </span>
           <ul aria-label="Hệ thống hiểu là" className="m-0 flex list-none flex-wrap gap-da-sm p-0">
             {reading.map(chip => (
               <li key={chip.key} className="inline-flex items-center gap-da-sm rounded-sm border border-border px-[10px] py-[5px]">
                 <span className="text-muted-foreground da-caption">{chip.label}</span>
                 <span className="text-foreground da-body-strong">{chip.value}</span>
+                {chip.inherited && <span className="text-muted-foreground da-caption">từ câu trước</span>}
               </li>
             ))}
           </ul>
@@ -187,8 +194,25 @@ export function AnswerBlock({
 
       {!!msg.chartSpecs?.length && (
         <Suspense fallback={<div className="min-h-[180px] rounded-md border border-border" />}>
-          {msg.chartSpecs.map((spec, i) => <ChartRenderer key={i} spec={spec} />)}
+          {msg.chartSpecs.map((spec, i) => (
+            <ChartRenderer
+              key={i}
+              spec={spec}
+              onPick={msg.drill && onSuggestion && !busy ? setPicked : undefined}
+            />
+          ))}
         </Suspense>
+      )}
+
+      {msg.drill && onSuggestion && !streaming && (
+        <DrillPicker
+          drill={msg.drill}
+          members={(msg.chartSpecs?.[0]?.data ?? []).map(d => String(d[msg.chartSpecs![0].x_key] ?? ''))}
+          picked={picked}
+          onPick={setPicked}
+          onAsk={onSuggestion}
+          disabled={busy}
+        />
       )}
 
       {displayedRuns.map((displayRun, index) => {
@@ -206,6 +230,8 @@ export function AnswerBlock({
           />
         );
       })}
+
+      {!streaming && msg.proposal && <DecompositionCard proposal={msg.proposal} />}
 
       {showEvidenceStrip && displayEvidence && hasEvidence(displayEvidence) && (
         <EvidenceStrip evidence={displayEvidence} onOpenPanel={onOpenEvidence} />

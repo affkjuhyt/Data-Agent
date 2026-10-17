@@ -28,6 +28,7 @@ import decimal
 import hashlib
 import logging
 import os
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -39,7 +40,8 @@ from libs.contracts.v1.errors import ErrorCode, NextAction, Refusal
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, document, qa
 from services.worker_agent.answer import narrator
-from services.worker_agent.answer.narrate import figures_of, text_of
+from services.worker_agent.answer.insights import insights_of, is_additive, written
+from services.worker_agent.answer.narrate import chart_spec_of, figures_of, text_of
 from services.worker_agent.documents import answer as document_answer
 from services.worker_agent.documents.retrieve import retrieve
 from services.worker_agent.documents.search import SearchServices, services_from_env
@@ -52,7 +54,12 @@ from services.worker_agent.query.secrets import SecretReader, StaticReader, read
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import SpaceLayer, load
 from services.worker_agent.understand import llm_reader
-from services.worker_agent.understand.resolver import Understanding, from_chips, understand
+from services.worker_agent.understand.resolver import (
+    Understanding,
+    follow_up,
+    from_chips,
+    understand,
+)
 from services.worker_agent.understand.text import norm
 
 logger = logging.getLogger(__name__)
@@ -62,6 +69,8 @@ AGENT_NAME = "Agent Hỏi đáp"
 RUNTIME_VERSION = "worker-agent-r1"
 QUERYABLE = ("active", "testing")
 INTERNAL_WORKSPACE = "internal://workspace"
+# "Vì sao NPL tăng?": the question asks what moved, which the decomposition skill answers.
+_WHY = re.compile(r"\b(?:vi sao|tai sao|nguyen nhan|ly do|do dau)\b")
 
 # Trust labels of tab 5 G5.3 / G5.16: what the answer says about where its numbers come from.
 STANDARD = "Theo chỉ số chuẩn"
@@ -144,14 +153,29 @@ class Prepared:
     knowledge_mode: str
     knowledge_at: datetime.datetime | None
     started: datetime.datetime
+    # Codes of the time dimensions: a cut along one is drawn as a line.
+    time_dimensions: set[str] = field(default_factory=set)
+    # One summed or counted measure: its members add up to a total (answer/insights.py).
+    additive: bool = False
+    # The cuts the metric allows besides time, (code, name): the chart's "Đi sâu theo" (UC-01-04).
+    cuts: list[tuple[str, str]] = field(default_factory=list)
     # Model calls behind this answer, for the receipt (ADR-43: models[], frontier_used).
     models: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _plan_ir(
-    u: Understanding, compiled: c.Compiled | None, as_of: datetime.date | None
+    u: Understanding,
+    compiled: c.Compiled | None,
+    as_of: datetime.date | None,
+    explain_by: str | None = None,
+    explain_name: str | None = None,
 ) -> dict[str, Any]:
-    """Plan IR v2 (tab 5 G3.1): the fast path's template plan, one semantic query step."""
+    """Plan IR v2 (tab 5 G3.1): the fast path's template plan, one semantic query step.
+
+    A "vì sao" question (UC-03-01) also gets a second step that waits for the person: the
+    decomposition skill on the same metric and month against the month before, cut by
+    `explain_by`. Nothing runs it until they confirm (checkpoint `confirm`); the screen runs it
+    through POST /v1/skills/{id}/runs."""
     steps: list[dict[str, Any]] = []
     if compiled is not None and u.metric is not None:
         steps.append(
@@ -173,6 +197,30 @@ def _plan_ir(
                 "explain": f"Tính {u.metric.name}",
             }
         )
+        if explain_by is not None and u.period is not None:
+            month = u.period.start
+            before = (month - datetime.timedelta(days=1)).replace(day=1)
+            steps.append(
+                {
+                    "id": "s2",
+                    "kind": "skill",
+                    "tool": "skill.run",
+                    "args": {
+                        "category": "decomposition",
+                        "params": {
+                            "metric": u.metric.code,
+                            "dimension": explain_by,
+                            "period": f"{month:%Y-%m}",
+                            "base_period": f"{before:%Y-%m}",
+                        },
+                    },
+                    "depends_on": ["s1"],
+                    "checkpoint": "confirm",
+                    "on_error": "fail",
+                    "explain": f"Phân rã biến động {u.metric.name} theo {explain_name or explain_by}"
+                    " so với tháng trước",
+                }
+            )
     return {
         "version": 2,
         "goal": "answer",
@@ -287,6 +335,77 @@ def _cut_clarification(
     )
 
 
+def _dimension_name(layer: SpaceLayer, code: str | None) -> str | None:
+    dim = layer.layer.dimensions.get(code) if code else None
+    return dim.name if dim else None
+
+
+def _explain_cut(u: Understanding, layer: SpaceLayer) -> str | None:
+    """The cut a "vì sao" decomposes by: the one asked for, else the metric's first allowed one.
+    None when there is no single month to compare with the month before."""
+    if u.decision != "proceed" or u.metric is None or u.period is None:
+        return None
+    start, end = u.period.start, u.period.end
+    if start.day != 1 or end != (start + datetime.timedelta(days=32)).replace(day=1):
+        return None
+    dims = layer.layer.dimensions
+    asked = [g for g in u.group_by if g in dims and not dims[g].is_time]
+    if asked:
+        return asked[0]
+    allowed = layer.versions[u.metric.metric_id].allowed_dimension_ids
+    cuts = sorted(
+        (d for d in dims.values() if d.id in allowed and not d.is_time), key=lambda d: d.name
+    )
+    return cuts[0].code if cuts else None
+
+
+def _cut_not_allowed(u: Understanding, layer: SpaceLayer) -> str | None:
+    """A cut or filter on a dimension the metric's owner did not allow (BR-81), in words, with
+    the allowed ones, those on the same entity first (the nearest cut that can be made)."""
+    assert u.metric is not None
+    allowed_ids = layer.versions[u.metric.metric_id].allowed_dimension_ids
+    dims = layer.layer.dimensions
+    bad = [
+        dims[code]
+        for code in [*u.group_by, *u.filters]
+        if code in dims and not dims[code].is_time and dims[code].id not in allowed_ids
+    ]
+    if not bad:
+        return None
+    entity = bad[0].entity_id
+    allowed = sorted(
+        (d for d in dims.values() if d.id in allowed_ids and not d.is_time),
+        key=lambda d: (d.entity_id != entity, d.name),
+    )
+    head = f"{u.metric.name} không chia được theo {', '.join(d.name for d in bad)}."
+    if not allowed:
+        return f"{head} Chỉ số này chưa được phép chia theo chiều nào."
+    return f"{head} Có thể chia theo: {', '.join(d.name for d in allowed)}."
+
+
+async def _previous_chips(session: AsyncSession, question: qa.Question) -> list[dict[str, object]]:
+    """The reading of the question this one follows: its parent, else the one before it in the
+    conversation; the chips of its latest plan."""
+    earlier = question.parent_question_id or await session.scalar(
+        select(qa.Question.id)
+        .where(
+            qa.Question.conversation_id == question.conversation_id,
+            qa.Question.seq < question.seq,
+        )
+        .order_by(qa.Question.seq.desc())
+        .limit(1)
+    )
+    if earlier is None:
+        return []
+    chips = await session.scalar(
+        select(qa.Plan.chips)
+        .where(qa.Plan.question_id == earlier)
+        .order_by(qa.Plan.version.desc())
+        .limit(1)
+    )
+    return [c for c in (chips or []) if isinstance(c, dict)]
+
+
 def _code(code: str) -> ErrorCode:
     try:
         return ErrorCode(code)
@@ -390,6 +509,9 @@ async def _understand_and_plan(
             if edited is not None
             else understand(question.text, layer.vocabulary, today=today)
         )
+        if edited is None and u.decision == "unknown":
+            # UC-01-04: "còn theo vùng thì sao?" reads against the question before it.
+            u = follow_up(u, await _previous_chips(session, question), layer.vocabulary)
         models: list[dict[str, Any]] = []
         model = gateway()
         if edited is None and u.decision == "unknown" and model is not None:
@@ -404,7 +526,13 @@ async def _understand_and_plan(
         compiled: c.Compiled | None = None
         problem: Refusal | None = None
         compile_request: c.Request | None = None
-        if u.decision == "proceed" and u.metric is not None:
+        not_cut = _cut_not_allowed(u, layer) if u.decision == "proceed" else None
+        if not_cut is not None:
+            # AC-01-04-04: said in words, with the cuts the metric does allow.
+            problem = Refusal.of(
+                ErrorCode.CONTRACT_MISMATCH, message=not_cut, detail_id=str(question.id)
+            )
+        elif u.decision == "proceed" and u.metric is not None:
             version = layer.versions[u.metric.metric_id]
             compile_request = c.Request(
                 version,
@@ -427,10 +555,15 @@ async def _understand_and_plan(
                     detail_id=str(question.id),
                 )
 
+        explain_by = (
+            _explain_cut(u, layer) if problem is None and _WHY.search(norm(question.text)) else None
+        )
         if edited is not None:
             # The person's chips stay as they wrote them; the plan gains its steps.
             plan_id = edited.id
-            edited.steps = _plan_ir(u, compiled, question.as_of)
+            edited.steps = _plan_ir(
+                u, compiled, question.as_of, explain_by, _dimension_name(layer, explain_by)
+            )
             edited.confidence = decimal.Decimal(str(round(u.confidence, 4)))
         else:
             plan_id = uuid7()
@@ -449,7 +582,9 @@ async def _understand_and_plan(
                     version=version_no,
                     chips=[chip.__dict__ for chip in u.chips]
                     + [{"kind": "option", "value": m.code, "label": m.name} for m in u.options],
-                    steps=_plan_ir(u, compiled, question.as_of),
+                    steps=_plan_ir(
+                        u, compiled, question.as_of, explain_by, _dimension_name(layer, explain_by)
+                    ),
                     confidence=decimal.Decimal(str(round(u.confidence, 4))),
                 )
             )
@@ -508,6 +643,17 @@ async def _understand_and_plan(
                 knowledge_mode=question.knowledge_mode,
                 knowledge_at=question.knowledge_at,
                 started=datetime.datetime.now(datetime.UTC),
+                time_dimensions={d.code for d in layer.vocabulary.dimensions if d.is_time},
+                cuts=[
+                    (d.code, d.name)
+                    for d in layer.vocabulary.dimensions
+                    if d.dimension_id in layer.versions[u.metric.metric_id].allowed_dimension_ids
+                    and not d.is_time
+                ],
+                additive=is_additive(
+                    layer.versions[u.metric.metric_id].expression,
+                    {code: m.expression for code, m in layer.layer.measures.items()},
+                ),
                 models=models,
             )
 
@@ -759,6 +905,18 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
         latest_note = (
             None if u.period else "Không nêu kỳ: số liệu là dữ liệu mới nhất có trong nguồn."
         )
+        # What the table and chart show, by arithmetic: each number a figure with its expression.
+        ins = insights_of(
+            figures,
+            group_by=u.group_by,
+            time_dimensions=p.time_dimensions,
+            metric_name=p.metric_name,
+            unit=p.version.unit,
+            decimals=p.version.decimals,
+            additive=p.additive,
+        )
+        compute_run_id = uuid7() if ins.figures else None
+        every = figures + ins.figures
         text = text_of(
             figures,
             metric_name=p.metric_name,
@@ -767,8 +925,9 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             filters_label=filters_label,
             latest_note=latest_note,
             truncated=outcome.truncated,
+            insights=written(ins.sentences, every) or None,
         )
-        shown = [f for f in figures if f.display_state == "shown"]
+        shown = [f for f in every if f.display_state == "shown"]
         check = {
             "numbers_total": len(shown),
             "traced": len(shown),
@@ -782,11 +941,12 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             # G5.15: the main model writes the sentences, numbers only as figure tags, post-checked.
             told = await narrator.narrate(
                 model,
-                figures,
+                every,
                 question=question.text,
                 metric_name=p.metric_name,
                 exempt_text=[c.label for c in u.chips]
                 + [v for f in figures for v in f.dimensions.values()],
+                hints=ins.sentences,
             )
             if told is not None:
                 notes = [n for n in (latest_note,) if n]
@@ -815,13 +975,24 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                 kind="data",
                 text=text,
                 figures=[
-                    f.as_json(str(outcome.query_run_id), str(p.compiled.metric_version_id), trust)
-                    for f in figures
+                    f.as_json(
+                        str(outcome.query_run_id),
+                        str(p.compiled.metric_version_id),
+                        trust,
+                        compute_run_id=str(compute_run_id) if compute_run_id else None,
+                    )
+                    for f in every
                 ],
                 number_check=check,
-                chart_spec={"type": "bar", "x": u.group_by[0], "y": "value"}
-                if u.group_by
-                else None,
+                chart_spec=chart_spec_of(
+                    figures,
+                    group_by=u.group_by,
+                    dimension_names=p.dimension_names,
+                    time_dimensions=p.time_dimensions,
+                    metric_name=p.metric_name,
+                    unit=p.version.unit,
+                    drill=[cut for cut in p.cuts if cut[0] not in u.group_by],
+                ),
                 agent_name=AGENT_NAME,
                 latency_ms=int(
                     (datetime.datetime.now(datetime.UTC) - p.started).total_seconds() * 1000
@@ -833,7 +1004,9 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
         )
         await session.flush()
         if product is not None:
-            await _seal_receipt(session, p, product, answer_id, figures, outcome, freshness, state)
+            await _seal_receipt(
+                session, p, product, answer_id, every, outcome, freshness, state, compute_run_id
+            )
         question.status = "answered"
         question.answered_at = func.now()
     payload = {"question_id": str(question_id), "answer_id": str(answer_id), "kind": "data"}
@@ -881,6 +1054,7 @@ async def _seal_receipt(
     outcome: Any,
     freshness: list[dict[str, Any]],
     state: str,
+    compute_run_id: uuid.UUID | None = None,
 ) -> None:
     """ADR-43: the receipt and its figures are written with the answer and sealed before commit;
     a failure here rolls the whole answer back."""
@@ -927,9 +1101,13 @@ async def _seal_receipt(
                 metric_version_no=v.version,
                 metric_certified_by=v.certified_by if certified else None,
                 metric_certified_at=v.certified_at if certified else None,
-                source_kind="query_run",
-                query_run_id=outcome.query_run_id,
-                compiled_sql_sha256=p.compiled.sql_sha256,
+                # A derived figure is the in-process computation over the others (G5.10): its
+                # expression's hash, so a replay recomputes it rather than reading a row.
+                source_kind="compute_run" if f.expr else "query_run",
+                query_run_id=None if f.expr else outcome.query_run_id,
+                compute_run_id=compute_run_id if f.expr else None,
+                expr_sha256=hashlib.sha256(f.expr.encode()).hexdigest() if f.expr else None,
+                compiled_sql_sha256=None if f.expr else p.compiled.sql_sha256,
                 result_sha256=outcome.result_hash,
                 dataset_versions=[
                     {"dataset_id": str(d), "version": p.datasets[d].current_version}

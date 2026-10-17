@@ -182,6 +182,50 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
     return out
 
 
+def follow_up(
+    current: Understanding, previous: list[dict[str, object]], vocab: Vocabulary
+) -> Understanding:
+    """A question that only cuts, filters or dates (UC-01-04: "còn theo vùng thì sao?", "đi sâu
+    Miền Bắc theo chi nhánh") read against the question before it.
+
+    It inherits the earlier metric, and its period and filters unless it states its own; a cut
+    it names replaces the earlier cut, so a drill-down is a member filter plus a new dimension.
+    Inherited chips carry source `inherited` ("từ câu trước"). A question that names a metric, or
+    names nothing the Data Space knows, is a new question and is returned as it was read.
+    """
+    stated = [c for c in current.chips if c.kind in ("dimension", "filter", "period")]
+    if current.decision != "unknown" or current.metric is not None or not stated:
+        return current
+    earlier = {str(c.get("kind")): c for c in previous if c.get("kind") == "metric"}
+    if "metric" not in earlier:
+        return current
+    cut_dims = {c.value for c in current.chips if c.kind == "dimension"}
+    filtered_dims = {c.value.partition("=")[0] for c in current.chips if c.kind == "filter"}
+    has_period = any(c.kind == "period" for c in current.chips)
+
+    def inherited(chip: dict[str, object]) -> dict[str, object]:
+        return {**chip, "source": "inherited", "origin": None}
+
+    def kept(chip: dict[str, object]) -> bool:
+        kind = chip.get("kind")
+        if kind == "dimension":
+            return not cut_dims
+        if kind == "filter":
+            return str(chip.get("value", "")).partition("=")[0] not in filtered_dims
+        return kind == "period" and not has_period
+
+    merged: list[dict[str, object]] = [inherited(earlier["metric"])]
+    merged += [inherited(chip) for chip in previous if kept(chip)]
+    merged += [
+        {"kind": c.kind, "value": c.value, "label": c.label, "source": c.source} for c in stated
+    ]
+    out = from_chips(merged, vocab)
+    out.unplaced_cut = current.unplaced_cut
+    if out.decision == "proceed" and out.unplaced_cut:
+        out.decision = "clarify"
+    return out
+
+
 def from_chips(chips: list[dict[str, object]], vocab: Vocabulary) -> Understanding:
     """The question as the person corrected it (UC-01-03, PATCH /v1/questions/{id}/plan): the
     chips are taken as stated, never re-read from the text. A chip naming a metric, a dimension

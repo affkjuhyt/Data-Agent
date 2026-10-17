@@ -35,6 +35,7 @@ from services.worker_agent import (
     resolutions,
     runs,
     schema_scans,
+    skill_runs,
     source_tests,
     tiles,
     uploads,
@@ -70,6 +71,7 @@ HANDLERS: dict[str, Handler] = {
     **proposals.HANDLERS,
     **exports.HANDLERS,
     **runs.HANDLERS,
+    **skill_runs.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -103,7 +105,7 @@ async def sources() -> list[EventSource]:
         if schema == "workspace":
             types |= set(tiles.HANDLERS)
         if schema == "skill":
-            types |= {proposals.PUBLISH, proposals.SHARE}
+            types |= {proposals.PUBLISH, proposals.SHARE} | set(skill_runs.HANDLERS)
         if schema == "pack":
             types |= {proposals.ACTIVATE}
         if schema == "pipeline":

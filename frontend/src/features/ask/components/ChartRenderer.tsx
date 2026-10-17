@@ -17,7 +17,8 @@ import { chartColor } from './AnswerTheme';
 const tickFormatter = (v: unknown) => (typeof v === 'number' ? (Math.abs(v) >= 10_000 ? formatCompact(v) : formatNumber(v)) : String(v ?? ''));
 const valueFormatter = (v: unknown) => (typeof v === 'number' ? formatNumber(v) : String(v ?? ''));
 
-export function ChartRenderer({ spec }: { spec: ChartSpec }) {
+/** `onPick`: a bar clicked, by its category (the answer's "Đi sâu", UC-01-04). */
+export function ChartRenderer({ spec, onPick }: { spec: ChartSpec; onPick?: (category: string) => void }) {
   const colors = Array.from({ length: 6 }, (_, i) => chartColor(i));
   const grid = 'var(--border)';
   const axis = 'var(--muted-foreground)';
@@ -121,7 +122,16 @@ export function ChartRenderer({ spec }: { spec: ChartSpec }) {
         return (
           <BarChart data={spec.data}>
             {axes()}
-            {spec.y_keys.map((k, i) => <Bar key={k} dataKey={k} fill={colors[i % colors.length]} radius={[2, 2, 0, 0]} />)}
+            {spec.y_keys.map((k, i) => (
+              <Bar
+                key={k}
+                dataKey={k}
+                fill={colors[i % colors.length]}
+                radius={[2, 2, 0, 0]}
+                cursor={onPick ? 'pointer' : undefined}
+                onClick={onPick ? (entry: { payload?: Record<string, unknown> }) => onPick(String(entry.payload?.[spec.x_key] ?? '')) : undefined}
+              />
+            ))}
           </BarChart>
         );
     }

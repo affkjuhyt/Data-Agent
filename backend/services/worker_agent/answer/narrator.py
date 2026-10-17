@@ -17,12 +17,14 @@ import json
 import re
 from dataclasses import dataclass
 
-from services.worker_agent.answer.narrate import Figure, vn_number
+from services.worker_agent.answer.narrate import Figure, shown_value
 from services.worker_agent.llm import Gateway, ModelUnavailable
 
-SYSTEM = """Bạn viết câu trả lời số liệu ngắn bằng tiếng Việt (1 đến 3 câu) từ các số được cho.
+SYSTEM = """Bạn là chuyên viên phân tích dữ liệu, viết câu trả lời ngắn bằng tiếng Việt (2 đến 4 câu)
+từ các số được cho: câu đầu trả lời đúng câu hỏi, các câu sau giải thích bảng và biểu đồ.
 Chỉ được viết số dưới dạng thẻ {{F<n>}} của số đó; không viết chữ số nào khác, không tự tính toán.
-Có thể so sánh hoặc nêu cao nhất, thấp nhất bằng lời nhưng mọi con số phải là thẻ.
+Các số chênh lệch, tỷ lệ thay đổi, tổng, tỷ trọng đã được tính sẵn trong danh sách; "nhan_dinh"
+là các nhận định đã kiểm, hãy dùng chúng thay vì tự suy ra. Không nêu nguyên nhân khi không được cho.
 Trả về JSON: {"text": "<câu trả lời>"}"""
 
 _TAG = re.compile(r"\{\{\s*(F\d+)\s*\}\}")
@@ -41,18 +43,12 @@ class Narration:
     tokens: int
 
 
-def _shown(f: Figure) -> str:
-    assert f.value is not None
-    unit = f" {f.unit}" if f.unit and f.unit != "%" else (f.unit or "")
-    return f"{vn_number(f.value, f.decimals)}{unit}"
-
-
 def _fill(text: str, figures: dict[str, Figure]) -> str | None:
     """Tags replaced by values; None when the text cites a figure it was not given."""
     unknown = [k for k in _TAG.findall(text) if k not in figures]
     if unknown:
         return None
-    return _TAG.sub(lambda m: _shown(figures[m.group(1)]), text)
+    return _TAG.sub(lambda m: shown_value(figures[m.group(1)]), text)
 
 
 def _stray(sentence: str, allowed: set[str]) -> list[str]:
@@ -66,21 +62,25 @@ async def narrate(
     question: str,
     metric_name: str,
     exempt_text: list[str],
+    hints: list[str] | None = None,
 ) -> Narration | None:
     shown = {f.key: f for f in figures if f.display_state == "shown" and f.value is not None}
     if not shown:
         return None
-    allowed = {n for f in shown.values() for n in _NUMBER.findall(_shown(f))}
-    for text in [question, *exempt_text, *(f.label for f in shown.values())]:
+    allowed = {n for f in shown.values() for n in _NUMBER.findall(shown_value(f))}
+    # A hint's own words ("trong 3 kỳ") may be repeated; its numbers are tags, removed here.
+    plain_hints = [_TAG.sub("", h) for h in hints or []]
+    for text in [question, *exempt_text, *plain_hints, *(f.label for f in shown.values())]:
         allowed.update(_NUMBER.findall(text))
     prompt = json.dumps(
         {
             "question": question,
             "metric": metric_name,
             "figures": [
-                {"tag": f"{{{{{k}}}}}", "label": f.label, "value": _shown(f)}
+                {"tag": f"{{{{{k}}}}}", "label": f.label, "value": shown_value(f)}
                 for k, f in shown.items()
             ],
+            "nhan_dinh": hints or [],
         },
         ensure_ascii=False,
     )

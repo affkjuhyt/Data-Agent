@@ -33,8 +33,24 @@ class Figure:
     dimensions: dict[str, str] = field(default_factory=dict)
     display_state: DisplayState = "shown"
     stale_note: str | None = None
+    # A figure computed from others (answer/insights.py): its expression over their keys, and
+    # whether it reads as a change (+/-).
+    expr: str | None = None
+    signed: bool = False
 
-    def as_json(self, query_run_id: str, metric_version_id: str, trust: str) -> dict[str, Any]:
+    def as_json(
+        self,
+        query_run_id: str,
+        metric_version_id: str,
+        trust: str,
+        compute_run_id: str | None = None,
+    ) -> dict[str, Any]:
+        # G5.15: a figure's source is {query_run_id, row, col} or {compute_run_id, expr}.
+        source: dict[str, Any] = (
+            {"compute_run_id": compute_run_id, "expr": self.expr}
+            if self.expr
+            else {"query_run_id": query_run_id, "row": self.row, "col": self.column}
+        )
         return {
             "key": self.key,
             "label": self.label,
@@ -43,10 +59,11 @@ class Figure:
             "decimals": self.decimals,
             "dimensions": self.dimensions,
             "display_state": self.display_state,
-            "source": {"query_run_id": query_run_id, "row": self.row, "col": self.column},
-            "query_run_id": query_run_id,
+            "source": source,
+            "query_run_id": None if self.expr else query_run_id,
             "metric_version_id": metric_version_id,
             "trust": trust,
+            "signed": self.signed,
         }
 
 
@@ -96,13 +113,56 @@ def figures_of(
     return out
 
 
+def chart_spec_of(
+    figures: list[Figure],
+    *,
+    group_by: list[str],
+    dimension_names: dict[str, str],
+    time_dimensions: set[str],
+    metric_name: str,
+    unit: str | None,
+    drill: list[tuple[str, str]] | None = None,
+) -> dict[str, Any] | None:
+    """How the figures are drawn (AC-01-01-01): a line along a time dimension, bars otherwise.
+
+    The spec holds no values: the client draws the figures themselves, so a figure masked by
+    BR-178 is never drawn either. A second cut becomes the series. One figure or no cut has
+    nothing to compare, so no chart. `drill` lists the other cuts the metric allows: a bar picked
+    on the chart is asked again filtered to its member and cut by one of them (UC-01-04).
+    """
+    if not group_by or len(figures) < 2:
+        return None
+    x = group_by[0]
+    spec: dict[str, Any] = {
+        "type": "line" if x in time_dimensions else "bar",
+        "x": x,
+        "x_label": dimension_names.get(x, x),
+        "y": "value",
+        "y_label": metric_name,
+        "unit": unit,
+    }
+    if drill and x not in time_dimensions:
+        spec["drill"] = [{"code": code, "name": name} for code, name in drill]
+    if len(group_by) > 1:
+        spec["series"] = group_by[1]
+        spec["series_label"] = dimension_names.get(group_by[1], group_by[1])
+    return spec
+
+
 def _shown(f: Figure) -> str:
     if f.display_state == "masked_stale":
         return "(đã ẩn: dữ liệu quá hạn cập nhật)"
     if f.display_state == "not_available" or f.value is None:
         return "CHƯA CÓ"
+    return shown_value(f)
+
+
+def shown_value(f: Figure) -> str:
+    """A shown figure as the text writes it: "1.234,5 tỷ đồng", "1,84%", "+0,12 điểm %"."""
+    assert f.value is not None
     unit = f" {f.unit}" if f.unit and f.unit != "%" else (f.unit or "")
-    return f"{vn_number(f.value, f.decimals)}{unit}"
+    sign = "+" if f.signed and f.value > 0 else ""
+    return f"{sign}{vn_number(f.value, f.decimals)}{unit}"
 
 
 def text_of(
@@ -114,6 +174,7 @@ def text_of(
     filters_label: str | None,
     latest_note: str | None,
     truncated: bool,
+    insights: str | None = None,
 ) -> str:
     scope = " ".join(p for p in (filters_label, period_label) if p)
     head = f"{metric_name}{' ' + scope if scope else ''}"
@@ -131,6 +192,8 @@ def text_of(
             else ""
         )
         text = f"{head} theo {by}: {lines}{more}."
+    if insights:
+        text += f" {insights}"
     if latest_note:
         text += f" {latest_note}"
     if truncated:

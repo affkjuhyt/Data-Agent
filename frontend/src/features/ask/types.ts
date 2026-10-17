@@ -8,6 +8,10 @@
  * what exists, not to add a second source of truth.
  */
 
+import type { DecompositionProposal, Drill } from './dataAnswer';
+import type { ReadingChip } from './interpretation';
+import type { AnswerTrust } from './trust';
+
 export interface ChartSpec {
   chart_type: 'bar' | 'line' | 'area' | 'pie' | 'scatter' | 'radar' | 'radialBar' | 'composed';
   title: string;
@@ -298,6 +302,16 @@ export interface AskMessage {
   citations?: Citation[];
   evidence?: Evidence;
   verification?: VerificationFrame;
+  /** the label the server gave the answer's figures; without it the label comes from the runs */
+  trust?: AnswerTrust;
+  /** "Hệ thống hiểu là" from the server's plan; without it the chips come from the runs */
+  reading?: ReadingChip[];
+  /** a follow-up that inherited nothing: the reading says "Câu hỏi mới" (AC-01-04-03) */
+  newQuestion?: boolean;
+  /** where a picked bar can be drilled (UC-01-04) */
+  drill?: Drill;
+  /** the decomposition a "vì sao" question proposes, run once the person confirms (UC-03-01) */
+  proposal?: DecompositionProposal;
   clarification?: Clarification;
   pendingReview?: PendingReviewInfo;
   /** set instead of an answer: the turn was refused with a code */
