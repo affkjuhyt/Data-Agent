@@ -2,8 +2,8 @@
 
 The api creates one RSA-4096 key per vault and reads its public half, which the device encrypts
 the conditions under. It never asks Transit to decrypt: only svc_exec_worker's OpenBao policy may.
-Same connection as the governance module's KV reads: OPENBAO_ADDR and OPENBAO_TOKEN; the mount is
-EXEC_TRANSIT_MOUNT (default "transit").
+Same connection as the governance module's KV reads: the api's AppRole (kernel/openbao.py), whose
+policy covers transit/keys/exec-cond-*; the mount is EXEC_TRANSIT_MOUNT (default "transit").
 """
 
 from __future__ import annotations
@@ -13,10 +13,12 @@ import os
 import re
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from typing import Any
 
 from starlette.concurrency import run_in_threadpool
 
+from services.api.kernel import openbao
 from services.api.kernel.problems import Problem
 from services.api.modules.exec.ports import TransitKey
 
@@ -34,10 +36,30 @@ _OPENER = urllib.request.build_opener(_NoRedirect)
 
 
 class OpenBaoTransit:
-    def __init__(self, addr: str, token: str, mount: str = "transit", timeout: float = 5.0):
+    def __init__(
+        self,
+        addr: str,
+        token: str | Callable[[], str | None],
+        mount: str = "transit",
+        timeout: float = 5.0,
+    ):
         self._base = f"{addr.rstrip('/')}/v1/{mount.strip('/')}"
+        # A callable is asked on every call: an AppRole token expires, a static one does not.
         self._token = token
         self._timeout = timeout
+
+    def _token_now(self) -> str:
+        if isinstance(self._token, str):
+            return self._token
+        try:
+            value = self._token()
+        except openbao.VaultLoginError as exc:
+            raise Problem(
+                503, "source_unavailable", "The vault key service is unreachable."
+            ) from exc
+        if not value:
+            raise Problem(503, "source_unavailable", "The vault key service is not configured.")
+        return value
 
     def _call(self, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         request = urllib.request.Request(
@@ -45,7 +67,7 @@ class OpenBaoTransit:
             method=method,
             data=json.dumps(body).encode() if body is not None else None,
             headers={
-                "X-Vault-Token": self._token,
+                "X-Vault-Token": self._token_now(),
                 "Accept": "application/json",
                 "Content-Type": "application/json",
             },
@@ -95,7 +117,8 @@ class OpenBaoTransit:
 
 def transit_from_env() -> OpenBaoTransit | None:
     """The adapter when OpenBao is configured; None keeps the routes' 503 (ports.transit)."""
-    addr, token = os.environ.get("OPENBAO_ADDR"), os.environ.get("OPENBAO_TOKEN")
-    if not addr or not token:
+    addr = openbao.address()
+    has_role = os.environ.get("OPENBAO_ROLE_ID") and os.environ.get("OPENBAO_SECRET_ID")
+    if not addr or not (has_role or os.environ.get("OPENBAO_TOKEN")):
         return None
-    return OpenBaoTransit(addr, token, os.environ.get("EXEC_TRANSIT_MOUNT", "transit"))
+    return OpenBaoTransit(addr, openbao.token, os.environ.get("EXEC_TRANSIT_MOUNT", "transit"))

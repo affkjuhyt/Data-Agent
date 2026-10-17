@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 import urllib.error
 import urllib.request
 import uuid
 
 from libs.dataagent_db import uuid7
+from services.api.kernel import openbao
 
 
 class SecretStoreError(Exception):
@@ -41,8 +41,13 @@ def put_account(
     ``password`` may be empty. The vault error body is discarded: a KV rejection can echo
     the payload.
     """
-    addr = os.environ.get("OPENBAO_ADDR", "") if addr is None else addr
-    token = os.environ.get("OPENBAO_TOKEN", "") if token is None else token
+    addr = openbao.address() if addr is None else addr
+    if token is None:
+        # The api's own AppRole, write-only on tenant source paths (kernel/openbao.py).
+        try:
+            token = openbao.token() or ""
+        except openbao.VaultLoginError as exc:
+            raise SecretStoreError("the secret store is unavailable") from exc
     if not addr or not token:
         raise SecretStoreError("the secret store is not configured")
     ref = account_ref(org_id, source_id, version_id or uuid7(), writeback=writeback)

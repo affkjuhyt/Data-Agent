@@ -16,9 +16,11 @@ kubectl -n dataagent-service create secret generic auth-api-secrets \
   --from-literal=SERVICE_AUTH_SECRET="${SERVICE_AUTH_SECRET}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# The api's own AppRole (dataagent-api-policy), never the root token.
 kubectl -n dataagent-service create secret generic api-secrets \
   --from-literal=API_OIDC_ISSUER="${API_OIDC_ISSUER}" \
-  --from-literal=OPENBAO_TOKEN="${OPENBAO_TOKEN}" \
+  --from-literal=OPENBAO_ROLE_ID="${API_OPENBAO_ROLE_ID}" \
+  --from-literal=OPENBAO_SECRET_ID="${API_OPENBAO_SECRET_ID}" \
   --from-literal=DATAAGENT_DB_URL__SVC_ORG="${DATAAGENT_DB_URL__SVC_ORG}" \
   --from-literal=DATAAGENT_DB_URL__SVC_QA="${DATAAGENT_DB_URL__SVC_QA}" \
   --from-literal=DATAAGENT_DB_URL__SVC_QUERY="${DATAAGENT_DB_URL__SVC_QUERY}" \

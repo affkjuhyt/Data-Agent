@@ -103,15 +103,10 @@ spec:
         ports:
         - containerPort: 8290
           name: http
-        env:
-        # The same token auth-api already holds. A typed source password is written to
-        # OpenBao and only the path is stored (BR-14). create-secrets.sh also puts the
-        # token on api-secrets; this reference covers a cluster whose api secret predates that.
-        - name: OPENBAO_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: auth-api-secrets
-              key: OPENBAO_TOKEN
+        # OpenBao through the api's own AppRole (OPENBAO_ROLE_ID, OPENBAO_SECRET_ID on
+        # api-secrets, policy dataagent-api-policy): write-only on tenant source paths, never
+        # the root token auth-api holds. A typed source password is stored there and only the
+        # path in the database (BR-14).
         envFrom:
         - configMapRef:
             name: dataagent-config

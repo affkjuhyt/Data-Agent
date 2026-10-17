@@ -33,6 +33,24 @@
   changed_when: false
   no_log: true
 
+# The api is the one workload that writes: a source account typed in the UI (catalog), a
+# provider key it reads back (governance) and the exec vault's Transit keys. Its policy names
+# exactly those; the sources rule is more specific than the tenant read, so the api can store a
+# source password but not read one back. It used to hold the root token for this.
+- name: Write the api policy
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ kubectl }} exec -i -n {{ ns_database }} statefulset/openbao -- \
+    env BAO_TOKEN={{ bao_keys.root_token }} bao policy write dataagent-api-policy - <<'POLICY'
+    path "secret/data/tenants/+/sources/*" { capabilities = ["create", "update"] }
+    path "secret/data/tenants/*" { capabilities = ["read"] }
+    path "transit/keys/exec-cond-*" { capabilities = ["create", "update", "read"] }
+    POLICY
+  args:
+    executable: /bin/bash
+  changed_when: false
+  no_log: true
+
 - name: Write the demo warehouse password
   ansible.builtin.command: >
     {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
@@ -93,11 +111,12 @@
   ansible.builtin.command: >
     {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
     bao write auth/approle/role/{{ item.role }}
-    token_policies=dataagent-secret-read-policy token_ttl=1h token_max_ttl=4h
+    token_policies={{ item.policy | default('dataagent-secret-read-policy') }} token_ttl=1h token_max_ttl=4h
   loop:
     - {role: worker_agent, prefix: WORKER_AGENT}
     - {role: sandbox_executor, prefix: SANDBOX_EXECUTOR}
     - {role: platform_workers, prefix: PLATFORM_WORKERS}
+    - {role: api, prefix: API, policy: dataagent-api-policy}
   changed_when: false
   no_log: true
 
@@ -109,6 +128,7 @@
     - {role: worker_agent, prefix: WORKER_AGENT}
     - {role: sandbox_executor, prefix: SANDBOX_EXECUTOR}
     - {role: platform_workers, prefix: PLATFORM_WORKERS}
+    - {role: api, prefix: API, policy: dataagent-api-policy}
   register: bao_role_ids
   changed_when: false
   no_log: true
@@ -121,6 +141,7 @@
     - {role: worker_agent, prefix: WORKER_AGENT}
     - {role: sandbox_executor, prefix: SANDBOX_EXECUTOR}
     - {role: platform_workers, prefix: PLATFORM_WORKERS}
+    - {role: api, prefix: API, policy: dataagent-api-policy}
   register: bao_secret_ids
   when: >-
     (openbao_prev[item.prefix ~ '_OPENBAO_SECRET_ID'] | default('') | length) == 0
@@ -152,6 +173,8 @@
         SANDBOX_EXECUTOR_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[1].stdout | default(openbao_prev.SANDBOX_EXECUTOR_OPENBAO_SECRET_ID | default(''), true) | trim }}"
         PLATFORM_WORKERS_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[2].stdout | trim }}"
         PLATFORM_WORKERS_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[2].stdout | default(openbao_prev.PLATFORM_WORKERS_OPENBAO_SECRET_ID | default(''), true) | trim }}"
+        API_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[3].stdout | trim }}"
+        API_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[3].stdout | default(openbao_prev.API_OPENBAO_SECRET_ID | default(''), true) | trim }}"
   no_log: true
   # A skipped mint keeps each existing secret id rather than blanking it: a
   # rerun that does not rotate must not invalidate a workload's login.

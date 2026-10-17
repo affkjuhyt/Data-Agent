@@ -27,6 +27,7 @@ from sqlalchemy import func, literal, select
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import governance
 from services.api.catalogue import endpoint
+from services.api.kernel import openbao
 from services.api.kernel.auth import CurrentPrincipal
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import (
@@ -146,7 +147,10 @@ _OPENER = urllib.request.build_opener(_NoRedirect)
 def _secret_value(secret_ref: str | None) -> str | None:
     if not secret_ref:
         return None
-    token = os.environ.get("OPENBAO_TOKEN")
+    try:
+        token = openbao.token()
+    except openbao.VaultLoginError as exc:
+        raise _ProviderUnavailable("The provider secret could not be read from OpenBao.") from exc
     if not token:
         raise _ProviderUnavailable("The API has no OpenBao resolver for this provider.")
     ref = secret_ref.strip().strip("/")
