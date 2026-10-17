@@ -698,9 +698,6 @@ export interface DocumentAnswer {
   meta_text: string;
 }
 
-/** The purpose of use the question is recorded with (audit, A1.7). */
-export const DOCUMENT_ANSWER_PURPOSE = 'Trả lời từ tài liệu (UC-05-04)';
-
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Waits for the question's answer: GET /v1/questions/{id} names it once worker-agent is done. */
@@ -715,58 +712,64 @@ async function answerOf(questionId: string, pollMs: number): Promise<Schemas['An
   throw new Error('Chưa có câu trả lời, hãy thử lại sau.');
 }
 
-function citationOf(hit: Schemas['ChunkHit'], n: number, today: string): Citation {
-  const ended = hit.effective_to !== null && hit.effective_to < today;
+/** One entry of qa.answer.citations as worker-agent writes it (documents/answer.py). */
+interface AnswerCitationWire {
+  n: number;
+  chunk_id: Uuid;
+  document_id: Uuid;
+  document_title: string | null;
+  doc_no: string | null;
+  section_path: string | null;
+  page_from: number;
+  effective_from: string | null;
+  effective_to: string | null;
+  superseded_by: string | null;
+  quote: string;
+}
+
+function citationOf(c: AnswerCitationWire, today: string): Citation {
+  const ended = c.effective_to !== null && c.effective_to < today;
   return {
-    n,
-    document_id: hit.document_id,
-    title: hit.document_title ?? hit.doc_no ?? 'Tài liệu',
-    locator: [hit.section_path, `trang ${hit.page_from}`].filter(Boolean).join(' · '),
-    page: hit.page_from,
-    validity: ended
-      ? { tone: 'warning', text: `Hết hiệu lực ${ddmmyyyy(hit.effective_to!)}` }
-      : hit.effective_from && hit.effective_from > today
-        ? { tone: 'info', text: `Hiệu lực từ ${ddmmyyyy(hit.effective_from)}` }
-        : { tone: 'success', text: 'Đang hiệu lực' },
-    superseded: ended,
-    quote: hit.text,
+    n: c.n,
+    document_id: c.document_id,
+    title: c.document_title ?? c.doc_no ?? 'Tài liệu',
+    locator: [c.section_path, `trang ${c.page_from}`].filter(Boolean).join(' · '),
+    page: c.page_from,
+    validity: c.superseded_by
+      ? { tone: 'warning', text: `Đã được thay thế bởi ${c.superseded_by}` }
+      : ended
+        ? { tone: 'warning', text: `Hết hiệu lực ${ddmmyyyy(c.effective_to!)}` }
+        : c.effective_from && c.effective_from > today
+          ? { tone: 'info', text: `Hiệu lực từ ${ddmmyyyy(c.effective_from)}` }
+          : { tone: 'success', text: 'Đang hiệu lực' },
+    superseded: Boolean(c.superseded_by) || ended,
+    quote: c.quote,
   };
 }
 
 /*
  * A2 has no answer-from-documents resource: the question goes to Hỏi đáp (POST /v1/questions,
- * UC-05-04 is one of its use cases) and the passages that back it come from the hybrid search
- * over the chosen collection (POST /v1/search/documents), which only returns chunks the caller
- * may read. The question itself cannot be limited to a collection (QuestionCreate has no scope).
+ * UC-05-04 is one of its use cases). worker-agent retrieves over every collection the reader may
+ * read and writes the answer with its citations, each checked against the passage it names, so
+ * the page shows exactly what the answer rests on. No purpose is declared: a purpose limits the
+ * search to collections of that purpose (BR-59).
  */
-export const askDocuments = async (body: {
-  question: string;
-  collection_id: string | null;
-}): Promise<DocumentAnswer> => {
+export const askDocuments = async (body: { question: string }): Promise<DocumentAnswer> => {
   const started = Date.now();
-  const [accepted, hits] = await Promise.all([
-    v1Send<Schemas['QuestionAccepted']>('POST', '/questions', {
-      text: body.question,
-      knowledge_mode: 'latest',
-      stream: false,
-      purpose: DOCUMENT_ANSWER_PURPOSE,
-    } satisfies Schemas['QuestionCreate']),
-    v1Send<Page<Schemas['ChunkHit']>>('POST', '/search/documents', {
-      query: body.question,
-      collection_ids: body.collection_id ? [body.collection_id] : null,
-      top_k: 5,
-    } satisfies Schemas['SearchRequest']),
-  ]);
+  const accepted = await v1Send<Schemas['QuestionAccepted']>('POST', '/questions', {
+    text: body.question,
+    knowledge_mode: 'latest',
+    stream: false,
+  } satisfies Schemas['QuestionCreate']);
   const answer = await answerOf(accepted.question_id, accepted.poll_after_ms ?? 1000);
   const today = new Date().toISOString().slice(0, 10);
-  const citations = hits.items.map((hit, i) => citationOf(hit, i + 1, today));
+  const wire = (answer.kind === 'document' ? answer.citations : []) as AnswerCitationWire[] | null;
+  const citations = (wire ?? []).map((c) => citationOf(c, today));
   const seconds = ((answer.latency_ms ?? Date.now() - started) / 1000).toFixed(1).replace('.', ',');
   return {
     id: answer.id,
     question: body.question,
-    scope_text: body.collection_id
-      ? 'Tìm trong: bộ sưu tập đã chọn'
-      : 'Tìm trong: mọi bộ sưu tập bạn được đọc',
+    scope_text: 'Tìm trong: mọi bộ sưu tập bạn được đọc',
     answer: answer.text,
     not_found: answer.kind === 'refusal' || citations.length === 0,
     citations,

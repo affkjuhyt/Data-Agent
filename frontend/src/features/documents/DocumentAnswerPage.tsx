@@ -4,14 +4,11 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { Button } from '../../design-system/Button';
 import { Composer } from '../../design-system/Composer';
 import { EmptyState } from '../../design-system/EmptyState';
-import { Menu } from '../../design-system/Menu';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
 import { askDocuments, type Citation, type DocumentAnswer } from '../../lib/v1/documents';
-import { listCollections } from '../../lib/v1/sources';
-import { useV1 } from '../../lib/v1/useV1';
 import { ReportDialog } from '../ask/components/ReportDialog';
 
 /*
@@ -20,15 +17,13 @@ import { ReportDialog } from '../ask/components/ReportDialog';
  * shows on the right and "Mở đoạn gốc" opens it in the viewer. A superseded source is only cited
  * to say it was superseded, never as the basis.
  *
- * "Chọn bộ sưu tập" is the ghost menu button Figma draws. "Thêm vào phiên" has no session API yet:
- * shown disabled.
+ * Figma also draws a "Chọn bộ sưu tập" menu; it is left out because a question cannot be limited
+ * to a collection (A2's QuestionCreate has no scope): the agent reads every collection the reader
+ * may read. "Thêm vào phiên" has no session API yet: shown disabled.
  */
-const ALL_COLLECTIONS = '__all';
 
 export default function DocumentAnswerPage() {
   const toast = useToast();
-  const collections = useV1(listCollections, []);
-  const [collection, setCollection] = useState<string>(ALL_COLLECTIONS);
   const [answers, setAnswers] = useState<DocumentAnswer[]>([]);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [selected, setSelected] = useState<Citation | null>(null);
@@ -46,10 +41,7 @@ export default function DocumentAnswerPage() {
   const ask = async (question: string) => {
     setPendingQuestion(question);
     try {
-      const answer = await askDocuments({
-        question,
-        collection_id: collection === ALL_COLLECTIONS ? null : collection,
-      });
+      const answer = await askDocuments({ question });
       setAnswers((list) => [...list, answer]);
       setSelected(answer.citations[0] ?? null);
     } catch (e) {
@@ -68,30 +60,7 @@ export default function DocumentAnswerPage() {
         bordered
         breadcrumb={['Phân tích', 'Phiên', 'Hỏi đáp tài liệu']}
         title="Hỏi đáp tài liệu"
-        actions={
-          <>
-            <Menu
-              label="Chọn bộ sưu tập"
-              triggerKind="button"
-              trigger={
-                collection === ALL_COLLECTIONS
-                  ? 'Chọn bộ sưu tập'
-                  : (collections.data?.items.find((c) => c.id === collection)?.name ??
-                    'Chọn bộ sưu tập')
-              }
-              items={[
-                {
-                  label: 'Mọi bộ sưu tập được đọc',
-                  onSelect: () => setCollection(ALL_COLLECTIONS),
-                },
-                ...(collections.data?.items ?? [])
-                  .filter((c) => !c.archived)
-                  .map((c) => ({ label: c.name, onSelect: () => setCollection(c.id) })),
-              ]}
-            />
-            <Button onClick={() => void share()}>Chia sẻ</Button>
-          </>
-        }
+        actions={<Button onClick={() => void share()}>Chia sẻ</Button>}
       />
       <div className="flex min-h-0 flex-1">
         <section

@@ -21,7 +21,6 @@ import {
   resolveQualityIssue,
   setSupersession,
   uploadDocuments,
-  DOCUMENT_ANSWER_PURPOSE,
 } from './documents';
 import { getDocument, listCollections } from './sources';
 
@@ -224,29 +223,27 @@ describe('documents from the api', () => {
     expect((await listLibrary({ category: 'regulation' })).items).toEqual([]);
   });
 
-  it('lists the chunks from the pages, once each and in order', async () => {
+  it('lists the chunks of the document in order, numbered', async () => {
+    let asked: string | null = null;
     server.use(
-      http.get('*/v1/documents/:id/pages/:n', ({ params }) =>
-        HttpResponse.json({
-          page_no: Number(params.n),
-          chunks:
-            params.n === '1'
-              ? [
-                  { id: 'k1', page_from: 1, text: 'a' },
-                  { id: 'k2', page_from: 1, text: 'b' },
-                ]
-              : [
-                  { id: 'k2', page_from: 1, text: 'b' },
-                  { id: 'k3', page_from: 2, text: 'c' },
-                ],
-        }),
-      ),
+      http.get('*/v1/documents/:id/chunks', ({ request }) => {
+        asked = new URL(request.url).searchParams.get('page_size');
+        return HttpResponse.json({
+          items: [
+            { id: 'k1', page_from: 1, text: 'a' },
+            { id: 'k2', page_from: 1, text: 'b' },
+            { id: 'k3', page_from: 2, text: 'c' },
+          ],
+          next_page_token: '',
+        });
+      }),
     );
     expect((await listChunks({ id: 'd-1', page_count: 2 })).items).toEqual([
       { id: 'k1', page: 1, ordinal: 1, text: 'a' },
       { id: 'k2', page: 1, ordinal: 2, text: 'b' },
       { id: 'k3', page: 2, ordinal: 3, text: 'c' },
     ]);
+    expect(asked).toBe('500');
   });
 
   it('says the history from the versions, leaving the audit out without audit_read', async () => {
@@ -310,9 +307,8 @@ describe('documents from the api', () => {
     expect(String((bodies[0] as { description: string }).description)).toContain('Khiếu nại phí');
   });
 
-  it('answers from documents: Hỏi đáp writes the answer, the search cites the passages', async () => {
+  it('answers from documents: the answer carries its own checked citations', async () => {
     let asked: unknown;
-    let searched: unknown;
     server.use(
       http.post('*/v1/questions', async ({ request }) => {
         asked = await request.json();
@@ -329,40 +325,33 @@ describe('documents from the api', () => {
           id: 'a',
           kind: 'document',
           text: 'Nhóm 3 [1].',
-          agent_name: null,
+          agent_name: 'Agent Tài liệu',
           latency_ms: 3400,
-        }),
-      ),
-      http.post('*/v1/search/documents', async ({ request }) => {
-        searched = await request.json();
-        return HttpResponse.json({
-          items: [
+          citations: [
             {
+              n: 1,
+              chunk_id: 'ch-1',
               document_id: 'd-9',
               document_title: null,
               doc_no: 'TT 31/2024',
               section_path: 'Điều 10',
               page_from: 14,
-              text: 'tối thiểu là nhóm 3',
               effective_from: null,
               effective_to: '2020-01-01',
+              superseded_by: null,
+              quote: 'tối thiểu là nhóm 3',
             },
           ],
-          next_page_token: '',
-        });
-      }),
+        }),
+      ),
     );
-    const answer = await askDocuments({ question: 'Nhóm nợ?', collection_id: 'c-1' });
-    expect(asked).toEqual({
-      text: 'Nhóm nợ?',
-      knowledge_mode: 'latest',
-      purpose: DOCUMENT_ANSWER_PURPOSE,
-    });
-    expect(searched).toEqual({ query: 'Nhóm nợ?', collection_ids: ['c-1'], top_k: 5 });
+    const answer = await askDocuments({ question: 'Nhóm nợ?' });
+    // No purpose: it would limit the search to collections of that purpose (BR-59).
+    expect(asked).toEqual({ text: 'Nhóm nợ?', knowledge_mode: 'latest', stream: false });
     expect(answer).toMatchObject({
       answer: 'Nhóm 3 [1].',
       not_found: false,
-      scope_text: 'Tìm trong: bộ sưu tập đã chọn',
+      scope_text: 'Tìm trong: mọi bộ sưu tập bạn được đọc',
       meta_text: 'Agent Tài liệu · 1 nguồn · 3,4 giây',
     });
     expect(answer.citations[0]).toEqual({
@@ -375,5 +364,32 @@ describe('documents from the api', () => {
       superseded: true,
       quote: 'tối thiểu là nhóm 3',
     });
+  });
+
+  it('answers from documents: a refusal is not found and cites nothing', async () => {
+    server.use(
+      http.post('*/v1/questions', () =>
+        HttpResponse.json(
+          { id: 'q', question_id: 'q', conversation_id: 'c', status: 'received', poll_after_ms: 0 },
+          { status: 202 },
+        ),
+      ),
+      http.get('*/v1/questions/:id', () =>
+        HttpResponse.json({ id: 'q', status: 'refused', answer_id: 'a' }),
+      ),
+      http.get('*/v1/answers/:id', () =>
+        HttpResponse.json({
+          id: 'a',
+          kind: 'refusal',
+          text: 'Không tìm thấy trong tài liệu được phép nội dung trả lời câu hỏi này.',
+          agent_name: 'Agent Hỏi đáp',
+          latency_ms: 900,
+          citations: [],
+        }),
+      ),
+    );
+    const answer = await askDocuments({ question: 'Hạn mức thẻ?' });
+    expect(answer.not_found).toBe(true);
+    expect(answer.citations).toEqual([]);
   });
 });

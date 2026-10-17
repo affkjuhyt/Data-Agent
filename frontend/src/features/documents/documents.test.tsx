@@ -251,7 +251,7 @@ describe('DocumentAnswerPage', () => {
     });
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
     expect(await screen.findByText(/tối thiểu vào nhóm 3/)).toBeInTheDocument();
-    expect(screen.getByText('Hết hiệu lực 01/09/2026')).toBeInTheDocument();
+    expect(screen.getByText('Đã được thay thế bởi QĐ 845/2026')).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { name: '[1] TT 31/2024/TT-NHNN · Điều 10, khoản 3' }),
     ).toBeInTheDocument();
@@ -265,7 +265,7 @@ describe('DocumentAnswerPage', () => {
   it('says so when nothing answers the question', async () => {
     wrap(<DocumentAnswerPage />);
     fireEvent.change(await screen.findByRole('textbox'), {
-      target: { value: 'Giá vàng hôm nay?' },
+      target: { value: 'Văn bản nào nói về giá vàng hôm nay?' },
     });
     fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
     expect(await screen.findByText(/Không tìm thấy đoạn nào trả lời/)).toBeInTheDocument();

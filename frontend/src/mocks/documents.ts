@@ -14,7 +14,6 @@ import type {
   QualityIssue,
   ResolveIssue,
 } from '../lib/v1/documents';
-import { DOCUMENT_ANSWER_PURPOSE } from '../lib/v1/documents';
 import type { StepState } from '../lib/v1/sources';
 
 /*
@@ -1291,11 +1290,12 @@ export function createDocumentHandlers() {
       return HttpResponse.json({ status: 'resolved' });
     }),
 
-    // Answers from documents: the question is Hỏi đáp's, recorded with the documents purpose (the
-    // others fall through to its mock), and the passages are the hybrid search's.
+    // Answers from documents: the question is Hỏi đáp's; one about documents (by its wording, the
+    // mock has no retriever) is answered here with its citations, the others fall through to the
+    // Hỏi đáp mock.
     http.post('*/v1/questions', async ({ request }) => {
-      const body = (await request.clone().json()) as { text?: string; purpose?: string };
-      if (body.purpose !== DOCUMENT_ANSWER_PURPOSE) return undefined;
+      const body = (await request.clone().json()) as { text?: string };
+      if (!/cơ cấu|văn bản|quy định|tài liệu|điều \d/i.test(body.text ?? '')) return undefined;
       const id = `q-doc-${asked.size + 1}`;
       asked.set(id, answerTo(body.text ?? '', ''));
       return HttpResponse.json(
@@ -1324,7 +1324,19 @@ export function createDocumentHandlers() {
             text: answer.answer,
             agent_name: 'Agent Tài liệu',
             latency_ms: 3400,
-            citations: [],
+            citations: answer.citations.map((c) => ({
+              n: c.n,
+              chunk_id: `chunk-${c.document_id}`,
+              document_id: c.document_id,
+              document_title: c.title,
+              doc_no: null,
+              section_path: c.locator.split(' · ')[0],
+              page_from: c.page,
+              effective_from: null,
+              effective_to: null,
+              superseded_by: c.superseded ? 'QĐ 845/2026' : null,
+              quote: c.quote,
+            })),
           })
         : undefined;
     }),
