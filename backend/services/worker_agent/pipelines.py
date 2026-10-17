@@ -236,6 +236,40 @@ async def _measure(ctx: dict[str, Any], event: Event, sample: str | None) -> dic
     }
 
 
+async def step_preview_sql(
+    org_id: uuid.UUID, principal_id: uuid.UUID, p: dict[str, Any]
+) -> tuple[catalog.Source, str]:
+    """One step previewed (a query run of mode pipeline_step, UC-06-01 step 3), as SQL on the
+    pipeline's source: the rows a filter or dedupe drops (the step before EXCEPT the step), any
+    other step's output. The rows go through the run's policy like any query's."""
+    from services.worker_agent.query_runs import Unbuildable
+
+    ctx = await _context(
+        Event(
+            event_id=uuid7(),
+            org_id=org_id,
+            event_type="query_run.requested",
+            aggregate_type="pipeline",
+            aggregate_id=uuid.UUID(str(p["pipeline_id"])),
+            payload={"pipeline_id": str(p["pipeline_id"]), "requested_by": str(principal_id)},
+        ),
+        need_run=False,
+    )
+    if ctx is None:
+        raise Unbuildable("Pipeline không còn.")
+    if ctx["source"] is None:
+        raise Unbuildable("Các bảng đầu vào không cùng một nguồn.")
+    steps, seq = ctx["steps"], int(p["seq"])
+    if not 1 <= seq <= len(steps):
+        raise Unbuildable("Bước không còn trong pipeline.")
+    if any(s.get("language", "sql") != "sql" for s in steps[:seq]):
+        raise Unbuildable("Chưa xem trước được bước Python.")
+    if steps[seq - 1].get("kind") in DROPPING and seq > 1:
+        sql = f"({chain(steps, seq - 2)}) EXCEPT ({chain(steps, seq - 1)})"
+        return ctx["source"], f"SELECT * FROM ({sql}) q"
+    return ctx["source"], chain(steps, seq - 1)
+
+
 async def run_requested(event: Event) -> None:
     ctx = await _context(event)
     if ctx is None:

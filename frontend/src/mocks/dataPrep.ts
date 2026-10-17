@@ -10,7 +10,6 @@ import type {
   PublishPipeline,
   ScheduleKind,
   SqlResult,
-  StepPreview,
   Writeback,
 } from '../lib/v1/dataPrep';
 
@@ -193,25 +192,22 @@ function loansRetailFixture(base: Pipeline): PipelineDetail {
   };
 }
 
-function previewFixture(seq: number): StepPreview {
+/** The rows of a step preview's query run (qr-step-<seq>), as the worker stores them. */
+function previewRows(seq: number) {
   if (seq === 5)
     return {
-      seq,
-      key_column: 'loan_id',
-      column: 'branch_code',
-      rows: [
-        { key: 'LD2409-0187', before: 'HPG01', after: 'HPG001', note: 'đã chuẩn hoá' },
-        { key: 'LD2409-0201', before: '12045', after: '012045', note: 'thêm số 0' },
-        { key: 'LD2410-0031', before: 'QNH002', after: 'QNH002', note: 'giữ nguyên' },
+      columns: ['loan_id', 'branch_code'],
+      items: [
+        ['LD2409-0187', 'HPG001'],
+        ['LD2409-0201', '012045'],
+        ['LD2410-0031', 'QNH002'],
       ],
     };
   return {
-    seq,
-    key_column: 'loan_id',
-    column: 'status',
-    rows: [
-      { key: 'LD2409-0187', before: 'active', after: 'active', note: 'giữ nguyên' },
-      { key: 'LD2311-0442', before: 'closed', after: 'closed', note: 'giữ nguyên' },
+    columns: ['loan_id', 'status'],
+    items: [
+      ['LD2409-0187', 'active'],
+      ['LD2311-0442', 'closed'],
     ],
   };
 }
@@ -503,15 +499,26 @@ export function createDataPrepHandlers() {
         error: null,
       }),
     ),
-    http.get('*/v1/query-runs/:id/rows', () =>
-      HttpResponse.json({
+    http.get('*/v1/query-runs/:id/rows', ({ params }) => {
+      const id = String(params.id);
+      if (id.startsWith('qr-step-')) {
+        const step = previewRows(Number(id.slice('qr-step-'.length)));
+        return HttpResponse.json({
+          columns: step.columns.map((name) => ({ name, type: 'string' })),
+          items: step.items,
+          truncated: false,
+          next_page_token: '',
+          expires_at: '2026-10-15T00:00:00+07:00',
+        });
+      }
+      return HttpResponse.json({
         columns: SQL_RESULT.columns.map((name) => ({ name, type: 'string' })),
         items: SQL_RESULT.rows,
         truncated: false,
         next_page_token: '',
         expires_at: '2026-10-15T00:00:00+07:00',
-      }),
-    ),
+      });
+    }),
     http.post('*/v1/derived-tables', async ({ request }) => {
       const body = (await request.json()) as Omit<DerivedTable, 'id' | 'version' | 'write_mode'>;
       if (!/^[a-z][a-z0-9_.]{2,62}$/.test(body.name))
@@ -605,7 +612,13 @@ export function createDataPrepHandlers() {
     }),
     http.get('*/v1/pipelines/:id/steps/:seq/preview', ({ params }) =>
       detailOf(String(params.id))
-        ? HttpResponse.json(previewFixture(Number(params.seq)))
+        ? HttpResponse.json({
+            seq: Number(params.seq),
+            kind: 'compute',
+            shows: 'output',
+            query_run_id: `qr-step-${params.seq}`,
+            status: 'succeeded',
+          })
         : notFound(),
     ),
     http.post('*/v1/pipelines/:id/messages', async ({ params, request }) => {

@@ -210,7 +210,7 @@ export default function PipelinePage() {
                 {previewSeq !== undefined && (
                   <>
                     <h2 className="text-foreground da-heading-3">
-                      Xem trước bước {previewSeq} · trước và sau
+                      Xem trước bước {previewSeq} trên nguồn
                     </h2>
                     <AsyncRegion state={preview} what="bản xem trước" skeletonRows={3}>
                       {(p) => <PreviewTable preview={p} />}
@@ -273,10 +273,18 @@ function StepTable({
             <SortableTh view={view} column="in" className="w-[124px] px-da-lg py-da-md font-normal">
               Dòng vào
             </SortableTh>
-            <SortableTh view={view} column="out" className="w-[124px] px-da-lg py-da-md font-normal">
+            <SortableTh
+              view={view}
+              column="out"
+              className="w-[124px] px-da-lg py-da-md font-normal"
+            >
               Dòng ra
             </SortableTh>
-            <SortableTh view={view} column="change" className="w-[84px] px-da-lg py-da-md font-normal">
+            <SortableTh
+              view={view}
+              column="change"
+              className="w-[84px] px-da-lg py-da-md font-normal"
+            >
               <span className="sr-only">Thay đổi</span>
             </SortableTh>
           </tr>
@@ -337,62 +345,70 @@ function StepTable({
 }
 
 function PreviewTable({ preview }: { preview: StepPreview }) {
+  const cell = (v: unknown) => (v === null || v === undefined ? '—' : String(v));
   const view = useTableView(preview.rows, {
-    search: (r) => `${r.key} ${r.before} ${r.after} ${r.note}`,
-    filters: [
-      {
-        id: 'changed',
-        label: 'Thay đổi',
-        value: (r) => (r.before === r.after ? 'Giữ nguyên' : 'Đổi giá trị'),
-      },
-    ],
-    sorts: [
-      { id: 'key', value: (r) => r.key },
-      { id: 'before', value: (r) => r.before },
-      { id: 'after', value: (r) => r.after },
-      { id: 'note', value: (r) => r.note },
-    ],
+    search: (r) => r.map(cell).join(' '),
+    sorts: preview.columns.map((name, i) => ({ id: name, value: (r: unknown[]) => cell(r[i]) })),
     pageSize: 50,
   });
   return (
     <>
-      <TableToolbar view={view} placeholder="Tìm dòng xem trước…" searchLabel="Tìm dòng xem trước" />
-      <table className="w-full table-fixed border-collapse">
-        <thead>
-          <tr className="border-b border-border text-left text-muted-foreground da-caption">
-            <SortableTh view={view} column="key" className="w-[164px] px-da-lg py-da-md font-normal">
-              {preview.key_column}
-            </SortableTh>
-            <SortableTh view={view} column="before" className="w-[174px] px-da-lg py-da-md font-normal">
-              {preview.column} trước
-            </SortableTh>
-            <SortableTh view={view} column="after" className="w-[174px] px-da-lg py-da-md font-normal">
-              {preview.column} sau
-            </SortableTh>
-            <SortableTh view={view} column="note" className="px-da-lg py-da-md font-normal">
-              Ghi chú
-            </SortableTh>
-          </tr>
-        </thead>
-        <tbody>
-          {view.rows.map((r) => (
-            <tr key={r.key} className="border-b border-border">
-              <td className="px-da-lg py-[9px] text-foreground da-mono">{r.key}</td>
-              <td className="px-da-lg py-[9px] text-muted-foreground da-mono">{r.before}</td>
-              <td
-                className={cn(
-                  'px-da-lg py-[9px] da-mono',
-                  r.before === r.after ? 'text-foreground' : 'text-primary',
-                )}
-              >
-                {r.after}
-              </td>
-              <td className="px-da-lg py-[9px] text-muted-foreground da-body-small">{r.note}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <TablePager view={view} />
+      <p className="text-muted-foreground da-caption">
+        {preview.shows === 'dropped'
+          ? `${formatNumber(preview.rows.length)}${preview.truncated ? '+' : ''} dòng bước này bỏ đi`
+          : `${formatNumber(preview.rows.length)}${preview.truncated ? '+' : ''} dòng đầu sau bước này`}
+      </p>
+      {preview.rows.length === 0 ? (
+        <EmptyState
+          title={
+            preview.shows === 'dropped'
+              ? 'Bước này không bỏ dòng nào'
+              : 'Bước này không ra dòng nào'
+          }
+          description="Bản xem trước chạy trên nguồn, với quyền và che dữ liệu của bạn."
+        />
+      ) : (
+        <>
+          <TableToolbar
+            view={view}
+            placeholder="Tìm dòng xem trước…"
+            searchLabel="Tìm dòng xem trước"
+          />
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                  {preview.columns.map((name) => (
+                    <SortableTh
+                      key={name}
+                      view={view}
+                      column={name}
+                      className="px-da-lg py-da-md font-normal"
+                    >
+                      {name}
+                    </SortableTh>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {view.rows.map((r, n) => (
+                  <tr key={n} className="border-b border-border">
+                    {r.map((v, i) => (
+                      <td
+                        key={preview.columns[i]}
+                        className="px-da-lg py-[9px] text-foreground da-mono"
+                      >
+                        {cell(v)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <TablePager view={view} />
+        </>
+      )}
     </>
   );
 }

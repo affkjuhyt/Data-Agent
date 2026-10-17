@@ -338,11 +338,14 @@ export interface PipelineDetail extends Pipeline {
 }
 
 /** PROPOSAL: GET /v1/pipelines/{id}/steps/{seq}/preview — one column before and after a step. */
+/** One step run on its source: the rows a filter or dedupe drops, any other step's output. */
 export interface StepPreview {
   seq: number;
-  key_column: string;
-  column: string;
-  rows: { key: string; before: string; after: string; note: string }[];
+  kind: string;
+  shows: 'dropped' | 'output';
+  columns: string[];
+  rows: unknown[][];
+  truncated: boolean;
 }
 
 export const getPipeline = async (id: string): Promise<PipelineDetail> => {
@@ -354,8 +357,27 @@ export const getPipeline = async (id: string): Promise<PipelineDetail> => {
   return readPipelineDetail(raw, tables);
 };
 
-export const getStepPreview = async (id: string, seq: number) =>
-  v1Get<StepPreview>(`/pipelines/${pathId(id)}/steps/${seq}/preview`);
+/**
+ * A2: GET /v1/pipelines/{id}/steps/{seq}/preview names the query run previewing the step (queued
+ * when the steps changed); its rows are read like any run's, under the caller's policy.
+ */
+export const getStepPreview = async (id: string, seq: number): Promise<StepPreview> => {
+  const step = await v1Get<components['schemas']['StepPreview']>(
+    `/pipelines/${pathId(id)}/steps/${seq}/preview`,
+  );
+  await awaitQueryRun({ id: step.query_run_id, status: step.status } as Parameters<
+    typeof awaitQueryRun
+  >[0]);
+  const rows = await getQueryRows(step.query_run_id, 50);
+  return {
+    seq: step.seq,
+    kind: step.kind,
+    shows: step.shows,
+    columns: rows.columns.map((c) => c.name),
+    rows: rows.rows,
+    truncated: rows.truncated,
+  };
+};
 
 /**
  * PROPOSAL: POST /v1/pipelines/{id}/messages — the agent answers, adds or edits steps, and

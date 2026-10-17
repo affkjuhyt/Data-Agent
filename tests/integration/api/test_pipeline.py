@@ -630,6 +630,22 @@ async def test_pipeline_authoring_and_schedule_reads_are_canonical(pp: Space) ->
             f"/v1/pipelines/{pipeline_id}/steps/1/preview", headers=pp.headers("eng")
         )
         assert step.status_code == 200 and step.json()["seq"] == 1
+        preview = step.json()
+        assert preview["status"] == "queued" and preview["shows"] == "output"
+        # The run is the caller's own, built by worker-agent from the steps (mode pipeline_step);
+        # asked again for the same steps, the same run answers.
+        payload = pp.one(
+            "SELECT payload FROM query.outbox WHERE aggregate_id = %s", preview["query_run_id"]
+        )
+        assert (payload["mode"], payload["pipeline_id"], payload["seq"]) == (
+            "pipeline_step",
+            pipeline_id,
+            1,
+        )
+        again = await api.get(
+            f"/v1/pipelines/{pipeline_id}/steps/1/preview", headers=pp.headers("eng")
+        )
+        assert again.json()["query_run_id"] == preview["query_run_id"]
         draft = await api.get(
             f"/v1/pipelines/{pipeline_id}/output-draft", headers=pp.headers("eng")
         )

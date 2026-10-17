@@ -22188,18 +22188,28 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
-        /** StepPreview */
+        /**
+         * StepPreview
+         * @description One step previewed on its source: the query run holding the rows (UC-06-01 step 3). A
+         *     step that drops rows (filter, dedupe) shows the rows it drops; any other step its output.
+         */
         StepPreview: {
-            /** Column */
-            column: string;
-            /** Key Column */
-            key_column: string;
-            /** Rows */
-            rows?: {
-                [key: string]: string;
-            }[];
+            /** Kind */
+            kind: string;
+            /**
+             * Query Run Id
+             * Format: uuid
+             */
+            query_run_id: string;
             /** Seq */
             seq: number;
+            /**
+             * Shows
+             * @enum {string}
+             */
+            shows: "dropped" | "output";
+            /** Status */
+            status: string;
         };
         /** StepView */
         StepView: {

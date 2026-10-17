@@ -115,10 +115,10 @@ describe('PipelinePage', () => {
     const row2 = screen.getByRole('row', { name: /Bỏ dòng trùng loan_id/ });
     expect(within(row2).getByText('−8')).toBeInTheDocument();
     expect(screen.getAllByText('mới')).toHaveLength(3);
-    expect(screen.getByText('Xem trước bước 4 · trước và sau')).toBeInTheDocument();
+    expect(screen.getByText('Xem trước bước 4 trên nguồn')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('row', { name: /Chuẩn hoá branch_code/ }));
-    expect(await screen.findByText('Xem trước bước 5 · trước và sau')).toBeInTheDocument();
+    expect(await screen.findByText('Xem trước bước 5 trên nguồn')).toBeInTheDocument();
     expect(await screen.findByText('012045')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Xem SQL' }));

@@ -68,6 +68,7 @@ from services.api.modules.pipeline.schemas import (
     WriteWindow,
 )
 from services.api.modules.pipeline.store import ROLE, emit, invalid, now, require_datasets
+from services.api.modules.qa.public import pipeline_step_preview
 
 router = APIRouter()
 
@@ -592,18 +593,14 @@ async def preview_pipeline_step(
     steps = row.steps if isinstance(row.steps, list) else []
     if seq < 1 or seq > len(steps):
         raise Problem(404, "not_found", "Pipeline step not found.")
+    kind = str(steps[seq - 1].get("kind")) if isinstance(steps[seq - 1], dict) else ""
+    run = await pipeline_step_preview(principal, data_space, row.id, seq, steps)
     return StepPreview(
         seq=seq,
-        key_column="id",
-        column="output",
-        rows=[
-            {
-                "key": "preview_pending",
-                "before": "—",
-                "after": "—",
-                "note": "Bản xem trước sẽ xuất hiện sau khi worker xử lý pipeline.",
-            }
-        ],
+        kind=kind,
+        shows="dropped" if kind in ("filter", "dedupe") and seq > 1 else "output",
+        query_run_id=run.id,
+        status=run.status,
     )
 
 

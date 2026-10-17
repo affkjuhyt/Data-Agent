@@ -98,10 +98,14 @@ class SchedulePreview(_Body):
 
 
 class StepPreview(BaseModel):
+    """One step previewed on its source: the query run holding the rows (UC-06-01 step 3). A
+    step that drops rows (filter, dedupe) shows the rows it drops; any other step its output."""
+
     seq: int
-    key_column: str
-    column: str
-    rows: list[dict[str, str]] = Field(default_factory=list)
+    kind: str
+    shows: Literal["dropped", "output"]
+    query_run_id: uuid.UUID
+    status: str
 
 
 class OutputDraft(BaseModel):

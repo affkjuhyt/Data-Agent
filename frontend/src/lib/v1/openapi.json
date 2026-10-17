@@ -42414,34 +42414,40 @@
     "type": "object"
    },
    "StepPreview": {
+    "description": "One step previewed on its source: the query run holding the rows (UC-06-01 step 3). A\nstep that drops rows (filter, dedupe) shows the rows it drops; any other step its output.",
     "properties": {
-     "column": {
-      "title": "Column",
+     "kind": {
+      "title": "Kind",
       "type": "string"
      },
-     "key_column": {
-      "title": "Key Column",
+     "query_run_id": {
+      "format": "uuid",
+      "title": "Query Run Id",
       "type": "string"
-     },
-     "rows": {
-      "items": {
-       "additionalProperties": {
-        "type": "string"
-       },
-       "type": "object"
-      },
-      "title": "Rows",
-      "type": "array"
      },
      "seq": {
       "title": "Seq",
       "type": "integer"
+     },
+     "shows": {
+      "enum": [
+       "dropped",
+       "output"
+      ],
+      "title": "Shows",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
      }
     },
     "required": [
      "seq",
-     "key_column",
-     "column"
+     "kind",
+     "shows",
+     "query_run_id",
+     "status"
     ],
     "title": "StepPreview",
     "type": "object"
