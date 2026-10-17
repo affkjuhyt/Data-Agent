@@ -75,3 +75,51 @@ export function stepChart(output: unknown): ChartSpec | null {
 export function stepQuestion(output: unknown): string | null {
   return isRecord(output) && typeof output.question === 'string' ? output.question : null;
 }
+
+export interface ResultPart {
+  key: string;
+  question: string | null;
+  summary: string;
+  chart: ChartSpec | null;
+}
+
+interface StepLike {
+  seq: number;
+  kind: string;
+  status: string;
+  summary: string | null;
+  output?: unknown;
+}
+
+/**
+ * What the run found, in order: a query step that ran is one part (its question, sentence and
+ * chart); a step whose output has parts (a data-quality audit, worker-agent audit/) is its
+ * summary, then each part with its chart.
+ */
+export function resultParts(steps: StepLike[]): ResultPart[] {
+  const out: ResultPart[] = [];
+  for (const s of steps) {
+    if (s.status !== 'ok' || !s.summary) continue;
+    const parts = isRecord(s.output) && Array.isArray(s.output.parts) ? s.output.parts : null;
+    if (s.kind === 'query') {
+      out.push({
+        key: `${s.seq}`,
+        question: stepQuestion(s.output),
+        summary: s.summary,
+        chart: stepChart(s.output),
+      });
+    } else if (parts) {
+      out.push({ key: `${s.seq}`, question: null, summary: s.summary, chart: null });
+      parts.forEach((p, i) => {
+        if (!isRecord(p) || typeof p.summary !== 'string') return;
+        out.push({
+          key: `${s.seq}.${i}`,
+          question: typeof p.question === 'string' ? p.question : null,
+          summary: p.summary,
+          chart: stepChart(p),
+        });
+      });
+    }
+  }
+  return out;
+}

@@ -3,7 +3,7 @@
  * step's chart_spec, the same way the Ask screen draws an answer.
  */
 import { describe, expect, it } from 'vitest';
-import { stepChart } from './runResults';
+import { resultParts, stepChart } from './runResults';
 
 const byRegion = {
   columns: ['vung', 'value'],
@@ -72,5 +72,68 @@ describe('stepChart', () => {
       }),
     ).toBeNull();
     expect(stepChart(null)).toBeNull();
+  });
+});
+
+describe('resultParts', () => {
+  const base = {
+    duration_ms: 1,
+    parent_seq: null,
+    started_at: null,
+    actor: '',
+    metric_text: null,
+    run_as_text: null,
+    rows_text: null,
+    sql: null,
+  };
+
+  it('takes each answered question, and each part of an audit after its summary', () => {
+    // Steps as the api sends them, with fields resultParts does not read.
+    const steps = [
+      {
+        ...base,
+        seq: 1,
+        kind: 'plan',
+        name: 'plan',
+        summary: 'Kế hoạch',
+        status: 'ok',
+        output: {},
+      },
+      {
+        ...base,
+        seq: 2,
+        kind: 'query',
+        name: 'query.semantic',
+        summary: 'NPL 1,83%.',
+        status: 'ok',
+        output: { question: 'Tỷ lệ nợ xấu' },
+      },
+      {
+        ...base,
+        seq: 3,
+        kind: 'query',
+        name: 'query.semantic',
+        summary: 'Lỗi',
+        status: 'retried',
+        output: {},
+      },
+      {
+        ...base,
+        seq: 4,
+        kind: 'tool_call',
+        name: 'quality.status',
+        summary: 'Kiểm toán Khoản vay (16 dòng): 1 vấn đề cần xử lý.',
+        status: 'ok',
+        output: {
+          parts: [{ question: 'Phân bố Giới tính', summary: 'Nam 55%; Nữ 45%.', ...byRegion }],
+        },
+      },
+    ];
+    const parts = resultParts(steps);
+    expect(parts.map((p) => [p.question, p.summary, Boolean(p.chart)])).toEqual([
+      ['Tỷ lệ nợ xấu', 'NPL 1,83%.', false],
+      [null, 'Kiểm toán Khoản vay (16 dòng): 1 vấn đề cần xử lý.', false],
+      ['Phân bố Giới tính', 'Nam 55%; Nữ 45%.', true],
+    ]);
   });
 });

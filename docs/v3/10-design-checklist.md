@@ -10,7 +10,7 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 4 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 295 có test nhắc mã AC | todo 778 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 296 có test nhắc mã AC | todo 778 |
 | Endpoint A2 (tab 4) | 471 (A2 ghi 472 dòng; POST /v1/data-products ở hai nhóm) | 471 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 222 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 161 có mã nhắc tới | todo 195 |
@@ -71,7 +71,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
 | UC-04-01 | Đăng ký kết nối nguồn | todo | 2/2 | 1/1 | 3/5 |  |
-| UC-04-02 | Quét schema và lập hồ sơ dữ liệu | todo | 1/1 | 3/3 | 1/6 |  |
+| UC-04-02 | Quét schema và lập hồ sơ dữ liệu | todo | 1/1 | 3/3 | 2/6 |  |
 | UC-04-03 | Phát hiện thay đổi schema | todo | 1/1 | 2/2 | 0/5 |  |
 | UC-04-04 | Gán nguồn vào Data Space | todo | 2/2 | 2/2 | 1/3 |  |
 | UC-04-05 | Cấu hình lịch quét | todo | 1/1 | 3/3 | 2/3 |  |
@@ -891,11 +891,11 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-04-02 Quét schema và lập hồ sơ dữ liệu · 1/7</summary>
+<details><summary>UC-04-02 Quét schema và lập hồ sơ dữ liệu · 2/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-04-02-01 | Chính | Cho nguồn active với schema credit có 12 bảng / Khi quét lần đầu / Thì có 12 dataset kèm dataset_version, column_meta, column_profile (tỷ lệ null, số giá trị khác nhau, min, max), scan_run hoàn tất và sự kiện scan.com… | CSDL, API | todo |  |
+| AC-04-02-01 | Chính | Cho nguồn active với schema credit có 12 bảng / Khi quét lần đầu / Thì có 12 dataset kèm dataset_version, column_meta, column_profile (tỷ lệ null, số giá trị khác nhau, min, max), scan_run hoàn tất và sự kiện scan.com… | CSDL, API | todo | `tests/integration/worker_agent/test_audit.py` |
 | AC-04-02-02 | Chính | Cho cột so_cccd và cột điện thoại / Khi lập hồ sơ / Thì hai cột mang nhãn dữ liệu cá nhân và giá trị phổ biến lưu trong column_profile đã bị che | CSDL | todo | `tests/integration/api/test_catalog.py` |
 | AC-04-02-03 | Thay thế | Cho bảng SCD2 có cột ngày hiệu lực / Khi quét / Thì dataset ghi history_kind và business_date_col | CSDL | todo |  |
 | AC-04-02-04 | Ngoại lệ | Cho một bảng có truy vấn thống kê quá thời gian / Khi quét / Thì bảng đó bị bỏ kèm lý do và các bảng khác vẫn có hồ sơ | API, CSDL | todo |  |

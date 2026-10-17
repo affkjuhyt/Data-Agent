@@ -18,7 +18,7 @@ import { ChartRenderer } from '../ask/components/ChartRenderer';
 import { FailedRun } from './FailedRun';
 import { PlanEditDrawer } from './PlanEditDrawer';
 import { SpanDetail, TraceWaterfall, defaultSpan } from './RunTrace';
-import { stepChart, stepQuestion } from './runResults';
+import { resultParts } from './runResults';
 import { PLAN_STEP, runStatus } from './runStatus';
 
 /*
@@ -31,7 +31,8 @@ import { PLAN_STEP, runStatus } from './runStatus';
  * event stream (GET /v1/runs/{id}/events) reaches the browser. "Sửa kế hoạch" opens the plan
  * editor (PlanEditDrawer) once the run has stopped at a step boundary — paused, or waiting on a
  * person. Under the story, "Kết quả" shows what the run found: each answered question of its goal
- * with its sentence and chart (runResults), so the steps are read whichever way the run is viewed.
+ * with its sentence and chart, or a data audit's summary and parts (runResults), so the steps are
+ * read whichever way the run is viewed.
  */
 type View = 'simple' | 'technical';
 const LIVE: AgentRun['status'][] = ['queued', 'planning', 'running', 'waiting_human'];
@@ -314,23 +315,19 @@ function Story({ run }: { run: AgentRun }) {
 /** What the run found: one part per answered question, its sentence and, when there is
  *  something to compare, its chart. */
 function Results({ steps }: { steps: NonNullable<AgentRun['steps']> }) {
-  const parts = steps.filter((s) => s.kind === 'query' && s.status === 'ok' && s.summary);
+  const parts = resultParts(steps);
   if (parts.length === 0) return null;
   const title = parts.length === 1 ? 'Kết quả' : `Kết quả · ${parts.length} phần`;
   return (
     <section aria-label={title} className="flex flex-col gap-da-lg py-da-xl">
       <h2 className="text-foreground da-heading-3">{title}</h2>
-      {parts.map((s) => {
-        const chart = stepChart(s.output);
-        const question = stepQuestion(s.output);
-        return (
-          <article key={s.seq} className="flex flex-col gap-da-sm">
-            {question && <h3 className="text-foreground da-body-strong">{question}</h3>}
-            <p className="text-foreground da-body">{s.summary}</p>
-            {chart && <ChartRenderer spec={chart} />}
-          </article>
-        );
-      })}
+      {parts.map((p) => (
+        <article key={p.key} className="flex flex-col gap-da-sm">
+          {p.question && <h3 className="text-foreground da-body-strong">{p.question}</h3>}
+          <p className="text-foreground da-body">{p.summary}</p>
+          {p.chart && <ChartRenderer spec={p.chart} />}
+        </article>
+      ))}
     </section>
   );
 }

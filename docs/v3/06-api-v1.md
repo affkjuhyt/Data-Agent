@@ -186,6 +186,12 @@ của ADR-28) trả lời. Bước G1 của [09](09-target-deploy-and-cleanup.md
   bảo đảm của tab 5 G1.1. Mục tiêu nhiều dòng là một báo cáo: mỗi dòng một câu hỏi, một bước truy vấn và một biểu đồ
   (`chart_spec` trong output của bước), câu trả lời đánh số theo phần. Chưa có xin thêm ngân sách, sửa kế hoạch, kế
   hoạch do mô hình tự lập với các bước phụ thuộc nhau (docstring `runs.py`).
+- **Agent chất lượng dữ liệu.** Agent `kind = data_quality` được cấp `quality.status` kiểm toán bảng mà mục tiêu
+  gọi tên (tên hiển thị hoặc tên bảng trong Data Space), trên ảnh chụp mới nhất nếu bảng là snapshot: hồ sơ từng cột
+  (tỷ lệ trống, số giá trị, khoảng, giá trị phổ biến; cột dữ liệu cá nhân không lộ giá trị, AC-04-02-02), chỗ thiếu
+  tách phần không áp dụng (cả nhóm trống) khỏi phần thiếu thật, phân bố và nhóm tập trung (một nhóm có tỷ lệ ≥ 1,2 lần
+  mức chung), khoá trùng. Mọi truy vấn chỉ đọc, tại chỗ, ghi là `query_run` của lượt chạy (`audit/`); màn lượt chạy
+  hiện kết luận và từng phần kèm biểu đồ.
 - **Ngưỡng theo dõi.** Câu trả lời của Hỏi đáp và của lượt chạy agent nói kết quả đứng đâu so với ngưỡng mà người
   phụ trách đặt cho chỉ số trên cả Data Space (`monitor.monitor`, `rule_kind = threshold`, `scope_filter` rỗng, đọc
   như `svc_monitor`): thành viên nào vượt ngưỡng, nào ở vùng cảnh báo sớm (`answer/thresholds.py`). Ngưỡng và mức

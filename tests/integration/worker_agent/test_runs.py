@@ -41,6 +41,7 @@ def agent_run(
     autonomy: str = "suggest_only",
     checkpoints: tuple[str, ...] = (),
     is_test: bool = True,
+    kind: str = "analysis",
 ) -> uuid.UUID:
     seed = bank.seed
     agent_id = seed.row(
@@ -49,7 +50,7 @@ def agent_run(
         data_space_id=bank.space,
         code=f"a-{uuid.uuid4().hex[:6]}",
         name="Theo dõi nợ xấu",
-        kind="analysis",
+        kind=kind,
         owner_user_id=bank.user,
         account_user_id=bank.user,
         current_config_version=1,

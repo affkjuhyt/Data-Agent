@@ -43,6 +43,8 @@ from services.worker_agent.answer.insights import written
 from services.worker_agent.answer.narrate import chart_spec_of, figures_of, text_of
 from services.worker_agent.answer.thresholds import judged
 from services.worker_agent.answer.thresholds import load as load_threshold
+from services.worker_agent.audit.findings import Column, audit
+from services.worker_agent.audit.run import AuditFailed, Target, gather
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.query.guard import SqlRejected
@@ -58,7 +60,7 @@ from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import load
 from services.worker_agent.understand import llm_reader
 from services.worker_agent.understand.resolver import Understanding, from_chips, understand
-from services.worker_agent.understand.text import words_of
+from services.worker_agent.understand.text import norm, words_of
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +86,8 @@ ROLE = "svc_agent"
 QA_ROLE = "svc_qa"
 NOTIFY_ROLE = "svc_notify"
 NOTIFY_TOOL = "notify.internal"
+# The read tool a data-quality agent audits with (tool_def: quality.status).
+AUDIT_TOOL = "quality.status"
 TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
 # Request noise a fingerprint leaves out (tab 5 G4.4): the same call twice is the same call.
 _NOISE = frozenset({"request_id", "idempotency_key", "timestamp", "at"})
@@ -813,6 +817,10 @@ async def _execute(work: Run, run: agent.AgentRun) -> None:
         requires = {t.tool: t.requires_checkpoint for t in tools}
     limits = effective_limits(config.limits or {})
     done = await work.steps()
+    if owner.kind == "data_quality":
+        # A data-quality agent audits the table its goal names (audit/), it does not ask questions.
+        await _audit_flow(work, run, config, owner, granted, requires, limits, done)
+        return
 
     # 1. Plan, once: a resumed run reads back the chips it planned with.
     plan_row = next((s for s in done if s.kind == "plan"), None)
@@ -906,7 +914,22 @@ async def _execute(work: Run, run: agent.AgentRun) -> None:
         else "\n".join(f"{i}. {a}" for i, a in enumerate(answers, start=1))
     )
 
-    # 3. Tell the result inside the organisation, when the agent was given that tool.
+    await _tell_and_end(work, run, config, owner, granted, requires, limits, done, tokens, answer)
+
+
+async def _tell_and_end(
+    work: Run,
+    run: agent.AgentRun,
+    config: agent.AgentConfig,
+    owner: agent.AgentDef,
+    granted: Mapping[str, str],
+    requires: Mapping[str, bool],
+    limits: Limits,
+    done: Sequence[agent.AgentStep],
+    tokens: int,
+    answer: str,
+) -> None:
+    """Tell the result inside the organisation, when the agent was given that tool, then end."""
     if NOTIFY_TOOL in granted and not any(
         s.name == NOTIFY_TOOL and s.kind == "tool_call" for s in done
     ):
@@ -915,6 +938,184 @@ async def _execute(work: Run, run: agent.AgentRun) -> None:
         if not await _notify_step(work, run, config, owner, granted, requires, answer):
             return
     await work.end("succeeded", "completed", told=answer)
+
+
+async def _audit_target(
+    run: agent.AgentRun, goal: str, principal: uuid.UUID, dataset_id: str | None
+) -> Target:
+    """The table the goal names among the Data Space's datasets (its display or table name), with
+    its catalogued columns and where to query it in place."""
+    async with scoped_session(QA_ROLE, run.org_id, principal) as session:
+        datasets = (
+            await session.scalars(
+                select(catalog.Dataset).where(
+                    catalog.Dataset.data_space_id == run.data_space_id,
+                    catalog.Dataset.enabled.is_(True),
+                    catalog.Dataset.deleted_at.is_(None),
+                )
+            )
+        ).all()
+        if dataset_id is not None:
+            chosen = next((d for d in datasets if str(d.id) == dataset_id), None)
+        else:
+            said = f" {norm(goal)} "
+            named = [
+                (len(name), d)
+                for d in datasets
+                for name in {norm(d.display_name or ""), norm(d.table_name)}
+                if name and f" {name} " in said
+            ]
+            chosen = max(named, key=lambda x: x[0])[1] if named else None
+        if chosen is None:
+            listed = ", ".join(sorted(d.display_name or d.table_name for d in datasets)[:8])
+            raise RunFailed(
+                "Mục tiêu chưa gọi tên bảng nào của Data Space để kiểm toán"
+                + (f"; các bảng có: {listed}." if listed else "; Data Space chưa có bảng nào.")
+            )
+        metas = (
+            await session.scalars(
+                select(catalog.ColumnMeta)
+                .where(
+                    catalog.ColumnMeta.dataset_id == chosen.id,
+                    catalog.ColumnMeta.removed_in_version.is_(None),
+                )
+                .order_by(catalog.ColumnMeta.ordinal)
+            )
+        ).all()
+        if not metas:
+            raise RunFailed(
+                f"Bảng {chosen.display_name or chosen.table_name} chưa có cột trong danh mục; hãy quét "
+                "schema của nguồn trước khi kiểm toán."
+            )
+        source = (
+            _internal_workspace_source(run.data_space_id, run.org_id)
+            if chosen.schema_name == "workspace" and chosen.source_id is None
+            else await session.get(catalog.Source, chosen.source_id)
+        )
+        if source is None or source.mode != "federated" or source.status not in QUERYABLE:
+            raise RunFailed("Bảng này nằm trên một nguồn chưa được phép truy vấn tại chỗ.")
+        session.expunge(chosen)
+        session.expunge(source)
+    columns = [
+        Column(
+            m.name, m.display_name or m.name, m.normalized_type, m.is_key, m.pii_label is not None
+        )
+        for m in metas
+    ]
+    date_column = (
+        chosen.business_date_col
+        if chosen.history_kind == "snapshot"
+        and chosen.business_date_col in {c.name for c in columns}
+        else None
+    )
+    return Target(chosen, columns, source, date_column)
+
+
+async def _audit_flow(
+    work: Run,
+    run: agent.AgentRun,
+    config: agent.AgentConfig,
+    owner: agent.AgentDef,
+    granted: Mapping[str, str],
+    requires: Mapping[str, bool],
+    limits: Limits,
+    done: list[agent.AgentStep],
+) -> None:
+    plan_row = next((s for s in done if s.kind == "plan"), None)
+    started = _now()
+    target = await _audit_target(
+        run,
+        config.goal,
+        work.principal,
+        (plan_row.output or {}).get("dataset_id") if plan_row else None,
+    )
+    name = target.dataset.display_name or target.dataset.table_name
+    if plan_row is None:
+        status = await work.record(
+            kind="plan",
+            name="plan",
+            status="ok",
+            summary=f"Kiểm toán {name}: {len(target.columns)} cột",
+            told=f"Lập kế hoạch: kiểm toán bảng {name} ({len(target.columns)} cột).",
+            input={"goal": config.goal},
+            output={
+                "dataset_id": str(target.dataset.id),
+                "columns": [c.name for c in target.columns],
+            },
+            then="running",
+            started=started,
+        )
+        if status != "running":
+            return
+        done = await work.steps()
+
+    audited = next((s for s in done if s.name == AUDIT_TOOL and s.status == "ok"), None)
+    if audited is not None:
+        answer = audited.summary or ""
+    else:
+        if await _ended_by_budget(work, _stop_for_budget(limits, done, run, 0)):
+            return
+        started = _now()
+        if authority(AUDIT_TOOL, granted, is_test=run.is_test) == "denied":
+            message = "Agent chưa được cấp công cụ kiểm tra chất lượng dữ liệu (quality.status)."
+            await work.record(
+                kind="tool_call",
+                name=AUDIT_TOOL,
+                status="skipped",
+                summary=message,
+                told=None,
+                input={"dataset_id": str(target.dataset.id)},
+                started=started,
+            )
+            raise RunFailed(message)
+        try:
+            got = await gather(
+                target,
+                dialect=dialect_for_source(target.source.kind),
+                org_id=run.org_id,
+                space_id=run.data_space_id,
+                principal=work.principal,
+                run_id=run.id,
+                secrets=secrets(),
+            )
+        except AuditFailed as exc:
+            raise RunFailed(str(exc)) from exc
+        result = audit(name, target.columns, got.aggregates)
+        when = f", ảnh chụp {got.snapshot:%d/%m/%Y}" if got.snapshot else ""
+        answer = result.summary.replace(
+            f"({vn_rows(got.aggregates.rows)} dòng)",
+            f"({vn_rows(got.aggregates.rows)} dòng{when})",
+            1,
+        )
+        status = await work.record(
+            kind="tool_call",
+            name=AUDIT_TOOL,
+            status="ok",
+            summary=answer,
+            told=f"Đã kiểm toán {name}: {len(got.query_run_ids)} truy vấn chỉ đọc.",
+            input={
+                "dataset_id": str(target.dataset.id),
+                "snapshot": str(got.snapshot) if got.snapshot else None,
+            },
+            output={
+                "dataset_id": str(target.dataset.id),
+                "snapshot": got.snapshot.isoformat() if got.snapshot else None,
+                "rows": got.aggregates.rows,
+                "profiles": result.profiles,
+                "findings": [f.__dict__ for f in result.findings],
+                "parts": result.parts,
+                "query_run_ids": got.query_run_ids,
+            },
+            started=started,
+        )
+        if status != "running":
+            return
+        done = await work.steps()
+    await _tell_and_end(work, run, config, owner, granted, requires, limits, done, 0, answer)
+
+
+def vn_rows(n: int) -> str:
+    return f"{n:,}".replace(",", ".")
 
 
 async def _query_step(
