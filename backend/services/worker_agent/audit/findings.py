@@ -288,15 +288,38 @@ def audit(dataset: str, columns: list[Column], a: Aggregates) -> Audit:
         if p
     ]
     crossings = []
+    # A two-valued column (gender) crossed without concentrating anywhere: said once, plainly,
+    # since "where do men and women concentrate" has an answer even when it is "nowhere".
+    even: dict[str, list[str]] = defaultdict(list)
+    concentrated: set[str] = set()
     for (an, bn), cells in a.crossed.items():
         if an in by_name and bn in by_name and cells:
             finding, part, strength = _crossing(by_name[an], by_name[bn], cells)
             if finding is not None:
                 crossings.append((strength, finding, part))
+                concentrated.add(an)
+            else:
+                even[an].append(bn)
     crossings.sort(key=lambda x: -x[0])
     for _, finding, part in crossings[:MAX_CROSSES]:
         findings.append(finding)
         parts.append(part)
+    for an, bns in even.items():
+        named = [
+            str(v) for v, _ in sorted(a.values.get(an, []), key=lambda x: -x[1]) if v is not None
+        ]
+        if an in concentrated or len(named) != 2:
+            continue
+        findings.append(
+            Finding(
+                "concentration",
+                "info",
+                an,
+                f"{labels[an]}: {', '.join(named)} phân bố đều theo "
+                f"{', '.join(labels[b] for b in bns)} (không nhóm nào có tỷ lệ từ "
+                f"{vn_number(LIFT_MIN, 1)} lần mức chung).",
+            )
+        )
 
     high = sum(f.severity == "high" for f in findings)
     warn = sum(f.severity == "warning" for f in findings)

@@ -165,3 +165,22 @@ def test_a_lone_row_does_not_explain_a_gap_away() -> None:
     )
     [gender] = [t for t in texts("missing", a) if t.startswith("Giới tính")]
     assert gender == "Giới tính: thiếu 2/10 dòng (20,0%)."
+
+
+def test_a_two_valued_column_that_concentrates_nowhere_is_said_to_spread_evenly() -> None:
+    # "Where do men and women concentrate?" has an answer even when it is "nowhere".
+    even = [
+        ("Nam", "26-35", 150),
+        ("Nam", "36-45", 100),
+        ("Nữ", "26-35", 120),
+        ("Nữ", "36-45", 80),
+    ]
+    out = audit(
+        "Dư nợ khoản vay",
+        COLUMNS,
+        aggregates(crossed={("gender", "age_band"): even, ("gender", "customer_segment"): []}),
+    )
+    [said] = [f.text for f in out.findings if f.kind == "concentration"]
+    assert said == (
+        "Giới tính: Nam, Nữ phân bố đều theo Độ tuổi (không nhóm nào có tỷ lệ từ 1,2 lần mức chung)."
+    )

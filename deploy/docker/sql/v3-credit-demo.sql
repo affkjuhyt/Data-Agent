@@ -81,10 +81,13 @@ SELECT
     'L' || lpad(t.n::text, 5, '0'),
     'C' || lpad(((t.n * 7) % 2000 + 1)::text, 5, '0'),
     t.segment,
-    -- Individuals only; 3% of them were onboarded without it (a gap for the data audit).
+    -- Individuals only; 3% of them were onboarded without it (a gap for the data audit). Women
+    -- hold more of the credit cards and men more of the home loans, for the audit to find.
     CASE WHEN t.segment <> 'Cá nhân' THEN NULL
          WHEN t.u_gen < 0.03 THEN NULL
-         WHEN t.u_gen < 0.57 THEN 'Nam' ELSE 'Nữ' END,
+         WHEN t.u_gen < (CASE WHEN t.u_prd < 0.35 THEN 0.40 WHEN t.u_prd < 0.75 THEN 0.55
+                              ELSE 0.75 END) THEN 'Nam'
+         ELSE 'Nữ' END,
     CASE WHEN t.segment <> 'Cá nhân' THEN NULL
          WHEN t.u_age < 0.18 THEN '18-25' WHEN t.u_age < 0.48 THEN '26-35'
          WHEN t.u_age < 0.75 THEN '36-45' WHEN t.u_age < 0.95 THEN '46-60' ELSE 'Trên 60' END,
