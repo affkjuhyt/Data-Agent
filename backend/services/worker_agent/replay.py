@@ -43,14 +43,25 @@ EVENT_TYPE = "receipt_replay.requested"
 LIVE_ONLY = "Nguồn chỉ được truy vấn trên dữ liệu hiện hành; số khác vì dữ liệu nguồn đã thay đổi từ lúc trả lời."
 
 
-def _value(outcome: QueryOutcome, figure_key: str) -> decimal.Decimal | None:
+def _value(
+    outcome: QueryOutcome, figure_key: str, cell: tuple[int, str] | None = None
+) -> decimal.Decimal | None:
+    """The replayed value of a figure, read at the cell its answer named ({row, col}).
+
+    Answers written before figures named their cell read F<n> as row n-1 of `value`; a compared
+    answer (R1-06) has two figures a row, so the cell is what counts."""
     try:
-        row = int(figure_key.removeprefix("F")) - 1
-        col = [c["name"] for c in outcome.columns].index("value")
+        row, name = cell if cell is not None else (int(figure_key.removeprefix("F")) - 1, "value")
+        col = [c["name"] for c in outcome.columns].index(name)
         raw = outcome.rows[row][col]
     except (ValueError, IndexError):
         return None
     return None if raw is None else decimal.Decimal(str(raw))
+
+
+def _cell(source: dict[str, Any]) -> tuple[int, str] | None:
+    row, col = source.get("row"), source.get("col")
+    return (row, col) if isinstance(row, int) and isinstance(col, str) else None
 
 
 async def replay_receipt(event: Event) -> None:
@@ -70,11 +81,12 @@ async def replay_receipt(event: Event) -> None:
         mode = replay.mode
         receipt = await session.get(qa.AnswerReceipt, replay.receipt_id)
         answer = await session.get(qa.Answer, receipt.answer_id) if receipt else None
-        exprs = {
-            str(x.get("key")): (x.get("source") or {}).get("expr")
+        sources_of = {
+            str(x.get("key")): x.get("source") or {}
             for x in ((answer.figures if answer else None) or [])
             if isinstance(x, dict)
         }
+        exprs = {key: source.get("expr") for key, source in sources_of.items()}
     run_ids = sorted({f.query_run_id for f in figures if f.query_run_id is not None}, key=str)
     async with scoped_session("svc_query", event.org_id, requested_by) as session:
         originals = {
@@ -141,7 +153,11 @@ async def replay_receipt(event: Event) -> None:
             continue
         # A figure the answer masked (stale, not available) stays masked here: its value is never
         # read back or stored, only the result's hash is compared.
-        replayed = _value(rerun, f.figure_key) if f.display_state == "shown" else None
+        replayed = (
+            _value(rerun, f.figure_key, _cell(sources_of.get(f.figure_key, {})))
+            if f.display_state == "shown"
+            else None
+        )
         sql_match = (
             hashlib.sha256(first_run.sql_generated.encode()).hexdigest() == f.compiled_sql_sha256
         )

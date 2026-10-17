@@ -206,6 +206,8 @@ const CHIP_LABEL: Record<string, string> = {
   dimension: 'Chiều',
   filter: 'Phạm vi',
   period: 'Kỳ',
+  // R1-06: "so với tháng trước", read off the question and kept on an edited plan.
+  compare: 'So sánh',
 };
 
 interface PlanWire {

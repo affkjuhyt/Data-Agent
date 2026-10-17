@@ -92,7 +92,7 @@ def is_additive(expression: str, measures: dict[str, str]) -> bool:
     return bool(_CODE.match(code)) and bool(_ADDITIVE.match(measures.get(code, "")))
 
 
-class _Builder:
+class Builder:
     def __init__(self, base: list[Figure], unit: str | None, decimals: int) -> None:
         self.base = base
         self.unit = unit
@@ -139,7 +139,7 @@ def insights_of(
     if any(f.display_state != "shown" or f.value is None for f in figures):
         return Insights()
     code = group_by[0]
-    b = _Builder(figures, unit, decimals)
+    b = Builder(figures, unit, decimals)
     if code in time_dimensions:
         _over_time(b, code, metric_name)
     else:
@@ -151,7 +151,7 @@ def _change_unit(unit: str | None) -> str | None:
     return "điểm %" if unit == "%" else unit
 
 
-def _over_time(b: _Builder, code: str, metric_name: str) -> None:
+def _over_time(b: Builder, code: str, metric_name: str) -> None:
     # Period members sort as text (2026-08 < 2026-09); the compiler orders them the same way.
     ordered = sorted(b.base, key=lambda f: _member(f, code))
     last, prev = ordered[-1], ordered[-2]
@@ -188,7 +188,7 @@ def _over_time(b: _Builder, code: str, metric_name: str) -> None:
             )
 
 
-def _across_members(b: _Builder, code: str, metric_name: str, additive: bool) -> None:
+def _across_members(b: Builder, code: str, metric_name: str, additive: bool) -> None:
     high = max(b.base, key=lambda f: f.value or 0)
     low = min(b.base, key=lambda f: f.value or 0)
     if high.value == low.value:

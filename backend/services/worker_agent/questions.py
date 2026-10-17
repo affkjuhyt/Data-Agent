@@ -40,6 +40,13 @@ from libs.contracts.v1.errors import ErrorCode, NextAction, Refusal
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, document, qa
 from services.worker_agent.answer import narrator
+from services.worker_agent.answer.comparison import (
+    PERIOD_CODE,
+    PERIOD_NAME,
+    comparison_figures,
+    comparison_insights,
+    period_label,
+)
 from services.worker_agent.answer.insights import insights_of, is_additive, written
 from services.worker_agent.answer.narrate import chart_spec_of, figures_of, text_of
 from services.worker_agent.answer.thresholds import judged
@@ -53,10 +60,12 @@ from services.worker_agent.progress import publish
 from services.worker_agent.query.executor import run_query
 from services.worker_agent.query.guard import SqlRejected, dialect_of
 from services.worker_agent.query.secrets import SecretReader, StaticReader, reader_from_env
+from services.worker_agent.semantic import compare
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import SpaceLayer, load
 from services.worker_agent.sqlgen.answer import answer_by_sql
 from services.worker_agent.understand import llm_reader
+from services.worker_agent.understand.comparison import find_comparison
 from services.worker_agent.understand.resolver import (
     Understanding,
     follow_up,
@@ -162,6 +171,8 @@ class Prepared:
     additive: bool = False
     # The cuts the metric allows besides time, (code, name): the chart's "Đi sâu theo" (UC-01-04).
     cuts: list[tuple[str, str]] = field(default_factory=list)
+    # R1-06: the base period's label when the question compares ("so với tháng trước").
+    base_label: str | None = None
     # Model calls behind this answer, for the receipt (ADR-43: models[], frontier_used).
     models: list[dict[str, Any]] = field(default_factory=list)
 
@@ -172,6 +183,7 @@ def _plan_ir(
     as_of: datetime.date | None,
     explain_by: str | None = None,
     explain_name: str | None = None,
+    compare_to: str | None = None,
 ) -> dict[str, Any]:
     """Plan IR v2 (tab 5 G3.1): the fast path's template plan, one semantic query step.
 
@@ -200,6 +212,8 @@ def _plan_ir(
                 "explain": f"Tính {u.metric.name}",
             }
         )
+        if compare_to is not None:
+            steps[0]["args"]["compare_to"] = compare_to
         if explain_by is not None and u.period is not None:
             month = u.period.start
             before = (month - datetime.timedelta(days=1)).replace(day=1)
@@ -336,6 +350,33 @@ def _cut_clarification(
         f"Người phụ trách có thể thêm “{asked}” làm từ đồng nghĩa để lần sau hệ thống hiểu ngay.",
         choices,
     )
+
+
+def _compiled(
+    request: c.Request, layer: SpaceLayer, compare_to: str | None, dialect: str
+) -> c.Compiled:
+    """The question's statement; with a comparison, both periods in one (semantic/compare.py)."""
+    if compare_to is None:
+        return c.compile_metric(request, layer.layer, dialect=dialect)
+    return compare.compile_comparison(request, layer.layer, compare_to, dialect=dialect)[0]
+
+
+def _compare_chip(compare_to: str, period: c.Period | None) -> dict[str, object]:
+    """The comparison as a plan chip; an edited plan keeps it (from_chips ignores the kind)."""
+    compared_to = (
+        period_label(compare.base_period(period, compare_to))
+        if period is not None
+        else {"previous_period": "kỳ trước", "same_period_last_year": "cùng kỳ năm trước"}[
+            compare_to
+        ]
+    )
+    return {
+        "kind": "compare",
+        "value": compare_to,
+        "label": f"so với {compared_to}",
+        "source": "default",
+        "confidence": 1.0,
+    }
 
 
 def _dimension_name(layer: SpaceLayer, code: str | None) -> str | None:
@@ -533,10 +574,26 @@ async def _understand_and_plan(
         space_id, user_id = conversation.data_space_id, conversation.user_id
         today = question.as_of or datetime.date.today()
         layer = await load(session, space_id)
+        # R1-06: "so với tháng trước" is read first and taken out of the text, or "tháng trước"
+        # would be read as the period asked.
+        found = find_comparison(question.text) if edited is None else None
+        asked = found.rest if found is not None else question.text
+        compare_to = (
+            found.compare_to
+            if found is not None
+            else next(
+                (
+                    str(chip.get("value"))
+                    for chip in (edited.chips or [] if edited is not None else [])
+                    if chip.get("kind") == "compare" and chip.get("value") in compare.COMPARE_TO
+                ),
+                None,
+            )
+        )
         u = (
             from_chips(list(edited.chips or []), layer.vocabulary)
             if edited is not None
-            else understand(question.text, layer.vocabulary, today=today)
+            else understand(asked, layer.vocabulary, today=today)
         )
         if edited is None and u.decision == "unknown":
             # UC-01-04: "còn theo vùng thì sao?" reads against the question before it.
@@ -546,7 +603,7 @@ async def _understand_and_plan(
         if edited is None and u.decision == "unknown" and model is not None:
             # The rule pass placed no metric: the fast model reads it against this catalogue.
             read = await llm_reader.read(
-                question.text,
+                asked,
                 layer.vocabulary,
                 model,
                 today=today,
@@ -578,11 +635,7 @@ async def _understand_and_plan(
             try:
                 # Compile once to discover the dataset/source, then regenerate in that source's
                 # dialect after the source policy checks below.
-                compiled = c.compile_metric(
-                    compile_request,
-                    layer.layer,
-                    dialect="postgres",
-                )
+                compiled = _compiled(compile_request, layer, compare_to, "postgres")
             except (c.CompileError, SqlRejected) as exc:
                 problem = Refusal.of(
                     _code(getattr(exc, "code", "CONTRACT_MISMATCH")),
@@ -597,7 +650,12 @@ async def _understand_and_plan(
             # The person's chips stay as they wrote them; the plan gains its steps.
             plan_id = edited.id
             edited.steps = _plan_ir(
-                u, compiled, question.as_of, explain_by, _dimension_name(layer, explain_by)
+                u,
+                compiled,
+                question.as_of,
+                explain_by,
+                _dimension_name(layer, explain_by),
+                compare_to,
             )
             edited.confidence = decimal.Decimal(str(round(u.confidence, 4)))
         else:
@@ -616,9 +674,23 @@ async def _understand_and_plan(
                     question_id=question.id,
                     version=version_no,
                     chips=[chip.__dict__ for chip in u.chips]
-                    + [{"kind": "option", "value": m.code, "label": m.name} for m in u.options],
+                    + [{"kind": "option", "value": m.code, "label": m.name} for m in u.options]
+                    + (
+                        [
+                            _compare_chip(
+                                compare_to, compile_request.period if compile_request else None
+                            )
+                        ]
+                        if compare_to is not None
+                        else []
+                    ),
                     steps=_plan_ir(
-                        u, compiled, question.as_of, explain_by, _dimension_name(layer, explain_by)
+                        u,
+                        compiled,
+                        question.as_of,
+                        explain_by,
+                        _dimension_name(layer, explain_by),
+                        compare_to,
                     ),
                     confidence=decimal.Decimal(str(round(u.confidence, 4))),
                 )
@@ -641,10 +713,8 @@ async def _understand_and_plan(
                 )
             elif compile_request is not None:
                 try:
-                    compiled = c.compile_metric(
-                        compile_request,
-                        layer.layer,
-                        dialect=dialect_for_source(source.kind),
+                    compiled = _compiled(
+                        compile_request, layer, compare_to, dialect_for_source(source.kind)
                     )
                 except (c.CompileError, SqlRejected) as exc:
                     problem = Refusal.of(
@@ -689,6 +759,11 @@ async def _understand_and_plan(
                     layer.versions[u.metric.metric_id].expression,
                     {code: m.expression for code, m in layer.layer.measures.items()},
                 ),
+                base_label=period_label(compare.base_period(compile_request.period, compare_to))
+                if compare_to is not None
+                and compile_request is not None
+                and compile_request.period is not None
+                else None,
                 models=models,
             )
 
@@ -903,15 +978,31 @@ async def _answer_from_documents(
 async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: Any) -> None:
     u = p.understanding
     columns = [col["name"] for col in outcome.columns]
-    figures = figures_of(
-        columns,
-        outcome.rows,
-        metric_name=p.metric_name,
-        unit=p.version.unit,
-        decimals=p.version.decimals,
-        dimension_names=p.dimension_names,
-        period_label=u.period.label if u.period else None,
-    )
+    # A compared answer (R1-06): two figures a row, told apart by the period they read.
+    compared_to = p.base_label if u.period is not None else None
+    shown_by = [*u.group_by, PERIOD_CODE] if compared_to else list(u.group_by)
+    names = {**p.dimension_names, PERIOD_CODE: PERIOD_NAME}
+    if compared_to and u.period is not None:
+        figures = comparison_figures(
+            columns,
+            outcome.rows,
+            metric_name=p.metric_name,
+            unit=p.version.unit,
+            decimals=p.version.decimals,
+            dimension_names=p.dimension_names,
+            period_label=u.period.label,
+            base_label=compared_to,
+        )
+    else:
+        figures = figures_of(
+            columns,
+            outcome.rows,
+            metric_name=p.metric_name,
+            unit=p.version.unit,
+            decimals=p.version.decimals,
+            dimension_names=p.dimension_names,
+            period_label=u.period.label if u.period else None,
+        )
     # The risk team's threshold on this metric, judged once the figures are masked (BR-178).
     threshold = await load_threshold(p.org_id, p.space_id, p.metric_id, p.user_id)
     answer_id = uuid7()
@@ -960,14 +1051,26 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             None if u.period else "Không nêu kỳ: số liệu là dữ liệu mới nhất có trong nguồn."
         )
         # What the table and chart show, by arithmetic: each number a figure with its expression.
-        ins = insights_of(
-            figures,
-            group_by=u.group_by,
-            time_dimensions=p.time_dimensions,
-            metric_name=p.metric_name,
-            unit=p.version.unit,
-            decimals=p.version.decimals,
-            additive=p.additive,
+        ins = (
+            comparison_insights(
+                figures,
+                group_by=u.group_by,
+                metric_name=p.metric_name,
+                unit=p.version.unit,
+                decimals=p.version.decimals,
+                period_label=u.period.label,
+                base_label=compared_to,
+            )
+            if compared_to and u.period is not None
+            else insights_of(
+                figures,
+                group_by=u.group_by,
+                time_dimensions=p.time_dimensions,
+                metric_name=p.metric_name,
+                unit=p.version.unit,
+                decimals=p.version.decimals,
+                additive=p.additive,
+            )
         )
         if threshold is not None:
             against = judged(
@@ -983,8 +1086,14 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
         text = text_of(
             figures,
             metric_name=p.metric_name,
-            group_by_names=[p.dimension_names.get(g, g) for g in u.group_by],
-            period_label=u.period.label if u.period else None,
+            group_by_names=[names.get(g, g) for g in shown_by],
+            period_label=(
+                f"{u.period.label} so với {compared_to}"
+                if compared_to and u.period
+                else u.period.label
+                if u.period
+                else None
+            ),
             filters_label=filters_label,
             latest_note=latest_note,
             truncated=outcome.truncated,
@@ -1049,8 +1158,8 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                 number_check=check,
                 chart_spec=chart_spec_of(
                     figures,
-                    group_by=u.group_by,
-                    dimension_names=p.dimension_names,
+                    group_by=shown_by,
+                    dimension_names=names,
                     time_dimensions=p.time_dimensions,
                     metric_name=p.metric_name,
                     unit=p.version.unit,
@@ -1147,6 +1256,10 @@ async def _seal_receipt(
         v.status == "certified" and v.certified_by is not None and v.certified_at is not None
     )
     for f in figures:
+        if f.display_state == "not_available" and state != "missing":
+            # An empty cell of fresh data (a member with no row in one compared period) states
+            # no number; D4 keeps not_available for data that is missing, so it is not sealed.
+            continue
         session.add(
             qa.AnswerReceiptFigure(
                 id=uuid7(),

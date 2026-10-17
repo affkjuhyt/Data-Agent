@@ -157,6 +157,7 @@ describe('dataAnswer', () => {
         { kind: 'filter', value: 'vung=MB', label: 'Miền Bắc', source: 'default' },
         { kind: 'filter', value: 'sp=TD', label: 'Tín dụng', source: 'inherited' },
         { kind: 'option', value: 'DU_NO', label: 'Dư nợ' },
+        { kind: 'compare', value: 'previous_period', label: 'so với tháng 8/2026' },
       ],
       steps: {
         steps: [
@@ -183,6 +184,7 @@ describe('dataAnswer', () => {
       ['Chỉ số', 'Tỷ lệ nợ xấu', true],
       ['Phạm vi', 'Miền Bắc', false],
       ['Phạm vi', 'Tín dụng', true],
+      ['So sánh', 'so với tháng 8/2026', false],
     ]);
     expect(proposal?.params.base_period).toBe('2026-08');
     expect(
