@@ -1,7 +1,9 @@
-"""Initial PostgreSQL schema scans requested by the catalog API.
+"""Schema scans requested by the catalog API.
 
 The first scan records structure only.  Value profiling is deliberately a later worker step;
-the connection wizard needs the table list before the source can be activated.
+the connection wizard needs the table list before the source can be activated.  PostgreSQL is
+read through its catalog.  ClickHouse is read through the HTTP interface, the same one the
+connection test uses, because it does not speak the PostgreSQL wire protocol.
 """
 
 from __future__ import annotations
@@ -9,17 +11,22 @@ from __future__ import annotations
 import datetime
 import decimal
 import hashlib
+import json
+import re
 import uuid
 from typing import Any
 
 import asyncpg
+import httpx
 from sqlalchemy import select
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.questions import secrets
-from services.worker_agent.source_tests import _ssl_mode
+from services.worker_agent.source_tests import _clickhouse_sql, _clickhouse_url, _ssl_mode
+
+_CLICKHOUSE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 EVENT_TYPE = "scan_run.created"
 ROLE = "svc_catalog"
@@ -77,7 +84,93 @@ def _normalized_type(data_type: str) -> str:
     return "string"
 
 
+def _clickhouse_schemas(source: catalog.Source) -> list[str]:
+    """The databases to read. An empty list means the database named on the source, not public."""
+    names = [str(name) for name in (source.scan_schemas or []) if str(name)]
+    if not names and source.database_name:
+        names = [str(source.database_name)]
+    if not names or any(_CLICKHOUSE_NAME.fullmatch(name) is None for name in names):
+        raise ValueError("database")
+    return names
+
+
+def _clickhouse_object_kind(engine: str) -> str:
+    if engine == "View":
+        return "view"
+    if engine == "MaterializedView":
+        return "materialized_view"
+    return "table"
+
+
+def _json_rows(body: str) -> list[dict[str, Any]]:
+    return [json.loads(line) for line in body.splitlines() if line.strip()]
+
+
+async def _scan_clickhouse(
+    source: catalog.Source, tables: list[str] | None
+) -> list[dict[str, object]]:
+    credentials = await secrets().read(source.org_id, source.secret_ref)
+    schemas = _clickhouse_schemas(source)
+    url = _clickhouse_url(source.host or "", source.port or 8123)
+    schema_sql = ", ".join(f"'{name}'" for name in schemas)
+    requested = ""
+    if tables:
+        pairs: list[str] = []
+        for item in tables:
+            schema, dot, table = str(item).partition(".")
+            if dot and _CLICKHOUSE_NAME.fullmatch(schema) and _CLICKHOUSE_NAME.fullmatch(table):
+                pairs.append(f"('{schema}', '{table}')")
+        if not pairs:
+            return []
+        requested = f" AND (database, name) IN ({', '.join(pairs)})"
+    auth = (credentials.user, credentials.password)
+    tables_sql = (
+        "SELECT database, name, engine, ifNull(total_rows, 0) AS total_rows "
+        "FROM system.tables "
+        f"WHERE database IN ({schema_sql}){requested} "
+        "ORDER BY database, name FORMAT JSONEachRow"
+    )
+    columns_sql = (
+        "SELECT database, table, name, type, position, is_in_primary_key "
+        "FROM system.columns "
+        f"WHERE database IN ({schema_sql}){requested.replace('(database, name)', '(database, table)')} "
+        "ORDER BY database, table, position FORMAT JSONEachRow"
+    )
+    async with httpx.AsyncClient(timeout=30, verify=True) as client:
+        listed = await _clickhouse_sql(client, url, schemas[0], tables_sql, auth)
+        described = await _clickhouse_sql(client, url, schemas[0], columns_sql, auth)
+    if listed.status_code >= 400 or described.status_code >= 400:
+        raise RuntimeError("clickhouse catalog request failed")
+    columns_by_table: dict[tuple[str, str], list[dict[str, object]]] = {}
+    for row in _json_rows(described.text):
+        key = (str(row["database"]), str(row["table"]))
+        data_type = str(row["type"])
+        columns_by_table.setdefault(key, []).append(
+            {
+                "name": str(row["name"]),
+                "ordinal": int(row["position"]),
+                "data_type": data_type,
+                "normalized_type": _normalized_type(data_type),
+                "is_nullable": data_type.startswith("Nullable("),
+                "is_key": row.get("is_in_primary_key") in (1, True, "1"),
+            }
+        )
+    return [
+        {
+            "schema_name": str(row["database"]),
+            "table_name": str(row["name"]),
+            "object_kind": _clickhouse_object_kind(str(row["engine"])),
+            "row_estimate": max(int(row["total_rows"] or 0), 0),
+            "columns": columns_by_table.get((str(row["database"]), str(row["name"])), []),
+            "foreign_keys": [],
+        }
+        for row in _json_rows(listed.text)
+    ]
+
+
 async def _scan_source(source: catalog.Source, tables: list[str] | None) -> list[dict[str, object]]:
+    if source.kind == "clickhouse":
+        return await _scan_clickhouse(source, tables)
     credentials = await secrets().read(source.org_id, source.secret_ref)
     schemas = list(source.scan_schemas or ["public"])
     requested = set(tables or [])
