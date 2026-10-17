@@ -10,7 +10,7 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 3 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 284 có test nhắc mã AC | todo 778 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 292 có test nhắc mã AC | todo 778 |
 | Endpoint A2 (tab 4) | 471 (A2 ghi 472 dòng; POST /v1/data-products ở hai nhóm) | 471 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 222 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 161 có mã nhắc tới | todo 195 |
@@ -37,7 +37,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC-01-01 | Đặt câu hỏi bằng ngôn ngữ tự nhiên | todo | 1/1 | 4/4 | 3/9 |  |
 | UC-01-02 | Xem cách tính một con số | todo | 2/2 | 4/4 | 4/5 |  |
 | UC-01-03 | Chỉnh cách hiểu câu hỏi | todo | 1/1 | 1/1 | 1/4 |  |
-| UC-01-04 | Hỏi tiếp và đào sâu | todo | 2/2 | 2/2 | 1/5 |  |
+| UC-01-04 | Hỏi tiếp và đào sâu | todo | 2/2 | 2/2 | 3/5 |  |
 | UC-01-05 | Đánh giá và báo sai câu trả lời | todo | 2/2 | 2/2 | 3/5 |  |
 | UC-01-06 | Xuất kết quả | todo | 1/1 | 2/2 | 2/5 |  |
 | UC-01-07 | Xem biên nhận và chạy lại | todo | 4/4 | 10/10 | 3/6 |  |
@@ -58,7 +58,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-03-01 | Chạy kỹ năng | todo | 1/1 | 2/2 | 0/6 |  |
+| UC-03-01 | Chạy kỹ năng | todo | 1/1 | 2/2 | 3/6 |  |
 | UC-03-02 | Tìm yếu tố bên ngoài | todo | 1/1 | 1/1 | 0/5 |  |
 | UC-03-03 | Tạo kỹ năng từ phiên phân tích | todo | 2/2 | 3/3 | 0/3 |  |
 | UC-03-04 | Kiểm định kỹ năng | todo | 2/2 | 3/3 | 0/4 |  |
@@ -433,7 +433,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-175 | UC-01-01, UC-01-07, UC-07-13 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/qa.py` +15 |
 | BR-176 | UC-01-01, UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-177 | UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +6 |
-| BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +17 |
+| BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +20 |
 | BR-179 | UC-01-05, UC-07-14, UC-15-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/eval.py`, `backend/schema/csdl/definitions.json` +13 |
 | BR-180 | UC-01-01, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/governance.py` +14 |
 | BR-181 | UC-01-07, UC-11-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/libs/dataagent_db/models/qa.py` +9 |
@@ -591,7 +591,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-01-01-01 | Chính | Cho AC01 ở Data Space Tín dụng có nguồn hoạt động / Khi gửi “Tỷ lệ nợ xấu tháng 9/2026 theo vùng” / Thì câu trả lời có chip “Hệ thống hiểu là”, biểu đồ, nhãn “Theo chỉ số chuẩn”, nút Cách tính; CSDL có đủ question, pl… | E2E, CSDL | todo | `frontend/src/features/ask/hooks/useQuestionStream.test.tsx` |
+| AC-01-01-01 | Chính | Cho AC01 ở Data Space Tín dụng có nguồn hoạt động / Khi gửi “Tỷ lệ nợ xấu tháng 9/2026 theo vùng” / Thì câu trả lời có chip “Hệ thống hiểu là”, biểu đồ, nhãn “Theo chỉ số chuẩn”, nút Cách tính; CSDL có đủ question, pl… | E2E, CSDL | todo | `frontend/src/features/ask/hooks/useQuestionStream.test.tsx`, `tests/unit/worker_agent/test_chart_spec.py` |
 | AC-01-01-02 | Thay thế | Cho “doanh thu” có 2 định nghĩa được duyệt / Khi hỏi “Doanh thu quý 3/2026” / Thì hệ thống hỏi lại bằng 2 lựa chọn và không có query_run nào trước khi người dùng chọn | E2E, CSDL | todo |  |
 | AC-01-01-03 | Ngoại lệ | Cho nguồn không phản hồi / Khi truy vấn chạy quá 60 giây / Thì truy vấn bị dừng, thông báo lỗi nêu tên nguồn, question vẫn còn để hỏi lại | API | todo | `tests/design_checklist.py` |
 | AC-01-01-04 | Ngoại lệ | Cho AC01 không có quyền trên bảng cần đọc / Khi hỏi / Thì trả “không có quyền xem dữ liệu này”, thân phản hồi và luồng sự kiện không chứa tên bảng hay tên cột | API | todo | `tests/conftest.py` |
@@ -633,17 +633,17 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-01-04 Hỏi tiếp và đào sâu · 1/7</summary>
+<details><summary>UC-01-04 Hỏi tiếp và đào sâu · 5/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-01-04-01 | Chính | Cho câu trước “Tỷ lệ nợ xấu tháng 9/2026” / Khi hỏi “còn theo vùng thì sao?” / Thì question mới cùng conversation, plan giữ chỉ số và kỳ, đổi chiều sang vùng; chip kế thừa có dấu “từ câu trước” | E2E, CSDL | todo | `tests/integration/api/test_qa_query.py` |
-| AC-01-04-02 | Thay thế | Cho biểu đồ theo vùng / Khi bấm cột Duyên hải Bắc Bộ và chọn “Đi sâu theo chi nhánh” / Thì plan thêm bộ lọc vùng đó và đổi chiều sang chi nhánh | E2E | todo |  |
-| AC-01-04-03 | Thay thế | Cho câu hỏi tiếp không liên quan / Khi gửi / Thì dòng “Hệ thống hiểu là” ghi “Câu hỏi mới”, không có chip kế thừa | Đánh giá agent | todo |  |
-| AC-01-04-04 | Ngoại lệ | Cho chiều không dùng được với chỉ số / Khi hỏi tiếp theo chiều đó / Thì câu trả lời nói không chia được và gợi ý chiều gần nhất có được | Đánh giá agent | todo |  |
+| AC-01-04-01 | Chính | Cho câu trước “Tỷ lệ nợ xấu tháng 9/2026” / Khi hỏi “còn theo vùng thì sao?” / Thì question mới cùng conversation, plan giữ chỉ số và kỳ, đổi chiều sang vùng; chip kế thừa có dấu “từ câu trước” | E2E, CSDL | todo | `frontend/src/features/ask/hooks/useQuestionStream.test.tsx`, `tests/integration/api/test_qa_query.py` +2 |
+| AC-01-04-02 | Thay thế | Cho biểu đồ theo vùng / Khi bấm cột Duyên hải Bắc Bộ và chọn “Đi sâu theo chi nhánh” / Thì plan thêm bộ lọc vùng đó và đổi chiều sang chi nhánh | E2E | todo | `frontend/src/features/ask/components/DrillAndWhy.test.tsx`, `tests/integration/worker_agent/test_follow_ups.py` +1 |
+| AC-01-04-03 | Thay thế | Cho câu hỏi tiếp không liên quan / Khi gửi / Thì dòng “Hệ thống hiểu là” ghi “Câu hỏi mới”, không có chip kế thừa | Đánh giá agent | todo | `tests/unit/worker_agent/test_follow_up.py` |
+| AC-01-04-04 | Ngoại lệ | Cho chiều không dùng được với chỉ số / Khi hỏi tiếp theo chiều đó / Thì câu trả lời nói không chia được và gợi ý chiều gần nhất có được | Đánh giá agent | todo | `tests/integration/worker_agent/test_follow_ups.py` |
 | AC-01-04-05 | Ngoại lệ | Cho hội thoại 12 câu / Khi hỏi câu 13 / Thì ngữ cảnh gửi mô hình chứa 10 câu gần nhất nguyên văn, câu cũ hơn ở dạng tóm tắt | API | todo |  |
 | AC-01-04-06 | Quy tắc | Cho cùng plan NPL_RATIO theo vùng tháng 9/2026 / Khi chạy bằng kéo thả ở SCR-02 và bằng lời / Thì hai kết quả có cùng giá trị và cùng metric_version | E2E, API | todo |  |
-| AC-01-04-07 | Quy tắc | Cho câu hỏi tiếp có bộ lọc kế thừa / Khi hiển thị / Thì mọi bộ lọc trong plan đều có chip tương ứng, số chip bằng số bộ lọc | E2E | todo |  |
+| AC-01-04-07 | Quy tắc | Cho câu hỏi tiếp có bộ lọc kế thừa / Khi hiển thị / Thì mọi bộ lọc trong plan đều có chip tương ứng, số chip bằng số bộ lọc | E2E | todo | `frontend/src/features/ask/dataAnswer.test.ts`, `tests/unit/worker_agent/test_follow_up.py` |
 
 </details>
 
@@ -790,16 +790,16 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-03-01 Chạy kỹ năng · 0/7</summary>
+<details><summary>UC-03-01 Chạy kỹ năng · 4/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-03-01-01 | Chính | Cho kỹ năng Phân rã biến động đã phát hành cho Data Space Tín dụng / Khi AC01 hỏi “Vì sao tỷ lệ nợ xấu tháng 9/2026 tăng?” và xác nhận đề xuất / Thì skill_run hoàn tất trên Temporal, các query_run liên kết, giao diện … | E2E, CSDL | todo |  |
-| AC-03-01-02 | Thay thế | Cho một bước chạy quá 30 giây / Khi đang chạy / Thì lượt chuyển thành việc nền và người dùng nhận thông báo khi xong | E2E | todo |  |
+| AC-03-01-01 | Chính | Cho kỹ năng Phân rã biến động đã phát hành cho Data Space Tín dụng / Khi AC01 hỏi “Vì sao tỷ lệ nợ xấu tháng 9/2026 tăng?” và xác nhận đề xuất / Thì skill_run hoàn tất trên Temporal, các query_run liên kết, giao diện … | E2E, CSDL | todo | `frontend/src/features/ask/components/DrillAndWhy.test.tsx`, `tests/integration/worker_agent/test_follow_ups.py` |
+| AC-03-01-02 | Thay thế | Cho một bước chạy quá 30 giây / Khi đang chạy / Thì lượt chuyển thành việc nền và người dùng nhận thông báo khi xong | E2E | todo | `tests/integration/worker_agent/test_skill_runs.py` |
 | AC-03-01-03 | Ngoại lệ | Cho bước Python vượt 4 GB RAM / Khi chạy / Thì bước bị dừng và kết quả gồm các bước đã xong | API | todo |  |
-| AC-03-01-04 | Ngoại lệ | Cho chiều sản phẩm thiếu dữ liệu / Khi chạy / Thì kết quả ghi rõ chiều sản phẩm bị bỏ qua | E2E | todo |  |
+| AC-03-01-04 | Ngoại lệ | Cho chiều sản phẩm thiếu dữ liệu / Khi chạy / Thì kết quả ghi rõ chiều sản phẩm bị bỏ qua | E2E | todo | `tests/integration/worker_agent/test_skill_runs.py` |
 | AC-03-01-05 | Quy tắc | Cho bước Python thử mở kết nối mạng và đọc /etc/passwd / Khi chạy trong sandbox / Thì cả hai bị chặn; giới hạn mặc định đọc được là 2 vCPU, 4 GB | API | todo |  |
-| AC-03-01-06 | Quy tắc | Cho kỹ năng chạy xong / Khi đối chiếu nhật ký kết nối nguồn / Thì mọi truy vấn nguồn của lượt đều có query_run qua Query engine, không có kết nối trực tiếp từ sandbox | CSDL | todo |  |
+| AC-03-01-06 | Quy tắc | Cho kỹ năng chạy xong / Khi đối chiếu nhật ký kết nối nguồn / Thì mọi truy vấn nguồn của lượt đều có query_run qua Query engine, không có kết nối trực tiếp từ sandbox | CSDL | todo | `tests/integration/worker_agent/test_skill_runs.py` |
 | AC-03-01-07 | Quy tắc | Cho bộ câu hỏi “vì sao” chuẩn / Khi chấm nhận định / Thì 100% kết luận nhân quả có mức tin cậy và phương pháp kiểm định, không có câu viết tương quan thành nguyên nhân | Đánh giá agent | todo |  |
 | — | Cần làm rõ | BR-08 ghi giới hạn thời gian sandbox 300 giây, BR-94 ghi 120 giây mỗi bước. Cần chốt 300 giây là mỗi lượt hay mỗi bước | | | |
 
