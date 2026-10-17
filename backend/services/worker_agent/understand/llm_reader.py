@@ -7,12 +7,17 @@ Its chips carry confidence 0.8, the proceed threshold: a model reading is enough
 never outranks a name or an approved synonym, and an ambiguous reading becomes a clarification.
 The period keeps the rule parser's reading of the text; the model only names one when the text
 had none the parser could read.
+
+A question in a conversation is read with the conversation (AC-01-04-05): the last ten questions
+word for word with what each was understood as, older ones as a summary of the metrics and cuts
+they asked about. The summary is made from their plans, not by a model.
 """
 
 from __future__ import annotations
 
 import datetime
 import json
+from collections.abc import Sequence
 from typing import Any
 
 from services.worker_agent.llm import Gateway, ModelUnavailable, Reply
@@ -26,12 +31,42 @@ from services.worker_agent.understand.text import find_period
 
 MODEL_CONFIDENCE = 0.8
 VALUES_PER_DIMENSION = 30
+VERBATIM_TURNS = 10
+
+# An earlier question of the conversation: its text and the chips of its plan.
+Turn = tuple[str, Sequence[dict[str, object]]]
 
 SYSTEM = """Bạn đọc một câu hỏi số liệu tiếng Việt và chọn đúng các mã trong danh mục được cho.
 Chỉ dùng mã có trong danh mục; không đoán mã mới. Trả về JSON đúng dạng:
 {"metric": "<mã chỉ số hoặc null>", "alternatives": ["<mã chỉ số khác nếu câu hỏi mơ hồ>"],
  "group_by": ["<mã chiều>"], "filters": {"<mã chiều>": ["<mã giá trị>"]}, "period": "<cụm từ chỉ kỳ hoặc null>"}
-Nếu câu hỏi khớp nhiều chỉ số như nhau, đặt metric = null và liệt kê chúng trong alternatives."""
+Nếu câu hỏi khớp nhiều chỉ số như nhau, đặt metric = null và liệt kê chúng trong alternatives.
+Câu hỏi có thể nối tiếp hội thoại trước: khi nó không nêu chỉ số, dùng chỉ số của câu gần nhất."""
+
+
+def _labels(chips: Sequence[dict[str, object]], kind: str) -> list[str]:
+    return [str(c.get("label") or c.get("value")) for c in chips if c.get("kind") == kind]
+
+
+def history_of(turns: Sequence[Turn]) -> str:
+    """The conversation as the model sees it: older turns summarised, the last ten verbatim."""
+    if not turns:
+        return ""
+    older, recent = turns[:-VERBATIM_TURNS], turns[-VERBATIM_TURNS:]
+    lines: list[str] = []
+    if older:
+        metrics = dict.fromkeys(m for _, chips in older for m in _labels(chips, "metric"))
+        cuts = dict.fromkeys(d for _, chips in older for d in _labels(chips, "dimension"))
+        summary = f"{len(older)} câu trước đó hỏi về: {', '.join(metrics) or 'không rõ chỉ số'}"
+        lines.append(summary + (f"; theo {', '.join(cuts)}" if cuts else "") + ".")
+    for text, chips in recent:
+        read = ", ".join(
+            f"{kind}={label}"
+            for kind in ("metric", "dimension", "filter", "period")
+            for label in _labels(chips, kind)
+        )
+        lines.append(f"- {text}" + (f" (đã hiểu: {read})" if read else ""))
+    return "\n".join(lines)
 
 
 def _catalogue(vocab: Vocabulary) -> str:
@@ -54,15 +89,22 @@ def _catalogue(vocab: Vocabulary) -> str:
 
 
 async def read(
-    question: str, vocab: Vocabulary, gateway: Gateway, *, today: datetime.date
+    question: str,
+    vocab: Vocabulary,
+    gateway: Gateway,
+    *,
+    today: datetime.date,
+    history: Sequence[Turn] = (),
 ) -> tuple[Understanding, Reply] | None:
     if not vocab.metrics:
         return None
+    talk = history_of(history)
+    context = f"\n\nHội thoại trước (cũ đến mới):\n{talk}" if talk else ""
     try:
         reply = await gateway.json_chat(
             "planner",
             SYSTEM,
-            f"Danh mục: {_catalogue(vocab)}\n\nCâu hỏi: {question}",
+            f"Danh mục: {_catalogue(vocab)}{context}\n\nCâu hỏi: {question}",
             max_tokens=400,
         )
     except ModelUnavailable:

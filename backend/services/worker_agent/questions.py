@@ -383,6 +383,32 @@ def _cut_not_allowed(u: Understanding, layer: SpaceLayer) -> str | None:
     return f"{head} Có thể chia theo: {', '.join(d.name for d in allowed)}."
 
 
+async def _conversation(session: AsyncSession, question: qa.Question) -> list[llm_reader.Turn]:
+    """The conversation before this question, oldest first: each question's text and the chips
+    of its latest plan (AC-01-04-05)."""
+    rows = (
+        await session.execute(
+            select(qa.Question.id, qa.Question.text)
+            .where(
+                qa.Question.conversation_id == question.conversation_id,
+                qa.Question.seq < question.seq,
+            )
+            .order_by(qa.Question.seq)
+        )
+    ).all()
+    if not rows:
+        return []
+    plans = (
+        await session.execute(
+            select(qa.Plan.question_id, qa.Plan.chips)
+            .where(qa.Plan.question_id.in_([r.id for r in rows]))
+            .order_by(qa.Plan.version)
+        )
+    ).all()
+    chips = {p.question_id: [c for c in (p.chips or []) if isinstance(c, dict)] for p in plans}
+    return [(r.text, chips.get(r.id, [])) for r in rows]
+
+
 async def _previous_chips(session: AsyncSession, question: qa.Question) -> list[dict[str, object]]:
     """The reading of the question this one follows: its parent, else the one before it in the
     conversation; the chips of its latest plan."""
@@ -516,7 +542,13 @@ async def _understand_and_plan(
         model = gateway()
         if edited is None and u.decision == "unknown" and model is not None:
             # The rule pass placed no metric: the fast model reads it against this catalogue.
-            read = await llm_reader.read(question.text, layer.vocabulary, model, today=today)
+            read = await llm_reader.read(
+                question.text,
+                layer.vocabulary,
+                model,
+                today=today,
+                history=await _conversation(session, question),
+            )
             if read is not None:
                 u, reply = read
                 models.append(
