@@ -54,6 +54,27 @@ export default function PipelinePage() {
     setPipeline(loaded.data);
   }, [loaded.data]);
 
+  // The agent answers asynchronously (worker-agent): while the user spoke last, read the
+  // pipeline again until the answer, and the steps it set, are there.
+  const waiting = pipeline?.messages.at(-1)?.author === 'user';
+  useEffect(() => {
+    if (!waiting || !pipeline) return;
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      tries += 1;
+      if (tries > 30) {
+        window.clearInterval(timer);
+        return;
+      }
+      getPipeline(pipeline.id)
+        .then((next) => {
+          if (next.messages.at(-1)?.author !== 'user') setPipeline(next);
+        })
+        .catch(() => undefined);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [waiting, pipeline?.id]);
+
   const steps = pipeline?.steps ?? [];
   // Preview the first step the agent just added, so the change is the first thing checked.
   const previewSeq = selected ?? steps.find((s) => s.is_new)?.seq ?? steps.at(-1)?.seq;
@@ -168,7 +189,7 @@ export default function PipelinePage() {
                 <span className="flex-1" />
                 <Composer
                   placeholder="Mô tả bước tiếp theo…"
-                  sending={sending}
+                  sending={sending || waiting}
                   onSubmit={(text) => void send(text)}
                 />
               </section>

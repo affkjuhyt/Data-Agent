@@ -53,6 +53,7 @@ from services.api.modules.pipeline.schemas import (
     PipelineCreate,
     PipelineDetail,
     PipelineMessage,
+    PipelineMessageView,
     PipelinePatch,
     PipelineRunView,
     PipelineView,
@@ -313,6 +314,38 @@ async def create_pipeline(
         return PipelineView.model_validate(row)
 
 
+# The conversation is the pipeline's own events (pipeline.outbox is never purged): the user's
+# words as the api recorded them, the agent's answers as worker-agent's prep.py did.
+_SAID: dict[str, tuple[Literal["user", "agent"], str]] = {
+    "pipeline.steps_requested": ("user", "instruction"),
+    "pipeline.message_requested": ("user", "text"),
+    "pipeline.message_answered": ("agent", "text"),
+}
+
+
+async def _messages(session: AsyncSession, pipeline_id: uuid.UUID) -> list[PipelineMessageView]:
+    rows = (
+        await session.execute(
+            select(pl.Outbox.id, pl.Outbox.event_type, pl.Outbox.payload, pl.Outbox.created_at)
+            .where(
+                pl.Outbox.aggregate_type == "pipeline",
+                pl.Outbox.aggregate_id == pipeline_id,
+                pl.Outbox.event_type.in_(_SAID),
+            )
+            .order_by(pl.Outbox.created_at, pl.Outbox.id)
+        )
+    ).all()
+    return [
+        PipelineMessageView(
+            id=r.id,
+            author=_SAID[r.event_type][0],
+            text=str((r.payload or {}).get(_SAID[r.event_type][1]) or ""),
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
 @router.get(
     "/v1/pipelines/{id}",
     response_model=PipelineDetail,
@@ -332,12 +365,14 @@ async def get_pipeline(
             .order_by(pl.PipelineRun.started_at.desc(), pl.PipelineRun.id.desc())
             .limit(1)
         )
+        messages = await _messages(session, row.id)
     # The same tag PATCH answers with, so If-Match from either read passes the kernel's check
     # (which compares against this GET) and the route's own updated_at comparison alike.
     response.headers["ETag"] = _etag(row)
     return PipelineDetail(
         **PipelineView.model_validate(row).model_dump(),
         last_run=PipelineRunView.model_validate(last) if last is not None else None,
+        messages=messages,
     )
 
 
@@ -602,9 +637,12 @@ async def send_pipeline_message(
             text=body.text.strip(),
             requested_by=principal.user_id,
         )
+        await session.flush()
+        messages = await _messages(session, row.id)
     return PipelineDetail(
         **PipelineView.model_validate(row).model_dump(),
         last_run=PipelineRunView.model_validate(last) if last is not None else None,
+        messages=messages,
     )
 
 

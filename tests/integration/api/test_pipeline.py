@@ -10,6 +10,7 @@ and the event, not the effect.
 from __future__ import annotations
 
 import datetime
+import json
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -642,6 +643,22 @@ async def test_pipeline_authoring_and_schedule_reads_are_canonical(pp: Space) ->
         assert dict(pp.events(pipeline_id))["pipeline.message_requested"]["text"] == (
             "giữ lại các dòng hợp lệ"
         )
+        said = message.json()["messages"]
+        assert [(m["author"], m["text"]) for m in said] == [("user", "giữ lại các dòng hợp lệ")]
+        # The agent's answer (worker-agent's prep.py) joins the conversation the screen reads.
+        pp.one(
+            "INSERT INTO pipeline.outbox (id, org_id, aggregate_type, aggregate_id, event_type,"
+            " payload) VALUES (gen_random_uuid(), %s, 'pipeline', %s, 'pipeline.message_answered',"
+            " %s) RETURNING id",
+            pp.org,
+            pipeline_id,
+            json.dumps({"pipeline_id": pipeline_id, "text": "Đã thêm bước lọc."}),
+        )
+        read = await api.get(f"/v1/pipelines/{pipeline_id}", headers=pp.headers("eng"))
+        assert [(m["author"], m["text"]) for m in read.json()["messages"]] == [
+            ("user", "giữ lại các dòng hợp lệ"),
+            ("agent", "Đã thêm bước lọc."),
+        ]
         _activate(pp, pipeline_id)
         schedule = await api.get(f"/v1/pipelines/{pipeline_id}/schedule", headers=pp.headers("eng"))
         assert schedule.status_code == 200 and schedule.json()["cron"] is None

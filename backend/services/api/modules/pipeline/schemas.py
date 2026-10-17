@@ -151,10 +151,21 @@ class PipelineRunView(_View):
     created_at: datetime.datetime
 
 
+class PipelineMessageView(BaseModel):
+    """One turn of the conversation with the data-prep agent (UC-06-01 step 2)."""
+
+    id: uuid.UUID
+    author: Literal["user", "agent"]
+    text: str
+    created_at: datetime.datetime
+
+
 class PipelineDetail(PipelineView):
-    """GET /v1/pipelines/{id}: the pipeline with its latest run (UC-06-02, UC-06-03)."""
+    """GET /v1/pipelines/{id}: the pipeline with its latest run and the conversation that built
+    its steps (UC-06-01, UC-06-02, UC-06-03)."""
 
     last_run: PipelineRunView | None = None
+    messages: list[PipelineMessageView] = Field(default_factory=list)
 
 
 class Accepted(BaseModel):

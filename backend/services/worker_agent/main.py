@@ -32,6 +32,7 @@ from services.worker_agent import (
     hitl,
     periods,
     pipelines,
+    prep,
     private,
     proposals,
     quality,
@@ -89,6 +90,7 @@ HANDLERS: dict[str, Handler] = {
     **semantic_review.HANDLERS,
     **reviews.HANDLERS,
     **pipelines.HANDLERS,
+    **prep.HANDLERS,
     **quality.HANDLERS,
     **periods.HANDLERS,
 }
@@ -132,7 +134,7 @@ async def sources() -> list[EventSource]:
         if schema == "pack":
             types |= {proposals.ACTIVATE}
         if schema == "pipeline":
-            types |= {proposals.WRITEBACK} | set(pipelines.HANDLERS)
+            types |= {proposals.WRITEBACK} | set(pipelines.HANDLERS) | set(prep.HANDLERS)
         if schema == "ingest":
             types |= set(uploads.HANDLERS)
         if schema == "agent":

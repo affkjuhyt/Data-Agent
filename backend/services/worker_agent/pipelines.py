@@ -81,14 +81,19 @@ def physical_name(name: str, dataset_id: uuid.UUID) -> str:
     return f"p_{stem}_{dataset_id.hex}"
 
 
-async def _context(event: Event) -> dict[str, Any] | None:
+async def _context(event: Event, *, need_run: bool = True) -> dict[str, Any] | None:
+    """The pipeline, its running run (unless `need_run` is off), its inputs and their source."""
     from services.worker_agent.questions import _internal_workspace_source
 
     p = event.payload
     async with scoped_session(ROLE, event.org_id) as session:
-        run = await session.get(pl.PipelineRun, uuid.UUID(str(p["pipeline_run_id"])))
+        run = (
+            await session.get(pl.PipelineRun, uuid.UUID(str(p["pipeline_run_id"])))
+            if need_run
+            else None
+        )
         row = await session.get(pl.Pipeline, uuid.UUID(str(p["pipeline_id"])))
-        if run is None or row is None or run.status != "running":
+        if row is None or (need_run and (run is None or run.status != "running")):
             return None
         steps = list(row.steps or [])
         inputs = list(row.input_dataset_ids or [])
