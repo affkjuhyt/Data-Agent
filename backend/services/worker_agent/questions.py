@@ -14,8 +14,11 @@ never holds a lock on the question:
    from them (answer/narrate.py), the trust label, and, when the metric is in an active data
    product, the freshness gate and a receipt sealed in the same transaction (ADR-43, BR-175..178).
 
-Only single-metric questions take this path; planning several steps with a model, comparisons
-and documents are R1 S5. The handler is idempotent: a question past `received` is left alone.
+Only single-metric questions take this path; planning several steps with a model and
+comparisons are R1 S5. A question that names no metric is looked up in the Data Space's documents
+before it is refused (UC-05-04, documents/): an answer whose every claim carries a checked
+citation, or "không tìm thấy trong tài liệu được phép". The handler is idempotent: a question past
+`received` is left alone.
 """
 
 from __future__ import annotations
@@ -34,9 +37,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.contracts.v1.errors import ErrorCode, NextAction, Refusal
 from libs.dataagent_db import scoped_session, uuid7
-from libs.dataagent_db.models import catalog, context, qa
+from libs.dataagent_db.models import catalog, context, document, qa
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.narrate import figures_of, text_of
+from services.worker_agent.documents import answer as document_answer
+from services.worker_agent.documents.retrieve import retrieve
+from services.worker_agent.documents.search import SearchServices, services_from_env
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.llm import Gateway, gateway_from_env
 from services.worker_agent.progress import publish
@@ -61,9 +67,12 @@ STANDARD = "Theo chỉ số chuẩn"
 NOT_STANDARD = "chưa có định nghĩa chuẩn"
 OUT_OF_SCOPE = "Ngoài phạm vi data product, không có biên nhận"
 
+DOCUMENT_AGENT_NAME = "Agent Tài liệu"
+
 _secrets: SecretReader | None = None
 _gateway: Gateway | None = None
 _gateway_read = False
+_search: SearchServices | None = None
 
 
 def dialect_for_source(source_kind: str) -> str:
@@ -84,6 +93,13 @@ def gateway() -> Gateway | None:
     if not _gateway_read:
         _gateway, _gateway_read = gateway_from_env(), True
     return _gateway
+
+
+def search_services() -> SearchServices:
+    global _search
+    if _search is None:
+        _search = services_from_env()
+    return _search
 
 
 def _internal_workspace_source(data_space_id: uuid.UUID, org_id: uuid.UUID) -> catalog.Source:
@@ -488,6 +504,12 @@ async def _understand_and_plan(
             next_action=NextAction.REPHRASE,
             detail_id=str(question_id),
         )
+    if (
+        problem is None
+        and edited is None
+        and await _answer_from_documents(event, question_id, user_id, plan_id, models)
+    ):
+        return None
     if problem is None:
         problem = Refusal.of(
             ErrorCode.UNRESOLVED_ENTITY,
@@ -500,6 +522,147 @@ async def _understand_and_plan(
         )
     await _refuse(event, question_id, user_id, plan_id, problem)
     return None
+
+
+def _document_plan(question: qa.Question, as_of: datetime.date) -> dict[str, Any]:
+    """Plan IR v2 of a document answer: one retrieval step, its answer written from the passages."""
+    return {
+        "version": 2,
+        "goal": "answer",
+        "as_of": as_of.isoformat(),
+        "knowledge_mode": question.knowledge_mode,
+        "chips": [],
+        "steps": [
+            {
+                "id": "s1",
+                "kind": "document_search",
+                "tool": "document.search",
+                "args": {
+                    "query": question.text,
+                    "as_of": as_of.isoformat(),
+                    "purpose": question.purpose,
+                },
+                "depends_on": [],
+                "checkpoint": "none",
+                "on_error": "fail",
+                "explain": "Tìm trong tài liệu của Data Space",
+            }
+        ],
+        "outputs": [{"step": "s1", "as": "text"}],
+        "budget": {"max_steps": 15, "max_tokens": 0, "max_duration": 120},
+        "phase": 1,
+        "max_phases": 1,
+    }
+
+
+async def _answer_from_documents(
+    event: Event,
+    question_id: uuid.UUID,
+    user_id: uuid.UUID | None,
+    plan_id: uuid.UUID,
+    models: list[dict[str, Any]],
+) -> bool:
+    """UC-05-04 for a question that names no metric. False when the Data Space has no document
+    the question could be answered from, so the caller refuses as before."""
+    started = datetime.datetime.now(datetime.UTC)
+    async with scoped_session(ROLE, event.org_id, user_id) as session:
+        question = await session.get(qa.Question, question_id)
+        if question is None or question.status != "received":
+            return False
+        conversation = await session.get(qa.Conversation, question.conversation_id)
+        assert conversation is not None
+        as_of = question.as_of or datetime.date.today()
+        passages = await retrieve(
+            session,
+            search_services(),
+            data_space_id=conversation.data_space_id,
+            question=question.text,
+            as_of=as_of,
+            purpose=question.purpose,
+        )
+        # Any passage at all in the space: then "not found in the documents" is the true answer;
+        # without one the question was never a document question and is refused as before.
+        has_documents = (
+            bool(passages)
+            or (
+                await session.scalar(
+                    select(document.Chunk.id)
+                    .join(
+                        document.Collection, document.Collection.id == document.Chunk.collection_id
+                    )
+                    .where(
+                        document.Collection.data_space_id == conversation.data_space_id,
+                        document.Collection.deleted_at.is_(None),
+                    )
+                    .limit(1)
+                )
+            )
+            is not None
+        )
+        text, plan = question.text, _document_plan(question, as_of)
+    if not has_documents:
+        return False
+    await publish(
+        str(question_id), "progress", {"question_id": str(question_id), "status": "running"}
+    )
+    told = await document_answer.compose(gateway(), text, passages, as_of)
+    if told.model:
+        models.append({"task": "document_answer", "model_name": told.model, "tokens": told.tokens})
+    if told.dropped:
+        logger.info(
+            "question %s: %d document claims failed their citation check",
+            question_id,
+            len(told.dropped),
+        )
+    if not told.found:
+        await _refuse(
+            event,
+            question_id,
+            user_id,
+            plan_id,
+            Refusal.of(
+                ErrorCode.INSUFFICIENT_EVIDENCE,
+                message=told.text
+                + " Câu hỏi cũng không gọi tên chỉ số nào của Data Space; hãy hỏi lại cụ thể hơn.",
+                next_action=NextAction.REPHRASE,
+                detail_id=str(question_id),
+            ),
+        )
+        return True
+    answer_id = uuid7()
+    async with scoped_session(ROLE, event.org_id, user_id) as session:
+        question = await session.get(qa.Question, question_id, with_for_update=True)
+        if question is None or question.status != "received":
+            return True
+        stored_plan = await session.get(qa.Plan, plan_id)
+        if stored_plan is not None:
+            stored_plan.steps = plan
+        session.add(
+            qa.Answer(
+                id=answer_id,
+                org_id=event.org_id,
+                question_id=question_id,
+                plan_id=plan_id,
+                kind="document",
+                text=told.text,
+                citations=[c.as_json() for c in told.citations],
+                number_check=told.number_check,
+                agent_name=DOCUMENT_AGENT_NAME,
+                latency_ms=int(
+                    (datetime.datetime.now(datetime.UTC) - started).total_seconds() * 1000
+                ),
+                lineage_hash=hashlib.sha256(
+                    ",".join(sorted(str(c.passage.chunk_id) for c in told.citations)).encode()
+                ).hexdigest(),
+                product_scope="not_applicable",
+            )
+        )
+        question.status = "answered"
+        question.answered_at = func.now()
+    payload = {"question_id": str(question_id), "answer_id": str(answer_id), "kind": "document"}
+    await publish(str(question_id), "answer", {**payload, "citations": len(told.citations)})
+    await publish(str(question_id), "done", {**payload, "status": "answered"})
+    return True
 
 
 async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: Any) -> None:
