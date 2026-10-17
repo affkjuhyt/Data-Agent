@@ -34,10 +34,13 @@ Trên commit `68eda4d5` (đã push), sau khoảng 40 commit kể từ lần ki�
 
 Còn mở trước khi ký:
 
-1. Test integration tài liệu ở trên.
+1. ~~Test integration tài liệu ở trên.~~ Đã sửa (`64485c45`): test chưa theo nghĩa mới của bộ lọc
+   `processing` mà `5cf61f96` đưa vào (chưa xử lý xong, gồm cả đã nhận và chờ duyệt); suite tài liệu 28/28.
 2. E2E trên cụm với tài khoản thật.
-3. **Bảo mật (cao):** service `api` nhận root token của OpenBao (`OPENBAO_TOKEN`, `create-secrets.sh` và
-   `deploy/k8s/dev/service/api.yaml`) chỉ để ghi mật khẩu nguồn. Cần một AppRole riêng chỉ ghi vào
-   `secret/data/tenants/*/sources/*`, như worker-agent đang có AppRole chỉ đọc (R0-6).
+3. ~~Bảo mật (cao): service `api` nhận root token của OpenBao.~~ Đã sửa và đã deploy (`e2a4ee05`,
+   `64485c45`, `c5eb9f17`): `api` đăng nhập bằng AppRole riêng (`dataagent-api-policy`). Quyền đo trong pod
+   `api` bằng `sys/capabilities-self`: ghi nhưng không đọc mật khẩu nguồn, chỉ đọc key provider dưới
+   `providers/`, chỉ khoá Transit `exec-cond-*`; mọi đường dẫn khác `deny`. `auth-api` (dịch vụ cũ) vẫn
+   giữ root token, nằm trong danh sách cắt bỏ (08).
 
 Đã sửa trong lượt này: lineage để lộ id và tên nguồn của Data Space khác (`174c7bae`).
