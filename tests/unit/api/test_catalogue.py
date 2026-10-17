@@ -18,7 +18,8 @@ pytestmark = [pytest.mark.unit, pytest.mark.contract]
 
 def test_snapshot_holds_all_of_a2() -> None:
     data = catalogue()
-    assert len(data["endpoints"]) == 470
+    # 470 rows of tab 4, plus the upload preview and delete added with UC-04-08 (67aa0663).
+    assert len(data["endpoints"]) == 472
     assert len(data["groups"]) == 22
     assert {e["group"] for e in data["endpoints"]} == set(data["groups"])
 

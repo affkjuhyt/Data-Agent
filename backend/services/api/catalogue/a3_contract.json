@@ -1751,7 +1751,13 @@
     "Nạp dữ liệu"
    ],
    "body": {
-    "column_map": false
+    "column_map": false,
+    "sheet": false,
+    "header_row": false,
+    "encoding": false,
+    "decimal_sep": false,
+    "target_dataset_id": false,
+    "replace_mode": false
    },
    "query": [],
    "returns": "Dataset. Bảng tải tay hết hạn sau 90 ngày (BR-105)",
@@ -1761,7 +1767,7 @@
      "business_rule_violated"
     ]
    ],
-   "request_text": "column_map"
+   "request_text": "column_map, sheet, header_row, encoding, decimal_sep, target_dataset_id, replace_mode"
   },
   "DELETE /v1/uploads/{id}": {
    "group": "Nạp dữ liệu",
@@ -7776,6 +7782,240 @@
     ]
    ],
    "request_text": "—"
+  },
+  "GET /v1/access-requests": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "data_space_id",
+    "page_size",
+    "page_token",
+    "cursor",
+    "order_by"
+   ],
+   "returns": "Page_AccessRequestView_",
+   "errors": [],
+   "request_text": "?status, ?data_space_id, ?page_size, ?page_token, ?cursor, ?order_by"
+  },
+  "GET /v1/access-requests/{id}": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "AccessRequestView",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/admin/groups": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "Page_UserGroupView_",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/channel-rules": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ChannelRulesView",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/data-products/catalog": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [
+    "page_size",
+    "page_token",
+    "cursor"
+   ],
+   "returns": "Page_PublishedCatalogProduct_",
+   "errors": [],
+   "request_text": "?page_size, ?page_token, ?cursor"
+  },
+  "GET /v1/data-spaces/{id}/permissions": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "PermissionMatrix",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/documents/{id}/chunks": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [
+    "page_size",
+    "page_token",
+    "cursor"
+   ],
+   "returns": "Page_ChunkView_",
+   "errors": [],
+   "request_text": "?page_size, ?page_token, ?cursor"
+  },
+  "GET /v1/documents/{id}/file": {
+   "group": "Tài liệu",
+   "groups": [
+    "Tài liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "—",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/pipelines/{id}/output-draft": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "OutputDraft",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/pipelines/{id}/schedule": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ScheduleRequest",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/pipelines/{id}/steps/{seq}/preview": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "StepPreview",
+   "errors": [],
+   "request_text": "—"
+  },
+  "GET /v1/writebacks": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {},
+   "query": [
+    "status",
+    "page_size",
+    "page_token",
+    "cursor",
+    "order_by"
+   ],
+   "returns": "Page_WritebackView_",
+   "errors": [],
+   "request_text": "?status, ?page_size, ?page_token, ?cursor, ?order_by"
+  },
+  "POST /v1/admin/directory:sync": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "202, DirectorySyncAccepted",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/admin/invitations": {
+   "group": "Quản trị",
+   "groups": [
+    "Quản trị"
+   ],
+   "body": {
+    "email": true,
+    "role_id": true,
+    "data_space_id": true,
+    "row_scope": false,
+    "valid_until": false
+   },
+   "query": [],
+   "returns": "202, InvitationAccepted",
+   "errors": [],
+   "request_text": "email*, role_id*, data_space_id*, row_scope, valid_until"
+  },
+  "POST /v1/data-products:request-use": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "product_ids": true,
+    "data_space_id": true
+   },
+   "query": [],
+   "returns": "202, —",
+   "errors": [],
+   "request_text": "product_ids*, data_space_id*"
+  },
+  "POST /v1/me/notification-preferences:test": {
+   "group": "Theo dõi, báo cáo, thông báo",
+   "groups": [
+    "Theo dõi, báo cáo, thông báo"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "TestNotificationView",
+   "errors": [],
+   "request_text": "—"
+  },
+  "POST /v1/pipelines/{id}/messages": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {
+    "text": true
+   },
+   "query": [],
+   "returns": "PipelineDetail",
+   "errors": [],
+   "request_text": "text*"
+  },
+  "POST /v1/pipelines/{id}/schedule:preview": {
+   "group": "Biến đổi dữ liệu",
+   "groups": [
+    "Biến đổi dữ liệu"
+   ],
+   "body": {
+    "cron": false,
+    "no_overlap": false,
+    "on_failure": false
+   },
+   "query": [],
+   "returns": "—",
+   "errors": [],
+   "request_text": "cron, no_overlap, on_failure"
   }
  }
 }
