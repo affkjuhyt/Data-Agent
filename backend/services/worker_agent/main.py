@@ -19,6 +19,7 @@ import contextlib
 import logging
 import os
 import signal
+import time
 from collections.abc import Mapping
 
 from sqlalchemy import text
@@ -31,12 +32,14 @@ from services.worker_agent import (
     pipelines,
     private,
     proposals,
+    quality,
     query_runs,
     questions,
     replay,
     resolutions,
     runs,
     reviews,
+    scheduler,
     schema_scans,
     skill_runs,
     semantic_review,
@@ -50,6 +53,7 @@ from services.worker_agent.events import EventSource, Handler, OutboxTableSource
 logger = logging.getLogger(__name__)
 
 POLL_SECONDS = float(os.environ.get("WORKER_AGENT_POLL_SECONDS", "0.5"))
+SCHEDULE_SECONDS = float(os.environ.get("WORKER_AGENT_SCHEDULE_SECONDS", "60"))
 BATCH = int(os.environ.get("WORKER_AGENT_BATCH", "10"))
 
 
@@ -82,6 +86,7 @@ HANDLERS: dict[str, Handler] = {
     **semantic_review.HANDLERS,
     **reviews.HANDLERS,
     **pipelines.HANDLERS,
+    **quality.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -129,6 +134,7 @@ async def sources() -> list[EventSource]:
         if schema == "agent":
             # The one consumer of run.status_changed: the run executor (runs.py, ADR-37 stand-in).
             types |= set(runs.HANDLERS)
+            types |= set(uploads.HANDLERS) | set(quality.HANDLERS)
         if schema == "eval":
             types |= set(evaluation.HANDLERS)
         if schema == "context":
@@ -156,8 +162,16 @@ async def run(stop: asyncio.Event) -> None:
     # UC-16-02's private questions come from Redis, not an outbox (BR-193: never in a table).
     redis = private.redis_from_env()
     private_loop = asyncio.create_task(private.run(redis, stop)) if redis is not None else None
+    next_tick = 0.0
     while not stop.is_set():
         handled = 0
+        if time.monotonic() >= next_tick:
+            # Scheduled loads, pipelines and the daily quality pass (scheduler.py), once a minute.
+            next_tick = time.monotonic() + SCHEDULE_SECONDS
+            try:
+                await scheduler.tick()
+            except Exception:
+                logger.exception("worker-agent | schedule pass failed")
         for source in claimed_from:
             try:
                 handled += await run_once(source, HANDLERS)

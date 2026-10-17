@@ -24,10 +24,11 @@ import time
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import asyncpg
 from sqlalchemy import text, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
 
 from libs.dataagent_db import scoped_session, uuid7
@@ -380,7 +381,7 @@ async def run_query(
                     result = await local_session.execute(text(executed))
                     columns = [
                         {"name": str(item[0]), "type": _pg_type(item[1])}
-                        for item in result.cursor.description or ()
+                        for item in cast(CursorResult[Any], result).cursor.description or ()
                     ]
                     rows = [[_plain(value) for value in row] for row in result.fetchall()]
             else:

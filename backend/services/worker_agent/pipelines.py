@@ -76,8 +76,9 @@ def chain(steps: list[dict[str, Any]], upto: int, sample: str | None = None) -> 
 def physical_name(name: str, dataset_id: uuid.UUID) -> str:
     """The workspace table of a saved pipeline: the chosen name, cut to fit, and the dataset's
     own id, so no two Data Spaces (or organisations) ever share one."""
-    stem = re.sub(r"[^a-z0-9_]+", "_", name.lower()).strip("_")[:40] or "bang"
-    return f"p_{stem}_{dataset_id.hex[:16]}"
+    # All 32 hex digits: a uuid7's first ones are its timestamp, shared by ids made together.
+    stem = re.sub(r"[^a-z0-9_]+", "_", name.lower()).strip("_")[:28] or "bang"
+    return f"p_{stem}_{dataset_id.hex}"
 
 
 async def _context(event: Event) -> dict[str, Any] | None:
@@ -380,6 +381,12 @@ async def materialize_requested(event: Event) -> None:
             .where(pl.PipelineRun.id == run.id, pl.PipelineRun.status == "running")
             .values(status="succeeded", finished_at=_now(), **result)
         )
+    # The table's quality rules run on what was just written (UC-06-07, run_kind pipeline_run).
+    from services.worker_agent import quality
+
+    await quality.evaluate_dataset(
+        event.org_id, dataset_id, run_kind="pipeline_run", run_ref=run.id, actor=actor
+    )
     logger.info(
         "worker-agent | pipeline %s saved as workspace.%s (%d rows)",
         ctx["pipeline"].id,
