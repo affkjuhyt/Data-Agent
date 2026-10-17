@@ -10,7 +10,7 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 3 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 280 có test nhắc mã AC | todo 778 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 282 có test nhắc mã AC | todo 778 |
 | Endpoint A2 (tab 4) | 471 (A2 ghi 472 dòng; POST /v1/data-products ở hai nhóm) | 471 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 222 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 161 có mã nhắc tới | todo 195 |
@@ -182,7 +182,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
 | UC-13-01 | Tạo agent từ mô tả | todo | 2/2 | 3/3 | 1/5 |  |
-| UC-13-02 | Cấu hình agent | todo | 2/2 | 3/3 | 6/9 |  |
+| UC-13-02 | Cấu hình agent | todo | 2/2 | 3/3 | 8/9 |  |
 | UC-13-03 | Đặt trigger | todo | 1/1 | 1/1 | 3/5 |  |
 | UC-13-04 | Chạy thử và đánh giá agent | todo | 2/2 | 2/2 | 1/6 |  |
 | UC-13-05 | Triển khai và quay lui phiên bản agent | todo | 2/2 | 2/2 | 1/6 |  |
@@ -269,7 +269,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-11 | UC-03-02 | todo |  |
 | BR-12 | UC-03-05 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/skill/routes.py`, `backend/services/api/modules/skill/rules.py` +1 |
 | BR-13 | UC-03-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +1 |
-| BR-14 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +10 |
+| BR-14 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +12 |
 | BR-15 | UC-04-02 | todo |  |
 | BR-16 | UC-04-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/pack.py` +2 |
 | BR-17 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +1 |
@@ -335,8 +335,8 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-77 | UC-13-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/libs/dataagent_db/models/inbox.py` +5 |
 | BR-78 | UC-01-02 | todo |  |
 | BR-79 | UC-01-02 | todo |  |
-| BR-80 | UC-01-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +2 |
-| BR-81 | UC-01-04 | todo | `backend/services/api/modules/qa/query.py`, `backend/services/worker_agent/semantic/compiler.py`, `frontend/src/features/explore/explore.test.tsx` +2 |
+| BR-80 | UC-01-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +3 |
+| BR-81 | UC-01-04 | todo | `backend/services/api/modules/qa/query.py`, `backend/services/worker_agent/questions.py`, `backend/services/worker_agent/semantic/compiler.py` +3 |
 | BR-82 | UC-01-04 | todo |  |
 | BR-83 | UC-01-05 | todo | `backend/services/api/modules/qa/routes.py` |
 | BR-84 | UC-01-05 | todo |  |
@@ -425,7 +425,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-167 | UC-07-12 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +11 |
 | BR-168 | UC-14-03, UC-14-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-169 | UC-14-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +10 |
-| BR-170 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-170 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +11 |
 | BR-171 | UC-01-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-172 | UC-15-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-173 | UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +9 |
@@ -1783,7 +1783,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-13-02 Cấu hình agent · 6/10</summary>
+<details><summary>UC-13-02 Cấu hình agent · 8/10</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
@@ -1795,8 +1795,8 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | AC-13-02-06 | Quy tắc | Cho agent không ở mức Tự động / Khi lưu công cụ write_derived không có checkpoint / Thì bị từ chối; ở mức Tự động có chính sách cho phép thì lưu được | API | todo | `tests/integration/api/test_agent.py`, `tests/unit/api/test_agent_routes.py` |
 | AC-13-02-07 | Quy tắc | Cho ngân sách tháng của agent / Khi mức dùng đạt 80% và khi đạt 100% giữa một lượt / Thì ở 80% chủ sở hữu nhận báo; ở 100% có hitl_request loại ngân sách và lượt đang chạy không bị cắt giữa bước | API, CSDL | todo |  |
 | AC-13-02-08 | Quy tắc | Cho trần tổ chức của lượt nền là 60 bước / Khi lưu agent_config.limits 70 bước và khi lưu 40 bước / Thì 70 bước bị từ chối, 40 bước được lưu | API | todo | `tests/integration/api/test_agent.py`, `tests/unit/api/test_agent_routes.py` |
-| AC-13-02-09 | Quy tắc | Cho một lượt gọi cùng công cụ, cùng tham số đã chuẩn hoá và nhận cùng băm kết quả lần thứ 3 / Khi Executor xét bước kế / Thì lượt dừng ở ranh giới bước với stop_reason = loop_detected, bước bù chạy, người nhận báo kèm… | CSDL, API | todo |  |
-| AC-13-02-10 | Quy tắc | Cho câu hỏi tương tác / Khi lượt chạm 15 bước, 80.000 token hoặc 120 giây / Thì lượt dừng với stop_reason tương ứng budget_steps, budget_tokens, budget_duration; lượt kết thúc thiếu stop_reason thì CHECK agent_run_sta… | API, CSDL | todo |  |
+| AC-13-02-09 | Quy tắc | Cho một lượt gọi cùng công cụ, cùng tham số đã chuẩn hoá và nhận cùng băm kết quả lần thứ 3 / Khi Executor xét bước kế / Thì lượt dừng ở ranh giới bước với stop_reason = loop_detected, bước bù chạy, người nhận báo kèm… | CSDL, API | todo | `tests/unit/worker_agent/test_runs.py` |
+| AC-13-02-10 | Quy tắc | Cho câu hỏi tương tác / Khi lượt chạm 15 bước, 80.000 token hoặc 120 giây / Thì lượt dừng với stop_reason tương ứng budget_steps, budget_tokens, budget_duration; lượt kết thúc thiếu stop_reason thì CHECK agent_run_sta… | API, CSDL | todo | `tests/integration/worker_agent/test_runs.py` |
 | — | Cần làm rõ | Mục 5.13 có 4 mức tự chủ (Chỉ đề xuất, Hỏi khi mơ hồ, Duyệt khi ghi, Tự động), còn CHECK agent_config_autonomy_check chỉ có 3 giá trị suggest_only, propose_approve, act_then_report. Cần chốt ánh xạ | | | |
 
 </details>
@@ -1818,7 +1818,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-13-04-01 | Chính | Cho Agent Đối soát có công cụ ghi và gửi / Khi chạy thử trên dữ liệu kỳ 06/2026 / Thì agent_run có trigger_kind = test, mọi bước ghi và gửi có status = simulated, không bảng derived nào đổi và không có tin nào gửi ra | API, CSDL | todo | `tests/integration/api/test_agent.py` |
+| AC-13-04-01 | Chính | Cho Agent Đối soát có công cụ ghi và gửi / Khi chạy thử trên dữ liệu kỳ 06/2026 / Thì agent_run có trigger_kind = test, mọi bước ghi và gửi có status = simulated, không bảng derived nào đổi và không có tin nào gửi ra | API, CSDL | todo | `tests/integration/api/test_agent.py`, `tests/integration/worker_agent/test_runs.py` |
 | AC-13-04-02 | Chính | Cho bộ thử có đủ bốn loại tình huống / Khi chạy eval-runs cho version 3 / Thì eval_run có kết quả theo phiên bản, màn so với version đang chạy về tỷ lệ đạt, tình huống đổi kết quả, chi phí, thời gian và mỗi tình huống… | API, CSDL | todo |  |
 | AC-13-04-03 | Thay thế | Cho agent mới chưa có lượt chạy thật / Khi chạy đánh giá / Thì bộ thử là bộ mẫu của loại agent trong gói ngành | API | todo |  |
 | AC-13-04-04 | Ngoại lệ | Cho chạy thử chạm một công cụ không giả lập được / Khi tới bước đó / Thì lượt dừng, chủ sở hữu nhận báo và log egress proxy không có lời gọi thật nào | API | todo |  |
@@ -1848,7 +1848,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | --- | --- | --- | --- | --- | --- |
 | AC-13-06-01 | Chính | Cho một lượt Agent Đối soát đang ở bước 4 / Khi AC03 mở màn Đang làm gì rồi bấm “Xem kỹ thuật” / Thì mỗi bước đã xong là một câu kèm bằng chứng, có bước hiện tại, thời gian và chi phí đã tốn; trace thác nước có lượt g… | E2E | todo |  |
 | AC-13-06-02 | Chính | Cho lượt đang chạy bước 4 trong 7 bước / Khi tạm dừng, bỏ bước 6 kèm ghi chú rồi tiếp tục / Thì lượt dừng sau khi bước 4 xong (status paused), plan có phiên bản mới, bước 1–4 giữ kết quả và lượt chạy tiếp không có bước 6 | API, CSDL | todo | `tests/integration/api/test_agent.py` |
-| AC-13-06-03 | Thay thế | Cho lượt đang chạy / Khi huỷ / Thì agent_run cancelled với stop_reason = user_cancelled, không có ghi dữ liệu nào sau thời điểm huỷ và kết quả trung gian còn tra được ở ngày 29, hết ở ngày 31 | API, CSDL | todo | `tests/integration/api/test_agent.py` |
+| AC-13-06-03 | Thay thế | Cho lượt đang chạy / Khi huỷ / Thì agent_run cancelled với stop_reason = user_cancelled, không có ghi dữ liệu nào sau thời điểm huỷ và kết quả trung gian còn tra được ở ngày 29, hết ở ngày 31 | API, CSDL | todo | `tests/integration/api/test_agent.py`, `tests/integration/worker_agent/test_runs.py` |
 | AC-13-06-04 | Ngoại lệ | Cho một bước lỗi tạm thời liên tục / Khi Executor thử lại / Thì có đúng 3 lần thử cách 5, 15, 60 phút, sau đó lượt failed, chủ sở hữu nhận báo và không có dữ liệu ghi dở | API, CSDL | todo |  |
 | AC-13-06-05 | Ngoại lệ | Cho lượt chờ người từ ngày 01/10/2026 / Khi không ai trả lời / Thì có nhắc ngày 02/10 và 04/10, ngày 08/10 lượt tự huỷ với stop_reason = waiting_timeout kèm ghi chú, ngữ cảnh mở lại được tới 30 ngày | API, CSDL | todo |  |
 | AC-13-06-06 | Quy tắc | Cho một lượt đã xong và dữ liệu nguồn không đổi / Khi chạy lại lượt đó / Thì kết quả trùng lượt cũ; agent_run.snapshot_refs có phiên bản cấu hình, kỹ năng, mô hình và bản chụp đã đọc | API, CSDL | todo |  |

@@ -51,8 +51,9 @@ kubectl -n dataagent-service create secret generic api-secrets \
 # as svc_audit_worker (that one update only), claims outbox rows as svc_outbox_relay in both databases (docs/v3/06-api-v1.md §6),
 # runs queries in place as svc_query with source credentials read from OpenBao, writes schema
 # profiles as svc_context and tile snapshots as svc_workspace, and applies accepted proposals to
-# skills as svc_skill and to pack installs as svc_pack; answer exports go to MinIO as its own user,
-# which may only write to da-exports (minio-init), never with the root credentials.
+# skills as svc_skill and to pack installs as svc_pack, and executes agent runs as svc_agent (runs.py);
+# answer exports go to MinIO as its own user, which may only write to da-exports (minio-init), never
+# with the root credentials.
 kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_QA="${DATAAGENT_DB_URL__SVC_QA}" \
   --from-literal=DATAAGENT_DB_URL__SVC_INGEST="${DATAAGENT_DB_URL__SVC_INGEST}" \
@@ -66,6 +67,7 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_WORKSPACE="${DATAAGENT_DB_URL__SVC_WORKSPACE}" \
   --from-literal=DATAAGENT_DB_URL__SVC_SKILL="${DATAAGENT_DB_URL__SVC_SKILL}" \
   --from-literal=DATAAGENT_DB_URL__SVC_PACK="${DATAAGENT_DB_URL__SVC_PACK}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_AGENT="${DATAAGENT_DB_URL__SVC_AGENT}" \
   --from-literal=MINIO_URL="${WORKER_AGENT_MINIO_URL}" \
   --from-literal=OPENBAO_ROLE_ID="${WORKER_AGENT_OPENBAO_ROLE_ID}" \
   --from-literal=OPENBAO_SECRET_ID="${WORKER_AGENT_OPENBAO_SECRET_ID}" \

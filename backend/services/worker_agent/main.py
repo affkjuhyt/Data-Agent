@@ -33,6 +33,7 @@ from services.worker_agent import (
     questions,
     replay,
     resolutions,
+    runs,
     schema_scans,
     source_tests,
     tiles,
@@ -68,6 +69,7 @@ HANDLERS: dict[str, Handler] = {
     **uploads.HANDLERS,
     **proposals.HANDLERS,
     **exports.HANDLERS,
+    **runs.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -108,6 +110,9 @@ async def sources() -> list[EventSource]:
             types |= {proposals.WRITEBACK}
         if schema == "ingest":
             types |= set(uploads.HANDLERS)
+        if schema == "agent":
+            # The one consumer of run.status_changed: the run executor (runs.py, ADR-37 stand-in).
+            types |= set(runs.HANDLERS)
         found.append(OutboxTableSource(schema=schema, event_types=frozenset(types)))
     try:
         audit = await _outbox_schemas(AUDIT_RELAY)

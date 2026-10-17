@@ -171,8 +171,15 @@ của ADR-28) trả lời. Bước G1 của [09](09-target-deploy-and-cleanup.md
   `svc_outbox_relay_audit`; `resolutions` xử lý `hitl.resolved` (bản xuất kiểm toán được duyệt thì chuyển `queued`).
   Worker cần `DATAAGENT_DB_URL__SVC_QA`, `__SVC_INBOX`, `__SVC_AUDIT`, `__SVC_OUTBOX_RELAY`,
   `__SVC_OUTBOX_RELAY_AUDIT`; api cần một URL cho mỗi `svc_<schema>` nó dùng và `__SVC_AUDIT` (CSDL `<db>_audit`).
-- **Giới hạn hiện tại.** Bộ biên dịch ngữ nghĩa và bộ thực thi vẫn ở runtime cũ, nên câu hỏi kết thúc bằng lời từ
-  chối có mã (`INSUFFICIENT_EVIDENCE` khi Data Space chưa có data product đang hoạt động, `TOOL_UNAVAILABLE` khi đã
-  có), không bao giờ bằng con số không truy được (BR-171). Chuyển lõi agent sang đây là việc R1.
+- **Chạy agent.** `runs.execute` nhận `run.status_changed` từ `agent.outbox` khi lượt chạy được xếp hàng hoặc tiếp
+  tục, chạy như `svc_agent` (worker cần `DATAAGENT_DB_URL__SVC_AGENT`): đọc mục tiêu của phiên bản cấu hình lượt chạy
+  ghi như đọc một câu hỏi, lập Plan IR một bước (`qa.plan.agent_run_id`), truy vấn tại chỗ
+  (`query_run.caller_kind = agent_run`), ghi từng `agent_step` và `narrative`, kết thúc với `stop_reason`. Đọc lại
+  trạng thái ở mỗi ranh giới bước nên tạm dừng/huỷ của api có hiệu lực; giới hạn BR-170; lượt chạy thử chỉ mô phỏng
+  công cụ ghi/gửi. Đây là bản thay tạm ADR-37 (Temporal, R3) theo ba bảo đảm của tab 5 G1.1; chưa có checkpoint
+  chờ duyệt, xin thêm ngân sách, thử lại, sửa kế hoạch, kế hoạch nhiều bước (docstring `runs.py`).
+- **Giới hạn hiện tại.** Hỏi đáp trả lời một chỉ số qua lớp ngữ nghĩa (bộ biên dịch `semantic/compiler.py`, truy vấn
+  tại chỗ); câu hỏi ngoài lớp đó kết thúc bằng lời từ chối có mã, không bao giờ bằng con số không truy được
+  (BR-171). Text-to-SQL, so sánh kỳ và kế hoạch nhiều bước là việc R1.
 
 Chạy: `python -m services.worker_agent.main`; suite `worker_agent` (unit + tích hợp trên DDL thật).
