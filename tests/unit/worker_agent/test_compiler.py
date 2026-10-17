@@ -193,13 +193,7 @@ def test_a_filter_value_is_quoted_never_spliced() -> None:
             "CONTRACT_MISMATCH",
         ),
         (Request(metric(), group_by=["khong_co"]), "UNRESOLVED_ENTITY"),
-        (
-            Request(
-                metric(period_semantics="average_over_period"),
-                period=Period(datetime.date(2026, 1, 1), datetime.date(2026, 2, 1)),
-            ),
-            "UNSUPPORTED",
-        ),
+        (Request(metric(), group_by=["ngay"], grain="week"), "CONTRACT_MISMATCH"),
     ],
 )
 def test_what_cannot_be_compiled_says_why(request_: Request, code: str) -> None:

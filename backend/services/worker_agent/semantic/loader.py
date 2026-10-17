@@ -119,6 +119,7 @@ async def load(session: AsyncSession, space_id: uuid.UUID) -> SpaceLayer:
             period_semantics=v.period_semantics,
             allowed_dimension_ids=frozenset(v.allowed_dimensions or ()),
             certified=v.status == "certified",
+            time_grain=v.time_grain,
         )
         for mid, v in version_rows.items()
     }

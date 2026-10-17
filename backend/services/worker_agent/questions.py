@@ -66,6 +66,7 @@ from services.worker_agent.semantic.loader import SpaceLayer, load
 from services.worker_agent.sqlgen.answer import answer_by_sql
 from services.worker_agent.understand import llm_reader
 from services.worker_agent.understand.comparison import find_comparison
+from services.worker_agent.understand.grain import GRAIN_LABELS, find_grain
 from services.worker_agent.understand.resolver import (
     Understanding,
     follow_up,
@@ -184,6 +185,7 @@ def _plan_ir(
     explain_by: str | None = None,
     explain_name: str | None = None,
     compare_to: str | None = None,
+    grain: str | None = None,
 ) -> dict[str, Any]:
     """Plan IR v2 (tab 5 G3.1): the fast path's template plan, one semantic query step.
 
@@ -214,6 +216,8 @@ def _plan_ir(
         )
         if compare_to is not None:
             steps[0]["args"]["compare_to"] = compare_to
+        if grain is not None:
+            steps[0]["args"]["grain"] = grain
         if explain_by is not None and u.period is not None:
             month = u.period.start
             before = (month - datetime.timedelta(days=1)).replace(day=1)
@@ -374,6 +378,17 @@ def _compare_chip(compare_to: str, period: c.Period | None) -> dict[str, object]
         "kind": "compare",
         "value": compare_to,
         "label": f"so với {compared_to}",
+        "source": "default",
+        "confidence": 1.0,
+    }
+
+
+def _grain_chip(grain: str) -> dict[str, object]:
+    """The grain of a time cut as a plan chip; an edited plan keeps it (from_chips ignores it)."""
+    return {
+        "kind": "grain",
+        "value": grain,
+        "label": f"theo {GRAIN_LABELS[grain]}",
         "source": "default",
         "confidence": 1.0,
     }
@@ -590,6 +605,22 @@ async def _understand_and_plan(
                 None,
             )
         )
+        # R1-06: "theo tháng" names the grain of a cut along time, taken out like a comparison.
+        grain_found = find_grain(asked) if edited is None else None
+        if grain_found is not None:
+            asked = grain_found.rest
+        grain = (
+            grain_found.grain
+            if grain_found is not None
+            else next(
+                (
+                    str(chip.get("value"))
+                    for chip in (edited.chips or [] if edited is not None else [])
+                    if chip.get("kind") == "grain" and chip.get("value") in c.GRAINS
+                ),
+                None,
+            )
+        )
         u = (
             from_chips(list(edited.chips or []), layer.vocabulary)
             if edited is not None
@@ -618,19 +649,38 @@ async def _understand_and_plan(
         compiled: c.Compiled | None = None
         problem: Refusal | None = None
         compile_request: c.Request | None = None
-        not_cut = _cut_not_allowed(u, layer) if u.decision == "proceed" else None
+        if grain is not None and u.decision == "proceed" and u.metric is not None:
+            # The cut is along the metric's own time; a metric without one is not cut by month
+            # silently into a total (BR-80).
+            try:
+                time_cut = c.time_dimension_of(layer.versions[u.metric.metric_id], layer.layer)
+            except c.CompileError:
+                time_cut = None
+            if time_cut is None:
+                problem = Refusal.of(
+                    ErrorCode.CONTRACT_MISMATCH,
+                    message=f"{u.metric.name} không có chiều thời gian để chia theo "
+                    f"{GRAIN_LABELS[grain]}.",
+                    detail_id=str(question.id),
+                )
+            elif time_cut.code not in u.group_by:
+                u.group_by.append(time_cut.code)
+        not_cut = (
+            _cut_not_allowed(u, layer) if u.decision == "proceed" and problem is None else None
+        )
         if not_cut is not None:
             # AC-01-04-04: said in words, with the cuts the metric does allow.
             problem = Refusal.of(
                 ErrorCode.CONTRACT_MISMATCH, message=not_cut, detail_id=str(question.id)
             )
-        elif u.decision == "proceed" and u.metric is not None:
+        elif problem is None and u.decision == "proceed" and u.metric is not None:
             version = layer.versions[u.metric.metric_id]
             compile_request = c.Request(
                 version,
                 group_by=u.group_by,
                 filters=u.filters,
                 period=c.Period(u.period.start, u.period.end) if u.period else None,
+                grain=grain,
             )
             try:
                 # Compile once to discover the dataset/source, then regenerate in that source's
@@ -656,6 +706,7 @@ async def _understand_and_plan(
                 explain_by,
                 _dimension_name(layer, explain_by),
                 compare_to,
+                grain,
             )
             edited.confidence = decimal.Decimal(str(round(u.confidence, 4)))
         else:
@@ -683,7 +734,8 @@ async def _understand_and_plan(
                         ]
                         if compare_to is not None
                         else []
-                    ),
+                    )
+                    + ([_grain_chip(grain)] if grain is not None else []),
                     steps=_plan_ir(
                         u,
                         compiled,
@@ -691,6 +743,7 @@ async def _understand_and_plan(
                         explain_by,
                         _dimension_name(layer, explain_by),
                         compare_to,
+                        grain,
                     ),
                     confidence=decimal.Decimal(str(round(u.confidence, 4))),
                 )

@@ -1,4 +1,4 @@
-"""compare_to (R1-06): the comparison a question asks for, and the compared answer's figures."""
+"""R1-06 read off a question: the comparison and the grain of a time cut; the compared answer."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from services.worker_agent.answer.comparison import (
 from services.worker_agent.answer.insights import evaluate, written
 from services.worker_agent.semantic.compiler import Period
 from services.worker_agent.understand.comparison import find_comparison
+from services.worker_agent.understand.grain import find_grain
 
 pytestmark = [pytest.mark.unit]
 
@@ -159,3 +160,24 @@ def test_a_masked_side_derives_nothing() -> None:
         base_label="tháng 8/2026",
     )
     assert all("F1" not in (f.expr or "") and "F2" not in (f.expr or "") for f in ins.figures)
+
+
+@pytest.mark.parametrize(
+    ("question", "grain", "rest"),
+    [
+        ("Dư nợ theo tháng năm 2026", "month", "Dư nợ năm 2026"),
+        ("Doanh thu từng quý", "quarter", "Doanh thu"),
+        ("Nợ xấu hằng năm theo vùng", "year", "Nợ xấu theo vùng"),
+        ("Dư nợ theo ngày tháng 9", "day", "Dư nợ tháng 9"),
+    ],
+)
+def test_the_grain_of_a_time_cut_is_read_and_taken_out(
+    question: str, grain: str, rest: str
+) -> None:
+    found = find_grain(question)
+    assert found is not None and (found.grain, found.rest) == (grain, rest)
+
+
+@pytest.mark.parametrize("question", ["Dư nợ theo tháng 9", "Dư nợ năm 2026", "Nợ xấu theo vùng"])
+def test_no_grain_is_read_where_a_period_or_a_cut_is_named(question: str) -> None:
+    assert find_grain(question) is None

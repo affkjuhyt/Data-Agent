@@ -9,11 +9,20 @@ never an LLM. What it does:
   * the measures' entity gives the base table (catalog.dataset schema.table); a requested
     dimension on another entity is joined through an active many-to-one relationship from the base
     (one hop; anything else is NO_JOIN_PATH, never a guessed join);
+  * measures of several entities (R1-06, `doanh_thu / so_khach_hang`) are aggregated per entity
+    first, each on its own table with its own joins, then combined by the requested dimensions:
+    joining the tables before aggregating would repeat one side's rows for each of the other's
+    (the fan and chasm traps). The sides are combined with UNION ALL + GROUP BY, which every
+    dialect has (MySQL has no FULL JOIN), so a member present on one side only keeps NULL on the
+    other;
   * the metric's default filters and the question's dimension filters become WHERE clauses with
     values as literals sqlglot quotes (no text is spliced into SQL);
   * the period follows period_semantics: `sum_over_period` aggregates the whole range,
     `end_of_period` the last day of the range that has data (a balance is not summed over days),
-    `average_over_period` is not compiled yet (UNSUPPORTED);
+    `average_over_period` the mean of the metric's daily values over the range (R1-06);
+  * a cut along time is at a grain (R1-06): the question's ("theo tháng") or the metric version's
+    time_grain. Month, quarter and year are labelled '2026-09', '2026-Q3', '2026'. A balance cut
+    by month is read on the last day with data of each month, not summed over its days;
   * output: the requested dimensions, then `value`, grouped and ordered by the dimensions.
 
 The SQL hash and COMPILER_VERSION go on the receipt (qa.answer_receipt, ADR-43), so a figure can be
@@ -31,7 +40,10 @@ from dataclasses import dataclass, field
 from sqlglot import exp, parse_one
 from sqlglot.errors import ParseError
 
-COMPILER_VERSION = "v3-compiler-1"
+COMPILER_VERSION = "v3-compiler-2"
+GRAINS = ("day", "month", "quarter", "year")
+# The day a value was read on, carried from a side to the average over the period.
+_DAY = "_day"
 
 
 class CompileError(ValueError):
@@ -90,6 +102,8 @@ class MetricVersion:
     period_semantics: str
     allowed_dimension_ids: frozenset[uuid.UUID]
     certified: bool
+    # The grain a cut along time is at when the question names none (metric_version.time_grain).
+    time_grain: str = "day"
 
 
 @dataclass(frozen=True)
@@ -114,6 +128,8 @@ class Request:
     group_by: Sequence[str] = ()  # dimension codes
     filters: Mapping[str, Sequence[str]] = field(default_factory=dict)  # dimension code → values
     period: Period | None = None
+    # The grain of a cut along time ("theo tháng"); None: the metric version's time_grain.
+    grain: str | None = None
 
 
 @dataclass(frozen=True)
@@ -134,13 +150,16 @@ def _table(t: Table, alias: str) -> exp.Table:
     return exp.table_(t.name, db=t.schema, alias=alias, quoted=True)
 
 
-def _measure_entity(metric: MetricVersion, layer: Layer) -> tuple[exp.Expression, uuid.UUID]:
+def _measures(
+    metric: MetricVersion, layer: Layer
+) -> tuple[exp.Expression, dict[str, exp.Expression], dict[uuid.UUID, list[str]]]:
+    """The metric's expression, each measure's aggregate, and the measure codes of each entity."""
     try:
         tree = parse_one(metric.expression)
     except ParseError as exc:
         raise CompileError("CONTRACT_MISMATCH", "the metric's expression does not parse") from exc
-    entities: set[uuid.UUID] = set()
     measures: dict[str, exp.Expression] = {}
+    by_entity: dict[uuid.UUID, list[str]] = {}
     for column in tree.find_all(exp.Column):
         measure = layer.measures.get(column.name)
         if measure is None:
@@ -148,27 +167,30 @@ def _measure_entity(metric: MetricVersion, layer: Layer) -> tuple[exp.Expression
                 "CONTRACT_MISMATCH",
                 f"the metric names a measure that is not defined: {column.name}",
             )
-        entities.add(measure.entity_id)
+        if column.name in measures:
+            continue
         try:
             measures[column.name] = parse_one(measure.expression)
         except ParseError as exc:
             raise CompileError(
                 "CONTRACT_MISMATCH", f"measure {measure.code} does not parse"
             ) from exc
+        by_entity.setdefault(measure.entity_id, []).append(column.name)
     if not measures:
         raise CompileError("CONTRACT_MISMATCH", "the metric's expression names no measure")
-    if len(entities) != 1:
-        # Measures of two entities need pre-aggregation per entity (fan/chasm traps, G5.2).
-        raise CompileError("NO_JOIN_PATH", "the metric combines measures of several tables")
+    return tree, measures, by_entity
 
-    # Matched by name: transform() works on a copy, so the nodes found above are not the ones
-    # it visits. The metric's expression names only measures (checked above).
+
+def _swap(tree: exp.Expression, by_code: Mapping[str, exp.Expression]) -> exp.Expression:
+    """The expression with each measure code replaced. Matched by name: transform() works on a
+    copy, so nodes found earlier are not the ones it visits; the expression names only measures."""
+
     def swap(node: exp.Expression) -> exp.Expression:
-        if isinstance(node, exp.Column) and node.name in measures:
-            return exp.paren(measures[node.name].copy(), copy=False)
+        if isinstance(node, exp.Column) and node.name in by_code:
+            return exp.paren(by_code[node.name].copy(), copy=False)
         return node
 
-    return tree.transform(swap), next(iter(entities))
+    return tree.transform(swap)
 
 
 def _qualify(expression: str, alias: str) -> exp.Expression:
@@ -204,12 +226,92 @@ def _text_bounds(period: Period) -> tuple[str, str]:
     return start.isoformat(), end.isoformat()
 
 
-def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
+def _at_grain(when: exp.Expression, dim: Dimension, grain: str) -> exp.Expression:
+    """A time value at a grain, as text that orders like the periods: '2026-09', '2026-Q3'.
+
+    A date is formatted (TO_CHAR, DATE_FORMAT, FORMAT… per dialect); ISO text is cut. A quarter is
+    worked out from the month with CASE: Postgres has no QUARTER(), and Oracle's CONCAT takes two
+    arguments, so the year and '-Qn' are joined by one CONCAT.
+    """
+    if grain == "day":
+        return when
+
+    def part(start: int, length: int, fmt: str) -> exp.Expression:
+        if dim.value_type == "string":
+            return exp.Substring(
+                this=when.copy(),
+                start=exp.Literal.number(start),
+                length=exp.Literal.number(length),
+            )
+        return exp.TimeToStr(this=when.copy(), format=exp.Literal.string(fmt))
+
+    if grain == "month":
+        return part(1, 7, "%Y-%m")
+    if grain == "year":
+        return part(1, 4, "%Y")
+    month = part(6, 2, "%m")
+    quarter = exp.Case(
+        ifs=[
+            exp.If(
+                this=exp.In(
+                    this=month.copy(),
+                    expressions=[
+                        exp.Literal.string(f"{m:02d}") for m in range(3 * q - 2, 3 * q + 1)
+                    ],
+                ),
+                true=exp.Literal.string(f"-Q{q}"),
+            )
+            for q in range(1, 5)
+        ]
+    )
+    return exp.Concat(expressions=[part(1, 4, "%Y"), quarter], safe=True)
+
+
+def _reaches(layer: Layer, entity: uuid.UUID, code: str) -> bool:
+    """Whether a table reaches a dimension: its own, or one active join away."""
+    dim = layer.dimensions.get(code)
+    base, table = (
+        layer.entity_tables.get(entity),
+        layer.entity_tables.get(dim.entity_id if dim else entity),
+    )
+    if dim is None or base is None or table is None:
+        return False
+    return dim.entity_id == entity or any(
+        j.from_dataset_id == base.dataset_id and j.to_dataset_id == table.dataset_id
+        for j in layer.joins
+    )
+
+
+@dataclass
+class _Side:
+    """One entity's part of a metric: its select and the datasets it read."""
+
+    select: exp.Select
+    dataset_ids: list[uuid.UUID]
+
+
+def _side(
+    request: Request,
+    layer: Layer,
+    entity: uuid.UUID,
+    outputs: Sequence[tuple[str, exp.Expression]],
+    grain: str,
+    by_day: bool,
+    shared: bool = False,
+) -> _Side:
+    """The select of one entity: the requested dimensions, then `outputs`, grouped by the
+    dimensions (and by day when the period is averaged), filtered and cut to the period.
+
+    `shared`: the side is one of several tables. The metric's default filters then hold where
+    they can (the owner's "trừ cho vay nội bộ" is about the loans, not the revenue); the
+    question's filters must hold on every side, or the sides would count different scopes."""
     metric = request.metric
-    value_expr, base_entity = _measure_entity(metric, layer)
-    base = layer.entity_tables.get(base_entity)
+    base = layer.entity_tables.get(entity)
     if base is None:
         raise CompileError("NO_DATA_FOR_PERIOD", "the metric's table is not in the catalogue")
+    time_dim = next(
+        (d for d in layer.dimensions.values() if d.is_time and d.entity_id == entity), None
+    )
 
     aliases: dict[uuid.UUID, str] = {base.dataset_id: "t0"}
     joins: list[tuple[Table, str, Join]] = []
@@ -245,21 +347,37 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
             raise CompileError(
                 "CONTRACT_MISMATCH", f"{metric.display_name} is not cut by {dim.name}"
             )
+        # A time cut of a metric over several tables reads each table's own time.
+        if dim.is_time and time_dim is not None and dim.entity_id != entity:
+            return time_dim
         return dim
 
-    # The value expression's columns belong to the base table.
-    for column in value_expr.find_all(exp.Column):
-        if not column.table:
-            column.set("table", exp.to_identifier("t0"))
+    # The output expressions' columns belong to the base table.
+    outputs = [(name, expr.copy()) for name, expr in outputs]
+    for _, expr in outputs:
+        for column in expr.find_all(exp.Column):
+            if not column.table:
+                column.set("table", exp.to_identifier("t0"))
 
     select = exp.select()
     group: list[exp.Expression] = []
+    time_cut: Dimension | None = None
     for code in request.group_by:
         dim = dimension(code)
         expr = _qualify(dim.expression, alias_for(dim))
+        if dim.is_time:
+            time_cut = dim
+            expr = _at_grain(expr, dim, grain)
         select = select.select(exp.alias_(expr, code, quoted=True))
         group.append(expr)
-    select = select.select(exp.alias_(value_expr, "value", quoted=True))
+    if by_day:
+        if time_dim is None:
+            raise CompileError("NO_DATA_FOR_PERIOD", "the metric's table has no time dimension")
+        day = _qualify(time_dim.expression, "t0")
+        select = select.select(exp.alias_(day, _DAY, quoted=True))
+        group.append(day.copy())
+    for name, expr in outputs:
+        select = select.select(exp.alias_(expr, name, quoted=True))
 
     conditions: list[exp.Expression] = []
     # The metric's own default filters were set by its owner; the question's go through BR-81.
@@ -270,6 +388,8 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
         code = str(f.get("dimension") or f.get("column") or "")
         values = f.get("values", f.get("value"))
         values = values if isinstance(values, list) else [values]
+        if shared and not _reaches(layer, entity, code):
+            continue
         filters.append((code, values, str(f.get("op", "in")) in ("!=", "not_in", "<>")))
     filters += [(code, list(values), False) for code, values in request.filters.items()]
     for code, values, negated in filters:
@@ -280,10 +400,11 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
         cond: exp.Expression = exp.In(this=expr, expressions=[_literal(v) for v in values])
         conditions.append(exp.not_(cond) if negated else cond)
 
+    balance = metric.period_semantics == "end_of_period"
+    cut_by_day = time_cut is not None and grain == "day"
+    in_range: exp.Expression | None = None
+    in_range_of_l: exp.Expression | None = None
     if request.period is not None:
-        time_dim = next(
-            (d for d in layer.dimensions.values() if d.is_time and d.entity_id == base_entity), None
-        )
         if time_dim is None:
             raise CompileError("NO_DATA_FOR_PERIOD", "the metric's table has no time dimension")
         when = _qualify(time_dim.expression, "t0")
@@ -297,39 +418,29 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
                 for d in (request.period.start, request.period.end)
             )
         in_range = exp.and_(exp.GTE(this=when, expression=start), exp.LT(this=when, expression=end))
-        if metric.period_semantics == "end_of_period" and time_dim.code not in request.group_by:
-            # A balance is read on the last day of the range that has data, not summed over days.
-            last = (
-                exp.select(exp.Max(this=_qualify(time_dim.expression, "l")))
-                .from_(_table(base, "l"))
-                .where(
-                    exp.and_(
-                        exp.GTE(this=_qualify(time_dim.expression, "l"), expression=start.copy()),
-                        exp.LT(this=_qualify(time_dim.expression, "l"), expression=end.copy()),
-                    )
-                )
-            )
-            conditions.append(exp.EQ(this=when, expression=exp.paren(last.subquery(), copy=False)))
-        elif metric.period_semantics == "average_over_period":
-            raise CompileError("UNSUPPORTED", "averages over a period are not compiled yet")
-        else:
-            conditions.append(in_range)
-    elif metric.period_semantics == "end_of_period":
-        # No period asked: "the latest data" of a balance or price is its last day with data,
-        # not its maximum over all history. A cut along time keeps every day.
-        time_dim = next(
-            (d for d in layer.dimensions.values() if d.is_time and d.entity_id == base_entity), None
+        in_range_of_l = exp.and_(
+            exp.GTE(this=_qualify(time_dim.expression, "l"), expression=start.copy()),
+            exp.LT(this=_qualify(time_dim.expression, "l"), expression=end.copy()),
         )
-        if time_dim is not None and time_dim.code not in request.group_by:
-            last = exp.select(exp.Max(this=_qualify(time_dim.expression, "l"))).from_(
-                _table(base, "l")
-            )
+    if balance and time_dim is not None and not cut_by_day:
+        # A balance is read on the last day with data, not summed over days: of the range (or of
+        # all data when no period is asked), or of each month, quarter or year of a time cut.
+        last_of_l = _qualify(time_dim.expression, "l")
+        last = exp.select(exp.Max(this=last_of_l)).from_(_table(base, "l"))
+        if in_range_of_l is not None:
+            last = last.where(in_range_of_l)
+        when_t0 = _qualify(time_dim.expression, "t0")
+        if time_cut is not None:
+            last = last.group_by(_at_grain(_qualify(time_dim.expression, "l"), time_dim, grain))
+            conditions.append(exp.In(this=when_t0, query=last.subquery()))
+            if in_range is not None:
+                conditions.append(in_range)
+        else:
             conditions.append(
-                exp.EQ(
-                    this=_qualify(time_dim.expression, "t0"),
-                    expression=exp.paren(last.subquery(), copy=False),
-                )
+                exp.EQ(this=when_t0, expression=exp.paren(last.subquery(), copy=False))
             )
+    elif in_range is not None:
+        conditions.append(in_range)
 
     # FROM and JOINs last: a filter on another table's dimension adds its join too.
     select = select.from_(_table(base, "t0"))
@@ -347,15 +458,112 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
     if conditions:
         select = select.where(exp.and_(*conditions))
     if group:
-        select = select.group_by(*group).order_by(*[g.copy() for g in group])
+        select = select.group_by(*group)
+    return _Side(select, list(aliases))
+
+
+def time_dimension_of(metric: MetricVersion, layer: Layer) -> Dimension | None:
+    """The time dimension a cut along time of this metric reads ("theo tháng"): that of its
+    first measure's table; None when that table has none."""
+    _, _, by_entity = _measures(metric, layer)
+    entity = next(iter(by_entity))
+    return next((d for d in layer.dimensions.values() if d.is_time and d.entity_id == entity), None)
+
+
+def _ordered(select: exp.Select, request: Request, dims: Sequence[exp.Expression]) -> exp.Select:
+    if not dims:
+        return select
+    return select.order_by(*[d.copy() for d in dims])
+
+
+def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
+    metric = request.metric
+    tree, measures, by_entity = _measures(metric, layer)
+    grain = request.grain or metric.time_grain
+    if grain not in GRAINS:
+        raise CompileError("CONTRACT_MISMATCH", f"unknown time grain {grain}")
+    by_day = metric.period_semantics == "average_over_period"
+    codes = list(request.group_by)
+
+    sides: list[_Side] = []
+    if len(by_entity) == 1:
+        side = _side(
+            request, layer, next(iter(by_entity)), [("value", _swap(tree, measures))], grain, by_day
+        )
+        sides.append(side)
+        select = side.select
+        # Ordered by the dimensions' own expressions, as before compiler 2.
+        dims = list(select.args["group"].expressions) if select.args.get("group") else []
+        if by_day:
+            dims = dims[: len(codes)]
+        else:
+            select = _ordered(select, request, dims)
+    else:
+        # Aggregated per entity, then combined by the dimensions (the fan trap, module docstring).
+        names = {code: f"m_{code}" for code in measures}
+        for f in metric.filters:
+            code = str(f.get("dimension") or f.get("column") or "")
+            if not any(_reaches(layer, entity, code) for entity in by_entity):
+                raise CompileError("CONTRACT_MISMATCH", f"filter on an unknown dimension {code}")
+        parts: list[exp.Select] = []
+        for entity, entity_codes in by_entity.items():
+            side = _side(
+                request,
+                layer,
+                entity,
+                [(names[code], measures[code]) for code in entity_codes],
+                grain,
+                by_day,
+                shared=True,
+            )
+            sides.append(side)
+            keys = [*codes, _DAY] if by_day else codes
+            parts.append(
+                exp.select(
+                    *(exp.column(k, quoted=True) for k in keys),
+                    *(
+                        exp.column(names[code], quoted=True)
+                        if code in entity_codes
+                        else exp.alias_(exp.Null(), names[code], quoted=True)
+                        for code in measures
+                    ),
+                ).from_(side.select.subquery("s"))
+            )
+        union: exp.Query = parts[0]
+        for part in parts[1:]:
+            union = exp.union(union, part, distinct=False)
+        keys = [*codes, _DAY] if by_day else codes
+        combined = _swap(
+            tree, {code: exp.Max(this=exp.column(names[code], quoted=True)) for code in measures}
+        )
+        select = exp.select(
+            *(exp.column(k, quoted=True) for k in keys),
+            exp.alias_(combined, "value", quoted=True),
+        ).from_(union.subquery("u"))
+        if keys:
+            select = select.group_by(*(exp.column(k, quoted=True) for k in keys))
+        dims = [exp.column(code, quoted=True) for code in codes]
+        if not by_day:
+            select = _ordered(select, request, dims)
+
+    if by_day:
+        # The mean of the metric's daily values over the period, per member.
+        dims = [exp.column(code, quoted=True) for code in codes]
+        select = exp.select(
+            *dims,
+            exp.alias_(exp.Avg(this=exp.column("value", quoted=True)), "value", quoted=True),
+        ).from_(select.subquery("d"))
+        if dims:
+            select = _ordered(select.group_by(*[d.copy() for d in dims]), request, dims)
 
     sql = select.sql(dialect=dialect)
+    dataset_ids = list(dict.fromkeys(d for side in sides for d in side.dataset_ids))
     return Compiled(
         sql=sql,
         dialect=dialect,
         metric_version_id=metric.id,
-        dataset_ids=tuple(aliases),
-        columns=(*request.group_by, "value"),
+        dataset_ids=tuple(dataset_ids),
+        columns=(*codes, "value"),
         unit=metric.unit,
         decimals=metric.decimals,
         certified=metric.certified,

@@ -12,8 +12,9 @@ Two producers (services/api/modules/qa/query.py):
 The run is claimed `queued` → `running` in one statement, so a redelivered event is a no-op, then
 completed by the executor, which checks the tables again (Data Space, policies) and stores the
 rows the api's GET /v1/query-runs/{id}/rows reads. A run that cannot be built ends `failed` with
-the reason. Knowledge time (`as_of` before today) and `compare` need the history route and the
-compiler's compare_to (R1-06); until then such a run fails saying so, it never runs live instead.
+the reason. Knowledge time (`as_of` before today) needs the history route, and `compare` a period
+to compare (semantic/compare.py, R1-06), which the explorer's request does not carry yet; such a
+run fails saying so, it never runs live instead.
 """
 
 from __future__ import annotations
@@ -102,7 +103,10 @@ async def _explore(
     session: Any, run: q.QueryRun, p: dict[str, Any]
 ) -> tuple[catalog.Source, str, list[uuid.UUID]]:
     if p.get("compare"):
-        raise Unbuildable("So sánh kỳ (compare) chưa được trình biên dịch hỗ trợ.")
+        raise Unbuildable(
+            "So sánh kỳ (compare) cần kỳ được hỏi; yêu cầu Khám phá chưa mang kỳ. Hãy hỏi trên màn"
+            " Hỏi đáp, ví dụ: Dư nợ tháng 9/2026 so với tháng trước."
+        )
     layer = await load(session, run.data_space_id)
     by_id = {d.id: d.code for d in layer.layer.dimensions.values()}
     try:
