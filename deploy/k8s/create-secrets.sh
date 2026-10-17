@@ -47,6 +47,7 @@ kubectl -n dataagent-service create secret generic api-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_AUDIT="${DATAAGENT_DB_URL__SVC_AUDIT}" \
   --from-literal=MINIO_URL="${MINIO_URL}" \
   --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \
+  --from-literal=NOTIFY_VERIFICATION_SECRET="${NOTIFY_VERIFICATION_SECRET}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # worker-agent: answers as svc_qa, opens HITL requests as svc_inbox, releases approved audit exports
@@ -75,6 +76,7 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_NOTIFY="${DATAAGENT_DB_URL__SVC_NOTIFY}" \
   --from-literal=DATAAGENT_DB_URL__SVC_MONITOR="${DATAAGENT_DB_URL__SVC_MONITOR}" \
   --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \
+  --from-literal=NOTIFY_VERIFICATION_SECRET="${NOTIFY_VERIFICATION_SECRET}" \
   --from-literal=MINIO_URL="${WORKER_AGENT_MINIO_URL}" \
   --from-literal=OPENBAO_ROLE_ID="${WORKER_AGENT_OPENBAO_ROLE_ID}" \
   --from-literal=OPENBAO_SECRET_ID="${WORKER_AGENT_OPENBAO_SECRET_ID}" \

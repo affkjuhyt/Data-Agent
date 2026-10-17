@@ -23,9 +23,15 @@ data:
   WORKER_AGENT_POLL_SECONDS: "0.5"
   WORKER_AGENT_BATCH: "10"
   # Document answers (UC-05-04): the query is embedded by the bge-m3 TEI the chunks were embedded
-  # with, and the pool is ordered by the TEI reranker. The local slice has no LiteLLM.
+  # with, and the pool is ordered by the TEI reranker.
   DOCUMENT_EMBED_URL: http://10.10.55.101:8003
   DOCUMENT_RERANK_URL: http://10.10.55.101:8004
+  # The channel gateway (channels/): email goes to Mailpit, which keeps every message for viewing
+  # (http://localhost:30025) and sends none out; links in a message open the app.
+  SMTP_HOST: mailpit.dataagent-service.svc.cluster.local
+  SMTP_PORT: "1025"
+  SMTP_FROM: data-agent@helios.local
+  APP_BASE_URL: http://localhost:30280
 ---
 apiVersion: apps/v1
 kind: Deployment
