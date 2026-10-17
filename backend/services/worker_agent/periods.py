@@ -34,16 +34,20 @@ from typing import Any
 from sqlalchemy import delete, literal, select, update
 
 from libs.dataagent_db import scoped_session, uuid7
-from libs.dataagent_db.models import catalog
+from libs.dataagent_db.models import catalog, inbox
 from libs.dataagent_db.models import period as pd
 from services.worker_agent import storage
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
+from services.worker_agent.semantic import compiler as c
+from services.worker_agent.semantic.loader import load
 
 logger = logging.getLogger(__name__)
 
 ROLE = "svc_period"
 CLOSE = "period.close_requested"
+PUBLISH = "period.publish_requested"
+PUBLISHED = "period.published"
 BUCKET = os.environ.get("PERIOD_CLOSE_BUCKET", "da-period-close")
 SNAPSHOT_ROWS = 500_000
 
@@ -87,7 +91,11 @@ async def _source(
 
 
 async def _rows(
-    event: Event, close: pd.PeriodClose, dataset: catalog.Dataset, actor: uuid.UUID, source: Any
+    org_id: uuid.UUID,
+    close: pd.PeriodClose,
+    dataset: catalog.Dataset,
+    actor: uuid.UUID,
+    source: Any,
 ) -> list[dict[str, Any]] | str:
     """The dataset's rows as of the business date; or why they could not be read."""
     from services.worker_agent.questions import secrets
@@ -98,7 +106,7 @@ async def _rows(
         op = "=" if dataset.history_kind == "snapshot" else "<="
         where = f" WHERE {_ident(dataset.business_date_col)} {op} DATE '{close.business_date.isoformat()}'"
     outcome = await run_query(
-        org_id=event.org_id,
+        org_id=org_id,
         data_space_id=close.data_space_id,
         principal_id=actor,
         caller_kind="period",
@@ -117,23 +125,25 @@ async def _rows(
 
 
 async def _ledger(
-    event: Event, close: pd.PeriodClose, ledger: dict[str, Any], actor: uuid.UUID
+    org_id: uuid.UUID, close: pd.PeriodClose, ledger: dict[str, Any], actor: uuid.UUID
 ) -> decimal.Decimal | str:
     if "value" in ledger:
         return decimal.Decimal(str(ledger["value"]))
-    async with scoped_session("svc_catalog", event.org_id, actor) as session:
+    async with scoped_session("svc_catalog", org_id, actor) as session:
         dataset = await session.get(catalog.Dataset, uuid.UUID(str(ledger["dataset_id"])))
-        source = await _source(session, dataset, event.org_id) if dataset else None
+        source = await _source(session, dataset, org_id) if dataset else None
     if dataset is None or source is None or dataset.data_space_id != close.data_space_id:
         return "the ledger dataset is not readable in this Data Space"
-    rows = await _rows(event, close, dataset, actor, source)
+    rows = await _rows(org_id, close, dataset, actor, source)
     if isinstance(rows, str):
         return rows
     return aggregate(str(ledger.get("aggregate", "sum")), ledger.get("column"), rows)
 
 
-async def _end(event: Event, close_id: uuid.UUID, status: str, snapshot_hash: str | None) -> None:
-    async with scoped_session(ROLE, event.org_id) as session:
+async def _end(
+    org_id: uuid.UUID, close_id: uuid.UUID, status: str, snapshot_hash: str | None
+) -> None:
+    async with scoped_session(ROLE, org_id) as session:
         values: dict[str, Any] = {"status": status}
         if status == "closed":
             values |= {"snapshot_hash": snapshot_hash, "closed_at": _now()}
@@ -144,9 +154,73 @@ async def _end(event: Event, close_id: uuid.UUID, status: str, snapshot_hash: st
         )
 
 
+def _snapshot_hash(hashes: dict[str, str]) -> str:
+    return hashlib.sha256(
+        "\n".join(f"{k}:{v}" for k, v in sorted(hashes.items())).encode()
+    ).hexdigest()
+
+
+async def _capture(
+    org_id: uuid.UUID,
+    close: pd.PeriodClose,
+    calendar: pd.PeriodCalendar,
+    actor: uuid.UUID,
+    written: dict[uuid.UUID, pd.PeriodSnapshotFile],
+    *,
+    write: bool = True,
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, str]] | str:
+    """Every calendar dataset's rows as of the business date and the hash of each one's file,
+    writing the files not written yet (only checking them when `write` is off); or why not."""
+    captured: dict[str, list[dict[str, Any]]] = {}
+    hashes: dict[str, str] = {}
+    for dataset_id in calendar.dataset_ids:
+        async with scoped_session("svc_catalog", org_id, actor) as session:
+            dataset = await session.get(catalog.Dataset, dataset_id)
+            source = await _source(session, dataset, org_id) if dataset else None
+        if dataset is None or source is None or dataset.data_space_id != close.data_space_id:
+            return f"dataset {dataset_id} is not readable"
+        rows = await _rows(org_id, close, dataset, actor, source)
+        if isinstance(rows, str):
+            return f"{dataset.table_name}: {rows}"
+        captured[str(dataset_id)] = rows
+        lines = sorted(
+            json.dumps({k: _plain(v) for k, v in r.items()}, ensure_ascii=False, sort_keys=True)
+            for r in rows
+        )
+        body = gzip.compress("".join(f"{line}\n" for line in lines).encode("utf-8"), mtime=0)
+        sha = hashlib.sha256(body).hexdigest()
+        hashes[str(dataset_id)] = sha
+        if dataset_id in written:
+            if written[dataset_id].sha256 != sha:
+                return f"{dataset.table_name} changed since its snapshot was written"
+            continue
+        if not write:
+            return f"{dataset.table_name} has no snapshot file"
+        key = (
+            f"{org_id}/{close.data_space_id}/{close.period_label}/v{close.version}/"
+            f"{dataset_id}.jsonl.gz"
+        )
+        await storage.store().put(BUCKET, key, body, "application/gzip")
+        async with scoped_session(ROLE, org_id, actor) as session:
+            session.add(
+                pd.PeriodSnapshotFile(
+                    id=uuid7(),
+                    org_id=org_id,
+                    period_close_id=close.id,
+                    dataset_id=dataset_id,
+                    dataset_version=dataset.current_version,
+                    object_key=key,
+                    row_count=len(rows),
+                    sha256=sha,
+                )
+            )
+    return captured, hashes
+
+
 async def close_requested(event: Event) -> None:
+    org_id = event.org_id
     close_id = uuid.UUID(str(event.payload["period_close_id"]))
-    async with scoped_session(ROLE, event.org_id) as session:
+    async with scoped_session(ROLE, org_id) as session:
         close = await session.get(pd.PeriodClose, close_id)
         if close is None or close.status != "closing":
             return
@@ -168,61 +242,14 @@ async def close_requested(event: Event) -> None:
     actor = close.closed_by or close.created_by
     if calendar is None or actor is None:
         logger.info("worker-agent | period %s has no calendar or closer", close_id)
-        await _end(event, close_id, "close_failed", None)
+        await _end(org_id, close_id, "close_failed", None)
         return
-    captured: dict[str, list[dict[str, Any]]] = {}
-    hashes: dict[str, str] = {}
-    for dataset_id in calendar.dataset_ids:
-        async with scoped_session("svc_catalog", event.org_id, actor) as session:
-            dataset = await session.get(catalog.Dataset, dataset_id)
-            source = await _source(session, dataset, event.org_id) if dataset else None
-        if dataset is None or source is None or dataset.data_space_id != close.data_space_id:
-            logger.info(
-                "worker-agent | period %s: dataset %s is not readable", close_id, dataset_id
-            )
-            await _end(event, close_id, "close_failed", None)
-            return
-        rows = await _rows(event, close, dataset, actor, source)
-        if isinstance(rows, str):
-            logger.info("worker-agent | period %s: %s: %s", close_id, dataset.table_name, rows)
-            await _end(event, close_id, "close_failed", None)
-            return
-        captured[str(dataset_id)] = rows
-        lines = sorted(
-            json.dumps({k: _plain(v) for k, v in r.items()}, ensure_ascii=False, sort_keys=True)
-            for r in rows
-        )
-        body = gzip.compress("".join(f"{line}\n" for line in lines).encode("utf-8"), mtime=0)
-        sha = hashlib.sha256(body).hexdigest()
-        hashes[str(dataset_id)] = sha
-        if dataset_id in written:
-            if written[dataset_id].sha256 != sha:
-                logger.info(
-                    "worker-agent | period %s: %s changed since its snapshot was written",
-                    close_id,
-                    dataset.table_name,
-                )
-                await _end(event, close_id, "close_failed", None)
-                return
-            continue
-        key = (
-            f"{event.org_id}/{close.data_space_id}/{close.period_label}/v{close.version}/"
-            f"{dataset_id}.jsonl.gz"
-        )
-        await storage.store().put(BUCKET, key, body, "application/gzip")
-        async with scoped_session(ROLE, event.org_id, actor) as session:
-            session.add(
-                pd.PeriodSnapshotFile(
-                    id=uuid7(),
-                    org_id=event.org_id,
-                    period_close_id=close_id,
-                    dataset_id=dataset_id,
-                    dataset_version=dataset.current_version,
-                    object_key=key,
-                    row_count=len(rows),
-                    sha256=sha,
-                )
-            )
+    capture = await _capture(org_id, close, calendar, actor, written)
+    if isinstance(capture, str):
+        logger.info("worker-agent | period %s: %s", close_id, capture)
+        await _end(org_id, close_id, "close_failed", None)
+        return
+    captured, hashes = capture
     results = []
     for item in calendar.reconciliation_items or []:
         code = str(item.get("code"))
@@ -232,21 +259,21 @@ async def close_requested(event: Event) -> None:
             if item_rows is None:
                 raise ValueError("the item's dataset is not in the snapshot")
             snapshot = aggregate(str(item.get("aggregate", "sum")), item.get("column"), item_rows)
-            ledger = await _ledger(event, close, dict(item.get("ledger") or {}), actor)
+            ledger = await _ledger(org_id, close, dict(item.get("ledger") or {}), actor)
             if isinstance(ledger, str):
                 raise ValueError(ledger)
         except (ValueError, KeyError, decimal.InvalidOperation) as exc:
             logger.info(
                 "worker-agent | period %s: item %s cannot be reconciled: %s", close_id, code, exc
             )
-            await _end(event, close_id, "close_failed", None)
+            await _end(org_id, close_id, "close_failed", None)
             return
         delta = snapshot - ledger
         status = "matched" if abs(delta) <= tolerance else "mismatched"
         results.append(
             pd.PeriodReconciliation(
                 id=uuid7(),
-                org_id=event.org_id,
+                org_id=org_id,
                 period_close_id=close_id,
                 item_code=code,
                 snapshot_value=snapshot,
@@ -256,7 +283,7 @@ async def close_requested(event: Event) -> None:
                 status=status,
             )
         )
-    async with scoped_session(ROLE, event.org_id, actor) as session:
+    async with scoped_session(ROLE, org_id, actor) as session:
         # A close run again reconciles again. A person's exception (pending or approved) stands
         # only for the variance it was asked on: when the delta moved, it is replaced by the new
         # mismatch and a new exception is needed. Earlier matched/mismatched rows are replaced.
@@ -289,10 +316,8 @@ async def close_requested(event: Event) -> None:
     mismatched = any(
         r.status == "mismatched" and kept.get(r.item_code) != "exception_approved" for r in results
     )
-    snapshot_hash = hashlib.sha256(
-        "\n".join(f"{k}:{v}" for k, v in sorted(hashes.items())).encode()
-    ).hexdigest()
-    await _end(event, close_id, "close_failed" if mismatched else "closed", snapshot_hash)
+    snapshot_hash = _snapshot_hash(hashes)
+    await _end(org_id, close_id, "close_failed" if mismatched else "closed", snapshot_hash)
     logger.info(
         "worker-agent | period %s %s (%d tables, %d items)",
         close_id,
@@ -302,4 +327,237 @@ async def close_requested(event: Event) -> None:
     )
 
 
-HANDLERS: dict[str, Handler] = {CLOSE: close_requested}
+# --- filing (UC-10-03) ---------------------------------------------------------------------------
+
+
+def period_range(kind: str, business_date: datetime.date) -> c.Period:
+    """The days a period of `kind` ending on `business_date` covers (end exclusive)."""
+    if kind == "month":
+        start = business_date.replace(day=1)
+    elif kind == "quarter":
+        start = business_date.replace(month=3 * ((business_date.month - 1) // 3) + 1, day=1)
+    elif kind == "year":
+        start = business_date.replace(month=1, day=1)
+    else:  # custom: the period is its business date
+        start = business_date
+    return c.Period(start=start, end=business_date + datetime.timedelta(days=1))
+
+
+async def _overrides(org_id: uuid.UUID, close: pd.PeriodClose) -> list[inbox.HitlRequest]:
+    """The approvals the filing asked for: the override requests opened since it was recorded."""
+    async with scoped_session("svc_inbox", org_id) as session:
+        return list(
+            (
+                await session.scalars(
+                    select(inbox.HitlRequest).where(
+                        inbox.HitlRequest.source_service == "period",
+                        inbox.HitlRequest.kind == "period_exception",
+                        inbox.HitlRequest.source_ref == close.id,
+                        inbox.HitlRequest.created_at >= close.updated_at,
+                    )
+                )
+            ).all()
+        )
+
+
+async def _unfile(org_id: uuid.UUID, close_id: uuid.UUID, why: str) -> None:
+    """The filing could not be frozen: it is cleared, so the period can be filed again."""
+    logger.info("worker-agent | period %s not filed: %s", close_id, why)
+    async with scoped_session(ROLE, org_id) as session:
+        await session.execute(
+            update(pd.PeriodClose)
+            .where(pd.PeriodClose.id == close_id, pd.PeriodClose.status == "closed")
+            .values(filed_report_code=None, filed_at=None)
+        )
+
+
+async def _values(
+    org_id: uuid.UUID,
+    close: pd.PeriodClose,
+    calendar: pd.PeriodCalendar,
+    actor: uuid.UUID,
+) -> dict[uuid.UUID, decimal.Decimal] | str:
+    """Every certified metric of the Data Space computed on the period, by metric version; only
+    the metrics read from the snapshotted tables (another table's number is not the period's)."""
+    from services.worker_agent.questions import (
+        QUERYABLE,
+        _internal_workspace_source,
+        dialect_for_source,
+        secrets,
+    )
+
+    span = period_range(calendar.period_kind, close.business_date)
+    snapshotted = set(calendar.dataset_ids)
+    values: dict[uuid.UUID, decimal.Decimal] = {}
+    async with scoped_session("svc_qa", org_id, actor) as session:
+        layer = await load(session, close.data_space_id)
+        compiled = []
+        for version in layer.versions.values():
+            if not version.certified:
+                continue
+            request = c.Request(version, period=span)
+            try:
+                first = c.compile_metric(request, layer.layer, dialect="postgres")
+            except c.CompileError as exc:
+                return f"{version.metric_code} does not compile: {exc}"
+            if not set(first.dataset_ids) <= snapshotted:
+                continue
+            dataset = layer.datasets[first.dataset_ids[0]]
+            source = (
+                _internal_workspace_source(close.data_space_id, org_id)
+                if dataset.schema_name == "workspace" and dataset.source_id is None
+                else await session.get(catalog.Source, dataset.source_id)
+            )
+            if source is None or source.mode != "federated" or source.status not in QUERYABLE:
+                return f"{version.metric_code}: its source is not queryable"
+            compiled.append(
+                (
+                    source,
+                    c.compile_metric(request, layer.layer, dialect=dialect_for_source(source.kind)),
+                )
+            )
+    for source, metric in compiled:
+        outcome = await run_query(
+            org_id=org_id,
+            data_space_id=close.data_space_id,
+            principal_id=actor,
+            caller_kind="period",
+            caller_id=close.id,
+            source=source,
+            sql=metric.sql,
+            secrets=secrets(),
+            metric_version_ids=[metric.metric_version_id],
+            limit=1,
+        )
+        if not outcome.ok:
+            return f"metric version {metric.metric_version_id}: {outcome.error or outcome.status}"
+        if outcome.rows and outcome.rows[0][-1] is not None:
+            values[metric.metric_version_id] = decimal.Decimal(str(outcome.rows[0][-1]))
+    return values
+
+
+async def publish(org_id: uuid.UUID, close_id: uuid.UUID) -> str | None:
+    """Freeze the filing of a closed period once every number it overrides is approved: each
+    certified metric computed on the snapshot into published_result (insert-only, BR-42), the
+    period filed, period.published. Returns the period's status after, or None when it waits."""
+    async with scoped_session(ROLE, org_id) as session:
+        close = await session.get(pd.PeriodClose, close_id)
+        if close is None or close.status != "closed" or close.filed_report_code is None:
+            return None
+        calendar = (
+            await session.get(pd.PeriodCalendar, close.period_calendar_id)
+            if close.period_calendar_id
+            else None
+        )
+        written = {
+            f.dataset_id: f
+            for f in (
+                await session.scalars(
+                    select(pd.PeriodSnapshotFile).where(
+                        pd.PeriodSnapshotFile.period_close_id == close_id
+                    )
+                )
+            ).all()
+        }
+    filer = close.updated_by
+    if calendar is None or filer is None:
+        await _unfile(org_id, close_id, "the period has no calendar or filer")
+        return "closed"
+    requests = await _overrides(org_id, close)
+    if any(r.status in ("open", "reassigned") for r in requests):
+        return None  # an approval is still to be decided
+    refused = [r for r in requests if r.status != "approved" or r.resolved_by in (None, filer)]
+    if refused:
+        await _unfile(org_id, close_id, "a manual number was not approved (BR-133)")
+        return "closed"
+    # The numbers are the snapshot's only while the tables still hold its rows (BR-42).
+    capture = await _capture(org_id, close, calendar, filer, written, write=False)
+    if isinstance(capture, str):
+        await _unfile(org_id, close_id, capture)
+        return "closed"
+    if close.snapshot_hash and _snapshot_hash(capture[1]) != close.snapshot_hash:
+        await _unfile(org_id, close_id, "the snapshot no longer matches its hash")
+        return "closed"
+    values = await _values(org_id, close, calendar, filer)
+    if isinstance(values, str):
+        await _unfile(org_id, close_id, values)
+        return "closed"
+    overrides = {uuid.UUID(str(r.context["metric_version_id"])): r for r in requests}
+    missing = set(overrides) - set(values)
+    if missing:
+        await _unfile(org_id, close_id, f"no computed number for {sorted(map(str, missing))}")
+        return "closed"
+    async with scoped_session(ROLE, org_id, filer) as session:
+        locked = await session.scalar(
+            select(pd.PeriodClose).where(pd.PeriodClose.id == close_id).with_for_update()
+        )
+        if locked is None or locked.status != "closed":
+            return None  # another delivery filed it
+        for version_id, value in sorted(values.items(), key=lambda kv: str(kv[0])):
+            o = overrides.get(version_id)
+            reported = decimal.Decimal(str(o.context["reported_value"])) if o else None
+            session.add(
+                pd.PublishedResult(
+                    id=uuid7(),
+                    org_id=org_id,
+                    period_close_id=close_id,
+                    metric_version_id=version_id,
+                    value=value,
+                    reported_value=reported,
+                    manual_override=o is not None,
+                    override_reason=str(o.context["override_reason"]) if o else None,
+                    # The controller who decided, never a value the filer sent (BR-133).
+                    approved_by=o.resolved_by if o else None,
+                    report_ref=str(close.filed_report_code),
+                    sha256=hashlib.sha256(
+                        f"{version_id}|{value}|{reported}|{close.snapshot_hash}".encode()
+                    ).hexdigest(),
+                )
+            )
+        locked.status = "filed"
+        session.add(
+            pd.Outbox(
+                id=uuid7(),
+                org_id=org_id,
+                aggregate_type="period_close",
+                aggregate_id=close_id,
+                event_type=PUBLISHED,
+                payload={
+                    "period_close_id": str(close_id),
+                    "data_space_id": str(close.data_space_id),
+                    "report_code": close.filed_report_code,
+                    "metric_version_ids": [str(v) for v in values],
+                    "status": "filed",
+                },
+            )
+        )
+    logger.info("worker-agent | period %s filed with %d numbers", close_id, len(values))
+    return "filed"
+
+
+async def publish_requested(event: Event) -> None:
+    await publish(event.org_id, uuid.UUID(str(event.payload["period_close_id"])))
+
+
+async def exception_decided(event: Event) -> None:
+    """An exception to a mismatched item, decided in the inbox: approved, it lets the item
+    stand at the next close (for the variance it was asked on); otherwise the item stays
+    mismatched. A decision on a filing's manual number moves the filing on."""
+    p, org_id = event.payload, event.org_id
+    request_id = uuid.UUID(str(p["hitl_request_id"]))
+    ref = uuid.UUID(str(p["source_ref"]))
+    async with scoped_session(ROLE, org_id) as session:
+        done = await session.execute(
+            update(pd.PeriodReconciliation)
+            .where(
+                pd.PeriodReconciliation.id == ref,
+                pd.PeriodReconciliation.hitl_request_id == request_id,
+                pd.PeriodReconciliation.status == "exception_pending",
+            )
+            .values(status="exception_approved" if p.get("status") == "approved" else "mismatched")
+        )
+    if not done.rowcount:
+        await publish(org_id, ref)
+
+
+HANDLERS: dict[str, Handler] = {CLOSE: close_requested, PUBLISH: publish_requested}

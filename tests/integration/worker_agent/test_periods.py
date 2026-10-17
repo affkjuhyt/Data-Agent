@@ -3,6 +3,7 @@ the reconciliation on the captured rows, the period closed or close_failed."""
 
 from __future__ import annotations
 
+import decimal
 import gzip
 import hashlib
 import json
@@ -11,8 +12,8 @@ from typing import Any
 
 import pytest
 
-from services.worker_agent import periods, storage
-from services.worker_agent.events import OutboxTableSource
+from services.worker_agent import periods, resolutions, storage
+from services.worker_agent.events import Event, OutboxTableSource
 from services.worker_agent.main import run_once
 
 from .conftest import Seed
@@ -236,3 +237,234 @@ async def test_an_approved_exception_stands_only_for_its_variance(
     # A variance that moved needs its own exception: the old approval is not carried over.
     expected = "exception_approved" if approved_delta == 1000 else "mismatched"
     assert (status, delta) == (expected, 1000)
+
+
+# --- filing (UC-10-03) ---------------------------------------------------------------------------
+
+
+def closed(bank: Bank, monkeypatch: pytest.MonkeyPatch) -> uuid.UUID:
+    pid, _ = close(bank, 8000, monkeypatch)
+    return pid
+
+
+def file(bank: Bank, pid: uuid.UUID) -> None:
+    """What :publish records: the report, its date, the filer, then period.publish_requested."""
+    bank.seed.conn.cursor().execute(
+        "UPDATE period.period_close SET filed_report_code = 'BC_NO_XAU', filed_at = '2026-10-10',"
+        " updated_by = %s, updated_at = now() - interval '1 second' WHERE id = %s",
+        (str(bank.user), str(pid)),
+    )
+    bank.seed.row(
+        "period.outbox",
+        org_id=bank.org,
+        aggregate_type="period_close",
+        aggregate_id=pid,
+        event_type=periods.PUBLISH,
+        payload=json.dumps({"period_close_id": str(pid), "data_space_id": str(bank.space)}),
+    )
+
+
+def npl_version(bank: Bank) -> uuid.UUID:
+    return bank.seed.one("SELECT id FROM context.metric_version WHERE metric_id = %s", bank.npl)
+
+
+def override(bank: Bank, pid: uuid.UUID, status: str = "open") -> uuid.UUID:
+    controller = bank.seed.row(
+        "org.app_user", org_id=bank.org, external_id="kc-ks", username="ks", display_name="ks"
+    )
+    return bank.seed.row(
+        "inbox.hitl_request",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        kind="period_exception",
+        risk="high",
+        title="Duyệt số nộp khác số tính",
+        source_service="period",
+        source_ref=pid,
+        assignee_id=controller,
+        status=status,
+        context=json.dumps(
+            {
+                "period_close_id": str(pid),
+                "metric_version_id": str(npl_version(bank)),
+                "reported_value": "31.5",
+                "override_reason": "Số trên báo cáo đã nộp",
+            }
+        ),
+    )
+
+
+async def decide(bank: Bank, request: uuid.UUID, status: str, source_ref: uuid.UUID) -> None:
+    controller = bank.seed.one(
+        "SELECT assignee_id FROM inbox.hitl_request WHERE id = %s", request
+    ) or bank.seed.row(
+        "org.app_user", org_id=bank.org, external_id="kc-kt", username="kt", display_name="kt"
+    )
+    bank.seed.conn.cursor().execute(
+        "UPDATE inbox.hitl_request SET status = %s, resolved_by = %s, resolved_at = now()"
+        " WHERE id = %s",
+        (status, str(controller), str(request)),
+    )
+    await resolutions.act_on_decision(
+        Event(
+            event_id=uuid.uuid4(),
+            org_id=bank.org,
+            event_type=resolutions.EVENT_TYPE,
+            aggregate_type="hitl_request",
+            aggregate_id=request,
+            payload={
+                "hitl_request_id": str(request),
+                "kind": "period_exception",
+                "status": status,
+                "source_service": "period",
+                "source_ref": str(source_ref),
+                "resolved_by": str(controller),
+            },
+        )
+    )
+
+
+@pytest.mark.req("AC-10-03-01")
+async def test_filing_freezes_every_certified_number_of_the_snapshot(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    pid = closed(bank, monkeypatch)
+    await drain()
+    file(bank, pid)
+    await drain()
+    assert seed.one("SELECT status FROM period.period_close WHERE id = %s", pid) == "filed"
+    rows = seed.all(
+        "SELECT m.code, r.value, r.manual_override, r.report_ref, r.sha256"
+        " FROM period.published_result r"
+        " JOIN context.metric_version v ON v.id = r.metric_version_id"
+        " JOIN context.metric m ON m.id = v.metric_id"
+        " WHERE r.period_close_id = %s ORDER BY m.code",
+        pid,
+    )
+    assert [(r[0], r[2], r[3]) for r in rows] == [
+        ("DU_NO", False, "BC_NO_XAU"),
+        ("NPL_RATIO", False, "BC_NO_XAU"),
+    ]
+    assert all(len(r[4]) == 64 for r in rows)
+    # The 30/09 snapshot without NOI_BO: what the reconciliation's 8000 holds, less internal loans.
+    du_no, npl = rows[0][1], rows[1][1]
+    assert 0 < du_no < 8000 and 0 < npl < 100
+    assert (
+        seed.one(
+            "SELECT count(*) FROM period.outbox WHERE aggregate_id = %s AND event_type = %s",
+            pid,
+            periods.PUBLISHED,
+        )
+        == 1
+    )
+
+
+@pytest.mark.req("AC-10-03-02")
+async def test_a_manual_number_waits_for_its_controller(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    pid = closed(bank, monkeypatch)
+    await drain()
+    file(bank, pid)
+    request = override(bank, pid)
+    await drain()
+    assert seed.one("SELECT status FROM period.period_close WHERE id = %s", pid) == "closed"
+    assert (
+        seed.one("SELECT count(*) FROM period.published_result WHERE period_close_id = %s", pid)
+        == 0
+    )
+    await decide(bank, request, "approved", pid)
+    assert seed.one("SELECT status FROM period.period_close WHERE id = %s", pid) == "filed"
+    reported, manual, reason, approver = seed.one(
+        "SELECT reported_value, manual_override, override_reason, approved_by"
+        " FROM period.published_result WHERE period_close_id = %s AND metric_version_id = %s",
+        pid,
+        npl_version(bank),
+    )
+    assert (reported, manual, reason) == (decimal.Decimal("31.5"), True, "Số trên báo cáo đã nộp")
+    assert approver == seed.one("SELECT assignee_id FROM inbox.hitl_request WHERE id = %s", request)
+
+
+async def test_a_refused_manual_number_leaves_the_period_to_file_again(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    pid = closed(bank, monkeypatch)
+    await drain()
+    file(bank, pid)
+    request = override(bank, pid)
+    await drain()
+    await decide(bank, request, "rejected", pid)
+    status, report = seed.one(
+        "SELECT status, filed_report_code FROM period.period_close WHERE id = %s", pid
+    )
+    assert (status, report) == ("closed", None)
+    assert (
+        seed.one("SELECT count(*) FROM period.published_result WHERE period_close_id = %s", pid)
+        == 0
+    )
+
+
+async def test_a_snapshot_whose_tables_changed_is_not_filed(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    pid = closed(bank, monkeypatch)
+    await drain()
+    # As if the source rows had moved since the close: the locked file no longer matches them.
+    seed.conn.cursor().execute(
+        "UPDATE period.period_snapshot_file SET sha256 = %s WHERE period_close_id = %s",
+        ("b" * 64, str(pid)),
+    )
+    file(bank, pid)
+    await drain()
+    status, report = seed.one(
+        "SELECT status, filed_report_code FROM period.period_close WHERE id = %s", pid
+    )
+    assert (status, report) == ("closed", None)
+
+
+@pytest.mark.parametrize(
+    ("decision", "after"), [("approved", "exception_approved"), ("rejected", "mismatched")]
+)
+async def test_an_exception_decided_in_the_inbox_moves_its_item(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+    decision: str,
+    after: str,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    pid, _ = close(bank, 7000, monkeypatch)
+    await drain()
+    request = seed.row(
+        "inbox.hitl_request",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        kind="period_exception",
+        title="Ngoại lệ đối soát tong_du_no",
+        source_service="period",
+        assignee_capability="compliance",
+    )
+    item = seed.one(
+        "SELECT id FROM period.period_reconciliation"
+        " WHERE period_close_id = %s AND item_code = 'tong_du_no'",
+        pid,
+    )
+    seed.conn.cursor().execute(
+        "UPDATE period.period_reconciliation SET status = 'exception_pending', hitl_request_id = %s"
+        " WHERE id = %s",
+        (str(request), str(item)),
+    )
+    await decide(bank, request, decision, item)
+    assert seed.one("SELECT status FROM period.period_reconciliation WHERE id = %s", item) == after
