@@ -9,8 +9,8 @@
 
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
-| Use case (tab 8) | 115 | 3 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 293 có test nhắc mã AC | todo 778 |
+| Use case (tab 8) | 115 | 4 UC đủ tiêu chí bắt buộc | todo 115 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 294 có test nhắc mã AC | todo 778 |
 | Endpoint A2 (tab 4) | 471 (A2 ghi 472 dòng; POST /v1/data-products ở hai nhóm) | 471 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 222 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 161 có mã nhắc tới | todo 195 |
@@ -37,7 +37,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC-01-01 | Đặt câu hỏi bằng ngôn ngữ tự nhiên | todo | 1/1 | 4/4 | 3/9 |  |
 | UC-01-02 | Xem cách tính một con số | todo | 2/2 | 4/4 | 4/5 |  |
 | UC-01-03 | Chỉnh cách hiểu câu hỏi | todo | 1/1 | 1/1 | 1/4 |  |
-| UC-01-04 | Hỏi tiếp và đào sâu | todo | 2/2 | 2/2 | 4/5 |  |
+| UC-01-04 | Hỏi tiếp và đào sâu | todo | 2/2 | 2/2 | 5/5 |  |
 | UC-01-05 | Đánh giá và báo sai câu trả lời | todo | 2/2 | 2/2 | 3/5 |  |
 | UC-01-06 | Xuất kết quả | todo | 1/1 | 2/2 | 2/5 |  |
 | UC-01-07 | Xem biên nhận và chạy lại | todo | 4/4 | 10/10 | 3/6 |  |
@@ -633,7 +633,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-01-04 Hỏi tiếp và đào sâu · 6/7</summary>
+<details><summary>UC-01-04 Hỏi tiếp và đào sâu · 7/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
@@ -642,7 +642,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | AC-01-04-03 | Thay thế | Cho câu hỏi tiếp không liên quan / Khi gửi / Thì dòng “Hệ thống hiểu là” ghi “Câu hỏi mới”, không có chip kế thừa | Đánh giá agent | todo | `tests/unit/worker_agent/test_follow_up.py` |
 | AC-01-04-04 | Ngoại lệ | Cho chiều không dùng được với chỉ số / Khi hỏi tiếp theo chiều đó / Thì câu trả lời nói không chia được và gợi ý chiều gần nhất có được | Đánh giá agent | todo | `tests/integration/worker_agent/test_follow_ups.py` |
 | AC-01-04-05 | Ngoại lệ | Cho hội thoại 12 câu / Khi hỏi câu 13 / Thì ngữ cảnh gửi mô hình chứa 10 câu gần nhất nguyên văn, câu cũ hơn ở dạng tóm tắt | API | todo | `tests/unit/worker_agent/test_llm_history.py` |
-| AC-01-04-06 | Quy tắc | Cho cùng plan NPL_RATIO theo vùng tháng 9/2026 / Khi chạy bằng kéo thả ở SCR-02 và bằng lời / Thì hai kết quả có cùng giá trị và cùng metric_version | E2E, API | todo |  |
+| AC-01-04-06 | Quy tắc | Cho cùng plan NPL_RATIO theo vùng tháng 9/2026 / Khi chạy bằng kéo thả ở SCR-02 và bằng lời / Thì hai kết quả có cùng giá trị và cùng metric_version | E2E, API | todo | `tests/integration/worker_agent/test_query_runs.py` |
 | AC-01-04-07 | Quy tắc | Cho câu hỏi tiếp có bộ lọc kế thừa / Khi hiển thị / Thì mọi bộ lọc trong plan đều có chip tương ứng, số chip bằng số bộ lọc | E2E | todo | `frontend/src/features/ask/dataAnswer.test.ts`, `tests/unit/worker_agent/test_follow_up.py` |
 
 </details>
