@@ -962,7 +962,7 @@ async def upload_file(
 
 
 @router.get(
-    "/v1/uploads/{id}",
+    "/v1/uploads/{id:uuid}",
     response_model=FileUploadView,
     **endpoint("GET", "/v1/uploads/{id}", operation_id="getUpload"),
 )
@@ -1065,7 +1065,7 @@ async def _upload(
 
 
 @router.patch(
-    "/v1/uploads/{id}",
+    "/v1/uploads/{id:uuid}",
     response_model=FileUploadView,
     **endpoint("PATCH", "/v1/uploads/{id}", operation_id="updateUpload"),
 )
@@ -1108,7 +1108,7 @@ async def update_upload(
 
 
 @router.delete(
-    "/v1/uploads/{id}",
+    "/v1/uploads/{id:uuid}",
     status_code=204,
     **endpoint("DELETE", "/v1/uploads/{id}", operation_id="deleteUpload"),
 )
