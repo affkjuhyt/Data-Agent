@@ -91,7 +91,14 @@ async def test_documents_list_with_their_preprocessing_step(ds: Space) -> None:
         processing = await api.get(
             "/v1/documents", params={"status": "processing"}, headers=ds.headers("analyst")
         )
-        assert {r["id"] for r in processing.json()["items"]} == {str(reading), str(indexing)}
+        # "processing" is unfinished preprocessing (5cf61f96): received and waiting for review
+        # count too, only ready, failed and removed do not.
+        assert {r["id"] for r in processing.json()["items"]} == {
+            str(queued),
+            str(reading),
+            str(indexing),
+            str(review),
+        }
         by_number = await api.get(
             "/v1/documents", params={"q": "39/2016"}, headers=ds.headers("analyst")
         )

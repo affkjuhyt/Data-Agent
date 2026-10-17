@@ -65,11 +65,12 @@ _SECRET_SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def _tenant_secret_ref(ref: str, org_id: uuid.UUID) -> str:
-    """An OpenBao path under the organisation's own prefix (the catalog module's convention).
+    """An OpenBao path under the organisation's own providers/ prefix.
 
-    The api reads OpenBao with one token for every organisation, so a path outside the caller's
-    prefix would send another tenant's key to an endpoint the caller chose."""
-    prefix = f"secret/tenants/{org_id}/"
+    The api reads OpenBao with one AppRole for every organisation, so a path outside the caller's
+    prefix would send another tenant's key to an endpoint the caller chose; and its policy reads
+    only secret/data/tenants/+/providers/* (dataagent-api-policy), never a source account."""
+    prefix = f"secret/tenants/{org_id}/providers/"
     rest = ref[len(prefix) :] if ref.startswith(prefix) else ""
     if not rest or any(s in (".", "..") or not _SECRET_SEGMENT.match(s) for s in rest.split("/")):
         raise Problem(

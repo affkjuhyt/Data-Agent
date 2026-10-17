@@ -239,6 +239,9 @@ async def test_a_frontier_provider_is_public_https_with_the_orgs_own_secret(gov:
         assert other_tenant.status_code == 422
         escape = await create(secret_ref=f"secret/tenants/{gov.org}/../{gov.other_org}/a")
         assert escape.status_code == 422
+        # Our own tenant, but a source account: the api's AppRole reads only providers/.
+        source_account = await create(secret_ref=f"secret/tenants/{gov.org}/sources/s/account-1")
+        assert source_account.status_code == 422
         assert (await create(secret_ref=None)).status_code == 422
         assert (await create(data_region=None)).status_code == 422
 
@@ -294,7 +297,7 @@ async def test_the_enabler_cannot_approve(gov: Org) -> None:
         code="frontier-b",
         kind="frontier",
         endpoint=f"https://{PUBLIC_HOST}/v1",
-        secret_ref=f"secret/tenants/{gov.org}/b",
+        secret_ref=f"secret/tenants/{gov.org}/providers/b",
         data_region="sg",
         zero_retention=True,
         max_classification="public",
@@ -321,7 +324,7 @@ async def test_the_enabler_cannot_approve(gov: Org) -> None:
             code="frontier-c",
             kind="frontier",
             endpoint=f"https://{PUBLIC_HOST}/v1",
-            secret_ref=f"secret/tenants/{gov.org}/c",
+            secret_ref=f"secret/tenants/{gov.org}/providers/c",
             data_region="sg",
             zero_retention=True,
             max_classification="public",
@@ -350,7 +353,7 @@ async def test_changing_where_data_goes_switches_a_frontier_provider_off(gov: Or
         code="frontier-d",
         kind="frontier",
         endpoint=endpoint,
-        secret_ref=f"secret/tenants/{gov.org}/d",
+        secret_ref=f"secret/tenants/{gov.org}/providers/d",
         data_region="sg",
         zero_retention=True,
         max_classification="public",
@@ -374,7 +377,7 @@ async def test_changing_where_data_goes_switches_a_frontier_provider_off(gov: Or
         assert private.status_code == 422
         foreign_secret = await api.patch(
             url,
-            json={"secret_ref": f"secret/tenants/{gov.other_org}/d"},
+            json={"secret_ref": f"secret/tenants/{gov.other_org}/providers/d"},
             headers=gov.headers("admin"),
         )
         assert foreign_secret.status_code == 422
@@ -409,7 +412,7 @@ async def test_providers_list_with_this_months_cost(gov: Org) -> None:
         code="frontier-e",
         kind="frontier",
         endpoint=f"https://{PUBLIC_HOST}/v1",
-        secret_ref=f"secret/tenants/{gov.org}/e",
+        secret_ref=f"secret/tenants/{gov.org}/providers/e",
         data_region="sg",
         max_classification="public",
         price=Json({"model-x": {"input": 30000, "output": 120000}}),
@@ -528,7 +531,7 @@ async def test_a_frontier_provider_not_switched_on_is_never_called(
         code="frontier-f",
         kind="frontier",
         endpoint=f"https://{PUBLIC_HOST}/v1",
-        secret_ref=f"secret/tenants/{gov.org}/f",
+        secret_ref=f"secret/tenants/{gov.org}/providers/f",
         data_region="sg",
         zero_retention=True,
         max_classification="public",
@@ -572,7 +575,7 @@ async def test_compliance_reads_the_routing_log(gov: Org) -> None:
         code="frontier-g",
         kind="frontier",
         endpoint=f"https://{PUBLIC_HOST}/v1",
-        secret_ref=f"secret/tenants/{gov.org}/g",
+        secret_ref=f"secret/tenants/{gov.org}/providers/g",
         data_region="sg",
         max_classification="public",
     )

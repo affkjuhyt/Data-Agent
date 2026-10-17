@@ -34,16 +34,18 @@
   no_log: true
 
 # The api is the one workload that writes: a source account typed in the UI (catalog), a
-# provider key it reads back (governance) and the exec vault's Transit keys. Its policy names
-# exactly those; the sources rule is more specific than the tenant read, so the api can store a
-# source password but not read one back. It used to hold the root token for this.
+# model provider's key it reads (governance, always under providers/) and the exec vault's
+# Transit keys. Its policy names exactly those, on paths that do not overlap: the api can store
+# a source password but never read one, and reads no secret outside providers/. Overlapping
+# rules would be decided by OpenBao's priority, where a rule with a `+` loses to `tenants/*`:
+# measured, that gave read and no write on the sources path. It used to hold the root token.
 - name: Write the api policy
   ansible.builtin.shell: |
     set -euo pipefail
     {{ kubectl }} exec -i -n {{ ns_database }} statefulset/openbao -- \
     env BAO_TOKEN={{ bao_keys.root_token }} bao policy write dataagent-api-policy - <<'POLICY'
     path "secret/data/tenants/+/sources/*" { capabilities = ["create", "update"] }
-    path "secret/data/tenants/*" { capabilities = ["read"] }
+    path "secret/data/tenants/+/providers/*" { capabilities = ["read"] }
     path "transit/keys/exec-cond-*" { capabilities = ["create", "update", "read"] }
     POLICY
   args:
