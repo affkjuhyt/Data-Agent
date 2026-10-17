@@ -20,7 +20,10 @@ data:
   ENABLE_ADMIN_KEY_AUTH: '0'
   KONG_ADMIN_SUBNET: ''
   KONG_PROXY_URL: http://kong.dataagent-service.svc.cluster.local:8100
-  KEYCLOAK_DISABLE_MFA: '0'
+  # Dev only: the realm export keeps Browser MFA. This job switches the live realm
+  # to the built-in browser flow and turns off its conditional OTP step, so a
+  # login is username and password. Production leaves the flag at 0.
+  KEYCLOAK_DISABLE_MFA: '1'
   SMOKE_USER: 'platform-admin'
 ---
 apiVersion: batch/v1
@@ -62,13 +65,18 @@ spec:
               -d grant_type=password -d client_id=admin-cli \
               --data-urlencode "username=$KEYCLOAK_ADMIN" --data-urlencode "password=$KEYCLOAK_ADMIN_PASSWORD" \
               | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
-            flow=$(curl -sf -H "Authorization: Bearer $tok" "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM" \
-              | python3 -c 'import sys,json;print(json.load(sys.stdin).get("browserFlow",""))')
-            if [ "$flow" != "browser" ]; then
-              curl -sf -X PUT -H "Authorization: Bearer $tok" -H "Content-Type: application/json" \
-                -d '{"browserFlow":"browser"}' "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM"
-              echo "keycloak browserFlow set to browser"
-            fi
+            KC_TOKEN="$tok" python3 -c 'import json,os,urllib.request
+base,realm,token=os.environ["KEYCLOAK_URL"],os.environ["KEYCLOAK_REALM"],os.environ["KC_TOKEN"]
+def call(method,path,body=None):
+ d=None if body is None else json.dumps(body).encode(); req=urllib.request.Request(base+path,data=d,method=method); req.add_header("Authorization","Bearer "+token)
+ if d is not None: req.add_header("Content-Type","application/json")
+ raw=urllib.request.urlopen(req).read(); return json.loads(raw) if raw else None
+doc=call("GET","/admin/realms/"+realm)
+if doc.get("browserFlow")!="browser":
+ doc["browserFlow"]="browser"; call("PUT","/admin/realms/"+realm,doc); print("keycloak browserFlow set to browser")
+for ex in call("GET","/admin/realms/"+realm+"/authentication/flows/forms/executions"):
+ if ex.get("displayName")=="Browser - Conditional OTP" and ex.get("requirement")!="DISABLED":
+  call("PUT","/admin/realms/"+realm+"/authentication/flows/forms/executions",{"id":ex["id"],"requirement":"DISABLED"}); print("keycloak conditional OTP disabled")'
           fi
           code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$KONG_PROXY_URL/v1/questions" \
             -H "Content-Type: application/json" -d '{"text":"ping"}')
