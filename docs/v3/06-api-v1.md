@@ -196,6 +196,12 @@ của ADR-28) trả lời. Bước G1 của [09](09-target-deploy-and-cleanup.md
   phụ trách đặt cho chỉ số trên cả Data Space (`monitor.monitor`, `rule_kind = threshold`, `scope_filter` rỗng, đọc
   như `svc_monitor`): thành viên nào vượt ngưỡng, nào ở vùng cảnh báo sớm (`answer/thresholds.py`). Ngưỡng và mức
   cảnh báo là hình số hằng (`expr`), nên câu không có con số không truy được; số bị che (BR-178) thì không xét.
+- **SQL khám phá (R1-09).** Câu hỏi không gọi tên chỉ số nào (sau luật và mô hình planner) được trả lời bằng SQL do
+  mô hình nội bộ viết (`sqlgen/`, alias `text_to_sql`, không bao giờ frontier): câu hỏi gắn với bảng, cột và giá trị
+  của Data Space (đóng bao theo quan hệ đã duyệt), sáu ứng viên (ba cách viết × hai mẫu), kiểm tra tất định rồi gửi
+  lại sửa một lần, chạy chỉ đọc tại chỗ, bỏ phiếu theo kết quả: ≥ 4/6 trả lời nhãn "Khám phá", 3/6 trả lời kèm "nên
+  kiểm lại", ≤ 2/6 không đưa số mà hỏi lại. Không gắn được bảng nào hoặc không có mô hình thì tìm trong tài liệu như
+  trước. Chưa hiệu chỉnh ngưỡng trên Eval Set và chưa có bước LLM so cặp ở 3/6.
 - **Giới hạn hiện tại.** Hỏi đáp trả lời một chỉ số qua lớp ngữ nghĩa (bộ biên dịch `semantic/compiler.py`, truy vấn
   tại chỗ); câu hỏi ngoài lớp đó kết thúc bằng lời từ chối có mã, không bao giờ bằng con số không truy được
   (BR-171). Text-to-SQL, so sánh kỳ và kế hoạch nhiều bước là việc R1.

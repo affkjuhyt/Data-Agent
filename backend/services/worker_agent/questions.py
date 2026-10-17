@@ -55,6 +55,7 @@ from services.worker_agent.query.guard import SqlRejected, dialect_of
 from services.worker_agent.query.secrets import SecretReader, StaticReader, reader_from_env
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import SpaceLayer, load
+from services.worker_agent.sqlgen.answer import answer_by_sql
 from services.worker_agent.understand import llm_reader
 from services.worker_agent.understand.resolver import (
     Understanding,
@@ -727,6 +728,23 @@ async def _understand_and_plan(
             next_action=NextAction.REPHRASE,
             detail_id=str(question_id),
         )
+    # No metric names the question: the model writes SQL over the Data Space's tables (01 §3.4,
+    # EXPLORATORY), then the documents are looked in.
+    if (
+        problem is None
+        and edited is None
+        and await answer_by_sql(
+            event,
+            question_id,
+            user_id,
+            plan_id,
+            models,
+            gateway=gateway(),
+            secrets=secrets(),
+            workspace_source=_internal_workspace_source,
+        )
+    ):
+        return None
     if (
         problem is None
         and edited is None

@@ -11,7 +11,12 @@ import {
   type FigureWire,
 } from './dataAnswer';
 
-const fig = (key: string, dims: Record<string, string>, value: string | null, extra: Partial<FigureWire> = {}): FigureWire => ({
+const fig = (
+  key: string,
+  dims: Record<string, string>,
+  value: string | null,
+  extra: Partial<FigureWire> = {},
+): FigureWire => ({
   key,
   label: `Tỷ lệ nợ xấu, ${Object.values(dims).join(', ')}`,
   value,
@@ -30,14 +35,25 @@ describe('dataAnswer', () => {
     expect(readFigures(null)).toEqual([]);
     expect(readFigures([1, { key: 'F1' }])).toHaveLength(1);
     // a derived figure (gap, change, share) is in the text, never a row or a bar
-    expect(readFigures([{ key: 'F1' }, { key: 'F2', source: { compute_run_id: 'c', expr: 'F1 - F1' } }])).toHaveLength(1);
+    expect(
+      readFigures([{ key: 'F1' }, { key: 'F2', source: { compute_run_id: 'c', expr: 'F1 - F1' } }]),
+    ).toHaveLength(1);
     expect(readChartSpec({ type: 'pie', x: 'vung' })).toBeNull();
     expect(readChartSpec({ type: 'bar', x: 'vung', y: 'value' })).not.toBeNull();
   });
 
   it('builds the table from the figures, naming columns from the spec', () => {
-    const spec = readChartSpec({ type: 'bar', x: 'vung', x_label: 'Vùng', y: 'value', y_label: 'Tỷ lệ nợ xấu' });
-    const run = figureRun([fig('F1', { vung: 'Bắc' }, '1.84'), fig('F2', { vung: 'Nam' }, '2.5')], spec);
+    const spec = readChartSpec({
+      type: 'bar',
+      x: 'vung',
+      x_label: 'Vùng',
+      y: 'value',
+      y_label: 'Tỷ lệ nợ xấu',
+    });
+    const run = figureRun(
+      [fig('F1', { vung: 'Bắc' }, '1.84'), fig('F2', { vung: 'Nam' }, '2.5')],
+      spec,
+    );
     expect(run?.columns).toEqual(['Vùng', 'Tỷ lệ nợ xấu']);
     expect(run?.rows).toEqual([
       { Vùng: 'Bắc', 'Tỷ lệ nợ xấu': 1.84 },
@@ -54,12 +70,23 @@ describe('dataAnswer', () => {
       fig('F2', { vung: 'Nam' }, null, { display_state: 'masked_stale' }),
       fig('F3', { vung: 'Trung' }, '3'),
     ];
-    expect(figureRun(figures, spec)?.rows[1]).toEqual({ vung: 'Nam', NPL: 'Đã ẩn: dữ liệu quá hạn cập nhật' });
+    expect(figureRun(figures, spec)?.rows[1]).toEqual({
+      vung: 'Nam',
+      NPL: 'Đã ẩn: dữ liệu quá hạn cập nhật',
+    });
     expect(figureChart(figures, spec)?.data.map((d) => d.vung)).toEqual(['Bắc', 'Trung']);
   });
 
   it('draws a time cut as an ordered line, one line per series member', () => {
-    const spec = readChartSpec({ type: 'line', x: 'thang', x_label: 'Tháng', series: 'sp', y: 'value', y_label: 'NPL', unit: '%' });
+    const spec = readChartSpec({
+      type: 'line',
+      x: 'thang',
+      x_label: 'Tháng',
+      series: 'sp',
+      y: 'value',
+      y_label: 'NPL',
+      unit: '%',
+    });
     const chart = figureChart(
       [
         fig('F1', { thang: '2026-09', sp: 'Thẻ' }, '2'),
@@ -68,7 +95,12 @@ describe('dataAnswer', () => {
       ],
       spec,
     );
-    expect(chart).toMatchObject({ chart_type: 'line', x_key: 'Tháng', y_keys: ['Thẻ', 'Vay'], title: 'NPL (%) theo Tháng' });
+    expect(chart).toMatchObject({
+      chart_type: 'line',
+      x_key: 'Tháng',
+      y_keys: ['Thẻ', 'Vay'],
+      title: 'NPL (%) theo Tháng',
+    });
     expect(chart?.data).toEqual([
       { Tháng: '2026-08', Thẻ: 1, Vay: 3 },
       { Tháng: '2026-09', Thẻ: 2 },
@@ -78,26 +110,43 @@ describe('dataAnswer', () => {
   it('draws nothing without a spec or with fewer than two points', () => {
     const spec = readChartSpec({ type: 'bar', x: 'vung', y: 'value' });
     expect(figureChart([fig('F1', { vung: 'Bắc' }, '1')], null)).toBeNull();
-    expect(figureChart([fig('F1', { vung: 'Bắc' }, '1'), fig('F2', { vung: 'Nam' }, null)], spec)).toBeNull();
+    expect(
+      figureChart([fig('F1', { vung: 'Bắc' }, '1'), fig('F2', { vung: 'Nam' }, null)], spec),
+    ).toBeNull();
   });
 
   it('keeps the label the server gave, and nothing for one it does not know', () => {
-    expect(figureTrust([fig('F1', {}, '1')])).toMatchObject({ label: 'Theo chỉ số chuẩn', level: 'GOVERNED' });
+    expect(figureTrust([fig('F1', {}, '1')])).toMatchObject({
+      label: 'Theo chỉ số chuẩn',
+      level: 'GOVERNED',
+    });
     expect(figureTrust([fig('F1', {}, '1', { trust: 'chưa có định nghĩa chuẩn' })])).toMatchObject({
       label: 'Chưa có định nghĩa chuẩn',
       tone: 'warning',
     });
     expect(figureTrust([fig('F1', {}, '1', { trust: 'khác' })])).toBeNull();
+    // worker-agent sqlgen/answer.py: SQL the model wrote, voted on, never a metric's definition.
+    expect(
+      figureTrust([fig('F1', {}, '1', { trust: 'Khám phá (truy vấn do mô hình viết)' })]),
+    ).toMatchObject({
+      label: 'Khám phá (truy vấn do mô hình viết)',
+      level: 'EXPLORATORY',
+      tone: 'warning',
+    });
   });
 
   it('drills a bar chart along the cuts the metric allows, never a line or a series', () => {
     const drill = [{ code: 'chi_nhanh', name: 'chi nhánh' }];
-    expect(figureDrill(readChartSpec({ type: 'bar', x: 'vung', x_label: 'Vùng', y: 'value', drill }))).toEqual({
+    expect(
+      figureDrill(readChartSpec({ type: 'bar', x: 'vung', x_label: 'Vùng', y: 'value', drill })),
+    ).toEqual({
       axis: 'Vùng',
       cuts: drill,
     });
     expect(figureDrill(readChartSpec({ type: 'line', x: 'thang', y: 'value', drill }))).toBeNull();
-    expect(figureDrill(readChartSpec({ type: 'bar', x: 'vung', series: 'sp', y: 'value', drill }))).toBeNull();
+    expect(
+      figureDrill(readChartSpec({ type: 'bar', x: 'vung', series: 'sp', y: 'value', drill })),
+    ).toBeNull();
     expect(drillQuestion('Miền Bắc', 'chi nhánh')).toBe('Đi sâu Miền Bắc theo chi nhánh');
   });
 
@@ -117,7 +166,15 @@ describe('dataAnswer', () => {
             kind: 'skill',
             checkpoint: 'confirm',
             explain: 'Phân rã biến động',
-            args: { category: 'decomposition', params: { metric: 'NPL_RATIO', dimension: 'vung', period: '2026-09', base_period: '2026-08' } },
+            args: {
+              category: 'decomposition',
+              params: {
+                metric: 'NPL_RATIO',
+                dimension: 'vung',
+                period: '2026-09',
+                base_period: '2026-08',
+              },
+            },
           },
         ],
       },
@@ -128,6 +185,8 @@ describe('dataAnswer', () => {
       ['Phạm vi', 'Tín dụng', true],
     ]);
     expect(proposal?.params.base_period).toBe('2026-08');
-    expect(readPlan({ chips: [], steps: { steps: [{ kind: 'skill', checkpoint: 'none' }] } }).proposal).toBeNull();
+    expect(
+      readPlan({ chips: [], steps: { steps: [{ kind: 'skill', checkpoint: 'none' }] } }).proposal,
+    ).toBeNull();
   });
 });

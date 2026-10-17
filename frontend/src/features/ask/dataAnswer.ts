@@ -42,26 +42,37 @@ export interface ChartSpecWire {
   drill?: { code: string; name: string }[];
 }
 
-/** The three labels the worker writes (questions.py STANDARD, NOT_STANDARD, OUT_OF_SCOPE). */
+/** The labels the worker writes (questions.py STANDARD, NOT_STANDARD, OUT_OF_SCOPE; sqlgen/answer.py TRUST). */
 const TRUST: Record<string, Omit<AnswerTrust, 'label'>> = {
   'Theo chỉ số chuẩn': {
     level: 'GOVERNED',
     tone: 'success',
-    meaning: 'Số tính từ định nghĩa chỉ số đã duyệt, trong một data product có cam kết và có biên nhận.',
+    meaning:
+      'Số tính từ định nghĩa chỉ số đã duyệt, trong một data product có cam kết và có biên nhận.',
   },
   'chưa có định nghĩa chuẩn': {
     level: 'EXPLORATORY',
     tone: 'warning',
     meaning: 'Chỉ số chưa được duyệt là định nghĩa chuẩn. Kiểm lại trước khi dùng để quyết định.',
   },
+  'Khám phá (truy vấn do mô hình viết)': {
+    level: 'EXPLORATORY',
+    tone: 'warning',
+    meaning:
+      'Số từ truy vấn SQL do mô hình viết trên bảng của Data Space, không qua định nghĩa chỉ số đã duyệt; sáu cách viết được chạy và lấy kết quả đồng thuận. Kiểm lại trước khi dùng để quyết định.',
+  },
   'Ngoài phạm vi data product, không có biên nhận': {
     level: 'EXPLORATORY',
     tone: 'warning',
-    meaning: 'Chỉ số không thuộc data product nào nên không có cam kết cập nhật và không có biên nhận.',
+    meaning:
+      'Chỉ số không thuộc data product nào nên không có cam kết cập nhật và không có biên nhận.',
   },
 };
 
-const MASKED = { masked_stale: 'Đã ẩn: dữ liệu quá hạn cập nhật', not_available: 'CHƯA CÓ' } as const;
+const MASKED = {
+  masked_stale: 'Đã ẩn: dữ liệu quá hạn cập nhật',
+  not_available: 'CHƯA CÓ',
+} as const;
 
 /** The figures that are result rows. A derived one (a gap, a change, a share: worker-agent
  *  answer/insights.py) is told in the text, not drawn as one more bar or row. */
@@ -142,7 +153,7 @@ export function figureChart(figures: FigureWire[], spec: ChartSpecWire | null): 
     const value = numberOf(f);
     if (value === null) continue;
     const x = f.dimensions[spec.x] ?? '';
-    const y = spec.series ? f.dimensions[spec.series] ?? '' : metric;
+    const y = spec.series ? (f.dimensions[spec.series] ?? '') : metric;
     if (!yKeys.includes(y)) yKeys.push(y);
     const point = byX.get(x) ?? { [xKey]: x };
     point[y] = value;
@@ -152,14 +163,22 @@ export function figureChart(figures: FigureWire[], spec: ChartSpecWire | null): 
   if (data.length < 2) return null;
   if (spec.type === 'line') data.sort((a, b) => String(a[xKey]).localeCompare(String(b[xKey])));
   const unit = spec.unit ? ` (${spec.unit})` : '';
-  return { chart_type: spec.type, title: `${metric}${unit} theo ${xKey}`, x_key: xKey, y_keys: yKeys, data };
+  return {
+    chart_type: spec.type,
+    title: `${metric}${unit} theo ${xKey}`,
+    x_key: xKey,
+    y_keys: yKeys,
+    data,
+  };
 }
 
 /** The label the worker gave the figures; all figures of an answer carry the same one. */
 export function figureTrust(figures: FigureWire[]): AnswerTrust | null {
   const label = figures[0]?.trust;
   const known = label ? TRUST[label] : undefined;
-  return label && known ? { label: label.charAt(0).toUpperCase() + label.slice(1), ...known } : null;
+  return label && known
+    ? { label: label.charAt(0).toUpperCase() + label.slice(1), ...known }
+    : null;
 }
 
 /** Where a picked bar of the chart can be drilled: its axis and the other cuts (UC-01-04). */
@@ -215,7 +234,10 @@ export function readPlan(plan: PlanWire | null | undefined): {
   const args = (step?.args ?? {}) as { category?: string; params?: Record<string, unknown> };
   const p = args.params ?? {};
   const proposal =
-    step && args.category === 'decomposition' && typeof p.metric === 'string' && typeof p.period === 'string'
+    step &&
+    args.category === 'decomposition' &&
+    typeof p.metric === 'string' &&
+    typeof p.period === 'string'
       ? {
           explain: String(step.explain ?? 'Phân rã biến động'),
           params: {

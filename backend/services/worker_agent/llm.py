@@ -35,7 +35,13 @@ class ModelUnavailable(RuntimeError):
 
 class Gateway(Protocol):
     async def json_chat(
-        self, role: str, system: str, user: str, *, max_tokens: int = 800
+        self,
+        role: str,
+        system: str,
+        user: str,
+        *,
+        max_tokens: int = 800,
+        temperature: float = 0.0,
     ) -> Reply: ...
 
 
@@ -45,12 +51,21 @@ class LiteLLMGateway:
         self._key = api_key
         self._timeout = timeout
 
-    async def json_chat(self, role: str, system: str, user: str, *, max_tokens: int = 800) -> Reply:
+    async def json_chat(
+        self,
+        role: str,
+        system: str,
+        user: str,
+        *,
+        max_tokens: int = 800,
+        temperature: float = 0.0,
+    ) -> Reply:
+        """`temperature` above 0 only where several samples are wanted (N-version SQL)."""
         started = time.monotonic()
         body = {
             "model": role,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            "temperature": 0,
+            "temperature": temperature,
             "max_tokens": max_tokens,
             "response_format": {"type": "json_object"},
         }
