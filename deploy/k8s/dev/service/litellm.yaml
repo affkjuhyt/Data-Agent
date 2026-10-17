@@ -57,9 +57,12 @@ spec:
         - containerPort: 8500
           name: http
         resources:
+          # The dev node's memory requests are almost all reserved (98% of 9 GiB) while about
+          # 3.5 GiB stays free in use (17/10/2026), so the request is kept at what the proxy needs
+          # to start; the limit caps what it may grow to.
           requests:
             cpu: 250m
-            memory: 512Mi
+            memory: 64Mi
           limits:
             cpu: '1'
             memory: 2Gi

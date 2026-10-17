@@ -575,3 +575,38 @@ async def test_what_may_be_decided_outside_the_app(ntf: Org, cards: dict[str, uu
     for name in ("email", "high", "conflict", "medium", "resolved"):
         assert ntf.events("notify", cards[name]) == [], name
     assert [e for e, _ in ntf.events("notify", cards["low_approval"])] == ["channel_delivery.acted"]
+
+
+@pytest.mark.parametrize(
+    ("channel", "address"),
+    [
+        # The worker would call a Teams URL: only Microsoft's https webhook hosts, never inside.
+        ("teams", "https://openbao.dataagent-database.svc.cluster.local:8120/v1/sys/seal"),
+        ("teams", "http://contoso.webhook.office.com/webhookb2/abc"),
+        ("teams", "https://10.0.0.5/hook"),
+        ("email", "not-an-email"),
+    ],
+)
+async def test_an_address_the_gateway_must_not_send_to_is_refused(
+    ntf: Org, channel: str, address: str
+) -> None:
+    async with api_for(ntf) as api:
+        r = await api.put(
+            f"/v1/me/channels/{channel}", json={"external_address": address}, headers=me("owner")
+        )
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "https://prod-12.westus.logic.azure.com/workflows/abc/triggers/manual/paths/invoke",
+        "owner@bank.vn",
+    ],
+)
+async def test_a_teams_webhook_or_a_teams_account_is_bound(ntf: Org, address: str) -> None:
+    async with api_for(ntf) as api:
+        r = await api.put(
+            "/v1/me/channels/teams", json={"external_address": address}, headers=me("owner")
+        )
+    assert r.status_code == 200, r.text

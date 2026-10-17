@@ -40,6 +40,7 @@ from services.worker_agent import (
     tiles,
     uploads,
 )
+from services.worker_agent.channels import gateway as channels
 from services.worker_agent.events import EventSource, Handler, OutboxTableSource
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ async def run_once(source: EventSource, handlers: Mapping[str, Handler], batch: 
 
 
 HANDLERS: dict[str, Handler] = {
+    **channels.HANDLERS,
     **questions.HANDLERS,
     **replay.HANDLERS,
     **hitl.HANDLERS,
@@ -98,6 +100,10 @@ async def sources() -> list[EventSource]:
             # Claiming stamps published_at, so this worker is the one consumer of hitl.resolved
             # until Debezium gives each consumer its own group (ADR-06).
             types |= set(resolutions.HANDLERS) | {proposals.DECIDED}
+            # The channel gateway tells a request's assignee outside the app (channels/).
+            types |= channels.INBOX_EVENTS
+        if schema == "notify":
+            types |= channels.NOTIFY_EVENTS
         if schema == "catalog":
             types |= set(source_tests.HANDLERS) | set(schema_scans.HANDLERS)
         if schema == "query":

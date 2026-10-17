@@ -35,6 +35,7 @@ from services.api.kernel.problems import FieldError, Problem
 from services.api.modules.notify.channels import (
     Secrets,
     VerifiedChannel,
+    address_problem,
     code_matches,
     verify_channel,
 )
@@ -344,6 +345,10 @@ async def put_channel(
 ) -> ChannelBindingView:
     if body.external_address is None and body.verification_code is None:
         raise _invalid("external_address", "Give external_address, then verification_code.")
+    if body.external_address is not None:
+        problem = address_problem(channel, body.external_address)
+        if problem:
+            raise _invalid("external_address", problem)
     secret = secrets.verification_secret()
     if not secret:
         raise Problem(503, "source_unavailable", "Channel verification is not configured.")

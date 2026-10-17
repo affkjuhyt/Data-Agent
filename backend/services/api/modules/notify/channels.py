@@ -19,11 +19,14 @@ from __future__ import annotations
 import datetime
 import hashlib
 import hmac
+import ipaddress
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass
 from typing import Annotated, Protocol
+from urllib.parse import urlsplit
 
 from fastapi import Depends, Path, Request
 
@@ -125,3 +128,41 @@ def code_matches(
         return False
     expected = verification_code(secret, binding_id, address, issued_at)
     return hmac.compare_digest(code.encode(), expected.encode())
+
+
+# Hosts a Teams Workflows or incoming webhook is served from (worker-agent channels/senders.py
+# calls only these; both lists must agree).
+WEBHOOK_HOSTS = (".logic.azure.com", ".webhook.office.com", ".environment.api.powerplatform.com")
+_EMAIL = re.compile(r"^[^@\s/:]+@[^@\s/:]+\.[^@\s/:]+$")
+
+
+def _microsoft_webhook(url: str) -> bool:
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return False
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or parts.username or parts.password or port not in (None, 443):
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        pass
+    return any(host.endswith(suffix) for suffix in WEBHOOK_HOSTS)
+
+
+def address_problem(channel: str, address: str) -> str | None:
+    """Why the gateway must not send to this address, or None. An email address is an address; a
+    Teams address is a Microsoft https webhook (the gateway calls it, so never a URL inside the
+    cluster) or the person's Teams account (an email-like UPN, for a registered bot)."""
+    if channel == "email" and not _EMAIL.match(address):
+        return "An email channel needs an email address."
+    if channel == "teams":
+        if "://" in address:
+            if not _microsoft_webhook(address):
+                return "A Teams address is a Microsoft https webhook (Workflows) URL."
+        elif not _EMAIL.match(address):
+            return "A Teams address is a Workflows webhook URL or a Teams account."
+    return None

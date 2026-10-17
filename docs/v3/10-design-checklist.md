@@ -322,8 +322,8 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-64 | UC-07-07 | todo |  |
 | BR-65 | UC-07-08 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/governance.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-66 | UC-07-08 | todo |  |
-| BR-67 | UC-08-06 | todo | `backend/services/api/modules/notify/routes.py`, `frontend/src/lib/v1/adminPlatform.ts`, `tests/integration/api/test_notify.py` |
-| BR-68 | UC-08-06 | todo | `backend/services/api/modules/notify/routes.py` |
+| BR-67 | UC-08-06 | todo | `backend/services/api/modules/notify/routes.py`, `backend/services/worker_agent/channels/cards.py`, `backend/services/worker_agent/channels/gateway.py` +4 |
+| BR-68 | UC-08-06 | todo | `backend/services/api/modules/notify/routes.py`, `backend/services/worker_agent/channels/cards.py`, `backend/services/worker_agent/channels/gateway.py` +1 |
 | BR-69 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-70 | UC-13-02 | todo | `backend/alembic/seed/tool_def.json`, `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py` +10 |
 | BR-71 | UC-13-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +1 |
@@ -382,7 +382,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-124 | UC-08-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/schema/csdl/definitions.json` +10 |
 | BR-125 | UC-08-04 | todo |  |
 | BR-126 | UC-08-05 | todo | `backend/services/api/modules/agent/tasks.py`, `tests/integration/api/test_agent_tasks.py` |
-| BR-127 | UC-08-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/libs/dataagent_db/models/notify.py` +7 |
+| BR-127 | UC-08-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/monitor.py`, `backend/libs/dataagent_db/models/notify.py` +8 |
 | BR-128 | UC-09-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +7 |
 | BR-129 | UC-09-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/pack.py` +6 |
 | BR-130 | UC-09-04 | todo | `backend/services/api/modules/pack/routes.py` |
