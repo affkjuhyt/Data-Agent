@@ -776,6 +776,23 @@ async def test_lineage_reads_source_to_table_from_the_catalog(pp: Space) -> None
         assert f"dataset:{pp.other_dataset}" not in {n["key"] for n in down.json()["nodes"]}
 
 
+async def test_lineage_hides_a_source_another_data_space_owns(pp: Space) -> None:
+    # Our table reads a source the other Data Space owns: the source is a hidden node.
+    borrowed = _dataset(
+        pp.seed, pp.org, pp.space, "du_no_muon", origin="source", source=pp.other_source
+    )
+    async with client(pp) as api:
+        up = await api.get(
+            "/v1/lineage",
+            params={"object_kind": "dataset", "object_id": str(borrowed)},
+            headers=pp.headers("analyst"),
+        )
+    assert up.status_code == 200, up.text
+    assert str(pp.other_source) not in up.text
+    [source] = [n for n in up.json()["nodes"] if n["kind"] == "source"]
+    assert (source["hidden"], source["id"]) == (True, None)
+
+
 # AC-06-05-01
 # AC-06-05-02
 @pytest.mark.req("AC-06-05-01", "AC-06-05-02")

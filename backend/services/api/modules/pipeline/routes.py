@@ -911,15 +911,23 @@ async def get_lineage(
                         derived.append((end, ("dataset", ds.id)))
         source_ids = [i for (k, i), shown in nodes.items() if k == "source" and shown]
         if source_ids:
+            # A source is shown only when it is in the caller's Data Space itself: a dataset of
+            # this space may read a source another space owns, whose id and name stay hidden.
+            visible: set[uuid.UUID] = set()
             for source in (
                 await session.scalars(
                     select(catalog.Source).where(
                         catalog.Source.id.in_(source_ids),
                         catalog.Source.org_id == principal.org_id,
+                        catalog.Source.data_space_id == data_space,
                     )
                 )
             ).all():
                 names[source.id] = source.name
+                visible.add(source.id)
+            for source_id in source_ids:
+                if source_id not in visible:
+                    nodes[("source", source_id)] = False
     keys: dict[tuple[str, uuid.UUID], str] = {}
     out_nodes: list[LineageNode] = []
     hidden = 0
