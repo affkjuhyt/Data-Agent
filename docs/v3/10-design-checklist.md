@@ -388,7 +388,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-130 | UC-09-04 | todo | `backend/services/api/modules/pack/routes.py` |
 | BR-131 | UC-09-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +7 |
 | BR-132 | UC-10-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/versions/v3_0010_hitl_by_capability.py`, `backend/libs/dataagent_db/models/inbox.py` +13 |
-| BR-133 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +8 |
+| BR-133 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-134 | UC-10-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +3 |
 | BR-135 | UC-10-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-136 | UC-11-01 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/org/admin/grants.py`, `tests/integration/api/test_org_admin.py` |
