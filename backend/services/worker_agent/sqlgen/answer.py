@@ -158,7 +158,7 @@ async def answer_by_sql(
         conversation = await session.get(qa.Conversation, question.conversation_id)
         assert conversation is not None
         space_id, text = conversation.data_space_id, question.text
-        space = await load_space(session, space_id)
+        space = await load_space(session, space_id, user_id)
         linked = link(text, space.schema)
         if not linked.tables:
             return False

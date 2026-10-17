@@ -2,8 +2,8 @@
 
 Its enabled datasets with their catalogued columns, the approved many-to-one relationships (the
 joins), known values of text columns (the semantic layer's value_index of a dimension that is a
-plain column, and the latest column profile's most common values; never a personal-data column's)
-and the verified example queries. A table with no catalogued column is left out: the model would
+plain column, and the latest column profile's most common values) and the verified example
+queries. A column labelled personal data is left out altogether. A table with no catalogued column is left out: the model would
 have to guess its columns.
 """
 
@@ -13,10 +13,10 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from libs.dataagent_db.models import catalog, context
+from libs.dataagent_db.models import catalog, context, governance
 from services.worker_agent.sqlgen.schema import Col, Fk, Schema, Tbl
 
 MAX_SAMPLES = 20
@@ -29,13 +29,24 @@ class Space:
     source_of: dict[uuid.UUID, uuid.UUID | None] = field(default_factory=dict)
 
 
-async def load_space(session: AsyncSession, space_id: uuid.UUID) -> Space:
+async def load_space(session: AsyncSession, space_id: uuid.UUID, principal_id: uuid.UUID) -> Space:
+    """Only what the asker may read is shown to the model: the rules query/scope.datasets_read
+    applies when a query runs (no one else's personal table, BR-111; none an active access policy
+    covers, BR-45) hold for the prompt too, so a table's names and values never reach the model
+    when its rows could not."""
+    covered = select(governance.AccessPolicy.dataset_id).where(
+        governance.AccessPolicy.status == "active"
+    )
     datasets = (
         await session.scalars(
             select(catalog.Dataset).where(
                 catalog.Dataset.data_space_id == space_id,
                 catalog.Dataset.enabled.is_(True),
                 catalog.Dataset.deleted_at.is_(None),
+                or_(
+                    catalog.Dataset.scope != "personal", catalog.Dataset.created_by == principal_id
+                ),
+                catalog.Dataset.id.not_in(covered),
             )
         )
     ).all()
@@ -93,17 +104,20 @@ async def load_space(session: AsyncSession, space_id: uuid.UUID) -> Space:
         key = (dataset_id, expression.strip('"'))
         if value not in samples[key]:
             samples[key].append(value)
-    pii = {(m.dataset_id, m.name) for m in metas if m.pii_label is not None}
     columns: dict[uuid.UUID, list[Col]] = defaultdict(list)
     for m in metas:
-        key = (m.dataset_id, m.name)
+        # A personal-data column is not part of what this path may read: never shown to the
+        # model, so the checker rejects any candidate naming it (AC-04-02-02's spirit; the
+        # semantic path exposes only metrics and approved dimensions).
+        if m.pii_label is not None:
+            continue
         columns[m.dataset_id].append(
             Col(
                 m.name,
                 m.display_name or m.name,
                 m.normalized_type,
                 m.description,
-                () if key in pii else tuple(samples.get(key, [])[:MAX_SAMPLES]),
+                tuple(samples.get((m.dataset_id, m.name), [])[:MAX_SAMPLES]),
             )
         )
     tables = [

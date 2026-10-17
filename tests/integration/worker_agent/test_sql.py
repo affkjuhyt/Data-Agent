@@ -164,3 +164,90 @@ async def test_candidates_that_disagree_give_no_number_and_ask_back(
     status, kind, text, figures, *_ = answer_of(seed, q)
     assert (status, kind, figures) == ("clarifying", "clarification", [])
     assert "2/6" in text and json.dumps(figures) == "[]"
+
+
+async def test_a_personal_data_column_is_never_shown_to_the_model_nor_read(
+    seed: Seed, credit: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    seed.row(
+        "catalog.column_meta",
+        org_id=bank.org,
+        dataset_id=bank.loans,
+        dataset_version=1,
+        name="national_id",
+        display_name="Số CCCD",
+        ordinal=9,
+        data_type="string",
+        normalized_type="string",
+        pii_label="national_id",
+    )
+    # Every candidate tries the personal-data column, even after being sent back.
+    leaking = "SELECT national_id, COUNT(*) FROM bank.loan GROUP BY national_id"
+    script = Script([leaking] * 12)
+    q = asked(bank, script, monkeypatch)
+    await drain()
+    assert all("national_id" not in user.split("Your SQL")[0] for user, _ in script.asked)
+    assert all("Số CCCD" not in user for user, _ in script.asked)
+    # No candidate passed its checks, so nothing ran and the question went on as before.
+    assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", q) == 0
+    assert seed.one("SELECT status FROM qa.question WHERE id = %s", q) != "answered"
+
+
+async def test_tables_the_asker_may_not_read_are_never_shown_to_the_model(
+    seed: Seed, credit: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Someone else's personal table (BR-111) and a table under an access policy (BR-45): the
+    # executor would refuse them, and their names, columns and values stay out of the prompt too.
+    bank = build(seed, credit, monkeypatch)
+    source = seed.one("SELECT source_id FROM catalog.dataset WHERE id = %s", bank.loans)
+    other = seed.row(
+        "org.app_user", org_id=bank.org, external_id="kc-x", username="x", display_name="X"
+    )
+    hidden = []
+    for table, scope, owner in (
+        ("salary", "personal", other),
+        ("vip_loan", "data_space", bank.user),
+    ):
+        dataset = seed.row(
+            "catalog.dataset",
+            org_id=bank.org,
+            data_space_id=bank.space,
+            source_id=source,
+            origin="source",
+            schema_name="bank",
+            table_name=table,
+            display_name=f"Khoản vay chi nhánh {table}",
+            scope=scope,
+            created_by=owner,
+            enabled=True,
+        )
+        seed.row(
+            "catalog.column_meta",
+            org_id=bank.org,
+            dataset_id=dataset,
+            dataset_version=1,
+            name="branch_code",
+            display_name="Mã chi nhánh",
+            ordinal=0,
+            data_type="string",
+            normalized_type="string",
+        )
+        hidden.append((dataset, table))
+    seed.row(
+        "governance.access_policy",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        dataset_id=hidden[1][0],
+        name="Chỉ phòng VIP",
+        kind="row",
+        condition_expr="1 = 0",
+        status="active",
+        simulated_at="2026-10-01T00:00:00Z",
+    )
+    script = Script([GOOD[0]] * 6)
+    asked(bank, script, monkeypatch)
+    await drain()
+    prompt = script.asked[0][0]
+    assert "bank.loan" in prompt
+    assert "bank.salary" not in prompt and "bank.vip_loan" not in prompt
