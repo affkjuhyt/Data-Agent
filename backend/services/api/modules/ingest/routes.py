@@ -284,6 +284,20 @@ async def create_job(
         return _job_view(row)
 
 
+@router.post(
+    "/v1/uploads/{id}:commit",
+    response_model=DatasetView,
+    **endpoint("POST", "/v1/uploads/{id}:commit", operation_id="commitUpload"),
+)
+async def commit_upload(
+    upload_id: IdPath,
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+    body: UploadPatch | None = None,
+) -> DatasetView:
+    return await _commit_upload_impl(upload_id, principal, data_space, body)
+
+
 @router.get(
     "/v1/jobs",
     response_model=Page[IngestionJobSummary],
@@ -962,7 +976,7 @@ async def upload_file(
 
 
 @router.get(
-    "/v1/uploads/{id:uuid}",
+    "/v1/uploads/{id}",
     response_model=FileUploadView,
     **endpoint("GET", "/v1/uploads/{id}", operation_id="getUpload"),
 )
@@ -1065,7 +1079,7 @@ async def _upload(
 
 
 @router.patch(
-    "/v1/uploads/{id:uuid}",
+    "/v1/uploads/{id}",
     response_model=FileUploadView,
     **endpoint("PATCH", "/v1/uploads/{id}", operation_id="updateUpload"),
 )
@@ -1108,7 +1122,7 @@ async def update_upload(
 
 
 @router.delete(
-    "/v1/uploads/{id:uuid}",
+    "/v1/uploads/{id}",
     status_code=204,
     **endpoint("DELETE", "/v1/uploads/{id}", operation_id="deleteUpload"),
 )
@@ -1136,12 +1150,7 @@ async def delete_upload(
     return Response(status_code=204)
 
 
-@router.post(
-    "/v1/uploads/{id}:commit",
-    response_model=DatasetView,
-    **endpoint("POST", "/v1/uploads/{id}:commit", operation_id="commitUpload"),
-)
-async def commit_upload(
+async def _commit_upload_impl(
     upload_id: IdPath,
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
