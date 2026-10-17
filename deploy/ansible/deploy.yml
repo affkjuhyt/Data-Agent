@@ -406,6 +406,21 @@
         name: k8s_openbao
       when: apply_databases | bool
 
+    # The role writes what it minted to openbao_env_file but not to the openbao_env fact, which
+    # was read before it ran: rendering from the fact gave a new AppRole (the api's) empty ids.
+    - name: Read back the minted credentials
+      ansible.builtin.include_vars:
+        file: "{{ openbao_env_file }}"
+        name: openbao_state
+      when: openbao_minted | default(false) | bool
+      no_log: true
+
+    - name: Fold the minted credentials into openbao_env
+      ansible.builtin.set_fact:
+        openbao_env: "{{ openbao_env | combine(openbao_state.openbao_env | default({}, true)) }}"
+      when: openbao_minted | default(false) | bool
+      no_log: true
+
     - name: Re-render secrets.env with the minted credentials
       ansible.builtin.template:
         src: templates/secrets.env.j2
