@@ -179,9 +179,11 @@ của ADR-28) trả lời. Bước G1 của [09](09-target-deploy-and-cleanup.md
   công cụ ghi/gửi. Agent được cấp `notify.internal` gửi kết quả cho chủ sở hữu trong ứng dụng (`notify.notification`,
   như `svc_notify`); bước ghi có checkpoint thì lượt chạy sang `waiting_human`, mở yêu cầu `checkpoint` trong Cần bạn
   (`hitl.requested` từ `agent.outbox`, `agent_checkpoint_hit`) và chạy tiếp khi `hitl.resolved` về
-  (`resolutions` → `runs.resume_after_checkpoint`): duyệt thì gửi, từ chối thì bỏ bước. Đây là bản thay tạm ADR-37
-  (Temporal, R3) theo ba bảo đảm của tab 5 G1.1; chưa có xin thêm ngân sách, nhắc/hết hạn chờ duyệt, thử lại, sửa
-  kế hoạch, kế hoạch nhiều bước (docstring `runs.py`).
+  (`resolutions` → `runs.resume_after_checkpoint`): duyệt thì gửi, từ chối thì bỏ bước. Hẹn giờ bền là dòng
+  `run.timer` trong `agent.outbox` có `not_before` (`events.OutboxTableSource` chưa nhận trước giờ đó): chờ duyệt
+  được nhắc ngày 1 và 3, ngày 7 tự huỷ với `waiting_timeout` (AC-13-06-05); lỗi tạm thời của nguồn được thử lại sau
+  5, 15, 60 phút rồi `failed` và báo chủ sở hữu (AC-13-06-04). Đây là bản thay tạm ADR-37 (Temporal, R3) theo ba
+  bảo đảm của tab 5 G1.1; chưa có xin thêm ngân sách, sửa kế hoạch, kế hoạch nhiều bước (docstring `runs.py`).
 - **Giới hạn hiện tại.** Hỏi đáp trả lời một chỉ số qua lớp ngữ nghĩa (bộ biên dịch `semantic/compiler.py`, truy vấn
   tại chỗ); câu hỏi ngoài lớp đó kết thúc bằng lời từ chối có mã, không bao giờ bằng con số không truy được
   (BR-171). Text-to-SQL, so sánh kỳ và kế hoạch nhiều bước là việc R1.

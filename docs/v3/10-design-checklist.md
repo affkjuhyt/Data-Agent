@@ -10,7 +10,7 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 3 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 282 có test nhắc mã AC | todo 778 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 284 có test nhắc mã AC | todo 778 |
 | Endpoint A2 (tab 4) | 471 (A2 ghi 472 dòng; POST /v1/data-products ở hai nhóm) | 471 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 222 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 161 có mã nhắc tới | todo 195 |
@@ -186,7 +186,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC-13-03 | Đặt trigger | todo | 1/1 | 1/1 | 3/5 |  |
 | UC-13-04 | Chạy thử và đánh giá agent | todo | 2/2 | 2/2 | 1/6 |  |
 | UC-13-05 | Triển khai và quay lui phiên bản agent | todo | 2/2 | 2/2 | 1/6 |  |
-| UC-13-06 | Theo dõi và can thiệp lượt chạy | todo | 2/2 | 2/2 | 2/6 |  |
+| UC-13-06 | Theo dõi và can thiệp lượt chạy | todo | 2/2 | 2/2 | 4/6 |  |
 | UC-13-07 | Quản lý bộ nhớ agent | todo | 2/2 | 2/2 | 3/5 |  |
 | UC-13-08 | Điều phối nhiều agent | todo | 2/2 | 2/2 | 1/5 |  |
 
@@ -1842,15 +1842,15 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-13-06 Theo dõi và can thiệp lượt chạy · 3/7</summary>
+<details><summary>UC-13-06 Theo dõi và can thiệp lượt chạy · 5/7</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-13-06-01 | Chính | Cho một lượt Agent Đối soát đang ở bước 4 / Khi AC03 mở màn Đang làm gì rồi bấm “Xem kỹ thuật” / Thì mỗi bước đã xong là một câu kèm bằng chứng, có bước hiện tại, thời gian và chi phí đã tốn; trace thác nước có lượt g… | E2E | todo |  |
 | AC-13-06-02 | Chính | Cho lượt đang chạy bước 4 trong 7 bước / Khi tạm dừng, bỏ bước 6 kèm ghi chú rồi tiếp tục / Thì lượt dừng sau khi bước 4 xong (status paused), plan có phiên bản mới, bước 1–4 giữ kết quả và lượt chạy tiếp không có bước 6 | API, CSDL | todo | `tests/integration/api/test_agent.py` |
 | AC-13-06-03 | Thay thế | Cho lượt đang chạy / Khi huỷ / Thì agent_run cancelled với stop_reason = user_cancelled, không có ghi dữ liệu nào sau thời điểm huỷ và kết quả trung gian còn tra được ở ngày 29, hết ở ngày 31 | API, CSDL | todo | `tests/integration/api/test_agent.py`, `tests/integration/worker_agent/test_runs.py` |
-| AC-13-06-04 | Ngoại lệ | Cho một bước lỗi tạm thời liên tục / Khi Executor thử lại / Thì có đúng 3 lần thử cách 5, 15, 60 phút, sau đó lượt failed, chủ sở hữu nhận báo và không có dữ liệu ghi dở | API, CSDL | todo |  |
-| AC-13-06-05 | Ngoại lệ | Cho lượt chờ người từ ngày 01/10/2026 / Khi không ai trả lời / Thì có nhắc ngày 02/10 và 04/10, ngày 08/10 lượt tự huỷ với stop_reason = waiting_timeout kèm ghi chú, ngữ cảnh mở lại được tới 30 ngày | API, CSDL | todo |  |
+| AC-13-06-04 | Ngoại lệ | Cho một bước lỗi tạm thời liên tục / Khi Executor thử lại / Thì có đúng 3 lần thử cách 5, 15, 60 phút, sau đó lượt failed, chủ sở hữu nhận báo và không có dữ liệu ghi dở | API, CSDL | todo | `tests/integration/worker_agent/test_runs.py`, `tests/unit/worker_agent/test_runs.py` |
+| AC-13-06-05 | Ngoại lệ | Cho lượt chờ người từ ngày 01/10/2026 / Khi không ai trả lời / Thì có nhắc ngày 02/10 và 04/10, ngày 08/10 lượt tự huỷ với stop_reason = waiting_timeout kèm ghi chú, ngữ cảnh mở lại được tới 30 ngày | API, CSDL | todo | `tests/integration/worker_agent/test_runs.py`, `tests/unit/worker_agent/test_runs.py` |
 | AC-13-06-06 | Quy tắc | Cho một lượt đã xong và dữ liệu nguồn không đổi / Khi chạy lại lượt đó / Thì kết quả trùng lượt cũ; agent_run.snapshot_refs có phiên bản cấu hình, kỹ năng, mô hình và bản chụp đã đọc | API, CSDL | todo |  |
 | AC-13-06-07 | Ngoại lệ | Cho AC01 không phải chủ sở hữu, người khởi tạo hay người phụ trách Data Space / Khi gọi :pause / Thì nhận 403 và lượt không đổi trạng thái | API | todo | `tests/integration/api/test_agent.py`, `tests/integration/api/test_agent_lock_retry.py` |
 

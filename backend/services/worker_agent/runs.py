@@ -9,10 +9,10 @@ without a message to this worker; and a redelivered event finds nothing left to 
 
 The goal is read like a question (rule pass, then the planner model), planned as the semantic fast
 path's one-step Plan IR and run in place; an agent given notify.internal then tells the result in
-the app, after its checkpoint was approved in Cần bạn when it has one. Deferred: the waiting
-reminders and timeout, the +50% budget request and the monthly budget alerts, retries,
-no_progress, plan edits, the LLM Planner's multi-step plans, and recovering runs orphaned by a
-crash. Runs execute inline, so a long run holds this worker's poll loop for at most its BR-170
+the app, after its checkpoint was approved in Cần bạn when it has one. A wait is reminded and
+times out, and a passing failure is retried, on durable timers (TIMER). Deferred: the +50%
+budget request and the monthly budget alerts, no_progress, plan edits, the LLM Planner's
+multi-step plans, and recovering runs orphaned by a crash. Runs execute inline, so a long run holds this worker's poll loop for at most its BR-170
 duration.
 """
 
@@ -23,6 +23,7 @@ import decimal
 import hashlib
 import json
 import logging
+import re
 import time
 import unicodedata
 import uuid
@@ -57,6 +58,23 @@ from services.worker_agent.understand.text import words_of
 logger = logging.getLogger(__name__)
 
 EVENT_TYPE = "run.status_changed"
+# A durable timer in agent.outbox: its payload's `not_before` keeps it unclaimed until then
+# (events.OutboxTableSource), so a reminder, a timeout or a retry survives a restart.
+TIMER = "run.timer"
+# AC-13-06-04: a passing failure is tried again after 5, 15 and 60 minutes, then the run fails.
+RETRY_DELAYS = (
+    datetime.timedelta(minutes=5),
+    datetime.timedelta(minutes=15),
+    datetime.timedelta(minutes=60),
+)
+# AC-13-06-05: a run waiting for a person is reminded on day 1 and 3, and ends on day 7.
+REMINDERS = (datetime.timedelta(days=1), datetime.timedelta(days=3))
+WAIT_LIMIT = datetime.timedelta(days=7)
+# What a source or OpenBao says when it is down or slow, not when the query is wrong.
+_PASSING = re.compile(
+    r"Connection\w*Error|OperationalError|InterfaceError|TimeoutError|OSError|: connection"
+    r"|OpenBao login failed \(5\d\d\)|could not be read \(5\d\d\)"
+)
 ROLE = "svc_agent"
 QA_ROLE = "svc_qa"
 NOTIFY_ROLE = "svc_notify"
@@ -89,6 +107,16 @@ def wants_execution(payload: Mapping[str, Any]) -> bool:
     if status == "queued":
         return previous in (None, "failed", "paused")
     return status == "running" and previous in ("paused", "waiting_human")
+
+
+def is_transient(status: str, error: str | None) -> bool:
+    """A failure that may pass by itself (a timeout, a source or OpenBao down): worth a retry.
+    A wrong query, a missing grant or a missing credential fails the same way every time."""
+    return status == "timeout" or bool(error and _PASSING.search(error))
+
+
+def wait_timers(since: datetime.datetime) -> list[tuple[str, datetime.datetime]]:
+    return [("reminder", since + d) for d in REMINDERS] + [("timeout", since + WAIT_LIMIT)]
 
 
 def needs_checkpoint(
@@ -184,11 +212,15 @@ def _plain(value: Any) -> Any:
 
 
 class RunFailed(Exception):
-    """The run cannot go on; the message is the sentence the owner reads."""
+    """The run cannot go on; the message is the sentence the owner reads. `tell_owner`: the owner
+    is told in the app too (a run that gave up after its retries, AC-13-06-04)."""
 
-    def __init__(self, message: str, stop_reason: str = "error") -> None:
+    def __init__(
+        self, message: str, stop_reason: str = "error", *, tell_owner: bool = False
+    ) -> None:
         super().__init__(message)
         self.stop_reason = stop_reason
+        self.tell_owner = tell_owner
 
 
 @dataclass
@@ -321,6 +353,47 @@ def _emit(run: agent.AgentRun, previous: str | None) -> agent.Outbox:
     )
 
 
+def _timer(run: agent.AgentRun, timer: str, at: datetime.datetime, **extra: Any) -> agent.Outbox:
+    return agent.Outbox(
+        id=uuid7(),
+        org_id=run.org_id,
+        aggregate_type="agent_run",
+        aggregate_id=run.id,
+        event_type=TIMER,
+        payload={"run_id": str(run.id), "timer": timer, "not_before": at.isoformat(), **extra},
+    )
+
+
+async def _tell(
+    org_id: uuid.UUID,
+    principal: uuid.UUID,
+    users: Sequence[uuid.UUID],
+    *,
+    kind: str,
+    title: str,
+    body: str,
+    link: str,
+    data_space_id: uuid.UUID | None,
+    source_ref: uuid.UUID,
+) -> None:
+    """In-app notifications (notify.notification), written as svc_notify."""
+    async with scoped_session(NOTIFY_ROLE, org_id, principal) as session:
+        for user in sorted(set(users)):
+            session.add(
+                notify.Notification(
+                    id=uuid7(),
+                    org_id=org_id,
+                    user_id=user,
+                    data_space_id=data_space_id,
+                    kind=kind,
+                    title=title,
+                    body=body,
+                    link=link,
+                    source_ref=source_ref,
+                )
+            )
+
+
 class Run:
     """One execution of a run: each method is its own transaction, so what is done stays done."""
 
@@ -330,6 +403,8 @@ class Run:
         # Who the run acts as: the person who started it, or the agent's own account for a
         # schedule or event (agent_def.account_user_id).
         self.principal: uuid.UUID = org_id
+        self.owner: uuid.UUID = org_id
+        self.agent_name = ""
 
     def _session(self, principal: uuid.UUID | None = None) -> Any:
         return scoped_session(ROLE, self.org_id, principal)
@@ -346,11 +421,12 @@ class Run:
             if owner is None:
                 return None
             self.principal = run.initiated_by or owner.account_user_id
+            self.owner, self.agent_name = owner.owner_user_id, owner.name
             if run.status == "queued":
                 run.status = "planning"
                 run.started_at = run.started_at or _now()
                 session.add(_emit(run, "queued"))
-            elif not (run.status == "running" and previous in ("paused", "waiting_human")):
+            elif not (run.status == "running" and previous in ("paused", "waiting_human", "retry")):
                 return None
             await session.flush()
             session.expunge(run)
@@ -425,11 +501,13 @@ class Run:
             # The step the run has reached (agent_step.seq), what a resume carries on from.
             run.current_step = seq
             run.tokens = (run.tokens or 0) + tokens
-            if then is not None and run.status not in ("paused", *TERMINAL):
-                previous, run.status = run.status, then
-                session.add(_emit(run, previous))
+            if run.status not in ("paused", *TERMINAL):
+                if then is not None:
+                    previous, run.status = run.status, then
+                    session.add(_emit(run, previous))
                 if also is not None:
-                    # Written with the step, so a run never waits on a request that was not made.
+                    # Written with the step, so a run never waits on a request or a timer that
+                    # was not made.
                     also(session, run)
             return str(run.status)
 
@@ -465,6 +543,8 @@ class Run:
 
         def open_request(session: Any, run: agent.AgentRun) -> None:
             run.waiting_since = _now()
+            for timer, at in wait_timers(run.waiting_since):
+                session.add(_timer(run, timer, at, hitl_request_id=str(request_id)))
             session.add(
                 agent.AgentCheckpointHit(
                     id=uuid7(),
@@ -504,7 +584,7 @@ class Run:
                         "assignee_capability": None,
                         "approval_steps": [],
                         "excluded_approver_ids": [],
-                        "due_at": None,
+                        "due_at": (_now() + WAIT_LIMIT).isoformat(),
                         "parent_run_label": None,
                     },
                 )
@@ -604,12 +684,27 @@ async def execute(event: Event) -> None:
         return
     work = Run(event.aggregate_id, event.org_id)
     run = await work.claim(event.payload.get("previous_status"))
-    if run is None:
-        return
+    if run is not None:
+        await _go_on(work, run)
+
+
+async def _go_on(work: Run, run: agent.AgentRun) -> None:
     try:
         await _execute(work, run)
     except RunFailed as exc:
         await work.end("failed", exc.stop_reason, told=str(exc), error=str(exc))
+        if exc.tell_owner and not run.is_test:
+            await _tell(
+                run.org_id,
+                work.principal,
+                [work.owner],
+                kind="alert",
+                title=f"{work.agent_name}: lượt chạy không chạy được",
+                body=str(exc),
+                link=f"/agents/run/{run.id}",
+                data_space_id=run.data_space_id,
+                source_ref=run.id,
+            )
     except DBAPIError:
         # The database went away mid-run: the event is retried and the run goes on from its
         # last recorded step.
@@ -763,6 +858,25 @@ async def _query_step(
             else f"Chưa truy vấn được nguồn {planned.source.name}; người phụ trách dữ liệu có thể "
             "xem lượt chạy trong lịch sử truy vấn."
         )
+        tried = sum(1 for s in await work.steps() if s.kind == "query" and s.status == "retried")
+        if is_transient(outcome.status, outcome.error) and tried < len(RETRY_DELAYS):
+            delay = RETRY_DELAYS[tried]
+            minutes = int(delay.total_seconds() // 60)
+            await work.record(
+                kind="query",
+                name="query.semantic",
+                status="retried",
+                summary=f"{message} Thử lại sau {minutes} phút (lần {tried + 1}/{len(RETRY_DELAYS)}).",
+                told=f"Lỗi tạm thời ở nguồn; thử lại sau {minutes} phút.",
+                input={"sql": compiled.sql, "args": _normal(args)},
+                output={"query_run_id": str(outcome.query_run_id), "error": outcome.error},
+                fingerprint=call,
+                started=started,
+                also=lambda session, row: session.add(
+                    _timer(row, "retry", _now() + delay, attempt=tried + 1)
+                ),
+            )
+            return None
         await work.record(
             kind="query",
             name="query.semantic",
@@ -774,6 +888,8 @@ async def _query_step(
             fingerprint=call,
             started=started,
         )
+        if tried:
+            raise RunFailed(f"{message} Đã thử lại {tried} lần.", tell_owner=True)
         raise RunFailed(message)
 
     figures = figures_of(
@@ -892,21 +1008,17 @@ async def _notify_step(
                 started=started,
             )
             return True
-    async with scoped_session(NOTIFY_ROLE, run.org_id, work.principal) as session:
-        for user in recipients:
-            session.add(
-                notify.Notification(
-                    id=uuid7(),
-                    org_id=run.org_id,
-                    user_id=user,
-                    data_space_id=run.data_space_id,
-                    kind="report",
-                    title=title,
-                    body=answer,
-                    link=link,
-                    source_ref=run.id,
-                )
-            )
+    await _tell(
+        run.org_id,
+        work.principal,
+        recipients,
+        kind="report",
+        title=title,
+        body=answer,
+        link=link,
+        data_space_id=run.data_space_id,
+        source_ref=run.id,
+    )
     status = await work.record(
         kind="tool_call",
         name=NOTIFY_TOOL,
@@ -945,4 +1057,72 @@ async def resume_after_checkpoint(event: Event) -> None:
         session.add(_emit(run, "waiting_human"))
 
 
-HANDLERS: dict[str, Handler] = {EVENT_TYPE: execute}
+async def on_timer(event: Event) -> None:
+    """A run's timer came due: a retry carries on from the failed step; a reminder tells the owner
+    again; a timeout ends a run nobody answered (AC-13-06-04/05). A timer whose moment passed
+    (the run moved on, the checkpoint was decided) does nothing."""
+    p = event.payload
+    if p.get("timer") == "retry":
+        work = Run(event.aggregate_id, event.org_id)
+        last = (await work.steps())[-1:]
+        attempt = int(p.get("attempt") or 0)
+        tried = sum(1 for s in await work.steps() if s.kind == "query" and s.status == "retried")
+        if not last or last[0].status != "retried" or tried != attempt:
+            return
+        run = await work.claim("retry")
+        if run is not None:
+            await _go_on(work, run)
+        return
+    if p.get("timer") in ("reminder", "timeout"):
+        await _wait_timer(event, str(p["timer"]), uuid.UUID(str(p["hitl_request_id"])))
+
+
+async def _wait_timer(event: Event, timer: str, request_id: uuid.UUID) -> None:
+    now = _now()
+    async with scoped_session(ROLE, event.org_id) as session:
+        run = await session.get(agent.AgentRun, event.aggregate_id, with_for_update=True)
+        hit = await session.scalar(
+            select(agent.AgentCheckpointHit)
+            .where(agent.AgentCheckpointHit.hitl_request_id == request_id)
+            .with_for_update()
+        )
+        if run is None or hit is None or hit.resolved_at is not None:
+            return
+        if run.status != "waiting_human":
+            return
+        owner = await session.get(agent.AgentDef, run.agent_id)
+        assert owner is not None
+        principal = run.initiated_by or owner.account_user_id
+        if timer == "reminder":
+            # An event, not a sentence: the screen keeps showing what the run waits for.
+            run.narrative = [*(run.narrative or []), {"event": "reminder", "at": now.isoformat()}]
+            title = f"Nhắc: {owner.name} đang chờ bạn duyệt"
+            body = "Lượt chạy đang chờ quyết định của bạn trong Cần bạn."
+            kind, link = "hitl", "/needs-you"
+        else:
+            message = (
+                "Không ai duyệt trong 7 ngày nên lượt chạy tự huỷ; ngữ cảnh của lượt mở lại được "
+                "trong 30 ngày."
+            )
+            hit.resolved_at, hit.outcome = now, "expired"
+            run.status, run.stop_reason, run.error = "cancelled", "waiting_timeout", message
+            run.finished_at = now
+            run.narrative = _told(run.narrative, message, "done", now)
+            session.add(_emit(run, "waiting_human"))
+            title, body = f"{owner.name}: lượt chạy tự huỷ vì không ai duyệt", message
+            kind, link = "alert", f"/agents/run/{run.id}"
+        org, space, owner_id = run.org_id, run.data_space_id, owner.owner_user_id
+    await _tell(
+        org,
+        principal,
+        [owner_id],
+        kind=kind,
+        title=title,
+        body=body,
+        link=link,
+        data_space_id=space,
+        source_ref=event.aggregate_id,
+    )
+
+
+HANDLERS: dict[str, Handler] = {EVENT_TYPE: execute, TIMER: on_timer}

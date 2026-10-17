@@ -470,3 +470,177 @@ async def test_an_agent_that_acts_then_reports_writes_without_waiting(
     await drain_with_inbox()
     assert run_row(seed, run)[:2] == ("succeeded", "completed")
     assert len(notifications(seed, bank.org)) == 1
+
+
+def timers(seed: Seed, run: uuid.UUID) -> list[tuple[Any, ...]]:
+    """The run's timers still to fire: kind, and how far ahead (minutes, rounded)."""
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "SELECT payload->>'timer', round(extract(epoch FROM"
+            " ((payload->>'not_before')::timestamptz - now())) / 60)"
+            " FROM agent.outbox WHERE aggregate_id = %s AND event_type = 'run.timer'"
+            " AND published_at IS NULL ORDER BY (payload->>'not_before')::timestamptz",
+            (str(run),),
+        )
+        return [(kind, int(minutes)) for kind, minutes in cur.fetchall()]
+
+
+def elapse(seed: Seed, run: uuid.UUID) -> None:
+    """Time passes until the run's next timer is due."""
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE agent.outbox SET payload = jsonb_set(payload, '{not_before}',"
+            " to_jsonb((now() - interval '1 second')::text)) WHERE id = ("
+            " SELECT id FROM agent.outbox WHERE aggregate_id = %s AND event_type = 'run.timer'"
+            " AND published_at IS NULL ORDER BY (payload->>'not_before')::timestamptz LIMIT 1)",
+            (str(run),),
+        )
+
+
+@pytest.mark.req("AC-13-06-05")
+async def test_an_unanswered_checkpoint_is_reminded_then_times_out(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    run = agent_run(
+        bank,
+        tools=NOTIFY,
+        autonomy="propose_approve",
+        checkpoints=("before_write_derived",),
+        is_test=False,
+    )
+    await drain_with_inbox()
+    day = 24 * 60
+    # Timers not yet due stay in the outbox: nothing fired on the first drain.
+    assert timers(seed, run) == [("reminder", day), ("reminder", 3 * day), ("timeout", 7 * day)]
+
+    elapse(seed, run)
+    await drain_with_inbox()
+    assert run_row(seed, run)[0] == "waiting_human"
+    [reminder] = notifications(seed, bank.org)
+    assert reminder[1] == "hitl" and "Nhắc" in reminder[2]
+
+    for _ in range(2):  # the second reminder, then the seventh day
+        elapse(seed, run)
+        await drain_with_inbox()
+    status, stop, _, narrative, error, *_ = run_row(seed, run)
+    assert (status, stop) == ("cancelled", "waiting_timeout")
+    assert "7 ngày" in error and narrative[-1]["text"] == error
+    assert seed.one("SELECT outcome FROM agent.agent_checkpoint_hit WHERE run_id = %s", run) == (
+        "expired"
+    )
+    # Two reminders, then the owner is told the run ended; nothing was sent.
+    assert [n[1] for n in notifications(seed, bank.org)].count("hitl") == 2
+    assert not [n for n in notifications(seed, bank.org) if n[1] == "report"]
+
+
+async def test_a_checkpoint_decided_in_time_cancels_nothing(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    run = agent_run(
+        bank,
+        tools=NOTIFY,
+        autonomy="propose_approve",
+        checkpoints=("before_write_derived",),
+        is_test=False,
+    )
+    await drain_with_inbox()
+    await decide(bank, "approved")
+    await drain_with_inbox()
+    for _ in range(3):
+        elapse(seed, run)
+        await drain_with_inbox()
+    assert run_row(seed, run)[:2] == ("succeeded", "completed")
+    assert [n[1] for n in notifications(seed, bank.org)] == ["report"]
+
+
+def failing(times: int, real: Any) -> Any:
+    """run_query that cannot reach the source `times` times, then reaches it."""
+    calls = {"n": 0}
+
+    async def run_query(**kwargs: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] <= times:
+            return runs.QueryOutcome(
+                query_run_id=uuid.uuid4(),
+                status="failed",
+                error="ConnectionRefusedError: connection",
+            )
+        return await real(**kwargs)
+
+    return run_query
+
+
+@pytest.mark.req("AC-13-06-04")
+async def test_a_passing_failure_is_retried_after_5_then_15_minutes(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    monkeypatch.setattr(runs, "run_query", failing(2, runs.run_query))
+    run = agent_run(bank)
+    await drain()
+    assert run_row(seed, run)[0] == "running" and timers(seed, run) == [("retry", 5)]
+    elapse(seed, run)
+    await drain()
+    assert timers(seed, run) == [("retry", 15)]
+    elapse(seed, run)
+    await drain()
+    assert run_row(seed, run)[:2] == ("succeeded", "completed")
+    assert [(s[1], s[3]) for s in steps(seed, run)] == [
+        ("plan", "ok"),
+        ("query", "retried"),
+        ("query", "retried"),
+        ("query", "ok"),
+    ]
+
+
+@pytest.mark.req("AC-13-06-04")
+async def test_after_three_retries_the_run_fails_and_the_owner_is_told(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    monkeypatch.setattr(runs, "run_query", failing(9, runs.run_query))
+    run = agent_run(bank, is_test=False)
+    await drain()
+    for _ in range(3):
+        elapse(seed, run)
+        await drain()
+    status, stop, *_ = run_row(seed, run)
+    assert (status, stop) == ("failed", "error") and timers(seed, run) == []
+    assert [s[3] for s in steps(seed, run) if s[1] == "query"] == [
+        "retried",
+        "retried",
+        "retried",
+        "error",
+    ]
+    [(user, kind, title, *_)] = notifications(seed, bank.org)
+    assert (user, kind) == (bank.user, "alert") and "không chạy được" in title
+
+
+async def test_a_wrong_query_is_not_retried(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+
+    async def wrong(**kwargs: Any) -> Any:
+        return runs.QueryOutcome(
+            query_run_id=uuid.uuid4(),
+            status="failed",
+            error="local query failed (ProgrammingError)",
+        )
+
+    monkeypatch.setattr(runs, "run_query", wrong)
+    run = agent_run(bank)
+    await drain()
+    assert run_row(seed, run)[:2] == ("failed", "error") and timers(seed, run) == []

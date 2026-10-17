@@ -119,3 +119,43 @@ def test_which_steps_stop_at_a_checkpoint(
         )
         is expected
     )
+
+
+@pytest.mark.parametrize(
+    ("status", "error", "transient"),
+    [
+        ("timeout", "the query ran longer than the source allows (120 s)", True),
+        ("failed", "ConnectionRefusedError: connection", True),
+        ("failed", "local query failed (OperationalError)", True),
+        ("failed", "local query failed (InterfaceError)", True),
+        ("failed", "OpenBao login failed (503)", True),
+        ("failed", "the source's secret could not be read (502)", True),
+        ("failed", "no credentials for this source", False),
+        ("failed", "the source's secret could not be read (403)", False),
+        # The SQL itself is wrong: running it again gives the same error.
+        ("failed", "local query failed (ProgrammingError)", False),
+        ("failed", "UndefinedColumnError: 42703", False),
+        ("failed", "only one read-only statement is allowed", False),
+    ],
+)
+def test_only_a_passing_failure_is_retried(status: str, error: str, transient: bool) -> None:
+    assert runs.is_transient(status, error) is transient
+
+
+@pytest.mark.req("AC-13-06-04")
+def test_retries_wait_5_15_then_60_minutes() -> None:
+    assert (
+        datetime.timedelta(minutes=5),
+        datetime.timedelta(minutes=15),
+        datetime.timedelta(minutes=60),
+    ) == runs.RETRY_DELAYS
+
+
+@pytest.mark.req("AC-13-06-05")
+def test_a_wait_is_reminded_on_day_1_and_3_and_ends_on_day_7() -> None:
+    since = datetime.datetime(2026, 10, 1, 9, 0, tzinfo=datetime.UTC)
+    assert runs.wait_timers(since) == [
+        ("reminder", datetime.datetime(2026, 10, 2, 9, 0, tzinfo=datetime.UTC)),
+        ("reminder", datetime.datetime(2026, 10, 4, 9, 0, tzinfo=datetime.UTC)),
+        ("timeout", datetime.datetime(2026, 10, 8, 9, 0, tzinfo=datetime.UTC)),
+    ]

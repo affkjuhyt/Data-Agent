@@ -58,10 +58,14 @@ class OutboxTableSource:
     @asynccontextmanager
     async def claim(self, batch: int) -> AsyncIterator[list[Event]]:
         # The schema name is ours, never input: it is formatted, the rest is bound.
+        # A row whose payload names `not_before` is a durable timer (runs.py: reminders, the
+        # waiting timeout, retries): it stays unclaimed until then (tab 5 G1.1, until Temporal).
         claim_sql = text(
             f"SELECT id, org_id, event_type, aggregate_type, aggregate_id, payload "
             f"FROM {self._schema}.outbox "
             f"WHERE published_at IS NULL AND event_type = ANY(:types) "
+            f"AND (payload->>'not_before' IS NULL "
+            f"OR (payload->>'not_before')::timestamptz <= now()) "
             f"ORDER BY created_at LIMIT :batch FOR UPDATE SKIP LOCKED"
         )
         ack_sql = text(
