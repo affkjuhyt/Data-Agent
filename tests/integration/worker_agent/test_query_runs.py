@@ -201,3 +201,31 @@ async def test_a_past_as_of_fails_instead_of_running_live(
     )
     await _drain()
     assert _outcome(seed, run) == ("failed", query_runs.HISTORY)
+
+
+@pytest.mark.req("AC-01-04-06")
+async def test_the_same_plan_dragged_and_asked_gives_the_same_values_and_metric_version(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    # NPL_RATIO by region, no period, on the explorer's shelves ...
+    run = _queue(
+        bank,
+        "question",
+        {"metric_ids": [bank.npl], "dimensions": [_dimension(seed, bank, "vung")], "filters": []},
+    )
+    await _drain()
+    assert _outcome(seed, run) == ("succeeded", None)
+    dragged = {r[1]: float(r[2]) for r in _rows(seed, run)}
+    # ... and in words.
+    q = bank.ask("Tỷ lệ nợ xấu theo vùng")
+    await test_answers.drain()
+    status, _, text, figures, _, _ = test_answers.answer_of(seed, q)
+    assert status == "answered", text
+    rows = [f for f in figures if "expr" not in f["source"]]
+    asked = {f["dimensions"]["vung"]: float(f["value"]) for f in rows}
+    assert asked == dragged
+    versions = seed.one(
+        "SELECT metric_version_ids FROM query.query_run WHERE id = %s", run
+    )
+    assert {f["metric_version_id"] for f in rows} == {str(v) for v in versions}

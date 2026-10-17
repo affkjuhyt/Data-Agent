@@ -33,7 +33,12 @@ from libs.dataagent_db.models import catalog, notify, skill
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
 from services.worker_agent.query.guard import SqlRejected
-from services.worker_agent.questions import QUERYABLE, dialect_for_source, secrets
+from services.worker_agent.questions import (
+    QUERYABLE,
+    _internal_workspace_source,
+    dialect_for_source,
+    secrets,
+)
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import SpaceLayer, load
 from services.worker_agent.skills.decomposition import (
@@ -237,7 +242,7 @@ async def _decompose(
     async with scoped_session(LAYER_ROLE, org_id, principal) as session:
         layer = await load(session, space)
         version, metric_name, shape, dimensions = _plan(layer, params)
-        source = await _source(session, layer, version, dimensions[0])
+        source = await _source(session, layer, version, dimensions[0], space=space, org_id=org_id)
     measures = [shape.numerator] + ([shape.denominator] if shape.denominator else [])
     seq = 0
     skipped: list[str] = []
@@ -402,7 +407,13 @@ def _plan(
 
 
 async def _source(
-    session: AsyncSession, layer: SpaceLayer, version: c.MetricVersion, dimension: c.Dimension
+    session: AsyncSession,
+    layer: SpaceLayer,
+    version: c.MetricVersion,
+    dimension: c.Dimension,
+    *,
+    space: uuid.UUID,
+    org_id: uuid.UUID,
 ) -> catalog.Source:
     try:
         probe = c.compile_metric(
@@ -411,6 +422,10 @@ async def _source(
     except (c.CompileError, SqlRejected) as exc:
         raise RunFailed(str(exc)) from exc
     dataset = layer.datasets[probe.dataset_ids[0]]
+    # A table materialised in the Data Space's workspace schema is queried in place on the
+    # platform database, as questions.py does (the credit demo's loan snapshot is one).
+    if dataset.schema_name == "workspace" and dataset.source_id is None:
+        return _internal_workspace_source(space, org_id)
     source = await session.get(catalog.Source, dataset.source_id) if dataset.source_id else None
     if source is None or source.mode != "federated" or source.status not in QUERYABLE:
         raise RunFailed("Bảng của chỉ số này nằm trên một nguồn chưa được phép truy vấn tại chỗ.")
