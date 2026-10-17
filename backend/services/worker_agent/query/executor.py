@@ -46,6 +46,31 @@ from services.worker_agent.query.secrets import SecretReader, SecretUnavailable
 ROLE = "svc_query"
 INTERNAL_WORKSPACE = "internal://workspace"
 MAX_ROWS = 10_000  # BR-03
+# PostgreSQL type OIDs as asyncpg reports them, named as asyncpg's own attributes name them, so
+# the workspace path and the direct path describe a column the same way.
+_PG_OIDS = {
+    16: "bool",
+    20: "int8",
+    21: "int2",
+    23: "int4",
+    25: "text",
+    700: "float4",
+    701: "float8",
+    790: "money",
+    1043: "varchar",
+    1082: "date",
+    1114: "timestamp",
+    1184: "timestamptz",
+    1700: "numeric",
+}
+
+
+def _pg_type(code: Any) -> str:
+    if isinstance(code, int):
+        return _PG_OIDS.get(code, "unknown")
+    return str(code or "unknown")
+
+
 STORED_ROWS = 1_000  # query.query_result keeps at most this many (D4)
 RESULT_DAYS = 30
 SSL_MODES = ("disable", "require", "verify-ca", "verify-full")
@@ -349,9 +374,14 @@ async def run_query(
                     # Upload tables are materialized in the private workspace schema. The SQL
                     # editor deliberately uses unqualified table names, so make resolution agree
                     # with the scope checker without exposing any other schema to the query.
-                    await local_session.execute(text("SET LOCAL search_path TO workspace, pg_catalog"))
+                    await local_session.execute(
+                        text("SET LOCAL search_path TO workspace, pg_catalog")
+                    )
                     result = await local_session.execute(text(executed))
-                    columns = [{"name": column, "type": "unknown"} for column in tuple(result.keys())]
+                    columns = [
+                        {"name": str(item[0]), "type": _pg_type(item[1])}
+                        for item in result.cursor.description or ()
+                    ]
                     rows = [[_plain(value) for value in row] for row in result.fetchall()]
             else:
                 credentials = await secrets.read(org_id, source.secret_ref)

@@ -135,19 +135,19 @@ async def test_saving_writes_the_table_registers_it_and_links_its_inputs(
     pid = pipeline(bank, [SELECT, DROP_INTERNAL])
     request(bank, pid, pipelines.MATERIALIZE, table_name="khoan_vay_sach", scope="data_space")
     await drain()
-    assert seed.one("SELECT count(*) FROM workspace.khoan_vay_sach") == 6
-    assert seed.one("SELECT sum(balance) FROM workspace.khoan_vay_sach") == 3500
     status, target = seed.one(
         "SELECT status, target_dataset_id FROM pipeline.pipeline WHERE id = %s", pid
     )
     assert status == "active" and target is not None
-    assert (
-        seed.one(
-            "SELECT table_name FROM catalog.dataset WHERE id = %s AND schema_name = 'workspace'",
-            target,
-        )
-        == "khoan_vay_sach"
+    table, shown = seed.one(
+        "SELECT table_name, display_name FROM catalog.dataset"
+        " WHERE id = %s AND schema_name = 'workspace'",
+        target,
     )
+    # The physical name is the server's, unique to the dataset; the chosen one is displayed.
+    assert shown == "khoan_vay_sach" and table.startswith("p_khoan_vay_sach_")
+    assert seed.one(f"SELECT count(*) FROM workspace.{table}") == 6
+    assert seed.one(f"SELECT sum(balance) FROM workspace.{table}") == 3500
     assert (
         seed.one(
             "SELECT via FROM pipeline.lineage_edge WHERE from_id = %s AND to_id = %s",
@@ -156,6 +156,39 @@ async def test_saving_writes_the_table_registers_it_and_links_its_inputs(
         )
         == "pipeline"
     )
+
+
+async def test_two_spaces_saving_the_same_name_never_share_a_table(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # One after the other: each build points the secret reader at its own organisation.
+    for steps in ([SELECT, DROP_INTERNAL], [SELECT]):
+        bank = build(seed, warehouse, monkeypatch)
+        request(bank, pipeline(bank, steps), pipelines.MATERIALIZE, table_name="chung")
+        await drain()
+    tables = [
+        r[0]
+        for r in seed.all(
+            "SELECT table_name FROM catalog.dataset WHERE display_name = 'chung' ORDER BY created_at"
+        )
+    ]
+    assert len(tables) == 2 and tables[0] != tables[1]
+    assert [seed.one(f"SELECT count(*) FROM workspace.{t}") for t in tables] == [6, 7]
+
+
+async def test_a_filter_that_changes_columns_is_held_to_the_totals(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    sneaky = {**DOUBLE, "kind": "filter", "drop_condition": "không bỏ gì"}
+    run = request(bank, pipeline(bank, [SELECT, sneaky]), pipelines.RUN)
+    await drain()
+    totals = seed.one("SELECT totals_check FROM pipeline.pipeline_run WHERE id = %s", run)
+    assert totals["matched"] is False
 
 
 async def test_python_steps_fail_with_the_reason(

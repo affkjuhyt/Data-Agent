@@ -73,6 +73,13 @@ def chain(steps: list[dict[str, Any]], upto: int, sample: str | None = None) -> 
     return "WITH " + ", ".join(ctes) + f" SELECT * FROM s{upto}"
 
 
+def physical_name(name: str, dataset_id: uuid.UUID) -> str:
+    """The workspace table of a saved pipeline: the chosen name, cut to fit, and the dataset's
+    own id, so no two Data Spaces (or organisations) ever share one."""
+    stem = re.sub(r"[^a-z0-9_]+", "_", name.lower()).strip("_")[:40] or "bang"
+    return f"p_{stem}_{dataset_id.hex[:16]}"
+
+
 async def _context(event: Event) -> dict[str, Any] | None:
     from services.worker_agent.questions import _internal_workspace_source
 
@@ -145,6 +152,20 @@ async def _measure(ctx: dict[str, Any], event: Event, sample: str | None) -> dic
         if not out.ok:
             return f"step {i + 1}: {out.error or out.status}"
         shapes.append({c["name"]: c["type"] for c in out.columns})
+    unknown = [name for name, kind in shapes[-1].items() if kind == "unknown"]
+    if unknown:
+        # Fail closed: a column whose type the source did not say could be money.
+        return {
+            "rows_in": None,
+            "rows_out": None,
+            "rows_dropped": [],
+            "totals_check": {
+                "matched": False,
+                "columns": [
+                    {"column": name, "matched": False, "reason": "type unknown"} for name in unknown
+                ],
+            },
+        }
     money = [
         name
         for name, kind in shapes[-1].items()
@@ -178,7 +199,9 @@ async def _measure(ctx: dict[str, Any], event: Event, sample: str | None) -> dic
     checks: dict[str, dict[str, Any]] = {m: {"column": m, "matched": True} for m in money}
     for i in range(1, len(steps)):
         kind = steps[i].get("kind")
-        if kind in DROPPING:
+        # Only a step that keeps the columns as they are and does not add rows is a filter;
+        # a step labelled filter that does anything else is held to the totals like any other.
+        if kind in DROPPING and shapes[i] == shapes[i - 1] and counts[i] <= counts[i - 1]:
             dropped.append(
                 {
                     "step": i + 1,
@@ -272,8 +295,22 @@ async def materialize_requested(event: Event) -> None:
         {"name": c["name"].lower(), "type": _TYPES.get(c["type"], "text")} for c in out.columns
     ]
     rows = [[None if v is None else str(v) for v in row] for row in out.rows]
-    table = str(p["table_name"])
     actor = ctx["actor"]
+    dataset_id = (
+        uuid.UUID(str(p["overwrite_dataset_id"])) if p.get("overwrite_dataset_id") else uuid7()
+    )
+    async with scoped_session("svc_catalog", event.org_id, actor) as session:
+        target = await session.get(catalog.Dataset, dataset_id)
+        if target is not None and (
+            target.data_space_id != ctx["space"] or target.schema_name != "workspace"
+        ):
+            target = None
+    # The workspace schema is shared by every organisation: the physical name is the server's,
+    # unique to this dataset, and the name the author chose is its display name. Replacing a
+    # table only ever replaces this pipeline's own target.
+    table = (
+        target.table_name if target is not None else physical_name(str(p["table_name"]), dataset_id)
+    )
     async with scoped_session("svc_ingest", event.org_id, actor) as session:
         await session.execute(
             text(
@@ -281,9 +318,6 @@ async def materialize_requested(event: Event) -> None:
             ),
             {"t": table, "c": json.dumps(columns), "r": json.dumps(rows)},
         )
-    dataset_id = (
-        uuid.UUID(str(p["overwrite_dataset_id"])) if p.get("overwrite_dataset_id") else uuid7()
-    )
     async with scoped_session("svc_catalog", event.org_id, actor) as session:
         existing = await session.get(catalog.Dataset, dataset_id)
         if existing is None:
@@ -296,7 +330,7 @@ async def materialize_requested(event: Event) -> None:
                     origin="derived",
                     schema_name="workspace",
                     table_name=table,
-                    display_name=ctx["pipeline"].name,
+                    display_name=str(p["table_name"]),
                     row_estimate=len(rows),
                     enabled=True,
                     scope=str(p.get("scope") or "data_space"),
