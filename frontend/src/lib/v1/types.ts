@@ -198,6 +198,8 @@ export interface AgentStep {
   run_as_text: string | null;
   rows_text: string | null;
   sql: string | null;
+  /** What the step produced (agent_step.output): a query step's question, rows and chart_spec. */
+  output?: unknown;
 }
 
 /** PROPOSAL: run fields the screens need and the api does not send yet. */

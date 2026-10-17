@@ -237,3 +237,90 @@ describe('AgentTeamPage', () => {
     expect(navigate).toHaveBeenCalledWith('data', 'PACKS');
   });
 });
+
+describe('RunDetailPage results', () => {
+  it('shows what a report run found: each question with its sentence and chart', async () => {
+    routeId = 'run-report';
+    const step = (seq: number, question: string, summary: string, output: object) => ({
+      id: `step-${seq}`,
+      seq,
+      kind: 'query',
+      name: 'query.semantic',
+      input: { sql: 'SELECT 1' },
+      output: { question, ...output },
+      summary,
+      status: 'ok',
+      attempt: 1,
+      child_run_id: null,
+      cost: '0',
+      started_at: '2026-10-17T12:00:00Z',
+      duration_ms: 40,
+    });
+    server.use(
+      http.get('*/v1/runs/run-report', ({ request }) =>
+        HttpResponse.json({
+          id: 'run-report',
+          agent_id: 'agent-x',
+          agent_name: 'Báo cáo rủi ro tín dụng',
+          config_version: 1,
+          data_space_id: 'ds-rr',
+          trigger_kind: 'manual',
+          trigger_ref: null,
+          initiated_by: null,
+          parent_run_id: null,
+          depth: 0,
+          is_test: false,
+          status: 'succeeded',
+          current_step: 3,
+          narrative: [{ at: '2026-10-17T12:00:01Z', text: 'Lập kế hoạch 2 phần.', state: 'done' }],
+          cost: '0',
+          tokens: 0,
+          started_at: '2026-10-17T12:00:00Z',
+          finished_at: '2026-10-17T12:00:05Z',
+          error: null,
+          stop_reason: 'completed',
+          created_at: '2026-10-17T12:00:00Z',
+          // The results need the steps whichever way the run is viewed.
+          steps:
+            new URL(request.url).searchParams.get('view') === 'technical'
+              ? [
+                  { ...step(1, '', '', {}), kind: 'plan', name: 'plan', output: {} },
+                  step(
+                    2,
+                    'Tỷ lệ nợ xấu theo vùng tháng 9/2026',
+                    'Miền Bắc: 2,37%; Miền Nam: 1,26%.',
+                    {
+                      columns: ['vung', 'value'],
+                      rows: [
+                        ['Miền Bắc', 2.37],
+                        ['Miền Nam', 1.26],
+                      ],
+                      chart_spec: {
+                        type: 'bar',
+                        x: 'vung',
+                        x_label: 'Vùng',
+                        y_label: 'Tỷ lệ nợ xấu',
+                        unit: '%',
+                      },
+                    },
+                  ),
+                  step(3, 'Tỷ lệ nợ xấu tháng 9/2026', 'Tỷ lệ nợ xấu tháng 9/2026 là 1,83%.', {
+                    columns: ['value'],
+                    rows: [[1.83]],
+                    chart_spec: null,
+                  }),
+                ]
+              : undefined,
+        }),
+      ),
+    );
+    wrap(<RunDetailPage />);
+    const results = await screen.findByRole('region', { name: 'Kết quả · 2 phần' });
+    expect(within(results).getByText('Tỷ lệ nợ xấu theo vùng tháng 9/2026')).toBeInTheDocument();
+    expect(within(results).getByText('Miền Bắc: 2,37%; Miền Nam: 1,26%.')).toBeInTheDocument();
+    expect(within(results).getByText('Tỷ lệ nợ xấu tháng 9/2026 là 1,83%.')).toBeInTheDocument();
+    // One chart: the single number has nothing to compare.
+    expect(within(results).getAllByRole('figure')).toHaveLength(1);
+    expect(within(results).getByText('Tỷ lệ nợ xấu (%) theo Vùng')).toBeInTheDocument();
+  });
+});

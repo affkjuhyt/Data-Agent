@@ -14,9 +14,11 @@ import { cn } from '../../lib/utils';
 import { controlRun, getRun } from '../../lib/v1/api';
 import type { AgentRun } from '../../lib/v1/types';
 import { useV1 } from '../../lib/v1/useV1';
+import { ChartRenderer } from '../ask/components/ChartRenderer';
 import { FailedRun } from './FailedRun';
 import { PlanEditDrawer } from './PlanEditDrawer';
 import { SpanDetail, TraceWaterfall, defaultSpan } from './RunTrace';
+import { stepChart, stepQuestion } from './runResults';
 import { PLAN_STEP, runStatus } from './runStatus';
 
 /*
@@ -28,7 +30,8 @@ import { PLAN_STEP, runStatus } from './runStatus';
  * layout (FailedRun) that leads with the error and the way out. A live run refreshes every 5 s until the
  * event stream (GET /v1/runs/{id}/events) reaches the browser. "Sửa kế hoạch" opens the plan
  * editor (PlanEditDrawer) once the run has stopped at a step boundary — paused, or waiting on a
- * person.
+ * person. Under the story, "Kết quả" shows what the run found: each answered question of its goal
+ * with its sentence and chart (runResults), so the steps are read whichever way the run is viewed.
  */
 type View = 'simple' | 'technical';
 const LIVE: AgentRun['status'][] = ['queued', 'planning', 'running', 'waiting_human'];
@@ -40,7 +43,7 @@ const hhmm = (iso: string) =>
 export default function RunDetailPage() {
   const { routeId, navigate } = useAppState();
   const [view, setView] = useState<View>('simple');
-  const run = useV1(routeId ? () => getRun(routeId, view) : null, [routeId, view]);
+  const run = useV1(routeId ? () => getRun(routeId, 'technical') : null, [routeId]);
 
   const live = run.data ? LIVE.includes(run.data.status) : false;
   useEffect(() => {
@@ -196,7 +199,10 @@ function RunBody({
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col pl-da-3xl pr-da-2xl pt-da-lg">
           {view === 'simple' ? (
-            <Story run={run} />
+            <>
+              <Story run={run} />
+              <Results steps={steps} />
+            </>
           ) : (
             <TraceWaterfall run={run} steps={steps} selected={spanSeq} onSelect={setPicked} />
           )}
@@ -302,6 +308,30 @@ function Story({ run }: { run: AgentRun }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+/** What the run found: one part per answered question, its sentence and, when there is
+ *  something to compare, its chart. */
+function Results({ steps }: { steps: NonNullable<AgentRun['steps']> }) {
+  const parts = steps.filter((s) => s.kind === 'query' && s.status === 'ok' && s.summary);
+  if (parts.length === 0) return null;
+  const title = parts.length === 1 ? 'Kết quả' : `Kết quả · ${parts.length} phần`;
+  return (
+    <section aria-label={title} className="flex flex-col gap-da-lg py-da-xl">
+      <h2 className="text-foreground da-heading-3">{title}</h2>
+      {parts.map((s) => {
+        const chart = stepChart(s.output);
+        const question = stepQuestion(s.output);
+        return (
+          <article key={s.seq} className="flex flex-col gap-da-sm">
+            {question && <h3 className="text-foreground da-body-strong">{question}</h3>}
+            <p className="text-foreground da-body">{s.summary}</p>
+            {chart && <ChartRenderer spec={chart} />}
+          </article>
+        );
+      })}
+    </section>
   );
 }
 

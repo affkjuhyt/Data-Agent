@@ -210,6 +210,7 @@ function readStep(raw: components['schemas']['StepView'] | AgentStep): AgentStep
     run_as_text: null,
     rows_text: null,
     sql: isText(input.sql) ? input.sql : null,
+    output: raw.output,
   };
 }
 
