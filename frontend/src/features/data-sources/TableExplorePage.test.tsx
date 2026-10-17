@@ -34,7 +34,7 @@ describe('TableExplorePage', () => {
       </ToastProvider>,
     );
     expect(
-      await screen.findByRole('heading', { name: /ld_loans · 1\.284\.562 dòng/ }),
+      await screen.findByRole('heading', { name: /LD_LOANS · 1\.284\.562 dòng/ }),
     ).toBeInTheDocument();
     expect(screen.getAllByText('••••1180')).toHaveLength(2);
     expect(screen.getByRole('row', { name: /Dòng 5, trùng/ })).toBeInTheDocument();

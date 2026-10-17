@@ -215,7 +215,7 @@ describe('sources from the api', () => {
     expect((await listSourceDrifts()).items).toEqual([]);
   });
 
-  it('uses the canonical query run when the table preview route is not served', async () => {
+  it('reads a table preview through the canonical query run', async () => {
     const run = {
       id: 'qr-1',
       data_space_id: 'ds-1',
@@ -236,12 +236,6 @@ describe('sources from the api', () => {
       started_at: at,
     };
     server.use(
-      http.post('*/v1/datasets/:action', () =>
-        HttpResponse.json(
-          { status: 404, code: 'not_found', detail: 'Not served.' },
-          { status: 404 },
-        ),
-      ),
       http.post('*/v1/query-runs', () => HttpResponse.json(run, { status: 202 })),
       http.get('*/v1/query-runs/:id', () => HttpResponse.json(run)),
       http.get('*/v1/query-runs/:id/rows', () =>
@@ -254,7 +248,10 @@ describe('sources from the api', () => {
         }),
       ),
     );
-    await expect(previewTable('d-1', [])).resolves.toMatchObject({
+    // With a filter, the run counts the matching rows.
+    await expect(
+      previewTable('d-1', [{ column: 'balance', op: 'gte', value: '0' }]),
+    ).resolves.toMatchObject({
       name: 'Loan',
       matched_rows: 1,
       rows: [[100]],

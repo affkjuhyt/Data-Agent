@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import { documentApi } from './documents';
+import { recordQueryRun } from './explore';
 import type {
   ActivateSource,
   ApiFieldMapping,
@@ -1514,13 +1515,6 @@ export function createSourcesHandlers() {
         sources = sources.map((s) => (s.id === id ? activated : s));
         return HttpResponse.json(activated);
       }
-      if (verb === 'backfill') {
-        if (!apiConfigs[id]) return problem(404, 'not_found', 'Nguồn không chạy bù được.');
-        const range = (await request.json()) as { from?: string; to?: string };
-        if (!range.from || !range.to || range.from > range.to)
-          return problem(422, 'validation_failed', 'Khoảng ngày không hợp lệ.');
-        return HttpResponse.json({ status: 'queued' }, { status: 202 });
-      }
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),
     http.get('*/v1/sources/:id/api-config', ({ params }) => {
@@ -1608,7 +1602,8 @@ export function createSourcesHandlers() {
           description_status: 'none',
           unit: null,
           pii_label:
-            column.name === 'card_no' || ('histogram_note' in column && column.histogram_note === 'che')
+            column.name === 'card_no' ||
+            ('histogram_note' in column && column.histogram_note === 'che')
               ? 'other'
               : null,
           pii_confirmed: false,
@@ -1636,15 +1631,27 @@ export function createSourcesHandlers() {
         ? HttpResponse.json(profileOf(found.table, found.source))
         : problem(404, 'not_found', 'Không tìm thấy bảng.');
     }),
+    // The table explorer reads a table through POST /v1/query-runs (dataset_id + filters).
+    http.post('*/v1/query-runs', async ({ request }) => {
+      const body = (await request.clone().json()) as {
+        dataset_id?: string;
+        filters?: ExploreFilter[];
+      };
+      const found = body.dataset_id ? findTable(body.dataset_id) : undefined;
+      if (!found) return undefined;
+      const preview = previewOf(found.table, found.source.name, body.filters ?? []);
+      const run = recordQueryRun({
+        caller_kind: 'ad_hoc',
+        columns: preview.columns.map((c) => ({ name: c.name, type: c.type_label })),
+        rows: preview.rows,
+      });
+      return HttpResponse.json(run, { status: 202 });
+    }),
     http.post('*/v1/datasets/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
       const found = findTable(id);
       if (!found) return problem(404, 'not_found', 'Không tìm thấy bảng.');
       if (verb === 'profile') return HttpResponse.json({ status: 'queued' }, { status: 202 });
-      if (verb === 'preview') {
-        const body = (await request.json()) as { filters?: ExploreFilter[] };
-        return HttpResponse.json(previewOf(found.table, found.source.name, body.filters ?? []));
-      }
       if (verb === 'derive') {
         const body = (await request.json()) as {
           filters: ExploreFilter[];
@@ -1690,8 +1697,26 @@ export function createSourcesHandlers() {
       page(new URL(request.url).searchParams.get('kind') === 'api' ? API_SECRET_REFS : SECRET_REFS),
     ),
 
-    http.get('*/v1/jobs', () =>
-      page(
+    http.get('*/v1/jobs', ({ request }) => {
+      // A REST source loads through its own job (what :backfill is asked of).
+      const sourceId = new URL(request.url).searchParams.get('source_id');
+      if (sourceId && apiConfigs[sourceId])
+        return page([
+          {
+            id: `job-${sourceId}`,
+            name: sourceId,
+            mode: 'incremental',
+            source_object: 'api',
+            source_id: sourceId,
+            dlq_pending: 0,
+            dlq_retention_days: 30,
+            status: 'active',
+            paused_reason: null,
+            lag_seconds: 0,
+            last_run: { status: 'succeeded', rows_loaded: 0 },
+          },
+        ]);
+      return page(
         jobs.map((job) => ({
           id: job.id,
           name: job.source_name,
@@ -1722,8 +1747,8 @@ export function createSourcesHandlers() {
             rows_loaded: job.rows_today,
           },
         })),
-      ),
-    ),
+      );
+    }),
     http.get('*/v1/jobs/:id/dlq', ({ params }) => {
       const records = errorGroups
         .filter((group) => group.job_id === params.id)
@@ -1776,8 +1801,17 @@ export function createSourcesHandlers() {
       );
       return HttpResponse.json({ discarded: 1 });
     }),
-    http.post('*/v1/jobs/:action', ({ params }) => {
+    http.post('*/v1/jobs/:action', async ({ params, request }) => {
       const [id, verb] = String(params.action).split(':');
+      if (verb === 'backfill' && apiConfigs[id.replace(/^job-/, '')]) {
+        const range = (await request.json()) as { from?: string; to?: string };
+        if (!range.from || !range.to || range.from > range.to)
+          return problem(422, 'validation_failed', 'Khoảng ngày không hợp lệ.');
+        return HttpResponse.json(
+          { id: `run-${id}`, status: 'running', poll_after_ms: 1000 },
+          { status: 202 },
+        );
+      }
       const job = jobs.find((j) => j.id === id);
       if (!job) return problem(404, 'not_found', 'Không tìm thấy job.');
       const next: Partial<Record<string, IngestionJob['status']>> = {
@@ -1854,9 +1888,7 @@ export function createSourcesHandlers() {
     http.get('*/v1/documents', ({ request }) => {
       const collection = new URL(request.url).searchParams.get('collection_id');
       if (!collection || !(collection in documents)) return undefined;
-      return page(
-        (documents[collection] ?? []).map((doc) => documentApi(doc.id, doc.title, doc)),
-      );
+      return page((documents[collection] ?? []).map((doc) => documentApi(doc.id, doc.title, doc)));
     }),
     http.get('*/v1/collections/:id/documents', ({ params }) => {
       const list = documents[String(params.id)] ?? [];

@@ -470,7 +470,9 @@ export function createDataPrepHandlers() {
   return [
     /* The SQL screen uses the canonical query-run worker. */
     http.post('*/v1/query-runs', async ({ request }) => {
-      const body = (await request.json()) as { sql?: string };
+      const body = (await request.clone().json()) as { sql?: string; dataset_id?: string };
+      // A dataset with filters (the table explorer) is the sources mock's.
+      if (body.dataset_id) return undefined;
       const sql = body.sql ?? '';
       if (!sql.trim()) return problem(400, 'invalid_request', 'Chưa có câu truy vấn.');
       if (/\b(insert|update|delete|drop|alter|truncate)\b/i.test(sql))
@@ -700,12 +702,25 @@ export function createDataPrepHandlers() {
       const detail = verb ? detailOf(id) : undefined;
       if (!verb) return undefined;
       if (!detail) return notFound();
-      if (verb === 'test-run')
-        return HttpResponse.json({
-          rows_out: detail.steps.at(-1)?.rows_out ?? 0,
-          excluded_rows: 8,
-          duration_s: 41,
-        });
+      if (verb === 'preview')
+        // A full test run (sample_rows null), already finished as the worker would leave it.
+        return HttpResponse.json(
+          {
+            id: `run-${++seq}`,
+            pipeline_id: id,
+            mode: 'preview',
+            status: 'succeeded',
+            sample_rows: null,
+            rows_in: detail.input_rows,
+            rows_out: detail.steps.at(-1)?.rows_out ?? 0,
+            rows_dropped: [{ step: 2, kind: 'dedupe', rows: 8, condition: 'loan_id trùng' }],
+            totals_check: { matched: true, columns: [] },
+            started_at: '2026-10-17T08:00:00+07:00',
+            finished_at: '2026-10-17T08:00:41+07:00',
+            error: null,
+          },
+          { status: 202 },
+        );
       if (verb === 'materialize') {
         const body = (await request.json()) as { table_name: string };
         if (!/^[a-z_][a-z0-9_]{0,62}$/.test(body.table_name))

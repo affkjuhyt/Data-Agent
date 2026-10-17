@@ -386,32 +386,40 @@ export const getStepPreview = async (id: string, seq: number): Promise<StepPrevi
 export const sendPrepMessage = async (id: string, text: string) =>
   v1Send<PipelineDetail>('POST', `/pipelines/${pathId(id)}/messages`, { text });
 
-/** PROPOSAL: POST /v1/pipelines/{id}:test-run — every step on the full input, nothing written. */
+/** A2: POST /v1/pipelines/{id}:preview with no sample — every step on the full input, nothing written. */
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export const testRunPipeline = async (id: string) => {
-  try {
-    return await v1Send<{ rows_out: number; excluded_rows: number; duration_s: number }>(
-      'POST',
-      `/pipelines/${pathId(id)}:test-run`,
-    );
-  } catch (error) {
-    if (!(error instanceof V1Error) || error.status !== 404) throw error;
-    const run = await v1Send<components['schemas']['PipelineRunView']>(
-      'POST',
-      `/pipelines/${pathId(id)}:preview`,
-      { sample_rows: null },
-    );
-    const started = new Date(run.started_at).getTime();
-    const finished = run.finished_at ? new Date(run.finished_at).getTime() : started;
-    const dropped =
-      typeof run.rows_dropped === 'object' && run.rows_dropped !== null
-        ? (run.rows_dropped as { total?: unknown }).total
-        : 0;
-    return {
-      rows_out: run.rows_out ?? 0,
-      excluded_rows: typeof dropped === 'number' ? dropped : 0,
-      duration_s: Math.max(0, finished - started) / 1000,
-    };
+  const queued = await v1Send<components['schemas']['PipelineRunView']>(
+    'POST',
+    `/pipelines/${pathId(id)}:preview`,
+    { sample_rows: null },
+  );
+  // The worker runs it: follow the pipeline's last run until this one has finished.
+  let run = queued;
+  const deadline = Date.now() + 120_000;
+  while (run.status === 'running') {
+    if (Date.now() > deadline)
+      throw new V1Error(504, 'timeout', 'Chạy thử quá lâu; xem lại sau trong danh sách pipeline.');
+    await sleep(1000);
+    const raw = await v1Get<PipelineDetailWire>(`/pipelines/${pathId(id)}`);
+    if (raw.last_run && raw.last_run.id === queued.id) run = raw.last_run;
   }
+  if (run.status !== 'succeeded')
+    throw new V1Error(422, 'run_failed', run.error ?? 'Chạy thử không thành công.');
+  const started = new Date(run.started_at).getTime();
+  const finished = run.finished_at ? new Date(run.finished_at).getTime() : started;
+  // rows_dropped is one entry per dropping step: {step, kind, rows, condition}.
+  const dropped = (Array.isArray(run.rows_dropped) ? run.rows_dropped : []).reduce<number>(
+    (sum, d) =>
+      sum + (typeof (d as { rows?: unknown }).rows === 'number' ? (d as { rows: number }).rows : 0),
+    0,
+  );
+  return {
+    rows_out: run.rows_out ?? 0,
+    excluded_rows: dropped,
+    duration_s: Math.max(0, finished - started) / 1000,
+  };
 };
 
 /* ─── Lưu thành bảng & lịch chạy (UC-06-02, UC-06-03) ─────────────────── */
@@ -452,8 +460,6 @@ export interface PublishPipeline {
 
 export const getOutputDraft = async (id: string) =>
   v1Get<OutputDraft>(`/pipelines/${pathId(id)}/output-draft`);
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * A2 saves in two calls: POST :materialize (the table, in the pipeline's own Data Space, always
