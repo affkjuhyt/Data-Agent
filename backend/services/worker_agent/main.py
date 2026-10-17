@@ -25,6 +25,7 @@ from sqlalchemy import text
 
 from libs.dataagent_db import unscoped_session
 from services.worker_agent import (
+    evaluation,
     exports,
     hitl,
     private,
@@ -36,6 +37,7 @@ from services.worker_agent import (
     runs,
     schema_scans,
     skill_runs,
+    semantic_review,
     source_tests,
     tiles,
     uploads,
@@ -74,6 +76,8 @@ HANDLERS: dict[str, Handler] = {
     **exports.HANDLERS,
     **runs.HANDLERS,
     **skill_runs.HANDLERS,
+    **evaluation.HANDLERS,
+    **semantic_review.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -121,6 +125,10 @@ async def sources() -> list[EventSource]:
         if schema == "agent":
             # The one consumer of run.status_changed: the run executor (runs.py, ADR-37 stand-in).
             types |= set(runs.HANDLERS)
+        if schema == "eval":
+            types |= set(evaluation.HANDLERS)
+        if schema == "context":
+            types |= set(semantic_review.HANDLERS)
         found.append(OutboxTableSource(schema=schema, event_types=frozenset(types)))
     try:
         audit = await _outbox_schemas(AUDIT_RELAY)

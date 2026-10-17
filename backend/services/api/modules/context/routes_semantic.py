@@ -411,6 +411,7 @@ async def preview_metric_version(
             periods=body.periods or PREVIEW_PERIODS,
             previous_status=previous,
             status=row.status,
+            requested_by=principal.user_id,
         )
     return accepted(response, f"/v1/eval-runs/{eval_run_id}", eval_run_id, "queued")
 

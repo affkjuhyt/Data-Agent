@@ -465,13 +465,18 @@ async def _finish(event: Event, pid: uuid.UUID, status: str) -> None:
 
 
 async def decided(event: Event) -> None:
+    from services.worker_agent import semantic_review
+
     proposal = await _proposal(event)
-    if proposal is None or proposal["kind"] not in ("skill_publish", "pack_activate", "writeback"):
+    applied_here = ("skill_publish", "pack_activate", "writeback", *semantic_review.KINDS)
+    if proposal is None or proposal["kind"] not in applied_here:
         return
     if proposal["status"] not in ("accepted", "open", "rejected"):
         return  # already applied, or no longer waiting
-    if proposal["kind"] == "skill_publish":
-        outcome: bool | None = await _apply_skill(event, proposal)
+    if proposal["kind"] in semantic_review.KINDS:
+        outcome: bool | None = await semantic_review.apply(event, proposal)
+    elif proposal["kind"] == "skill_publish":
+        outcome = await _apply_skill(event, proposal)
     elif proposal["kind"] == "pack_activate":
         outcome = await _apply_pack(event, proposal)
     else:

@@ -5,14 +5,18 @@ with (compiler.Layer), plus each metric's version in force: the current version 
 certified, otherwise the newest certified one, otherwise the current one uncertified (the answer
 then says "chưa có định nghĩa chuẩn", AC-01-01-07). Only active rows count: a synonym pending
 review, a rejected relationship or a disabled dataset is not part of what a question can use.
+
+An `Overlay` is the exception, for evaluation only (UC-07-03): the layer as it would be once a
+proposal is accepted, a draft metric version used in place of the one in force, a pending synonym
+or relationship counted as active. Questions never load one.
 """
 
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db.models import catalog, context
@@ -25,6 +29,13 @@ from services.worker_agent.understand.resolver import (
 )
 
 
+@dataclass(frozen=True)
+class Overlay:
+    metric_version_ids: frozenset[uuid.UUID] = field(default_factory=frozenset)
+    synonym_ids: frozenset[uuid.UUID] = field(default_factory=frozenset)
+    relationship_ids: frozenset[uuid.UUID] = field(default_factory=frozenset)
+
+
 @dataclass
 class SpaceLayer:
     vocabulary: Vocabulary
@@ -34,8 +45,25 @@ class SpaceLayer:
     datasets: dict[uuid.UUID, catalog.Dataset]
 
 
-async def load(session: AsyncSession, space_id: uuid.UUID) -> SpaceLayer:
+async def load(
+    session: AsyncSession, space_id: uuid.UUID, overlay: Overlay | None = None
+) -> SpaceLayer:
     ctx = context
+    overlay = overlay or Overlay()
+    drafts = (
+        {
+            v.metric_id: v
+            for v in (
+                await session.scalars(
+                    select(ctx.MetricVersion).where(
+                        ctx.MetricVersion.id.in_(overlay.metric_version_ids)
+                    )
+                )
+            ).all()
+        }
+        if overlay.metric_version_ids
+        else {}
+    )
     entities = (
         await session.scalars(
             select(ctx.SemanticEntity).where(
@@ -77,7 +105,10 @@ async def load(session: AsyncSession, space_id: uuid.UUID) -> SpaceLayer:
         await session.scalars(
             select(ctx.Relationship).where(
                 ctx.Relationship.data_space_id == space_id,
-                ctx.Relationship.status == "active",
+                or_(
+                    ctx.Relationship.status == "active",
+                    ctx.Relationship.id.in_(overlay.relationship_ids),
+                ),
                 ctx.Relationship.cardinality == "many_to_one",
             )
         )
@@ -85,7 +116,8 @@ async def load(session: AsyncSession, space_id: uuid.UUID) -> SpaceLayer:
     metrics = (
         await session.scalars(
             select(ctx.Metric).where(
-                ctx.Metric.data_space_id == space_id, ctx.Metric.status == "active"
+                ctx.Metric.data_space_id == space_id,
+                or_(ctx.Metric.status == "active", ctx.Metric.id.in_(list(drafts))),
             )
         )
     ).all()
@@ -105,6 +137,8 @@ async def load(session: AsyncSession, space_id: uuid.UUID) -> SpaceLayer:
             if current is not None and current.status == "certified"
             else certified or current
         )
+        if m.id in drafts:
+            chosen = drafts[m.id]
         if chosen is not None and chosen.status != "broken":
             version_rows[m.id] = chosen
     versions = {
@@ -153,7 +187,8 @@ async def load(session: AsyncSession, space_id: uuid.UUID) -> SpaceLayer:
     synonyms = (
         await session.scalars(
             select(ctx.Synonym).where(
-                ctx.Synonym.data_space_id == space_id, ctx.Synonym.status == "active"
+                ctx.Synonym.data_space_id == space_id,
+                or_(ctx.Synonym.status == "active", ctx.Synonym.id.in_(overlay.synonym_ids)),
             )
         )
     ).all()

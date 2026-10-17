@@ -53,6 +53,7 @@ def worker_database(ddl_server: dict[str, str]) -> Iterator[str]:  # noqa: F811
             "svc_agent",
             "svc_notify",
             "svc_monitor",
+            "svc_eval",
         ):
             cur.execute(f"ALTER ROLE {role} WITH LOGIN PASSWORD %s", (PASSWORD,))
     conn.close()
@@ -72,6 +73,7 @@ def worker_database(ddl_server: dict[str, str]) -> Iterator[str]:  # noqa: F811
         "svc_agent",
         "svc_notify",
         "svc_monitor",
+        "svc_eval",
     ):
         mp.setenv(f"DATAAGENT_DB_URL__{role.upper()}", _login_url(dsn, role))
     # The audit database's outbox, read by the same relay role through its own connection key.
@@ -102,6 +104,11 @@ class Seed:
         with self.conn.cursor() as cur:
             cur.execute(f"INSERT INTO {table} ({cols}) VALUES ({marks})", params)
         return values["id"]  # type: ignore[return-value]
+
+    def all(self, sql: str, *params: object) -> list[tuple]:
+        with self.conn.cursor() as cur:
+            cur.execute(sql, [str(p) if isinstance(p, uuid.UUID) else p for p in params])
+            return cur.fetchall()
 
     def one(self, sql: str, *params: object) -> object:
         with self.conn.cursor() as cur:
