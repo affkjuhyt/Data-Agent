@@ -191,6 +191,10 @@ Dịch vụ: Connector service (catalog). 17 endpoint. Hai endpoint chứng nh�
 | GET | /v1/datasets/{id}/versions | Lịch sử cấu trúc | 04-03 | ask |
 | POST | /v1/dataset-versions/{id}:certify | Chứng nhận phiên bản dataset hợp nhất | 14-05 | steward |
 | POST | /v1/dataset-versions/{id}:revoke-certification | Thu hồi chứng nhận, bắt buộc lý do | 14-05 | steward |
+| POST | /v1/connectors/rest:try | Xếp hàng kiểm tra một request REST không lưu bí mật (thêm 17/10/2026) | 04-01 | admin_data |
+| GET | /v1/datasets/{id}/columns/{column} | Thống kê một cột dữ liệu (thêm 17/10/2026) | 04-02 | ask |
+| POST | /v1/datasets/{id}:derive | Tạo bảng dẫn xuất từ bộ lọc và tuỳ chọn bỏ trùng (thêm 17/10/2026) | 04-02, 06-02 | ask |
+| POST | /v1/derived-tables | Lưu câu SQL thành bảng dẫn xuất (thêm 17/10/2026) | 06-02 | ask |
 
 ### Nạp dữ liệu
 
@@ -246,6 +250,8 @@ Dịch vụ: Document service (document). 15 endpoint.
 | GET | /v1/extraction-schemas | Lược đồ trích xuất của bộ sưu tập (thêm 12/10/2026) | 05-06 | ask |
 | GET | /v1/extraction-schemas/{id} | Một lược đồ trích xuất: trường, kiểu, bắt buộc, độ chính xác trên mẫu, cột đích (thêm 12/10/2026) | 05-06 | ask |
 | GET | /v1/document-sources | Nguồn đồng bộ tài liệu đã đăng ký (thêm 12/10/2026) | 05-01 | ask |
+| GET | /v1/documents/{id}/file | Tải bản gốc để xem hoặc tải xuống (thêm 17/10/2026) | 05-04 | ask |
+| GET | /v1/documents/{id}/chunks | Danh sách đoạn văn đã trích xuất (thêm 17/10/2026) | 05-04 | ask |
 
 ### Biến đổi dữ liệu
 
@@ -277,6 +283,8 @@ Dịch vụ: Pipeline service (pipeline). 18 endpoint.
 | GET | /v1/marts | Danh sách data mart (thêm 12/10/2026) | 06-06 | ask |
 | GET | /v1/marts/{id} | Một data mart: bảng sự kiện, chiều, quan hệ, kiểm tra, chiều agent gợi ý (thêm 12/10/2026) | 06-06 | ask |
 | PATCH | /v1/marts/{id} | Sửa mart: thêm chiều, thước đo, quan hệ (kể cả nhận gợi ý của agent) (thêm 12/10/2026) | 06-06 | admin\_data |
+| POST | /v1/pipelines/{id}/runs | Chạy pipeline ngay (thêm 17/10/2026) | 06-03 | prepare_data |
+| GET | /v1/lineage/targets | Danh sách đối tượng có thể chọn cho dòng dữ liệu (thêm 17/10/2026) | 06-05 | ask |
 
 ### Lớp ngữ cảnh
 
@@ -328,6 +336,9 @@ Dịch vụ: Context service (context). 39 endpoint, trong đó 16 endpoint lớ
 | GET | /v1/examples | Câu hỏi mẫu (đã xác nhận và gợi ý) (thêm 12/10/2026) | 07-02, 07-06 | ask |
 | PATCH | /v1/examples/{id} | Sửa SQL hoặc xác nhận câu hỏi mẫu; SQL chạy lại trước khi lưu (thêm 12/10/2026) | 07-02, 07-06 | steward |
 | GET | /v1/synonyms | Từ đồng nghĩa (thêm 12/10/2026) | 07-02 | ask |
+| POST | /v1/data-products/{id}:draft-version | Mở bản nháp phiên bản kế tiếp để chỉnh sửa (thêm 17/10/2026) | 07-13 | steward |
+| GET | /v1/data-products/catalog | Catalog sản phẩm dữ liệu đã phát hành của Data Space khác (thêm 17/10/2026) | 06-06, 11-08 | — |
+| POST | /v1/data-products:request-use | Xin quyền dùng sản phẩm dữ liệu của Data Space khác (thêm 17/10/2026) | 07-13, 11-08 | ask |
 
 ### Xung đột
 
@@ -519,6 +530,11 @@ Dịch vụ: Admin service (org, governance). 27 endpoint.
 | GET | /v1/admin/agent-usage | Vận hành agent theo ngày và theo agent: lượt chạy, cần người, lỗi, thời gian, chi phí so ngân sách (thêm 12/10/2026) | 11-04, 13-06 | admin |
 | POST | /v1/schedules:preview | Các lần chạy tới của một lịch chưa lưu, theo lịch làm việc và ngày nghỉ (thêm 12/10/2026) | 06-03, 04-05, 02-04 | ask |
 | GET | /v1/dsr | Yêu cầu của chủ thể dữ liệu (thêm 12/10/2026) | 11-06 | compliance |
+| PUT | /v1/me/data-space-preference | Chọn Data Space mở lần sau (thêm 17/10/2026) | 11-08 | — |
+| GET | /v1/me/onboarding | Trạng thái hướng dẫn bắt đầu và các mẫu agent (thêm 17/10/2026) | 11-01 | — |
+| POST | /v1/me/onboarding:skip | Bỏ qua hướng dẫn bắt đầu (thêm 17/10/2026) | 11-01 | — |
+| POST | /v1/me/onboarding:complete | Hoàn tất hướng dẫn bắt đầu (thêm 17/10/2026) | 11-01 | — |
+| POST | /v1/me/onboarding:try-agent | Tạo agent mẫu và khởi chạy lượt thử (thêm 17/10/2026) | 11-01 | create_agent |
 
 ### Kiểm toán
 
@@ -820,12 +836,14 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/uploads | — | Page<FileUpload> | — |
 | GET /v1/uploads/{id} | — | FileUpload | 404 not_found |
 | PATCH /v1/uploads/{id} | sheet, header\_row, encoding, decimal\_sep, column\_map, target\_dataset\_id, replace\_mode | FileUpload | — |
-| POST /v1/uploads/{id}:commit | column_map | Dataset. Bảng tải tay hết hạn sau 90 ngày (BR-105) | 422 business\_rule\_violated (dòng lỗi trên 5%) |
+| POST /v1/uploads/{id}:commit | column\_map, sheet, header\_row, encoding, decimal\_sep, target\_dataset\_id, replace\_mode | Dataset. Bảng tải tay hết hạn sau 90 ngày (BR-105) | 422 business\_rule\_violated (dòng lỗi trên 5%) |
 | GET /v1/quality-rules | ?dataset\_id, ?severity | Danh sách QualityRule | — |
 | POST /v1/quality-rules | dataset\_id\*, column\_name, kind\*, params, severity | QualityRule | — |
 | PATCH /v1/quality-rules/{id} | params, severity, status | QualityRule | — |
 | GET /v1/quality-results | ?dataset\_id, ?passed, ?from, ?to | Danh sách QualityResult | — |
 | POST /v1/quality-results/{id}:acknowledge | note\* | QualityResult. Cho phép dùng tiếp dữ liệu vi phạm mức cao trong báo cáo (BR-116) | — |
+| GET /v1/uploads/{id}/preview | ?limit | UploadPreview | 404 not\_found; 422 validation\_failed |
+| DELETE /v1/uploads/{id} | — | — | 404 not\_found |
 
 ### A3 · Tài liệu
 
@@ -850,6 +868,8 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/extraction-schemas | ?collection\_id, ?cursor | Danh sách ExtractionSchema | — |
 | GET /v1/extraction-schemas/{id} | — | ExtractionSchema (nơi Location của :test trỏ tới) | 404 not\_found |
 | GET /v1/document-sources | ?collection\_id | Danh sách nguồn tài liệu, không có bí mật | — |
+| GET /v1/documents/{id}/file | — | — | — |
+| GET /v1/documents/{id}/chunks | — | Page<ChunkView> | — |
 
 ### A3 · Biến đổi dữ liệu
 
@@ -875,6 +895,12 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/marts | ?status, ?cursor | Danh sách DataMart | — |
 | GET /v1/marts/{id} | — | DataMart | 404 not\_found |
 | PATCH /v1/marts/{id} | name, dimensions, measures, relations | DataMart; kiểm quan hệ chạy lại (relation\_check\_passed) | 409 invalid\_state (mart đã retired); 422 validation\_failed |
+| GET /v1/pipelines/{id}/steps/{seq}/preview | — | StepPreview | — |
+| POST /v1/pipelines/{id}/messages | text\* | PipelineDetail | — |
+| GET /v1/pipelines/{id}/schedule | — | ScheduleRequest | — |
+| POST /v1/pipelines/{id}/schedule:preview | cron, no\_overlap, on\_failure | — | — |
+| GET /v1/pipelines/{id}/output-draft | — | OutputDraft | — |
+| GET /v1/writebacks | ?status | Page<WritebackView> | — |
 
 ### A3 · Lớp ngữ cảnh
 
@@ -925,6 +951,8 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/examples | ?status, ?q, ?cursor | Danh sách Example | — |
 | PATCH /v1/examples/{id} | question, sql, status | Example | 422 validation\_failed (SQL không chạy được); 404 not\_found |
 | GET /v1/synonyms | ?q, ?cursor | Danh sách Synonym | — |
+| GET /v1/data-products/catalog | — | Page<PublishedCatalogProduct> | — |
+| POST /v1/data-products:request-use | product\_ids\*, data\_space\_id\* | 202, — | — |
 
 ### A3 · Xung đột
 
@@ -1010,6 +1038,8 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | POST /v1/alerts/{id}:reopen | reason\* | Alert (status = open) | 409 invalid\_state (chưa đóng) |
 | GET /v1/reports | ?status, ?cursor | Danh sách Report | — |
 | GET /v1/reports/{id} | — | Report | 404 not\_found |
+| POST /v1/me/notification-preferences:test | — | TestNotificationView | — |
+| GET /v1/channel-rules | — | ChannelRulesView | — |
 
 ### A3 · Gói ngành
 
@@ -1097,6 +1127,12 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/admin/agent-usage | ?from, ?to, ?granularity | Chuỗi tổng hợp theo ngày và theo agent | — |
 | POST /v1/schedules:preview | cron\*, work\_calendar\_id, timezone, count | Danh sách thời điểm chạy kế tiếp; không ghi gì | 422 validation\_failed (cron sai) |
 | GET /v1/dsr | ?status, ?cursor | Danh sách DsrRequest (không có định danh, chỉ bản băm) | — |
+| GET /v1/access-requests | ?status, ?data\_space\_id | Page<AccessRequestView> | — |
+| GET /v1/access-requests/{id} | — | AccessRequestView | — |
+| GET /v1/admin/groups | — | Page<UserGroupView> | — |
+| POST /v1/admin/directory:sync | — | 202, DirectorySyncAccepted | — |
+| POST /v1/admin/invitations | email\*, role\_id\*, data\_space\_id\*, row\_scope, valid\_until | 202, InvitationAccepted | — |
+| GET /v1/data-spaces/{id}/permissions | — | PermissionMatrix | — |
 
 ### A3 · Kiểm toán
 
