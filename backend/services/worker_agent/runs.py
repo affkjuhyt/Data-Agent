@@ -995,7 +995,9 @@ async def _audit_target(
         if source is None or source.mode != "federated" or source.status not in QUERYABLE:
             raise RunFailed("Bảng này nằm trên một nguồn chưa được phép truy vấn tại chỗ.")
         session.expunge(chosen)
-        session.expunge(source)
+        # The workspace's source is built here, not read: it is not in the session.
+        if source in session:
+            session.expunge(source)
     columns = [
         Column(
             m.name, m.display_name or m.name, m.normalized_type, m.is_key, m.pii_label is not None

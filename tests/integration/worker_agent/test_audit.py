@@ -147,3 +147,46 @@ async def test_a_goal_naming_no_table_of_the_space_lists_them(
     status, stop, *_, error, _, _, _ = run_row(seed, run)
     assert (status, stop) == ("failed", "error")
     assert "Khoản vay khách hàng" in error and steps(seed, run) == []
+
+
+async def test_a_workspace_table_is_audited_in_place_too(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An ingested or uploaded table: in the workspace schema, with no source of its own.
+    bank = build(seed, credit, monkeypatch)
+    table = f"ingest_audit_{uuid.uuid4().hex[:8]}"
+    with seed.conn.cursor() as cur:
+        cur.execute(f'CREATE TABLE workspace."{table}" (region text, net_revenue numeric)')
+        cur.execute(f'GRANT SELECT ON workspace."{table}" TO svc_query')
+        cur.execute(
+            f'INSERT INTO workspace."{table}" VALUES '
+            "('HN', 95), ('HCM', 125), ('DN', NULL), ('HN', 40)"
+        )
+    dataset = seed.row(
+        "catalog.dataset",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        origin="derived",
+        schema_name="workspace",
+        table_name=table,
+        display_name="Doanh thu theo vùng",
+        enabled=True,
+    )
+    for ordinal, (name, kind) in enumerate([("region", "string"), ("net_revenue", "decimal")]):
+        seed.row(
+            "catalog.column_meta",
+            org_id=bank.org,
+            dataset_id=dataset,
+            dataset_version=1,
+            name=name,
+            ordinal=ordinal,
+            data_type=kind,
+            normalized_type=kind,
+        )
+    run = agent_run(bank, goal="Kiểm toán Doanh thu theo vùng", tools=AUDIT, kind="data_quality")
+    await drain()
+    status, stop, *_, error, _, _, _ = run_row(seed, run)
+    assert (status, stop) == ("succeeded", "completed"), error
+    assert "Doanh thu theo vùng (4 dòng)" in steps(seed, run)[1][4]
