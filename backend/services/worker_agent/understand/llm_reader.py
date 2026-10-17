@@ -41,7 +41,10 @@ Chỉ dùng mã có trong danh mục; không đoán mã mới. Trả về JSON �
 {"metric": "<mã chỉ số hoặc null>", "alternatives": ["<mã chỉ số khác nếu câu hỏi mơ hồ>"],
  "group_by": ["<mã chiều>"], "filters": {"<mã chiều>": ["<mã giá trị>"]}, "period": "<cụm từ chỉ kỳ hoặc null>"}
 Nếu câu hỏi khớp nhiều chỉ số như nhau, đặt metric = null và liệt kê chúng trong alternatives.
-Câu hỏi có thể nối tiếp hội thoại trước: khi nó không nêu chỉ số, dùng chỉ số của câu gần nhất."""
+Câu hỏi hỏi một đại lượng không có trong danh mục chỉ số (ví dụ số khoản vay, số khách hàng, số
+giao dịch) thì metric = null, kể cả khi hội thoại trước có chỉ số.
+Câu hỏi có thể nối tiếp hội thoại trước: chỉ khi nó không nêu đại lượng nào (chỉ đổi chiều, bộ lọc
+hoặc kỳ, ví dụ "còn theo vùng thì sao?") mới dùng chỉ số của câu gần nhất."""
 
 
 def _labels(chips: Sequence[dict[str, object]], kind: str) -> list[str]:
