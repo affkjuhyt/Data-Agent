@@ -112,42 +112,57 @@ async def evaluate(
     *,
     run_kind: str,
     run_ref: uuid.UUID | None,
-    actor: uuid.UUID,
 ) -> bool | None:
-    """Run one rule; True passed, False failed, None when it could not run."""
+    """Run one rule; True passed, False failed (or could not run), None when it is gone.
+
+    A rule runs with its own author's rights, the last person who wrote it, whoever triggered
+    the check: a custom_sql rule reads what its author may read, never what the person running
+    a pipeline or the scheduler could. A rule that cannot run is recorded as failed with why
+    (fail closed: a high-severity rule that cannot be checked blocks its table)."""
     from services.worker_agent.questions import secrets
 
-    async with scoped_session(ROLE, org_id, actor) as session:
+    async with scoped_session(ROLE, org_id) as session:
         rule = await session.get(ingest.QualityRule, rule_id)
-        if rule is None or rule.status == "disabled":
+        if rule is None or rule.status != "active":
             return None
-    async with scoped_session("svc_catalog", org_id, actor) as session:
+        author = rule.updated_by or rule.created_by
+    if author is None:
+        return None
+    async with scoped_session("svc_catalog", org_id, author) as session:
         dataset = await session.get(catalog.Dataset, rule.dataset_id)
         source = await _source(session, dataset, org_id) if dataset else None
-    if dataset is None or source is None:
+    if dataset is None:
         return None
-    table = f"{_ident(dataset.schema_name)}.{_ident(dataset.table_name)}"
-    try:
-        sql = violation_sql(rule, table)
-    except (KeyError, ValueError) as exc:
-        logger.info("worker-agent | quality rule %s cannot run: %s", rule_id, exc)
-        return None
-    outcome = await run_query(
-        org_id=org_id,
-        data_space_id=dataset.data_space_id,
-        principal_id=actor,
-        caller_kind="ad_hoc",
-        caller_id=rule_id,
-        source=source,
-        sql=sql,
-        secrets=secrets(),
-        limit=1,
-    )
-    if not outcome.ok or not outcome.rows:
-        logger.info("worker-agent | quality rule %s failed to run: %s", rule_id, outcome.error)
-        return None
-    violations = int(outcome.rows[0][0] or 0)
-    async with scoped_session(ROLE, org_id, actor) as session:
+    failure: str | None = None
+    violations = 0
+    query_run: uuid.UUID | None = None
+    if source is None:
+        failure = "the dataset's source is gone"
+    else:
+        table = f"{_ident(dataset.schema_name)}.{_ident(dataset.table_name)}"
+        try:
+            sql = violation_sql(rule, table)
+        except (KeyError, ValueError) as exc:
+            failure = f"the rule is incomplete: {exc}"
+        else:
+            outcome = await run_query(
+                org_id=org_id,
+                data_space_id=dataset.data_space_id,
+                principal_id=author,
+                caller_kind="ad_hoc",
+                caller_id=rule_id,
+                source=source,
+                sql=sql,
+                secrets=secrets(),
+                limit=1,
+            )
+            query_run = outcome.query_run_id
+            if not outcome.ok or not outcome.rows:
+                failure = outcome.error or outcome.status
+            else:
+                violations = int(outcome.rows[0][0] or 0)
+    passed = failure is None and violations == 0
+    async with scoped_session(ROLE, org_id, author) as session:
         session.add(
             ingest.QualityResult(
                 id=uuid7(),
@@ -155,13 +170,15 @@ async def evaluate(
                 rule_id=rule_id,
                 run_kind=run_kind,
                 run_ref=run_ref,
-                passed=violations == 0,
+                passed=passed,
                 violations=violations,
-                sample_ref=str(outcome.query_run_id),
+                sample_ref=f"error: {failure}"[:1000] if failure else str(query_run),
             )
         )
-    await refresh_state(org_id, dataset.id, actor)
-    return violations == 0
+    if failure:
+        logger.info("worker-agent | quality rule %s could not run: %s", rule_id, failure)
+    await refresh_state(org_id, dataset.id, author)
+    return passed
 
 
 async def refresh_state(org_id: uuid.UUID, dataset_id: uuid.UUID, actor: uuid.UUID) -> str:
@@ -176,7 +193,7 @@ async def refresh_state(org_id: uuid.UUID, dataset_id: uuid.UUID, actor: uuid.UU
             )
         ).all()
         failing: list[str] = []
-        known = 0
+        unchecked = 0
         for rule in rules:
             latest = await session.scalar(
                 select(ingest.QualityResult.passed)
@@ -185,12 +202,18 @@ async def refresh_state(org_id: uuid.UUID, dataset_id: uuid.UUID, actor: uuid.UU
                 .limit(1)
             )
             if latest is None:
-                continue
-            known += 1
-            if not latest:
+                unchecked += 1
+            elif not latest:
                 failing.append(rule.severity)
+    # A table is ok only when every active rule has passed its last check.
     state = (
-        "blocked" if "high" in failing else "warning" if failing else "ok" if known else "unknown"
+        "blocked"
+        if "high" in failing
+        else "warning"
+        if failing
+        else "unknown"
+        if unchecked or not rules
+        else "ok"
     )
     async with scoped_session("svc_catalog", org_id, actor) as session:
         await session.execute(
@@ -206,9 +229,7 @@ async def rule_created(event: Event) -> None:
         rule = await session.get(ingest.QualityRule, event.aggregate_id)
         if rule is None:
             return
-        actor = rule.created_by or rule.updated_by
-    if actor is not None:
-        await evaluate(event.org_id, rule.id, run_kind="manual", run_ref=None, actor=actor)
+    await evaluate(event.org_id, rule.id, run_kind="manual", run_ref=None)
 
 
 async def evaluate_dataset(
@@ -217,9 +238,8 @@ async def evaluate_dataset(
     *,
     run_kind: str,
     run_ref: uuid.UUID | None,
-    actor: uuid.UUID,
 ) -> int:
-    async with scoped_session(ROLE, org_id, actor) as session:
+    async with scoped_session(ROLE, org_id) as session:
         ids = (
             await session.scalars(
                 select(ingest.QualityRule.id).where(
@@ -229,7 +249,7 @@ async def evaluate_dataset(
             )
         ).all()
     for rule_id in ids:
-        await evaluate(org_id, rule_id, run_kind=run_kind, run_ref=run_ref, actor=actor)
+        await evaluate(org_id, rule_id, run_kind=run_kind, run_ref=run_ref)
     return len(ids)
 
 

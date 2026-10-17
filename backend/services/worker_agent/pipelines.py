@@ -385,7 +385,7 @@ async def materialize_requested(event: Event) -> None:
     from services.worker_agent import quality
 
     await quality.evaluate_dataset(
-        event.org_id, dataset_id, run_kind="pipeline_run", run_ref=run.id, actor=actor
+        event.org_id, dataset_id, run_kind="pipeline_run", run_ref=run.id
     )
     logger.info(
         "worker-agent | pipeline %s saved as workspace.%s (%d rows)",

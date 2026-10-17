@@ -80,6 +80,40 @@ async def test_rules_count_their_violations_on_the_data(
     )
 
 
+async def test_a_rule_that_cannot_run_fails_closed(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    # Reads a table outside the Data Space: the executor refuses, the check does not pass.
+    rid = rule(bank, "custom_sql", None, {"sql": "SELECT * FROM pg_catalog.pg_roles"}, "high")
+    await drain()
+    passed, ref = seed.one(
+        "SELECT passed, sample_ref FROM ingest.quality_result WHERE rule_id = %s", rid
+    )
+    assert passed is False and ref.startswith("error:")
+    assert (
+        seed.one("SELECT quality_state FROM catalog.dataset WHERE id = %s", bank.loans) == "blocked"
+    )
+
+
+async def test_a_rule_runs_with_its_authors_rights(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    rid = rule(bank, "not_null", "product_code", {}, "low")
+    await drain()
+    run_by = seed.one(
+        "SELECT q.principal_id FROM query.query_run q JOIN ingest.quality_result r"
+        " ON r.sample_ref = q.id::text WHERE r.rule_id = %s",
+        rid,
+    )
+    assert str(run_by) == str(bank.user)
+
+
 def job(bank: Bank, cron: str) -> uuid.UUID:
     source = bank.seed.one("SELECT source_id FROM catalog.dataset WHERE id = %s", bank.loans)
     jid = bank.seed.row(

@@ -174,11 +174,11 @@ async def _quality(org_id: uuid.UUID) -> int:
                 .order_by(ingest.QualityResult.checked_at.desc())
                 .limit(1)
             )
-            actor = rule.updated_by or rule.created_by
-            if (last is None or last < due_before) and actor is not None:
-                due.append((rule.id, actor))
-    for rule_id, actor in due:
-        await quality.evaluate(org_id, rule_id, run_kind="scheduled", run_ref=None, actor=actor)
+            if last is None or last < due_before:
+                due.append(rule.id)
+    for rule_id in due:
+        # Each rule runs with its own author's rights (quality.evaluate).
+        await quality.evaluate(org_id, rule_id, run_kind="scheduled", run_ref=None)
     return len(due)
 
 
