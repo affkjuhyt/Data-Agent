@@ -184,3 +184,22 @@ def test_a_two_valued_column_that_concentrates_nowhere_is_said_to_spread_evenly(
     assert said == (
         "Giới tính: Nam, Nữ phân bố đều theo Độ tuổi (không nhóm nào có tỷ lệ từ 1,2 lần mức chung)."
     )
+
+
+@pytest.mark.req("AC-06-07-02")
+def test_the_audit_suggests_rules_that_hold_its_findings() -> None:
+    # Suggestions, not rules: none exists until a person takes one (AC-06-07-02).
+    out = audit("Dư nợ khoản vay", COLUMNS, aggregates())
+    rules = {(s["kind"], s["column"]): s for s in out.suggestions}
+    assert rules[("unique", "loan_id")]["severity"] == "high"
+    gender = rules[("not_null", "gender")]
+    assert gender["params"] == {"where": {"customer_segment": ["Cá nhân"]}}
+    assert gender["severity"] == "medium" and "Cá nhân" in gender["text"]
+    assert rules[("range", "balance")]["params"] == {"min": 0}
+    segment = rules[("in_list", "customer_segment")]
+    assert segment["params"] == {"values": ["Cá nhân", "SME", "Doanh nghiệp lớn"]}
+    assert segment["severity"] == "low"
+    # Personal data is never listed; a rule a finding contradicts is not suggested.
+    assert not any(s["column"] == "national_id" for s in out.suggestions)
+    dup = audit("x", COLUMNS, aggregates(duplicate_keys=4))
+    assert ("unique", "loan_id") not in {(s["kind"], s["column"]) for s in dup.suggestions}

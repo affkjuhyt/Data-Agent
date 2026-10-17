@@ -324,3 +324,86 @@ describe('RunDetailPage results', () => {
     expect(within(results).getByText('Tỷ lệ nợ xấu (%) theo Vùng')).toBeInTheDocument();
   });
 });
+
+describe('RunDetailPage audit suggestions', () => {
+  it('turns a suggested rule into a quality rule when the person takes it', async () => {
+    routeId = 'run-audit';
+    const posted: unknown[] = [];
+    server.use(
+      http.get('*/v1/runs/run-audit', () =>
+        HttpResponse.json({
+          id: 'run-audit',
+          agent_id: 'agent-q',
+          agent_name: 'Kiểm toán dữ liệu',
+          config_version: 1,
+          data_space_id: 'ds-rr',
+          trigger_kind: 'manual',
+          trigger_ref: null,
+          initiated_by: null,
+          parent_run_id: null,
+          depth: 0,
+          is_test: false,
+          status: 'succeeded',
+          current_step: 2,
+          narrative: [],
+          cost: '0',
+          tokens: 0,
+          started_at: '2026-10-17T12:00:00Z',
+          finished_at: '2026-10-17T12:00:05Z',
+          error: null,
+          stop_reason: 'completed',
+          created_at: '2026-10-17T12:00:00Z',
+          steps: [
+            {
+              id: 'step-2',
+              seq: 2,
+              kind: 'tool_call',
+              name: 'quality.status',
+              input: {},
+              output: {
+                dataset_id: 'ds-loans',
+                parts: [],
+                suggestions: [
+                  {
+                    kind: 'unique',
+                    column: 'loan_id',
+                    params: {},
+                    severity: 'high',
+                    text: 'Mã khoản vay không trùng.',
+                  },
+                ],
+              },
+              summary: 'Kiểm toán Khoản vay (2.400 dòng): 0 vấn đề cần xử lý, 1 cảnh báo.',
+              status: 'ok',
+              attempt: 1,
+              child_run_id: null,
+              cost: '0',
+              started_at: '2026-10-17T12:00:00Z',
+              duration_ms: 40,
+            },
+          ],
+        }),
+      ),
+      http.post('*/v1/quality-rules', async ({ request }) => {
+        posted.push(await request.json());
+        return HttpResponse.json({ id: 'rule-1' }, { status: 201 });
+      }),
+    );
+    wrap(<RunDetailPage />);
+    const rules = await screen.findByRole('region', { name: 'Gợi ý quy tắc chất lượng' });
+    expect(within(rules).getByText('Mã khoản vay không trùng.')).toBeInTheDocument();
+    fireEvent.click(within(rules).getByRole('button', { name: 'Tạo quy tắc' }));
+    await waitFor(() =>
+      expect(posted).toEqual([
+        {
+          dataset_id: 'ds-loans',
+          kind: 'unique',
+          column_name: 'loan_id',
+          params: {},
+          severity: 'high',
+        },
+      ]),
+    );
+    expect(await within(rules).findByText('Đã tạo')).toBeInTheDocument();
+  });
+});

@@ -3,7 +3,7 @@
  * step's chart_spec, the same way the Ask screen draws an answer.
  */
 import { describe, expect, it } from 'vitest';
-import { resultParts, stepChart } from './runResults';
+import { resultParts, ruleSuggestions, stepChart } from './runResults';
 
 const byRegion = {
   columns: ['vung', 'value'],
@@ -134,6 +134,59 @@ describe('resultParts', () => {
       ['Tỷ lệ nợ xấu', 'NPL 1,83%.', false],
       [null, 'Kiểm toán Khoản vay (16 dòng): 1 vấn đề cần xử lý.', false],
       ['Phân bố Giới tính', 'Nam 55%; Nữ 45%.', true],
+    ]);
+  });
+});
+
+describe('ruleSuggestions', () => {
+  it('lists the rules an audit suggests for its table, high ones as blocking', () => {
+    const steps = [
+      {
+        seq: 2,
+        kind: 'tool_call',
+        status: 'ok',
+        summary: 'Kiểm toán',
+        output: {
+          dataset_id: 'ds-1',
+          suggestions: [
+            {
+              kind: 'unique',
+              column: 'loan_id',
+              params: {},
+              severity: 'high',
+              text: 'Mã khoản vay không trùng.',
+            },
+            {
+              kind: 'not_null',
+              column: 'gender',
+              params: { where: { segment: ['Cá nhân'] } },
+              severity: 'medium',
+              text: 'Giới tính không rỗng với Cá nhân.',
+            },
+            { kind: 'odd', column: 'x', params: {}, severity: 'low', text: 'Không biết' },
+          ],
+        },
+      },
+    ];
+    expect(ruleSuggestions(steps)).toEqual([
+      {
+        key: '2.0',
+        datasetId: 'ds-1',
+        kind: 'unique',
+        column: 'loan_id',
+        params: {},
+        severity: 'block',
+        text: 'Mã khoản vay không trùng.',
+      },
+      {
+        key: '2.1',
+        datasetId: 'ds-1',
+        kind: 'not_null',
+        column: 'gender',
+        params: { where: { segment: ['Cá nhân'] } },
+        severity: 'warn',
+        text: 'Giới tính không rỗng với Cá nhân.',
+      },
     ]);
   });
 });

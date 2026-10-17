@@ -10,7 +10,7 @@
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 4 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 296 có test nhắc mã AC | todo 778 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 297 có test nhắc mã AC | todo 778 |
 | Endpoint A2 (tab 4) | 471 (A2 ghi 472 dòng; POST /v1/data-products ở hai nhóm) | 471 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 222 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 161 có mã nhắc tới | todo 195 |
@@ -1144,12 +1144,12 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-06-07 Đặt quy tắc chất lượng dữ liệu · 2/4</summary>
+<details><summary>UC-06-07 Đặt quy tắc chất lượng dữ liệu · 3/4</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-06-07-01 | Chính | Cho bảng dư nợ có trong catalog / Khi AC04 thêm quy tắc “du_no không rỗng”, chạy thử, đặt mức và lưu / Thì chạy thử báo số dòng vi phạm; quality_rule active; mỗi lần nạp sau đó có 1 quality_result và ghi chú bất thườn… | E2E, CSDL | todo | `tests/integration/api/test_ingest.py` |
-| AC-06-07-02 | Thay thế | Cho cột không rỗng liên tục 90 ngày / Khi agent đề xuất quy tắc và người dùng bỏ / Thì không có quality_rule mới; nhận thì có | E2E, CSDL | todo |  |
+| AC-06-07-02 | Thay thế | Cho cột không rỗng liên tục 90 ngày / Khi agent đề xuất quy tắc và người dùng bỏ / Thì không có quality_rule mới; nhận thì có | E2E, CSDL | todo | `tests/unit/worker_agent/test_audit_findings.py` |
 | AC-06-07-03 | Ngoại lệ | Cho quy tắc mức cao bị vi phạm / Khi lượt nạp xong / Thì bảng mang nhãn “chặn báo cáo” và Cần bạn có yêu cầu cho người phụ trách bảng | CSDL, E2E | todo |  |
 | AC-06-07-04 | Quy tắc | Cho bảng đang bị chặn mức cao / Khi phát hành báo cáo hoặc chốt kỳ dùng bảng / Thì bị chặn cho tới khi có người xác nhận (:acknowledge); vi phạm mức trung bình chỉ gắn nhãn, không chặn | API | todo | `tests/integration/api/test_ingest.py` |
 

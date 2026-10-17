@@ -123,3 +123,40 @@ export function resultParts(steps: StepLike[]): ResultPart[] {
   }
   return out;
 }
+
+/** A quality rule a data audit suggests for its table (worker-agent audit/findings._suggest). */
+export interface RuleSuggestion {
+  key: string;
+  datasetId: string;
+  kind: 'not_null' | 'range' | 'unique' | 'in_list';
+  column: string;
+  params: Record<string, unknown>;
+  /** The rules screen's two levels: a high rule blocks reports, the others warn. */
+  severity: 'block' | 'warn';
+  text: string;
+}
+
+const RULE_KINDS = new Set(['not_null', 'range', 'unique', 'in_list']);
+
+/** The rules the run's audits suggest; none exists until a person takes one (AC-06-07-02). */
+export function ruleSuggestions(steps: StepLike[]): RuleSuggestion[] {
+  const out: RuleSuggestion[] = [];
+  for (const s of steps) {
+    if (s.status !== 'ok' || !isRecord(s.output)) continue;
+    const { dataset_id: datasetId, suggestions } = s.output;
+    if (typeof datasetId !== 'string' || !Array.isArray(suggestions)) continue;
+    suggestions.forEach((r, i) => {
+      if (!isRecord(r) || !RULE_KINDS.has(String(r.kind)) || typeof r.column !== 'string') return;
+      out.push({
+        key: `${s.seq}.${i}`,
+        datasetId,
+        kind: r.kind as RuleSuggestion['kind'],
+        column: r.column,
+        params: isRecord(r.params) ? r.params : {},
+        severity: r.severity === 'high' ? 'block' : 'warn',
+        text: String(r.text ?? ''),
+      });
+    });
+  }
+  return out;
+}

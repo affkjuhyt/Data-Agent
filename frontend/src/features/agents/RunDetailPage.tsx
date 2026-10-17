@@ -18,7 +18,8 @@ import { ChartRenderer } from '../ask/components/ChartRenderer';
 import { FailedRun } from './FailedRun';
 import { PlanEditDrawer } from './PlanEditDrawer';
 import { SpanDetail, TraceWaterfall, defaultSpan } from './RunTrace';
-import { resultParts } from './runResults';
+import { createQualityRule } from '../../lib/v1/dataProducts';
+import { resultParts, ruleSuggestions, type RuleSuggestion } from './runResults';
 import { PLAN_STEP, runStatus } from './runStatus';
 
 /*
@@ -203,6 +204,7 @@ function RunBody({
             <>
               <Story run={run} />
               <Results steps={steps} />
+              <Suggestions steps={steps} />
             </>
           ) : (
             <TraceWaterfall run={run} steps={steps} selected={spanSeq} onSelect={setPicked} />
@@ -328,6 +330,59 @@ function Results({ steps }: { steps: NonNullable<AgentRun['steps']> }) {
           {p.chart && <ChartRenderer spec={p.chart} />}
         </article>
       ))}
+    </section>
+  );
+}
+
+/** The quality rules a data audit suggests (AC-06-07-02): none exists until the person takes
+ *  one here, which creates it (POST /v1/quality-rules) and has the worker run it at once. */
+function Suggestions({ steps }: { steps: NonNullable<AgentRun['steps']> }) {
+  const toast = useToast();
+  const [state, setState] = useState<Record<string, 'busy' | 'done' | string>>({});
+  const rules = ruleSuggestions(steps);
+  if (rules.length === 0) return null;
+  const take = async (r: RuleSuggestion) => {
+    setState((s) => ({ ...s, [r.key]: 'busy' }));
+    try {
+      await createQualityRule({
+        dataset_id: r.datasetId,
+        kind: r.kind,
+        column_name: r.column,
+        params: r.params,
+        severity: r.severity,
+      });
+      setState((s) => ({ ...s, [r.key]: 'done' }));
+      toast({ tone: 'success', message: `Đã tạo quy tắc: ${r.text}` });
+    } catch (e) {
+      setState((s) => ({ ...s, [r.key]: (e as Error).message }));
+    }
+  };
+  return (
+    <section aria-label="Gợi ý quy tắc chất lượng" className="flex flex-col gap-da-md pb-da-xl">
+      <h2 className="text-foreground da-heading-3">Gợi ý quy tắc chất lượng</h2>
+      <ul className="flex flex-col">
+        {rules.map((r) => {
+          const st = state[r.key];
+          return (
+            <li key={r.key} className="flex items-center gap-da-md border-b border-border py-[9px]">
+              <span className="min-w-0 flex-1 text-foreground da-body-small">{r.text}</span>
+              <StatusDot tone={r.severity === 'block' ? 'error' : 'warning'}>
+                {r.severity === 'block' ? 'Chặn báo cáo' : 'Cảnh báo'}
+              </StatusDot>
+              {st === 'done' ? (
+                <span className="text-muted-foreground da-body-small">Đã tạo</span>
+              ) : (
+                <Button size="sm" loading={st === 'busy'} onClick={() => take(r)}>
+                  Tạo quy tắc
+                </Button>
+              )}
+              {st && st !== 'busy' && st !== 'done' && (
+                <span className="text-error da-body-small">{st}</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }

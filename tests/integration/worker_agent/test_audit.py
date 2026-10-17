@@ -126,6 +126,11 @@ async def test_a_data_quality_agent_audits_the_latest_snapshot_of_the_table_it_n
     assert "Nam tập trung ở 26-35 (80,0%, chung 55,6%)" in concentration
     assert "Nữ tập trung ở 36-45 (75,0%, chung 44,4%)" in concentration
     assert "Phân bố Giới tính" in [p["question"] for p in out["parts"]]
+    # What it suggests is in its result only: no quality rule exists until a person takes one.
+    assert {"kind": "not_null", "column": "gender"} in [
+        {"kind": r["kind"], "column": r["column"]} for r in out["suggestions"]
+    ]
+    assert seed.one("SELECT count(*) FROM ingest.quality_rule WHERE org_id = %s", bank.org) == 0
     # Every query was read-only, in place, and the run's.
     assert seed.one(
         "SELECT count(*) FILTER (WHERE status = 'succeeded'), count(*) FROM query.query_run"

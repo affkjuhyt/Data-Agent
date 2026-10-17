@@ -86,6 +86,9 @@ class Audit:
     findings: list[Finding]
     parts: list[dict[str, Any]]
     summary: str
+    # Quality rules that hold what the audit found (AC-06-07-02): suggestions only, none is a
+    # rule until a person takes it (POST /v1/quality-rules).
+    suggestions: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _n(value: int | float) -> str:
@@ -128,16 +131,15 @@ def _profile(c: Column, a: Aggregates) -> dict[str, Any]:
     }
 
 
-def _missing(c: Column, a: Aggregates, labels: dict[str, str]) -> Finding | None:
-    filled = a.non_null.get(c.name, a.rows)
-    empty = a.rows - filled
-    if empty <= 0:
-        return None
-    plain = f"{c.label}: thiếu {_n(empty)}/{_n(a.rows)} dòng ({_pct(empty, a.rows)})."
-    # The group column that explains most of the gap: groups where the column is wholly empty.
-    # Such a group has more than a row or two: a lone empty row is the gap itself.
+Explained = tuple[int, str, list[tuple[Any, int, int]], list[tuple[Any, int, int]]]
+
+
+def _explained(c: Column, a: Aggregates) -> Explained | None:
+    """The group column that explains most of a column's gap: groups where it is wholly empty
+    (it does not apply there), and the groups where it applies. A group must have more than a
+    row or two: a lone empty row is the gap itself."""
     least = max(2, a.rows // 100)
-    best: tuple[int, str, list[tuple[Any, int, int]], list[tuple[Any, int, int]]] | None = None
+    best: Explained | None = None
     for (col, group), rows in a.filled_by.items():
         if col != c.name:
             continue
@@ -146,6 +148,16 @@ def _missing(c: Column, a: Aggregates, labels: dict[str, str]) -> Finding | None
         explained = sum(n for _, n, _ in absent)
         if absent and any(f > 0 for _, _, f in applies) and (best is None or explained > best[0]):
             best = (explained, group, absent, applies)
+    return best
+
+
+def _missing(c: Column, a: Aggregates, labels: dict[str, str]) -> Finding | None:
+    filled = a.non_null.get(c.name, a.rows)
+    empty = a.rows - filled
+    if empty <= 0:
+        return None
+    plain = f"{c.label}: thiếu {_n(empty)}/{_n(a.rows)} dòng ({_pct(empty, a.rows)})."
+    best = _explained(c, a)
     if best is None:
         severity: Severity = "high" if empty / a.rows > HIGH_GAP else "warning"
         return Finding("missing", severity, c.name, plain)
@@ -257,6 +269,53 @@ def _crossing(
     return finding, part, strongest
 
 
+# A small category whose values are all known: a new code is worth a look (low).
+IN_LIST_MAX = 6
+
+
+def _suggest(columns: list[Column], a: Aggregates, labels: dict[str, str]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+
+    def add(kind: str, c: Column, params: dict[str, Any], severity: str, text: str) -> None:
+        out.append(
+            {"kind": kind, "column": c.name, "params": params, "severity": severity, "text": text}
+        )
+
+    keys = [c for c in columns if c.name in a.key_columns] or [c for c in columns if c.is_key]
+    # The rule holds one column; a key of several is checked by the audit only.
+    if len(keys) == 1 and a.duplicate_keys == 0:
+        add("unique", keys[0], {}, "high", f"{keys[0].label} không trùng.")
+    for c in columns:
+        if c.pii or c.is_key:
+            continue
+        explained = _explained(c, a) if a.non_null.get(c.name, a.rows) < a.rows else None
+        if explained is not None:
+            _, group, _, applies = explained
+            where = [str(v) for v, _, f in applies if f > 0 and v is not None]
+            add(
+                "not_null",
+                c,
+                {"where": {group: where}},
+                "medium",
+                f"{c.label} không rỗng với {', '.join(where)} (theo {labels.get(group, group)}).",
+            )
+        low = a.minimum.get(c.name)
+        if c.numeric and low is not None and decimal.Decimal(str(low)) >= 0:
+            add("range", c, {"min": 0}, "medium", f"{c.label} không âm.")
+        values = [
+            v for v, _ in sorted(a.values.get(c.name, []), key=lambda x: -x[1]) if v is not None
+        ]
+        if c.kind == "string" and is_category(c, a) and 0 < len(values) <= IN_LIST_MAX:
+            add(
+                "in_list",
+                c,
+                {"values": [str(v) for v in values]},
+                "low",
+                f"{c.label} chỉ nhận {', '.join(str(v) for v in values)}.",
+            )
+    return out
+
+
 def audit(dataset: str, columns: list[Column], a: Aggregates) -> Audit:
     labels = {c.name: c.label for c in columns}
     by_name = {c.name: c for c in columns}
@@ -305,17 +364,17 @@ def audit(dataset: str, columns: list[Column], a: Aggregates) -> Audit:
         findings.append(finding)
         parts.append(part)
     for an, bns in even.items():
-        named = [
+        members = [
             str(v) for v, _ in sorted(a.values.get(an, []), key=lambda x: -x[1]) if v is not None
         ]
-        if an in concentrated or len(named) != 2:
+        if an in concentrated or len(members) != 2:
             continue
         findings.append(
             Finding(
                 "concentration",
                 "info",
                 an,
-                f"{labels[an]}: {', '.join(named)} phân bố đều theo "
+                f"{labels[an]}: {', '.join(members)} phân bố đều theo "
                 f"{', '.join(labels[b] for b in bns)} (không nhóm nào có tỷ lệ từ "
                 f"{vn_number(LIFT_MIN, 1)} lần mức chung).",
             )
@@ -328,4 +387,6 @@ def audit(dataset: str, columns: list[Column], a: Aggregates) -> Audit:
         f"Kiểm toán {dataset} ({_n(a.rows)} dòng): {high} vấn đề cần xử lý, {warn} cảnh báo."
         + ("" if not said else " " + " ".join(said))
     )
-    return Audit([_profile(c, a) for c in columns], findings, parts, summary)
+    return Audit(
+        [_profile(c, a) for c in columns], findings, parts, summary, _suggest(columns, a, labels)
+    )

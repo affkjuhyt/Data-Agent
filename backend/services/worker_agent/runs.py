@@ -43,8 +43,8 @@ from services.worker_agent.answer.insights import written
 from services.worker_agent.answer.narrate import chart_spec_of, figures_of, text_of
 from services.worker_agent.answer.thresholds import judged
 from services.worker_agent.answer.thresholds import load as load_threshold
-from services.worker_agent.audit.findings import Column, audit
-from services.worker_agent.audit.run import AuditFailed, Target, gather
+from services.worker_agent.audit.findings import audit
+from services.worker_agent.audit.run import AuditFailed, Target, gather, load_target
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.query.guard import SqlRejected
@@ -972,45 +972,10 @@ async def _audit_target(
                 "Mục tiêu chưa gọi tên bảng nào của Data Space để kiểm toán"
                 + (f"; các bảng có: {listed}." if listed else "; Data Space chưa có bảng nào.")
             )
-        metas = (
-            await session.scalars(
-                select(catalog.ColumnMeta)
-                .where(
-                    catalog.ColumnMeta.dataset_id == chosen.id,
-                    catalog.ColumnMeta.removed_in_version.is_(None),
-                )
-                .order_by(catalog.ColumnMeta.ordinal)
-            )
-        ).all()
-        if not metas:
-            raise RunFailed(
-                f"Bảng {chosen.display_name or chosen.table_name} chưa có cột trong danh mục; hãy quét "
-                "schema của nguồn trước khi kiểm toán."
-            )
-        source = (
-            _internal_workspace_source(run.data_space_id, run.org_id)
-            if chosen.schema_name == "workspace" and chosen.source_id is None
-            else await session.get(catalog.Source, chosen.source_id)
-        )
-        if source is None or source.mode != "federated" or source.status not in QUERYABLE:
-            raise RunFailed("Bảng này nằm trên một nguồn chưa được phép truy vấn tại chỗ.")
-        session.expunge(chosen)
-        # The workspace's source is built here, not read: it is not in the session.
-        if source in session:
-            session.expunge(source)
-    columns = [
-        Column(
-            m.name, m.display_name or m.name, m.normalized_type, m.is_key, m.pii_label is not None
-        )
-        for m in metas
-    ]
-    date_column = (
-        chosen.business_date_col
-        if chosen.history_kind == "snapshot"
-        and chosen.business_date_col in {c.name for c in columns}
-        else None
-    )
-    return Target(chosen, columns, source, date_column)
+        try:
+            return await load_target(session, chosen, run.org_id, run.data_space_id)
+        except AuditFailed as exc:
+            raise RunFailed(str(exc)) from exc
 
 
 async def _audit_flow(
@@ -1106,6 +1071,8 @@ async def _audit_flow(
                 "profiles": result.profiles,
                 "findings": [f.__dict__ for f in result.findings],
                 "parts": result.parts,
+                # Rules a person may take (POST /v1/quality-rules); none is made here.
+                "suggestions": result.suggestions,
                 "query_run_ids": got.query_run_ids,
             },
             started=started,

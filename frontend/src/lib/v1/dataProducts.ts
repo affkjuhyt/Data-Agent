@@ -435,7 +435,8 @@ export const createQualityRule = (body: {
   dataset_id: string;
   kind: RuleKind;
   column_name?: string;
-  params?: Record<string, number>;
+  /** range: {min, max}; not_null: {where: {column: values}}; in_list: {values}. */
+  params?: Record<string, unknown>;
   severity: RuleSeverity;
 }) =>
   v1Send<Schemas['QualityRuleView']>('POST', '/quality-rules', {

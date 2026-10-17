@@ -20,12 +20,15 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlglot import exp
 
 from libs.dataagent_db.models import catalog
 from services.worker_agent.audit.findings import CATEGORICAL_MAX, Aggregates, Column, is_category
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.query.secrets import SecretReader
+from services.worker_agent.questions import QUERYABLE, _internal_workspace_source
 
 # A category crossed against the others has at most this many values (gender, a segment, a region).
 CROSS_FROM = 3
@@ -148,6 +151,52 @@ class Builder:
             .order_by(exp.column("b", quoted=True))
             .sql(dialect=self.dialect)
         )
+
+
+async def load_target(
+    session: AsyncSession, dataset: catalog.Dataset, org_id: uuid.UUID, space_id: uuid.UUID
+) -> Target:
+    """A catalogued dataset with its columns and where to query it in place (a session that reads
+    catalog, as svc_qa). The objects are detached, for use after the session."""
+    metas = (
+        await session.scalars(
+            select(catalog.ColumnMeta)
+            .where(
+                catalog.ColumnMeta.dataset_id == dataset.id,
+                catalog.ColumnMeta.removed_in_version.is_(None),
+            )
+            .order_by(catalog.ColumnMeta.ordinal)
+        )
+    ).all()
+    name = dataset.display_name or dataset.table_name
+    if not metas:
+        raise AuditFailed(
+            f"Bảng {name} chưa có cột trong danh mục; hãy quét schema của nguồn trước khi kiểm toán."
+        )
+    source = (
+        _internal_workspace_source(space_id, org_id)
+        if dataset.schema_name == "workspace" and dataset.source_id is None
+        else await session.get(catalog.Source, dataset.source_id)
+    )
+    if source is None or source.mode != "federated" or source.status not in QUERYABLE:
+        raise AuditFailed(f"Bảng {name} nằm trên một nguồn chưa được phép truy vấn tại chỗ.")
+    session.expunge(dataset)
+    # The workspace's source is built here, not read: it is not in the session.
+    if source in session:
+        session.expunge(source)
+    columns = [
+        Column(
+            m.name, m.display_name or m.name, m.normalized_type, m.is_key, m.pii_label is not None
+        )
+        for m in metas
+    ]
+    date_column = (
+        dataset.business_date_col
+        if dataset.history_kind == "snapshot"
+        and dataset.business_date_col in {c.name for c in columns}
+        else None
+    )
+    return Target(dataset, columns, source, date_column)
 
 
 def _int(v: Any) -> int:
