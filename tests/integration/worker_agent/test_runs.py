@@ -280,3 +280,16 @@ async def test_a_run_without_the_query_tool_is_refused_before_it_queries(
     assert (status, stop) == ("failed", "error")
     assert [(s[1], s[3]) for s in steps(seed, run)] == [("plan", "ok"), ("query", "skipped")]
     assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", run) == 0
+
+
+async def test_a_goal_cut_by_a_dimension_the_space_lacks_names_it_in_the_goals_words(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    run = agent_run(bank, goal="Tỷ lệ nợ xấu theo khu vực tháng 9/2026")
+    await drain()
+    status, stop, _, _, error, *_ = run_row(seed, run)
+    assert (status, stop) == ("failed", "error")
+    assert "“khu vực”" in error and "khu vuc" not in error

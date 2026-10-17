@@ -107,3 +107,18 @@ def find_period(question: str, today: datetime.date) -> FoundPeriod | None:
     if re.search(r"\bhom nay\b", t):
         return FoundPeriod(today, today + datetime.timedelta(days=1), "hôm nay", "hom nay")
     return None
+
+
+def words_of(text: str, phrase: str) -> str:
+    """The words of `text` whose normalised form is `phrase`, as the person wrote them (accents,
+    case); the phrase itself when no run of words matches."""
+    words = text.split()
+    size = len(phrase.split())
+    return next(
+        (
+            " ".join(words[i : i + size])
+            for i in range(len(words) - size + 1)
+            if norm(" ".join(words[i : i + size])) == phrase
+        ),
+        phrase,
+    )

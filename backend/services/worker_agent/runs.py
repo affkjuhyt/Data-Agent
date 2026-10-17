@@ -50,6 +50,7 @@ from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import load
 from services.worker_agent.understand import llm_reader
 from services.worker_agent.understand.resolver import Understanding, from_chips, understand
+from services.worker_agent.understand.text import words_of
 
 logger = logging.getLogger(__name__)
 
@@ -220,7 +221,8 @@ async def _plan_step(
                 )
         if u.decision == "clarify" and u.unplaced_cut is not None:
             raise RunFailed(
-                f"Mục tiêu chia theo “{u.unplaced_cut}”, nhưng Data Space không có chiều nào tên như "
+                f"Mục tiêu chia theo “{words_of(goal, u.unplaced_cut)}”, nhưng Data Space không có "
+                "chiều nào tên như "
                 "vậy. Hãy sửa mục tiêu theo tên chiều trong danh mục."
             )
         if u.decision == "clarify":

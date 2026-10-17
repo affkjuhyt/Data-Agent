@@ -27,7 +27,8 @@ MAX_OPTIONS = 3
 # "theo X" asks for a cut along X ("nợ xấu theo vùng").
 _BY = re.compile(r"\b(?:theo|tung|moi|chia theo)\s+")
 # The words after "theo" that no phrase placed: up to three, before the next placed phrase.
-_UNPLACED_CUT = re.compile(r"\b(?:theo|tung|moi|chia theo)\s+([^#\s]+(?:\s+[^#\s]+){0,2})")
+# "theo kỳ …" ("theo kỳ được hỏi") speaks of the period, which find_period reads, not of a cut.
+_UNPLACED_CUT = re.compile(r"\b(?:theo|tung|moi|chia theo)\s+(?!ky\b)([^#\s]+(?:\s+[^#\s]+){0,2})")
 
 
 @dataclass(frozen=True)

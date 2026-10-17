@@ -14,7 +14,7 @@ from services.worker_agent.understand.resolver import (
     Vocabulary,
     understand,
 )
-from services.worker_agent.understand.text import find_period, norm
+from services.worker_agent.understand.text import find_period, norm, words_of
 
 pytestmark = [pytest.mark.unit]
 
@@ -101,3 +101,14 @@ def test_a_cut_the_space_does_not_know_asks_which_instead_of_being_dropped() -> 
 def test_a_known_cut_leaves_nothing_unplaced() -> None:
     u = understand("Tỷ lệ nợ xấu theo vùng tháng 9/2026", VOCAB, today=TODAY)
     assert u.decision == "proceed" and u.group_by == ["vung"] and u.unplaced_cut is None
+
+
+def test_by_the_period_asked_is_about_time_not_a_missing_cut() -> None:
+    # "theo kỳ được hỏi": the period is the question's, read by find_period, not a dimension.
+    u = understand("Tỷ lệ nợ xấu theo kỳ được hỏi", VOCAB, today=TODAY)
+    assert u.unplaced_cut is None and u.decision == "proceed"
+
+
+def test_the_persons_own_words_are_found_for_a_normalised_phrase() -> None:
+    assert words_of("Tỷ lệ nợ xấu theo Khu Vực tháng 9", "khu vuc") == "Khu Vực"
+    assert words_of("abc", "khu vuc") == "khu vuc"
