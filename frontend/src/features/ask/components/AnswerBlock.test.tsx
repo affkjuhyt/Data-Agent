@@ -247,8 +247,10 @@ describe('DataGrid', () => {
   it('pages in place and sorts on header click', () => {
     wrap(<DataGrid columns={['id', 'amount']} rows={rows} pageSize={10} />);
     expect(screen.getAllByRole('row')).toHaveLength(11); // header + 10
-    fireEvent.click(screen.getByRole('button', { name: /Xem thêm .* dòng/ }));
-    expect(screen.getAllByRole('row')).toHaveLength(26); // all 25 rows + header
+    expect(screen.getByLabelText('Tìm trong bảng')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Lọc theo id' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Trang sau' }));
+    expect(screen.getAllByRole('row')).toHaveLength(11);
 
     const amountHeader = screen.getByRole('columnheader', { name: /amount/ });
     fireEvent.click(amountHeader); // asc
