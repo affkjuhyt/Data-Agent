@@ -29,6 +29,7 @@ from services.worker_agent import (
     evaluation,
     exports,
     hitl,
+    periods,
     pipelines,
     private,
     proposals,
@@ -87,6 +88,7 @@ HANDLERS: dict[str, Handler] = {
     **reviews.HANDLERS,
     **pipelines.HANDLERS,
     **quality.HANDLERS,
+    **periods.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -139,6 +141,8 @@ async def sources() -> list[EventSource]:
             types |= set(evaluation.HANDLERS)
         if schema == "context":
             types |= set(semantic_review.HANDLERS) | {reviews.PRODUCT}
+        if schema == "period":
+            types |= set(periods.HANDLERS)
         if schema == "conflict":
             types |= {reviews.AUTHORITY}
         if schema == "document":

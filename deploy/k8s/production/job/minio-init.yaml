@@ -77,6 +77,13 @@ spec:
           mc admin user add local worker-agent "$WORKER_AGENT_MINIO_PASSWORD"
           mc admin policy attach local worker-agent-exports --user worker-agent || mc admin user info local worker-agent
           mc admin policy attach local worker-agent-ingest-v1 --user worker-agent || mc admin user info local worker-agent
+          # UC-10-02 / AC-10-02-07: a period's snapshot cannot be deleted or rewritten before its
+          # retention ends; worker-agent may add files there and nothing else.
+          mc mb --ignore-existing --with-lock local/da-period-close
+          mc retention set --default "$RAW_RETENTION_MODE" "${RAW_RETENTION_DAYS}d" local/da-period-close
+          printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:PutObject"],"Resource":["arn:aws:s3:::da-period-close/*"]}]}' > /tmp/worker-agent-period.json
+          mc admin policy create local worker-agent-period-v1 /tmp/worker-agent-period.json
+          mc admin policy attach local worker-agent-period-v1 --user worker-agent || mc admin user info local worker-agent
           mc mb --ignore-existing --with-lock local/raw
           mc retention set --default "$RAW_RETENTION_MODE" "${RAW_RETENTION_DAYS}d" local/raw
         resources:
