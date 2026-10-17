@@ -57,7 +57,9 @@ class RedisResponseStore:
     def __init__(self, url: str) -> None:
         import redis.asyncio as redis
 
-        self._redis = redis.from_url(url, decode_responses=True)
+        # Redis closes a client idle for 300 s (redis.conf `timeout`); the check pings a pooled
+        # connection idle that long before using it, instead of failing the request on it.
+        self._redis = redis.from_url(url, decode_responses=True, health_check_interval=30)
 
     async def put(self, ref: str, value: str, ttl: datetime.timedelta) -> None:
         await self._redis.set(ref, value, ex=int(ttl.total_seconds()))

@@ -89,6 +89,8 @@ def private_questions_from_env() -> RedisPrivateQuestions | None:
     import redis.asyncio as redis
 
     return RedisPrivateQuestions(
-        redis.from_url(url, decode_responses=True),
+        # Redis closes a client idle for 300 s (redis.conf `timeout`); the check pings a pooled
+        # connection idle that long before using it, instead of failing the request on it.
+        redis.from_url(url, decode_responses=True, health_check_interval=30),
         int(os.environ.get("EXEC_PQ_MAX_WAITING", "20")),
     )

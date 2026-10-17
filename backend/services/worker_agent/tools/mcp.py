@@ -72,7 +72,11 @@ class MCPRegistry:
         elif os.getenv("REDIS_URL"):
             from redis.asyncio import from_url
 
-            self._redis = from_url(os.environ["REDIS_URL"], decode_responses=True)
+            # Redis closes a client idle for 300 s (redis.conf `timeout`); the check pings a pooled
+            # connection idle that long before using it, instead of failing the request on it.
+            self._redis = from_url(
+                os.environ["REDIS_URL"], decode_responses=True, health_check_interval=30
+            )
         else:
             self._redis = None
         self._cache_ttl = cache_ttl

@@ -25,7 +25,9 @@ def _client() -> Any:
             return None
         import redis.asyncio as redis
 
-        _redis = redis.from_url(url, decode_responses=True)
+        # Redis closes a client idle for 300 s (redis.conf `timeout`); the check pings a pooled
+        # connection idle that long before using it, instead of failing the request on it.
+        _redis = redis.from_url(url, decode_responses=True, health_check_interval=30)
     return _redis
 
 

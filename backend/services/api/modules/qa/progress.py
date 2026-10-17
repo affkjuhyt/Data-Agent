@@ -21,7 +21,9 @@ def _client() -> Any:
     except ImportError:
         logger.warning("api | Redis client is not installed; using database question stream")
         return None
-    return redis.from_url(url, decode_responses=True)
+    # Redis closes a client idle for 300 s (redis.conf `timeout`); the check pings a pooled
+    # connection idle that long before using it, instead of failing the request on it.
+    return redis.from_url(url, decode_responses=True, health_check_interval=30)
 
 
 def _text(value: Any) -> str:
