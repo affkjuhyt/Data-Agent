@@ -22,9 +22,14 @@ async def test_created_job_materializes_rows_and_registers_a_local_dataset(
     dsn = ddl_server["dataagent"]
     parts = urlsplit(dsn)
     with seed.conn.cursor() as cur:
-        cur.execute(f'CREATE TABLE public."{source_table}" (branch text, balance numeric)')
         cur.execute(
-            f'INSERT INTO public."{source_table}" VALUES (%s, %s), (%s, %s)', ("HN", 10, "SG", 20)
+            f'CREATE TABLE public."{source_table}" (branch text, balance numeric, month text, '
+            "as_of date, n int, open boolean, at timestamptz)"
+        )
+        cur.execute(
+            f'INSERT INTO public."{source_table}" VALUES '
+            "('HN', 10, '2026-09', '2026-09-30', 1, true, now()), "
+            "('SG', 20, '2026-09', '2026-09-30', 2, false, now())"
         )
 
     org = seed.row("org.organization", code=f"org-{uuid.uuid4().hex[:8]}", name="Ingest test")
@@ -88,3 +93,31 @@ async def test_created_job_materializes_rows_and_registers_a_local_dataset(
     )
     assert dataset is not None
     assert seed.one(f'SELECT count(*) FROM workspace."{dataset}"') == 2
+    # The source's types are kept where the workspace can hold them, and every column is in the
+    # catalog: the semantic compiler reads a text month as text, a date as a date.
+    assert seed.all(
+        "SELECT column_name, data_type FROM information_schema.columns "
+        "WHERE table_schema = 'workspace' AND table_name = %s ORDER BY ordinal_position",
+        dataset,
+    ) == [
+        ("branch", "text"),
+        ("balance", "numeric"),
+        ("month", "text"),
+        ("as_of", "date"),
+        ("n", "numeric"),
+        ("open", "boolean"),
+        ("at", "text"),
+    ]
+    assert seed.all(
+        "SELECT c.name, c.normalized_type FROM catalog.column_meta c "
+        "JOIN catalog.dataset d ON d.id = c.dataset_id WHERE d.table_name = %s ORDER BY c.ordinal",
+        dataset,
+    ) == [
+        ("branch", "string"),
+        ("balance", "decimal"),
+        ("month", "string"),
+        ("as_of", "date"),
+        ("n", "decimal"),
+        ("open", "boolean"),
+        ("at", "string"),
+    ]

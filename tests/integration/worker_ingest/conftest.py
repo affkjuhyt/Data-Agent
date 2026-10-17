@@ -68,6 +68,13 @@ class Seed:
             row = cur.fetchone()
         return row[0] if row and len(row) == 1 else row
 
+    def all(self, sql: str, *params: object) -> list[tuple[object, ...]]:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                sql, [str(value) if isinstance(value, uuid.UUID) else value for value in params]
+            )
+            return list(cur.fetchall())
+
 
 @pytest.fixture
 def seed(worker_database: str) -> Iterator[Seed]:

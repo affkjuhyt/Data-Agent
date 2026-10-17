@@ -53,6 +53,12 @@ def warehouse(ddl_server: dict[str, str]) -> dict[str, Any]:
             # Internal lending is excluded by the metric's own filter.
             "('SG1',5,5000,'NOI_BO','2026-09-30')"
         )
+        # Monthly revenue as an ingest leaves it: the month is text, not a date.
+        cur.execute("CREATE TABLE bank.revenue (region text, net_revenue numeric, month text)")
+        cur.execute(
+            "INSERT INTO bank.revenue VALUES "
+            "('HCM',125,'2026-09'),('HN',95,'2026-09'),('HN',40,'2026-08')"
+        )
         cur.execute(
             "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'loans_reader') THEN "
             "CREATE ROLE loans_reader LOGIN; END IF; END $$"
@@ -647,3 +653,117 @@ async def test_br_178_a_masked_figure_stays_masked_on_replay(
     )
     assert outcome == "identical" and results[0]["replay_value"] is None
     assert "10" not in (text or "")
+
+
+async def test_a_month_stored_as_text_is_answered_for_its_period(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The catalog says the month column is text; comparing it with a DATE has no operator.
+    bank = build(seed, warehouse, monkeypatch)
+    org, space = bank.org, bank.space
+    source = seed.one("SELECT source_id FROM catalog.dataset WHERE id = %s", bank.loans)
+    revenue = seed.row(
+        "catalog.dataset",
+        org_id=org,
+        data_space_id=space,
+        source_id=source,
+        origin="source",
+        schema_name="bank",
+        table_name="revenue",
+        history_kind="none",
+        enabled=True,
+    )
+    for ordinal, (name, data_type, normalized) in enumerate(
+        (
+            ("region", "text", "string"),
+            ("net_revenue", "numeric", "decimal"),
+            ("month", "text", "string"),
+        )
+    ):
+        seed.row(
+            "catalog.column_meta",
+            org_id=org,
+            dataset_id=revenue,
+            dataset_version=1,
+            name=name,
+            ordinal=ordinal,
+            data_type=data_type,
+            normalized_type=normalized,
+        )
+    entity = seed.row(
+        "context.semantic_entity",
+        org_id=org,
+        data_space_id=space,
+        code="doanh_thu",
+        name="Doanh thu",
+        primary_dataset_id=revenue,
+        key_columns=["region", "month"],
+    )
+    seed.row(
+        "context.semantic_measure",
+        org_id=org,
+        data_space_id=space,
+        entity_id=entity,
+        code="net_revenue",
+        name="net_revenue",
+        expression="SUM(net_revenue)",
+        aggregation="sum",
+        additivity="full",
+    )
+    seed.row(
+        "context.semantic_dimension",
+        org_id=org,
+        data_space_id=space,
+        entity_id=entity,
+        code="thang",
+        name="tháng",
+        expression="month",
+        is_time=True,
+    )
+    owner = seed.row("org.app_user", org_id=org, external_id="kc-r", username="r", display_name="R")
+    m = seed.row(
+        "context.metric",
+        org_id=org,
+        data_space_id=space,
+        code="NET_REVENUE",
+        owner_id=owner,
+        current_version=1,
+        status="active",
+    )
+    seed.row(
+        "context.metric_version",
+        org_id=org,
+        metric_id=m,
+        version=1,
+        display_name="Doanh thu thuần",
+        expression="net_revenue",
+        unit="tỷ đồng",
+        period_semantics="sum_over_period",
+        status="certified",
+        certified_by=owner,
+        certified_at="2026-06-01T00:00:00Z",
+        valid_from="2026-06-01T00:00:00Z",
+        allowed_dimensions=[],
+        filters=json.dumps([]),
+    )
+    q = bank.ask("Doanh thu thuần tháng 9/2026")
+    await drain()
+    status, kind, text, figures, _, _ = answer_of(seed, q)
+    assert (status, kind) == ("answered", "data"), text
+    # September only: August's 40 is outside the period.
+    assert [float(f["value"]) for f in figures] == [220.0]
+
+
+async def test_a_cut_the_space_does_not_know_is_asked_about_not_dropped(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The Space calls it "vùng"; answering the total for "theo khu vực" answers another question.
+    bank = build(seed, warehouse, monkeypatch)
+    q = bank.ask("Tỷ lệ nợ xấu theo khu vực tháng 9/2026")
+    await drain()
+    status, kind, text, figures, _, _ = answer_of(seed, q)
+    assert (status, kind, figures) == ("clarifying", "clarification", [])
+    assert "khu vực" in text and "Tỷ lệ nợ xấu theo vùng tháng 9/2026" in text
+    # The metric only allows region and product cuts; nothing ran before the person picks.
+    assert "theo sản phẩm" in text and "theo ngày" not in text
+    assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", q) == 0

@@ -50,9 +50,10 @@ from services.worker_agent.query.executor import run_query
 from services.worker_agent.query.guard import SqlRejected, dialect_of
 from services.worker_agent.query.secrets import SecretReader, StaticReader, reader_from_env
 from services.worker_agent.semantic import compiler as c
-from services.worker_agent.semantic.loader import load
+from services.worker_agent.semantic.loader import SpaceLayer, load
 from services.worker_agent.understand import llm_reader
 from services.worker_agent.understand.resolver import Understanding, from_chips, understand
+from services.worker_agent.understand.text import norm
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +244,47 @@ async def _refuse(
     payload = {"question_id": str(question_id), "answer_id": str(answer_id), "kind": "refusal"}
     await publish(str(question_id), "answer", {**payload, "code": str(refusal.code)})
     await publish(str(question_id), "done", {**payload, "status": status})
+
+
+def _cut_clarification(
+    question: str, u: Understanding, layer: SpaceLayer
+) -> tuple[str, list[dict[str, str]]]:
+    """Asks which cut a "theo X" meant when X names no dimension (BR-80).
+
+    The options are the cuts the metric's owner allowed (BR-81), each written as a whole question:
+    the screen answers a clarification by asking again, so an option must stand on its own.
+    """
+    assert u.metric is not None and u.unplaced_cut is not None
+    words = question.split()
+    size = len(u.unplaced_cut.split())
+    # The person's own words, accents and all, for the phrase the rule pass could not place.
+    asked = next(
+        (
+            " ".join(words[i : i + size])
+            for i in range(len(words) - size + 1)
+            if norm(" ".join(words[i : i + size])) == u.unplaced_cut
+        ),
+        u.unplaced_cut,
+    )
+    allowed = layer.versions[u.metric.metric_id].allowed_dimension_ids
+    period = f" {u.period.label}" if u.period else ""
+    choices = [
+        {"value": d.code, "label": f"{u.metric.name} theo {d.name}{period}"}
+        for d in layer.vocabulary.dimensions
+        if d.dimension_id in allowed and not d.is_time
+    ]
+    if not choices:
+        return (
+            f"Chưa nhận ra “{asked}” là chiều nào. {u.metric.name} chưa được phép chia theo chiều "
+            "nào; người phụ trách chỉ số có thể mở thêm.",
+            [],
+        )
+    listed = "; ".join(f"{i + 1}. {c['label']}" for i, c in enumerate(choices))
+    return (
+        f"Chưa nhận ra “{asked}” là chiều nào của {u.metric.name}. Bạn muốn hỏi: {listed}? "
+        f"Người phụ trách có thể thêm “{asked}” làm từ đồng nghĩa để lần sau hệ thống hiểu ngay.",
+        choices,
+    )
 
 
 def _code(code: str) -> ErrorCode:
@@ -470,7 +512,12 @@ async def _understand_and_plan(
             )
 
     if u.decision == "clarify":
-        options = "; ".join(f"{i + 1}. {m.name}" for i, m in enumerate(u.options))
+        if u.unplaced_cut is not None and u.metric is not None:
+            text, choices = _cut_clarification(question.text, u, layer)
+        else:
+            listed = "; ".join(f"{i + 1}. {m.name}" for i, m in enumerate(u.options))
+            text = f"Câu hỏi khớp với nhiều chỉ số. Bạn muốn hỏi chỉ số nào: {listed}?"
+            choices = [{"value": m.code, "label": m.name} for m in u.options]
         answer_id = await _finish(
             question_id,
             event.org_id,
@@ -478,16 +525,12 @@ async def _understand_and_plan(
             plan_id,
             kind="clarification",
             status="clarifying",
-            text=f"Câu hỏi khớp với nhiều chỉ số. Bạn muốn hỏi chỉ số nào: {options}?",
+            text=text,
         )
         await publish(
             str(question_id),
             "clarification",
-            {
-                "question_id": str(question_id),
-                "answer_id": str(answer_id),
-                "options": [{"value": m.code, "label": m.name} for m in u.options],
-            },
+            {"question_id": str(question_id), "answer_id": str(answer_id), "options": choices},
         )
         await publish(
             str(question_id), "done", {"question_id": str(question_id), "status": "clarifying"}

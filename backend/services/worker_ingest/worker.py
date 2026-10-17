@@ -25,6 +25,15 @@ BACKFILL = "job_run.backfill_requested"
 ROLE = "svc_ingest"
 CATALOG_ROLE = "svc_catalog"
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Source types the workspace keeps (da_materialize_upload takes text, numeric, boolean, date);
+# anything else lands as text. Timestamps too: the function has no timestamp column yet.
+_WORKSPACE_TYPES = {
+    **dict.fromkeys(("int2", "int4", "int8", "numeric", "float4", "float8", "money"), "numeric"),
+    "bool": "boolean",
+    "date": "date",
+}
+# How the catalog names a workspace column type (catalog.column_meta.normalized_type).
+_NORMALIZED = {"text": "string", "numeric": "decimal", "boolean": "boolean", "date": "date"}
 
 
 def _identifier(value: str) -> str:
@@ -73,7 +82,10 @@ async def _read_source(
     try:
         statement = await conn.prepare(f'SELECT * FROM "{schema}"."{table}"')
         records = await statement.fetch()
-        columns = [{"name": attr.name, "type": "text"} for attr in statement.get_attributes()]
+        columns = [
+            {"name": attr.name, "type": _WORKSPACE_TYPES.get(attr.type.name, "text")}
+            for attr in statement.get_attributes()
+        ]
         return columns, [[_plain(value) for value in record] for record in records]
     finally:
         await conn.close()
@@ -87,7 +99,7 @@ def _table_name(job: ingest.IngestionJob) -> str:
 async def _materialize(
     session: Any, table_name: str, columns: list[dict[str, str]], rows: list[list[Any]]
 ) -> None:
-    typed = [{"name": _identifier(column["name"]), "type": "text"} for column in columns]
+    typed = [{"name": _identifier(column["name"]), "type": column["type"]} for column in columns]
     await session.execute(
         text(
             "SELECT public.da_materialize_upload(:table_name, CAST(:columns AS jsonb), CAST(:rows AS jsonb), true)"
@@ -179,6 +191,32 @@ async def handle(event: Event) -> None:
                         created_by=principal_id,
                         updated_by=principal_id,
                     )
+                )
+            # The columns as materialized, so the semantic layer knows a text month from a date.
+            # A dataset catalogued before its columns were gets them on its next run.
+            if (
+                await session.scalar(
+                    select(catalog.ColumnMeta.id)
+                    .where(catalog.ColumnMeta.dataset_id == dataset_id)
+                    .limit(1)
+                )
+                is None
+            ):
+                await session.flush()
+                session.add_all(
+                    catalog.ColumnMeta(
+                        id=uuid.uuid4(),
+                        org_id=event.org_id,
+                        dataset_id=dataset_id,
+                        dataset_version=1,
+                        name=column["name"],
+                        ordinal=ordinal,
+                        data_type=column["type"],
+                        normalized_type=_NORMALIZED[column["type"]],
+                        created_by=principal_id,
+                        updated_by=principal_id,
+                    )
+                    for ordinal, column in enumerate(columns)
                 )
     except (SecretUnavailable, ValueError, asyncpg.PostgresError) as exc:
         await _fail(event, run_id, str(exc))

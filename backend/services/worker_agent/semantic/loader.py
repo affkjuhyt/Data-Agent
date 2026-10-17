@@ -123,6 +123,27 @@ async def load(session: AsyncSession, space_id: uuid.UUID) -> SpaceLayer:
         for mid, v in version_rows.items()
     }
     dim_by_id = {d.id: d for d in dims}
+    # The catalog type of each column a dimension names directly: a time column stored as text
+    # is compared as text (compiler._text_bounds). An expression is not a column, so it has none.
+    entity_dataset = {e.id: e.primary_dataset_id for e in entities}
+    column_types = {
+        (col.dataset_id, col.name): col.normalized_type
+        for col in (
+            await session.scalars(
+                select(catalog.ColumnMeta).where(
+                    catalog.ColumnMeta.dataset_id.in_(datasets),
+                    catalog.ColumnMeta.removed_in_version.is_(None),
+                )
+            )
+        ).all()
+    }
+
+    def value_type(d: context.SemanticDimension) -> str | None:
+        dataset_id = entity_dataset.get(d.entity_id)
+        if dataset_id is None:
+            return None
+        return column_types.get((dataset_id, d.expression.strip('"')))
+
     values = (
         await session.scalars(
             select(ctx.ValueIndex).where(ctx.ValueIndex.data_space_id == space_id)
@@ -165,7 +186,9 @@ async def load(session: AsyncSession, space_id: uuid.UUID) -> SpaceLayer:
     layer = c.Layer(
         measures={m.code: c.Measure(m.code, m.expression, m.entity_id) for m in measures},
         dimensions={
-            d.code: c.Dimension(d.id, d.code, d.name, d.expression, d.entity_id, d.is_time)
+            d.code: c.Dimension(
+                d.id, d.code, d.name, d.expression, d.entity_id, d.is_time, value_type(d)
+            )
             for d in dims
         },
         entity_tables=tables,

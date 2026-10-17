@@ -26,6 +26,8 @@ PROCEED_AT = 0.8
 MAX_OPTIONS = 3
 # "theo X" asks for a cut along X ("nợ xấu theo vùng").
 _BY = re.compile(r"\b(?:theo|tung|moi|chia theo)\s+")
+# The words after "theo" that no phrase placed: up to three, before the next placed phrase.
+_UNPLACED_CUT = re.compile(r"\b(?:theo|tung|moi|chia theo)\s+([^#\s]+(?:\s+[^#\s]+){0,2})")
 
 
 @dataclass(frozen=True)
@@ -81,6 +83,9 @@ class Understanding:
     chips: list[Chip] = field(default_factory=list)
     options: list[MetricEntry] = field(default_factory=list)  # when clarifying
     unmapped: list[str] = field(default_factory=list)
+    # A cut asked for ("theo khu vực") that names no dimension: the question asks which one
+    # rather than answering the total, which would answer another question (BR-80).
+    unplaced_cut: str | None = None
 
     @property
     def confidence(self) -> float:
@@ -151,6 +156,8 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
                 out.filters[dim_code].append(value)
                 out.chips.append(Chip("filter", f"{dim_code}={value}", label, "default", score))
 
+    cut = _UNPLACED_CUT.search(taken)
+    out.unplaced_cut = cut.group(1).strip() if cut else None
     leftover = " ".join(w for w in re.sub(r"#+", " ", taken).split() if len(w) > 3)
     out.unmapped = [leftover] if leftover and not metric_hits else []
     if period:
@@ -168,7 +175,7 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
         return out
     out.metric = top[0]
     out.chips.insert(0, Chip("metric", top[0].code, top[0].name, "default", best))
-    out.decision = "proceed"
+    out.decision = "clarify" if out.unplaced_cut else "proceed"
     return out
 
 

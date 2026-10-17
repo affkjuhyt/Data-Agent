@@ -64,6 +64,8 @@ class Dimension:
     expression: str
     entity_id: uuid.UUID
     is_time: bool = False
+    # The catalog's normalized type of the column behind it, when the catalog knows it.
+    value_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -186,6 +188,22 @@ def _literal(value: object) -> exp.Expression:
     return exp.Literal.string(str(value))
 
 
+def _text_bounds(period: Period) -> tuple[str, str]:
+    """A period's bounds as ISO text, at the coarsest grain both bounds sit on.
+
+    A time column stored as text ('2026-10', '2026-10-06') compares as text; ISO strings order
+    like the dates they name. October as '2026-10'..'2026-11' matches a monthly '2026-10' and a
+    daily '2026-10-06' alike, while six days of October stay '2026-10-01'..'2026-10-07' so a
+    monthly row is never counted for part of its month.
+    """
+    start, end = period.start, period.end
+    if start.month == end.month == 1 and start.day == end.day == 1:
+        return f"{start:%Y}", f"{end:%Y}"
+    if start.day == end.day == 1:
+        return f"{start:%Y-%m}", f"{end:%Y-%m}"
+    return start.isoformat(), end.isoformat()
+
+
 def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
     metric = request.metric
     value_expr, base_entity = _measure_entity(metric, layer)
@@ -269,10 +287,15 @@ def compile_metric(request: Request, layer: Layer, *, dialect: str) -> Compiled:
         if time_dim is None:
             raise CompileError("NO_DATA_FOR_PERIOD", "the metric's table has no time dimension")
         when = _qualify(time_dim.expression, "t0")
-        start, end = (
-            exp.cast(exp.Literal.string(d.isoformat()), "DATE")
-            for d in (request.period.start, request.period.end)
-        )
+        start: exp.Expression
+        end: exp.Expression
+        if time_dim.value_type == "string":
+            start, end = (exp.Literal.string(b) for b in _text_bounds(request.period))
+        else:
+            start, end = (
+                exp.cast(exp.Literal.string(d.isoformat()), "DATE")
+                for d in (request.period.start, request.period.end)
+            )
         in_range = exp.and_(exp.GTE(this=when, expression=start), exp.LT(this=when, expression=end))
         if metric.period_semantics == "end_of_period" and time_dim.code not in request.group_by:
             # A balance is read on the last day of the range that has data, not summed over days.

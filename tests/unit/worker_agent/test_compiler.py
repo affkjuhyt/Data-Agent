@@ -94,6 +94,56 @@ def test_a_flow_metric_sums_over_the_period() -> None:
     assert "MAX(" not in out.sql and ">= CAST('2026-01-01' AS DATE)" in out.sql
 
 
+MONTH_TEXT = Dimension(
+    uuid.uuid4(), "thang", "Tháng", "month", LOAN_ENTITY, is_time=True, value_type="string"
+)
+TEXT_TIME_LAYER = Layer(
+    measures=LAYER.measures,
+    dimensions={d.code: d for d in (REGION, MONTH_TEXT, PRODUCT)},
+    entity_tables=LAYER.entity_tables,
+    joins=LAYER.joins,
+)
+
+
+def test_a_time_column_stored_as_text_is_compared_as_text() -> None:
+    # An ingested '2026-10' cannot be compared with a DATE (text >= date has no operator).
+    out = compile_metric(
+        Request(
+            metric(period_semantics="sum_over_period", filters=()),
+            period=Period(datetime.date(2026, 10, 1), datetime.date(2026, 11, 1)),
+        ),
+        TEXT_TIME_LAYER,
+        dialect="postgres",
+    )
+    assert "AS DATE" not in out.sql
+    assert "t0.month >= '2026-10'" in out.sql and "t0.month < '2026-11'" in out.sql
+
+
+def test_a_text_time_column_is_not_widened_past_the_period() -> None:
+    # Six days of October must not match the whole month '2026-10': both bounds keep the day.
+    out = compile_metric(
+        Request(
+            metric(period_semantics="sum_over_period", filters=()),
+            period=Period(datetime.date(2026, 10, 1), datetime.date(2026, 10, 7)),
+        ),
+        TEXT_TIME_LAYER,
+        dialect="postgres",
+    )
+    assert "t0.month >= '2026-10-01'" in out.sql and "t0.month < '2026-10-07'" in out.sql
+
+
+def test_a_text_time_column_aligned_on_years_compares_years() -> None:
+    out = compile_metric(
+        Request(
+            metric(period_semantics="end_of_period", filters=()),
+            period=Period(datetime.date(2026, 1, 1), datetime.date(2027, 1, 1)),
+        ),
+        TEXT_TIME_LAYER,
+        dialect="postgres",
+    )
+    assert "AS DATE" not in out.sql and ">= '2026'" in out.sql and "< '2027'" in out.sql
+
+
 def test_a_filter_value_is_quoted_never_spliced() -> None:
     out = compile_metric(
         Request(metric(), filters={"vung": ["Miền Bắc'; DROP TABLE x; --"]}),

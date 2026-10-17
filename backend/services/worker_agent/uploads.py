@@ -26,6 +26,8 @@ UPLOADED = "file_upload.uploaded"
 MAPPED = "file_upload.mapped"
 COMMITTED = "file_upload.committed"
 WORKSPACE_SCHEMA = "workspace"
+# How the catalog names a workspace column type (catalog.column_meta.normalized_type).
+_NORMALIZED = {"text": "string", "numeric": "decimal", "boolean": "boolean", "date": "date"}
 
 
 def _store_config() -> tuple[str, str, str]:
@@ -158,7 +160,10 @@ def _value(value: Any, kind: str) -> Any:
     return value
 
 
-async def _materialize(session: Any, table_name: str, rows: list[list[Any]], column_map: list[dict[str, Any]]) -> None:
+async def _materialize(
+    session: Any, table_name: str, rows: list[list[Any]], column_map: list[dict[str, Any]]
+) -> list[dict[str, str]]:
+    """Writes the workspace table; returns its columns as created (name, PostgreSQL type)."""
     if not rows:
         raise ValueError("the upload has no readable rows")
     names = _column_names(rows[0], column_map)
@@ -180,6 +185,7 @@ async def _materialize(session: Any, table_name: str, rows: list[list[Any]], col
                 "replace": start == 0,
             },
         )
+    return columns
 
 
 def _json_value(value: Any) -> str:
@@ -214,7 +220,7 @@ async def _register_dataset(event: Event) -> None:
         quality_state = "ok" if (row.error_ratio or 0) == 0 else "warning"
         content = await _read_object(row.object_key)
         upload_rows = _rows(content, row.file_name, row.sheet)
-        await _materialize(session, table_name, upload_rows, row.column_map or [])
+        columns = await _materialize(session, table_name, upload_rows, row.column_map or [])
         row.validation = {**(row.validation or {}), "materialized": True, "table_name": table_name}
     async with scoped_session(CATALOG_ROLE, event.org_id, event.payload.get("uploader_id")) as session:
         if await session.get(catalog.Dataset, dataset_id) is None:
@@ -237,6 +243,29 @@ async def _register_dataset(event: Event) -> None:
                     created_by=row.uploader_id,
                     updated_by=row.uploader_id,
                 )
+            )
+        # The columns as materialized, so the semantic layer knows a text month from a date.
+        if (
+            await session.scalar(
+                select(catalog.ColumnMeta.id).where(catalog.ColumnMeta.dataset_id == dataset_id).limit(1)
+            )
+            is None
+        ):
+            await session.flush()
+            session.add_all(
+                catalog.ColumnMeta(
+                    id=uuid.uuid4(),
+                    org_id=event.org_id,
+                    dataset_id=dataset_id,
+                    dataset_version=1,
+                    name=column["name"],
+                    ordinal=ordinal,
+                    data_type=column["type"],
+                    normalized_type=_NORMALIZED[column["type"]],
+                    created_by=row.uploader_id,
+                    updated_by=row.uploader_id,
+                )
+                for ordinal, column in enumerate(columns)
             )
 
 

@@ -87,3 +87,17 @@ def test_two_metrics_named_as_well_as_each_other_ask_which() -> None:
 def test_nothing_known_is_unknown_and_reported() -> None:
     u = understand("doanh thu bảo hiểm nhân thọ tháng này", VOCAB, today=TODAY)
     assert u.decision == "unknown" and u.unmapped
+
+
+def test_a_cut_the_space_does_not_know_asks_which_instead_of_being_dropped() -> None:
+    # "theo khu vực" when the Space calls it "vùng": answering the total would answer
+    # another question than the one asked.
+    u = understand("Tỷ lệ nợ xấu theo khu vực tháng 9/2026", VOCAB, today=TODAY)
+    assert u.decision == "clarify" and u.metric == NPL
+    assert u.unplaced_cut == "khu vuc" and u.options == []
+    assert not any(c.kind == "dimension" for c in u.chips)
+
+
+def test_a_known_cut_leaves_nothing_unplaced() -> None:
+    u = understand("Tỷ lệ nợ xấu theo vùng tháng 9/2026", VOCAB, today=TODAY)
+    assert u.decision == "proceed" and u.group_by == ["vung"] and u.unplaced_cut is None
