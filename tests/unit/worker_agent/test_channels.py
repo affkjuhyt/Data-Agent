@@ -59,3 +59,36 @@ def test_a_teams_message_is_an_adaptive_card_with_one_open_button() -> None:
 )
 def test_only_a_microsoft_https_webhook_is_called(url: str, ok: bool) -> None:
     assert webhook_allowed(url) is ok
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "linh@helios.corp\n",
+        "linh@helios.corp\r\nBcc: x@evil.com",
+        "linh@helios.corp\x00",
+        "a b@c.d",
+    ],
+)
+def test_an_address_with_a_line_break_or_control_character_is_not_an_address(address: str) -> None:
+    from services.worker_agent.channels.senders import email_allowed
+
+    assert email_allowed(address) is False
+
+
+async def test_a_message_smtp_cannot_build_fails_the_send_instead_of_the_handler() -> None:
+    from services.worker_agent.channels.senders import SendFailed, Smtp
+
+    smtp = Smtp("localhost", 1, "data-agent@helios.local")
+
+    def boom(_self: object, to: str, m: object) -> None:
+        raise ValueError("Header values may not contain linefeed")
+
+    smtp_cls = type(smtp)
+    original = smtp_cls._send
+    smtp_cls._send = boom  # type: ignore[method-assign,assignment]
+    try:
+        with pytest.raises(SendFailed):
+            await smtp.send("linh@helios.corp", probe_card(app_url=APP))
+    finally:
+        smtp_cls._send = original  # type: ignore[method-assign]

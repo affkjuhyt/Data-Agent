@@ -196,6 +196,15 @@ async def on_test(event: Event) -> None:
     wanted = [str(c) for c in p.get("channels") or []]
     notification_id = uuid7()
     async with scoped_session(ROLE, event.org_id, user) as session:
+        # Redelivered: this test was already sent.
+        if await session.scalar(
+            select(notify.Notification.id).where(
+                notify.Notification.source_ref == event.aggregate_id,
+                notify.Notification.user_id == user,
+                notify.Notification.kind == "system",
+            )
+        ):
+            return
         session.add(
             notify.Notification(
                 id=notification_id,

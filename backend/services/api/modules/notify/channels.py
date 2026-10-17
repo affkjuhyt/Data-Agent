@@ -133,7 +133,8 @@ def code_matches(
 # Hosts a Teams Workflows or incoming webhook is served from (worker-agent channels/senders.py
 # calls only these; both lists must agree).
 WEBHOOK_HOSTS = (".logic.azure.com", ".webhook.office.com", ".environment.api.powerplatform.com")
-_EMAIL = re.compile(r"^[^@\s/:]+@[^@\s/:]+\.[^@\s/:]+$")
+# Whole string, no whitespace or control character: a line break would add a mail header.
+_EMAIL = re.compile(r"[^@\s\x00-\x1f\x7f/:]+@[^@\s\x00-\x1f\x7f/:]+\.[^@\s\x00-\x1f\x7f/:]+")
 
 
 def _microsoft_webhook(url: str) -> bool:
@@ -157,12 +158,12 @@ def address_problem(channel: str, address: str) -> str | None:
     """Why the gateway must not send to this address, or None. An email address is an address; a
     Teams address is a Microsoft https webhook (the gateway calls it, so never a URL inside the
     cluster) or the person's Teams account (an email-like UPN, for a registered bot)."""
-    if channel == "email" and not _EMAIL.match(address):
+    if channel == "email" and not _EMAIL.fullmatch(address):
         return "An email channel needs an email address."
     if channel == "teams":
         if "://" in address:
             if not _microsoft_webhook(address):
                 return "A Teams address is a Microsoft https webhook (Workflows) URL."
-        elif not _EMAIL.match(address):
+        elif not _EMAIL.fullmatch(address):
             return "A Teams address is a Workflows webhook URL or a Teams account."
     return None

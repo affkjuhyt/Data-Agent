@@ -27,7 +27,7 @@ data:
   DOCUMENT_EMBED_URL: http://10.10.55.101:8003
   DOCUMENT_RERANK_URL: http://10.10.55.101:8004
   # The channel gateway (channels/): email goes to Mailpit, which keeps every message for viewing
-  # (http://localhost:30025) and sends none out; links in a message open the app.
+  # (port-forward, deploy/k8s/dev/service/mailpit.yaml) and sends none out; links open the app.
   SMTP_HOST: mailpit.dataagent-service.svc.cluster.local
   SMTP_PORT: "1025"
   SMTP_FROM: data-agent@helios.local

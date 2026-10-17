@@ -610,3 +610,13 @@ async def test_a_teams_webhook_or_a_teams_account_is_bound(ntf: Org, address: st
             "/v1/me/channels/teams", json={"external_address": address}, headers=me("owner")
         )
     assert r.status_code == 200, r.text
+
+
+async def test_an_email_address_carrying_a_header_is_refused(ntf: Org) -> None:
+    async with api_for(ntf) as api:
+        r = await api.put(
+            "/v1/me/channels/email",
+            json={"external_address": "owner@bank.vn\nBcc: x@evil.com"},
+            headers=me("owner"),
+        )
+    assert r.status_code == 422, r.text

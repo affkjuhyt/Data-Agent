@@ -38,7 +38,7 @@ any machine on the `10.10.55.x` network; no port-forwarding is needed.
 | Jaeger | http://10.10.55.101:30430 |
 | LiteLLM | http://10.10.55.101:30500 |
 | MinIO console | http://10.10.55.101:30361 |
-| Mailpit: the mail the channel gateway sends (kept, never delivered) | http://10.10.55.101:30025 |
+| Mailpit: the mail the channel gateway sends (kept, never delivered; cluster-only) | `kubectl -n dataagent-service port-forward svc/mailpit 8025:8025`, then http://localhost:8025 |
 | Kong admin (dev only — never expose beyond the LAN) | http://10.10.55.101:30101 |
 
 The full port table is in [`deploy/k8s/README.md`](../deploy/k8s/README.md#ports).

@@ -1,6 +1,8 @@
 # Mailpit: the dev slice's mail server. It accepts every message the channel gateway sends
-# (worker-agent channels/, SMTP on 1025) and shows them on http://localhost:30025; it never
-# delivers outside. Production points SMTP_HOST at the organisation's mail server instead.
+# (worker-agent channels/, SMTP on 1025) and never delivers outside. It holds verification codes
+# and links, so it is reachable inside the cluster only, with no login of its own: read it with
+#   kubectl -n dataagent-service port-forward svc/mailpit 8025:8025   →  http://localhost:8025
+# Production points SMTP_HOST at the organisation's mail server instead.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -55,7 +57,7 @@ metadata:
     app: mailpit
     app.kubernetes.io/part-of: dataagent
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     app: mailpit
   ports:
@@ -65,4 +67,3 @@ spec:
   - name: http
     port: 8025
     targetPort: 8025
-    nodePort: 30025

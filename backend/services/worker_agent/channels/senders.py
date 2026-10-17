@@ -25,7 +25,8 @@ from services.worker_agent.channels.cards import Message
 
 # Hosts a Teams Workflows or incoming webhook is served from.
 WEBHOOK_HOSTS = (".logic.azure.com", ".webhook.office.com", ".environment.api.powerplatform.com")
-_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# Whole string, no whitespace or control character: a line break would add a mail header.
+_EMAIL = re.compile(r"[^@\s\x00-\x1f\x7f/:]+@[^@\s\x00-\x1f\x7f/:]+\.[^@\s\x00-\x1f\x7f/:]+")
 TIMEOUT = 10.0
 
 
@@ -51,7 +52,7 @@ def webhook_allowed(url: str) -> bool:
 
 
 def email_allowed(address: str) -> bool:
-    return bool(_EMAIL.match(address)) and len(address) <= 320
+    return bool(_EMAIL.fullmatch(address)) and len(address) <= 320
 
 
 def teams_payload(m: Message) -> dict[str, Any]:
@@ -117,7 +118,9 @@ class Smtp:
             raise SendFailed("the bound email address is not an address")
         try:
             await asyncio.to_thread(self._send, to, m)
-        except (OSError, smtplib.SMTPException) as exc:
+        except (OSError, smtplib.SMTPException, ValueError) as exc:
+            # ValueError: a message email.message refuses to build. A send that cannot happen
+            # fails this delivery, never the handler, so the event is not retried forever.
             raise SendFailed(f"SMTP: {type(exc).__name__}") from exc
 
 

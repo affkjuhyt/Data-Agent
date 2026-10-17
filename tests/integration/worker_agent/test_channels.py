@@ -202,3 +202,23 @@ async def test_a_test_goes_on_the_channel_asked_and_a_code_to_the_address_being_
     [(address, card)] = email.sent
     code = gateway.verification_code(b"s3cret", pending, "new@helios.corp", issued)
     assert address == "new@helios.corp" and code in card.text and len(code) == 6
+
+
+async def test_a_test_requested_twice_is_sent_once(
+    seed: Seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    org, user = person(seed, ["in_app"])
+    teams = Recorder()
+    senders(monkeypatch, teams=teams, email=Recorder())
+    request = uuid.uuid4()
+    for _ in range(2):
+        seed.row(
+            "notify.outbox",
+            org_id=org,
+            aggregate_type="notification_test",
+            aggregate_id=request,
+            event_type="notification.test_requested",
+            payload=json.dumps({"user_id": str(user), "channels": ["teams"]}),
+        )
+    await drain()
+    assert len(teams.sent) == 1
