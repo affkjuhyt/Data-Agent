@@ -90,6 +90,8 @@ _NOISE = frozenset({"request_id", "idempotency_key", "timestamp", "at"})
 # The builder's draft grants the read tool as "query" (api agent routes, draft-from-text).
 _ALIASES = {"query": "query.semantic"}
 LOOP_REPEATS = 3
+# A report's questions: each may cost a planner call before any budget step is counted.
+MAX_QUESTIONS = 10
 ROWS_KEPT = 50
 
 
@@ -373,6 +375,7 @@ async def _plan_all(
     goal: str,
     saved: list[dict[str, Any]] | None,
     principal: uuid.UUID,
+    max_tokens: int,
 ) -> list[Planned]:
     """Each question of the goal planned on its own; one the Data Space cannot read stops the plan
     and is named. A resumed run plans from the chips it saved, question by question."""
@@ -381,14 +384,29 @@ async def _plan_all(
         if saved
         else [(q, None) for q in questions_of(goal)]
     )
+    if len(asked) > MAX_QUESTIONS:
+        raise RunFailed(
+            f"Mục tiêu có {len(asked)} câu hỏi; một lượt chạy trả lời tối đa {MAX_QUESTIONS} câu. "
+            "Hãy rút gọn mục tiêu hoặc chia thành nhiều agent.",
+            "budget_steps",
+        )
     planned: list[Planned] = []
-    for text, chips in asked:
+    spent = int(run.tokens or 0)
+    for n, (text, chips) in enumerate(asked, start=1):
         try:
             planned.append(await _plan_step(run, text, chips, principal))
         except RunFailed as exc:
             if len(asked) == 1:
                 raise
             raise RunFailed(f"Câu “{text}”: {exc}", exc.stop_reason) from exc
+        spent += planned[-1].tokens
+        # BR-170 holds while planning too: no further model call once the tokens are spent.
+        if spent >= max_tokens and n < len(asked):
+            raise RunFailed(
+                f"Lập kế hoạch dừng ở câu {n}/{len(asked)}: đã dùng {spent} token, chạm giới hạn "
+                f"{max_tokens} của agent (BR-170).",
+                "budget_tokens",
+            )
     return planned
 
 
@@ -806,6 +824,7 @@ async def _execute(work: Run, run: agent.AgentRun) -> None:
         saved.get("questions")
         or ([{"text": config.goal, "chips": saved["chips"]}] if "chips" in saved else None),
         work.principal,
+        limits.max_tokens,
     )
     tokens = sum(p.tokens for p in planned)
     if plan_row is None:

@@ -745,3 +745,49 @@ async def test_a_paused_report_carries_on_with_its_next_question(
     assert run_row(seed, run)[:2] == ("succeeded", "completed")
     assert [s[1] for s in steps(seed, run)] == ["plan", "query", "query", "query"]
     assert calls["n"] == 3
+
+
+async def test_a_goal_of_too_many_questions_is_refused_before_any_is_read(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Each question may cost a model call: the plan is capped before the first one.
+    bank = build(seed, credit, monkeypatch)
+    calls = {"n": 0}
+    real = runs._plan_step
+
+    async def counted(*args: Any, **kwargs: Any) -> Any:
+        calls["n"] += 1
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(runs, "_plan_step", counted)
+    goal = "\n".join(["Tỷ lệ nợ xấu theo vùng tháng 9/2026"] * (runs.MAX_QUESTIONS + 1))
+    run = agent_run(bank, goal=goal)
+    await drain()
+    status, stop, *_, error, _, _, detail = run_row(seed, run)
+    assert (status, stop, calls["n"]) == ("failed", "budget_steps", 0)
+    assert str(runs.MAX_QUESTIONS) in error
+
+
+async def test_planning_stops_once_its_model_calls_reach_the_token_limit(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    real = runs._plan_step
+    calls = {"n": 0}
+
+    async def costly(*args: Any, **kwargs: Any) -> Any:
+        calls["n"] += 1
+        planned = await real(*args, **kwargs)
+        planned.tokens = 600  # as if the planner model read it
+        return planned
+
+    monkeypatch.setattr(runs, "_plan_step", costly)
+    run = agent_run(bank, goal=REPORT, limits={"max_tokens": 1000})
+    await drain()
+    status, stop, *_ = run_row(seed, run)
+    assert (status, stop) == ("failed", "budget_tokens") and calls["n"] == 2
+    assert steps(seed, run) == []
