@@ -255,3 +255,17 @@ def test_an_image_is_one_ocr_page(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_recordings_are_not_transcribed_yet() -> None:
     with pytest.raises(ValueError, match="not transcribed"):
         extract_pages(b"ID3", "audio")
+
+
+def test_replacements_are_found_by_document_number() -> None:
+    from services.worker_document.validity import find_replacements
+
+    found = find_replacements(
+        [
+            "Quyết định này thay thế Quyết định số 10/QĐ-NH ngày 01/01/2025.",
+            "Thay thế cho Thông tư 39/2016/TT-NHNN.",
+            "Không thay thế gì cả.",
+        ]
+    )
+    assert [r.doc_no for r in found] == ["10/QĐ-NH", "39/2016/TT-NHNN"]
+    assert "thay thế Quyết định số 10/QĐ-NH" in found[0].excerpt

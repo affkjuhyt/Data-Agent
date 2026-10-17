@@ -35,6 +35,7 @@ from services.worker_agent import (
     replay,
     resolutions,
     runs,
+    reviews,
     schema_scans,
     skill_runs,
     semantic_review,
@@ -78,6 +79,7 @@ HANDLERS: dict[str, Handler] = {
     **skill_runs.HANDLERS,
     **evaluation.HANDLERS,
     **semantic_review.HANDLERS,
+    **reviews.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -128,7 +130,11 @@ async def sources() -> list[EventSource]:
         if schema == "eval":
             types |= set(evaluation.HANDLERS)
         if schema == "context":
-            types |= set(semantic_review.HANDLERS)
+            types |= set(semantic_review.HANDLERS) | {reviews.PRODUCT}
+        if schema == "conflict":
+            types |= {reviews.AUTHORITY}
+        if schema == "document":
+            types |= {reviews.VALIDITY}
         found.append(OutboxTableSource(schema=schema, event_types=frozenset(types)))
     try:
         audit = await _outbox_schemas(AUDIT_RELAY)

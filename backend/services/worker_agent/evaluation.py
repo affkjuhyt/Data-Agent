@@ -315,19 +315,19 @@ async def start_run(
     trigger_ref: uuid.UUID | None,
     subject_version: str,
     run_id: uuid.UUID | None = None,
+    eval_set_id: uuid.UUID | None = None,
 ) -> uuid.UUID | None:
-    """A running eval_run on the Data Space's active context set; None when it has none."""
+    """A running eval_run on `eval_set_id`, else on the Data Space's active context set; None
+    when there is no such set."""
     async with scoped_session(ROLE, org_id, user_id) as session:
-        eval_set = await session.scalar(
-            select(ev.EvalSet)
-            .where(
-                ev.EvalSet.data_space_id == space_id,
-                ev.EvalSet.subject_type == "context",
-                ev.EvalSet.status == "active",
+        query = select(ev.EvalSet).where(ev.EvalSet.status == "active")
+        if eval_set_id is not None:
+            query = query.where(ev.EvalSet.id == eval_set_id)
+        else:
+            query = query.where(
+                ev.EvalSet.data_space_id == space_id, ev.EvalSet.subject_type == "context"
             )
-            .order_by(ev.EvalSet.created_at)
-            .limit(1)
-        )
+        eval_set = await session.scalar(query.order_by(ev.EvalSet.created_at).limit(1))
         if eval_set is None:
             return None
         baseline = await session.scalar(
