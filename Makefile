@@ -224,6 +224,24 @@ e2e:  ## pytest -m e2e against the deployed V3 dev cluster (LAN NodePorts; URLs 
 	  "python -m pytest -q -p no:cacheprovider --no-showlocals -m e2e $(PYTEST_ARGS) $(E2E_TESTS); \
 	   rc=\$$?; chown -R $$(id -u):$$(id -g) tests/e2e/out 2>/dev/null; exit \$$rc"
 
+# R1-06: a Data Space's semantic model as YAML, read and written in the api pod with its
+# svc_context credentials. SEMANTIC_ORG is the organisation's id; an import is a dry run unless
+# SEMANTIC_APPLY=1, and approves nothing (relationships and metric versions wait for review).
+SEMANTIC_ORG ?=
+SEMANTIC_SPACE ?=
+SEMANTIC_AS ?=
+SEMANTIC_FILE ?= semantic-model.yaml
+SEMANTIC_YAML = kubectl -n dataagent-service exec -i deploy/api -- \
+	python -m services.api.modules.context.semantic_yaml
+.PHONY: semantic-export semantic-import
+
+semantic-export:  ## a Data Space's semantic model as YAML on stdout (SEMANTIC_ORG, SEMANTIC_SPACE)
+	@$(SEMANTIC_YAML) export --org "$(SEMANTIC_ORG)" --space "$(SEMANTIC_SPACE)"
+
+semantic-import:  ## import SEMANTIC_FILE as SEMANTIC_AS (dry run unless SEMANTIC_APPLY=1)
+	@$(SEMANTIC_YAML) import - --org "$(SEMANTIC_ORG)" --space "$(SEMANTIC_SPACE)" \
+		--as "$(SEMANTIC_AS)" $(if $(filter 1,$(SEMANTIC_APPLY)),,--dry-run) < "$(SEMANTIC_FILE)"
+
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml
 
