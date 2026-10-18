@@ -183,19 +183,32 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
     return out
 
 
+# A quantity asked for in words ("số khoản vay", "bao nhiêu khách hàng"); "so với" and "so sánh"
+# compare, they ask for no quantity of their own.
+_QUANTITY = re.compile(r"\b(?:so luong|bao nhieu|so(?! voi\b| sanh\b))\s+\w")
+
+
 def follow_up(
-    current: Understanding, previous: list[dict[str, object]], vocab: Vocabulary
+    current: Understanding,
+    previous: list[dict[str, object]],
+    vocab: Vocabulary,
+    *,
+    question: str = "",
 ) -> Understanding:
     """A question that only cuts, filters or dates (UC-01-04: "còn theo vùng thì sao?", "đi sâu
     Miền Bắc theo chi nhánh") read against the question before it.
 
     It inherits the earlier metric, and its period and filters unless it states its own; a cut
     it names replaces the earlier cut, so a drill-down is a member filter plus a new dimension.
-    Inherited chips carry source `inherited` ("từ câu trước"). A question that names a metric, or
-    names nothing the Data Space knows, is a new question and is returned as it was read.
+    Inherited chips carry source `inherited` ("từ câu trước"). A question that names a metric,
+    names nothing the Data Space knows, or asks for a quantity no metric holds ("Số khoản vay theo
+    sản phẩm" after a question on NPL) is a new question and is returned as it was read: answering
+    it with the earlier metric would answer another question.
     """
     stated = [c for c in current.chips if c.kind in ("dimension", "filter", "period")]
     if current.decision != "unknown" or current.metric is not None or not stated:
+        return current
+    if _QUANTITY.search(norm(question)):
         return current
     earlier = {str(c.get("kind")): c for c in previous if c.get("kind") == "metric"}
     if "metric" not in earlier:

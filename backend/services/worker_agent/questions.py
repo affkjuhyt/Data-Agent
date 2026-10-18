@@ -628,7 +628,9 @@ async def _understand_and_plan(
         )
         if edited is None and u.decision == "unknown":
             # UC-01-04: "còn theo vùng thì sao?" reads against the question before it.
-            u = follow_up(u, await _previous_chips(session, question), layer.vocabulary)
+            u = follow_up(
+                u, await _previous_chips(session, question), layer.vocabulary, question=asked
+            )
         models: list[dict[str, Any]] = []
         model = gateway()
         if edited is None and u.decision == "unknown" and model is not None:
