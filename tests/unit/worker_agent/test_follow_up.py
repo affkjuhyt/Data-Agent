@@ -34,7 +34,7 @@ VOCAB = Vocabulary(
 def _ask(text: str, previous: str) -> tuple[list[tuple[str, str, str]], str]:
     before = understand(previous, VOCAB, today=TODAY)
     chips = [chip.__dict__ for chip in before.chips]
-    u = follow_up(understand(text, VOCAB, today=TODAY), chips, VOCAB)
+    u = follow_up(understand(text, VOCAB, today=TODAY), chips, VOCAB, question=text)
     return [(c.kind, c.value, c.source) for c in u.chips], u.decision
 
 
@@ -75,6 +75,24 @@ def test_a_question_naming_its_own_metric_is_a_new_question() -> None:
 def test_nothing_the_space_knows_is_not_a_follow_up() -> None:
     chips, decision = _ask("cảm ơn nhé", "Tỷ lệ nợ xấu tháng 9/2026")
     assert (chips, decision) == ([], "unknown")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Số khoản vay theo vùng",
+        "Số lượng khách hàng theo chi nhánh",
+        "Bao nhiêu hợp đồng theo vùng",
+    ],
+)
+def test_a_quantity_no_metric_holds_is_a_new_question(text: str) -> None:
+    chips, decision = _ask(text, "Tỷ lệ nợ xấu tháng 9/2026")
+    assert decision == "unknown" and all(source != "inherited" for _, _, source in chips)
+
+
+def test_a_comparison_still_follows_the_question_before() -> None:
+    chips, _ = _ask("so với Miền Nam thì sao", "Tỷ lệ nợ xấu Miền Bắc tháng 9/2026")
+    assert ("metric", "NPL_RATIO", "inherited") in chips
 
 
 def test_no_earlier_metric_nothing_to_inherit() -> None:
