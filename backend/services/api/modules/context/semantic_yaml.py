@@ -593,6 +593,7 @@ async def import_model(
                 code=metric.code,
                 status=metric.status,
                 version_id=version.id,
+                created_by=principal.user_id,
             )
             report.count("metric", "created")
             continue
@@ -628,6 +629,7 @@ async def import_model(
             version=version.version,
             data_space_id=data_space,
             status=version.status,
+            created_by=principal.user_id,
         )
         report.count("metric", "updated")
     audit(

@@ -247,3 +247,71 @@ async def test_a_definition_that_does_not_compile_is_a_break_and_never_certified
     await decide(bank, proposal, "accepted")
     assert seed.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "apply_failed"
     assert seed.one("SELECT status FROM context.metric_version WHERE id = %s", v1) == "certified"
+
+
+async def test_its_author_cannot_approve_a_version_someone_else_previewed(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    metric, v1 = du_no(bank)
+    v2 = new_version(bank, metric, dims=["vung", "san_pham"])
+    author = reviewer(bank)
+    # The api records who created the version on its created event (metric_version has no column).
+    seed.row(
+        "context.outbox",
+        org_id=bank.org,
+        aggregate_type="metric_version",
+        aggregate_id=v2,
+        event_type="metric_version.created",
+        payload=json.dumps({"version_id": str(v2), "created_by": str(author)}),
+    )
+    proposal = await preview(bank, v2)  # asked by bank.user, not the author
+    assert seed.one("SELECT proposed_by FROM inbox.proposal WHERE id = %s", proposal) == author
+    await decide(bank, proposal, "accepted")  # decided by the author
+    assert seed.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "apply_failed"
+    assert seed.one("SELECT status FROM context.metric_version WHERE id = %s", v1) == "certified"
+
+
+async def test_an_edited_proposal_is_not_certified_as_the_version(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    metric, v1 = du_no(bank)
+    v2 = new_version(bank, metric, dims=["vung", "san_pham"])
+    proposal = await preview(bank, v2)
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE inbox.proposal SET diff = diff || '{\"version\": 3}'::jsonb WHERE id = %s",
+            (str(proposal),),
+        )
+    await decide(bank, proposal, "accepted")
+    assert seed.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "apply_failed"
+    assert seed.one("SELECT status FROM context.metric_version WHERE id = %s", v1) == "certified"
+
+
+async def test_figures_over_a_masked_table_are_withheld_not_broken(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    metric, _ = du_no(bank)
+    seed.row(
+        "governance.access_policy",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        dataset_id=bank.loans,
+        name="Che số dư",
+        kind="mask",
+        applies_to=json.dumps({}),
+        columns=["balance"],
+        mask_method="null",
+        status="active",
+        simulated_at="2026-10-17T08:00:00Z",
+        activated_at="2026-10-17T09:00:00Z",
+        activated_by=bank.user,
+    )
+    v2 = new_version(bank, metric, dims=["vung", "san_pham"])
+    proposal = await preview(bank, v2)
+    diff, impact = seed.one("SELECT diff, impact FROM inbox.proposal WHERE id = %s", proposal)
+    assert "che cột" in diff["preview_withheld"]
+    assert all(row["new"] is None and row["current"] is None for row in diff["preview"])
+    assert impact["breaks"] == []

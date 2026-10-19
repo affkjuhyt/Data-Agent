@@ -259,6 +259,8 @@ async def create_metric(
             code=row.code,
             status=row.status,
             version_id=versions[0].id if versions else None,
+            # metric_version has no author column: the worker reads it here (maker-checker).
+            created_by=principal.user_id,
         )
         await session.flush()
         await session.refresh(row)
@@ -360,6 +362,7 @@ async def create_metric_version(
             version=row.version,
             data_space_id=data_space,
             status=row.status,
+            created_by=principal.user_id,
         )
         await session.flush()
         await session.refresh(row)

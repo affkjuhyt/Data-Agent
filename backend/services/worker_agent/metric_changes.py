@@ -42,10 +42,20 @@ from sqlalchemy import String, cast, func, literal, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 
 from libs.dataagent_db import scoped_session, uuid7
-from libs.dataagent_db.models import agent, catalog, context, inbox, monitor, period, skill
+from libs.dataagent_db.models import (
+    agent,
+    catalog,
+    context,
+    governance,
+    inbox,
+    monitor,
+    period,
+    skill,
+)
 from services.worker_agent import proposals, questions
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
+from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import load
 
@@ -336,34 +346,59 @@ async def _by_month(
     version: c.MetricVersion,
     window: c.Period,
     space_id: uuid.UUID,
-) -> tuple[dict[str, decimal.Decimal | None], str | None]:
-    """The version's value for each month of the window, run in place on its source; or why not."""
+) -> tuple[dict[str, decimal.Decimal | None], str | None, str | None]:
+    """The version's value for each month of the window, run in place on its source; or the break
+    that keeps it from running; or, third, why its figures are withheld from this steward.
+
+    The figures are held to the question path's rules (the security review of :preview): the
+    steward must be allowed to ask in the Data Space, and a definition that reads a table under a
+    column or mask policy is not run, since an aggregate over a masked column still discloses it
+    (semantic/loader.py blocks such a metric from questions the same way)."""
     async with scoped_session("svc_qa", event.org_id, actor) as session:
+        if not await can_ask_data_space(session, data_space_id=space_id, principal_id=actor):
+            return {}, None, "Người chạy thử không có quyền hỏi dữ liệu của Data Space này."
         space = await load(session, space_id)
         try:
             time_dim = c.time_dimension_of(version, space.layer)
             if time_dim is None:
-                return {}, f"{version.display_name} không có chiều thời gian để so theo tháng."
+                return (
+                    {},
+                    f"{version.display_name} không có chiều thời gian để so theo tháng.",
+                    None,
+                )
             request = c.Request(version, group_by=[time_dim.code], period=window, grain="month")
             compiled = c.compile_metric(request, space.layer, dialect="postgres")
         except c.CompileError as exc:
-            return {}, f"Không biên dịch được {version.display_name}: {exc}"
+            return {}, f"Không biên dịch được {version.display_name}: {exc}", None
+        covered = await session.scalar(
+            select(func.count()).where(
+                governance.AccessPolicy.dataset_id.in_(list(compiled.dataset_ids)),
+                governance.AccessPolicy.status == "active",
+                governance.AccessPolicy.kind.in_(("column", "mask")),
+            )
+        )
+        if covered:
+            return (
+                {},
+                None,
+                "Bảng của chỉ số có chính sách ẩn hoặc che cột; số chạy thử không được hiện.",
+            )
         dataset = space.datasets.get(compiled.dataset_ids[0])
         if dataset is None:
-            return {}, f"Bảng của {version.display_name} không có trong danh mục."
+            return {}, f"Bảng của {version.display_name} không có trong danh mục.", None
         source = (
             questions._internal_workspace_source(space_id, event.org_id)
             if dataset.schema_name == "workspace" and dataset.source_id is None
             else await session.get(catalog.Source, dataset.source_id)
         )
         if source is None or source.mode != "federated" or source.status not in questions.QUERYABLE:
-            return {}, "Bảng của chỉ số nằm trên một nguồn chưa được phép truy vấn tại chỗ."
+            return {}, "Bảng của chỉ số nằm trên một nguồn chưa được phép truy vấn tại chỗ.", None
         try:
             compiled = c.compile_metric(
                 request, space.layer, dialect=questions.dialect_for_source(source.kind)
             )
         except c.CompileError as exc:
-            return {}, f"Không biên dịch được {version.display_name}: {exc}"
+            return {}, f"Không biên dịch được {version.display_name}: {exc}", None
     outcome = await run_query(
         org_id=event.org_id,
         data_space_id=space_id,
@@ -376,8 +411,8 @@ async def _by_month(
         metric_version_ids=[version.id],
     )
     if not outcome.ok:
-        return {}, f"Chạy thử {version.display_name} không thành công ({outcome.status})."
-    return {str(row[0]): _number(row[-1]) for row in outcome.rows}, None
+        return {}, f"Chạy thử {version.display_name} không thành công ({outcome.status}).", None
+    return {str(row[0]): _number(row[-1]) for row in outcome.rows}, None, None
 
 
 async def _filed(
@@ -406,23 +441,27 @@ async def _filed(
 
 async def preview_figures(
     event: Event, actor: uuid.UUID, v: _Versions, periods: int, impact: Impact
-) -> list[dict[str, str | None]]:
-    """The new version next to the certified one and to the filed figure, month by month; what
-    keeps the new one from running goes into `impact` as a break."""
+) -> tuple[list[dict[str, str | None]], str | None]:
+    """The new version next to the certified one and to the filed figure, month by month, and why
+    figures are withheld if they are; what keeps the new one from running goes into `impact` as a
+    break."""
     window = _months_before(_today(), periods)
     space_id = v.metric.data_space_id
-    new, problem = await _by_month(
+    new, problem, withheld = await _by_month(
         event, actor, _compiled_version(v.new, v.metric.code), window, space_id
     )
     if problem is not None:
         impact.breaks.append({"kind": "definition", "id": str(v.new.id), "text": problem})
     current: dict[str, decimal.Decimal | None] = {}
     filed: dict[str, decimal.Decimal] = {}
-    if v.certified is not None:
-        current, _ = await _by_month(
+    if v.certified is not None and withheld is None:
+        current, _, withheld = await _by_month(
             event, actor, _compiled_version(v.certified, v.metric.code), window, space_id
         )
-        filed = await _filed(event.org_id, actor, v.certified.id)
+        if withheld is None:
+            filed = await _filed(event.org_id, actor, v.certified.id)
+        else:
+            new = {}
     rows: list[dict[str, str | None]] = []
     mismatches = 0
     for label in _month_labels(window):
@@ -440,7 +479,23 @@ async def preview_figures(
             }
         )
     impact.counts["filed_mismatches"] = mismatches
-    return rows
+    return rows, withheld
+
+
+async def _author(org: uuid.UUID, actor: uuid.UUID, version_id: uuid.UUID) -> uuid.UUID | None:
+    """Who wrote the version: metric_version has no author column, so it is read from the event
+    the api wrote when it created it (created_by); None for a version created before it did."""
+    async with scoped_session("svc_context", org, actor) as session:
+        payload = await session.scalar(
+            select(context.Outbox.payload)
+            .where(
+                context.Outbox.event_type.in_(("metric.created", "metric_version.created")),
+                context.Outbox.payload.op("->>")("version_id") == str(version_id),
+            )
+            .limit(1)
+        )
+    created_by = (payload or {}).get("created_by")
+    return uuid.UUID(str(created_by)) if created_by else None
 
 
 async def preview_requested(event: Event) -> None:
@@ -451,9 +506,12 @@ async def preview_requested(event: Event) -> None:
     if v is None or v.new.status != "testing":
         return
     impact = await impact_of(event.org_id, actor, v)
-    figures = await preview_figures(
+    figures, withheld = await preview_figures(
         event, actor, v, int(p.get("periods") or PREVIEW_PERIODS), impact
     )
+    # Maker-checker: the proposer is the version's author, so its author cannot decide it even
+    # when someone else asked for the preview; without a recorded author, whoever asked.
+    author = await _author(event.org_id, actor, version_id)
     diff = {
         "action": "certify",
         "metric_id": v.metric.id,
@@ -463,6 +521,7 @@ async def preview_requested(event: Event) -> None:
         "replaces_version": v.certified.version if v.certified else None,
         "changes": changes(v),
         "preview": figures,
+        "preview_withheld": withheld,
     }
     pid = await proposals._open(
         event,
@@ -472,7 +531,7 @@ async def preview_requested(event: Event) -> None:
         target_ref=v.new.id,
         title=f"Duyệt định nghĩa {v.metric.code} phiên bản {v.new.version}",
         diff=diff,
-        proposed_by=actor,
+        proposed_by=author or actor,
         eval_run_id=None,
         impact=impact.as_json(),
         impact_level=impact.level,
@@ -509,9 +568,22 @@ async def apply(event: Event, proposal: dict[str, Any]) -> bool:
     # A version that did not compile or run at preview stays broken: the dependents are counted
     # again, the definition is not re-run, so its break is read back from the proposal.
     async with scoped_session("svc_inbox", event.org_id, reviewer) as session:
-        stored = await session.scalar(
-            select(inbox.Proposal.impact).where(inbox.Proposal.id == proposal["id"])
+        row = await session.get(inbox.Proposal, proposal["id"])
+        stored = row.impact if row is not None else None
+        requested = (
+            row.evidence[0].get("requested")
+            if row is not None and isinstance(row.evidence, list) and row.evidence
+            else None
         )
+        edited = row is None or row.diff != requested
+    # What is certified is the version as proposed: an accept_with_edit changed the diff, not the
+    # version, so an edited definition is a new version to preview, never certified as this one.
+    if edited:
+        logger.info("worker-agent | metric_change %s not applied: edited", proposal["id"])
+        return False
+    if reviewer == await _author(event.org_id, reviewer, version_id):
+        logger.info("worker-agent | metric_change %s not applied: its author", proposal["id"])
+        return False
     impact.breaks += [
         b
         for b in (stored or {}).get("breaks", [])
