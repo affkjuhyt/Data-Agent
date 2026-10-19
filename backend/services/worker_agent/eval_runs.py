@@ -27,7 +27,18 @@ def _question_text(item: evaluation.EvalItem) -> str:
 
 
 def _values(figures: Any) -> list[float]:
-    return [float(x["value"]) for x in (figures or []) if isinstance(x, dict) and isinstance(x.get("value"), (int, float))]
+    """The answer's own figures as numbers, in order. A figure's value is stored as text
+    (Figure.as_json writes the Decimal with format "f"), so a filter on int/float would drop every
+    one; the totals and changes derived from them (source.expr) are not what an item expects."""
+    out: list[float] = []
+    for figure in figures or []:
+        if not isinstance(figure, dict) or "expr" in (figure.get("source") or {}):
+            continue
+        try:
+            out.append(float(figure["value"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
 
 
 def _score(item: evaluation.EvalItem, answer: qa.Answer | None, question: qa.Question | None) -> tuple[bool | None, bool | None, bool | None, bool, dict[str, Any], str | None]:
