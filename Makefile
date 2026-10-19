@@ -12,10 +12,40 @@ DOCKER_RUN_DEV = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH
 
 .PHONY: help lint type test test-unit test-integration test-changed deadcode frontend-lint frontend-test ci e2e \
         deploy deploy-local fmt bench bench-gate bench-e2e mock-api contract-compat design-checklist design-audit api-types dev-tools fmt-files \
-        type-v3 lint-imports
+        type-v3 lint-imports banking-data-plan banking-data-download banking-data-verify banking-data-inventory banking-data-prepare banking-data-bulk-ingest
 
 help:  ## List targets
 	@grep -hE '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+
+BANKING_DATA_ROOT ?= /private/tmp/data-agent-banking
+BANKING_DATA_PROFILE ?= test
+
+banking-data-plan:  ## show the public banking artifacts and estimated sizes
+	python3 tools/banking_data.py plan --profile $(BANKING_DATA_PROFILE) --root "$(BANKING_DATA_ROOT)"
+
+banking-data-download:  ## download/resume a banking profile outside the repository
+	python3 tools/banking_data.py download --profile $(BANKING_DATA_PROFILE) --root "$(BANKING_DATA_ROOT)"
+
+banking-data-verify:  ## verify sizes, SHA-256 checksums and ZIP integrity
+	python3 tools/banking_data.py verify --root "$(BANKING_DATA_ROOT)"
+
+BANKING_UPLOAD_ROOT ?= /private/tmp/data-agent-banking-upload
+
+banking-data-inventory:  ## classify downloaded banking archives as JSON
+	python3 tools/banking_upload_prep.py inventory --root "$(BANKING_DATA_ROOT)"
+
+banking-data-prepare:  ## create bounded CSV samples for /v1/uploads
+	python3 tools/banking_upload_prep.py prepare --root "$(BANKING_DATA_ROOT)" --output "$(BANKING_UPLOAD_ROOT)"
+
+BANKING_DATA_API ?= http://localhost:30100
+BANKING_DATA_SPACE ?= DS-DEMO
+BANKING_DATA_TOKEN ?=
+BANKING_BULK_MANIFEST ?= /private/tmp/data-agent-banking-bulk-ingest.json
+
+banking-data-bulk-ingest:  ## resumably ingest raw banking archives through the API
+	DATA_AGENT_TOKEN="$(BANKING_DATA_TOKEN)" python3 tools/banking_bulk_ingest.py \
+		--api-base "$(BANKING_DATA_API)" --data-space "$(BANKING_DATA_SPACE)" \
+		--root "$(BANKING_DATA_ROOT)" --manifest "$(BANKING_BULK_MANIFEST)"
 
 # The tree is not ruff-clean, so lint fails only on findings added since the
 # merge-base with LINT_BASE (tests/ruff_ratchet.py), working-tree edits included.
