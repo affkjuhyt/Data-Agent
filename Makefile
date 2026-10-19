@@ -12,10 +12,40 @@ DOCKER_RUN_DEV = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH
 
 .PHONY: help lint type test test-unit test-integration test-changed deadcode frontend-lint frontend-test ci e2e \
         deploy deploy-local fmt bench bench-gate bench-e2e mock-api contract-compat design-checklist design-audit api-types dev-tools fmt-files \
-        type-v3 lint-imports
+        type-v3 lint-imports banking-data-plan banking-data-download banking-data-verify banking-data-inventory banking-data-prepare banking-data-bulk-ingest
 
 help:  ## List targets
 	@grep -hE '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+
+BANKING_DATA_ROOT ?= /private/tmp/data-agent-banking
+BANKING_DATA_PROFILE ?= test
+
+banking-data-plan:  ## show the public banking artifacts and estimated sizes
+	python3 tools/banking_data.py plan --profile $(BANKING_DATA_PROFILE) --root "$(BANKING_DATA_ROOT)"
+
+banking-data-download:  ## download/resume a banking profile outside the repository
+	python3 tools/banking_data.py download --profile $(BANKING_DATA_PROFILE) --root "$(BANKING_DATA_ROOT)"
+
+banking-data-verify:  ## verify sizes, SHA-256 checksums and ZIP integrity
+	python3 tools/banking_data.py verify --root "$(BANKING_DATA_ROOT)"
+
+BANKING_UPLOAD_ROOT ?= /private/tmp/data-agent-banking-upload
+
+banking-data-inventory:  ## classify downloaded banking archives as JSON
+	python3 tools/banking_upload_prep.py inventory --root "$(BANKING_DATA_ROOT)"
+
+banking-data-prepare:  ## create bounded CSV samples for /v1/uploads
+	python3 tools/banking_upload_prep.py prepare --root "$(BANKING_DATA_ROOT)" --output "$(BANKING_UPLOAD_ROOT)"
+
+BANKING_DATA_API ?= http://localhost:30100
+BANKING_DATA_SPACE ?= DS-DEMO
+BANKING_DATA_TOKEN ?=
+BANKING_BULK_MANIFEST ?= /private/tmp/data-agent-banking-bulk-ingest.json
+
+banking-data-bulk-ingest:  ## resumably ingest raw banking archives through the API
+	DATA_AGENT_TOKEN="$(BANKING_DATA_TOKEN)" python3 tools/banking_bulk_ingest.py \
+		--api-base "$(BANKING_DATA_API)" --data-space "$(BANKING_DATA_SPACE)" \
+		--root "$(BANKING_DATA_ROOT)" --manifest "$(BANKING_BULK_MANIFEST)"
 
 # The tree is not ruff-clean, so lint fails only on findings added since the
 # merge-base with LINT_BASE (tests/ruff_ratchet.py), working-tree edits included.
@@ -223,6 +253,24 @@ e2e:  ## pytest -m e2e against the deployed V3 dev cluster (LAN NodePorts; URLs 
 	  dataagent-test/worker_agent:latest sh -c \
 	  "python -m pytest -q -p no:cacheprovider --no-showlocals -m e2e $(PYTEST_ARGS) $(E2E_TESTS); \
 	   rc=\$$?; chown -R $$(id -u):$$(id -g) tests/e2e/out 2>/dev/null; exit \$$rc"
+
+# R1-06: a Data Space's semantic model as YAML, read and written in the api pod with its
+# svc_context credentials. SEMANTIC_ORG is the organisation's id; an import is a dry run unless
+# SEMANTIC_APPLY=1, and approves nothing (relationships and metric versions wait for review).
+SEMANTIC_ORG ?=
+SEMANTIC_SPACE ?=
+SEMANTIC_AS ?=
+SEMANTIC_FILE ?= semantic-model.yaml
+SEMANTIC_YAML = kubectl -n dataagent-service exec -i deploy/api -- \
+	python -m services.api.modules.context.semantic_yaml
+.PHONY: semantic-export semantic-import
+
+semantic-export:  ## a Data Space's semantic model as YAML on stdout (SEMANTIC_ORG, SEMANTIC_SPACE)
+	@$(SEMANTIC_YAML) export --org "$(SEMANTIC_ORG)" --space "$(SEMANTIC_SPACE)"
+
+semantic-import:  ## import SEMANTIC_FILE as SEMANTIC_AS (dry run unless SEMANTIC_APPLY=1)
+	@$(SEMANTIC_YAML) import - --org "$(SEMANTIC_ORG)" --space "$(SEMANTIC_SPACE)" \
+		--as "$(SEMANTIC_AS)" $(if $(filter 1,$(SEMANTIC_APPLY)),,--dry-run) < "$(SEMANTIC_FILE)"
 
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml

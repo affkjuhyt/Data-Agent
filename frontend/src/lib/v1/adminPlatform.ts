@@ -1,7 +1,8 @@
+import { listAdminUsers } from './adminAccess';
+import { listAgents, listRuns } from './api';
 import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
 import type { components } from './schema';
-import type { ModelConfig } from './types';
-import { listAdminUsers } from './adminAccess';
+import type { AgentDef, AgentRun, ModelConfig } from './types';
 
 type Schemas = components['schemas'];
 
@@ -285,14 +286,14 @@ function readUsage(
     issues: report.issues?.length
       ? report.issues
       : report.agents
-      .filter((a) => (a.budget_used_ratio ?? 0) >= BUDGET_WARNING)
-      .map((a) => ({
-        id: `budget-${a.agent_id}`,
-        severity: (a.budget_used_ratio ?? 0) >= 1 ? ('error' as const) : ('warning' as const),
-        title: `${a.name} đã dùng ${Math.round((a.budget_used_ratio ?? 0) * 100)}% ngân sách tháng`,
-        detail: 'Nâng ngân sách hoặc giảm việc của agent trước khi nó dừng vì hết ngân sách.',
-        action: { kind: 'budget' as const, label: 'Mở agent', target_id: a.agent_id },
-      })),
+          .filter((a) => (a.budget_used_ratio ?? 0) >= BUDGET_WARNING)
+          .map((a) => ({
+            id: `budget-${a.agent_id}`,
+            severity: (a.budget_used_ratio ?? 0) >= 1 ? ('error' as const) : ('warning' as const),
+            title: `${a.name} đã dùng ${Math.round((a.budget_used_ratio ?? 0) * 100)}% ngân sách tháng`,
+            detail: 'Nâng ngân sách hoặc giảm việc của agent trước khi nó dừng vì hết ngân sách.',
+            action: { kind: 'budget' as const, label: 'Mở agent', target_id: a.agent_id },
+          })),
   };
 }
 
@@ -303,15 +304,103 @@ const usage = (from: Date, to: Date) =>
     granularity: 'day',
   });
 
+const needsPerson = (run: AgentRun) => run.status === 'waiting_human' || (run.hitl_count ?? 0) > 0;
+
+function figuresOf(rows: AgentRun[]): Figures {
+  const count = rows.length;
+  const needs = rows.filter(needsPerson).length;
+  const errors = rows.filter((run) => run.status === 'failed').length;
+  const done = rows.filter((run) => run.started_at && run.finished_at);
+  const duration = done.reduce(
+    (sum, run) =>
+      sum + (new Date(run.finished_at!).getTime() - new Date(run.started_at!).getTime()) / 1000,
+    0,
+  );
+  const cost = rows.reduce((sum, run) => sum + Number(run.cost || 0), 0);
+  return {
+    runs: count,
+    needs_person: needs,
+    needs_person_rate: count > 0 ? needs / count : null,
+    errors,
+    error_rate: count > 0 ? errors / count : null,
+    avg_duration_s: done.length > 0 ? duration / done.length : null,
+    cost: String(cost),
+    model_calls: 0,
+    model_errors: 0,
+    tokens: 0,
+  };
+}
+
+/**
+ * Vận hành is on the agent rail. The usage endpoint is admin-only, so a caller who can list
+ * runs still sees those runs, grouped the same way, instead of an empty error.
+ */
+export function summaryFromRuns(
+  period: OpsPeriod,
+  runs: AgentRun[],
+  agents: AgentDef[],
+  now = new Date(),
+): AgentOpsSummary {
+  const end = now.getTime();
+  const from = end - PERIOD_MS[period];
+  const live = runs.filter((run) => !run.is_test);
+  const between = (start: number, stop: number) =>
+    live.filter((run) => {
+      const at = new Date(run.created_at).getTime();
+      return at >= start && at < stop;
+    });
+  const current = between(from, end);
+  const previous = between(from - PERIOD_MS[period], from);
+  const byDay = new Map<string, AgentRun[]>();
+  const byAgent = new Map<string, AgentRun[]>();
+  for (const run of current) {
+    const day = new Date(run.created_at).toISOString().slice(0, 10);
+    byDay.set(day, [...(byDay.get(day) ?? []), run]);
+    byAgent.set(run.agent_id, [...(byAgent.get(run.agent_id) ?? []), run]);
+  }
+  const known = new Map(agents.map((agent) => [agent.id, agent]));
+  const report = {
+    from: new Date(from).toISOString(),
+    to: new Date(end).toISOString(),
+    granularity: 'day' as const,
+    totals: figuresOf(current),
+    days: [...byDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([day, rows]) => ({ day, ...figuresOf(rows) })),
+    agents: [...byAgent.entries()].map(([id, rows]) => {
+      const agent = known.get(id);
+      const budget = agent?.monthly_budget == null ? null : Number(agent.monthly_budget);
+      const spent = Number(agent?.spent_this_month ?? 0);
+      return {
+        agent_id: id,
+        name: agent?.name ?? '',
+        monthly_budget: budget === null ? null : String(budget),
+        spent_this_month: String(spent),
+        budget_used_ratio: budget ? spent / budget : null,
+        days: [],
+        ...figuresOf(rows),
+      };
+    }),
+  };
+  const before = previous.length === 0 ? null : { ...report, totals: figuresOf(previous) };
+  return readUsage(period, report as UsageReport, before as UsageReport | null);
+}
+
 export const getAgentOpsSummary = async (period: OpsPeriod): Promise<AgentOpsSummary> => {
   const to = new Date();
   const from = new Date(to.getTime() - PERIOD_MS[period]);
-  const [report, before] = await Promise.all([
-    usage(from, to),
-    // The period before is only the comparison; the screen stands without it.
-    usage(new Date(from.getTime() - PERIOD_MS[period]), from).catch(() => null),
-  ]);
-  return readUsage(period, report, before);
+  try {
+    const [report, before] = await Promise.all([
+      usage(from, to),
+      // The period before is only the comparison; the screen stands without it.
+      usage(new Date(from.getTime() - PERIOD_MS[period]), from).catch(() => null),
+    ]);
+    return readUsage(period, report, before);
+  } catch (error) {
+    if (!(error instanceof V1Error) || error.status !== 403) throw error;
+    const [runs, agents] = await Promise.all([listRuns(), listAgents()]);
+    return summaryFromRuns(period, runs.items, agents.items, to);
+  }
 };
 
 /* ─── Mô hình & chính sách AI (UC-11-05) ───────────────────────────────── */

@@ -1,7 +1,8 @@
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { lockAgent, unlockAgent } from './agentControl';
+import { isLocked, lockAgent, unlockAgent } from './agentControl';
+import type { AgentDef } from './types';
 import { setDataSpace } from './client';
 
 const server = setupServer();
@@ -40,5 +41,12 @@ describe('agent control API', () => {
     await unlockAgent('agent-1');
 
     expect(body).toBe('');
+  });
+
+  it('reads a locked agent as the api marks it, not a pause with a reason', () => {
+    const agent = (status: string, paused_reason: string | null) =>
+      ({ status, paused_reason }) as AgentDef;
+    expect(isLocked(agent('locked', 'Sai số liệu nợ xấu'))).toBe(true);
+    expect(isLocked(agent('paused', 'locked'))).toBe(false);
   });
 });

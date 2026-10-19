@@ -160,12 +160,26 @@ class TestGatewayPath:
             )
         assert exc.value.status_code == 401
 
-    def test_unset_gateway_key_keeps_the_previous_behaviour(self, monkeypatch):
-        """Deliberate compatibility escape hatch so an existing deployment does
-        not lock itself out mid-upgrade. It is a downgrade, and auth.py logs a
-        warning on every request that takes it."""
+    def test_unset_gateway_key_refuses_the_kong_marker(self, monkeypatch):
+        """A Secret that lost its key must not turn the marker into a free pass."""
         monkeypatch.setenv("SERVICE_AUTH_SECRET", SECRET)
         monkeypatch.delenv("KB_GATEWAY_KEY", raising=False)
+        monkeypatch.delenv("GATEWAY_KEY", raising=False)
+        monkeypatch.delenv("GATEWAY_KEY_OPTIONAL", raising=False)
+        import services.kb_backend.dependencies.auth as auth_mod
+        auth = importlib.reload(auth_mod)
+
+        with pytest.raises(HTTPException) as exc:
+            _call(auth, x_kong_verified="true", x_tenant_id=TENANT, x_user_roles="platform-admin")
+        assert exc.value.status_code == 401
+
+    def test_unset_gateway_key_with_explicit_opt_in_keeps_the_previous_behaviour(self, monkeypatch):
+        """Escape hatch so a deployment rolling the key out does not lock itself out.
+        It is a downgrade, opted into by name, and auth.py warns on every request."""
+        monkeypatch.setenv("SERVICE_AUTH_SECRET", SECRET)
+        monkeypatch.delenv("KB_GATEWAY_KEY", raising=False)
+        monkeypatch.delenv("GATEWAY_KEY", raising=False)
+        monkeypatch.setenv("GATEWAY_KEY_OPTIONAL", "true")
         import services.kb_backend.dependencies.auth as auth_mod
         auth = importlib.reload(auth_mod)
 

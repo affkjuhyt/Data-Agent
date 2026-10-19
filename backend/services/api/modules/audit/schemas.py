@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 import datetime
+import ipaddress
 import uuid
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+
+
+def _ip_text(value: Any) -> Any:
+    # SQLAlchemy returns inet as ipaddress.IPv4Address/IPv6Address. Leaving that
+    # for pydantic to treat as str fails the whole GET /v1/audit response.
+    if isinstance(value, ipaddress.IPv4Address | ipaddress.IPv6Address):
+        return str(value)
+    return value
 
 
 class AuditFilters(BaseModel):
@@ -45,7 +54,7 @@ class AuditLogView(BaseModel):
     before: Any | None
     after: Any | None
     agent_run_id: uuid.UUID | None
-    ip: str | None
+    ip: Annotated[str | None, BeforeValidator(_ip_text)]
     prev_hash: str
     hash: str
 

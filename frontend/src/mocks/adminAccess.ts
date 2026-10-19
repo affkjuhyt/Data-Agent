@@ -816,6 +816,16 @@ export function createAdminAccessHandlers() {
   const members: Record<string, DataSpaceMember[]> = { [DS_RISK]: membersFixture() };
   let requests = accessRequestsFixture();
   let policies = accessPoliciesFixture();
+  const accessView = <T extends object>(p: T) => ({
+    ...p,
+    type: 'access',
+    dataset_id: 'dataset-0',
+    applies_to: null,
+    mask_method: null,
+    activated_by: null,
+    created_at: '2026-09-01T09:00:00+07:00',
+    updated_at: '2026-10-01T09:00:00+07:00',
+  });
   let dsrs = dsrFixture();
   const exports = new Map<string, AuditExport>();
   /** GET /v1/audit's filters: exact action and outcome, occurred_at in [from, to). */
@@ -1016,18 +1026,12 @@ export function createAdminAccessHandlers() {
     http.get('*/v1/policies', ({ request }) => {
       if (new URL(request.url).searchParams.get('type') !== 'access') return undefined;
       // AccessPolicyView with the screen's display fields alongside.
-      return HttpResponse.json(
-        policies.map((p) => ({
-          ...p,
-          type: 'access',
-          dataset_id: 'dataset-0',
-          applies_to: null,
-          mask_method: null,
-          activated_by: null,
-          created_at: '2026-09-01T09:00:00+07:00',
-          updated_at: '2026-10-01T09:00:00+07:00',
-        })),
-      );
+      return HttpResponse.json(policies.map(({ last_backtest: _, ...p }) => accessView(p)));
+    }),
+    // AccessPolicyDetail; a behaviour policy's id falls through to the rules mock.
+    http.get('*/v1/policies/:id', ({ params }) => {
+      const item = policies.find((p) => p.id === params.id);
+      return item ? HttpResponse.json(accessView(item)) : undefined;
     }),
     http.patch('*/v1/policies/:id', async ({ params, request }) => {
       const item = policies.find((p) => p.id === params.id);
@@ -1085,6 +1089,9 @@ export function createAdminAccessHandlers() {
         return HttpResponse.json(result);
       }
       if (verb === 'disable') {
+        const body = (await request.json().catch(() => null)) as { reason?: string } | null;
+        if (!body?.reason?.trim())
+          return problem(422, 'validation_failed', 'Ghi lý do tắt chính sách.');
         if (item.status !== 'active')
           return problem(409, 'invalid_state', 'Chính sách không đang bật.');
         const disabled = { ...item, status: 'disabled' as const };

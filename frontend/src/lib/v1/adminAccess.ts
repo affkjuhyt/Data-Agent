@@ -386,7 +386,7 @@ export interface AccessPolicy {
   sample_question: string;
   /** PROPOSAL: how many requests the policy handled this week (the policyOff confirmation). */
   applied_this_week: number;
-  /** PROPOSAL: the last backtest, so the side panel shows without re-running it. */
+  /** The last backtest (AccessPolicyDetail.latest_backtest); null in the list and until one ran. */
   last_backtest: Backtest | null;
 }
 
@@ -404,7 +404,26 @@ export interface PolicySimulation {
 }
 
 type AccessPolicyWire = Schemas['AccessPolicyView'] &
-  Partial<Omit<AccessPolicy, keyof Schemas['AccessPolicyView']>>;
+  Partial<Omit<AccessPolicy, keyof Schemas['AccessPolicyView']>> &
+  Partial<Pick<Schemas['AccessPolicyDetail'], 'latest_backtest'>>;
+
+const DAY_MS = 86_400_000;
+
+/** BacktestResultView in the panel's words: queries whose result the policy changes, of all. */
+function readBacktest(raw: Schemas['BacktestResultView']): Backtest {
+  return {
+    window_days: Math.max(
+      1,
+      Math.round((new Date(raw.window_to).getTime() - new Date(raw.window_from).getTime()) / DAY_MS),
+    ),
+    affected_queries: raw.changed_result_count,
+    total_queries: raw.matched_count,
+    affected_users_text: raw.affected_agent_ids.length
+      ? `${raw.affected_agent_ids.length} agent`
+      : 'Không agent nào',
+    empty_queries_text: raw.blocked_count ? `${raw.blocked_count} truy vấn bị chặn` : 'Không có',
+  };
+}
 
 /** The rule in the lines the screen edits: who it applies to, the row condition, the columns. */
 const ruleTextOf = (raw: Schemas['AccessPolicyView']) =>
@@ -434,7 +453,8 @@ function readAccessPolicy(raw: AccessPolicyWire, spaces: Map<string, string>): A
     rule_text: raw.rule_text ?? ruleTextOf(raw),
     sample_question: raw.sample_question ?? '',
     applied_this_week: raw.applied_this_week ?? 0,
-    last_backtest: raw.last_backtest ?? null,
+    last_backtest:
+      raw.last_backtest ?? (raw.latest_backtest ? readBacktest(raw.latest_backtest) : null),
   };
 }
 
@@ -448,11 +468,15 @@ export const listAccessPolicies = async (): Promise<Page<AccessPolicy>> => {
   return { items: rows.map((r) => readAccessPolicy(r, names)), next_page_token: '' };
 };
 
-/** A2 has no GET /v1/policies/{id}: a policy is its row in the list. */
+/** GET /v1/policies/{id} answers either type; a behaviour policy is not shown here. */
 export const getAccessPolicy = async (id: string) => {
-  const policy = (await listAccessPolicies()).items.find((p) => p.id === id);
-  if (!policy) throw new V1Error(404, 'not_found', 'Không tìm thấy chính sách.');
-  return policy;
+  const [raw, spaces] = await Promise.all([
+    v1Get<AccessPolicyWire | Schemas['BehaviorPolicyDetail']>(`/policies/${pathId(id)}`),
+    listDataSpaceSummaries().catch(() => null),
+  ]);
+  if (raw.type !== 'access') throw new V1Error(404, 'not_found', 'Không tìm thấy chính sách.');
+  const names = new Map<string, string>(spaces?.items.map((s) => [s.id, s.name]) ?? []);
+  return readAccessPolicy(raw as AccessPolicyWire, names);
 };
 /** PROPOSAL: PATCH saves the rule as a new version (draft until simulated). */
 export const updateAccessPolicy = async (id: string, body: { rule_text: string }) =>
@@ -480,11 +504,22 @@ export const simulatePolicy = async (id: string, body: { user_id: Uuid; question
     ],
   } satisfies PolicySimulation;
 };
-export const backtestPolicy = async (id: string) =>
-  v1Send<Backtest>('POST', `/policies/${pathId(id)}:backtest`);
-/** PROPOSAL: :disable (A2 has :activate only). */
-export const disablePolicy = async (id: string) =>
-  v1Send<AccessPolicy>('POST', `/policies/${pathId(id)}:disable`);
+/**
+ * :backtest answers 202 and the worker replays the window's queries afterwards; the counts come
+ * back as latest_backtest on the policy. The mock answers the counts at once (PROPOSAL).
+ */
+export const backtestPolicy = async (id: string): Promise<Backtest | null> => {
+  const raw = await v1Send<Schemas['BacktestAccepted'] | Backtest>(
+    'POST',
+    `/policies/${pathId(id)}:backtest`,
+  );
+  return 'total_queries' in raw ? raw : null;
+};
+/** :disable takes the reason, which the audit keeps. */
+export const disablePolicy = async (id: string, reason: string) =>
+  v1Send<AccessPolicy>('POST', `/policies/${pathId(id)}:disable`, {
+    reason,
+  } satisfies Schemas['PolicyDisable']);
 
 /* ─── Kiểm toán (UC-11-03) ──────────────────────────────────────────── */
 

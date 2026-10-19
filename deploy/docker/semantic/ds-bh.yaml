@@ -1,0 +1,292 @@
+# Semantic model of the pilot Data Space "Bán hàng" (DS-BH, deploy/docker/sql/v3-pilot-seed.sql):
+# the R1-06 pilot set, 20 metrics over sales lines, month-end stock, receivables and period
+# editions. Format: services/api/modules/context/semantic_yaml.py.
+#
+# Load into the dev cluster (a dry run first, then SEMANTIC_APPLY=1):
+#   make semantic-import SEMANTIC_ORG=a0000000-0000-0000-0000-000000000001 SEMANTIC_SPACE=DS-BH \
+#        SEMANTIC_AS=<steward username> SEMANTIC_FILE=deploy/docker/semantic/ds-bh.yaml
+# Four of the five metrics the seed certified come back unchanged. TON_KHO gets a draft version 2
+# that leaves out the retired code, and stock gains its time dimension. The other 15 metrics arrive
+# as drafts for review.
+#
+# Every metric is reconciled against hand-written SQL on the seed's data
+# (tests/integration/worker_agent/test_pilot_reconciliation.py). The definitions keep to the
+# pilot's policy (QD-GV-2026/02), not to its traps: margin is revenue-weighted, stock is read on a
+# month end and never summed over months, the retired warehouse code "Kho Hà Nội" is left out, and
+# only the final edition of a period counts.
+version: 1
+semantic_models:
+  - name: dong_ban
+    label: Dòng bán
+    description: Một dòng hàng của một đơn.
+    model: workspace.pilot_sales_line
+    primary_key: [line_id]
+    dimensions:
+      - {name: chi_nhanh, label: Chi nhánh, type: categorical, expr: branch}
+      - {name: ngay_ban, label: Ngày bán, type: time, expr: sold_on}
+      - {name: nhom_hang, label: Nhóm hàng, type: categorical, expr: category}
+    measures:
+      - {name: bien_gop, label: Lãi gộp, agg: sum, expr: net_revenue - cogs, unit: VND}
+      - {name: doanh_thu, label: Doanh thu thuần, agg: sum, expr: net_revenue, unit: VND}
+      - {name: gia_von, label: Giá vốn, agg: sum, expr: cogs, unit: VND}
+      - {name: so_don, label: Số đơn, agg: count_distinct, expr: order_id, additivity: none}
+      - {name: so_luong, label: Số lượng bán, agg: sum, expr: qty, unit: cái}
+  - name: ton
+    label: Tồn kho
+    description: Số tồn một mã tại một chi nhánh, một ngày cuối kỳ.
+    model: workspace.pilot_inventory
+    primary_key: [sku, branch, as_of_date]
+    dimensions:
+      - {name: kho, label: Kho, type: categorical, expr: branch}
+      - {name: ma_hang, label: Mã hàng, type: categorical, expr: sku}
+      - {name: ngay_ton, label: Ngày tồn, type: time, expr: as_of_date}
+    measures:
+      - {name: gia_tri_ton, label: Giá trị tồn, agg: sum, expr: qty_on_hand * unit_cost, additivity: semi, unit: VND}
+      - {name: ton_kho, label: Tồn kho, agg: sum, expr: qty_on_hand, additivity: semi, unit: cái}
+  - name: cong_no
+    label: Công nợ phải thu
+    description: Hoá đơn và số đã thu tại một ngày chụp.
+    model: workspace.pilot_receivable
+    primary_key: [invoice_id, as_of_date]
+    dimensions:
+      - {name: chi_nhanh_no, label: Chi nhánh, type: categorical, expr: branch}
+      - {name: ngay_chup, label: Ngày chụp, type: time, expr: as_of_date}
+    measures:
+      - {name: con_phai_thu, label: Còn phải thu, agg: sum, expr: amount - paid, additivity: semi, unit: VND}
+      - name: qua_han
+        label: Quá hạn
+        agg: sum
+        expr: CASE WHEN due_on < as_of_date THEN amount - paid ELSE 0 END
+        additivity: semi
+        unit: VND
+      - name: hoa_don_mo
+        label: Hoá đơn còn mở
+        agg: sum
+        expr: CASE WHEN amount > paid THEN 1 ELSE 0 END
+        additivity: semi
+  - name: ban_chot
+    label: Bản chốt kỳ
+    description: Doanh thu và giá vốn của một kỳ theo từng bản (final, preliminary).
+    model: workspace.pilot_period_edition
+    primary_key: [period_month, edition, category]
+    dimensions:
+      - {name: ban, label: Bản, type: categorical, expr: edition}
+      - {name: ky_chot, label: Kỳ, type: time, expr: period_month}
+      - {name: nhom_hang_chot, label: Nhóm hàng, type: categorical, expr: category}
+    measures:
+      - {name: doanh_thu_chot, label: Doanh thu đã chốt, agg: sum, expr: net_revenue, unit: VND}
+      - {name: gia_von_chot, label: Giá vốn đã chốt, agg: sum, expr: cogs, unit: VND}
+relationships: []
+metrics:
+  # Sales lines: flows summed over the period.
+  - name: DOANH_THU
+    label: Doanh thu thuần
+    description: Tổng doanh thu thuần trong kỳ, lấy từ dòng bán.
+    expr: doanh_thu
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: VND
+    decimals: 0
+    direction: higher_better
+    additivity: full
+    dimensions: [chi_nhanh, nhom_hang]
+    legal_basis: QD-GV-2026/02
+  - name: GIA_VON
+    label: Giá vốn
+    description: Tổng giá vốn trong kỳ, cùng grain với doanh thu.
+    expr: gia_von
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: VND
+    decimals: 0
+    direction: lower_better
+    additivity: full
+    dimensions: [chi_nhanh, nhom_hang]
+    legal_basis: QD-GV-2026/02
+  - name: BIEN_GOP
+    label: Lãi gộp
+    description: Doanh thu thuần trừ giá vốn.
+    expr: bien_gop
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: VND
+    decimals: 0
+    direction: higher_better
+    additivity: full
+    dimensions: [chi_nhanh, nhom_hang]
+    legal_basis: QD-GV-2026/02
+  - name: BIEN_GOP_TY_LE
+    label: Biên lợi nhuận gộp
+    description: Lãi gộp trên doanh thu thuần. Không lấy trung bình tỷ lệ từng chi nhánh.
+    expr: bien_gop / doanh_thu * 100
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: "%"
+    decimals: 1
+    direction: higher_better
+    dimensions: [chi_nhanh, nhom_hang]
+    legal_basis: QD-GV-2026/02
+  - name: TY_LE_GIA_VON
+    label: Tỷ lệ giá vốn
+    description: Giá vốn trên doanh thu thuần, theo doanh thu (không trung bình tỷ lệ).
+    expr: gia_von / doanh_thu * 100
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: "%"
+    decimals: 1
+    direction: lower_better
+    dimensions: [chi_nhanh, nhom_hang]
+  - name: SO_LUONG_BAN
+    label: Số lượng bán
+    expr: so_luong
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: cái
+    decimals: 0
+    direction: higher_better
+    additivity: full
+    dimensions: [chi_nhanh, nhom_hang]
+  - name: SO_DON
+    label: Số đơn hàng
+    description: Số đơn khác nhau; một đơn nhiều dòng đếm một lần.
+    expr: so_don
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: đơn
+    decimals: 0
+    direction: higher_better
+    dimensions: [chi_nhanh, nhom_hang]
+  - name: GIA_TRI_DON_TB
+    label: Giá trị đơn bình quân
+    expr: doanh_thu / so_don
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: VND
+    decimals: 0
+    direction: higher_better
+    dimensions: [chi_nhanh, nhom_hang]
+  - name: GIA_BAN_TB
+    label: Giá bán bình quân
+    expr: doanh_thu / so_luong
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: VND
+    decimals: 0
+    direction: neutral
+    dimensions: [chi_nhanh, nhom_hang]
+  - name: DOANH_THU_BQ_NGAY
+    label: Doanh thu bình quân ngày bán
+    description: Trung bình doanh thu của những ngày có bán trong kỳ.
+    expr: doanh_thu
+    period_semantics: average_over_period
+    time_grain: month
+    unit: VND
+    decimals: 0
+    direction: higher_better
+    dimensions: [chi_nhanh, nhom_hang]
+  # Month-end stock: read on the last day, never summed over months; the retired code is left out.
+  - name: TON_KHO
+    label: Tồn kho
+    description: Số tồn tại ngày cuối kỳ. Không cộng các ngày, không cộng mã Kho Hà Nội.
+    expr: ton_kho
+    period_semantics: end_of_period
+    time_grain: month
+    unit: cái
+    decimals: 0
+    additivity: semi
+    dimensions: [kho, ma_hang]
+    filters: [{dimension: kho, op: "!=", values: [Kho Hà Nội]}]
+    legal_basis: QD-GV-2026/02
+  - name: GIA_TRI_TON_KHO
+    label: Giá trị tồn kho
+    expr: gia_tri_ton
+    period_semantics: end_of_period
+    time_grain: month
+    unit: VND
+    decimals: 0
+    additivity: semi
+    dimensions: [kho, ma_hang]
+    filters: [{dimension: kho, op: "!=", values: [Kho Hà Nội]}]
+  - name: TON_KHO_BQ
+    label: Tồn kho bình quân
+    description: Trung bình số tồn các ngày cuối tháng trong kỳ.
+    expr: ton_kho
+    period_semantics: average_over_period
+    time_grain: month
+    unit: cái
+    decimals: 0
+    dimensions: [kho, ma_hang]
+    filters: [{dimension: kho, op: "!=", values: [Kho Hà Nội]}]
+  # Two tables: each aggregated alone, then divided (compiler 2).
+  - name: VONG_QUAY_TON_KHO
+    label: Vòng quay hàng tồn kho
+    description: Giá vốn trong kỳ trên giá trị tồn cuối kỳ.
+    expr: gia_von / gia_tri_ton
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: lần
+    decimals: 2
+    direction: higher_better
+    filters: [{dimension: kho, op: "!=", values: [Kho Hà Nội]}]
+  - name: DSO
+    label: Số ngày thu tiền
+    description: Còn phải thu trên doanh thu kỳ, quy ra 30 ngày.
+    expr: con_phai_thu / doanh_thu * 30
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: ngày
+    decimals: 1
+    direction: lower_better
+  # Receivables: a snapshot, read on its day.
+  - name: CONG_NO
+    label: Công nợ phải thu
+    expr: con_phai_thu
+    period_semantics: end_of_period
+    time_grain: month
+    unit: VND
+    decimals: 0
+    direction: lower_better
+    additivity: semi
+    dimensions: [chi_nhanh_no]
+  - name: CONG_NO_QUA_HAN
+    label: Công nợ quá hạn
+    expr: qua_han
+    period_semantics: end_of_period
+    time_grain: month
+    unit: VND
+    decimals: 0
+    direction: lower_better
+    additivity: semi
+    dimensions: [chi_nhanh_no]
+  - name: TY_LE_QUA_HAN
+    label: Tỷ lệ công nợ quá hạn
+    expr: qua_han / con_phai_thu * 100
+    period_semantics: end_of_period
+    time_grain: month
+    unit: "%"
+    decimals: 1
+    direction: lower_better
+    dimensions: [chi_nhanh_no]
+  - name: SO_HOA_DON_MO
+    label: Số hoá đơn còn mở
+    expr: hoa_don_mo
+    period_semantics: end_of_period
+    time_grain: month
+    unit: hoá đơn
+    decimals: 0
+    direction: lower_better
+    additivity: semi
+    dimensions: [chi_nhanh_no]
+  # Period editions: only the final one counts (the preliminary September hides the margin drop).
+  - name: DOANH_THU_CHOT
+    label: Doanh thu đã chốt
+    description: Doanh thu theo bản final của kỳ; bản preliminary không được cộng.
+    expr: doanh_thu_chot
+    period_semantics: sum_over_period
+    time_grain: month
+    unit: VND
+    decimals: 0
+    direction: higher_better
+    additivity: full
+    dimensions: [nhom_hang_chot]
+    filters: [{dimension: ban, op: in, values: [final]}]

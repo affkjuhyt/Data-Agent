@@ -90,6 +90,56 @@ describe('agents and runs from the api', () => {
     expect(r.code).toBe('#0192f0aa');
   });
 
+  it('keeps a goal and builds the plan from the steps the run recorded', async () => {
+    server.use(
+      http.get('*/v1/agents', () =>
+        HttpResponse.json({
+          items: [
+            {
+              ...agent,
+              goal: 'So số nội bộ',
+              trigger_text: 'Theo lịch 07:00 thứ Hai',
+              runs_7d: { count: 4, needs_approval_pct: 25, errors: 1 },
+              active_deployment_id: 'dep-1',
+            },
+          ],
+          next_page_token: null,
+        }),
+      ),
+      http.get('*/v1/runs/:id', () =>
+        HttpResponse.json({
+          ...run,
+          title: 'So số nội bộ',
+          hitl_count: 1,
+          steps: [
+            {
+              id: 's1',
+              seq: 1,
+              kind: 'query',
+              name: 'query.semantic',
+              summary: 'Doanh thu tháng 9',
+              status: 'ok',
+              attempt: 1,
+              cost: '1',
+              started_at: at,
+              duration_ms: 800,
+              input: { sql: 'select 1' },
+              output: null,
+              child_run_id: null,
+            },
+          ],
+        }),
+      ),
+    );
+    const [a] = (await listAgents()).items;
+    expect(a.goal).toBe('So số nội bộ');
+    expect(sevenDaysText(a)).toBe('4 lượt · 25% cần duyệt · 1 lỗi');
+    expect(a.active_deployment_id).toBe('dep-1');
+    const detail = await getRun(run.id, 'technical');
+    expect(detail.title).toBe('So số nội bộ');
+    expect(detail.plan?.[0]).toMatchObject({ title: 'Doanh thu tháng 9', state: 'done' });
+  });
+
   it('keeps the narrative entries that read as a sentence', async () => {
     const r = await getRun(run.id);
     expect(r.agent_name).toBe('Agent Đối soát');

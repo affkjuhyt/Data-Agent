@@ -144,9 +144,11 @@ names the code expects — so `kb-backend` gets four keys and never sees
 `libs.shared.auth` (which imports `service_identity`): `auth-api` and
 `kb-backend` (`GATEWAY_KEY` also to the `setup` Job, which writes it into the
 Kong plugin; `SERVICE_AUTH_SECRET` also to `sandbox-executor`, which verifies
-service assertions). Nothing else needs them, and both fail *silently* when absent — an unset `GATEWAY_KEY` makes
-`X-Kong-Verified` trusted on its own, and a mismatched `SERVICE_AUTH_SECRET`
-makes `kb_search` return no chunks. Check those two first if retrieval goes quiet.
+service assertions). Nothing else needs them. An unset `GATEWAY_KEY` makes every
+Kong-routed request 401 (the services log an error naming it); `GATEWAY_KEY_OPTIONAL=true`
+restores the old trust-`X-Kong-Verified`-alone behaviour while a key is rolled out. A
+mismatched `SERVICE_AUTH_SECRET` fails *silently*: `kb_search` returns no chunks. Check those
+two first if retrieval goes quiet.
 
 [`create-secrets.sh`](create-secrets.sh) reads one env file and creates every
 Secret in the right namespace with the right subset. The deploy pipeline renders

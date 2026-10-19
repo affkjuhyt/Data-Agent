@@ -137,6 +137,10 @@ class KafkaProducerClient:
 
 # ── Consumer ──────────────────────────────────────────────────────────────────
 
+class KafkaHandlerFailed(RuntimeError):
+    """A message's handler kept failing; its offset was not committed."""
+
+
 class KafkaConsumerClient:
     __slots__ = ("_consumer", "_bootstrap", "_group_id", "_connected", "_healthy", "_url")
 
@@ -251,6 +255,8 @@ class KafkaConsumerClient:
         topics: list[str],
         handler: Callable[[dict[str, Any]], Awaitable[None]],
         concurrency: int = 1,
+        handler_attempts: int = 3,
+        retry_backoff_s: float = 1.0,
     ) -> None:
         """Subscribe to topics and run handler for each message. Runs forever (call as create_task).
 
@@ -261,11 +267,18 @@ class KafkaConsumerClient:
         bounded by a semaphore. This lets I/O-bound work (DB/LLM/embedding calls)
         and thread-pooled OCR overlap instead of serializing.
 
-        Offsets are committed MANUALLY, only after a message's handler finishes
-        (at-least-once). Handlers must be idempotent — the silver/gold stages are
-        (re-delivery on rebalance/restart is safe). Auto-commit is NOT used: with
-        concurrent dispatch it would commit fetched-but-unprocessed offsets and
-        silently drop in-flight docs on restart.
+        Offsets are committed MANUALLY (at-least-once), per partition, and only up to
+        the earliest message still running: committing each message's own offset+1
+        as it finished let a fast later message commit past a slow earlier one, which
+        a restart then skipped. Handlers must be idempotent — the silver/gold stages
+        are (re-delivery on rebalance/restart is safe).
+
+        A handler that still raises after `handler_attempts` tries (backoff doubling
+        from `retry_backoff_s`) is not committed: the consumer stops and raises
+        KafkaHandlerFailed, so the pod restarts and the message is redelivered.
+        Committing it anyway — the old behaviour — dropped it. Handlers own their
+        business retry/DLQ (libs/ingestion/consumer.py); what reaches here is an
+        infrastructure failure, e.g. the DLQ publish itself failing.
         """
         self._consumer = self._make_consumer(*topics, manual_commit=True)
         await self._consumer.start()
@@ -274,49 +287,74 @@ class KafkaConsumerClient:
         log.info("Kafka consumer started topics=%s group=%s concurrency=%d",
                  topics, self._group_id, concurrency)
 
-        async def _commit(message: Any) -> None:
+        # Per partition: offsets fetched but not finished, and the highest finished.
+        running: dict[TopicPartition, set[int]] = {}
+        finished: dict[TopicPartition, int] = {}
+        committed: dict[TopicPartition, int] = {}
+        failure: list[KafkaHandlerFailed] = []
+
+        async def _handle(message: Any) -> bool:
+            delay = retry_backoff_s
+            for attempt in range(1, max(handler_attempts, 1) + 1):
+                try:
+                    await handler(message.value)
+                    return True
+                except Exception as e:
+                    log.error("Kafka message handler error topic=%s partition=%s offset=%s "
+                              "attempt=%d/%d: %s", message.topic, message.partition,
+                              message.offset, attempt, handler_attempts, e)
+                    if attempt < handler_attempts:
+                        await asyncio.sleep(delay)
+                        delay *= 2
+            failure.append(KafkaHandlerFailed(
+                f"handler failed {handler_attempts} times on {message.topic}"
+                f"[{message.partition}]@{message.offset}; not committed"))
+            return False
+
+        async def _commit(tp: TopicPartition) -> None:
+            pending = running.get(tp)
+            upto = min(pending) if pending else finished[tp] + 1
+            if upto <= committed.get(tp, -1):
+                return
             try:
                 # start_consuming() sets self._consumer just above and only clears
                 # it in this method's own finally blocks, after the consume loop ends.
                 assert self._consumer is not None
-                await self._consumer.commit(
-                    {TopicPartition(message.topic, message.partition): message.offset + 1}
-                )
+                await self._consumer.commit({tp: upto})
+                committed[tp] = upto
             except Exception as e:
-                log.warning("Kafka offset commit failed topic=%s offset=%s: %s",
-                            message.topic, message.offset, e)
+                log.warning("Kafka offset commit failed topic=%s partition=%s offset=%s: %s",
+                            tp.topic, tp.partition, upto, e)
 
-        if concurrency <= 1:
-            try:
-                async for message in self._consumer:
-                    try:
-                        await handler(message.value)
-                    except Exception as e:
-                        log.error("Kafka message handler error topic=%s: %s", message.topic, e)
-                    await _commit(message)
-            finally:
-                await self._consumer.stop()
-                self._consumer = None
-                self._connected = False
-                self._healthy = False
-            return
+        async def _process(message: Any) -> None:
+            tp = TopicPartition(message.topic, message.partition)
+            if not await _handle(message):
+                # Leave the offset in `running`: no later commit can pass it.
+                return
+            running[tp].discard(message.offset)
+            finished[tp] = max(finished.get(tp, -1), message.offset)
+            await _commit(tp)
 
-        sem = asyncio.Semaphore(concurrency)
+        sem = asyncio.Semaphore(max(concurrency, 1))
         inflight: set[asyncio.Task[Any]] = set()
 
         async def _run(message: Any) -> None:
             try:
-                await handler(message.value)
-            except Exception as e:
-                log.error("Kafka message handler error topic=%s: %s", message.topic, e)
+                await _process(message)
             finally:
-                # Commit AFTER the handler completes so a crash re-delivers
-                # unfinished work instead of dropping it.
-                await _commit(message)
                 sem.release()
 
         try:
             async for message in self._consumer:
+                if failure:
+                    break
+                tp = TopicPartition(message.topic, message.partition)
+                running.setdefault(tp, set()).add(message.offset)
+                if concurrency <= 1:
+                    await _process(message)
+                    if failure:
+                        break
+                    continue
                 # Acquire BEFORE spawning so we never exceed `concurrency` in-flight
                 # and the loop naturally back-pressures when all slots are busy.
                 await sem.acquire()
@@ -330,6 +368,8 @@ class KafkaConsumerClient:
             self._consumer = None
             self._connected = False
             self._healthy = False
+        if failure:
+            raise failure[0]
 
 
 producer = KafkaProducerClient()

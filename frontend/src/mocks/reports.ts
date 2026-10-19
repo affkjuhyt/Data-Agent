@@ -1,10 +1,11 @@
 import { http, HttpResponse } from 'msw';
-import type { DigestItem, ReportRun, ReportSchedule } from '../lib/v1/reports';
+import type { DigestItem, ReportRun, ReportScheduleWire } from '../lib/v1/reports';
 
 /*
  * Báo cáo định kỳ and Bản tin (P08) for the dev mock: the weekly credit-risk report of
  * "Báo cáo định kỳ · Thiết lập" (2271:16289) and the reader's digests of "Bản tin · Đọc"
- * (2272:16218), week 41 opened first.
+ * (2272:16218), week 41 opened first. A schedule is the api's ReportScheduleDetail with the
+ * PROPOSAL fields of lib/v1/reports.ts beside it.
  */
 const problem = (status: number, code: string, detail: string) =>
   HttpResponse.json(
@@ -12,11 +13,25 @@ const problem = (status: number, code: string, detail: string) =>
     { status, headers: { 'Content-Type': 'application/problem+json' } },
   );
 
-function reportsFixture(): ReportSchedule[] {
+function reportsFixture(): ReportScheduleWire[] {
   return [
     {
       id: 'rep-risk-weekly',
+      data_space_id: 'ds-credit-risk',
+      kind: 'report',
+      workspace_id: null,
+      owner_id: 'u-me',
       title: 'Rủi ro tín dụng · tuần',
+      cron: '0 7 * * 1',
+      work_calendar_id: null,
+      cutoff_time: '06:30:00',
+      as_of_rule: 'end_of_previous_week',
+      formats: ['pdf'],
+      recipients: [],
+      latest_run: null,
+      created_at: '2026-09-01T00:00:00Z',
+      updated_at: '2026-10-06T00:00:00Z',
+      test_to_me: true,
       status: 'active',
       summary_text:
         'Agent Báo cáo soạn từ phiên “Điều tra nợ xấu bán lẻ T9” · gửi gần nhất thứ Hai 06/10 07:00',
@@ -177,7 +192,7 @@ export function createReportHandlers() {
         : problem(404, 'not_found', 'Không tìm thấy báo cáo.');
     }),
     http.patch('*/v1/reports/:id', async ({ params, request }) => {
-      const patch = (await request.json()) as Partial<ReportSchedule>;
+      const patch = (await request.json()) as Partial<ReportScheduleWire>;
       const found = reports.find((r) => r.id === params.id);
       if (!found) return problem(404, 'not_found', 'Không tìm thấy báo cáo.');
       const updated = { ...found, ...patch };
@@ -189,7 +204,7 @@ export function createReportHandlers() {
       const found = reports.find((r) => r.id === id);
       if (!found) return problem(404, 'not_found', 'Không tìm thấy báo cáo.');
       if (verb === 'pause') {
-        const paused: ReportSchedule = { ...found, status: 'paused' };
+        const paused: ReportScheduleWire = { ...found, status: 'paused' };
         reports = reports.map((r) => (r.id === id ? paused : r));
         return HttpResponse.json(paused);
       }

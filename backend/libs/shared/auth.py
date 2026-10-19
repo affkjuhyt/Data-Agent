@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 # configured before this was shared across services keeps working.
 GATEWAY_KEY_ENV = "GATEWAY_KEY"
 GATEWAY_KEY_ENV_LEGACY = "KB_GATEWAY_KEY"
+# Explicit opt-in to the pre-key behaviour (trust X-Kong-Verified alone) while a key is rolled out.
+GATEWAY_KEY_OPTIONAL_ENV = "GATEWAY_KEY_OPTIONAL"
 
 
 def gateway_key() -> str:
@@ -71,13 +73,22 @@ class ResolvedCaller:
 def _gateway_key_ok(presented: str) -> bool:
     """True when this request may be treated as gateway-verified.
 
-    An unset key preserves the previous behaviour so an existing deployment does
-    not lock itself out mid-upgrade — but in that state the only thing between a
-    caller and any identity is network reach, so it warns rather than passing
-    silently.
+    An unset key refuses the marker. GATEWAY_KEY_OPTIONAL=true restores the old
+    trust-the-marker behaviour for a deployment rolling the key out — in that state
+    the only thing between a caller and any identity is network reach, so it warns.
     """
     expected = gateway_key()
     if not expected:
+        # Open only when the operator says so: an unset key used to trust the marker by
+        # default, so a Secret that lost its key let anyone on the network act as any user.
+        if os.environ.get(GATEWAY_KEY_OPTIONAL_ENV, "").lower() not in ("1", "true", "yes"):
+            logger.error(
+                "auth | %s is not set — refusing X-Kong-Verified. Set it, or set %s=true "
+                "to accept the marker without proof during an upgrade.",
+                GATEWAY_KEY_ENV,
+                GATEWAY_KEY_OPTIONAL_ENV,
+            )
+            return False
         logger.warning(
             "auth | %s is not set — trusting X-Kong-Verified without proof the request came "
             "from Kong. Any caller able to reach this service can impersonate any user.",

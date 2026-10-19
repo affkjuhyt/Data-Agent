@@ -15,6 +15,7 @@ import type {
   ProposalImpact,
   ProposalWire,
   AgentRun,
+  RunPlanStep,
   AppUser,
   DataSpace,
   Dataset,
@@ -167,6 +168,7 @@ export const readAgent = (raw: AgentWire): AgentDef => ({
   trigger_text: raw.trigger_text ?? null,
   permission_text: raw.permission_text ?? null,
   runs_7d: raw.runs_7d ?? null,
+  active_deployment_id: raw.active_deployment_id ?? null,
 });
 
 /*
@@ -214,7 +216,22 @@ function readStep(raw: components['schemas']['StepView'] | AgentStep): AgentStep
   };
 }
 
+/** A technical step becomes a line of the plan when the api did not send one. */
+function planFromSteps(steps: AgentStep[]): RunPlanStep[] {
+  const state = (status: AgentStep['status']): RunPlanStep['state'] =>
+    status === 'error' ? 'error' : status === 'retried' ? 'waiting' : 'done';
+  return steps.map((step) => ({
+    id: String(step.seq),
+    title: step.summary || step.name,
+    state: state(step.status),
+    detail: step.name,
+    duration_text:
+      step.duration_ms == null ? undefined : `${Math.max(1, Math.round(step.duration_ms / 1000))}s`,
+  }));
+}
+
 function readRun(raw: RunWire): AgentRun {
+  const steps = raw.steps ? raw.steps.map(readStep) : undefined;
   return {
     ...raw,
     status: raw.status as AgentRun['status'],
@@ -229,7 +246,8 @@ function readRun(raw: RunWire): AgentRun {
     initiated_label: raw.initiated_label ?? null,
     trigger_text: raw.trigger_text ?? null,
     hitl_count: raw.hitl_count ?? null,
-    steps: raw.steps ? raw.steps.map(readStep) : undefined,
+    plan: raw.plan ?? (steps && steps.length > 0 ? planFromSteps(steps) : undefined),
+    steps,
   };
 }
 

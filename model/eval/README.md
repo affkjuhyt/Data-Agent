@@ -12,7 +12,7 @@ nothing anywhere that could stop a release.
 | `sql_accuracy` | offline | Question → metric resolution → compiled SQL: how often is it the SQL the contract implies? | min 1.0 |
 | `causal_claim_rate` | offline | Of the standard "vì sao" answers (`cases/why.jsonl`, run through the real decomposition skill), how many word a contribution as a cause? (AC-03-01-07) | max 0 |
 | `why_method_coverage` | offline | How many of them carry the method, the confidence and a total reconciled to the change? | min 1.0 |
-| `why_decomposition_accuracy` | offline | Is the direction of the change and its largest contributor the one the case's data implies? | min 1.0 |
+| `why_decomposition_accuracy` | offline | Is the direction of the change and its largest contributor the one the case's data implies? A case expecting `{"refused": true}` (a distinct count, whose contributions cannot add up) passes only when the skill refuses | min 1.0 |
 | `intent_accuracy` | online | How often does the real planner classify intent / analysis type correctly? | min 0.85 * |
 | `unsupported_recall` | online | Of the questions asking for what this platform CANNOT do (forecast, anomaly), how many were caught? | min 0.95 * |
 | `hallucination_rate` | online | RAGAS faithfulness below its floor — answers not made of their sources. | max 0.10 * |

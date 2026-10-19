@@ -14,6 +14,7 @@ import datetime
 import decimal
 import io
 import os
+import re
 import uuid
 import warnings
 from collections.abc import Callable, Sequence
@@ -761,18 +762,41 @@ async def _measure(upload: UploadFile) -> int:
     return size
 
 
-def _column_type(values: list[Any]) -> str:
-    non_empty = [value for value in values if value not in (None, "")]
-    if not non_empty:
-        return "string"
-    if all(isinstance(value, bool) for value in non_empty):
+# CSV cells arrive as text, so the first read recognises numbers, percents, dates and booleans
+# in their written form too. Either separator may group or mark decimals ("1.234,5" and
+# "1,234.5"); a code with a leading zero ("001") stays text.
+_PLAIN_NUMBER = re.compile(r"[+-]?(?:0|[1-9]\d*)(?:[.,]\d+)?")
+_GROUPED_NUMBER = re.compile(r"[+-]?[1-9]\d{0,2}(?:([.,])\d{3})(?:\1\d{3})*(?:[.,]\d+)?")
+_TEXT_DATE = re.compile(r"\d{4}-\d{1,2}-\d{1,2}(?:[ T].*)?|\d{1,2}/\d{1,2}/\d{4}")
+_TEXT_BOOLEAN = {"true", "false"}
+
+
+def _is_number_text(text: str) -> bool:
+    return bool(_PLAIN_NUMBER.fullmatch(text) or _GROUPED_NUMBER.fullmatch(text))
+
+
+def _cell_type(value: Any) -> str:
+    if isinstance(value, bool):
         return "boolean"
-    if all(
-        isinstance(value, (int, float, decimal.Decimal)) and not isinstance(value, bool)
-        for value in non_empty
-    ):
+    if isinstance(value, int | float | decimal.Decimal):
         return "number"
+    if isinstance(value, datetime.date | datetime.datetime):
+        return "date"
+    text = str(value).strip()
+    if text.lower() in _TEXT_BOOLEAN:
+        return "boolean"
+    if _is_number_text(text):
+        return "number"
+    if text.endswith("%") and _is_number_text(text[:-1].strip()):
+        return "percent"
+    if _TEXT_DATE.fullmatch(text):
+        return "date"
     return "string"
+
+
+def _column_type(values: list[Any]) -> str:
+    kinds = {_cell_type(value) for value in values if value not in (None, "")}
+    return kinds.pop() if len(kinds) == 1 else "string"
 
 
 def _is_personal_column(name: str) -> bool:

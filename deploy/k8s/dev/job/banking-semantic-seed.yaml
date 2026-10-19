@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: banking-semantic-seed
+  namespace: dataagent-service
+  labels:
+    app: banking-semantic-seed
+    app.kubernetes.io/part-of: dataagent
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: banking-semantic-seed
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      containers:
+      - name: banking-semantic-seed
+        image: postgres:16-alpine
+        command:
+        - sh
+        - -c
+        - psql -v ON_ERROR_STOP=1 -f /sql/06-v3-banking-demo.sql
+        envFrom:
+        - configMapRef:
+            name: db-init-env
+        - secretRef:
+            name: db-init-secrets
+        volumeMounts:
+        - name: sql
+          mountPath: /sql
+          readOnly: true
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+      volumes:
+      - name: sql
+        configMap:
+          name: db-init-sql

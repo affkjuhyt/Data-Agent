@@ -10,7 +10,9 @@ shape_of / decompose / result_of produce the answer, and three numbers come out:
   "nguyên nhân là", "vì … nên", …), the negation the method states excepted;
 - why_method_coverage: answers that carry the method, the confidence and a reconciled total;
 - why_decomposition_accuracy: the direction of the change and the largest contributor are
-  the ones the case expects, written against the data, not copied from the output.
+  the ones the case expects, written against the data, not copied from the output. A case
+  expecting {"refused": true} — a metric whose contributions cannot add up, such as a distinct
+  count — is right only when the skill refuses to decompose it.
 """
 
 from __future__ import annotations
@@ -61,10 +63,19 @@ def _values(
     }
 
 
-def _answer(case: dict[str, Any]) -> dict[str, Any]:
-    from services.worker_agent.skills.decomposition import decompose, result_of, shape_of
+def _answer(case: dict[str, Any]) -> dict[str, Any] | None:
+    """The skill's answer, or None when it refuses the metric as not decomposable."""
+    from services.worker_agent.skills.decomposition import (
+        NotDecomposable,
+        decompose,
+        result_of,
+        shape_of,
+    )
 
-    shape = shape_of(case["expression"], case["measures"])
+    try:
+        shape = shape_of(case["expression"], case["measures"])
+    except NotDecomposable:
+        return None
     d = decompose(shape, _values(case["base"]), _values(case["current"]))
     return result_of(
         d,
@@ -85,13 +96,17 @@ def score(cases: list[dict[str, Any]]) -> dict[str, Any]:
     wrong: list[dict[str, Any]] = []
     for case in cases:
         result = _answer(case)
+        expect = case["expect"]
+        if expect.get("refused") or result is None:
+            if not (expect.get("refused") and result is None):
+                wrong.append({"id": case["id"], "refused": result is None, "expect": expect})
+            continue
         said = " ".join([result["summary"], result["decomposition"]["summary"], result["method"]])
         claims = causal_sentences(said)
         if claims:
             causal.append({"id": case["id"], "sentences": claims})
         if not (result.get("method") and result.get("confidence") and result.get("reconciled")):
             uncovered.append(case["id"])
-        expect = case["expect"]
         top = result["decomposition"]["contributions"][0]["label"]
         direction = next(
             (w for w in ("tăng", "giảm", "không đổi") if f" {w} " in f" {result['summary']} "),
