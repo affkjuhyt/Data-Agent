@@ -1,6 +1,7 @@
 import { useAppState } from '../../AppStateContext';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { EmptyState } from '../../design-system/EmptyState';
+import { Notice } from '../../design-system/Notice';
 import { cn } from '../../lib/utils';
 import { getReportRun, listMyDigests, type ReportRun } from '../../lib/v1/reports';
 import { useV1 } from '../../lib/v1/useV1';
@@ -9,6 +10,8 @@ import { useV1 } from '../../lib/v1/useV1';
  * "P08 · Bản tin · Đọc" (2272:16218, UC-08-04): the reports and digests sent to the reader, newest
  * first and unread ones dotted, beside the one being read — what changed, the key figures, why, and
  * what waits on a decision (open ones lead to Cần bạn). Opened without an id, the newest is shown.
+ * The api's run has only its status and rendered files, so a block the run does not carry is
+ * left out rather than drawn empty.
  */
 const DELTA = { up_bad: 'text-error', up_good: 'text-success', neutral: 'text-muted-foreground' };
 
@@ -63,7 +66,13 @@ export default function DigestPage() {
           />
         ) : (
           <AsyncRegion state={run} what="bản tin">
-            {(r) => <Reading run={r} onOpenDecision={() => navigate('needs-you')} />}
+            {(r) => (
+              <Reading
+                run={r}
+                title={r.title ?? list.data?.items.find((d) => d.id === r.id)?.title ?? 'Bản tin'}
+                onOpenDecision={() => navigate('needs-you')}
+              />
+            )}
           </AsyncRegion>
         )}
       </div>
@@ -71,49 +80,78 @@ export default function DigestPage() {
   );
 }
 
-function Reading({ run, onOpenDecision }: { run: ReportRun; onOpenDecision: () => void }) {
+function Reading({
+  run,
+  title,
+  onOpenDecision,
+}: {
+  run: ReportRun;
+  title: string;
+  onOpenDecision: () => void;
+}) {
+  const empty = !run.changed && !run.kpis.length && !run.why && !run.decisions.length;
   return (
     <article className="mx-auto flex w-[680px] max-w-full flex-col gap-da-lg">
       <header className="flex flex-col gap-da-md">
-        <h1 className="text-foreground da-display">{run.title}</h1>
+        <h1 className="text-foreground da-display">{title}</h1>
         <p className="text-muted-foreground da-body-small">{run.meta_text}</p>
       </header>
-      <h2 className="pt-da-sm text-foreground da-heading-2">Điều gì thay đổi</h2>
-      <p className="text-foreground da-reading">{run.changed}</p>
-      <dl className="grid grid-cols-3 overflow-hidden rounded-md border border-border max-[767px]:grid-cols-1">
-        {run.kpis.map((k) => (
-          <div
-            key={k.label}
-            className="flex flex-col gap-[2px] border-r border-border px-da-lg py-da-md last:border-r-0"
-          >
-            <dt className="text-muted-foreground da-caption">{k.label}</dt>
-            <dd className="text-foreground da-metric">{k.value}</dd>
-            <dd className={cn('da-caption', DELTA[k.tone])}>{k.delta}</dd>
-          </div>
-        ))}
-      </dl>
-      <h2 className="pt-da-sm text-foreground da-heading-2">Vì sao</h2>
-      <p className="text-foreground da-reading">{run.why}</p>
-      <h2 className="pt-da-sm text-foreground da-heading-2">Cần quyết định</h2>
-      <ul className="flex flex-col border-t border-border">
-        {run.decisions.map((d) => (
-          <li key={d.text} className="flex items-center gap-da-md border-b border-border py-[10px]">
-            {d.hitl_id ? (
-              <button
-                type="button"
-                onClick={onOpenDecision}
-                className="min-w-0 flex-1 text-left text-foreground hover:underline da-body"
+      {empty && (
+        <Notice tone="info">Bản này chưa có nội dung để đọc trong ứng dụng.</Notice>
+      )}
+      {run.changed && (
+        <>
+          <h2 className="pt-da-sm text-foreground da-heading-2">Điều gì thay đổi</h2>
+          <p className="text-foreground da-reading">{run.changed}</p>
+        </>
+      )}
+      {run.kpis.length > 0 && (
+        <dl className="grid grid-cols-3 overflow-hidden rounded-md border border-border max-[767px]:grid-cols-1">
+          {run.kpis.map((k) => (
+            <div
+              key={k.label}
+              className="flex flex-col gap-[2px] border-r border-border px-da-lg py-da-md last:border-r-0"
+            >
+              <dt className="text-muted-foreground da-caption">{k.label}</dt>
+              <dd className="text-foreground da-metric">{k.value}</dd>
+              <dd className={cn('da-caption', DELTA[k.tone])}>{k.delta}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {run.why && (
+        <>
+          <h2 className="pt-da-sm text-foreground da-heading-2">Vì sao</h2>
+          <p className="text-foreground da-reading">{run.why}</p>
+        </>
+      )}
+      {run.decisions.length > 0 && (
+        <>
+          <h2 className="pt-da-sm text-foreground da-heading-2">Cần quyết định</h2>
+          <ul className="flex flex-col border-t border-border">
+            {run.decisions.map((d) => (
+              <li
+                key={d.text}
+                className="flex items-center gap-da-md border-b border-border py-[10px]"
               >
-                {d.text}
-              </button>
-            ) : (
-              <span className="min-w-0 flex-1 text-foreground da-body">{d.text}</span>
-            )}
-            <span className="shrink-0 text-muted-foreground da-caption">{d.who_text}</span>
-          </li>
-        ))}
-      </ul>
-      <p className="text-muted-foreground da-caption">{run.footer_text}</p>
+                {d.hitl_id ? (
+                  <button
+                    type="button"
+                    onClick={onOpenDecision}
+                    className="min-w-0 flex-1 text-left text-foreground hover:underline da-body"
+                  >
+                    {d.text}
+                  </button>
+                ) : (
+                  <span className="min-w-0 flex-1 text-foreground da-body">{d.text}</span>
+                )}
+                <span className="shrink-0 text-muted-foreground da-caption">{d.who_text}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {run.footer_text && <p className="text-muted-foreground da-caption">{run.footer_text}</p>}
     </article>
   );
 }

@@ -92,9 +92,10 @@ export type ResolveHitl = RequestBody<components['schemas']['HitlResolve'], 'rem
 
 /* ─── Agents: agent.agent_def, agent.agent_run ────────────────────────── */
 
-export type AgentStatusV1 = 'draft' | 'testing' | 'running' | 'paused' | 'retired';
+/** agent.agent_def.status; `locked` is the owner's emergency stop (:lock), the reason in paused_reason. */
+export type AgentStatusV1 = 'draft' | 'testing' | 'running' | 'paused' | 'retired' | 'locked';
 
-/** PROPOSAL, for the "Đội agent" table: fields the api does not send yet. */
+/** Fields GET /v1/agents fills from the current config, its tools, triggers and recent runs. */
 interface AgentDisplay {
   /** The goal of the running config version. */
   goal: string;
@@ -106,6 +107,8 @@ interface AgentDisplay {
   permission_text: string;
   /** Last 7 days, "12 lượt · 58% cần duyệt". */
   runs_7d: { count: number; needs_approval_pct: number; errors: number };
+  /** Deployment still rolling or waiting for approval; absent when there is none. */
+  active_deployment_id?: string | null;
 }
 
 /** GET /v1/agents as the api sends it, plus the PROPOSAL fields when present. */
@@ -134,6 +137,7 @@ export type AgentDef = Omit<
   trigger_text: string | null;
   permission_text: string | null;
   runs_7d: AgentDisplay['runs_7d'] | null;
+  active_deployment_id?: string | null;
 };
 
 export type RunStatus =

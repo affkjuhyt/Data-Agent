@@ -24,8 +24,11 @@ export interface FigureWire {
   query_run_id: string | null;
   metric_version_id: string;
   trust: string;
+  /** Governance facts copied from the catalog at answer time. */
+  provenance?: import('./types').DataProvenance | null;
   /** {query_run_id, row, col} for a result row; {compute_run_id, expr} for a derived figure */
   source?: { expr?: string };
+  comparison_only?: boolean;
 }
 
 /** qa.answer.chart_spec (answer/narrate.py chart_spec_of): the cut to draw, never the values. */
@@ -80,7 +83,11 @@ export function readFigures(raw: unknown): FigureWire[] {
   return Array.isArray(raw)
     ? raw.filter(
         (f): f is FigureWire =>
-          typeof f === 'object' && f !== null && 'key' in f && !(f as FigureWire).source?.expr,
+          typeof f === 'object' &&
+          f !== null &&
+          'key' in f &&
+          !(f as FigureWire).source?.expr &&
+          !(f as FigureWire).comparison_only,
       )
     : [];
 }
@@ -125,6 +132,7 @@ export function figureRun(figures: FigureWire[], spec: ChartSpecWire | null): Ev
     return row;
   });
   const unit = figures.find((f) => f.unit)?.unit;
+  const provenance = figures.find((f) => f.provenance)?.provenance ?? null;
   return {
     id: figures[0].query_run_id ?? undefined,
     kind: 'sql',
@@ -135,6 +143,7 @@ export function figureRun(figures: FigureWire[], spec: ChartSpecWire | null): Ev
     rows,
     row_count: rows.length,
     metric: { metric, unit: unit ?? null, dimensions: codes.map((c) => dimensionLabel(c, spec)) },
+    provenance,
   };
 }
 

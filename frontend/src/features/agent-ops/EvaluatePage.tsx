@@ -12,6 +12,7 @@ import { useToast } from '../../design-system/Toast';
 import { Tooltip } from '../../design-system/Tooltip';
 import { formatNumber } from '../../lib/formatVN';
 import {
+  findRollout,
   getRollout,
   rollbackRollout,
   setRolloutShare,
@@ -40,7 +41,8 @@ export default function EvaluatePage() {
   const { routeId } = useAppState();
   const toast = useToast();
   const loaded = useV1<Rollout | null>(
-    () => (routeId ? getRollout(routeId) : Promise.resolve(null)),
+    () =>
+      routeId ? getRollout(routeId) : findRollout().then((id) => (id ? getRollout(id) : null)),
     [routeId],
   );
   // Actions answer with the new deployment; keep it rather than refetch, because the agent
@@ -415,13 +417,25 @@ function EvalTable({
             <SortableTh view={view} column="label" className="px-da-lg py-da-md font-normal">
               Tiêu chí
             </SortableTh>
-            <SortableTh view={view} column="baseline" className="w-[100px] px-da-lg py-da-md font-normal">
+            <SortableTh
+              view={view}
+              column="baseline"
+              className="w-[100px] px-da-lg py-da-md font-normal"
+            >
               {r.baseline_version === null ? 'Bản cũ' : `v${r.baseline_version}`}
             </SortableTh>
-            <SortableTh view={view} column="candidate" className="w-[100px] px-da-lg py-da-md font-normal">
+            <SortableTh
+              view={view}
+              column="candidate"
+              className="w-[100px] px-da-lg py-da-md font-normal"
+            >
               v{r.candidate_version}
             </SortableTh>
-            <SortableTh view={view} column="threshold" className="w-[100px] px-da-lg py-da-md font-normal">
+            <SortableTh
+              view={view}
+              column="threshold"
+              className="w-[100px] px-da-lg py-da-md font-normal"
+            >
               Ngưỡng
             </SortableTh>
           </tr>
@@ -485,10 +499,18 @@ function LiveTable({
             <SortableTh view={view} column="metric" className="px-da-lg py-da-md font-normal">
               Chỉ số{windowDays !== null && ` ${windowDays} ngày`}
             </SortableTh>
-            <SortableTh view={view} column="baseline" className="w-[120px] px-da-lg py-da-md font-normal">
+            <SortableTh
+              view={view}
+              column="baseline"
+              className="w-[120px] px-da-lg py-da-md font-normal"
+            >
               {baselineLabel}
             </SortableTh>
-            <SortableTh view={view} column="candidate" className="w-[120px] px-da-lg py-da-md font-normal">
+            <SortableTh
+              view={view}
+              column="candidate"
+              className="w-[120px] px-da-lg py-da-md font-normal"
+            >
               {candidateLabel}
             </SortableTh>
           </tr>

@@ -205,8 +205,8 @@ export function createHandlers() {
     }),
 
     http.get('*/v1/agents', () => page(agents)),
-    // PROPOSAL :lock / :unlock (lib/v1/agentControl.ts): a locked agent runs nothing and its open
-    // HITL requests go to the owner.
+    // :lock / :unlock (lib/v1/agentControl.ts): a locked agent runs nothing and its open HITL
+    // requests go to the owner.
     http.post('*/v1/agents/:action', ({ params }) => {
       const [id, verb] = String(params.action).split(':');
       const agent = agents.find((a) => a.id === id);
@@ -217,8 +217,8 @@ export function createHandlers() {
         verb === 'lock'
           ? {
               ...agent,
-              status: 'paused' as const,
-              paused_reason: 'locked',
+              status: 'locked' as const,
+              paused_reason: 'Khoá theo yêu cầu của người dùng.',
               active_runs: 0,
               waiting_runs: 0,
               now: { text: 'Đã khoá · không chạy lượt hay trigger nào', tone: 'normal' as const },

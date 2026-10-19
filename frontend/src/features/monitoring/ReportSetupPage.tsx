@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Button } from '../../design-system/Button';
 import { Checkbox } from '../../design-system/Checkbox';
+import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
 import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
@@ -14,6 +15,7 @@ import {
   getReport,
   listReports,
   pauseReport,
+  runReportNow,
   sendReportTest,
   updateReport,
   type ReportSchedule,
@@ -28,6 +30,9 @@ import { useV1 } from '../../lib/v1/useV1';
  * parameters. Right, schedule and recipients, whether someone must approve before it is sent (late
  * means held, never sent unchecked), and the recent sends. Changes wait for "Lưu thay đổi"; a test
  * goes to the caller alone. Opened from the rail without an id, the page shows the first report.
+ * The api cannot yet store sections or the pre-send switch, nor send a test to the caller alone
+ * (lib/v1/reports.ts): then the sections are not offered for editing, the switch only shows what
+ * was set, and the test becomes "Chạy ngay", a real run for every recipient, confirmed first.
  */
 const STATUS = {
   active: { label: 'Đang chạy', tone: 'success' },
@@ -62,13 +67,14 @@ export default function ReportSetupPage() {
 
 function ReportBody({ report, onChanged }: { report: ReportSchedule; onChanged: () => void }) {
   const toast = useToast();
-  const [sections, setSections] = useState<ReportSection[]>(report.sections);
+  const [sections, setSections] = useState<ReportSection[]>(report.sections ?? []);
+  const [confirmRun, setConfirmRun] = useState(false);
   const [check, setCheck] = useState(report.require_publish_check);
   const [dragging, setDragging] = useState<string>();
-  const [busy, setBusy] = useState<'save' | 'pause' | 'resume' | 'test' | null>(null);
+  const [busy, setBusy] = useState<'save' | 'pause' | 'resume' | 'test' | 'run' | null>(null);
   const [error, setError] = useState<string>();
   const dirty =
-    JSON.stringify(sections) !== JSON.stringify(report.sections) ||
+    JSON.stringify(sections) !== JSON.stringify(report.sections ?? []) ||
     check !== report.require_publish_check;
   const status = STATUS[report.status];
 
@@ -83,6 +89,7 @@ function ReportBody({ report, onChanged }: { report: ReportSchedule; onChanged: 
       await call();
       toast({ tone: 'success', message });
       if (key !== 'test') onChanged();
+      if (key === 'run') setConfirmRun(false);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -124,16 +131,26 @@ function ReportBody({ report, onChanged }: { report: ReportSchedule; onChanged: 
         description={report.summary_text}
         actions={
           <>
-            <Button
-              kind="ghost"
-              loading={busy === 'test'}
-              disabled={busy !== null}
-              onClick={() =>
-                act('test', () => sendReportTest(report.id), 'Đang soạn bản thử; gửi riêng cho bạn')
-              }
-            >
-              Gửi thử cho tôi
-            </Button>
+            {report.test_to_me ? (
+              <Button
+                kind="ghost"
+                loading={busy === 'test'}
+                disabled={busy !== null}
+                onClick={() =>
+                  act(
+                    'test',
+                    () => sendReportTest(report.id),
+                    'Đang soạn bản thử; gửi riêng cho bạn',
+                  )
+                }
+              >
+                Gửi thử cho tôi
+              </Button>
+            ) : (
+              <Button kind="ghost" disabled={busy !== null} onClick={() => setConfirmRun(true)}>
+                Chạy ngay
+              </Button>
+            )}
             {report.status === 'paused' ? (
               <Button
                 loading={busy === 'resume'}
@@ -159,23 +176,40 @@ function ReportBody({ report, onChanged }: { report: ReportSchedule; onChanged: 
                 Tạm dừng
               </Button>
             )}
-            <Button
-              kind="primary"
-              loading={busy === 'save'}
-              disabled={busy !== null || !dirty}
-              onClick={() =>
-                act(
-                  'save',
-                  () => updateReport(report.id, { sections, require_publish_check: check }),
-                  'Đã lưu; lần gửi sau dùng thiết lập mới',
-                )
-              }
-            >
-              Lưu thay đổi
-            </Button>
+            {report.settings_editable && (
+              <Button
+                kind="primary"
+                loading={busy === 'save'}
+                disabled={busy !== null || !dirty}
+                onClick={() =>
+                  act(
+                    'save',
+                    () => updateReport(report.id, { sections, require_publish_check: check }),
+                    'Đã lưu; lần gửi sau dùng thiết lập mới',
+                  )
+                }
+              >
+                Lưu thay đổi
+              </Button>
+            )}
           </>
         }
       />
+      <ConfirmDialog
+        open={confirmRun}
+        title={`Chạy ${report.title} ngay?`}
+        confirmLabel="Chạy và gửi"
+        tone="primary"
+        loading={busy === 'run'}
+        onCancel={() => setConfirmRun(false)}
+        onConfirm={() =>
+          act('run', () => runReportNow(report.id), 'Đang soạn; gửi khi xong và qua kiểm tra')
+        }
+      >
+        Báo cáo được soạn với số liệu hôm nay và gửi tới{' '}
+        {report.recipient_count ? `${report.recipient_count} người nhận` : 'người nhận'} như một lần
+        gửi theo lịch.
+      </ConfirmDialog>
       <div className="flex min-h-0 flex-1 max-[1023px]:flex-col">
         <div className="flex w-[560px] shrink-0 flex-col px-da-3xl pb-da-2xl max-[1023px]:w-full">
           {error && (
@@ -186,9 +220,17 @@ function ReportBody({ report, onChanged }: { report: ReportSchedule; onChanged: 
           <section className="flex flex-col gap-da-md border-b border-border py-da-xl">
             <div className="flex items-baseline gap-da-md">
               <h2 className="text-foreground da-heading-3">Nội dung</h2>
-              <span className="ml-auto text-muted-foreground da-caption">kéo để đổi thứ tự</span>
+              {report.sections && (
+                <span className="ml-auto text-muted-foreground da-caption">kéo để đổi thứ tự</span>
+              )}
             </div>
-            <ol aria-label="Các mục của báo cáo" className="flex flex-col gap-da-lg">
+            {!report.sections && (
+              <p className="text-muted-foreground da-body-small">
+                Nội dung lấy từ phiên nguồn của báo cáo; chưa chọn mục riêng ở đây được.
+              </p>
+            )}
+            <ol
+              hidden={!report.sections} aria-label="Các mục của báo cáo" className="flex flex-col gap-da-lg">
               {sections.map((s, i) => (
                 <li
                   key={s.key}
@@ -237,7 +279,12 @@ function ReportBody({ report, onChanged }: { report: ReportSchedule; onChanged: 
           <section className="flex flex-col gap-da-md border-b border-border py-da-xl">
             <h2 className="text-foreground da-heading-3">Duyệt trước khi gửi</h2>
             <div className="flex items-center gap-da-md">
-              <Toggle checked={check} onChange={setCheck} label="Duyệt trước khi gửi" />
+              <Toggle
+                checked={check}
+                onChange={setCheck}
+                disabled={!report.settings_editable}
+                label="Duyệt trước khi gửi"
+              />
               <span className="text-foreground da-body-small">
                 {check
                   ? report.publish_check_text

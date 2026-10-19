@@ -64,7 +64,9 @@ export default function PolicyDetail({ id }: { id: string }) {
     setRunning(true);
     setError(undefined);
     try {
-      setBacktest(await backtestPolicy(p.id));
+      const result = await backtestPolicy(p.id);
+      if (result) setBacktest(result);
+      else toast({ tone: 'success', message: 'Đang chạy thử lại; kết quả hiện khi xong' });
     } catch (e) {
       setError((e as Error).message);
     } finally {

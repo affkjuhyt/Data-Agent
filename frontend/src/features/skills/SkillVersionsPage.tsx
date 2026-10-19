@@ -39,12 +39,23 @@ interface Loaded {
   review: SkillVersionReview | null;
 }
 
+/** The list row omits versions, so a skill waiting for review is found on its detail. */
+async function waitingSkillId(): Promise<string | undefined> {
+  const items = (await listSkills()).items;
+  const listed = items.find((skill) => skill.pending_version_id);
+  if (listed) return listed.id;
+  for (const skill of items) {
+    const detail = await getSkill(skill.id).catch(() => null);
+    if (detail?.pending_version_id) return detail.id;
+  }
+  return undefined;
+}
+
 async function load(routeId: string | undefined): Promise<Loaded | null> {
   let id = routeId;
   if (!id) {
-    const waiting = (await listSkills()).items.find((s) => s.pending_version_id);
-    if (!waiting) return null;
-    id = waiting.id;
+    id = await waitingSkillId();
+    if (!id) return null;
   }
   const [skill, versions] = await Promise.all([getSkill(id), listSkillVersions(id)]);
   const review = skill.pending_version_id
@@ -178,16 +189,28 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
             <table className="w-full table-fixed border-collapse">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <SortableTh view={view} column="version" className="w-[72px] py-da-md pl-da-lg font-normal">
+                  <SortableTh
+                    view={view}
+                    column="version"
+                    className="w-[72px] py-da-md pl-da-lg font-normal"
+                  >
                     Bản
                   </SortableTh>
                   <SortableTh view={view} column="change" className="py-da-md pl-da-lg font-normal">
                     Thay đổi
                   </SortableTh>
-                  <SortableTh view={view} column="eval" className="w-[132px] py-da-md pl-da-lg font-normal">
+                  <SortableTh
+                    view={view}
+                    column="eval"
+                    className="w-[132px] py-da-md pl-da-lg font-normal"
+                  >
                     Kiểm định
                   </SortableTh>
-                  <SortableTh view={view} column="status" className="w-[214px] px-da-lg py-da-md font-normal">
+                  <SortableTh
+                    view={view}
+                    column="status"
+                    className="w-[214px] px-da-lg py-da-md font-normal"
+                  >
                     Trạng thái
                   </SortableTh>
                 </tr>
@@ -214,9 +237,9 @@ function Versions({ data, reload }: { data: Loaded; reload: () => void }) {
 
           {review && pending && current && (
             <p className="py-da-xl text-foreground da-body-small">
-              Khi phát hành v{pending.version}, v{current.version} ngừng dùng sau 30 ngày; người dùng
-              chuyển sang v{pending.version} với tham số giữ nguyên. Kết quả cũ luôn ghi rõ phiên
-              bản đã dùng.
+              Khi phát hành v{pending.version}, v{current.version} ngừng dùng sau 30 ngày; người
+              dùng chuyển sang v{pending.version} với tham số giữ nguyên. Kết quả cũ luôn ghi rõ
+              phiên bản đã dùng.
             </p>
           )}
         </div>

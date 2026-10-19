@@ -3,6 +3,7 @@
  * pausing it and sending a test, and reading the digests sent to me.
  */
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
@@ -60,6 +61,53 @@ describe('ReportSetupPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Tạm dừng' }));
     expect(await screen.findByRole('button', { name: 'Tiếp tục' })).toBeInTheDocument();
     expect(screen.getAllByText('Tạm dừng').length).toBeGreaterThan(0);
+  });
+});
+
+describe('ReportSetupPage on the api', () => {
+  it('runs the report for everyone only after confirming, and offers no save', async () => {
+    let runNow: unknown;
+    server.use(
+      http.get('*/v1/reports/:id', () =>
+        HttpResponse.json({
+          id: 'rep-1',
+          data_space_id: 'ds-1',
+          kind: 'report',
+          workspace_id: null,
+          owner_id: 'u-me',
+          title: 'Danh mục cho vay · tháng',
+          cron: '0 8 1 * *',
+          work_calendar_id: null,
+          cutoff_time: null,
+          as_of_rule: 'end_of_previous_month',
+          formats: ['pdf'],
+          recipients: [],
+          require_publish_check: false,
+          status: 'active',
+          latest_run: null,
+          created_at: '2026-10-01T00:00:00Z',
+          updated_at: '2026-10-01T00:00:00Z',
+        }),
+      ),
+      http.post('*/v1/reports/:action', async ({ request }) => {
+        runNow = await request.json();
+        return HttpResponse.json(
+          { id: 'run-1', status: 'running', poll_after_ms: 2000 },
+          { status: 202 },
+        );
+      }),
+    );
+    routeId = 'rep-1';
+    wrap(<ReportSetupPage />);
+    expect(await screen.findByText('Ngày 1 hằng tháng, 08:00')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Lưu thay đổi' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Gửi thử cho tôi' })).not.toBeInTheDocument();
+    expect(screen.getByText(/chưa chọn mục riêng ở đây được/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Chạy ngay' }));
+    expect(runNow).toBeUndefined();
+    fireEvent.click(await screen.findByRole('button', { name: 'Chạy và gửi' }));
+    expect(await screen.findByText('Đang soạn; gửi khi xong và qua kiểm tra')).toBeInTheDocument();
+    expect(runNow).toEqual({});
   });
 });
 

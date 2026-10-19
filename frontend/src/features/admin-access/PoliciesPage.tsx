@@ -3,6 +3,7 @@ import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
+import { Textarea } from '../../design-system/Textarea';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Menu } from '../../design-system/Menu';
 import { StatusDot } from '../../design-system/StatusDot';
@@ -35,6 +36,7 @@ function PolicyList() {
   const policies = useV1(listAccessPolicies, []);
   const [turningOff, setTurningOff] = useState<AccessPolicy | null>(null);
   const [sending, setSending] = useState(false);
+  const [reason, setReason] = useState('');
   const [error, setError] = useState<string>();
 
   const items = policies.data?.items ?? [];
@@ -56,9 +58,10 @@ function PolicyList() {
     setSending(true);
     setError(undefined);
     try {
-      await disablePolicy(p.id);
+      await disablePolicy(p.id, reason.trim());
       toast({ tone: 'success', message: `Đã tắt ${p.code}` });
       setTurningOff(null);
+      setReason('');
       policies.reload();
     } catch (e) {
       setError((e as Error).message);
@@ -196,11 +199,24 @@ function PolicyList() {
         onCancel={() => {
           setTurningOff(null);
           setError(undefined);
+          setReason('');
         }}
-        onConfirm={() => turningOff && void turnOff(turningOff)}
+        onConfirm={() => {
+          if (!reason.trim()) setError('Ghi lý do tắt chính sách.');
+          else if (turningOff) void turnOff(turningOff);
+        }}
       >
-        {turningOff?.applied_this_week ?? 0} yêu cầu tuần này được tự xử lý nhờ quy tắc. Sau khi
-        tắt, agent sẽ hỏi lại bạn mỗi lần.
+        <span className="flex flex-col gap-da-sm">
+          {turningOff?.applied_this_week ?? 0} yêu cầu tuần này được tự xử lý nhờ quy tắc. Sau khi
+          tắt, agent sẽ hỏi lại bạn mỗi lần.
+          <Textarea
+            aria-label="Lý do tắt"
+            placeholder="Lý do tắt (bắt buộc)"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={2}
+          />
+        </span>
       </ConfirmDialog>
     </div>
   );

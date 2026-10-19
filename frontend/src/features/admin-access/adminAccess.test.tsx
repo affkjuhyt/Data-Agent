@@ -256,6 +256,11 @@ describe('PoliciesPage', () => {
       within(dialog).getByText(/23 yêu cầu tuần này được tự xử lý nhờ quy tắc/),
     ).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Tắt chính sách' }));
+    expect(await within(dialog).findByText('Ghi lý do tắt chính sách.')).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Lý do tắt' }), {
+      target: { value: 'Chi nhánh đã gộp' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tắt chính sách' }));
     await waitFor(() => expect(within(row).getByText('Đã tắt')).toBeInTheDocument());
   });
 

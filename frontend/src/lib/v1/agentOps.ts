@@ -333,6 +333,12 @@ const ACTIVE = new Set(['queued', 'planning', 'running', 'waiting_human', 'pause
  * A2 lists runs without a "has children" filter: a lead is found as the parent of a delegated
  * run (depth 1) on the latest page, preferring one still going.
  */
+/** The agent whose deployment is still in progress; the rail opens that one. */
+export const findRollout = async (): Promise<string | null> => {
+  const page = await listAgents();
+  return page.items.find((agent) => agent.active_deployment_id)?.id ?? null;
+};
+
 export const findOrchestration = async (): Promise<string | null> => {
   const page = await v1Get<Page<RunRow>>('/runs', { page_size: 500 });
   const leads = [
