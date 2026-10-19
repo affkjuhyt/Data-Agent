@@ -6,6 +6,10 @@
 # union of what they need (silver is the superset).
 FROM python:3.11-slim
 
+# DEBIAN_MIRROR replaces deb.debian.org where the link to it is slow (the inventory sets it;
+# empty keeps upstream). apt verifies the archive's signatures, so a mirror cannot alter packages.
+ARG DEBIAN_MIRROR=
+RUN if [ -n "$DEBIAN_MIRROR" ]; then sed -i "s#^URIs: http://deb.debian.org/debian\$#URIs: $DEBIAN_MIRROR#" /etc/apt/sources.list.d/debian.sources; fi
 RUN apt-get update && apt-get install -y --no-install-recommends     libgl1 libglib2.0-0 poppler-utils tesseract-ocr tesseract-ocr-vie tesseract-ocr-eng     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

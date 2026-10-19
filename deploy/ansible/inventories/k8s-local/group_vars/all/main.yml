@@ -11,6 +11,9 @@ image_registry: "localhost:5001"
 image_push: true
 image_import: ""
 image_tag: latest
+# deb.debian.org is ~0.3 MB/s from this host and BizFly's mirror ~16 MB/s (measured 20/10/2026);
+# apt checks signatures, so the mirror cannot change a package. Dockerfiles without the arg ignore it.
+image_build_flags: "--provenance=false --sbom=false --build-arg DEBIAN_MIRROR=http://mirror.bizflycloud.vn/debian"
 
 git_sync_enabled: false
 git_branch: main

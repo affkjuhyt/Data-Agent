@@ -66,6 +66,10 @@ images keep their native port.
   `kb-backend` — a mismatch is silent.
 - **`GATEWAY_KEY` must equal the `aeroflow-jwks` plugin's key** set by
   `kong/kong-setup.sh`.
+- **Debian packages come from `DEBIAN_MIRROR` when it is set.** The Dockerfiles that run
+  `apt-get` take it as a build arg (empty keeps `deb.debian.org`); the k8s-local inventory
+  passes BizFly's mirror through `image_build_flags`, because deb.debian.org was ~0.3 MB/s
+  from that host. apt verifies the archive signatures, so the mirror cannot alter a package.
 - **`model_service` runs no local models.** `REMOTE_EMBED_URL` /
   `REMOTE_RERANK_URL` / `REMOTE_LLM_URL` are required. Embeddings are `bge-m3`
   (1024-dim) — a KB ingested against the old 384-dim backend must be re-ingested.
