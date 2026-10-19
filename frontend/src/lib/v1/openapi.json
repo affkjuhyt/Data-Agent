@@ -6863,10 +6863,32 @@
       ],
       "title": "Assignee Id"
      },
+     "assignee_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Assignee Name"
+     },
      "author_id": {
       "format": "uuid",
       "title": "Author Id",
       "type": "string"
+     },
+     "author_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Author Name"
      },
      "body": {
       "title": "Body",
@@ -13413,6 +13435,61 @@
     "title": "DlqRecordView",
     "type": "object"
    },
+   "DocumentBlockView": {
+    "properties": {
+     "box": {
+      "items": {
+       "type": "number"
+      },
+      "title": "Box",
+      "type": "array"
+     },
+     "image_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Image Url"
+     },
+     "kind": {
+      "enum": [
+       "title",
+       "heading",
+       "paragraph",
+       "picture",
+       "line"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "level": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Level"
+     },
+     "text": {
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "kind",
+     "text",
+     "box"
+    ],
+    "title": "DocumentBlockView",
+    "type": "object"
+   },
    "DocumentDetail": {
     "properties": {
      "blocking_quality_issues": {
@@ -13515,6 +13592,17 @@
      "open_quality_issues": {
       "title": "Open Quality Issues",
       "type": "integer"
+     },
+     "original_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Original Url"
      },
      "page_count": {
       "anyOf": [
@@ -13815,6 +13903,13 @@
    },
    "DocumentPageView": {
     "properties": {
+     "blocks": {
+      "items": {
+       "$ref": "#/components/schemas/DocumentBlockView"
+      },
+      "title": "Blocks",
+      "type": "array"
+     },
      "chunks": {
       "items": {
        "$ref": "#/components/schemas/ChunkView"
@@ -13831,6 +13926,17 @@
       "format": "uuid",
       "title": "Document Id",
       "type": "string"
+     },
+     "height": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Height"
      },
      "human_corrected": {
       "title": "Human Corrected",
@@ -13897,6 +14003,17 @@
      "usable": {
       "title": "Usable",
       "type": "boolean"
+     },
+     "width": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Width"
      }
     },
     "required": [
@@ -30320,6 +30437,27 @@
     "title": "Page[ChunkHit]",
     "type": "object"
    },
+   "Page_ChunkView_": {
+    "properties": {
+     "items": {
+      "items": {
+       "$ref": "#/components/schemas/ChunkView"
+      },
+      "title": "Items",
+      "type": "array"
+     },
+     "next_page_token": {
+      "default": "",
+      "title": "Next Page Token",
+      "type": "string"
+     }
+    },
+    "required": [
+     "items"
+    ],
+    "title": "Page[ChunkView]",
+    "type": "object"
+   },
    "Page_CollectionView_": {
     "properties": {
      "items": {
@@ -40492,18 +40630,47 @@
    },
    "SecretReference": {
     "additionalProperties": false,
-    "description": "Where the account lives in OpenBao (BR-14): a path under the organisation's namespace\n`secret/tenants/{org_id}/`. A password, token or any other key is refused.",
+    "description": "An existing OpenBao path, or the account the API stores there (BR-14).\n\nThe source row keeps only the path. ``username`` and ``password`` are written to OpenBao\nand never returned; ``password`` may be empty when the source does not use one. A path and\na password in the same object are refused, so a secret cannot be posted beside its reference.",
     "properties": {
+     "password": {
+      "anyOf": [
+       {
+        "maxLength": 1024,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Password"
+     },
      "secret_ref": {
-      "maxLength": 512,
-      "minLength": 1,
-      "title": "Secret Ref",
-      "type": "string"
+      "anyOf": [
+       {
+        "maxLength": 512,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Secret Ref"
+     },
+     "username": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Username"
      }
     },
-    "required": [
-     "secret_ref"
-    ],
     "title": "SecretReference",
     "type": "object"
    },
@@ -40711,6 +40878,17 @@
       "format": "uuid",
       "title": "Principal Id",
       "type": "string"
+     },
+     "principal_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Principal Name"
      },
      "principal_type": {
       "title": "Principal Type",
@@ -67603,7 +67781,7 @@
      "Quản trị"
     ],
     "x-capability": [
-     "ask"
+     "—"
     ],
     "x-use-cases": [
      "UC-11-08"
@@ -71827,6 +72005,349 @@
     ],
     "x-use-cases": [
      "UC-05-05"
+    ]
+   }
+  },
+  "/v1/documents/{id}/chunks": {
+   "get": {
+    "operationId": "listDocumentChunks",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "maximum": 500,
+       "minimum": 1,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "page_token",
+      "required": false,
+      "schema": {
+       "default": "",
+       "maxLength": 2048,
+       "title": "Page Token",
+       "type": "string"
+      }
+     },
+     {
+      "description": "A3's name for page_token",
+      "in": "query",
+      "name": "cursor",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 2048,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "A3's name for page_token",
+       "title": "Cursor"
+      }
+     },
+     {
+      "in": "header",
+      "name": "X-Purpose",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maxLength": 500,
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "X-Purpose"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page_ChunkView_"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Danh sách đoạn văn đã trích xuất",
+    "tags": [
+     "Tài liệu"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-05-04"
+    ]
+   }
+  },
+  "/v1/documents/{id}/file": {
+   "get": {
+    "operationId": "downloadDocumentOriginal",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "id",
+      "required": true,
+      "schema": {
+       "format": "uuid",
+       "title": "Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "400": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Invalid request"
+     },
+     "401": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Unauthenticated"
+     },
+     "403": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Forbidden"
+     },
+     "404": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Not found"
+     },
+     "409": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Conflict"
+     },
+     "410": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Gone"
+     },
+     "412": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Precondition failed"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Validation failed"
+     },
+     "429": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProblemBody"
+        }
+       },
+       "application/problem+json": {}
+      },
+      "description": "Rate limited"
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "summary": "Tải bản gốc để xem hoặc tải xuống",
+    "tags": [
+     "Tài liệu"
+    ],
+    "x-capability": [
+     "ask"
+    ],
+    "x-use-cases": [
+     "UC-05-04"
     ]
    }
   },
@@ -122987,11 +123508,18 @@
      "content": {
       "application/json": {
        "schema": {
-        "$ref": "#/components/schemas/UploadPatch"
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/UploadPatch"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Body"
        }
       }
-     },
-     "required": true
+     }
     },
     "responses": {
      "200": {

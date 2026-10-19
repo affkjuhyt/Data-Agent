@@ -75,6 +75,33 @@ const server = setupServer(
     });
   }),
   // GET /v1/policies/{id} answers either kind; only a behaviour policy is a rule.
+  http.get('*/v1/policies/pol-1', () =>
+    HttpResponse.json({
+      id: 'pol-1',
+      type: 'access',
+      data_space_id: 'ds-1',
+      name: 'Chi nhánh thấy chi nhánh',
+      kind: 'row',
+      condition_expr: 'branch_code = :user.branch',
+      columns: ['id_number'],
+      mask_method: 'hash',
+      version: 3,
+      status: 'active',
+      simulated_at: at,
+      activated_at: at,
+      latest_backtest: {
+        id: 'bt-1',
+        window_from: '2026-10-05T00:00:00Z',
+        window_to: '2026-10-12T00:00:00Z',
+        matched_count: 18302,
+        auto_handled_count: 0,
+        blocked_count: 12,
+        changed_result_count: 2140,
+        affected_agent_ids: ['a-1', 'a-2'],
+        created_at: at,
+      },
+    }),
+  ),
   http.get('*/v1/policies/rule-1', () =>
     HttpResponse.json({
       id: 'rule-1',
@@ -155,13 +182,24 @@ afterEach(() => {
 afterAll(() => server.close());
 
 describe('governance from the api', () => {
-  it('reads an access policy from the array, with its rule in lines and its Data Space', async () => {
+  it('reads an access policy by id, with its rule in lines, its Data Space and last backtest', async () => {
     const p = await getAccessPolicy('pol-1');
-    expect(policyQuery[0].get('type')).toBe('access');
+    expect(policyQuery).toHaveLength(0);
     expect(p).toMatchObject({
       data_space_name: 'Rủi ro tín dụng',
       rule_text: 'Chỉ cho thấy dòng: branch_code = :user.branch\nCột ẩn: id_number (hash)',
+      last_backtest: {
+        window_days: 7,
+        affected_queries: 2140,
+        total_queries: 18302,
+        affected_users_text: '2 agent',
+        empty_queries_text: '12 truy vấn bị chặn',
+      },
     });
+  });
+
+  it('does not open a behaviour policy as an access policy', async () => {
+    await expect(getAccessPolicy('rule-1')).rejects.toMatchObject({ status: 404 });
   });
 
   it('simulates as one person and compares rows and columns', async () => {

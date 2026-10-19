@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from collections.abc import Collection, Sequence
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Path, Query, Response
@@ -775,7 +776,7 @@ async def share_workspace(
         ).all()
         for share in shares:
             await session.refresh(share)
-        return Page(items=[ShareView.model_validate(s) for s in shares])
+        return Page(items=await _share_views(session, principal, shares))
 
 
 @router.delete(
@@ -839,7 +840,65 @@ async def list_workspace_shares(
                 .order_by(ws.WorkspaceShare.created_at, ws.WorkspaceShare.id)
             )
         ).all()
-        return Page(items=[ShareView.model_validate(s) for s in shares])
+        return Page(items=await _share_views(session, principal, shares))
+
+
+async def _names(
+    session: AsyncSession,
+    principal: Principal,
+    users: Collection[uuid.UUID],
+    groups: Collection[uuid.UUID] = (),
+) -> dict[tuple[str, uuid.UUID], str]:
+    """Display names of the organisation's users and groups, keyed by (principal_type, id)."""
+    out: dict[tuple[str, uuid.UUID], str] = {}
+    if users:
+        found = await session.execute(
+            select(org.AppUser.id, org.AppUser.display_name).where(
+                org.AppUser.id.in_(users), org.AppUser.org_id == principal.org_id
+            )
+        )
+        out |= {("user", i): n for i, n in found.tuples()}
+    if groups:
+        found = await session.execute(
+            select(org.UserGroup.id, org.UserGroup.name).where(
+                org.UserGroup.id.in_(groups), org.UserGroup.org_id == principal.org_id
+            )
+        )
+        out |= {("group", i): n for i, n in found.tuples()}
+    return out
+
+
+async def _share_views(
+    session: AsyncSession, principal: Principal, shares: Sequence[ws.WorkspaceShare]
+) -> list[ShareView]:
+    names = await _names(
+        session,
+        principal,
+        {s.principal_id for s in shares if s.principal_type == "user"},
+        {s.principal_id for s in shares if s.principal_type == "group"},
+    )
+    return [
+        ShareView.model_validate(s).model_copy(
+            update={"principal_name": names.get((s.principal_type, s.principal_id))}
+        )
+        for s in shares
+    ]
+
+
+async def _comment_views(
+    session: AsyncSession, principal: Principal, rows: Sequence[ws.WsComment]
+) -> list[CommentView]:
+    people = {r.author_id for r in rows} | {r.assignee_id for r in rows if r.assignee_id}
+    names = await _names(session, principal, people)
+    return [
+        CommentView.model_validate(r).model_copy(
+            update={
+                "author_name": names.get(("user", r.author_id)),
+                "assignee_name": names.get(("user", r.assignee_id)) if r.assignee_id else None,
+            }
+        )
+        for r in rows
+    ]
 
 
 def _member_of(principal_type: str, principal_id: uuid.UUID) -> ColumnElement[bool]:
@@ -1133,7 +1192,7 @@ async def create_comment(
         )
         await session.flush()
         await session.refresh(comment)
-        return CommentView.model_validate(comment)
+        return (await _comment_views(session, principal, [comment]))[0]
 
 
 @router.get(
@@ -1163,7 +1222,7 @@ async def list_tile_comments(
             page=page,
         )
         rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
-        return Page(items=[CommentView.model_validate(r) for r in rows], next_page_token=token)
+        return Page(items=await _comment_views(session, principal, rows), next_page_token=token)
 
 
 @router.patch(
@@ -1226,7 +1285,7 @@ async def patch_comment(
         comment.updated_at = now
         comment.updated_by = principal.user_id
         await session.flush()
-        return CommentView.model_validate(comment)
+        return (await _comment_views(session, principal, [comment]))[0]
 
 
 # --- session reports ----------------------------------------------------------------------------

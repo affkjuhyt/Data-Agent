@@ -2107,6 +2107,40 @@ export interface paths {
         patch: operations["updateDocument"];
         trace?: never;
     };
+    "/v1/documents/{id}/chunks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Danh sách đoạn văn đã trích xuất */
+        get: operations["listDocumentChunks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/{id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tải bản gốc để xem hoặc tải xuống */
+        get: operations["downloadDocumentOriginal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/documents/{id}/pages/{n}": {
         parameters: {
             query?: never;
@@ -9511,11 +9545,15 @@ export interface components {
             agent_run_id: string | null;
             /** Assignee Id */
             assignee_id: string | null;
+            /** Assignee Name */
+            assignee_name?: string | null;
             /**
              * Author Id
              * Format: uuid
              */
             author_id: string;
+            /** Author Name */
+            author_name?: string | null;
             /** Body */
             body: string;
             /**
@@ -11595,6 +11633,22 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** DocumentBlockView */
+        DocumentBlockView: {
+            /** Box */
+            box: number[];
+            /** Image Url */
+            image_url?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "title" | "heading" | "paragraph" | "picture" | "line";
+            /** Level */
+            level?: number | null;
+            /** Text */
+            text: string;
+        };
         /** DocumentDetail */
         DocumentDetail: {
             /** Blocking Quality Issues */
@@ -11632,6 +11686,8 @@ export interface components {
             media: string;
             /** Open Quality Issues */
             open_quality_issues: number;
+            /** Original Url */
+            original_url?: string | null;
             /** Page Count */
             page_count: number | null;
             /** Parent Document Id */
@@ -11717,6 +11773,8 @@ export interface components {
         };
         /** DocumentPageView */
         DocumentPageView: {
+            /** Blocks */
+            blocks?: components["schemas"]["DocumentBlockView"][];
             /** Chunks */
             chunks?: components["schemas"]["ChunkView"][];
             /**
@@ -11729,6 +11787,8 @@ export interface components {
              * Format: uuid
              */
             document_id: string;
+            /** Height */
+            height?: number | null;
             /** Human Corrected */
             human_corrected: boolean;
             /**
@@ -11755,6 +11815,8 @@ export interface components {
             updated_at: string;
             /** Usable */
             usable: boolean;
+            /** Width */
+            width?: number | null;
         };
         /** DocumentPatch */
         DocumentPatch: {
@@ -17612,6 +17674,16 @@ export interface components {
              */
             next_page_token: string;
         };
+        /** Page[ChunkView] */
+        Page_ChunkView_: {
+            /** Items */
+            items: components["schemas"]["ChunkView"][];
+            /**
+             * Next Page Token
+             * @default
+             */
+            next_page_token: string;
+        };
         /** Page[CollectionView] */
         Page_CollectionView_: {
             /** Items */
@@ -21501,12 +21573,19 @@ export interface components {
         };
         /**
          * SecretReference
-         * @description Where the account lives in OpenBao (BR-14): a path under the organisation's namespace
-         *     `secret/tenants/{org_id}/`. A password, token or any other key is refused.
+         * @description An existing OpenBao path, or the account the API stores there (BR-14).
+         *
+         *     The source row keeps only the path. ``username`` and ``password`` are written to OpenBao
+         *     and never returned; ``password`` may be empty when the source does not use one. A path and
+         *     a password in the same object are refused, so a secret cannot be posted beside its reference.
          */
         SecretReference: {
+            /** Password */
+            password?: string | null;
             /** Secret Ref */
-            secret_ref: string;
+            secret_ref?: string | null;
+            /** Username */
+            username?: string | null;
         };
         /** SecurityEventView */
         SecurityEventView: {
@@ -21596,6 +21675,8 @@ export interface components {
              * Format: uuid
              */
             principal_id: string;
+            /** Principal Name */
+            principal_name?: string | null;
             /** Principal Type */
             principal_type: string;
             /**
@@ -40509,6 +40590,237 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocumentUpdated"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    listDocumentChunks: {
+        parameters: {
+            query?: {
+                page_size?: number;
+                page_token?: string;
+                /** @description A3's name for page_token */
+                cursor?: string | null;
+            };
+            header?: {
+                "X-Purpose"?: string | null;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_ChunkView_"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    downloadDocumentOriginal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Invalid request */
@@ -76308,9 +76620,9 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "application/json": components["schemas"]["UploadPatch"];
+                "application/json": components["schemas"]["UploadPatch"] | null;
             };
         };
         responses: {

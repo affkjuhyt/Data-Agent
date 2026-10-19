@@ -319,6 +319,8 @@ async def test_list_shares(team: Team) -> None:
         got = {(s["principal_id"], s["permission"]) for s in listed.json()["items"]}
         assert got == {(str(team.users["viewer"]), "view"), (str(team.users["both"]), "edit")}
         assert all(s["granted_by"] == str(team.users["owner"]) for s in listed.json()["items"])
+        # The dialog names each recipient instead of showing an id.
+        assert {s["principal_name"] for s in listed.json()["items"]} == {"viewer", "both"}
 
         assert (
             await api.get(f"/v1/workspaces/{workspace_id}/shares", headers=_as(team, "approver"))
@@ -470,6 +472,7 @@ async def test_tile_comments_in_order_with_tasks_and_replies(team: Team) -> None
         owner = _as(team, "owner")
         first = await api.post(f"/v1/tiles/{tile}/comments", headers=owner, json={"body": "Số lạ"})
         assert first.status_code == 201, first.text
+        assert first.json()["author_name"] == "owner"
         reply = await api.post(
             f"/v1/tiles/{tile}/comments",
             headers=owner,
@@ -496,6 +499,8 @@ async def test_tile_comments_in_order_with_tasks_and_replies(team: Team) -> None
         ]
         assert items[1]["parent_id"] == first.json()["id"]
         assert items[2]["assignee_id"] == str(team.users["viewer"]) and items[2]["status"] == "open"
+        assert (items[2]["author_name"], items[2]["assignee_name"]) == ("owner", "viewer")
+        assert items[0]["assignee_name"] is None
 
         page = await api.get(f"/v1/tiles/{tile}/comments?page_size=2", headers=owner)
         token = page.json()["next_page_token"]

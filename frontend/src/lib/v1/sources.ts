@@ -344,9 +344,12 @@ export interface SecretRef {
   label: string;
 }
 
-/** GET /v1/secret-refs?kind= — references only, the value stays in OpenBao. */
-export const listSecretRefs = (kind: 'database' | 'api' = 'database') =>
-  v1Get<Page<SecretRef>>('/secret-refs', { ...ALL, kind });
+/**
+ * GET /v1/secret-refs — references only, the value stays in OpenBao. The api lists the references
+ * the Data Space's sources already use, whatever their kind (it has no `kind` filter, and a
+ * SecretRefView does not say one), so the API and the database forms offer the same list.
+ */
+export const listSecretRefs = () => v1Get<Page<SecretRef>>('/secret-refs', ALL);
 
 export interface NewSource {
   name: string;

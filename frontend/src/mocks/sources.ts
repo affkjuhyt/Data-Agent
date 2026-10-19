@@ -1686,9 +1686,8 @@ export function createSourcesHandlers() {
         })),
       ),
     ),
-    http.get('*/v1/secret-refs', ({ request }) =>
-      page(new URL(request.url).searchParams.get('kind') === 'api' ? API_SECRET_REFS : SECRET_REFS),
-    ),
+    // As the api: every reference the Data Space's sources use, of any kind.
+    http.get('*/v1/secret-refs', () => page([...SECRET_REFS, ...API_SECRET_REFS])),
 
     http.get('*/v1/jobs', () =>
       page(

@@ -118,7 +118,7 @@ function parseHeaders(text: string): ApiRequest['headers'] {
 function ApiForm({ config }: { config: ApiSourceConfig | null }) {
   const { navigate } = useAppState();
   const toast = useToast();
-  const secrets = useV1(() => listSecretRefs('api'), []);
+  const secrets = useV1(() => listSecretRefs(), []);
   const [name, setName] = useState(config?.name ?? '');
   const [request, setRequest] = useState<ApiRequest>(config?.request ?? EMPTY);
   const [headers, setHeaders] = useState(headersText(config?.request ?? EMPTY));

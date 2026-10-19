@@ -138,7 +138,7 @@ export interface TileTask {
   due_at: Timestamp;
 }
 
-/** PROPOSAL: GET /v1/workspaces/{id}/tiles/{tile}/comments — the thread and its tasks. */
+/** GET /v1/tiles/{id}/comments — the thread, and the comments given as tasks. */
 export interface TileThread {
   items: TileComment[];
   tasks: TileTask[];
@@ -158,7 +158,7 @@ export interface WorkspaceMember {
   role: MemberRole;
 }
 
-/** PROPOSAL: GET/PUT /v1/workspaces/{id}/sharing. */
+/** GET/PUT /v1/workspaces/{id}/shares; `preview` and `link` are the screen's. */
 export interface WorkspaceSharing {
   members: WorkspaceMember[];
   /** "Người nhận thấy gì": what each recipient will see, computed from their data scope. */
@@ -166,7 +166,7 @@ export interface WorkspaceSharing {
   link: string;
 }
 
-/** PROPOSAL: GET /v1/principals?q= — people and groups to share with. */
+/** GET /v1/principals?q= — people and groups to share with; `detail` and the scope are PROPOSAL. */
 export interface Principal {
   id: Uuid;
   kind: 'user' | 'group';
@@ -254,7 +254,7 @@ function readTileThread(raw: unknown): TileThread {
   const items = (page.items ?? []).map((comment) => ({
     id: comment.id,
     tile_id: comment.tile_id ?? '',
-    author: { kind: 'person' as const, name: comment.author_id },
+    author: { kind: 'person' as const, name: comment.author_name ?? 'Người dùng' },
     body: comment.body,
     created_at: comment.created_at,
   }));
@@ -264,7 +264,7 @@ function readTileThread(raw: unknown): TileThread {
       id: comment.id,
       tile_id: comment.tile_id ?? '',
       title: comment.body,
-      assignee_name: comment.assignee_id ?? '',
+      assignee_name: comment.assignee_name ?? 'Người được giao',
       due_at: comment.due_at as string,
     }));
   return { items, tasks };
@@ -289,7 +289,7 @@ function readSharing(raw: unknown, workspaceId: string): WorkspaceSharing {
   const members = (page.items ?? []).map((share) => ({
     principal_id: share.principal_id,
     kind: share.principal_type as 'user' | 'group',
-    name: share.principal_id,
+    name: share.principal_name ?? (share.principal_type === 'group' ? 'Nhóm' : 'Người dùng'),
     detail: '',
     scope_limited: false,
     role: share.permission === 'edit' ? ('editor' as const) : ('viewer' as const),
@@ -373,7 +373,8 @@ const REPORT_STATUS: Record<string, SessionReport['status']> = {
   changes_requested: 'changes_requested',
   draft: 'drafting',
   checking: 'drafting',
-  failed_checks: 'changes_requested',
+  // Checks not passed sends the report back to its author, not a reviewer's request for changes.
+  failed_checks: 'drafting',
   ready: 'pending_review',
   pending_approval: 'pending_review',
   published: 'published',

@@ -293,7 +293,7 @@ export interface PeriodVersion {
 export interface PeriodComparison {
   left: PeriodVersion;
   right: PeriodVersion;
-  /** PROPOSAL: the versions the pickers offer. */
+  /** The versions the pickers offer: every close of the Data Space. */
   versions: PeriodVersion[];
   /** Every gap traces back to the retro change or run that made it (UC-10-05). */
   rows: {
@@ -309,9 +309,12 @@ export interface PeriodComparison {
 
 type CompareWire = Schemas['CompareResult'] & { display?: PeriodComparison };
 
+const versionLabel = (label: string, version: number, status: string) =>
+  `${label} · v${version} · ${STATUS[status] === 'published' ? 'đã công bố' : 'chưa công bố'}`;
+
 const side = (s: Schemas['CompareSide']): PeriodVersion => ({
   id: s.period_close_id,
-  label: `${s.period_label} · v${s.version} · ${STATUS[s.status] === 'published' ? 'đã công bố' : 'chưa công bố'}`,
+  label: versionLabel(s.period_label, s.version, s.status),
   note: s.values_from === 'retro' ? 'điều chỉnh hồi tố' : 'số đã công bố',
 });
 
@@ -323,29 +326,89 @@ const CAUSE: Record<string, string> = {
   removed: 'chỉ có ở bản trước',
 };
 
-/** A2: GET /v1/periods/compare?a&b — two closes (versions) of a period, item by item. */
+/** A retro change makes a new period_close of the same label with version + 1 (BR-43). */
+async function listCloses(): Promise<Schemas['PeriodCloseView'][]> {
+  const page = await v1Get<Page<PeriodWire>>('/periods', { page_size: 500 });
+  return [...page.items].sort(
+    (x, y) =>
+      y.business_date.localeCompare(x.business_date) ||
+      x.period_label.localeCompare(y.period_label) ||
+      y.version - x.version,
+  );
+}
+
+/**
+ * Opened without a pair: the two newest versions of the newest period that has two; without
+ * one, the two newest closes.
+ */
+function defaultPair(closes: Schemas['PeriodCloseView'][]): [string, string] {
+  const byLabel = new Map<string, Schemas['PeriodCloseView'][]>();
+  for (const c of closes) byLabel.set(c.period_label, [...(byLabel.get(c.period_label) ?? []), c]);
+  const twice = [...byLabel.values()].find((list) => list.length >= 2);
+  const [newer, older] = twice ?? closes;
+  if (!newer || !older)
+    throw new V1Error(404, 'not_found', 'Chưa có hai bản kỳ chốt nào để so sánh.');
+  return [older.id, newer.id];
+}
+
+/** dimension_key in words: "region: Bắc Bộ · segment: retail"; empty for the whole metric. */
+function dimensionText(key: unknown): string {
+  if (!key || typeof key !== 'object') return '';
+  return Object.entries(key as Record<string, unknown>)
+    .map(([k, v]) => `${k}: ${String(v)}`)
+    .join(' · ');
+}
+
+const rowKey = (metricVersionId: string | null, dimensionKey: unknown) =>
+  `${metricVersionId ?? ''}|${JSON.stringify(dimensionKey ?? {})}`;
+
+/**
+ * A2: GET /v1/periods/compare?a&b — two closes (versions) of a period, item by item; its rows_id
+ * pages the retro rows (GET /v1/periods/compare/{id}/rows) that name the retro change behind a
+ * gap. Without a pair, the default above.
+ */
 export async function comparePeriodVersions(
-  left: string,
-  right: string,
+  left?: string,
+  right?: string,
 ): Promise<PeriodComparison> {
-  const raw = await v1Get<CompareWire>('/periods/compare', { a: left, b: right });
+  const closes = await listCloses().catch(() => null);
+  const [a, b] = left && right ? [left, right] : defaultPair(closes ?? []);
+  const raw = await v1Get<CompareWire>('/periods/compare', { a, b });
   if (raw.display) return raw.display;
-  const a = side(raw.a);
-  const b = side(raw.b);
+  const retro = new Map<string, string>();
+  if (raw.rows_id) {
+    const rows = await v1Get<Page<Schemas['DiffRow']>>(
+      `/periods/compare/${pathId(raw.rows_id)}/rows`,
+      { page_size: 500 },
+    ).catch(() => null);
+    for (const row of rows?.items ?? [])
+      retro.set(rowKey(row.metric_version_id, row.dimension_key), row.retro_change_id);
+  }
+  const sideA = side(raw.a);
+  const sideB = side(raw.b);
+  const versions = closes?.map((c) => ({
+    id: c.id,
+    label: versionLabel(c.period_label, c.version, c.status),
+    note: '',
+  })) ?? [sideA, sideB];
   return {
-    left: a,
-    right: b,
-    versions: [a, b],
+    left: sideA,
+    right: sideB,
+    versions,
     rows: raw.items.map((item) => {
       const delta = item.delta === null ? null : Number(item.delta);
+      const dims = dimensionText(item.dimension_key);
       return {
-        metric: item.metric_code ?? '',
+        metric: [item.metric_code ?? '', dims].filter(Boolean).join(' · '),
         left: item.a_value === null ? '—' : number(item.a_value),
         right: item.b_value === null ? '—' : number(item.b_value),
         delta: delta === null ? '—' : number(delta),
         changed: delta !== 0,
         reason: CAUSE[item.cause] ?? item.cause,
-        retro_change_id: null,
+        retro_change_id:
+          retro.get(rowKey(item.b_metric_version_id, item.dimension_key)) ??
+          retro.get(rowKey(item.a_metric_version_id, item.dimension_key)) ??
+          null,
       };
     }),
   };

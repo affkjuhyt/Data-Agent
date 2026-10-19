@@ -284,7 +284,14 @@ export function createPeriodHandlers() {
     // Before /v1/periods/:id, which would otherwise take "compare" as an id.
     http.get('*/v1/periods/compare', ({ request }) => {
       const params = new URL(request.url).searchParams;
-      const result = compare(params.get('a') ?? '', params.get('b') ?? '');
+      // The mock's periods have one close each, so the screen's default pair (two closes from
+      // GET /v1/periods) is answered with the design's T8 v1 against v2.
+      const known = (id: string | null) => VERSIONS.some((v) => v.id === id);
+      const [a, b] =
+        known(params.get('a')) && known(params.get('b'))
+          ? [params.get('a')!, params.get('b')!]
+          : ['pv-2026-08-v1', 'pv-2026-08-v2'];
+      const result = compare(a, b);
       return result
         ? HttpResponse.json({ a: {}, b: {}, items: [], rows_id: null, display: result })
         : problem(404, 'not_found', 'Không tìm thấy bản.');

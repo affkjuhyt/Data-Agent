@@ -15,9 +15,9 @@ import { useV1 } from '../../lib/v1/useV1';
  * "P10 · So sánh hai bản" (2304:19616, UC-10-05): two versions of a period side by side, figure
  * by figure, each gap with the reason that traces it back to the retro change (or run) that made
  * it. "Đổi bản" swaps the two; "Xuất" downloads the table as CSV. Comparing two points in time
- * of the current data and adding the table to a session wait for their screens.
+ * of the current data and adding the table to a session wait for their screens. Opened without
+ * a pair, the api's newest two versions are compared (lib/v1/periods.ts).
  */
-const DEFAULT = { left: 'pv-2026-08-v1', right: 'pv-2026-08-v2' };
 
 function csvOf(result: PeriodComparison): string {
   const head = ['Chỉ số', result.left.label, result.right.label, 'Chênh', 'Vì sao'];
@@ -37,8 +37,11 @@ function download(name: string, text: string) {
 
 export default function CompareVersionsPage() {
   const { navigate } = useAppState();
-  const [pair, setPair] = useState(DEFAULT);
-  const result = useV1(() => comparePeriodVersions(pair.left, pair.right), [pair.left, pair.right]);
+  const [pair, setPair] = useState<{ left: string; right: string } | null>(null);
+  const result = useV1(() => comparePeriodVersions(pair?.left, pair?.right), [
+    pair?.left,
+    pair?.right,
+  ]);
 
   return (
     <AsyncRegion state={result} what="so sánh">
@@ -53,7 +56,7 @@ export default function CompareVersionsPage() {
               <>
                 <Button
                   kind="ghost"
-                  onClick={() => setPair({ left: pair.right, right: pair.left })}
+                  onClick={() => setPair({ left: r.right.id, right: r.left.id })}
                 >
                   Đổi bản
                 </Button>
@@ -73,9 +76,9 @@ export default function CompareVersionsPage() {
                 <Select
                   label={`Bản ${i + 1}`}
                   className="w-[240px]"
-                  value={pair[side]}
+                  value={r[side].id}
                   options={r.versions.map((v) => ({ value: v.id, label: v.label }))}
-                  onChange={(id) => setPair({ ...pair, [side]: id })}
+                  onChange={(id) => setPair({ left: r.left.id, right: r.right.id, [side]: id })}
                 />
               </span>
             ))}

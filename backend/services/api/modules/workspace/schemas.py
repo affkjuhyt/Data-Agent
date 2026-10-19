@@ -147,6 +147,8 @@ class ShareView(_View):
     expires_at: datetime.datetime | None
     created_at: datetime.datetime
     updated_at: datetime.datetime
+    # The user's or group's name, so the share dialog never shows an id; null once deleted.
+    principal_name: str | None = None
 
 
 # Why a recipient would not see a tile (POST /v1/workspaces/{id}/shares:preview, BR-89):
@@ -215,6 +217,9 @@ class CommentView(_View):
     agent_run_id: uuid.UUID | None
     created_at: datetime.datetime
     updated_at: datetime.datetime
+    # Names of the author and the assignee for the thread; null for one no longer in org.
+    author_name: str | None = None
+    assignee_name: str | None = None
 
 
 class ReportCreate(_Body):

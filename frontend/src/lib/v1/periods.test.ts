@@ -180,6 +180,84 @@ describe('periods from the api', () => {
       },
     ]);
   });
+
+  it('opens on the newest period’s two versions and links a gap to its retro change', async () => {
+    let asked: URLSearchParams | undefined;
+    const close = (id: string, label: string, version: number, date: string) => ({
+      id,
+      period_label: label,
+      status: 'filed',
+      version,
+      business_date: date,
+    });
+    server.use(
+      http.get('*/v1/periods', () =>
+        HttpResponse.json({
+          items: [
+            close('pc-8', 'T8/2026', 1, '2026-08-31'),
+            close('pc-9a', 'T9/2026', 1, '2026-09-30'),
+            close('pc-9', 'T9/2026', 2, '2026-09-30'),
+            close('pc-10', 'T10/2026', 1, '2026-10-31'),
+          ],
+          next_page_token: '',
+        }),
+      ),
+      http.get('*/v1/periods/compare', ({ request }) => {
+        asked = new URL(request.url).searchParams;
+        const sideOf = (id: string, version: number) => ({
+          period_close_id: id,
+          period_label: 'T9/2026',
+          status: 'filed',
+          values_from: version === 2 ? 'retro' : 'published',
+          version,
+        });
+        return HttpResponse.json({
+          a: sideOf('pc-9a', 1),
+          b: sideOf('pc-9', 2),
+          items: [
+            {
+              metric_id: 'm-1',
+              metric_code: 'NPL_RATIO',
+              dimension_key: { region: 'Bắc Bộ' },
+              a_metric_version_id: 'mv-1',
+              b_metric_version_id: 'mv-1',
+              a_value: '1.84',
+              b_value: '1.96',
+              delta: '0.12',
+              cause: 'retro',
+            },
+          ],
+          rows_id: 'cmp-1',
+        });
+      }),
+      http.get('*/v1/periods/compare/cmp-1/rows', () =>
+        HttpResponse.json({
+          items: [
+            {
+              retro_change_id: 'rc-12',
+              period_close_id: 'pc-9',
+              metric_version_id: 'mv-1',
+              dimension_key: { region: 'Bắc Bộ' },
+              published_value: '1.84',
+              current_value: '1.96',
+              delta: '0.12',
+              below_materiality: false,
+              detected_at: at,
+            },
+          ],
+          next_page_token: '',
+        }),
+      ),
+    );
+    const result = await comparePeriodVersions();
+    expect(asked?.get('a')).toBe('pc-9a');
+    expect(asked?.get('b')).toBe('pc-9');
+    expect(result.versions.map((v) => v.id)).toEqual(['pc-10', 'pc-9', 'pc-9a', 'pc-8']);
+    expect(result.rows[0]).toMatchObject({
+      metric: 'NPL_RATIO · region: Bắc Bộ',
+      retro_change_id: 'rc-12',
+    });
+  });
 });
 
 describe('source authority from the api', () => {

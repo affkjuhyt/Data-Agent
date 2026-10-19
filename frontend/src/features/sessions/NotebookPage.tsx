@@ -112,10 +112,10 @@ function Notebook({ ws: loaded, onChanged }: { ws: WorkspaceDetail; onChanged: (
     setBusy('report');
     setError(undefined);
     try {
-      // An unpublished report of this session is reviewed, not drafted again. A2 has no list of
-      // a session's reports (PROPOSAL), so when it cannot be read a new one is drafted.
-      const drafts = await listSessionReports(ws.id).catch(() => null);
-      const existing = drafts?.items.find((r) => r.status !== 'published');
+      // An unpublished report of this session is reviewed, not drafted again; a list that cannot
+      // be read is an error, not a reason to draft a second one.
+      const drafts = await listSessionReports(ws.id);
+      const existing = drafts.items.find((r) => r.status !== 'published');
       const report = existing ?? (await createSessionReport(ws.id, ws.title));
       navigate('analysis', 'REPORT', report.id);
     } catch (e) {
