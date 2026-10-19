@@ -19,7 +19,7 @@ so a green `make ci` is a green pipeline.
 | Serving benchmark | `make bench` | TTFT / decode / throughput per LLM role against the GPU tiers (`model/bench/`). Needs `LLM_MAIN_BASE_URL` + `LLM_FAST_BASE_URL` reachable; pass args with `BENCH_ARGS="…"`. Measures cost, not quality — `model/eval` owns quality |
 | Serving gate | `make bench-gate` | judges a bench report against `model/bench/thresholds.json`. Exit 0 pass / 1 fail / **2 inconclusive** — 2 means a budget could not be judged (shared GPU, missing metrics), re-run rather than widen |
 | Agent e2e latency | `make bench-e2e` | per-stage breakdown of one real question against a deployed agent. Needs `BENCH_AGENT_URL`, `BENCH_AGENT_ID`, `BENCH_TENANT_ID`, `GATEWAY_KEY` exported — never read from `.env` |
-| Deploy | `make deploy` | Ansible is the only deploy path; it deploys **committed** changes only |
+| Deploy | `make deploy-local` (OrbStack), `make deploy` (full stack) | Ansible is the only deploy path. The local cluster runs only the V3 slice: use `make deploy-local`, since `make deploy` also rebuilds kb-backend, kb-worker, auth_api and platform-workers, which nothing there runs. The git diff since the last deploy picks **which** images to rebuild, but each is built from the **working tree**, uncommitted edits included: to ship exactly a commit, deploy from a clean worktree. Check which branch the cluster runs first (`~/.dataagent-deploy/k8s-local/last_deployed_sha.txt`). See `deploy/ansible/README.md` |
 
 ### Gates that are currently red
 

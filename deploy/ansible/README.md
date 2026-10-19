@@ -32,6 +32,18 @@ non-blocking stdio.
 > still reports success. Commit first (a local commit is enough). See
 > [Uncommitted changes](#uncommitted-changes) for the escape hatches.
 
+> **…but an image is built from the working tree.** The diff only decides *which*
+> images to rebuild; `docker build` then reads the files on disk, so a rebuilt image
+> also carries every uncommitted edit under its inputs — someone else's half-done work
+> included. To ship exactly a commit, deploy from a clean worktree:
+> [Deploying one commit exactly](#deploying-one-commit-exactly).
+
+> **On the OrbStack cluster use `make deploy-local`.** That cluster runs only the V3
+> slice (api, worker-agent, worker-ingest, worker-document, frontend, migrate, gateway,
+> litellm, mailpit). `make deploy` plans the whole stack and also rebuilds kb-backend,
+> kb-worker, auth_api and platform-workers when `backend/libs` changes — images nothing
+> there runs; on 20/10/2026 that cost 30 minutes for no running change.
+
 ## What a run does
 
 Everything is in `deploy.yml`, top to bottom. Settings are role defaults in
@@ -188,6 +200,29 @@ Commit, then run. If you cannot commit yet:
 These overrides work because `-e` outranks the diff result. The checkpoint
 still advances to `HEAD`, so the next run will not see those files as changed
 either: commit them before relying on the pipeline again.
+
+## Deploying one commit exactly
+
+When the checkout has uncommitted work that must not ship, build from a worktree of the
+commit. `project_dir` is derived from the inventory's location, so running the playbook
+from the worktree's `deploy/ansible` makes the worktree the build context. The vault and
+the OpenBao state are git-ignored and live only in the main checkout: link them, do not
+copy them, so the run reads and updates the same files.
+
+```bash
+git worktree add ../release <commit-or-branch>
+for f in deploy/ansible/inventories/k8s-local/.secrets deploy/k8s/dev/.openbao-env.yml \
+         deploy/k8s/dev/.openbao-keys.json deploy/k8s/dev/secrets.env; do
+  ln -s "$PWD/$f" "../release/$f"
+done
+(cd ../release && make deploy-local </dev/null)
+```
+
+The checkpoint is shared (it lives in `$HOME`), so the next run from the main checkout
+diffs against the commit the worktree deployed. Check which branch the cluster runs
+before deploying another one: `cat ~/.dataagent-deploy/k8s-local/last_deployed_sha.txt`
+and `git branch --contains <sha>` — deploying a branch that lacks its commits removes
+their features from the cluster.
 
 ## Checking a plan
 
