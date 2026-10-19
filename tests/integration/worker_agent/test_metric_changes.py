@@ -46,8 +46,10 @@ def new_version(
     dims: list[str],
     unit: str = "tỷ đồng",
     expression: str = "du_no",
+    author: uuid.UUID | None = None,
+    recorded: bool = True,
 ) -> uuid.UUID:
-    return bank.seed.row(
+    version = bank.seed.row(
         "context.metric_version",
         org_id=bank.org,
         metric_id=metric,
@@ -60,6 +62,19 @@ def new_version(
         allowed_dimensions=[dimension(bank, d) for d in dims],
         filters=json.dumps([]),
     )
+    if recorded:
+        # As the api writes it: metric_version has no author column, its created event does.
+        bank.seed.row(
+            "context.outbox",
+            org_id=bank.org,
+            aggregate_type="metric_version",
+            aggregate_id=version,
+            event_type="metric_version.created",
+            payload=json.dumps(
+                {"version_id": str(version), "created_by": str(author or bank.user)}
+            ),
+        )
+    return version
 
 
 def file_september(bank: Bank, version: uuid.UUID, value: int) -> None:
@@ -254,17 +269,8 @@ async def test_its_author_cannot_approve_a_version_someone_else_previewed(
 ) -> None:
     bank = build(seed, warehouse, monkeypatch)
     metric, v1 = du_no(bank)
-    v2 = new_version(bank, metric, dims=["vung", "san_pham"])
     author = reviewer(bank)
-    # The api records who created the version on its created event (metric_version has no column).
-    seed.row(
-        "context.outbox",
-        org_id=bank.org,
-        aggregate_type="metric_version",
-        aggregate_id=v2,
-        event_type="metric_version.created",
-        payload=json.dumps({"version_id": str(v2), "created_by": str(author)}),
-    )
+    v2 = new_version(bank, metric, dims=["vung", "san_pham"], author=author)
     proposal = await preview(bank, v2)  # asked by bank.user, not the author
     assert seed.one("SELECT proposed_by FROM inbox.proposal WHERE id = %s", proposal) == author
     await decide(bank, proposal, "accepted")  # decided by the author
@@ -312,6 +318,19 @@ async def test_figures_over_a_masked_table_are_withheld_not_broken(
     v2 = new_version(bank, metric, dims=["vung", "san_pham"])
     proposal = await preview(bank, v2)
     diff, impact = seed.one("SELECT diff, impact FROM inbox.proposal WHERE id = %s", proposal)
-    assert "che cột" in diff["preview_withheld"]
+    assert "chính sách truy cập" in diff["preview_withheld"]
     assert all(row["new"] is None and row["current"] is None for row in diff["preview"])
     assert impact["breaks"] == []
+
+
+async def test_a_version_without_a_recorded_author_is_not_certified(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Fail closed: the reviewer could be its author, so it waits to be saved again as a new version.
+    bank = build(seed, warehouse, monkeypatch)
+    metric, v1 = du_no(bank)
+    v2 = new_version(bank, metric, dims=["vung", "san_pham"], recorded=False)
+    proposal = await preview(bank, v2)
+    await decide(bank, proposal, "accepted")
+    assert seed.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "apply_failed"
+    assert seed.one("SELECT status FROM context.metric_version WHERE id = %s", v1) == "certified"

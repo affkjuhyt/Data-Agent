@@ -52,6 +52,7 @@ from libs.dataagent_db.models import (
     period,
     skill,
 )
+from libs.dataagent_db.models import org as org_models
 from services.worker_agent import proposals, questions
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
@@ -351,9 +352,12 @@ async def _by_month(
     that keeps it from running; or, third, why its figures are withheld from this steward.
 
     The figures are held to the question path's rules (the security review of :preview): the
-    steward must be allowed to ask in the Data Space, and a definition that reads a table under a
-    column or mask policy is not run, since an aggregate over a masked column still discloses it
-    (semantic/loader.py blocks such a metric from questions the same way)."""
+    steward must be allowed to ask in the Data Space, and a definition that reads a table under any
+    access policy is not run: an aggregate over a masked column still discloses it
+    (semantic/loader.py blocks such a metric from questions the same way), and row policies and
+    row-scoped members make the figures depend on who reads them, while the proposal they go into
+    is read by every reviewer, so figures computed under the steward's rows would show a reviewer
+    rows outside theirs."""
     async with scoped_session("svc_qa", event.org_id, actor) as session:
         if not await can_ask_data_space(session, data_space_id=space_id, principal_id=actor):
             return {}, None, "Người chạy thử không có quyền hỏi dữ liệu của Data Space này."
@@ -374,14 +378,20 @@ async def _by_month(
             select(func.count()).where(
                 governance.AccessPolicy.dataset_id.in_(list(compiled.dataset_ids)),
                 governance.AccessPolicy.status == "active",
-                governance.AccessPolicy.kind.in_(("column", "mask")),
             )
         )
-        if covered:
+        scoped = await session.scalar(
+            select(func.count()).where(
+                org_models.DataSpaceMember.data_space_id == space_id,
+                org_models.DataSpaceMember.row_scope.is_not(None),
+            )
+        )
+        if covered or scoped:
             return (
                 {},
                 None,
-                "Bảng của chỉ số có chính sách ẩn hoặc che cột; số chạy thử không được hiện.",
+                "Bảng của chỉ số có chính sách truy cập hoặc Data Space có phạm vi dòng theo người;"
+                " số chạy thử không được hiện.",
             )
         dataset = space.datasets.get(compiled.dataset_ids[0])
         if dataset is None:
@@ -581,8 +591,15 @@ async def apply(event: Event, proposal: dict[str, Any]) -> bool:
     if edited:
         logger.info("worker-agent | metric_change %s not applied: edited", proposal["id"])
         return False
-    if reviewer == await _author(event.org_id, reviewer, version_id):
-        logger.info("worker-agent | metric_change %s not applied: its author", proposal["id"])
+    # Fail closed: without a recorded author the reviewer could be it, so the version is not
+    # certified; one created before the api recorded authors is saved again as a new version.
+    author = await _author(event.org_id, reviewer, version_id)
+    if author is None or reviewer == author:
+        logger.info(
+            "worker-agent | metric_change %s not applied: %s",
+            proposal["id"],
+            "no recorded author" if author is None else "its author",
+        )
         return False
     impact.breaks += [
         b
