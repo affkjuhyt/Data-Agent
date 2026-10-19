@@ -48,6 +48,23 @@ def source() -> OutboxTableSource:
     return OutboxTableSource(schema="qa", event_types=frozenset(HANDLERS))
 
 
+def repeat(seed: Seed, asked: Asked, text: str) -> Asked:
+    conv = seed.one("SELECT conversation_id FROM qa.question WHERE id = %s", asked.question)
+    seq = seed.one("SELECT coalesce(max(seq), 0) + 1 FROM qa.question WHERE conversation_id = %s", conv)
+    question = seed.row(
+        "qa.question", org_id=asked.org, conversation_id=conv, seq=seq, text=text
+    )
+    outbox = seed.row(
+        "qa.outbox",
+        org_id=asked.org,
+        aggregate_type="question",
+        aggregate_id=question,
+        event_type="question.received",
+        payload=json.dumps({"question_id": str(question), "user_id": str(asked.users[0])}),
+    )
+    return Asked(asked.org, asked.space, question, outbox, asked.users)
+
+
 async def drain() -> int:
     total = 0
     while handled := await run_once(source(), HANDLERS, batch=50):
@@ -72,6 +89,23 @@ async def test_a_question_naming_no_known_metric_ends_in_a_coded_refusal(seed: S
     # Plan IR v2 (tab 5 G3.1): the period was read, no step could be planned.
     assert version == 1 and steps["version"] == 2 and steps["steps"] == []
     assert seed.one("SELECT published_at IS NOT NULL FROM qa.outbox WHERE id = %s", asked.outbox)
+
+
+@pytest.mark.req("AC-07-09-02")
+async def test_unmapped_phrase_accumulates_review_evidence(seed: Seed) -> None:
+    text = "Thuật ngữ ngân hàng chưa ánh xạ"
+    first = ask(seed, text)
+    for _ in range(5):
+        repeat(seed, first, text)
+    assert await drain() >= 6
+    count, samples = seed.one(
+        "SELECT ask_count, sample_questions FROM context.unmapped_phrase"
+        " WHERE org_id = %s AND data_space_id = %s AND phrase_norm = %s",
+        first.org,
+        first.space,
+        "thuat ngan hang chua",
+    )
+    assert count == 6 and text in samples and len(samples) == 1
 
 
 async def test_redelivered_event_changes_nothing(seed: Seed) -> None:

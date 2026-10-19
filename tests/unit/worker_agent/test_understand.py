@@ -14,7 +14,12 @@ from services.worker_agent.understand.resolver import (
     Vocabulary,
     understand,
 )
-from services.worker_agent.understand.text import find_period, norm, words_of
+from services.worker_agent.understand.text import (
+    find_knowledge_hint,
+    find_period,
+    norm,
+    words_of,
+)
 
 pytestmark = [pytest.mark.unit]
 
@@ -103,6 +108,21 @@ def test_a_known_cut_leaves_nothing_unplaced() -> None:
     assert u.decision == "proceed" and u.group_by == ["vung"] and u.unplaced_cut is None
 
 
+def test_a_ranked_question_adds_the_dimension_and_limit() -> None:
+    product = DimensionEntry(uuid.uuid4(), "product", "Sản phẩm")
+    vocab = Vocabulary(
+        metrics=[NPL],
+        dimensions=[product],
+        synonyms={
+            "complaint": ("metric", str(NPL.metric_id)),
+            "product": ("dimension", str(product.dimension_id)),
+        },
+    )
+    u = understand("complaint top 5 Product xuất hiện nhiều nhất", vocab, today=TODAY)
+    assert u.decision == "proceed"
+    assert u.group_by == ["product"] and u.top_n == 5 and u.top_desc
+
+
 def test_by_the_period_asked_is_about_time_not_a_missing_cut() -> None:
     # "theo kỳ được hỏi": the period is the question's, read by find_period, not a dimension.
     u = understand("Tỷ lệ nợ xấu theo kỳ được hỏi", VOCAB, today=TODAY)
@@ -118,3 +138,13 @@ def test_latest_is_not_read_as_a_cut() -> None:
     # "mới" (new) and "mỗi" (each) are both "moi" without accents: only "theo" asks for a cut.
     u = understand("Báo tỷ lệ nợ xấu mới nhất cho chủ sở hữu", VOCAB, today=TODAY)
     assert u.unplaced_cut is None and u.decision == "proceed"
+
+
+def test_as_submitted_phrase_selects_period_close_before_metric_matching() -> None:
+    hint = find_knowledge_hint("NPL_RATIO tháng 6/2026 như đã nộp")
+    assert hint is not None and hint.mode == "period_close" and hint.span == "nhu da nop"
+
+
+def test_current_data_phrase_keeps_latest_mode() -> None:
+    hint = find_knowledge_hint("NPL_RATIO tháng 6/2026 theo dữ liệu hiện tại")
+    assert hint is not None and hint.mode == "latest"

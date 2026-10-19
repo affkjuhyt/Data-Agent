@@ -158,6 +158,19 @@ def test_a_flow_without_a_period_is_not_cut_to_a_day() -> None:
     assert "MAX(" not in out.sql and "WHERE" not in out.sql
 
 
+def test_a_ranked_cut_orders_and_limits_the_result() -> None:
+    out = compile_metric(
+        Request(
+            metric(period_semantics="sum_over_period", filters=()),
+            group_by=["san_pham"],
+            top_n=5,
+        ),
+        LAYER,
+        dialect="postgres",
+    )
+    assert 'ORDER BY "value" DESC NULLS LAST LIMIT 5' in out.sql
+
+
 def test_a_filter_value_is_quoted_never_spliced() -> None:
     out = compile_metric(
         Request(metric(), filters={"vung": ["Miền Bắc'; DROP TABLE x; --"]}),

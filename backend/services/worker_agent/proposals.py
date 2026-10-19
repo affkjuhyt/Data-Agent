@@ -33,11 +33,12 @@ import logging
 import uuid
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from libs.dataagent_db import scoped_session, uuid7
-from libs.dataagent_db.models import inbox, pack, period, pipeline, skill
+from libs.dataagent_db.models import context, inbox, pack, period, pipeline, skill
+from libs.dataagent_db.models import eval as evaluation
 from services.worker_agent.events import Event, Handler
 
 logger = logging.getLogger(__name__)
@@ -435,6 +436,68 @@ async def _apply_writeback(event: Event, proposal: dict[str, Any]) -> bool:
         return True
 
 
+async def _apply_data_product(event: Event, proposal: dict[str, Any]) -> bool:
+    """Activate only after the eval run attached to the proposal meets its contract."""
+    reviewer = uuid.UUID(str(event.payload["reviewer_id"]))
+    accepted = event.payload.get("status") == "accepted"
+    product_id = uuid.UUID(str(proposal["target_ref"]))
+    if not accepted:
+        async with scoped_session("svc_context", event.org_id, reviewer) as session:
+            await session.execute(
+                update(context.DataProduct)
+                .where(context.DataProduct.id == product_id, context.DataProduct.status == "pending_review")
+                .values(status="rejected", proposal_id=None, updated_by=reviewer, updated_at=_now())
+            )
+        return True
+    async with scoped_session("svc_eval", event.org_id, reviewer) as session:
+        result = await session.execute(
+            select(evaluation.EvalRun, evaluation.EvalSet)
+            .join(evaluation.EvalSet, evaluation.EvalSet.id == evaluation.EvalRun.eval_set_id)
+            .where(evaluation.EvalRun.id == proposal["eval_run_id"])
+        )
+        run, eval_set = result.one_or_none() or (None, None)
+        if (
+            run is None
+            or eval_set is None
+            or run.status != "completed"
+            or run.item_count < eval_set.min_items
+            or float(run.pass_rate or 0) < float(eval_set.pass_threshold)
+        ):
+            return False
+    async with scoped_session("svc_context", event.org_id, reviewer) as session:
+        metric_ok = await session.scalar(
+            select(func.count())
+            .select_from(context.DataProductMember)
+            .join(context.Metric, context.Metric.id == context.DataProductMember.member_ref)
+            .join(
+                context.MetricVersion,
+                (context.MetricVersion.metric_id == context.Metric.id)
+                & (context.MetricVersion.version == context.Metric.current_version)
+                & (context.MetricVersion.status == "certified"),
+            )
+            .where(
+                context.DataProductMember.data_product_id == product_id,
+                context.DataProductMember.member_kind == "metric",
+            )
+        )
+        dataset_ok = await session.scalar(
+            select(func.count()).select_from(context.DataProductMember).where(
+                context.DataProductMember.data_product_id == product_id,
+                context.DataProductMember.member_kind == "dataset",
+                context.DataProductMember.role == "primary",
+                context.DataProductMember.sla_kind != "none",
+            )
+        )
+        if not metric_ok or not dataset_ok:
+            return False
+        result = await session.execute(
+            update(context.DataProduct)
+            .where(context.DataProduct.id == product_id, context.DataProduct.status == "pending_review")
+            .values(status="active", activated_by=reviewer, activated_at=_now(), updated_by=reviewer, updated_at=_now())
+        )
+        return result.rowcount == 1
+
+
 async def _proposal(event: Event) -> dict[str, Any] | None:
     async with scoped_session("svc_inbox", event.org_id) as session:
         row = await session.get(inbox.Proposal, uuid.UUID(str(event.payload["proposal_id"])))
@@ -447,6 +510,7 @@ async def _proposal(event: Event) -> dict[str, Any] | None:
             "target_ref": row.target_ref,
             "evidence": row.evidence,
             "data_space_id": row.data_space_id,
+            "eval_run_id": row.eval_run_id,
         }
 
 
@@ -466,7 +530,7 @@ async def _finish(event: Event, pid: uuid.UUID, status: str) -> None:
 
 async def decided(event: Event) -> None:
     proposal = await _proposal(event)
-    if proposal is None or proposal["kind"] not in ("skill_publish", "pack_activate", "writeback"):
+    if proposal is None or proposal["kind"] not in ("skill_publish", "pack_activate", "writeback", "data_product"):
         return
     if proposal["status"] not in ("accepted", "open", "rejected"):
         return  # already applied, or no longer waiting
@@ -474,8 +538,10 @@ async def decided(event: Event) -> None:
         outcome: bool | None = await _apply_skill(event, proposal)
     elif proposal["kind"] == "pack_activate":
         outcome = await _apply_pack(event, proposal)
-    else:
+    elif proposal["kind"] == "writeback":
         outcome = await _apply_writeback(event, proposal)
+    else:
+        outcome = await _apply_data_product(event, proposal)
     if outcome is None:
         logger.info("worker-agent | pack activation %s waits for the period close", proposal["id"])
         return

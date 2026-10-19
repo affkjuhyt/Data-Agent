@@ -36,6 +36,38 @@ class FoundPeriod:
     span: str  # the normalised words it was read from
 
 
+@dataclass(frozen=True)
+class KnowledgeHint:
+    """A mode explicitly expressed in the question, and the words to remove before matching.
+
+    The API still accepts an explicit ``knowledge_mode``.  This hint is the safe default for
+    natural-language questions: a phrase such as “như đã nộp” must not be allowed to fall through
+    to the live-data path just because the browser omitted the optional chip.
+    """
+
+    mode: str
+    span: str
+
+
+def find_knowledge_hint(question: str) -> KnowledgeHint | None:
+    text = norm(question)
+    # Keep the vocabulary deliberately narrow.  Ambiguous words such as “cũ” must not silently
+    # change the point-in-time semantics of a question.
+    for phrase in (
+        "nhu da nop",
+        "so da nop",
+        "so da cong bo",
+        "ky da chot",
+        "nhu da chot",
+    ):
+        if re.search(rf"\b{re.escape(phrase)}\b", text):
+            return KnowledgeHint("period_close", phrase)
+    for phrase in ("theo du lieu hien tai", "tinh tren du lieu hien tai"):
+        if re.search(rf"\b{re.escape(phrase)}\b", text):
+            return KnowledgeHint("latest", phrase)
+    return None
+
+
 def _month(year: int, month: int) -> tuple[datetime.date, datetime.date]:
     start = datetime.date(year, month, 1)
     return start, start + datetime.timedelta(days=calendar.monthrange(year, month)[1])

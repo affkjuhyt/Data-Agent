@@ -43,6 +43,7 @@ def worker_database(ddl_server: dict[str, str]) -> Iterator[str]:  # noqa: F811
             "svc_outbox_relay",
             "svc_audit_worker",
             "svc_query",
+            "svc_governance",
             "svc_catalog",
             "svc_context",
             "svc_workspace",
@@ -53,6 +54,7 @@ def worker_database(ddl_server: dict[str, str]) -> Iterator[str]:  # noqa: F811
             "svc_agent",
             "svc_notify",
             "svc_monitor",
+            "svc_eval",
         ):
             cur.execute(f"ALTER ROLE {role} WITH LOGIN PASSWORD %s", (PASSWORD,))
     conn.close()
@@ -62,6 +64,7 @@ def worker_database(ddl_server: dict[str, str]) -> Iterator[str]:  # noqa: F811
         "svc_inbox",
         "svc_outbox_relay",
         "svc_query",
+        "svc_governance",
         "svc_catalog",
         "svc_context",
         "svc_workspace",
@@ -72,6 +75,7 @@ def worker_database(ddl_server: dict[str, str]) -> Iterator[str]:  # noqa: F811
         "svc_agent",
         "svc_notify",
         "svc_monitor",
+        "svc_eval",
     ):
         mp.setenv(f"DATAAGENT_DB_URL__{role.upper()}", _login_url(dsn, role))
     # The audit database's outbox, read by the same relay role through its own connection key.

@@ -38,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.contracts.v1.errors import ErrorCode, NextAction, Refusal
 from libs.dataagent_db import scoped_session, uuid7
-from libs.dataagent_db.models import catalog, context, document, qa
+from libs.dataagent_db.models import catalog, context, document, period, qa
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.comparison import (
     PERIOD_CODE,
@@ -48,7 +48,7 @@ from services.worker_agent.answer.comparison import (
     period_label,
 )
 from services.worker_agent.answer.insights import insights_of, is_additive, written
-from services.worker_agent.answer.narrate import chart_spec_of, figures_of, text_of
+from services.worker_agent.answer.narrate import Figure, chart_spec_of, figures_of, text_of
 from services.worker_agent.answer.thresholds import judged
 from services.worker_agent.answer.thresholds import load as load_threshold
 from services.worker_agent.documents import answer as document_answer
@@ -57,8 +57,9 @@ from services.worker_agent.documents.search import SearchServices, services_from
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.llm import Gateway, gateway_from_env
 from services.worker_agent.progress import publish
-from services.worker_agent.query.executor import run_query
+from services.worker_agent.query.executor import record_period_snapshot, run_query
 from services.worker_agent.query.guard import SqlRejected, dialect_of
+from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.query.secrets import SecretReader, StaticReader, reader_from_env
 from services.worker_agent.semantic import compare
 from services.worker_agent.semantic import compiler as c
@@ -73,7 +74,7 @@ from services.worker_agent.understand.resolver import (
     from_chips,
     understand,
 )
-from services.worker_agent.understand.text import norm
+from services.worker_agent.understand.text import find_knowledge_hint, norm
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +177,11 @@ class Prepared:
     base_label: str | None = None
     # Model calls behind this answer, for the receipt (ADR-43: models[], frontier_used).
     models: list[dict[str, Any]] = field(default_factory=list)
+    period_close_id: uuid.UUID | None = None
+    period_rows: list[list[Any]] | None = None
+    period_result_ids: list[uuid.UUID] | None = None
+    filed_period_label: str | None = None
+    filed_rows: list[dict[str, Any]] | None = None
 
 
 def _plan_ir(
@@ -186,6 +192,7 @@ def _plan_ir(
     explain_name: str | None = None,
     compare_to: str | None = None,
     grain: str | None = None,
+    knowledge_mode: str = "latest",
 ) -> dict[str, Any]:
     """Plan IR v2 (tab 5 G3.1): the fast path's template plan, one semantic query step.
 
@@ -207,6 +214,8 @@ def _plan_ir(
                     "period": [u.period.start.isoformat(), u.period.end.isoformat()]
                     if u.period
                     else None,
+                    "top_n": u.top_n,
+                    "top_desc": u.top_desc,
                 },
                 "depends_on": [],
                 "checkpoint": "none",
@@ -246,7 +255,7 @@ def _plan_ir(
         "version": 2,
         "goal": "answer",
         "as_of": as_of.isoformat() if as_of else None,
-        "knowledge_mode": "latest",
+        "knowledge_mode": knowledge_mode,
         "chips": [chip.__dict__ for chip in u.chips],
         "steps": steps,
         "outputs": [{"step": "s1", "as": "table" if u.group_by else "text"}] if steps else [],
@@ -531,6 +540,18 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
         secrets=secrets(),
         metric_version_ids=[prepared.compiled.metric_version_id],
         as_of=prepared.as_of,
+    ) if prepared.period_close_id is None else await record_period_snapshot(
+        org_id=prepared.org_id,
+        data_space_id=prepared.space_id,
+        principal_id=prepared.user_id,
+        caller_id=question_id,
+        period_close_id=prepared.period_close_id,
+        metric_version_ids=[prepared.compiled.metric_version_id],
+        columns=[
+            {"name": name, "type": "numeric" if name == "value" else "text"}
+            for name in prepared.compiled.columns
+        ],
+        rows=prepared.period_rows or [],
     )
     if not outcome.ok:
         name = prepared.source.name
@@ -565,6 +586,45 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
     await _answer(event, question_id, prepared, outcome)
 
 
+async def _record_unmapped(
+    event: Event, data_space_id: uuid.UUID, question_text: str, phrases: list[str]
+) -> None:
+    """Write review evidence through the context owner role, not the QA read role."""
+    async with scoped_session("svc_context", event.org_id, event.payload.get("user_id")) as session:
+        for phrase in dict.fromkeys(phrases):
+            phrase_norm = norm(phrase)
+            if not phrase_norm:
+                continue
+            unmapped = await session.scalar(
+                select(context.UnmappedPhrase)
+                .where(
+                    context.UnmappedPhrase.org_id == event.org_id,
+                    context.UnmappedPhrase.data_space_id == data_space_id,
+                    context.UnmappedPhrase.phrase_norm == phrase_norm,
+                    context.UnmappedPhrase.status == "open",
+                )
+                .with_for_update()
+            )
+            if unmapped is None:
+                session.add(
+                    context.UnmappedPhrase(
+                        id=uuid7(),
+                        org_id=event.org_id,
+                        data_space_id=data_space_id,
+                        phrase_norm=phrase_norm,
+                        sample_questions=[question_text],
+                        ask_count=1,
+                    )
+                )
+            else:
+                unmapped.ask_count += 1
+                samples = list(unmapped.sample_questions or [])
+                if question_text not in samples and len(samples) < 5:
+                    samples.append(question_text)
+                unmapped.sample_questions = samples
+                unmapped.last_seen_at = datetime.datetime.now(datetime.UTC)
+
+
 async def _understand_and_plan(
     event: Event, question_id: uuid.UUID, edited_plan_id: uuid.UUID | None
 ) -> Prepared | None:
@@ -587,12 +647,30 @@ async def _understand_and_plan(
         conversation = await session.get(qa.Conversation, question.conversation_id)
         assert conversation is not None
         space_id, user_id = conversation.data_space_id, conversation.user_id
+        knowledge_hint = find_knowledge_hint(question.text)
+        if knowledge_hint is not None and question.knowledge_mode == "latest":
+            # The explicit API field wins.  Only infer from prose when the caller left the
+            # default in place; this prevents a UI chip from being overwritten by text.
+            question.knowledge_mode = knowledge_hint.mode
         today = question.as_of or datetime.date.today()
         layer = await load(session, space_id)
+        space_access_problem = None
+        if not await can_ask_data_space(
+            session, data_space_id=space_id, principal_id=user_id
+        ):
+            space_access_problem = Refusal.of(
+                ErrorCode.ACCESS_DENIED,
+                message="Bạn không thuộc Data Space hoặc chưa được cấp quyền hỏi dữ liệu.",
+                detail_id=str(question.id),
+            )
         # R1-06: "so với tháng trước" is read first and taken out of the text, or "tháng trước"
         # would be read as the period asked.
         found = find_comparison(question.text) if edited is None else None
         asked = found.rest if found is not None else question.text
+        if knowledge_hint is not None:
+            asked = re.sub(
+                rf"\b{re.escape(knowledge_hint.span)}\b", " ", norm(asked), count=1
+            )
         compare_to = (
             found.compare_to
             if found is not None
@@ -626,14 +704,26 @@ async def _understand_and_plan(
             if edited is not None
             else understand(asked, layer.vocabulary, today=today)
         )
+        # AC-07-09-02 / BR-80: keep a bounded, tenant- and Data-Space-scoped trail of phrases
+        # the rule pass could not place. This is context data for steward review, never prompt
+        # context; the context owner role writes it because QA is intentionally read-only there.
+        if edited is None and u.unmapped:
+            await _record_unmapped(event, space_id, question.text, u.unmapped)
         if edited is None and u.decision == "unknown":
             # UC-01-04: "còn theo vùng thì sao?" reads against the question before it.
             u = follow_up(
                 u, await _previous_chips(session, question), layer.vocabulary, question=asked
             )
+        access_problem: Refusal | None = space_access_problem
+        if u.metric is not None and u.metric.metric_id in layer.blocked_metric_ids:
+            access_problem = Refusal.of(
+                ErrorCode.ACCESS_DENIED,
+                message="Bạn không có quyền xem dữ liệu cần cho câu hỏi này.",
+                detail_id=str(question.id),
+            )
         models: list[dict[str, Any]] = []
         model = gateway()
-        if edited is None and u.decision == "unknown" and model is not None:
+        if access_problem is None and edited is None and u.decision == "unknown" and model is not None:
             # The rule pass placed no metric: the fast model reads it against this catalogue.
             read = await llm_reader.read(
                 asked,
@@ -649,7 +739,7 @@ async def _understand_and_plan(
                 )
 
         compiled: c.Compiled | None = None
-        problem: Refusal | None = None
+        problem: Refusal | None = access_problem
         compile_request: c.Request | None = None
         if grain is not None and u.decision == "proceed" and u.metric is not None:
             # The cut is along the metric's own time; a metric without one is not cut by month
@@ -683,6 +773,11 @@ async def _understand_and_plan(
                 filters=u.filters,
                 period=c.Period(u.period.start, u.period.end) if u.period else None,
                 grain=grain,
+                top_n=u.top_n,
+                top_desc=u.top_desc,
+                knowledge_at=question.knowledge_at
+                if question.knowledge_mode == "at"
+                else None,
             )
             try:
                 # Compile once to discover the dataset/source, then regenerate in that source's
@@ -698,6 +793,110 @@ async def _understand_and_plan(
         explain_by = (
             _explain_cut(u, layer) if problem is None and _WHY.search(norm(question.text)) else None
         )
+        period_close_id: uuid.UUID | None = None
+        period_rows: list[list[Any]] | None = None
+        period_result_ids: list[uuid.UUID] | None = None
+        filed_period_label: str | None = None
+        filed_rows: list[dict[str, Any]] | None = None
+        if problem is None and question.knowledge_mode == "period_close":
+            if u.period is None:
+                problem = Refusal.of(
+                    ErrorCode.WRONG_PERIOD,
+                    message="Hỏi theo số đã nộp cần nêu rõ kỳ chốt.",
+                    detail_id=str(question.id),
+                )
+            else:
+                label = f"{u.period.start:%Y-%m}"
+                closed = await session.scalar(
+                    select(period.PeriodClose)
+                    .where(
+                        period.PeriodClose.org_id == event.org_id,
+                        period.PeriodClose.data_space_id == space_id,
+                        period.PeriodClose.period_label == label,
+                        period.PeriodClose.status.in_(("closed", "filed")),
+                    )
+                    .order_by(period.PeriodClose.version.desc())
+                    .limit(1)
+                )
+                if closed is None:
+                    problem = Refusal.of(
+                        ErrorCode.NO_DATA_FOR_PERIOD,
+                        message=f"Không có kỳ đã chốt cho {label}; không trả số theo dữ liệu hiện tại.",
+                        detail_id=str(question.id),
+                    )
+                else:
+                    question.as_of = closed.business_date
+                    published = (
+                        await session.scalars(
+                            select(period.PublishedResult)
+                            .where(
+                                period.PublishedResult.org_id == event.org_id,
+                                period.PublishedResult.period_close_id == closed.id,
+                                period.PublishedResult.metric_version_id
+                                == compiled.metric_version_id,
+                            )
+                            .order_by(period.PublishedResult.id)
+                        )
+                    ).all()
+                    if not published:
+                        problem = Refusal.of(
+                            ErrorCode.NO_DATA_FOR_PERIOD,
+                            message=f"Kỳ {label} chưa có số đã nộp cho chỉ số này.",
+                            detail_id=str(question.id),
+                        )
+                    else:
+                        period_close_id = closed.id
+                        period_rows = [
+                            [
+                                *[
+                                    (row.dimension_key or {}).get(column)
+                                    for column in compiled.columns
+                                    if column != "value"
+                                ],
+                                str(row.value),
+                            ]
+                            for row in published
+                        ]
+                        period_result_ids = [row.id for row in published]
+        elif problem is None and question.knowledge_mode == "latest" and u.period is not None:
+            # BR-39 / AC-10-01-02: a dated question without an explicit mode compares the
+            # live result with the filed result when the period has one. Missing filed history
+            # is not an error: the answer remains explicitly current-data only.
+            label = f"{u.period.start:%Y-%m}"
+            closed = await session.scalar(
+                select(period.PeriodClose)
+                .where(
+                    period.PeriodClose.org_id == event.org_id,
+                    period.PeriodClose.data_space_id == space_id,
+                    period.PeriodClose.period_label == label,
+                    period.PeriodClose.status.in_(("closed", "filed")),
+                )
+                .order_by(period.PeriodClose.version.desc())
+                .limit(1)
+            )
+            if closed is not None:
+                published = (
+                    await session.scalars(
+                        select(period.PublishedResult)
+                        .where(
+                            period.PublishedResult.org_id == event.org_id,
+                            period.PublishedResult.period_close_id == closed.id,
+                            period.PublishedResult.metric_version_id
+                            == compiled.metric_version_id,
+                        )
+                        .order_by(period.PublishedResult.id)
+                    )
+                ).all()
+                if published:
+                    filed_period_label = label
+                    filed_rows = [
+                        {
+                            "id": row.id,
+                            "value": row.value,
+                            "dimensions": row.dimension_key or {},
+                        }
+                        for row in published
+                    ]
         if edited is not None:
             # The person's chips stay as they wrote them; the plan gains its steps.
             plan_id = edited.id
@@ -709,6 +908,7 @@ async def _understand_and_plan(
                 _dimension_name(layer, explain_by),
                 compare_to,
                 grain,
+                question.knowledge_mode,
             )
             edited.confidence = decimal.Decimal(str(round(u.confidence, 4)))
         else:
@@ -746,6 +946,7 @@ async def _understand_and_plan(
                         _dimension_name(layer, explain_by),
                         compare_to,
                         grain,
+                        question.knowledge_mode,
                     ),
                     confidence=decimal.Decimal(str(round(u.confidence, 4))),
                 )
@@ -820,6 +1021,11 @@ async def _understand_and_plan(
                 and compile_request.period is not None
                 else None,
                 models=models,
+                period_close_id=period_close_id,
+                period_rows=period_rows,
+                period_result_ids=period_result_ids,
+                filed_period_label=filed_period_label,
+                filed_rows=filed_rows,
             )
 
     if u.decision == "clarify":
@@ -1103,7 +1309,11 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                     f.display_state, f.value = "not_available", None
         filters_label = ", ".join(chip.label for chip in u.chips if chip.kind == "filter") or None
         latest_note = (
-            None if u.period else "Không nêu kỳ: số liệu là dữ liệu mới nhất có trong nguồn."
+            "Số này được tính trên dữ liệu hiện tại; không có bản chốt đã nộp cho kỳ được hỏi."
+            if u.period and not p.filed_rows
+            else None
+            if u.period
+            else "Không nêu kỳ: số liệu là dữ liệu mới nhất có trong nguồn."
         )
         # What the table and chart show, by arithmetic: each number a figure with its expression.
         ins = (
@@ -1124,7 +1334,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                 metric_name=p.metric_name,
                 unit=p.version.unit,
                 decimals=p.version.decimals,
-                additive=p.additive,
+                additive=p.additive and u.top_n is None,
             )
         )
         if threshold is not None:
@@ -1136,8 +1346,65 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             )
             ins.figures += against.figures
             ins.sentences += against.sentences
+        filed_figures: list[Figure] = []
+        filed_items: list[dict[str, str]] = []
+        if p.filed_rows:
+            by_dimensions = {tuple(sorted(f.dimensions.items())): f for f in figures}
+            for row in p.filed_rows:
+                dimensions = {str(k): str(v) for k, v in row["dimensions"].items()}
+                current = by_dimensions.get(tuple(sorted(dimensions.items())))
+                if current is None and not dimensions and len(figures) == 1:
+                    current = figures[0]
+                if current is None or current.value is None:
+                    continue
+                filed_key = f"F{len(figures) + len(ins.figures) + len(filed_figures) + 1}"
+                filed_value = decimal.Decimal(str(row["value"]))
+                filed_figures.append(
+                    Figure(
+                        filed_key,
+                        f"{p.metric_name} — đã nộp {p.filed_period_label}",
+                        filed_value,
+                        p.version.unit,
+                        p.version.decimals,
+                        len(filed_figures),
+                        "value",
+                        dimensions=dimensions,
+                        published_result_id=str(row["id"]),
+                        comparison_only=True,
+                    )
+                )
+                delta_key = f"F{len(figures) + len(ins.figures) + len(filed_figures) + 1}"
+                ins.figures.append(
+                    Figure(
+                        delta_key,
+                        f"Chênh lệch hiện tại so với đã nộp {p.filed_period_label}",
+                        current.value - filed_value,
+                        p.version.unit,
+                        p.version.decimals,
+                        -1,
+                        "value",
+                        dimensions=dimensions,
+                        expr=f"{current.key} - {filed_key}",
+                        signed=True,
+                        comparison_only=True,
+                    )
+                )
+                filed_items.append(
+                    {
+                        "current": str(current.value),
+                        "filed": str(filed_value),
+                        "delta": str(current.value - filed_value),
+                        "published_result_id": str(row["id"]),
+                    }
+                )
+                ins.sentences.append(
+                    f"Số hiện tại tại mốc dữ liệu được truy vấn là {{{{{current.key}}}}}, "
+                    f"số đã nộp của kỳ {p.filed_period_label} là {{{{{filed_key}}}}}; "
+                    f"chênh lệch hiện tại so với đã nộp là {{{{{delta_key}}}}}."
+                )
         compute_run_id = uuid7() if ins.figures else None
         every = figures + ins.figures
+        every.extend(filed_figures)
         text = text_of(
             figures,
             metric_name=p.metric_name,
@@ -1152,6 +1419,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             filters_label=filters_label,
             latest_note=latest_note,
             truncated=outcome.truncated,
+            top_n=u.top_n,
             insights=written(ins.sentences, every) or None,
         )
         shown = [f for f in every if f.display_state == "shown"]
@@ -1193,6 +1461,22 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
         lineage = hashlib.sha256(
             f"{p.compiled.sql_sha256}:{outcome.result_hash}".encode()
         ).hexdigest()
+        governance_tables = [
+            {
+                "table": f"{dataset.schema_name}.{dataset.table_name}",
+                "classification": "internal",
+                "last_crawled_at": dataset.updated_at.isoformat()
+                if dataset.updated_at
+                else None,
+            }
+            for dataset_id, dataset in p.datasets.items()
+            if dataset_id in p.compiled.dataset_ids
+        ]
+        answer_provenance = {
+            "status": state if state in {"fresh", "overdue", "missing"} else "unknown",
+            "classification": "internal",
+            "tables": governance_tables,
+        }
         session.add(
             qa.Answer(
                 id=answer_id,
@@ -1207,9 +1491,23 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                         str(p.compiled.metric_version_id),
                         trust,
                         compute_run_id=str(compute_run_id) if compute_run_id else None,
+                        provenance=answer_provenance,
                     )
                     for f in every
                 ],
+                filed_vs_current=(
+                    {"period": p.filed_period_label, "items": filed_items}
+                    if filed_items
+                    else None
+                ),
+                reconcile_badge=(
+                    "matched_filed"
+                    if filed_items
+                    and all(decimal.Decimal(item["delta"]) == 0 for item in filed_items)
+                    else "differs_from_filed"
+                    if filed_items
+                    else None
+                ),
                 number_check=check,
                 chart_spec=chart_spec_of(
                     figures,
@@ -1310,11 +1608,18 @@ async def _seal_receipt(
     certified = (
         v.status == "certified" and v.certified_by is not None and v.certified_at is not None
     )
+    raw_index = 0
     for f in figures:
         if f.display_state == "not_available" and state != "missing":
             # An empty cell of fresh data (a member with no row in one compared period) states
             # no number; D4 keeps not_available for data that is missing, so it is not sealed.
             continue
+        published_result_id = None
+        if getattr(f, "published_result_id", None) is not None:
+            published_result_id = uuid.UUID(f.published_result_id)
+        elif p.period_result_ids and not f.expr and raw_index < len(p.period_result_ids):
+            published_result_id = p.period_result_ids[raw_index]
+            raw_index += 1
         session.add(
             qa.AnswerReceiptFigure(
                 id=uuid7(),
@@ -1334,9 +1639,16 @@ async def _seal_receipt(
                 metric_certified_at=v.certified_at if certified else None,
                 # A derived figure is the in-process computation over the others (G5.10): its
                 # expression's hash, so a replay recomputes it rather than reading a row.
-                source_kind="compute_run" if f.expr else "query_run",
-                query_run_id=None if f.expr else outcome.query_run_id,
+                source_kind=(
+                    "compute_run"
+                    if f.expr
+                    else "period_result"
+                    if published_result_id is not None
+                    else "query_run"
+                ),
+                query_run_id=None if f.expr or published_result_id is not None else outcome.query_run_id,
                 compute_run_id=compute_run_id if f.expr else None,
+                published_result_id=published_result_id,
                 expr_sha256=hashlib.sha256(f.expr.encode()).hexdigest() if f.expr else None,
                 compiled_sql_sha256=None if f.expr else p.compiled.sql_sha256,
                 result_sha256=outcome.result_hash,

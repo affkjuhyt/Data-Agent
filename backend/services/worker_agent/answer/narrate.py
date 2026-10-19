@@ -37,6 +37,8 @@ class Figure:
     # whether it reads as a change (+/-).
     expr: str | None = None
     signed: bool = False
+    published_result_id: str | None = None
+    comparison_only: bool = False
 
     def as_json(
         self,
@@ -44,11 +46,14 @@ class Figure:
         metric_version_id: str,
         trust: str,
         compute_run_id: str | None = None,
+        provenance: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         # G5.15: a figure's source is {query_run_id, row, col} or {compute_run_id, expr}.
         source: dict[str, Any] = (
             {"compute_run_id": compute_run_id, "expr": self.expr}
             if self.expr
+            else {"published_result_id": self.published_result_id, "row": self.row, "col": self.column}
+            if self.published_result_id
             else {"query_run_id": query_run_id, "row": self.row, "col": self.column}
         )
         return {
@@ -60,10 +65,12 @@ class Figure:
             "dimensions": self.dimensions,
             "display_state": self.display_state,
             "source": source,
-            "query_run_id": None if self.expr else query_run_id,
+            "query_run_id": None if self.expr or self.published_result_id else query_run_id,
             "metric_version_id": metric_version_id,
             "trust": trust,
             "signed": self.signed,
+            "comparison_only": self.comparison_only,
+            "provenance": provenance,
         }
 
 
@@ -174,6 +181,7 @@ def text_of(
     filters_label: str | None,
     latest_note: str | None,
     truncated: bool,
+    top_n: int | None = None,
     insights: str | None = None,
 ) -> str:
     scope = " ".join(p for p in (filters_label, period_label) if p)
@@ -191,7 +199,8 @@ def text_of(
             if len(figures) > len(listed)
             else ""
         )
-        text = f"{head} theo {by}: {lines}{more}."
+        ranked = f"Top {top_n} " if top_n is not None else ""
+        text = f"{ranked}{head} theo {by}: {lines}{more}."
     if insights:
         text += f" {insights}"
     if latest_note:

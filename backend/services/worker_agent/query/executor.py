@@ -4,13 +4,17 @@ Every run is a query.query_run row, written as svc_query: `running` before the s
 then `succeeded`, `failed` or `timeout` with the row count, the duration and a hash of the result,
 plus up to 1 000 rows in query.query_result (30 days) for the answer's lineage and table preview.
 
-The source is reached with the credentials at its secret_ref, in a READ ONLY transaction with the
-source's own statement timeout (query_timeout_s, AC-01-01-03), after the guard admitted the SQL;
-at most BR-03's 10 000 rows come back, flagged `truncated` when there were more. The number of
-runs per source in this process is capped by source.max_concurrency.
+The source is reached with the credentials at its secret_ref, in a transaction that is rolled back,
+with the source's own statement timeout (query_timeout_s, AC-01-01-03), after the guard admitted
+the SQL. PostgreSQL and MySQL also mark that transaction READ ONLY; SQL Server has no read-only
+transaction, so there the guard and the rollback are the only barriers and the source login must
+be read-only (db_datareader). At most BR-03's 10 000 rows come back, flagged `truncated` when
+there were more. The number of runs per source in this process is capped by
+source.max_concurrency.
 
 PostgreSQL, MySQL and SQL Server sources are wired. The latter two use synchronous DB-API drivers
 inside a bounded worker thread: neither driver has to run on the worker-agent event loop.
+
 """
 
 from __future__ import annotations
@@ -27,11 +31,11 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import asyncpg
-from sqlalchemy import text, update
+from sqlalchemy import select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from libs.dataagent_db import scoped_session, uuid7
-from libs.dataagent_db.models import catalog
+from libs.dataagent_db.models import catalog, governance, org
 from libs.dataagent_db.models import query as q
 from services.worker_agent.query.guard import (
     SqlRejected,
@@ -40,7 +44,15 @@ from services.worker_agent.query.guard import (
     dialect_of,
     tables_of,
 )
-from services.worker_agent.query.scope import datasets_read, default_schema
+from services.worker_agent.query.scope import (
+    active_policies,
+    active_row_scopes,
+    apply_output_policies,
+    datasets_read,
+    default_schema,
+    rewrite_access_policies,
+    rewrite_row_scopes,
+)
 from services.worker_agent.query.secrets import SecretReader, SecretUnavailable
 
 ROLE = "svc_query"
@@ -223,6 +235,8 @@ def _sqlserver_sync(
         )
         try:
             with conn.cursor() as cursor:
+                # No READ ONLY transaction exists in T-SQL: the rollback below undoes a write the
+                # guard missed, and the source login is expected to be db_datareader.
                 cursor.execute("BEGIN TRANSACTION")
                 cursor.execute(sql)
                 result = _rows(cursor)
@@ -290,6 +304,8 @@ async def run_query(
     outcome = QueryOutcome(query_run_id=run_id, status="failed", sql=sql)
     executed = sql
     tables: set[tuple[str | None, str]] = set()
+    output_policies: list[governance.AccessPolicy] = []
+    applied_policy_ids: list[uuid.UUID] = []
     try:
         dialect = dialect_of(source.kind)
         tree = check_read_only(sql, dialect)
@@ -298,14 +314,45 @@ async def run_query(
     except SqlRejected as exc:
         outcome.error = str(exc)
     async with scoped_session(ROLE, org_id, principal_id) as session:
+        readable_datasets: list[catalog.Dataset] = []
         if outcome.error is None:
             try:
-                await datasets_read(
+                readable_datasets = await datasets_read(
                     session,
                     data_space_id=data_space_id,
                     principal_id=principal_id,
                     source=source,
                     tables=tables,
+                )
+                policies = await active_policies(
+                    session,
+                    principal_id=principal_id,
+                    datasets=readable_datasets,
+                )
+                output_policies = [
+                    policy for policy in policies if policy.kind in {"column", "mask"}
+                ]
+                applied_policy_ids = [policy.id for policy in policies]
+                user = await session.scalar(
+                    select(org.AppUser).where(org.AppUser.id == principal_id)
+                )
+                if user is None:
+                    raise SqlRejected("query principal is not an organisation user")
+                executed = rewrite_access_policies(
+                    executed,
+                    dialect=dialect,
+                    policies=[policy for policy in policies if policy.kind == "row"],
+                    user=user,
+                    datasets=readable_datasets,
+                )
+                executed = rewrite_row_scopes(
+                    executed,
+                    dialect=dialect,
+                    scopes=await active_row_scopes(
+                        session,
+                        data_space_id=data_space_id,
+                        principal_id=principal_id,
+                    ),
                 )
             except SqlRejected as exc:
                 outcome.error = str(exc)
@@ -315,6 +362,7 @@ async def run_query(
             "sql_executed": "" if private else executed,
             "status": "failed" if outcome.error else "running",
             "error": _stored_error(outcome, private),
+            "policies_applied": applied_policy_ids,
         }
         if existing:
             if metric_version_ids:
@@ -349,9 +397,13 @@ async def run_query(
                     # Upload tables are materialized in the private workspace schema. The SQL
                     # editor deliberately uses unqualified table names, so make resolution agree
                     # with the scope checker without exposing any other schema to the query.
-                    await local_session.execute(text("SET LOCAL search_path TO workspace, pg_catalog"))
+                    await local_session.execute(
+                        text("SET LOCAL search_path TO workspace, pg_catalog")
+                    )
                     result = await local_session.execute(text(executed))
-                    columns = [{"name": column, "type": "unknown"} for column in tuple(result.keys())]
+                    columns = [
+                        {"name": column, "type": "unknown"} for column in tuple(result.keys())
+                    ]
                     rows = [[_plain(value) for value in row] for row in result.fetchall()]
             else:
                 credentials = await secrets.read(org_id, source.secret_ref)
@@ -362,6 +414,7 @@ async def run_query(
                     timeout=timeout_s + 5,
                 )
         outcome.truncated = len(rows) > limit
+        columns, rows = apply_output_policies(columns, rows, output_policies)
         outcome.rows = rows[:limit]
         outcome.columns = columns
         outcome.result_hash = _hash(columns, outcome.rows)
@@ -405,3 +458,63 @@ async def run_query(
                 )
             )
     return outcome
+
+
+async def record_period_snapshot(
+    *,
+    org_id: uuid.UUID,
+    data_space_id: uuid.UUID,
+    principal_id: uuid.UUID,
+    caller_id: uuid.UUID,
+    period_close_id: uuid.UUID,
+    metric_version_ids: Sequence[uuid.UUID],
+    columns: list[dict[str, str]],
+    rows: list[list[Any]],
+) -> QueryOutcome:
+    """Record a read-only answer sourced from ``period.published_result``.
+
+    A filed period is not a live query.  It still gets a normal query-run/result pair so the
+    answer, receipt and API lineage have one stable reference, but no source connection is
+    touched and the route is explicit in the query ledger.
+    """
+    run_id = uuid7()
+    result_hash = _hash(columns, rows)
+    async with scoped_session(ROLE, org_id, principal_id) as session:
+        session.add(
+            q.QueryRun(
+                id=run_id,
+                org_id=org_id,
+                data_space_id=data_space_id,
+                caller_kind="question",
+                caller_id=caller_id,
+                principal_id=principal_id,
+                source_id=None,
+                route="period_snapshot",
+                period_close_id=period_close_id,
+                sql_generated="",
+                sql_executed="",
+                metric_version_ids=list(metric_version_ids),
+                status="succeeded",
+                row_count=len(rows),
+                result_hash=result_hash,
+                duration_ms=0,
+            )
+        )
+        session.add(
+            q.QueryResult(
+                id=uuid7(),
+                org_id=org_id,
+                query_run_id=run_id,
+                columns=columns,
+                rows=rows[:STORED_ROWS],
+                truncated=len(rows) > STORED_ROWS,
+            )
+        )
+    return QueryOutcome(
+        query_run_id=run_id,
+        status="succeeded",
+        columns=columns,
+        rows=rows,
+        truncated=len(rows) > STORED_ROWS,
+        result_hash=result_hash,
+    )

@@ -25,8 +25,10 @@ from sqlalchemy import text
 
 from libs.dataagent_db import unscoped_session
 from services.worker_agent import (
+    eval_runs,
     exports,
     hitl,
+    policy_backtests,
     private,
     proposals,
     query_runs,
@@ -74,6 +76,8 @@ HANDLERS: dict[str, Handler] = {
     **exports.HANDLERS,
     **runs.HANDLERS,
     **skill_runs.HANDLERS,
+    **policy_backtests.HANDLERS,
+    **eval_runs.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -108,6 +112,10 @@ async def sources() -> list[EventSource]:
             types |= set(source_tests.HANDLERS) | set(schema_scans.HANDLERS)
         if schema == "query":
             types |= set(query_runs.HANDLERS)
+        if schema == "governance":
+            types |= set(policy_backtests.HANDLERS)
+        if schema == "eval":
+            types |= set(eval_runs.HANDLERS)
         if schema == "workspace":
             types |= set(tiles.HANDLERS)
         if schema == "skill":
@@ -118,6 +126,8 @@ async def sources() -> list[EventSource]:
             types |= {proposals.WRITEBACK}
         if schema == "ingest":
             types |= set(uploads.HANDLERS)
+        if schema == "context":
+            types |= {eval_runs.DATA_PRODUCT_SUBMITTED}
         if schema == "agent":
             # The one consumer of run.status_changed: the run executor (runs.py, ADR-37 stand-in).
             types |= set(runs.HANDLERS)

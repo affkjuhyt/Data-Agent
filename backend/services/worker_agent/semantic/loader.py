@@ -14,8 +14,10 @@ from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlglot import exp, parse_one
+from sqlglot.errors import ParseError
 
-from libs.dataagent_db.models import catalog, context
+from libs.dataagent_db.models import catalog, context, governance
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.understand.resolver import (
     DimensionEntry,
@@ -32,6 +34,7 @@ class SpaceLayer:
     versions: dict[uuid.UUID, c.MetricVersion]  # metric id → version in force
     version_rows: dict[uuid.UUID, context.MetricVersion]  # metric id → its row (receipt fields)
     datasets: dict[uuid.UUID, catalog.Dataset]
+    blocked_metric_ids: frozenset[uuid.UUID]
 
 
 async def load(session: AsyncSession, space_id: uuid.UUID) -> SpaceLayer:
@@ -44,12 +47,31 @@ async def load(session: AsyncSession, space_id: uuid.UUID) -> SpaceLayer:
         )
     ).all()
     dataset_ids = {e.primary_dataset_id for e in entities}
+    active_column_policies = (
+        await session.scalars(
+            select(governance.AccessPolicy).where(
+                governance.AccessPolicy.data_space_id == space_id,
+                governance.AccessPolicy.status == "active",
+                governance.AccessPolicy.kind.in_(("column", "mask")),
+                governance.AccessPolicy.dataset_id.in_(dataset_ids),
+            )
+        )
+    ).all()
+    protected_dataset_ids = {
+        policy.dataset_id for policy in active_column_policies if policy.kind == "column"
+    }
+    restricted_columns = {
+        policy.dataset_id: {str(column).lower() for column in policy.columns or []}
+        for policy in active_column_policies
+        if policy.kind == "mask"
+    }
     datasets = {
         d.id: d
         for d in (
             await session.scalars(
                 select(catalog.Dataset).where(
-                    catalog.Dataset.id.in_(dataset_ids), catalog.Dataset.enabled.is_(True)
+                    catalog.Dataset.id.in_(dataset_ids - protected_dataset_ids),
+                    catalog.Dataset.enabled.is_(True),
                 )
             )
         ).all()
@@ -59,6 +81,8 @@ async def load(session: AsyncSession, space_id: uuid.UUID) -> SpaceLayer:
             e.primary_dataset_id,
             datasets[e.primary_dataset_id].schema_name,
             datasets[e.primary_dataset_id].table_name,
+            datasets[e.primary_dataset_id].history_kind,
+            datasets[e.primary_dataset_id].knowledge_time_col,
         )
         for e in entities
         if e.primary_dataset_id in datasets
@@ -126,6 +150,38 @@ async def load(session: AsyncSession, space_id: uuid.UUID) -> SpaceLayer:
     # The catalog type of each column a dimension names directly: a time column stored as text
     # is compared as text (compiler._text_bounds). An expression is not a column, so it has none.
     entity_dataset = {e.id: e.primary_dataset_id for e in entities}
+    measures_by_code = {m.code: m for m in measures}
+    blocked_metric_ids: set[uuid.UUID] = set()
+    for metric_id, version in version_rows.items():
+        try:
+            columns = parse_one(version.expression).find_all(exp.Column)
+        except ParseError:
+            columns = ()
+        restricted = False
+        for column in columns:
+            measure = measures_by_code.get(column.name)
+            if measure is None:
+                continue
+            dataset_id = entity_dataset.get(measure.entity_id)
+            if dataset_id in protected_dataset_ids:
+                restricted = True
+                break
+            if dataset_id not in restricted_columns:
+                continue
+            try:
+                measure_columns = parse_one(measure.expression).find_all(exp.Column)
+            except ParseError:
+                restricted = True
+                break
+            if any(
+                physical.name.lower() in restricted_columns[dataset_id]
+                for physical in measure_columns
+            ):
+                restricted = True
+                break
+        if restricted:
+            blocked_metric_ids.add(metric_id)
+    blocked_metric_ids = frozenset(blocked_metric_ids)
     column_types = {
         (col.dataset_id, col.name): col.normalized_type
         for col in (
@@ -203,4 +259,4 @@ async def load(session: AsyncSession, space_id: uuid.UUID) -> SpaceLayer:
             for j in joins
         ),
     )
-    return SpaceLayer(vocabulary, layer, versions, version_rows, datasets)
+    return SpaceLayer(vocabulary, layer, versions, version_rows, datasets, blocked_metric_ids)

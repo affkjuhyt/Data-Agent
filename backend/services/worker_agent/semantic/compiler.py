@@ -63,6 +63,8 @@ class Table:
     dataset_id: uuid.UUID
     schema: str | None
     name: str
+    history_kind: str = "none"
+    knowledge_time_col: str | None = None
 
 
 @dataclass(frozen=True)
@@ -134,6 +136,9 @@ class Request:
     period: Period | None = None
     # The grain of a cut along time ("theo tháng"); None: the metric version's time_grain.
     grain: str | None = None
+    top_n: int | None = None
+    top_desc: bool = True
+    knowledge_at: datetime.datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -440,6 +445,17 @@ def _side(
         select = select.select(exp.alias_(expr, name, quoted=True))
 
     conditions: list[exp.Expression] = []
+    if request.knowledge_at is not None:
+        if base.history_kind not in {"temporal", "scd2"} or not base.knowledge_time_col:
+            raise CompileError(
+                "CONTRACT_MISMATCH",
+                f"bảng {base.name} chưa khai báo cột thời điểm ghi nhận cho hỏi tại mốc.",
+            )
+        knowledge_when = _qualify(base.knowledge_time_col, "t0")
+        knowledge_value = exp.cast(
+            exp.Literal.string(request.knowledge_at.isoformat()), "TIMESTAMP"
+        )
+        conditions.append(exp.LTE(this=knowledge_when, expression=knowledge_value))
     # The metric's own default filters were set by its owner; the question's go through BR-81.
     filters: list[tuple[str, Sequence[object], bool]] = []
     for code in request.filters:
@@ -533,6 +549,10 @@ def time_dimension_of(metric: MetricVersion, layer: Layer) -> Dimension | None:
 def _ordered(select: exp.Select, request: Request, dims: Sequence[exp.Expression]) -> exp.Select:
     if not dims:
         return select
+    if request.top_n is not None:
+        value_order = exp.column("value", quoted=True)
+        select = select.order_by(value_order.desc() if request.top_desc else value_order.asc())
+        return select.limit(request.top_n)
     return select.order_by(*[d.copy() for d in dims])
 
 
