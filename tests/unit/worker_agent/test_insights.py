@@ -107,8 +107,16 @@ def test_br178_nothing_is_derived_from_a_masked_figure() -> None:
 
 
 def test_additive_only_for_one_summed_or_counted_measure() -> None:
-    measures = {"du_no": "SUM(balance)", "so_kh": "count(distinct id)", "lai": "AVG(rate)"}
+    measures = {
+        "du_no": "SUM(balance)",
+        "so_hd": "count(id)",
+        "so_kh": "count(distinct id)",
+        "lai": "AVG(rate)",
+    }
     assert is_additive("du_no", measures)
-    assert is_additive(" so_kh ", measures)
+    assert is_additive(" so_hd ", measures)
+    # A customer counted in two regions is one customer in the total: shares of a distinct
+    # count do not add up to 100 % (semantic/analysis.is_additive agrees).
+    assert not is_additive("so_kh", measures)
     assert not is_additive("lai", measures)
     assert not is_additive("no_xau / du_no * 100", measures)

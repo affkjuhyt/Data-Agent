@@ -12,8 +12,8 @@ from libs.ingestion.prompts import SILVER_SYSTEM_PROMPTS as SYSTEM_PROMPTS
 
 log = logging.getLogger(__name__)
 
-_JSON_FENCE = re.compile(r"```(?:json)?\\s*([\\s\\S]*?)```", re.IGNORECASE)
-_JSON_OBJ = re.compile(r"\\{[\\s\\S]*\\}", re.DOTALL)
+_JSON_FENCE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
+_JSON_OBJ = re.compile(r"\{[\s\S]*\}", re.DOTALL)
 
 
 async def _llm_generate_json(

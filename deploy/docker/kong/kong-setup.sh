@@ -315,12 +315,11 @@ KONG_REFRESH=300
 # Injected as X-Gateway-Key on every JWT-verified request so an upstream can
 # distinguish "Kong verified this" from "a caller reached my port and typed
 # X-Kong-Verified: true". MUST equal the upstream's KB_GATEWAY_KEY — set both
-# from the same value in .env. Empty (the default) reproduces the previous
-# behaviour: the plugin omits the header and upstreams keep trusting
-# X-Kong-Verified alone, which is only safe if nothing but Kong can reach them.
+# from the same value in .env. Empty: the plugin omits the header and upstreams
+# refuse X-Kong-Verified (401) unless they run with GATEWAY_KEY_OPTIONAL=true.
 KONG_GATEWAY_KEY="${GATEWAY_KEY:-${KB_GATEWAY_KEY:-}}"
 if [ -z "$KONG_GATEWAY_KEY" ]; then
-  echo "⚠️  GATEWAY_KEY is empty — upstreams will accept X-Kong-Verified without proof it came from Kong."
+  echo "⚠️  GATEWAY_KEY is empty — upstreams will refuse Kong traffic unless they set GATEWAY_KEY_OPTIONAL=true."
 fi
 # aeroflow-jwks' `gateway_key` field, when present, must be non-empty (schema:
 # len_min=1) — so omit the key entirely rather than send "" when unset.

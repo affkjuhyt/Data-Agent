@@ -25,6 +25,9 @@ import re
 import statistics
 from dataclasses import dataclass, field
 
+from sqlglot import exp, parse_one
+from sqlglot.errors import ParseError
+
 from services.worker_agent.answer.narrate import Figure, shown_value
 
 PERCENT_DECIMALS = 1
@@ -34,7 +37,6 @@ OUTLIER_Z = decimal.Decimal("3.5")
 MAD_SCALE = decimal.Decimal("0.6745")
 
 _TAG = re.compile(r"\{\{\s*(F\d+)\s*\}\}")
-_ADDITIVE = re.compile(r"^\s*(?:SUM|COUNT)\s*\(", re.IGNORECASE)
 _CODE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -87,9 +89,20 @@ def written(sentences: list[str], figures: list[Figure]) -> str:
 
 
 def is_additive(expression: str, measures: dict[str, str]) -> bool:
-    """One measure code whose aggregate is SUM or COUNT adds up across members."""
+    """One measure code whose aggregate is SUM or COUNT (not DISTINCT) adds up across members.
+
+    Read from the AST, as semantic/analysis.is_additive does: a prefix regex took
+    COUNT(DISTINCT x) for additive and produced shares of distinct counts."""
     code = expression.strip()
-    return bool(_CODE.match(code)) and bool(_ADDITIVE.match(measures.get(code, "")))
+    if not _CODE.match(code) or code not in measures:
+        return False
+    try:
+        measure = parse_one(measures[code])
+    except ParseError:
+        return False
+    if isinstance(measure, exp.Sum):
+        return True
+    return isinstance(measure, exp.Count) and not isinstance(measure.this, exp.Distinct)
 
 
 class Builder:
