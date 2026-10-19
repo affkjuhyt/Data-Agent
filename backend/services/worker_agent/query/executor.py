@@ -15,6 +15,15 @@ source.max_concurrency.
 PostgreSQL, MySQL and SQL Server sources are wired. The latter two use synchronous DB-API drivers
 inside a bounded worker thread: neither driver has to run on the worker-agent event loop.
 
+A result is reused for a while (the Holistics review: cache by the generated SQL). The key is
+what decides the rows: the source, the SQL as executed (after the row policies and scopes bound
+the asker's attributes into it, and with its row cap), the column and mask policies applied to the
+result, and the as-of date. A succeeded run with that key, younger than QUERY_CACHE_TTL_S (600 s;
+0 turns it off) and whose stored result is whole (at most STORED_ROWS, not truncated), answers
+without touching the source: the new run is recorded as usual, with that run named in result_ref
+("query_run:<id>"), and its own copy of the rows. Never reused: a private run (nothing of it is
+stored), and the callers that must read the source now: a tile refresh (UC-02-02), a receipt
+replay (it is how a changed source is detected), a period close and a pipeline.
 """
 
 from __future__ import annotations
@@ -24,6 +33,7 @@ import datetime
 import decimal
 import hashlib
 import json
+import os
 import time
 import uuid
 from collections.abc import Sequence
@@ -73,6 +83,54 @@ CallerKind = Literal[
     "receipt_replay",
     "ad_hoc",
 ]
+
+CACHEABLE_CALLERS = frozenset({"question", "agent_run", "skill_run", "eval", "ad_hoc"})
+CACHE_PREFIX = "query_run:"
+
+
+def cache_ttl() -> datetime.timedelta:
+    return datetime.timedelta(seconds=max(0, int(os.environ.get("QUERY_CACHE_TTL_S", "600"))))
+
+
+async def _cached(
+    session: Any,
+    *,
+    source_id: uuid.UUID,
+    executed: str,
+    policies: Sequence[uuid.UUID],
+    as_of: datetime.date | None,
+) -> tuple[q.QueryRun, q.QueryResult] | None:
+    """The newest succeeded run with the same key inside the TTL, with its whole stored result."""
+    ttl = cache_ttl()
+    if not ttl:
+        return None
+    since = datetime.datetime.now(datetime.UTC) - ttl
+    found = (
+        await session.execute(
+            select(q.QueryRun, q.QueryResult)
+            .join(q.QueryResult, q.QueryResult.query_run_id == q.QueryRun.id)
+            .where(
+                q.QueryRun.started_at >= since,
+                q.QueryRun.source_id == source_id,
+                q.QueryRun.status == "succeeded",
+                q.QueryRun.sql_executed == executed,
+                q.QueryRun.as_of.is_(None) if as_of is None else q.QueryRun.as_of == as_of,
+                q.QueryResult.truncated.is_(False),
+            )
+            .order_by(q.QueryRun.started_at.desc())
+            .limit(5)
+        )
+    ).all()
+    wanted = sorted(map(str, policies))
+    return next(
+        (
+            (run, result)
+            for run, result in found
+            if sorted(map(str, run.policies_applied or [])) == wanted
+        ),
+        None,
+    )
+
 
 _slots: dict[uuid.UUID, asyncio.Semaphore] = {}
 
@@ -357,6 +415,15 @@ async def run_query(
                 )
             except SqlRejected as exc:
                 outcome.error = str(exc)
+        hit: tuple[q.QueryRun, q.QueryResult] | None = None
+        if outcome.error is None and not private and caller_kind in CACHEABLE_CALLERS:
+            hit = await _cached(
+                session,
+                source_id=source.id,
+                executed=executed,
+                policies=applied_policy_ids,
+                as_of=as_of,
+            )
         recorded = {
             "source_id": source.id,
             "sql_generated": "" if private else sql,
@@ -390,48 +457,59 @@ async def run_query(
         return outcome
 
     timeout_s = int(source.query_timeout_s or 120)
-    try:
-        async with _slot(source):
-            if source.secret_ref == INTERNAL_WORKSPACE:
-                async with scoped_session(ROLE, org_id, principal_id) as local_session:
-                    await local_session.execute(text("SET TRANSACTION READ ONLY"))
-                    # Upload tables are materialized in the private workspace schema. The SQL
-                    # editor deliberately uses unqualified table names, so make resolution agree
-                    # with the scope checker without exposing any other schema to the query.
-                    await local_session.execute(
-                        text("SET LOCAL search_path TO workspace, pg_catalog")
-                    )
-                    result = await local_session.execute(text(executed))
-                    columns = [
-                        {"name": column, "type": "unknown"} for column in tuple(result.keys())
-                    ]
-                    rows = [[_plain(value) for value in row] for row in result.fetchall()]
-            else:
-                credentials = await secrets.read(org_id, source.secret_ref)
-                columns, rows = await asyncio.wait_for(
-                    driver_for(source.kind)(
-                        source, credentials.user, credentials.password, executed, timeout_s
-                    ),
-                    timeout=timeout_s + 5,
-                )
-        outcome.truncated = len(rows) > limit
-        columns, rows = apply_output_policies(columns, rows, output_policies)
-        outcome.rows = rows[:limit]
-        outcome.columns = columns
-        outcome.result_hash = _hash(columns, outcome.rows)
+    cache_ref: str | None = None
+    if hit is not None:
+        # The rows were read with the same SQL, policies and as-of moments ago (module doc).
+        earlier, stored = hit
+        cache_ref = f"{CACHE_PREFIX}{earlier.id}"
+        outcome.columns = list(stored.columns or [])
+        outcome.rows = [list(row) for row in stored.rows or []]
+        outcome.truncated = False
+        outcome.result_hash = earlier.result_hash or _hash(outcome.columns, outcome.rows)
         outcome.status = "succeeded"
-    except (asyncpg.QueryCanceledError, TimeoutError):
-        outcome.status = "timeout"
-        outcome.error = f"the query ran longer than the source allows ({timeout_s} s)"
-    except SecretUnavailable as exc:
-        outcome.error = str(exc)
-    except SourceDriverError as exc:
-        outcome.error = str(exc)
-    except SQLAlchemyError as exc:
-        outcome.error = f"local query failed ({type(exc).__name__})"
-    except (asyncpg.PostgresError, OSError) as exc:
-        # The source's own message, without the SQL text or values it may quote.
-        outcome.error = f"{type(exc).__name__}: {getattr(exc, 'sqlstate', '') or 'connection'}"
+    else:
+        try:
+            async with _slot(source):
+                if source.secret_ref == INTERNAL_WORKSPACE:
+                    async with scoped_session(ROLE, org_id, principal_id) as local_session:
+                        await local_session.execute(text("SET TRANSACTION READ ONLY"))
+                        # Upload tables are materialized in the private workspace schema. The SQL
+                        # editor deliberately uses unqualified table names, so make resolution agree
+                        # with the scope checker without exposing any other schema to the query.
+                        await local_session.execute(
+                            text("SET LOCAL search_path TO workspace, pg_catalog")
+                        )
+                        result = await local_session.execute(text(executed))
+                        columns = [
+                            {"name": column, "type": "unknown"} for column in tuple(result.keys())
+                        ]
+                        rows = [[_plain(value) for value in row] for row in result.fetchall()]
+                else:
+                    credentials = await secrets.read(org_id, source.secret_ref)
+                    columns, rows = await asyncio.wait_for(
+                        driver_for(source.kind)(
+                            source, credentials.user, credentials.password, executed, timeout_s
+                        ),
+                        timeout=timeout_s + 5,
+                    )
+            outcome.truncated = len(rows) > limit
+            columns, rows = apply_output_policies(columns, rows, output_policies)
+            outcome.rows = rows[:limit]
+            outcome.columns = columns
+            outcome.result_hash = _hash(columns, outcome.rows)
+            outcome.status = "succeeded"
+        except (asyncpg.QueryCanceledError, TimeoutError):
+            outcome.status = "timeout"
+            outcome.error = f"the query ran longer than the source allows ({timeout_s} s)"
+        except SecretUnavailable as exc:
+            outcome.error = str(exc)
+        except SourceDriverError as exc:
+            outcome.error = str(exc)
+        except SQLAlchemyError as exc:
+            outcome.error = f"local query failed ({type(exc).__name__})"
+        except (asyncpg.PostgresError, OSError) as exc:
+            # The source's own message, without the SQL text or values it may quote.
+            outcome.error = f"{type(exc).__name__}: {getattr(exc, 'sqlstate', '') or 'connection'}"
 
     async with scoped_session(ROLE, org_id, principal_id) as session:
         await session.execute(
@@ -442,6 +520,7 @@ async def run_query(
                 error=_stored_error(outcome, private),
                 row_count=len(outcome.rows) if outcome.ok else None,
                 result_hash=outcome.result_hash,
+                result_ref=cache_ref,
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
         )

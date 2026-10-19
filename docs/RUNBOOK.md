@@ -138,6 +138,19 @@ token, so sending your own identity headers is pointless.
 
 `make bench-e2e` breaks one real turn down per stage (`model/bench/e2e.py`).
 
+**Query result cache.** `worker-agent` reuses a query result for `QUERY_CACHE_TTL_S` seconds
+(default 600; `0` turns it off) when the source, the executed SQL (after row policies and scopes),
+the column and mask policies applied and the as-of date are the same
+(`backend/services/worker_agent/query/executor.py`). A reused run is still a `query.query_run` row
+of its own, with `result_ref = 'query_run:<id of the run it reused>'` and its own copy of the
+rows. Tile refreshes, receipt replays, period closes and pipelines always read the source. To see
+how often answers are served from the cache:
+
+```sql
+SELECT count(*) FILTER (WHERE result_ref LIKE 'query_run:%') AS reused, count(*) AS runs
+FROM query.query_run WHERE started_at > now() - interval '1 day';
+```
+
 ## 5. Demo data
 
 With `seed_demo: true` (the dev inventory's setting) the `seed` Job loads:
