@@ -78,7 +78,6 @@ async def load(session: AsyncSession, space_id: uuid.UUID) -> SpaceLayer:
             select(ctx.Relationship).where(
                 ctx.Relationship.data_space_id == space_id,
                 ctx.Relationship.status == "active",
-                ctx.Relationship.cardinality == "many_to_one",
             )
         )
     ).all()
@@ -193,8 +192,14 @@ async def load(session: AsyncSession, space_id: uuid.UUID) -> SpaceLayer:
             for d in dims
         },
         entity_tables=tables,
+        # A join always runs to the "one" side (compiler.join_path): many-to-one and one-to-one
+        # as declared, one-to-many the other way round.
         joins=tuple(
             c.Join(j.from_dataset_id, tuple(j.from_columns), j.to_dataset_id, tuple(j.to_columns))
+            if j.cardinality in ("many_to_one", "one_to_one")
+            else c.Join(
+                j.to_dataset_id, tuple(j.to_columns), j.from_dataset_id, tuple(j.from_columns)
+            )
             for j in joins
         ),
     )

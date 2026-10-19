@@ -7,8 +7,11 @@ never an LLM. What it does:
   * the metric's expression is written over measure codes (e.g. `no_xau / du_no * 100`); each code
     is replaced by its measure's own aggregate expression (`SUM(npl_amt)`);
   * the measures' entity gives the base table (catalog.dataset schema.table); a requested
-    dimension on another entity is joined through an active many-to-one relationship from the base
-    (one hop; anything else is NO_JOIN_PATH, never a guessed join);
+    dimension on another entity is joined through a chain of active many-to-one relationships
+    from the base (join_path: at most MAX_HOPS, the shortest one). Every hop goes to the "one"
+    side, so the base's rows are never repeated. Two shortest chains to the same table are
+    NO_JOIN_PATH naming both, never a guessed join: which way a loan reaches a region (its
+    branch's, or its customer's) changes the figure, and only the semantic model's owner knows;
   * measures of several entities (R1-06, `doanh_thu / so_khach_hang`) are aggregated per entity
     first, each on its own table with its own joins, then combined by the requested dimensions:
     joining the tables before aggregating would repeat one side's rows for each of the other's
@@ -40,7 +43,8 @@ from dataclasses import dataclass, field
 from sqlglot import exp, parse_one
 from sqlglot.errors import ParseError
 
-COMPILER_VERSION = "v3-compiler-2"
+COMPILER_VERSION = "v3-compiler-3"
+MAX_HOPS = 3
 GRAINS = ("day", "month", "quarter", "year")
 # The day a value was read on, carried from a side to the average over the period.
 _DAY = "_day"
@@ -267,8 +271,48 @@ def _at_grain(when: exp.Expression, dim: Dimension, grain: str) -> exp.Expressio
     return exp.Concat(expressions=[part(1, 4, "%Y"), quarter], safe=True)
 
 
+def _table_names(layer: Layer) -> dict[uuid.UUID, str]:
+    return {t.dataset_id: t.name for t in layer.entity_tables.values()}
+
+
+def join_path(layer: Layer, start: uuid.UUID, target: uuid.UUID) -> tuple[Join, ...]:
+    """The chain of active many-to-one joins from the `start` table to the `target` one: the
+    shortest, at most MAX_HOPS. None is NO_JOIN_PATH; two of the shortest length are too."""
+    if start == target:
+        return ()
+    paths: list[tuple[Join, ...]] = [()]
+    for _ in range(MAX_HOPS):
+        longer: list[tuple[Join, ...]] = []
+        for path in paths:
+            here = path[-1].to_dataset_id if path else start
+            seen = {start, *(j.to_dataset_id for j in path)}
+            longer += [
+                (*path, j)
+                for j in layer.joins
+                if j.from_dataset_id == here and j.to_dataset_id not in seen
+            ]
+        arrived = [path for path in longer if path[-1].to_dataset_id == target]
+        if len(arrived) == 1:
+            return arrived[0]
+        if arrived:
+            names = _table_names(layer)
+            ways = " / ".join(
+                " → ".join([names.get(start, "?"), *(names.get(j.to_dataset_id, "?") for j in p)])
+                for p in arrived
+            )
+            raise CompileError(
+                "NO_JOIN_PATH",
+                f"Có nhiều cách nối tới bảng {names.get(target, '?')} ({ways}); người phụ trách"
+                " mô hình cần tắt một quan hệ để chọn cách nối.",
+            )
+        paths = longer
+    raise CompileError(
+        "NO_JOIN_PATH", f"no approved join path to {_table_names(layer).get(target, target)}"
+    )
+
+
 def _reaches(layer: Layer, entity: uuid.UUID, code: str) -> bool:
-    """Whether a table reaches a dimension: its own, or one active join away."""
+    """Whether a table reaches a dimension: its own, or through an approved join path."""
     dim = layer.dimensions.get(code)
     base, table = (
         layer.entity_tables.get(entity),
@@ -276,10 +320,13 @@ def _reaches(layer: Layer, entity: uuid.UUID, code: str) -> bool:
     )
     if dim is None or base is None or table is None:
         return False
-    return dim.entity_id == entity or any(
-        j.from_dataset_id == base.dataset_id and j.to_dataset_id == table.dataset_id
-        for j in layer.joins
-    )
+    if dim.entity_id == entity:
+        return True
+    try:
+        join_path(layer, base.dataset_id, table.dataset_id)
+    except CompileError:
+        return False
+    return True
 
 
 @dataclass
@@ -314,7 +361,10 @@ def _side(
     )
 
     aliases: dict[uuid.UUID, str] = {base.dataset_id: "t0"}
-    joins: list[tuple[Table, str, Join]] = []
+    # The joins that reached each table: a table already joined is reused only by the same way.
+    reached_by: dict[uuid.UUID, tuple[Join, ...]] = {base.dataset_id: ()}
+    joins: list[tuple[Table, str, Join, str]] = []  # table, its alias, the join, the from alias
+    tables = {t.dataset_id: t for t in layer.entity_tables.values()}
 
     def alias_for(dim: Dimension) -> str:
         table = layer.entity_tables.get(dim.entity_id)
@@ -322,20 +372,30 @@ def _side(
             raise CompileError("NO_JOIN_PATH", f"dimension {dim.code} has no table")
         if table.dataset_id in aliases:
             return aliases[table.dataset_id]
-        join = next(
-            (
-                j
-                for j in layer.joins
-                if j.from_dataset_id == base.dataset_id and j.to_dataset_id == table.dataset_id
-            ),
-            None,
-        )
-        if join is None:
-            raise CompileError("NO_JOIN_PATH", f"no approved join from the metric to {dim.name}")
-        alias = f"t{len(aliases)}"
-        aliases[table.dataset_id] = alias
-        joins.append((table, alias, join))
-        return alias
+        try:
+            path = join_path(layer, base.dataset_id, table.dataset_id)
+        except CompileError as exc:
+            raise CompileError(
+                "NO_JOIN_PATH", f"no approved join from the metric to {dim.name}: {exc}"
+            ) from exc
+        for hop, join in enumerate(path):
+            via = path[: hop + 1]
+            if join.to_dataset_id in aliases:
+                if reached_by[join.to_dataset_id] != via:
+                    raise CompileError(
+                        "NO_JOIN_PATH",
+                        f"bảng {tables[join.to_dataset_id].name} được nối tới bằng hai cách trong"
+                        " cùng một câu hỏi",
+                    )
+                continue
+            hop_table = tables.get(join.to_dataset_id)
+            if hop_table is None:
+                raise CompileError("NO_JOIN_PATH", f"a join on the way to {dim.name} has no table")
+            alias = f"t{len(aliases)}"
+            aliases[join.to_dataset_id] = alias
+            reached_by[join.to_dataset_id] = via
+            joins.append((hop_table, alias, join, aliases[join.from_dataset_id]))
+        return aliases[table.dataset_id]
 
     def dimension(code: str) -> Dimension:
         dim = layer.dimensions.get(code)
@@ -444,11 +504,11 @@ def _side(
 
     # FROM and JOINs last: a filter on another table's dimension adds its join too.
     select = select.from_(_table(base, "t0"))
-    for table, alias, join in joins:
+    for table, alias, join, from_alias in joins:
         on = exp.and_(
             *(
                 exp.EQ(
-                    this=exp.column(fc, table="t0", quoted=True),
+                    this=exp.column(fc, table=from_alias, quoted=True),
                     expression=exp.column(tc, table=alias, quoted=True),
                 )
                 for fc, tc in zip(join.from_columns, join.to_columns, strict=True)
