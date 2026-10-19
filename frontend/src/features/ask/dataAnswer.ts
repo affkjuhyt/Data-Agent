@@ -217,6 +217,8 @@ const CHIP_LABEL: Record<string, string> = {
   period: 'Kỳ',
   // R1-06: "so với tháng trước", read off the question and kept on an edited plan.
   compare: 'So sánh',
+  // "tỷ trọng", "luỹ kế", "từ đầu năm": the analysis over the metric (worker semantic/analysis.py).
+  analysis: 'Phép tính',
 };
 
 interface PlanWire {

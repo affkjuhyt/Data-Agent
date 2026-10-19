@@ -30,7 +30,7 @@ import logging
 import os
 import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from sqlalchemy import func, select
@@ -61,11 +61,12 @@ from services.worker_agent.query.executor import record_period_snapshot, run_que
 from services.worker_agent.query.guard import SqlRejected, dialect_of
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.query.secrets import SecretReader, StaticReader, reader_from_env
-from services.worker_agent.semantic import compare
+from services.worker_agent.semantic import analysis, compare
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import SpaceLayer, load
 from services.worker_agent.sqlgen.answer import answer_by_sql
 from services.worker_agent.understand import llm_reader
+from services.worker_agent.understand.analysis import TO_DATE, find_analysis
 from services.worker_agent.understand.comparison import find_comparison
 from services.worker_agent.understand.grain import GRAIN_LABELS, find_grain
 from services.worker_agent.understand.resolver import (
@@ -74,7 +75,7 @@ from services.worker_agent.understand.resolver import (
     from_chips,
     understand,
 )
-from services.worker_agent.understand.text import find_knowledge_hint, norm
+from services.worker_agent.understand.text import FoundPeriod, find_knowledge_hint, norm
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +183,8 @@ class Prepared:
     period_result_ids: list[uuid.UUID] | None = None
     filed_period_label: str | None = None
     filed_rows: list[dict[str, Any]] | None = None
+    # The analysis the answer shows (semantic/analysis.py): share_of_total or running_total.
+    analysis: str | None = None
 
 
 def _plan_ir(
@@ -193,6 +196,7 @@ def _plan_ir(
     compare_to: str | None = None,
     grain: str | None = None,
     knowledge_mode: str = "latest",
+    analysis_args: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Plan IR v2 (tab 5 G3.1): the fast path's template plan, one semantic query step.
 
@@ -227,6 +231,8 @@ def _plan_ir(
             steps[0]["args"]["compare_to"] = compare_to
         if grain is not None:
             steps[0]["args"]["grain"] = grain
+        if analysis_args is not None:
+            steps[0]["args"]["analysis"] = analysis_args
         if explain_by is not None and u.period is not None:
             month = u.period.start
             before = (month - datetime.timedelta(days=1)).replace(day=1)
@@ -366,12 +372,52 @@ def _cut_clarification(
 
 
 def _compiled(
-    request: c.Request, layer: SpaceLayer, compare_to: str | None, dialect: str
+    request: c.Request,
+    layer: SpaceLayer,
+    compare_to: str | None,
+    dialect: str,
+    shown: tuple[str, str | None] | None = None,
 ) -> c.Compiled:
-    """The question's statement; with a comparison, both periods in one (semantic/compare.py)."""
+    """The question's statement; with a comparison, both periods in one (semantic/compare.py);
+    with an analysis (`shown`: its kind and restart), the share or the accumulation beside the
+    value (semantic/analysis.py)."""
+    if shown is not None:
+        if compare_to is not None:
+            raise c.CompileError(
+                "CONTRACT_MISMATCH",
+                "Chưa so sánh hai kỳ cho tỷ trọng hoặc luỹ kế; hãy hỏi riêng từng kỳ.",
+            )
+        kind, restart = shown
+        if kind == analysis.SHARE_OF_TOTAL:
+            return analysis.compile_share(request, layer.layer, dialect=dialect)
+        return analysis.compile_running(request, layer.layer, dialect=dialect, restart=restart)
     if compare_to is None:
         return c.compile_metric(request, layer.layer, dialect=dialect)
     return compare.compile_comparison(request, layer.layer, compare_to, dialect=dialect)[0]
+
+
+_ANALYSIS_LABEL = {
+    analysis.SHARE_OF_TOTAL: "tỷ trọng trên tổng",
+    analysis.RUNNING_TOTAL: "luỹ kế",
+    TO_DATE: "luỹ kế từ đầu {unit}",
+}
+_UNIT_LABEL = {"year": "năm", "quarter": "quý", "month": "tháng"}
+
+
+def _analysis_args(kind: str | None, unit: str | None) -> dict[str, Any] | None:
+    return None if kind is None else {"kind": kind, "unit": unit}
+
+
+def _analysis_chip(kind: str, unit: str | None) -> dict[str, object]:
+    """The analysis as a plan chip; an edited plan keeps it (from_chips ignores the kind)."""
+    return {
+        "kind": "analysis",
+        "value": kind,
+        "unit": unit,
+        "label": _ANALYSIS_LABEL[kind].format(unit=_UNIT_LABEL.get(unit or "", "năm")),
+        "source": "default",
+        "confidence": 1.0,
+    }
 
 
 def _compare_chip(compare_to: str, period: c.Period | None) -> dict[str, object]:
@@ -699,6 +745,26 @@ async def _understand_and_plan(
                 None,
             )
         )
+        # The Holistics review (19/10/2026): "tỷ trọng", "luỹ kế", "từ đầu năm" ask for an
+        # analysis over the metric, taken out like a grain, or "từ đầu năm" would be a period.
+        analysis_found = find_analysis(asked) if edited is None else None
+        if analysis_found is not None:
+            asked = analysis_found.rest
+        analysis_chip = next(
+            (
+                chip
+                for chip in (edited.chips or [] if edited is not None else [])
+                if chip.get("kind") == "analysis"
+            ),
+            None,
+        )
+        analysis_kind, analysis_unit = (
+            (analysis_found.kind, analysis_found.unit)
+            if analysis_found is not None
+            else (str(analysis_chip.get("value")), analysis_chip.get("unit"))
+            if analysis_chip is not None
+            else (None, None)
+        )
         u = (
             from_chips(list(edited.chips or []), layer.vocabulary)
             if edited is not None
@@ -757,6 +823,57 @@ async def _understand_and_plan(
                 )
             elif time_cut.code not in u.group_by:
                 u.group_by.append(time_cut.code)
+        # What the analysis asked is, once the cut is known: a share; an accumulation along the
+        # time cut (restarted each year for a to-date one); without a time cut, "luỹ kế" or
+        # "từ đầu năm" is one period from the start of the year (or quarter, month) to its end.
+        shown: tuple[str, str | None] | None = None
+        if (
+            analysis_kind is not None
+            and problem is None
+            and u.decision == "proceed"
+            and u.metric is not None
+        ):
+            times = {d.code for d in layer.vocabulary.dimensions if d.is_time}
+            if question.knowledge_mode == "period_close":
+                problem = Refusal.of(
+                    ErrorCode.CONTRACT_MISMATCH,
+                    message="Chưa tính tỷ trọng hoặc luỹ kế trên số đã nộp; hãy hỏi theo dữ liệu"
+                    " hiện tại.",
+                    detail_id=str(question.id),
+                )
+            elif analysis_kind == analysis.SHARE_OF_TOTAL:
+                weak = analysis_found is not None and analysis_found.weak
+                if not weak or analysis.is_additive(
+                    layer.versions[u.metric.metric_id], layer.layer
+                ):
+                    shown = (analysis_kind, None)
+                else:
+                    # "chiếm bao nhiêu %" of a ratio is the ratio itself, answered as asked.
+                    analysis_kind = None
+            elif any(code in times for code in u.group_by):
+                shown = (analysis.RUNNING_TOTAL, analysis_unit if analysis_kind == TO_DATE else None)
+            else:
+                unit = analysis_unit or "year"
+                asked_period = u.period or FoundPeriod(
+                    today, today + datetime.timedelta(days=1), "hôm nay", ""
+                )
+                try:
+                    whole = analysis.to_date(
+                        c.Period(asked_period.start, asked_period.end),
+                        unit,
+                        layer.versions[u.metric.metric_id],
+                    )
+                except c.CompileError as exc:
+                    problem = Refusal.of(
+                        _code(exc.code), message=str(exc), detail_id=str(question.id)
+                    )
+                else:
+                    since = f"từ đầu {_UNIT_LABEL[unit]}"
+                    u.period = replace(
+                        asked_period,
+                        start=whole.start,
+                        label=f"{since} đến hết {asked_period.label}" if u.period else f"{since} đến nay",
+                    )
         not_cut = (
             _cut_not_allowed(u, layer) if u.decision == "proceed" and problem is None else None
         )
@@ -782,7 +899,7 @@ async def _understand_and_plan(
             try:
                 # Compile once to discover the dataset/source, then regenerate in that source's
                 # dialect after the source policy checks below.
-                compiled = _compiled(compile_request, layer, compare_to, "postgres")
+                compiled = _compiled(compile_request, layer, compare_to, "postgres", shown)
             except (c.CompileError, SqlRejected) as exc:
                 problem = Refusal.of(
                     _code(getattr(exc, "code", "CONTRACT_MISMATCH")),
@@ -909,6 +1026,7 @@ async def _understand_and_plan(
                 compare_to,
                 grain,
                 question.knowledge_mode,
+                _analysis_args(analysis_kind, analysis_unit),
             )
             edited.confidence = decimal.Decimal(str(round(u.confidence, 4)))
         else:
@@ -937,7 +1055,12 @@ async def _understand_and_plan(
                         if compare_to is not None
                         else []
                     )
-                    + ([_grain_chip(grain)] if grain is not None else []),
+                    + ([_grain_chip(grain)] if grain is not None else [])
+                    + (
+                        [_analysis_chip(analysis_kind, analysis_unit)]
+                        if analysis_kind is not None
+                        else []
+                    ),
                     steps=_plan_ir(
                         u,
                         compiled,
@@ -947,6 +1070,7 @@ async def _understand_and_plan(
                         compare_to,
                         grain,
                         question.knowledge_mode,
+                        _analysis_args(analysis_kind, analysis_unit),
                     ),
                     confidence=decimal.Decimal(str(round(u.confidence, 4))),
                 )
@@ -970,7 +1094,7 @@ async def _understand_and_plan(
             elif compile_request is not None:
                 try:
                     compiled = _compiled(
-                        compile_request, layer, compare_to, dialect_for_source(source.kind)
+                        compile_request, layer, compare_to, dialect_for_source(source.kind), shown
                     )
                 except (c.CompileError, SqlRejected) as exc:
                     problem = Refusal.of(
@@ -1026,6 +1150,7 @@ async def _understand_and_plan(
                 period_result_ids=period_result_ids,
                 filed_period_label=filed_period_label,
                 filed_rows=filed_rows,
+                analysis=shown[0] if shown is not None else None,
             )
 
     if u.decision == "clarify":
@@ -1243,6 +1368,15 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
     compared_to = p.base_label if u.period is not None else None
     shown_by = [*u.group_by, PERIOD_CODE] if compared_to else list(u.group_by)
     names = {**p.dimension_names, PERIOD_CODE: PERIOD_NAME}
+    # An analysed answer shows its own column (semantic/analysis.py): the share in percent, or the
+    # accumulated value in the metric's unit; the plain value stays in the table beside it.
+    metric_name, unit, decimals, value_column = (
+        (f"Tỷ trọng {p.metric_name}", "%", 1, "share")
+        if p.analysis == analysis.SHARE_OF_TOTAL
+        else (f"{p.metric_name} luỹ kế", p.version.unit, p.version.decimals, "cumulative")
+        if p.analysis == analysis.RUNNING_TOTAL
+        else (p.metric_name, p.version.unit, p.version.decimals, "value")
+    )
     if compared_to and u.period is not None:
         figures = comparison_figures(
             columns,
@@ -1258,11 +1392,12 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
         figures = figures_of(
             columns,
             outcome.rows,
-            metric_name=p.metric_name,
-            unit=p.version.unit,
-            decimals=p.version.decimals,
+            metric_name=metric_name,
+            unit=unit,
+            decimals=decimals,
             dimension_names=p.dimension_names,
             period_label=u.period.label if u.period else None,
+            value_column=value_column,
         )
     # The risk team's threshold on this metric, judged once the figures are masked (BR-178).
     threshold = await load_threshold(p.org_id, p.space_id, p.metric_id, p.user_id)
@@ -1331,13 +1466,15 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                 figures,
                 group_by=u.group_by,
                 time_dimensions=p.time_dimensions,
-                metric_name=p.metric_name,
-                unit=p.version.unit,
-                decimals=p.version.decimals,
-                additive=p.additive and u.top_n is None,
+                metric_name=metric_name,
+                unit=unit,
+                decimals=decimals,
+                # Shares add up to 100% and accumulations repeat earlier months: no total.
+                additive=p.additive and u.top_n is None and p.analysis is None,
             )
         )
-        if threshold is not None:
+        # The threshold is on the metric's own values, not on a share or an accumulation of them.
+        if threshold is not None and p.analysis is None:
             against = judged(
                 figures,
                 threshold,
@@ -1407,7 +1544,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
         every.extend(filed_figures)
         text = text_of(
             figures,
-            metric_name=p.metric_name,
+            metric_name=metric_name,
             group_by_names=[names.get(g, g) for g in shown_by],
             period_label=(
                 f"{u.period.label} so với {compared_to}"
@@ -1438,7 +1575,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                 model,
                 every,
                 question=question.text,
-                metric_name=p.metric_name,
+                metric_name=metric_name,
                 exempt_text=[c.label for c in u.chips]
                 + [v for f in figures for v in f.dimensions.values()],
                 hints=ins.sentences,
@@ -1514,8 +1651,8 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                     group_by=shown_by,
                     dimension_names=names,
                     time_dimensions=p.time_dimensions,
-                    metric_name=p.metric_name,
-                    unit=p.version.unit,
+                    metric_name=metric_name,
+                    unit=unit,
                     drill=[cut for cut in p.cuts if cut[0] not in u.group_by],
                 ),
                 agent_name=AGENT_NAME,

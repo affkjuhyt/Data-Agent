@@ -150,6 +150,19 @@ describe('dataAnswer', () => {
     expect(drillQuestion('Miền Bắc', 'chi nhánh')).toBe('Đi sâu Miền Bắc theo chi nhánh');
   });
 
+  it('shows the analysis the plan reads, "tỷ trọng" or "luỹ kế", as its own chip', () => {
+    const { reading } = readPlan({
+      chips: [
+        { kind: 'metric', value: 'DU_NO', label: 'Dư nợ' },
+        { kind: 'analysis', value: 'share_of_total', unit: null, label: 'tỷ trọng trên tổng' },
+      ],
+    });
+    expect(reading.map((c) => [c.label, c.value])).toEqual([
+      ['Chỉ số', 'Dư nợ'],
+      ['Phép tính', 'tỷ trọng trên tổng'],
+    ]);
+  });
+
   it('AC-01-04-07 reads one chip per plan chip, inherited ones marked, and the step awaiting a yes', () => {
     const { reading, proposal } = readPlan({
       chips: [

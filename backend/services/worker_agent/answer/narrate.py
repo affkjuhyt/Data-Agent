@@ -21,6 +21,10 @@ MAX_LISTED = 12  # beyond this the text names the top values and the table holds
 DisplayState = Literal["shown", "masked_stale", "not_available"]
 
 
+# The columns an analysis adds beside `value` (semantic/analysis.py).
+ANALYSIS_COLUMNS = ("share", "cumulative")
+
+
 @dataclass
 class Figure:
     key: str  # F1…
@@ -92,10 +96,15 @@ def figures_of(
     decimals: int,
     dimension_names: dict[str, str],
     period_label: str | None,
+    value_column: str = "value",
 ) -> list[Figure]:
-    """One figure per row: the `value` column, labelled by its dimension members and period."""
-    value_col = columns.index("value")
-    dim_cols = [(i, c) for i, c in enumerate(columns) if c != "value"]
+    """One figure per row: the `value` column, labelled by its dimension members and period.
+
+    An analysed answer (semantic/analysis.py) shows its own column instead, `share` or
+    `cumulative`, and the figure points at that cell so the receipt traces what is shown; the
+    metric's plain value beside it is not a dimension."""
+    value_col = columns.index(value_column)
+    dim_cols = [(i, c) for i, c in enumerate(columns) if c not in ("value", *ANALYSIS_COLUMNS)]
     out: list[Figure] = []
     for r, row in enumerate(rows):
         raw = row[value_col]
@@ -112,7 +121,7 @@ def figures_of(
                 unit=unit,
                 decimals=decimals,
                 row=r,
-                column="value",
+                column=value_column,
                 dimensions=dims,
                 display_state="shown" if value is not None else "not_available",
             )
