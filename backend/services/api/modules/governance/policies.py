@@ -41,11 +41,17 @@ class _View(BaseModel):
 
 
 class AppliesTo(BaseModel):
-    """Who the policy applies to; all empty means everyone."""
+    """Who the policy applies to; all empty means everyone.
+
+    `actors` narrows it to who runs the query: "agent" when the agent answers or runs (so what
+    the policy hides never reaches a model, though the person may still read it themselves),
+    "person" when people read data directly (explorer, tiles); empty is both. The worker's query
+    path applies it (worker_agent/query/scope.py)."""
 
     role_ids: list[uuid.UUID] = Field(default_factory=list, max_length=200)
     group_ids: list[uuid.UUID] = Field(default_factory=list, max_length=200)
     user_ids: list[uuid.UUID] = Field(default_factory=list, max_length=1_000)
+    actors: list[Literal["agent", "person"]] = Field(default_factory=list, max_length=2)
 
 
 class AccessDefinition(BaseModel):
@@ -83,6 +89,9 @@ class PolicyCreate(BaseModel):
 class PolicySimulate(BaseModel):
     as_user_id: uuid.UUID
     sample_sql: str | None = Field(default=None, max_length=20_000)
+    # The person's question answered by the agent (applies_to.actors "agent"), or read by the
+    # person themselves.
+    as_agent: bool = True
 
 
 class PolicyBacktestRequest(BaseModel):
@@ -587,8 +596,17 @@ async def disable_policy(
 # ---------------------------------------------------------------- simulate, backtest, activate
 
 
-def _applies(applies_to: Any, user_id: uuid.UUID, roles: set[str], groups: set[str]) -> bool:
+def _applies(
+    applies_to: Any,
+    user_id: uuid.UUID,
+    roles: set[str],
+    groups: set[str],
+    actor: str = "agent",
+) -> bool:
     spec = applies_to if isinstance(applies_to, dict) else {}
+    actors = set(map(str, spec.get("actors") or []))
+    if actors and actor not in actors:
+        return False
     role_ids = set(map(str, spec.get("role_ids") or []))
     group_ids = set(map(str, spec.get("group_ids") or []))
     user_ids = set(map(str, spec.get("user_ids") or []))
@@ -671,12 +689,17 @@ async def simulate_policy(
                 applies=applies,
                 reason=f"{row.scope} policy, {row.kind}",
             )
-        applies = _applies(row.applies_to, user.id, roles, groups)
+        actor = "agent" if body.as_agent else "person"
+        applies = _applies(row.applies_to, user.id, roles, groups, actor)
         view = SimulationView(
             policy_id=row.id,
             as_user_id=user.id,
             applies=applies,
-            reason="applies to this person" if applies else "not among whom it applies to",
+            reason="applies to this person"
+            if applies
+            else "only when the agent answers"
+            if actor == "person" and "agent" in ((row.applies_to or {}).get("actors") or [])
+            else "not among whom it applies to",
             before_sql=body.sample_sql,
         )
         if applies:

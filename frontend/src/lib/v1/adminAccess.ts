@@ -492,6 +492,8 @@ type SimulationWire = Schemas['SimulationView'] & { display?: PolicySimulation }
 export const simulatePolicy = async (id: string, body: { user_id: Uuid; question: string }) => {
   const raw = await v1Send<SimulationWire>('POST', `/policies/${pathId(id)}:simulate`, {
     as_user_id: body.user_id,
+    // The question asked of the agent: a policy for the agent only (applies_to.actors) applies.
+    as_agent: true,
   } satisfies Schemas['PolicySimulate']);
   if (raw.display) return raw.display;
   const masked = Object.keys((raw.masked_columns as Record<string, unknown> | undefined) ?? {});

@@ -328,6 +328,7 @@ async def run_query(
                     session,
                     principal_id=principal_id,
                     datasets=readable_datasets,
+                    caller_kind=caller_kind,
                 )
                 output_policies = [
                     policy for policy in policies if policy.kind in {"column", "mask"}

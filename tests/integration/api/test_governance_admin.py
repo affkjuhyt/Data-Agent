@@ -569,3 +569,41 @@ async def test_no_subject_key_no_request(gov: Org, monkeypatch: pytest.MonkeyPat
             headers=gov.headers("officer"),
         )
     assert refused.status_code == 503
+
+
+async def test_an_agent_only_policy_is_simulated_for_the_agent_and_not_the_person(gov: Org) -> None:
+    # The Holistics review: what the agent may see can be less than what the person may.
+    async with client(gov) as api:
+        made = await api.post(
+            "/v1/policies",
+            json=_access(gov, applies_to={"actors": ["agent"]}),
+            headers=gov.headers("admin"),
+        )
+        assert made.status_code == 201, made.text
+        policy = made.json()
+        assert policy["applies_to"]["actors"] == ["agent"]
+        teller = str(gov.users["teller"])
+
+        as_agent = await api.post(
+            f"/v1/policies/{policy['id']}:simulate",
+            json={"as_user_id": teller},
+            headers=gov.headers("admin"),
+        )
+        assert as_agent.status_code == 200, as_agent.text
+        assert as_agent.json()["applies"] is True
+        assert as_agent.json()["row_condition"] == "branch_code = 'HCM02'"
+
+        as_person = await api.post(
+            f"/v1/policies/{policy['id']}:simulate",
+            json={"as_user_id": teller, "as_agent": False},
+            headers=gov.headers("admin"),
+        )
+        assert as_person.json()["applies"] is False
+        assert as_person.json()["reason"] == "only when the agent answers"
+
+        wrong = await api.post(
+            "/v1/policies",
+            json=_access(gov, applies_to={"actors": ["robot"]}),
+            headers=gov.headers("admin"),
+        )
+        assert wrong.status_code == 422

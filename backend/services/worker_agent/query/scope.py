@@ -74,13 +74,41 @@ async def can_ask_data_space(
     return any("ask" in (capabilities or []) for _, capabilities in rows)
 
 
+# Who runs a query (applies_to.actors, the Holistics review's "the AI sees less than the
+# person"): the agent when it answers, runs or replays, so its text and figures reach a model; the
+# person when they read data themselves (the explorer, a tile they refresh). Only a period close,
+# which recomputes filed figures from frozen definitions, is a system caller no actor condition
+# limits. Anything else, a pipeline (its SQL may be the agent's) or a caller added later, is taken
+# as the agent: a policy written for the agent is the stricter one, so an unknown caller fails
+# closed.
+AGENT_CALLERS = frozenset({"question", "agent_run", "skill_run", "eval", "receipt_replay"})
+PERSON_CALLERS = frozenset({"ad_hoc", "tile"})
+SYSTEM_CALLERS = frozenset({"period"})
+
+
+def actor_of(caller_kind: str | None, user_kind: str | None) -> str | None:
+    """"agent", "person" or None (a vetted system caller). An agent's own account is an agent
+    whatever calls."""
+    if user_kind == "agent" or caller_kind in AGENT_CALLERS:
+        return "agent"
+    if caller_kind in PERSON_CALLERS:
+        return "person"
+    if caller_kind in SYSTEM_CALLERS:
+        return None
+    return "agent"
+
+
 async def active_policies(
     session: AsyncSession,
     *,
     principal_id: uuid.UUID,
     datasets: Iterable[catalog.Dataset],
+    caller_kind: str | None = None,
 ) -> list[governance.AccessPolicy]:
-    """Return policies that apply to this principal; an empty applies_to means everyone."""
+    """Return policies that apply to this principal; an empty applies_to means everyone.
+
+    `applies_to.actors` (["agent"], ["person"]) narrows a policy to queries the agent runs, or the
+    person runs themselves; empty is both. An unknown caller is taken as the agent (actor_of)."""
     found = list(datasets)
     if not found:
         return []
@@ -118,11 +146,16 @@ async def active_policies(
         )
     ).all()
 
+    actor = actor_of(caller_kind, user.kind)
+
     def applies(policy: governance.AccessPolicy) -> bool:
         raw = policy.applies_to if isinstance(policy.applies_to, dict) else {}
         users = {str(value) for value in raw.get("user_ids", [])}
         roles = {str(value) for value in raw.get("role_ids", [])}
         groups = {str(value) for value in raw.get("group_ids", [])}
+        actors = {str(value) for value in raw.get("actors", [])}
+        if actors and actor not in actors:
+            return False
         return (
             not (users or roles or groups)
             or str(principal_id) in users
