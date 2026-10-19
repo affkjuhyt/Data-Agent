@@ -90,6 +90,8 @@ async def _open(
     diff: dict[str, Any],
     proposed_by: uuid.UUID,
     eval_run_id: uuid.UUID | None,
+    impact: dict[str, Any] | None = None,
+    impact_level: str = "low",
 ) -> uuid.UUID:
     pid = proposal_id(event)
     async with scoped_session("svc_inbox", event.org_id, proposed_by) as session:
@@ -109,6 +111,9 @@ async def _open(
                 evidence=[{"requested": _plain(diff)}],
                 proposed_by=proposed_by,
                 eval_run_id=eval_run_id,
+                # What the change reaches, counted when it is proposed (metric_changes.py).
+                impact=_plain(impact or {}),
+                impact_level=impact_level,
                 created_by=proposed_by,
             )
             .on_conflict_do_nothing(index_elements=["id"])
@@ -530,7 +535,13 @@ async def _finish(event: Event, pid: uuid.UUID, status: str) -> None:
 
 async def decided(event: Event) -> None:
     proposal = await _proposal(event)
-    if proposal is None or proposal["kind"] not in ("skill_publish", "pack_activate", "writeback", "data_product"):
+    if proposal is None or proposal["kind"] not in (
+        "skill_publish",
+        "pack_activate",
+        "writeback",
+        "data_product",
+        "metric_change",
+    ):
         return
     if proposal["status"] not in ("accepted", "open", "rejected"):
         return  # already applied, or no longer waiting
@@ -540,6 +551,11 @@ async def decided(event: Event) -> None:
         outcome = await _apply_pack(event, proposal)
     elif proposal["kind"] == "writeback":
         outcome = await _apply_writeback(event, proposal)
+    elif proposal["kind"] == "metric_change":
+        # Imported here: metric_changes opens its proposals through this module.
+        from services.worker_agent import metric_changes
+
+        outcome = await metric_changes.apply(event, proposal)
     else:
         outcome = await _apply_data_product(event, proposal)
     if outcome is None:

@@ -28,6 +28,7 @@ from services.worker_agent import (
     eval_runs,
     exports,
     hitl,
+    metric_changes,
     policy_backtests,
     private,
     proposals,
@@ -78,6 +79,7 @@ HANDLERS: dict[str, Handler] = {
     **skill_runs.HANDLERS,
     **policy_backtests.HANDLERS,
     **eval_runs.HANDLERS,
+    **metric_changes.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -127,7 +129,7 @@ async def sources() -> list[EventSource]:
         if schema == "ingest":
             types |= set(uploads.HANDLERS)
         if schema == "context":
-            types |= {eval_runs.DATA_PRODUCT_SUBMITTED}
+            types |= {eval_runs.DATA_PRODUCT_SUBMITTED} | set(metric_changes.HANDLERS)
         if schema == "agent":
             # The one consumer of run.status_changed: the run executor (runs.py, ADR-37 stand-in).
             types |= set(runs.HANDLERS)
