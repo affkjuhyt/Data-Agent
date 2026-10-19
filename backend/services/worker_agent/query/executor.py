@@ -16,14 +16,16 @@ PostgreSQL, MySQL and SQL Server sources are wired. The latter two use synchrono
 inside a bounded worker thread: neither driver has to run on the worker-agent event loop.
 
 A result is reused for a while (the Holistics review: cache by the generated SQL). The key is
-what decides the rows: the source, the SQL as executed (after the row policies and scopes bound
-the asker's attributes into it, and with its row cap), the column and mask policies applied to the
-result, and the as-of date. A succeeded run with that key, younger than QUERY_CACHE_TTL_S (600 s;
+what decides the rows: the Data Space and the source, the SQL as executed (after the row policies
+and scopes bound the asker's attributes into it, and with its row cap), the column and mask
+policies applied to the result (a run from before one of them last changed is not reused), and
+the as-of date. A succeeded run with that key, younger than QUERY_CACHE_TTL_S (600 s;
 0 turns it off) and whose stored result is whole (at most STORED_ROWS, not truncated), answers
 without touching the source: the new run is recorded as usual, with that run named in result_ref
 ("query_run:<id>"), and its own copy of the rows. Never reused: a private run (nothing of it is
 stored), and the callers that must read the source now: a tile refresh (UC-02-02), a receipt
-replay (it is how a changed source is detected), a period close and a pipeline.
+replay (it is how a changed source is detected), a period close, a pipeline, and the internal
+workspace (read through the asker's own session).
 """
 
 from __future__ import annotations
@@ -95,22 +97,30 @@ def cache_ttl() -> datetime.timedelta:
 async def _cached(
     session: Any,
     *,
+    data_space_id: uuid.UUID,
     source_id: uuid.UUID,
     executed: str,
-    policies: Sequence[uuid.UUID],
+    policies: Sequence[governance.AccessPolicy],
     as_of: datetime.date | None,
 ) -> tuple[q.QueryRun, q.QueryResult] | None:
-    """The newest succeeded run with the same key inside the TTL, with its whole stored result."""
+    """The newest succeeded run with the same key inside the TTL, with its whole stored result.
+
+    The policies are compared by id and by when they last changed: a run from before a policy was
+    edited is not reused, whatever its id (a mask method or a column list changed in place)."""
     ttl = cache_ttl()
     if not ttl:
         return None
     since = datetime.datetime.now(datetime.UTC) - ttl
+    changed = max((p.updated_at for p in policies if p.updated_at is not None), default=None)
+    if changed is not None and changed > since:
+        since = changed
     found = (
         await session.execute(
             select(q.QueryRun, q.QueryResult)
             .join(q.QueryResult, q.QueryResult.query_run_id == q.QueryRun.id)
             .where(
-                q.QueryRun.started_at >= since,
+                q.QueryRun.started_at > since,
+                q.QueryRun.data_space_id == data_space_id,
                 q.QueryRun.source_id == source_id,
                 q.QueryRun.status == "succeeded",
                 q.QueryRun.sql_executed == executed,
@@ -121,7 +131,7 @@ async def _cached(
             .limit(5)
         )
     ).all()
-    wanted = sorted(map(str, policies))
+    wanted = sorted(str(p.id) for p in policies)
     return next(
         (
             (run, result)
@@ -364,6 +374,7 @@ async def run_query(
     tables: set[tuple[str | None, str]] = set()
     output_policies: list[governance.AccessPolicy] = []
     applied_policy_ids: list[uuid.UUID] = []
+    applied_policies: list[governance.AccessPolicy] = []
     try:
         dialect = dialect_of(source.kind)
         tree = check_read_only(sql, dialect)
@@ -391,6 +402,7 @@ async def run_query(
                 output_policies = [
                     policy for policy in policies if policy.kind in {"column", "mask"}
                 ]
+                applied_policies = list(policies)
                 applied_policy_ids = [policy.id for policy in policies]
                 user = await session.scalar(
                     select(org.AppUser).where(org.AppUser.id == principal_id)
@@ -416,12 +428,20 @@ async def run_query(
             except SqlRejected as exc:
                 outcome.error = str(exc)
         hit: tuple[q.QueryRun, q.QueryResult] | None = None
-        if outcome.error is None and not private and caller_kind in CACHEABLE_CALLERS:
+        # The internal workspace is read through the asker's own session, and one source id stands
+        # for it in every Data Space: never reused.
+        if (
+            outcome.error is None
+            and not private
+            and caller_kind in CACHEABLE_CALLERS
+            and source.secret_ref != INTERNAL_WORKSPACE
+        ):
             hit = await _cached(
                 session,
+                data_space_id=data_space_id,
                 source_id=source.id,
                 executed=executed,
-                policies=applied_policy_ids,
+                policies=applied_policies,
                 as_of=as_of,
             )
         recorded = {

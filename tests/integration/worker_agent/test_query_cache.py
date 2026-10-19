@@ -130,3 +130,39 @@ async def test_a_result_with_other_policies_applied_is_not_shared(
     assert ref_of(seed, masked.query_run_id) is None
     assert masked.columns[0]["name"] == "branch_code"
     assert all(row[0] is None for row in masked.rows)
+
+
+async def test_a_run_from_before_a_policy_changed_is_not_reused(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    source = await source_of(bank)
+    policy = seed.row(
+        "governance.access_policy",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        dataset_id=bank.loans,
+        name="Che số dư",
+        kind="mask",
+        applies_to=json.dumps({}),
+        columns=["balance"],
+        mask_method="null",
+        status="active",
+        simulated_at="2026-10-17T08:00:00Z",
+        activated_at="2026-10-17T09:00:00Z",
+        activated_by=bank.user,
+    )
+    first = await run(bank, source, "agent_run")
+    assert ref_of(seed, (await run(bank, source, "agent_run")).query_run_id) == (
+        f"{CACHE_PREFIX}{first.query_run_id}"
+    )
+    # The same policy, edited in place: what it masks changed, so the earlier result is not reused.
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE governance.access_policy SET columns = ARRAY['branch_code'], updated_at = now()"
+            " WHERE id = %s",
+            (str(policy),),
+        )
+    after = await run(bank, source, "agent_run")
+    assert ref_of(seed, after.query_run_id) is None
+    assert all(row[0] is None for row in after.rows) and after.rows[0][1] is not None
