@@ -379,7 +379,6 @@ kubectl -n dataagent-service create job --from=cronjob/eval-nightly eval-nightly
 kubectl -n dataagent-service logs job/eval-nightly-manual    # "nightly-evals | N runs requested"
 ```
 
-## 11. LLM and model backend
 ## 10d. Crawler (crawl sources, UC-14)
 
 `crawler` (`backend/services/crawler`) works the runs of `/v1/crawl-sources`: it claims
@@ -414,6 +413,7 @@ The run stops at `in_review`; publishing is a person's action. Its event is `acq
 - **Scheduled runs** (`schedule_cron`) are not created yet: nothing in V3 schedules across
   organisations before Temporal Schedules (ADR-33). Start runs from the source screen.
 
+## 11. LLM and model backend
 
 The GPU services on `10.10.55.101` run outside k8s: vLLM main `:8001`
 (Qwen3-14B-AWQ, LiteLLM role `agent-main`), vLLM fast `:8002` (Qwen3-4B-AWQ,
@@ -428,7 +428,6 @@ workloads after changing it). LiteLLM reaches both vLLM tiers through
 `deploy/docker/litellm/config.yaml` (ConfigMap `litellm-config`). Embeddings are `bge-m3` (1024-dim): a knowledge base
 ingested against another embedding model must be re-ingested.
 
-V3 documents (UC-05-02/04) use the same TEI services directly on the local slice,
 worker-agent (`services/worker_agent/llm.py`) and platform-workers (memory, schema
 crawler: `common/llm.py`) call LiteLLM through PydanticAI. Every call names the
 Pydantic model its answer must fit and sends that model's JSON schema as
@@ -441,6 +440,7 @@ answer, no model reading), so a run's trace showing `UnexpectedModelBehavior` me
 the model could not produce the schema — check that the vLLM tier accepts
 `response_format` (a 400 from vLLM shows as `ModelHTTPError`) before blaming the prompt.
 
+V3 documents (UC-05-02/04) use the same TEI services directly on the local slice,
 which has no LiteLLM: `DOCUMENT_EMBED_URL` (`:8003`) in `worker-document-env`,
 `api-env` and `worker-agent-env`, and `DOCUMENT_RERANK_URL` (`:8004`) in
 `worker-agent-env`; unset, both fall back to `LITELLM_BASE_URL` (embeddings) or to
