@@ -82,17 +82,30 @@ async def run_eval(event: Event) -> None:
                 )
             )
             baseline = dict((await session.execute(select(evaluation.EvalResult.eval_item_id, evaluation.EvalResult.passed).where(evaluation.EvalResult.eval_run_id == run.baseline_run_id))).all())
+        # A nightly run has no person who asked for it: each item is answered as the one who last
+        # wrote it, so a steward of narrower scope cannot have the Data Space steward's rights
+        # answer, and record, a question they wrote. A run someone started answers as them.
+        nightly = run.trigger == "nightly"
+        active_authors: set[uuid.UUID] = set()
+        if nightly:
+            authors = {a for i in items if (a := i.updated_by or i.created_by) is not None}
+            active_authors = set((await session.scalars(select(org.AppUser.id).where(org.AppUser.id.in_(authors), org.AppUser.status == "active"))).all()) if authors else set()
         passed = failed = refusals = regressions = 0
         for item in items:
-            question_id, conversation_id = uuid7(), uuid7()
-            async with scoped_session("svc_qa", event.org_id, user_id) as qa_session:
-                qa_session.add(qa.Conversation(id=conversation_id, org_id=event.org_id, data_space_id=space_id, user_id=user_id, channel="api", created_by=user_id, updated_by=user_id))
-                qa_session.add(qa.Question(id=question_id, org_id=event.org_id, conversation_id=conversation_id, seq=1, text=_question_text(item), as_of=item.as_of, received_at=func.now()))
-            await answer_question(Event(uuid7(), event.org_id, "question.received", "question", question_id, {"question_id": str(question_id), "user_id": str(user_id), "eval_run_id": str(run_id)}))
-            async with scoped_session("svc_qa", event.org_id, user_id) as qa_session:
-                question = await qa_session.get(qa.Question, question_id)
-                answer = await qa_session.scalar(select(qa.Answer).where(qa.Answer.question_id == question_id))
-            understanding_ok, value_ok, behavior_ok, item_passed, actual, cause = _score(item, answer, question)
+            asker = (item.updated_by or item.created_by) if nightly else user_id
+            if asker is None or (nightly and asker not in active_authors):
+                understanding_ok = value_ok = behavior_ok = item_passed = False
+                actual, cause = {}, "the item has no active author to answer it as"
+            else:
+                question_id, conversation_id = uuid7(), uuid7()
+                async with scoped_session("svc_qa", event.org_id, asker) as qa_session:
+                    qa_session.add(qa.Conversation(id=conversation_id, org_id=event.org_id, data_space_id=space_id, user_id=asker, channel="api", created_by=asker, updated_by=asker))
+                    qa_session.add(qa.Question(id=question_id, org_id=event.org_id, conversation_id=conversation_id, seq=1, text=_question_text(item), as_of=item.as_of, received_at=func.now()))
+                await answer_question(Event(uuid7(), event.org_id, "question.received", "question", question_id, {"question_id": str(question_id), "user_id": str(asker), "eval_run_id": str(run_id)}))
+                async with scoped_session("svc_qa", event.org_id, asker) as qa_session:
+                    question = await qa_session.get(qa.Question, question_id)
+                    answer = await qa_session.scalar(select(qa.Answer).where(qa.Answer.question_id == question_id))
+                understanding_ok, value_ok, behavior_ok, item_passed, actual, cause = _score(item, answer, question)
             changed = item.id in baseline and baseline[item.id] != item_passed
             regressions += int(changed and baseline[item.id] and not item_passed)
             passed += int(item_passed)

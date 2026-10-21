@@ -375,8 +375,8 @@ DELETE FROM "OutboxEvents" WHERE published_at < now() - interval '7 days';
 The `eval-nightly` CronJob (beside worker-agent, `deploy/k8s/*/service/worker-agent.yaml`) runs
 `python -m services.worker_agent.nightly_evals` at 02:00 Hà Nội time. It requests one run
 (`trigger = nightly`, `subject_version = context@nightly-<day>`) for every active context eval set
-of an `active` Data Space, answered as the Data Space's steward; worker-agent answers it from
-`eval.outbox`. Its only credential is the `svc_eval` URL (`eval-nightly-secrets`), and the one
+of an `active` Data Space with an active steward, requested for that steward; worker-agent answers
+it from `eval.outbox`, each item as the user who last wrote it (an item whose author left fails). Its only credential is the `svc_eval` URL (`eval-nightly-secrets`), and the one
 cross-organisation read is the SECURITY DEFINER `eval.nightly_eval_sets()`. A set that already had
 a nightly run in the last 20 hours is skipped, so re-running the Job by hand is safe:
 

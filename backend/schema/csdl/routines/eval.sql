@@ -89,15 +89,18 @@ GRANT EXECUTE ON FUNCTION eval.error_book_on_regression_failed(uuid) TO svc_eval
 
 -- SECURITY DEFINER: the nightly scheduler (worker_agent/nightly_evals.py, a CronJob) runs for every
 -- organisation, and every eval table is org_isolated. This lists only what a nightly run needs to
--- be requested, the active context eval sets of active Data Spaces with the steward the run is
--- answered as; it reads no item, result or answer, and only svc_eval may call it.
+-- be requested, the active context eval sets of active Data Spaces whose steward is an active user,
+-- whom the run is requested for (each item is answered as its author, eval_runs.run_eval); it reads
+-- no item, result or answer, and only svc_eval may call it.
 CREATE FUNCTION eval.nightly_eval_sets()
 RETURNS TABLE (org_id uuid, eval_set_id uuid, data_space_id uuid, steward_id uuid)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
   SELECT s.org_id, s.id, s.data_space_id, d.steward_id
     FROM eval.eval_set s
     JOIN org.data_space d ON d.id = s.data_space_id AND d.org_id = s.org_id
+    JOIN org.app_user u ON u.id = d.steward_id AND u.org_id = d.org_id
    WHERE s.subject_type = 'context' AND s.status = 'active' AND d.status = 'active'
+     AND u.status = 'active'
 $$;
 REVOKE EXECUTE ON FUNCTION eval.nightly_eval_sets() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION eval.nightly_eval_sets() TO svc_eval;

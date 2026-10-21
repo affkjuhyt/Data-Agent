@@ -2,8 +2,9 @@
 
 `python -m services.worker_agent.nightly_evals` runs once and exits. It only requests: each run is
 an eval.eval_run in status running plus its eval_run.requested event, written in one transaction,
-and the worker's eval_runs.run_eval answers it, as it does a run started from the api. The run is
-answered as the Data Space's steward, the person accountable for its context.
+and the worker's eval_runs.run_eval answers it. The run is requested for the Data Space's steward,
+the person accountable for its context, but each item is answered as its own author: no one's
+question is answered with the steward's rights.
 
 A set that already had a nightly run started within MIN_GAP is skipped, so a CronJob retried or
 started by hand the same night does not run the set twice.

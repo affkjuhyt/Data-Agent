@@ -119,3 +119,66 @@ async def test_a_set_whose_nightly_run_started_is_not_run_twice(seed) -> None:
     # The next night it is due again.
     await request_all(NOW + datetime.timedelta(days=1))
     assert len(runs_of(seed, active)) == 2
+
+
+async def test_each_nightly_item_is_answered_as_its_author_and_a_departed_one_fails(seed) -> None:
+    asked = ask(seed, "Câu hỏi đánh giá không có chỉ số đã biết")
+    in_use(seed, asked)
+    steward, other = asked.users
+    set_id = eval_set(seed, asked)  # one item written by the steward
+    by_other = seed.row(
+        "eval.eval_item",
+        org_id=asked.org,
+        eval_set_id=set_id,
+        category="refusal",
+        input=json.dumps({"question": "Câu hỏi của người khác"}),
+        expected=json.dumps({"kind": "refusal"}),
+        created_by=steward,
+        updated_by=other,
+    )
+    await request_all(NOW)
+    ((run_id, *_),) = runs_of(seed, set_id)
+    payload = seed.one("SELECT payload FROM eval.outbox WHERE aggregate_id = %s", run_id)
+    # The other user's question is answered as them, not with the steward's rights.
+    await run_eval(
+        Event(uuid.uuid4(), asked.org, "eval_run.requested", "eval_run", run_id, payload)
+    )
+    asker = seed.one(
+        "SELECT c.user_id FROM qa.conversation c JOIN qa.question q ON q.conversation_id = c.id"
+        " WHERE q.text = 'Câu hỏi của người khác'"
+    )
+    assert str(asker) == str(other)
+
+    with seed.conn.cursor() as cur:
+        cur.execute("UPDATE org.app_user SET status = 'left' WHERE id = %s", (str(other),))
+    await request_all(NOW + datetime.timedelta(days=1))
+    (second,) = (r[0] for r in runs_of(seed, set_id) if str(r[0]) != str(run_id))
+    payload = seed.one("SELECT payload FROM eval.outbox WHERE aggregate_id = %s", second)
+    await run_eval(
+        Event(
+            uuid.uuid4(),
+            asked.org,
+            "eval_run.requested",
+            "eval_run",
+            uuid.UUID(str(second)),
+            payload,
+        )
+    )
+    passed, cause = seed.one(
+        "SELECT passed, cause FROM eval.eval_result WHERE eval_run_id = %s AND eval_item_id = %s",
+        second,
+        by_other,
+    )
+    assert (passed, cause) == (False, "the item has no active author to answer it as")
+
+
+async def test_a_data_space_whose_steward_left_has_no_nightly_run(seed) -> None:
+    asked = ask(seed, "Câu hỏi đánh giá không có chỉ số đã biết")
+    in_use(seed, asked)
+    set_id = eval_set(seed, asked)
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE org.app_user SET status = 'disabled' WHERE id = %s", (str(asked.users[0]),)
+        )
+    await request_all(NOW)
+    assert runs_of(seed, set_id) == []
