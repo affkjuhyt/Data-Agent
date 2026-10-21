@@ -321,8 +321,10 @@ def check_column_policies(
     column reaches the result under its own name: `SELECT ssn AS x`, `upper(ssn)`, `count(DISTINCT
     ssn)`, `WHERE ssn = ...`, a subquery or CTE renaming it, or a UNION branch would pass it
     unmasked or disclose it (the security review of the policy engine). A column through `*`
-    keeps its name and is masked on the result. A column qualified by an alias that is not one of
-    the covered tables' is still checked when its name is covered: it may come through a subquery.
+    keeps its name and is masked on the result. Any column with a covered name is checked,
+    whatever it is qualified by: a qualifier can name a subquery or a CTE over the covered table
+    (`WITH x AS (SELECT * FROM t) SELECT x.ssn AS y FROM x`), so another table's column of the
+    same name is refused too rather than told apart from it.
     """
     by_dataset: dict[uuid.UUID, set[str]] = {}
     for policy in policies:
@@ -334,22 +336,15 @@ def check_column_policies(
         return
     tree = parse_one(sql, dialect=dialect)
     covered_names: set[str] = set()
-    other_tables: set[str] = set()
     for table in tree.find_all(exp.Table):
-        hits = [d for d in datasets if d.id in by_dataset and _reads(table, d, source)]
-        if hits:
-            for dataset in hits:
+        for dataset in datasets:
+            if dataset.id in by_dataset and _reads(table, dataset, source):
                 covered_names |= by_dataset[dataset.id]
-        else:
-            other_tables.add(table.alias_or_name.lower())
     if not covered_names:
         return
     for column in tree.find_all(exp.Column):
         name = column.name.lower()
         if name not in covered_names:
-            continue
-        qualifier = column.table.lower() if column.table else None
-        if qualifier is not None and qualifier in other_tables:
             continue
         parent = column.parent
         as_itself = (parent is tree and column.arg_key == "expressions") or (

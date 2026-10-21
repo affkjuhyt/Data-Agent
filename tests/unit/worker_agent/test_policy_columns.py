@@ -56,7 +56,6 @@ def check(sql: str, *, kind: str = "mask", source: catalog.Source = POSTGRES) ->
         "SELECT * FROM bank.customer",
         "SELECT c.* FROM bank.customer AS c",
         "SELECT * FROM (SELECT * FROM bank.customer) AS s",
-        "SELECT b.code FROM bank.branch AS b WHERE b.id_number = '1'",  # another table's column
     ],
 )
 def test_a_covered_column_selected_as_itself_reaches_the_masking(sql: str) -> None:
@@ -75,6 +74,10 @@ def test_a_covered_column_selected_as_itself_reaches_the_masking(sql: str) -> No
         "WITH c AS (SELECT id_number AS n FROM bank.customer) SELECT n FROM c",
         "SELECT name FROM bank.branch UNION SELECT id_number FROM bank.customer",
         "SELECT id_number AS x FROM bank.CUSTOMER",  # PostgreSQL folds the name: the same table
+        "WITH x AS (SELECT * FROM bank.customer) SELECT x.id_number AS y FROM x",
+        "SELECT s.id_number AS y FROM (SELECT * FROM bank.customer) AS s",
+        # Another table's column of a covered name is refused too: a qualifier cannot tell them apart.
+        "SELECT b.code FROM bank.customer AS c JOIN bank.branch AS b ON b.id_number = c.name",
     ],
 )
 def test_a_covered_column_under_another_name_or_in_an_expression_is_refused(sql: str) -> None:
