@@ -97,6 +97,39 @@ def test_every_read_of_the_table_is_its_masked_columns(sql: str) -> None:
     assert len(raw) == len(reads)
 
 
+def test_a_parenthesised_join_does_not_carry_a_raw_read_into_the_subquery() -> None:
+    # sqlglot hangs the join on the first table's node: copying it would copy the other read.
+    with pytest.raises(OutOfScope, match="plain name"):
+        rewrite("SELECT * FROM (bank.customer AS c JOIN bank.customer AS d ON c.id = d.id)")
+
+
+def test_every_dataset_naming_the_table_applies_and_they_must_agree() -> None:
+    twin = catalog.Dataset(id=uuid.uuid4(), schema_name="bank", table_name="customer")
+    hide_name = governance.AccessPolicy(
+        id=uuid.uuid4(),
+        dataset_id=twin.id,
+        name="Ẩn tên",
+        kind="column",
+        columns=["name"],
+        status="active",
+    )
+
+    def both(columns: dict[uuid.UUID, list[str]]) -> str:
+        return rewrite_column_policies(
+            "SELECT * FROM bank.customer",
+            dialect="postgres",
+            policies=[*POLICIES, hide_name],
+            datasets=[CUSTOMERS, twin],
+            source=POSTGRES,
+            columns=columns,
+        )
+
+    (read,) = reads_of_customer(both({**COLUMNS, twin.id: COLUMNS[CUSTOMERS.id]}))
+    assert '"name"' not in read and "salary" not in read and "MD5" in read
+    with pytest.raises(OutOfScope, match="list them differently"):
+        both({**COLUMNS, twin.id: ["id", "name"]})
+
+
 def test_the_alias_of_the_table_is_kept_for_the_rest_of_the_query() -> None:
     out = rewrite("SELECT c.name FROM bank.customer AS c WHERE c.id = 1")
     assert ") AS c WHERE c.id = 1" in out

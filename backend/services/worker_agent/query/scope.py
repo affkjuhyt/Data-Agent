@@ -350,6 +350,10 @@ def _masked(column: str, method: str) -> exp.Expression:
     raise OutOfScope(f"unsupported mask method {method}")
 
 
+# What a covered table node may carry and still be read through its masked subquery.
+_PLAIN_TABLE = frozenset({"this", "db", "catalog", "alias", "only"})
+
+
 def rewrite_column_policies(
     sql: str,
     *,
@@ -385,37 +389,65 @@ def rewrite_column_policies(
     if not covered:
         return sql
     tree = parse_one(sql, dialect=dialect)
+    made: set[int] = set()
     for table in list(tree.find_all(exp.Table)):
-        dataset = next((d for d in covered if _reads(table, d, source)), None)
-        if dataset is None:
+        matched = [d for d in covered if _reads(table, d, source)]
+        if not matched:
             continue
-        listed = columns.get(dataset.id)
+        # A table node can carry more than its name: a parenthesised join, a lateral, a pivot,
+        # a sample. Copied into the subquery, those would bring another read of a covered table
+        # along unmasked (the security review), so a covered table must be a plain name.
+        extra = [k for k, v in table.args.items() if v and k not in _PLAIN_TABLE]
+        if extra:
+            raise OutOfScope(
+                f"{table.name} is read with {', '.join(sorted(extra))}; a table with a hidden or "
+                "masked column is only read by its plain name"
+            )
+        # Several datasets can name one table: every one's policies apply, and they must agree.
+        listings = {tuple(columns.get(d.id) or ()) for d in matched}
+        listed = next(iter(listings)) if len(listings) == 1 else ()
         if not listed:
             raise OutOfScope(
-                f"the columns of {dataset.table_name} are not in the catalog; a table with a "
-                "hidden or masked column is only read once they are"
+                f"the columns of {table.name} are not in the catalog, or its datasets list them "
+                "differently; a table with a hidden or masked column is only read once they agree"
             )
+        drop: set[str] = set()
+        method_of: dict[str, str] = {}
+        for dataset in matched:
+            drop |= hidden.get(dataset.id, set())
+            for name, method in masks.get(dataset.id, {}).items():
+                if method_of.setdefault(name, method) != method:
+                    raise OutOfScope(f"conflicting masks for column {name}")
         projection: list[exp.Expression] = []
         for name in listed:
             key = name.lower()
-            if key in hidden.get(dataset.id, set()):
+            if key in drop:
                 continue
-            method = masks.get(dataset.id, {}).get(key)
-            value = _masked(name, method) if method else exp.column(name, quoted=True)
+            chosen = method_of.get(key)
+            value = _masked(name, chosen) if chosen else exp.column(name, quoted=True)
             projection.append(exp.alias_(value, name, quoted=True))
         if not projection:
-            raise OutOfScope(f"every column of {dataset.table_name} is hidden")
-        bare = table.copy()
-        bare.set("alias", None)
+            raise OutOfScope(f"every column of {table.name} is hidden")
+        bare = exp.Table(
+            this=table.this.copy(),
+            db=table.args["db"].copy() if table.args.get("db") else None,
+            catalog=table.args["catalog"].copy() if table.args.get("catalog") else None,
+            only=table.args.get("only"),
+        )
+        made.add(id(bare))
         alias = table.args.get("alias")
-        inner = exp.select(*projection).from_(bare)
         replacement = exp.Subquery(
-            this=inner,
+            this=exp.select(*projection).from_(bare, copy=False),
             alias=alias.copy()
             if alias is not None
             else exp.TableAlias(this=exp.to_identifier(table.name)),
         )
         table.replace(replacement)
+    # Whatever the rewrite missed is refused, not run: every read left of a covered table must be
+    # one of the masked subqueries made above.
+    for table in tree.find_all(exp.Table):
+        if id(table) not in made and any(_reads(table, d, source) for d in covered):
+            raise OutOfScope(f"a read of {table.name} could not be masked; query refused")
     return tree.sql(dialect=dialect)
 
 
