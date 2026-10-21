@@ -56,7 +56,9 @@ kubectl -n dataagent-service create secret generic api-secrets \
 # profiles as svc_context and tile snapshots as svc_workspace, and applies accepted proposals to
 # skills as svc_skill and to pack installs as svc_pack, and executes agent runs as svc_agent (runs.py,
 # which tells a run's result in the app as svc_notify) and reads metric threshold watches as
-# svc_monitor (answer/thresholds.py);
+# svc_monitor (answer/thresholds.py, metric_changes.py); runs eval items through the QA handler
+# as svc_eval (eval_runs.py), replays runs for a pending access policy as svc_governance
+# (policy_backtests.py) and applies an accepted writeback as svc_pipeline (proposals.py);
 # answer exports go to MinIO as its own user, which may only write to da-exports (minio-init), never
 # with the root credentials.
 kubectl -n dataagent-service create secret generic worker-agent-secrets \
@@ -75,6 +77,9 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_AGENT="${DATAAGENT_DB_URL__SVC_AGENT}" \
   --from-literal=DATAAGENT_DB_URL__SVC_NOTIFY="${DATAAGENT_DB_URL__SVC_NOTIFY}" \
   --from-literal=DATAAGENT_DB_URL__SVC_MONITOR="${DATAAGENT_DB_URL__SVC_MONITOR}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_EVAL="${DATAAGENT_DB_URL__SVC_EVAL}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_GOVERNANCE="${DATAAGENT_DB_URL__SVC_GOVERNANCE}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_PIPELINE="${DATAAGENT_DB_URL__SVC_PIPELINE}" \
   --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \
   --from-literal=NOTIFY_VERIFICATION_SECRET="${NOTIFY_VERIFICATION_SECRET}" \
   --from-literal=MINIO_URL="${WORKER_AGENT_MINIO_URL}" \
