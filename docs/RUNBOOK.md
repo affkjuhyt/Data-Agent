@@ -398,10 +398,13 @@ The run stops at `in_review`; publishing is a person's action. Its event is `acq
   connection error. The crawler refuses internal names (`localhost`, `.svc`, `.cluster.local`,
   `.internal`, `.local`) and any host resolving to a private, loopback, link-local or reserved
   address, on the first request and every redirect; the api refuses such domains on the source.
-  The connection is not pinned to the checked address, so the proxy must refuse private ranges too.
+  Without a proxy the connection is pinned to the checked address (no DNS rebinding); through the
+  proxy it is the proxy that resolves, so it must refuse private ranges itself.
 - **API keys.** A source with `auth_mode = api_key` names a key under
   `tenants/<org>/crawl-sources/` of the `secret` mount (the api refuses any other path); the value is
   in field `api_key`. The crawler's own AppRole (`dataagent-crawler-policy`) reads only those paths.
+  The key is sent over https only and only to the origin it was first sent to: a redirect to
+  another host, port or to http goes without it.
 - **Missing intermediate CA** (`CERTIFICATE_VERIFY_FAILED`, e.g. hnx.vn): put the intermediate's
   PEM in a file mounted into the pod and point `CRAWLER_EXTRA_CA_FILE` (`crawler-env`) at it.
 - **Blocked source.** Three runs in a row answered 403/429 pause the source

@@ -1,10 +1,16 @@
 """Fetching a source's pages inside its declared scope (BR-149, UC-14-01, UC-14-06).
 
 Every request goes out through the egress proxy (CRAWLER_EGRESS_PROXY, given to the client itself
-rather than through HTTPS_PROXY/NO_PROXY, so no crawl request can bypass it), with one User-Agent, never more than one request per second to a domain
-whatever the number of sources hitting it (AC-14-06-05), only to `allowed_domains`, and only where
-robots.txt allows it. A listing is followed breadth-first to `max_depth`; nothing is posted, so no
-login form or captcha is ever submitted.
+rather than through HTTPS_PROXY/NO_PROXY, so no crawl request can bypass it), with one User-Agent,
+never more than one request per second to a domain whatever the number of sources hitting it
+(AC-14-06-05), only to `allowed_domains`, and only where robots.txt allows it. A listing is followed
+breadth-first to `max_depth`; nothing is posted, so no login form or captcha is ever submitted.
+
+Internal hosts are refused by name and by address, on the first request and every redirect. Without
+a proxy the connection is pinned to the address that was checked, so a name that resolves to a
+public address for the check and to a private one for the connection (DNS rebinding) gets nowhere;
+through the proxy it is the proxy that resolves and must refuse private ranges. A source's API key
+is sent only over https and only to the host it was sent to first, never along a redirect elsewhere.
 
 Some Vietnamese public sites send their leaf certificate without the intermediate CA (hnx.vn). The
 legacy connector fetched the intermediate from the certificate's AIA URL over a direct connection,
@@ -25,6 +31,7 @@ from urllib.parse import urldefrag, urljoin, urlsplit
 from urllib.robotparser import RobotFileParser
 
 import certifi
+import httpcore
 import httpx
 from lxml import html
 
@@ -63,19 +70,18 @@ def _public_address(address: str) -> bool:
     return ip.is_global and not (ip.is_multicast or ip.is_reserved or ip.is_unspecified)
 
 
-async def public(url: str) -> bool:
-    """The host is not internal by name, and every address it resolves to is public.
-
-    Checked for the first request and every redirect hop. The connection is not pinned to the
-    checked address; the egress proxy resolves again and must refuse private ranges itself."""
-    if ALLOW_PRIVATE:
-        return True
+async def checked_address(url: str) -> str | None:
+    """The address to connect to, or None: the host is internal by name, or one of the addresses
+    it resolves to is not public. IPv4 first, the address the connection is then pinned to."""
     parts = urlsplit(url)
     host = (parts.hostname or "").lower().rstrip(".")
-    if not host or host == "localhost" or host.endswith(INTERNAL_SUFFIXES):
-        return False
+    if not host:
+        return None
+    if not ALLOW_PRIVATE and (host == "localhost" or host.endswith(INTERNAL_SUFFIXES)):
+        return None
     try:
-        return _public_address(host)
+        ipaddress.ip_address(host)
+        return host if ALLOW_PRIVATE or _public_address(host) else None
     except ValueError:
         pass  # a name, not an address literal
     try:
@@ -83,8 +89,66 @@ async def public(url: str) -> bool:
             host, parts.port or (443 if parts.scheme == "https" else 80), type=socket.SOCK_STREAM
         )
     except OSError:
-        return False
-    return bool(infos) and all(_public_address(str(info[4][0])) for info in infos)
+        return None
+    addresses = [str(info[4][0]) for info in infos]
+    if not addresses or not (ALLOW_PRIVATE or all(_public_address(a) for a in addresses)):
+        return None
+    v4 = [a for a in addresses if ":" not in a]
+    return (v4 or addresses)[0]
+
+
+async def public(url: str) -> bool:
+    return await checked_address(url) is not None
+
+
+class PinnedBackend(httpcore.AsyncNetworkBackend):
+    """Connects a host only to the address it was checked at (DNS rebinding); a host never checked
+    is not connected to at all, but the proxy, whose name is the cluster's."""
+
+    def __init__(self, passthrough: frozenset[str] = frozenset()) -> None:
+        self._inner = httpcore.AnyIOBackend()
+        self._passthrough = passthrough
+        self.pins: dict[str, str] = {}
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,  # noqa: ASYNC109 — httpcore's AsyncNetworkBackend signature
+        local_address: str | None = None,
+        socket_options: Iterable[httpcore.SOCKET_OPTION] | None = None,
+    ) -> httpcore.AsyncNetworkStream:
+        address = self.pins.get(host.lower())
+        if address is None:
+            if host.lower() not in self._passthrough:
+                raise httpcore.ConnectError(f"{host} was not checked before connecting")
+            address = host
+        # TLS still verifies the certificate against the name (httpcore passes the origin's host
+        # as server_hostname), so pinning changes where we connect, not whom we trust.
+        return await self._inner.connect_tcp(
+            address,
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+
+    async def connect_unix_socket(
+        self,
+        path: str,
+        timeout: float | None = None,  # noqa: ASYNC109 — httpcore's AsyncNetworkBackend signature
+        socket_options: Iterable[httpcore.SOCKET_OPTION] | None = None,
+    ) -> httpcore.AsyncNetworkStream:
+        raise httpcore.ConnectError("the crawler opens no unix socket")
+
+    async def sleep(self, seconds: float) -> None:
+        await self._inner.sleep(seconds)
+
+
+class CrawlClient(httpx.AsyncClient):
+    def __init__(self, backend: PinnedBackend, **kwargs: object) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self.backend = backend
 
 
 def ssl_context() -> ssl.SSLContext:
@@ -118,6 +182,13 @@ class DomainPacer:
 PACER = DomainPacer()
 
 
+def keeps_credentials(first: str, url: str) -> bool:
+    """A source's API key goes to `url` only if it is https and the same origin (scheme, host and
+    port) as the URL it was first sent to: a redirect elsewhere, or down to http, goes without it."""
+    a, b = urlsplit(first), urlsplit(url)
+    return b.scheme == "https" and (a.scheme, a.hostname, a.port) == (b.scheme, b.hostname, b.port)
+
+
 class OutOfScope(Exception):
     """A redirect pointed outside the source's domains, or a host resolves to a private address;
     the request is not made (BR-149)."""
@@ -125,7 +196,7 @@ class OutOfScope(Exception):
 
 class Fetcher:
     def __init__(
-        self, client: httpx.AsyncClient, *, domains: Iterable[str], rate_limit_rps: float
+        self, client: CrawlClient, *, domains: Iterable[str], rate_limit_rps: float
     ) -> None:
         self._client = client
         self._domains = list(domains)
@@ -156,11 +227,19 @@ class Fetcher:
 
     async def _send(self, url: str, headers: dict[str, str] | None) -> tuple[httpx.Response, str]:
         """The final response and its URL; redirects are followed by hand so that each hop is
-        checked against the domains and paced like any other request."""
+        checked against the domains and paced like any other request. `headers` (a source's API
+        key) go only over https and only to the first URL's host."""
+        first = url
+        if headers and urlsplit(url).scheme != "https":
+            raise OutOfScope(f"{url}: a source's credentials are sent over https only")
         for _ in range(MAX_REDIRECTS + 1):
-            if not await public(url):
+            address = await checked_address(url)
+            if address is None:
                 raise OutOfScope(f"{url} is not a public address")
-            request = self._client.build_request("GET", url, headers=headers)
+            parts = urlsplit(url)
+            self._client.backend.pins[(parts.hostname or "").lower()] = address
+            keep = headers if headers and keeps_credentials(first, url) else None
+            request = self._client.build_request("GET", url, headers=keep)
             response = await self._client.send(request, stream=True)
             location = response.headers.get("location")
             if not response.is_redirect or not location:
@@ -244,14 +323,28 @@ async def crawl(
     return pages, refused
 
 
-def client() -> httpx.AsyncClient:
+def client() -> CrawlClient:
     # The proxy is passed explicitly and the environment ignored: a NO_PROXY entry meant for MinIO
     # or OpenBao must never let a crawl request out without the proxy.
-    return httpx.AsyncClient(
-        proxy=os.environ.get("CRAWLER_EGRESS_PROXY") or None,
+    proxy = os.environ.get("CRAWLER_EGRESS_PROXY") or None
+    ctx = ssl_context()
+    backend = PinnedBackend(
+        frozenset({(urlsplit(proxy).hostname or "").lower()}) if proxy else frozenset()
+    )
+    pool: httpcore.AsyncConnectionPool = (
+        httpcore.AsyncHTTPProxy(proxy_url=proxy, ssl_context=ctx, network_backend=backend)
+        if proxy
+        else httpcore.AsyncConnectionPool(ssl_context=ctx, network_backend=backend)
+    )
+    transport = httpx.AsyncHTTPTransport(verify=ctx)
+    # httpx 0.27 takes no network backend; its transport is a thin wrapper around this same pool,
+    # so the pool is swapped for one that pins (tests/unit/crawler/test_fetch.py checks it).
+    transport._pool = pool
+    return CrawlClient(
+        backend,
+        transport=transport,
         headers={"User-Agent": USER_AGENT, "Accept-Language": "vi,en;q=0.8"},
         timeout=httpx.Timeout(TIMEOUT),
         follow_redirects=False,
-        verify=ssl_context(),
         trust_env=False,
     )

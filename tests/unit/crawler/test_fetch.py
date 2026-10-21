@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from itertools import pairwise
 from typing import Any
 
+import httpcore
 import httpx
 import pytest
 
@@ -163,7 +164,63 @@ async def test_crawl_traffic_takes_the_proxy_whatever_no_proxy_says(
     monkeypatch.setenv("NO_PROXY", "*")
     async with fetch.client() as http:
         transport = http._transport_for_url(httpx.URL("https://bank.example.vn/"))
-    assert transport is not http._transport  # the proxy's transport, not the direct one
+        assert isinstance(transport, httpx.AsyncHTTPTransport)
+        assert isinstance(transport._pool, httpcore.AsyncHTTPProxy)
+        # Only the proxy's own name is connected to without a check.
+        with pytest.raises(httpcore.ConnectError):
+            await http.backend.connect_tcp("bank.example.vn", 443)
+
+
+async def test_the_connection_goes_to_the_address_that_was_checked(
+    site: Site, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A name answered as 127.0.0.1 at the check is connected to there, whatever the resolver says
+    later: system DNS cannot resolve rebind.test at all, so the page arrives only through the pin."""
+    real = asyncio.get_running_loop().getaddrinfo
+
+    async def resolve(host: str, port: int, **kw: Any) -> list[Any]:
+        if host == "rebind.test":
+            return [(2, 1, 6, "", ("127.0.0.1", port))]
+        return await real(host, port, **kw)
+
+    monkeypatch.setattr(
+        type(asyncio.get_running_loop()), "getaddrinfo", lambda self, *a, **k: resolve(*a, **k)
+    )
+    port = site.http.server_port
+    async with fetch.client() as http:
+        fetcher = fetch.Fetcher(http, domains=["rebind.test"], rate_limit_rps=1)
+        fetcher._interval = 0.0
+        page = await fetcher.get(f"http://rebind.test:{port}/b")
+        assert http.backend.pins == {"rebind.test": "127.0.0.1"}
+    assert page is not None and page.content == b"<p>b</p>"
+
+
+async def test_a_host_never_checked_is_not_connected_to() -> None:
+    async with fetch.client() as http:
+        with pytest.raises(httpx.ConnectError):
+            await http.get("http://127.0.0.1:9/")
+
+
+@pytest.mark.parametrize(
+    ("url", "keeps"),
+    [
+        ("https://api.bank.example.vn/v1/rates?page=2", True),
+        ("http://api.bank.example.vn/v1/rates", False),
+        ("https://cdn.bank.example.vn/v1/rates", False),
+        ("https://api.bank.example.vn:8443/v1/rates", False),
+    ],
+)
+def test_a_source_key_follows_only_the_same_https_origin(url: str, keeps: bool) -> None:
+    assert fetch.keeps_credentials("https://api.bank.example.vn/v1/rates", url) is keeps
+
+
+async def test_a_source_key_is_never_sent_over_http(site: Site) -> None:
+    async with fetch.client() as http:
+        fetcher = fetch.Fetcher(http, domains=["localhost"], rate_limit_rps=1)
+        fetcher._interval = 0.0
+        page = await fetcher.get(f"{site.base}/a", headers={"Authorization": "Bearer k"})
+    assert page is not None and page.error is not None and "https only" in page.error
+    assert not any(path == "/a" for _, path in site.hits)
 
 
 @pytest.mark.parametrize(
