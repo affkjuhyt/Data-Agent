@@ -67,7 +67,7 @@ spec:
           for b in $MINIO_BUCKETS; do mc mb --ignore-existing "local/$b"; done
           # BR-86: an answer export is downloadable for 24 hours; the file does not outlive it.
           mc ilm rule add --expire-days 1 local/da-exports >/dev/null 2>&1 || mc ilm rule ls local/da-exports
-          # worker-agent's own user: PutObject on da-exports, nothing else (it never holds root).
+          # worker-agent's own user: PutObject on da-exports (the other grants follow); it never holds root.
           printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:PutObject"],"Resource":["arn:aws:s3:::da-exports/*"]}]}' > /tmp/worker-agent-exports.json
           mc admin policy create local worker-agent-exports /tmp/worker-agent-exports.json
           # Upload analysis runs as worker-agent and must read the immutable upload object.
@@ -77,6 +77,11 @@ spec:
           mc admin user add local worker-agent "$WORKER_AGENT_MINIO_PASSWORD"
           mc admin policy attach local worker-agent-exports --user worker-agent || mc admin user info local worker-agent
           mc admin policy attach local worker-agent-ingest-v1 --user worker-agent || mc admin user info local worker-agent
+          # Session report drafts (worker_agent/session_reports.py) go under session-reports/ of
+          # da-results, which the api reads and serves; the worker writes them and never reads one.
+          printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:PutObject"],"Resource":["arn:aws:s3:::da-results/session-reports/*"]}]}' > /tmp/worker-agent-reports.json
+          mc admin policy create local worker-agent-reports /tmp/worker-agent-reports.json
+          mc admin policy attach local worker-agent-reports --user worker-agent || mc admin user info local worker-agent
           mc mb --ignore-existing --with-lock local/raw
           mc retention set --default "$RAW_RETENTION_MODE" "${RAW_RETENTION_DAYS}d" local/raw
         resources:

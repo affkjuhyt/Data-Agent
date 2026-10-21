@@ -93,6 +93,11 @@ async def run_eval(event: Event) -> None:
         passed = failed = refusals = regressions = 0
         for item in items:
             asker = (item.updated_by or item.created_by) if nightly else user_id
+            understanding_ok: bool | None
+            value_ok: bool | None
+            behavior_ok: bool | None
+            actual: dict[str, Any]
+            cause: str | None
             if asker is None or (nightly and asker not in active_authors):
                 understanding_ok = value_ok = behavior_ok = item_passed = False
                 actual, cause = {}, "the item has no active author to answer it as"

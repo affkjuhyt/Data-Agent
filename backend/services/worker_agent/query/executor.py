@@ -344,6 +344,79 @@ def _stored_error(outcome: QueryOutcome, private: bool) -> str | None:
     return f"private run {outcome.status}"
 
 
+@dataclass
+class Bound:
+    """The SQL as `principal_id` may run it, and the policies that shaped it."""
+
+    executed: str
+    policies: list[governance.AccessPolicy]
+
+
+async def bound_sql(
+    session: Any,
+    *,
+    sql: str,
+    source: catalog.Source,
+    data_space_id: uuid.UUID,
+    principal_id: uuid.UUID,
+    caller_kind: str | None,
+    limit: int = MAX_ROWS,
+) -> Bound:
+    """`sql` with the asker's limits written into it: the row cap, the column and mask policies,
+    the row policies with their attributes bound, and the row scopes. Two people for whom it gives
+    the same text read the same rows (session_reports' rights check relies on that). Raises
+    SqlRejected for what they may not run."""
+    dialect = dialect_of(source.kind)
+    tree = check_read_only(sql, dialect)
+    tables = tables_of(tree, dialect)
+    executed = capped(tree, dialect, min(limit, MAX_ROWS) + 1)
+    readable_datasets = await datasets_read(
+        session,
+        data_space_id=data_space_id,
+        principal_id=principal_id,
+        source=source,
+        tables=tables,
+    )
+    policies = await active_policies(
+        session,
+        principal_id=principal_id,
+        datasets=readable_datasets,
+        caller_kind=caller_kind,
+    )
+    user = await session.scalar(select(org.AppUser).where(org.AppUser.id == principal_id))
+    if user is None:
+        raise SqlRejected("query principal is not an organisation user")
+    output_policies = [policy for policy in policies if policy.kind in {"column", "mask"}]
+    # Columns first: the row policies then filter the inner reads of the table,
+    # where a hidden column is still there to filter on.
+    executed = rewrite_column_policies(
+        executed,
+        dialect=dialect,
+        policies=output_policies,
+        datasets=readable_datasets,
+        source=source,
+        columns=await covered_columns(session, output_policies),
+    )
+    executed = rewrite_access_policies(
+        executed,
+        dialect=dialect,
+        policies=[policy for policy in policies if policy.kind == "row"],
+        user=user,
+        datasets=readable_datasets,
+        source=source,
+    )
+    executed = rewrite_row_scopes(
+        executed,
+        dialect=dialect,
+        scopes=await active_row_scopes(
+            session,
+            data_space_id=data_space_id,
+            principal_id=principal_id,
+        ),
+    )
+    return Bound(executed, list(policies))
+
+
 async def run_query(
     *,
     org_id: uuid.UUID,
@@ -373,73 +446,26 @@ async def run_query(
     started = time.monotonic()
     outcome = QueryOutcome(query_run_id=run_id, status="failed", sql=sql)
     executed = sql
-    tables: set[tuple[str | None, str]] = set()
     output_policies: list[governance.AccessPolicy] = []
     applied_policy_ids: list[uuid.UUID] = []
     applied_policies: list[governance.AccessPolicy] = []
-    try:
-        dialect = dialect_of(source.kind)
-        tree = check_read_only(sql, dialect)
-        tables = tables_of(tree, dialect)
-        executed = capped(tree, dialect, limit + 1)
-    except SqlRejected as exc:
-        outcome.error = str(exc)
     async with scoped_session(ROLE, org_id, principal_id) as session:
-        readable_datasets: list[catalog.Dataset] = []
-        if outcome.error is None:
-            try:
-                readable_datasets = await datasets_read(
-                    session,
-                    data_space_id=data_space_id,
-                    principal_id=principal_id,
-                    source=source,
-                    tables=tables,
-                )
-                policies = await active_policies(
-                    session,
-                    principal_id=principal_id,
-                    datasets=readable_datasets,
-                    caller_kind=caller_kind,
-                )
-                output_policies = [
-                    policy for policy in policies if policy.kind in {"column", "mask"}
-                ]
-                applied_policies = list(policies)
-                applied_policy_ids = [policy.id for policy in policies]
-                user = await session.scalar(
-                    select(org.AppUser).where(org.AppUser.id == principal_id)
-                )
-                if user is None:
-                    raise SqlRejected("query principal is not an organisation user")
-                # Columns first: the row policies then filter the inner reads of the table,
-                # where a hidden column is still there to filter on.
-                executed = rewrite_column_policies(
-                    executed,
-                    dialect=dialect,
-                    policies=output_policies,
-                    datasets=readable_datasets,
-                    source=source,
-                    columns=await covered_columns(session, output_policies),
-                )
-                executed = rewrite_access_policies(
-                    executed,
-                    dialect=dialect,
-                    policies=[policy for policy in policies if policy.kind == "row"],
-                    user=user,
-                    datasets=readable_datasets,
-                    source=source,
-                )
-                executed = rewrite_row_scopes(
-                    executed,
-                    dialect=dialect,
-                    scopes=await active_row_scopes(
-                        session,
-                        data_space_id=data_space_id,
-                        principal_id=principal_id,
-                    ),
-                )
-            except SqlRejected as exc:
-                outcome.error = str(exc)
+        try:
+            bound = await bound_sql(
+                session,
+                sql=sql,
+                source=source,
+                data_space_id=data_space_id,
+                principal_id=principal_id,
+                caller_kind=caller_kind,
+                limit=limit,
+            )
+            executed = bound.executed
+            applied_policies = bound.policies
+            applied_policy_ids = [policy.id for policy in bound.policies]
+            output_policies = [p for p in bound.policies if p.kind in {"column", "mask"}]
+        except SqlRejected as exc:
+            outcome.error = str(exc)
         hit: tuple[q.QueryRun, q.QueryResult] | None = None
         # The internal workspace is read through the asker's own session, and one source id stands
         # for it in every Data Space: never reused.

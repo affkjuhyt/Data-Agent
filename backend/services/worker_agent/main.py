@@ -38,6 +38,7 @@ from services.worker_agent import (
     resolutions,
     runs,
     schema_scans,
+    session_reports,
     skill_runs,
     source_tests,
     tiles,
@@ -72,6 +73,7 @@ HANDLERS: dict[str, Handler] = {
     **schema_scans.HANDLERS,
     **query_runs.HANDLERS,
     **tiles.HANDLERS,
+    **session_reports.HANDLERS,
     **uploads.HANDLERS,
     **proposals.HANDLERS,
     **exports.HANDLERS,
@@ -119,7 +121,9 @@ async def sources() -> list[EventSource]:
         if schema == "eval":
             types |= set(eval_runs.HANDLERS)
         if schema == "workspace":
-            types |= set(tiles.HANDLERS)
+            # session_report.status_changed is claimed whatever its status (publish, approval):
+            # nothing else consumes it yet, and session_reports acts on `checking` alone.
+            types |= set(tiles.HANDLERS) | set(session_reports.HANDLERS)
         if schema == "skill":
             types |= {proposals.PUBLISH, proposals.SHARE} | set(skill_runs.HANDLERS)
         if schema == "pack":
