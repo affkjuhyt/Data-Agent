@@ -60,10 +60,11 @@ from services.worker_agent.query.scope import (
     active_policies,
     active_row_scopes,
     apply_output_policies,
-    check_column_policies,
+    covered_columns,
     datasets_read,
     default_schema,
     rewrite_access_policies,
+    rewrite_column_policies,
     rewrite_row_scopes,
 )
 from services.worker_agent.query.secrets import SecretReader, SecretUnavailable
@@ -410,13 +411,15 @@ async def run_query(
                 )
                 if user is None:
                     raise SqlRejected("query principal is not an organisation user")
-                # On the query as written: the executed text is wrapped in SELECT * (capped).
-                check_column_policies(
-                    tree.sql(dialect=dialect),
+                # Columns first: the row policies then filter the inner reads of the table,
+                # where a hidden column is still there to filter on.
+                executed = rewrite_column_policies(
+                    executed,
                     dialect=dialect,
                     policies=output_policies,
                     datasets=readable_datasets,
                     source=source,
+                    columns=await covered_columns(session, output_policies),
                 )
                 executed = rewrite_access_policies(
                     executed,
@@ -523,7 +526,11 @@ async def run_query(
                         timeout=timeout_s + 5,
                     )
             outcome.truncated = len(rows) > limit
-            columns, rows = apply_output_policies(columns, rows, output_policies)
+            # Masks were applied in the SQL (rewrite_column_policies); a hidden column is not
+            # read at all, and is dropped here once more should a source return it anyway.
+            columns, rows = apply_output_policies(
+                columns, rows, [p for p in output_policies if p.kind == "column"]
+            )
             outcome.rows = rows[:limit]
             outcome.columns = columns
             outcome.result_hash = _hash(columns, outcome.rows)

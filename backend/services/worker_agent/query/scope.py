@@ -306,78 +306,117 @@ def _reads(table: exp.Table, dataset: catalog.Dataset, source: catalog.Source) -
     )
 
 
-def check_column_policies(
+async def covered_columns(
+    session: AsyncSession, policies: Iterable[governance.AccessPolicy]
+) -> dict[uuid.UUID, list[str]]:
+    """The current columns, in order, of each table a column or mask policy covers (the catalog's
+    column_meta of its newest dataset version); rewrite_column_policies needs every one of them."""
+    ids = {p.dataset_id for p in policies if p.kind in {"column", "mask"}}
+    if not ids:
+        return {}
+    meta = catalog.ColumnMeta
+    rows = (
+        await session.execute(
+            select(meta.dataset_id, meta.dataset_version, meta.name)
+            .where(meta.dataset_id.in_(ids), meta.removed_in_version.is_(None))
+            .order_by(meta.dataset_id, meta.dataset_version.desc(), meta.ordinal)
+        )
+    ).all()
+    newest: dict[uuid.UUID, int] = {}
+    out: dict[uuid.UUID, list[str]] = {}
+    for dataset_id, version, name in rows:
+        if newest.setdefault(dataset_id, version) == version:
+            out.setdefault(dataset_id, []).append(name)
+    return out
+
+
+def _masked(column: str, method: str) -> exp.Expression:
+    """A masked column in SQL, as the api's simulation shows it (governance/policies._MASKS)."""
+    text = exp.cast(exp.column(column, quoted=True), "TEXT")
+    if method == "hash":
+        return exp.MD5(this=text)
+    if method == "partial":
+        return exp.DPipe(
+            this=exp.Left(this=text, expression=exp.Literal.number(2)),
+            expression=exp.Literal.string("***"),
+        )
+    if method == "last4":
+        return exp.DPipe(
+            this=exp.Literal.string("****"),
+            expression=exp.Right(this=text, expression=exp.Literal.number(4)),
+        )
+    if method == "null":
+        return exp.Null()
+    raise OutOfScope(f"unsupported mask method {method}")
+
+
+def rewrite_column_policies(
     sql: str,
     *,
     dialect: str,
     policies: Iterable[governance.AccessPolicy],
     datasets: Iterable[catalog.Dataset],
     source: catalog.Source,
-) -> None:
-    """Refuse a query that uses a hidden or masked column anywhere but as itself in the outermost
-    SELECT's list.
+    columns: Mapping[uuid.UUID, list[str]],
+) -> str:
+    """Hide and mask columns in the SQL itself, before the source reads the table.
 
-    apply_output_policies hides and masks result columns by name, so it only holds when a covered
-    column reaches the result under its own name: `SELECT ssn AS x`, `upper(ssn)`, `count(DISTINCT
-    ssn)`, `WHERE ssn = ...`, a subquery or CTE renaming it, or a UNION branch would pass it
-    unmasked or disclose it (the security review of the policy engine). A column through `*`
-    keeps its name and is masked on the result. Any column with a covered name is checked,
-    whatever it is qualified by: a qualifier can name a subquery or a CTE over the covered table
-    (`WITH x AS (SELECT * FROM t) SELECT x.ssn AS y FROM x`), so another table's column of the
-    same name is refused too rather than told apart from it.
+    Every read of a covered table becomes `(SELECT <its columns> FROM table) AS <its alias>`, a
+    hidden column left out and a masked one replaced by its masking expression under its own name.
+    Whatever the rest of the query does then sees the masked table only: a rename, an expression,
+    a WHERE, a UNION, a whole-row reference (`row_to_json(c)`, `c.*`, PostgreSQL's `c.text`). The
+    security review found each of those past a check on result column names, which is why the
+    masking is no longer done on the result. A covered table without its columns in the catalog is
+    refused: its columns cannot be listed, so none can be left out.
     """
-    by_dataset: dict[uuid.UUID, set[str]] = {}
+    hidden: dict[uuid.UUID, set[str]] = {}
+    masks: dict[uuid.UUID, dict[str, str]] = {}
     for policy in policies:
-        if policy.kind in {"column", "mask"}:
-            by_dataset.setdefault(policy.dataset_id, set()).update(
-                str(column).lower() for column in policy.columns or []
-            )
-    if not by_dataset:
-        return
+        names = {str(c).lower() for c in policy.columns or []}
+        if policy.kind == "column":
+            hidden.setdefault(policy.dataset_id, set()).update(names)
+        elif policy.kind == "mask":
+            for name in names:
+                previous = masks.setdefault(policy.dataset_id, {}).get(name)
+                if previous is not None and previous != policy.mask_method:
+                    raise OutOfScope(f"conflicting masks for column {name}")
+                masks[policy.dataset_id][name] = str(policy.mask_method)
+    covered = [d for d in datasets if d.id in hidden or d.id in masks]
+    if not covered:
+        return sql
     tree = parse_one(sql, dialect=dialect)
-    covered_names: set[str] = set()
-    covered_tables: set[str] = set()
-    for table in tree.find_all(exp.Table):
-        for dataset in datasets:
-            if dataset.id in by_dataset and _reads(table, dataset, source):
-                covered_names |= by_dataset[dataset.id]
-                covered_tables |= {table.name.lower(), table.alias_or_name.lower()}
-    if not covered_names:
-        return
-    # What renames or folds columns out of sight of a name check is refused outright on a query
-    # over a covered table (the security review): a column list on an alias (`AS c(a, b)`)
-    # renames what `*` brings; a whole-row reference (`row_to_json(c)`) carries every column;
-    # USING and NATURAL joins compare columns the query never names; a UNION, EXCEPT or INTERSECT
-    # takes its column names from its first branch, so another branch's covered column comes out
-    # under them.
-    refused = "it can only be read through a plain SELECT of its columns"
-    if any(alias.args.get("columns") for alias in tree.find_all(exp.TableAlias)):
-        raise OutOfScope(
-            f"a table with a hidden or masked column is renamed by an alias; {refused}"
-        )
-    if any(
-        join.args.get("using") or join.method.upper() == "NATURAL"
-        for join in tree.find_all(exp.Join)
-    ):
-        raise OutOfScope(f"a USING or NATURAL join reads a hidden or masked column; {refused}")
-    if any(True for _ in tree.find_all(exp.SetOperation)):
-        raise OutOfScope(f"a set operation over a hidden or masked column; {refused}")
-    for column in tree.find_all(exp.Column):
-        if not column.table and column.name.lower() in covered_tables:
-            raise OutOfScope(f"a whole-row reference to {column.name}; {refused}")
-    for column in tree.find_all(exp.Column):
-        name = column.name.lower()
-        if name not in covered_names:
+    for table in list(tree.find_all(exp.Table)):
+        dataset = next((d for d in covered if _reads(table, d, source)), None)
+        if dataset is None:
             continue
-        parent = column.parent
-        as_itself = (parent is tree and column.arg_key == "expressions") or (
-            isinstance(parent, exp.Alias) and parent.alias.lower() == name and parent.parent is tree
-        )
-        if not (isinstance(tree, exp.Select) and as_itself):
+        listed = columns.get(dataset.id)
+        if not listed:
             raise OutOfScope(
-                f"column {column.name} is hidden or masked by an access policy; it can only be "
-                "selected as itself"
+                f"the columns of {dataset.table_name} are not in the catalog; a table with a "
+                "hidden or masked column is only read once they are"
             )
+        projection: list[exp.Expression] = []
+        for name in listed:
+            key = name.lower()
+            if key in hidden.get(dataset.id, set()):
+                continue
+            method = masks.get(dataset.id, {}).get(key)
+            value = _masked(name, method) if method else exp.column(name, quoted=True)
+            projection.append(exp.alias_(value, name, quoted=True))
+        if not projection:
+            raise OutOfScope(f"every column of {dataset.table_name} is hidden")
+        bare = table.copy()
+        bare.set("alias", None)
+        alias = table.args.get("alias")
+        inner = exp.select(*projection).from_(bare)
+        replacement = exp.Subquery(
+            this=inner,
+            alias=alias.copy()
+            if alias is not None
+            else exp.TableAlias(this=exp.to_identifier(table.name)),
+        )
+        table.replace(replacement)
+    return tree.sql(dialect=dialect)
 
 
 def rewrite_access_policies(

@@ -20,6 +20,7 @@ from services.worker_agent.query.secrets import StaticReader
 from . import test_answers
 from .conftest import Seed
 from .test_answers import PASSWORD, Bank, activate, answer_of, build, drain
+from .test_column_masking import catalogue_columns
 
 pytestmark = [pytest.mark.integration]
 
@@ -108,6 +109,7 @@ async def test_a_result_with_other_policies_applied_is_not_shared(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     bank = build(seed, warehouse, monkeypatch)
+    catalogue_columns(seed, bank)  # masks are applied in the SQL, over these columns
     source = await source_of(bank)
     await run(bank, source, "agent_run")
     # A mask policy changes the result after the query, not its SQL: the key must still differ.
@@ -136,6 +138,7 @@ async def test_a_run_from_before_a_policy_changed_is_not_reused(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     bank = build(seed, warehouse, monkeypatch)
+    catalogue_columns(seed, bank)  # masks are applied in the SQL, over these columns
     source = await source_of(bank)
     policy = seed.row(
         "governance.access_policy",
