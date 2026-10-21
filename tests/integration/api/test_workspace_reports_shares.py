@@ -261,6 +261,39 @@ async def test_session_report_document_is_read_through_the_authorized_api(team: 
         assert document.json()["markdown"] == "# NPL T9\n\n1,84%\n"
 
 
+async def test_an_unchecked_report_document_is_only_its_authors(team: Team) -> None:
+    class Store:
+        async def download(self, bucket: str, key: str) -> bytes:
+            return "# NPL T9\n\n## Số liệu\n- NPL: 1,84% | grounded\n".encode()
+
+    async with _api(team, Store()) as api:
+        workspace_id = await _workspace(api, team)
+        await _share(api, team, workspace_id, viewer="view")
+        made = await api.post(
+            f"/v1/workspaces/{workspace_id}/reports",
+            headers=_as(team, "owner"),
+            json={"title": "Bản NPL T9"},
+        )
+        report_id = made.json()["id"]
+        document = f"/v1/session-reports/{report_id}/document"
+        # The viewer reads the report's row, not its figures, while the checks have not passed.
+        row = await api.get(f"/v1/session-reports/{report_id}", headers=_as(team, "viewer"))
+        assert row.status_code == 200
+        for status in ("draft", "checking", "failed_checks"):
+            with team.seed.conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE workspace.session_report SET status = %s WHERE id = %s",
+                    (status, report_id),
+                )
+            assert (await api.get(document, headers=_as(team, "viewer"))).status_code == 404
+            assert (await api.get(document, headers=_as(team, "owner"))).status_code == 200
+        with team.seed.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE workspace.session_report SET status = 'ready' WHERE id = %s", (report_id,)
+            )
+        assert (await api.get(document, headers=_as(team, "viewer"))).status_code == 200
+
+
 async def test_session_reports_follow_the_workspace_rights(team: Team) -> None:
     async with _api(team) as api:
         workspace_id = await _workspace(api, team)

@@ -1477,6 +1477,9 @@ async def publish_report(
         return ReportView.model_validate(report)
 
 
+# A report whose checks have not passed: its document is still only its author's.
+_UNCHECKED = ("draft", "checking", "failed_checks")
+
 # The approver of a report acts for the Data Space (publish_report), so it reads the reports
 # waiting for it, and the published ones, without a share of the workspace.
 _APPROVER_SEES = ("pending_approval", "published")
@@ -1590,6 +1593,11 @@ async def get_session_report_document(
             )
         )
         if report is None:
+            raise Problem(404, "not_found", "Session report not found.")
+        # The draft holds figures computed with its author's rights (worker_agent/
+        # session_reports.py); whether every reader may see them is what the rights check decides.
+        # Until it has passed (ready), the document is the author's alone.
+        if report.status in _UNCHECKED and report.created_by != principal.user_id:
             raise Problem(404, "not_found", "Session report not found.")
         body_ref = report.body_ref
     if not body_ref or body_ref.startswith("/") or ".." in body_ref.split("/"):

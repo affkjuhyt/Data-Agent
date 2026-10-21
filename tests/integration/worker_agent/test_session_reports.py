@@ -58,7 +58,7 @@ async def _drain() -> None:
         pass
 
 
-def _workspace(bank: Bank) -> tuple[uuid.UUID, uuid.UUID]:
+def _workspace(bank: Bank, sql: str = SQL) -> tuple[uuid.UUID, uuid.UUID]:
     ws = bank.seed.row(
         "workspace.workspace",
         org_id=bank.org,
@@ -73,7 +73,7 @@ def _workspace(bank: Bank) -> tuple[uuid.UUID, uuid.UUID]:
         position=0,
         kind="sql",
         title="Dư nợ theo chi nhánh",
-        spec=json.dumps({"sql": SQL}),
+        spec=json.dumps({"sql": sql}),
     )
     return ws, tile
 
@@ -254,8 +254,18 @@ async def test_a_reader_with_a_narrower_policy_fails_the_rights_check(
     assert checks["grounded"]["status"] == "pass"
 
 
+@pytest.mark.parametrize(
+    "sql",
+    [
+        SQL,
+        # Renamed, inside a function, or only filtered on: the output names hide it, the SQL not.
+        "SELECT upper(branch_code) AS x, sum(balance) AS b FROM loan GROUP BY 1",
+        "SELECT sum(balance) AS b FROM loan WHERE branch_code <> ''",
+        "SELECT * FROM loan",
+    ],
+)
 async def test_a_figure_from_a_personal_data_column_fails(
-    seed: Any, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch, store: Store
+    seed: Any, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch, store: Store, sql: str
 ) -> None:
     bank = build(seed, warehouse, monkeypatch)
     catalogue_columns(seed, bank)
@@ -265,13 +275,13 @@ async def test_a_figure_from_a_personal_data_column_fails(
             " WHERE dataset_id = %s AND name = 'branch_code'",
             (str(bank.loans),),
         )
-    ws, tile = _workspace(bank)
+    ws, tile = _workspace(bank, sql)
     await _refresh(bank, ws, tile)
     report = await _draft(bank, ws, [tile])
     status, checks = await _check(bank, report)
     assert status == "failed_checks"
     assert checks["personal_data"]["status"] == "fail"
-    assert "branch_code (account_no)" in checks["personal_data"]["detail"]
+    assert "branch_code (account_no)" in checks["personal_data"]["detail"], checks
 
 
 async def test_a_live_figure_of_a_filed_period_fails(

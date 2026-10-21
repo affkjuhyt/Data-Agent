@@ -21,7 +21,11 @@ fails; it never passes by default:
 - rights: everyone who may read the report (the workspace's owner, its shares and participants,
   and the organisation's approvers) would run each of its queries as the same SQL as the author
   (executor.bound_sql), so reads the same rows and nothing more;
-- personal_data: no figure's result has a column the catalogue labels personal data (pii_label).
+- personal_data: no figure's query reads a column the catalogue labels personal data (pii_label),
+  anywhere in it (projection, filter, join, inside a function) or through a whole-row read.
+
+The draft is written before the checks, so the api serves its document to the author alone until
+the report is ready (workspace/routes.py, get_session_report_document).
 """
 
 from __future__ import annotations
@@ -35,6 +39,7 @@ from typing import Any
 
 from sqlalchemy import any_, func, literal, or_, select
 from sqlalchemy.dialects.postgresql import insert
+from sqlglot import exp
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, period, pipeline
@@ -389,6 +394,30 @@ async def _rights(
     return _verdict(failures, "Mọi người đọc báo cáo đều được xem đúng các số này")
 
 
+def _referenced(sql: str, source: catalog.Source) -> tuple[set[str], bool]:
+    """The column names `sql` reads anywhere (projection, filter, join, inside functions), and
+    whether it reads whole rows: `*`, `t.*`, or a table or alias used as a value
+    (row_to_json(t)). Output names prove nothing, since an alias renames a column; count(*)
+    reads no column."""
+    dialect = dialect_of(source.kind)
+    tree = check_read_only(sql, dialect)
+    tables = {t.name.lower() for t in tree.find_all(exp.Table)} | {
+        t.alias_or_name.lower() for t in tree.find_all(exp.Table)
+    }
+    names: set[str] = set()
+    whole_row = False
+    for column in tree.find_all(exp.Column):
+        if isinstance(column.this, exp.Star) or (
+            column.name.lower() in tables and not column.table
+        ):
+            whole_row = True
+        names.add(column.name.lower())
+    for star in tree.find_all(exp.Star):
+        if not isinstance(star.parent, exp.Count | exp.Column):
+            whole_row = True
+    return names, whole_row
+
+
 async def _personal_data(
     session: Any,
     author: uuid.UUID,
@@ -398,27 +427,23 @@ async def _personal_data(
     failures = []
     for d in drawn:
         for run in d.runs:
-            result = d.results.get(run.id)
             source = sources.get(run.source_id) if run.source_id else None
-            if result is None or source is None or not run.sql_generated:
+            if source is None or not run.sql_generated:
                 failures.append(f"{d.title}: không xác định được cột của số")
                 continue
             try:
-                tables = tables_of_sql(run.sql_generated, source)
+                names, whole_row = _referenced(run.sql_generated, source)
                 datasets = await datasets_read(
                     session,
                     data_space_id=run.data_space_id,
                     principal_id=author,
                     source=source,
-                    tables=tables,
+                    tables=tables_of_sql(run.sql_generated, source),
                 )
             except SqlRejected:
                 failures.append(f"{d.title}: không xác định được bảng của số")
                 continue
-            names = {
-                str(c.get("name")).lower() for c in result.columns or [] if isinstance(c, dict)
-            }
-            if not datasets or not names:
+            if not datasets:
                 continue
             labelled = (
                 await session.execute(
@@ -428,7 +453,11 @@ async def _personal_data(
                     )
                 )
             ).all()
-            hits = sorted({f"{n} ({label})" for n, label in labelled if n.lower() in names})
+            # Matched by name across every table the query reads, not resolved to one: a name
+            # two tables share fails for both, which errs on the side of the check.
+            hits = sorted(
+                {f"{n} ({label})" for n, label in labelled if whole_row or n.lower() in names}
+            )
             if hits:
                 failures.append(f"{d.title}: có cột dữ liệu cá nhân {', '.join(hits)}")
     return _verdict(failures, "Không số nào lấy từ cột dữ liệu cá nhân")
