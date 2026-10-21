@@ -68,7 +68,8 @@ fmt-files: dev-tools  ## ruff format + check on FILES only (fast, for the files 
 
 type-v3: dev-tools  ## strict mypy on the V3 blocks (api, worker_agent), as CI's blocking step
 	$(DOCKER_RUN_DEV) mypy --disallow-untyped-defs --disallow-any-generics \
-	  --ignore-missing-imports --follow-imports=silent backend/services/api backend/services/worker_agent
+	  --ignore-missing-imports --follow-imports=silent backend/services/api backend/services/worker_agent \
+	  backend/services/crawler
 
 lint-imports: dev-tools  ## import-linter contracts (.importlinter), as CI
 	docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend $(DEV_TOOLS_IMAGE) lint-imports
@@ -82,13 +83,13 @@ type:  ## mypy strict on libs + services (same set as CI python-type)
 # k8s, Ansible, model/, cross-service policy) belongs to no service and runs on the local
 # dev-tools image: an image naming a `/` is used as given, not looked up in the registry.
 IMAGE_REGISTRY ?= localhost:5001
-UNIT_SUITES ?= kb_backend:kb-backend platform_workers:platform-workers \
-               sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker \
-               model_service:model_service contracts:kb-backend api:api worker_agent:worker-agent worker_ingest:worker-ingest \
-               worker_document:worker-document repo:$(DEV_TOOLS_IMAGE)
+UNIT_SUITES ?= platform_workers:platform-workers \
+               sandbox_executor:sandbox_executor auth_api:auth_api \
+               model_service:model_service contracts:api api:api worker_agent:worker-agent worker_ingest:worker-ingest \
+               worker_document:worker-document crawler:crawler repo:$(DEV_TOOLS_IMAGE)
 INTEGRATION_SUITES ?= sandbox_executor:sandbox_executor \
-                      contracts:kb-backend api:api migrate:migrate worker_agent:worker-agent worker_ingest:worker-ingest \
-                      worker_document:worker-document
+                      contracts:api api:api migrate:migrate worker_agent:worker-agent worker_ingest:worker-ingest \
+                      worker_document:worker-document crawler:crawler
 # The integration sandbox tests start real sandbox-runner containers; the tag
 # differs per host (tests/integration/_sandbox.py), override it to match.
 SANDBOX_RUNNER_IMAGE ?= dataagent/sandbox-runner:latest
@@ -164,13 +165,13 @@ contract-compat:  ## contract compatibility gate against CONTRACT_BASE (libs/con
 	  if [ $$code -eq 2 ]; then echo "base has no published contract, nothing to compare"; exit 0; fi; \
 	  exit $$code
 
-# In the kb-backend image, where the contracts suite runs (pinned pydantic); it also
-# spares a frontend developer a Python 3.11 environment of their own.
+# In the api image, where the contracts suite runs (pinned pydantic); it also
+# spares a frontend developer a Python environment of their own.
 MOCK_API_PORT ?= 8090
 mock-api:  ## Contract v1 mock API on :8090 for FE/Data/Agent (tests/contract_mock/README.md)
 	docker run --rm -p $(MOCK_API_PORT):$(MOCK_API_PORT) -v "$(PWD):/src" -w /src \
 	  -e PYTHONPATH=/src/backend:/src -e PYTHONDONTWRITEBYTECODE=1 \
-	  $(IMAGE_REGISTRY)/dataagent/kb-backend:latest \
+	  $(IMAGE_REGISTRY)/dataagent/api:latest \
 	  python -m tests.contract_mock --host 0.0.0.0 --port $(MOCK_API_PORT)
 
 # The serving benchmark talks to the GPU host over the LAN and, for
@@ -281,8 +282,8 @@ deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 LOCAL_DATABASES = ["postgres","pgbouncer","redis","mongo","minio","kafka","openbao","qdrant","clickhouse"]
 LOCAL_DATABASE_WORKLOADS = ["redis","mongo","minio","kafka","openbao","qdrant","clickhouse"]
 
-deploy-local:  ## deploy the V3 local slice (api, worker-agent, worker-ingest, worker-document, web, migrate, gateway, litellm, mailpit; no Neo4j)
+deploy-local:  ## deploy the V3 local slice (api, worker-agent, worker-ingest, worker-document, crawler, web, migrate, gateway, litellm, mailpit; no Neo4j)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml \
 		-e apply_jobs=true -e image_registry=$(IMAGE_REGISTRY) -e image_push=true \
 		-e '{"database_manifests":$(LOCAL_DATABASES),"database_workloads":$(LOCAL_DATABASE_WORKLOADS)}' \
-		-e '{"deploy_image_allowlist":["api","worker-agent","worker-ingest","worker-document","migrate","frontend","kong","keycloak"],"service_manifests":["api","worker-agent","worker-ingest","worker-document","frontend","kong","keycloak","prometheus","litellm","mailpit"],"service_workloads":["api","worker-agent","worker-ingest","worker-document","frontend","kong","keycloak","prometheus","litellm","mailpit"]}'
+		-e '{"deploy_image_allowlist":["api","worker-agent","worker-ingest","worker-document","crawler","migrate","frontend","kong","keycloak"],"service_manifests":["api","worker-agent","worker-ingest","worker-document","crawler","frontend","kong","keycloak","prometheus","litellm","mailpit"],"service_workloads":["api","worker-agent","worker-ingest","worker-document","crawler","frontend","kong","keycloak","prometheus","litellm","mailpit"]}'

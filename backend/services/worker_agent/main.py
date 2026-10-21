@@ -54,6 +54,7 @@ from services.worker_agent import (
     uploads,
 )
 from services.worker_agent.channels import gateway as channels
+from services.worker_agent.documents import indexed
 from services.worker_agent.events import EventSource, Handler, OutboxTableSource
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,7 @@ HANDLERS: dict[str, Handler] = {
     **prep.HANDLERS,
     **quality.HANDLERS,
     **periods.HANDLERS,
+    **indexed.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -155,6 +157,9 @@ async def sources() -> list[EventSource]:
             # submitted data product.
             types |= set(metric_changes.HANDLERS) | set(semantic_review.HANDLERS)
             types |= {reviews.PRODUCT}
+        if schema == "document":
+            # worker-document claims its own types from the same outbox; this is the ready one.
+            types |= set(indexed.HANDLERS)
         if schema == "agent":
             # The one consumer of run.status_changed: the run executor (runs.py, ADR-37 stand-in).
             types |= set(runs.HANDLERS)

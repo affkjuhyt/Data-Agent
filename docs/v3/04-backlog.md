@@ -92,6 +92,28 @@ của tài liệu thiết kế hệ thống; cổng A2 trong CI giữ mã khớp
 | API-05 | Agent: lượt chạy, sự kiện SSE, tạm dừng/tiếp tục | API-02 | BE, FE | L | Như trên cho màn Agent | done b867d890 |
 | API-06 | Triển khai khối `api`: manifest, Ansible, route `/v1` ở gateway, secret từ OpenBao | API-02 | Ops | S | `make deploy` đưa `api` lên cụm dev; e2e gọi `/v1` qua gateway | done 61563359 |
 
+## 3c. Chuyển KB cũ sang V3 (G3, phần thu thập của G4)
+
+Thêm 21/10/2026. Thay `kb_backend`, `kb-worker`, `libs/ingestion` và `platform-workers-web-crawler`
+([09 §3](09-target-deploy-and-cleanup.md)). Đã chốt: đồ thị Neo4j/LightRAG hoãn sau G3 (ADR-04); lọc
+nội dung bằng LLM và tóm tắt chunk của Silver/Gold cũ bỏ; các bước LLM chạy trong `worker-agent` qua
+gateway PydanticAI (`services/worker_agent/llm.py`); connector `document_source` (smb, sharepoint, imap)
+là tính năng mới, ngoài đợt này.
+
+| ID | Việc | Phụ thuộc | Vai | Cỡ | Tiêu chí | TT |
+| --- | --- | --- | --- | --- | --- | --- |
+| KB-01 | Màn Hỏi đáp bỏ citation `kb` và link `/api/knowledge/documents/{id}/file` | | FE | XS | Frontend không còn gọi `/api/data`, `/api/knowledge`, `/api/pipeline`, `/api/fleet` | doing |
+| KB-02 | Deployable `crawler`: nhận lượt thu từ `acquire.outbox`, tải `seed_urls` bằng connector chuyển từ `libs/ingestion` (`http_file`, `web_crawl` + headless, `rss`, `rest_api`/`sdmx`) trong `allowed_domains`, `max_depth`, `rate_limit_rps`, robots; ghi `crawl_page` và bản gốc MinIO theo SHA-256 (BR-150), đánh dấu `changed`, cập nhật đếm và trạng thái `crawl_run` | | BE, Ops | L | Test tích hợp: lượt thu → trang + object; trang không đổi không ghi lại bản gốc; manifest, Ansible, suite, CI. Còn thiếu: lượt theo `schedule_cron` (chờ Temporal Schedules, ADR-33), egress proxy và NetworkPolicy production (chung mọi khối V3) | doing |
+| KB-03 | Trích bản ghi theo `crawl_schema_version` đã duyệt (selector, trường, luật giá trị) → `extracted_record` có độ tin cậy, mẫu ngẫu nhiên và cổng duyệt của nguồn | KB-02 | BE | M | Test tích hợp trên trang mẫu; bản ghi dưới ngưỡng vào hàng duyệt. Làm cùng KB-02 (lượt kẹt ở `extracting` nếu không trích); còn `value_rules`, `outlier`, `new_category` cần dữ liệu các lượt khác | doing |
+| KB-04 | Suy schema bằng LLM khi nguồn chưa có schema hoặc lệch (`schema_drift`): đề xuất `crawl_schema_version` nháp, chạy thử trên trang mẫu | KB-03 | AI, BE | L | Bản nháp đạt `test_required_accuracy` trên mẫu mới được đề xuất duyệt | todo |
+| KB-05 | Phát hiện xung đột tài liệu: LLM trích claim từ chunk mới → `conflict.claim`, so với claim cùng chủ thể và kỳ → `conflict.conflict` | | AI, BE | M | Hai văn bản nêu hai giá trị khác nhau cho cùng một điều sinh một xung đột mở. worker-document phát `document.indexed` (AC-05-02-01); worker-agent trích claim (`documents/claims.py`). Chưa có: tự giải theo `resolution_rule`/thẩm quyền nguồn (AC-07-04-05) | doing |
+| KB-06 | Biên soạn knowledge page cho `knowledge_run.requested`: phiên bản nháp có nguồn, claim và số truy được | | AI, BE | M | Phiên bản nháp chờ duyệt, mọi số có nguồn. Tính năng mới của Agent Tri thức (BR-161…166: số chỉ là chỗ giữ gắn chỉ số), không phải tương đương của KB cũ (tóm tắt Gold đã bỏ), nên không chặn KB-08 | todo |
+| KB-07 | Trích dữ liệu có cấu trúc từ tài liệu theo `extraction_schema` → `document.extracted_record` | | AI, BE | M | Test tích hợp trên tài liệu mẫu. worker-agent `documents/extraction.py` trên `document.indexed`; giá trị phải có trích dẫn nguyên văn và số có trong đoạn; trường pii lưu đã che. Chưa có: đổ ra bảng đích, so với dữ liệu có cấu trúc (AC-05-06-03) | doing |
+| KB-08 | Xoá KB cũ và web-crawler: mã, image `kb-backend`/`kb-worker`, manifest, Kong, Ansible, topic `kb.*`, Makefile, CI, suite; suite `contracts` rời image `kb-backend`; sửa 00 §7.2 (Neo4j), 08, 09 | KB-01, KB-02, KB-05, KB-07 | BE, Ops | M | Cổng [08 §4](08-legacy-cutover.md): người deploy kiểm trên cụm, thử rollback. Mã, manifest, Kong (xoá route cũ), Ansible, topic `kb.*` (job xoá), CI, suite đã gỡ; `contracts` chạy trong image `api`; seed còn dùng chuyển sang `platform-seed.sql`. Chờ: `make deploy` và cổng §4 | doing |
+
+KB-03 và KB-04 là sản phẩm G4, không phải tương đương của KB cũ (web-crawler cũ không trích bản ghi), nên
+KB-08 không chờ chúng.
+
 ## 4. Quy tắc theo dõi
 
 - Thứ Sáu hằng tuần rà cột TT; việc trễ > 2 ngày thì cắt hoặc đổi người ngay trong tuần.

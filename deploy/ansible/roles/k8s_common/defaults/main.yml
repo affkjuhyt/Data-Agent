@@ -129,19 +129,14 @@ service_workloads:
   - worker-agent
   - worker-ingest
   - worker-document
+  - crawler
   - litellm
   - auth-api
-  - kb-backend
-  - kb-promote-silver
-  - kb-promote-gold
-  - kb-conflict-resolution
-  - kb-structured-data
   - model-service
   - sandbox-executor
   - platform-workers-audit
   - platform-workers-memory
   - platform-workers-schema-crawler
-  - platform-workers-web-crawler
   - llm-exporter
   - langfuse
   - langfuse-worker
@@ -167,7 +162,7 @@ job_inputs:
   # any backend change, while only a new revision needs the Job.
   migrate: [backend/alembic]
   # grant-roles.sql grants on ALL TABLES, so tables a migration adds need it again.
-  db-init: [deploy/docker/sql/grant-roles.sql, deploy/docker/sql/kb-seed.sql, "job:migrate"]
+  db-init: [deploy/docker/sql/grant-roles.sql, deploy/docker/sql/platform-seed.sql, "job:migrate"]
   minio-init: []
   kafka-topics: []
 jobs_force: false

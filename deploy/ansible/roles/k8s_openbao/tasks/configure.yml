@@ -53,6 +53,21 @@
   changed_when: false
   no_log: true
 
+# The crawler reads only the API keys of crawl sources, which the api accepts only under
+# tenants/<org>/crawl-sources/ (acquire rules): a source cannot name another secret of its
+# organisation and have the crawler send it to a site as a bearer token.
+- name: Write the crawler policy
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ kubectl }} exec -i -n {{ ns_database }} statefulset/openbao -- \
+    env BAO_TOKEN={{ bao_keys.root_token }} bao policy write dataagent-crawler-policy - <<'POLICY'
+    path "secret/data/tenants/+/crawl-sources/*" { capabilities = ["read"] }
+    POLICY
+  args:
+    executable: /bin/bash
+  changed_when: false
+  no_log: true
+
 - name: Write the demo warehouse password
   ansible.builtin.command: >
     {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
@@ -119,6 +134,7 @@
     - {role: sandbox_executor, prefix: SANDBOX_EXECUTOR}
     - {role: platform_workers, prefix: PLATFORM_WORKERS}
     - {role: api, prefix: API, policy: dataagent-api-policy}
+    - {role: crawler, prefix: CRAWLER, policy: dataagent-crawler-policy}
   changed_when: false
   no_log: true
 
@@ -131,6 +147,7 @@
     - {role: sandbox_executor, prefix: SANDBOX_EXECUTOR}
     - {role: platform_workers, prefix: PLATFORM_WORKERS}
     - {role: api, prefix: API, policy: dataagent-api-policy}
+    - {role: crawler, prefix: CRAWLER, policy: dataagent-crawler-policy}
   register: bao_role_ids
   changed_when: false
   no_log: true
@@ -144,6 +161,7 @@
     - {role: sandbox_executor, prefix: SANDBOX_EXECUTOR}
     - {role: platform_workers, prefix: PLATFORM_WORKERS}
     - {role: api, prefix: API, policy: dataagent-api-policy}
+    - {role: crawler, prefix: CRAWLER, policy: dataagent-crawler-policy}
   register: bao_secret_ids
   when: >-
     (openbao_prev[item.prefix ~ '_OPENBAO_SECRET_ID'] | default('') | length) == 0
@@ -177,6 +195,8 @@
         PLATFORM_WORKERS_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[2].stdout | default(openbao_prev.PLATFORM_WORKERS_OPENBAO_SECRET_ID | default(''), true) | trim }}"
         API_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[3].stdout | trim }}"
         API_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[3].stdout | default(openbao_prev.API_OPENBAO_SECRET_ID | default(''), true) | trim }}"
+        CRAWLER_OPENBAO_ROLE_ID: "{{ bao_role_ids.results[4].stdout | trim }}"
+        CRAWLER_OPENBAO_SECRET_ID: "{{ bao_secret_ids.results[4].stdout | default(openbao_prev.CRAWLER_OPENBAO_SECRET_ID | default(''), true) | trim }}"
   no_log: true
   # A skipped mint keeps each existing secret id rather than blanking it: a
   # rerun that does not rotate must not invalidate a workload's login.

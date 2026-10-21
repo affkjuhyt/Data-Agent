@@ -23,11 +23,6 @@ _.fill
 _.font
 _.freeze_panes
 
-# kb_backend/main.py puts these on app.state; routes fetch them by string
-# through dependencies.services.svc(request, "light_rag" | "ingestion").
-_.light_rag
-_.ingestion
-
 # libs/shared/audit.py AuditEvent fields: serialised with dataclasses.asdict()
 # into the audit record, never read attribute by attribute.
 _.statement_redacted

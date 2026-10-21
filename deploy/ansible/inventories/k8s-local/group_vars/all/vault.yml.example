@@ -24,8 +24,6 @@
 vault_postgres_password: ""
 vault_app_user_password: ""
 vault_sandbox_reader_password: ""
-vault_kb_backend_password: ""
-vault_kb_ingestion_worker_password: ""
 vault_pgbouncer_auth_password: ""
 # V3 database: a password per service role (svc_org, svc_governance, svc_integration,
 # svc_catalog, svc_context, svc_qa, svc_query, svc_agent, svc_eval, svc_inbox, svc_workspace,
@@ -41,6 +39,8 @@ vault_clickhouse_password: ""
 vault_minio_root_password: ""
 # MinIO user worker-agent: writes answer exports to da-exports, nothing else (minio-init).
 vault_worker_agent_minio_password: ""
+# The crawler's MinIO user: Put/Get on da-raw-crawl only (minio-init).
+vault_crawler_minio_password: ""
 
 # ── Kafka SASL, one principal per consumer ────────────────────────────
 vault_kafka_admin_password: ""

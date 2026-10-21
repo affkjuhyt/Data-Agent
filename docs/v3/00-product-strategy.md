@@ -96,9 +96,9 @@ Ba kết luận dùng cho quyết định:
 
 | Khối | Hiện thực | Nơi |
 | --- | --- | --- |
-| Nguồn tài liệu/web | Source Registry, 6 connector (`http_file`, `web_crawl`(+headless), `rss`, `rest_api`, `sdmx`=alias), cron, raw bất biến MinIO theo SHA-256 | `libs/ingestion/connectors/`, `platform_workers/workers/web_crawler/` |
-| Pipeline tài liệu | Bronze → Silver (Docling + Tesseract vie/eng, chunk theo cấu trúc, policy, PII) → Gold (embedding bge-m3, Qdrant, entity/relation vào Neo4j có provenance) | `libs/ingestion/{silver,gold}/`, `kb_backend/workers/` |
-| Truy hồi tài liệu | LightRAG: vector 2 lượt + mở rộng đồ thị 1 bước + RRF + cross-encoder; FTS Postgres có nhưng **tắt** (`HYBRID_LEXICAL=0`) | `kb_backend/pipeline/light_rag/` |
+| Nguồn web | Nguồn thu thập (`acquire`), tải trong miền khai báo, 1 yêu cầu/giây/miền, robots, bản gốc bất biến MinIO `da-raw-crawl` theo SHA-256, trích bản ghi theo schema đã duyệt vào hàng duyệt; lượt theo lịch chờ Temporal (ADR-33) | `crawler/` (KB-02, KB-03) |
+| Pipeline tài liệu | Trang (PyMuPDF + OCR vie/eng), chunk theo cấu trúc văn bản Việt, PII theo bộ sưu tập, embedding bge-m3 vào Qdrant; claim và trường trích bằng LLM có kiểm trích dẫn (KB-05, KB-07) | `worker_document/`, `worker_agent/documents/` |
+| Truy hồi tài liệu | Vector + FTS Postgres, RRF, cross-encoder TEI; không mở rộng đồ thị (Neo4j hoãn, ADR-04) | `worker_agent/documents/retrieve.py` |
 | Text-to-SQL trên CSDL khách | Postgres, ClickHouse, Snowflake; xếp hạng bảng/cột, catalog, tự sửa 3 lần, `sql_guard` chỉ SELECT, sandbox read-only, audit | `workflow_runtime/.../tool_executor/handlers/data.py`, `sandbox_executor/` |
 | Schema crawler | Postgres/Snowflake/ClickHouse qua `information_schema`; mô tả, từ khoá, gợi ý join do LLM viết; owner, phân loại, độ tươi | `platform_workers/workers/schema_crawler/` |
 | Semantic layer | Metric một bảng, synonym, phát hiện câu hỏi thiếu (thiếu kỳ, metric mơ hồ, so sánh thiếu mốc) | `libs/semantic/`, `workflow_runtime/domain/semantic_layer.py` |
@@ -174,7 +174,7 @@ lại mã để xác nhận từng dòng in đậm.
 ┌────────────────────────────────────▼──────────────────────────────────────────────┐
 │ QUERY ENGINES                                                                     │
 │ Semantic Compiler (SQLGlot*, mọi dialect)│ Governed text-to-SQL │ Python sandbox  │
-│ Document Retrieval (LightRAG + FTS) │ Observation Engine (V2: as-of, vintage)     │
+│ Document Retrieval (vector + FTS)   │ Observation Engine (V2: as-of, vintage)     │
 │ Graph query (Neo4j)                                                               │
 └────────────────────────────────────┬──────────────────────────────────────────────┘
 ┌────────────────────────────────────▼──────────────────────────────────────────────┐
@@ -282,7 +282,7 @@ Bộ chuyên gia mặc định (đều là cấu hình trên cùng runtime, khô
 | --- | --- | --- |
 | Discovery | Tìm bảng/tài liệu/metric phù hợp trong Data Space, giải thích ý nghĩa | `schema_catalog` Qdrant, LightRAG |
 | Semantic/SQL | Compile semantic, text-to-SQL có kiểm, so nhiều ứng viên | `handlers/data.py`, `libs/semantic` |
-| Document | Tìm, đọc, trích dẫn, đối chiếu tài liệu | `kb_search`, LightRAG, Neo4j |
+| Document | Tìm, đọc, trích dẫn, đối chiếu tài liệu | `worker_agent/documents` (truy hồi, trả lời có Verifier, claim và xung đột) |
 | Python Analyst | Phân rã driver, anomaly, forecast, thống kê, what-if trên result set | `sandbox_executor` (Python), mới: `libs/analytics` |
 | Viz & Report | Chọn khối hiển thị, dựng báo cáo nhiều phần | node `visualization`, mới: report builder |
 | Critic/Verifier | Kiểm số, độ tươi, quyền, đủ bằng chứng | `libs/indicator/verifier.py`, judge |
@@ -312,7 +312,7 @@ Hai ràng buộc thiết kế: chuyên gia nhận **ngữ cảnh hẹp** (Databr
 ### 7.2 Các mối nối quan trọng nhất
 
 1. **Catalog là khoá chung.** Tài liệu, bảng, cột, series, metric đều có `asset_id`. Knowledge graph
-   (Neo4j) nối entity nghiệp vụ ↔ bảng/cột ↔ tài liệu ↔ series. Đây là chỗ giải bài "cross-modal
+   (Neo4j, hoãn sau G3 theo ADR-04; bỏ cùng KB cũ ngày 21/10/2026) sẽ nối entity nghiệp vụ ↔ bảng/cột ↔ tài liệu ↔ series. Đây là chỗ giải bài "cross-modal
    join" của V2 (00 mục 13) cho mọi dữ liệu.
 2. **Capability Registry là hợp đồng giữa agent và engine.** Một bảng, đọc bởi planner (chọn), MCP
    Gateway (phơi ra ngoài), UI (hiện "capability đã duyệt"), eval (kiểm planner chỉ dùng cái đã

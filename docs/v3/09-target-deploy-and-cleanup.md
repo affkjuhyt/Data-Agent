@@ -43,7 +43,7 @@ deploy riêng, CLAUDE.md §3):
 | `auth_api` / `auth-api` | module `org` + `integration` trong `api` |
 | `workflow_runtime` / `workflow-runtime` | `api` (agent, qa, workspace, inbox) + `worker-agent` (thực thi) |
 | `sandbox_executor`, `sandbox-runner` | sandbox của `worker-agent` (tab 1 §7.2) |
-| `kb_backend`, `kb-worker` (`kb-promote-*`, `kb-structured-data`, `kb-conflict-resolution`) | `api` (document, catalog, conflict) + `worker-ingest` |
+| `kb_backend`, `kb-worker` (`kb-promote-*`, `kb-structured-data`, `kb-conflict-resolution`) | đã xoá mã 22/10/2026 (04 §3c, KB-08): `api` (document, catalog, conflict) + `worker-document` (trang, chunk, index) + `worker-agent` (claim, xung đột, trích trường trên `document.indexed`); bước LLM nằm ở `worker-agent`, không ở `worker-ingest` |
 | `platform_workers` (audit, memory, schema-crawler, web-crawler), `llm-exporter` | audit: Audit service ghi `dataagent_audit`; memory: `worker-agent`; schema-crawler: `worker-ingest`; web-crawler: `crawler`; llm-exporter: chỉ số vLLM qua OpenTelemetry (ADR-40) |
 | `indicator_api` | đã xoá 12/10/2026: `api` phục vụ đủ A2, mọi route của nó chỉ trả 501 |
 | `model_service` | TEI hoặc Infinity cho embedding, rerank (ADR-35); sinh văn bản qua vLLM sau Model gateway (ADR-41) |

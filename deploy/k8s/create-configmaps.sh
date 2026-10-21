@@ -32,7 +32,7 @@ cm "$DB" postgres-initdb \
 # a ConfigMap has to live where the pod that mounts it runs.
 cm "$SVC" db-init-sql \
   --from-file=01-grants.sql=$K/sql/grant-roles.sql \
-  --from-file=02-kb-seed.sql=$K/sql/kb-seed.sql \
+  --from-file=02-platform-seed.sql=$K/sql/platform-seed.sql \
   --from-file=03-v3-demo-seed.sql=$K/sql/v3-demo-seed.sql \
   --from-file=04-v3-credit-demo.sql=$K/sql/v3-credit-demo.sql \
   --from-file=05-v3-pilot-seed.sql=$K/sql/v3-pilot-seed.sql \

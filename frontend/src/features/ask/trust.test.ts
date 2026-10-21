@@ -28,7 +28,7 @@ describe('trust label', () => {
   });
 
   it('labels document-only and unsupported answers too', () => {
-    expect(answerTrust([], [{ index: 1, source: 'Thông tư', type: 'kb', snippet: '' }]).label).toBe('Giả thuyết từ tài liệu');
+    expect(answerTrust([], [{ index: 1, source: 'Thông tư', type: 'document', snippet: '' }]).label).toBe('Giả thuyết từ tài liệu');
     expect(answerTrust([]).label).toBe('Chưa đủ bằng chứng');
   });
 });

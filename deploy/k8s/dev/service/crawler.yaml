@@ -1,0 +1,105 @@
+# crawler (09 §1, KB-02): claims acquire.run.queued from acquire.outbox, fetches a source's pages
+# within its domains, keeps the originals in MinIO da-raw-crawl and writes the extracted records for
+# review. One replica: the one-request-per-second pace per domain is held in the process.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: crawler
+  namespace: dataagent-service
+  labels:
+    app: crawler
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crawler-env
+  namespace: dataagent-service
+  labels:
+    app: crawler
+    app.kubernetes.io/part-of: dataagent
+data:
+  OTEL_SERVICE_NAME: crawler
+  CRAWLER_POLL_SECONDS: "2"
+  CRAWLER_RAW_BUCKET: da-raw-crawl
+  CRAWLER_RETENTION_DAYS: "400"
+  CRAWLER_MAX_PAGES_PER_RUN: "200"
+  # Intermediate CAs some sources leave out of their chain (hnx.vn); empty until one is needed.
+  CRAWLER_EXTRA_CA_FILE: ""
+  # No egress proxy on the dev cluster: its NetworkPolicy lets every pod out. The crawler still
+  # refuses internal names and private addresses itself.
+  CRAWLER_EGRESS_PROXY: ""
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crawler
+  namespace: dataagent-service
+  labels:
+    app: crawler
+    app.kubernetes.io/part-of: dataagent
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: crawler
+  template:
+    metadata:
+      labels:
+        app: crawler
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      initContainers:
+      - name: wait-for-migrations
+        image: dataagent/migrate:latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -c
+        - |
+          heads="$(python -B -m alembic -c alembic/alembic.ini heads | sed -n 's/ (head)$//p')"
+          [ -n "$heads" ] || exit 1
+          until python -B -c 'import os,sys,psycopg; url="postgresql://"+os.environ[sys.argv[1]].split("://",1)[1]; conn=psycopg.connect(url,connect_timeout=5,prepare_threshold=None); applied={row[0] for row in conn.execute("SELECT version_num FROM public.alembic_version")}; conn.close(); sys.exit(applied != set(sys.argv[2].split()))' DATAAGENT_DB_URL__SVC_ACQUIRE "$heads" 2>/dev/null; do sleep 2; done
+        envFrom:
+        - secretRef:
+            name: crawler-secrets
+        resources:
+          requests: {cpu: 25m, memory: 32Mi}
+          limits: {cpu: 100m, memory: 128Mi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+      containers:
+      - name: crawler
+        image: dataagent/crawler:latest
+        imagePullPolicy: IfNotPresent
+        command: ["python", "-m", "services.crawler.main"]
+        envFrom:
+        - configMapRef: {name: dataagent-config}
+        - configMapRef: {name: crawler-env}
+        - secretRef: {name: crawler-secrets}
+        resources:
+          requests: {cpu: 50m, memory: 128Mi}
+          limits: {cpu: "1", memory: 512Mi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+      enableServiceLinks: false
+      serviceAccountName: crawler

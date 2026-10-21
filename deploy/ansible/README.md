@@ -39,9 +39,9 @@ non-blocking stdio.
 > [Deploying one commit exactly](#deploying-one-commit-exactly).
 
 > **On the OrbStack cluster use `make deploy-local`.** That cluster runs only the V3
-> slice (api, worker-agent, worker-ingest, worker-document, frontend, migrate, gateway,
-> litellm, mailpit). `make deploy` plans the whole stack and also rebuilds kb-backend,
-> kb-worker, auth_api and platform-workers when `backend/libs` changes — images nothing
+> slice (api, worker-agent, worker-ingest, worker-document, crawler, frontend, migrate, gateway,
+> litellm, mailpit). `make deploy` plans the whole stack and also rebuilds
+> auth_api, model-service and platform-workers when `backend/libs` changes — images nothing
 > there runs; on 20/10/2026 that cost 30 minutes for no running change. It also leaves Neo4j
 > out of the database tier (`LOCAL_DATABASES` in the Makefile): nothing in V3 reads it, and its
 > 2 GiB request left the one-node cluster no memory to schedule worker-agent on 22/10/2026. A
@@ -135,7 +135,7 @@ outside the server fail with "Connecting to Keycloak…" and
 | `jobs_force=true` | with `apply_jobs=true`, rerun all six Jobs whatever changed — e.g. after a vault change to the app-role passwords that `db-init` sets |
 | `build_parallelism=N` | how many images build (and push) at once; default 6 |
 | `apply_setup=true` | run step 13. Needed after changing the public URLs, `kong-setup.sh` or the Keycloak mappers |
-| `images_only=kb-backend,frontend` | narrow the build list to these image names |
+| `images_only=worker-agent,frontend` | narrow the build list to these image names |
 | `images_only=eval` | build an on-demand image (`images_on_demand`) — before applying the online-eval Job |
 | `deploy_full=true` | treat everything as changed: rebuild **all** images, reapply all Secrets and ConfigMaps, rerun Jobs (with `apply_jobs`). Images whose digest comes out unchanged are neither pushed nor restarted. Needs tens of GB of free disk — check `df -h /data` first |
 | `seed_demo=false` | run the `seed` Job without demo data |
@@ -163,8 +163,8 @@ outside the server fail with "Connecting to Keycloak…" and
 - Postgres admin, Keycloak admin, MinIO, Neo4j and ClickHouse read their password
   only when their storage is first initialised. Changing one afterwards updates
   the Secret but not the store, and the services lose access. The Postgres app
-  roles (`app_user`, `runtime_writer`, `sandbox_reader`, `kb_backend`,
-  `pgbouncer_auth`, `kb_ingestion_worker`) are different: the `db-init` Job sets
+  roles (`app_user`, `runtime_writer`, `sandbox_reader`, `pgbouncer_auth`)
+  are different: the `db-init` Job sets
   their passwords on every run.
 - OpenBao's root token and the three workload AppRole credential pairs are not in
   the vault; `k8s_openbao` writes them to `deploy/k8s/dev/.openbao-env.yml`.

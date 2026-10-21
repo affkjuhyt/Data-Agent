@@ -51,6 +51,8 @@ DOCUMENT_RECEIVED = "document.received"
 # Queued by `python -m services.worker_document.reprocess`: extract a ready (or failed) document
 # again, e.g. after an extractor improved; the reconciliation keeps what did not change.
 DOCUMENT_REPROCESS = "document.reprocess"
+# A document reached ready (AC-05-02-01); worker-agent reads its claims for conflicts (KB-05).
+DOCUMENT_INDEXED = "document.indexed"
 ISSUE_RESOLVED = "quality_issue.resolved"
 ROLE = "svc_document"
 AUDIT_ROLE = "svc_audit"
@@ -273,6 +275,21 @@ async def _finish(session: Any, meta: Meta, page_count: int | None = None) -> st
     await session.execute(
         update(document.Document).where(document.Document.id == meta.document_id).values(**values)
     )
+    if status == "ready":
+        session.add(
+            document.Outbox(
+                id=uuid7(),
+                org_id=meta.org_id,
+                aggregate_type="document",
+                aggregate_id=meta.document_id,
+                event_type=DOCUMENT_INDEXED,
+                payload={
+                    "document_id": str(meta.document_id),
+                    "collection_id": str(meta.collection_id),
+                    "data_space_id": str(meta.data_space_id),
+                },
+            )
+        )
     return status
 
 

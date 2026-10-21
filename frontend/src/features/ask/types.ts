@@ -22,7 +22,7 @@ export interface ChartSpec {
   series?: Array<{ key: string; type: 'bar' | 'line' | 'area' }>;
 }
 
-export type CitationType = 'kb' | 'mcp' | 'db' | 'web' | 'tool' | 'document';
+export type CitationType = 'mcp' | 'db' | 'web' | 'tool' | 'document';
 
 export interface Citation {
   index: number;

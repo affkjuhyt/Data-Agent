@@ -18,7 +18,7 @@ metadata:
     app: minio-init
     app.kubernetes.io/part-of: dataagent
 data:
-  MINIO_BUCKETS: knowledge-base langfuse sandbox-audit da-results da-exports da-ingest da-raw-docs da-doc-derived
+  MINIO_BUCKETS: langfuse sandbox-audit da-results da-exports da-ingest da-raw-docs da-doc-derived
   # Raw is immutable (S2-02, ADR-V2-21): object lock, settable only at bucket creation.
   # COMPLIANCE: no one, root included, deletes an object before its retention ends.
   RAW_RETENTION_MODE: COMPLIANCE
@@ -90,6 +90,14 @@ spec:
           mc admin policy create local worker-agent-period-v1 /tmp/worker-agent-period.json
           mc admin policy attach local worker-agent-period-v1 --user worker-agent || mc admin user info local worker-agent
           mc mb --ignore-existing --with-lock local/raw
+          # BR-150: crawled originals are immutable and kept 400 days (crawl_page.retain_until).
+          mc mb --ignore-existing --with-lock local/da-raw-crawl
+          mc retention set --default "$RAW_RETENTION_MODE" 400d local/da-raw-crawl
+          # The crawler's own user: it stores and re-reads originals, it never deletes one.
+          printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:PutObject","s3:GetObject"],"Resource":["arn:aws:s3:::da-raw-crawl/*"]}]}' > /tmp/crawler-raw.json
+          mc admin policy create local crawler-raw /tmp/crawler-raw.json
+          mc admin user add local crawler "$CRAWLER_MINIO_PASSWORD"
+          mc admin policy attach local crawler-raw --user crawler || mc admin user info local crawler
           mc retention set --default "$RAW_RETENTION_MODE" "${RAW_RETENTION_DAYS}d" local/raw
         resources:
           requests:

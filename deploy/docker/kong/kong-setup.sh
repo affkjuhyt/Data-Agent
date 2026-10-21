@@ -173,11 +173,6 @@ curl -sf -X PUT "$KONG_ADMIN/services/api/routes/api-v1-route" \
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
 
-# NOTE: the kb-backend service + its route (paths /api/data, /api/knowledge,
-# /api/pipeline, /api/fleet) are created together in section 3d below. Do not
-# add a second /api/data route here — two routes matching the same path leave
-# the CORS plugin (attached to one route) ambiguous for browser preflights.
-
 # ── 3b. Create auth_api service + route ────────────────────────────────
 echo "📡 Creating auth_api service..."
 curl -sf -X PUT "$KONG_ADMIN/services/auth_api" \
@@ -231,28 +226,14 @@ curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/release_worker" || true
 # (3d used to create an `orchestrator` service + route, and 3d-2 a
 # `minio_service` one. Both are retired with the legacy runtime.)
 
-# ── 3e. Create kb-backend service + route ──────────────────────────────
-# Kong reaches kb-backend by its Service short name: both run in
-# dataagent-service, so it resolves without the FQDN.
-echo "📡 Creating kb-backend service..."
-curl -sf -X PUT "$KONG_ADMIN/services/kb-backend" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "kb-backend",
-    "url": "http://kb-backend:8220",
-    "connect_timeout": 5000,
-    "read_timeout": 60000
-  }' | json_field name | xargs -I{} echo "  → service: {}"
+# ── 3e. Retired kb-backend service + route ─────────────────────────────
+# The legacy knowledge base (/api/data, /api/knowledge, /api/pipeline, /api/fleet) was
+# removed (KB-08); the V3 screens use /v1. Same as 3c: the route first, then the service,
+# whose plugins (size limit, aeroflow-jwks, rate limiting) and the route's CORS go with them.
+echo "🧹 Removing the retired kb-backend service..."
+curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/kb-backend/routes/kb-backend-route" || true
+curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/kb-backend" || true
 
-echo "🛣️  Creating kb-backend route (KB UI data/knowledge/pipeline APIs)..."
-curl -sf -X PUT "$KONG_ADMIN/services/kb-backend/routes/kb-backend-route" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "kb-backend-route",
-    "paths": ["/api/data","/api/knowledge","/api/pipeline","/api/fleet"],
-    "strip_path": false,
-    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
-  }' | json_field name | xargs -I{} echo "  → route: {}"
 
 # Helper: upsert a plugin scoped to a specific service/route/global endpoint.
 # Fetches all plugins at the scope, finds one matching plugin_name by parsing
@@ -356,31 +337,6 @@ else
 
 fi
 
-# ── 4c2. request-size-limiting on kb-backend ───────────────────────────
-# Ingestion buffers the whole upload, so the gateway stops oversized bodies.
-# Outside the SKIP_JWT branch: the limit applies either way.
-echo "📏 Enabling request-size-limiting on kb-backend (${KB_MAX_UPLOAD_MB:-64}MB)..."
-upsert_plugin "$KONG_ADMIN/services/kb-backend/plugins" \
-  "{\"name\":\"request-size-limiting\",\"config\":{\"allowed_payload_size\":${KB_MAX_UPLOAD_MB:-64},\"size_unit\":\"megabytes\",\"require_content_length\":false}}" \
-  "request-size-limiting"
-
-# ── 4d. aeroflow-jwks on kb-backend ────────────────────────────────────
-# Reuse aud=aeroflow-backend so the existing audience mapper on the
-# aeroflow-frontend client applies — no new Keycloak mapper needed.
-echo "🔐 Enabling aeroflow-jwks plugin on kb-backend (aud=aeroflow-backend)..."
-upsert_plugin "$KONG_ADMIN/services/kb-backend/plugins" \
-  "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"aeroflow-backend\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
-  "aeroflow-jwks"
-
-# ── 4e. CORS on kb-backend-route ───────────────────────────────────────
-# Browser preflight OPTIONS carries no Authorization header. The cors plugin
-# (priority higher than aeroflow-jwks @1010) answers the preflight before JWT
-# verification runs — without it every cross-origin request 401s on preflight.
-echo "🌐 Enabling CORS on kb-backend-route..."
-upsert_plugin "$KONG_ADMIN/routes/kb-backend-route/plugins" \
-  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:8150","http://localhost:30280","http://10.10.55.101:30280"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Authorization","Content-Type","X-Data-Space","X-Role","X-Request-ID","Idempotency-Key","X-Upload-Filename","Last-Event-ID","Accept"],"credentials":true,"max_age":3600}}' \
-  "cors"
-
 # ── 5. IP restriction ─────────────────────────────────────────────────
 # Applied to: auth_api-keys-route and auth_api-secrets-route.
 # auth_api ip-allowlist routes are intentionally EXCLUDED so admin can always
@@ -419,13 +375,6 @@ upsert_plugin "$KONG_ADMIN/plugins" \
   '{"name":"correlation-id","config":{"header_name":"X-Request-ID","generator":"uuid#counter","echo_downstream":true}}' \
   "correlation-id" "global"
 
-# ── 10. Rate limiting ──────────────────────────────────────────────────
-# kb-gateway (Go edge) removed 30-08-2026 — this plugin is what it existed for.
-echo "⏱️  Enabling rate-limiting on kb-backend..."
-upsert_plugin "$KONG_ADMIN/services/kb-backend/plugins" \
-  '{"name":"rate-limiting","config":{"minute":300,"policy":"local"}}' \
-  "rate-limiting"
-
 # ── 10. mTLS client cert (Kong → Backend) ─────────────────────────────
 # If certs exist (generated by deploy/docker/certs/gen-certs.sh), register Kong
 # client cert so Kong presents it on every upstream request.
@@ -459,7 +408,7 @@ if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ] && [ -f "$CA_FILE" ]; then
     | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
 
   # Attach client cert to the active V3 backend services
-  for svc in api kb-backend; do
+  for svc in api; do
     curl -sf -X PATCH "$KONG_ADMIN/services/$svc" \
       -H "Content-Type: application/json" \
       -d "{\"client_certificate\":{\"id\":\"$CLIENT_CERT_ID\"}}" > /dev/null

@@ -15,7 +15,6 @@ sed -e "s/REPLACE_WITH_KAFKA_ADMIN_PASSWORD/$KAFKA_ADMIN_PASSWORD/g" \
     -e "s/REPLACE_WITH_AUDIT_CONSUMER_PASSWORD/$AUDIT_CONSUMER_KAFKA_PASSWORD/g" \
     -e "s/REPLACE_WITH_MEMORY_CONSUMER_PASSWORD/$MEMORY_CONSUMER_KAFKA_PASSWORD/g" \
     -e "s/REPLACE_WITH_SCHEMA_CRAWLER_WORKER_PASSWORD/$SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD/g" \
-    -e "s/REPLACE_WITH_WEB_CRAWLER_WORKER_PASSWORD/$WEB_CRAWLER_WORKER_KAFKA_PASSWORD/g" \
     ../docker/kafka/kafka-broker-jaas.config.example |
 kubectl -n dataagent-database create secret generic kafka-jaas \
   --from-file=kafka-broker-jaas.config=/dev/stdin \

@@ -13,13 +13,12 @@ tests/
 ├── unit/                    # pure Python, no Docker, no network — fast
 │   ├── _loader.py           # load a service module by path, with stubs that do not leak
 │   ├── workflow_runtime/    # one suite per service, run in that service's image:
-│   ├── kb_backend/          #   a test goes in the suite of the code it exercises.
+│   ├── crawler/             #   a test goes in the suite of the code it exercises.
 │   ├── platform_workers/    #   There is no single image that can import every
 │   ├── sandbox_executor/    #   service (their pins conflict: OTel, boto3), so the
 │   ├── auth_api/            #   suites are never run together.
-│   ├── kb_worker/
 │   ├── model_service/
-│   ├── contracts/           # libs/contracts (NOP-150), run in the kb-backend image (PyYAML, pinned pydantic)
+│   ├── contracts/           # libs/contracts (NOP-150), run in the api image (PyYAML, pinned pydantic)
 │   └── repo/                # repo-wide: k8s manifests, db-init, Ansible deploy plan, migrate image,
 │                            #   cross-service auth/tenant policy, model/bench and model/eval.
 │                            #   Runs in the local dev-tools image (tests/dev-tools.Dockerfile)
@@ -34,7 +33,7 @@ tests/
 │   ├── auth_api/            # conftest.py: the auth_api app + minimal schema; smoke + RLS
 │   ├── platform_workers/    # schema crawler, web crawler
 │   ├── sandbox_executor/    # real sandbox-runner containers, read-only Postgres backend
-│   ├── contracts/           # the Contract v1 mock as a real server (kb-backend image)
+│   ├── contracts/           # the Contract v1 mock as a real server (api image)
 │   └── test_*.py            # e2e only (LIVE_STACK=1): agent answer, JWT audience, load, tenant isolation
 ├── e2e/                     # seed data for the demo agent + non-pytest harnesses
 │   ├── seed.sql             # demo agent, metrics, fact_sales warehouse
@@ -74,7 +73,7 @@ requirement. Which issue needs which level, and the V2 rules behind the tags:
 ```bash
 make test-changed                                # only the suites your changes since main can affect
 make test-unit                                   # every suite, each in its service image, in parallel
-make test-unit UNIT_SUITES=kb_backend:kb-backend # one suite
+make test-unit UNIT_SUITES=crawler:crawler       # one suite
 make test-unit PYTEST_ARGS="-k lock -x"          # extra pytest args
 make test TEST_JOBS=1                            # unit + integration, one suite at a time
 ```
@@ -228,7 +227,7 @@ transaction and roll back at the end.
 testing of a FastAPI service. See [tests/integration/auth_api/test_auth_api_smoke.py](integration/auth_api/test_auth_api_smoke.py)
 for the seven smoke tests built on top of it.
 
-The pattern, when cloning for a new service (workflow_runtime, kb-backend, ...):
+The pattern, when cloning for a new service (workflow_runtime, ...):
 
 1. **Import the service by its package path** — `from services.auth_api.app
    import create_app` — the way the image runs it (PYTHONPATH=backend, which
@@ -309,7 +308,7 @@ The `get_tenant_db` dependency:
 
 ### Rollout checklist for each service
 
-When migrating a service (workflow_runtime, kb-backend, ...):
+When migrating a service (workflow_runtime, ...):
 
 1. Give it `APP_DATABASE_URL` in its `<workload>-secrets` (Ansible
    `secrets.yml` → `create-secrets.sh`). Format:

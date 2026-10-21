@@ -137,12 +137,12 @@ A ConfigMap change does **not** reach a running pod through `envFrom` — restar
 
 There is no shared Secret mounted everywhere. Each workload gets a
 `<workload>-secrets` holding only the keys its code actually reads, under the
-names the code expects — so `kb-backend` gets four keys and never sees
+names the code expects — so `crawler` gets six keys and never sees
 `GRAFANA_ADMIN_PASSWORD` or the Snowflake crawler password.
 
 `GATEWAY_KEY` and `SERVICE_AUTH_SECRET` go to the services that import
-`libs.shared.auth` (which imports `service_identity`): `auth-api` and
-`kb-backend` (`GATEWAY_KEY` also to the `setup` Job, which writes it into the
+`libs.shared.auth` (which imports `service_identity`): `auth-api`
+(`GATEWAY_KEY` also to the `setup` Job, which writes it into the
 Kong plugin; `SERVICE_AUTH_SECRET` also to `sandbox-executor`, which verifies
 service assertions). Nothing else needs them. An unset `GATEWAY_KEY` makes every
 Kong-routed request 401 (the services log an error naming it); `GATEWAY_KEY_OPTIONAL=true`
@@ -324,7 +324,6 @@ band. Nothing in `deploy/k8s/` may use it.
 | keycloak (health) | service | 9000 | **8111** | `KC_HTTP_MANAGEMENT_PORT` |
 | openbao | database | 8200 | **8120** | `config.hcl` listener |
 | auth-api | service | 8200 | **8200** | manifest `command` (unchanged) |
-| kb-backend | service | 8000 | **8220** | manifest `command` |
 | model-service | service | 8001 | **8230** | manifest `command` |
 | workflow-runtime | service | 8001 | **8240** | manifest `command` |
 | sandbox-executor | service | 8500 | **8260** | manifest `command` |
@@ -361,7 +360,7 @@ numbers above — `postgres:8300`, `redis://redis:8320`, `bolt://neo4j:8341`,
 `http://litellm:8500`, `http://jaeger:8431`, and so on.
 
 Service DNS names are DNS-1123, so an underscore is not legal in a hostname:
-`model-service`, `workflow-runtime`, `kb-backend`, `auth-api`,
+`model-service`, `workflow-runtime`, `auth-api`,
 `sandbox-executor`, `llm-exporter`. `env` in the manifest wins
 over whatever default the image ships, so the underscored defaults compiled into
 the Python services never apply in-cluster.

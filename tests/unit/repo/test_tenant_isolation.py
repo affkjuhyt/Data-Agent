@@ -50,11 +50,6 @@ def _get_client_calls() -> tuple[collections.Counter, collections.Counter, dict]
                     continue
                 parts = path.relative_to(REPO_ROOT).parts
                 service = parts[2]  # backend/<services|libs>/<name>
-                # The KB Kafka workers live inside kb_backend but, unlike its API,
-                # do not set the tenant per request: keep them a separate unit so
-                # kb_backend's ambient-tenant exemption does not hide them.
-                if parts[2] == "kb_backend" and parts[3] == "workers":
-                    service = f"kb_worker_{parts[4]}"
                 if any(k.arg == "tenant_id" for k in node.keywords) or node.args:
                     scoped[service] += 1
                 else:
@@ -67,20 +62,13 @@ def _get_client_calls() -> tuple[collections.Counter, collections.Counter, dict]
 # set_current_tenant) so a bare get_client() is already scoped. Counting their
 # call sites measures nothing; what matters there is how often they opt OUT,
 # which the platform-client test below caps instead.
-_AMBIENT_TENANT_SERVICES = {"kb_backend"}
+_AMBIENT_TENANT_SERVICES: set[str] = set()
 
 # The inventory as it stands. A ratchet, not a target: the number may go DOWN as
 # services adopt tenant scoping, and a rise means a new unscoped call site was
 # added to a surface that already cannot isolate.
 _UNSCOPED_BUDGET = {
-    # kb_ingestion_worker's 49 split across the four processes and libs/ingestion.
-    # 32: the Silver tier update/rollback, the auto-Gold hand-off read and the
-    # trash-flush graph lookup now pass the tenant they already had. 31: the Gold
-    "ingestion": 24,
-    "kb_worker_conflict_resolution": 16,
-    "kb_worker_promote_gold": 2,
-    "kb_worker_structured_data": 2,
-    "kb_worker_promote_silver": 1,
+    # The KB workers and libs/ingestion went with kb-backend (KB-08).
     # libs/shared is at 0: the document advisory lock moved to
     # get_platform_client(), the deliberate unscoped form.
     "database_connector": 15,

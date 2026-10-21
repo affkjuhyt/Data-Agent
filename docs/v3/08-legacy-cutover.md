@@ -22,10 +22,10 @@
 | --- | --- | --- | --- | --- |
 | `auth-api` | `service/auth-api.yaml`, `dataagent/auth_api` | `api` (`org`, token/capability) | Giữ | API thay được `/api/auth`, API-key verification và mọi client cũ; e2e auth qua `/v1` |
 | `workflow-runtime` | `service/workflow-runtime.yaml`, `dataagent/workflow_runtime` | `api` cho resource/control + `worker-agent` cho execution | Giữ | `worker-agent` chạy agent turn thật, resume/HITL, outbox và sandbox; Kong không còn route runtime cũ |
-| `kb-backend` | `service/kb-backend.yaml`, `dataagent/kb-backend` | `api` cho catalog/query + `worker-ingest`/`crawler` | Giữ | ingest/search/catalog mới chạy trên V3 và các `/api/data`, `/api/knowledge`, `/api/pipeline` đã có replacement |
-| `kb-promote-*` | bốn manifest `kb-promote-*`, image `kb-worker` | `worker-ingest` | Giữ | Kafka consumer/group mới xử lý đủ Bronze/Silver/Gold, retry và DLQ |
+| `kb-backend` | đã xoá mã 22/10/2026 (KB-08) | `api` (document, catalog, conflict) + `worker-document`, `worker-agent`, `crawler` | Đã xoá mã, chờ cổng §4 | ingest/search/catalog mới chạy trên V3 và các `/api/data`, `/api/knowledge`, `/api/pipeline` đã có replacement |
+| `kb-promote-*` | đã xoá mã 22/10/2026 (KB-08) | `worker-document` + `worker-agent` (`document.indexed`) | Đã xoá mã, chờ cổng §4 | Kafka consumer/group mới xử lý đủ Bronze/Silver/Gold, retry và DLQ |
 | `indicator-api` | đã xoá 12/10/2026 | module của `api` (mọi route của nó chỉ trả 501) | Đã xoá | không còn Kong route, lời gọi frontend, import hay topic nào; manifest, Ansible, Makefile, CI, secret xoá cùng commit |
-| `platform-workers-*` | audit, memory, schema-crawler, web-crawler | `worker-ingest`, `crawler`, audit/memory worker V3 | Giữ | từng topic, group, ACL và state store có consumer thay thế; không còn CronJob/manifest tham chiếu |
+| `platform-workers-*` | audit, memory, schema-crawler (web-crawler đã xoá mã 22/10/2026, thay bằng `crawler`) | `worker-ingest`, audit/memory worker V3 | Giữ | từng topic, group, ACL và state store có consumer thay thế; không còn CronJob/manifest tham chiếu |
 | `model-service` | `service/model-service.yaml`, `dataagent/model_service` | Chưa được đặc tả rõ trong V3 | Giữ | Có quyết định riêng về LLM/model proxy; không xoá theo suy đoán |
 | `sandbox-executor` | `service/sandbox-executor.yaml`, `dataagent/sandbox_executor` | Có thể nằm trong `worker-agent` | Giữ | worker-agent có boundary xác thực, policy OpenBao và test isolation tương đương |
 | `llm-exporter` | `service/llm-exporter.yaml` | Observability V3 | Giữ | metric thay thế đã được Prometheus scrape và dashboard kiểm chứng |

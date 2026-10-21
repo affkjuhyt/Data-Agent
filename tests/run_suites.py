@@ -34,13 +34,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # `repo` (deploy/, k8s, Ansible, model/, cross-service policy) belongs to no service, so it
 # runs on the local dev-tools image (`make dev-tools` builds it) instead of a registry image.
 DEFAULT_UNIT = (
-    "kb_backend:kb-backend platform_workers:platform-workers "
-    "sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker model_service:model_service api:api worker_agent:worker-agent worker_ingest:worker-ingest "
-    "worker_document:worker-document repo:dataagent/dev-tools:local"
+    "platform_workers:platform-workers contracts:api "
+    "sandbox_executor:sandbox_executor auth_api:auth_api model_service:model_service api:api worker_agent:worker-agent worker_ingest:worker-ingest "
+    "worker_document:worker-document crawler:crawler repo:dataagent/dev-tools:local"
 )
 DEFAULT_INTEGRATION = (
-    "sandbox_executor:sandbox_executor api:api migrate:migrate "
-    "worker_agent:worker-agent worker_ingest:worker-ingest worker_document:worker-document"
+    "sandbox_executor:sandbox_executor contracts:api api:api migrate:migrate "
+    "worker_agent:worker-agent worker_ingest:worker-ingest worker_document:worker-document "
+    "crawler:crawler"
 )
 
 # Which suites a change under backend/services/<service>/ can break: the suite of
@@ -51,12 +52,10 @@ SERVICE_SUITES: dict[str, set[tuple[str, str]]] = {
     "worker_agent": {("unit", "worker_agent"), ("integration", "worker_agent")},
     "worker_ingest": {("unit", "worker_ingest")},
     "worker_document": {("unit", "worker_document"), ("integration", "worker_document")},
+    "crawler": {("unit", "crawler"), ("integration", "crawler")},
     "auth_api": {("unit", "auth_api")},
-    "kb_backend": {
-        ("unit", "kb_backend"), ("unit", "kb_worker"),
-    },
     "model_service": {("unit", "model_service")},
-    "platform_workers": {("unit", "platform_workers"), ("unit", "kb_backend")},
+    "platform_workers": {("unit", "platform_workers")},
     "sandbox_executor": {
         ("unit", "sandbox_executor"), ("integration", "sandbox_executor"),
     },
@@ -69,7 +68,7 @@ REPO_SUITE = ("unit", "repo")
 # Files outside the services that some unit suites read directly (manifests, Ansible,
 # the frontend's Dockerfiles and dev proxy, model/ configs).
 OTHER_PREFIXES: dict[str, set[tuple[str, str]]] = {
-    "deploy/": {REPO_SUITE, ("unit", "kb_backend")},
+    "deploy/": {REPO_SUITE},
     "frontend/": {REPO_SUITE},
     "model/": {REPO_SUITE, ("unit", "model_service")},
 }

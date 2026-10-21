@@ -66,7 +66,6 @@ jobs:
           for target in \
             backend/libs/basemodel backend/libs/database_connector backend/libs/shared \
             backend/libs/contracts \
-            backend/services/kb_backend \
             backend/services/auth_api backend/services/model_service \
             backend/services/sandbox_executor \
             backend/services/platform_workers; do
@@ -80,10 +79,11 @@ jobs:
         # installed every query result is Any and warn_return_any reports false positives. Installed
         # here, after the loop above, so the legacy surfaces keep their own baseline.
         run: |
-          pip install -r backend/services/api/requirements.txt -r backend/services/worker_agent/requirements.txt
+          pip install -r backend/services/api/requirements.txt -r backend/services/worker_agent/requirements.txt \
+            -r backend/services/crawler/requirements.txt
           mypy --disallow-untyped-defs --disallow-any-generics \
                --ignore-missing-imports --follow-imports=silent \
-               backend/services/api backend/services/worker_agent
+               backend/services/api backend/services/worker_agent backend/services/crawler
 
   # One job per service suite, in that service's Python with only its own
   # requirements.txt: no single environment can import every service (the
@@ -96,32 +96,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - suite: kb_backend
-            python: "3.13"
-            install: -r backend/services/kb_backend/requirements.txt
-            apt: libpq-dev
           - suite: platform_workers
             python: "3.12"
             install: -r backend/services/platform_workers/requirements.txt
-          # libs/contracts (NOP-150) in the kb-backend environment: it has PyYAML for
-          # the seed test and pins pydantic, which the generated/ staleness check needs.
+          # libs/contracts (NOP-150) in the api environment: it has PyYAML for the seed
+          # test and pins pydantic, which the generated/ staleness check needs.
           - suite: contracts
-            python: "3.13"
-            install: -r backend/services/kb_backend/requirements.txt
-            apt: libpq-dev
+            python: "3.12"
+            install: -r backend/services/api/requirements.txt
           - suite: sandbox_executor
             python: "3.11"
             install: -r backend/services/sandbox_executor/requirements.txt
           - suite: auth_api
             python: "3.12"
             install: -r backend/services/auth_api/requirements.txt
-          - suite: kb_worker
-            python: "3.11"
-            # Same system libraries and CPU torch wheel as its Dockerfile;
-            # docling imports fail without them.
-            apt: libgl1 libglib2.0-0 poppler-utils tesseract-ocr
-            pre: torch torchvision --index-url https://download.pytorch.org/whl/cpu
-            install: -r deploy/docker/kb-worker/requirements.txt
           - suite: model_service
             python: "3.11"
             install: -r backend/services/model_service/requirements.txt
@@ -137,6 +125,10 @@ jobs:
           - suite: worker_document
             python: "3.12"
             install: -r backend/services/worker_document/requirements.txt
+          # The crawler block (KB-02): scope (robots, redirects, pace) and record extraction.
+          - suite: crawler
+            python: "3.12"
+            install: -r backend/services/crawler/requirements.txt
           # Repo-wide tests (deploy/, k8s, Ansible, model/, cross-service policy): the
           # environment of tests/dev-tools.Dockerfile, which `make test-unit` runs them on.
           - suite: repo
@@ -218,9 +210,8 @@ jobs:
           # The Contract v1 mock (NOP-151) started as a real server, in the same
           # environment as the contracts unit suite.
           - suite: contracts
-            python: "3.13"
-            install: -r backend/services/kb_backend/requirements.txt
-            apt: libpq-dev
+            python: "3.12"
+            install: -r backend/services/api/requirements.txt
           # The api against the V3 DDL (backend/alembic/sql) as its svc_* roles.
           - suite: api
             python: "3.12"
@@ -233,6 +224,10 @@ jobs:
           - suite: worker_document
             python: "3.12"
             install: -r backend/services/worker_document/requirements.txt
+          # A crawl run on the V3 DDL as svc_acquire, claimed from acquire.outbox.
+          - suite: crawler
+            python: "3.12"
+            install: -r backend/services/crawler/requirements.txt
           - suite: migrate
             python: "3.11"
             install: '"sqlalchemy[asyncio]==2.0.35"'

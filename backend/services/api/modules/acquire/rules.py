@@ -50,10 +50,17 @@ def invalid(field: str, message: str, code: str = "invalid") -> Problem:
     )
 
 
+# Names that resolve inside the cluster or a host: never a crawl domain, or the crawler would read
+# internal services (the crawler refuses private addresses again at request time).
+_INTERNAL_SUFFIXES = (".local", ".internal", ".svc", ".localhost", ".lan", ".home.arpa")
+
+
 def normalise_domain(domain: str) -> str:
     value = domain.strip().lower().rstrip(".")
     if not _DOMAIN.match(value):
         raise ValueError(f"{domain!r} is not a domain name")
+    if value.endswith(_INTERNAL_SUFFIXES):
+        raise ValueError(f"{domain!r} is an internal name")
     return value
 
 
@@ -92,8 +99,11 @@ def check_cron(expression: str) -> str:
 
 
 def check_secret_ref(secret_ref: str, org_id: uuid.UUID) -> str:
-    """An OpenBao path under the caller's organisation; the secret itself never reaches the api."""
-    prefix = f"tenants/{org_id}/"
+    """An OpenBao path under the caller's organisation; the secret itself never reaches the api.
+
+    Only under crawl-sources/: the crawler's AppRole reads nothing else, so a source cannot name
+    another secret of the organisation and have it sent to a site as a bearer token."""
+    prefix = f"tenants/{org_id}/crawl-sources/"
     if not secret_ref.startswith(prefix) or ".." in secret_ref.split("/"):
         raise invalid(
             "secret_ref",

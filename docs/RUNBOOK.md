@@ -83,7 +83,7 @@ kubectl -n dataagent-service get secret grafana-secrets \
 | A Job manifest under `deploy/k8s/dev/job/`, a seed file, `deploy/docker/sql/` | `-e apply_jobs=true` (reruns only the Jobs that read it; `-e jobs_force=true` reruns all) |
 | `deploy/docker/kong/kong-setup.sh`, Keycloak mappers | `-e apply_setup=true` |
 | A value in the vault | `-e secrets_changed=true` (§7) |
-| Only one image, skip the rest | `-e images_only=kb-backend` |
+| Only one image, skip the rest | `-e images_only=worker-agent` |
 
 The dev frontend runs the Vite dev server inside its pod (image from
 `frontend/Dockerfile.dev`). The source is baked into the image, so a frontend
@@ -121,9 +121,6 @@ curl -s "http://10.10.55.101:30101/plugins?size=1000" \
   | python3 -c 'import sys,json; print({p["config"]["issuer"] for p in json.load(sys.stdin)["data"] if p["name"]=="aeroflow-jwks"})'
 ```
 
-`kb-backend` is **fail-closed**: calling it directly on `:30220` returns `401`.
-That is expected; application traffic goes through Kong.
-
 **Agent turn routes.** `worker-agent` consumes `question.received` from the V3
 outbox; every request goes through Kong (`$API`) with `Authorization: Bearer
 $TOKEN` and `X-Data-Space`. Kong clears and re-injects identity headers from the
@@ -159,7 +156,7 @@ With `seed_demo: true` (the dev inventory's setting) the `seed` Job loads:
 
 | Source | What |
 | --- | --- |
-| `deploy/docker/sql/kb-seed.sql` | baseline tenant, roles and knowledge-base records |
+| `deploy/docker/sql/platform-seed.sql` | baseline tenant, embedding models and demo warehouse of the legacy services that remain |
 | `deploy/docker/sql/v3-demo-seed.sql` | V3 demo organisation directory: `helios-engineer`, `DS-DEMO` membership and Data Engineer capabilities |
 | `deploy/docker/sql/v3-credit-demo.sql` | `DS-TD` "Tín dụng": a synthetic loan book (`workspace.credit_loan_snapshot`, 2 400 loans × 6 month-ends) with its certified semantic layer (Dư nợ, Nợ xấu, Tỷ lệ nợ xấu), the NPL threshold watch (> 3%, early from 2%) and the "Phân rã biến động" skill. Rebuilt on every apply |
 | `deploy/docker/sql/v3-pilot-seed.sql` | `DS-BH` "Bán hàng": sales lines, order headers, receivables, month-end stock and three policy documents. The book contains the five pilot traps (join fan-out, unweighted margin, summed stock, an expired promotion, two editions of September). Rebuilt on every apply |
@@ -352,9 +349,6 @@ therefore delays an event instead of losing it. Delivery is at-least-once; consu
 
 | `producer` | Service | Topics |
 | --- | --- | --- |
-| `kb-backend` | kb-backend API relay | `kb.promote.silver/gold`, `kb.resolve.conflict`, `kb.structured.propose` |
-| `kb-promote-silver`, `kb-promote-gold` | the two workers | retries, DLQ, Gold hand-off |
-| `web-crawler` | platform-workers-web-crawler | `kb.promote.silver` (auto-promote, inserted with the Bronze registration) |
 | `api` / `worker-agent` | V3 question outbox and worker | `question.received`, progress and terminal answer events |
 
 Not on the outbox: `audit.data.access` (best-effort `produce_event`, delivery errors are logged).
@@ -386,6 +380,37 @@ kubectl -n dataagent-service logs job/eval-nightly-manual    # "nightly-evals | 
 ```
 
 ## 11. LLM and model backend
+## 10d. Crawler (crawl sources, UC-14)
+
+`crawler` (`backend/services/crawler`) works the runs of `/v1/crawl-sources`: it claims
+`acquire.run.queued` from `acquire.outbox` (as `svc_outbox_relay`), fetches the source's seed URLs
+(a `web_listing` is followed in its `allowed_domains` to `max_depth`), keeps each original in MinIO
+`da-raw-crawl` under `<org>/<source>/<sha256>` (object lock, 400 days) and writes `crawl_page`, then
+the records of the active schema version to `extracted_record` for review, all as `svc_acquire`.
+The run stops at `in_review`; publishing is a person's action. Its event is `acquire.run.completed`.
+
+- **Scope.** One request per second per domain whatever the sources ask, robots.txt honoured,
+  redirects followed only inside the declared domains, nothing posted. One replica: the pace is held
+  in the process.
+- **Egress.** Dev goes out directly. Production sets `CRAWLER_EGRESS_PROXY` to
+  `egress-proxy.dataagent-service:3128` (handed to the HTTP client, so `NO_PROXY` cannot exempt a
+  crawl request), which is not deployed yet: until it is, every production run fails with a
+  connection error. The crawler refuses internal names (`localhost`, `.svc`, `.cluster.local`,
+  `.internal`, `.local`) and any host resolving to a private, loopback, link-local or reserved
+  address, on the first request and every redirect; the api refuses such domains on the source.
+  The connection is not pinned to the checked address, so the proxy must refuse private ranges too.
+- **API keys.** A source with `auth_mode = api_key` names a key under
+  `tenants/<org>/crawl-sources/` of the `secret` mount (the api refuses any other path); the value is
+  in field `api_key`. The crawler's own AppRole (`dataagent-crawler-policy`) reads only those paths.
+- **Missing intermediate CA** (`CERTIFICATE_VERIFY_FAILED`, e.g. hnx.vn): put the intermediate's
+  PEM in a file mounted into the pod and point `CRAWLER_EXTRA_CA_FILE` (`crawler-env`) at it.
+- **Blocked source.** Three runs in a row answered 403/429 pause the source
+  (`acquire.source.status_changed`, reason `blocked`); resume it from the source screen.
+- **A run stuck in `fetching`/`extracting`** after a crawler restart is failed when its event is
+  claimed again (reason "abandoned"), which frees the source for a new run.
+- **Scheduled runs** (`schedule_cron`) are not created yet: nothing in V3 schedules across
+  organisations before Temporal Schedules (ADR-33). Start runs from the source screen.
+
 
 The GPU services on `10.10.55.101` run outside k8s: vLLM main `:8001`
 (Qwen3-14B-AWQ, LiteLLM role `agent-main`), vLLM fast `:8002` (Qwen3-4B-AWQ,
@@ -401,6 +426,18 @@ workloads after changing it). LiteLLM reaches both vLLM tiers through
 ingested against another embedding model must be re-ingested.
 
 V3 documents (UC-05-02/04) use the same TEI services directly on the local slice,
+worker-agent (`services/worker_agent/llm.py`) and platform-workers (memory, schema
+crawler: `common/llm.py`) call LiteLLM through PydanticAI. Every call names the
+Pydantic model its answer must fit and sends that model's JSON schema as
+`response_format: json_schema`, which vLLM enforces with its structured-outputs
+backend (xgrammar by default) — LiteLLM passes it through. The OpenAI SDK retries
+429/5xx and dropped connections twice with backoff; an answer that still does not
+validate is sent back once with its errors. Past that worker-agent raises
+`ModelUnavailable` and keeps to its deterministic path (template text, extractive
+answer, no model reading), so a run's trace showing `UnexpectedModelBehavior` means
+the model could not produce the schema — check that the vLLM tier accepts
+`response_format` (a 400 from vLLM shows as `ModelHTTPError`) before blaming the prompt.
+
 which has no LiteLLM: `DOCUMENT_EMBED_URL` (`:8003`) in `worker-document-env`,
 `api-env` and `worker-agent-env`, and `DOCUMENT_RERANK_URL` (`:8004`) in
 `worker-agent-env`; unset, both fall back to `LITELLM_BASE_URL` (embeddings) or to
@@ -426,27 +463,12 @@ suspecting the pipeline.
 | Job stuck in `ImagePullBackOff` | Image no longer pullable (happened to `minio/mc`) → use a pinned image already on the node or in `localhost:5000` |
 | `field is immutable` applying a Job | Delete the Job first: `kubectl -n dataagent-service delete job <name>` |
 | Pod in `CreateContainerConfigError` | Its `<workload>-secrets` is missing a key → `kubectl -n <ns> describe pod <pod>` names it; rerun the pipeline with `-e secrets_changed=true` |
-worker-agent (`services/worker_agent/llm.py`) and platform-workers (memory, schema
-crawler: `common/llm.py`) call LiteLLM through PydanticAI. Every call names the
-Pydantic model its answer must fit and sends that model's JSON schema as
-`response_format: json_schema`, which vLLM enforces with its structured-outputs
-backend (xgrammar by default) — LiteLLM passes it through. The OpenAI SDK retries
-429/5xx and dropped connections twice with backoff; an answer that still does not
-validate is sent back once with its errors. Past that worker-agent raises
-`ModelUnavailable` and keeps to its deterministic path (template text, extractive
-answer, no model reading), so a run's trace showing `UnexpectedModelBehavior` means
-the model could not produce the schema — check that the vLLM tier accepts
-`response_format` (a 400 from vLLM shows as `ModelHTTPError`) before blaming the prompt.
-
 | DB-connector / warehouse nodes fail to authenticate | OpenBao sealed → §8 |
 | Many pods `Evicted` at once | Disk pressure → §9 |
 | `sandbox-executor` Pending (production set) | No `gvisor` RuntimeClass; preflight reports it. The dev set doesn't use gvisor |
 | `worker-agent` does not answer a question | Check `kubectl -n dataagent-service logs deployment/worker-agent`; then inspect the question's terminal refusal and the `qa.outbox`/Redis SSE path |
-| Every `/api` call returns `503` but Kong `/status` is `200` | Kong is not at fault: kb-backend's Postgres pool stayed "not connected" after Postgres restarted. `/health` now returns `503` in that state so liveness restarts the pod; to fix by hand `kubectl -n dataagent-service rollout restart deploy/kb-backend` |
 | A worker's Kafka producer times out on metadata ("Failed to update metadata after 60 secs") though SASL login succeeds | Kafka's ACLs are gone (ACLs live in the broker's metadata, lost with it). Re-run the topics/ACL Job: `kubectl apply -f deploy/k8s/dev/job/kafka-topics.yaml` (delete the old Job first if it still exists) |
 | litellm `429 No deployments available` for `embedder`, or `401 Incorrect API key ... platform.openai.com` | `EMBEDDING_V1_BASE_URL` missing from `litellm-env`, so the embedder calls OpenAI and goes into cooldown |
-| Silver finishes but an Auto source never reaches Gold; Kafka logs `OutOfOrderSequenceException` for a producer id | The broker no longer agrees with an idempotent producer's id/sequence. `KafkaProducerClient.produce` now rebuilds the producer and retries once; on an image without that fix, restart the pod or publish `kb.promote.gold` by hand |
-| A document stays at Silver and shows "Ends at Silver" | Intended: Training/Evaluation data (Data Purpose) is parsed but never promoted to Gold (`libs/ingestion/purpose.py`); change the purpose to Production to send it to the knowledge base |
 | `/v1/questions` returns `502` | Check `api` is Ready and not `OOMKilled`; then check Kong upstream logs and `worker-agent` logs. Do not restore the retired workflow runtime |
 | The card says "Hệ thống chưa lập được cách trả lời…" (`PLANNER_ERROR`) | The planner model returned no valid plan twice (the second time at temperature 0). Check the `planner \| response is not a valid plan` lines for that conversation; usually `planner_max_tokens` too low or the model endpoint degraded |
 | `Dockerfile cannot be empty` | A Dockerfile was truncated by a bad edit → `git checkout HEAD -- <path>` |

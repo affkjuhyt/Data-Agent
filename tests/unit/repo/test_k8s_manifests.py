@@ -40,20 +40,16 @@ MANIFEST_DIR = K8S_DIR / "production"
 
 # Deployments that reach Postgres through the ORM, and so must not serve traffic
 # on a schema older than their code.
-MIGRATION_GATED = {"api", "worker-agent", "worker-ingest"}
+MIGRATION_GATED = {"api", "worker-agent", "worker-ingest", "crawler"}
 GATE_CONTAINER = "wait-for-migrations"
 
 # Queue consumers and pollers: no inbound traffic, so no Service and no HTTP probe.
 HEADLESS_WORKERS = {
-    "kb-promote-silver",
-    "kb-promote-gold",
-    "kb-conflict-resolution",
-    "kb-structured-data",
+    "crawler",
     "langfuse-worker",
     "platform-workers-audit",
     "platform-workers-memory",
     "platform-workers-schema-crawler",
-    "platform-workers-web-crawler",
     "worker-agent",
     "worker-document",
     "worker-ingest",
@@ -864,7 +860,6 @@ class TestCrossNamespaceHostnamesAreQualified:
             "prometheus",
             "grafana",
             "auth-api",
-            "kb-backend",
             "model-service",
             "workflow-runtime",
             "api",
@@ -974,7 +969,7 @@ class TestConfigComesFromConfigMapsAndSecrets:
                 for m in script.split("kubectl -n ")[1:]
                 if key in m
             }
-            expected = {"auth-api", "kb-backend"}
+            expected = {"auth-api"}
             if key == "GATEWAY_KEY":
                 expected |= {"setup"}  # kong-setup.sh writes it into the plugin
                 # Not the eval Job: model/eval's agent_client calls the public
@@ -1162,7 +1157,6 @@ class TestDockerfilesCarryNoDeploymentConfig:
     DOCKERFILES = sorted(
         [
             *list((REPO_ROOT / "backend" / "services").glob("*/Dockerfile")),
-            REPO_ROOT / "deploy" / "docker" / "kb-worker" / "Dockerfile",
             REPO_ROOT / "backend" / "alembic" / "Dockerfile",
             REPO_ROOT / "model" / "eval" / "Dockerfile",
             REPO_ROOT / "frontend" / "Dockerfile.dev",
