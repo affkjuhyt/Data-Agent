@@ -262,6 +262,9 @@ async def test_a_reader_with_a_narrower_policy_fails_the_rights_check(
         "SELECT upper(branch_code) AS x, sum(balance) AS b FROM loan GROUP BY 1",
         "SELECT sum(balance) AS b FROM loan WHERE branch_code <> ''",
         "SELECT * FROM loan",
+        "SELECT count(*) AS n FROM loan AS a JOIN loan AS b USING (branch_code)",
+        "SELECT sum(a.balance) AS b FROM loan AS a NATURAL JOIN loan AS c",
+        "SELECT max(x) AS m FROM loan AS l(x, y, z, u, v)",
     ],
 )
 async def test_a_figure_from_a_personal_data_column_fails(

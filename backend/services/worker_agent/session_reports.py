@@ -396,9 +396,9 @@ async def _rights(
 
 def _referenced(sql: str, source: catalog.Source) -> tuple[set[str], bool]:
     """The column names `sql` reads anywhere (projection, filter, join, inside functions), and
-    whether it reads whole rows: `*`, `t.*`, or a table or alias used as a value
-    (row_to_json(t)). Output names prove nothing, since an alias renames a column; count(*)
-    reads no column."""
+    whether it reads whole rows: `*`, `t.*`, a table or alias used as a value (row_to_json(t)),
+    a NATURAL join, or a column list on an alias. Output names prove nothing, since an alias
+    renames a column; count(*) reads no column."""
     dialect = dialect_of(source.kind)
     tree = check_read_only(sql, dialect)
     tables = {t.name.lower() for t in tree.find_all(exp.Table)} | {
@@ -414,6 +414,16 @@ def _referenced(sql: str, source: catalog.Source) -> tuple[set[str], bool]:
         names.add(column.name.lower())
     for star in tree.find_all(exp.Star):
         if not isinstance(star.parent, exp.Count | exp.Column):
+            whole_row = True
+    for join in tree.find_all(exp.Join):
+        # USING names its columns as identifiers, not columns; NATURAL names none at all.
+        names |= {ident.name.lower() for ident in join.args.get("using") or []}
+        if join.args.get("method") == "NATURAL":
+            whole_row = True
+    for table in tree.find_all(exp.Table):
+        # `t AS x(a, b)` renames the table's columns by position: any of them may be read as a.
+        alias = table.args.get("alias")
+        if isinstance(alias, exp.TableAlias) and alias.columns:
             whole_row = True
     return names, whole_row
 
