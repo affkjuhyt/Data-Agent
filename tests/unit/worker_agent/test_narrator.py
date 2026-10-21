@@ -18,8 +18,15 @@ class Scripted:
     def __init__(self, *texts: str) -> None:
         self.texts = list(texts)
 
-    async def json_chat(self, role: str, system: str, user: str, *, max_tokens: int = 800) -> Any:
-        return Reply({"text": self.texts.pop(0)}, model="responder", tokens=50, latency_ms=3)
+    async def json_chat(
+        self, role: str, system: str, user: str, output: type[Any], *, max_tokens: int = 800
+    ) -> Any:
+        return Reply(
+            output.model_validate({"text": self.texts.pop(0)}),
+            model="responder",
+            tokens=50,
+            latency_ms=3,
+        )
 
 
 FIGS = [

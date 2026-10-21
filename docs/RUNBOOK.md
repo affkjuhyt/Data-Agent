@@ -426,6 +426,18 @@ suspecting the pipeline.
 | Job stuck in `ImagePullBackOff` | Image no longer pullable (happened to `minio/mc`) → use a pinned image already on the node or in `localhost:5000` |
 | `field is immutable` applying a Job | Delete the Job first: `kubectl -n dataagent-service delete job <name>` |
 | Pod in `CreateContainerConfigError` | Its `<workload>-secrets` is missing a key → `kubectl -n <ns> describe pod <pod>` names it; rerun the pipeline with `-e secrets_changed=true` |
+worker-agent (`services/worker_agent/llm.py`) and platform-workers (memory, schema
+crawler: `common/llm.py`) call LiteLLM through PydanticAI. Every call names the
+Pydantic model its answer must fit and sends that model's JSON schema as
+`response_format: json_schema`, which vLLM enforces with its structured-outputs
+backend (xgrammar by default) — LiteLLM passes it through. The OpenAI SDK retries
+429/5xx and dropped connections twice with backoff; an answer that still does not
+validate is sent back once with its errors. Past that worker-agent raises
+`ModelUnavailable` and keeps to its deterministic path (template text, extractive
+answer, no model reading), so a run's trace showing `UnexpectedModelBehavior` means
+the model could not produce the schema — check that the vLLM tier accepts
+`response_format` (a 400 from vLLM shows as `ModelHTTPError`) before blaming the prompt.
+
 | DB-connector / warehouse nodes fail to authenticate | OpenBao sealed → §8 |
 | Many pods `Evicted` at once | Disk pressure → §9 |
 | `sandbox-executor` Pending (production set) | No `gvisor` RuntimeClass; preflight reports it. The dev set doesn't use gvisor |

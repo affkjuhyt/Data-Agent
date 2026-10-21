@@ -14,6 +14,8 @@ import asyncio
 import re
 from dataclasses import dataclass
 
+from pydantic import BaseModel
+
 from services.worker_agent.llm import Gateway, ModelUnavailable
 from services.worker_agent.sqlgen.schema import Linked
 
@@ -36,6 +38,10 @@ HOW = {
 }
 
 _LITERAL = re.compile(r"\d+(?:[.,/]\d+)*|'[^']*'")
+
+
+class Draft(BaseModel):
+    sql: str
 
 
 @dataclass
@@ -85,13 +91,15 @@ async def _ask(
     gateway: Gateway, method: str, system: str, user: str, temperature: float
 ) -> Candidate:
     try:
-        reply = await gateway.json_chat(ROLE, system, user, max_tokens=900, temperature=temperature)
+        reply = await gateway.json_chat(
+            ROLE, system, user, Draft, max_tokens=900, temperature=temperature
+        )
     except ModelUnavailable as exc:
         return Candidate(method, None, error=str(exc))
-    sql = reply.content.get("sql")
-    if not isinstance(sql, str) or not sql.strip():
+    sql = reply.content.sql.strip()
+    if not sql:
         return Candidate(method, None, reply.tokens, reply.model, "the model gave no SQL")
-    return Candidate(method, sql.strip().rstrip(";"), reply.tokens, reply.model)
+    return Candidate(method, sql.rstrip(";"), reply.tokens, reply.model)
 
 
 async def candidates(

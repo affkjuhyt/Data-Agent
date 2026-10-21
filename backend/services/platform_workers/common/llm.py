@@ -1,78 +1,81 @@
-"""Chat completions through LiteLLM (``/v1/chat/completions``).
+"""Typed chat completions through LiteLLM, on PydanticAI (ADR-37).
 
 Two callers, one shape: the memory worker's insight extraction and the
-schema crawler's table description both send a single user message with
-``response_format=json_object`` and parse the reply. Neither retries at the
-HTTP level — the memory worker retries the whole event (with a DLQ), and the
-crawler picks a failed table up on the next tick — so this module does not
-either; a transport error propagates to the caller's own recovery path.
+schema crawler's table description both send a single user message and name
+the Pydantic model the answer must fit. PydanticAI sends that model's JSON
+schema as ``response_format`` and, when the answer still does not validate,
+shows the model the errors once. The SDK retries 429/5xx and dropped
+connections with backoff; past that a transport error propagates to the
+caller's own recovery path — the memory worker retries the whole event (with
+a DLQ), the crawler picks a failed table up on the next tick.
 """
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
-from typing import Any
+from typing import TypeVar
 
-import httpx
+from openai import AsyncOpenAI
+from pydantic import BaseModel
+from pydantic_ai import Agent, NativeOutput
+from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.settings import ModelSettings
 
 from services.platform_workers.common.settings import LiteLLMSettings
 
 log = logging.getLogger("platform-workers.llm")
 
+T = TypeVar("T", bound=BaseModel)
 
-def chat(
-    messages: list[dict[str, Any]],
-    model: str,
-    *,
-    settings: LiteLLMSettings | None = None,
-    max_tokens: int = 400,
-    temperature: float = 0.0,
-    response_format: dict[str, Any] | None = None,
-    timeout: float = 30.0,
-) -> str:
-    """One completion; returns the assistant message content, stripped."""
-    settings = settings or LiteLLMSettings()
-    body: dict[str, Any] = {
-        "model": model,
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-    }
-    if response_format is not None:
-        body["response_format"] = response_format
-    r = httpx.post(
-        f"{settings.base_url.rstrip('/')}/v1/chat/completions",
-        headers={"Authorization": f"Bearer {settings.api_key}"},
-        json=body,
-        timeout=timeout,
-    )
-    r.raise_for_status()
-    content = r.json()["choices"][0]["message"]["content"]
-    return str(content or "").strip()
+OUTPUT_RETRIES = 1
+HTTP_RETRIES = 2
 
 
-def chat_json(
-    messages: list[dict[str, Any]],
+async def _ask(
+    client: AsyncOpenAI, prompt: str, output: type[T], model: str,
+    max_tokens: int, temperature: float,
+) -> T:
+    async with client:
+        agent = Agent(
+            OpenAIChatModel(model, provider=OpenAIProvider(openai_client=client)),
+            output_type=NativeOutput(output),
+            retries=OUTPUT_RETRIES,
+        )
+        result = await agent.run(
+            prompt, model_settings=ModelSettings(max_tokens=max_tokens, temperature=temperature),
+        )
+        return result.output
+
+
+def ask(
+    prompt: str,
+    output: type[T],
     model: str,
     *,
     settings: LiteLLMSettings | None = None,
     max_tokens: int = 400,
     temperature: float = 0.0,
     timeout: float = 30.0,
-) -> Any:
-    """``chat`` with ``response_format=json_object``, parsed.
+) -> T | None:
+    """One completion validated as ``output``.
 
-    Returns ``None`` when the model replied with something that is not JSON —
+    Returns ``None`` when the model's answer does not fit even after its retry —
     callers decide what an unusable answer means for them (skip the turn,
-    describe the table as empty), so no exception is raised here.
+    describe the table as empty), so no exception is raised for that.
     """
-    content = chat(
-        messages, model,
-        settings=settings, max_tokens=max_tokens, temperature=temperature,
-        response_format={"type": "json_object"}, timeout=timeout,
+    settings = settings or LiteLLMSettings()
+    # A client per call, closed with it: each call runs in its own event loop
+    # (asyncio.run below), and a pooled async client cannot cross loops.
+    client = AsyncOpenAI(
+        base_url=f"{settings.base_url.rstrip('/')}/v1",
+        api_key=settings.api_key,
+        timeout=timeout,
+        max_retries=HTTP_RETRIES,
     )
     try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        log.warning("llm | non-JSON response from model=%s: %r", model, content[:200])
+        return asyncio.run(_ask(client, prompt, output, model, max_tokens, temperature))
+    except UnexpectedModelBehavior as exc:
+        log.warning("llm | answer from model=%s does not fit %s: %s", model, output.__name__, exc)
         return None

@@ -1,14 +1,17 @@
 """LLM-generated Text Description (doc §2.4) — the business-semantic layer
 bridging natural-language questions and warehouse structure. Same call
-shape as the memory worker's call_llm_extract(): one chat completion, JSON
-response_format, no retry here (the crawl loop's outer per-table try/except
-in worker.py skips a table on failure and picks it up again next cron tick).
+shape as the memory worker's call_llm_extract(): one chat completion typed
+by a Pydantic model, no retry beyond the gateway's (the crawl loop's outer
+per-table try/except in worker.py skips a table on failure and picks it up
+again next cron tick).
 """
 from __future__ import annotations
 
 import logging
 import os
 from typing import Any
+
+from pydantic import BaseModel
 
 from services.platform_workers.common import llm as llm_client
 from services.platform_workers.common.settings import LiteLLMSettings
@@ -35,6 +38,13 @@ _MAX_OUTPUT_ITEMS = 15
 _MAX_OUTPUT_STR_CHARS = 300
 
 
+class Description(BaseModel):
+    keywords: list[str] = []
+    categories: dict[str, str] = {}
+    use_cases: list[str] = []
+    join_hints: list[str] = []
+
+
 def _truncate(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
@@ -48,8 +58,8 @@ def _columns_block(columns: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _cap_str_list(values: list[Any], limit_items: int = _MAX_OUTPUT_ITEMS) -> list[str]:
-    return [_truncate(str(v), _MAX_OUTPUT_STR_CHARS) for v in values[:limit_items]]
+def _cap_str_list(values: list[str], limit_items: int = _MAX_OUTPUT_ITEMS) -> list[str]:
+    return [_truncate(v, _MAX_OUTPUT_STR_CHARS) for v in values[:limit_items]]
 
 
 def describe_table(table_name: str, columns: list[dict[str, Any]], row_count: int | None) -> dict[str, Any]:
@@ -60,22 +70,20 @@ def describe_table(table_name: str, columns: list[dict[str, Any]], row_count: in
         .replace("{row_count}", str(row_count or "unknown"))
         .replace("{columns}", _columns_block(columns))
     )
-    parsed = llm_client.chat_json(
-        [{"role": "user", "content": prompt}], "planner",
-        settings=_litellm, max_tokens=600, temperature=0, timeout=30,
+    parsed = llm_client.ask(
+        prompt, Description, "planner", settings=_litellm, max_tokens=600, timeout=30,
     )
-    if not isinstance(parsed, dict):
-        logger.warning("llm_describe | non-JSON-object response for table=%s", table_name)
-        parsed = {}
-    categories = parsed.get("categories") or {}
+    if parsed is None:
+        logger.warning("llm_describe | unusable response for table=%s", table_name)
+        parsed = Description()
     return {
-        "keywords": _cap_str_list(parsed.get("keywords") or []),
+        "keywords": _cap_str_list(parsed.keywords),
         "categories": {
-            _truncate(str(k), _MAX_OUTPUT_STR_CHARS): _truncate(str(v), _MAX_OUTPUT_STR_CHARS)
-            for k, v in list(categories.items())[:_MAX_OUTPUT_ITEMS]
-        } if isinstance(categories, dict) else {},
-        "use_cases": _cap_str_list(parsed.get("use_cases") or []),
-        "join_hints": _cap_str_list(parsed.get("join_hints") or []),
+            _truncate(k, _MAX_OUTPUT_STR_CHARS): _truncate(v, _MAX_OUTPUT_STR_CHARS)
+            for k, v in list(parsed.categories.items())[:_MAX_OUTPUT_ITEMS]
+        },
+        "use_cases": _cap_str_list(parsed.use_cases),
+        "join_hints": _cap_str_list(parsed.join_hints),
     }
 
 

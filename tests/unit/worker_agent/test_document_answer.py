@@ -46,9 +46,16 @@ class Scripted:
         self.claims = claims
         self.prompts: list[str] = []
 
-    async def json_chat(self, role: str, system: str, user: str, *, max_tokens: int = 800) -> Any:
+    async def json_chat(
+        self, role: str, system: str, user: str, output: type[Any], *, max_tokens: int = 800
+    ) -> Any:
         self.prompts.append(system + user)
-        return Reply({"claims": self.claims}, model="responder", tokens=40, latency_ms=3)
+        return Reply(
+            output.model_validate({"claims": self.claims}),
+            model="responder",
+            tokens=40,
+            latency_ms=3,
+        )
 
 
 class Down:

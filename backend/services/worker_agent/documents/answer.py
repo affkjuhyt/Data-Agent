@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any
 
+from pydantic import BaseModel
+
 from services.worker_agent.documents.retrieve import Passage
 from services.worker_agent.llm import Gateway, ModelUnavailable
 
@@ -35,6 +37,20 @@ Nếu các đoạn không trả lời được câu hỏi, trả {"claims": []}.
 Trả về JSON: {"claims": [{"text": "<ý>", "citations": [{"passage": <số đoạn>, "quote": "<câu trích>"}]}]}"""
 
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+
+
+class Cited(BaseModel):
+    passage: int
+    quote: str
+
+
+class Claim(BaseModel):
+    text: str
+    citations: list[Cited]
+
+
+class Claims(BaseModel):
+    claims: list[Claim]
 
 
 @dataclass
@@ -188,28 +204,21 @@ def _prompt(question: str, as_of: datetime.date, passages: list[Passage]) -> str
 
 
 def verify(
-    claims: Any, passages: list[Passage], as_of: datetime.date, question: str
+    claims: list[Claim], passages: list[Passage], as_of: datetime.date, question: str
 ) -> tuple[list[tuple[str, list[tuple[Passage, str]]]], list[str], int]:
     """The claims that pass, the texts of those dropped, and how many numbers were stray."""
     kept: list[tuple[str, list[tuple[Passage, str]]]] = []
     dropped: list[str] = []
     strays = 0
     asked = set(_NUMBER.findall(question))
-    for claim in claims if isinstance(claims, list) else []:
-        if not isinstance(claim, dict):
-            continue
-        text = str(claim.get("text") or "").strip()
+    for claim in claims:
+        text = claim.text.strip()
         cited: list[tuple[Passage, str]] = []
-        ok = bool(text) and isinstance(claim.get("citations"), list) and bool(claim["citations"])
-        for cit in claim.get("citations") or []:
+        ok = bool(text) and bool(claim.citations)
+        for cit in claim.citations:
             if not ok:
                 break
-            try:
-                n = int(cit.get("passage"))
-            except (AttributeError, TypeError, ValueError):
-                ok = False
-                break
-            quote = str(cit.get("quote") or "").strip()
+            n, quote = cit.passage, cit.quote.strip()
             if not 1 <= n <= len(passages) or not quote:
                 ok = False
                 break
@@ -243,11 +252,11 @@ async def compose(
         return extractive(passages)
     try:
         reply = await gateway.json_chat(
-            "responder", SYSTEM, _prompt(question, as_of, passages), max_tokens=900
+            "responder", SYSTEM, _prompt(question, as_of, passages), Claims, max_tokens=900
         )
     except ModelUnavailable:
         return extractive(passages)
-    kept, dropped, strays = verify(reply.content.get("claims"), passages, as_of, question)
+    kept, dropped, strays = verify(reply.content.claims, passages, as_of, question)
     if not kept:
         answer = not_found()
         answer.model, answer.tokens, answer.dropped = reply.model, reply.tokens, dropped

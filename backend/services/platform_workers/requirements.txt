@@ -4,6 +4,8 @@ kafka-python-ng==2.2.3
 psycopg2-binary==2.9.9
 sqlalchemy==2.0.35
 httpx==0.27.2
+# memory + schema-crawler: typed answers over LiteLLM's OpenAI-compatible API (common/llm.py).
+pydantic-ai-slim[openai]==2.54.0
 # web-crawler-worker's tls.py AIA-fetch fallback (works around sources that
 # send an incomplete cert chain, e.g. hnx.vn) imports both directly — were
 # previously transitive-only, pin explicitly so an unrelated dep bump can't

@@ -659,11 +659,19 @@ class FakeGateway:
         self.content = content
         self.calls: list[str] = []
 
-    async def json_chat(self, role: str, system: str, user: str, *, max_tokens: int = 800) -> Any:
-        from services.worker_agent.llm import Reply
+    async def json_chat(
+        self, role: str, system: str, user: str, output: type[Any], *, max_tokens: int = 800
+    ) -> Any:
+        from pydantic import ValidationError
+
+        from services.worker_agent.llm import ModelUnavailable, Reply
 
         self.calls.append(role)
-        return Reply(self.content, model="planner", tokens=120, latency_ms=5)
+        try:
+            content = output.model_validate(self.content)
+        except ValidationError as exc:
+            raise ModelUnavailable("the answer does not fit") from exc
+        return Reply(content, model="planner", tokens=120, latency_ms=5)
 
 
 async def test_g5_1_the_model_reads_what_the_rules_could_not(
@@ -677,7 +685,7 @@ async def test_g5_1_the_model_reads_what_the_rules_could_not(
     q = bank.ask("Khoản vay khó đòi chiếm bao nhiêu phần trăm ở mỗi miền, tháng 9/2026?")
     await drain()
     status, kind, _text, figures, scope, answer = answer_of(seed, q)
-    # The planner read it; the responder got no "text" back twice, so the template wrote it.
+    # The planner read it; the responder's answer had no "text", so the template wrote it.
     assert (status, kind, scope) == ("answered", "data", "in_scope")
     assert fake.calls == ["planner", "responder", "responder"]
     rows = [f for f in figures if "expr" not in f["source"]]

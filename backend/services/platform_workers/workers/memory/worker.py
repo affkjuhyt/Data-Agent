@@ -21,10 +21,10 @@ import os
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 
 from kafka import KafkaProducer
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -136,6 +136,25 @@ def ensure_qdrant_collection(qdrant: QdrantClient) -> None:
 
 # ─── LLM calls ───────────────────────────────────────────────────────────────
 
+class Insight(BaseModel):
+    """One insight as extract_prompt.txt asks for it. Validated at the LLM
+    boundary, then handed on as a dict: the process_* functions below read
+    their keys with .get() and are shared with the retry path."""
+
+    action: Literal["add", "update", "delete"] = "add"
+    memory_type: Literal["semantic", "episodic_past", "episodic_future"]
+    domain: str | None = None
+    fact_key: str | None = None
+    content: str = ""
+    importance_score: float = Field(0.5, ge=0.0, le=1.0)
+    execution_time: str | None = None
+    recurrence: str | None = None
+
+
+class Insights(BaseModel):
+    insights: list[Insight] = []
+
+
 def call_llm_extract(query: str, response: str) -> list[dict[str, Any]]:
     # .replace() instead of .format() — the template's own JSON example uses
     # literal braces, and query/response are arbitrary user text (code, JSON,
@@ -147,14 +166,11 @@ def call_llm_extract(query: str, response: str) -> list[dict[str, Any]]:
         .replace("{response}", response[:1000])
         .replace("{vocab}", _vocab_block())
     )
-    data = llm_client.chat_json(
-        [{"role": "user", "content": prompt}], "planner",
-        settings=_litellm, max_tokens=400, temperature=0, timeout=20,
-    )
+    data = llm_client.ask(prompt, Insights, "planner", settings=_litellm, max_tokens=400, timeout=20)
     if data is None:
-        log.warning("extraction LLM returned non-JSON, skipping turn")
+        log.warning("extraction LLM gave no usable insights, skipping turn")
         return []
-    return data.get("insights", []) if isinstance(data, dict) else []
+    return [i.model_dump() for i in data.insights]
 
 
 def embed(text: str) -> list[float]:

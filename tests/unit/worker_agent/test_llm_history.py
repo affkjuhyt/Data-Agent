@@ -31,9 +31,13 @@ class Recording:
     def __init__(self) -> None:
         self.prompts: list[str] = []
 
-    async def json_chat(self, role: str, system: str, user: str, *, max_tokens: int = 800) -> Any:
+    async def json_chat(
+        self, role: str, system: str, user: str, output: type[Any], *, max_tokens: int = 800
+    ) -> Any:
         self.prompts.append(user)
-        return Reply({"metric": "NPL_RATIO"}, model="planner", tokens=10, latency_ms=1)
+        return Reply(
+            output.model_validate({"metric": "NPL_RATIO"}), model="planner", tokens=10, latency_ms=1
+        )
 
 
 @pytest.mark.req("AC-01-04-05")
