@@ -44,3 +44,63 @@ Còn mở trước khi ký:
    giữ root token, nằm trong danh sách cắt bỏ (08).
 
 Đã sửa trong lượt này: lineage để lộ id và tên nguồn của Data Space khác (`174c7bae`).
+
+## Kiểm tra lại 22/10/2026
+
+Mã: `main` tại `caee53c8`, chạy trong worktree sạch (không có thay đổi chưa commit). Cụm OrbStack chạy
+`4e1a1e05` (nhánh `release/2026-10-20`), chưa có các commit từ 20/10 của `main`: hai nhánh cài trùng
+ba tính năng (eval, duyệt data product, xem trước metric) theo hai thiết kế, chưa gộp được nên chưa
+deploy `main`.
+
+| Phạm vi | Lệnh | Kết quả |
+| --- | --- | --- |
+| Toàn bộ unit, 12 suite | `make test-unit` | **11/12 PASS**; `repo` lỗi 1 test: `test_bench_harness.py::test_worker_agent_profiles_carry_the_prompt_the_call_site_sends[planner-understand/llm_reader.py-400]` (prompt trong `understand/llm_reader.py` khác profile bench) |
+| Toàn bộ integration, 7 suite | `make test-integration` | **6/7 PASS** (worker_agent 202, migrate 123, worker_document 7, worker_ingest 1, sandbox_executor 5 + 31 skip, contracts 2); `api` 639/640, lỗi `test_org_identity.py::test_list_needs_ask` (`GET /v1/data-spaces` trả 200 cho người không có `ask`), lỗi có sẵn trên `main` |
+| E2E câu hỏi V3 | `make e2e` (`test_v3_question_e2e.py`, tài khoản `helios-engineer`) | **PASS 2/2**: từ chối khi không đăng nhập; câu hỏi qua Kong tới worker-agent và stream đến `done` |
+| E2E JWT audience | `make e2e E2E_TESTS=tests/integration/test_jwt_audience.py` | 3/4; lỗi `/api/auth/health` 503 vì `auth_api` (dịch vụ cũ) không chạy trên cụm local, không thuộc V3 |
+| E2E tenant isolation | `make e2e E2E_TESTS=tests/integration/test_tenant_isolation.py` | Không áp dụng: test của dịch vụ cũ (secret, API key, IP rule qua `auth_api`); thêm vào đó mật khẩu `helios-admin` bị Keycloak từ chối |
+
+Mục 2 "còn mở" của lần 17/10 (E2E với tài khoản thật) đã chạy: đường câu hỏi V3 đạt.
+
+## Kịch bản nghiệm thu theo story
+
+Phần lớn mã R0 nằm trong `workflow_runtime`, đã xoá ở `2c1dac2c` cùng test của nó; V3 làm lại một số việc
+ở `worker_agent` và `api` theo hình khác. Cột "Bằng chứng tự động" chỉ ghi test còn chạy ở `caee53c8`.
+Người nghiệm thu chạy cột "Bước kiểm trên cụm", ghi Đạt/Không đạt và mức lỗi.
+
+| Story | Còn ở đâu | Bằng chứng tự động | Bước kiểm trên cụm | Kết quả mong đợi | Đạt? | Mức lỗi |
+| --- | --- | --- | --- | --- | --- | --- |
+| R0-1 Kênh result set | Hợp đồng `libs/contracts/v1/result_set.py`; FE `features/ask/resultSets.ts` | `tests/unit/contracts/test_models.py`; FE `AnswerBlock.test.tsx` | Màn Hỏi: "Doanh thu thuần tháng này theo vùng" | Bảng đủ dòng, khớp nguồn | | |
+| R0-2 MCP | `worker_agent/tools/mcp.py`, `tools/plan.py` | `tests/unit/worker_agent/test_mcp.py` (6 test) | Không kiểm được: adapter chưa nối vào câu hỏi hay lượt chạy | — | | |
+| R0-3 HITL bền | `worker_agent/runs.py`, `hitl.py`, `resolutions.py`; `inbox.hitl_request` | `tests/integration/worker_agent/test_runs.py`, `test_hitl.py` | Chạy thử agent có checkpoint ghi → đợi ở Cần bạn → `kubectl -n dataagent-service rollout restart deployment/worker-agent` → duyệt | Lượt chạy kết thúc đúng một lần, không lặp bước | | |
+| R0-4 Canvas | Cắt (chuyển R4) | — | — | — | Không áp dụng | |
+| R0-5 `/run` không tin client | `api/modules/qa/schemas.py` (`extra="forbid"`) | `tests/unit/api/test_qa_contract.py::test_question_requires_text_and_refuses_fields_a3_does_not_name`; e2e từ chối ẩn danh | `POST /v1/questions` qua Kong với `{"text":"x","memory_context":"…"}` và token hợp lệ | 422 nêu tên trường | | |
+| R0-6 Sandbox, OpenBao | `sandbox_executor/auth.py`, `warehouse_secrets.py`; `worker_agent/query/secrets.py`; crawler `secrets.py` | `tests/unit/sandbox_executor/test_r0_6_security.py`; `tests/unit/platform_workers/test_schema_crawler_secrets.py`; `tests/unit/worker_agent/test_secrets.py`; `test_executor.py::test_credentials_of_another_organisation_are_refused` | Trong pod `api`: `sys/capabilities-self` trên `secret/data/warehouse/…`; `git grep WAREHOUSE_PASSWORD__ -- deploy backend` | Không đọc được mật khẩu nguồn; grep rỗng | | |
+| R0-7 Mã lỗi, không fallback | `libs/contracts/v1/errors.py`; `worker_agent/questions.py` `_refuse`; FE `RefusalCard.tsx` | `tests/unit/contracts/test_refusal.py`; `test_answers.py::test_an_unknown_metric_is_refused_with_a_way_forward`; FE `RefusalCard.test.tsx` | Màn Hỏi: hỏi chỉ số Data Space không có | Thẻ từ chối "Chưa nhận ra chỉ số…", không có câu trả lời bịa | | |
+| R0-8 `__verification` | Chỉ còn hợp đồng `verification.py` và FE `VerifierBadge.tsx`; không nơi nào phát | FE `VerifierBadge.test.tsx` | Không kiểm được | — | | |
+| R0-9 Đo model | `docs/v3/06-r0-9-model-benchmark.md`, `model/bench` | `tests/unit/repo/test_bench_harness.py`, `test_eval_gate.py` | `make bench` rồi `make bench-gate` trên GPU | Gate 0 (đạt) | | |
+| R0-10 Plan IR | V3: `questions.py::_plan_ir` ghi `qa.plan` (phiên bản 2); `libs/contracts/v1/plan.py` không ai dùng | `tests/unit/contracts/test_plan_ir.py`; `test_questions.py::test_a_question_naming_no_known_metric_ends_in_a_coded_refusal`; `test_runs.py` (từ chối trước khi chạy) | Hỏi rồi `GET /v1/questions/{id}` | Có các bước của kế hoạch; câu bị từ chối có `steps: []` | | |
+| R0-11 Lớp lỗi của judge | Đã xoá cùng `workflow_runtime` | — | Không kiểm được | — | | |
+| R0-12 RUNBOOK, ghi chú UI | `docs/RUNBOOK.md` §8, §10a, "V3 MCP tool calls"; `docs/v3/05-ui-v3.md` "Workspace (D9)" | — | Đọc tài liệu | Đúng với mã hiện tại | | |
+
+## Lỗi ghi nhận (đề xuất mức, người nghiệm thu chốt)
+
+| # | Mức | Story | Lỗi |
+| --- | --- | --- | --- |
+| 1 | Cao | R0-8, R0-11 | Không còn mã: không có khung `__verification` và không có lớp lỗi của judge. Cần quyết định làm lại trong V3 hay đưa khỏi phạm vi R0 |
+| 2 | Trung bình | R0-7 | `qa.answer` không lưu mã từ chối; FE gán cứng `code: 'REFUSED'`, nên hành vi theo mã (thử lại, hỏi lại) không tới được người dùng. `AGENT_CONFIG_ERROR`, `PLANNER_ERROR` không còn được phát; không test nào cho đường lỗi CSDL |
+| 3 | Trung bình | R0-2 | Adapter MCP không nối vào đường câu hỏi hay lượt chạy; chưa có test khoá cache theo tenant |
+| 4 | Trung bình | R0-10 | Bộ kiểm tĩnh kế hoạch (chu trình, kiểu cổng, quyền, ngân sách) đã xoá; kế hoạch V3 là mẫu kiểm tại chỗ |
+| 5 | Trung bình | R0-1 | Luồng V3 không gửi result set; bảng dựng từ `answer.figures` |
+| 6 | Thấp | R0-6 | Không có kiểm tra CI grep `WAREHOUSE_PASSWORD__` như "Xong khi" yêu cầu (grep tay hiện rỗng) |
+| 7 | Thấp | R0-3, R0-12 | RUNBOOK §10a còn tả `runtime.pending_review`; migration `v3_0003` vẫn tạo bảng không ai đọc |
+| 8 | Thấp | — | Suite `contracts` chạy trong image `kb-backend`, đang bị gỡ: cần chuyển image trước khi xoá |
+| 9 | Thấp | — | `test_bench_harness` (prompt `llm_reader.py`) và `tests/integration/api/test_org_identity.py::test_list_needs_ask` (`GET /v1/data-spaces` trả 200 cho người không có `ask`) đỏ trên `main` |
+
+## Ký nghiệm thu
+
+| Vai | Họ tên | Kết luận (Đạt / Đạt có điều kiện / Không đạt) | Ngày | Chữ ký |
+| --- | --- | --- | --- | --- |
+| Người nghiệm thu (QA) | | | | |
+| Phụ trách kỹ thuật | | | | |
+| Phụ trách sản phẩm | | | | |
