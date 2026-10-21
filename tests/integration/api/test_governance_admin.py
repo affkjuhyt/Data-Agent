@@ -571,7 +571,7 @@ async def test_no_subject_key_no_request(gov: Org, monkeypatch: pytest.MonkeyPat
     assert refused.status_code == 503
 
 
-async def test_an_agent_only_policy_is_simulated_for_the_agent_and_not_the_person(gov: Org) -> None:
+async def test_an_agent_only_policy_is_simulated_as_the_agent_answers(gov: Org) -> None:
     # The Holistics review: what the agent may see can be less than what the person may.
     async with client(gov) as api:
         made = await api.post(
@@ -582,24 +582,17 @@ async def test_an_agent_only_policy_is_simulated_for_the_agent_and_not_the_perso
         assert made.status_code == 201, made.text
         policy = made.json()
         assert policy["applies_to"]["actors"] == ["agent"]
-        teller = str(gov.users["teller"])
 
-        as_agent = await api.post(
+        simulated = await api.post(
             f"/v1/policies/{policy['id']}:simulate",
-            json={"as_user_id": teller},
+            json={"as_user_id": str(gov.users["teller"])},
             headers=gov.headers("admin"),
         )
-        assert as_agent.status_code == 200, as_agent.text
-        assert as_agent.json()["applies"] is True
-        assert as_agent.json()["row_condition"] == "branch_code = 'HCM02'"
-
-        as_person = await api.post(
-            f"/v1/policies/{policy['id']}:simulate",
-            json={"as_user_id": teller, "as_agent": False},
-            headers=gov.headers("admin"),
-        )
-        assert as_person.json()["applies"] is False
-        assert as_person.json()["reason"] == "only when the agent answers"
+        assert simulated.status_code == 200, simulated.text
+        view = simulated.json()
+        assert view["applies"] is True
+        assert view["row_condition"] == "branch_code = 'HCM02'"
+        assert "when the agent answers" in view["reason"]
 
         wrong = await api.post(
             "/v1/policies",

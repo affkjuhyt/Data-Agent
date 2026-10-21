@@ -204,7 +204,7 @@ describe('governance from the api', () => {
 
   it('simulates as one person and compares rows and columns', async () => {
     const sim = await simulatePolicy('pol-1', { user_id: 'u-1', question: 'dư nợ theo chi nhánh' });
-    expect(simulateBody).toEqual({ as_user_id: 'u-1', as_agent: true });
+    expect(simulateBody).toEqual({ as_user_id: 'u-1' });
     expect(sim.rows).toEqual([
       { label: 'Dòng được thấy', without: 'tất cả', with: "branch_code = 'HN01'" },
       { label: 'Cột ẩn', without: '—', with: '—' },

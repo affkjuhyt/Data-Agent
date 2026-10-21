@@ -33744,11 +33744,6 @@
    },
    "PolicySimulate": {
     "properties": {
-     "as_agent": {
-      "default": true,
-      "title": "As Agent",
-      "type": "boolean"
-     },
      "as_user_id": {
       "format": "uuid",
       "title": "As User Id",

@@ -19093,11 +19093,6 @@ export interface components {
         /** PolicySimulate */
         PolicySimulate: {
             /**
-             * As Agent
-             * @default true
-             */
-            as_agent: boolean;
-            /**
              * As User Id
              * Format: uuid
              */

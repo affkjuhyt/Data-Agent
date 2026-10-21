@@ -89,9 +89,6 @@ class PolicyCreate(BaseModel):
 class PolicySimulate(BaseModel):
     as_user_id: uuid.UUID
     sample_sql: str | None = Field(default=None, max_length=20_000)
-    # The person's question answered by the agent (applies_to.actors "agent"), or read by the
-    # person themselves.
-    as_agent: bool = True
 
 
 class PolicyBacktestRequest(BaseModel):
@@ -689,16 +686,20 @@ async def simulate_policy(
                 applies=applies,
                 reason=f"{row.scope} policy, {row.kind}",
             )
-        actor = "agent" if body.as_agent else "person"
-        applies = _applies(row.applies_to, user.id, roles, groups, actor)
+        # A3's PolicySimulate names no actor: the person is simulated as the agent answers them,
+        # the stricter reading (a policy for the agent only applies, one for people only does not).
+        actors = set(map(str, (row.applies_to or {}).get("actors") or []))
+        applies = _applies(row.applies_to, user.id, roles, groups, "agent")
         view = SimulationView(
             policy_id=row.id,
             as_user_id=user.id,
             applies=applies,
-            reason="applies to this person"
+            reason="applies when the agent answers this person, not when they read data themselves"
+            if applies and actors == {"agent"}
+            else "applies to this person"
             if applies
-            else "only when the agent answers"
-            if actor == "person" and "agent" in ((row.applies_to or {}).get("actors") or [])
+            else "applies when the person reads data themselves, not to the agent"
+            if actors == {"person"}
             else "not among whom it applies to",
             before_sql=body.sample_sql,
         )
