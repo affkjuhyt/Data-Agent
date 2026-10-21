@@ -60,6 +60,7 @@ from services.worker_agent.query.scope import (
     active_policies,
     active_row_scopes,
     apply_output_policies,
+    check_column_policies,
     datasets_read,
     default_schema,
     rewrite_access_policies,
@@ -409,12 +410,21 @@ async def run_query(
                 )
                 if user is None:
                     raise SqlRejected("query principal is not an organisation user")
+                # On the query as written: the executed text is wrapped in SELECT * (capped).
+                check_column_policies(
+                    tree.sql(dialect=dialect),
+                    dialect=dialect,
+                    policies=output_policies,
+                    datasets=readable_datasets,
+                    source=source,
+                )
                 executed = rewrite_access_policies(
                     executed,
                     dialect=dialect,
                     policies=[policy for policy in policies if policy.kind == "row"],
                     user=user,
                     datasets=readable_datasets,
+                    source=source,
                 )
                 executed = rewrite_row_scopes(
                     executed,

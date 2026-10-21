@@ -97,6 +97,7 @@ async def _candidate_hash(
             policies=[policy],
             user=user,
             datasets=[dataset],
+            source=source,
         )
     if source.secret_ref == INTERNAL_WORKSPACE:
         await session.execute(text("SET LOCAL search_path TO workspace, pg_catalog"))

@@ -87,7 +87,7 @@ SYSTEM_CALLERS = frozenset({"period"})
 
 
 def actor_of(caller_kind: str | None, user_kind: str | None) -> str | None:
-    """"agent", "person" or None (a vetted system caller). An agent's own account is an agent
+    """ "agent", "person" or None (a vetted system caller). An agent's own account is an agent
     whatever calls."""
     if user_kind == "agent" or caller_kind in AGENT_CALLERS:
         return "agent"
@@ -281,6 +281,87 @@ def _and_where(select_node: exp.Select, predicate: exp.Expression) -> None:
     )
 
 
+def _resolved(ident: exp.Expression | None, source: catalog.Source) -> str | None:
+    """A name as the source resolves it (guard.tables_of): PostgreSQL folds an unquoted name to
+    lower case and keeps a quoted one; the other engines compare without case."""
+    if not isinstance(ident, exp.Identifier):
+        return None
+    text = str(ident.this)
+    return text if source.kind == "postgresql" and ident.quoted else text.lower()
+
+
+def _reads(table: exp.Table, dataset: catalog.Dataset, source: catalog.Source) -> bool:
+    """Whether a table in the query is the dataset, compared as datasets_read compares: the name
+    as the source resolves it and the schema an unqualified name resolves to. An exact test on
+    the name as written let `FROM loan JOIN LOAN` filter one read and leave the other unfiltered,
+    and missed `FROM LOAN` on PostgreSQL, which reads the table loan."""
+    name = _resolved(table.this, source)
+    schema = _resolved(table.args.get("db"), source) or default_schema(source)
+    return (
+        name is not None
+        and _same(name, dataset.table_name, source)
+        and (
+            schema is None or not dataset.schema_name or _same(schema, dataset.schema_name, source)
+        )
+    )
+
+
+def check_column_policies(
+    sql: str,
+    *,
+    dialect: str,
+    policies: Iterable[governance.AccessPolicy],
+    datasets: Iterable[catalog.Dataset],
+    source: catalog.Source,
+) -> None:
+    """Refuse a query that uses a hidden or masked column anywhere but as itself in the outermost
+    SELECT's list.
+
+    apply_output_policies hides and masks result columns by name, so it only holds when a covered
+    column reaches the result under its own name: `SELECT ssn AS x`, `upper(ssn)`, `count(DISTINCT
+    ssn)`, `WHERE ssn = ...`, a subquery or CTE renaming it, or a UNION branch would pass it
+    unmasked or disclose it (the security review of the policy engine). A column through `*`
+    keeps its name and is masked on the result. A column qualified by an alias that is not one of
+    the covered tables' is still checked when its name is covered: it may come through a subquery.
+    """
+    by_dataset: dict[uuid.UUID, set[str]] = {}
+    for policy in policies:
+        if policy.kind in {"column", "mask"}:
+            by_dataset.setdefault(policy.dataset_id, set()).update(
+                str(column).lower() for column in policy.columns or []
+            )
+    if not by_dataset:
+        return
+    tree = parse_one(sql, dialect=dialect)
+    covered_names: set[str] = set()
+    other_tables: set[str] = set()
+    for table in tree.find_all(exp.Table):
+        hits = [d for d in datasets if d.id in by_dataset and _reads(table, d, source)]
+        if hits:
+            for dataset in hits:
+                covered_names |= by_dataset[dataset.id]
+        else:
+            other_tables.add(table.alias_or_name.lower())
+    if not covered_names:
+        return
+    for column in tree.find_all(exp.Column):
+        name = column.name.lower()
+        if name not in covered_names:
+            continue
+        qualifier = column.table.lower() if column.table else None
+        if qualifier is not None and qualifier in other_tables:
+            continue
+        parent = column.parent
+        as_itself = (parent is tree and column.arg_key == "expressions") or (
+            isinstance(parent, exp.Alias) and parent.alias.lower() == name and parent.parent is tree
+        )
+        if not (isinstance(tree, exp.Select) and as_itself):
+            raise OutOfScope(
+                f"column {column.name} is hidden or masked by an access policy; it can only be "
+                "selected as itself"
+            )
+
+
 def rewrite_access_policies(
     sql: str,
     *,
@@ -288,6 +369,7 @@ def rewrite_access_policies(
     policies: Iterable[governance.AccessPolicy],
     user: org_models.AppUser,
     datasets: Iterable[catalog.Dataset],
+    source: catalog.Source,
 ) -> str:
     """Apply supported row policies to the executable AST; never run an unfiltered query."""
     policies = list(policies)
@@ -309,11 +391,11 @@ def rewrite_access_policies(
             (select_node, table)
             for select_node in _selects(tree)
             for table in _direct_tables(select_node)
-            if table.name == dataset.table_name
+            if _reads(table, dataset, source)
         ]
         if not reads:
             raise OutOfScope(f"access policy table {dataset.table_name} is not in the query")
-        mentions = [table for table in tree.find_all(exp.Table) if table.name == dataset.table_name]
+        mentions = [table for table in tree.find_all(exp.Table) if _reads(table, dataset, source)]
         if len(mentions) != len(reads):
             raise OutOfScope(
                 f"access policy table {dataset.table_name} is read where no filter can be "

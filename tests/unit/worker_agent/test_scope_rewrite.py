@@ -14,6 +14,7 @@ from services.worker_agent.query.scope import (
 )
 
 pytestmark = [pytest.mark.unit]
+_SOURCE = catalog.Source(id=uuid.uuid4(), kind="postgresql", conn_options={})
 
 
 def _dataset(table: str = "loan") -> catalog.Dataset:
@@ -44,6 +45,7 @@ def _rewrite(sql: str, *, dialect: str = "postgres", branch: object = "HN") -> s
         policies=[_policy(dataset)],
         user=_user(branch=branch),
         datasets=[dataset],
+        source=_SOURCE,
     )
 
 

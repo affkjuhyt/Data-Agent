@@ -59,7 +59,12 @@ from services.worker_agent.llm import Gateway, gateway_from_env
 from services.worker_agent.progress import publish
 from services.worker_agent.query.executor import record_period_snapshot, run_query
 from services.worker_agent.query.guard import SqlRejected, dialect_of
-from services.worker_agent.query.scope import can_ask_data_space
+from services.worker_agent.query.scope import (
+    OutOfScope,
+    active_policies,
+    active_row_scopes,
+    can_ask_data_space,
+)
 from services.worker_agent.query.secrets import SecretReader, StaticReader, reader_from_env
 from services.worker_agent.semantic import analysis, compare
 from services.worker_agent.semantic import compiler as c
@@ -418,6 +423,32 @@ def _analysis_chip(kind: str, unit: str | None) -> dict[str, object]:
         "source": "default",
         "confidence": 1.0,
     }
+
+
+async def _filed_restricted(
+    session: AsyncSession,
+    layer: SpaceLayer,
+    compiled: c.Compiled | None,
+    space_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> bool:
+    """Whether the asker may see less than the whole: a filed figure is the period's total,
+    computed when it was filed, so no row scope or access policy of the asker can be applied to
+    it (the security review of filed answers). A scoped member, a policy that applies to them, or
+    no ask grant at all refuses the filed figure; the live path filters as usual."""
+    if compiled is None:
+        return True
+    try:
+        scopes = await active_row_scopes(session, data_space_id=space_id, principal_id=user_id)
+        if scopes is not None:
+            return True
+        datasets = [layer.datasets[d] for d in compiled.dataset_ids if d in layer.datasets]
+        policies = await active_policies(
+            session, principal_id=user_id, datasets=datasets, caller_kind="question"
+        )
+    except OutOfScope:
+        return True
+    return bool(policies)
 
 
 def _compare_chip(compare_to: str, period: c.Period | None) -> dict[str, object]:
@@ -918,7 +949,7 @@ async def _understand_and_plan(
         if problem is None and question.knowledge_mode == "period_close":
             if u.period is None:
                 problem = Refusal.of(
-                    ErrorCode.WRONG_PERIOD,
+                    ErrorCode.NO_DATA_FOR_PERIOD,
                     message="Hỏi theo số đã nộp cần nêu rõ kỳ chốt.",
                     detail_id=str(question.id),
                 )
@@ -939,6 +970,13 @@ async def _understand_and_plan(
                     problem = Refusal.of(
                         ErrorCode.NO_DATA_FOR_PERIOD,
                         message=f"Không có kỳ đã chốt cho {label}; không trả số theo dữ liệu hiện tại.",
+                        detail_id=str(question.id),
+                    )
+                elif await _filed_restricted(session, layer, compiled, space_id, user_id):
+                    problem = Refusal.of(
+                        ErrorCode.ACCESS_DENIED,
+                        message="Số đã nộp là số toàn kỳ, không lọc được theo phạm vi dữ liệu"
+                        " của bạn; hãy hỏi theo dữ liệu hiện tại.",
                         detail_id=str(question.id),
                     )
                 else:
