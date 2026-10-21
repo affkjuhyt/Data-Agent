@@ -87,6 +87,12 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=OPENBAO_SECRET_ID="${WORKER_AGENT_OPENBAO_SECRET_ID}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# eval-nightly (the CronJob beside worker-agent): requests each night's eval runs as svc_eval
+# (services/worker_agent/nightly_evals.py); worker-agent answers them. It needs nothing else.
+kubectl -n dataagent-service create secret generic eval-nightly-secrets \
+  --from-literal=DATAAGENT_DB_URL__SVC_EVAL="${DATAAGENT_DB_URL__SVC_EVAL}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 # worker-ingest: reads source credentials from OpenBao, claims ingest.outbox, writes workspace
 # tables as svc_ingest and registers them as svc_catalog. It has no MinIO or agent credentials.
 kubectl -n dataagent-service create secret generic worker-ingest-secrets \

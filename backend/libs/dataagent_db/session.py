@@ -87,8 +87,10 @@ async def scoped_session(
 # Roles that act across organisations by design and so run without app.org_id: the interim outbox
 # relay (Debezium's job, ADR-06). Its grants stop at the outbox tables (backend/schema gen_ddl.py).
 # svc_outbox_relay_audit is not another role but a second connection key for svc_outbox_relay, in
-# the audit database (dataagent_audit), which has its own outbox and its own URL.
-UNSCOPED_ROLES = frozenset({"svc_outbox_relay", "svc_outbox_relay_audit"})
+# the audit database (dataagent_audit), which has its own outbox and its own URL. svc_eval is here
+# only for the nightly scheduler's call of eval.nightly_eval_sets() (SECURITY DEFINER): without
+# app.org_id, row-level security lets it read no eval table itself.
+UNSCOPED_ROLES = frozenset({"svc_outbox_relay", "svc_outbox_relay_audit", "svc_eval"})
 
 
 @asynccontextmanager

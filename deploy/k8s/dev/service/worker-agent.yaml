@@ -142,3 +142,82 @@ spec:
         emptyDir: {}
       enableServiceLinks: false
       serviceAccountName: worker-agent
+---
+# eval-nightly (UC-07-06): requests the nightly run of every active context eval set at 02:00
+# Hà Nội time; worker-agent answers them from eval.outbox. Same image, its own account and secret
+# (only the svc_eval URL). A run already started that night is not requested again
+# (nightly_evals.MIN_GAP), so a retried or hand-started Job does not run a set twice.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eval-nightly
+  namespace: dataagent-service
+  labels:
+    app: eval-nightly
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: eval-nightly
+  namespace: dataagent-service
+  labels:
+    app: eval-nightly
+    app.kubernetes.io/part-of: dataagent
+spec:
+  schedule: 0 2 * * *
+  timeZone: Asia/Ho_Chi_Minh
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: eval-nightly
+            app.kubernetes.io/part-of: dataagent
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          automountServiceAccountToken: false
+          containers:
+          - name: eval-nightly
+            image: dataagent/worker-agent:latest
+            imagePullPolicy: IfNotPresent
+            command: ["python", "-m", "services.worker_agent.nightly_evals"]
+            envFrom:
+            - configMapRef:
+                name: dataagent-config
+            - secretRef:
+                name: eval-nightly-secrets
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                cpu: 250m
+                memory: 256Mi
+            volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            securityContext:
+              allowPrivilegeEscalation: false
+              privileged: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                - ALL
+          volumes:
+          - name: tmp
+            emptyDir: {}
+          enableServiceLinks: false
+          serviceAccountName: eval-nightly

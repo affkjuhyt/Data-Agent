@@ -370,6 +370,21 @@ UPDATE "OutboxEvents" SET dead_at = NULL, attempts = 0 WHERE id = :id;
 DELETE FROM "OutboxEvents" WHERE published_at < now() - interval '7 days';
 ```
 
+## 10c. Nightly eval runs
+
+The `eval-nightly` CronJob (beside worker-agent, `deploy/k8s/*/service/worker-agent.yaml`) runs
+`python -m services.worker_agent.nightly_evals` at 02:00 Hà Nội time. It requests one run
+(`trigger = nightly`, `subject_version = context@nightly-<day>`) for every active context eval set
+of an `active` Data Space, answered as the Data Space's steward; worker-agent answers it from
+`eval.outbox`. Its only credential is the `svc_eval` URL (`eval-nightly-secrets`), and the one
+cross-organisation read is the SECURITY DEFINER `eval.nightly_eval_sets()`. A set that already had
+a nightly run in the last 20 hours is skipped, so re-running the Job by hand is safe:
+
+```bash
+kubectl -n dataagent-service create job --from=cronjob/eval-nightly eval-nightly-manual
+kubectl -n dataagent-service logs job/eval-nightly-manual    # "nightly-evals | N runs requested"
+```
+
 ## 11. LLM and model backend
 
 The GPU services on `10.10.55.101` run outside k8s: vLLM main `:8001`
