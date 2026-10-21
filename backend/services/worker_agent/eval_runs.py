@@ -106,6 +106,8 @@ async def run_eval(event: Event) -> None:
                     question = await qa_session.get(qa.Question, question_id)
                     answer = await qa_session.scalar(select(qa.Answer).where(qa.Answer.question_id == question_id))
                 understanding_ok, value_ok, behavior_ok, item_passed, actual, cause = _score(item, answer, question)
+                # The api shows this answer only to whom it was answered as (routes._result_view).
+                actual["answered_as"] = str(asker)
             changed = item.id in baseline and baseline[item.id] != item_passed
             regressions += int(changed and baseline[item.id] and not item_passed)
             passed += int(item_passed)

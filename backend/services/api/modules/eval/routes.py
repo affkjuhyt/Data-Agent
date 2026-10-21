@@ -107,6 +107,27 @@ async def _eval_set(
 RECENT_RUNS = 20
 
 
+def _result_view(result: evaluation.EvalResult, principal: Principal) -> EvalResultView:
+    """A result as `principal` may read it. The answer it holds was computed with the rights of
+    whom it was answered as (eval_runs.run_eval records them): anyone else reads the scores and the
+    cause, not the answer, so reading a run never shows more than one's own rights would. A result
+    from before answered_as was recorded shows its answer to no one."""
+    view = EvalResultView.model_validate(result, from_attributes=True)
+    actual = result.actual if isinstance(result.actual, dict) else {}
+    if actual.get("answered_as") != str(principal.user_id):
+        view.actual = None
+    return view
+
+
+def _item_read_view(item: evaluation.EvalItem, principal: Principal) -> EvalItemView:
+    """An item as a reader sees it: its expected answer holds the figures a steward wrote down,
+    so a reader who may only ask (the eval read endpoints' capability) sees the question alone."""
+    view = EvalItemView.model_validate(item, from_attributes=True)
+    if "steward" not in principal.capabilities:
+        view.expected = None
+    return view
+
+
 def _readable_sets(principal: Principal, data_space: uuid.UUID) -> tuple[Any, ...]:
     """The Data Space's sets and the organisation-wide ones (pack sets have no Data Space)."""
     return (
@@ -258,8 +279,8 @@ async def get_eval_set(
             ).all()
             failures = [
                 EvalFailure(
-                    item=EvalItemView.model_validate(item, from_attributes=True),
-                    result=EvalResultView.model_validate(result, from_attributes=True),
+                    item=_item_read_view(item, principal),
+                    result=_result_view(result, principal),
                 )
                 for result, item in missed
             ]
@@ -406,7 +427,7 @@ async def get_eval_run(
                 )
         return EvalRunDetail(
             **EvalRunView.model_validate(run, from_attributes=True).model_dump(),
-            results=[EvalResultView.model_validate(r, from_attributes=True) for r in results],
+            results=[_result_view(r, principal) for r in results],
             baseline=baseline,
         )
 
@@ -603,10 +624,8 @@ async def get_error_book(
             )
         return ErrorBookDetail(
             **ErrorBookView.model_validate(row, from_attributes=True).model_dump(),
-            eval_item=EvalItemView.model_validate(item, from_attributes=True) if item else None,
-            latest_result=EvalResultView.model_validate(latest, from_attributes=True)
-            if latest
-            else None,
+            eval_item=_item_read_view(item, principal) if item else None,
+            latest_result=_result_view(latest, principal) if latest else None,
         )
 
 

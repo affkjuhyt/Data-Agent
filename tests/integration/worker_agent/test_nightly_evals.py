@@ -148,6 +148,13 @@ async def test_each_nightly_item_is_answered_as_its_author_and_a_departed_one_fa
         " WHERE q.text = 'Câu hỏi của người khác'"
     )
     assert str(asker) == str(other)
+    # The answer is recorded with whom it was answered as, the only one the api shows it to.
+    actual = seed.one(
+        "SELECT actual FROM eval.eval_result WHERE eval_run_id = %s AND eval_item_id = %s",
+        run_id,
+        by_other,
+    )
+    assert actual["answered_as"] == str(other)
 
     with seed.conn.cursor() as cur:
         cur.execute("UPDATE org.app_user SET status = 'left' WHERE id = %s", (str(other),))

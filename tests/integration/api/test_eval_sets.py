@@ -186,3 +186,49 @@ async def test_runs_of_an_organisation_wide_set_are_not_shown(team: Team) -> Non
         assert row["latest_run"] is None
         direct = await api.get(f"/v1/eval-runs/{run}", headers=team.headers("asker"))
         assert direct.status_code == 404
+
+
+async def test_an_answer_is_read_only_by_whom_it_was_answered_as(team: Team) -> None:
+    """A result's answer was computed with someone's rights (eval_runs.run_eval records whose):
+    anyone else reads its scores but not the answer, and only a steward reads what was expected."""
+    steward_role = team.seed.row(
+        "org.role", org_id=team.org, code="STW", name="Steward", capabilities=["ask", "steward"]
+    )
+    team.users["steward"] = _user(team.seed, team.org, "steward", steward_role, [team.space])
+    context = _set(team, "Bộ chuẩn")
+    mine = _item(team, context, "Dư nợ miền Bắc?")
+    theirs = _item(team, context, "Dư nợ miền Nam?")
+    run = _run(team, context, "2026-10-01T00:00:00Z", status="completed", failed=2)
+    for item, asker in ((mine, team.users["steward"]), (theirs, team.users["asker"])):
+        team.seed.row(
+            "eval.eval_result",
+            org_id=team.org,
+            eval_run_id=run,
+            eval_item_id=item,
+            passed=False,
+            actual=Json({"text": "Dư nợ 1.250 tỷ", "answered_as": str(asker)}),
+        )
+    async with client(team) as api:
+        as_steward = await api.get(f"/v1/eval-runs/{run}", headers=team.headers("steward"))
+        assert as_steward.status_code == 200, as_steward.text
+        actual = {r["eval_item_id"]: r["actual"] for r in as_steward.json()["results"]}
+        assert actual[str(mine)]["text"] == "Dư nợ 1.250 tỷ" and actual[str(theirs)] is None
+        as_asker = await api.get(f"/v1/eval-runs/{run}", headers=team.headers("asker"))
+        actual = {r["eval_item_id"]: r["actual"] for r in as_asker.json()["results"]}
+        assert actual[str(mine)] is None and actual[str(theirs)]["text"] == "Dư nợ 1.250 tỷ"
+
+        steward_view = await api.get(f"/v1/eval-sets/{context}", headers=team.headers("steward"))
+        assert {f["item"]["expected"]["value"] for f in steward_view.json()["failures"]} == {1}
+        asker_view = await api.get(f"/v1/eval-sets/{context}", headers=team.headers("asker"))
+        failures = asker_view.json()["failures"]
+        assert len(failures) == 2 and all(f["item"]["expected"] is None for f in failures)
+
+
+async def test_a_result_without_whom_it_was_answered_as_shows_no_answer(team: Team) -> None:
+    context = _set(team, "Bộ chuẩn")
+    item = _item(team, context, "Dư nợ T9?")
+    run = _run(team, context, "2026-10-01T00:00:00Z", status="completed", passed=1)
+    _result(team, run, item, True)  # written before answered_as was recorded
+    async with client(team) as api:
+        got = await api.get(f"/v1/eval-runs/{run}", headers=team.headers("asker"))
+        assert got.status_code == 200 and got.json()["results"][0]["actual"] is None
