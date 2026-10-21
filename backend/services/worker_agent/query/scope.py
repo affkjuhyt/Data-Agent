@@ -336,12 +336,35 @@ def check_column_policies(
         return
     tree = parse_one(sql, dialect=dialect)
     covered_names: set[str] = set()
+    covered_tables: set[str] = set()
     for table in tree.find_all(exp.Table):
         for dataset in datasets:
             if dataset.id in by_dataset and _reads(table, dataset, source):
                 covered_names |= by_dataset[dataset.id]
+                covered_tables |= {table.name.lower(), table.alias_or_name.lower()}
     if not covered_names:
         return
+    # What renames or folds columns out of sight of a name check is refused outright on a query
+    # over a covered table (the security review): a column list on an alias (`AS c(a, b)`)
+    # renames what `*` brings; a whole-row reference (`row_to_json(c)`) carries every column;
+    # USING and NATURAL joins compare columns the query never names; a UNION, EXCEPT or INTERSECT
+    # takes its column names from its first branch, so another branch's covered column comes out
+    # under them.
+    refused = "it can only be read through a plain SELECT of its columns"
+    if any(alias.args.get("columns") for alias in tree.find_all(exp.TableAlias)):
+        raise OutOfScope(
+            f"a table with a hidden or masked column is renamed by an alias; {refused}"
+        )
+    if any(
+        join.args.get("using") or join.method.upper() == "NATURAL"
+        for join in tree.find_all(exp.Join)
+    ):
+        raise OutOfScope(f"a USING or NATURAL join reads a hidden or masked column; {refused}")
+    if any(True for _ in tree.find_all(exp.SetOperation)):
+        raise OutOfScope(f"a set operation over a hidden or masked column; {refused}")
+    for column in tree.find_all(exp.Column):
+        if not column.table and column.name.lower() in covered_tables:
+            raise OutOfScope(f"a whole-row reference to {column.name}; {refused}")
     for column in tree.find_all(exp.Column):
         name = column.name.lower()
         if name not in covered_names:

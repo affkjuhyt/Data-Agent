@@ -78,6 +78,14 @@ def test_a_covered_column_selected_as_itself_reaches_the_masking(sql: str) -> No
         "SELECT s.id_number AS y FROM (SELECT * FROM bank.customer) AS s",
         # Another table's column of a covered name is refused too: a qualifier cannot tell them apart.
         "SELECT b.code FROM bank.customer AS c JOIN bank.branch AS b ON b.id_number = c.name",
+        "SELECT * FROM bank.customer AS c(a, b, x)",
+        "SELECT * FROM (SELECT * FROM bank.customer) AS s(a, b, x)",
+        "SELECT row_to_json(c) FROM bank.customer AS c",
+        "SELECT row_to_json(customer) FROM bank.customer",
+        "SELECT * FROM bank.customer JOIN bank.branch USING (id_number)",
+        "SELECT * FROM bank.customer NATURAL JOIN bank.branch",
+        "SELECT * FROM bank.branch UNION ALL SELECT * FROM bank.customer",
+        "SELECT * FROM (SELECT * FROM bank.branch EXCEPT SELECT * FROM bank.customer) AS s",
     ],
 )
 def test_a_covered_column_under_another_name_or_in_an_expression_is_refused(sql: str) -> None:
