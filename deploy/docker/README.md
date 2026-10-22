@@ -21,7 +21,7 @@ things:
 | `kong/kong-setup.sh` | ConfigMap `kong-scripts` → `job/setup.yaml` |
 | `keycloak/setup-audience-mappers.sh`, `realm-export.json` | ConfigMaps `keycloak-scripts`, `keycloak-realm` |
 | `sql/create-extra-dbs.sql`, `init.sql` | ConfigMap `postgres-initdb` |
-| `sql/grant-roles.sql`, `kb-seed.sql` | ConfigMap `db-init-sql` → `job/db-init.yaml` |
+| `sql/grant-roles.sql`, `platform-seed.sql` | ConfigMap `db-init-sql` → `job/db-init.yaml` |
 | `litellm/config.yaml` | ConfigMap `litellm-config` |
 | `monitoring/prometheus.yml` | ConfigMap `prometheus-config` |
 | `monitoring/grafana/provisioning/{datasources,dashboards}/`, `grafana/dashboards/` | ConfigMaps `grafana-datasources`, `grafana-dashboards-provider`, `grafana-dashboards` |
@@ -36,7 +36,7 @@ these files in place — there is no second copy.
 ## Building
 
 ```bash
-docker build -t dataagent/kb-backend:latest -f backend/services/kb_backend/Dockerfile .
+docker build -t dataagent/crawler:latest    -f backend/services/crawler/Dockerfile .
 docker build -t dataagent/kong:latest       -f deploy/docker/kong/Dockerfile .
 ```
 
@@ -47,7 +47,7 @@ Images are named `dataagent/<service_name>`; push them as
 
 Ports are not in the Dockerfiles. Each image has no `EXPOSE` and no `CMD` — the
 start command and the port live in the workload's manifest, so there is one place
-to change them: auth-api 8200, kb-backend 8220, model-service
+to change them: auth-api 8200, model-service
 8230, workflow-runtime 8240 (also the agent/workflow authoring API, ex flow-builder), sandbox-executor 8260,
 llm-exporter 8270. `8000–8099` stays reserved for the LLM tier. Third-party
 images keep their native port.
@@ -58,12 +58,10 @@ images keep their native port.
   the internal topics at the default factor of 3, and consumers then hang on
   `GroupCoordinatorNotAvailableError`.
 - **Kafka's `INTERNAL` listener (`:8352`) is plaintext and its principal is a
-  super-user.** `kb-backend` and the KB workers (`kb-promote-*`,
-  `kb-structured-data`, `kb-conflict-resolution`) have no SASL support and use
-  it, as does the `kafka-topics` Job (`docs/v2/11-ops.md` §5, K7).
+  super-user.** The `kafka-topics` Job uses it (`docs/v2/11-ops.md` §5, K7).
 - **Redis has no password.** Langfuse must not send `AUTH`.
-- **`SERVICE_AUTH_SECRET` must be identical** in `workflow-runtime` and
-  `kb-backend` — a mismatch is silent.
+- **`SERVICE_AUTH_SECRET` must be identical** in `auth-api` and
+  `sandbox-executor` — a mismatch is silent.
 - **`GATEWAY_KEY` must equal the `aeroflow-jwks` plugin's key** set by
   `kong/kong-setup.sh`.
 - **Debian packages come from `DEBIAN_MIRROR` when it is set.** The Dockerfiles that run

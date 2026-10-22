@@ -3,7 +3,8 @@ import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setDataSpace } from '../../../lib/v1/client';
 import { createQuestionHandlers } from '../../../mocks/questions';
-import { readVerification, useQuestionStream } from './useQuestionStream';
+import { readVerification } from '../answerMessage';
+import { useQuestionStream } from './useQuestionStream';
 
 const server = setupServer();
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -70,6 +71,27 @@ describe('useQuestionStream', () => {
     });
     expect(result.current.messages[1].status).toBe('error');
     expect(result.current.messages[1].content).toBe('Chọn một Data Space ở thanh trên trước khi hỏi.');
+  });
+
+  it('R1-13 hydrates a conversation URL into messages with answer ids', async () => {
+    setDataSpace('ds-rr');
+    const { result } = renderHook(() => useQuestionStream());
+    await act(async () => {
+      await result.current.send('Tỷ lệ nợ xấu tháng 9/2026 theo vùng');
+    });
+    await waitFor(() => expect(result.current.conversationId).toBeTruthy());
+    const conversationId = result.current.conversationId!;
+    const answerId = result.current.messages[1].answerId;
+    expect(answerId).toBeTruthy();
+
+    const reopened = renderHook(() => useQuestionStream());
+    await act(async () => {
+      await reopened.result.current.hydrate(conversationId);
+    });
+    await waitFor(() => expect(reopened.result.current.messages).toHaveLength(2));
+    expect(reopened.result.current.conversationId).toBe(conversationId);
+    expect(reopened.result.current.messages[0].content).toContain('nợ xấu');
+    expect(reopened.result.current.messages[1].answerId).toBe(answerId);
   });
 });
 

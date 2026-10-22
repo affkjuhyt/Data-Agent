@@ -43,22 +43,13 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
 - **Vault panic mode** is per tenant (`compliance_settings.vault_panic_mode`): it revokes that
   tenant's secrets and answers 503 on that tenant's secret routes only, until a
   platform-admin turns it off in Settings → Secrets.
-- **Service-to-service identity.** `workflow-runtime` calls `kb-backend` directly
-  (`kb_search` → LightRAG retrieve), so it cannot present a user's Keycloak token. It signs
-  an **HMAC assertion** (`backend/libs/shared/service_identity.py`) carrying the real caller's
-  tenant, user and roles, with a 120 s expiry; `kb-backend` verifies it and takes identity
-  **only** from the token, ignoring accompanying `X-User-*` headers. Services permitted to
-  assert an identity are allowlisted per service: `KB_ALLOWED_SERVICES`
-  (kb-backend ← `workflow_runtime`) and `RUNTIME_ALLOWED_SERVICES` (empty: the
-  orchestrator is in-process now, so nothing calls workflow-runtime with an
-  assertion).
-  The trust decision itself lives once in `backend/libs/shared/auth.resolve_caller`, so
-  every service makes it identically.
-  - Previously this call forged `X-Kong-Verified: true` plus a fixed
-    `platform-admin,tenant-admin,kb-admin,engineer` role set, which made the document-level
-    role filter (`kb_backend/operations/access.py`) inoperative for all agent traffic.
-  - With no caller roles, or no `SERVICE_AUTH_SECRET`, retrieval now **fails closed** and
-    returns no chunks rather than defaulting to any identity.
+- **Service-to-service identity.** A service that acts for a user without the user's token
+  signs an **HMAC assertion** (`backend/libs/shared/service_identity.py`) carrying the real
+  caller's tenant, user and roles, with a 120 s expiry; the receiver takes identity **only**
+  from the token, ignoring accompanying `X-User-*` headers, and fails closed without one. The
+  trust decision lives once in `backend/libs/shared/auth.resolve_caller`. Its first user,
+  kb-backend's retrieval, was removed with the legacy knowledge base (KB-08); the V3 blocks
+  talk through the database and events instead.
 - **Mutual TLS (optional).** `deploy/docker/certs/gen-certs.sh` issues the CA plus `clientAuth`
   certificates for Kong *and* `workflow-runtime`, and a `serverAuth` cert for the backend.
   Setting `MTLS_CLIENT_CERT` / `MTLS_CLIENT_KEY` / `MTLS_CA_CERT` authenticates the
@@ -119,16 +110,15 @@ release-hardening pass:
 
 | Runs as non-root (`USER` in the image) | Root in the image — documented |
 |---|---|
-| kb-backend, kb-promote-silver/gold, kb-structured-data, kb-conflict-resolution, workflow-runtime (incl. the orchestrator and agent/workflow authoring), auth-api, model-service, llm-exporter, platform-workers (memory / schema-crawler / audit / web-crawler) | **sandbox-executor** — the image stays root for `SANDBOX_BACKEND=docker`, which spawns containers through the host Docker socket. On k8s it runs `SANDBOX_BACKEND=kubernetes` (runner pods in `dataagent-sandbox` via its ServiceAccount), and the production manifest sets `runAsNonRoot` / `runAsUser: 10001`. |
+| api, worker-agent, worker-ingest, worker-document, crawler, workflow-runtime (incl. the orchestrator and agent/workflow authoring), auth-api, model-service, llm-exporter, platform-workers (memory / schema-crawler / audit) | **sandbox-executor** — the image stays root for `SANDBOX_BACKEND=docker`, which spawns containers through the host Docker socket. On k8s it runs `SANDBOX_BACKEND=kubernetes` (runner pods in `dataagent-sandbox` via its ServiceAccount), and the production manifest sets `runAsNonRoot` / `runAsUser: 10001`. |
 
 `frontend/Dockerfile.dev` (dev-only) is out of scope for the prod non-root requirement.
 
 Notes on special cases:
 - **model-service** downloads no weights: it runs no local model and proxies embed,
   rerank and generate to the GPU services (`REMOTE_*_URL`).
-- **kb-worker** (the KB workers' image) and **platform-workers** install Chromium to a world-readable
-  `PLAYWRIGHT_BROWSERS_PATH` (`/ms-playwright`) so the non-root user can still launch the
-  browser; the app user has a writable `$HOME` for Chromium's profile/cache.
+- **crawler** fetches without a browser (no Chromium in any image since the web-crawler and
+  kb-worker were removed); it refuses internal names and private addresses (docs/RUNBOOK.md §10d).
 
 ### Base-image digest pinning — TODO (tracked)
 
@@ -177,11 +167,11 @@ with an existing baseline to burn down. Ratchet plan:
   | Surface | strict errors |
   | --- | --- |
   | `backend/libs/{basemodel,database_connector,shared}` | **0**, enforced |
-  | `backend/services/{kb_backend,workflow_runtime}` (incl. `workflow_runtime/application/orchestrator`) | **0**, enforced |
+  | `backend/services/workflow_runtime` (incl. `workflow_runtime/application/orchestrator`) | **0**, enforced |
+  | `backend/services/{api,worker_agent,crawler}` (`--disallow-untyped-defs --disallow-any-generics`) | CI blocking step (`make type-v3`) |
   | `backend/services/{auth_api,model_service,sandbox_executor,platform_workers}` | **0**, enforced |
 
-  Not on the strict list: `backend/libs/{ingestion,semantic,indicator}`. The KB workers
-  (`kb_backend/workers/*`) are strict as part of the `kb_backend` entry. The whole-tree run is report-only (`|| true`).
+  Not on the strict list: `backend/libs/{semantic,indicator}`. The whole-tree run is report-only (`|| true`).
 
 ## 6. Reporting a vulnerability
 

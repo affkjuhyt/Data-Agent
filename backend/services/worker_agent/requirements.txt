@@ -1,5 +1,6 @@
 # worker-agent (ADR-28): the api's stack (ADR-29) without the web server.
-pydantic==2.9.2
+# pydantic-ai (llm.py) needs pydantic >= 2.12; the api moves with it, as dev-tools installs both.
+pydantic==2.13.5
 sqlalchemy[asyncio]==2.0.35
 asyncpg==0.29.0
 PyMySQL==1.1.1
@@ -8,6 +9,8 @@ redis>=5.0
 # The read-only guard parses SQL per source dialect; OpenBao is read over HTTP (query/).
 sqlglot==25.24.5
 httpx==0.27.2
+# The model gateway (llm.py, ADR-37): typed answers over LiteLLM's OpenAI-compatible API.
+pydantic-ai-slim[openai]==2.54.0
 mcp>=1.0,<2.0
 # Answer exports: files to MinIO (da-exports), Excel workbooks (exports.py, storage.py).
 aioboto3==15.5.0

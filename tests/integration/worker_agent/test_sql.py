@@ -50,14 +50,15 @@ class Script:
         role: str,
         system: str,
         user: str,
+        output: type[Any],
         *,
         max_tokens: int = 800,
         temperature: float = 0.0,
-    ) -> Reply:
+    ) -> Reply[Any]:
         if role != "text_to_sql":
             raise ModelUnavailable("only the SQL model is up in this test")
         self.asked.append((user, temperature))
-        return Reply({"sql": self.sqls.pop(0)}, "agent-main", 100, 5)
+        return Reply(output.model_validate({"sql": self.sqls.pop(0)}), "agent-main", 100, 5)
 
 
 def catalogue(bank: Bank) -> None:

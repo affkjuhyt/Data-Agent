@@ -1,15 +1,11 @@
-/* Questions asked on Phân tích, kept per viewer by AskDataPage (same key). */
-const HISTORY_KEY = 'dataagent.ask.history';
+import { listConversations } from '../../lib/v1/questions';
 
-export function recentQuestions(limit: number): string[] {
+/** Recent Ask conversation titles for the home bar (server-backed, R1-13). */
+export async function recentQuestions(limit: number): Promise<string[]> {
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    const list: unknown = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(list)) return [];
-    return list
-      .map((item) =>
-        item && typeof item === 'object' && 'q' in item ? String((item as { q: unknown }).q) : '',
-      )
+    const page = await listConversations(limit);
+    return page.items
+      .map((c) => c.title?.trim() || '')
       .filter(Boolean)
       .slice(0, limit);
   } catch {

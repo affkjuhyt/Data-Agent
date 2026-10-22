@@ -27,7 +27,6 @@ data:
 
   #Minio
   MINIO_ENDPOINT: http://minio.dataagent-database.svc.cluster.local:8360
-  MINIO_BUCKET: knowledge-base
 
   #Openbao
   OPENBAO_ADDR: http://openbao.dataagent-database.svc.cluster.local:8120
@@ -46,9 +45,6 @@ data:
 
   #Sandbox-executor
   SANDBOX_EXECUTOR_URL: http://sandbox-executor.dataagent-service.svc.cluster.local:8260
-
-  #Knowledge-Base
-  KB_ENDPOINT: http://kb-backend.dataagent-service.svc.cluster.local:8220
 
   #Kong
   KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101
@@ -91,7 +87,6 @@ data:
   RUNTIME_ALLOWED_SERVICES: ''
 
   #Others
-  KB_ALLOWED_SERVICES: api,worker-agent
 
 ---
 apiVersion: v1
@@ -123,7 +118,6 @@ data:
 
   #Minio
   MINIO_ENDPOINT: http://minio.dataagent-database.svc.cluster.local:8360
-  MINIO_BUCKET: knowledge-base
 
   #Openbao
   OPENBAO_ADDR: http://openbao.dataagent-database.svc.cluster.local:8120
@@ -142,9 +136,6 @@ data:
 
   #Sandbox-Executor
   SANDBOX_EXECUTOR_URL: http://sandbox-executor.dataagent-service.svc.cluster.local:8260
-
-  #Knowledge-Base
-  KB_ENDPOINT: http://kb-backend.dataagent-service.svc.cluster.local:8220
 
   #Kong
   KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101
@@ -171,4 +162,3 @@ data:
   RUNTIME_ALLOWED_SERVICES: ''
 
   #Others
-  KB_ALLOWED_SERVICES: api,worker-agent

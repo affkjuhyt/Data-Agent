@@ -1223,6 +1223,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/conversations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chi tiết hội thoại kèm lượt hỏi và answer_id
+         * @description Reopen an Ask thread: ordered turns with answer_id when answered (R1-13).
+         */
+        get: operations["getConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/crawl-runs": {
         parameters: {
             query?: never;
@@ -2400,6 +2420,23 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/eval-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Cập nhật đáp án eval có lý do */
+        patch: operations["updateEvalItem"];
         trace?: never;
     };
     "/v1/eval-runs/{id}": {
@@ -4504,10 +4541,12 @@ export interface paths {
         get: operations["getMetric"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Ngừng dùng chỉ số */
+        delete: operations["deleteMetric"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Sửa thuộc tính chỉ số */
+        patch: operations["updateMetric"];
         trace?: never;
     };
     "/v1/metrics/{id}/versions": {
@@ -7172,7 +7211,6 @@ export interface components {
              * Type
              * @default access
              * @constant
-             * @enum {string}
              */
             type: "access";
             /**
@@ -7229,7 +7267,6 @@ export interface components {
              * Type
              * @default access
              * @constant
-             * @enum {string}
              */
             type: "access";
             /**
@@ -7419,9 +7456,13 @@ export interface components {
             /** Eval Set Id */
             eval_set_id?: string | null;
             /** Expected */
-            expected?: Record<string, never> | null;
+            expected?: {
+                [key: string]: unknown;
+            } | null;
             /** Input */
-            input?: Record<string, never> | null;
+            input?: {
+                [key: string]: unknown;
+            } | null;
             /** Tolerance */
             tolerance?: number | string | null;
         };
@@ -7473,7 +7514,9 @@ export interface components {
         /** AdminUserDetail */
         AdminUserDetail: {
             /** Attributes */
-            attributes: Record<string, never>;
+            attributes: {
+                [key: string]: unknown;
+            };
             /**
              * Created At
              * Format: date-time
@@ -7547,6 +7590,8 @@ export interface components {
              * Format: uuid
              */
             account_user_id: string;
+            /** Active Deployment Id */
+            active_deployment_id?: string | null;
             /**
              * Active Runs
              * @default 0
@@ -7566,6 +7611,8 @@ export interface components {
              * Format: uuid
              */
             data_space_id: string;
+            /** Goal */
+            goal?: string | null;
             /**
              * Id
              * Format: uuid
@@ -7584,12 +7631,17 @@ export interface components {
             owner_user_id: string;
             /** Paused Reason */
             paused_reason: string | null;
+            /** Permission Text */
+            permission_text?: string | null;
+            runs_7d?: components["schemas"]["RunsWindow"] | null;
             /** Spent This Month */
             spent_this_month: number | string;
             /** Status */
             status: string;
             /** Template Ref */
             template_ref: string | null;
+            /** Trigger Text */
+            trigger_text?: string | null;
             /**
              * Updated At
              * Format: date-time
@@ -7691,7 +7743,6 @@ export interface components {
             /**
              * Granularity
              * @constant
-             * @enum {string}
              */
             granularity: "day";
             /**
@@ -7709,6 +7760,8 @@ export interface components {
              */
             account_user_id: string;
             active_deployment?: components["schemas"]["DeploymentView"] | null;
+            /** Active Deployment Id */
+            active_deployment_id?: string | null;
             /**
              * Active Runs
              * @default 0
@@ -7729,6 +7782,8 @@ export interface components {
              * Format: uuid
              */
             data_space_id: string;
+            /** Goal */
+            goal?: string | null;
             /**
              * Id
              * Format: uuid
@@ -7747,12 +7802,17 @@ export interface components {
             owner_user_id: string;
             /** Paused Reason */
             paused_reason: string | null;
+            /** Permission Text */
+            permission_text?: string | null;
+            runs_7d?: components["schemas"]["RunsWindow"] | null;
             /** Spent This Month */
             spent_this_month: number | string;
             /** Status */
             status: string;
             /** Template Ref */
             template_ref: string | null;
+            /** Trigger Text */
+            trigger_text?: string | null;
             /**
              * Updated At
              * Format: date-time
@@ -8144,20 +8204,30 @@ export interface components {
          */
         ApiConfigPut: {
             /** Mapping */
-            mapping?: Record<string, never>[];
+            mapping?: {
+                [key: string]: unknown;
+            }[];
             /** Request */
-            request: Record<string, never>;
+            request: {
+                [key: string]: unknown;
+            };
         };
         /** ApiConfigView */
         ApiConfigView: {
             /** Health */
-            health?: Record<string, never> | null;
+            health?: {
+                [key: string]: unknown;
+            } | null;
             /** Mapping */
-            mapping?: Record<string, never>[];
+            mapping?: {
+                [key: string]: unknown;
+            }[];
             /** Name */
             name: string;
             /** Request */
-            request: Record<string, never>;
+            request: {
+                [key: string]: unknown;
+            };
             /**
              * Source Id
              * Format: uuid
@@ -8464,7 +8534,6 @@ export interface components {
              * Type
              * @default behavior
              * @constant
-             * @enum {string}
              */
             type: "behavior";
             /**
@@ -8519,7 +8588,6 @@ export interface components {
              * Type
              * @default behavior
              * @constant
-             * @enum {string}
              */
             type: "behavior";
             /**
@@ -9306,7 +9374,9 @@ export interface components {
             /** Attribute */
             attribute?: string | null;
             /** Figure Condition */
-            figure_condition?: Record<string, never> | null;
+            figure_condition?: {
+                [key: string]: unknown;
+            } | null;
             /** Period */
             period?: string | null;
             /** Source Key */
@@ -9743,15 +9813,21 @@ export interface components {
             /** Checkpoints */
             checkpoints?: unknown[];
             /** Data Scope */
-            data_scope?: Record<string, never>;
+            data_scope?: {
+                [key: string]: unknown;
+            };
             /** Denied Actions */
             denied_actions?: string[];
             /** Goal */
             goal: string;
             /** Limits */
-            limits?: Record<string, never>;
+            limits?: {
+                [key: string]: unknown;
+            };
             /** Model By Task */
-            model_by_task?: Record<string, never>;
+            model_by_task?: {
+                [key: string]: unknown;
+            };
             /** Skill Ids */
             skill_ids?: string[];
             /** Tools */
@@ -9767,15 +9843,21 @@ export interface components {
             /** Checkpoints */
             checkpoints: unknown[];
             /** Data Scope */
-            data_scope: Record<string, never>;
+            data_scope: {
+                [key: string]: unknown;
+            };
             /** Denied Actions */
             denied_actions: string[];
             /** Goal */
             goal: string;
             /** Limits */
-            limits: Record<string, never>;
+            limits: {
+                [key: string]: unknown;
+            };
             /** Model By Task */
-            model_by_task: Record<string, never>;
+            model_by_task: {
+                [key: string]: unknown;
+            };
             /** Out Of Scope */
             out_of_scope: string[];
             /** Skill Ids */
@@ -10052,7 +10134,9 @@ export interface components {
             /** Name */
             name: string;
             /** Normalization */
-            normalization?: Record<string, never>;
+            normalization?: {
+                [key: string]: unknown;
+            };
             /** Source Ids */
             source_ids: string[];
             /** Source Priority */
@@ -10075,7 +10159,9 @@ export interface components {
             /** Name */
             name?: string | null;
             /** Normalization */
-            normalization?: Record<string, never> | null;
+            normalization?: {
+                [key: string]: unknown;
+            } | null;
             /** Owner Id */
             owner_id?: string | null;
             /** Source Ids */
@@ -10127,7 +10213,9 @@ export interface components {
             /** Name */
             name: string;
             /** Normalization */
-            normalization: Record<string, never>;
+            normalization: {
+                [key: string]: unknown;
+            };
             /**
              * Owner Id
              * Format: uuid
@@ -10148,6 +10236,75 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * ConversationDetail
+         * @description Conversation with ordered turns for Ask URL hydrate (R1-13).
+         */
+        ConversationDetail: {
+            /** Api Client Id */
+            api_client_id: string | null;
+            /** Channel */
+            channel: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Data Space Id
+             * Format: uuid
+             */
+            data_space_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Question At */
+            last_question_at: string | null;
+            /** Title */
+            title: string | null;
+            /** Turns */
+            turns?: components["schemas"]["ConversationTurnView"][];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Workspace Id */
+            workspace_id: string | null;
+        };
+        /**
+         * ConversationTurnView
+         * @description One question in a conversation, ordered by seq (R1-13 reopen).
+         */
+        ConversationTurnView: {
+            /** Answer Id */
+            answer_id?: string | null;
+            /** Answered At */
+            answered_at?: string | null;
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /** Seq */
+            seq: number;
+            /** Status */
+            status: string;
+            /** Text */
+            text: string;
         };
         /** ConversationView */
         ConversationView: {
@@ -10456,7 +10613,9 @@ export interface components {
             /** Last Run Status */
             last_run_status?: string | null;
             /** Legal Checklist */
-            legal_checklist: Record<string, never>;
+            legal_checklist: {
+                [key: string]: unknown;
+            };
             /** Legal Evidence */
             legal_evidence: unknown[];
             /** Legal Review Due At */
@@ -10607,7 +10766,9 @@ export interface components {
             /** Last Run Status */
             last_run_status?: string | null;
             /** Legal Checklist */
-            legal_checklist: Record<string, never>;
+            legal_checklist: {
+                [key: string]: unknown;
+            };
             /** Legal Evidence */
             legal_evidence: unknown[];
             /** Legal Review Due At */
@@ -10708,7 +10869,9 @@ export interface components {
             /** Last Run At */
             last_run_at: string | null;
             /** Legal Checklist */
-            legal_checklist: Record<string, never>;
+            legal_checklist: {
+                [key: string]: unknown;
+            };
             /** Legal Evidence */
             legal_evidence: unknown[];
             /** Legal Review Due At */
@@ -10815,7 +10978,9 @@ export interface components {
             /** Code */
             code: string;
             /** Contract */
-            contract?: Record<string, never> | null;
+            contract?: {
+                [key: string]: unknown;
+            } | null;
             /** Data Mart Id */
             data_mart_id?: string | null;
             /** Dataset Id */
@@ -10893,12 +11058,13 @@ export interface components {
              */
             id: string;
             /** Latest Eval Run */
-            latest_eval_run?: Record<string, never> | null;
+            latest_eval_run?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Layer
              * @default context
              * @constant
-             * @enum {string}
              */
             layer: "context";
             /** Members */
@@ -11120,7 +11286,9 @@ export interface components {
              */
             created_at: string;
             /** Default Policy */
-            default_policy: Record<string, never>;
+            default_policy: {
+                [key: string]: unknown;
+            };
             /** Description */
             description: string | null;
             /**
@@ -11157,7 +11325,9 @@ export interface components {
              */
             drop_duplicates: boolean;
             /** Filters */
-            filters?: Record<string, never>[];
+            filters?: {
+                [key: string]: unknown;
+            }[];
         };
         /** DatasetDetail */
         DatasetDetail: {
@@ -11343,7 +11513,9 @@ export interface components {
             /** Config Version */
             config_version: number;
             /** Gates */
-            gates?: Record<string, never>;
+            gates?: {
+                [key: string]: unknown;
+            };
             /**
              * Traffic Pct
              * @default 10
@@ -12522,11 +12694,15 @@ export interface components {
              */
             data_space_id: string;
             /** Detail */
-            detail?: Record<string, never>;
+            detail?: {
+                [key: string]: unknown;
+            };
             /** Feedback Id */
             feedback_id?: string | null;
             /** Forecast Detail */
-            forecast_detail?: Record<string, never> | null;
+            forecast_detail?: {
+                [key: string]: unknown;
+            } | null;
             /** Hitl Request Id */
             hitl_request_id?: string | null;
             /** Lint Finding Id */
@@ -12778,9 +12954,33 @@ export interface components {
              */
             category: "correct_result" | "ask_at_right_time" | "respect_permission" | "correct_format" | "refusal";
             /** Expected */
-            expected: Record<string, never>;
+            expected: {
+                [key: string]: unknown;
+            };
             /** Input */
-            input: Record<string, never>;
+            input: {
+                [key: string]: unknown;
+            };
+            /** Tolerance */
+            tolerance?: number | string | null;
+        };
+        /**
+         * EvalItemPatch
+         * @description Changing an answer for an old period is an auditable contract change.
+         */
+        EvalItemPatch: {
+            /** As Of */
+            as_of?: string | null;
+            /** Expected */
+            expected?: {
+                [key: string]: unknown;
+            } | null;
+            /** Input */
+            input?: {
+                [key: string]: unknown;
+            } | null;
+            /** Reason */
+            reason?: string | null;
             /** Tolerance */
             tolerance?: number | string | null;
         };
@@ -13371,7 +13571,9 @@ export interface components {
             /** Expires At */
             expires_at: string | null;
             /** Filters */
-            filters: Record<string, never>;
+            filters: {
+                [key: string]: unknown;
+            };
             /** Format */
             format: string;
             /**
@@ -13442,7 +13644,9 @@ export interface components {
             /** Entity Key */
             entity_key: string;
             /** Field Confidence */
-            field_confidence: Record<string, never>;
+            field_confidence: {
+                [key: string]: unknown;
+            };
             /**
              * Id
              * Format: uuid
@@ -13451,7 +13655,9 @@ export interface components {
             /** Is Random Sample */
             is_random_sample: boolean;
             /** Locators */
-            locators?: Record<string, never>;
+            locators?: {
+                [key: string]: unknown;
+            };
             /**
              * Page Id
              * Format: uuid
@@ -13482,7 +13688,9 @@ export interface components {
              */
             updated_at: string;
             /** Values */
-            values: Record<string, never>;
+            values: {
+                [key: string]: unknown;
+            };
         };
         /** ExtractedRecordView */
         ExtractedRecordView: {
@@ -13494,7 +13702,9 @@ export interface components {
             /** Entity Key */
             entity_key: string;
             /** Field Confidence */
-            field_confidence: Record<string, never>;
+            field_confidence: {
+                [key: string]: unknown;
+            };
             /**
              * Id
              * Format: uuid
@@ -13531,7 +13741,9 @@ export interface components {
              */
             updated_at: string;
             /** Values */
-            values: Record<string, never>;
+            values: {
+                [key: string]: unknown;
+            };
         };
         /** ExtractionField */
         ExtractionField: {
@@ -13564,7 +13776,9 @@ export interface components {
             /** Fields */
             fields: components["schemas"]["ExtractionField"][];
             /** Join Key */
-            join_key?: Record<string, never> | null;
+            join_key?: {
+                [key: string]: unknown;
+            } | null;
             /** Target Dataset Id */
             target_dataset_id?: string | null;
         };
@@ -13717,7 +13931,9 @@ export interface components {
             /** Metric Code */
             metric_code?: string | null;
             /** Params */
-            params?: Record<string, never>;
+            params?: {
+                [key: string]: unknown;
+            };
             /** Source Key */
             source_key: string;
             /** Token */
@@ -13911,7 +14127,9 @@ export interface components {
             /** Question Id */
             question_id?: string | null;
             /** Scope */
-            scope?: Record<string, never>;
+            scope?: {
+                [key: string]: unknown;
+            };
         };
         /** ForecastDetail */
         ForecastDetail: {
@@ -14129,9 +14347,13 @@ export interface components {
         /** FormulaModelCreate */
         FormulaModelCreate: {
             /** Formula */
-            formula: Record<string, never>;
+            formula: {
+                [key: string]: unknown;
+            };
             /** Input Series */
-            input_series: Record<string, never>;
+            input_series: {
+                [key: string]: unknown;
+            };
             /**
              * Metric Version Id
              * Format: uuid
@@ -14167,7 +14389,9 @@ export interface components {
              */
             rounding: "integer" | "ten";
             /** Window Rule */
-            window_rule: Record<string, never>;
+            window_rule: {
+                [key: string]: unknown;
+            };
         };
         /** FormulaModelView */
         FormulaModelView: {
@@ -14307,7 +14531,9 @@ export interface components {
             /** Capability */
             capability?: ("view_aggregate" | "view_detail" | "ask" | "run_agent") | null;
             /** Row Scope */
-            row_scope?: Record<string, never> | null;
+            row_scope?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** GroupMappingIn */
         GroupMappingIn: {
@@ -14324,7 +14550,9 @@ export interface components {
              */
             role_id: string;
             /** Row Scope */
-            row_scope?: Record<string, never> | null;
+            row_scope?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Status
              * @default active
@@ -14565,7 +14793,9 @@ export interface components {
         /** HealthSection */
         HealthSection: {
             /** Series */
-            series?: Record<string, never>[];
+            series?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Status
              * @enum {string}
@@ -14816,11 +15046,12 @@ export interface components {
              * Dry Run
              * @default true
              * @constant
-             * @enum {boolean}
              */
             dry_run: true;
             /** Errors */
-            errors?: Record<string, never>[];
+            errors?: {
+                [key: string]: unknown;
+            }[];
             /** Freshness Sla */
             freshness_sla: string | null;
             /**
@@ -14839,7 +15070,9 @@ export interface components {
             /** Paused Reason */
             paused_reason: string | null;
             /** Sample */
-            sample?: Record<string, never>[];
+            sample?: {
+                [key: string]: unknown;
+            }[];
             /** Schedule Cron */
             schedule_cron: string | null;
             /**
@@ -15913,9 +16146,13 @@ export interface components {
         /** MartCreate */
         MartCreate: {
             /** Checks */
-            checks?: Record<string, never>[];
+            checks?: {
+                [key: string]: unknown;
+            }[];
             /** Dimensions */
-            dimensions?: Record<string, never>[];
+            dimensions?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Fact Dataset Id
              * Format: uuid
@@ -15924,11 +16161,15 @@ export interface components {
             /** Grain */
             grain: string;
             /** Measures */
-            measures?: Record<string, never>[];
+            measures?: {
+                [key: string]: unknown;
+            }[];
             /** Name */
             name: string;
             /** Relations */
-            relations?: Record<string, never>[];
+            relations?: {
+                [key: string]: unknown;
+            }[];
         };
         /**
          * MartPatch
@@ -15937,13 +16178,19 @@ export interface components {
          */
         MartPatch: {
             /** Dimensions */
-            dimensions?: Record<string, never>[] | null;
+            dimensions?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Measures */
-            measures?: Record<string, never>[] | null;
+            measures?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Name */
             name?: string | null;
             /** Relations */
-            relations?: Record<string, never>[] | null;
+            relations?: {
+                [key: string]: unknown;
+            }[] | null;
         };
         /**
          * Materiality
@@ -16101,7 +16348,9 @@ export interface components {
              */
             role_id: string;
             /** Row Scope */
-            row_scope?: Record<string, never> | null;
+            row_scope?: {
+                [key: string]: unknown;
+            } | null;
             /** Valid Until */
             valid_until?: string | null;
         };
@@ -16416,6 +16665,13 @@ export interface components {
              */
             updated_at: string;
         };
+        /** MetricPatch */
+        MetricPatch: {
+            /** Code */
+            code?: string | null;
+            /** Consumer Group */
+            consumer_group?: string | null;
+        };
         /** MetricPreview */
         MetricPreview: {
             /** Periods */
@@ -16450,7 +16706,9 @@ export interface components {
             /** Expression */
             expression: string;
             /** Filters */
-            filters?: Record<string, never>[] | null;
+            filters?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Legal Basis */
             legal_basis?: string | null;
             /**
@@ -16602,7 +16860,9 @@ export interface components {
             /** Fallback Model */
             fallback_model?: string | null;
             /** Limits */
-            limits?: Record<string, never> | null;
+            limits?: {
+                [key: string]: unknown;
+            } | null;
             /** Model Name */
             model_name: string;
             /** Rollout Pct */
@@ -16652,7 +16912,9 @@ export interface components {
             /** Latency P95 Ms */
             latency_p95_ms?: number | null;
             /** Latest Eval */
-            latest_eval?: Record<string, never> | null;
+            latest_eval?: {
+                [key: string]: unknown;
+            } | null;
             /** Limits */
             limits: unknown;
             /** Model Name */
@@ -16709,7 +16971,9 @@ export interface components {
             /** Monthly Budget Vnd */
             monthly_budget_vnd?: number | string | null;
             /** Price */
-            price?: Record<string, never>;
+            price?: {
+                [key: string]: unknown;
+            };
             /** Secret Ref */
             secret_ref?: string | null;
             /**
@@ -16733,7 +16997,9 @@ export interface components {
             /** Monthly Budget Vnd */
             monthly_budget_vnd?: number | string | null;
             /** Price */
-            price?: Record<string, never> | null;
+            price?: {
+                [key: string]: unknown;
+            } | null;
             /** Secret Ref */
             secret_ref?: string | null;
             /** Status */
@@ -16953,9 +17219,13 @@ export interface components {
              */
             notify_mode: "alert_only" | "with_analysis";
             /** Recipients */
-            recipients?: Record<string, never>[];
+            recipients?: {
+                [key: string]: unknown;
+            }[];
             /** Rule */
-            rule: Record<string, never>;
+            rule: {
+                [key: string]: unknown;
+            };
             /**
              * Rule Kind
              * @enum {string}
@@ -16964,20 +17234,28 @@ export interface components {
             /** Schedule Cron */
             schedule_cron: string;
             /** Scope Filter */
-            scope_filter?: Record<string, never>;
+            scope_filter?: {
+                [key: string]: unknown;
+            };
         };
         /** MonitorPatch */
         MonitorPatch: {
             /** Notify Mode */
             notify_mode?: ("alert_only" | "with_analysis") | null;
             /** Recipients */
-            recipients?: Record<string, never>[] | null;
+            recipients?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Rule */
-            rule?: Record<string, never> | null;
+            rule?: {
+                [key: string]: unknown;
+            } | null;
             /** Schedule Cron */
             schedule_cron?: string | null;
             /** Scope Filter */
-            scope_filter?: Record<string, never> | null;
+            scope_filter?: {
+                [key: string]: unknown;
+            } | null;
             /** Status */
             status?: ("draft" | "active" | "paused") | null;
         };
@@ -17127,7 +17405,9 @@ export interface components {
         /** OutputDraft */
         OutputDraft: {
             /** Columns */
-            columns?: Record<string, never>[];
+            columns?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Columns Status
              * @default ready
@@ -17382,13 +17662,17 @@ export interface components {
             /** Calibration Run Id */
             calibration_run_id: string | null;
             /** Conflicts */
-            conflicts?: Record<string, never>[];
+            conflicts?: {
+                [key: string]: unknown;
+            }[];
             /** Conflicts Open */
             conflicts_open: number;
             /** Created At */
             created_at: string | null;
             /** Decisions */
-            decisions?: Record<string, never>[];
+            decisions?: {
+                [key: string]: unknown;
+            }[];
             /**
              * Dry Run
              * @default false
@@ -17472,9 +17756,13 @@ export interface components {
         /** PackVersionCreate */
         PackVersionCreate: {
             /** Breaking Changes */
-            breaking_changes?: Record<string, never>[];
+            breaking_changes?: {
+                [key: string]: unknown;
+            }[];
             /** Manifest */
-            manifest: Record<string, never>;
+            manifest: {
+                [key: string]: unknown;
+            };
             /** Min Core Version */
             min_core_version: string;
             /** Release Notes */
@@ -19088,7 +19376,9 @@ export interface components {
         /** PlanPatch */
         PlanPatch: {
             /** Chips */
-            chips: Record<string, never>[];
+            chips: {
+                [key: string]: unknown;
+            }[];
             /** Edit Note */
             edit_note?: string | null;
         };
@@ -19110,7 +19400,9 @@ export interface components {
         /** PolicyCreate */
         PolicyCreate: {
             /** Definition */
-            definition: Record<string, never>;
+            definition: {
+                [key: string]: unknown;
+            };
             /**
              * Type
              * @enum {string}
@@ -19350,7 +19642,9 @@ export interface components {
              */
             decision: "accept" | "accept_with_edit" | "reject" | "request_changes";
             /** Edited Diff */
-            edited_diff?: Record<string, never> | null;
+            edited_diff?: {
+                [key: string]: unknown;
+            } | null;
             /** Note */
             note?: string | null;
             /**
@@ -19489,7 +19783,9 @@ export interface components {
              */
             ref_kind: "metric" | "data_product";
             /** Scope */
-            scope?: Record<string, never>;
+            scope?: {
+                [key: string]: unknown;
+            };
             /** Statement Public */
             statement_public: string;
             /**
@@ -19646,7 +19942,6 @@ export interface components {
              * Layer
              * @default published
              * @constant
-             * @enum {string}
              */
             layer: "published";
             /** Name */
@@ -19771,14 +20066,18 @@ export interface components {
              */
             kind: "not_null" | "range" | "unique" | "in_list" | "sum_matches" | "freshness" | "custom_sql";
             /** Params */
-            params?: Record<string, never> | null;
+            params?: {
+                [key: string]: unknown;
+            } | null;
             /** Severity */
             severity?: ("low" | "medium" | "high") | null;
         };
         /** QualityRulePatch */
         QualityRulePatch: {
             /** Params */
-            params?: Record<string, never> | null;
+            params?: {
+                [key: string]: unknown;
+            } | null;
             /** Severity */
             severity?: ("low" | "medium" | "high") | null;
             /** Status */
@@ -20313,7 +20612,9 @@ export interface components {
         /** RecordReview */
         RecordReview: {
             /** Corrected Values */
-            corrected_values?: Record<string, never> | null;
+            corrected_values?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Decision
              * @enum {string}
@@ -20508,7 +20809,6 @@ export interface components {
             /**
              * Content Type
              * @constant
-             * @enum {string}
              */
             content_type: "text/markdown";
             /** Markdown */
@@ -20562,7 +20862,9 @@ export interface components {
             /** Kind */
             kind: string;
             /** Outputs */
-            outputs: Record<string, never>[];
+            outputs: {
+                [key: string]: unknown;
+            }[];
             /**
              * Report Schedule Id
              * Format: uuid
@@ -20718,9 +21020,13 @@ export interface components {
         /** ResolutionRuleCreate */
         ResolutionRuleCreate: {
             /** Action */
-            action: Record<string, never>;
+            action: {
+                [key: string]: unknown;
+            };
             /** Condition */
-            condition: Record<string, never>;
+            condition: {
+                [key: string]: unknown;
+            };
             /** Data Kind */
             data_kind: string;
         };
@@ -20772,7 +21078,9 @@ export interface components {
         /** RestTryRequest */
         RestTryRequest: {
             /** Request */
-            request: Record<string, never>;
+            request: {
+                [key: string]: unknown;
+            };
         };
         /** RestTryResult */
         RestTryResult: {
@@ -20781,7 +21089,9 @@ export interface components {
             /** Duration Ms */
             duration_ms: number;
             /** Mapping */
-            mapping?: Record<string, never>[];
+            mapping?: {
+                [key: string]: unknown;
+            }[];
             /** Status */
             status: number;
         };
@@ -20873,7 +21183,9 @@ export interface components {
         /** ReviewDecisionView */
         ReviewDecisionView: {
             /** Corrected Values */
-            corrected_values: Record<string, never> | null;
+            corrected_values: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Decided At
              * Format: date-time
@@ -21006,7 +21318,9 @@ export interface components {
             /** As Of */
             as_of?: string | null;
             /** Params */
-            params: Record<string, never>;
+            params: {
+                [key: string]: unknown;
+            };
         };
         /** RunDetail */
         RunDetail: {
@@ -21125,6 +21439,11 @@ export interface components {
             /** Finished At */
             finished_at: string | null;
             /**
+             * Hitl Count
+             * @default 0
+             */
+            hitl_count: number;
+            /**
              * Id
              * Format: uuid
              */
@@ -21141,6 +21460,8 @@ export interface components {
             status: string;
             /** Stop Reason */
             stop_reason: string | null;
+            /** Title */
+            title?: string | null;
             /** Tokens */
             tokens: number;
             /** Trigger Kind */
@@ -21199,6 +21520,11 @@ export interface components {
             /** Finished At */
             finished_at: string | null;
             /**
+             * Hitl Count
+             * @default 0
+             */
+            hitl_count: number;
+            /**
              * Id
              * Format: uuid
              */
@@ -21223,6 +21549,8 @@ export interface components {
             stop_detail: unknown;
             /** Stop Reason */
             stop_reason: string | null;
+            /** Title */
+            title?: string | null;
             /** Tokens */
             tokens: number;
             /** Trigger Kind */
@@ -21233,6 +21561,18 @@ export interface components {
             waiting_since: string | null;
             /** Workflow Id */
             workflow_id: string | null;
+        };
+        /**
+         * RunsWindow
+         * @description Last 7 days on one agent: how many runs, how many needed a person, how many failed.
+         */
+        RunsWindow: {
+            /** Count */
+            count: number;
+            /** Errors */
+            errors: number;
+            /** Needs Approval Pct */
+            needs_approval_pct: number;
         };
         /** SampleQuestion */
         SampleQuestion: {
@@ -21260,7 +21600,6 @@ export interface components {
              * Network
              * @default false
              * @constant
-             * @enum {boolean}
              */
             network: false;
             /** Timeout S */
@@ -21402,7 +21741,9 @@ export interface components {
             /** Scan Cron */
             scan_cron?: string | null;
             /** Scan Window */
-            scan_window?: Record<string, never> | null;
+            scan_window?: {
+                [key: string]: unknown;
+            } | null;
             /** Work Calendar Id */
             work_calendar_id?: string | null;
         };
@@ -21449,7 +21790,9 @@ export interface components {
             /** Severity */
             severity: string;
             /** Signals */
-            signals: Record<string, never>;
+            signals: {
+                [key: string]: unknown;
+            };
             /**
              * Source Id
              * Format: uuid
@@ -21626,7 +21969,9 @@ export interface components {
             /** Data Space Id */
             data_space_id: string | null;
             /** Detail */
-            detail: Record<string, never>;
+            detail: {
+                [key: string]: unknown;
+            };
             /** Handled By */
             handled_by: string | null;
             /**
@@ -21992,7 +22337,9 @@ export interface components {
             /** Scan Schemas */
             scan_schemas?: string[] | null;
             /** Scan Window */
-            scan_window?: Record<string, never> | null;
+            scan_window?: {
+                [key: string]: unknown;
+            } | null;
             /** Work Calendar Id */
             work_calendar_id?: string | null;
             writeback_credentials?: components["schemas"]["SecretReference"] | null;
@@ -22068,7 +22415,9 @@ export interface components {
             /** Scan Schemas */
             scan_schemas?: string[] | null;
             /** Scan Window */
-            scan_window?: Record<string, never> | null;
+            scan_window?: {
+                [key: string]: unknown;
+            } | null;
             /** Status */
             status?: ("active" | "paused" | "archived") | null;
             /** Writeback Tables */
@@ -22489,7 +22838,9 @@ export interface components {
             /** Legal Basis */
             legal_basis?: string | null;
             /** Meanings */
-            meanings?: Record<string, never>[] | null;
+            meanings?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Term */
             term: string;
         };
@@ -22721,7 +23072,9 @@ export interface components {
             /** Position */
             position?: number | null;
             /** Spec */
-            spec: Record<string, never>;
+            spec: {
+                [key: string]: unknown;
+            };
             /** Title */
             title?: string | null;
         };
@@ -22734,7 +23087,9 @@ export interface components {
             /** Position */
             position?: number | null;
             /** Spec */
-            spec?: Record<string, never> | null;
+            spec?: {
+                [key: string]: unknown;
+            } | null;
             /** Title */
             title?: string | null;
         };
@@ -22802,7 +23157,6 @@ export interface components {
              * Algorithm
              * @default RSA-OAEP-SHA256
              * @constant
-             * @enum {string}
              */
             algorithm: "RSA-OAEP-SHA256";
             /** Key Version */
@@ -22826,7 +23180,9 @@ export interface components {
              */
             combine: "any" | "all";
             /** Condition */
-            condition?: Record<string, never>;
+            condition?: {
+                [key: string]: unknown;
+            };
             /** Cron */
             cron?: string | null;
             /**
@@ -22909,7 +23265,9 @@ export interface components {
          */
         TryRequest: {
             /** Params */
-            params: Record<string, never>;
+            params: {
+                [key: string]: unknown;
+            };
         };
         /** UndoRequest */
         UndoRequest: {
@@ -22976,7 +23334,9 @@ export interface components {
         /** UploadPatch */
         UploadPatch: {
             /** Column Map */
-            column_map?: Record<string, never>[] | null;
+            column_map?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Decimal Sep */
             decimal_sep?: ("." | ",") | null;
             /** Encoding */
@@ -23330,10 +23690,14 @@ export interface components {
             /** Metric Version Ids */
             metric_version_ids?: string[];
             /** Params Schema */
-            params_schema: Record<string, never>;
+            params_schema: {
+                [key: string]: unknown;
+            };
             sandbox_limits?: components["schemas"]["SandboxLimits"] | null;
             /** Steps */
-            steps: Record<string, never>[];
+            steps: {
+                [key: string]: unknown;
+            }[];
             /** Template Md */
             template_md?: string | null;
         };
@@ -23345,10 +23709,14 @@ export interface components {
         /** VersionPatch */
         VersionPatch: {
             /** Params Schema */
-            params_schema?: Record<string, never> | null;
+            params_schema?: {
+                [key: string]: unknown;
+            } | null;
             sandbox_limits?: components["schemas"]["SandboxLimits"] | null;
             /** Steps */
-            steps?: Record<string, never>[] | null;
+            steps?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Template Md */
             template_md?: string | null;
         };
@@ -23517,7 +23885,9 @@ export interface components {
             /** Description */
             description?: string | null;
             /** Params */
-            params?: Record<string, never>;
+            params?: {
+                [key: string]: unknown;
+            };
             /** Template Of Skill Id */
             template_of_skill_id?: string | null;
             /** Title */
@@ -23583,7 +23953,9 @@ export interface components {
             /** Description */
             description?: string | null;
             /** Params */
-            params?: Record<string, never> | null;
+            params?: {
+                [key: string]: unknown;
+            } | null;
             /** Status */
             status?: ("active" | "archived") | null;
             /** Title */
@@ -24073,7 +24445,6 @@ export interface components {
              * Layer
              * @default context
              * @constant
-             * @enum {string}
              */
             layer: "context";
             /** Name */
@@ -24650,7 +25021,6 @@ export interface components {
              * Layer
              * @default published
              * @constant
-             * @enum {string}
              */
             layer: "published";
             /** Name */
@@ -33706,6 +34076,118 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_ConversationView_"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    getConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationDetail"];
                 };
             };
             /** @description Invalid request */
@@ -42951,6 +43433,122 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBookView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    updateEvalItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvalItemPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalItemView"];
                 };
             };
             /** @description Invalid request */
@@ -58827,6 +59425,232 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MetricDetail"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    deleteMetric: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    updateMetric: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MetricPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetricView"];
                 };
             };
             /** @description Invalid request */

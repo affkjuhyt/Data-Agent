@@ -17,7 +17,7 @@ test = [
     "testcontainers[postgres,redis,kafka]>=4.7",
     "httpx>=0.27",
     "requests>=2.31",
-    # kb_backend router imports File/Form routes during unit collection.
+    # The api's upload routes import File/Form during unit collection.
     "python-multipart>=0.0.9",
     # Unit tests import the shared Kafka connector; service images install it,
     # so the test extra should too.
@@ -226,7 +226,7 @@ exclude = [
 # `disallow_untyped_defs` + `disallow_any_generics` and are kept green (0 errors)
 # — enforced BLOCKING by the CI "Strict typecheck · core libs" step, not just
 # reported. Expand this list as each service is cleaned up (see the burn-down in
-# docs/SECURITY.md / docs/RUNBOOK.md: database_connector, kb_backend, orchestrator next).
+# docs/SECURITY.md / docs/RUNBOOK.md: database_connector, orchestrator next).
 #
 # NOTE: these globs only match real importable packages. Hyphenated service dirs
 # (`backend/services/auth_api`, …) are NOT importable as `services.auth_api.*`, so such a

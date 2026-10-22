@@ -45,6 +45,7 @@ from services.api.modules.eval.schemas import (
     ErrorBookView,
     EvalFailure,
     EvalItemCreate,
+    EvalItemPatch,
     EvalItemView,
     EvalResultView,
     EvalRunAccepted,
@@ -320,6 +321,58 @@ async def create_eval_item(
         return EvalItemView.model_validate(item, from_attributes=True)
 
 
+@router.patch(
+    "/v1/eval-items/{id}",
+    response_model=EvalItemView,
+    **endpoint("PATCH", "/v1/eval-items/{id}", operation_id="updateEvalItem"),
+)
+async def update_eval_item(
+    body: EvalItemPatch,
+    item_id: Annotated[uuid.UUID, Path(alias="id")],
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> EvalItemView:
+    async with transaction(ROLE, principal) as session:
+        item = await session.scalar(
+            select(evaluation.EvalItem)
+            .join(evaluation.EvalSet, evaluation.EvalSet.id == evaluation.EvalItem.eval_set_id)
+            .where(
+                evaluation.EvalItem.id == item_id,
+                evaluation.EvalItem.org_id == principal.org_id,
+                evaluation.EvalSet.data_space_id == data_space,
+            )
+            .with_for_update()
+        )
+        if item is None:
+            raise Problem(404, "not_found", "Eval item not found.")
+        changes = body.model_dump(exclude_unset=True, exclude={"reason"})
+        # The input is half of the contract: a new question under an old expected answer changes
+        # what the eval proves as much as a new answer does, so it needs a reason and the event too.
+        answer_changed = any(key in changes for key in ("input", "expected", "as_of", "tolerance"))
+        if answer_changed and not body.reason:
+            raise Problem(422, "validation_failed", "A reason is required when changing an answer.")
+        for key, value in changes.items():
+            setattr(item, key, value)
+        item.updated_by = principal.user_id
+        item.updated_at = _now()
+        if answer_changed:
+            session.add(
+                _event(
+                    principal,
+                    "eval_item",
+                    item.id,
+                    "eval_item.answer_changed",
+                    eval_item_id=item.id,
+                    eval_set_id=item.eval_set_id,
+                    reason=body.reason,
+                    changed_fields=sorted(changes),
+                )
+            )
+        await session.flush()
+        await session.refresh(item)
+        return EvalItemView.model_validate(item, from_attributes=True)
+
+
 @router.post(
     "/v1/eval-sets/{id}/runs",
     response_model=EvalRunAccepted,
@@ -375,8 +428,8 @@ async def run_eval_set(
                 data_space_id=data_space,
                 subject_version=run.subject_version,
                 trigger=run.trigger,
-                status=run.status,
                 requested_by=principal.user_id,
+                status=run.status,
             )
         )
         await session.flush()

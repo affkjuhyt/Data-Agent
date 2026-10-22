@@ -43,6 +43,8 @@ from services.api.modules.qa.export_storage import export_links
 from services.api.modules.qa.questions import insert_question
 from services.api.modules.qa.schemas import (
     AnswerView,
+    ConversationDetail,
+    ConversationTurnView,
     ConversationView,
     EvalItemAccepted,
     ExportCreate,
@@ -436,6 +438,71 @@ async def list_conversations(
     async with transaction(ROLE, principal) as session:
         rows, token = next_page(list((await session.scalars(stmt)).all()), order=order, page=page)
     return Page(items=[ConversationView.model_validate(row) for row in rows], next_page_token=token)
+
+
+@router.get(
+    "/v1/conversations/{id}",
+    response_model=ConversationDetail,
+    **endpoint("GET", "/v1/conversations/{id}", operation_id="getConversation"),
+)
+async def get_conversation(
+    conversation_id: IdPath, principal: CurrentPrincipal, data_space: CurrentDataSpace
+) -> ConversationDetail:
+    """Reopen an Ask thread: ordered turns with answer_id when answered (R1-13)."""
+    async with transaction(ROLE, principal) as session:
+        conversation: qa.Conversation | None = await session.scalar(
+            select(qa.Conversation).where(
+                qa.Conversation.id == conversation_id,
+                qa.Conversation.org_id == principal.org_id,
+                qa.Conversation.user_id == principal.user_id,
+                qa.Conversation.data_space_id == data_space,
+                qa.Conversation.deleted_at.is_(None),
+            )
+        )
+        if conversation is None:
+            raise Problem(404, "not_found", "Conversation not found.")
+        questions = list(
+            (
+                await session.scalars(
+                    select(qa.Question)
+                    .where(qa.Question.conversation_id == conversation.id)
+                    .order_by(qa.Question.seq.asc(), qa.Question.id.asc())
+                )
+            ).all()
+        )
+        answer_by_question: dict[uuid.UUID, uuid.UUID] = {}
+        if questions:
+            qids = [q.id for q in questions]
+            # Latest answer per question (same rule as get_question).
+            rows = (
+                await session.execute(
+                    select(qa.Answer.question_id, qa.Answer.id, qa.Answer.created_at)
+                    .where(qa.Answer.question_id.in_(qids))
+                    .order_by(
+                        qa.Answer.question_id.asc(),
+                        qa.Answer.created_at.desc(),
+                        qa.Answer.id.desc(),
+                    )
+                )
+            ).all()
+            for question_id, answer_id, _created in rows:
+                if question_id not in answer_by_question:
+                    answer_by_question[question_id] = answer_id
+        turns = [
+            ConversationTurnView(
+                question_id=q.id,
+                seq=q.seq,
+                text=q.text,
+                status=q.status,
+                answer_id=answer_by_question.get(q.id),
+                received_at=q.received_at,
+                answered_at=q.answered_at,
+            )
+            for q in questions
+        ]
+        detail = ConversationDetail.model_validate(conversation)
+        detail.turns = turns
+        return detail
 
 
 # ─── answers and lineage ───

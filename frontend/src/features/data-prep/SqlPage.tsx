@@ -1,23 +1,62 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useAppState } from '../../AppStateContext';
 import { Button } from '../../design-system/Button';
 import { MatrixTable } from '../../design-system/tableView';
 import { Icon } from '../../design-system/Icon';
-import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
-import { SkeletonRows } from '../../design-system/SkeletonRow';
+import { Segmented } from '../../design-system/Segmented';
+import { Select } from '../../design-system/Select';
 import { StatusDot } from '../../design-system/StatusDot';
 import { useToast } from '../../design-system/Toast';
-import { formatSql, getSqlCatalog, runSql, type SqlResult } from '../../lib/v1/dataPrep';
+import { ChartRenderer } from '../ask/components/ChartRenderer';
+import {
+  formatSql,
+  getSqlCatalog,
+  listSqlMetrics,
+  loadSqlColumns,
+  runSql,
+  saveSqlToSession,
+  type SqlColumn,
+  type SqlResult,
+} from '../../lib/v1/dataPrep';
 import { useV1 } from '../../lib/v1/useV1';
+import {
+  chartFromGrid,
+  columnKinds,
+  mentionedMetric,
+  sqlCompletionContext,
+  sqlCompletionDefaults,
+  sqlBrowseTree,
+  sqlErrorLine,
+  sqlSchemaTree,
+  statementAround,
+  type SqlBrowseTable,
+} from '../../lib/sqlText';
 import { SaveDatasetDialog } from './SaveDatasetDialog';
+import { SaveToSessionDialog } from '../explore/SaveToSessionDialog';
+import { SqlCatalog } from './SqlCatalog';
+import { SqlEditor, type SqlEditorHandle } from './SqlEditor';
 
 /*
- * "v3.1 · Dữ liệu · SQL" (2082:6880, UC-06-01 SQL branch, UC-06-02): a schema browser of the
- * tables the caller may read, a read-only editor (⌘↵ runs), the agent's hint about the query,
- * and the result grid with the permissions that applied. "Lưu thành dataset" turns the query
- * into a derived table. Runs and formatting go through the server so the editor, pipelines and
- * the permission check agree on one SQL dialect.
+ * "v3.1 · Dữ liệu · SQL" (2082:6880, UC-06-01 SQL branch, UC-06-02): an analyst workbench.
+ * The catalog is a schema tree (react-arborist): a click selects and opens a branch.
+ * It does not write into the statement. CodeMirror completes names as the analyst types.
+ * Columns load when a table is opened.
+ * ⌘↵ runs the selection, or the statement under the caret. The result is a table, a chart when the grid has a category
+ * and a number, and the SQL the policy actually ran. A certified metric named in the text opens
+ * that definition. Runs stay in this browser session because GET /v1/query-runs does not list them.
  */
+const HISTORY_KEY = 'da.sql.history';
+const NO_TABLES: SqlBrowseTable[] = [];
+
+interface SqlHistoryEntry {
+  id: string;
+  sql: string;
+  at: string;
+  rowCount: number;
+  durationMs: number;
+}
+
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1).replace('.', ',')}`;
 
 const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`;
@@ -30,38 +69,125 @@ const starterFor = (table: { name: string; columns: { name: string }[] }) => {
   return `SELECT\n${columns || '  *'}\nFROM ${table.name}\nLIMIT 100;`;
 };
 
+const readHistory = (): SqlHistoryEntry[] => {
+  try {
+    const raw = sessionStorage.getItem(HISTORY_KEY);
+    const parsed = raw ? (JSON.parse(raw) as SqlHistoryEntry[]) : [];
+    return Array.isArray(parsed) ? parsed.slice(0, 8) : [];
+  } catch {
+    return [];
+  }
+};
+
+const remember = (entry: SqlHistoryEntry) => {
+  const next = [entry, ...readHistory().filter((item) => item.id !== entry.id)].slice(0, 8);
+  try {
+    sessionStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+  } catch {
+    /* a private window that refuses storage still shows the result */
+  }
+  return next;
+};
+
+type ResultTab = 'table' | 'chart' | 'sql';
+
 export default function SqlPage() {
+  const { navigate } = useAppState();
   const catalog = useV1(getSqlCatalog, []);
+  const metrics = useV1(listSqlMetrics, []);
   const toast = useToast();
   const [sql, setSql] = useState('');
-  const [filter, setFilter] = useState('');
+  const [columns, setColumns] = useState<Record<string, SqlColumn[]>>({});
+  const [failedColumns, setFailedColumns] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<SqlResult>();
+  const [tab, setTab] = useState<ResultTab>('table');
+  const [category, setCategory] = useState<string | null>(null);
+  const [measure, setMeasure] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string>();
+  const [selection, setSelection] = useState(false);
   const [saving, setSaving] = useState(false);
-  const editorRef = useRef<HTMLTextAreaElement>(null);
-  const resultRef = useRef<HTMLDivElement>(null);
+  const [session, setSession] = useState(false);
+  const [history, setHistory] = useState<SqlHistoryEntry[]>(readHistory);
+  const caret = useRef<{ start: number; end: number } | null>(null);
+  const editorRef = useRef<SqlEditorHandle>(null);
+  const columnsRef = useRef(columns);
+  const inflight = useRef(new Set<string>());
+  columnsRef.current = columns;
 
   useEffect(() => {
-    if (sql || !catalog.data) return;
-    const firstTable = catalog.data.items[0]?.tables[0];
-    if (firstTable) setSql(starterFor(firstTable));
-  }, [catalog.data, sql]);
+    const first = catalog.data
+      ? sqlBrowseTree(catalog.data.tables)[0]?.schemas[0]?.tables[0]
+      : undefined;
+    if (!first) return;
+    let live = true;
+    void loadSqlColumns(first.id)
+      .then((loaded) => {
+        if (!live) return;
+        setColumns((current) => (current[first.id] ? current : { ...current, [first.id]: loaded }));
+        setSql((current) =>
+          current ? current : starterFor({ name: first.qualified, columns: loaded }),
+        );
+      })
+      .catch(() => {
+        if (!live) return;
+        setSql((current) =>
+          current ? current : starterFor({ name: first.qualified, columns: [] }),
+        );
+      });
+    return () => {
+      live = false;
+    };
+  }, [catalog.data]);
+
+  const ensureColumns = (id: string) => {
+    if (columnsRef.current[id] || inflight.current.has(id)) return;
+    inflight.current.add(id);
+    setFailedColumns((current) => {
+      if (!current.has(id)) return current;
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+    void loadSqlColumns(id)
+      .then((loaded) => setColumns((current) => ({ ...current, [id]: loaded })))
+      .catch(() => setFailedColumns((current) => new Set(current).add(id)))
+      .finally(() => {
+        inflight.current.delete(id);
+      });
+  };
+
+  const textToRun = () => {
+    const range = caret.current;
+    if (range && range.end > range.start)
+      return sql.slice(range.start, Math.min(range.end, sql.length));
+    return statementAround(sql, range?.start ?? 0);
+  };
 
   const run = async () => {
     if (running) return;
+    const statement = textToRun();
     setRunning(true);
     setError(undefined);
     try {
-      const res = await runSql(sql);
+      const res = await runSql(statement);
       setResult(res);
+      setTab('table');
+      const kinds = columnKinds(res.columns, res.rows);
+      setCategory(kinds.text[0] ?? null);
+      setMeasure(kinds.numeric[0] ?? null);
+      setHistory(
+        remember({
+          id: res.id,
+          sql: statement,
+          at: new Date().toISOString(),
+          rowCount: res.row_count,
+          durationMs: res.duration_ms,
+        }),
+      );
       toast({
         tone: 'success',
         message: `Truy vấn xong · ${res.row_count} dòng · ${seconds(res.duration_ms)} giây`,
-        action: {
-          label: 'Xem',
-          onClick: () => resultRef.current?.scrollIntoView({ behavior: 'smooth' }),
-        },
       });
     } catch (e) {
       setError((e as Error).message);
@@ -71,6 +197,7 @@ export default function SqlPage() {
   };
 
   const format = async () => {
+    caret.current = null;
     const before = sql;
     try {
       const { sql: formatted } = await formatSql(sql);
@@ -85,108 +212,38 @@ export default function SqlPage() {
     }
   };
 
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      void run();
-    }
-  };
-
-  const insertTable = (table: string) => {
-    const el = editorRef.current;
-    if (!el) return;
-    if (document.activeElement === el) {
-      const at = el.selectionStart;
-      setSql(sql.slice(0, at) + table + sql.slice(el.selectionEnd));
-      el.focus();
-      requestAnimationFrame(() => {
-        const next = at + table.length;
-        el.setSelectionRange(next, next);
-      });
-      return;
-    }
-
-    // Clicking the table browser moves focus to the sidebar button. In that case the browser's
-    // selectionStart falls back to zero, which used to produce `tableSELECT ...` and a misleading
-    // 422 from the read-only SQL validator. Replace the first FROM target as the useful fallback.
-    const fromTarget = /(\bfrom\s+)([a-zA-Z_][\w$]*(?:\.[a-zA-Z_][\w$]*)?)/i;
-    if (fromTarget.test(sql)) {
-      setSql(sql.replace(fromTarget, `$1${table}`));
-    } else {
-      setSql(`${sql.trimEnd()}\n${table}`);
-    }
-    el.focus();
-  };
-
-  const q = filter.trim().toLowerCase();
-  const groups = (catalog.data?.items ?? [])
-    .map((g) => ({
-      ...g,
-      tables: q
-        ? g.tables.filter(
-            (t) =>
-              t.name.toLowerCase().includes(q) ||
-              g.name.toLowerCase().includes(q) ||
-              t.columns.some((column) => column.name.toLowerCase().includes(q)),
-          )
-        : g.tables,
-    }))
-    .filter((g) => g.tables.length > 0);
-  const lineCount = sql.split('\n').length;
+  const tables = catalog.data?.tables ?? NO_TABLES;
+  const lintTables = useMemo(() => tables.map((table) => ({ name: table.qualified })), [tables]);
+  const schema = useMemo(
+    () =>
+      sqlSchemaTree(
+        tables.map((table) => ({
+          name: table.qualified,
+          columns: columns[table.id] ?? [],
+        })),
+      ),
+    [tables, columns],
+  );
+  const completion = sqlCompletionDefaults(schema, sqlCompletionContext(sql));
+  const hint = mentionedMetric(sql, metrics.data ?? []);
+  const kinds = result ? columnKinds(result.columns, result.rows) : { text: [], numeric: [] };
+  const chart =
+    result && category && measure
+      ? chartFromGrid(result.columns, result.rows, category, measure)
+      : null;
 
   return (
-    <div className="flex min-h-full">
-      <aside
-        aria-label="Bảng có thể truy vấn"
-        className="flex w-[240px] shrink-0 flex-col gap-da-xs border-r border-border p-da-lg"
-      >
-        <Input
-          icon="search"
-          aria-label="Tìm bảng, cột"
-          placeholder="Tìm bảng, cột"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="mb-da-xs w-full"
-        />
-        {catalog.loading && !catalog.data && <SkeletonRows count={6} label="Đang tải bảng…" />}
-        {catalog.error && (
-          <Notice tone="error">Không tải được danh sách bảng. {catalog.error.message}</Notice>
-        )}
-        {groups.map((g) => (
-          <div key={g.id} className="flex flex-col gap-da-xs">
-            <p className="flex items-center gap-da-sm text-muted-foreground da-label">
-              <Icon name="database" />
-              {g.name}
-            </p>
-            {g.tables.map((t) => (
-              <div key={t.id} className="flex flex-col gap-da-2xs pl-da-xl">
-                <button
-                  type="button"
-                  title="Chèn tên bảng vào câu truy vấn"
-                  onClick={() => insertTable(t.name)}
-                  className="rounded-sm text-left text-foreground da-mono hover:bg-subtle"
-                >
-                  {t.name}
-                </button>
-                {t.columns.map((column) => (
-                  <button
-                    key={`${t.id}-${column.name}`}
-                    type="button"
-                    title={`Chèn cột ${column.name}`}
-                    onClick={() => insertTable(column.name)}
-                    className="truncate rounded-sm pl-da-md text-left text-muted-foreground da-caption hover:bg-subtle"
-                  >
-                    {column.name}
-                    {column.type ? ` · ${column.type}` : ''}
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
-        ))}
-      </aside>
-      <div className="flex min-w-0 flex-1 flex-col gap-da-md px-da-xl py-da-lg">
-        <div className="flex items-center gap-da-sm">
+    <div className="flex h-full min-h-[32rem] flex-col lg:flex-row">
+      <SqlCatalog
+        tables={tables}
+        columns={columns}
+        failedIds={failedColumns}
+        loading={catalog.loading}
+        error={catalog.error?.message}
+        onExpand={ensureColumns}
+      />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-da-md px-da-xl py-da-lg">
+        <div className="flex flex-wrap items-center gap-da-sm">
           <p className="text-foreground da-body-strong">
             Truy vấn chưa lưu{result ? ` · ${result.permission_scope}` : ''}
           </p>
@@ -197,34 +254,48 @@ export default function SqlPage() {
           <Button onClick={() => setSaving(true)} disabled={!sql.trim()}>
             Lưu thành dataset
           </Button>
-          <Button kind="primary" icon="play" loading={running} onClick={run}>
-            Chạy ⌘↵
+          <Button onClick={() => setSession(true)} disabled={!result}>
+            Lưu vào phiên
+          </Button>
+          <Button kind="ghost" onClick={() => navigate('analysis', 'EXPLORE')} disabled={!result}>
+            Mở trong Khám phá
+          </Button>
+          <Button kind="primary" icon="play" loading={running} onClick={() => void run()}>
+            {selection ? 'Chạy vùng chọn' : 'Chạy ⌘↵'}
           </Button>
         </div>
-        <div className="flex overflow-hidden rounded-md border border-border bg-card">
-          <div
-            aria-hidden
-            className="flex flex-col bg-subtle p-da-md text-right text-muted-foreground da-mono"
-          >
-            {Array.from({ length: lineCount }, (_, i) => (
-              <span key={i}>{i + 1}</span>
-            ))}
-          </div>
-          <textarea
-            ref={editorRef}
-            aria-label="Câu truy vấn SQL"
-            value={sql}
-            onChange={(e) => setSql(e.target.value)}
-            onKeyDown={onKeyDown}
-            spellCheck={false}
-            rows={Math.max(lineCount, 7)}
-            className="min-w-0 flex-1 resize-none whitespace-pre bg-transparent px-da-lg py-da-md text-foreground outline-none da-mono"
-          />
-        </div>
+        {hint && (
+          <Notice tone="info">
+            Câu này nhắc chỉ số đã chứng nhận {hint.code}
+            {hint.version != null ? ` v${hint.version}` : ''}.{' '}
+            <button
+              type="button"
+              className="underline"
+              onClick={() => navigate('data', 'METRIC', hint.id)}
+            >
+              Mở {hint.code}
+            </button>
+          </Notice>
+        )}
+        <SqlEditor
+          ref={editorRef}
+          value={sql}
+          onChange={setSql}
+          onRun={() => void run()}
+          errorLine={error ? sqlErrorLine(error) : null}
+          onSelect={setSelection}
+          onCaret={(start, end) => {
+            caret.current = { start, end };
+          }}
+          schema={schema}
+          defaultSchema={completion.defaultSchema}
+          defaultTable={completion.defaultTable}
+          tables={lintTables}
+        />
         {error && <Notice tone="error">{error}</Notice>}
         {result && (
-          <div ref={resultRef} className="flex flex-col gap-da-md">
-            <div className="flex items-center gap-da-md">
+          <div className="flex min-h-0 flex-1 flex-col gap-da-md overflow-y-auto">
+            <div className="flex flex-wrap items-center gap-da-md">
               <StatusDot tone="success">
                 {result.row_count} dòng · {seconds(result.duration_ms)} s
               </StatusDot>
@@ -233,16 +304,89 @@ export default function SqlPage() {
                 {result.masked_columns.length > 0 &&
                   ` · cột ${result.masked_columns.join(', ')} đã che`}
               </p>
+              <span className="flex-1" />
+              <Segmented<ResultTab>
+                variant="outline"
+                label="Cách xem kết quả"
+                value={tab}
+                onChange={setTab}
+                items={[
+                  { value: 'table', label: 'Bảng' },
+                  { value: 'chart', label: 'Biểu đồ' },
+                  { value: 'sql', label: 'SQL đã chạy' },
+                ]}
+              />
             </div>
-            <MatrixTable
-              columns={result.columns}
-              rows={result.rows}
-              className="border-collapse da-mono"
-              searchLabel="Tìm trong kết quả"
-            />
+            {tab === 'table' && (
+              <MatrixTable
+                columns={result.columns}
+                rows={result.rows}
+                className="border-collapse da-mono"
+                searchLabel="Tìm trong kết quả"
+              />
+            )}
+            {tab === 'chart' &&
+              (chart ? (
+                <div className="flex flex-col gap-da-md">
+                  <div className="flex flex-wrap gap-da-md">
+                    <Select
+                      size="sm"
+                      label="Cột nhóm"
+                      value={category}
+                      options={kinds.text.map((name) => ({ value: name, label: name }))}
+                      onChange={setCategory}
+                    />
+                    <Select
+                      size="sm"
+                      label="Cột số"
+                      value={measure}
+                      options={kinds.numeric.map((name) => ({ value: name, label: name }))}
+                      onChange={setMeasure}
+                    />
+                  </div>
+                  <ChartRenderer spec={chart} />
+                </div>
+              ) : (
+                <Notice tone="info">Biểu đồ cần một cột chữ và một cột số.</Notice>
+              ))}
+            {tab === 'sql' && (
+              <pre className="overflow-auto rounded-md border border-border bg-subtle p-da-lg text-foreground da-mono">
+                {result.sql_executed ?? 'Không đọc được SQL đã chạy sau chính sách.'}
+              </pre>
+            )}
           </div>
         )}
       </div>
+      <aside
+        aria-label="Câu đã chạy"
+        className="hidden w-[220px] shrink-0 flex-col gap-da-sm overflow-y-auto border-l border-border p-da-lg lg:flex"
+      >
+        <p className="flex items-center gap-da-sm text-muted-foreground da-label">
+          <Icon name="clock" />
+          Trong phiên này
+        </p>
+        {history.length === 0 && (
+          <p className="text-muted-foreground da-caption">Chưa có câu nào.</p>
+        )}
+        {history.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => {
+              caret.current = null;
+              setSql(item.sql);
+            }}
+            className="rounded-sm px-da-sm py-da-xs text-left hover:bg-subtle"
+          >
+            <span className="block truncate text-foreground da-caption">
+              {item.sql.replace(/\s+/g, ' ').slice(0, 72)}
+            </span>
+            <span className="text-muted-foreground da-caption">
+              {item.rowCount} dòng · {seconds(item.durationMs)} s
+            </span>
+          </button>
+        ))}
+      </aside>
       <SaveDatasetDialog
         open={saving}
         sql={sql}
@@ -253,6 +397,29 @@ export default function SqlPage() {
           toast({ tone: 'success', message: `Đã tạo bảng ${table.name}` });
         }}
       />
+      {session && result && (
+        <SaveToSessionDialog
+          onClose={() => setSession(false)}
+          onSave={(workspaceId) =>
+            saveSqlToSession(
+              workspaceId,
+              result.id,
+              sql.trim().split('\n')[0]?.slice(0, 80) || 'Truy vấn SQL',
+            )
+          }
+          onSaved={(workspaceId, title) => {
+            setSession(false);
+            toast({
+              tone: 'success',
+              message: `Đã lưu vào ${title}`,
+              action: {
+                label: 'Mở phiên',
+                onClick: () => navigate('analysis', 'SESSIONS', workspaceId),
+              },
+            });
+          }}
+        />
+      )}
     </div>
   );
 }

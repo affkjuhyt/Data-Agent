@@ -9,7 +9,7 @@ export function CitationPanel({ citations, onOpen }: { citations: Citation[]; on
       <span className="text-muted-foreground da-caption">Nguồn</span>
       <ol className="m-0 flex list-none flex-col gap-da-sm p-0">
         {citations.map((c, i) => {
-          const href = c.url || (c.type === 'kb' && c.doc_id ? `/api/knowledge/documents/${c.doc_id}/file` : null);
+          const href = c.url;
           return (
             <li key={i} className="flex items-start gap-da-md">
               <span className="mt-px inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-sm bg-accent px-da-xs text-primary da-label">

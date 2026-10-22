@@ -6,8 +6,8 @@
 `generated/contracts.openapi.json` is what the frontend generates its V2 types
 from until indicator-api (NOP-162) serves the same models; `generated/events/`
 holds one JSON Schema per (topic, payload schema_version) plus the envelope.
-Run it with pydantic 2.9.2 (the kb-backend image): another pydantic minor may
-render the same models slightly differently and make --check fail spuriously.
+Run it with pydantic 2.13.5 (the api image, where the contracts suite runs): another pydantic
+minor may render the same models slightly differently and make --check fail spuriously.
 """
 
 from __future__ import annotations

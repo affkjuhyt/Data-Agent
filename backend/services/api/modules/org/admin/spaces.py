@@ -21,6 +21,7 @@ from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Princip
 from services.api.kernel.db import transaction
 from services.api.kernel.pagination import Page
 from services.api.kernel.problems import Problem
+from services.api.modules.eval.public import membership_gate
 from services.api.modules.org.admin import grants
 from services.api.modules.org.admin.common import (
     active_user,
@@ -418,6 +419,19 @@ async def put_members(
             (r.principal_type, r.principal_id, r.role_id) for r in existing if r.source != "manual"
         }
         wanted = {(m.principal_type, m.principal_id, m.role_id): m for m in body.members}
+
+        # BR-122 gates whoever has no membership in force now: an expired one renewed, or one
+        # extended, counts as new, or the gate would be passed by re-adding a lapsed member.
+        current = {(r.principal_type, r.principal_id, r.role_id) for r in valid}
+        has_new_member = any(key not in current for key in wanted)
+        if has_new_member:
+            space_status, pass_rate = await membership_gate(principal, space_id)
+            if space_status != "active" and pass_rate is not None and pass_rate < 0.90:
+                raise Problem(
+                    422,
+                    "business_rule_violated",
+                    f"BR-122: mở Data Space sau khi eval đạt ít nhất 90%; hiện tại {pass_rate:.1%}.",
+                )
 
         before_rows = [(r.principal_type, r.principal_id, r.role_id) for r in valid]
         after_rows = [k for k in before_rows if k not in manual] + list(wanted)

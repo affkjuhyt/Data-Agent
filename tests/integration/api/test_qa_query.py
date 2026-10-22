@@ -353,6 +353,50 @@ async def test_conversations_are_mine_filtered_and_paged(world: World, seed: See
         assert other_space.json()["items"] == []
 
 
+async def test_conversation_detail_lists_turns_in_seq(world: World, seed: Seed) -> None:
+    async with api_for(world) as api:
+        first = await ask(api, world, text="Câu đầu")
+        second = await ask(
+            api,
+            world,
+            text="Câu tiếp",
+            conversation_id=first["conversation_id"],
+        )
+        assert first["conversation_id"] == second["conversation_id"]
+        detail = await api.get(
+            f"/v1/conversations/{first['conversation_id']}",
+            headers=as_(world, "asker"),
+        )
+        assert detail.status_code == 200, detail.text
+        body = detail.json()
+        assert body["id"] == first["conversation_id"]
+        assert [t["seq"] for t in body["turns"]] == [1, 2]
+        assert [t["question_id"] for t in body["turns"]] == [
+            first["question_id"],
+            second["question_id"],
+        ]
+        assert body["turns"][0]["text"] == "Câu đầu"
+        assert body["turns"][1]["text"] == "Câu tiếp"
+        # ask() leaves questions received unless the worker answers; answer_id stays null.
+        assert all(t["answer_id"] is None for t in body["turns"])
+
+        missing = await api.get(
+            f"/v1/conversations/{uuid.uuid4()}",
+            headers=as_(world, "asker"),
+        )
+        assert missing.status_code == 404
+        other = await api.get(
+            f"/v1/conversations/{first['conversation_id']}",
+            headers=as_(world, "voter1"),
+        )
+        assert other.status_code == 404
+        other_space = await api.get(
+            f"/v1/conversations/{first['conversation_id']}",
+            headers=as_(world, "asker", world.other_space),
+        )
+        assert other_space.status_code == 404
+
+
 # --- explorer and query runs --------------------------------------------------------------------
 
 

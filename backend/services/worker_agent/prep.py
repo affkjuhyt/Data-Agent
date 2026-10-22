@@ -23,6 +23,7 @@ import logging
 import uuid
 from typing import Any
 
+from pydantic import BaseModel
 from sqlalchemy import select
 
 from libs.dataagent_db import scoped_session, uuid7
@@ -58,6 +59,15 @@ Quy tắc:
 - Chỉ SELECT; không INSERT, UPDATE, DELETE, DDL; không đọc bảng nào khác.
 - Không làm thay đổi tổng cột tiền ngoài bước filter hay dedupe.
 - Nếu không chắc người dùng muốn gì, đặt "question" và trả "steps" như cũ."""
+
+
+class PrepAnswer(BaseModel):
+    """The model's answer (llm.py validates it). Steps stay plain objects: check_steps says which
+    one is wrong and why, which a schema error for the whole answer would not."""
+
+    reply: str = ""
+    question: str | None = None
+    steps: list[dict[str, Any]] = []
 
 
 def _now() -> datetime.datetime:
@@ -207,7 +217,7 @@ async def requested(event: Event) -> None:
         ensure_ascii=False,
     )
     try:
-        reply = await model.json_chat("responder", SYSTEM, prompt, max_tokens=1500)
+        reply = await model.json_chat("responder", SYSTEM, prompt, PrepAnswer, max_tokens=1500)
     except ModelUnavailable as exc:
         logger.info("worker-agent | prep agent for pipeline %s: %s", pipeline_id, exc)
         await _answer(
@@ -217,12 +227,12 @@ async def requested(event: Event) -> None:
             "Mô hình đang không trả lời; chưa có bước nào thay đổi. Hãy thử lại sau.",
         )
         return
-    text = str(reply.content.get("reply") or "").strip()
-    question = reply.content.get("question")
-    if isinstance(question, str) and question.strip():
-        await _answer(event.org_id, pipeline_id, actor, question.strip(), asks=True)
+    text = reply.content.reply.strip()
+    question = (reply.content.question or "").strip()
+    if question:
+        await _answer(event.org_id, pipeline_id, actor, question, asks=True)
         return
-    steps, why = check_steps(reply.content.get("steps"), inputs, dialect)
+    steps, why = check_steps(reply.content.steps, inputs, dialect)
     if why is None:
         for i in range(len(steps)):
             out = await run_query(

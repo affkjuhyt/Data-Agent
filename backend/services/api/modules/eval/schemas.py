@@ -47,6 +47,16 @@ class EvalItemCreate(BaseModel):
     tolerance: decimal.Decimal | None = Field(default=None, ge=0)
 
 
+class EvalItemPatch(BaseModel):
+    """Changing an answer for an old period is an auditable contract change."""
+
+    input: dict[str, Any] | None = None
+    as_of: datetime.date | None = None
+    expected: dict[str, Any] | None = None
+    tolerance: decimal.Decimal | None = Field(default=None, ge=0)
+    reason: str | None = Field(default=None, min_length=1, max_length=2000)
+
+
 class EvalItemView(BaseModel):
     id: uuid.UUID
     eval_set_id: uuid.UUID

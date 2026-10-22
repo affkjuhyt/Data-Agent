@@ -21,6 +21,7 @@ def test_api02_core_routes_are_registered() -> None:
         ("GET", "/v1/questions/{id}/stream"),
         ("PATCH", "/v1/questions/{id}/plan"),
         ("GET", "/v1/conversations"),
+        ("GET", "/v1/conversations/{id}"),
         ("GET", "/v1/answers/{id}"),
         ("GET", "/v1/answers/{id}/lineage"),
         ("POST", "/v1/answers/{id}/feedback"),

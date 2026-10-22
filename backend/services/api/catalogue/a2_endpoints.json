@@ -184,6 +184,18 @@
   {
    "group": "Hỏi đáp",
    "method": "GET",
+   "path": "/v1/conversations/{id}",
+   "summary": "Chi tiết hội thoại kèm lượt hỏi và answer_id",
+   "use_cases": [
+    "01-04"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Hỏi đáp",
+   "method": "GET",
    "path": "/v1/answers/{id}",
    "summary": "Câu trả lời đầy đủ: số, biểu đồ, trích dẫn",
    "use_cases": [
@@ -1956,16 +1968,40 @@
    ]
   },
   {
-   "group": "Lớp ngữ cảnh",
-   "method": "GET",
-   "path": "/v1/metrics/{id}",
+    "group": "Lớp ngữ cảnh",
+    "method": "GET",
+    "path": "/v1/metrics/{id}",
    "summary": "Chỉ số và các phiên bản",
    "use_cases": [
     "07-01"
    ],
-   "capability": [
-    "ask"
-   ]
+    "capability": [
+      "ask"
+    ]
+  },
+  {
+    "group": "Lớp ngữ cảnh",
+    "method": "PATCH",
+    "path": "/v1/metrics/{id}",
+    "summary": "Sửa thuộc tính chỉ số",
+    "use_cases": [
+      "07-01"
+    ],
+    "capability": [
+      "steward"
+    ]
+  },
+  {
+    "group": "Lớp ngữ cảnh",
+    "method": "DELETE",
+    "path": "/v1/metrics/{id}",
+    "summary": "Ngừng dùng chỉ số",
+    "use_cases": [
+      "07-01"
+    ],
+    "capability": [
+      "steward"
+    ]
   },
   {
    "group": "Lớp ngữ cảnh",
@@ -2574,6 +2610,18 @@
    ],
    "capability": [
     "ask"
+   ]
+  },
+  {
+   "group": "Cần bạn và đánh giá",
+   "method": "PATCH",
+   "path": "/v1/eval-items/{id}",
+   "summary": "Cập nhật đáp án eval có lý do",
+   "use_cases": [
+    "07-06"
+   ],
+   "capability": [
+    "steward"
    ]
   },
   {

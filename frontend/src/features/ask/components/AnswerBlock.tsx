@@ -67,6 +67,10 @@ interface AnswerBlockProps {
   onOpenCitation?: (citation: Citation) => void;
   /** "Lưu thành tri thức": open P07 Lưu câu trả lời thành tri thức for this answer */
   onSaveKnowledge?: () => void;
+  /** "Thêm vào phiên": keep this answer as a workspace tile */
+  onSaveToSession?: () => void;
+  /** already saved to a session this visit — clear UX instead of duplicating */
+  savedToSession?: boolean;
   /** "Dừng" on a result still arriving */
   onStop?: () => void;
   /** "Đúng rồi, chạy" on the agent's reading of the question */
@@ -115,7 +119,7 @@ export function AnswerBlock({
   msg, question, busy, onSuggestion, onAnswerClarification, onSave, onOpenEvidence,
   showEvidenceStrip = true, showTimestamp = true, onRetry, onRephrase, showRefusalDetail,
   onReport, reported, onOpenReceipt, onOpenCitation,
-  onSaveKnowledge, onStop, onConfirmUnderstanding, onEditUnderstanding,
+  onSaveKnowledge, onSaveToSession, savedToSession, onStop, onConfirmUnderstanding, onEditUnderstanding,
 }: AnswerBlockProps) {
   const [exportOpen, setExportOpen] = useState(false);
   // UC-01-04: the bar picked on the chart, to drill into by one of the metric's other cuts.
@@ -269,6 +273,16 @@ export function AnswerBlock({
           )}
           {onSaveKnowledge && (
             <button type="button" className={LINK} onClick={onSaveKnowledge}>Lưu thành tri thức</button>
+          )}
+          {onSaveToSession && (
+            <button
+              type="button"
+              className={LINK}
+              onClick={onSaveToSession}
+              disabled={savedToSession}
+            >
+              {savedToSession ? 'Đã thêm vào phiên' : 'Thêm vào phiên'}
+            </button>
           )}
           {onReport && (
             <button type="button" className={LINK} onClick={onReport} disabled={reported}>Báo sai</button>

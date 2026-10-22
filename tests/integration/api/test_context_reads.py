@@ -16,6 +16,7 @@ from typing import Any
 
 import httpx
 import pytest
+from psycopg2.extras import Json
 
 from services.api.app import create_app
 from services.api.config import Settings
@@ -328,6 +329,49 @@ async def test_one_entity_names_its_dimensions_measures_and_metrics(ctx: Ctx) ->
         assert denied.status_code == 403
 
 
+@pytest.mark.req("AC-07-01-06", "AC-07-01-07")
+async def test_metric_code_is_immutable_and_filed_metric_can_only_be_retired(ctx: Ctx) -> None:
+    metric = ctx.rows["by_dimension"]
+    async with client(ctx) as api:
+        version = await api.post(
+            f"/v1/metrics/{metric}/versions",
+            json={
+                "display_name": "Dư nợ phiên bản mới",
+                "expression": "sum(balance)",
+                "period_semantics": "end_of_period",
+                "additivity": "semi",
+            },
+            headers=ctx.headers("steward"),
+        )
+        assert version.status_code == 201, version.text
+        assert version.json()["version"] == 2
+        assert version.json()["valid_from"] is not None
+
+        renamed = await api.patch(
+            f"/v1/metrics/{metric}",
+            json={"code": "DU_NO_RENAMED"},
+            headers=ctx.headers("steward"),
+        )
+        assert renamed.status_code == 409 and renamed.json()["code"] == "immutable"
+
+        ctx.run("UPDATE context.metric SET in_filed_report = true WHERE id = %s", metric)
+        blocked = await api.delete(f"/v1/metrics/{metric}", headers=ctx.headers("steward"))
+        assert blocked.status_code == 409 and blocked.json()["code"] == "in_use"
+        assert ctx.one("SELECT status FROM context.metric WHERE id = %s", metric) == "active"
+
+        ctx.run("UPDATE context.metric SET in_filed_report = false WHERE id = %s", metric)
+        retired = await api.delete(f"/v1/metrics/{metric}", headers=ctx.headers("steward"))
+        assert retired.status_code == 204
+    assert ctx.one("SELECT status FROM context.metric WHERE id = %s", metric) == "retired"
+    assert (
+        ctx.one(
+            "SELECT expression FROM context.metric_version WHERE metric_id = %s AND version = 1",
+            metric,
+        )
+        == "count(*)"
+    )
+
+
 # ---------------------------------------------------------------- examples and synonyms
 
 
@@ -379,6 +423,60 @@ async def test_synonyms_are_listed_and_matched_without_accents(ctx: Ctx) -> None
         )
         assert [s["id"] for s in active.json()["items"]] == [str(kh)]
         assert (await api.get("/v1/synonyms", headers=ctx.headers("nocap"))).status_code == 403
+
+
+@pytest.mark.req("AC-07-02-04")
+async def test_a_second_meaning_becomes_a_pending_ambiguous_glossary_term(ctx: Ctx) -> None:
+    ctx.seed.row(
+        "context.synonym",
+        org_id=ctx.org,
+        data_space_id=ctx.space,
+        phrase="nợ xấu",
+        phrase_norm="no xau",
+        target_kind="entity",
+        target_id=ctx.rows["customer"],
+        status="active",
+    )
+    async with client(ctx) as api:
+        second = await api.post(
+            "/v1/synonyms",
+            json={
+                "phrase": "Nợ Xấu",
+                "target_kind": "entity",
+                "target_id": str(ctx.rows["contract"]),
+            },
+            headers=ctx.headers("steward"),
+        )
+        assert second.status_code == 201, second.text
+        assert second.json()["glossary_term_id"] is not None
+        terms = await api.get("/v1/terms", params={"q": "nợ xấu"}, headers=ctx.headers("steward"))
+        assert terms.status_code == 200
+        term = terms.json()["items"][0]
+        assert term["status"] == "pending_review" and len(term["meanings"]) == 2
+
+
+@pytest.mark.req("AC-07-09-02")
+async def test_steward_can_filter_unmapped_phrases_by_review_threshold(ctx: Ctx) -> None:
+    ctx.seed.row(
+        "context.unmapped_phrase",
+        org_id=ctx.org,
+        data_space_id=ctx.space,
+        phrase_norm="no xau moi",
+        sample_questions=["Nợ xấu mới là gì?"],
+        ask_count=6,
+        suggested_target=Json({"target_kind": "metric", "code": "NPL_RATIO"}),
+    )
+    async with client(ctx) as api:
+        listed = await api.get(
+            "/v1/unmapped-phrases",
+            params={"min_count": 6},
+            headers=ctx.headers("steward"),
+        )
+        assert listed.status_code == 200, listed.text
+        (phrase,) = listed.json()["items"]
+        assert phrase["ask_count"] == 6
+        assert phrase["sample_questions"] == ["Nợ xấu mới là gì?"]
+        assert phrase["suggested_target"]["code"] == "NPL_RATIO"
 
 
 async def test_a_changed_sql_goes_back_to_the_checker(ctx: Ctx) -> None:
@@ -442,7 +540,7 @@ async def test_a_checked_suggestion_is_confirmed_and_a_draft_is_not(ctx: Ctx) ->
         )
         assert confirmed.status_code == 200, confirmed.text
         assert confirmed.json()["status"] == "active"
-        ((event, payload),) = ctx.events(suggested)
+        ((_, payload),) = ctx.events(suggested)
         assert payload["rerun_sql"] is False and payload["status"] == "active"
         # The checker has not run a draft's SQL yet.
         early = await api.patch(

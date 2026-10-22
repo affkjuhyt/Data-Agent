@@ -89,6 +89,7 @@ Dịch vụ: Agent runtime (qa). 17 endpoint.
 | GET | /v1/questions/{id}/stream | Luồng SSE: cách hiểu, tiến độ, câu trả lời | 01-01 | ask |
 | PATCH | /v1/questions/{id}/plan | Sửa chip cách hiểu, chạy lại | 01-03 | ask |
 | GET | /v1/conversations | Danh sách hội thoại của tôi | 01-04 | ask |
+| GET | /v1/conversations/{id} | Chi tiết hội thoại kèm lượt hỏi và answer\_id | 01-04 | ask |
 | GET | /v1/answers/{id} | Câu trả lời đầy đủ: số, biểu đồ, trích dẫn | 01-01 | ask |
 | GET | /v1/answers/{id}/lineage | Cách tính một con số | 01-02 | ask |
 | POST | /v1/answers/{id}/feedback | Đánh giá hoặc báo sai | 01-05 | ask |
@@ -295,6 +296,8 @@ Dịch vụ: Context service (context). 39 endpoint, trong đó 16 endpoint lớ
 | GET | /v1/metrics | Danh sách chỉ số | 07-01 | ask |
 | POST | /v1/metrics | Tạo chỉ số | 07-01 | steward |
 | GET | /v1/metrics/{id} | Chỉ số và các phiên bản | 07-01 | ask |
+| PATCH | /v1/metrics/{id} | Sửa thuộc tính chỉ số | 07-01 | steward |
+| DELETE | /v1/metrics/{id} | Ngừng dùng chỉ số | 07-01 | steward |
 | POST | /v1/metrics/{id}/versions | Tạo phiên bản nháp | 07-01 | steward |
 | POST | /v1/metric-versions/{id}:preview | Chạy thử, so với bản đang dùng và số đã nộp | 07-01 | steward |
 | POST | /v1/relationships | Khai báo quan hệ | 07-02 | steward |
@@ -365,6 +368,7 @@ Dịch vụ: Inbox service (inbox), Eval service (eval). 16 endpoint.
 | GET | /v1/proposals/{id} | Đề xuất: diff, ảnh hưởng, kết quả đánh giá | 07-03 | ask |
 | POST | /v1/proposals/{id}:decide | Chấp nhận, sửa rồi chấp nhận, từ chối | 07-03, 07-13, 07-14, 16-05 | approve |
 | POST | /v1/eval-sets/{id}/items | Thêm mục đánh giá | 07-06 | steward |
+| PATCH | /v1/eval-items/{id} | Cập nhật đáp án eval có lý do | 07-06 | steward |
 | POST | /v1/eval-sets/{id}/runs | Chạy bộ đánh giá; 202 | 07-06 | steward |
 | GET | /v1/eval-runs/{id} | Kết quả đánh giá từng mục | 07-06 | ask |
 | GET | /v1/error-book-entries | Danh sách mục Error Book (errorbook.search) | 07-14 | steward |
@@ -719,6 +723,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/questions/{id}/stream | — | Luồng SSE. Sự kiện understood, progress, clarification, answer, error, done | 404 not\_found |
 | PATCH /v1/questions/{id}/plan | chips\*, edit\_note | 202, Location tới plan. Tạo phiên bản plan mới và chạy lại; mỗi chip ghi nguồn gốc người sửa | 409 invalid\_state (câu hỏi đang chạy); 422 validation\_failed (chip không ánh xạ được) |
 | GET /v1/conversations | ?q, ?from, ?to | Danh sách Conversation | — |
+| GET /v1/conversations/{id} | — | ConversationDetail. Kèm turns theo seq (question\_id, text, status, answer\_id) | 404 not\_found |
 | GET /v1/answers/{id} | — | Answer. figures kèm query\_run\_id, metric\_version\_id; số ngoài quyền đã bị che theo chính sách | 404 not\_found |
 | GET /v1/answers/{id}/lineage | ?figure | JSON. Cây truy nguồn: chỉ số và phiên bản, bảng, cột, bộ lọc, lượt chạy SQL, kỳ chốt, mã băm (UC-01-02) | 403 policy\_denied (bước ngoài quyền hiện “ngoài quyền”, không lộ tên bảng) |
 | POST /v1/answers/{id}/feedback | rating\*, error\_kind, expected\_value, comment | Feedback | 422 validation\_failed (rating = wrong thiếu error\_kind) |
@@ -909,6 +914,8 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/metrics | ?q, ?status, ?certified | Danh sách Metric | — |
 | POST /v1/metrics | code\*, owner\_id\*, consumer\_group, canonical\_dataset\_id, definition | Metric | 409 conflict (trùng mã) |
 | GET /v1/metrics/{id} | — | Metric. Kèm danh sách phiên bản và nơi đang dùng (artifact, agent, báo cáo) | — |
+| PATCH /v1/metrics/{id} | code, consumer\_group | Metric | 409 immutable (đổi mã chỉ số) |
+| DELETE /v1/metrics/{id} | — | 204. Chỉ số chuyển retired, không xoá dòng | 409 in\_use (đang dùng trong báo cáo đã nộp); 409 invalid\_state (đã retired) |
 | POST /v1/metrics/{id}/versions | display\_name\*, description, expression\*, filters, unit, decimals, direction, period\_semantics\*, time\_grain, allowed\_dimensions, additivity, legal\_basis, change\_note | MetricVersion | 422 business\_rule\_violated (đổi mã chỉ số đã phát hành, BR-26) |
 | POST /v1/metric-versions/{id}:preview | periods | 202, Location tới eval\_run. Chạy trên 6 kỳ, so với bản đang dùng và số đã nộp; tạo đề xuất metric\_change khi gửi duyệt | — |
 | POST /v1/relationships | from\_dataset\_id\*, from\_columns\*, to\_dataset\_id\*, to\_columns\*, cardinality\* | Relationship. Tạo ở trạng thái pending\_review (BR-100) | — |
@@ -975,6 +982,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/proposals/{id} | — | Proposal. Kèm diff, ảnh hưởng, kết quả eval\_run và các mục đổi kết quả | — |
 | POST /v1/proposals/{id}:decide | decision\*, note, reviewed\_regressions, edited\_diff | Proposal | 403 forbidden (người duyệt là người đề xuất); 422 business\_rule\_violated (có mục đổi kết quả chưa xem, BR-28) |
 | POST /v1/eval-sets/{id}/items | category, input\*, as\_of, expected\*, tolerance | EvalItem | — |
+| PATCH /v1/eval-items/{id} | input, as\_of, expected, tolerance, reason | EvalItem. Đổi đáp án (expected, as\_of, tolerance) cần reason và phát eval\_item.answer\_changed | 404 not\_found; 422 validation\_failed (thiếu reason khi đổi đáp án) |
 | POST /v1/eval-sets/{id}/runs | subject\_version | 202, Location tới eval\_run | — |
 | GET /v1/eval-runs/{id} | — | EvalRun. Kèm eval\_result từng mục và so sánh với lần chạy nền | — |
 | GET /v1/error-book-entries | ?status, ?error\_kind, ?source\_kind, ?data\_product\_id, ?metric\_code, ?assignee\_id, ?cursor | Danh sách ErrorBookEntry, mới nhất trước | — |

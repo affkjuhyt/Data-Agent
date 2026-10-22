@@ -23,9 +23,12 @@ import {
   type WorkspaceTile,
 } from '../../lib/v1/sessions';
 import { useV1 } from '../../lib/v1/useV1';
+import { loadAnswerMessage } from '../ask/answerMessage';
+import { EvidencePanel } from '../ask/components/EvidencePanel';
 import { SessionToAgentDialog } from '../skill-authoring/SessionToAgentDialog';
 import { ShareDialog } from './ShareDialog';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
+import type { AskMessage } from '../ask/types';
 
 /*
  * "P02 · Phiên · Notebook" (2297:18612, UC-02-01, 02, 04, 05, 06): a bordered header with who is
@@ -42,6 +45,7 @@ const KIND_LABEL: Record<WorkspaceTile['kind'], string> = {
   sql: 'SQL',
   chart: 'Biểu đồ',
   skill: 'Kỹ năng',
+  question: 'Câu hỏi',
 };
 
 const hhmm = (iso: string) =>
@@ -211,18 +215,25 @@ function Notebook({ ws: loaded, onChanged }: { ws: WorkspaceDetail; onChanged: (
         </div>
 
         {selectedTile && (
-          <CommentPanel
-            workspaceId={ws.id}
-            tile={selectedTile}
-            onCommented={() => {
-              setWs((prev) => ({
-                ...prev,
-                tiles: prev.tiles.map((t) =>
-                  t.id === selectedTile.id ? { ...t, comment_count: t.comment_count + 1 } : t,
-                ),
-              }));
-            }}
-          />
+          <aside
+            aria-label={selectedTile.answerId ? 'Cách tính' : 'Bình luận'}
+            className="flex w-[420px] max-w-[45%] shrink-0 flex-col gap-da-lg overflow-y-auto border-l border-border bg-background px-[20px] py-da-xl"
+          >
+            {selectedTile.answerId && <TileAnswerContext answerId={selectedTile.answerId} />}
+            <CommentPanel
+              workspaceId={ws.id}
+              tile={selectedTile}
+              embedded={!!selectedTile.answerId}
+              onCommented={() => {
+                setWs((prev) => ({
+                  ...prev,
+                  tiles: prev.tiles.map((t) =>
+                    t.id === selectedTile.id ? { ...t, comment_count: t.comment_count + 1 } : t,
+                  ),
+                }));
+              }}
+            />
+          </aside>
         )}
       </div>
 
@@ -325,14 +336,50 @@ function TileRow({
   );
 }
 
+/** Holistics-shaped side context: interpretation chips + Cách tính for an Ask answer tile. */
+function TileAnswerContext({ answerId }: { answerId: string }) {
+  const answer = useV1(() => loadAnswerMessage(answerId), [answerId]);
+  return (
+    <AsyncRegion state={answer} what="cách tính" skeletonRows={4}>
+      {(msg: AskMessage) => (
+        <div className="flex flex-col gap-da-lg border-b border-border pb-da-lg">
+          {msg.reading && msg.reading.length > 0 && (
+            <div className="flex flex-col gap-da-sm">
+              <span className="text-muted-foreground da-caption">Hệ thống hiểu là</span>
+              <ul aria-label="Hệ thống hiểu là" className="m-0 flex list-none flex-wrap gap-da-sm p-0">
+                {msg.reading.map((chip) => (
+                  <li
+                    key={chip.key}
+                    className="inline-flex items-center gap-da-sm rounded-sm border border-border px-[10px] py-[5px]"
+                  >
+                    <span className="text-muted-foreground da-caption">{chip.label}</span>
+                    <span className="text-foreground da-body-strong">{chip.value}</span>
+                    {chip.inherited && (
+                      <span className="text-muted-foreground da-caption">từ câu trước</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <EvidencePanel message={msg} />
+        </div>
+      )}
+    </AsyncRegion>
+  );
+}
+
 function CommentPanel({
   workspaceId,
   tile,
   onCommented,
+  embedded = false,
 }: {
   workspaceId: string;
   tile: WorkspaceTile;
   onCommented: () => void;
+  /** Nested under Cách tính — no outer aside chrome. */
+  embedded?: boolean;
 }) {
   const thread = useV1(() => getTileThread(workspaceId, tile.id), [workspaceId, tile.id]);
   const [draft, setDraft] = useState('');
@@ -356,11 +403,8 @@ function CommentPanel({
     }
   };
 
-  return (
-    <aside
-      aria-label="Bình luận"
-      className="flex w-[340px] shrink-0 flex-col gap-da-lg border-l border-border bg-background px-[20px] py-da-xl"
-    >
+  const body = (
+    <>
       <h2 className="text-foreground da-heading-3">
         Ô {tile.seq} · {tile.title || KIND_LABEL[tile.kind]}
       </h2>
@@ -410,6 +454,13 @@ function CommentPanel({
           error={error}
         />
       </form>
-    </aside>
+    </>
+  );
+
+  if (embedded) return <div className="flex flex-col gap-da-lg">{body}</div>;
+  return (
+    <div className="flex flex-col gap-da-lg" aria-label="Bình luận">
+      {body}
+    </div>
   );
 }

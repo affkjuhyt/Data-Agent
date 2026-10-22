@@ -12,14 +12,14 @@ so a green `make ci` is a green pipeline.
 | --- | --- | --- |
 | Lint / format | `make lint`, `make fmt` | ruff 0.6.9 (pinned in `pyproject.toml`), run inside the service image. `make lint` and CI's `python-lint` are a **ratchet** (`tests/ruff_ratchet.py`): they fail only on findings, per file and rule, that the change adds against its base (`LINT_BASE`, default `main`), and on files it leaves unformatted that were formatted before or are new. `make fmt` rewrites the whole tree — do not commit its output with a behaviour change. Import sorting (`I001`) is on and `combine-as-imports` is off, so ruff writes one `from x import (y as z,)` statement per alias — that is its output, not churn; do not hand-collapse it |
 | Types | `make type` | mypy 2.4.0 (pinned; `pyproject.toml` config, not strict) on the whole of `backend/libs` + `backend/services` — red, see below. CI's blocking step is the strict per-surface list in `.github/workflows/ci.yml` |
-| Tests | `make test-changed`, `make test-unit`, `make test-integration`, `make test` | one pytest suite per service (`tests/unit/<service>/`, `tests/integration/<service>/`), each run in **that service's image** (plus the cached test tooling, `tests/test-image.Dockerfile`) — no single image can import every service. Suites run in parallel (`TEST_JOBS=1` to serialise); `make test-changed` runs only the suites the changes since `main` can affect — use it while iterating, `make test` before a merge. **Host Python is 3.10, the code targets 3.11**: never run tests with the host interpreter (`tests/run_suites.py` only drives docker). One suite: `make test-unit UNIT_SUITES=kb_backend:kb-backend` |
+| Tests | `make test-changed`, `make test-unit`, `make test-integration`, `make test` | one pytest suite per service (`tests/unit/<service>/`, `tests/integration/<service>/`), each run in **that service's image** (plus the cached test tooling, `tests/test-image.Dockerfile`) — no single image can import every service. Suites run in parallel (`TEST_JOBS=1` to serialise); `make test-changed` runs only the suites the changes since `main` can affect — use it while iterating, `make test` before a merge. **Host Python is 3.10, the code targets 3.11**: never run tests with the host interpreter (`tests/run_suites.py` only drives docker). One suite: `make test-unit UNIT_SUITES=worker_agent:worker-agent` |
 | Dead code | `make deadcode` | vulture (python, `min_confidence = 60`, vetted exceptions in `backend/.vulture_whitelist.py`, both set in `pyproject.toml`) + knip (frontend) |
 | Frontend | `make frontend-lint`, `make frontend-test` | tsc + vitest. There is **no ESLint**: the config was v8-format, unreferenced and never ran, so it and its five devDeps were removed. Correctness is tsc's job, style is prettier's, unused code is knip's. Reintroducing ESLint means a flat `eslint.config.js`, an npm script and a CI step — all three or none |
 | End-to-end | `make e2e` | `pytest -m e2e` against the **deployed dev cluster** over its LAN NodePorts (override with `E2E_KONG_URL` / `E2E_KEYCLOAK_URL` / `E2E_RUNTIME_URL`); `E2E_USER` / `E2E_PASS` from the environment. It **writes data**: agent turns create conversations, the tenant-isolation test deletes, revokes and rotates API keys. Needs the `seed_demo` data. See `tests/README.md` |
 | Serving benchmark | `make bench` | TTFT / decode / throughput per LLM role against the GPU tiers (`model/bench/`). Needs `LLM_MAIN_BASE_URL` + `LLM_FAST_BASE_URL` reachable; pass args with `BENCH_ARGS="…"`. Measures cost, not quality — `model/eval` owns quality |
 | Serving gate | `make bench-gate` | judges a bench report against `model/bench/thresholds.json`. Exit 0 pass / 1 fail / **2 inconclusive** — 2 means a budget could not be judged (shared GPU, missing metrics), re-run rather than widen |
 | Agent e2e latency | `make bench-e2e` | per-stage breakdown of one real question against a deployed agent. Needs `BENCH_AGENT_URL`, `BENCH_AGENT_ID`, `BENCH_TENANT_ID`, `GATEWAY_KEY` exported — never read from `.env` |
-| Deploy | `make deploy-local` (OrbStack), `make deploy` (full stack) | Ansible is the only deploy path. The local cluster runs only the V3 slice: use `make deploy-local`, since `make deploy` also rebuilds kb-backend, kb-worker, auth_api and platform-workers, which nothing there runs. The git diff since the last deploy picks **which** images to rebuild, but each is built from the **working tree**, uncommitted edits included: to ship exactly a commit, deploy from a clean worktree. Check which branch the cluster runs first (`~/.dataagent-deploy/k8s-local/last_deployed_sha.txt`). See `deploy/ansible/README.md` |
+| Deploy | `make deploy-local` (OrbStack), `make deploy` (full stack) | Ansible is the only deploy path. The local cluster runs only the V3 slice: use `make deploy-local`, since `make deploy` also rebuilds auth_api, model-service and platform-workers, which nothing there runs. The git diff since the last deploy picks **which** images to rebuild, but each is built from the **working tree**, uncommitted edits included: to ship exactly a commit, deploy from a clean worktree. Check which branch the cluster runs first (`~/.dataagent-deploy/k8s-local/last_deployed_sha.txt`). See `deploy/ansible/README.md` |
 
 ### Gates that are currently red
 
@@ -73,7 +73,7 @@ commented-out code is not allowed to stay.
 | Env vars | `SCREAMING_SNAKE`, prefixed by subsystem | `LITELLM_BASE_URL` |
 
 Known inconsistency, do not copy it: container images are half snake_case
-(`dataagent/workflow_runtime`) and half kebab (`dataagent/kb-backend`), while every k8s
+(`dataagent/workflow_runtime`) and half kebab (`dataagent/worker-agent`), while every k8s
 object is kebab. New services use kebab everywhere outside Python; renaming the existing
 images is a deploy-affecting change that needs its own PR (manifests + Ansible + docs in
 one commit).
@@ -110,11 +110,10 @@ from a literal.
 ## 7. Repo layout
 
 ```
-backend/libs        shared libraries (basemodel, database_connector, shared, ingestion,
+backend/libs        shared libraries (basemodel, database_connector, shared, contracts,
                     semantic, indicator)
-backend/services    one deployable per directory, Dockerfile inside. kb_backend also holds the four KB
-                    Kafka workers (workers/*), built as the `kb-worker` image (deploy/docker/kb-worker);
-                    llm-exporter is a platform_workers worker. Add a worker, not a service, for a new
+backend/services    one deployable per directory, Dockerfile inside. The KB stack and the web-crawler
+                    were removed (docs/v3/04-backlog.md §3c); llm-exporter is a platform_workers worker. Add a worker, not a service, for a new
                     queue consumer
 
                     workflow_runtime is layered: api/ (routers, auth, app factory) > application/
@@ -141,7 +140,7 @@ tests/unit/<service>/, tests/integration/<service>/   one suite per service imag
 tests/integration/test_*.py                         e2e tests (make e2e)
 tests/e2e           demo seed data (k8s seed Job), eval and Playwright harnesses
 tests/loadtest      k6
-docs                RUNBOOK, SECURITY, SILVER-FORMAT, v3/ (product direction, agent core, R0 design,
+docs                RUNBOOK, SECURITY, v3/ (product direction, agent core, R0 design,
                     backlog — start here), v2/ (Observation Engine spec and the oil/gold reference Data
                     Space; v2/data/ fixtures are read by tests)
 ```

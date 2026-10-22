@@ -1,6 +1,7 @@
-"""llm_describe / embed (sandbox_schema_docs.docx §2.4, §2.5) — HTTP request/
-response shape tested via respx (no real LLM, no real network), same
-technique as test_workflow_memory_embed.py.
+"""llm_describe / embed (sandbox_schema_docs.docx §2.4, §2.5). embed's HTTP
+shape is tested via respx (no real LLM, no real network), same technique as
+test_workflow_memory_embed.py; describe_table goes through common/llm.ask,
+whose HTTP shape test_llm_ask.py covers, so it is stubbed at that seam.
 """
 from __future__ import annotations
 
@@ -40,18 +41,16 @@ def test_embed_parses_successful_response():
 
 
 @pytest.mark.unit
-@respx.mock
-def test_describe_table_parses_json_response():
+def test_describe_table_parses_json_response(monkeypatch):
     from workers.schema_crawler import llm_describe
 
-    respx.post(f"{llm_describe.LITELLM_BASE}/v1/chat/completions").mock(
-        return_value=httpx.Response(200, json={"choices": [{"message": {"content": (
-            '{"keywords": ["OHLCV", "stock price"], '
-            '"categories": {"ticker": "stock symbol"}, '
-            '"use_cases": ["compute daily returns"], '
-            '"join_hints": ["dim_company.ticker"]}'
-        )}}]}),
+    answer = llm_describe.Description(
+        keywords=["OHLCV", "stock price"],
+        categories={"ticker": "stock symbol"},
+        use_cases=["compute daily returns"],
+        join_hints=["dim_company.ticker"],
     )
+    monkeypatch.setattr(llm_describe.llm_client, "ask", lambda *a, **k: answer)
 
     result = llm_describe.describe_table(
         "fact_stock_price",
@@ -66,13 +65,10 @@ def test_describe_table_parses_json_response():
 
 
 @pytest.mark.unit
-@respx.mock
-def test_describe_table_handles_non_json_response_gracefully():
+def test_describe_table_handles_non_json_response_gracefully(monkeypatch):
     from workers.schema_crawler import llm_describe
 
-    respx.post(f"{llm_describe.LITELLM_BASE}/v1/chat/completions").mock(
-        return_value=httpx.Response(200, json={"choices": [{"message": {"content": "not json"}}]}),
-    )
+    monkeypatch.setattr(llm_describe.llm_client, "ask", lambda *a, **k: None)
 
     result = llm_describe.describe_table("t", [{"name": "a", "type": "VARCHAR"}], None)
 

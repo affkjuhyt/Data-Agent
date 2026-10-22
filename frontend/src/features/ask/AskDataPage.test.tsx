@@ -1,18 +1,51 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { ToastProvider } from '../../design-system/Toast';
 import AskDataPage from './AskDataPage';
 import type { AskMessage } from './types';
 
-const send = vi.fn();
-const navigate = vi.fn();
+const { send, navigate, saveAnswerToSession } = vi.hoisted(() => ({
+  send: vi.fn(),
+  navigate: vi.fn(),
+  saveAnswerToSession: vi.fn(
+    async (_workspaceId: string, _answer: { answerId: string; title: string }) => ({ id: 'tile-1' }),
+  ),
+}));
 let messages: AskMessage[] = [];
 
 vi.mock('../../AppStateContext', () => ({
-  useAppState: () => ({ user: { id: 'u1', name: 'Đỗ Hải Yến' }, navigate }),
+  useAppState: () => ({ user: { id: 'u1', name: 'Đỗ Hải Yến' }, navigate, routeId: undefined }),
+}));
+vi.mock('../../lib/v1/questions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/v1/questions')>();
+  return {
+    ...actual,
+    listConversations: vi.fn(async () => ({ items: [], next_page_token: '' })),
+    saveAnswerToSession,
+  };
+});
+vi.mock('../../lib/v1/api', () => ({
+  listWorkspaces: vi.fn(async () => ({
+    items: [{ id: 'ws-npl-sept', title: 'Điều tra nợ xấu bán lẻ T9' }],
+    next_page_token: '',
+  })),
 }));
 vi.mock('./hooks/useQuestionStream', () => ({
-  useQuestionStream: () => ({ messages, sending: false, send, answerClarification: vi.fn(), confirmUnderstanding: vi.fn(), stop: vi.fn() }),
+  useQuestionStream: () => ({
+    messages,
+    sending: false,
+    hydrating: false,
+    conversationId: null,
+    send,
+    answerClarification: vi.fn(),
+    confirmUnderstanding: vi.fn(),
+    stop: vi.fn(),
+    hydrate: vi.fn(),
+    resetConversation: vi.fn(),
+  }),
 }));
+
+const wrap = (ui: React.ReactNode) => render(<ToastProvider>{ui}</ToastProvider>);
 
 const conversation: AskMessage[] = [
   { id: 'q1', role: 'user', content: 'Nợ xấu bán lẻ tháng này tăng ở đâu?', timestamp: '2026-10-08T10:50:00', status: 'done' },
@@ -34,13 +67,14 @@ const conversation: AskMessage[] = [
 beforeEach(() => {
   send.mockReset();
   navigate.mockReset();
+  saveAnswerToSession.mockClear();
   messages = [];
   localStorage.clear();
 });
 
 describe('AskDataPage', () => {
   it('starts empty with examples and asks what is typed', async () => {
-    render(<AskDataPage />);
+    wrap(<AskDataPage />);
     // The desktop title; under 768px the page also carries the mobile title "Hỏi" (CSS picks one).
     expect(screen.getByRole('heading', { level: 1, name: 'Hỏi đáp' })).toBeInTheDocument();
     expect(screen.getByText('Bắt đầu bằng một câu hỏi rõ ràng')).toBeInTheDocument();
@@ -50,13 +84,13 @@ describe('AskDataPage', () => {
     fireEvent.change(box, { target: { value: 'Doanh thu tháng này' } });
     fireEvent.keyDown(box, { key: 'Enter' });
     expect(send).toHaveBeenCalledWith('Doanh thu tháng này');
-    // remembered for this viewer
-    expect(JSON.parse(localStorage.getItem('dataagent.ask.history') ?? '[]')[0].q).toBe('Doanh thu tháng này');
+    // Thread durability is server-side (conversation URL); no localStorage history.
+    expect(localStorage.getItem('dataagent.ask.history')).toBeNull();
   });
 
   it('titles the page with the first question and labels the answer', () => {
     messages = conversation;
-    render(<AskDataPage />);
+    wrap(<AskDataPage />);
     expect(
       screen.getByRole('heading', { level: 1, name: 'Nợ xấu bán lẻ tháng này tăng ở đâu?' }),
     ).toBeInTheDocument();
@@ -67,7 +101,7 @@ describe('AskDataPage', () => {
 
   it('opens the receipt of an answer over the conversation, which stays', () => {
     messages = conversation;
-    render(<AskDataPage />);
+    wrap(<AskDataPage />);
     fireEvent.click(screen.getByRole('button', { name: 'Biên nhận' }));
     expect(screen.getByRole('dialog', { name: 'Biên nhận câu trả lời' })).toBeInTheDocument();
     expect(screen.getByTestId('trust-label')).toBeInTheDocument();
@@ -76,7 +110,7 @@ describe('AskDataPage', () => {
 
   it('opens Cách tính beside the conversation and closes it', () => {
     messages = conversation;
-    render(<AskDataPage />);
+    wrap(<AskDataPage />);
     fireEvent.click(screen.getByRole('button', { name: 'Cách tính' }));
     const panel = screen.getByRole('complementary', { name: 'Cách tính' });
     expect(within(panel).getByText(/npl_ratio v4 · đã duyệt, người phụ trách Phạm Đức Long/)).toBeInTheDocument();
@@ -86,7 +120,7 @@ describe('AskDataPage', () => {
 
   it('asks a follow-up chip and saves a question', () => {
     messages = conversation;
-    render(<AskDataPage />);
+    wrap(<AskDataPage />);
     fireEvent.click(screen.getByRole('button', { name: 'So với cùng kỳ năm trước' }));
     expect(send).toHaveBeenCalledWith('So với cùng kỳ năm trước');
     fireEvent.click(screen.getByRole('button', { name: 'Lưu câu hỏi' }));
@@ -95,9 +129,26 @@ describe('AskDataPage', () => {
 
   it('opens Báo sai with the answer quoted', () => {
     messages = conversation;
-    render(<AskDataPage />);
+    wrap(<AskDataPage />);
     fireEvent.click(screen.getByRole('button', { name: 'Báo sai' }));
     const dialog = screen.getByRole('dialog', { name: 'Báo câu trả lời sai' });
     expect(within(dialog).getByText('“Nợ xấu bán lẻ T9 là 1,84%.”')).toBeInTheDocument();
+  });
+
+  it('saves an answer as a session tile via Thêm vào phiên', async () => {
+    messages = conversation;
+    wrap(<AskDataPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm vào phiên' }));
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Phiên đích' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Điều tra nợ xấu bán lẻ T9' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
+    await waitFor(() =>
+      expect(saveAnswerToSession).toHaveBeenCalledWith('ws-npl-sept', {
+        answerId: 'answer-1',
+        title: 'Nợ xấu bán lẻ tháng này tăng ở đâu?',
+      }),
+    );
+    expect(await screen.findByText(/Đã thêm vào Điều tra nợ xấu bán lẻ T9/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Đã thêm vào phiên' })).toBeDisabled();
   });
 });

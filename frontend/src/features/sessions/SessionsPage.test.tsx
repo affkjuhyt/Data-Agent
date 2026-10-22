@@ -79,6 +79,19 @@ describe('SessionsPage', () => {
     expect(await within(panel).findByText('Đã xem, đồng ý.')).toBeInTheDocument();
   });
 
+  it('opens Cách tính and interpretation chips for an Ask answer tile', async () => {
+    routeId = 'ws-npl-sept';
+    renderWithToast(<SessionsPage />);
+    await screen.findAllByRole('article');
+    const questionTile = screen.getByRole('article', { name: 'Ô 1 · Câu hỏi' });
+    fireEvent.click(within(questionTile).getByRole('button', { name: 'Câu hỏi' }));
+    const panel = await screen.findByRole('complementary', { name: 'Cách tính' });
+    expect(await within(panel).findByRole('heading', { name: 'Cách tính' })).toBeInTheDocument();
+    const chips = within(panel).getByRole('list', { name: 'Hệ thống hiểu là' });
+    expect(within(chips).getByText('Chỉ số')).toBeInTheDocument();
+    expect(within(chips).getByText(/Tỷ lệ nợ xấu/)).toBeInTheDocument();
+  });
+
   it('shares the session and previews what a narrow-scope recipient sees', async () => {
     routeId = 'ws-npl-sept';
     renderWithToast(<SessionsPage />);

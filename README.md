@@ -19,15 +19,15 @@ backend/     Python import root: services/ (FastAPI/worker services), libs/ (sha
 frontend/    React 19 + Vite app (npm workspace): src/, index.html, vite/vitest/tsconfig, Dockerfile.dev
 deploy/      ansible/ (deploy pipeline: deploy.yml) · k8s/ (manifests: production/ and dev/) · docker/ (Dockerfiles + service config)
 tests/       unit/<service> · integration/<service> · e2e/ (demo seed data, eval + Playwright harnesses) · loadtest/ (k6)
-docs/        v3/ (product direction, agent core, R0 design, backlog) · v2/ (Observation Engine spec, reference Data Space, data/ fixtures) · RUNBOOK · SECURITY · SILVER-FORMAT
+docs/        v3/ (product direction, agent core, R0 design, backlog) · v2/ (Observation Engine spec, reference Data Space, data/ fixtures) · RUNBOOK · SECURITY
 model/       eval/ (release gate: cases, scorers incl. RAGAS faithfulness, thresholds) · bench/ (serving latency)
 ```
 
 | Path | Contents |
 |---|---|
 | [`frontend/src/`](./frontend/src) | React 19 + TypeScript + Vite frontend (Knowledge Base UI + Ask). `frontend/src/lib/apiClient.ts` is the FastAPI client (bearer-only — Kong injects identity). Root `package.json` is an npm workspace that forwards `npm run dev/test/typecheck` here |
-| [`backend/services/`](./backend/services) | Backend microservices: `kb_backend` (API + the four KB Kafka workers under `workers/`, built as the separate `kb-worker` image from `deploy/docker/kb-worker`); `auth_api`, `workflow_runtime` (which also hosts the agent/workflow/canvas authoring API, ex flow_builder, and the multi-agent orchestrator at `/api/orchestrate`), `model_service`, `sandbox_executor`, `platform_workers` (one image; `WORKER=memory\|schema-crawler\|audit\|web-crawler`). Each owns its `Dockerfile` (build context = repo root) |
-| [`backend/libs/`](./backend/libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability), `libs/ingestion` (Bronze→Silver→Gold pipeline the KB workers run), `libs/semantic` (metric contracts), `libs/indicator` (numeric core). Innermost architecture layer |
+| [`backend/services/`](./backend/services) | Backend services: the V3 blocks `api`, `worker_agent`, `worker_ingest`, `worker_document`, `crawler`; legacy `auth_api`, `workflow_runtime` (which also hosts the agent/workflow/canvas authoring API, ex flow_builder, and the multi-agent orchestrator at `/api/orchestrate`), `model_service`, `sandbox_executor`, `platform_workers` (one image; `WORKER=memory\|schema-crawler\|audit\|llm-exporter`). Each owns its `Dockerfile` (build context = repo root) |
+| [`backend/libs/`](./backend/libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability), `libs/contracts` (V2 wire contract), `libs/dataagent_db` (V3 ORM), `libs/semantic` (metric contracts), `libs/indicator` (numeric core). Innermost architecture layer |
 | [`backend/alembic/`](./backend/alembic) | Database migrations (`alembic -c backend/alembic/alembic.ini upgrade head`) |
 | [`deploy/ansible/`](./deploy/ansible) | The deploy pipeline — `deploy.yml` builds what changed, renders Secrets from the vault, applies the manifests, reruns Jobs, restarts what changed |
 | [`deploy/k8s/`](./deploy/k8s) | Kubernetes manifests: `production/` (hardened) and `dev/` (the single-node dev server) |
@@ -39,10 +39,9 @@ model/       eval/ (release gate: cases, scorers incl. RAGAS faithfulness, thres
 
 ## Deployment at a glance
 
-There is no mock server — the frontend talks to the real `kb-backend`, which is **fail-closed**:
-every API request must arrive through **Kong** carrying a verified Keycloak identity (`X-Kong-Verified`),
-or it is rejected with `401`. So a usable stack needs **Keycloak** (login) + **Kong** (gateway) in
-front of `kb-backend`.
+There is no mock server — the frontend talks to the real `api` (`/v1`) through **Kong**, with a
+Keycloak bearer token the api verifies against the realm's JWKS. So a usable stack needs
+**Keycloak** (login) + **Kong** (gateway) in front of `api`.
 
 The stack runs on Kubernetes. The shared dev server (`10.10.55.101`, single-node k3s) is deployed
 from `/home/ndip/Data-Agent` with the Ansible pipeline:
@@ -81,7 +80,7 @@ npm install
 export VITE_KEYCLOAK_URL=http://10.10.55.101:30110
 export VITE_KEYCLOAK_REALM=aeroflow
 export VITE_KEYCLOAK_CLIENT=aeroflow-frontend
-export VITE_API_URL=http://10.10.55.101:30100     # Kong — NOT kb-backend
+export VITE_API_URL=http://10.10.55.101:30100     # Kong — not the api directly
 npm run dev                                        # http://localhost:3000
 ```
 
@@ -96,95 +95,6 @@ npm run test          # vitest run
 
 ---
 
-## LightRAG Retrieval API
-
-The `kb-backend` exposes the LightRAG retrieval pipeline over HTTP. Use it to fetch the top-ranked
-Gold-layer chunks for a query and feed them to your own LLM for RAG.
-
-**Base URL:** the **Kong** gateway — `http://10.10.55.101:30100` on the dev server. These routes are
-fail-closed — call them through Kong with a Keycloak bearer token, not `kb-backend` directly (it returns `401`).
-
-| Method & path | Purpose |
-|---|---|
-| `POST /api/pipeline/light-rag/retrieve` | Run the full pipeline, return ranked chunks (JSON) |
-
-### Request
-
-Identity (tenant, user, role) is **not** sent as headers — it comes from the Keycloak JWT. Kong
-verifies the token and injects the authoritative `X-*` identity; the client sends only a bearer token.
-Get one via the password grant (helios-* users have no required actions):
-
-```bash
-KC=http://10.10.55.101:30110; API=http://10.10.55.101:30100
-TOKEN=$(curl -s -X POST $KC/realms/aeroflow/protocol/openid-connect/token \
-  -d grant_type=password -d client_id=aeroflow-frontend \
-  -d username=helios-engineer --data-urlencode "password=$PASSWORD" | jq -r .access_token)
-```
-
-Body fields:
-
-| Field | Type | Default | Meaning |
-|---|---|---|---|
-| `query` | string | — | **required** — the natural-language question |
-| `knowledge_base` | string | `""` (all) | restrict retrieval to one knowledge base |
-| `collection` | string | `knowledge` | chunk collection to search |
-| `tenant_id` | string | from the JWT | overrides the token's tenant |
-| `entities` | string[] | `[]` | front-layer entities — skips the internal canonicalize LLM and uses these as the pass-1 filter + graph seeds |
-| `intent` | string | `""` | front-layer query intent label |
-| `entity_types` | object | `{}` | `{name: type}` e.g. `{"Việt Minh":"organization"}` — per-entity typed search |
-
-```bash
-curl -X POST $API/api/pipeline/light-rag/retrieve \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"Điều kiện thành lập thư viện cơ sở?","knowledge_base":""}'
-```
-
-### Response
-
-```jsonc
-{
-  "source": "pipeline",            // "pipeline" = full run; "cache" = served from the query cache
-  "canonical": {                   // query understanding from the canonicalize step
-    "intent": "general",
-    "entities": [],
-    "relationships": []
-  },
-  "results": [                     // ranked chunks — THIS is what you feed the LLM
-    {
-      "chunk_rank": 1,             // 1 = best match
-      "chunk_score": 0.534,        // 0–1 relevance (cross-encoder, sigmoid-squashed)
-      "chunk_context": "…full chunk text from the active Postgres version…",
-      "table": [],                 // [{table_name: description}, …] when the chunk carries a table
-      "source": {
-        "block_id":    "86e86eb6-…",  // chunk id (Qdrant point ↔ Postgres KBTextBlock)
-        "block_index": 0,             // position within the document
-        "doc_id":      "98fff8e8-…",  // owning document (KBData)
-        "doc_name":    "59984",
-        "source_type": "doc",         // doc | web | image | video
-        "tier":        "gold"
-      }
-    }
-    // … up to RERANK_TOP_N results (default 5)
-  ],
-  "timings": { "embed_query_ms": 12.0, "rerank_ms": 80.1, "total_ms": 420.0 }
-}
-```
-
-### Using it for RAG
-
-1. `POST` the user's question to `/retrieve`.
-2. Build the LLM context from `results` in `chunk_rank` order — concatenate each `chunk_context`
-   (plus any `table`); optionally drop low-`chunk_score` chunks.
-3. Cite from each `source` (`doc_name`, `doc_id`, `block_id`, `tier`).
-4. Send `{context + user question}` to your generation model.
-
-`results` is `[]` when nothing relevant is found (e.g. an empty knowledge base) — treat that as
-"no answer in the knowledge base." Repeated near-identical queries return `"source":"cache"` with the
-same shape (no LLM re-run).
-
----
-
 ## Runtime shape
 
 - **Storage:** PostgreSQL (+ PgBouncer), MongoDB, Redis, MinIO
@@ -192,7 +102,7 @@ same shape (no LLM re-run).
 - **Security and gateway:** Keycloak, Kong (`aeroflow-jwks` plugin verifies JWTs at the edge), OpenBao
 - **Messaging:** Kafka
 - **Observability and AI tooling:** LiteLLM, Langfuse, Prometheus, Grafana, Jaeger (no central log store: `kubectl logs`)
-- **Application services:** workflow_runtime, kb-backend, kb-promote-silver / kb-promote-gold / kb-structured-data / kb-conflict-resolution (four Deployments of the one kb-worker image), model_service, auth_api, sandbox_executor, platform_workers (memory / schema-crawler / audit / web-crawler / llm-exporter)
+- **Application services:** V3 `api`, `worker-agent`, `worker-ingest`, `worker-document`, `crawler`; legacy model_service, auth_api, sandbox_executor, platform_workers (memory / schema-crawler / audit / llm-exporter)
 - **LLM tier:** GPU services on `10.10.55.101` — vLLM main `:8001` (`agent-main`), vLLM fast `:8002` (`agent-fast`), TEI embed `:8003`, TEI rerank `:8004`
 
 Every workload listens on an `8xxx` port; `8000–8099` is reserved for the LLM tier. The full port

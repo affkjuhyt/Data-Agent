@@ -17,6 +17,8 @@ import json
 import re
 from dataclasses import dataclass
 
+from pydantic import BaseModel
+
 from services.worker_agent.answer.narrate import Figure, shown_value
 from services.worker_agent.llm import Gateway, ModelUnavailable
 
@@ -30,6 +32,10 @@ Trả về JSON: {"text": "<câu trả lời>"}"""
 _TAG = re.compile(r"\{\{\s*(F\d+)\s*\}\}")
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 _SENTENCE = re.compile(r"(?<=[.!?])\s+")
+
+
+class Draft(BaseModel):
+    text: str
 
 
 @dataclass
@@ -89,12 +95,13 @@ async def narrate(
     model = ""
     for attempt in range(2):
         try:
-            reply = await gateway.json_chat("responder", SYSTEM, prompt, max_tokens=600)
+            reply = await gateway.json_chat("responder", SYSTEM, prompt, Draft, max_tokens=600)
         except ModelUnavailable:
             return None
         tokens += reply.tokens
         model = reply.model
-        filled = _fill(str(reply.content.get("text") or ""), shown)
+        tags = len(_TAG.findall(reply.content.text))
+        filled = _fill(reply.content.text, shown)
         if filled is None or not filled.strip():
             continue
         sentences = [s for s in _SENTENCE.split(filled.strip()) if s]
@@ -104,7 +111,7 @@ async def narrate(
         if not strays:
             return Narration(
                 filled.strip(),
-                len(_TAG.findall(str(reply.content.get("text")))),
+                tags,
                 draft_strays,
                 attempt,
                 0,
@@ -118,7 +125,7 @@ async def narrate(
             note = f"Đã bỏ {len(strays)} câu có số không truy được nguồn."
             return Narration(
                 " ".join([*kept, note]),
-                len(_TAG.findall(str(reply.content.get("text")))),
+                tags,
                 draft_strays,
                 1,
                 len(strays),

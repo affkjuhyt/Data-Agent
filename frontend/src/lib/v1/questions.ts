@@ -1,4 +1,4 @@
-import { pathId, v1Events, v1Get, v1Send } from './client';
+import { pathId, v1Events, v1Get, v1Send, type Page } from './client';
 import type { components } from './schema';
 
 /*
@@ -11,6 +11,38 @@ import type { components } from './schema';
 type QuestionCreate = components['schemas']['QuestionCreate'];
 type QuestionAccepted = components['schemas']['QuestionAccepted'];
 export type Answer = components['schemas']['AnswerView'];
+
+/** Wire shapes for GET /v1/conversations/{id} (R1-13). Kept local until `make api-types`. */
+export interface ConversationTurn {
+  question_id: string;
+  seq: number;
+  text: string;
+  status: string;
+  answer_id: string | null;
+  received_at: string;
+  answered_at: string | null;
+}
+
+export interface ConversationDetail {
+  id: string;
+  data_space_id: string;
+  user_id: string;
+  channel: string;
+  api_client_id: string | null;
+  title: string | null;
+  workspace_id: string | null;
+  last_question_at: string | null;
+  created_at: string;
+  updated_at: string;
+  turns: ConversationTurn[];
+}
+
+export interface ConversationListItem {
+  id: string;
+  title: string | null;
+  last_question_at: string | null;
+  updated_at: string;
+}
 
 export const askQuestion = (text: string, conversationId: string | null) =>
   v1Send<QuestionAccepted>('POST', '/questions', {
@@ -28,6 +60,25 @@ export type QuestionWire = components['schemas']['QuestionView'];
  *  waiting for the person (UC-01-04, UC-03-01). */
 export const getQuestion = async (id: string) => v1Get<QuestionWire>(`/questions/${pathId(id)}`);
 
+/** Reopen an Ask thread: ordered turns with answer_id when answered (R1-13). */
+export const getConversation = async (id: string) =>
+  v1Get<ConversationDetail>(`/conversations/${pathId(id)}`);
+
+/** Recent conversations for this viewer in the current Data Space. */
+export const listConversations = async (pageSize = 8) =>
+  v1Get<Page<ConversationListItem>>('/conversations', { page_size: pageSize });
+
 /** The question's events after `lastEventId`; the server closes the stream after what it has. */
 export const questionEvents = async (id: string, lastEventId?: string, signal?: AbortSignal) =>
   v1Events(`/questions/${pathId(id)}/stream`, { lastEventId, signal });
+
+/** "Thêm vào phiên": the answer becomes a question tile (POST /v1/workspaces/{id}/tiles). */
+export const saveAnswerToSession = (
+  workspaceId: string,
+  answer: { answerId: string; title: string },
+) =>
+  v1Send<components['schemas']['TileView']>('POST', `/workspaces/${pathId(workspaceId)}/tiles`, {
+    kind: 'question',
+    title: answer.title,
+    spec: { question: answer.title, answer_id: answer.answerId },
+  });

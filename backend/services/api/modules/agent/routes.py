@@ -37,6 +37,7 @@ from services.api.kernel.pagination import (
 from services.api.kernel.problems import FieldError, Problem
 from services.api.kernel.sse import Event, event_stream, last_event_id
 from services.api.modules.agent import rules
+from services.api.modules.agent.display import permission_text, runs_window, trigger_text
 from services.api.modules.agent.schemas import (
     AgentCreate,
     AgentKind,
@@ -64,6 +65,7 @@ from services.api.modules.agent.schemas import (
     RunCancel,
     RunStatus,
     RunSummary,
+    RunsWindow,
     RunView,
     StepView,
     ToolIn,
@@ -287,6 +289,7 @@ async def _agent_view(session: AsyncSession, row: agent.AgentDef) -> AgentView:
         view.current_config = await _config_view(session, current) if current else None
     deployment = await _active_deployment(session, row.id)
     view.active_deployment = DeploymentView.model_validate(deployment) if deployment else None
+    await _screen_agents(session, [view])
     return view
 
 
@@ -309,6 +312,137 @@ async def _run_counts(
         )
     ).all()
     return {r[0]: (int(r[1]), int(r[2])) for r in rows}
+
+
+async def _screen_agents(session: AsyncSession, items: list[AgentSummary]) -> None:
+    """Goal, trigger, permission and the last 7 days, from the rows the team table names."""
+    if not items:
+        return
+    ids = [item.id for item in items]
+    configs = (
+        await session.execute(
+            select(
+                agent.AgentConfig.agent_id,
+                agent.AgentConfig.version,
+                agent.AgentConfig.goal,
+                agent.AgentConfig.id,
+            ).where(agent.AgentConfig.agent_id.in_(ids))
+        )
+    ).all()
+    by_version = {(row.agent_id, row.version): row for row in configs}
+    config_ids = [
+        by_version[(item.id, item.current_config_version)].id
+        for item in items
+        if item.current_config_version is not None
+        and (item.id, item.current_config_version) in by_version
+    ]
+    levels: dict[uuid.UUID, list[str]] = {}
+    if config_ids:
+        for config_id, level in (
+            await session.execute(
+                select(agent.AgentTool.agent_config_id, agent.AgentTool.permission_level).where(
+                    agent.AgentTool.agent_config_id.in_(config_ids)
+                )
+            )
+        ).all():
+            levels.setdefault(config_id, []).append(level)
+    triggers: dict[uuid.UUID, list[tuple[str, str | None, str | None]]] = {}
+    for agent_id, kind, cron, event_type in (
+        await session.execute(
+            select(
+                agent.AgentTrigger.agent_id,
+                agent.AgentTrigger.kind,
+                agent.AgentTrigger.cron,
+                agent.AgentTrigger.event_type,
+            ).where(
+                agent.AgentTrigger.agent_id.in_(ids),
+                agent.AgentTrigger.enabled.is_(True),
+            )
+        )
+    ).all():
+        triggers.setdefault(agent_id, []).append((kind, cron, event_type))
+    since = _now() - datetime.timedelta(days=7)
+    recent = (
+        await session.execute(
+            select(agent.AgentRun.agent_id, agent.AgentRun.id, agent.AgentRun.status).where(
+                agent.AgentRun.agent_id.in_(ids),
+                agent.AgentRun.is_test.is_(False),
+                agent.AgentRun.created_at >= since,
+            )
+        )
+    ).all()
+    stopped: set[uuid.UUID] = set()
+    run_ids = [row.id for row in recent]
+    if run_ids:
+        stopped = set(
+            (
+                await session.scalars(
+                    select(agent.AgentCheckpointHit.run_id).where(
+                        agent.AgentCheckpointHit.run_id.in_(run_ids)
+                    )
+                )
+            ).all()
+        )
+    window: dict[uuid.UUID, list[tuple[uuid.UUID, str]]] = {}
+    for agent_id, run_id, status in recent:
+        window.setdefault(agent_id, []).append((run_id, status))
+    live = {
+        row.agent_id: row.id
+        for row in (
+            await session.scalars(
+                select(agent.AgentDeployment).where(
+                    agent.AgentDeployment.agent_id.in_(ids),
+                    agent.AgentDeployment.status.in_(("pending_approval", "rolling")),
+                )
+            )
+        ).all()
+    }
+    for item in items:
+        current = (
+            by_version.get((item.id, item.current_config_version))
+            if item.current_config_version is not None
+            else None
+        )
+        item.goal = current.goal if current else None
+        item.permission_text = permission_text(levels.get(current.id, []) if current else [])
+        item.trigger_text = trigger_text(triggers.get(item.id, []))
+        rows = window.get(item.id, [])
+        counted = runs_window(
+            len(rows),
+            sum(1 for run_id, status in rows if status == "waiting_human" or run_id in stopped),
+            sum(1 for _, status in rows if status == "failed"),
+        )
+        item.runs_7d = RunsWindow.model_validate(counted) if counted else None
+        item.active_deployment_id = live.get(item.id)
+
+
+async def _screen_runs(session: AsyncSession, items: list[RunSummary]) -> None:
+    """The run's title is the goal of the config it used; hitl_count is its checkpoint hits."""
+    if not items:
+        return
+    agent_ids = {item.agent_id for item in items}
+    goals = {
+        (row.agent_id, row.version): row.goal
+        for row in (
+            await session.execute(
+                select(
+                    agent.AgentConfig.agent_id, agent.AgentConfig.version, agent.AgentConfig.goal
+                ).where(agent.AgentConfig.agent_id.in_(agent_ids))
+            )
+        ).all()
+    }
+    hitl: dict[uuid.UUID, int] = {}
+    for row in (
+        await session.execute(
+            select(agent.AgentCheckpointHit.run_id, func.count())
+            .where(agent.AgentCheckpointHit.run_id.in_([item.id for item in items]))
+            .group_by(agent.AgentCheckpointHit.run_id)
+        )
+    ).all():
+        hitl[row[0]] = int(row[1])
+    for item in items:
+        item.title = goals.get((item.agent_id, item.config_version))
+        item.hitl_count = hitl.get(item.id, 0)
 
 
 def _accepted(response: Response, location: str, row_id: uuid.UUID, status: str) -> RunAccepted:
@@ -379,6 +513,7 @@ async def list_agents(
         counts = await _run_counts(session, [r.id for r in served])
         for item in items:
             item.active_runs, item.waiting_runs = counts.get(item.id, (0, 0))
+        await _screen_agents(session, items)
     return Page(items=items, next_page_token=token)
 
 
@@ -988,7 +1123,9 @@ async def list_runs(
     query = _run_keyset(query, order, page)
     async with transaction(ROLE, principal) as session:
         rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
-    return Page(items=[RunSummary.model_validate(r) for r in rows], next_page_token=token)
+        items = [RunSummary.model_validate(r) for r in rows]
+        await _screen_runs(session, items)
+    return Page(items=items, next_page_token=token)
 
 
 async def _steps(session: AsyncSession, run_id: uuid.UUID) -> list[agent.AgentStep]:
@@ -1017,6 +1154,7 @@ async def get_run(
     async with transaction(ROLE, principal) as session:
         row = await _run(session, run_id, principal, data_space)
         out = RunView.model_validate(row)
+        await _screen_runs(session, [out])
         # simple: the narrative only; technical: the steps as well (SCR-21 "Xem ky thuat").
         if view == "technical":
             out.steps = [StepView.model_validate(s) for s in await _steps(session, row.id)]
@@ -1094,7 +1232,9 @@ async def list_children(
     async with transaction(ROLE, principal) as session:
         await _run(session, run_id, principal, data_space)
         rows, token = next_page(list((await session.scalars(query)).all()), order=order, page=page)
-    return Page(items=[RunSummary.model_validate(r) for r in rows], next_page_token=token)
+        items = [RunSummary.model_validate(r) for r in rows]
+        await _screen_runs(session, items)
+    return Page(items=items, next_page_token=token)
 
 
 async def _intervene(

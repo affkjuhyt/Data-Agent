@@ -25,6 +25,7 @@ declare -A IMAGES=(
   [worker-agent]="backend/services/worker_agent/Dockerfile|."
   [worker-ingest]="backend/services/worker_ingest/Dockerfile|."
   [worker-document]="backend/services/worker_document/Dockerfile|."
+  [crawler]="backend/services/crawler/Dockerfile|."
   [migrate]="backend/alembic/Dockerfile|."
   [kong]="deploy/docker/kong/Dockerfile|."
   [keycloak]="deploy/docker/keycloak/Dockerfile|."

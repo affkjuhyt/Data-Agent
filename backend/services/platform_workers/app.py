@@ -12,7 +12,6 @@ WORKERS: dict[str, str] = {
     "memory": "services.platform_workers.workers.memory",
     "schema-crawler": "services.platform_workers.workers.schema_crawler",
     "audit": "services.platform_workers.workers.audit",
-    "web-crawler": "services.platform_workers.workers.web_crawler",
     "llm-exporter": "services.platform_workers.workers.llm_exporter",
 }
 

@@ -2,14 +2,6 @@
 # Build context is the repo root (the deploy's default) so backend/libs is reachable:
 # the governance vocabulary (libs/shared/freshness.py), the embeddings client
 # and the observability bootstrap are shared with the other services.
-#
-# Pinned to -bookworm, not the floating `python:3.12-slim` (now Debian
-# trixie): Playwright's `--with-deps` doesn't recognise trixie yet and falls
-# back to an ubuntu20.04 dependency list that references packages trixie
-# dropped (ttf-unifont, ttf-ubuntu-font-family), so `playwright install
-# --with-deps chromium` below hard-fails on a floating tag. the kb-worker image
-# hasn't hit this yet only because `python:3.11-slim` happens to still
-# resolve to bookworm today — an unpinned coincidence, not a fix.
 FROM python:3.12-slim-bookworm
 WORKDIR /app
 # DEBIAN_MIRROR replaces deb.debian.org where the link to it is slow (the inventory sets it;
@@ -18,11 +10,6 @@ ARG DEBIAN_MIRROR=
 RUN if [ -n "$DEBIAN_MIRROR" ]; then sed -i "s#^URIs: http://deb.debian.org/debian\$#URIs: $DEBIAN_MIRROR#" /etc/apt/sources.list.d/debian.sources; fi
 COPY backend/services/platform_workers/requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
-# web-crawler-worker's web_crawl connector needs a real Chromium — same
-# install step as the kb-worker Dockerfile, whose promote_silver worker already
-# depends on Playwright for the identical fetch.
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN apt-get update && python -m playwright install --with-deps chromium && rm -rf /var/lib/apt/lists/*
 # /app mirrors backend/: `libs.*` and `services.platform_workers.*` resolve as
 # root packages, matching how the code imports after the repo restructure (the
 # old flat copy left no `services` package → "No module named 'services'" loop).

@@ -794,7 +794,7 @@ export const deleteUpload = (id: string) => v1Send<void>('DELETE', `/uploads/${p
 export const commitUpload = async (id: string, columns: UploadColumn[]) => {
   const row = await v1Send<{ table_name?: string; display_name?: string }>(
     'POST',
-    `/uploads/${pathId(id)}%3Acommit`,
+    `/uploads/${pathId(id)}:commit`,
     { column_map: columns },
   );
   return { table: row.table_name ?? row.display_name ?? 'bảng mới' };

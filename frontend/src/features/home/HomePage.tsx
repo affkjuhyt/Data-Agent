@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { Icon } from '../../design-system/Icon';
 import { listInbox, listRuns, listSources } from '../../lib/v1/api';
@@ -39,6 +40,17 @@ export default function HomePage() {
   const runs = useV1(() => listRuns(), []);
   const sources = useV1(listSources, []);
   const home = useV1(getMyHome, []);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    recentQuestions(4).then((titles) => {
+      if (!cancelled) setSuggestions(titles);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [dataSpace?.id]);
 
   const now = new Date();
   const dateLine = `${WEEKDAYS[now.getDay()]}, ${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -70,7 +82,7 @@ export default function HomePage() {
               {greetingFor(now.getHours())}, {givenName(user.name)}
             </h1>
           </header>
-          <AskBar suggestions={recentQuestions(4)} onAsk={ask} />
+          <AskBar suggestions={suggestions} onAsk={ask} />
           {home.data && (
             <MyMetrics
               metrics={home.data.metrics}

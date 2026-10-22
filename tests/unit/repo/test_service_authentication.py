@@ -63,7 +63,6 @@ _NOT_APP_SERVICES = {
 _LIVE_SERVICES = (
     "api",
     "auth_api",
-    "kb_backend",
     "model_service",
     "platform_workers",
     "sandbox_executor",
@@ -217,7 +216,7 @@ class TestFailClosedOnAMissingTenant:
 
 
 # The Kong service names of the application services behind the gateway.
-_KONG_SERVICES = ("api", "auth_api", "kb-backend")
+_KONG_SERVICES = ("api", "auth_api")
 
 
 class TestGatewayConfigMatchesTheClosedPorts:

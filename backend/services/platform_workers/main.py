@@ -3,9 +3,8 @@
     WORKER=memory          -> workers.memory.run()          (memory.extraction.requested)
     WORKER=schema-crawler  -> workers.schema_crawler.run()  (cron crawl + ddl.changes)
     WORKER=audit           -> workers.audit.run()           (audit.data.access + Keycloak bridge)
-    WORKER=web-crawler     -> workers.web_crawler.run()     (cron crawl + queued Run Now rows)
 
-One image, four containers: each keeps its own Kafka principal, consumer
+One image, one container per worker: each keeps its own Kafka principal, consumer
 group and restart policy, so a crash in one worker cannot take the others down.
 """
 from __future__ import annotations

@@ -127,10 +127,20 @@ class AlertReopen(BaseModel):
 # ---------------------------------------------------------------- reports (UC-02-04, UC-08-03/04)
 
 
+# Typed factories, not lambdas: since pydantic 2.12 Field checks default_factory against the field
+# type, and a lambda returning ["email"] is inferred as list[str].
+def _email() -> list[ReportChannel]:
+    return ["email"]
+
+
+def _pdf() -> list[ReportFormat]:
+    return ["pdf"]
+
+
 class RecipientIn(BaseModel):
     principal_type: Literal["user", "group"] = "user"
     principal_id: uuid.UUID
-    channels: list[ReportChannel] = Field(default_factory=lambda: ["email"], min_length=1)
+    channels: list[ReportChannel] = Field(default_factory=_email, min_length=1)
 
 
 class RecipientView(BaseModel):
@@ -158,7 +168,7 @@ class ReportCreate(BaseModel):
     work_calendar_id: uuid.UUID | None = None
     cutoff_time: datetime.time | None = None
     as_of_rule: str = Field(min_length=1, max_length=120)
-    formats: list[ReportFormat] = Field(default_factory=lambda: ["pdf"], min_length=1)
+    formats: list[ReportFormat] = Field(default_factory=_pdf, min_length=1)
     require_publish_check: bool = True
     recipients: list[RecipientIn] = Field(default_factory=list, max_length=500)
 

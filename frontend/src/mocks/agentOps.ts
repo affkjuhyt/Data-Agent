@@ -158,6 +158,7 @@ const teamRun = (
   created_at: minutesAgo(11),
   narrative: [],
   error: null,
+  hitl_count: status === 'waiting_human' ? 1 : 0,
 });
 
 const delegation = (seq: number, child: string, name: string, summary: string | null) => ({

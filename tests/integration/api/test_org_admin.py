@@ -703,6 +703,62 @@ async def test_steward_sets_members_of_their_own_space(world: World) -> None:
         assert not_member.status_code == 404
 
 
+@pytest.mark.req("AC-07-06-05")
+async def test_low_eval_rate_blocks_adding_a_member_to_unopened_space(world: World) -> None:
+    world.seed.conn.autocommit = True
+    with world.seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE org.data_space SET status = 'draft' WHERE id = %s", (world.other_space,)
+        )
+    eval_set = world.seed.row(
+        "eval.eval_set",
+        org_id=world.org,
+        data_space_id=world.other_space,
+        subject_type="context",
+        name="Gate",
+        pass_threshold=0.90,
+        min_items=100,
+    )
+    world.seed.row(
+        "eval.eval_run",
+        org_id=world.org,
+        eval_set_id=eval_set,
+        subject_version="context@v1",
+        trigger="nightly",
+        item_count=100,
+        passed=88,
+        failed=12,
+        pass_rate=0.88,
+        status="completed",
+    )
+    # The group was a member once; its membership lapsed. Renewing it is adding a member.
+    world.seed.row(
+        "org.data_space_member",
+        org_id=world.org,
+        data_space_id=world.other_space,
+        principal_type="group",
+        principal_id=world.group,
+        role_id=world.roles["analyst"],
+        source="manual",
+        valid_until="2026-01-01T00:00:00Z",
+    )
+    members = [
+        {
+            "principal_type": "group",
+            "principal_id": str(world.group),
+            "role_id": str(world.roles["analyst"]),
+        }
+    ]
+    async with client(world) as api:
+        response = await api.put(
+            f"/v1/data-spaces/{world.other_space}/members",
+            json={"members": members},
+            headers=world.headers("steward", world.other_space),
+        )
+    assert response.status_code == 422, response.text
+    assert "90%" in response.text
+
+
 async def test_members_never_carry_org_wide_roles_or_conflicts(world: World) -> None:
     steward = {
         "principal_type": "user",

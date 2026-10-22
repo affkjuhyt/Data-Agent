@@ -104,6 +104,12 @@ async def test_a_clean_document_becomes_ready_with_structured_chunks(
     pages.append(page(TEXT))
     await handler.process_document(event(u))
     assert seed.one("SELECT status FROM document.document WHERE id = %s", u.document) == "ready"
+    # AC-05-02-01: ready is announced, for worker-agent's claims (KB-05).
+    assert seed.one(
+        "SELECT payload->>'document_id' FROM document.outbox"
+        " WHERE aggregate_id = %s AND event_type = 'document.indexed'",
+        u.document,
+    ) == str(u.document)
     rows = seed.all(
         "SELECT section_path, context_header, page_from, qdrant_point_id FROM document.chunk WHERE document_id = %s",
         u.document,

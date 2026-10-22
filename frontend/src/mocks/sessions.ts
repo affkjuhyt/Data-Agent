@@ -108,6 +108,7 @@ function sessionDetailsFixture(): WorkspaceDetailWire[] {
           title: 'Câu hỏi',
           spec: {
             question: 'Vì sao nợ xấu bán lẻ T9 tăng 0,22 điểm, vùng nào và sản phẩm nào đóng góp?',
+            answer_id: 'answer-npl-session',
           },
           author: YEN,
         }),
@@ -449,6 +450,45 @@ export function createSessionHandlers() {
     http.get('*/v1/workspaces/:id', ({ params }) => {
       const ws = find(params.id);
       return ws ? HttpResponse.json(ws) : notFound();
+    }),
+
+    // Ask / Explore "Thêm vào phiên": append a tile (idempotent enough for UI tests).
+    http.post('*/v1/workspaces/:id/tiles', async ({ params, request }) => {
+      const ws = find(params.id);
+      if (!ws) return notFound();
+      const body = (await request.json()) as components['schemas']['TileCreate'];
+      const answerId =
+        typeof body.spec === 'object' && body.spec && 'answer_id' in body.spec
+          ? String((body.spec as { answer_id?: unknown }).answer_id ?? '')
+          : '';
+      const existing = answerId
+        ? ws.tiles.find((t) => {
+            const spec = t.spec as { answer_id?: string } | null;
+            return spec?.answer_id === answerId;
+          })
+        : undefined;
+      if (existing) return HttpResponse.json(existing, { status: 200 });
+      const position = Math.max(0, ...ws.tiles.map((t) => t.position)) + 1;
+      const next = {
+        id: `tile-ask-${position}`,
+        workspace_id: ws.id,
+        position,
+        kind: body.kind,
+        title: body.title ?? null,
+        spec: body.spec,
+        depends_on: body.depends_on ?? [],
+        author_kind: 'user',
+        author_name: YEN.name,
+        agent_suggestion_state: null,
+        latest_snapshot_id: null,
+        stale: false,
+        comment_count: 0,
+        task_count: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as TileWire;
+      save({ ...ws, tiles: [...ws.tiles, next] });
+      return HttpResponse.json(next, { status: 201 });
     }),
 
     http.post('*/v1/workspaces/:action', ({ params }) => {

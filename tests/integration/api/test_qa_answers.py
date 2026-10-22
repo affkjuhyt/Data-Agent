@@ -189,6 +189,7 @@ def _eval_set(seed: Seed, world: World, space: uuid.UUID) -> str:
     return str(eval_set)
 
 
+@pytest.mark.req("AC-07-06-02")
 async def test_only_confirmed_feedback_goes_to_eval_once(world: World, seed: Seed) -> None:
     eval_set = _eval_set(seed, world, world.space)
     elsewhere = _eval_set(seed, world, world.other_space)

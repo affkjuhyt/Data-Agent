@@ -894,3 +894,49 @@ async def test_memories(world: AgentWorld, seed: Seed) -> None:
         "agent_memory.status_changed",
         "agent_memory.deleted",
     ]
+
+
+async def test_list_says_the_goal_the_trigger_and_the_run_title(world: AgentWorld) -> None:
+    async with client(world) as api:
+        created = await new_agent(
+            api,
+            world,
+            config={
+                "goal": "Giai thich bien gop thang truoc",
+                "tools": [
+                    {"tool": "query", "permission_level": "read"},
+                    {
+                        "tool": "create_proposal",
+                        "permission_level": "write_derived",
+                        "requires_checkpoint": True,
+                    },
+                ],
+            },
+        )
+        saved = await api.put(
+            f"/v1/agents/{created['id']}/triggers",
+            headers=owner_headers(world),
+            json={"triggers": [{"kind": "schedule", "cron": "0 7 * * 1"}]},
+        )
+        assert saved.status_code == 200, saved.text
+        listed = await api.get("/v1/agents", headers=owner_headers(world))
+        assert listed.status_code == 200, listed.text
+        item = next(row for row in listed.json()["items"] if row["id"] == created["id"])
+        assert item["goal"] == "Giai thich bien gop thang truoc"
+        assert item["permission_text"] == "Đọc · Đề xuất"
+        assert item["trigger_text"] == "Theo lịch 07:00 thứ Hai"
+        assert item["runs_7d"] is None
+        assert item["active_deployment_id"] is None
+
+        started = await api.post(
+            f"/v1/agents/{created['id']}/test-runs", headers=owner_headers(world)
+        )
+        assert started.status_code == 202, started.text
+        # A test run is not a production run, so the week stays empty and the title is the goal.
+        runs = await api.get(f"/v1/runs?agent_id={created['id']}", headers=owner_headers(world))
+        assert runs.status_code == 200, runs.text
+        assert runs.json()["items"][0]["title"] == "Giai thich bien gop thang truoc"
+        assert runs.json()["items"][0]["hitl_count"] == 0
+        again = await api.get("/v1/agents", headers=owner_headers(world))
+        item = next(row for row in again.json()["items"] if row["id"] == created["id"])
+        assert item["runs_7d"] is None

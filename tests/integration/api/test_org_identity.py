@@ -203,8 +203,12 @@ async def test_space_role_cannot_grant_org_wide_capabilities(world: World, seed:
     # Naming DS-GOLD must add steward only: /v1/admin/* and audit checks stay closed.
     risky = _role(seed, world, "DS-ADMIN", "admin", "compliance", "audit_read", "steward")
     seed.row(
-        "org.data_space_member", org_id=world.org, data_space_id=world.gold,
-        principal_type="user", principal_id=world.bob, role_id=risky,
+        "org.data_space_member",
+        org_id=world.org,
+        data_space_id=world.gold,
+        principal_type="user",
+        principal_id=world.bob,
+        role_id=risky,
     )
     assert await _caps(world, "kc-bob", "DS-GOLD") == {"steward"}
     async with _client(world) as client:
@@ -212,18 +216,27 @@ async def test_space_role_cannot_grant_org_wide_capabilities(world: World, seed:
     assert all("admin" not in s["my_capabilities"] for s in r.json()["items"])
 
 
-async def test_role_from_a_disabled_group_mapping_is_revoked_at_once(world: World, seed: Seed) -> None:
+async def test_role_from_a_disabled_group_mapping_is_revoked_at_once(
+    world: World, seed: Seed
+) -> None:
     # The sync has not yet removed the user_role rows materialised from the mappings.
     group = seed.row("org.user_group", org_id=world.org, external_id="cn=ops", name="Ops")
-    live_role, dead_role = _role(seed, world, "OPS", "run_agent"), _role(seed, world, "OLD", "approve")
+    live_role, dead_role = (
+        _role(seed, world, "OPS", "run_agent"),
+        _role(seed, world, "OLD", "approve"),
+    )
     live = seed.row("org.group_mapping", org_id=world.org, group_id=group, role_id=live_role)
     dead = seed.row(
         "org.group_mapping", org_id=world.org, group_id=group, role_id=dead_role, status="disabled"
     )
     for role, mapping in ((live_role, live), (dead_role, dead)):
         seed.row(
-            "org.user_role", org_id=world.org, user_id=world.bob, role_id=role,
-            source="group_mapping", source_ref=mapping,
+            "org.user_role",
+            org_id=world.org,
+            user_id=world.bob,
+            role_id=role,
+            source="group_mapping",
+            source_ref=mapping,
         )
     assert await _caps(world, "kc-bob") == {"run_agent"}
     async with _client(world) as client:
@@ -233,7 +246,9 @@ async def test_role_from_a_disabled_group_mapping_is_revoked_at_once(world: Worl
 
 async def test_suspended_organisation_resolves_nobody(world: World, seed: Seed) -> None:
     with seed.conn.cursor() as cur:
-        cur.execute("UPDATE org.organization SET status = 'suspended' WHERE id = %s", (str(world.org),))
+        cur.execute(
+            "UPDATE org.organization SET status = 'suspended' WHERE id = %s", (str(world.org),)
+        )
     resolved = await OrgIdentityResolver().resolve(
         org_id=world.org, external_id="kc-alice", data_space=None
     )
@@ -242,7 +257,9 @@ async def test_suspended_organisation_resolves_nobody(world: World, seed: Seed) 
 
 async def test_archived_space_cannot_be_named(world: World, seed: Seed) -> None:
     with seed.conn.cursor() as cur:
-        cur.execute("UPDATE org.data_space SET status = 'archived' WHERE id = %s", (str(world.oil),))
+        cur.execute(
+            "UPDATE org.data_space SET status = 'archived' WHERE id = %s", (str(world.oil),)
+        )
     with pytest.raises(DataSpaceNotFound):
         await OrgIdentityResolver().resolve(
             org_id=world.org, external_id="kc-alice", data_space="DS-OIL"
@@ -276,10 +293,13 @@ async def test_list_my_data_spaces(world: World) -> None:
     assert body["next_page_token"] == ""
 
 
-async def test_list_needs_ask(world: World) -> None:
+async def test_any_signed_in_user_lists_only_current_memberships(world: World) -> None:
+    # A login is enough since d89c5000 (the Data Space picker comes before any capability); what a
+    # user sees is still only where they are a member now: Bob's DS-GOLD membership has expired.
     async with _client(world) as client:
         r = await client.get("/v1/data-spaces", headers={"Authorization": "Bearer kc-bob"})
-    assert r.status_code == 403
+    assert r.status_code == 200
+    assert r.json()["items"] == []
 
 
 async def test_list_pages_by_cursor(world: World, seed: Seed) -> None:

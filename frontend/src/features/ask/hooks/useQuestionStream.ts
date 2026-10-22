@@ -14,20 +14,14 @@ import { getQuerySql } from '../../../lib/v1/explore';
 import {
   askQuestion,
   getAnswer,
+  getConversation,
   getQuestion,
   questionEvents,
-  type Answer,
+  type ConversationDetail,
 } from '../../../lib/v1/questions';
-import {
-  figureChart,
-  figureDrill,
-  figureRun,
-  figureTrust,
-  readChartSpec,
-  readFigures,
-  readPlan,
-} from '../dataAnswer';
-import type { AskMessage, Citation, ClarificationReply, VerificationFrame } from '../types';
+import { fromAnswer } from '../answerMessage';
+import { readPlan } from '../dataAnswer';
+import type { AskMessage, ClarificationReply } from '../types';
 
 const POLL_MS = 400;
 // A turn the worker has not finished in this long is shown as failed; the question stays
@@ -52,97 +46,96 @@ const STATUS_STEP: Record<string, string> = {
   running: 'Đang chạy kế hoạch',
 };
 
-/** One entry of qa.answer.citations as worker-agent writes it (documents/answer.py). */
-interface AnswerCitationWire {
-  n: number;
-  document_id: string;
-  document_title: string | null;
-  doc_no: string | null;
-  section_path: string | null;
-  page_from: number;
-  superseded_by: string | null;
-  quote: string;
-  score?: number | null;
-}
-
-/** A document citation numbered like the [n] markers of the answer text. */
-export function citationsOf(answer: Pick<Answer, 'citations'>): Citation[] {
-  const wire = Array.isArray(answer.citations) ? (answer.citations as AnswerCitationWire[]) : [];
-  return wire.map((c) => ({
-    index: c.n,
-    source: [
-      c.document_title ?? c.doc_no ?? 'Tài liệu',
-      c.section_path,
-      `trang ${c.page_from}`,
-      c.superseded_by ? `đã được thay thế bởi ${c.superseded_by}` : null,
-    ]
-      .filter(Boolean)
-      .join(' · '),
-    type: 'document',
-    snippet: c.quote,
-    doc_id: c.document_id,
-    page: c.page_from,
-    score: c.score ?? null,
-  }));
-}
-
-/** The deterministic checks the worker wrote with the answer (number_check.verification, R0-8).
- *  Anything not of that shape is left out rather than drawn as a verdict. */
-export function readVerification(numberCheck: unknown): VerificationFrame | undefined {
-  if (!numberCheck || typeof numberCheck !== 'object') return undefined;
-  const raw = (numberCheck as { verification?: unknown }).verification;
-  if (!raw || typeof raw !== 'object') return undefined;
-  const { checks, verdict, iteration } = raw as Record<string, unknown>;
-  if ((verdict !== 'PASS' && verdict !== 'FAIL') || !Array.isArray(checks)) return undefined;
-  return {
-    verdict,
-    iteration: typeof iteration === 'number' ? iteration : 1,
-    confidence: null,
-    checks: checks.flatMap(check => {
-      if (!check || typeof check !== 'object') return [];
-      const { name, passed, detail } = check as Record<string, unknown>;
-      if (typeof name !== 'string' || typeof passed !== 'boolean') return [];
-      return [{ name, passed, detail: typeof detail === 'string' ? detail : '' }];
-    }),
-  };
-}
-
-/** The answer as the Ask screen draws it. A refusal has no code on the wire (qa.answer keeps
- *  kind and text only), so it is drawn as a refusal with the server's message. */
-function fromAnswer(answer: Answer): Partial<AskMessage> {
-  if (answer.kind === 'refusal') {
-    return {
-      content: '',
-      refusal: { code: 'REFUSED', message: answer.text, next_action: '' },
-    };
+async function messagesFromConversation(detail: ConversationDetail): Promise<AskMessage[]> {
+  const out: AskMessage[] = [];
+  for (const turn of detail.turns) {
+    out.push({
+      id: `q-${turn.question_id}`,
+      role: 'user',
+      content: turn.text,
+      timestamp: turn.received_at,
+      status: 'done',
+      questionId: turn.question_id,
+    });
+    const assistantId = `a-${turn.question_id}`;
+    if (turn.answer_id) {
+      try {
+        const answer = await getAnswer(turn.answer_id);
+        const drawn = fromAnswer(answer);
+        let reading: AskMessage['reading'];
+        let proposal: AskMessage['proposal'];
+        let newQuestion: boolean | undefined;
+        try {
+          const q = await getQuestion(turn.question_id);
+          const plan = readPlan(q.plan);
+          reading = plan.reading.length ? plan.reading : undefined;
+          proposal = plan.proposal;
+          newQuestion = q.seq > 1 && !!reading?.length && !reading.some((c) => c.inherited);
+        } catch {
+          /* plan optional on reopen */
+        }
+        out.push({
+          id: assistantId,
+          role: 'assistant',
+          content: '',
+          timestamp: turn.answered_at ?? turn.received_at,
+          status: 'done',
+          questionId: turn.question_id,
+          answerId: turn.answer_id,
+          ...drawn,
+          ...(reading && { reading }),
+          ...(proposal && { proposal }),
+          ...(newQuestion !== undefined && { newQuestion }),
+        });
+        const run = drawn.evidence?.runs[0];
+        if (run?.id) {
+          try {
+            const sql = await getQuerySql(run.id);
+            const last = out[out.length - 1];
+            if (last.evidence) {
+              last.evidence = {
+                ...last.evidence,
+                runs: last.evidence.runs.map((r) =>
+                  r.id === run.id ? { ...r, sql: sql.sql_executed } : r,
+                ),
+              };
+            }
+          } catch {
+            /* SQL is enrichment for Cách tính */
+          }
+        }
+      } catch {
+        out.push({
+          id: assistantId,
+          role: 'assistant',
+          content: 'Không tải được câu trả lời đã lưu.',
+          timestamp: turn.answered_at ?? turn.received_at,
+          status: 'error',
+          questionId: turn.question_id,
+        });
+      }
+    } else {
+      out.push({
+        id: assistantId,
+        role: 'assistant',
+        content:
+          turn.status === 'failed'
+            ? 'Agent không trả lời được câu hỏi này.'
+            : 'Câu hỏi chưa có câu trả lời (đang chạy hoặc chưa xong).',
+        timestamp: turn.received_at,
+        status: turn.status === 'failed' ? 'error' : 'done',
+        questionId: turn.question_id,
+      });
+    }
   }
-  const citations = citationsOf(answer);
-  const verification = readVerification(answer.number_check);
-  const drawn: Partial<AskMessage> = {
-    content: answer.text,
-    ...(citations.length > 0 && { citations }),
-    ...(verification && { verification }),
-  };
-  if (answer.kind !== 'data') return drawn;
-  // AC-01-01-01: the figures become the table, the chart and the trust label.
-  const figures = readFigures(answer.figures);
-  const spec = readChartSpec(answer.chart_spec);
-  const run = figureRun(figures, spec);
-  const chart = figureChart(figures, spec);
-  const trust = figureTrust(figures);
-  const drill = figureDrill(spec);
-  return {
-    ...drawn,
-    ...(drill && { drill }),
-    ...(run && { evidence: { runs: [run], clarifications: [], warnings: [] } }),
-    ...(chart && { chartSpecs: [chart] }),
-    ...(trust && { trust }),
-  };
+  return out;
 }
 
 export function useQuestionStream() {
   const [messages, setMessages] = useState<AskMessage[]>([]);
   const [sending, setSending] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [hydrating, setHydrating] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const conversationRef = useRef<string | null>(null);
   const mounted = useRef(true);
@@ -255,6 +248,7 @@ export function useQuestionStream() {
       try {
         const accepted = await askQuestion(q, conversationRef.current);
         conversationRef.current = accepted.conversation_id;
+        if (mounted.current) setConversationId(accepted.conversation_id);
         patch(assistantId, (m) => ({ ...m, questionId: accepted.question_id }));
         await follow(assistantId, accepted.question_id, controller.signal);
       } catch (err) {
@@ -303,5 +297,58 @@ export function useQuestionStream() {
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
-  return { messages, sending, send, answerClarification, confirmUnderstanding, stop };
+  /** Load a server conversation into the screen (R1-13 URL reopen). */
+  const hydrate = useCallback(async (id: string) => {
+    if (!id || conversationRef.current === id) return;
+    abortRef.current?.abort();
+    setHydrating(true);
+    try {
+      const detail = await getConversation(id);
+      const next = await messagesFromConversation(detail);
+      if (!mounted.current) return;
+      conversationRef.current = detail.id;
+      setConversationId(detail.id);
+      setMessages(next);
+    } catch (err) {
+      if (!mounted.current) return;
+      conversationRef.current = null;
+      setConversationId(null);
+      setMessages([
+        {
+          id: nextId(),
+          role: 'assistant',
+          content:
+            err instanceof V1Error && err.status === 404
+              ? 'Không tìm thấy hội thoại này, hoặc bạn không có quyền mở.'
+              : err instanceof V1Error
+                ? err.message
+                : 'Không tải được hội thoại.',
+          timestamp: nowIso(),
+          status: 'error',
+        },
+      ]);
+    } finally {
+      if (mounted.current) setHydrating(false);
+    }
+  }, []);
+
+  const resetConversation = useCallback(() => {
+    abortRef.current?.abort();
+    conversationRef.current = null;
+    setConversationId(null);
+    setMessages([]);
+  }, []);
+
+  return {
+    messages,
+    sending,
+    hydrating,
+    conversationId,
+    send,
+    answerClarification,
+    confirmUnderstanding,
+    stop,
+    hydrate,
+    resetConversation,
+  };
 }

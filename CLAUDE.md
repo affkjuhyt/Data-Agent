@@ -13,7 +13,7 @@ so a green `make ci` is a green pipeline.
 | Lint / format | `make lint`, `make fmt` | ruff 0.6.9 (pinned in `pyproject.toml`), run inside the service image. `make lint` and CI's `python-lint` are a **ratchet** (`tests/ruff_ratchet.py`): they fail only on findings, per file and rule, that the change adds against its base (`LINT_BASE`, default `main`), and on files it leaves unformatted that were formatted before or are new. `make fmt` rewrites the whole tree — do not commit its output with a behaviour change. Import sorting (`I001`) is on and `combine-as-imports` is off, so ruff writes one `from x import (y as z,)` statement per alias — that is its output, not churn; do not hand-collapse it |
 | Fast lint / types on V3 code | `make fmt-files FILES="…"`, `make type-v3`, `make lint-imports` | run in the cached `dataagent/dev-tools:local` image (`tests/dev-tools.Dockerfile`: ruff, mypy, import-linter and the V3 services' requirements, pinned), built once by `make dev-tools`; seconds per run instead of a PyPI install per run. `make lint` and `make fmt` use the same image |
 | Types | `make type` | mypy 2.4.0 (pinned; `pyproject.toml` config, not strict) on the whole of `backend/libs` + `backend/services` — red, see below. CI's blocking step is the strict per-surface list in `.github/workflows/ci.yml` |
-| Tests | `make test-changed`, `make test-unit`, `make test-integration`, `make test` | one pytest suite per service (`tests/unit/<service>/`, `tests/integration/<service>/`), each run in **that service's image** (plus the cached test tooling, `tests/test-image.Dockerfile`) — no single image can import every service. Suites run in parallel (`TEST_JOBS=1` to serialise); `make test-changed` runs only the suites the changes since `main` can affect — use it while iterating, `make test` before a merge. **Host Python is 3.10, the code targets 3.11**: never run tests with the host interpreter (`tests/run_suites.py` only drives docker). One suite: `make test-unit UNIT_SUITES=kb_backend:kb-backend` |
+| Tests | `make test-changed`, `make test-unit`, `make test-integration`, `make test` | one pytest suite per service (`tests/unit/<service>/`, `tests/integration/<service>/`), each run in **that service's image** (plus the cached test tooling, `tests/test-image.Dockerfile`) — no single image can import every service. Suites run in parallel (`TEST_JOBS=1` to serialise); `make test-changed` runs only the suites the changes since `main` can affect — use it while iterating, `make test` before a merge. **Host Python is 3.10, the code targets 3.11**: never run tests with the host interpreter (`tests/run_suites.py` only drives docker). One suite: `make test-unit UNIT_SUITES=worker_agent:worker-agent` |
 | Dead code | `make deadcode` | vulture (python, `min_confidence = 60`, vetted exceptions in `backend/.vulture_whitelist.py`, both set in `pyproject.toml`) + knip (frontend) |
 | Frontend | `make frontend-lint`, `make frontend-test` | tsc + vitest. There is **no ESLint**: the config was v8-format, unreferenced and never ran, so it and its five devDeps were removed. Correctness is tsc's job, style is prettier's, unused code is knip's. Reintroducing ESLint means a flat `eslint.config.js`, an npm script and a CI step — all three or none |
 | End-to-end | `make e2e` | `pytest -m e2e` against the **deployed dev cluster** over its LAN NodePorts (override with `E2E_KONG_URL` / `E2E_KEYCLOAK_URL` / `E2E_RUNTIME_URL`); `E2E_USER` / `E2E_PASS` from the environment. It **writes data**: agent turns create conversations, the tenant-isolation test deletes, revokes and rotates API keys. Needs the `seed_demo` data. See `tests/README.md` |
@@ -23,7 +23,7 @@ so a green `make ci` is a green pipeline.
 | Semantic model YAML | `make semantic-export`, `make semantic-import` | a Data Space's entities, dimensions, measures, relationships and metrics as MetricFlow-shaped YAML (`services/api/modules/context/semantic_yaml.py`), run in the api pod. `SEMANTIC_ORG` (id), `SEMANTIC_SPACE` (code), `SEMANTIC_AS` (username), `SEMANTIC_FILE`; import is a dry run unless `SEMANTIC_APPLY=1` and approves nothing: relationships stay `pending_review`, metrics get draft versions |
 | Frontend API types | `make api-types` | dumps the api's OpenAPI to `frontend/src/lib/v1/openapi.json` and generates `schema.ts` (openapi-typescript); rerun when an api schema changes, never edit either file |
 | Design coverage | `make design-checklist`, `make design-audit` | what of the V3 system design exists: `docs/v3/10-design-checklist.md`, generated from the design snapshot, code evidence and `docs/v3/checklist/status.tsv`. Tag a test with the acceptance criterion it proves (`pytest.mark.req("AC-01-01-04")`), declare what code cannot show in `status.tsv`, regenerate in the same commit; CI fails a stale file or a status the evidence contradicts (`docs/v3/checklist/README.md`) |
-| Deploy | `make deploy-local` (OrbStack), `make deploy` (full stack) | Ansible is the only deploy path. The local cluster runs only the V3 slice: use `make deploy-local`, since `make deploy` also rebuilds kb-backend, kb-worker, auth_api and platform-workers, which nothing there runs. The git diff since the last deploy picks **which** images to rebuild, but each is built from the **working tree**, uncommitted edits included: to ship exactly a commit, deploy from a clean worktree. Check which branch the cluster runs first (`~/.dataagent-deploy/k8s-local/last_deployed_sha.txt`). See `deploy/ansible/README.md` |
+| Deploy | `make deploy-local` (OrbStack), `make deploy` (full stack) | Ansible is the only deploy path. The local cluster runs only the V3 slice: use `make deploy-local`, since `make deploy` also rebuilds auth_api, model-service and platform-workers, which nothing there runs. The git diff since the last deploy picks **which** images to rebuild, but each is built from the **working tree**, uncommitted edits included: to ship exactly a commit, deploy from a clean worktree. Check which branch the cluster runs first (`~/.dataagent-deploy/k8s-local/last_deployed_sha.txt`). See `deploy/ansible/README.md` |
 
 ### Gates that are currently red
 
@@ -77,7 +77,7 @@ commented-out code is not allowed to stay.
 | Env vars | `SCREAMING_SNAKE`, prefixed by subsystem | `LITELLM_BASE_URL` |
 
 Known inconsistency, do not copy it: container images are half snake_case
-(`dataagent/workflow_runtime`) and half kebab (`dataagent/kb-backend`), while every k8s
+(`dataagent/workflow_runtime`) and half kebab (`dataagent/worker-agent`), while every k8s
 object is kebab. New services use kebab everywhere outside Python; renaming the existing
 images is a deploy-affecting change that needs its own PR (manifests + Ansible + docs in
 one commit).
@@ -114,14 +114,15 @@ from a literal.
 ## 7. Repo layout
 
 ```
-backend/libs        shared libraries (basemodel, database_connector, shared, ingestion,
+backend/libs        shared libraries (basemodel, database_connector, shared, contracts,
                     semantic, indicator; dataagent_db = generated V3 models + scoped_session)
 backend/services    one deployable per directory, Dockerfile inside. `api` is the V3 modular monolith
                     (ADR-28, docs/v3/06-api-v1.md): every /v1 module goes there, one package per schema,
                     and its routes take their metadata and capability check from the A2 snapshot
-                    (catalogue/). The other directories are the legacy services it replaces.
-                    kb_backend also holds the four KB Kafka workers (workers/*), built as the
-                    `kb-worker` image (deploy/docker/kb-worker); llm-exporter is a platform_workers worker. Add a worker, not a service, for a new
+                    (catalogue/). worker_agent, worker_ingest, worker_document and crawler are the
+                    other V3 blocks; the remaining directories are the legacy services it replaces
+                    (the KB stack and the web-crawler were removed, docs/v3/04-backlog.md §3c).
+                    llm-exporter is a platform_workers worker. Add a worker, not a service, for a new
                     queue consumer
 
                     workflow_runtime is layered: api/ (routers, auth, app factory) > application/
@@ -150,7 +151,7 @@ tests/unit/<service>/, tests/integration/<service>/   one suite per service imag
 tests/integration/test_*.py                         e2e tests (make e2e)
 tests/e2e           demo seed data (k8s seed Job), eval and Playwright harnesses
 tests/loadtest      k6
-docs                RUNBOOK, SECURITY, SILVER-FORMAT, v3/ (product direction, agent core, R0 design,
+docs                RUNBOOK, SECURITY, v3/ (product direction, agent core, R0 design,
                     backlog — start here), v2/ (Observation Engine spec and the oil/gold reference Data
                     Space; v2/data/ fixtures are read by tests)
 ```

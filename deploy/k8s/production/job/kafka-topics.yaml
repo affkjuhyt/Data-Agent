@@ -17,8 +17,7 @@ metadata:
   labels:
     app: kafka-topics
     app.kubernetes.io/part-of: dataagent
-data:
-  INGEST_PARTITIONS: '3'
+data: {}
 
 ---
 apiVersion: batch/v1
@@ -66,9 +65,11 @@ spec:
 
           until $KT --bootstrap-server "$B" --list >/dev/null 2>&1; do echo waiting for kafka; sleep 3; done
 
-          for t in kb.promote.silver kb.promote.gold kb.structured.propose; do
-            $KT --bootstrap-server "$B" --create --if-not-exists --topic "$t" --partitions "$INGEST_PARTITIONS" --replication-factor 1
-            $KT --bootstrap-server "$B" --alter --topic "$t" --partitions "$INGEST_PARTITIONS" || true
+          # The legacy knowledge base (kb-backend, kb-worker, web-crawler) was removed (KB-08): drop its
+          # topics and every ACL on them; no-ops once they are gone.
+          for t in kb.promote.silver kb.promote.gold kb.structured.propose kb.resolve.conflict kb.ingestion.dlq; do
+            $KT --bootstrap-server "$B" --delete --if-exists --topic "$t"
+            $KA --bootstrap-server "$B" --remove --force --topic "$t"
           done
 
           # Every SASL principal needs an explicit ACL per topic

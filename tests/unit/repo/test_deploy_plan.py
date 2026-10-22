@@ -93,7 +93,7 @@ class TestRealImages:
     def test_a_service_image_sees_its_own_tree_and_not_the_others(self):
         # They used to copy all of backend/services, so an edit to one service rebuilt
         # and restarted every one of them (and the migrate image).
-        services = ("auth_api", "kb_backend")
+        services = ("auth_api", "model_service")
         for service in services:
             inputs = _inputs(f"backend/services/{service}")
             assert plan.paths_touching([f"backend/services/{service}/main.py"], inputs), service
@@ -111,7 +111,7 @@ class TestRealImages:
             ["backend/libs/basemodel/services_databaseconnector/postgres_model.py"], inputs
         )
         assert not plan.paths_touching(
-            ["backend/services/kb_backend/main.py", "backend/libs/shared/outbox.py"], inputs
+            ["backend/services/auth_api/main.py", "backend/libs/shared/outbox.py"], inputs
         )
 
     def test_images_that_never_copy_libs_ignore_a_libs_change(self):

@@ -3,7 +3,8 @@
  * list and its schedule, cleaning by conversation, saving the output, approving a write-back,
  * and a lineage graph laid out from the API.
  */
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { EditorView } from '@codemirror/view';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
@@ -25,6 +26,7 @@ const server = setupServer();
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 beforeEach(() => {
   routeId = undefined;
+  sessionStorage.removeItem('da.sql.history');
   server.resetHandlers(...createHandlers());
 });
 afterEach(() => navigate.mockReset());
@@ -32,17 +34,39 @@ afterAll(() => server.close());
 
 const wrap = (ui: React.ReactNode) => render(<ToastProvider>{ui}</ToastProvider>);
 
+const sqlView = () => {
+  const box = screen.getByLabelText('Câu truy vấn SQL');
+  const view = EditorView.findFromDOM(box);
+  if (!view) throw new Error('SQL editor is not mounted');
+  return view;
+};
+
+const sqlText = () => sqlView().state.doc.toString();
+
+const replaceSql = (text: string) => {
+  act(() => {
+    const view = sqlView();
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+  });
+};
+
+const placeCaret = (offset: number) => {
+  act(() => {
+    sqlView().dispatch({ selection: { anchor: offset } });
+  });
+};
+
 describe('SqlPage', () => {
   it('discovers the real table schema, runs the query, and saves it as a dataset', async () => {
     wrap(<SqlPage />);
-    expect(
-      await screen.findByRole('button', { name: 'mart.loans_dedup_0930' }),
-    ).toBeInTheDocument();
-    await waitFor(() =>
-      expect((screen.getByLabelText('Câu truy vấn SQL') as HTMLTextAreaElement).value).toContain(
-        'FROM mart.loans_dedup_0930',
-      ),
-    );
+    const table = await screen.findByRole('treeitem', { name: 'loans_dedup_0930' });
+    expect(table).toHaveTextContent('loans_dedup_0930');
+    expect(screen.getByRole('treeitem', { name: 'mart' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByRole('treeitem', { name: 'Bảng dẫn xuất' })).not.toBeInTheDocument();
+    await waitFor(() => expect(sqlText()).toContain('FROM mart.loans_dedup_0930'));
+    const before = sqlText();
+    fireEvent.click(table);
+    expect(sqlText()).toBe(before);
 
     fireEvent.click(screen.getByRole('button', { name: /Chạy/ }));
     expect(await screen.findByText('Truy vấn xong · 20 dòng · 0,8 giây')).toBeInTheDocument();
@@ -65,11 +89,67 @@ describe('SqlPage', () => {
 
   it('refuses a statement that writes', async () => {
     wrap(<SqlPage />);
-    fireEvent.change(screen.getByLabelText('Câu truy vấn SQL'), {
-      target: { value: 'DELETE FROM ld_loans' },
+    replaceSql('DELETE FROM ld_loans');
+    act(() => {
+      sqlView().contentDOM.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Enter',
+          metaKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
     });
-    fireEvent.keyDown(screen.getByLabelText('Câu truy vấn SQL'), { key: 'Enter', metaKey: true });
     expect(await screen.findByText('Trình SQL chỉ chạy câu đọc dữ liệu.')).toBeInTheDocument();
+  });
+
+  it('charts a category against a number and shows the SQL the policy ran', async () => {
+    wrap(<SqlPage />);
+    await waitFor(() => expect(sqlText()).toContain('FROM mart.loans_dedup_0930'));
+    fireEvent.click(screen.getByRole('button', { name: /Chạy/ }));
+    expect(await screen.findByText('Truy vấn xong · 20 dòng · 0,8 giây')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: 'Biểu đồ' }));
+    expect(await screen.findByText('npl theo region')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'SQL đã chạy' }));
+    expect(screen.getByText(/:policy_branch/)).toBeInTheDocument();
+  });
+
+  it('browses the schema tree without writing names into the statement', async () => {
+    wrap(<SqlPage />);
+    await waitFor(() => expect(sqlText()).toContain('FROM mart.loans_dedup_0930'));
+    const before = sqlText();
+    const table = screen.getByRole('treeitem', { name: 'loans_dedup_0930' });
+    fireEvent.click(table);
+    fireEvent.doubleClick(table);
+    expect(sqlText()).toBe(before);
+
+    const column = await screen.findByRole('treeitem', { name: 'balance' });
+    fireEvent.click(column);
+    fireEvent.doubleClick(column);
+    expect(sqlText()).toBe(before);
+  });
+
+  it('runs only the statement under the cursor', async () => {
+    wrap(<SqlPage />);
+    await waitFor(() => expect(sqlText()).toContain('FROM mart.loans_dedup_0930'));
+    replaceSql('SELECT 1;\nDELETE FROM secret;');
+    placeCaret(sqlText().indexOf('DELETE'));
+    fireEvent.click(screen.getByRole('button', { name: /Chạy/ }));
+    expect(await screen.findByText('Trình SQL chỉ chạy câu đọc dữ liệu.')).toBeInTheDocument();
+
+    placeCaret(0);
+    fireEvent.click(screen.getByRole('button', { name: /Chạy/ }));
+    expect(await screen.findByText('Truy vấn xong · 20 dòng · 0,8 giây')).toBeInTheDocument();
+  });
+
+  it('opens a certified metric when the statement names its code', async () => {
+    wrap(<SqlPage />);
+    await screen.findByLabelText('Câu truy vấn SQL');
+    replaceSql('SELECT NPL_RATIO FROM mart.loans_dedup_0930');
+    fireEvent.click(await screen.findByRole('button', { name: 'Mở NPL_RATIO' }));
+    expect(navigate).toHaveBeenCalledWith('data', 'METRIC', 'exp-npl-ratio');
+    expect(screen.queryByRole('button', { name: 'Dùng NPL_RATIO v4' })).not.toBeInTheDocument();
   });
 });
 

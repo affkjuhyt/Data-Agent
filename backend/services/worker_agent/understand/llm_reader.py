@@ -18,7 +18,8 @@ from __future__ import annotations
 import datetime
 import json
 from collections.abc import Sequence
-from typing import Any
+
+from pydantic import BaseModel
 
 from services.worker_agent.llm import Gateway, ModelUnavailable, Reply
 from services.worker_agent.understand.resolver import (
@@ -45,6 +46,14 @@ Câu hỏi hỏi một đại lượng không có trong danh mục chỉ số (v
 giao dịch) thì metric = null, kể cả khi hội thoại trước có chỉ số.
 Câu hỏi có thể nối tiếp hội thoại trước: chỉ khi nó không nêu đại lượng nào (chỉ đổi chiều, bộ lọc
 hoặc kỳ, ví dụ "còn theo vùng thì sao?") mới dùng chỉ số của câu gần nhất."""
+
+
+class Reading(BaseModel):
+    metric: str | None = None
+    alternatives: list[str] = []
+    group_by: list[str] = []
+    filters: dict[str, list[str]] = {}
+    period: str | None = None
 
 
 def _labels(chips: Sequence[dict[str, object]], kind: str) -> list[str]:
@@ -98,7 +107,7 @@ async def read(
     *,
     today: datetime.date,
     history: Sequence[Turn] = (),
-) -> tuple[Understanding, Reply] | None:
+) -> tuple[Understanding, Reply[Reading]] | None:
     if not vocab.metrics:
         return None
     talk = history_of(history)
@@ -108,15 +117,16 @@ async def read(
             "planner",
             SYSTEM,
             f"Danh mục: {_catalogue(vocab)}{context}\n\nCâu hỏi: {question}",
+            Reading,
             max_tokens=400,
         )
     except ModelUnavailable:
         return None
-    answer: dict[str, Any] = reply.content
+    answer = reply.content
     codes = {m.code: m for m in vocab.metrics}
-    alternatives = [codes[c] for c in answer.get("alternatives") or [] if c in codes]
-    metric = answer.get("metric")
-    if metric not in codes:
+    alternatives = [codes[c] for c in answer.alternatives if c in codes]
+    metric = answer.metric
+    if metric is None or metric not in codes:
         if len(alternatives) > 1:
             return (
                 Understanding(
@@ -126,16 +136,14 @@ async def read(
             )
         return None
     chips: list[dict[str, object]] = [{"kind": "metric", "value": metric}]
-    chips += [{"kind": "dimension", "value": str(d)} for d in answer.get("group_by") or []]
-    filters = answer.get("filters") or {}
-    if isinstance(filters, dict):
-        chips += [
-            {"kind": "filter", "value": f"{dim}={member}"}
-            for dim, members in filters.items()
-            for member in (members if isinstance(members, list) else [members])
-        ]
+    chips += [{"kind": "dimension", "value": d} for d in answer.group_by]
+    chips += [
+        {"kind": "filter", "value": f"{dim}={member}"}
+        for dim, members in answer.filters.items()
+        for member in members
+    ]
     period = find_period(question, today) or (
-        find_period(str(answer["period"]), today) if answer.get("period") else None
+        find_period(answer.period, today) if answer.period else None
     )
     if period is not None:
         chips.append(

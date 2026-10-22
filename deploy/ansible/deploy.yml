@@ -271,7 +271,8 @@
               'WORKER_AGENT_OPENBAO_ROLE_ID': '', 'WORKER_AGENT_OPENBAO_SECRET_ID': '',
               'SANDBOX_EXECUTOR_OPENBAO_ROLE_ID': '', 'SANDBOX_EXECUTOR_OPENBAO_SECRET_ID': '',
               'PLATFORM_WORKERS_OPENBAO_ROLE_ID': '', 'PLATFORM_WORKERS_OPENBAO_SECRET_ID': '',
-              'API_OPENBAO_ROLE_ID': '', 'API_OPENBAO_SECRET_ID': ''}
+              'API_OPENBAO_ROLE_ID': '', 'API_OPENBAO_SECRET_ID': '',
+              'CRAWLER_OPENBAO_ROLE_ID': '', 'CRAWLER_OPENBAO_SECRET_ID': ''}
              | combine((openbao_state | default({}, true)).openbao_env | default({}, true)) }}
       no_log: true
 
@@ -341,7 +342,6 @@
               -e "s|REPLACE_WITH_AUDIT_CONSUMER_PASSWORD|${AUDIT_CONSUMER_KAFKA_PASSWORD}|g" \
               -e "s|REPLACE_WITH_MEMORY_CONSUMER_PASSWORD|${MEMORY_CONSUMER_KAFKA_PASSWORD}|g" \
               -e "s|REPLACE_WITH_SCHEMA_CRAWLER_WORKER_PASSWORD|${SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD}|g" \
-              -e "s|REPLACE_WITH_WEB_CRAWLER_WORKER_PASSWORD|${WEB_CRAWLER_WORKER_KAFKA_PASSWORD}|g" \
               "{{ docker_dir }}/kafka/kafka-broker-jaas.config.example" > "$jaas"
           kubectl -n {{ ns_database }} create secret generic kafka-jaas \
             --from-file=kafka-broker-jaas.config="$jaas" \

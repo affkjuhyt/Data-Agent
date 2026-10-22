@@ -520,16 +520,27 @@ async def test_secret_ref_is_an_openbao_path_of_the_org_and_never_returned(w: Wo
     async with w.client("owner") as c:
         foreign = await c.post(
             "/v1/crawl-sources",
-            json=_source_body(auth_mode="api_key", secret_ref=f"tenants/{other_org}/bank-a"),
+            json=_source_body(
+                auth_mode="api_key", secret_ref=f"tenants/{other_org}/crawl-sources/bank-a"
+            ),
         )
         climb = await c.post(
             "/v1/crawl-sources",
-            json=_source_body(auth_mode="api_key", secret_ref=f"tenants/{w.org}/../{other_org}/k"),
+            json=_source_body(
+                auth_mode="api_key", secret_ref=f"tenants/{w.org}/crawl-sources/../../{other_org}/k"
+            ),
         )
         missing = await c.post("/v1/crawl-sources", json=_source_body(auth_mode="api_key"))
+        # Another secret of the same organisation (a warehouse password) is not a source's key.
+        elsewhere = await c.post(
+            "/v1/crawl-sources",
+            json=_source_body(auth_mode="api_key", secret_ref=f"tenants/{w.org}/sources/dw"),
+        )
         made = await c.post(
             "/v1/crawl-sources",
-            json=_source_body(auth_mode="api_key", secret_ref=f"tenants/{w.org}/bank-a/api-key"),
+            json=_source_body(
+                auth_mode="api_key", secret_ref=f"tenants/{w.org}/crawl-sources/bank-a/api-key"
+            ),
         )
         assert made.status_code == 201, made.text
         source = made.json()["id"]
@@ -539,13 +550,14 @@ async def test_secret_ref_is_an_openbao_path_of_the_org_and_never_returned(w: Wo
     assert foreign.json()["errors"][0]["field"] == "secret_ref"
     assert climb.status_code == 422, climb.text
     assert missing.status_code == 422, missing.text
+    assert elsewhere.status_code == 422, elsewhere.text
     assert made.json()["has_secret"] is True
     for text in (made.text, detail.text, listed.text, str(w.events(source))):
         assert "secret_ref" not in text
         assert "bank-a/api-key" not in text
     assert (
         w.one("SELECT secret_ref FROM acquire.crawl_source WHERE id = %s", source)
-        == f"tenants/{w.org}/bank-a/api-key"
+        == f"tenants/{w.org}/crawl-sources/bank-a/api-key"
     )
 
 
