@@ -126,6 +126,14 @@ class DeploymentView(_Row):
     updated_at: datetime.datetime
 
 
+class RunsWindow(BaseModel):
+    """Last 7 days on one agent: how many runs, how many needed a person, how many failed."""
+
+    count: int
+    needs_approval_pct: int
+    errors: int
+
+
 class AgentSummary(_Row):
     id: uuid.UUID
     data_space_id: uuid.UUID
@@ -145,6 +153,13 @@ class AgentSummary(_Row):
     # GET /v1/agents: runs in progress and runs waiting for a person (A3).
     active_runs: int = 0
     waiting_runs: int = 0
+    # Drawn on "Đội agent" from the current config, its tools and the last 7 days of runs.
+    goal: str | None = None
+    trigger_text: str | None = None
+    permission_text: str | None = None
+    runs_7d: RunsWindow | None = None
+    # The deployment still in progress, so "Đánh giá & triển khai" can open it without an id.
+    active_deployment_id: uuid.UUID | None = None
 
 
 class AgentView(AgentSummary):
@@ -258,6 +273,9 @@ class RunSummary(_Row):
     finished_at: datetime.datetime | None
     stop_reason: str | None
     created_at: datetime.datetime
+    # The goal of the config version this run used, and how often it stopped for a person.
+    title: str | None = None
+    hitl_count: int = 0
 
 
 class RunView(RunSummary):

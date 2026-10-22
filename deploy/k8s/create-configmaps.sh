@@ -36,7 +36,8 @@ cm "$SVC" db-init-sql \
   --from-file=03-v3-demo-seed.sql=$K/sql/v3-demo-seed.sql \
   --from-file=04-v3-credit-demo.sql=$K/sql/v3-credit-demo.sql \
   --from-file=05-v3-pilot-seed.sql=$K/sql/v3-pilot-seed.sql \
-  --from-file=06-v3-banking-demo.sql=$K/sql/v3-banking-demo.sql
+  --from-file=06-v3-banking-demo.sql=$K/sql/v3-banking-demo.sql \
+  --from-file=07-v3-agent-seed.sql=$K/sql/v3-agent-seed.sql
 
 cm "$SVC" keycloak-realm   --from-file=$K/keycloak/realm-export.json
 cm "$SVC" keycloak-scripts --from-file=$K/keycloak/setup-audience-mappers.sh
