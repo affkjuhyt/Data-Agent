@@ -42,7 +42,11 @@ non-blocking stdio.
 > slice (api, worker-agent, worker-ingest, worker-document, frontend, migrate, gateway,
 > litellm, mailpit). `make deploy` plans the whole stack and also rebuilds kb-backend,
 > kb-worker, auth_api and platform-workers when `backend/libs` changes — images nothing
-> there runs; on 20/10/2026 that cost 30 minutes for no running change.
+> there runs; on 20/10/2026 that cost 30 minutes for no running change. It also leaves Neo4j
+> out of the database tier (`LOCAL_DATABASES` in the Makefile): nothing in V3 reads it, and its
+> 2 GiB request left the one-node cluster no memory to schedule worker-agent on 22/10/2026. A
+> Neo4j already there stays as it is; `kubectl -n dataagent-database scale statefulset neo4j
+> --replicas=0` frees it, its PVC kept.
 
 ## What a run does
 
