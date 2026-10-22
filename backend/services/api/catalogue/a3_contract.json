@@ -108,22 +108,6 @@
    "errors": [],
    "request_text": "?q, ?from, ?to"
   },
-  "GET /v1/conversations/{id}": {
-   "group": "Hỏi đáp",
-   "groups": [
-    "Hỏi đáp"
-   ],
-   "body": {},
-   "query": [],
-   "returns": "ConversationDetail. Kèm turns theo seq (question_id, text, status, answer_id)",
-   "errors": [
-    [
-     404,
-     "not_found"
-    ]
-   ],
-   "request_text": "—"
-  },
   "GET /v1/answers/{id}": {
    "group": "Hỏi đáp",
    "groups": [

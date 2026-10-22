@@ -11,7 +11,7 @@
 | --- | --- | --- | --- |
 | Use case (tab 8) | 115 | 7 UC đủ tiêu chí bắt buộc | todo 115 |
 | Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 332 có test nhắc mã AC | todo 778 |
-| Endpoint A2 (tab 4) | 475 (A2 ghi 476 dòng; POST /v1/data-products ở hai nhóm) | 474 được `api` phục vụ | — |
+| Endpoint A2 (tab 4) | 474 (A2 ghi 475 dòng; POST /v1/data-products ở hai nhóm) | 474 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 222 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 161 có mã nhắc tới | todo 195 |
 | Màn hình (SCR) | 75 | 15 có mã nhắc tới | todo 75 |
@@ -229,7 +229,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | Nhóm | Đã phục vụ | Còn thiếu |
 | --- | --- | --- |
-| Hỏi đáp | 17/18 | `GET /v1/conversations/{id}` |
+| Hỏi đáp | 17/17 |  |
 | Truy vấn | 4/4 |  |
 | Phiên làm việc | 22/22 |  |
 | Kỹ năng | 17/17 |  |

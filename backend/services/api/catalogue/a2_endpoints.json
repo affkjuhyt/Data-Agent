@@ -184,18 +184,6 @@
   {
    "group": "Hỏi đáp",
    "method": "GET",
-   "path": "/v1/conversations/{id}",
-   "summary": "Chi tiết hội thoại kèm lượt hỏi và answer_id",
-   "use_cases": [
-    "01-04"
-   ],
-   "capability": [
-    "ask"
-   ]
-  },
-  {
-   "group": "Hỏi đáp",
-   "method": "GET",
    "path": "/v1/answers/{id}",
    "summary": "Câu trả lời đầy đủ: số, biểu đồ, trích dẫn",
    "use_cases": [

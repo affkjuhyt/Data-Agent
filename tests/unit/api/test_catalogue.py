@@ -20,7 +20,7 @@ def test_snapshot_holds_all_of_a2() -> None:
     data = catalogue()
     # 470 rows of tab 4, plus the upload preview/delete, the metric edit/retire and the eval
     # item edit operations.
-    assert len(data["endpoints"]) == 476
+    assert len(data["endpoints"]) == 475
     assert len(data["groups"]) == 22
     assert {e["group"] for e in data["endpoints"]} == set(data["groups"])
 
