@@ -27,7 +27,7 @@ import {
   readFigures,
   readPlan,
 } from '../dataAnswer';
-import type { AskMessage, Citation, ClarificationReply } from '../types';
+import type { AskMessage, Citation, ClarificationReply, VerificationFrame } from '../types';
 
 const POLL_MS = 400;
 // A turn the worker has not finished in this long is shown as failed; the question stays
@@ -86,6 +86,27 @@ export function citationsOf(answer: Pick<Answer, 'citations'>): Citation[] {
   }));
 }
 
+/** The deterministic checks the worker wrote with the answer (number_check.verification, R0-8).
+ *  Anything not of that shape is left out rather than drawn as a verdict. */
+export function readVerification(numberCheck: unknown): VerificationFrame | undefined {
+  if (!numberCheck || typeof numberCheck !== 'object') return undefined;
+  const raw = (numberCheck as { verification?: unknown }).verification;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const { checks, verdict, iteration } = raw as Record<string, unknown>;
+  if ((verdict !== 'PASS' && verdict !== 'FAIL') || !Array.isArray(checks)) return undefined;
+  return {
+    verdict,
+    iteration: typeof iteration === 'number' ? iteration : 1,
+    confidence: null,
+    checks: checks.flatMap(check => {
+      if (!check || typeof check !== 'object') return [];
+      const { name, passed, detail } = check as Record<string, unknown>;
+      if (typeof name !== 'string' || typeof passed !== 'boolean') return [];
+      return [{ name, passed, detail: typeof detail === 'string' ? detail : '' }];
+    }),
+  };
+}
+
 /** The answer as the Ask screen draws it. A refusal has no code on the wire (qa.answer keeps
  *  kind and text only), so it is drawn as a refusal with the server's message. */
 function fromAnswer(answer: Answer): Partial<AskMessage> {
@@ -96,9 +117,12 @@ function fromAnswer(answer: Answer): Partial<AskMessage> {
     };
   }
   const citations = citationsOf(answer);
-  const drawn: Partial<AskMessage> = citations.length
-    ? { content: answer.text, citations }
-    : { content: answer.text };
+  const verification = readVerification(answer.number_check);
+  const drawn: Partial<AskMessage> = {
+    content: answer.text,
+    ...(citations.length > 0 && { citations }),
+    ...(verification && { verification }),
+  };
   if (answer.kind !== 'data') return drawn;
   // AC-01-01-01: the figures become the table, the chart and the trust label.
   const figures = readFigures(answer.figures);

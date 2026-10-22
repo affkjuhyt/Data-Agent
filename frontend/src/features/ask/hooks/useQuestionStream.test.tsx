@@ -3,7 +3,7 @@ import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setDataSpace } from '../../../lib/v1/client';
 import { createQuestionHandlers } from '../../../mocks/questions';
-import { useQuestionStream } from './useQuestionStream';
+import { readVerification, useQuestionStream } from './useQuestionStream';
 
 const server = setupServer();
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -70,5 +70,29 @@ describe('useQuestionStream', () => {
     });
     expect(result.current.messages[1].status).toBe('error');
     expect(result.current.messages[1].content).toBe('Chọn một Data Space ở thanh trên trước khi hỏi.');
+  });
+});
+
+describe('readVerification', () => {
+  it('R0-8 reads the checks the worker wrote with the answer', () => {
+    const verification = readVerification({
+      numbers_total: 2,
+      verification: {
+        verdict: 'FAIL',
+        iteration: 1,
+        checks: [
+          { name: 'Số trong câu có nguồn', passed: true, detail: '2/2 số' },
+          { name: 'Khớp số đã nộp', passed: false, detail: 'Số hiện tại khác số đã nộp của kỳ' },
+        ],
+      },
+    });
+    expect(verification?.verdict).toBe('FAIL');
+    expect(verification?.checks.map(c => c.passed)).toEqual([true, false]);
+  });
+
+  it('draws no verdict from anything else', () => {
+    expect(readVerification({ numbers_total: 2 })).toBeUndefined();
+    expect(readVerification({ verification: { verdict: 'MAYBE', checks: [] } })).toBeUndefined();
+    expect(readVerification(null)).toBeUndefined();
   });
 });

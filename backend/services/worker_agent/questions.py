@@ -51,6 +51,7 @@ from services.worker_agent.answer.insights import insights_of, is_additive, writ
 from services.worker_agent.answer.narrate import Figure, chart_spec_of, figures_of, text_of
 from services.worker_agent.answer.thresholds import judged
 from services.worker_agent.answer.thresholds import load as load_threshold
+from services.worker_agent.answer.verification import verify
 from services.worker_agent.documents import answer as document_answer
 from services.worker_agent.documents.retrieve import retrieve
 from services.worker_agent.documents.search import SearchServices, services_from_env
@@ -1378,7 +1379,11 @@ async def _answer_from_documents(
                 kind="document",
                 text=told.text,
                 citations=[c.as_json() for c in told.citations],
-                number_check=told.number_check,
+                number_check=verify(
+                    "document",
+                    told.number_check,
+                    citations=[c.as_json() for c in told.citations],
+                ),
                 agent_name=DOCUMENT_AGENT_NAME,
                 latency_ms=int(
                     (datetime.datetime.now(datetime.UTC) - started).total_seconds() * 1000
@@ -1652,6 +1657,23 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             "classification": "internal",
             "tables": governance_tables,
         }
+        stored_figures = [
+            f.as_json(
+                str(outcome.query_run_id),
+                str(p.compiled.metric_version_id),
+                trust,
+                compute_run_id=str(compute_run_id) if compute_run_id else None,
+                provenance=answer_provenance,
+            )
+            for f in every
+        ]
+        badge = (
+            "matched_filed"
+            if filed_items and all(decimal.Decimal(item["delta"]) == 0 for item in filed_items)
+            else "differs_from_filed"
+            if filed_items
+            else None
+        )
         session.add(
             qa.Answer(
                 id=answer_id,
@@ -1660,30 +1682,16 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                 plan_id=p.plan_id,
                 kind="data",
                 text=text,
-                figures=[
-                    f.as_json(
-                        str(outcome.query_run_id),
-                        str(p.compiled.metric_version_id),
-                        trust,
-                        compute_run_id=str(compute_run_id) if compute_run_id else None,
-                        provenance=answer_provenance,
-                    )
-                    for f in every
-                ],
+                figures=stored_figures,
                 filed_vs_current=(
                     {"period": p.filed_period_label, "items": filed_items}
                     if filed_items
                     else None
                 ),
-                reconcile_badge=(
-                    "matched_filed"
-                    if filed_items
-                    and all(decimal.Decimal(item["delta"]) == 0 for item in filed_items)
-                    else "differs_from_filed"
-                    if filed_items
-                    else None
+                reconcile_badge=badge,
+                number_check=verify(
+                    "data", check, figures=stored_figures, reconcile_badge=badge
                 ),
-                number_check=check,
                 chart_spec=chart_spec_of(
                     figures,
                     group_by=shown_by,

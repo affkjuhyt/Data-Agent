@@ -22,6 +22,7 @@ from sqlalchemy import func
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, qa
 from services.worker_agent.answer.narrate import Figure, shown_value
+from services.worker_agent.answer.verification import verify
 from services.worker_agent.events import Event
 from services.worker_agent.llm import Gateway
 from services.worker_agent.progress import publish
@@ -224,6 +225,7 @@ async def answer_by_sql(
         if stored is not None:
             stored.steps = _plan(e)
         shown = [f for f in figures if f.value is not None]
+        stored = [f.as_json(str(e.query_run_id), "", TRUST) for f in figures]
         session.add(
             qa.Answer(
                 id=answer_id,
@@ -232,15 +234,19 @@ async def answer_by_sql(
                 plan_id=plan_id,
                 kind=kind,
                 text=body,
-                figures=[f.as_json(str(e.query_run_id), "", TRUST) for f in figures],
+                figures=stored,
                 chart_spec=chart,
-                number_check={
-                    "numbers_total": len(shown),
-                    "traced": len(shown),
-                    "untraceable_draft": 0,
-                    "regenerated": 0,
-                    "untraceable_final": 0,
-                },
+                number_check=verify(
+                    kind,
+                    {
+                        "numbers_total": len(shown),
+                        "traced": len(shown),
+                        "untraceable_draft": 0,
+                        "regenerated": 0,
+                        "untraceable_final": 0,
+                    },
+                    figures=stored,
+                ),
                 agent_name=AGENT_NAME,
                 latency_ms=int(
                     (datetime.datetime.now(datetime.UTC) - started).total_seconds() * 1000

@@ -126,7 +126,21 @@ export function createQuestionHandlers() {
           data_product_id: null,
           product_scope: 'not_applicable',
           forecast_job_id: null,
-          number_check: {},
+          // As worker_agent/answer/verification.py writes it with the answer (R0-8).
+          number_check: {
+            numbers_total: 3,
+            traced: 3,
+            untraceable_final: 0,
+            verification: {
+              verdict: 'PASS',
+              iteration: 1,
+              checks: [
+                { name: 'Số trong câu có nguồn', passed: true, detail: '3/3 số trong câu trả lời có nguồn' },
+                { name: 'Mỗi số có lần chạy', passed: true, detail: '3 số, mỗi số có lần chạy truy vấn' },
+                { name: 'Khớp số đã nộp', passed: true, detail: 'Kỳ này chưa có số đã nộp' },
+              ],
+            },
+          },
           created_at: new Date().toISOString(),
         } as Answer);
         events.push(
