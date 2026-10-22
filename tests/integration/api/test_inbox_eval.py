@@ -381,6 +381,7 @@ async def test_reject_needs_a_reason(team: Team) -> None:
         assert closed.status_code == 409, closed.text
 
 
+@pytest.mark.req("AC-07-06-04")
 async def test_accepting_a_regression_needs_each_item_reviewed(team: Team) -> None:
     # AC-07-03-06 (BR-28) and AC-07-03-01 (API part: proposal_review and proposal.decided).
     eval_set = team.seed.row(
@@ -561,6 +562,48 @@ async def test_eval_items_and_runs(team: Team) -> None:
     [(event_type, payload)] = team.events("eval", uuid.UUID(run_id))
     assert event_type == "eval_run.requested"
     assert payload["eval_set_id"] == str(eval_set)
+
+
+@pytest.mark.req("AC-07-06-03")
+async def test_eval_answer_change_requires_reason_and_writes_audit_event(team: Team) -> None:
+    eval_set = team.seed.row(
+        "eval.eval_set",
+        org_id=team.org,
+        data_space_id=team.space,
+        subject_type="context",
+        name="Answer history",
+    )
+    async with client(team) as api:
+        item = await api.post(
+            f"/v1/eval-sets/{eval_set}/items",
+            headers=team.headers("reviewer"),
+            json={
+                "input": {"question": "Giá xăng kỳ cũ?"},
+                "as_of": "2026-07-02",
+                "expected": {"value": 24000},
+            },
+        )
+        assert item.status_code == 201, item.text
+        item_id = item.json()["id"]
+        no_reason = await api.patch(
+            f"/v1/eval-items/{item_id}",
+            headers=team.headers("reviewer"),
+            json={"expected": {"value": 24500}},
+        )
+        assert no_reason.status_code == 422, no_reason.text
+        changed = await api.patch(
+            f"/v1/eval-items/{item_id}",
+            headers=team.headers("reviewer"),
+            json={
+                "expected": {"value": 24500},
+                "reason": "Số đã nộp được điều chỉnh theo kỳ chốt mới.",
+            },
+        )
+        assert changed.status_code == 200, changed.text
+        assert changed.json()["expected"] == {"value": 24500}
+    [(event_type, payload)] = team.events("eval", uuid.UUID(item_id))
+    assert event_type == "eval_item.answer_changed"
+    assert payload["reason"] == "Số đã nộp được điều chỉnh theo kỳ chốt mới."
 
 
 async def test_error_book_lifecycle(team: Team) -> None:

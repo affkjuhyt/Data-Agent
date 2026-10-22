@@ -773,6 +773,7 @@ async def backtest_policy(
             backtest_id=backtest.id,
             window_from=backtest.window_from.isoformat(),
             window_to=backtest.window_to.isoformat(),
+            requested_by=str(principal.user_id),
         )
     response.headers["Location"] = f"/v1/policy-backtests/{backtest.id}"
     return BacktestAccepted(id=backtest.id, status="queued", poll_after_ms=POLL_AFTER_MS)
@@ -793,6 +794,33 @@ async def activate_policy(policy_id: PolicyId, principal: CurrentPrincipal) -> P
             if row.simulated_at is None:
                 raise Problem(
                     422, "business_rule_violated", "Simulate the policy before switching it on."
+                )
+            latest_backtest = await session.scalar(
+                select(governance.PolicyBacktest)
+                .where(
+                    governance.PolicyBacktest.org_id == principal.org_id,
+                    governance.PolicyBacktest.policy_id == row.id,
+                    governance.PolicyBacktest.policy_kind == "access",
+                )
+                .order_by(
+                    governance.PolicyBacktest.created_at.desc(),
+                    governance.PolicyBacktest.id.desc(),
+                )
+                .limit(1)
+            )
+            if latest_backtest and latest_backtest.changed_result_count:
+                _event(
+                    session,
+                    principal,
+                    row.__tablename__,
+                    row.id,
+                    "policy.impact_warning",
+                    policy_id=row.id,
+                    data_space_id=row.data_space_id,
+                    changed_result_count=latest_backtest.changed_result_count,
+                    affected_agent_ids=[
+                        str(value) for value in latest_backtest.affected_agent_ids or []
+                    ],
                 )
             row.activated_at, row.activated_by = stamp, principal.user_id
         else:

@@ -12,6 +12,10 @@ Applying: `proposal.decided` (inbox.outbox) is routed by kind to the role that o
 - pack_activate, accepted: the install becomes active, unless a period of its Data Space is
   closing (AC-09-02-05): it then stays accepted and is activated by `activate_waiting` once the
   close ends; rejected, it goes back to calibrating.
+- knowledge_page (UC-07-10 step 6, opened from `knowledge_page_version.submitted` with the id the
+  api reserved): accepted, the version becomes `reviewed` and the database's trigger serves it
+  (the one served before becomes superseded, BR-164); rejected, the version is rejected;
+  changes asked for, it is a draft again.
 The proposal then ends `applied` (or `apply_failed` with the object gone or moved on). A
 proposal the worker does not apply yet is left as the inbox wrote it.
 
@@ -37,7 +41,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from libs.dataagent_db import scoped_session, uuid7
-from libs.dataagent_db.models import inbox, pack, period, pipeline, skill
+from libs.dataagent_db.models import context, inbox, pack, period, pipeline, skill
 from services.worker_agent.events import Event, Handler
 
 logger = logging.getLogger(__name__)
@@ -47,6 +51,7 @@ SHARE = "skill.share_requested"
 ACTIVATE = "pack_install.activation_requested"
 WRITEBACK = "writeback.submitted"
 DECIDED = "proposal.decided"
+KNOWLEDGE_SUBMITTED = "knowledge_page_version.submitted"
 NAMESPACE = uuid.UUID("6b1f0c55-5f5e-4c49-9a39-2f4f5c1f1d7e")
 TRANSITION = datetime.timedelta(days=30)  # BR-97, as services/api/modules/skill/routes.py
 RUNNABLE = ("published", "needs_review")
@@ -440,6 +445,57 @@ async def _apply_writeback(event: Event, proposal: dict[str, Any]) -> bool:
         return True
 
 
+async def knowledge_page_submitted(event: Event) -> None:
+    """Opens the knowledge_page proposal for the page owner (UC-07-10 step 6)."""
+    payload = event.payload
+    version_id = uuid.UUID(str(payload["version_id"]))
+    await _open(
+        event,
+        data_space_id=uuid.UUID(str(payload["data_space_id"])),
+        kind="knowledge_page",
+        target_service="context",
+        target_ref=version_id,
+        title=f"Trang tri thức · phiên bản {payload.get('version')}",
+        diff={
+            "page_id": payload.get("page_id"),
+            "version_id": version_id,
+            "version": payload.get("version"),
+            "origin": payload.get("origin"),
+            "change_size": payload.get("change_size"),
+        },
+        proposed_by=uuid.UUID(str(payload["created_by"])),
+        eval_run_id=None,
+    )
+
+
+async def _apply_knowledge(event: Event, proposal: dict[str, Any]) -> bool:
+    reviewer = uuid.UUID(str(event.payload["reviewer_id"]))
+    decision = event.payload.get("status")
+    version_id = uuid.UUID(str(proposal["target_ref"]))
+    if decision == "accepted":
+        # The trigger serves the version, supersedes the one before and recomputes the page's
+        # policy in this same transaction (routines/context.sql); BR-164 refuses a self-review.
+        values: dict[str, Any] = {
+            "status": "reviewed",
+            "reviewed_by": reviewer,
+            "reviewed_at": _now(),
+        }
+    elif decision == "rejected":
+        values = {"status": "rejected"}
+    else:
+        values = {"status": "draft"}
+    async with scoped_session("svc_context", event.org_id, reviewer) as session:
+        result = await session.execute(
+            update(context.KnowledgePageVersion)
+            .where(
+                context.KnowledgePageVersion.id == version_id,
+                context.KnowledgePageVersion.status == "pending_review",
+            )
+            .values(**values)
+        )
+        return result.rowcount == 1
+
+
 async def _proposal(event: Event) -> dict[str, Any] | None:
     async with scoped_session("svc_inbox", event.org_id) as session:
         row = await session.get(inbox.Proposal, uuid.UUID(str(event.payload["proposal_id"])))
@@ -479,6 +535,7 @@ async def decided(event: Event) -> None:
         "pack_activate",
         "writeback",
         "metric_change",
+        "knowledge_page",
         *semantic_review.KINDS,
         *reviews.KINDS,
     )
@@ -501,6 +558,8 @@ async def decided(event: Event) -> None:
         outcome = await _apply_skill(event, proposal)
     elif proposal["kind"] == "pack_activate":
         outcome = await _apply_pack(event, proposal)
+    elif proposal["kind"] == "knowledge_page":
+        outcome = await _apply_knowledge(event, proposal)
     else:
         outcome = await _apply_writeback(event, proposal)
     if outcome is None:
@@ -550,4 +609,5 @@ HANDLERS: dict[str, Handler] = {
     ACTIVATE: activation_requested,
     WRITEBACK: writeback_submitted,
     DECIDED: decided,
+    KNOWLEDGE_SUBMITTED: knowledge_page_submitted,
 }

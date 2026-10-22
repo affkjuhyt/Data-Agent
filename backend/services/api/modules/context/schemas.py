@@ -57,6 +57,11 @@ class MetricCreate(BaseModel):
     definition: MetricVersionCreate | None = None
 
 
+class MetricPatch(BaseModel):
+    code: str | None = Field(default=None, pattern=r"^[A-Za-z][A-Za-z0-9_]{1,63}$")
+    consumer_group: str | None = Field(default=None, max_length=200)
+
+
 class MetricPreview(BaseModel):
     periods: int | None = Field(default=None, ge=1, le=24)
 

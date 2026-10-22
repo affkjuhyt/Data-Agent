@@ -156,7 +156,7 @@ async def sources() -> list[EventSource]:
             # semantic_review's overlay makes), semantic_review the other drafts, reviews a
             # submitted data product.
             types |= set(metric_changes.HANDLERS) | set(semantic_review.HANDLERS)
-            types |= {reviews.PRODUCT}
+            types |= {reviews.PRODUCT, proposals.KNOWLEDGE_SUBMITTED}
         if schema == "document":
             # worker-document claims its own types from the same outbox; this is the ready one.
             types |= set(indexed.HANDLERS)

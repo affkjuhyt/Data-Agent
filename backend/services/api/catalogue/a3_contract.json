@@ -108,6 +108,22 @@
    "errors": [],
    "request_text": "?q, ?from, ?to"
   },
+  "GET /v1/conversations/{id}": {
+   "group": "Hỏi đáp",
+   "groups": [
+    "Hỏi đáp"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "ConversationDetail. Kèm turns theo seq (question_id, text, status, answer_id)",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
   "GET /v1/answers/{id}": {
    "group": "Hỏi đáp",
    "groups": [
@@ -2666,6 +2682,45 @@
    "errors": [],
    "request_text": "—"
   },
+  "PATCH /v1/metrics/{id}": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {
+    "code": false,
+    "consumer_group": false
+   },
+   "query": [],
+   "returns": "Metric",
+   "errors": [
+    [
+     409,
+     "immutable"
+    ]
+   ],
+   "request_text": "code, consumer_group"
+  },
+  "DELETE /v1/metrics/{id}": {
+   "group": "Lớp ngữ cảnh",
+   "groups": [
+    "Lớp ngữ cảnh"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "204. Chỉ số chuyển retired, không xoá dòng",
+   "errors": [
+    [
+     409,
+     "in_use"
+    ],
+    [
+     409,
+     "invalid_state"
+    ]
+   ],
+   "request_text": "—"
+  },
   "POST /v1/metrics/{id}/versions": {
    "group": "Lớp ngữ cảnh",
    "groups": [
@@ -3657,6 +3712,32 @@
    "returns": "EvalItem",
    "errors": [],
    "request_text": "category, input*, as_of, expected*, tolerance"
+  },
+  "PATCH /v1/eval-items/{id}": {
+   "group": "Cần bạn và đánh giá",
+   "groups": [
+    "Cần bạn và đánh giá"
+   ],
+   "body": {
+    "input": false,
+    "as_of": false,
+    "expected": false,
+    "tolerance": false,
+    "reason": false
+   },
+   "query": [],
+   "returns": "EvalItem. Đổi đáp án (expected, as_of, tolerance) cần reason và phát eval_item.answer_changed",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ],
+    [
+     422,
+     "validation_failed"
+    ]
+   ],
+   "request_text": "input, as_of, expected, tolerance, reason"
   },
   "POST /v1/eval-sets/{id}/runs": {
    "group": "Cần bạn và đánh giá",

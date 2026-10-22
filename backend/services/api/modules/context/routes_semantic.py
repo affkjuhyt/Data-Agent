@@ -50,6 +50,7 @@ from services.api.modules.context.schemas import (
     ExampleView,
     MetricCreate,
     MetricDetail,
+    MetricPatch,
     MetricPreview,
     MetricUsage,
     MetricVersionCreate,
@@ -184,6 +185,7 @@ def _version_row(
         org_id=principal.org_id,
         metric_id=metric.id,
         version=version,
+        valid_from=now(),
         status="draft",
         **values,
     )
@@ -316,6 +318,72 @@ async def get_metric(
         versions=[MetricVersionView.model_validate(v) for v in versions],
         usage=MetricUsage(data_product_ids=list(products), knowledge_page_ids=list(pages)),
     )
+
+
+@router.patch(
+    "/v1/metrics/{id}",
+    response_model=MetricView,
+    **endpoint("PATCH", "/v1/metrics/{id}", operation_id="updateMetric"),
+)
+async def update_metric(
+    body: MetricPatch,
+    metric_id: Annotated[uuid.UUID, Path(alias="id")],
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> MetricView:
+    async with transaction(ROLE, principal) as session:
+        row = await _metric(session, metric_id, principal, data_space, lock=True)
+        if body.code is not None and body.code != row.code:
+            raise Problem(409, "immutable", "A metric code cannot change after creation.")
+        if body.consumer_group is not None:
+            row.consumer_group = body.consumer_group
+        row.updated_by, row.updated_at = principal.user_id, now()
+        emit(
+            session,
+            principal,
+            "metric",
+            row.id,
+            "metric.updated",
+            metric_id=row.id,
+            data_space_id=data_space,
+            changed=list(body.model_dump(exclude_unset=True)),
+        )
+        await session.flush()
+        return (await _metric_views(session, [row]))[0]
+
+
+@router.delete(
+    "/v1/metrics/{id}",
+    status_code=204,
+    **endpoint("DELETE", "/v1/metrics/{id}", operation_id="deleteMetric"),
+)
+async def delete_metric(
+    metric_id: Annotated[uuid.UUID, Path(alias="id")],
+    principal: CurrentPrincipal,
+    data_space: CurrentDataSpace,
+) -> Response:
+    async with transaction(ROLE, principal) as session:
+        row = await _metric(session, metric_id, principal, data_space, lock=True)
+        if row.in_filed_report:
+            raise Problem(
+                409,
+                "in_use",
+                "A metric used by a filed report cannot be deleted; retire it instead.",
+            )
+        if row.status == "retired":
+            raise Problem(409, "invalid_state", "The metric is already retired.")
+        row.status = "retired"
+        row.updated_by, row.updated_at = principal.user_id, now()
+        emit(
+            session,
+            principal,
+            "metric",
+            row.id,
+            "metric.retired",
+            metric_id=row.id,
+            data_space_id=data_space,
+        )
+    return Response(status_code=204)
 
 
 @router.post(

@@ -5,6 +5,7 @@ and, in a data product's scope, the sealed receipt."""
 
 from __future__ import annotations
 
+import datetime
 import decimal
 import json
 import uuid
@@ -14,10 +15,15 @@ from urllib.parse import urlsplit
 
 import psycopg2
 import pytest
+from sqlalchemy import select
 
-from services.worker_agent import questions
+from libs.dataagent_db import scoped_session
+from libs.dataagent_db.models import catalog
+from services.worker_agent import policy_backtests, questions
 from services.worker_agent.events import OutboxTableSource
 from services.worker_agent.main import run_once
+from services.worker_agent.query.executor import run_query
+from services.worker_agent.query.scope import active_policies
 from services.worker_agent.query.secrets import StaticReader
 
 from .conftest import Seed
@@ -80,12 +86,26 @@ class Bank:
     loans: uuid.UUID
     seed: Seed
 
-    def ask(self, text: str) -> uuid.UUID:
+    def ask(
+        self,
+        text: str,
+        *,
+        knowledge_mode: str = "latest",
+        as_of: str | None = None,
+        knowledge_at: str | None = None,
+    ) -> uuid.UUID:
         conv = self.seed.row(
             "qa.conversation", org_id=self.org, data_space_id=self.space, user_id=self.user
         )
         question = self.seed.row(
-            "qa.question", org_id=self.org, conversation_id=conv, seq=1, text=text
+            "qa.question",
+            org_id=self.org,
+            conversation_id=conv,
+            seq=1,
+            text=text,
+            knowledge_mode=knowledge_mode,
+            as_of=as_of,
+            knowledge_at=knowledge_at,
         )
         self.seed.row(
             "qa.outbox",
@@ -364,6 +384,525 @@ async def test_ac_01_01_01_a_ratio_by_region_in_scope_with_a_sealed_receipt(
     )
 
 
+async def test_ac_10_01_01_as_submitted_uses_period_snapshot_not_live_data(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # AC-10-01-01: natural-language “như đã nộp” must select period_close and its snapshot.
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    period_close = seed.row(
+        "period.period_close",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        period_label="2026-09",
+        business_date="2026-09-30",
+        version=1,
+        status="filed",
+        snapshot_hash="snapshot-september",
+        closed_by=bank.user,
+        closed_at="2026-10-01T08:00:00Z",
+        filed_report_code="BC-NHNN-02",
+        filed_at="2026-10-10",
+    )
+    metric_version = seed.one(
+        "SELECT id FROM context.metric_version WHERE metric_id = %s", bank.npl
+    )
+    published = seed.row(
+        "period.published_result",
+        org_id=bank.org,
+        period_close_id=period_close,
+        metric_version_id=metric_version,
+        dimension_key=json.dumps({}),
+        value="9.25",
+        reported_value="9.25",
+        report_ref="BC-NHNN-02",
+        sha256="cd" * 32,
+    )
+    question = bank.ask("Tỷ lệ nợ xấu tháng 9/2026 như đã nộp")
+    await drain()
+    status, kind, text, figures, _, answer = answer_of(seed, question)
+    assert (status, kind) == ("answered", "data"), text
+    assert float(figures[0]["value"]) == 9.25
+    route, source_id, period_id = seed.one(
+        "SELECT route, source_id, period_close_id FROM query.query_run WHERE id = %s",
+        figures[0]["query_run_id"],
+    )
+    assert (route, source_id, str(period_id)) == ("period_snapshot", None, str(period_close))
+    assert (
+        seed.one("SELECT knowledge_mode FROM qa.question WHERE id = %s", question) == "period_close"
+    )
+    assert seed.one("SELECT as_of FROM qa.question WHERE id = %s", question).isoformat() == (
+        "2026-09-30"
+    )
+    assert (
+        seed.one(
+            "SELECT count(*) FROM qa.answer_receipt_figure WHERE receipt_id = "
+            "(SELECT id FROM qa.answer_receipt WHERE answer_id = %s) AND published_result_id = %s",
+            answer,
+            published,
+        )
+        == 1
+    )
+
+
+async def test_ac_10_01_02_dated_question_reconciles_current_and_filed(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # AC-10-01-02: a dated question without a mode must show both sources and their delta.
+    # AC-10-01-05: the default mode must not silently choose only the live result.
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    period_close = seed.row(
+        "period.period_close",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        period_label="2026-09",
+        business_date="2026-09-30",
+        version=1,
+        status="filed",
+        snapshot_hash="snapshot-september",
+        closed_by=bank.user,
+        closed_at="2026-10-01T08:00:00Z",
+        filed_report_code="BC-NHNN-02",
+        filed_at="2026-10-10",
+    )
+    metric_version = seed.one(
+        "SELECT id FROM context.metric_version WHERE metric_id = %s", bank.npl
+    )
+    published = seed.row(
+        "period.published_result",
+        org_id=bank.org,
+        period_close_id=period_close,
+        metric_version_id=metric_version,
+        dimension_key=json.dumps({}),
+        value="9.25",
+        reported_value="9.25",
+        report_ref="BC-NHNN-02",
+        sha256="ef" * 32,
+    )
+    question = bank.ask("Tỷ lệ nợ xấu tháng 9/2026")
+    await drain()
+    status, kind, text, _figures, _, answer = answer_of(seed, question)
+    assert (status, kind) == ("answered", "data"), text
+    assert "10,00%" in text and "9,25%" in text
+    assert "chênh lệch" in text and "đã nộp" in text
+    filed = seed.one("SELECT filed_vs_current FROM qa.answer WHERE id = %s", answer)
+    assert filed["period"] == "2026-09"
+    assert filed["items"][0]["filed"] == "9.25"
+    assert filed["items"][0]["delta"] == "0.75"
+    assert (
+        seed.one(
+            "SELECT count(*) FROM qa.answer_receipt_figure WHERE receipt_id = "
+            "(SELECT id FROM qa.answer_receipt WHERE answer_id = %s) AND published_result_id = %s",
+            answer,
+            published,
+        )
+        == 1
+    )
+
+
+async def test_ac_10_01_06_missing_filed_history_is_labeled_current_data(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # AC-10-01-06: without period history, never present current data as a filed period value.
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    question = bank.ask("Tỷ lệ nợ xấu tháng 9/2026")
+    await drain()
+    status, kind, text, _figures, _, _answer = answer_of(seed, question)
+    assert (status, kind) == ("answered", "data"), text
+    assert "tính trên dữ liệu hiện tại" in text
+    assert "đã nộp" in text
+
+
+async def test_ac_10_01_03_knowledge_at_excludes_late_recorded_rows(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # AC-10-01-03: point-in-time uses knowledge_time_col, not the current table contents.
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    with seed.conn.cursor() as cur:
+        cur.execute("ALTER TABLE bank.loan ADD COLUMN recorded_at timestamptz")
+        cur.execute("UPDATE bank.loan SET recorded_at = '2026-07-01T00:00:00Z'")
+        cur.execute(
+            "UPDATE bank.loan SET recorded_at = '2026-07-15T00:00:00Z' "
+            "WHERE branch_code = 'SG1' AND group_code = 4"
+        )
+        cur.execute(
+            "UPDATE catalog.dataset SET history_kind = 'temporal', knowledge_time_col = 'recorded_at' "
+            "WHERE id = %s",
+            (str(bank.loans),),
+        )
+        cur.execute("GRANT SELECT ON bank.loan TO loans_reader")
+    question = bank.ask(
+        "Tỷ lệ nợ xấu tháng 9/2026",
+        knowledge_mode="at",
+        knowledge_at="2026-07-10T08:00:00Z",
+    )
+    await drain()
+    status, kind, text, figures, _, _answer = answer_of(seed, question)
+    assert (status, kind) == ("answered", "data"), text
+    assert float(figures[0]["value"]) == pytest.approx(200 / 2900 * 100)
+    assert (
+        seed.one("SELECT knowledge_mode, knowledge_at FROM qa.question WHERE id = %s", question)[0]
+        == "at"
+    )
+    assert "recorded_at" in seed.one(
+        "SELECT sql_executed FROM query.query_run WHERE id = %s", figures[0]["query_run_id"]
+    )
+
+
+async def test_ac_11_02_06_row_access_policy_rewrites_query_before_execution(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # AC-11-02-06, AC-11-02-08: row predicates are added before execution and intersect.
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE org.app_user SET attributes = %s::jsonb WHERE id = %s",
+            (json.dumps({"branch": "HN1"}), str(bank.user)),
+        )
+    seed.row(
+        "governance.access_policy",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        dataset_id=bank.loans,
+        name="Khoản vay cần kiểm soát",
+        kind="row",
+        condition_expr="branch_code = :user.branch",
+        status="active",
+        simulated_at="2026-10-17T08:00:00Z",
+        activated_at="2026-10-17T09:00:00Z",
+        activated_by=bank.user,
+    )
+    seed.row(
+        "governance.access_policy",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        dataset_id=bank.loans,
+        name="Khối bán lẻ",
+        kind="row",
+        condition_expr="group_code = 1",
+        status="active",
+        simulated_at="2026-10-17T08:00:00Z",
+        activated_at="2026-10-17T09:00:00Z",
+        activated_by=bank.user,
+    )
+    assert (
+        seed.one(
+            "SELECT count(*) FROM governance.access_policy WHERE dataset_id = %s AND status = 'active'",
+            bank.loans,
+        )
+        == 2
+    )
+    async with scoped_session("svc_query", bank.org, bank.user) as session:
+        dataset = await session.get(catalog.Dataset, bank.loans)
+        assert dataset is not None
+        assert len(await active_policies(session, principal_id=bank.user, datasets=[dataset])) == 2
+    question = bank.ask("Tỷ lệ nợ xấu tháng 9/2026")
+    await drain()
+    status, kind, text, figures, _, _answer = answer_of(seed, question)
+    assert (status, kind) == ("answered", "data"), (
+        seed.one(
+            "SELECT error || E'\\n' || sql_executed FROM query.query_run WHERE caller_id = %s",
+            question,
+        )
+        or text
+    )
+    assert float(figures[0]["value"]) == pytest.approx(0.0), seed.one(
+        "SELECT sql_executed FROM query.query_run WHERE caller_id = %s", question
+    )
+    executed = seed.one("SELECT sql_executed FROM query.query_run WHERE caller_id = %s", question)
+    assert "branch_code" in executed and "HN1" in executed and "group_code" in executed
+    assert (
+        seed.one(
+            "SELECT cardinality(policies_applied) FROM query.query_run WHERE caller_id = %s",
+            question,
+        )
+        == 2
+    )
+
+
+async def test_ac_11_02_02_policy_backtest_replays_runs_and_records_affected_owner(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # AC-11-02-02: :backtest replays the seven-day window and records changed runs/owners.
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank)
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE org.app_user SET attributes = %s::jsonb WHERE id = %s",
+            (json.dumps({"branch": "HN1"}), str(bank.user)),
+        )
+    policy = seed.row(
+        "governance.access_policy",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        dataset_id=bank.loans,
+        name="Backtest branch policy",
+        kind="row",
+        condition_expr="branch_code = :user.branch",
+        status="draft",
+    )
+    agent_run = uuid.uuid4()
+    async with scoped_session("svc_query", bank.org, bank.user) as session:
+        source = await session.scalar(
+            select(catalog.Source).where(catalog.Source.data_space_id == bank.space)
+        )
+        assert source is not None
+    outcome = await run_query(
+        org_id=bank.org,
+        data_space_id=bank.space,
+        principal_id=bank.user,
+        source=source,
+        sql="SELECT branch_code, balance FROM bank.loan WHERE as_of_date = '2026-09-30'",
+        secrets=StaticReader({source.secret_ref: {"user": "loans_reader", "password": PASSWORD}}),
+        caller_kind="agent_run",
+        caller_id=agent_run,
+    )
+    assert outcome.ok, outcome.error
+    backtest = seed.row(
+        "governance.policy_backtest",
+        org_id=bank.org,
+        policy_kind="access",
+        policy_id=policy,
+        window_from=datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=7),
+        window_to=datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=1),
+    )
+    seed.row(
+        "governance.outbox",
+        org_id=bank.org,
+        aggregate_type="policy_backtest",
+        aggregate_id=backtest,
+        event_type=policy_backtests.EVENT_TYPE,
+        payload=json.dumps({"backtest_id": str(backtest), "requested_by": str(bank.user)}),
+    )
+    source = OutboxTableSource(
+        schema="governance", event_types=frozenset(policy_backtests.HANDLERS)
+    )
+    assert await run_once(source, policy_backtests.HANDLERS) == 1
+    assert (
+        seed.one("SELECT matched_count FROM governance.policy_backtest WHERE id = %s", backtest)
+        == 1
+    )
+    assert (
+        seed.one(
+            "SELECT changed_result_count FROM governance.policy_backtest WHERE id = %s", backtest
+        )
+        == 1
+    )
+    assert (
+        seed.one("SELECT blocked_count FROM governance.policy_backtest WHERE id = %s", backtest)
+        == 0
+    )
+    assert str(agent_run) in [
+        str(value)
+        for value in seed.one(
+            "SELECT affected_agent_ids FROM governance.policy_backtest WHERE id = %s", backtest
+        )
+    ]
+    warning_event = seed.row(
+        "governance.outbox",
+        org_id=bank.org,
+        aggregate_type="access_policy",
+        aggregate_id=policy,
+        event_type=policy_backtests.IMPACT_WARNING,
+        payload=json.dumps(
+            {
+                "policy_id": str(policy),
+                "data_space_id": str(bank.space),
+                "changed_result_count": 1,
+                "affected_agent_ids": [str(bank.user)],
+            }
+        ),
+    )
+    assert await run_once(source, policy_backtests.HANDLERS) == 1
+    assert (
+        seed.one("SELECT title FROM notify.notification WHERE source_ref = %s", warning_event)
+        == "Quyền dữ liệu sắp thay đổi"
+    )
+
+
+async def test_ac_11_02_03_column_and_mask_policies_are_applied_before_result_storage(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # AC-11-02-03: hidden and masked values never reach the answer/query-result consumers.
+    bank = build(seed, warehouse, monkeypatch)
+    source_id = seed.one("SELECT source_id FROM catalog.dataset WHERE id = %s", bank.loans)
+    # A covered table is read only with its columns in the catalog, so the hidden one can be left
+    # out of the rewritten read (query/scope.py); a schema scan writes them like this.
+    for ordinal, (name, kind) in enumerate(
+        (
+            ("branch_code", "string"),
+            ("group_code", "integer"),
+            ("balance", "decimal"),
+            ("product_code", "string"),
+            ("as_of_date", "date"),
+        )
+    ):
+        seed.row(
+            "catalog.column_meta",
+            org_id=bank.org,
+            dataset_id=bank.loans,
+            dataset_version=1,
+            name=name,
+            ordinal=ordinal,
+            data_type=kind,
+            normalized_type=kind,
+        )
+    seed.row(
+        "governance.access_policy",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        dataset_id=bank.loans,
+        name="Ẩn dư nợ thô",
+        kind="column",
+        columns=["balance"],
+        status="active",
+        simulated_at="2026-10-17T08:00:00Z",
+        activated_at="2026-10-17T09:00:00Z",
+        activated_by=bank.user,
+    )
+    seed.row(
+        "governance.access_policy",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        dataset_id=bank.loans,
+        name="Che mã chi nhánh",
+        kind="mask",
+        columns=["branch_code"],
+        mask_method="last4",
+        status="active",
+        simulated_at="2026-10-17T08:00:00Z",
+        activated_at="2026-10-17T09:00:00Z",
+        activated_by=bank.user,
+    )
+    async with scoped_session("svc_query", bank.org, bank.user) as session:
+        source = await session.get(catalog.Source, source_id)
+        assert source is not None
+    secrets = StaticReader({source.secret_ref: {"user": "loans_reader", "password": PASSWORD}})
+
+    async def run(sql: str) -> Any:
+        return await run_query(
+            org_id=bank.org,
+            data_space_id=bank.space,
+            principal_id=bank.user,
+            source=source,
+            sql=sql,
+            secrets=secrets,
+            caller_kind="ad_hoc",
+            caller_id=uuid.uuid4(),
+        )
+
+    # The policies rewrite the read itself (query/scope.py): the masked column arrives masked,
+    # filters included, and is what the result stores.
+    outcome = await run(
+        "SELECT branch_code FROM bank.loan WHERE group_code = 1 ORDER BY branch_code LIMIT 1"
+    )
+    assert outcome.ok, outcome.error
+    assert [column["name"] for column in outcome.columns] == ["branch_code"]
+    assert outcome.rows[0] == ["****HN1"]
+    stored_columns, stored_rows = seed.one(
+        "SELECT columns, rows FROM query.query_result WHERE query_run_id = %s",
+        outcome.query_run_id,
+    )
+    assert [column["name"] for column in stored_columns] == ["branch_code"]
+    assert stored_rows == [["****HN1"]]
+    # The hidden column is not in the table the query sees: asking for it fails, nothing stored.
+    hidden = await run("SELECT branch_code, balance FROM bank.loan LIMIT 1")
+    assert not hidden.ok
+    assert (
+        seed.one(
+            "SELECT count(*) FROM query.query_result WHERE query_run_id = %s", hidden.query_run_id
+        )
+        == 0
+    )
+
+
+async def test_ac_11_01_01_non_member_cannot_enter_data_space_question_path(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # AC-11-01-01: a configured Data Space membership is required before asking its data.
+    bank = build(seed, warehouse, monkeypatch)
+    outsider = seed.row(
+        "org.app_user",
+        org_id=bank.org,
+        external_id="kc-outsider",
+        username="outsider",
+        display_name="Outsider",
+    )
+    ask_role = seed.row(
+        "org.role",
+        org_id=bank.org,
+        code="ASK-MEMBER",
+        name="Ask member",
+        capabilities=["ask"],
+    )
+    seed.row(
+        "org.data_space_member",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        principal_type="user",
+        principal_id=bank.user,
+        role_id=ask_role,
+    )
+    bank.user = outsider
+    question = bank.ask("Tỷ lệ nợ xấu tháng 9/2026")
+    await drain()
+    status, kind, text, _figures, _, _answer = answer_of(seed, question)
+    assert (status, kind) == ("refused", "refusal")
+    assert "Data Space" in text and "quyền" in text
+    assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", question) == 0
+
+
+async def test_ac_11_01_01_membership_row_scope_limits_source_rows(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # AC-11-01-01: a scoped ask grant must reach the source SQL, not only the screen guard.
+    bank = build(seed, warehouse, monkeypatch)
+    outsider = seed.row(
+        "org.app_user",
+        org_id=bank.org,
+        external_id="kc-scoped",
+        username="scoped",
+        display_name="Scoped",
+    )
+    ask_role = seed.row(
+        "org.role",
+        org_id=bank.org,
+        code="ASK-SCOPED",
+        name="Scoped ask member",
+        capabilities=["ask"],
+    )
+    seed.row(
+        "org.data_space_member",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        principal_type="user",
+        principal_id=outsider,
+        role_id=ask_role,
+        row_scope=json.dumps({"branch_code": ["HN1"]}),
+    )
+    bank.user = outsider
+    question = bank.ask("Tỷ lệ nợ xấu tháng 9/2026")
+    await drain()
+    status, kind, text, figures, _, _answer = answer_of(seed, question)
+    assert (status, kind) == ("answered", "data"), (
+        text
+        + "\n"
+        + str(
+            seed.one(
+                "SELECT error || E'\\n' || sql_executed FROM query.query_run WHERE caller_id = %s",
+                question,
+            )
+        )
+    )
+    assert float(figures[0]["value"]) == pytest.approx(20.0)
+    executed = seed.one("SELECT sql_executed FROM query.query_run WHERE caller_id = %s", question)
+    assert "branch_code" in executed and "HN1" in executed
+
+
 async def test_out_of_scope_is_answered_and_says_so_without_a_receipt(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -404,7 +943,7 @@ async def test_br_178_an_overdue_product_masks_its_figures(
     activate(bank, freshness="overdue")
     q = bank.ask("Tỷ lệ nợ xấu tháng 9/2026")
     await drain()
-    status, kind, text, figures, scope, answer = answer_of(seed, q)
+    status, _kind, text, figures, scope, answer = answer_of(seed, q)
     assert (status, scope) == ("answered", "in_scope")
     assert figures[0]["value"] is None and figures[0]["display_state"] == "masked_stale"
     assert "10,00" not in text and "đã ẩn" in text
@@ -653,7 +1192,8 @@ async def test_derived_figures_are_sealed_as_computations_and_recomputed_on_repl
 
 
 class FakeGateway:
-    """Stands in for LiteLLM: answers the planner's JSON from a fixed reading."""
+    """Stands in for LiteLLM: answers every call from a fixed reading, and a call whose model the
+    reading does not fit is unavailable, as the real gateway makes it once its retry is spent."""
 
     def __init__(self, content: dict[str, Any]) -> None:
         self.content = content

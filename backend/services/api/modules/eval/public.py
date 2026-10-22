@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy import func, or_, select
 
 from libs.dataagent_db.models import eval as evaluation
+from libs.dataagent_db.models import org
 from services.api.kernel.auth import Principal
 from services.api.kernel.db import transaction
 
@@ -43,6 +44,29 @@ class EvalSummary:
 
     latest_run: dict[str, Any] | None
     open_error_book_entries: int
+
+
+async def membership_gate(principal: Principal, data_space: uuid.UUID) -> tuple[str, float | None]:
+    """Return the space status and latest context pass rate for membership policy (BR-122)."""
+    async with transaction("svc_eval", principal) as session:
+        result = await session.execute(
+            select(org.DataSpace.status, evaluation.EvalRun.pass_rate)
+            .outerjoin(
+                evaluation.EvalSet,
+                (evaluation.EvalSet.data_space_id == org.DataSpace.id)
+                & (evaluation.EvalSet.subject_type == "context"),
+            )
+            .outerjoin(
+                evaluation.EvalRun,
+                (evaluation.EvalRun.eval_set_id == evaluation.EvalSet.id)
+                & (evaluation.EvalRun.status == "completed"),
+            )
+            .where(org.DataSpace.id == data_space, org.DataSpace.org_id == principal.org_id)
+            .order_by(evaluation.EvalRun.started_at.desc().nullslast())
+            .limit(1)
+        )
+        status, rate = result.one_or_none() or (None, None)
+    return str(status), float(rate) if rate is not None else None
 
 
 async def data_product_eval_summary(

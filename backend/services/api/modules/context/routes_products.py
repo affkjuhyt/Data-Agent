@@ -986,6 +986,7 @@ async def submit_data_product(
             version=row.version,
             eval_set_id=row.eval_set_id,
             eval_run_id=eval_run_id,
+            requested_by=principal.user_id,
             sample_questions=row.sample_questions,
             min_pass_rate=0.95,
             min_items=MIN_SAMPLE_QUESTIONS,

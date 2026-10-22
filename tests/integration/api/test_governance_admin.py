@@ -189,11 +189,31 @@ async def test_an_access_policy_is_simulated_before_it_is_switched_on(gov: Org) 
         )
         assert other.json()["applies"] is False
 
+        # AC-11-02-04: a backtest with changed historical runs queues an owner warning before activation.
+        gov.seed.row(
+            "governance.policy_backtest",
+            org_id=gov.org,
+            policy_kind="access",
+            policy_id=policy["id"],
+            window_from="2026-10-10T00:00:00Z",
+            window_to="2026-10-17T00:00:00Z",
+            changed_result_count=2,
+        )
+        with gov.seed.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE governance.policy_backtest SET affected_agent_ids = %s::uuid[] "
+                "WHERE policy_id = %s",
+                ([str(gov.users["teller"])], policy["id"]),
+            )
         on = await api.post(f"/v1/policies/{policy['id']}:activate", headers=gov.headers("admin"))
         assert on.status_code == 200, on.text
         assert on.json()["status"] == "active" and on.json()["activated_by"] == str(
             gov.users["admin"]
         )
+        events = gov.events(policy["id"])
+        warning = next(payload for event, payload in events if event == "policy.impact_warning")
+        assert warning["changed_result_count"] == 2
+        assert warning["affected_agent_ids"] == [str(gov.users["teller"])]
         again = await api.post(
             f"/v1/policies/{policy['id']}:activate", headers=gov.headers("admin")
         )

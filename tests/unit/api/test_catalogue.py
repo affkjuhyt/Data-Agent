@@ -18,8 +18,9 @@ pytestmark = [pytest.mark.unit, pytest.mark.contract]
 
 def test_snapshot_holds_all_of_a2() -> None:
     data = catalogue()
-    # 470 rows of tab 4, plus the upload preview and delete added with UC-04-08 (67aa0663).
-    assert len(data["endpoints"]) == 472
+    # 470 rows of tab 4, plus the upload preview/delete, the metric edit/retire and the eval
+    # item edit operations.
+    assert len(data["endpoints"]) == 476
     assert len(data["groups"]) == 22
     assert {e["group"] for e in data["endpoints"]} == set(data["groups"])
 
@@ -32,7 +33,7 @@ def test_endpoint_metadata_comes_from_a2() -> None:
         "x-capability": ["ask"],
     }
     # The capability guard, then the Idempotency-Key replay that must come after it (A1.5).
-    guard, replay = kw["dependencies"]
+    _, replay = kw["dependencies"]
     assert replay.dependency is replay_guard
 
 
