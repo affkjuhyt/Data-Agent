@@ -8,11 +8,11 @@
  *
  * Questions go to POST /v1/questions and are followed on their stream (useQuestionStream); the
  * agent that answers is chosen by the system, so the Figma picker "Agent trả lời" is not drawn
- * (A3 has no agent field). The only client-side state is per-viewer convenience (saved and
- * recent questions) in localStorage.
+ * (A3 has no agent field). The thread is durable on the server: `/analysis/ask/<conversation_id>`
+ * reopens it (R1-13). Bookmarks stay in localStorage; "Hỏi gần đây" comes from GET /v1/conversations.
  *
- * Not drawn, no backend yet: "Mở dạng notebook", "Chia sẻ", "Thêm vào phiên" (no session API on
- * this stream), editing a "Hệ thống hiểu là" chip to ask again (UC-01-03), per-number lineage.
+ * Not drawn yet: "Mở dạng notebook", "Chia sẻ", editing a "Hệ thống hiểu là" chip to ask again
+ * (UC-01-03), per-number lineage.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppState } from '../../AppStateContext';
@@ -22,24 +22,25 @@ import { EmptyState } from '../../design-system/EmptyState';
 import { Icon } from '../../design-system/Icon';
 import { Menu } from '../../design-system/Menu';
 import { SuggestionChip } from '../../design-system/SuggestionChip';
+import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import type { Feedback } from '../../lib/v1/answerReports';
+import { listConversations, saveAnswerToSession } from '../../lib/v1/questions';
 import { useQuestionStream } from './hooks/useQuestionStream';
 import { AnswerBlock } from './components/AnswerBlock';
 import { AnswerTheme } from './components/AnswerTheme';
 import { EvidencePanel } from './components/EvidencePanel';
 import { ReportDialog } from './components/ReportDialog';
 import { SaveToKnowledgeDialog } from '../knowledge/SaveToKnowledgeDialog';
+import { SaveToSessionDialog } from '../explore/SaveToSessionDialog';
 import { ReceiptDrawer } from '../answer-receipt/AnswerReceiptPage';
 import { requestPage } from '../documents/focusPage';
 import type { AskMessage, Citation } from './types';
 
-/* ─── per-viewer convenience storage ─────────────────────────────── */
+/* ─── per-viewer bookmarks (not the conversation thread) ─────────── */
 
 interface StoredQuestion { q: string; at: string }
 const SAVED_KEY = 'dataagent.ask.saved';
-const HISTORY_KEY = 'dataagent.ask.history';
-const HISTORY_MAX = 30;
 
 function readList(key: string): StoredQuestion[] {
   try {
@@ -75,7 +76,8 @@ const EXAMPLES = [
 /* ─── page ────────────────────────────────────────────────────────── */
 
 export default function AskDataPage() {
-  const { user, navigate } = useAppState();
+  const { user, navigate, routeId } = useAppState();
+  const toast = useToast();
   const openCitation = (c: Citation) => {
     if (!c.doc_id) return;
     requestPage(c.doc_id, c.page);
@@ -83,12 +85,14 @@ export default function AskDataPage() {
   };
   const [input, setInput] = useState('');
   const [saved, setSaved] = useState<StoredQuestion[]>(() => readList(SAVED_KEY));
-  const [history, setHistory] = useState<StoredQuestion[]>(() => readList(HISTORY_KEY));
+  const [recent, setRecent] = useState<{ id: string; title: string }[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reportFor, setReportFor] = useState<AskMessage | null>(null);
   const [receiptFor, setReceiptFor] = useState<string | null>(null);
   const [knowledgeFor, setKnowledgeFor] = useState<string | null>(null);
+  const [sessionFor, setSessionFor] = useState<AskMessage | null>(null);
+  const [savedToSession, setSavedToSession] = useState<Record<string, true>>({});
   const [reported, setReported] = useState<Record<string, Feedback>>({});
   const [listening, setListening] = useState(false);
   const recogRef = useRef<Recognition | null>(null);
@@ -96,9 +100,51 @@ export default function AskDataPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // The agent that answers is chosen by the system: POST /v1/questions has no agent field (A3).
-  const { messages, sending, send, answerClarification, confirmUnderstanding, stop } = useQuestionStream();
+  const {
+    messages,
+    sending,
+    hydrating,
+    conversationId,
+    send,
+    answerClarification,
+    confirmUnderstanding,
+    stop,
+    hydrate,
+  } = useQuestionStream();
 
   useEffect(() => { bottomRef.current?.scrollIntoView?.({ behavior: 'smooth' }); }, [messages]);
+
+  // Reopen from /analysis/ask/<conversation_id> (R1-13).
+  useEffect(() => {
+    if (routeId) void hydrate(routeId);
+  }, [routeId, hydrate]);
+
+  // Put the conversation id in the URL once the first question is accepted.
+  useEffect(() => {
+    if (!conversationId || routeId === conversationId) return;
+    navigate('analysis', 'ASK', conversationId);
+  }, [conversationId, routeId, navigate]);
+
+  // Recent threads from the server (not localStorage).
+  useEffect(() => {
+    let cancelled = false;
+    listConversations(8)
+      .then((page) => {
+        if (cancelled) return;
+        setRecent(
+          page.items.map((c) => ({
+            id: c.id,
+            title: (c.title?.trim() || 'Hội thoại không tiêu đề'),
+          })),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setRecent([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId]);
 
   const lastAssistant = useMemo(() => [...messages].reverse().find(m => m.role === 'assistant') ?? null, [messages]);
   const selected: AskMessage | null = useMemo(
@@ -111,13 +157,6 @@ export default function AskDataPage() {
     return '';
   }, [messages]);
 
-  const pushHistory = (q: string) => {
-    setHistory(prev => {
-      const next = [{ q, at: new Date().toISOString() }, ...prev.filter(x => x.q !== q)].slice(0, HISTORY_MAX);
-      writeList(HISTORY_KEY, next);
-      return next;
-    });
-  };
   const saveQuestion = (q: string) => {
     setSaved(prev => {
       if (prev.some(x => x.q === q)) return prev;
@@ -132,11 +171,10 @@ export default function AskDataPage() {
 
   const ask = (text?: string) => {
     const q = (text ?? input).trim();
-    if (!q || sending) return;
+    if (!q || sending || hydrating) return;
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setSelectedId(null);
-    pushHistory(q);
     void send(q);
   };
 
@@ -144,7 +182,7 @@ export default function AskDataPage() {
   // It is asked once, then dropped from the URL so a reload does not ask it again.
   const handedOver = useRef(false);
   useEffect(() => {
-    if (handedOver.current) return;
+    if (handedOver.current || routeId) return;
     handedOver.current = true;
     const params = new URLSearchParams(window.location.search);
     const q = params.get('q');
@@ -153,7 +191,7 @@ export default function AskDataPage() {
     const rest = params.toString();
     window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`);
     ask(q);
-  }, []);
+  }, [routeId]);
 
   const toggleMic = () => {
     const SR = speechRecognition();
@@ -232,7 +270,7 @@ export default function AskDataPage() {
                 />
               )}
 
-              {messages.length === 0 && (saved.length > 0 || history.length > 0) && (
+              {messages.length === 0 && !hydrating && (saved.length > 0 || recent.length > 0) && (
                 <div className="grid gap-da-2xl md:grid-cols-2">
                   {saved.length > 0 && (
                     <section aria-label="Câu hỏi đã lưu" className="flex flex-col gap-da-sm">
@@ -251,19 +289,19 @@ export default function AskDataPage() {
                       </ul>
                     </section>
                   )}
-                  {history.length > 0 && (
+                  {recent.length > 0 && (
                     <section aria-label="Hỏi gần đây" className="flex flex-col gap-da-sm">
                       <h2 className="m-0 text-muted-foreground da-overline uppercase">Hỏi gần đây</h2>
                       <ul className="m-0 flex list-none flex-col p-0">
-                        {history.slice(0, 8).map(h => (
-                          <li key={h.q}>
+                        {recent.map(h => (
+                          <li key={h.id}>
                             <button
                               type="button"
-                              onClick={() => { setInput(h.q); textareaRef.current?.focus(); }}
-                              title="Đưa vào ô hỏi"
+                              onClick={() => navigate('analysis', 'ASK', h.id)}
+                              title="Mở lại hội thoại"
                               className="w-full truncate rounded-sm px-da-md py-[5px] text-left text-muted-foreground da-body-small hover:bg-subtle hover:text-foreground"
                             >
-                              {h.q}
+                              {h.title}
                             </button>
                           </li>
                         ))}
@@ -304,6 +342,8 @@ export default function AskDataPage() {
                     }}
                     onReport={msg.answerId && msg.content ? () => setReportFor(msg) : undefined}
                     onSaveKnowledge={msg.answerId && msg.content ? () => setKnowledgeFor(msg.answerId!) : undefined}
+                    onSaveToSession={msg.answerId && msg.content ? () => setSessionFor(msg) : undefined}
+                    savedToSession={!!(msg.answerId && savedToSession[msg.answerId])}
                     /* The stream gives no server answer id yet (docs/v3/05-ui-v3.md §4), so this is the
                        client message id: the receipt page shows "chưa có biên nhận" until it does. */
                     onOpenReceipt={msg.answerId && msg.content ? () => setReceiptFor(msg.answerId!) : undefined}
@@ -379,6 +419,30 @@ export default function AskDataPage() {
       <ReceiptDrawer answerId={receiptFor} onClose={() => setReceiptFor(null)} />
       {knowledgeFor && (
         <SaveToKnowledgeDialog answerId={knowledgeFor} onClose={() => setKnowledgeFor(null)} />
+      )}
+      {sessionFor?.answerId && (
+        <SaveToSessionDialog
+          onClose={() => setSessionFor(null)}
+          onSave={(workspaceId) =>
+            saveAnswerToSession(workspaceId, {
+              answerId: sessionFor.answerId!,
+              title: questionFor(sessionFor.id) || sessionFor.content.slice(0, 80),
+            })
+          }
+          onSaved={(workspaceId, title) => {
+            const answerId = sessionFor.answerId!;
+            setSessionFor(null);
+            setSavedToSession((prev) => ({ ...prev, [answerId]: true }));
+            toast({
+              tone: 'success',
+              message: `Đã thêm vào ${title}`,
+              action: {
+                label: 'Mở phiên',
+                onClick: () => navigate('analysis', 'SESSIONS', workspaceId),
+              },
+            });
+          }}
+        />
       )}
       <ReportDialog
         open={!!reportFor}

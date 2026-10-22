@@ -78,6 +78,7 @@ def test_both_groups_take_the_request_shapes_of_a3() -> None:
         ("POST", "/v1/questions"),
         ("GET", f"/v1/questions/{SOME_ID}"),
         ("GET", "/v1/conversations"),
+        ("GET", f"/v1/conversations/{SOME_ID}"),
         ("GET", f"/v1/answers/{SOME_ID}"),
         ("GET", "/v1/receipts/BN-20260702-000184"),
         ("GET", f"/v1/query-runs/{SOME_ID}"),

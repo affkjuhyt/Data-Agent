@@ -112,6 +112,34 @@ class ConversationView(_Row):
     updated_at: datetime.datetime
 
 
+class ConversationTurnView(_Row):
+    """One question in a conversation, ordered by seq (R1-13 reopen)."""
+
+    question_id: uuid.UUID
+    seq: int
+    text: str
+    status: str
+    answer_id: uuid.UUID | None = None
+    received_at: datetime.datetime
+    answered_at: datetime.datetime | None = None
+
+
+class ConversationDetail(_Row):
+    """Conversation with ordered turns for Ask URL hydrate (R1-13)."""
+
+    id: uuid.UUID
+    data_space_id: uuid.UUID
+    user_id: uuid.UUID
+    channel: str
+    api_client_id: uuid.UUID | None
+    title: str | None
+    workspace_id: uuid.UUID | None
+    last_question_at: datetime.datetime | None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+    turns: list[ConversationTurnView] = Field(default_factory=list)
+
+
 # ─── answers, lineage, feedback ───
 
 

@@ -89,6 +89,7 @@ Dịch vụ: Agent runtime (qa). 17 endpoint.
 | GET | /v1/questions/{id}/stream | Luồng SSE: cách hiểu, tiến độ, câu trả lời | 01-01 | ask |
 | PATCH | /v1/questions/{id}/plan | Sửa chip cách hiểu, chạy lại | 01-03 | ask |
 | GET | /v1/conversations | Danh sách hội thoại của tôi | 01-04 | ask |
+| GET | /v1/conversations/{id} | Chi tiết hội thoại kèm lượt hỏi và answer\_id | 01-04 | ask |
 | GET | /v1/answers/{id} | Câu trả lời đầy đủ: số, biểu đồ, trích dẫn | 01-01 | ask |
 | GET | /v1/answers/{id}/lineage | Cách tính một con số | 01-02 | ask |
 | POST | /v1/answers/{id}/feedback | Đánh giá hoặc báo sai | 01-05 | ask |
@@ -722,6 +723,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/questions/{id}/stream | — | Luồng SSE. Sự kiện understood, progress, clarification, answer, error, done | 404 not\_found |
 | PATCH /v1/questions/{id}/plan | chips\*, edit\_note | 202, Location tới plan. Tạo phiên bản plan mới và chạy lại; mỗi chip ghi nguồn gốc người sửa | 409 invalid\_state (câu hỏi đang chạy); 422 validation\_failed (chip không ánh xạ được) |
 | GET /v1/conversations | ?q, ?from, ?to | Danh sách Conversation | — |
+| GET /v1/conversations/{id} | — | ConversationDetail. Kèm turns theo seq (question\_id, text, status, answer\_id) | 404 not\_found |
 | GET /v1/answers/{id} | — | Answer. figures kèm query\_run\_id, metric\_version\_id; số ngoài quyền đã bị che theo chính sách | 404 not\_found |
 | GET /v1/answers/{id}/lineage | ?figure | JSON. Cây truy nguồn: chỉ số và phiên bản, bảng, cột, bộ lọc, lượt chạy SQL, kỳ chốt, mã băm (UC-01-02) | 403 policy\_denied (bước ngoài quyền hiện “ngoài quyền”, không lộ tên bảng) |
 | POST /v1/answers/{id}/feedback | rating\*, error\_kind, expected\_value, comment | Feedback | 422 validation\_failed (rating = wrong thiếu error\_kind) |

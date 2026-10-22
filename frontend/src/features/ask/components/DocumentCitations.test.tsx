@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { AnswerBlock } from './AnswerBlock';
-import { citationsOf } from '../hooks/useQuestionStream';
+import { citationsOf } from '../answerMessage';
 import type { AskMessage } from '../types';
 
 const citations = citationsOf({

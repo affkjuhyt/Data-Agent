@@ -40,10 +40,12 @@ export interface WorkspaceTile {
   id: Uuid;
   /** Position in the notebook, 1-based, shown as "[1]". */
   seq: number;
-  kind: 'text' | 'sql' | 'chart' | 'skill';
+  kind: 'text' | 'sql' | 'chart' | 'skill' | 'question';
   title: string;
   /** The question, the SQL, or the result in one sentence. */
   body: string;
+  /** When the tile was saved from Ask, the answer to reopen in Cách tính. */
+  answerId: string | null;
   author: Author;
   /**
    * ok = result is current; stale = the data under it changed and it must be re-run (UC-02-02);
@@ -69,9 +71,11 @@ export interface WorkspaceDetail extends Omit<Workspace, 'params'> {
 }
 
 const KIND: Record<string, WorkspaceTile['kind']> = {
+  question: 'question',
   sql: 'sql',
   chart: 'chart',
   skill_run: 'skill',
+  agent_result: 'question',
 };
 
 /** What a tile says in one line: its SQL, its text or its question, whichever `spec` holds. */
@@ -82,6 +86,12 @@ const bodyOf = (spec: unknown) => {
   return (text.find((v) => typeof v === 'string') as string | undefined) ?? '';
 };
 
+const answerIdOf = (spec: unknown) => {
+  if (typeof spec !== 'object' || spec === null) return null;
+  const id = (spec as Record<string, unknown>).answer_id;
+  return typeof id === 'string' ? id : null;
+};
+
 function readTile(raw: TileWire): WorkspaceTile {
   const agent = raw.author_kind === 'agent';
   return {
@@ -90,6 +100,7 @@ function readTile(raw: TileWire): WorkspaceTile {
     kind: KIND[raw.kind] ?? 'text',
     title: raw.title ?? '',
     body: bodyOf(raw.spec),
+    answerId: answerIdOf(raw.spec),
     author: { kind: agent ? 'agent' : 'person', name: raw.author_name ?? (agent ? 'Agent' : '') },
     state: raw.agent_suggestion_state === 'suggested' ? 'proposed' : raw.stale ? 'stale' : 'ok',
     comment_count: raw.comment_count ?? 0,

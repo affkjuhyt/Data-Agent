@@ -37,6 +37,7 @@ const TableProfilePage = React.lazy(() => import('./features/data-sources/TableP
 const CatalogPage = React.lazy(() => import('./features/data/CatalogPage'));
 const ConnectPage = React.lazy(() => import('./features/data-sources/ConnectPage'));
 const JobsPage = React.lazy(() => import('./features/data-sources/JobsPage'));
+const JobMonitorPage = React.lazy(() => import('./features/ops/JobMonitorPage'));
 const UploadPage = React.lazy(() => import('./features/data-sources/UploadPage'));
 const CollectionsPage = React.lazy(() => import('./features/data-sources/CollectionsPage'));
 const CollectionPage = React.lazy(() => import('./features/data-sources/CollectionPage'));
@@ -194,6 +195,8 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     WATCH_NEW:       { render: () => <WatchCreatePage /> },
     // /analysis/alerts opens the newest open alert, /analysis/alerts/<id> one alert.
     ALERTS:          { render: () => <AlertPage /> },
+    // Read-only job status (R3 precursor); full controls stay on data › Job nạp.
+    JOB_MONITOR:     { render: () => <JobMonitorPage /> },
     REPORTS:         { render: () => <ReportSetupPage /> },
     DIGEST:          { render: () => <DigestPage /> },
   },

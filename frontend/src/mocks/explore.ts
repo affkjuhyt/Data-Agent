@@ -504,7 +504,6 @@ export function createExploreHandlers() {
   });
   const skillRuns = new Map<string, string>();
   const asked = new Map<string, string>();
-  let tiles = 0;
   // Dev mock only: the page reload resets MSW state, so finishing or skipping onboarding would
   // bring it back on every reload. The real server keeps this per user (GET /v1/me/onboarding).
   const STORED = 'mock:onboarding-state';
@@ -677,31 +676,7 @@ export function createExploreHandlers() {
       HttpResponse.json(artifactAnswer(artifactRun.id)),
     ),
 
-    // "Lưu vào phiên": the tile as the api returns it (201).
-    http.post('*/v1/workspaces/:id/tiles', async ({ params, request }) => {
-      const body = (await request.json()) as Schemas['TileCreate'];
-      if (!body.kind || typeof body.spec !== 'object')
-        return problem(422, 'validation_failed', 'kind and spec are required.');
-      tiles += 1;
-      return HttpResponse.json(
-        {
-          id: `tile-saved-${tiles}`,
-          workspace_id: String(params.id),
-          position: 100 + tiles,
-          kind: body.kind,
-          title: body.title ?? null,
-          spec: body.spec,
-          depends_on: body.depends_on ?? [],
-          author_kind: 'user',
-          agent_suggestion_state: null,
-          latest_snapshot_id: null,
-          stale: true,
-          created_at: AT,
-          updated_at: AT,
-        } satisfies Schemas['TileView'],
-        { status: 201 },
-      );
-    }),
+    // POST /v1/workspaces/:id/tiles lives in createSessionHandlers (appends to the notebook).
 
     http.get('*/v1/me/onboarding', () => HttpResponse.json(onboarding)),
     http.post('*/v1/me/onboarding\\:complete', () => {
