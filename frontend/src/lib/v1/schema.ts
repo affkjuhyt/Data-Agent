@@ -11417,7 +11417,7 @@ export interface components {
             /** Name */
             name: string;
             /** Row Count */
-            row_count: number;
+            row_count?: number | null;
         };
         /** DerivedTableCreate */
         DerivedTableCreate: {
@@ -17128,6 +17128,12 @@ export interface components {
         OutputDraft: {
             /** Columns */
             columns?: Record<string, never>[];
+            /**
+             * Columns Status
+             * @default ready
+             * @enum {string}
+             */
+            columns_status: "ready" | "pending" | "failed";
             /** Consumers Text */
             consumers_text?: string | null;
             /**
@@ -18862,7 +18868,8 @@ export interface components {
         };
         /**
          * PipelineDetail
-         * @description GET /v1/pipelines/{id}: the pipeline with its latest run (UC-06-02, UC-06-03).
+         * @description GET /v1/pipelines/{id}: the pipeline with its latest run and the conversation that built
+         *     its steps (UC-06-01, UC-06-02, UC-06-03).
          */
         PipelineDetail: {
             /**
@@ -18887,6 +18894,8 @@ export interface components {
             /** Input Dataset Ids */
             input_dataset_ids: string[];
             last_run?: components["schemas"]["PipelineRunView"] | null;
+            /** Messages */
+            messages?: components["schemas"]["PipelineMessageView"][];
             /** Name */
             name: string;
             /** No Overlap */
@@ -18918,6 +18927,29 @@ export interface components {
         };
         /** PipelineMessage */
         PipelineMessage: {
+            /** Text */
+            text: string;
+        };
+        /**
+         * PipelineMessageView
+         * @description One turn of the conversation with the data-prep agent (UC-06-01 step 2).
+         */
+        PipelineMessageView: {
+            /**
+             * Author
+             * @enum {string}
+             */
+            author: "user" | "agent";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
             /** Text */
             text: string;
         };
@@ -22168,18 +22200,28 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
-        /** StepPreview */
+        /**
+         * StepPreview
+         * @description One step previewed on its source: the query run holding the rows (UC-06-01 step 3). A
+         *     step that drops rows (filter, dedupe) shows the rows it drops; any other step its output.
+         */
         StepPreview: {
-            /** Column */
-            column: string;
-            /** Key Column */
-            key_column: string;
-            /** Rows */
-            rows?: {
-                [key: string]: string;
-            }[];
+            /** Kind */
+            kind: string;
+            /**
+             * Query Run Id
+             * Format: uuid
+             */
+            query_run_id: string;
             /** Seq */
             seq: number;
+            /**
+             * Shows
+             * @enum {string}
+             */
+            shows: "dropped" | "output";
+            /** Status */
+            status: string;
         };
         /** StepView */
         StepView: {

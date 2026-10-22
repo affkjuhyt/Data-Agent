@@ -7,10 +7,8 @@ import type {
   PipelineDetail,
   PipelineSchedule,
   PipelineStep,
-  PublishPipeline,
   ScheduleKind,
   SqlResult,
-  StepPreview,
   Writeback,
 } from '../lib/v1/dataPrep';
 
@@ -193,25 +191,22 @@ function loansRetailFixture(base: Pipeline): PipelineDetail {
   };
 }
 
-function previewFixture(seq: number): StepPreview {
+/** The rows of a step preview's query run (qr-step-<seq>), as the worker stores them. */
+function previewRows(seq: number) {
   if (seq === 5)
     return {
-      seq,
-      key_column: 'loan_id',
-      column: 'branch_code',
-      rows: [
-        { key: 'LD2409-0187', before: 'HPG01', after: 'HPG001', note: 'đã chuẩn hoá' },
-        { key: 'LD2409-0201', before: '12045', after: '012045', note: 'thêm số 0' },
-        { key: 'LD2410-0031', before: 'QNH002', after: 'QNH002', note: 'giữ nguyên' },
+      columns: ['loan_id', 'branch_code'],
+      items: [
+        ['LD2409-0187', 'HPG001'],
+        ['LD2409-0201', '012045'],
+        ['LD2410-0031', 'QNH002'],
       ],
     };
   return {
-    seq,
-    key_column: 'loan_id',
-    column: 'status',
-    rows: [
-      { key: 'LD2409-0187', before: 'active', after: 'active', note: 'giữ nguyên' },
-      { key: 'LD2311-0442', before: 'closed', after: 'closed', note: 'giữ nguyên' },
+    columns: ['loan_id', 'status'],
+    items: [
+      ['LD2409-0187', 'active'],
+      ['LD2311-0442', 'closed'],
     ],
   };
 }
@@ -470,11 +465,14 @@ export function createDataPrepHandlers() {
     return detail;
   };
   const notFound = () => problem(404, 'not_found', 'Không tìm thấy pipeline.');
+  const materialized = new Map<string, { runId: string; tableId: string }>();
 
   return [
     /* The SQL screen uses the canonical query-run worker. */
     http.post('*/v1/query-runs', async ({ request }) => {
-      const body = (await request.json()) as { sql?: string };
+      const body = (await request.clone().json()) as { sql?: string; dataset_id?: string };
+      // A dataset with filters (the table explorer) is the sources mock's.
+      if (body.dataset_id) return undefined;
       const sql = body.sql ?? '';
       if (!sql.trim()) return problem(400, 'invalid_request', 'Chưa có câu truy vấn.');
       if (/\b(insert|update|delete|drop|alter|truncate)\b/i.test(sql))
@@ -503,15 +501,26 @@ export function createDataPrepHandlers() {
         error: null,
       }),
     ),
-    http.get('*/v1/query-runs/:id/rows', () =>
-      HttpResponse.json({
+    http.get('*/v1/query-runs/:id/rows', ({ params }) => {
+      const id = String(params.id);
+      if (id.startsWith('qr-step-')) {
+        const step = previewRows(Number(id.slice('qr-step-'.length)));
+        return HttpResponse.json({
+          columns: step.columns.map((name) => ({ name, type: 'string' })),
+          items: step.items,
+          truncated: false,
+          next_page_token: '',
+          expires_at: '2026-10-15T00:00:00+07:00',
+        });
+      }
+      return HttpResponse.json({
         columns: SQL_RESULT.columns.map((name) => ({ name, type: 'string' })),
         items: SQL_RESULT.rows,
         truncated: false,
         next_page_token: '',
         expires_at: '2026-10-15T00:00:00+07:00',
-      }),
-    ),
+      });
+    }),
     http.post('*/v1/derived-tables', async ({ request }) => {
       const body = (await request.json()) as Omit<DerivedTable, 'id' | 'version' | 'write_mode'>;
       if (!/^[a-z][a-z0-9_.]{2,62}$/.test(body.name))
@@ -605,7 +614,13 @@ export function createDataPrepHandlers() {
     }),
     http.get('*/v1/pipelines/:id/steps/:seq/preview', ({ params }) =>
       detailOf(String(params.id))
-        ? HttpResponse.json(previewFixture(Number(params.seq)))
+        ? HttpResponse.json({
+            seq: Number(params.seq),
+            kind: 'compute',
+            shows: 'output',
+            query_run_id: `qr-step-${params.seq}`,
+            status: 'succeeded',
+          })
         : notFound(),
     ),
     http.post('*/v1/pipelines/:id/messages', async ({ params, request }) => {
@@ -687,45 +702,53 @@ export function createDataPrepHandlers() {
       const detail = verb ? detailOf(id) : undefined;
       if (!verb) return undefined;
       if (!detail) return notFound();
-      if (verb === 'test-run')
-        return HttpResponse.json({
-          rows_out: detail.steps.at(-1)?.rows_out ?? 0,
-          excluded_rows: 8,
-          duration_s: 41,
-        });
-      if (verb === 'publish') {
-        const body = (await request.json()) as PublishPipeline;
-        if (!body.table_name.includes('.'))
-          return problem(
-            422,
-            'validation_failed',
-            'Tên bảng cần có schema, ví dụ prep.loans_retail.',
-          );
+      if (verb === 'preview')
+        // A full test run (sample_rows null), already finished as the worker would leave it.
+        return HttpResponse.json(
+          {
+            id: `run-${++seq}`,
+            pipeline_id: id,
+            mode: 'preview',
+            status: 'succeeded',
+            sample_rows: null,
+            rows_in: detail.input_rows,
+            rows_out: detail.steps.at(-1)?.rows_out ?? 0,
+            rows_dropped: [{ step: 2, kind: 'dedupe', rows: 8, condition: 'loan_id trùng' }],
+            totals_check: { matched: true, columns: [] },
+            started_at: '2026-10-17T08:00:00+07:00',
+            finished_at: '2026-10-17T08:00:41+07:00',
+            error: null,
+          },
+          { status: 202 },
+        );
+      if (verb === 'materialize') {
+        const body = (await request.json()) as { table_name: string };
+        if (!/^[a-z_][a-z0-9_]{0,62}$/.test(body.table_name))
+          return problem(422, 'validation_failed', 'Tên bảng chỉ gồm chữ thường, số và _.');
+        const runId = `run-${++seq}`;
+        const tableId = `dt-${seq}`;
+        materialized.set(id, { runId, tableId });
         const p = pipelines.find((x) => x.id === id);
         if (p) p.output_table = body.table_name;
-        return HttpResponse.json({
-          table: {
-            id: `dt-${++seq}`,
-            name: body.table_name,
-            data_space_id: body.data_space_id,
-            write_mode: body.write_mode,
-            refresh: 'after_etl',
-            access: 'inherit',
-            version: 1,
-          } satisfies DerivedTable,
-          schedule_text:
-            body.schedule.mode === 'manual'
-              ? 'chạy thủ công'
-              : body.schedule.mode === 'cron'
-                ? 'chạy mỗi 2 giờ'
-                : 'chạy sau job nạp ld_loans',
-        });
+        return HttpResponse.json({ id: runId, status: 'running' }, { status: 202 });
       }
       return problem(404, 'not_found', 'Không có thao tác này.');
     }),
     http.get('*/v1/pipelines/:id', ({ params }) => {
       const detail = detailOf(String(params.id));
-      return detail ? HttpResponse.json(detail) : notFound();
+      if (!detail) return notFound();
+      // After :materialize the worker has run: the last run and the table it wrote.
+      const saved = materialized.get(String(params.id));
+      return HttpResponse.json(
+        saved
+          ? {
+              ...detail,
+              data_space_id: 'ds-tin-dung',
+              target_dataset_id: saved.tableId,
+              last_run: { id: saved.runId, status: 'succeeded', error: null },
+            }
+          : detail,
+      );
     }),
 
     /* Ghi ngược */

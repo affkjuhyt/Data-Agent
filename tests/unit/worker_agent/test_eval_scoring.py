@@ -45,3 +45,15 @@ def test_a_wrong_value_fails_and_a_tolerance_lets_a_close_one_pass() -> None:
 
 def test_a_masked_figure_is_not_a_value() -> None:
     assert _score(item({"values": [5]}), answer(figure(None)), QUESTION)[1] is False
+
+
+def test_an_item_written_for_the_proposals_path_is_scored_the_same_way() -> None:
+    # evaluation.py's keys: behavior, metric, value within 0.5 % without an item tolerance.
+    refused = answer(kind="refusal")
+    assert _score(item({"behavior": "refuse"}), refused, QUESTION)[3] is True
+    assert _score(item({"behavior": "refuse"}), answer(figure("1")), QUESTION)[3] is False
+    assert _score(item({"behavior": "clarify"}), refused, QUESTION)[3] is False
+    near = answer(figure("3010"))
+    assert _score(item({"metric": "DU_NO", "value": 3000}), near, QUESTION, "DU_NO")[3] is True
+    assert _score(item({"metric": "DU_NO", "value": 3000}), near, QUESTION, "NPL")[3] is False
+    assert _score(item({"value": 3000}), answer(figure("3020")), QUESTION)[3] is False

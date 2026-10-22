@@ -19,25 +19,34 @@ import contextlib
 import logging
 import os
 import signal
+import time
 from collections.abc import Mapping
 
 from sqlalchemy import text
 
 from libs.dataagent_db import unscoped_session
 from services.worker_agent import (
+    derived,
     eval_runs,
     exports,
     hitl,
     metric_changes,
+    periods,
+    pipelines,
     policy_backtests,
+    prep,
     private,
     proposals,
+    quality,
     query_runs,
     questions,
     replay,
     resolutions,
+    reviews,
     runs,
+    scheduler,
     schema_scans,
+    semantic_review,
     session_reports,
     skill_runs,
     source_tests,
@@ -50,6 +59,7 @@ from services.worker_agent.events import EventSource, Handler, OutboxTableSource
 logger = logging.getLogger(__name__)
 
 POLL_SECONDS = float(os.environ.get("WORKER_AGENT_POLL_SECONDS", "0.5"))
+SCHEDULE_SECONDS = float(os.environ.get("WORKER_AGENT_SCHEDULE_SECONDS", "60"))
 BATCH = int(os.environ.get("WORKER_AGENT_BATCH", "10"))
 
 
@@ -82,6 +92,13 @@ HANDLERS: dict[str, Handler] = {
     **policy_backtests.HANDLERS,
     **eval_runs.HANDLERS,
     **metric_changes.HANDLERS,
+    **derived.HANDLERS,
+    **semantic_review.HANDLERS,
+    **reviews.HANDLERS,
+    **pipelines.HANDLERS,
+    **prep.HANDLERS,
+    **quality.HANDLERS,
+    **periods.HANDLERS,
 }
 AUDIT_RELAY = "svc_outbox_relay_audit"
 
@@ -113,7 +130,7 @@ async def sources() -> list[EventSource]:
         if schema == "notify":
             types |= channels.NOTIFY_EVENTS
         if schema == "catalog":
-            types |= set(source_tests.HANDLERS) | set(schema_scans.HANDLERS)
+            types |= set(source_tests.HANDLERS) | set(schema_scans.HANDLERS) | set(derived.HANDLERS)
         if schema == "query":
             types |= set(query_runs.HANDLERS)
         if schema == "governance":
@@ -129,14 +146,25 @@ async def sources() -> list[EventSource]:
         if schema == "pack":
             types |= {proposals.ACTIVATE}
         if schema == "pipeline":
-            types |= {proposals.WRITEBACK}
+            types |= {proposals.WRITEBACK} | set(pipelines.HANDLERS) | set(prep.HANDLERS)
         if schema == "ingest":
             types |= set(uploads.HANDLERS)
         if schema == "context":
-            types |= {eval_runs.DATA_PRODUCT_SUBMITTED} | set(metric_changes.HANDLERS)
+            # One handler per event: metric_changes previews a metric version (with the eval run
+            # semantic_review's overlay makes), semantic_review the other drafts, reviews a
+            # submitted data product.
+            types |= set(metric_changes.HANDLERS) | set(semantic_review.HANDLERS)
+            types |= {reviews.PRODUCT}
         if schema == "agent":
             # The one consumer of run.status_changed: the run executor (runs.py, ADR-37 stand-in).
             types |= set(runs.HANDLERS)
+            types |= set(uploads.HANDLERS) | set(quality.HANDLERS)
+        if schema == "period":
+            types |= set(periods.HANDLERS)
+        if schema == "conflict":
+            types |= {reviews.AUTHORITY}
+        if schema == "document":
+            types |= {reviews.VALIDITY}
         found.append(OutboxTableSource(schema=schema, event_types=frozenset(types)))
     try:
         audit = await _outbox_schemas(AUDIT_RELAY)
@@ -156,8 +184,16 @@ async def run(stop: asyncio.Event) -> None:
     # UC-16-02's private questions come from Redis, not an outbox (BR-193: never in a table).
     redis = private.redis_from_env()
     private_loop = asyncio.create_task(private.run(redis, stop)) if redis is not None else None
+    next_tick = 0.0
     while not stop.is_set():
         handled = 0
+        if time.monotonic() >= next_tick:
+            # Scheduled loads, pipelines and the daily quality pass (scheduler.py), once a minute.
+            next_tick = time.monotonic() + SCHEDULE_SECONDS
+            try:
+                await scheduler.tick()
+            except Exception:
+                logger.exception("worker-agent | schedule pass failed")
         for source in claimed_from:
             try:
                 handled += await run_once(source, HANDLERS)

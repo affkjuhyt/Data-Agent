@@ -225,7 +225,25 @@ async def test_the_same_plan_dragged_and_asked_gives_the_same_values_and_metric_
     rows = [f for f in figures if "expr" not in f["source"]]
     asked = {f["dimensions"]["vung"]: float(f["value"]) for f in rows}
     assert asked == dragged
-    versions = seed.one(
-        "SELECT metric_version_ids FROM query.query_run WHERE id = %s", run
-    )
+    versions = seed.one("SELECT metric_version_ids FROM query.query_run WHERE id = %s", run)
     assert {f["metric_version_id"] for f in rows} == {str(v) for v in versions}
+
+
+@pytest.mark.req("AC-06-01-01")
+async def test_a_pipeline_step_is_previewed_on_its_source(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from .test_pipelines import DROP_INTERNAL, SELECT, pipeline
+
+    bank = build(seed, warehouse, monkeypatch)
+    pid = pipeline(bank, [SELECT, DROP_INTERNAL])
+    output = _queue(bank, "pipeline", {"mode": "pipeline_step", "pipeline_id": pid, "seq": 1})
+    dropped = _queue(bank, "pipeline", {"mode": "pipeline_step", "pipeline_id": pid, "seq": 2})
+    gone = _queue(bank, "pipeline", {"mode": "pipeline_step", "pipeline_id": pid, "seq": 3})
+    await _drain()
+    assert _outcome(seed, output) == ("succeeded", None)
+    assert len(_rows(seed, output)) == 7
+    # A filter shows the rows it drops: the one internal loan.
+    assert _outcome(seed, dropped) == ("succeeded", None)
+    assert [r[3] for r in _rows(seed, dropped)] == ["NOI_BO"]
+    assert _outcome(seed, gone) == ("failed", "Bước không còn trong pipeline.")

@@ -2,8 +2,9 @@
 
 The inbox records the decision and emits `hitl.resolved` (inbox.outbox); the module that asked
 for it changes its own object. Each source is routed by `source_service` to the code that knows
-its object, in the role that owns it. The audit export, the answer export and agent checkpoints
-(runs.resume_after_checkpoint) are wired; other sources'
+its object, in the role that owns it. The audit export, the answer export, agent checkpoints
+(runs.resume_after_checkpoint) and the period's exceptions and manual numbers are wired; other
+sources'
 decisions are acknowledged and left to their own consumer (they are no-ops here, logged).
 
 Idempotent: an object that already left its waiting state is not touched again.
@@ -19,7 +20,7 @@ from sqlalchemy import update
 
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import audit, qa
-from services.worker_agent import exports, runs
+from services.worker_agent import exports, periods, runs
 from services.worker_agent.events import Event, Handler
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,7 @@ ROUTES = {
     ("audit", "export"): _audit_export,
     ("qa", "export"): _answer_export,
     ("agent", "checkpoint"): runs.resume_after_checkpoint,
+    ("period", "period_exception"): periods.exception_decided,
 }
 
 

@@ -32,6 +32,7 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import audit, document
 from libs.database_connector.minio_connector import MinIOClient
 from libs.shared import pii_detector
+from services.worker_document import validity
 from services.worker_document.indexing import Point, VectorIndex
 from services.worker_document.processing import (
     OCR_THRESHOLD,
@@ -411,6 +412,18 @@ async def process_document(event: Any, *, again: bool = False) -> None:
                 )
             await _write_chunks(session, meta, plan, indexed)
             status = await _finish(session, meta, page_count=len(pages))
+            if not existing_pages:
+                # First reading only: a reprocess would propose the same link again.
+                await validity.propose(
+                    session,
+                    org_id=org_id,
+                    data_space_id=meta.data_space_id,
+                    document_id=document_id,
+                    own_doc_no=meta.doc_no,
+                    effective_from=meta.effective_from,
+                    proposed_by=meta.created_by,
+                    texts=page_texts,
+                )
         log.info(
             "document processed id=%s status=%s pages=%d (unchanged %d) chunks new=%d kept=%d removed=%d indexed=%s",
             document_id,

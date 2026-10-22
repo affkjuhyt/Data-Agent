@@ -705,7 +705,7 @@ async def test_dataset_detail_masks_the_values_of_personal_columns(o: Org) -> No
     cccd = _column(o, dataset, "so_cccd", 1, pii_label="national_id")
     city = _column(o, dataset, "tinh", 2)
     _column(o, dataset, "cu", 3, removed_in_version=2)
-    for column, top in ((cccd, "001203004567"), (city, "Hà Nội")):
+    for column, top, more in ((cccd, "001203004567", []), (city, "Hà Nội", [("Huế", 14)])):
         o.seed.row(
             "catalog.column_profile",
             org_id=o.org,
@@ -715,13 +715,11 @@ async def test_dataset_detail_masks_the_values_of_personal_columns(o: Org) -> No
             null_ratio=0.1,
             min_value=top,
             max_value=top,
-            top_values=Json([{"value": top, "count": 7}]),
+            top_values=Json([{"value": v, "count": n} for v, n in [(top, 28), *more]]),
         )
     async with client(o) as api:
         got = await api.get(f"/v1/datasets/{dataset}", headers=o.headers("analyst"))
-        stats = await api.get(
-            f"/v1/datasets/{dataset}/columns/tinh", headers=o.headers("analyst")
-        )
+        stats = await api.get(f"/v1/datasets/{dataset}/columns/tinh", headers=o.headers("analyst"))
         masked = await api.get(
             f"/v1/datasets/{dataset}/columns/so_cccd", headers=o.headers("analyst")
         )
@@ -732,12 +730,22 @@ async def test_dataset_detail_masks_the_values_of_personal_columns(o: Org) -> No
     assert stats.status_code == 200, stats.text
     assert stats.json()["name"] == "tinh"
     assert stats.json()["distinct"] == 0
+    # The bars are the scan's top values, as counted; the median is not computed by the scan.
+    assert stats.json()["histogram"] == [
+        {"height": 1.0, "flagged": False},
+        {"height": 0.5, "flagged": False},
+    ]
+    assert stats.json()["buckets_text"] == "Giá trị phổ biến: Hà Nội · Huế"
+    assert stats.json()["median"] == "chưa tính"
     assert masked.status_code == 403
     masked = columns["so_cccd"]["profile"]
-    assert masked["top_values"] == [{"value": "***", "count": 7}]
+    assert masked["top_values"] == [{"value": "***", "count": 28}]
     assert masked["min_value"] is None and masked["max_value"] is None
     assert "001203004567" not in got.text
-    assert columns["tinh"]["profile"]["top_values"] == [{"value": "Hà Nội", "count": 7}]
+    assert columns["tinh"]["profile"]["top_values"] == [
+        {"value": "Hà Nội", "count": 28},
+        {"value": "Huế", "count": 14},
+    ]
 
 
 async def test_dataset_list_filters_and_isolation(o: Org) -> None:
@@ -889,7 +897,8 @@ async def test_dataset_derive_registers_worker_request(o: Org) -> None:
         )
     assert response.status_code == 201, response.text
     body = response.json()
-    assert body["id"] and body["name"].startswith("derived_") and body["row_count"] == 0
+    # Named as the catalogue shows it; its rows are unknown until worker-agent has built it.
+    assert body["id"] and body["name"] == "khoan_vay · dẫn xuất" and body["row_count"] is None
     event = o.events(body["id"])
     assert event and event[-1][0] == "dataset.derive_requested"
     assert event[-1][1]["source_dataset_id"] == str(dataset)

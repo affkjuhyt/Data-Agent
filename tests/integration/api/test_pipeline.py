@@ -10,6 +10,7 @@ and the event, not the effect.
 from __future__ import annotations
 
 import datetime
+import json
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -629,6 +630,22 @@ async def test_pipeline_authoring_and_schedule_reads_are_canonical(pp: Space) ->
             f"/v1/pipelines/{pipeline_id}/steps/1/preview", headers=pp.headers("eng")
         )
         assert step.status_code == 200 and step.json()["seq"] == 1
+        preview = step.json()
+        assert preview["status"] == "queued" and preview["shows"] == "output"
+        # The run is the caller's own, built by worker-agent from the steps (mode pipeline_step);
+        # asked again for the same steps, the same run answers.
+        payload = pp.one(
+            "SELECT payload FROM query.outbox WHERE aggregate_id = %s", preview["query_run_id"]
+        )
+        assert (payload["mode"], payload["pipeline_id"], payload["seq"]) == (
+            "pipeline_step",
+            pipeline_id,
+            1,
+        )
+        again = await api.get(
+            f"/v1/pipelines/{pipeline_id}/steps/1/preview", headers=pp.headers("eng")
+        )
+        assert again.json()["query_run_id"] == preview["query_run_id"]
         draft = await api.get(
             f"/v1/pipelines/{pipeline_id}/output-draft", headers=pp.headers("eng")
         )
@@ -642,6 +659,22 @@ async def test_pipeline_authoring_and_schedule_reads_are_canonical(pp: Space) ->
         assert dict(pp.events(pipeline_id))["pipeline.message_requested"]["text"] == (
             "giữ lại các dòng hợp lệ"
         )
+        said = message.json()["messages"]
+        assert [(m["author"], m["text"]) for m in said] == [("user", "giữ lại các dòng hợp lệ")]
+        # The agent's answer (worker-agent's prep.py) joins the conversation the screen reads.
+        pp.one(
+            "INSERT INTO pipeline.outbox (id, org_id, aggregate_type, aggregate_id, event_type,"
+            " payload) VALUES (gen_random_uuid(), %s, 'pipeline', %s, 'pipeline.message_answered',"
+            " %s) RETURNING id",
+            pp.org,
+            pipeline_id,
+            json.dumps({"pipeline_id": pipeline_id, "text": "Đã thêm bước lọc."}),
+        )
+        read = await api.get(f"/v1/pipelines/{pipeline_id}", headers=pp.headers("eng"))
+        assert [(m["author"], m["text"]) for m in read.json()["messages"]] == [
+            ("user", "giữ lại các dòng hợp lệ"),
+            ("agent", "Đã thêm bước lọc."),
+        ]
         _activate(pp, pipeline_id)
         schedule = await api.get(f"/v1/pipelines/{pipeline_id}/schedule", headers=pp.headers("eng"))
         assert schedule.status_code == 200 and schedule.json()["cron"] is None
@@ -774,6 +807,18 @@ async def test_lineage_reads_source_to_table_from_the_catalog(pp: Space) -> None
         assert down.status_code == 200, down.text
         assert f"dataset:{pp.raw}" in {n["key"] for n in down.json()["nodes"]}
         assert f"dataset:{pp.other_dataset}" not in {n["key"] for n in down.json()["nodes"]}
+
+    # A table of this space read from another space's source: the source stays anonymous.
+    pp.run("UPDATE catalog.dataset SET source_id = %s WHERE id = %s", pp.other_source, pp.raw)
+    async with client(pp) as api:
+        up = await api.get(
+            "/v1/lineage",
+            params={"object_kind": "dataset", "object_id": str(pp.raw)},
+            headers=pp.headers("analyst"),
+        )
+    nodes = {n["kind"]: n for n in up.json()["nodes"]}
+    assert nodes["source"]["hidden"] and nodes["source"]["id"] is None
+    assert nodes["source"]["name"] == "Đối tượng bạn không có quyền xem"
 
 
 async def test_lineage_hides_a_source_another_data_space_owns(pp: Space) -> None:
@@ -1353,3 +1398,65 @@ async def test_a_writeback_goes_only_to_a_declared_target(pp: Space) -> None:
             headers=pp.headers("eng"),
         )
         assert other.status_code == 422 and other.json()["code"] == "business_rule_violated"
+
+
+async def test_the_output_draft_is_read_from_the_steps_run_on_the_source(pp: Space) -> None:
+    async with client(pp) as api:
+        made = await _create(api, pp, scope="data_space")
+        pipeline_id = made["id"]
+        first = await api.get(
+            f"/v1/pipelines/{pipeline_id}/output-draft", headers=pp.headers("eng")
+        )
+        assert first.status_code == 200, first.text
+        draft = first.json()
+        # The steps are run on the source first: nothing is guessed meanwhile.
+        assert draft["columns_status"] == "pending" and draft["columns"] == []
+        assert draft["table_name"] == "lam_sach_du_no"
+        assert draft["notify_options"] == [{"value": "owner", "label": "Người phụ trách pipeline"}]
+        # What worker-agent leaves for each step's preview run.
+        runs = pp.one(
+            "SELECT array_agg(id ORDER BY started_at, id) FROM query.query_run WHERE caller_id = %s",
+            pipeline_id,
+        )
+        assert len(runs) == len(STEPS)
+        for run in runs:
+            pp.run("UPDATE query.query_run SET status = 'succeeded' WHERE id = %s", run)
+            pp.seed.row(
+                "query.query_result",
+                org_id=pp.org,
+                query_run_id=run,
+                columns=Json(
+                    [{"name": "ma_chi_nhanh", "type": "text"}, {"name": "du_no", "type": "numeric"}]
+                ),
+                rows=Json([]),
+            )
+        pp.seed.row(
+            "catalog.column_meta",
+            org_id=pp.org,
+            dataset_id=pp.raw,
+            dataset_version=1,
+            name="ma_chi_nhanh",
+            ordinal=1,
+            data_type="text",
+            normalized_type="string",
+        )
+        read = await api.get(f"/v1/pipelines/{pipeline_id}/output-draft", headers=pp.headers("eng"))
+    draft = read.json()
+    assert draft["columns_status"] == "ready"
+    assert draft["columns"] == [
+        {"name": "ma_chi_nhanh", "type": "text", "from_step": 0, "is_new": False},
+        {"name": "du_no", "type": "numeric", "from_step": 1, "is_new": True},
+    ]
+
+
+async def test_the_output_draft_names_only_readers_the_caller_may_see(pp: Space) -> None:
+    async with client(pp) as api:
+        made = await _create(api, pp, scope="data_space")
+        _activate(pp, made["id"])
+        shared = await _create(
+            api, pp, name="Mart chung", input_dataset_ids=[str(pp.derived)], scope="data_space"
+        )
+        await _create(api, pp, who="eng2", name="Nháp riêng", input_dataset_ids=[str(pp.derived)])
+        draft = await api.get(f"/v1/pipelines/{made['id']}/output-draft", headers=pp.headers("eng"))
+    assert shared["name"] == "Mart chung"
+    assert draft.json()["consumers_text"] == "Đang được đọc bởi pipeline “Mart chung”."

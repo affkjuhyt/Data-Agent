@@ -98,17 +98,24 @@ class SchedulePreview(_Body):
 
 
 class StepPreview(BaseModel):
+    """One step previewed on its source: the query run holding the rows (UC-06-01 step 3). A
+    step that drops rows (filter, dedupe) shows the rows it drops; any other step its output."""
+
     seq: int
-    key_column: str
-    column: str
-    rows: list[dict[str, str]] = Field(default_factory=list)
+    kind: str
+    shows: Literal["dropped", "output"]
+    query_run_id: uuid.UUID
+    status: str
 
 
 class OutputDraft(BaseModel):
     table_name: str
     data_space_id: uuid.UUID
     write_mode: Literal["replace", "append", "merge"] = "replace"
+    # {name, type, from_step, is_new}: read from the step previews run on the source; `pending`
+    # while those runs have not finished (read the draft again), `failed` when one could not run.
     columns: list[dict[str, Any]] = Field(default_factory=list)
+    columns_status: Literal["ready", "pending", "failed"] = "ready"
     consumers_text: str | None = None
     input_jobs: list[dict[str, str]] = Field(default_factory=list)
     notify_options: list[dict[str, str]] = Field(default_factory=list)
@@ -151,10 +158,21 @@ class PipelineRunView(_View):
     created_at: datetime.datetime
 
 
+class PipelineMessageView(BaseModel):
+    """One turn of the conversation with the data-prep agent (UC-06-01 step 2)."""
+
+    id: uuid.UUID
+    author: Literal["user", "agent"]
+    text: str
+    created_at: datetime.datetime
+
+
 class PipelineDetail(PipelineView):
-    """GET /v1/pipelines/{id}: the pipeline with its latest run (UC-06-02, UC-06-03)."""
+    """GET /v1/pipelines/{id}: the pipeline with its latest run and the conversation that built
+    its steps (UC-06-01, UC-06-02, UC-06-03)."""
 
     last_run: PipelineRunView | None = None
+    messages: list[PipelineMessageView] = Field(default_factory=list)
 
 
 class Accepted(BaseModel):

@@ -11,12 +11,14 @@ context module, which calls public.create_published_product for layer "published
 from __future__ import annotations
 
 import datetime
+import re
+import unicodedata
 import uuid
 from collections import Counter
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, Path, Query, Response
-from sqlalchemy import and_, or_, select, tuple_
+from sqlalchemy import and_, func, literal, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,6 +38,7 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import Problem
+from services.api.modules.ingest.public import jobs_feeding
 from services.api.modules.pipeline import rules
 from services.api.modules.pipeline.schemas import (
     Accepted,
@@ -53,6 +56,7 @@ from services.api.modules.pipeline.schemas import (
     PipelineCreate,
     PipelineDetail,
     PipelineMessage,
+    PipelineMessageView,
     PipelinePatch,
     PipelineRunView,
     PipelineView,
@@ -67,6 +71,7 @@ from services.api.modules.pipeline.schemas import (
     WriteWindow,
 )
 from services.api.modules.pipeline.store import ROLE, emit, invalid, now, require_datasets
+from services.api.modules.qa.public import pipeline_step_preview, query_result_columns
 
 router = APIRouter()
 
@@ -313,6 +318,38 @@ async def create_pipeline(
         return PipelineView.model_validate(row)
 
 
+# The conversation is the pipeline's own events (pipeline.outbox is never purged): the user's
+# words as the api recorded them, the agent's answers as worker-agent's prep.py did.
+_SAID: dict[str, tuple[Literal["user", "agent"], str]] = {
+    "pipeline.steps_requested": ("user", "instruction"),
+    "pipeline.message_requested": ("user", "text"),
+    "pipeline.message_answered": ("agent", "text"),
+}
+
+
+async def _messages(session: AsyncSession, pipeline_id: uuid.UUID) -> list[PipelineMessageView]:
+    rows = (
+        await session.execute(
+            select(pl.Outbox.id, pl.Outbox.event_type, pl.Outbox.payload, pl.Outbox.created_at)
+            .where(
+                pl.Outbox.aggregate_type == "pipeline",
+                pl.Outbox.aggregate_id == pipeline_id,
+                pl.Outbox.event_type.in_(_SAID),
+            )
+            .order_by(pl.Outbox.created_at, pl.Outbox.id)
+        )
+    ).all()
+    return [
+        PipelineMessageView(
+            id=r.id,
+            author=_SAID[r.event_type][0],
+            text=str((r.payload or {}).get(_SAID[r.event_type][1]) or ""),
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
 @router.get(
     "/v1/pipelines/{id}",
     response_model=PipelineDetail,
@@ -332,12 +369,14 @@ async def get_pipeline(
             .order_by(pl.PipelineRun.started_at.desc(), pl.PipelineRun.id.desc())
             .limit(1)
         )
+        messages = await _messages(session, row.id)
     # The same tag PATCH answers with, so If-Match from either read passes the kernel's check
     # (which compares against this GET) and the route's own updated_at comparison alike.
     response.headers["ETag"] = _etag(row)
     return PipelineDetail(
         **PipelineView.model_validate(row).model_dump(),
         last_run=PipelineRunView.model_validate(last) if last is not None else None,
+        messages=messages,
     )
 
 
@@ -353,21 +392,98 @@ async def get_pipeline_output_draft(
 ) -> OutputDraft:
     async with transaction(ROLE, principal) as session:
         row = await _pipeline(session, principal, data_space, pipeline_id)
-    columns: list[dict[str, Any]] = []
-    for seq, step in enumerate(row.steps if isinstance(row.steps, list) else [], start=1):
-        if isinstance(step, dict):
-            columns.append(
-                {
-                    "name": str(step.get("description") or f"step_{seq}"),
-                    "type": "unknown",
-                    "from_step": seq,
-                    "is_new": True,
-                }
+        inputs = (
+            await session.scalars(
+                select(catalog.Dataset).where(
+                    catalog.Dataset.id.in_(row.input_dataset_ids),
+                    catalog.Dataset.org_id == principal.org_id,
+                )
             )
+        ).all()
+        known = set(
+            (
+                await session.scalars(
+                    select(catalog.ColumnMeta.name).where(
+                        catalog.ColumnMeta.dataset_id.in_([d.id for d in inputs]),
+                        catalog.ColumnMeta.removed_in_version.is_(None),
+                    )
+                )
+            ).all()
+        )
+        target = (
+            await session.get(catalog.Dataset, row.target_dataset_id)
+            if row.target_dataset_id
+            else None
+        )
+        readers = (
+            (
+                await session.scalars(
+                    select(pl.Pipeline.name).where(
+                        pl.Pipeline.org_id == principal.org_id,
+                        pl.Pipeline.data_space_id == data_space,
+                        pl.Pipeline.deleted_at.is_(None),
+                        pl.Pipeline.id != row.id,
+                        # Another person's personal pipeline is not named (BR-111).
+                        _visible(principal),
+                        literal(row.target_dataset_id) == func.any(pl.Pipeline.input_dataset_ids),
+                    )
+                )
+            ).all()
+            if row.target_dataset_id
+            else []
+        )
+    steps = row.steps if isinstance(row.steps, list) else []
+    # Each step previewed on the source (the caller's own runs, reused while the steps are
+    # unchanged): a column comes from the first step whose output has it.
+    columns: list[dict[str, Any]] = []
+    status: Literal["ready", "pending", "failed"] = "ready"
+    first_seen: dict[str, int] = {}
+    for seq in range(1, len(steps) + 1):
+        run = await pipeline_step_preview(principal, data_space, row.id, seq, steps)
+        if run.status == "failed":
+            status = "failed"
+            break
+        got = await query_result_columns(principal, run.id) if run.status == "succeeded" else None
+        if got is None:
+            status = "pending"
+            continue
+        for c in got:
+            first_seen.setdefault(c["name"], seq)
+        if seq == len(steps):
+            columns = [
+                {
+                    "name": c["name"],
+                    "type": c["type"],
+                    "from_step": first_seen[c["name"]] if c["name"] not in known else 0,
+                    "is_new": c["name"] not in known,
+                }
+                for c in got
+            ]
+    jobs = await jobs_feeding(
+        principal,
+        data_space,
+        [d.id for d in inputs],
+        [d.source_id for d in inputs if d.source_id is not None],
+    )
+    stem = unicodedata.normalize("NFKD", row.name).encode("ascii", "ignore").decode().lower()
     return OutputDraft(
-        table_name=row.name.lower().replace(" ", "_")[:63],
+        # The table's name once saved; for a first save, the pipeline's name as an identifier.
+        table_name=(
+            target.display_name or target.table_name
+            if target is not None
+            else (re.sub(r"[^a-z0-9_]+", "_", stem).strip("_") or "bang")[:63]
+        ),
         data_space_id=row.data_space_id,
         columns=columns,
+        columns_status=status if steps else "ready",
+        consumers_text=(
+            "Đang được đọc bởi pipeline " + ", ".join(f"“{n}”" for n in readers) + "."
+            if readers
+            else None
+        ),
+        input_jobs=[{"value": str(job_id), "label": name} for job_id, name in jobs],
+        # A failed run tells the pipeline's owner (on_failure notify / retry_then_notify).
+        notify_options=[{"value": "owner", "label": "Người phụ trách pipeline"}],
     )
 
 
@@ -557,18 +673,14 @@ async def preview_pipeline_step(
     steps = row.steps if isinstance(row.steps, list) else []
     if seq < 1 or seq > len(steps):
         raise Problem(404, "not_found", "Pipeline step not found.")
+    kind = str(steps[seq - 1].get("kind")) if isinstance(steps[seq - 1], dict) else ""
+    run = await pipeline_step_preview(principal, data_space, row.id, seq, steps)
     return StepPreview(
         seq=seq,
-        key_column="id",
-        column="output",
-        rows=[
-            {
-                "key": "preview_pending",
-                "before": "—",
-                "after": "—",
-                "note": "Bản xem trước sẽ xuất hiện sau khi worker xử lý pipeline.",
-            }
-        ],
+        kind=kind,
+        shows="dropped" if kind in ("filter", "dedupe") and seq > 1 else "output",
+        query_run_id=run.id,
+        status=run.status,
     )
 
 
@@ -602,9 +714,12 @@ async def send_pipeline_message(
             text=body.text.strip(),
             requested_by=principal.user_id,
         )
+        await session.flush()
+        messages = await _messages(session, row.id)
     return PipelineDetail(
         **PipelineView.model_validate(row).model_dump(),
         last_run=PipelineRunView.model_validate(last) if last is not None else None,
+        messages=messages,
     )
 
 
@@ -906,6 +1021,7 @@ async def get_lineage(
                 names[ds.id] = ds.display_name or f"{ds.schema_name}.{ds.table_name}"
                 if ds.source_id is not None and direction in ("upstream", "both"):
                     end = ("source", ds.source_id)
+                    # Hidden unless both the table and (below) its source are this space's.
                     nodes.setdefault(end, ds.data_space_id == data_space)
                     if ((end), ("dataset", ds.id)) not in derived:
                         derived.append((end, ("dataset", ds.id)))

@@ -1548,52 +1548,68 @@ export interface TablePreview {
   quality: { agent_name: string; text: string } | null;
 }
 
+/** The table's rows under the filters, through the query-run path (the caller's policy applies). */
 export const previewTable = async (id: string, filters: ExploreFilter[]): Promise<TablePreview> => {
-  try {
-    return await v1Send<TablePreview>('POST', `/datasets/${pathId(id)}:preview`, {
+  const dataset = await v1Get<DatasetDetailWire>(`/datasets/${pathId(id)}`);
+  const [source, run] = await Promise.all([
+    dataset.source_id ? v1Get<SourceWire>(`/sources/${pathId(dataset.source_id)}`) : null,
+    v1Send<components['schemas']['QueryRunView']>('POST', '/query-runs', {
+      dataset_id: id,
       filters,
       limit: 50,
-    });
-  } catch (error) {
-    if (!(error instanceof V1Error) || error.status !== 404) throw error;
-    const dataset = await v1Get<DatasetDetailWire>(`/datasets/${pathId(id)}`);
-    const [source, run] = await Promise.all([
-      dataset.source_id ? v1Get<SourceWire>(`/sources/${pathId(dataset.source_id)}`) : null,
-      v1Send<components['schemas']['QueryRunView']>('POST', '/query-runs', {
-        dataset_id: id,
-        filters,
-        limit: 50,
-      }),
-    ]);
-    const finished = await awaitQueryRun(run);
-    const result = await getQueryRows(finished.id, 50);
-    const columns = (dataset.columns ?? []).map((column) => ({
-      name: column.name,
-      type_label: column.normalized_type || column.data_type,
-      numeric: ['integer', 'decimal', 'number', 'float'].includes(column.normalized_type),
-      masked: Boolean(column.pii_label),
-    }));
+    }),
+  ]);
+  const finished = await awaitQueryRun(run);
+  const result = await getQueryRows(finished.id, 50);
+  const rows = result.rows as CellValue[][];
+  const seen = new Map<string, number>();
+  const duplicates: number[] = [];
+  let pair: [number, number] | null = null;
+  rows.forEach((row, i) => {
+    const key = JSON.stringify(row);
+    const earlier = seen.get(key);
+    if (earlier === undefined) seen.set(key, i);
+    else {
+      duplicates.push(i);
+      pair ??= [earlier, i];
+    }
+  });
+  // The rows come in the result's column order: headers follow it, with the catalog's type and
+  // PII label matched by name.
+  const meta = new Map((dataset.columns ?? []).map((column) => [column.name, column]));
+  const columns = result.columns.map((column) => {
+    const known = meta.get(column.name);
+    const type = known?.normalized_type || known?.data_type || column.type || 'unknown';
     return {
-      id: dataset.id,
-      name: dataset.display_name ?? dataset.table_name,
-      source_name: source?.name ?? 'Nguồn dữ liệu',
-      row_count: dataset.row_estimate ?? finished.row_count ?? result.rows.length,
-      matched_rows: finished.row_count ?? result.rows.length,
-      snapshot_text: 'Kết quả truy vấn mới nhất',
-      columns:
-        columns.length > 0
-          ? columns
-          : result.columns.map((column) => ({
-              name: column.name,
-              type_label: column.type ?? 'unknown',
-              numeric: false,
-              masked: false,
-            })),
-      rows: result.rows as CellValue[][],
-      duplicate_rows: [],
-      quality: null,
+      name: column.name,
+      type_label: type,
+      numeric: ['integer', 'decimal', 'number', 'float', 'numeric'].includes(type),
+      masked: Boolean(known?.pii_label),
     };
-  }
+  });
+
+  return {
+    id: dataset.id,
+    name: dataset.display_name ?? dataset.table_name,
+    source_name: source?.name ?? 'Nguồn dữ liệu',
+    row_count: dataset.row_estimate ?? finished.row_count ?? result.rows.length,
+    // Without a filter every row matches; with one, the run counts them (at most the rows read).
+    matched_rows:
+      filters.length === 0
+        ? (dataset.row_estimate ?? finished.row_count ?? rows.length)
+        : (finished.row_count ?? rows.length),
+    snapshot_text: 'Kết quả truy vấn mới nhất',
+    columns,
+    rows,
+    duplicate_rows: duplicates,
+    // A row identical to an earlier one in what was read: counted here, not guessed.
+    quality: pair
+      ? {
+          agent_name: 'Kiểm tra dòng trùng',
+          text: `dòng ${pair[1] + 1} trùng hoàn toàn với dòng ${pair[0] + 1} (${duplicates.length} bản ghi trùng trong bộ lọc này).`,
+        }
+      : null,
+  };
 };
 
 /** Column statistics; falls back to the latest masked catalog profile. */
@@ -1649,12 +1665,12 @@ export const getColumnStats = async (id: string, column: string): Promise<Column
   }
 };
 
-/** Pending backend action: POST /v1/datasets/{id}:derive creates a derived table from filters. */
+/** A2: POST /v1/datasets/{id}:derive registers a derived table from filters; worker-agent builds it. */
 export const deriveTable = async (
   id: string,
   body: { filters: ExploreFilter[]; drop_duplicates: boolean },
 ) =>
-  v1Send<{ id: Uuid; name: string; row_count: number }>(
+  v1Send<{ id: Uuid; name: string; row_count: number | null }>(
     'POST',
     `/datasets/${pathId(id)}:derive`,
     body,
@@ -1758,5 +1774,10 @@ export const backfillSource = async (sourceId: string, range: { from: string; to
       `/jobs/${pathId(job.id)}:backfill`,
       range,
     );
-  return v1Send<{ status: 'queued' }>('POST', `/sources/${pathId(sourceId)}:backfill`, range);
+  // A backfill is a job's (POST /v1/jobs/{id}:backfill): a source without one has nothing to load.
+  throw new V1Error(
+    409,
+    'no_job',
+    'Nguồn này chưa có job nạp dữ liệu; hãy tạo job trước khi nạp lại.',
+  );
 };

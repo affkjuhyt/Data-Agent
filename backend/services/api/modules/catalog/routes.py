@@ -1166,6 +1166,14 @@ async def get_dataset_column_stats(
         )
     if profile is None:
         raise Problem(404, "not_found", "Column profile not found.")
+    # The scan keeps the most frequent values with their counts ([{value, count}]): the bars are
+    # those counts, tallest first as the scan ranked them. The scan does not compute a median.
+    top = [
+        t
+        for t in (profile.top_values if isinstance(profile.top_values, list) else [])
+        if isinstance(t, dict) and isinstance(t.get("count"), int | float)
+    ]
+    tallest = max((float(t["count"]) for t in top), default=0.0)
     return ColumnStatsView(
         name=meta.name,
         type_label=meta.normalized_type or meta.data_type,
@@ -1173,9 +1181,17 @@ async def get_dataset_column_stats(
         distinct=int(profile.distinct_est or 0),
         min=profile.min_value or "—",
         max=profile.max_value or "—",
-        median="—",
-        histogram=[],
-        buckets_text="Phân bố theo giá trị phổ biến",
+        median="chưa tính",
+        histogram=(
+            [{"height": float(t["count"]) / tallest, "flagged": False} for t in top]
+            if tallest > 0
+            else []
+        ),
+        buckets_text=(
+            "Giá trị phổ biến: " + " · ".join(str(t.get("value")) for t in top[:6])
+            if top
+            else f"Chưa đủ dữ liệu để lập biểu đồ (quét {profile.sample_rows} dòng)"
+        ),
     )
 
 
@@ -1228,7 +1244,8 @@ async def derive_dataset(
             )
         )
         await session.flush()
-    return DerivedDatasetAccepted(id=row.id, name=row.table_name, row_count=0)
+    # The table is built by worker-agent (derived.py): its rows are not known yet.
+    return DerivedDatasetAccepted(id=row.id, name=row.display_name or row.table_name)
 
 
 @router.post(

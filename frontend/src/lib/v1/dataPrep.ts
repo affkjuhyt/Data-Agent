@@ -132,7 +132,10 @@ export const createDerivedTable = (body: {
   refresh: DatasetRefresh;
   access: DatasetAccess;
   sql: string;
-}) => v1Send<DerivedTable>('POST', '/derived-tables', body);
+  write_mode?: WriteMode;
+}) =>
+  // The api requires write_mode; a table saved from the editor is a new one.
+  v1Send<DerivedTable>('POST', '/derived-tables', { write_mode: 'replace', ...body });
 
 /* ─── Pipeline (UC-06-01, UC-06-03) ───────────────────────────────────── */
 
@@ -335,11 +338,14 @@ export interface PipelineDetail extends Pipeline {
 }
 
 /** PROPOSAL: GET /v1/pipelines/{id}/steps/{seq}/preview — one column before and after a step. */
+/** One step run on its source: the rows a filter or dedupe drops, any other step's output. */
 export interface StepPreview {
   seq: number;
-  key_column: string;
-  column: string;
-  rows: { key: string; before: string; after: string; note: string }[];
+  kind: string;
+  shows: 'dropped' | 'output';
+  columns: string[];
+  rows: unknown[][];
+  truncated: boolean;
 }
 
 export const getPipeline = async (id: string): Promise<PipelineDetail> => {
@@ -351,8 +357,27 @@ export const getPipeline = async (id: string): Promise<PipelineDetail> => {
   return readPipelineDetail(raw, tables);
 };
 
-export const getStepPreview = async (id: string, seq: number) =>
-  v1Get<StepPreview>(`/pipelines/${pathId(id)}/steps/${seq}/preview`);
+/**
+ * A2: GET /v1/pipelines/{id}/steps/{seq}/preview names the query run previewing the step (queued
+ * when the steps changed); its rows are read like any run's, under the caller's policy.
+ */
+export const getStepPreview = async (id: string, seq: number): Promise<StepPreview> => {
+  const step = await v1Get<components['schemas']['StepPreview']>(
+    `/pipelines/${pathId(id)}/steps/${seq}/preview`,
+  );
+  await awaitQueryRun({ id: step.query_run_id, status: step.status } as Parameters<
+    typeof awaitQueryRun
+  >[0]);
+  const rows = await getQueryRows(step.query_run_id, 50);
+  return {
+    seq: step.seq,
+    kind: step.kind,
+    shows: step.shows,
+    columns: rows.columns.map((c) => c.name),
+    rows: rows.rows,
+    truncated: rows.truncated,
+  };
+};
 
 /**
  * PROPOSAL: POST /v1/pipelines/{id}/messages — the agent answers, adds or edits steps, and
@@ -361,32 +386,40 @@ export const getStepPreview = async (id: string, seq: number) =>
 export const sendPrepMessage = async (id: string, text: string) =>
   v1Send<PipelineDetail>('POST', `/pipelines/${pathId(id)}/messages`, { text });
 
-/** PROPOSAL: POST /v1/pipelines/{id}:test-run — every step on the full input, nothing written. */
+/** A2: POST /v1/pipelines/{id}:preview with no sample — every step on the full input, nothing written. */
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export const testRunPipeline = async (id: string) => {
-  try {
-    return await v1Send<{ rows_out: number; excluded_rows: number; duration_s: number }>(
-      'POST',
-      `/pipelines/${pathId(id)}:test-run`,
-    );
-  } catch (error) {
-    if (!(error instanceof V1Error) || error.status !== 404) throw error;
-    const run = await v1Send<components['schemas']['PipelineRunView']>(
-      'POST',
-      `/pipelines/${pathId(id)}:preview`,
-      { sample_rows: null },
-    );
-    const started = new Date(run.started_at).getTime();
-    const finished = run.finished_at ? new Date(run.finished_at).getTime() : started;
-    const dropped =
-      typeof run.rows_dropped === 'object' && run.rows_dropped !== null
-        ? (run.rows_dropped as { total?: unknown }).total
-        : 0;
-    return {
-      rows_out: run.rows_out ?? 0,
-      excluded_rows: typeof dropped === 'number' ? dropped : 0,
-      duration_s: Math.max(0, finished - started) / 1000,
-    };
+  const queued = await v1Send<components['schemas']['PipelineRunView']>(
+    'POST',
+    `/pipelines/${pathId(id)}:preview`,
+    { sample_rows: null },
+  );
+  // The worker runs it: follow the pipeline's last run until this one has finished.
+  let run = queued;
+  const deadline = Date.now() + 120_000;
+  while (run.status === 'running') {
+    if (Date.now() > deadline)
+      throw new V1Error(504, 'timeout', 'Chạy thử quá lâu; xem lại sau trong danh sách pipeline.');
+    await sleep(1000);
+    const raw = await v1Get<PipelineDetailWire>(`/pipelines/${pathId(id)}`);
+    if (raw.last_run && raw.last_run.id === queued.id) run = raw.last_run;
   }
+  if (run.status !== 'succeeded')
+    throw new V1Error(422, 'run_failed', run.error ?? 'Chạy thử không thành công.');
+  const started = new Date(run.started_at).getTime();
+  const finished = run.finished_at ? new Date(run.finished_at).getTime() : started;
+  // rows_dropped is one entry per dropping step: {step, kind, rows, condition}.
+  const dropped = (Array.isArray(run.rows_dropped) ? run.rows_dropped : []).reduce<number>(
+    (sum, d) =>
+      sum + (typeof (d as { rows?: unknown }).rows === 'number' ? (d as { rows: number }).rows : 0),
+    0,
+  );
+  return {
+    rows_out: run.rows_out ?? 0,
+    excluded_rows: dropped,
+    duration_s: Math.max(0, finished - started) / 1000,
+  };
 };
 
 /* ─── Lưu thành bảng & lịch chạy (UC-06-02, UC-06-03) ─────────────────── */
@@ -403,7 +436,9 @@ export interface OutputDraft {
   table_name: string;
   data_space_id: string;
   write_mode: WriteMode;
+  /** from_step 0: the column is one of the inputs'. */
   columns: { name: string; type: string; from_step: number; is_new: boolean }[];
+  columns_status?: 'ready' | 'pending' | 'failed';
   /** PROPOSAL: who reads the table now or will ("Pipeline “Mart rủi ro tín dụng” sẽ đọc…"). */
   consumers_text: string | null;
   /** The ingestion jobs the pipeline can run after. */
@@ -425,16 +460,70 @@ export interface PublishPipeline {
   };
 }
 
-export const getOutputDraft = async (id: string) =>
-  v1Get<OutputDraft>(`/pipelines/${pathId(id)}/output-draft`);
+/**
+ * A2: GET /v1/pipelines/{id}/output-draft. Its columns are read from the steps previewed on the
+ * source; while those runs are going (`columns_status` pending) the draft is read again.
+ */
+export const getOutputDraft = async (id: string) => {
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    const draft = await v1Get<OutputDraft>(`/pipelines/${pathId(id)}/output-draft`);
+    if (draft.columns_status !== 'pending' || Date.now() > deadline) return draft;
+    await sleep(1000);
+  }
+};
 
-/** A2: :publish — creates or versions the derived table and turns the schedule on. */
-export const publishPipeline = async (id: string, body: PublishPipeline) =>
-  v1Send<{ table: DerivedTable; schedule_text: string }>(
-    'POST',
-    `/pipelines/${pathId(id)}:publish`,
-    body,
-  );
+/**
+ * A2 saves in two calls: POST :materialize (the table, in the pipeline's own Data Space, always
+ * replaced by the worker) and PUT /schedule. The run is followed on GET /v1/pipelines/{id}
+ * (last_run) until it has written the table; a failed run's reason is the error shown.
+ */
+export const publishPipeline = async (id: string, body: PublishPipeline) => {
+  // The table lands in the work schema: the api takes a plain name, not schema.table.
+  const tableName = body.table_name.split('.').at(-1)?.trim() ?? '';
+  const run = await v1Send<
+    components['schemas']['services__api__modules__pipeline__schemas__Accepted']
+  >('POST', `/pipelines/${pathId(id)}:materialize`, { table_name: tableName });
+  const cron = body.schedule.mode === 'cron' ? body.schedule.cron : null;
+  await v1Send('PUT', `/pipelines/${pathId(id)}/schedule`, {
+    cron,
+    work_calendar_id: null,
+    trigger_on_job_id:
+      body.schedule.mode === 'after_source' ? (body.schedule.after_job_id ?? null) : null,
+    depends_on_pipeline_ids: [],
+    no_overlap: true,
+    on_failure: body.schedule.retries > 0 ? 'retry_then_notify' : 'notify',
+  });
+  const deadline = Date.now() + 120_000;
+  for (;;) {
+    const raw = await v1Get<PipelineDetailWire>(`/pipelines/${pathId(id)}`);
+    const last = raw.last_run;
+    if (last && last.id === run.id && last.status !== 'running') {
+      if (last.status !== 'succeeded' || !raw.target_dataset_id)
+        throw new V1Error(422, 'run_failed', last.error ?? 'Pipeline chạy không thành công.');
+      return {
+        table: {
+          id: raw.target_dataset_id,
+          name: tableName,
+          data_space_id: raw.data_space_id,
+          write_mode: 'replace' as WriteMode,
+          refresh: 'manual' as DatasetRefresh,
+          access: 'inherit' as DatasetAccess,
+          version: 1,
+        } satisfies DerivedTable,
+        schedule_text:
+          body.schedule.mode === 'manual'
+            ? 'chạy thủ công'
+            : body.schedule.mode === 'cron'
+              ? `chạy theo lịch ${cron}`
+              : 'chạy sau job nạp dữ liệu',
+      };
+    }
+    if (Date.now() > deadline)
+      throw new V1Error(504, 'timeout', 'Pipeline chạy quá lâu; xem lại trong danh sách pipeline.');
+    await sleep(1000);
+  }
+};
 
 /* ─── Hộp thoại · Lịch chạy (UC-06-03) ────────────────────────────────── */
 

@@ -5,17 +5,15 @@ import datetime
 import uuid
 from typing import Any
 
-from sqlalchemy import func, literal, select, update
+from sqlalchemy import func, literal, select
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import context, notify, org, qa
 from libs.dataagent_db.models import eval as evaluation
-from services.worker_agent import proposals
 from services.worker_agent.events import Event
 from services.worker_agent.questions import answer_question
 
 HANDLER = "eval_run.requested"
-DATA_PRODUCT_SUBMITTED = "data_product.submitted"
 ROLE = "svc_eval"
 
 
@@ -41,13 +39,27 @@ def _values(figures: Any) -> list[float]:
     return out
 
 
-def _score(item: evaluation.EvalItem, answer: qa.Answer | None, question: qa.Question | None) -> tuple[bool | None, bool | None, bool | None, bool, dict[str, Any], str | None]:
+# Without a tolerance on the item an expected value may be off by 0.5 %, as evaluation.py (the
+# proposals' runs of the same sets) scores it, so a set passes or fails alike on either path.
+RELATIVE_TOLERANCE = 0.005
+
+
+def _score(item: evaluation.EvalItem, answer: qa.Answer | None, question: qa.Question | None, understood_metric: str | None = None) -> tuple[bool | None, bool | None, bool | None, bool, dict[str, Any], str | None]:
+    """Score one answer against what its item expects. An item may be written either way the two
+    eval paths accept: `kind`, `values`/`value`, `text_contains` (this module), or `behavior`
+    ("refuse", "clarify"), `metric` (the code it must be read as), `value` (evaluation.py)."""
     expected = item.expected if isinstance(item.expected, dict) else {}
     actual = {"kind": answer.kind if answer else None, "status": question.status if question else None, "text": answer.text if answer else None, "figures": answer.figures if answer else []}
     if answer is None or question is None:
         return False, False, False, False, actual, "QA handler did not produce an answer"
+    behavior = expected.get("behavior")
+    if behavior in ("refuse", "clarify"):
+        ok = answer.kind == "clarification" if behavior == "clarify" else answer.kind in ("refusal", "clarification")
+        return None, None, ok, ok, actual, None if ok else f"expected to {behavior}, answered instead"
     expected_kind = expected.get("kind") or ("refusal" if item.category == "refusal" else None)
     understanding_ok = expected_kind is None or answer.kind == expected_kind
+    if expected.get("metric"):
+        understanding_ok = understanding_ok and understood_metric == expected["metric"]
     expected_values = expected.get("values")
     if expected_values is None and "value" in expected:
         expected_values = [expected["value"]]
@@ -55,13 +67,39 @@ def _score(item: evaluation.EvalItem, answer: qa.Answer | None, question: qa.Que
         value_ok: bool | None = True
     else:
         actual_values = _values(answer.figures)
-        tolerance = float(item.tolerance or expected.get("tolerance") or 0)
-        value_ok = len(actual_values) == len(expected_values) and all(abs(a - float(e)) <= tolerance for a, e in zip(actual_values, expected_values, strict=True))
+        tolerance = item.tolerance if item.tolerance is not None else expected.get("tolerance")
+        value_ok = len(actual_values) == len(expected_values) and all(
+            abs(a - float(e)) <= (float(tolerance) if tolerance is not None else abs(float(e)) * RELATIVE_TOLERANCE)
+            for a, e in zip(actual_values, expected_values, strict=True)
+        )
     contains = expected.get("text_contains")
     behavior_ok = contains is None or all(str(part) in answer.text for part in contains)
     passed = bool(understanding_ok and (value_ok is not False) and behavior_ok)
-    cause = None if passed else "answer did not satisfy expected understanding, value, or behavior"
+    # Which part missed, never the values: anyone who may ask reads the cause, while the answer
+    # was computed with its asker's rights (routes._result_view shows that to them alone).
+    missed = [
+        name
+        for name, ok in (("understanding", understanding_ok), ("value", value_ok), ("behavior", behavior_ok))
+        if ok is False
+    ]
+    cause = None if passed else f"the answer's {', '.join(missed) or 'result'} is not what the item expects"
     return understanding_ok, value_ok, behavior_ok, passed, actual, cause
+
+
+async def _understood_metric(org: uuid.UUID, user: uuid.UUID, question_id: uuid.UUID) -> str | None:
+    """The metric code the question was read as: its plan's semantic step names the version."""
+    async with scoped_session("svc_qa", org, user) as session:
+        steps = await session.scalar(select(qa.Plan.steps).where(qa.Plan.question_id == question_id).order_by(qa.Plan.version.desc()).limit(1))
+    version_id = next((s.get("args", {}).get("metric_version_id") for s in (steps or {}).get("steps", []) if isinstance(s, dict) and s.get("kind") == "semantic_query"), None) if isinstance(steps, dict) else None
+    if version_id is None:
+        return None
+    async with scoped_session(ROLE, org, user) as session:
+        code: str | None = await session.scalar(
+            select(context.Metric.code)
+            .join(context.MetricVersion, context.MetricVersion.metric_id == context.Metric.id)
+            .where(context.MetricVersion.id == uuid.UUID(str(version_id)))
+        )
+    return code
 
 
 async def run_eval(event: Event) -> None:
@@ -110,7 +148,9 @@ async def run_eval(event: Event) -> None:
                 async with scoped_session("svc_qa", event.org_id, asker) as qa_session:
                     question = await qa_session.get(qa.Question, question_id)
                     answer = await qa_session.scalar(select(qa.Answer).where(qa.Answer.question_id == question_id))
-                understanding_ok, value_ok, behavior_ok, item_passed, actual, cause = _score(item, answer, question)
+                wants_metric = isinstance(item.expected, dict) and bool(item.expected.get("metric"))
+                understood = await _understood_metric(event.org_id, asker, question_id) if wants_metric else None
+                understanding_ok, value_ok, behavior_ok, item_passed, actual, cause = _score(item, answer, question, understood)
                 # The api shows this answer only to whom it was answered as (routes._result_view).
                 actual["answered_as"] = str(asker)
             changed = item.id in baseline and baseline[item.id] != item_passed
@@ -189,89 +229,4 @@ async def run_eval(event: Event) -> None:
                         )
 
 
-async def data_product_submitted(event: Event) -> None:
-    """Create and execute the reserved eval run for a submitted Data Product."""
-    p = event.payload
-    run_id = uuid.UUID(str(p["eval_run_id"]))
-    eval_set_id = uuid.UUID(str(p["eval_set_id"]))
-    actor = uuid.UUID(str(p["requested_by"]))
-    async with scoped_session(ROLE, event.org_id, actor) as session:
-        existing = await session.get(evaluation.EvalRun, run_id)
-        if existing is None:
-            count = await session.scalar(
-                select(func.count()).select_from(evaluation.EvalItem).where(
-                    evaluation.EvalItem.eval_set_id == eval_set_id,
-                    evaluation.EvalItem.status == "active",
-                )
-            )
-            baseline = await session.scalar(
-                select(evaluation.EvalRun.id)
-                .where(
-                    evaluation.EvalRun.eval_set_id == eval_set_id,
-                    evaluation.EvalRun.status == "completed",
-                )
-                .order_by(evaluation.EvalRun.started_at.desc())
-                .limit(1)
-            )
-            session.add(
-                evaluation.EvalRun(
-                    id=run_id,
-                    org_id=event.org_id,
-                    eval_set_id=eval_set_id,
-                    subject_version=f"data_product@{p.get('version', 'draft')}",
-                    trigger="proposal",
-                    item_count=int(count or 0),
-                    baseline_run_id=baseline,
-                    status="running",
-                )
-            )
-    await run_eval(
-        Event(
-            event_id=event.event_id,
-            org_id=event.org_id,
-            event_type=HANDLER,
-            aggregate_type="eval_run",
-            aggregate_id=run_id,
-            payload={
-                "eval_run_id": str(run_id),
-                "data_space_id": str(p["data_space_id"]),
-                "requested_by": str(actor),
-                "trigger": "proposal",
-            },
-        )
-    )
-    async with scoped_session(ROLE, event.org_id, actor) as session:
-        run = await session.get(evaluation.EvalRun, run_id)
-        product_id = uuid.UUID(str(p["data_product_id"]))
-        passed = (
-            run is not None
-            and run.item_count >= int(p.get("min_items") or 10)
-            and float(run.pass_rate or 0) >= float(p.get("min_pass_rate") or 0.95)
-        )
-    proposal_id = None
-    if passed:
-        proposal_id = await proposals._open(
-            event,
-            data_space_id=uuid.UUID(str(p["data_space_id"])),
-            kind="data_product",
-            target_service="context",
-            target_ref=product_id,
-            title="Duyệt Data Product sau khi eval đạt",
-            diff={"action": "activate", "data_product_id": str(product_id), "version": p.get("version")},
-            proposed_by=actor,
-            eval_run_id=run_id,
-        )
-    async with scoped_session("svc_context", event.org_id, actor) as session:
-        await session.execute(
-            update(context.DataProduct)
-            .where(context.DataProduct.id == product_id, context.DataProduct.org_id == event.org_id)
-            .values(
-                status="pending_review" if passed else "rejected",
-                proposal_id=proposal_id,
-                updated_by=actor,
-                updated_at=func.now(),
-            )
-        )
-
-
-HANDLERS = {HANDLER: run_eval, DATA_PRODUCT_SUBMITTED: data_product_submitted}
+HANDLERS = {HANDLER: run_eval}

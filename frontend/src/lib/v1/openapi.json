@@ -12891,14 +12891,20 @@
       "type": "string"
      },
      "row_count": {
-      "title": "Row Count",
-      "type": "integer"
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Row Count"
      }
     },
     "required": [
      "id",
-     "name",
-     "row_count"
+     "name"
     ],
     "title": "DerivedDatasetAccepted",
     "type": "object"
@@ -29122,6 +29128,16 @@
       "title": "Columns",
       "type": "array"
      },
+     "columns_status": {
+      "default": "ready",
+      "enum": [
+       "ready",
+       "pending",
+       "failed"
+      ],
+      "title": "Columns Status",
+      "type": "string"
+     },
      "consumers_text": {
       "anyOf": [
        {
@@ -33080,7 +33096,7 @@
     "type": "object"
    },
    "PipelineDetail": {
-    "description": "GET /v1/pipelines/{id}: the pipeline with its latest run (UC-06-02, UC-06-03).",
+    "description": "GET /v1/pipelines/{id}: the pipeline with its latest run and the conversation that built\nits steps (UC-06-01, UC-06-02, UC-06-03).",
     "properties": {
      "created_at": {
       "format": "date-time",
@@ -33133,6 +33149,13 @@
         "type": "null"
        }
       ]
+     },
+     "messages": {
+      "items": {
+       "$ref": "#/components/schemas/PipelineMessageView"
+      },
+      "title": "Messages",
+      "type": "array"
      },
      "name": {
       "title": "Name",
@@ -33240,6 +33263,41 @@
      "text"
     ],
     "title": "PipelineMessage",
+    "type": "object"
+   },
+   "PipelineMessageView": {
+    "description": "One turn of the conversation with the data-prep agent (UC-06-01 step 2).",
+    "properties": {
+     "author": {
+      "enum": [
+       "user",
+       "agent"
+      ],
+      "title": "Author",
+      "type": "string"
+     },
+     "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+     },
+     "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+     },
+     "text": {
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "author",
+     "text",
+     "created_at"
+    ],
+    "title": "PipelineMessageView",
     "type": "object"
    },
    "PipelinePatch": {
@@ -42405,34 +42463,40 @@
     "type": "object"
    },
    "StepPreview": {
+    "description": "One step previewed on its source: the query run holding the rows (UC-06-01 step 3). A\nstep that drops rows (filter, dedupe) shows the rows it drops; any other step its output.",
     "properties": {
-     "column": {
-      "title": "Column",
+     "kind": {
+      "title": "Kind",
       "type": "string"
      },
-     "key_column": {
-      "title": "Key Column",
+     "query_run_id": {
+      "format": "uuid",
+      "title": "Query Run Id",
       "type": "string"
-     },
-     "rows": {
-      "items": {
-       "additionalProperties": {
-        "type": "string"
-       },
-       "type": "object"
-      },
-      "title": "Rows",
-      "type": "array"
      },
      "seq": {
       "title": "Seq",
       "type": "integer"
+     },
+     "shows": {
+      "enum": [
+       "dropped",
+       "output"
+      ],
+      "title": "Shows",
+      "type": "string"
+     },
+     "status": {
+      "title": "Status",
+      "type": "string"
      }
     },
     "required": [
      "seq",
-     "key_column",
-     "column"
+     "kind",
+     "shows",
+     "query_run_id",
+     "status"
     ],
     "title": "StepPreview",
     "type": "object"

@@ -55,3 +55,24 @@ async def test_a_failing_handler_leaves_the_batch_unacknowledged() -> None:
 
 async def test_empty_claim_handles_nothing() -> None:
     assert await run_once(FakeSource([]), {}) == 0
+
+
+def test_each_event_type_has_one_handler() -> None:
+    """HANDLERS merges every module's dict, so a type two modules claim would be left, silently,
+    to the last one merged (the release and main branches each wrote an eval, a data product and
+    a metric preview handler)."""
+    import types
+
+    from services.worker_agent import main
+
+    modules = [
+        m
+        for m in vars(main).values()
+        if isinstance(m, types.ModuleType) and isinstance(getattr(m, "HANDLERS", None), dict)
+    ]
+    claimed: dict[str, list[str]] = {}
+    for module in modules:
+        for event_type in module.HANDLERS:
+            claimed.setdefault(event_type, []).append(module.__name__)
+    assert {t: m for t, m in claimed.items() if len(m) > 1} == {}
+    assert set(claimed) == set(main.HANDLERS)

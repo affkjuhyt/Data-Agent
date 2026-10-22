@@ -359,7 +359,8 @@ class DatasetDeriveRequest(BaseModel):
 class DerivedDatasetAccepted(BaseModel):
     id: uuid.UUID
     name: str
-    row_count: int
+    # None until worker-agent has built the table (the dataset is enabled then).
+    row_count: int | None = None
 
 
 class DerivedTableCreate(BaseModel):

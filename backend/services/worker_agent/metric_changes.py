@@ -9,9 +9,10 @@ to the figure filed for each month. A new version that does not compile or run i
 (AC-07-01-04). A metric_change proposal opens with all of it: `diff.preview`, `impact` and
 `impact_level`, and the version waits in pending_review.
 
-The comparison is not an eval run: eval.eval_result rows are the answers to an eval set's items,
-and a month of a metric is no item, so the proposal carries no eval run (the api's Location names
-one that is never created).
+The month-by-month comparison is not an eval run: a month of a metric is no item. The Data
+Space's standard set is run besides, with the new version in place (semantic_review.
+evaluate_overlay), under the id the api's Location names: the proposal carries it and its
+regressions as `diff.eval`.
 
 `proposal.decided` for metric_change (proposals.decided routes it here): accepted, the breaks are
 checked again, since the dependents may have changed while the proposal waited. With none, the
@@ -53,12 +54,12 @@ from libs.dataagent_db.models import (
     skill,
 )
 from libs.dataagent_db.models import org as org_models
-from services.worker_agent import proposals, questions
+from services.worker_agent import proposals, questions, semantic_review
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.semantic import compiler as c
-from services.worker_agent.semantic.loader import load
+from services.worker_agent.semantic.loader import Overlay, load
 
 logger = logging.getLogger(__name__)
 
@@ -519,6 +520,17 @@ async def preview_requested(event: Event) -> None:
     figures, withheld = await preview_figures(
         event, actor, v, int(p.get("periods") or PREVIEW_PERIODS), impact
     )
+    # The Data Space's standard set asked with the new version in place: the eval run the api's
+    # Location names, and the items it would turn from passing to failing.
+    eval_run_id, evaluated = await semantic_review.evaluate_overlay(
+        event,
+        v.metric.data_space_id,
+        actor,
+        Overlay(metric_version_ids=frozenset({version_id})),
+        f"metric_version:{version_id}",
+        version_id,
+        run_id=uuid.UUID(str(p["eval_run_id"])) if p.get("eval_run_id") else None,
+    )
     # Maker-checker: the proposer is the version's author, so its author cannot decide it even
     # when someone else asked for the preview; without a recorded author, whoever asked.
     author = await _author(event.org_id, actor, version_id)
@@ -532,6 +544,7 @@ async def preview_requested(event: Event) -> None:
         "changes": changes(v),
         "preview": figures,
         "preview_withheld": withheld,
+        "eval": evaluated,
     }
     pid = await proposals._open(
         event,
@@ -542,7 +555,7 @@ async def preview_requested(event: Event) -> None:
         title=f"Duyệt định nghĩa {v.metric.code} phiên bản {v.new.version}",
         diff=diff,
         proposed_by=author or actor,
-        eval_run_id=None,
+        eval_run_id=eval_run_id,
         impact=impact.as_json(),
         impact_level=impact.level,
     )

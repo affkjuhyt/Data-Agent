@@ -234,3 +234,42 @@ async def test_a_suspected_injection_is_flagged_and_reported(
     assert audit.all(
         "SELECT kind, source_ref FROM audit.security_event WHERE org_id = %s", u.org
     ) == [("prompt_injection", f"document.chunk/{chunk}")]
+
+
+@pytest.mark.req("AC-05-05-01")
+async def test_a_document_that_replaces_another_proposes_the_link(seed: Seed, pages: list) -> None:
+    u = upload(seed)
+    collection, author = seed.one(
+        "SELECT d.collection_id, a.id FROM document.document d "
+        "JOIN org.app_user a ON a.org_id = d.org_id WHERE d.id = %s",
+        u.document,
+    )
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE document.document SET created_by = %s, doc_no = '123/QĐ-NH',"
+            " effective_from = '2026-04-01' WHERE id = %s",
+            (str(author), str(u.document)),
+        )
+    old = seed.row(
+        "document.document",
+        org_id=u.org,
+        collection_id=collection,
+        sha256=uuid.uuid4().hex,
+        media="pdf",
+        file_name="cu.pdf",
+        object_key="k",
+        size_bytes=1,
+        doc_no="10/QĐ-NH",
+        status="ready",
+    )
+    pages.append(page("Điều 9. Hiệu lực\n\nQuyết định này thay thế Quyết định số 10/QĐ-NH."))
+    await handler.process_document(event(u))
+    proposed = seed.all(
+        "SELECT payload FROM document.outbox WHERE event_type = 'document.validity_proposed'"
+        " AND aggregate_id = %s",
+        u.document,
+    )
+    assert len(proposed) == 1
+    payload = proposed[0][0]
+    assert payload["supersedes_id"] == str(old) and payload["effective_from"] == "2026-04-01"
+    assert "thay thế Quyết định số 10/QĐ-NH" in payload["excerpt"]

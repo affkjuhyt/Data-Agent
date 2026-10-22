@@ -9,8 +9,8 @@
 
 | Hạng mục | Tổng | Bằng chứng tự động | Trạng thái đã khai |
 | --- | --- | --- | --- |
-| Use case (tab 8) | 115 | 4 UC đủ tiêu chí bắt buộc | todo 115 |
-| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 297 có test nhắc mã AC | todo 778 |
+| Use case (tab 8) | 115 | 6 UC đủ tiêu chí bắt buộc | todo 115 |
+| Tiêu chí nghiệm thu | 778 (614 bắt buộc) | 308 có test nhắc mã AC | todo 778 |
 | Endpoint A2 (tab 4) | 471 (A2 ghi 472 dòng; POST /v1/data-products ở hai nhóm) | 471 được `api` phục vụ | — |
 | Bảng (tab 3/3b) | 222 trong DDL | DDL sinh từ thiết kế | — |
 | Quy tắc nghiệp vụ | 195 | 161 có mã nhắc tới | todo 195 |
@@ -96,30 +96,30 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
 | UC-06-01 | Làm sạch và chuẩn hoá bằng hội thoại | todo | 2/2 | 1/1 | 4/6 |  |
-| UC-06-02 | Tạo bảng dẫn xuất | todo | 1/1 | 4/4 | 1/3 |  |
+| UC-06-02 | Tạo bảng dẫn xuất | todo | 1/1 | 4/4 | 2/3 |  |
 | UC-06-03 | Lên lịch pipeline | todo | 1/1 | 3/3 | 1/3 |  |
 | UC-06-04 | Ghi ngược về hệ thống nguồn | todo | 2/2 | 2/2 | 3/6 |  |
 | UC-06-05 | Xem dòng dữ liệu | todo | 1/1 | 1/1 | 2/3 |  |
 | UC-06-06 | Xây data mart và phát hành sản phẩm dữ liệu | todo | 2/2 | 2/2 | 3/4 |  |
-| UC-06-07 | Đặt quy tắc chất lượng dữ liệu | todo | 2/2 | 2/2 | 2/3 |  |
+| UC-06-07 | Đặt quy tắc chất lượng dữ liệu | todo | 2/2 | 2/2 | 3/3 |  |
 
 ### P07 Lớp ngữ cảnh, Cần bạn và xung đột
 
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
-| UC-07-01 | Định nghĩa chỉ số | todo | 2/2 | 3/3 | 0/6 |  |
-| UC-07-02 | Khai báo quan hệ, từ đồng nghĩa, ví dụ | todo | 2/2 | 4/4 | 0/4 |  |
+| UC-07-01 | Định nghĩa chỉ số | todo | 2/2 | 3/3 | 1/6 |  |
+| UC-07-02 | Khai báo quan hệ, từ đồng nghĩa, ví dụ | todo | 2/2 | 4/4 | 1/4 |  |
 | UC-07-03 | Duyệt đề xuất | todo | 1/1 | 3/3 | 3/6 |  |
 | UC-07-04 | Xử lý xung đột dữ liệu | todo | 2/2 | 3/3 | 4/6 |  |
 | UC-07-05 | Khai báo thẩm quyền nguồn | todo | 1/1 | 1/1 | 2/3 |  |
-| UC-07-06 | Đánh giá lớp ngữ cảnh | todo | 2/2 | 2/2 | 0/5 |  |
+| UC-07-06 | Đánh giá lớp ngữ cảnh | todo | 2/2 | 2/2 | 1/5 |  |
 | UC-07-07 | Trả lời yêu cầu của agent | todo | 1/1 | 2/2 | 3/7 |  |
 | UC-07-08 | Biến quyết định thành quy tắc | todo | 2/2 | 2/2 | 0/4 |  |
-| UC-07-09 | Quản lý thuật ngữ và cách hiểu câu hỏi | todo | 2/2 | 3/3 | 0/3 |  |
+| UC-07-09 | Quản lý thuật ngữ và cách hiểu câu hỏi | todo | 2/2 | 3/3 | 1/3 |  |
 | UC-07-10 | Biên soạn và cập nhật trang tri thức | todo | 6/6 | 7/7 | 0/7 |  |
 | UC-07-11 | Rà soát tri thức định kỳ | todo | 4/4 | 5/5 | 0/5 |  |
 | UC-07-12 | Lưu câu trả lời thành tri thức | todo | 2/2 | 6/6 | 0/4 |  |
-| UC-07-13 | Quản lý data product | todo | 12/12 | 11/11 | 2/7 |  |
+| UC-07-13 | Quản lý data product | todo | 12/12 | 11/11 | 3/7 |  |
 | UC-07-14 | Error Book | todo | 9/9 | 11/11 | 4/5 |  |
 
 ### P08 Theo dõi, cảnh báo, báo cáo và kênh ngoài
@@ -150,8 +150,8 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | UC | Tên | Trạng thái | Endpoint | Bảng | Tiêu chí bắt buộc | Người làm, ghi chú |
 | --- | --- | --- | --- | --- | --- | --- |
 | UC-10-01 | Hỏi theo thời điểm | todo | 1/1 | 1/1 | 0/6 |  |
-| UC-10-02 | Chốt kỳ | todo | 2/2 | 2/2 | 2/7 |  |
-| UC-10-03 | Đóng băng số đã công bố | todo | 1/1 | 1/1 | 4/5 |  |
+| UC-10-02 | Chốt kỳ | todo | 2/2 | 2/2 | 4/7 |  |
+| UC-10-03 | Đóng băng số đã công bố | todo | 1/1 | 1/1 | 5/5 |  |
 | UC-10-04 | Xử lý thay đổi hồi tố | todo | 1/1 | 2/2 | 2/6 |  |
 | UC-10-05 | So sánh hai bản hoặc hai thời điểm | todo | 2/2 | 3/3 | 2/5 |  |
 
@@ -268,7 +268,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-10 | UC-03-01 | todo |  |
 | BR-11 | UC-03-02 | todo |  |
 | BR-12 | UC-03-05 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/skill/routes.py`, `backend/services/api/modules/skill/rules.py` +1 |
-| BR-13 | UC-03-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-13 | UC-03-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/skill.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-14 | UC-04-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/schema/csdl/definitions.json` +12 |
 | BR-15 | UC-04-02 | todo |  |
 | BR-16 | UC-04-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/catalog.py`, `backend/libs/dataagent_db/models/pack.py` +2 |
@@ -277,8 +277,8 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-19 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-20 | UC-05-04 | todo | `backend/services/worker_agent/documents/answer.py`, `backend/services/worker_agent/documents/retrieve.py` |
 | BR-21 | UC-05-04 | todo |  |
-| BR-22 | UC-06-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +8 |
-| BR-23 | UC-06-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +2 |
+| BR-22 | UC-06-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-23 | UC-06-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-24 | UC-06-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +7 |
 | BR-25 | UC-06-04 | todo | `backend/services/api/modules/pipeline/routes.py` |
 | BR-26 | UC-07-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +4 |
@@ -294,10 +294,10 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-36 | UC-09-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +7 |
 | BR-37 | UC-09-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-38 | UC-09-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +4 |
-| BR-39 | UC-10-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +1 |
+| BR-39 | UC-10-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +2 |
 | BR-40 | UC-10-01 | todo |  |
 | BR-41 | UC-10-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +2 |
-| BR-42 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +4 |
+| BR-42 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-43 | UC-10-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +7 |
 | BR-44 | UC-11-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/org.py`, `backend/schema/csdl/definitions.json` +10 |
 | BR-45 | UC-11-02 | todo | `backend/services/api/catalogue/a3_contract.json`, `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/governance/policies.py` +6 |
@@ -336,7 +336,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-78 | UC-01-02 | todo |  |
 | BR-79 | UC-01-02 | todo |  |
 | BR-80 | UC-01-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +3 |
-| BR-81 | UC-01-04 | todo | `backend/services/api/modules/context/semantic_yaml.py`, `backend/services/api/modules/qa/query.py`, `backend/services/worker_agent/questions.py` +4 |
+| BR-81 | UC-01-04 | todo | `backend/services/api/modules/context/semantic_yaml.py`, `backend/services/api/modules/qa/query.py`, `backend/services/worker_agent/metric_changes.py` +5 |
 | BR-82 | UC-01-04 | todo |  |
 | BR-83 | UC-01-05 | todo | `backend/services/api/modules/qa/routes.py` |
 | BR-84 | UC-01-05 | todo |  |
@@ -371,7 +371,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-113 | UC-06-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-114 | UC-06-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-115 | UC-06-06 | todo |  |
-| BR-116 | UC-06-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/versions/v3_0009_design_decisions_1210.py`, `backend/libs/dataagent_db/models/catalog.py` +8 |
+| BR-116 | UC-06-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/versions/v3_0009_design_decisions_1210.py`, `backend/libs/dataagent_db/models/catalog.py` +10 |
 | BR-117 | UC-07-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-118 | UC-07-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-119 | UC-07-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/inbox.py`, `backend/schema/csdl/definitions.json` +4 |
@@ -388,7 +388,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-130 | UC-09-04 | todo | `backend/services/api/modules/pack/routes.py` |
 | BR-131 | UC-09-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pack.py`, `backend/schema/csdl/definitions.json` +7 |
 | BR-132 | UC-10-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/alembic/versions/v3_0010_hitl_by_capability.py`, `backend/libs/dataagent_db/models/inbox.py` +13 |
-| BR-133 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +7 |
+| BR-133 | UC-10-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-134 | UC-10-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +3 |
 | BR-135 | UC-10-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/period.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-136 | UC-11-01 | todo | `backend/services/api/catalogue/source/tab4.md`, `backend/services/api/modules/org/admin/grants.py`, `tests/integration/api/test_org_admin.py` |
@@ -430,7 +430,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-172 | UC-15-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-173 | UC-15-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/forecast.py`, `backend/schema/csdl/definitions.json` +9 |
 | BR-174 | UC-14-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +12 |
-| BR-175 | UC-01-01, UC-01-07, UC-07-13 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/qa.py` +15 |
+| BR-175 | UC-01-01, UC-01-07, UC-07-13 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/qa.py` +16 |
 | BR-176 | UC-01-01, UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-177 | UC-01-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/qa.py`, `backend/schema/csdl/definitions.json` +6 |
 | BR-178 | UC-01-01, UC-01-07, UC-07-13, UC-15-07 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/context.py`, `backend/libs/dataagent_db/models/monitor.py` +22 |
@@ -934,7 +934,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-04-05-01 | Chính | Cho nguồn active / Khi AC04 đặt quét schema hằng ngày, quét thống kê hằng tuần, khung 22:00–05:00 và lịch ngày làm việc / Thì màn hiện các lần chạy tới kèm ước lượng thời gian; source.scan_cron, profile_cron, scan_win… | E2E, CSDL | todo | `tests/integration/api/test_catalog.py` |
+| AC-04-05-01 | Chính | Cho nguồn active / Khi AC04 đặt quét schema hằng ngày, quét thống kê hằng tuần, khung 22:00–05:00 và lịch ngày làm việc / Thì màn hiện các lần chạy tới kèm ước lượng thời gian; source.scan_cron, profile_cron, scan_win… | E2E, CSDL | todo | `tests/integration/api/test_catalog.py`, `tests/integration/worker_agent/test_quality_schedule.py` |
 | AC-04-05-02 | Thay thế | Cho nguồn CDC / Khi Debezium báo đổi cấu trúc ngoài lịch / Thì có một lượt kiểm tra schema, lịch quét thường vẫn giữ | API, CSDL | todo |  |
 | AC-04-05-03 | Ngoại lệ | Cho lần quét trước mất 9 giờ và khung cho phép 7 giờ / Khi lưu lịch / Thì có cảnh báo và gợi ý chia lịch theo nhóm bảng | E2E | todo |  |
 | AC-04-05-04 | Quy tắc | Cho lượt quét chưa xong lúc 05:00 / Khi hết khung giờ và khi có lệnh quét thứ hai trên cùng nguồn / Thì lượt dừng sau bảng đang quét, tiếp tục ở khung kế tiếp; không có hai scan_run running cùng nguồn | CSDL, API | todo | `tests/integration/api/test_catalog.py` |
@@ -1049,7 +1049,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-05-05-01 | Chính | Cho văn bản mới có câu “thay thế Quyết định số …” / Khi nạp xong / Thì Cần bạn có đề xuất liên kết hiệu lực kèm đoạn trích; AC03 xác nhận thì văn bản cũ có effective_to, văn bản mới có supersedes_id, có sự kiện docume… | E2E, CSDL | todo | `tests/integration/api/test_document.py` |
+| AC-05-05-01 | Chính | Cho văn bản mới có câu “thay thế Quyết định số …” / Khi nạp xong / Thì Cần bạn có đề xuất liên kết hiệu lực kèm đoạn trích; AC03 xác nhận thì văn bản cũ có effective_to, văn bản mới có supersedes_id, có sự kiện docume… | E2E, CSDL | todo | `tests/integration/api/test_document.py`, `tests/integration/worker_agent/test_reviews.py` +1 |
 | AC-05-05-02 | Thay thế | Cho văn bản sửa Điều 3 của văn bản cũ / Khi xác nhận / Thì văn bản cũ không có effective_to, chỉ các đoạn của Điều 3 có effective_to riêng | CSDL | todo |  |
 | AC-05-05-03 | Ngoại lệ | Cho hai văn bản cùng tự nhận thay thế một văn bản / Khi agent phát hiện / Thì Cần bạn có một xung đột và không văn bản nào được tự ghi supersedes_id | CSDL | todo |  |
 | AC-05-05-04 | Quy tắc | Cho Điều 3 hết hiệu lực từ 01/08/2026 / Khi truy hồi với as_of 15/08/2026 và as_of 15/07/2026 / Thì as_of 15/08 không trả đoạn Điều 3 cũ, as_of 15/07 có trả | API | todo | `tests/integration/api/test_document.py` |
@@ -1069,14 +1069,14 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-06-01 Làm sạch và chuẩn hoá bằng hội thoại · 4/8</summary>
+<details><summary>UC-06-01 Làm sạch và chuẩn hoá bằng hội thoại · 5/8</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-06-01-01 | Chính | Cho bảng tải tay dư nợ chi nhánh 50.000 dòng / Khi AC01 gõ “bỏ dòng tổng, đổi ‘1.234,5’ thành số” / Thì agent đề xuất các bước có loại, mô tả và mã; chạy thử trên mẫu 10.000 dòng hiện trước và sau từng bước, ô bị đổi … | E2E, CSDL | todo | `tests/integration/api/test_pipeline.py` |
+| AC-06-01-01 | Chính | Cho bảng tải tay dư nợ chi nhánh 50.000 dòng / Khi AC01 gõ “bỏ dòng tổng, đổi ‘1.234,5’ thành số” / Thì agent đề xuất các bước có loại, mô tả và mã; chạy thử trên mẫu 10.000 dòng hiện trước và sau từng bước, ô bị đổi … | E2E, CSDL | todo | `tests/integration/api/test_pipeline.py`, `tests/integration/worker_agent/test_pipelines.py` +2 |
 | AC-06-01-02 | Chính | Cho pipeline đã giữ các bước / Khi chạy toàn bộ / Thì tổng cột dư nợ sau bằng tổng trước trừ tổng của các dòng bị loại có chủ đích | API, CSDL | todo |  |
 | AC-06-01-03 | Thay thế | Cho yêu cầu “bỏ dòng sai” / Khi gửi / Thì agent hỏi lại tiêu chí bằng lựa chọn cụ thể, chưa thêm bước nào | Đánh giá agent | todo |  |
-| AC-06-01-04 | Thay thế | Cho bước join với bảng ở nguồn khác / Khi xem trước / Thì có cảnh báo khác thời điểm dữ liệu kèm thời điểm của từng bên | E2E | todo |  |
+| AC-06-01-04 | Thay thế | Cho bước join với bảng ở nguồn khác / Khi xem trước / Thì có cảnh báo khác thời điểm dữ liệu kèm thời điểm của từng bên | E2E | todo | `tests/integration/worker_agent/test_pipelines.py` |
 | AC-06-01-05 | Ngoại lệ | Cho bước Python vượt giới hạn sandbox / Khi chạy thử / Thì bước dừng và có gợi ý chuyển sang SQL hoặc chạy trên mẫu nhỏ hơn | API, E2E | todo |  |
 | AC-06-01-06 | Ngoại lệ | Cho một bước join làm nhân dòng và tổng lệch / Khi chạy toàn bộ / Thì kết quả không được lưu và giao diện chỉ ra bước làm lệch | API, CSDL | todo | `tests/integration/api/test_pipeline.py` |
 | AC-06-01-07 | Quy tắc | Cho pipeline P06 chạy xong / Khi đối chiếu nhật ký truy vấn của nguồn / Thì không có lệnh ghi nào tới nguồn, mọi lệnh ghi nằm trong schema vùng làm việc hoặc sandbox | CSDL | todo | `tests/integration/api/test_pipeline.py` |
@@ -1084,11 +1084,11 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-06-02 Tạo bảng dẫn xuất · 1/4</summary>
+<details><summary>UC-06-02 Tạo bảng dẫn xuất · 2/4</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-06-02-01 | Chính | Cho pipeline đã chạy toàn bộ thành công / Khi lưu thành bảng du_no_sach phạm vi Data Space / Thì bảng ws_{data_space}.du_no_sach có dữ liệu, dataset nội bộ trong catalog, lineage_edge từ bảng gốc, quy tắc chất lượng đ… | E2E, CSDL | todo |  |
+| AC-06-02-01 | Chính | Cho pipeline đã chạy toàn bộ thành công / Khi lưu thành bảng du_no_sach phạm vi Data Space / Thì bảng ws_{data_space}.du_no_sach có dữ liệu, dataset nội bộ trong catalog, lineage_edge từ bảng gốc, quy tắc chất lượng đ… | E2E, CSDL | todo | `tests/integration/worker_agent/test_derived.py`, `tests/integration/worker_agent/test_pipelines.py` |
 | AC-06-02-02 | Thay thế | Cho bảng đã có / Khi chọn ghi đè / Thì có phiên bản mới và bản trước còn đọc được tới ngày thứ 7, bị dọn sau đó | CSDL | todo |  |
 | AC-06-02-03 | Ngoại lệ | Cho tên bảng trùng / Khi lưu không chọn ghi đè / Thì bị từ chối và giao diện yêu cầu tên khác hoặc chọn ghi đè | API | todo | `tests/integration/api/test_pipeline.py` |
 | AC-06-02-04 | Quy tắc | Cho bảng dẫn xuất phạm vi cá nhân / Khi dùng trong chỉ số đã chứng nhận hoặc báo cáo phát hành / Thì bị chặn cho tới khi nâng lên phạm vi Data Space qua duyệt | API | todo |  |
@@ -1099,7 +1099,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-06-03-01 | Chính | Cho pipeline active / Khi AC04 đặt chạy sau khi job nạp dư nợ hoàn tất, lịch ngày làm việc và chính sách khi lỗi / Thì màn hiện các lần chạy tới; pipeline.cron, calendar_id, trigger_on_job_id, on_failure được lưu; job… | E2E, CSDL | todo | `tests/integration/api/test_pipeline.py` |
+| AC-06-03-01 | Chính | Cho pipeline active / Khi AC04 đặt chạy sau khi job nạp dư nợ hoàn tất, lịch ngày làm việc và chính sách khi lỗi / Thì màn hiện các lần chạy tới; pipeline.cron, calendar_id, trigger_on_job_id, on_failure được lưu; job… | E2E, CSDL | todo | `tests/integration/api/test_pipeline.py`, `tests/integration/worker_agent/test_quality_schedule.py` |
 | AC-06-03-02 | Thay thế | Cho lượt trước chưa xong / Khi đến lịch / Thì lượt mới bị bỏ kèm lý do, không có hai pipeline_run chạy cùng lúc | CSDL | todo |  |
 | AC-06-03-03 | Ngoại lệ | Cho pipeline lỗi hết lượt thử lại / Khi lượt kết thúc / Thì chủ pipeline nhận báo, bảng giữ dữ liệu lần thành công cuối và mang nhãn dữ liệu cũ | API, E2E | todo |  |
 | AC-06-03-04 | Quy tắc | Cho pipeline B phụ thuộc pipeline A, A kỳ 10/10/2026 lỗi / Khi đến lịch của B / Thì B không chạy cho kỳ đó | CSDL | todo |  |
@@ -1144,22 +1144,22 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-06-07 Đặt quy tắc chất lượng dữ liệu · 3/4</summary>
+<details><summary>UC-06-07 Đặt quy tắc chất lượng dữ liệu · 4/4</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-06-07-01 | Chính | Cho bảng dư nợ có trong catalog / Khi AC04 thêm quy tắc “du_no không rỗng”, chạy thử, đặt mức và lưu / Thì chạy thử báo số dòng vi phạm; quality_rule active; mỗi lần nạp sau đó có 1 quality_result và ghi chú bất thườn… | E2E, CSDL | todo | `tests/integration/api/test_ingest.py` |
+| AC-06-07-01 | Chính | Cho bảng dư nợ có trong catalog / Khi AC04 thêm quy tắc “du_no không rỗng”, chạy thử, đặt mức và lưu / Thì chạy thử báo số dòng vi phạm; quality_rule active; mỗi lần nạp sau đó có 1 quality_result và ghi chú bất thườn… | E2E, CSDL | todo | `tests/integration/api/test_ingest.py`, `tests/integration/worker_agent/test_quality_schedule.py` |
 | AC-06-07-02 | Thay thế | Cho cột không rỗng liên tục 90 ngày / Khi agent đề xuất quy tắc và người dùng bỏ / Thì không có quality_rule mới; nhận thì có | E2E, CSDL | todo | `tests/unit/worker_agent/test_audit_findings.py` |
-| AC-06-07-03 | Ngoại lệ | Cho quy tắc mức cao bị vi phạm / Khi lượt nạp xong / Thì bảng mang nhãn “chặn báo cáo” và Cần bạn có yêu cầu cho người phụ trách bảng | CSDL, E2E | todo |  |
+| AC-06-07-03 | Ngoại lệ | Cho quy tắc mức cao bị vi phạm / Khi lượt nạp xong / Thì bảng mang nhãn “chặn báo cáo” và Cần bạn có yêu cầu cho người phụ trách bảng | CSDL, E2E | todo | `tests/integration/worker_agent/test_quality_schedule.py` |
 | AC-06-07-04 | Quy tắc | Cho bảng đang bị chặn mức cao / Khi phát hành báo cáo hoặc chốt kỳ dùng bảng / Thì bị chặn cho tới khi có người xác nhận (:acknowledge); vi phạm mức trung bình chỉ gắn nhãn, không chặn | API | todo | `tests/integration/api/test_ingest.py` |
 
 </details>
 
-<details><summary>UC-07-01 Định nghĩa chỉ số · 0/8</summary>
+<details><summary>UC-07-01 Định nghĩa chỉ số · 1/8</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-07-01-01 | Chính | Cho AC03 phụ trách Data Space Tín dụng / Khi tạo NPL_RATIO, nhận công thức agent gợi ý, chạy thử và gửi duyệt / Thì kết quả kỳ gần nhất hiện cạnh bản đang dùng và số đã nộp, màn nêu số agent, ô, báo cáo, kỹ năng bị ản… | E2E, CSDL | todo |  |
+| AC-07-01-01 | Chính | Cho AC03 phụ trách Data Space Tín dụng / Khi tạo NPL_RATIO, nhận công thức agent gợi ý, chạy thử và gửi duyệt / Thì kết quả kỳ gần nhất hiện cạnh bản đang dùng và số đã nộp, màn nêu số agent, ô, báo cáo, kỹ năng bị ản… | E2E, CSDL | todo | `tests/integration/worker_agent/test_semantic_review.py` |
 | AC-07-01-02 | Thay thế | Cho chỉ số đến từ gói ngành / Khi sửa công thức chuẩn / Thì ô công thức bị khoá và chỉ tạo được hiệu chỉnh riêng | E2E, API | todo |  |
 | AC-07-01-03 | Thay thế | Cho chênh với số đã nộp vượt ngưỡng / Khi gửi duyệt không có lý do / Thì bị từ chối cho tới khi ghi lý do | API | todo |  |
 | AC-07-01-04 | Ngoại lệ | Cho công thức tham chiếu cột ngoài quyền của AC03 / Khi :preview / Thì không biên dịch được và thông báo nêu tên cột | API | todo |  |
@@ -1171,11 +1171,11 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-07-02 Khai báo quan hệ, từ đồng nghĩa, ví dụ · 0/5</summary>
+<details><summary>UC-07-02 Khai báo quan hệ, từ đồng nghĩa, ví dụ · 1/5</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-07-02-01 | Chính | Cho từ đồng nghĩa “NPL” → NPL_RATIO và một ví dụ câu hỏi kèm SQL đúng / Khi AC03 gửi và được duyệt / Thì synonym và example_query chuyển active, value_index làm mới, bộ câu hỏi chuẩn đã chạy trước khi duyệt | API, CSDL | todo |  |
+| AC-07-02-01 | Chính | Cho từ đồng nghĩa “NPL” → NPL_RATIO và một ví dụ câu hỏi kèm SQL đúng / Khi AC03 gửi và được duyệt / Thì synonym và example_query chuyển active, value_index làm mới, bộ câu hỏi chuẩn đã chạy trước khi duyệt | API, CSDL | todo | `tests/integration/worker_agent/test_semantic_review.py` |
 | AC-07-02-02 | Chính | Cho quan hệ khai báo làm nhân dòng, hoặc ví dụ có SQL cho kết quả lệch chỉ số / Khi kiểm tra / Thì kết quả kiểm tra ghi trượt và mục không được gửi duyệt | API | todo |  |
 | AC-07-02-03 | Thay thế | Cho cụm từ “nợ nhóm 3” chưa ánh xạ bị hỏi nhiều lần / Khi agent chạy đề xuất / Thì Cần bạn có đề xuất từ đồng nghĩa kèm số lần và câu ví dụ | CSDL | todo |  |
 | AC-07-02-04 | Ngoại lệ | Cho “nợ xấu” đã trỏ nhóm 3–5 / Khi thêm từ đồng nghĩa “nợ xấu” trỏ nhóm 2–5 / Thì không ghi đè, glossary_term chuyển thành thuật ngữ nhiều nghĩa | CSDL | todo |  |
@@ -1187,7 +1187,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-07-03-01 | Chính | Cho đề xuất thêm từ đồng nghĩa đổi lớp ngữ cảnh / Khi AC03 mở Chi tiết duyệt và chấp nhận / Thì màn có diff, lý do, bằng chứng, số câu đúng trước và sau, phiên và báo cáo ảnh hưởng; có proposal_review, sự kiện proposa… | E2E, CSDL | todo | `tests/integration/api/test_inbox_eval.py` |
+| AC-07-03-01 | Chính | Cho đề xuất thêm từ đồng nghĩa đổi lớp ngữ cảnh / Khi AC03 mở Chi tiết duyệt và chấp nhận / Thì màn có diff, lý do, bằng chứng, số câu đúng trước và sau, phiên và báo cáo ảnh hưởng; có proposal_review, sự kiện proposa… | E2E, CSDL | todo | `tests/integration/api/test_inbox_eval.py`, `tests/integration/worker_agent/test_semantic_review.py` |
 | AC-07-03-02 | Thay thế | Cho đề xuất / Khi từ chối không ghi lý do / Thì bị từ chối; có lý do thì đề xuất rejected và lý do được lưu | API | todo | `tests/integration/api/test_inbox_eval.py` |
 | AC-07-03-03 | Thay thế | Cho đề xuất đổi NPL_RATIO đang dùng trong báo cáo đã nộp / Khi AC03 chấp nhận / Thì đề xuất chưa phát hành cho tới khi AC06 duyệt bước sau | API, CSDL | todo | `tests/integration/api/test_inbox_eval.py` |
 | AC-07-03-04 | Ngoại lệ | Cho dịch vụ sở hữu lỗi khi phát hành / Khi chấp nhận / Thì đề xuất chuyển Lỗi áp dụng và người duyệt nhận thông báo | API, CSDL | todo |  |
@@ -1216,18 +1216,18 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-07-05-01 | Chính | Cho loại dữ liệu dư nợ có 3 nguồn / Khi AC03 xếp thứ tự, đặt ngưỡng, chạy thử và được duyệt / Thì màn hiện số lần lệch 90 ngày và số xung đột sẽ tự giải quyết; source_authority có ranking, materiality, approved_by và … | E2E, CSDL | todo | `tests/integration/api/test_conflict.py` |
+| AC-07-05-01 | Chính | Cho loại dữ liệu dư nợ có 3 nguồn / Khi AC03 xếp thứ tự, đặt ngưỡng, chạy thử và được duyệt / Thì màn hiện số lần lệch 90 ngày và số xung đột sẽ tự giải quyết; source_authority có ranking, materiality, approved_by và … | E2E, CSDL | todo | `tests/integration/api/test_conflict.py`, `tests/integration/worker_agent/test_reviews.py` |
 | AC-07-05-02 | Thay thế | Cho hai nguồn đặt cùng cấp / Khi chúng lệch trên ngưỡng và không có quy tắc riêng / Thì xung đột luôn tạo hitl_request, không tự giải quyết | CSDL | todo | `tests/integration/api/test_conflict.py` |
 | AC-07-05-03 | Ngoại lệ | Cho loại dữ liệu dùng trong báo cáo đã nộp / Khi AC03 duyệt / Thì thứ tự mới chưa có hiệu lực cho tới khi AC06 duyệt | API, CSDL | todo |  |
 | AC-07-05-04 | Quy tắc | Cho nguồn tải tay cấp 3 / Khi PUT /v1/source-authorities xếp nó trên nguồn cấp 1 / Thì bị từ chối | API, CSDL | todo | `tests/integration/api/test_conflict.py` |
 
 </details>
 
-<details><summary>UC-07-06 Đánh giá lớp ngữ cảnh · 0/6</summary>
+<details><summary>UC-07-06 Đánh giá lớp ngữ cảnh · 1/6</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-07-06-01 | Chính | Cho eval_set 120 câu có đáp án / Khi bấm “Chạy lại toàn bộ” / Thì có eval_run với số đúng, sai, từ chối đúng, 120 eval_result chấm ba tầng (cách hiểu, con số, hành vi), so với lần trước; bảng câu sai có mong đợi, cách… | Đánh giá agent, E2E | todo |  |
+| AC-07-06-01 | Chính | Cho eval_set 120 câu có đáp án / Khi bấm “Chạy lại toàn bộ” / Thì có eval_run với số đúng, sai, từ chối đúng, 120 eval_result chấm ba tầng (cách hiểu, con số, hành vi), so với lần trước; bảng câu sai có mong đợi, cách… | Đánh giá agent, E2E | todo | `tests/integration/worker_agent/test_semantic_review.py` |
 | AC-07-06-02 | Thay thế | Cho báo sai đã xác nhận ở UC-01-05 / Khi đưa vào bộ / Thì eval_set có eval_item mới trỏ feedback đó | CSDL | todo |  |
 | AC-07-06-03 | Ngoại lệ | Cho câu có đáp án theo kỳ cũ đã đổi hợp lệ / Khi AC03 cập nhật đáp án không ghi lý do / Thì bị từ chối; có lý do thì đáp án mới được lưu | API | todo |  |
 | AC-07-06-04 | Quy tắc | Cho đề xuất có eval_run giảm số câu đúng / Khi gắn kết quả / Thì đề xuất mang cờ bị chặn cho tới khi người duyệt xem từng câu bị đổi | CSDL | todo |  |
@@ -1266,12 +1266,12 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-07-09 Quản lý thuật ngữ và cách hiểu câu hỏi · 0/5</summary>
+<details><summary>UC-07-09 Quản lý thuật ngữ và cách hiểu câu hỏi · 1/5</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
 | AC-07-09-01 | Chính | Cho “nợ xấu” là thuật ngữ nhiều nghĩa với mặc định nhóm 3–5 / Khi hỏi “nợ xấu tháng 9/2026” không rơi vào điều kiện phải hỏi / Thì plan dùng nhóm 3–5 và chip hiện nghĩa đó | Đánh giá agent, E2E | todo |  |
-| AC-07-09-02 | Chính | Cho 1 cụm từ chưa ánh xạ bị hỏi 6 lần / Khi AC03 mở danh sách / Thì cụm từ có số lần 6, câu ví dụ và gợi ý ánh xạ; ánh xạ xong thì đi qua duyệt như UC-07-02 | E2E, CSDL | todo |  |
+| AC-07-09-02 | Chính | Cho 1 cụm từ chưa ánh xạ bị hỏi 6 lần / Khi AC03 mở danh sách / Thì cụm từ có số lần 6, câu ví dụ và gợi ý ánh xạ; ánh xạ xong thì đi qua duyệt như UC-07-02 | E2E, CSDL | todo | `tests/integration/worker_agent/test_questions.py` |
 | AC-07-09-03 | Thay thế | Cho cách hiểu có độ tin 0,7 / Khi hỏi / Thì có yêu cầu làm rõ trong Cần bạn và không có query_run trước khi người chọn | CSDL | todo |  |
 | AC-07-09-04 | Thay thế | Cho AC01 chọn “miền Bắc” theo địa lý / Khi AC01 và AC02 cùng hỏi “nợ xấu miền Bắc” / Thì chỉ câu của AC01 dùng user_term_pref và hiện chip “theo cách hiểu của bạn” | E2E, CSDL | todo |  |
 | AC-07-09-05 | Quy tắc | Cho AC01 có cách hiểu riêng “miền Bắc” / Khi dùng trong báo cáo phát hành, kỳ chốt hoặc câu trả lời chia sẻ cho AC02 / Thì plan dùng nghĩa của Data Space, không dùng user_term_pref | API, CSDL | todo |  |
@@ -1321,11 +1321,11 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-07-13 Quản lý data product · 4/9</summary>
+<details><summary>UC-07-13 Quản lý data product · 5/9</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-07-13-01 | Chính | Cho steward tạo “Giá xăng dầu trong nước” với dataset gia_xang_dau_ky_dieu_hanh primary, 5 chỉ số certified, cam kết 16:30 ân hạn 30 phút và 10 câu mẫu / Khi gửi duyệt, bộ đánh giá đạt 10/10 và owner chấp nhận / Thì d… | E2E, CSDL | todo |  |
+| AC-07-13-01 | Chính | Cho steward tạo “Giá xăng dầu trong nước” với dataset gia_xang_dau_ky_dieu_hanh primary, 5 chỉ số certified, cam kết 16:30 ân hạn 30 phút và 10 câu mẫu / Khi gửi duyệt, bộ đánh giá đạt 10/10 và owner chấp nhận / Thì d… | E2E, CSDL | todo | `tests/integration/worker_agent/test_reviews.py` |
 | AC-07-13-02 | Thay thế | Cho chỉ số chưa certified hoặc dataset chỉ truy vấn tại chỗ không có lịch sử / Khi gắn thành phần / Thì bị từ chối; màn gợi mở UC-07-01 hoặc chuyển nguồn sang nạp về có phiên bản | API, E2E | todo | `tests/integration/api/test_context_products.py` |
 | AC-07-13-03 | Thay thế | Cho data product active version 1 / Khi đổi cam kết độ tươi sang 17:00 / Thì có version 2 chờ duyệt và version 1 vẫn phục vụ tới khi duyệt | API, CSDL | todo | `tests/integration/api/test_context_products.py` |
 | AC-07-13-04 | Ngoại lệ | Cho chỉ số gia_tran_ban_le mất chứng nhận / Khi sự kiện tới / Thì data product chuyển suspended có lý do, câu hỏi lúc đó mang nhãn ngoài phạm vi kèm “data product đang tạm ngưng”, steward và owner nhận thông báo | CSDL, E2E | todo |  |
@@ -1542,15 +1542,15 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-10-02 Chốt kỳ · 4/9</summary>
+<details><summary>UC-10-02 Chốt kỳ · 6/9</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-10-02-01 | Chính | Cho kỳ 09/2026 ở trạng thái Mở và các nguồn đã cập nhật quá 30/09/2026 / Khi AC03 bấm Chốt kỳ và tổng dư nợ, số khoản vay, số khách hàng đều khớp sổ cái trong dung sai / Thì period_close ở trạng thái closed có snapsho… | API, CSDL | todo |  |
+| AC-10-02-01 | Chính | Cho kỳ 09/2026 ở trạng thái Mở và các nguồn đã cập nhật quá 30/09/2026 / Khi AC03 bấm Chốt kỳ và tổng dư nợ, số khoản vay, số khách hàng đều khớp sổ cái trong dung sai / Thì period_close ở trạng thái closed có snapsho… | API, CSDL | todo | `tests/integration/worker_agent/test_periods.py` |
 | AC-10-02-02 | Ngoại lệ | Cho Data Space Tín dụng đang có một việc chốt kỳ chạy / Khi gọi :close cho kỳ khác / Thì bị từ chối và không có tệp Parquet nào được ghi | API, CSDL | todo | `tests/integration/api/test_period.py` |
-| AC-10-02-03 | Thay thế | Cho tổng dư nợ trên bản chụp lệch sổ cái vượt dung sai / Khi đối soát / Thì period_close chuyển close_failed, chỉ tiêu đó mismatched, màn hiện các dòng gây lệch; sửa ở nguồn rồi chốt lại thì kỳ chuyển closed | API, CSDL, E2E | todo | `tests/integration/api/test_period.py` |
+| AC-10-02-03 | Thay thế | Cho tổng dư nợ trên bản chụp lệch sổ cái vượt dung sai / Khi đối soát / Thì period_close chuyển close_failed, chỉ tiêu đó mismatched, màn hiện các dòng gây lệch; sửa ở nguồn rồi chốt lại thì kỳ chuyển closed | API, CSDL, E2E | todo | `tests/integration/api/test_period.py`, `tests/integration/worker_agent/test_periods.py` |
 | AC-10-02-04 | Thay thế | Cho chỉ tiêu số khách hàng mismatched / Khi AC03 xin ngoại lệ kèm lý do và cả người phụ trách, AC06 cùng duyệt / Thì có hitl_request rủi ro cao với 2 bước duyệt, chỉ tiêu chuyển exception_approved và kỳ được khoá | API, CSDL | todo | `tests/integration/api/test_period.py` |
-| AC-10-02-05 | Ngoại lệ | Cho kỳ có 5 bảng và việc ghi tệp lỗi ở bảng thứ 3 / Khi Temporal thử lại / Thì chạy tiếp từ bảng thứ 3, tệp của 2 bảng đầu giữ nguyên SHA-256 và period_snapshot_file không có dòng trùng | API, CSDL | todo |  |
+| AC-10-02-05 | Ngoại lệ | Cho kỳ có 5 bảng và việc ghi tệp lỗi ở bảng thứ 3 / Khi Temporal thử lại / Thì chạy tiếp từ bảng thứ 3, tệp của 2 bảng đầu giữ nguyên SHA-256 và period_snapshot_file không có dòng trùng | API, CSDL | todo | `tests/integration/worker_agent/test_periods.py` |
 | AC-10-02-06 | Ngoại lệ | Cho một khoản vay được sửa ở nguồn trong lúc chụp / Khi bản chụp hoàn tất / Thì bản chụp chứa giá trị theo ngày nghiệp vụ và thời điểm ghi nhận trước lúc bắt đầu chụp, các bảng cùng kỳ nhất quán với nhau | CSDL | todo |  |
 | AC-10-02-07 | Quy tắc | Cho tệp Parquet của kỳ 09/2026 trong bucket object lock / Khi tài khoản quản trị MinIO xoá hoặc ghi đè tệp trước hạn lưu trữ / Thì thao tác bị từ chối và tệp giữ nguyên SHA-256 | API | todo |  |
 | AC-10-02-08 | Quy tắc | Cho 1 chỉ tiêu còn mismatched chưa có ngoại lệ / Khi mở màn Chốt kỳ / Thì nút Chốt khoá; người bấm chốt tự duyệt ngoại lệ của kỳ đó thì bị từ chối | E2E, API | todo | `tests/integration/api/test_period.py` |
@@ -1558,12 +1558,12 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 
 </details>
 
-<details><summary>UC-10-03 Đóng băng số đã công bố · 5/6</summary>
+<details><summary>UC-10-03 Đóng băng số đã công bố · 6/6</summary>
 
 | AC | Loại | Tiêu chí | Cách kiểm | Trạng thái | Test |
 | --- | --- | --- | --- | --- | --- |
-| AC-10-03-01 | Chính | Cho kỳ 09/2026 Đã chốt / Khi AC03 nhập mã báo cáo, ngày nộp 10/10/2026, chọn NPL_RATIO và 2 chỉ số khác rồi xác nhận khớp số trên báo cáo / Thì published_result có 3 dòng mỗi dòng có sha256 và metric_version_id, perio… | API, CSDL | todo |  |
-| AC-10-03-02 | Thay thế | Cho hệ thống tính NPL_RATIO 2,29% còn báo cáo thực tế ghi 2,31% / Khi AC03 nhập số đã nộp kèm lý do / Thì published_result lưu value 2,29 và reported_value 2,31 với manual_override = true và override_reason | API, CSDL | todo | `tests/integration/api/test_period.py` |
+| AC-10-03-01 | Chính | Cho kỳ 09/2026 Đã chốt / Khi AC03 nhập mã báo cáo, ngày nộp 10/10/2026, chọn NPL_RATIO và 2 chỉ số khác rồi xác nhận khớp số trên báo cáo / Thì published_result có 3 dòng mỗi dòng có sha256 và metric_version_id, perio… | API, CSDL | todo | `tests/integration/worker_agent/test_periods.py` |
+| AC-10-03-02 | Thay thế | Cho hệ thống tính NPL_RATIO 2,29% còn báo cáo thực tế ghi 2,31% / Khi AC03 nhập số đã nộp kèm lý do / Thì published_result lưu value 2,29 và reported_value 2,31 với manual_override = true và override_reason | API, CSDL | todo | `tests/integration/api/test_period.py`, `tests/integration/worker_agent/test_periods.py` |
 | AC-10-03-03 | Ngoại lệ | Cho một chỉ số trong danh sách chưa có định nghĩa chứng nhận / Khi gọi :publish / Thì bị từ chối, nêu chỉ số đó và không có dòng published_result nào được ghi | API, CSDL | todo | `tests/integration/api/test_period.py` |
 | AC-10-03-04 | Ngoại lệ | Cho kỳ 10/2026 còn ở trạng thái Mở / Khi gọi :publish / Thì bị từ chối vì kỳ chưa chốt | API | todo | `tests/integration/api/test_period.py` |
 | AC-10-03-05 | Quy tắc | Cho published_result của kỳ 09/2026 / Khi vai trò svc_period chạy UPDATE hoặc DELETE trên bảng / Thì cả hai bị từ chối với permission denied; INSERT dòng mới vẫn được | CSDL | todo | `tests/integration/api/test_period.py` |

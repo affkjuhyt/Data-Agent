@@ -376,6 +376,7 @@ async def run_eval_set(
                 subject_version=run.subject_version,
                 trigger=run.trigger,
                 status=run.status,
+                requested_by=principal.user_id,
             )
         )
         await session.flush()

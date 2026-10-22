@@ -270,6 +270,10 @@ async def run_requested(event: Event) -> None:
                 source, sql, metric_version_ids = await _explore(session, run, p)
             elif p.get("mode") == "dataset":
                 source, sql = await dataset_sql(session, run.data_space_id, p)
+            elif p.get("mode") == "pipeline_step":
+                from services.worker_agent.pipelines import step_preview_sql
+
+                source, sql = await step_preview_sql(run.org_id, run.principal_id, p)
             else:
                 source, sql = (
                     await sql_source(session, run.data_space_id, run.sql_generated),

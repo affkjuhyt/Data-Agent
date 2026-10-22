@@ -58,7 +58,9 @@ kubectl -n dataagent-service create secret generic api-secrets \
 # which tells a run's result in the app as svc_notify) and reads metric threshold watches as
 # svc_monitor (answer/thresholds.py, metric_changes.py); runs eval items through the QA handler
 # as svc_eval (eval_runs.py), replays runs for a pending access policy as svc_governance
-# (policy_backtests.py) and applies an accepted writeback as svc_pipeline (proposals.py);
+# (policy_backtests.py) and applies an accepted writeback as svc_pipeline (proposals.py), which also
+# runs pipelines (pipelines.py); closes and files periods as svc_period (periods.py), and applies
+# source-authority and document-validity reviews as svc_conflict and svc_document (reviews.py);
 # answer exports go to MinIO as its own user, which may only write to da-exports (minio-init), never
 # with the root credentials.
 kubectl -n dataagent-service create secret generic worker-agent-secrets \
@@ -71,15 +73,18 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_CATALOG="${DATAAGENT_DB_URL__SVC_CATALOG}" \
   --from-literal=DATAAGENT_DB_URL__SVC_QUERY="${DATAAGENT_DB_URL__SVC_QUERY}" \
   --from-literal=DATAAGENT_DB_URL__SVC_CONTEXT="${DATAAGENT_DB_URL__SVC_CONTEXT}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_EVAL="${DATAAGENT_DB_URL__SVC_EVAL}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_PIPELINE="${DATAAGENT_DB_URL__SVC_PIPELINE}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_PERIOD="${DATAAGENT_DB_URL__SVC_PERIOD}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_CONFLICT="${DATAAGENT_DB_URL__SVC_CONFLICT}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_DOCUMENT="${DATAAGENT_DB_URL__SVC_DOCUMENT}" \
   --from-literal=DATAAGENT_DB_URL__SVC_WORKSPACE="${DATAAGENT_DB_URL__SVC_WORKSPACE}" \
   --from-literal=DATAAGENT_DB_URL__SVC_SKILL="${DATAAGENT_DB_URL__SVC_SKILL}" \
   --from-literal=DATAAGENT_DB_URL__SVC_PACK="${DATAAGENT_DB_URL__SVC_PACK}" \
   --from-literal=DATAAGENT_DB_URL__SVC_AGENT="${DATAAGENT_DB_URL__SVC_AGENT}" \
   --from-literal=DATAAGENT_DB_URL__SVC_NOTIFY="${DATAAGENT_DB_URL__SVC_NOTIFY}" \
   --from-literal=DATAAGENT_DB_URL__SVC_MONITOR="${DATAAGENT_DB_URL__SVC_MONITOR}" \
-  --from-literal=DATAAGENT_DB_URL__SVC_EVAL="${DATAAGENT_DB_URL__SVC_EVAL}" \
   --from-literal=DATAAGENT_DB_URL__SVC_GOVERNANCE="${DATAAGENT_DB_URL__SVC_GOVERNANCE}" \
-  --from-literal=DATAAGENT_DB_URL__SVC_PIPELINE="${DATAAGENT_DB_URL__SVC_PIPELINE}" \
   --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \
   --from-literal=NOTIFY_VERIFICATION_SECRET="${NOTIFY_VERIFICATION_SECRET}" \
   --from-literal=MINIO_URL="${WORKER_AGENT_MINIO_URL}" \
