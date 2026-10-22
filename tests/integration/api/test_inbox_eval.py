@@ -591,6 +591,13 @@ async def test_eval_answer_change_requires_reason_and_writes_audit_event(team: T
             json={"expected": {"value": 24500}},
         )
         assert no_reason.status_code == 422, no_reason.text
+        # A new question under the old answer changes the contract as much as a new answer.
+        new_question = await api.patch(
+            f"/v1/eval-items/{item_id}",
+            headers=team.headers("reviewer"),
+            json={"input": {"question": "Dư nợ tháng 10/2026?"}},
+        )
+        assert new_question.status_code == 422, new_question.text
         changed = await api.patch(
             f"/v1/eval-items/{item_id}",
             headers=team.headers("reviewer"),

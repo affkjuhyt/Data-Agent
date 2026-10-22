@@ -420,7 +420,10 @@ async def put_members(
         }
         wanted = {(m.principal_type, m.principal_id, m.role_id): m for m in body.members}
 
-        has_new_member = any(key not in manual and key not in others for key in wanted)
+        # BR-122 gates whoever has no membership in force now: an expired one renewed, or one
+        # extended, counts as new, or the gate would be passed by re-adding a lapsed member.
+        current = {(r.principal_type, r.principal_id, r.role_id) for r in valid}
+        has_new_member = any(key not in current for key in wanted)
         if has_new_member:
             space_status, pass_rate = await membership_gate(principal, space_id)
             if space_status != "active" and pass_rate is not None and pass_rate < 0.90:

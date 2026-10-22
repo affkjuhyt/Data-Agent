@@ -731,6 +731,17 @@ async def test_low_eval_rate_blocks_adding_a_member_to_unopened_space(world: Wor
         pass_rate=0.88,
         status="completed",
     )
+    # The group was a member once; its membership lapsed. Renewing it is adding a member.
+    world.seed.row(
+        "org.data_space_member",
+        org_id=world.org,
+        data_space_id=world.other_space,
+        principal_type="group",
+        principal_id=world.group,
+        role_id=world.roles["analyst"],
+        source="manual",
+        valid_until="2026-01-01T00:00:00Z",
+    )
     members = [
         {
             "principal_type": "group",
