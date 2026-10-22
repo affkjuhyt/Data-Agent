@@ -66,9 +66,10 @@ spec:
           mc admin user add local worker-agent "$WORKER_AGENT_MINIO_PASSWORD"
           mc admin policy attach local worker-agent-exports --user worker-agent || mc admin user info local worker-agent
           mc admin policy attach local worker-agent-ingest-v1 --user worker-agent || mc admin user info local worker-agent
-          # Session report drafts (worker_agent/session_reports.py) go under session-reports/ of
-          # da-results, which the api reads and serves; the worker writes them and never reads one.
-          printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:PutObject"],"Resource":["arn:aws:s3:::da-results/session-reports/*"]}]}' > /tmp/worker-agent-reports.json
+          # Session report drafts (worker_agent/session_reports.py) and scheduled reports' renderings
+          # (report_runs.py) go under session-reports/ and report-runs/ of da-results, which the api
+          # reads and serves; the worker writes them and never reads one.
+          printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:PutObject"],"Resource":["arn:aws:s3:::da-results/session-reports/*","arn:aws:s3:::da-results/report-runs/*"]}]}' > /tmp/worker-agent-reports.json
           mc admin policy create local worker-agent-reports /tmp/worker-agent-reports.json
           mc admin policy attach local worker-agent-reports --user worker-agent || mc admin user info local worker-agent
           # UC-10-02 / AC-10-02-07: a period's snapshot cannot be deleted or rewritten before its

@@ -5,11 +5,13 @@ Every minute the worker looks, organisation by organisation, for what is due:
   job_run.backfill_requested event worker-ingest loads from (the same path as "Chạy lại ngay");
 - an active pipeline whose cron fires this minute: a scheduled pipeline_run, skipped as
   skipped_overlap while a run of it is still going and no_overlap is set (UC-06-03);
-- once a day, every active quality rule not checked in the last 24 hours (run_kind scheduled).
+- once a day, every active quality rule not checked in the last 24 hours (run_kind scheduled);
+- an active report schedule whose cron fires this minute, read in the bank's time zone: a
+  report_run dated by its as_of_rule and the report_run.requested event (report_runs.py).
 
 Row-level security scopes every session to one organisation and no role may list them all, so
-the organisations are those the outbox relay has seen emit on ingest.outbox or pipeline.outbox
-(every job and pipeline was created through one). A minute already served is recognised by the
+the organisations are those the outbox relay has seen emit on ingest.outbox, pipeline.outbox or
+monitor.outbox (every job, pipeline and report schedule was created through one). A minute already served is recognised by the
 run it created, so two replicas or a restart in the same minute do not fire twice.
 """
 
@@ -22,9 +24,9 @@ import uuid
 from sqlalchemy import select, text
 
 from libs.dataagent_db import scoped_session, unscoped_session, uuid7
-from libs.dataagent_db.models import ingest
+from libs.dataagent_db.models import ingest, monitor
 from libs.dataagent_db.models import pipeline as pl
-from services.worker_agent import cron, quality
+from services.worker_agent import cron, quality, report_runs
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +40,10 @@ def _now() -> datetime.datetime:
 async def organisations() -> list[uuid.UUID]:
     async with unscoped_session("svc_outbox_relay") as session:
         rows = await session.execute(
-            text("SELECT org_id FROM ingest.outbox UNION SELECT org_id FROM pipeline.outbox")
+            text(
+                "SELECT org_id FROM ingest.outbox UNION SELECT org_id FROM pipeline.outbox"
+                " UNION SELECT org_id FROM monitor.outbox"
+            )
         )
         return [r[0] for r in rows]
 
@@ -182,15 +187,80 @@ async def _quality(org_id: uuid.UUID) -> int:
     return len(due)
 
 
+async def _reports(org_id: uuid.UUID, minute: datetime.datetime) -> int:
+    local = minute.astimezone(report_runs.ZONE)
+    fired = 0
+    async with scoped_session(report_runs.ROLE, org_id) as session:
+        rows = (
+            await session.scalars(
+                select(monitor.ReportSchedule).where(
+                    monitor.ReportSchedule.status == "active",
+                    monitor.ReportSchedule.deleted_at.is_(None),
+                )
+            )
+        ).all()
+        for row in rows:
+            if not _fires(row.cron, local.replace(tzinfo=None)):
+                continue
+            served = await session.scalar(
+                select(monitor.ReportRun.id).where(
+                    monitor.ReportRun.report_schedule_id == row.id,
+                    monitor.ReportRun.trigger == "schedule",
+                    monitor.ReportRun.created_at >= minute,
+                )
+            )
+            if served is not None:
+                continue
+            as_of = report_runs.as_of_for(row.as_of_rule, local.date())
+            run = monitor.ReportRun(
+                id=uuid7(),
+                org_id=org_id,
+                report_schedule_id=row.id,
+                kind=row.kind,
+                as_of=as_of or local.date(),
+                trigger="schedule",
+                # A rule this worker cannot read fails the run instead of dating it wrongly.
+                status="running" if as_of is not None else "failed",
+                checks={}
+                if as_of is not None
+                else {"error": f"Không hiểu quy tắc ngày {row.as_of_rule}"},
+                finished_at=None if as_of is not None else _now(),
+            )
+            session.add(run)
+            if as_of is not None:
+                session.add(
+                    monitor.Outbox(
+                        id=uuid7(),
+                        org_id=org_id,
+                        aggregate_type="report_run",
+                        aggregate_id=run.id,
+                        event_type=report_runs.EVENT_TYPE,
+                        payload={
+                            "report_run_id": str(run.id),
+                            "report_schedule_id": str(row.id),
+                            "data_space_id": str(row.data_space_id),
+                            "kind": row.kind,
+                            "as_of": as_of.isoformat(),
+                            "trigger": "schedule",
+                            "status": "running",
+                            "requested_by": str(row.owner_id),
+                        },
+                    )
+                )
+            fired += 1
+    return fired
+
+
 async def tick(at: datetime.datetime | None = None) -> dict[str, int]:
     """One pass over every organisation for the minute of `at` (now by default)."""
     minute = (at or _now()).replace(second=0, microsecond=0)
-    counts = {"jobs": 0, "pipelines": 0, "quality": 0}
+    counts = {"jobs": 0, "pipelines": 0, "quality": 0, "reports": 0}
     for org_id in await organisations():
         try:
             counts["jobs"] += await _jobs(org_id, minute)
             counts["pipelines"] += await _pipelines(org_id, minute)
             counts["quality"] += await _quality(org_id)
+            counts["reports"] += await _reports(org_id, minute)
         except Exception:  # one organisation's failure must not stop the others' schedules
             logger.exception("worker-agent | schedule pass failed for organisation %s", org_id)
     if any(counts.values()):

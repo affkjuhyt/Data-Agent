@@ -41,6 +41,7 @@ from services.worker_agent import (
     query_runs,
     questions,
     replay,
+    report_runs,
     resolutions,
     reviews,
     runs,
@@ -78,6 +79,7 @@ HANDLERS: dict[str, Handler] = {
     **channels.HANDLERS,
     **questions.HANDLERS,
     **replay.HANDLERS,
+    **report_runs.HANDLERS,
     **hitl.HANDLERS,
     **resolutions.HANDLERS,
     **source_tests.HANDLERS,
@@ -164,6 +166,9 @@ async def sources() -> list[EventSource]:
             # The one consumer of run.status_changed: the run executor (runs.py, ADR-37 stand-in).
             types |= set(runs.HANDLERS)
             types |= set(uploads.HANDLERS) | set(quality.HANDLERS)
+        if schema == "monitor":
+            # Run now and the scheduler both request a report run here (report_runs.py).
+            types |= set(report_runs.HANDLERS)
         if schema == "period":
             types |= set(periods.HANDLERS)
         if schema == "conflict":

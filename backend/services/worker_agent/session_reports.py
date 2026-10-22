@@ -442,35 +442,50 @@ async def _personal_data(
                 failures.append(f"{d.title}: không xác định được cột của số")
                 continue
             try:
-                names, whole_row = _referenced(run.sql_generated, source)
-                datasets = await datasets_read(
-                    session,
-                    data_space_id=run.data_space_id,
-                    principal_id=author,
-                    source=source,
-                    tables=tables_of_sql(run.sql_generated, source),
+                hits = sorted(
+                    await personal_columns(
+                        session, author, run.sql_generated, source, run.data_space_id
+                    )
                 )
             except SqlRejected:
                 failures.append(f"{d.title}: không xác định được bảng của số")
                 continue
-            if not datasets:
-                continue
-            labelled = (
-                await session.execute(
-                    select(catalog.ColumnMeta.name, catalog.ColumnMeta.pii_label).where(
-                        catalog.ColumnMeta.dataset_id.in_([ds.id for ds in datasets]),
-                        catalog.ColumnMeta.pii_label.is_not(None),
-                    )
-                )
-            ).all()
-            # Matched by name across every table the query reads, not resolved to one: a name
-            # two tables share fails for both, which errs on the side of the check.
-            hits = sorted(
-                {f"{n} ({label})" for n, label in labelled if whole_row or n.lower() in names}
-            )
             if hits:
                 failures.append(f"{d.title}: có cột dữ liệu cá nhân {', '.join(hits)}")
     return _verdict(failures, "Không số nào lấy từ cột dữ liệu cá nhân")
+
+
+async def personal_columns(
+    session: Any,
+    reader: uuid.UUID,
+    sql: str,
+    source: catalog.Source,
+    data_space_id: uuid.UUID,
+) -> set[str]:
+    """The columns labelled personal data (pii_label) that `sql` reads, as "name (label)"; a
+    session report's check and a scheduled report's (report_runs.py, BR-35) both ask it. Raises
+    SqlRejected when the tables cannot be told."""
+    names, whole_row = _referenced(sql, source)
+    datasets = await datasets_read(
+        session,
+        data_space_id=data_space_id,
+        principal_id=reader,
+        source=source,
+        tables=tables_of_sql(sql, source),
+    )
+    if not datasets:
+        return set()
+    labelled = (
+        await session.execute(
+            select(catalog.ColumnMeta.name, catalog.ColumnMeta.pii_label).where(
+                catalog.ColumnMeta.dataset_id.in_([ds.id for ds in datasets]),
+                catalog.ColumnMeta.pii_label.is_not(None),
+            )
+        )
+    ).all()
+    # Matched by name across every table the query reads, not resolved to one: a name two
+    # tables share fails for both, which errs on the side of the check.
+    return {f"{n} ({label})" for n, label in labelled if whole_row or n.lower() in names}
 
 
 def tables_of_sql(sql: str, source: catalog.Source) -> set[tuple[str | None, str]]:
