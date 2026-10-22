@@ -269,9 +269,15 @@ async def test_a_goal_that_names_no_metric_fails_and_says_why(
     bank = build(seed, credit, monkeypatch)
     run = agent_run(bank, goal="Tìm nguyên nhân biến động lớn và giải thích")
     await drain()
-    status, stop, _, narrative, error, *_ = run_row(seed, run)
+    status, stop, _, narrative, error, _, _, detail = run_row(seed, run)
     assert (status, stop) == ("failed", "error")
     assert "chỉ số" in error and narrative[-1]["text"] == error
+    # R0-11: a goal read as no metric is an intent mismatch, routed to restating it.
+    assert detail == {
+        "error_class": "INTENT_MISMATCH",
+        "route": "clarify",
+        "code": "UNRESOLVED_ENTITY",
+    }
 
 
 async def test_a_run_without_the_query_tool_is_refused_before_it_queries(
@@ -616,8 +622,12 @@ async def test_after_three_retries_the_run_fails_and_the_owner_is_told(
     for _ in range(3):
         elapse(seed, run)
         await drain()
-    status, stop, *_ = run_row(seed, run)
+    status, stop, *_, detail = run_row(seed, run)
     assert (status, stop) == ("failed", "error") and timers(seed, run) == []
+    # The same class four times in a row: past what its route allows, so the run stops (R0-11).
+    assert detail["error_class"] == "SOURCE_UNAVAILABLE" and detail["route"] == "retry"
+    queried = [s for s in steps(seed, run) if s[1] == "query"]
+    assert {s[6]["error_class"] for s in queried} == {"SOURCE_UNAVAILABLE"}
     assert [s[3] for s in steps(seed, run) if s[1] == "query"] == [
         "retried",
         "retried",
@@ -646,6 +656,8 @@ async def test_a_wrong_query_is_not_retried(
     run = agent_run(bank)
     await drain()
     assert run_row(seed, run)[:2] == ("failed", "error") and timers(seed, run) == []
+    # A failure that comes back the same way every time is refused at once, not retried.
+    assert run_row(seed, run)[7]["error_class"] == "PLAN_LOGIC"
 
 
 async def test_a_run_judges_its_answer_against_the_metrics_threshold(

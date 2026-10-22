@@ -225,7 +225,7 @@ async def answer_by_sql(
         if stored is not None:
             stored.steps = _plan(e)
         shown = [f for f in figures if f.value is not None]
-        stored = [f.as_json(str(e.query_run_id), "", TRUST) for f in figures]
+        stored_figures = [f.as_json(str(e.query_run_id), "", TRUST) for f in figures]
         session.add(
             qa.Answer(
                 id=answer_id,
@@ -234,7 +234,7 @@ async def answer_by_sql(
                 plan_id=plan_id,
                 kind=kind,
                 text=body,
-                figures=stored,
+                figures=stored_figures,
                 chart_spec=chart,
                 number_check=verify(
                     kind,
@@ -245,7 +245,7 @@ async def answer_by_sql(
                         "regenerated": 0,
                         "untraceable_final": 0,
                     },
-                    figures=stored,
+                    figures=stored_figures,
                 ),
                 agent_name=AGENT_NAME,
                 latency_ms=int(

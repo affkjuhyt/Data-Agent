@@ -39,6 +39,7 @@ from sqlalchemy.exc import DBAPIError
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import agent, catalog, notify, qa
+from services.worker_agent import failures
 from services.worker_agent.answer.insights import written
 from services.worker_agent.answer.narrate import chart_spec_of, figures_of, text_of
 from services.worker_agent.answer.thresholds import judged
@@ -248,14 +249,31 @@ def _plain(value: Any) -> Any:
 
 class RunFailed(Exception):
     """The run cannot go on; the message is the sentence the owner reads. `tell_owner`: the owner
-    is told in the app too (a run that gave up after its retries, AC-13-06-04)."""
+    is told in the app too (a run that gave up after its retries, AC-13-06-04). `error_class`:
+    why, as failures.py names it; the run's stop_detail records it with its route."""
 
     def __init__(
-        self, message: str, stop_reason: str = "error", *, tell_owner: bool = False
+        self,
+        message: str,
+        stop_reason: str = "error",
+        *,
+        tell_owner: bool = False,
+        error_class: failures.ErrorClass | None = None,
     ) -> None:
         super().__init__(message)
         self.stop_reason = stop_reason
         self.tell_owner = tell_owner
+        self.error_class = error_class
+
+    def detail(self) -> dict[str, Any]:
+        if self.error_class is None:
+            return {}
+        route = failures.ROUTES[self.error_class]
+        return {
+            "error_class": self.error_class.value,
+            "route": route.action,
+            "code": route.code.value,
+        }
 
 
 @dataclass
@@ -321,17 +339,20 @@ async def _plan_step(
             raise RunFailed(
                 f"Mục tiêu chia theo “{words_of(goal, u.unplaced_cut)}”, nhưng Data Space không có "
                 "chiều nào tên như "
-                "vậy. Hãy sửa mục tiêu theo tên chiều trong danh mục."
+                "vậy. Hãy sửa mục tiêu theo tên chiều trong danh mục.",
+                error_class=failures.ErrorClass.INTENT_MISMATCH,
             )
         if u.decision == "clarify":
             names = ", ".join(m.name for m in u.options)
             raise RunFailed(
-                f"Mục tiêu khớp với nhiều chỉ số ({names}); hãy sửa mục tiêu cho rõ một chỉ số."
+                f"Mục tiêu khớp với nhiều chỉ số ({names}); hãy sửa mục tiêu cho rõ một chỉ số.",
+                error_class=failures.ErrorClass.INTENT_MISMATCH,
             )
         if u.decision != "proceed" or u.metric is None:
             raise RunFailed(
                 "Mục tiêu chưa gọi tên chỉ số nào của Data Space; hãy sửa mục tiêu theo tên chỉ số "
-                "trong danh mục, hoặc nhờ người phụ trách thêm từ đồng nghĩa."
+                "trong danh mục, hoặc nhờ người phụ trách thêm từ đồng nghĩa.",
+                error_class=failures.ErrorClass.INTENT_MISMATCH,
             )
         version = layer.versions[u.metric.metric_id]
         request = c.Request(
@@ -355,8 +376,16 @@ async def _plan_step(
             compiled = c.compile_metric(
                 request, layer.layer, dialect=dialect_for_source(source.kind)
             )
-        except (c.CompileError, SqlRejected) as exc:
-            raise RunFailed(f"Chưa lập được truy vấn cho mục tiêu: {exc}") from exc
+        except c.CompileError as exc:
+            raise RunFailed(
+                f"Chưa lập được truy vấn cho mục tiêu: {exc}",
+                error_class=failures.of_compile(exc.code),
+            ) from exc
+        except SqlRejected as exc:
+            raise RunFailed(
+                f"Chưa lập được truy vấn cho mục tiêu: {exc}",
+                error_class=failures.ErrorClass.TOOL_GRAMMAR,
+            ) from exc
         return Planned(
             understanding=u,
             compiled=compiled,
@@ -402,7 +431,9 @@ async def _plan_all(
         except RunFailed as exc:
             if len(asked) == 1:
                 raise
-            raise RunFailed(f"Câu “{text}”: {exc}", exc.stop_reason) from exc
+            raise RunFailed(
+                f"Câu “{text}”: {exc}", exc.stop_reason, error_class=exc.error_class
+            ) from exc
         spent += planned[-1].tokens
         # BR-170 holds while planning too: no further model call once the tokens are spent.
         if spent >= max_tokens and n < len(asked):
@@ -773,7 +804,9 @@ async def _go_on(work: Run, run: agent.AgentRun) -> None:
     try:
         await _execute(work, run)
     except RunFailed as exc:
-        await work.end("failed", exc.stop_reason, told=str(exc), error=str(exc))
+        await work.end(
+            "failed", exc.stop_reason, told=str(exc), error=str(exc), detail=exc.detail()
+        )
         if exc.tell_owner and not run.is_test:
             await _tell(
                 run.org_id,
@@ -1140,8 +1173,18 @@ async def _query_step(
             else f"Chưa truy vấn được nguồn {planned.source.name}; người phụ trách dữ liệu có thể "
             "xem lượt chạy trong lịch sử truy vấn."
         )
-        tried = retries_in_a_row([s.status for s in await work.steps() if s.kind == "query"])
-        if is_transient(outcome.status, outcome.error) and tried < len(RETRY_DELAYS):
+        steps = [s for s in await work.steps() if s.kind == "query"]
+        tried = retries_in_a_row([s.status for s in steps])
+        error_class = failures.of_query(transient=is_transient(outcome.status, outcome.error))
+        # The classes of the retries since the last query that ran, then this one: the route
+        # decides, and a class back more often than it allows stops the run (R0-11).
+        seen = (
+            [(s.output or {}).get("error_class") for s in steps[len(steps) - tried :]]
+            if tried
+            else []
+        )
+        # A retry recorded before error_class was (seen holds None) still counts against the waits.
+        if not failures.stops([*seen, error_class]) and tried < len(RETRY_DELAYS):
             delay = RETRY_DELAYS[tried]
             minutes = int(delay.total_seconds() // 60)
             await work.record(
@@ -1151,7 +1194,11 @@ async def _query_step(
                 summary=f"{message} Thử lại sau {minutes} phút (lần {tried + 1}/{len(RETRY_DELAYS)}).",
                 told=f"Lỗi tạm thời ở nguồn; thử lại sau {minutes} phút.",
                 input={"sql": compiled.sql, "args": _normal(args)},
-                output={"query_run_id": str(outcome.query_run_id), "error": outcome.error},
+                output={
+                    "query_run_id": str(outcome.query_run_id),
+                    "error": outcome.error,
+                    "error_class": error_class.value,
+                },
                 fingerprint=call,
                 started=started,
                 also=lambda session, row: session.add(
@@ -1166,13 +1213,19 @@ async def _query_step(
             summary=message,
             told=None,
             input={"sql": compiled.sql, "args": _normal(args)},
-            output={"query_run_id": str(outcome.query_run_id), "error": outcome.error},
+            output={
+                "query_run_id": str(outcome.query_run_id),
+                "error": outcome.error,
+                "error_class": error_class.value,
+            },
             fingerprint=call,
             started=started,
         )
         if tried:
-            raise RunFailed(f"{message} Đã thử lại {tried} lần.", tell_owner=True)
-        raise RunFailed(message)
+            raise RunFailed(
+                f"{message} Đã thử lại {tried} lần.", tell_owner=True, error_class=error_class
+            )
+        raise RunFailed(message, error_class=error_class)
 
     figures = figures_of(
         list(compiled.columns),
