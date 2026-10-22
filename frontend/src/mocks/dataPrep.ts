@@ -405,6 +405,7 @@ function prepTableLineage(): LineageGraph {
 }
 
 const SQL_RESULT: SqlResult = {
+  id: 'qr-sql-001',
   columns: ['region', 'product', 'npl'],
   rows: [
     ['DH Bắc Bộ', 'Tiêu dùng', '0,0284'],
@@ -416,6 +417,8 @@ const SQL_RESULT: SqlResult = {
   duration_ms: 800,
   permission_scope: 'Rủi ro tín dụng',
   masked_columns: ['customer_id'],
+  sql_executed:
+    'SELECT region, product, npl FROM mart.loans_dedup_0930 WHERE branch_code = :policy_branch LIMIT 100',
 };
 
 /** PipelineView as the api sends it, with the screen's row under display. */
@@ -519,6 +522,14 @@ export function createDataPrepHandlers() {
         truncated: false,
         next_page_token: '',
         expires_at: '2026-10-15T00:00:00+07:00',
+      });
+    }),
+    http.get('*/v1/query-runs/:id/sql', ({ params }) => {
+      if (params.id !== 'qr-sql-001') return undefined;
+      return HttpResponse.json({
+        sql_generated: 'SELECT region, product, npl FROM mart.loans_dedup_0930 LIMIT 100',
+        sql_executed: SQL_RESULT.sql_executed,
+        policies_applied: ['branch'],
       });
     }),
     http.post('*/v1/derived-tables', async ({ request }) => {

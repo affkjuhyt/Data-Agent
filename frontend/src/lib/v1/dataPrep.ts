@@ -1,6 +1,7 @@
 import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
 import type { components } from './schema';
-import { awaitQueryRun, getQueryRows } from './explore';
+import { formatReadOnlySql, type SqlBrowseTable } from '../sqlText';
+import { awaitQueryRun, getQueryRows, getQuerySql } from './explore';
 
 /*
  * Data preparation (P06, UC-06-01…05): the SQL editor and its derived datasets, transformation
@@ -13,20 +14,13 @@ import { awaitQueryRun, getQueryRows } from './explore';
 
 /* ─── SQL (v3.1 · Dữ liệu · SQL, UC-06-01 nhánh SQL) ──────────────────── */
 
-/** The tables the caller may query, grouped from the canonical dataset catalogue. */
-interface SqlCatalogGroup {
-  id: string;
+export interface SqlColumn {
   name: string;
-  tables: SqlCatalogTable[];
-}
-
-export interface SqlCatalogTable {
-  id: string;
-  name: string;
-  columns: { name: string; type: string | null }[];
+  type: string;
 }
 
 export interface SqlResult {
+  id: string;
   columns: string[];
   /** Cells as the warehouse returns them; masked columns already carry the mask. */
   rows: (string | number | null)[][];
@@ -36,21 +30,31 @@ export interface SqlResult {
   permission_scope: string;
   /** Columns the policy masked for this caller (BR: "cột customer_id đã che"). */
   masked_columns: string[];
+  /** The statement after the policy rewrite (GET .../sql). Null when that read fails. */
+  sql_executed: string | null;
 }
 
-export const getSqlCatalog = async (): Promise<{ items: SqlCatalogGroup[] }> => {
-  const datasets = await v1Get<Page<DatasetRow>>('/datasets', { page_size: 500 });
-  const details = await Promise.all(
-    datasets.items.map(async (dataset) => {
-      const detail = await v1Get<components['schemas']['DatasetDetail']>(
-        `/datasets/${pathId(dataset.id)}`,
-      ).catch(() => null);
-      return { dataset, detail };
-    }),
-  );
+const listDatasets = async (): Promise<DatasetRow[]> => {
+  const items: DatasetRow[] = [];
+  let token = '';
+  for (let page = 0; page < 20; page += 1) {
+    const datasets = await v1Get<Page<DatasetRow>>('/datasets', {
+      page_size: 500,
+      page_token: token || undefined,
+    });
+    items.push(...datasets.items);
+    if (!datasets.next_page_token || datasets.next_page_token === token) break;
+    token = datasets.next_page_token;
+  }
+  return items;
+};
+
+/** Tables the caller may query. Columns stay on the detail, loaded when a table is opened. */
+export const getSqlCatalog = async (): Promise<{ tables: SqlBrowseTable[] }> => {
+  const datasets = await listDatasets();
   const sourceNames = new Map<string, string>();
   await Promise.all(
-    [...new Set(datasets.items.map((dataset) => dataset.source_id).filter(Boolean))].map(
+    [...new Set(datasets.map((dataset) => dataset.source_id).filter(Boolean))].map(
       async (sourceId) => {
         const source = await v1Get<{ id: string; name: string }>(
           `/sources/${pathId(sourceId!)}`,
@@ -59,25 +63,26 @@ export const getSqlCatalog = async (): Promise<{ items: SqlCatalogGroup[] }> => 
       },
     ),
   );
-  const groups = new Map<string, SqlCatalogGroup>();
-  for (const { dataset, detail } of details) {
-    const key = dataset.source_id ?? 'derived';
-    const group = groups.get(key) ?? {
-      id: key,
-      name: dataset.source_id ? (sourceNames.get(key) ?? 'Nguồn dữ liệu') : 'Bảng dẫn xuất',
-      tables: [],
-    };
-    group.tables.push({
+  return {
+    tables: datasets.map((dataset) => ({
       id: dataset.id,
-      name: tableName(dataset),
-      columns: (detail?.columns ?? []).map((column) => ({
-        name: column.name,
-        type: column.data_type,
-      })),
-    });
-    groups.set(key, group);
-  }
-  return { items: [...groups.values()] };
+      schema: dataset.schema_name,
+      name: dataset.table_name,
+      qualified: tableName(dataset),
+      description: dataset.description ?? null,
+      sourceId: dataset.source_id,
+      sourceName: dataset.source_id ? (sourceNames.get(dataset.source_id) ?? null) : null,
+    })),
+  };
+};
+
+/** Columns of one dataset, fetched when its row in the schema browser is opened. */
+export const loadSqlColumns = async (id: string): Promise<SqlColumn[]> => {
+  const detail = await v1Get<components['schemas']['DatasetDetail']>(`/datasets/${pathId(id)}`);
+  return (detail.columns ?? []).map((column) => ({
+    name: column.name,
+    type: column.data_type,
+  }));
 };
 
 /** Read-only SQL through the canonical query-run worker and policy path. */
@@ -88,24 +93,48 @@ export const runSql = async (sql: string, limit = 500): Promise<SqlResult> => {
   });
   const finished = await awaitQueryRun(run);
   const rows = await getQueryRows(finished.id, limit);
+  const executed = await getQuerySql(finished.id).catch(() => null);
   const policy = finished as typeof finished & {
     permission_scope?: string;
     masked_columns?: string[];
   };
   return {
+    id: finished.id,
     columns: rows.columns.map((column) => column.name),
     rows: rows.rows as SqlResult['rows'],
     row_count: finished.row_count ?? rows.rows.length,
     duration_ms: finished.duration_ms ?? 0,
     permission_scope: policy.permission_scope ?? 'Data Space hiện tại',
     masked_columns: policy.masked_columns ?? [],
+    sql_executed: executed?.sql_executed ?? null,
   };
 };
 
-/** Server formatting when available; otherwise keep a deterministic read-only fallback. */
+/** There is no format endpoint. Indent clauses locally so the editor, not the warehouse, wraps. */
 export const formatSql = async (sql: string): Promise<{ sql: string }> => {
-  return { sql: sql.trim().replace(/\s+/g, ' ') };
+  return { sql: formatReadOnlySql(sql) };
 };
+
+/** Certified metrics, so a statement that names one can open that definition. */
+export const listSqlMetrics = async () => {
+  const page = await v1Get<Page<components['schemas']['MetricView']>>('/metrics', {
+    certified: true,
+    page_size: 100,
+  });
+  return page.items.map((metric) => ({
+    id: metric.id,
+    code: metric.code,
+    version: metric.current_version,
+  }));
+};
+
+/** A finished statement kept as a SQL tile of a session. */
+export const saveSqlToSession = (workspaceId: string, runId: string, title: string) =>
+  v1Send<components['schemas']['TileView']>('POST', `/workspaces/${pathId(workspaceId)}/tiles`, {
+    kind: 'sql',
+    title,
+    spec: { query_run_id: runId },
+  } as unknown as components['schemas']['TileCreate']);
 
 /* ─── Bảng dẫn xuất (UC-06-02) ────────────────────────────────────────── */
 
