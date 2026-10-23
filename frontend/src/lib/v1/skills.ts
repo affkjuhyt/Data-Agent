@@ -1,5 +1,5 @@
 import { listUsers } from './api';
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 
 type Schemas = components['schemas'];
@@ -112,15 +112,21 @@ const userNames = async () =>
 /** A2 filters by scope and category; `status` is the screen's, applied to the page read. */
 export const listSkills = async (query: { scope?: SkillScope; status?: SkillStatus } = {}) => {
   const [page, names] = await Promise.all([
-    v1Get<Page<SkillWire>>('/skills', {
-      scope:
-        query.scope === 'organization'
-          ? 'org'
-          : query.scope === 'data_space'
-            ? 'data_space'
-            : undefined,
-      page_size: 500,
-    }),
+    ok<Page<SkillWire>>(
+      api.GET('/v1/skills', {
+        params: {
+          query: {
+            scope:
+              query.scope === 'organization'
+                ? 'org'
+                : query.scope === 'data_space'
+                  ? 'data_space'
+                  : undefined,
+            page_size: 500,
+          },
+        },
+      }),
+    ),
     userNames(),
   ]);
   const items = page.items.map((s) => readSkill(s, names));
@@ -128,7 +134,10 @@ export const listSkills = async (query: { scope?: SkillScope; status?: SkillStat
 };
 
 export const getSkill = async (id: string) => {
-  const [raw, names] = await Promise.all([v1Get<SkillWire>(`/skills/${pathId(id)}`), userNames()]);
+  const [raw, names] = await Promise.all([
+    ok<SkillWire>(api.GET('/v1/skills/{id}', { params: { path: { id } } })),
+    userNames(),
+  ]);
   return readSkill(raw, names);
 };
 
@@ -149,13 +158,17 @@ const codeOf = (name: string) =>
  */
 export const createSkill = async (body: { name: string }) =>
   readSkill(
-    await v1Send<SkillWire>('POST', '/skills', {
-      code: codeOf(body.name),
-      name: body.name,
-      category: 'custom',
-      origin: 'manual',
-      scope: 'personal',
-    } satisfies Schemas['SkillCreate']),
+    await ok<SkillWire>(
+      api.POST('/v1/skills', {
+        body: {
+          code: codeOf(body.name),
+          name: body.name,
+          category: 'custom',
+          origin: 'manual',
+          scope: 'personal',
+        } satisfies Schemas['SkillCreate'],
+      }),
+    ),
     new Map(),
   );
 
@@ -204,8 +217,8 @@ const VERSION_TEXT: Record<SkillVersionStatus, string> = {
  * The change note and the eval counts are PROPOSAL.
  */
 export const listSkillVersions = async (skillId: string): Promise<Page<SkillVersion>> => {
-  const raw = await v1Get<Schemas['SkillDetail'] & { display_versions?: SkillVersion[] }>(
-    `/skills/${pathId(skillId)}`,
+  const raw = await ok<Schemas['SkillDetail'] & { display_versions?: SkillVersion[] }>(
+    api.GET('/v1/skills/{id}', { params: { path: { id: skillId } } }),
   );
   if (raw.display_versions) return { items: raw.display_versions, next_page_token: '' };
   const items = [...(raw.versions ?? [])]
@@ -258,16 +271,24 @@ type Proposal = Schemas['ProposalDetail'];
 
 /** The open skill_publish proposal of a version, among the caller's approve_proposal requests. */
 async function publishProposal(versionId: string): Promise<Proposal | null> {
-  const inbox = await v1Get<Page<Schemas['HitlView']>>('/inbox', {
-    kind: 'approve_proposal',
-    status: 'open',
-    page_size: 500,
-  });
+  const inbox = await ok<Page<Schemas['HitlView']>>(
+    api.GET('/v1/inbox', {
+      params: {
+        query: {
+          kind: 'approve_proposal',
+          status: 'open',
+          page_size: 500,
+        },
+      },
+    }),
+  );
   const refs = inbox.items.flatMap((h) =>
     h.kind === 'approve_proposal' && h.source_ref ? [h.source_ref] : [],
   );
   const proposals = await Promise.all(
-    refs.map((id) => v1Get<Proposal>(`/proposals/${pathId(id)}`).catch(() => null)),
+    refs.map((id) =>
+      ok<Proposal>(api.GET('/v1/proposals/{id}', { params: { path: { id } } })).catch(() => null),
+    ),
   );
   return (
     proposals.find(
@@ -288,15 +309,17 @@ export const getSkillVersionReview = async (
   skillId: string,
   versionId: string,
 ): Promise<SkillVersionReview> => {
-  const skill = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(skillId)}`);
+  const skill = await ok<Schemas['SkillDetail']>(
+    api.GET('/v1/skills/{id}', { params: { path: { id: skillId } } }),
+  );
   const versions = skill.versions ?? [];
   const version = versions.find((v) => v.id === versionId);
   const current = versions.find((v) => v.status === 'published') ?? null;
   const [run, proposal] = await Promise.all([
     version?.eval_run_id
-      ? v1Get<Schemas['EvalRunDetail']>(`/eval-runs/${pathId(version.eval_run_id)}`).catch(
-          () => null,
-        )
+      ? ok<Schemas['EvalRunDetail']>(
+          api.GET('/v1/eval-runs/{id}', { params: { path: { id: version.eval_run_id } } }),
+        ).catch(() => null)
       : null,
     publishProposal(versionId),
   ]);
@@ -322,18 +345,28 @@ export const getSkillVersionReview = async (
  * the version is published and the one in use retires after the transition (BR-97).
  */
 export const approveSkillVersion = async (proposalId: string) =>
-  v1Send<Proposal>('POST', `/proposals/${pathId(proposalId)}:decide`, {
-    decision: 'accept',
-    reviewed_regressions: true,
-  } satisfies Schemas['ProposalDecision']);
+  ok<Proposal>(
+    api.POST('/v1/proposals/{id}:decide', {
+      params: { path: { id: proposalId } },
+      body: {
+        decision: 'accept',
+        reviewed_regressions: true,
+      } satisfies Schemas['ProposalDecision'],
+    }),
+  );
 
 /** Asking for changes sends the version back to its author with the reviewer's note. */
 export const requestSkillChanges = async (proposalId: string, note: string) =>
-  v1Send<Proposal>('POST', `/proposals/${pathId(proposalId)}:decide`, {
-    decision: 'request_changes',
-    note,
-    reviewed_regressions: true,
-  } satisfies Schemas['ProposalDecision']);
+  ok<Proposal>(
+    api.POST('/v1/proposals/{id}:decide', {
+      params: { path: { id: proposalId } },
+      body: {
+        decision: 'request_changes',
+        note,
+        reviewed_regressions: true,
+      } satisfies Schemas['ProposalDecision'],
+    }),
+  );
 
 /* ─── Đề xuất từ agent & chia sẻ (UC-03-07) ───────────────────────────── */
 
@@ -393,13 +426,15 @@ function readSuggestion(raw: SuggestionWire): SkillSuggestion {
 }
 
 export const listSkillSuggestions = async () => {
-  const page = await v1Get<Page<SuggestionWire>>('/skill-suggestions', { page_size: 500 });
+  const page = await ok<Page<SuggestionWire>>(
+    api.GET('/v1/skill-suggestions', { params: { query: { page_size: 500 } } }),
+  );
   return { ...page, items: page.items.map(readSuggestion) };
 };
 
 /** :dismiss — the agent does not suggest the same chain again for 90 days. */
 export const dismissSkillSuggestion = async (id: string) =>
-  v1Send<void>('POST', `/skill-suggestions/${pathId(id)}:dismiss`, {});
+  okAs<void>(api.POST('/v1/skill-suggestions/{id}:dismiss', { params: { path: { id } } }));
 
 /**
  * :share — a certified skill to its Data Space or the whole organisation (`data_space_id` null).
@@ -409,9 +444,14 @@ export const dismissSkillSuggestion = async (id: string) =>
  */
 export const shareSkill = async (id: string, dataSpaceId: string | null) => {
   const scope = dataSpaceId === null ? 'org' : 'data_space';
-  const shared = await v1Send<Schemas['SkillView']>('POST', `/skills/${pathId(id)}:share`, {
-    scope,
-  } satisfies Schemas['ShareRequest']);
+  const shared = await ok<Schemas['SkillView']>(
+    api.POST('/v1/skills/{id}:share', {
+      params: { path: { id } },
+      body: {
+        scope,
+      } satisfies Schemas['ShareRequest'],
+    }),
+  );
   return { status: shared.scope === scope ? ('shared' as const) : ('pending_admin' as const) };
 };
 
@@ -449,6 +489,6 @@ const readTool = (raw: ToolWire): Tool => ({
 });
 
 export const listTools = async () => {
-  const page = await v1Get<Page<ToolWire>>('/tools', { page_size: 500 });
+  const page = await ok<Page<ToolWire>>(api.GET('/v1/tools'));
   return { ...page, items: page.items.map(readTool) };
 };

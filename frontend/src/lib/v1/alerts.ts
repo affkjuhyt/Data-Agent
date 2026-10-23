@@ -1,4 +1,4 @@
-import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
+import { V1Error, type Page, api, ok } from './client';
 import type { components } from './schema';
 
 /*
@@ -87,7 +87,9 @@ function readAlert(raw: AlertWire): Alert {
 }
 
 export const listAlerts = async (status?: AlertStatus) => {
-  const page = await v1Get<Page<AlertWire>>('/alerts', { status, page_size: 500 });
+  const page = await ok<Page<AlertWire>>(
+    api.GET('/v1/alerts', { params: { query: { status, page_size: 500 } } }),
+  );
   return { ...page, items: page.items.map(readAlert) };
 };
 
@@ -100,18 +102,32 @@ export const getAlert = async (id: string) => {
 
 export const assignAlert = async (id: string, assigneeId: string) =>
   readAlert(
-    await v1Send<AlertWire>('POST', `/alerts/${pathId(id)}:assign`, { assignee_id: assigneeId }),
+    await ok<AlertWire>(
+      api.POST('/v1/alerts/{id}:assign', {
+        params: { path: { id } },
+        body: { assignee_id: assigneeId },
+      }),
+    ),
   );
 
 /** `kind` is a PROPOSAL beside A2's close_note: a false alarm teaches the agent, BR-124 needs a note. */
 export const closeAlert = async (id: string, note: string, kind: 'resolved' | 'false_positive') =>
   readAlert(
-    await v1Send<AlertWire>('POST', `/alerts/${pathId(id)}:close`, { close_note: note, kind }),
+    await ok<AlertWire>(
+      api.POST('/v1/alerts/{id}:close', {
+        params: { path: { id } },
+        body: { close_note: note, kind },
+      }),
+    ),
   );
 
 /** A2 :reopen (added 12/10/2026): a closed alert opens again, with the reason why. */
 export const reopenAlert = async (id: string, reason: string) =>
-  readAlert(await v1Send<AlertWire>('POST', `/alerts/${pathId(id)}:reopen`, { reason }));
+  readAlert(
+    await ok<AlertWire>(
+      api.POST('/v1/alerts/{id}:reopen', { params: { path: { id } }, body: { reason } }),
+    ),
+  );
 
 /*
  * Opening an investigation is creating a workspace with the alert as its context (UC-08-02).
@@ -119,11 +135,15 @@ export const reopenAlert = async (id: string, reason: string) =>
  * alert in its params.
  */
 export const investigateAlert = async (alert: Pick<Alert, 'id' | 'code' | 'title' | 'summary'>) => {
-  const ws = await v1Send<components['schemas']['WorkspaceView']>('POST', '/workspaces', {
-    title: `Điều tra ${alert.code} · ${alert.title}`.slice(0, 300),
-    description: alert.summary,
-    created_from: 'blank',
-    params: { alert_id: alert.id },
-  });
+  const ws = await ok<components['schemas']['WorkspaceView']>(
+    api.POST('/v1/workspaces', {
+      body: {
+        title: `Điều tra ${alert.code} · ${alert.title}`.slice(0, 300),
+        description: alert.summary,
+        created_from: 'blank',
+        params: { alert_id: alert.id },
+      },
+    }),
+  );
   return { workspace_id: ws.id };
 };

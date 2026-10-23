@@ -1,5 +1,5 @@
 import { readAgent } from './api';
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 import type { AgentDef, AgentRun, AgentWire } from './types';
 import { getOnboarding } from './explore';
@@ -457,7 +457,10 @@ export const listTemplates = async (): Promise<Page<AgentTemplate>> => {
 };
 
 export const draftAgent = async (body: DraftRequest) =>
-  readDraft(await v1Send<DraftWire>('POST', '/agents:draft-from-text', body), body.description);
+  readDraft(
+    await ok<DraftWire>(api.POST('/v1/agents:draft-from-text', { body })),
+    body.description,
+  );
 
 /*
  * The config fields of ConfigCreate; the api ignores the rest, so only these are sent. Not typed
@@ -480,22 +483,30 @@ const configBody = (config: ConfigInput) => ({
  * triggers, so they follow in PUT /triggers.
  */
 export const createAgent = async (draft: AgentDraft, templateRef?: string) => {
-  const created = await v1Send<AgentDetailWire>('POST', '/agents', {
-    code: draft.code,
-    name: draft.name,
-    kind: draft.kind,
-    template_ref: templateRef,
-    config: configBody(draft.config),
-  });
+  const created = await okAs<AgentDetailWire>(
+    api.POST('/v1/agents', {
+      body: {
+        code: draft.code,
+        name: draft.name,
+        kind: draft.kind,
+        template_ref: templateRef,
+        config: configBody(draft.config),
+      },
+    }),
+  );
   if (draft.triggers.length > 0) await putTriggers(created.id, draft.triggers);
   return readAgentDetail(created);
 };
 
 export const getAgent = async (id: string) =>
-  readAgentDetail(await v1Get<AgentDetailWire>(`/agents/${pathId(id)}`));
+  readAgentDetail(
+    await okAs<AgentDetailWire>(api.GET('/v1/agents/{id}', { params: { path: { id } } })),
+  );
 
 export const listConfigs = async (id: string) => {
-  const page = await v1Get<Page<Schemas['ConfigView']>>(`/agents/${pathId(id)}/configs`);
+  const page = await ok<Page<Schemas['ConfigView']>>(
+    api.GET('/v1/agents/{id}/configs', { params: { path: { id } } }),
+  );
   return { ...page, items: page.items.map(readConfig) };
 };
 
@@ -509,49 +520,73 @@ export type ConfigInput = Pick<
 
 export const saveConfig = async (id: string, body: ConfigInput) =>
   readConfig(
-    await v1Send<Schemas['ConfigView']>('POST', `/agents/${pathId(id)}/configs`, configBody(body)),
+    await ok<Schemas['ConfigView']>(
+      api.POST('/v1/agents/{id}/configs', { params: { path: { id } }, body: configBody(body) }),
+    ),
   );
 
 /** PUT replaces the whole set (A1.3); the PROPOSAL description travels for the server to parse. */
 export const putTriggers = async (id: string, triggers: Omit<AgentTrigger, 'id'>[]) => {
-  const page = await v1Send<Page<Schemas['TriggerView']>>('PUT', `/agents/${pathId(id)}/triggers`, {
-    triggers,
-  });
+  const page = await ok<Page<Schemas['TriggerView']>>(
+    api.PUT('/v1/agents/{id}/triggers', {
+      params: { path: { id } },
+      body: {
+        triggers,
+      },
+    }),
+  );
   return page.items.map(readTrigger);
 };
 
 /** 202 with the run's id (RunAccepted); the drawer then reads the run. */
 export const startTestRun = async (id: string, configVersion: number) => {
-  const accepted = await v1Send<Schemas['RunAccepted']>('POST', `/agents/${pathId(id)}/test-runs`, {
-    config_version: configVersion,
-  });
+  const accepted = await ok<Schemas['RunAccepted']>(
+    api.POST('/v1/agents/{id}/test-runs', {
+      params: { path: { id } },
+      body: {
+        config_version: configVersion,
+      },
+    }),
+  );
   return getTestRun(accepted.id);
 };
 
 export const getTestRun = async (runId: string) =>
-  readTestRun(await v1Get<TestRunWire>(`/runs/${pathId(runId)}`));
+  readTestRun(await ok<TestRunWire>(api.GET('/v1/runs/{id}', { params: { path: { id: runId } } })));
 
 /** "Kích hoạt": full traffic, which waits for the data owner's approval. */
 export const activateAgent = async (id: string, configVersion: number) =>
-  v1Send<AgentDeployment>('POST', `/agents/${pathId(id)}/deployments`, {
-    config_version: configVersion,
-    traffic_pct: 100,
-  });
+  okAs<AgentDeployment>(
+    api.POST('/v1/agents/{id}/deployments', {
+      params: { path: { id } },
+      body: {
+        config_version: configVersion,
+        traffic_pct: 100,
+      },
+    }),
+  );
 
 export const listMemories = async (id: string) => {
-  const page = await v1Get<Page<MemoryWire>>(`/agents/${pathId(id)}/memories`, { page_size: 500 });
+  const page = await ok<Page<MemoryWire>>(
+    api.GET('/v1/agents/{id}/memories', { params: { path: { id }, query: { page_size: 500 } } }),
+  );
   return { ...page, items: page.items.map(readMemory) };
 };
 
 export const addMemory = async (id: string, body: NewMemory) =>
   readMemory(
-    await v1Send<MemoryWire>('POST', `/agents/${pathId(id)}/memories`, {
-      scope: body.scope,
-      kind: body.kind,
-      content: body.content,
-      user_id: body.user_id,
-      expires_at: expiresAt(body.expiry),
-    } satisfies Schemas['MemoryCreate']),
+    await ok<MemoryWire>(
+      api.POST('/v1/agents/{id}/memories', {
+        params: { path: { id } },
+        body: {
+          scope: body.scope,
+          kind: body.kind,
+          content: body.content,
+          user_id: body.user_id,
+          expires_at: expiresAt(body.expiry),
+        } satisfies Schemas['MemoryCreate'],
+      }),
+    ),
   );
 
 /**
@@ -560,11 +595,16 @@ export const addMemory = async (id: string, body: NewMemory) =>
  */
 export const updateMemory = async (memoryId: string, body: MemoryPatch) =>
   readMemory(
-    await v1Send<MemoryWire>('PATCH', `/memories/${pathId(memoryId)}`, {
-      content: body.content,
-      expires_at: expiresAt(body.expiry),
-    } satisfies Schemas['MemoryPatch']),
+    await ok<MemoryWire>(
+      api.PATCH('/v1/memories/{id}', {
+        params: { path: { id: memoryId } },
+        body: {
+          content: body.content,
+          expires_at: expiresAt(body.expiry),
+        } satisfies Schemas['MemoryPatch'],
+      }),
+    ),
   );
 
 export const forgetMemory = async (memoryId: string) =>
-  v1Send<void>('DELETE', `/memories/${pathId(memoryId)}`);
+  ok<void>(api.DELETE('/v1/memories/{id}', { params: { path: { id: memoryId } } }));

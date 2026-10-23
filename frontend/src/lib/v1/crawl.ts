@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 
 type Schemas = components['schemas'];
@@ -150,12 +150,22 @@ function readCrawlSource(
  */
 export const listCrawlSources = async (): Promise<Page<CrawlSource>> => {
   const [sources, runs, drifts] = await Promise.all([
-    v1Get<Page<CrawlSourceWire>>('/crawl-sources', { page_size: 500 }),
-    v1Get<Page<Schemas['CrawlRunView']>>('/crawl-runs', { status: 'in_review', page_size: 500 }),
-    v1Get<Page<Schemas['SchemaDriftItem']>>('/schema-drifts', {
-      resolution: 'open',
-      page_size: 500,
-    }),
+    ok<Page<CrawlSourceWire>>(
+      api.GET('/v1/crawl-sources', { params: { query: { page_size: 500 } } }),
+    ),
+    ok<Page<Schemas['CrawlRunView']>>(
+      api.GET('/v1/crawl-runs', { params: { query: { status: 'in_review', page_size: 500 } } }),
+    ),
+    ok<Page<Schemas['SchemaDriftItem']>>(
+      api.GET('/v1/schema-drifts', {
+        params: {
+          query: {
+            resolution: 'open',
+            page_size: 500,
+          },
+        },
+      }),
+    ),
   ]);
   const newest = (rows: { id: string; source_id: string }[]) => {
     const by = new Map<string, string>();
@@ -174,17 +184,24 @@ export const listCrawlSources = async (): Promise<Page<CrawlSource>> => {
 
 /** The newest version of the datasets the active consolidation specs write. */
 async function latestConsolidated(): Promise<AcquireSummary['latest_dataset']> {
-  const specs = await v1Get<Page<Schemas['ConsolidationSpecView']>>('/consolidation-specs', {
-    status: 'active',
-    page_size: 500,
-  });
+  const specs = await ok<Page<Schemas['ConsolidationSpecView']>>(
+    api.GET('/v1/consolidation-specs', {
+      params: {
+        query: {
+          status: 'active',
+          page_size: 500,
+        },
+      },
+    }),
+  );
   const versions = await Promise.all(
     specs.items
       .filter((spec) => spec.target_dataset_id)
       .map(async (spec) => {
-        const page = await v1Get<Page<Schemas['DatasetVersionView']>>(
-          `/datasets/${pathId(spec.target_dataset_id!)}/versions`,
-          { page_size: 1 },
+        const page = await ok<Page<Schemas['DatasetVersionView']>>(
+          api.GET('/v1/datasets/{id}/versions', {
+            params: { path: { id: spec.target_dataset_id! }, query: { page_size: 1 } },
+          }),
         );
         return page.items[0] ? { spec, version: page.items[0] } : null;
       }),
@@ -205,7 +222,9 @@ async function latestConsolidated(): Promise<AcquireSummary['latest_dataset']> {
 export const getAcquireSummary = async (): Promise<AcquireSummary> => {
   const [sources, runs, latest] = await Promise.all([
     listCrawlSources(),
-    v1Get<Page<Schemas['CrawlRunView']>>('/crawl-runs', { page_size: 500 }),
+    ok<Page<Schemas['CrawlRunView']>>(
+      api.GET('/v1/crawl-runs', { params: { query: { page_size: 500 } } }),
+    ),
     latestConsolidated().catch(() => null),
   ]);
   const items = sources.items;
@@ -238,7 +257,7 @@ export const getAcquireSummary = async (): Promise<AcquireSummary> => {
 
 /** A2: POST /v1/crawl-sources/{id}/runs (202); 409 when the source is not active or busy. */
 export const runCrawlSource = async (id: string) =>
-  v1Send<{ id: string }>('POST', `/crawl-sources/${pathId(id)}/runs`);
+  ok<{ id: string }>(api.POST('/v1/crawl-sources/{id}/runs', { params: { path: { id } } }));
 
 /* ─── Đăng ký nguồn (UC-14-01) ────────────────────────────────────────── */
 
@@ -265,7 +284,7 @@ export interface SourceSuggestion {
 }
 
 export const suggestCrawlSources = (goal: string) =>
-  v1Send<SourceSuggestion>('POST', '/crawl-sources:suggest', { goal });
+  okAs<SourceSuggestion>(api.POST('/v1/crawl-sources:suggest', { body: { goal } }));
 
 /** A2: POST /v1/crawl-sources — status draft; robots.txt checked, terms captured and hashed. */
 export const createCrawlSource = (body: {
@@ -279,11 +298,13 @@ export const createCrawlSource = (body: {
   rate_limit_rps: number;
   review_gate: ReviewGate;
   trust_level: number;
-}) => v1Send<{ id: string }>('POST', '/crawl-sources', body);
+}) => ok<{ id: string }>(api.POST('/v1/crawl-sources', { body }));
 
 /** A2: POST /v1/crawl-sources/{id}/schema-inference (202) — at least five samples. */
 export const inferCrawlSchema = async (id: string) =>
-  v1Send<{ id: string }>('POST', `/crawl-sources/${pathId(id)}/schema-inference`, {});
+  ok<{ id: string }>(
+    api.POST('/v1/crawl-sources/{id}/schema-inference', { params: { path: { id } }, body: {} }),
+  );
 
 /* ─── Suy ngược schema · chạy thử (UC-14-02) ──────────────────────────── */
 
@@ -391,16 +412,20 @@ interface CrawlSourceHeader {
 }
 
 export const getCrawlSource = async (id: string) =>
-  v1Get<CrawlSourceHeader>(`/crawl-sources/${pathId(id)}`);
+  ok<CrawlSourceHeader>(api.GET('/v1/crawl-sources/{id}', { params: { path: { id } } }));
 
 export const listCrawlSchemas = async (sourceId: string): Promise<Page<CrawlSchemaVersion>> => {
-  const page = await v1Get<Page<SchemaWire>>(`/crawl-sources/${pathId(sourceId)}/schemas`);
+  const page = await ok<Page<SchemaWire>>(
+    api.GET('/v1/crawl-sources/{id}/schemas', { params: { path: { id: sourceId } } }),
+  );
   return { ...page, items: page.items.map(readSchema) };
 };
 
 /** A2: :test (202) — on the held-out sample (at least 20 pages). */
 export const testCrawlSchema = async (id: string) =>
-  v1Send<{ id: string }>('POST', `/crawl-schemas/${pathId(id)}:test`, {});
+  ok<{ id: string }>(
+    api.POST('/v1/crawl-schemas/{id}:test', { params: { path: { id } }, body: {} }),
+  );
 
 /**
  * A2: :approve — active, previous superseded, source active (BR-151: 95% of required fields
@@ -409,10 +434,11 @@ export const testCrawlSchema = async (id: string) =>
  */
 export const approveCrawlSchema = async (id: string, fieldMappings: Record<string, string>) => {
   const choices = Object.entries(fieldMappings).map(([field, attr]) => `${field} → ${attr}`);
-  return v1Send<Schemas['CrawlSchemaVersionView']>(
-    'POST',
-    `/crawl-schemas/${pathId(id)}:approve`,
-    choices.length ? { note: `Thuộc tính chuẩn: ${choices.join(', ')}` } : {},
+  return ok<Schemas['CrawlSchemaVersionView']>(
+    api.POST('/v1/crawl-schemas/{id}:approve', {
+      params: { path: { id } },
+      body: choices.length ? { note: `Thuộc tính chuẩn: ${choices.join(', ')}` } : {},
+    }),
   );
 };
 
@@ -507,15 +533,20 @@ function diffFields(before: FieldMap, after: FieldMap): SchemaDrift['changes'] {
  * PROPOSAL, left empty.
  */
 export const getSchemaDrift = async (id: string): Promise<SchemaDrift> => {
-  const page = await v1Get<Page<DriftWire>>('/schema-drifts', { page_size: 500 });
+  const page = await ok<Page<DriftWire>>(
+    api.GET('/v1/schema-drifts', { params: { query: { page_size: 500 } } }),
+  );
   const raw = page.items.find((d) => d.id === id);
   if (!raw) throw new Error('Không tìm thấy sự cố đổi cấu trúc.');
   if (raw.display) return raw.display;
   const [source, schemas] = await Promise.all([
-    v1Get<Schemas['CrawlSourceDetail']>(`/crawl-sources/${pathId(raw.source_id)}`),
-    v1Get<Page<Schemas['CrawlSchemaVersionView']>>(
-      `/crawl-sources/${pathId(raw.source_id)}/schemas`,
-      { page_size: 500 },
+    ok<Schemas['CrawlSourceDetail']>(
+      api.GET('/v1/crawl-sources/{id}', { params: { path: { id: raw.source_id } } }),
+    ),
+    ok<Page<Schemas['CrawlSchemaVersionView']>>(
+      api.GET('/v1/crawl-sources/{id}/schemas', {
+        params: { path: { id: raw.source_id }, query: { page_size: 500 } },
+      }),
     ),
   ]);
   const from = schemas.items.find((v) => v.id === raw.from_version_id);
@@ -557,7 +588,10 @@ export const resolveSchemaDrift = async (
     proposed_version_id?: string;
     note?: string;
   },
-) => v1Send<Schemas['SchemaDriftItem']>('POST', `/schema-drifts/${pathId(id)}:resolve`, body);
+) =>
+  ok<Schemas['SchemaDriftItem']>(
+    api.POST('/v1/schema-drifts/{id}:resolve', { params: { path: { id } }, body }),
+  );
 
 /* ─── Duyệt dữ liệu thu thập (UC-14-04) ───────────────────────────────── */
 
@@ -645,7 +679,11 @@ const RECORD_STATUS: Record<string, ExtractedRecord['status']> = {
 };
 
 const runRecords = (runId: string) =>
-  v1Get<Page<RecordWire>>(`/crawl-runs/${pathId(runId)}/records`, { page_size: 500 });
+  ok<Page<RecordWire>>(
+    api.GET('/v1/crawl-runs/{id}/records', {
+      params: { path: { id: runId }, query: { page_size: 500 } },
+    }),
+  );
 
 const valueText = (v: unknown) =>
   v === null || v === undefined ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v);
@@ -685,10 +723,12 @@ function readRecord(raw: RecordWire): ExtractedRecord {
  * records (one page of 500); the source's name and review gate come from the source.
  */
 export const getCrawlRun = async (id: string): Promise<CrawlRun> => {
-  const run = await v1Get<RunWire>(`/crawl-runs/${pathId(id)}`);
+  const run = await ok<RunWire>(api.GET('/v1/crawl-runs/{id}', { params: { path: { id } } }));
   if (run.display) return run.display;
   const [source, records] = await Promise.all([
-    v1Get<Schemas['CrawlSourceDetail']>(`/crawl-sources/${pathId(run.source_id)}`),
+    ok<Schemas['CrawlSourceDetail']>(
+      api.GET('/v1/crawl-sources/{id}', { params: { path: { id: run.source_id } } }),
+    ),
     runRecords(run.id),
   ]);
   const undecided = records.items.filter((r) => UNDECIDED.has(r.status)).length;
@@ -733,7 +773,10 @@ export const reviewRecord = async (
     corrected_values?: Record<string, string>;
     reason?: string;
   },
-) => v1Send<Schemas['RecordReviewResult']>('POST', `/extracted-records/${pathId(id)}:review`, body);
+) =>
+  ok<Schemas['RecordReviewResult']>(
+    api.POST('/v1/extracted-records/{id}:review', { params: { path: { id } }, body }),
+  );
 
 /** A2: :bulk-review by filter — every pending record of the run with that reason. */
 export const bulkReviewRecords = ({
@@ -747,15 +790,21 @@ export const bulkReviewRecords = ({
   decision: 'confirm' | 'reject';
   reason: string;
 }) =>
-  v1Send<Schemas['BulkReviewResult']>('POST', '/extracted-records:bulk-review', {
-    decision,
-    filter: { run_id, review_reasons },
-    reason,
-  });
+  ok<Schemas['BulkReviewResult']>(
+    api.POST('/v1/extracted-records:bulk-review', {
+      body: {
+        decision,
+        filter: { run_id, review_reasons },
+        reason,
+      },
+    }),
+  );
 
 /** A2: :publish — 422 while blocking records remain (BR-153). */
 export const publishCrawlRun = async (id: string) =>
-  v1Send<Schemas['CrawlRunView']>('POST', `/crawl-runs/${pathId(id)}:publish`);
+  ok<Schemas['CrawlRunView']>(
+    api.POST('/v1/crawl-runs/{id}:publish', { params: { path: { id } } }),
+  );
 
 /* ─── Hợp nhất dữ liệu (UC-14-05) ─────────────────────────────────────── */
 
@@ -813,18 +862,32 @@ const LINK_METHOD: Record<string, string> = {
  * conflicts themselves are in Xung đột; the run only counts them.
  */
 export const getConsolidationRun = async (id: string): Promise<ConsolidationRun> => {
-  const run = await v1Get<ConsolidationWire>(`/consolidation-runs/${pathId(id)}`);
+  const run = await ok<ConsolidationWire>(
+    api.GET('/v1/consolidation-runs/{id}', { params: { path: { id } } }),
+  );
   if (run.display) return run.display;
-  const specs = await v1Get<Page<Schemas['ConsolidationSpecView']>>('/consolidation-specs', {
-    page_size: 500,
-  });
+  const specs = await ok<Page<Schemas['ConsolidationSpecView']>>(
+    api.GET('/v1/consolidation-specs', {
+      params: {
+        query: {
+          page_size: 500,
+        },
+      },
+    }),
+  );
   const spec = specs.items.find((s) => s.id === run.spec_id);
   const links = spec
-    ? await v1Get<Page<Schemas['EntityLinkView']>>('/entity-links', {
-        entity_type: spec.entity_type,
-        status: 'pending',
-        page_size: 500,
-      })
+    ? await ok<Page<Schemas['EntityLinkView']>>(
+        api.GET('/v1/entity-links', {
+          params: {
+            query: {
+              entity_type: spec.entity_type,
+              status: 'pending',
+              page_size: 500,
+            },
+          },
+        }),
+      )
     : { items: [] };
   const sources = new Set(spec?.source_ids ?? []);
   const name = spec?.name ?? 'Đặc tả hợp nhất';
@@ -866,14 +929,20 @@ export const getConsolidationRun = async (id: string): Promise<ConsolidationRun>
 
 /** A2: POST /v1/entity-links/{id}:decide — merge confirms the link, keeping apart rejects it. */
 export const decideEntityMatch = async (id: string, decision: 'merge' | 'split') =>
-  v1Send<Schemas['EntityLinkView']>('POST', `/entity-links/${pathId(id)}:decide`, {
-    status: decision === 'merge' ? 'confirmed' : 'rejected',
-  });
+  ok<Schemas['EntityLinkView']>(
+    api.POST('/v1/entity-links/{id}:decide', {
+      params: { path: { id } },
+      body: {
+        status: decision === 'merge' ? 'confirmed' : 'rejected',
+      },
+    }),
+  );
 
 /** A2: POST /v1/dataset-versions/{id}:certify — the person certifies the version the run wrote. */
 export const certifyDatasetVersion = async (datasetVersionId: string) =>
-  v1Send<Schemas['CertifiedVersion']>(
-    'POST',
-    `/dataset-versions/${pathId(datasetVersionId)}:certify`,
-    {},
+  ok<Schemas['CertifiedVersion']>(
+    api.POST('/v1/dataset-versions/{id}:certify', {
+      params: { path: { id: datasetVersionId } },
+      body: {},
+    }),
   );

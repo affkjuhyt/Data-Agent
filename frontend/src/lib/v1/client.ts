@@ -169,14 +169,58 @@ function fillPath(pathname: string, params: Record<string, unknown>): string {
   return pathname.replace(/\{([^}]+)\}/g, (_, name: string) => pathId(String(params[name] ?? '')));
 }
 
-export const api = createClient<paths>({
-  baseUrl: ORIGIN,
-  querySerializer: serializeQuery,
-  pathSerializer: fillPath,
-  // Looked up per request, not captured once: MSW replaces globalThis.fetch after this module loads.
-  fetch: (request) => globalThis.fetch(request),
-});
-api.use(v1Middleware);
+/*
+ * A request is abandoned after 15 s, or 60 s for an upload, a download or a stream; the caller's
+ * own signal (a closed screen) still aborts it sooner. The two are combined by hand because the
+ * tests' jsdom AbortSignal has no any().
+ */
+function clientWithin(ms: number) {
+  const client = createClient<paths>({
+    baseUrl: ORIGIN,
+    querySerializer: serializeQuery,
+    pathSerializer: fillPath,
+    // Looked up per request, not captured once: MSW replaces globalThis.fetch after this module loads.
+    fetch: async (request) => {
+      const deadline = new AbortController();
+      const timer = setTimeout(
+        () => deadline.abort(new DOMException('The request took too long.', 'TimeoutError')),
+        ms,
+      );
+      const cancel = () => deadline.abort(request.signal.reason);
+      if (request.signal.aborted) cancel();
+      else request.signal.addEventListener('abort', cancel, { once: true });
+      try {
+        return await globalThis.fetch(request, { signal: deadline.signal });
+      } finally {
+        clearTimeout(timer);
+        request.signal.removeEventListener('abort', cancel);
+      }
+    },
+  });
+  client.use(v1Middleware);
+  return client;
+}
+
+export const api = clientWithin(15_000);
+const slowApi = clientWithin(60_000);
+
+/**
+ * The body of a typed call. The middleware has already turned every failure into a V1Error, so
+ * what is left is the success, which openapi-fetch still types as optional.
+ */
+export async function ok<T>(request: Promise<{ data?: T }>): Promise<T> {
+  return (await request).data as T;
+}
+
+/**
+ * The body of a typed call whose screen reads more than the api's schema says it answers — fields
+ * marked PROPOSAL in types.ts, which only the mocks send so far. The path, parameters and body are
+ * still checked; the answer is taken as T unchecked, as v1Get did. Each use is a known gap
+ * between a screen and the api: when the api serves the fields, the call becomes ok().
+ */
+export async function okAs<T>(request: Promise<unknown>): Promise<T> {
+  return ((await request) as { data?: unknown }).data as T;
+}
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
@@ -192,11 +236,12 @@ async function untyped<T>(
     body?: unknown;
     headers?: Record<string, string>;
     parseAs?: 'json' | 'text' | 'blob';
-    signal: AbortSignal;
+    signal?: AbortSignal;
+    slow?: boolean;
   },
 ): Promise<T> {
-  const { query, ...rest } = init;
-  const request = api.request as unknown as (
+  const { query, slow, ...rest } = init;
+  const request = (slow ? slowApi : api).request as unknown as (
     method: Method,
     url: string,
     init: Record<string, unknown>,
@@ -209,13 +254,13 @@ async function untyped<T>(
 }
 
 export async function v1Get<T>(path: string, query?: Query): Promise<T> {
-  return untyped<T>('GET', path, { query, signal: AbortSignal.timeout(15_000) });
+  return untyped<T>('GET', path, { query });
 }
 
 export async function v1GetBlob(path: string): Promise<string> {
   const blob = await untyped<Blob>('GET', path, {
     parseAs: 'blob',
-    signal: AbortSignal.timeout(60_000),
+    slow: true,
   });
   return URL.createObjectURL(blob);
 }
@@ -231,7 +276,6 @@ export async function v1Send<T = unknown>(
     body,
     query: options.query,
     headers: options.ifMatch ? { 'If-Match': options.ifMatch } : undefined,
-    signal: AbortSignal.timeout(15_000),
   });
 }
 
@@ -244,7 +288,7 @@ export async function v1Upload<T = unknown>(
   return untyped<T>('POST', path, {
     body: form,
     headers: options.fileName ? { 'X-Upload-Filename': options.fileName } : undefined,
-    signal: AbortSignal.timeout(60_000),
+    slow: true,
   });
 }
 
@@ -269,7 +313,8 @@ export async function v1Events(
   const text = await untyped<string>('GET', path, {
     headers,
     parseAs: 'text',
-    signal: options.signal ?? AbortSignal.timeout(60_000),
+    signal: options.signal,
+    slow: true,
   });
   return (text ?? '')
     .split(/\r?\n\r?\n/)

@@ -1,4 +1,4 @@
-import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
+import { pathId, V1Error, v1Get, v1Send, type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 import type { AppUser, DataSpace } from './types';
 
@@ -119,15 +119,17 @@ function readAdminUser(raw: AdminUserWire): AdminUser {
 }
 
 export const listAdminUsers = async () => {
-  const page = await v1Get<Page<AdminUserWire>>('/admin/users', ALL);
+  const page = await ok<Page<AdminUserWire>>(
+    api.GET('/v1/admin/users', { params: { query: ALL } }),
+  );
   return { ...page, items: page.items.map(readAdminUser) };
 };
-export const listRoles = () => v1Get<Page<Role>>('/admin/roles', ALL);
-export const listGroups = () => v1Get<Page<UserGroup>>('/admin/groups', ALL);
+export const listRoles = () => ok<Page<Role>>(api.GET('/v1/admin/roles'));
+export const listGroups = () => okAs<Page<UserGroup>>(api.GET('/v1/admin/groups'));
 /** PROPOSAL: re-read people and groups from the identity source now (202). */
-export const syncDirectory = () => v1Send<{ status: string }>('POST', '/admin/directory:sync');
+export const syncDirectory = () => ok<{ status: string }>(api.POST('/v1/admin/directory:sync'));
 export const inviteUser = (body: Invitation) =>
-  v1Send<AdminUser>('POST', '/admin/invitations', body);
+  okAs<AdminUser>(api.POST('/v1/admin/invitations', { body }));
 
 /* ─── Data Space, thành viên và quyền (UC-11-08) ─────────────────────── */
 
@@ -244,7 +246,9 @@ const readSummary = (raw: DataSpaceWire): DataSpaceSummary => ({
 });
 
 export const listDataSpaceSummaries = async () => {
-  const page = await v1Get<Page<DataSpaceWire>>('/data-spaces', ALL);
+  const page = await ok<Page<DataSpaceWire>>(
+    api.GET('/v1/data-spaces', { params: { query: ALL } }),
+  );
   return { ...page, items: page.items.map(readSummary) };
 };
 
@@ -266,27 +270,42 @@ export const getDataSpace = async (id: string) =>
  * the api opens the space as it is and maps groups through PUT /v1/admin/group-mappings.
  */
 export const createDataSpace = async (body: CreateDataSpace) => {
-  const created = await v1Send<Schemas['DataSpaceView']>('POST', '/data-spaces', {
-    code: codeOf(body.name),
-    name: body.name,
-    description: body.description ?? null,
-    steward_id: body.steward_id,
-    default_policy: body.default_policy,
-  } satisfies Schemas['DataSpaceCreate']);
+  const created = await ok<Schemas['DataSpaceView']>(
+    api.POST('/v1/data-spaces', {
+      body: {
+        code: codeOf(body.name),
+        name: body.name,
+        description: body.description ?? null,
+        steward_id: body.steward_id,
+        default_policy: body.default_policy,
+      } satisfies Schemas['DataSpaceCreate'],
+    }),
+  );
   if (body.source_ids.length > 0)
-    await v1Send('PUT', `/data-spaces/${pathId(created.id)}/sources`, {
-      source_ids: body.source_ids,
-    });
+    await ok(
+      api.PUT('/v1/data-spaces/{id}/sources', {
+        params: { path: { id: created.id } },
+        body: {
+          source_ids: body.source_ids,
+        },
+      }),
+    );
   return created;
 };
 export const listMembers = async (id: string) =>
-  v1Get<Page<DataSpaceMember>>(`/data-spaces/${pathId(id)}/members`, ALL);
+  okAs<Page<DataSpaceMember>>(
+    api.GET('/v1/data-spaces/{id}/members', { params: { path: { id }, query: ALL } }),
+  );
 /** A2: PUT replaces the whole member list. */
 export const putMembers = async (id: string, members: MemberInput[]) =>
-  v1Send<Page<DataSpaceMember>>('PUT', `/data-spaces/${pathId(id)}/members`, { items: members });
+  // Untyped: MembersPut.row_scope is jsonb, the screen sends a named scope (PROPOSAL), so the api
+  // refuses a member with a scope; members without one go through.
+  v1Send<Page<DataSpaceMember>>('PUT', `/data-spaces/${pathId(id)}/members`, { members });
 export const getPermissions = async (id: string) =>
-  v1Get<PermissionMatrix>(`/data-spaces/${pathId(id)}/permissions`);
+  okAs<PermissionMatrix>(api.GET('/v1/data-spaces/{id}/permissions', { params: { path: { id } } }));
 export const simulatePermissions = (body: { data_space_id: Uuid; table?: string }) =>
+  // Untyped: PermissionSimulate takes dataset_id and role/user ids, not this PROPOSAL body; the api
+  // refuses it until the screen asks for a dataset.
   v1Send<PermissionSimulation>('POST', '/permissions:simulate', body);
 
 /* ─── Yêu cầu quyền (UC-11-07) ──────────────────────────────────────── */
@@ -348,18 +367,23 @@ export interface DecideAccess {
 /** PROPOSAL: GET /v1/access-requests (A2 has create and :decide only). */
 export const listAccessRequests = (
   query: { status?: AccessRequestStatus; data_space_id?: string } = {},
-) => v1Get<Page<AccessRequest>>('/access-requests', { ...ALL, ...query });
+) =>
+  okAs<Page<AccessRequest>>(
+    api.GET('/v1/access-requests', { params: { query: { ...ALL, ...query } } }),
+  );
 /** PROPOSAL: GET /v1/access-requests/{id} */
 export const getAccessRequest = async (id: string) =>
-  v1Get<AccessRequest>(`/access-requests/${pathId(id)}`);
+  okAs<AccessRequest>(api.GET('/v1/access-requests/{id}', { params: { path: { id } } }));
 export const decideAccessRequest = async (id: string, body: DecideAccess) =>
-  v1Send<AccessRequest>('POST', `/access-requests/${pathId(id)}:decide`, body);
+  okAs<AccessRequest>(
+    api.POST('/v1/access-requests/{id}:decide', { params: { path: { id } }, body }),
+  );
 export const requestAccess = (body: {
   data_space_id: Uuid;
   capability: AccessCapability;
   reason: string;
   requested_until: string;
-}) => v1Send<AccessRequest>('POST', '/access-requests', body);
+}) => okAs<AccessRequest>(api.POST('/v1/access-requests', { body }));
 
 /* ─── Chính sách dữ liệu (UC-11-02) ─────────────────────────────────── */
 
@@ -461,7 +485,7 @@ function readAccessPolicy(raw: AccessPolicyWire, spaces: Map<string, string>): A
 /** GET /v1/policies?type=access answers an array; the Data Space names come from the spaces. */
 export const listAccessPolicies = async (): Promise<Page<AccessPolicy>> => {
   const [rows, spaces] = await Promise.all([
-    v1Get<AccessPolicyWire[]>('/policies', { type: 'access' }),
+    okAs<AccessPolicyWire[]>(api.GET('/v1/policies', { params: { query: { type: 'access' } } })),
     listDataSpaceSummaries().catch(() => null),
   ]);
   const names = new Map<string, string>(spaces?.items.map((s) => [s.id, s.name]) ?? []);
@@ -471,7 +495,9 @@ export const listAccessPolicies = async (): Promise<Page<AccessPolicy>> => {
 /** GET /v1/policies/{id} answers either type; a behaviour policy is not shown here. */
 export const getAccessPolicy = async (id: string) => {
   const [raw, spaces] = await Promise.all([
-    v1Get<AccessPolicyWire | Schemas['BehaviorPolicyDetail']>(`/policies/${pathId(id)}`),
+    ok<AccessPolicyWire | Schemas['BehaviorPolicyDetail']>(
+      api.GET('/v1/policies/{id}', { params: { path: { id } } }),
+    ),
     listDataSpaceSummaries().catch(() => null),
   ]);
   if (raw.type !== 'access') throw new V1Error(404, 'not_found', 'Không tìm thấy chính sách.');
@@ -490,9 +516,14 @@ type SimulationWire = Schemas['SimulationView'] & { display?: PolicySimulation }
  * masked columns, without the policy and with it.
  */
 export const simulatePolicy = async (id: string, body: { user_id: Uuid; question: string }) => {
-  const raw = await v1Send<SimulationWire>('POST', `/policies/${pathId(id)}:simulate`, {
-    as_user_id: body.user_id,
-  } satisfies Schemas['PolicySimulate']);
+  const raw = await ok<SimulationWire>(
+    api.POST('/v1/policies/{id}:simulate', {
+      params: { path: { id } },
+      body: {
+        as_user_id: body.user_id,
+      } satisfies Schemas['PolicySimulate'],
+    }),
+  );
   if (raw.display) return raw.display;
   const masked = Object.keys((raw.masked_columns as Record<string, unknown> | undefined) ?? {});
   return {
@@ -509,17 +540,21 @@ export const simulatePolicy = async (id: string, body: { user_id: Uuid; question
  * back as latest_backtest on the policy. The mock answers the counts at once (PROPOSAL).
  */
 export const backtestPolicy = async (id: string): Promise<Backtest | null> => {
-  const raw = await v1Send<Schemas['BacktestAccepted'] | Backtest>(
-    'POST',
-    `/policies/${pathId(id)}:backtest`,
+  const raw = await ok<Schemas['BacktestAccepted'] | Backtest>(
+    api.POST('/v1/policies/{id}:backtest', { params: { path: { id } } }),
   );
   return 'total_queries' in raw ? raw : null;
 };
 /** :disable takes the reason, which the audit keeps. */
 export const disablePolicy = async (id: string, reason: string) =>
-  v1Send<AccessPolicy>('POST', `/policies/${pathId(id)}:disable`, {
-    reason,
-  } satisfies Schemas['PolicyDisable']);
+  okAs<AccessPolicy>(
+    api.POST('/v1/policies/{id}:disable', {
+      params: { path: { id } },
+      body: {
+        reason,
+      } satisfies Schemas['PolicyDisable'],
+    }),
+  );
 
 /* ─── Kiểm toán (UC-11-03) ──────────────────────────────────────────── */
 
@@ -616,11 +651,17 @@ function auditFilters(query: AuditQuery): Schemas['AuditFilters'] {
  */
 export const searchAudit = async (query: AuditQuery): Promise<Page<AuditEntry>> => {
   const [page, users] = await Promise.all([
-    v1Get<Page<AuditWire>>('/audit', {
-      page_size: 50,
-      page_token: query.page_token,
-      ...auditFilters(query),
-    }),
+    ok<Page<AuditWire>>(
+      api.GET('/v1/audit', {
+        params: {
+          query: {
+            page_size: 50,
+            page_token: query.page_token,
+            ...auditFilters(query),
+          },
+        },
+      }),
+    ),
     listAdminUsers().catch(() => null),
   ]);
   const names = new Map<string, string>(users?.items.map((u) => [u.id, u.display_name]) ?? []);
@@ -633,21 +674,28 @@ export const searchAudit = async (query: AuditQuery): Promise<Page<AuditEntry>> 
  * audit_read, who approves it in Cần bạn (BR-138).
  */
 export const exportAudit = (query: AuditQuery) =>
-  v1Send<Schemas['ExportAccepted']>('POST', '/audit:export', {
-    filters: auditFilters(query),
-    format: 'csv',
-  } satisfies Schemas['ExportIn']);
+  ok<Schemas['ExportAccepted']>(
+    api.POST('/v1/audit:export', {
+      body: {
+        filters: auditFilters(query),
+        format: 'csv',
+      } satisfies Schemas['ExportIn'],
+    }),
+  );
 
 /* openapi-typescript writes a free jsonb object as Record<string, never>; it holds anything. */
 export type AuditExport = Omit<Schemas['ExportJobView'], 'filters'> & {
   filters: Record<string, unknown>;
 };
 
-export const getAuditExport = (id: string) => v1Get<AuditExport>(`/audit/exports/${pathId(id)}`);
+export const getAuditExport = (id: string) =>
+  ok<AuditExport>(api.GET('/v1/audit/exports/{id}', { params: { path: { id } } }));
 
 /** Recomputes the hash chain; a break is also recorded as a security event. */
 export const verifyAuditChain = () =>
-  v1Send<Schemas['VerifyResult']>('POST', '/audit:verify', {} satisfies Schemas['VerifyIn']);
+  ok<Schemas['VerifyResult']>(
+    api.POST('/v1/audit:verify', { body: {} satisfies Schemas['VerifyIn'] }),
+  );
 
 export type SecurityEvent = Omit<Schemas['SecurityEventView'], 'detail'> & {
   detail: Record<string, unknown>;
@@ -657,7 +705,10 @@ export const listSecurityEvents = (query: {
   severity?: 'low' | 'medium' | 'high' | 'critical';
   status?: 'open' | 'investigating' | 'closed';
   page_token?: string;
-}) => v1Get<Page<SecurityEvent>>('/security-events', { page_size: 50, ...query });
+}) =>
+  ok<Page<SecurityEvent>>(
+    api.GET('/v1/security-events', { params: { query: { page_size: 50, ...query } } }),
+  );
 
 /* ─── Yêu cầu của chủ thể dữ liệu (UC-11-06) ───────────────────────── */
 
@@ -717,9 +768,11 @@ export interface CreateDsr {
 }
 
 /** PROPOSAL: GET /v1/dsr (A2 has create, get and :execute). */
-export const listDsr = () => v1Get<Page<DsrRequest>>('/dsr', ALL);
-export const getDsr = async (id: string) => v1Get<DsrRequest>(`/dsr/${pathId(id)}`);
+export const listDsr = () => okAs<Page<DsrRequest>>(api.GET('/v1/dsr', { params: { query: ALL } }));
+export const getDsr = async (id: string) => okAs<DsrRequest>(api.GET('/v1/dsr/{id}', { params: { path: { id } } }));
+// Untyped: DsrCreate also requires received_at, which the form does not ask for.
 export const createDsr = (body: CreateDsr) => v1Send<DsrRequest>('POST', '/dsr', body);
+// Untyped: DsrExecute takes items [{id, action, legal_basis}], the screen sends the ids it ticked.
 export const executeDsr = async (id: string, itemIds: string[]) =>
   v1Send<DsrRequest>('POST', `/dsr/${pathId(id)}:execute`, { item_ids: itemIds });
 /** PROPOSAL: :reject with a reason (status rejected). */

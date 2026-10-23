@@ -1,4 +1,4 @@
-import { pathId, v1Send } from './client';
+import { api, ok } from './client';
 import type { components } from './schema';
 
 /*
@@ -22,8 +22,6 @@ export interface PlanEdit {
 
 /** A2 returns the Plan; the screen only needs its version. */
 export const updateRunPlan = async (runId: string, edit: PlanEdit) =>
-  v1Send<components['schemas']['services__api__modules__agent__schemas__PlanView']>(
-    'PUT',
-    `/runs/${pathId(runId)}/plan`,
-    edit,
+  ok<components['schemas']['services__api__modules__agent__schemas__PlanView']>(
+    api.PUT('/v1/runs/{id}/plan', { params: { path: { id: runId } }, body: edit }),
   );

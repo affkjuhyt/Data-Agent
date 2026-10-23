@@ -1,4 +1,4 @@
-import { pathId, v1Send } from './client';
+import { api, ok } from './client';
 import type { components } from './schema';
 
 /*
@@ -28,8 +28,13 @@ interface AnswerReportInput {
 }
 
 export const reportAnswer = async (answerId: string, input: AnswerReportInput) =>
-  v1Send<Feedback>('POST', `/answers/${pathId(answerId)}/feedback`, {
-    rating: input.sendToSteward ? 'wrong' : 'down',
-    error_kind: ERROR_KIND[input.kind],
-    expected_value: input.correction ?? null,
-  } satisfies FeedbackCreate);
+  ok<Feedback>(
+    api.POST('/v1/answers/{id}/feedback', {
+      params: { path: { id: answerId } },
+      body: {
+        rating: input.sendToSteward ? 'wrong' : 'down',
+        error_kind: ERROR_KIND[input.kind],
+        expected_value: input.correction ?? null,
+      } satisfies FeedbackCreate,
+    }),
+  );

@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { type Page, api, ok } from './client';
 import type { components } from './schema';
 
 /*
@@ -122,10 +122,14 @@ export function readEntityDetail(raw: EntityDetailWire): EntityDetail {
 }
 
 export const getEntityModel = async () =>
-  readEntityModel(await v1Get<EntityPageWire>('/entities', { page_size: 500 }));
+  readEntityModel(
+    await ok<EntityPageWire>(api.GET('/v1/entities', { params: { query: { page_size: 500 } } })),
+  );
 
 export const getEntity = async (key: string) =>
-  readEntityDetail(await v1Get<EntityDetailWire>(`/entities/${pathId(key)}`));
+  readEntityDetail(
+    await ok<EntityDetailWire>(api.GET('/v1/entities/{key}', { params: { path: { key } } })),
+  );
 
 /* ─── Từ điển nghiệp vụ ─────────────────────────────────────────────── */
 
@@ -186,7 +190,9 @@ function readGlossary(raw: GlossaryWire): GlossaryEntry {
 
 /** `view=glossary` (PROPOSAL) asks for the reading fields; the api sends TermView. */
 export const listGlossary = async () => {
-  const page = await v1Get<Page<GlossaryWire>>('/terms', { view: 'glossary', page_size: 500 });
+  const page = await ok<Page<GlossaryWire>>(
+    api.GET('/v1/terms', { params: { query: { view: 'glossary', page_size: 500 } } }),
+  );
   return { ...page, items: page.items.map(readGlossary) };
 };
 
@@ -222,13 +228,15 @@ const readUnknown = (raw: UnknownPhraseWire): UnknownPhrase => ({
 });
 
 export const listUnknownPhrases = async () => {
-  const page = await v1Get<Page<UnknownPhraseWire>>('/unmapped-phrases', { page_size: 500 });
+  const page = await ok<Page<UnknownPhraseWire>>(
+    api.GET('/v1/unmapped-phrases', { params: { query: { page_size: 500 } } }),
+  );
   return { ...page, items: page.items.map(readUnknown) };
 };
 
 /** A2: POST /v1/terms — a new term waits for review (pending_review). */
 export const createTerm = async (body: { term: string; definition: string }) =>
-  readGlossary(await v1Send<GlossaryWire>('POST', '/terms', body));
+  readGlossary(await ok<GlossaryWire>(api.POST('/v1/terms', { body })));
 
 /* ─── Đánh giá lớp ngữ cảnh ─────────────────────────────────────────── */
 
@@ -334,14 +342,22 @@ export function readContextEval(raw: EvalSetWire): ContextEval {
 }
 
 export const getContextEval = async (id: string) =>
-  readContextEval(await v1Get<EvalSetWire>(`/eval-sets/${pathId(id)}`));
+  readContextEval(
+    await ok<EvalSetWire>(api.GET('/v1/eval-sets/{id}', { params: { path: { id } } })),
+  );
 
 /** A2: GET /v1/eval-sets?subject_type=context — the sets of the current Data Space. */
 export const listEvalSets = async () => {
-  const page = await v1Get<Page<EvalSetRowWire>>('/eval-sets', {
-    subject_type: 'context',
-    page_size: 500,
-  });
+  const page = await ok<Page<EvalSetRowWire>>(
+    api.GET('/v1/eval-sets', {
+      params: {
+        query: {
+          subject_type: 'context',
+          page_size: 500,
+        },
+      },
+    }),
+  );
   return {
     ...page,
     items: page.items.map((item) => ({ id: item.id, data_space_name: item.name })),
@@ -350,4 +366,6 @@ export const listEvalSets = async () => {
 
 /** A2: POST /v1/eval-sets/{id}/runs (202) */
 export const runContextEval = async (id: string) =>
-  v1Send<{ id: string; status: string }>('POST', `/eval-sets/${pathId(id)}/runs`, {});
+  ok<{ id: string; status: string }>(
+    api.POST('/v1/eval-sets/{id}/runs', { params: { path: { id } }, body: {} }),
+  );

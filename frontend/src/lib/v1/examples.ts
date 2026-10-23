@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { type Page, api, ok } from './client';
 import type { components } from './schema';
 
 type Schemas = components['schemas'];
@@ -108,7 +108,9 @@ function readSynonyms(rows: SynonymWire[]): Synonym[] {
 
 /** A rejected example is out of the list; drafts and suggestions wait under "Chờ xem". */
 export const listExamples = async () => {
-  const page = await v1Get<Page<ExampleWire>>('/examples', { page_size: 500 });
+  const page = await ok<Page<ExampleWire>>(
+    api.GET('/v1/examples', { params: { query: { page_size: 500 } } }),
+  );
   return {
     ...page,
     items: page.items.filter((e) => e.status !== 'rejected').map(readExample),
@@ -117,28 +119,42 @@ export const listExamples = async () => {
 
 /** Rejected synonyms are left out; a pending one already steers the agent only once approved. */
 export const listSynonyms = async () => {
-  const page = await v1Get<Page<SynonymWire>>('/synonyms', { page_size: 500 });
+  const page = await ok<Page<SynonymWire>>(
+    api.GET('/v1/synonyms', { params: { query: { page_size: 500 } } }),
+  );
   return { ...page, items: readSynonyms(page.items.filter((s) => s.status !== 'rejected')) };
 };
 
 /** A2: 422 validation_failed when the SQL is not one read-only SELECT. */
 export const addExample = async (body: { question: string; sql: string }) =>
   readExample(
-    await v1Send<ExampleWire>('POST', '/examples', body satisfies Schemas['ExampleCreate']),
+    await ok<ExampleWire>(
+      api.POST('/v1/examples', { body: body satisfies Schemas['ExampleCreate'] }),
+    ),
   );
 
 /** A2: PATCH /v1/examples/{id} — the SQL is run again before it is saved. */
 export const updateExampleSql = async (id: string, sql: string) =>
   readExample(
-    await v1Send<ExampleWire>('PATCH', `/examples/${pathId(id)}`, {
-      sql,
-    } satisfies Schemas['ExamplePatch']),
+    await ok<ExampleWire>(
+      api.PATCH('/v1/examples/{id}', {
+        params: { path: { id } },
+        body: {
+          sql,
+        } satisfies Schemas['ExamplePatch'],
+      }),
+    ),
   );
 
 /** A2: PATCH {status: active} marks a suggestion correct; it joins the standard question set. */
 export const verifyExample = async (id: string) =>
   readExample(
-    await v1Send<ExampleWire>('PATCH', `/examples/${pathId(id)}`, {
-      status: 'active',
-    } satisfies Schemas['ExamplePatch']),
+    await ok<ExampleWire>(
+      api.PATCH('/v1/examples/{id}', {
+        params: { path: { id } },
+        body: {
+          status: 'active',
+        } satisfies Schemas['ExamplePatch'],
+      }),
+    ),
   );

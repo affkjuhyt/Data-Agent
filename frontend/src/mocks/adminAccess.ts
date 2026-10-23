@@ -926,9 +926,9 @@ export function createAdminAccessHandlers() {
       const id = String(params.id);
       if (!spaces.some((s) => s.id === id))
         return problem(404, 'not_found', 'Không tìm thấy Data Space.');
-      const body = (await request.json()) as { items: MemberInput[] };
+      const body = (await request.json()) as { members: MemberInput[] };
       const groups = groupsFixture();
-      members[id] = body.items.map((input) => {
+      members[id] = body.members.map((input) => {
         const existing = membersOf(id).find(
           (m) => m.principal_id === input.principal_id && m.role_id === input.role_id,
         );

@@ -1,4 +1,4 @@
-import { v1Get } from './client';
+import { api, ok } from './client';
 import type { components } from './schema';
 
 /*
@@ -14,7 +14,7 @@ type RoleGrant = components['schemas']['RoleGrant'];
 /** capabilities: the organisation-wide ones (A1.2); a Data Space can add more. */
 export type Me = components['schemas']['Me'];
 
-export const getMe = () => v1Get<Me>('/me');
+export const getMe = () => ok<Me>(api.GET('/v1/me'));
 
 /** "Chuyên viên phân tích (nhóm GRP-RISK-ANALYST)" for each grant, as the profile shows it. */
 export const roleLabel = (grant: RoleGrant): string =>

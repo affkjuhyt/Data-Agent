@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { type Page, api, ok } from './client';
 import type { components } from './schema';
 
 /*
@@ -200,11 +200,17 @@ function readProduct(raw: ProductDetailWire): AnswerProduct {
 
 /** The api lists the context layer's products only (A2 has no read for published ones). */
 export const listAnswerProducts = async (status?: ProductStatus) => {
-  const page = await v1Get<Page<ProductSummaryWire>>('/data-products', {
-    layer: 'context',
-    status,
-    page_size: 100,
-  });
+  const page = await ok<Page<ProductSummaryWire>>(
+    api.GET('/v1/data-products', {
+      params: {
+        query: {
+          layer: 'context',
+          status,
+          page_size: 100,
+        },
+      },
+    }),
+  );
   return {
     ...page,
     items: page.items.map(readSummary),
@@ -212,7 +218,9 @@ export const listAnswerProducts = async (status?: ProductStatus) => {
 };
 
 export const getAnswerProduct = async (id: string) =>
-  readProduct(await v1Get<ProductDetailWire>(`/data-products/${pathId(id)}`));
+  readProduct(
+    await ok<ProductDetailWire>(api.GET('/v1/data-products/{id}', { params: { path: { id } } })),
+  );
 
 /** PROPOSAL: the commitment and grace in words; the mock sends them under `display`. */
 type FreshnessWire = Schemas['FreshnessReport'] & { display?: ProductFreshness };
@@ -245,17 +253,27 @@ function readFreshness(raw: FreshnessWire): ProductFreshness {
 
 export const getProductFreshness = async (id: string) =>
   readFreshness(
-    await v1Get<FreshnessWire>(`/data-products/${pathId(id)}/freshness`, { periods: 8 }),
+    await ok<FreshnessWire>(
+      api.GET('/v1/data-products/{id}/freshness', {
+        params: { path: { id }, query: { periods: 8 } },
+      }),
+    ),
   );
 
 /** A2: PATCH on an active product returns the draft version + 1; the old one serves until approved. */
 export const draftProductVersion = async (id: string) =>
-  v1Send<ProductRow>('PATCH', `/data-products/${pathId(id)}`, {});
+  ok<ProductRow>(api.PATCH('/v1/data-products/{id}', { params: { path: { id } }, body: {} }));
 
 /** A2: :submit runs the product's eval; at 95% on 10+ questions it goes to Cần bạn (BR-175). */
 export const submitAnswerProduct = async (id: string, note?: string) =>
-  v1Send<Schemas['DataProductSubmitted']>('POST', `/data-products/${pathId(id)}:submit`, { note });
+  ok<Schemas['DataProductSubmitted']>(
+    api.POST('/v1/data-products/{id}:submit', { params: { path: { id } }, body: { note } }),
+  );
 
 /** A2: DELETE a member; refused for the primary of an active version (a new version is needed). */
 export const removeProductMember = async (id: string, memberId: string) =>
-  v1Send<void>('DELETE', `/data-products/${pathId(id)}/members/${pathId(memberId)}`);
+  ok<void>(
+    api.DELETE('/v1/data-products/{id}/members/{member_id}', {
+      params: { path: { id, member_id: memberId } },
+    }),
+  );

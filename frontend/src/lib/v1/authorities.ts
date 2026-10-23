@@ -1,5 +1,5 @@
 import { listSources } from './api';
-import { v1Get, v1Send, type Page } from './client';
+import { type Page, api, ok } from './client';
 import type { components } from './schema';
 
 /*
@@ -97,7 +97,9 @@ function readAuthority(
 
 export const listSourceAuthorities = async (): Promise<Page<SourceAuthority>> => {
   const [page, sources] = await Promise.all([
-    v1Get<Page<AuthorityWire>>('/source-authorities', { page_size: 500 }),
+    ok<Page<AuthorityWire>>(
+      api.GET('/v1/source-authorities', { params: { query: { page_size: 500 } } }),
+    ),
     listSources().catch(() => null),
   ]);
   const byId = new Map<string, { name: string; level: string; kind: string }>(
@@ -115,8 +117,12 @@ export const saveSourceAuthority = (body: {
   ranking: string[];
   materiality: string | null;
 }) =>
-  v1Send<AuthorityWire>('PUT', '/source-authorities', {
-    data_kind: body.data_kind,
-    ranking: body.ranking,
-    materiality: parseMateriality(body.materiality),
-  } satisfies components['schemas']['SourceAuthorityPut']);
+  ok<AuthorityWire>(
+    api.PUT('/v1/source-authorities', {
+      body: {
+        data_kind: body.data_kind,
+        ranking: body.ranking,
+        materiality: parseMateriality(body.materiality),
+      } satisfies components['schemas']['SourceAuthorityPut'],
+    }),
+  );

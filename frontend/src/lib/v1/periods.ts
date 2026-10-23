@@ -1,4 +1,4 @@
-import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
+import { V1Error, type Page, api, ok } from './client';
 import type { components } from './schema';
 
 type Schemas = components['schemas'];
@@ -148,21 +148,22 @@ function reconciliationStep(raw: PeriodDetailWire): CloseStep {
 }
 
 export const listPeriods = async () => {
-  const page = await v1Get<Page<PeriodWire>>('/periods', { page_size: 500 });
+  const page = await ok<Page<PeriodWire>>(
+    api.GET('/v1/periods', { params: { query: { page_size: 500 } } }),
+  );
   return { ...page, items: page.items.map(readSummary) };
 };
 
 export const getPeriod = async (id: string) =>
-  readClose(await v1Get<PeriodDetailWire>(`/periods/${pathId(id)}`));
+  readClose(await ok<PeriodDetailWire>(api.GET('/v1/periods/{id}', { params: { path: { id } } })));
 
 /**
  * A2: :close (202) — the worker snapshots, hashes and reconciles, then locks the period and
  * freezes its figures; afterwards every change goes through a retro change.
  */
 export const startPeriodClose = async (id: string) =>
-  v1Send<{ id: string; status: string; poll_after_ms?: number }>(
-    'POST',
-    `/periods/${pathId(id)}:close`,
+  ok<{ id: string; status: string; poll_after_ms?: number }>(
+    api.POST('/v1/periods/{id}:close', { params: { path: { id } } }),
   );
 
 /* ─── Thay đổi hồi tố (period.retro_change, UC-10-04) ─────────────────── */
@@ -251,7 +252,11 @@ function readRetro(raw: RetroWire, period: PeriodSummary | undefined): RetroChan
 async function listRetroChanges(): Promise<RetroChange[]> {
   const periods = (await listPeriods()).items;
   const pages = await Promise.all(
-    periods.map((p) => v1Get<Page<RetroWire>>(`/periods/${pathId(p.id)}/retro-changes`)),
+    periods.map((p) =>
+      ok<Page<RetroWire>>(
+        api.GET('/v1/periods/{id}/retro-changes', { params: { path: { id: p.id } } }),
+      ),
+    ),
   );
   return pages.flatMap((page, i) => page.items.map((r) => readRetro(r, periods[i])));
 }
@@ -275,10 +280,15 @@ export const decideRetroChange = async (
   id: string,
   body: { decision: 'new_version' | 'no_change'; decision_note: string },
 ) =>
-  v1Send<RetroWire>('POST', `/retro-changes/${pathId(id)}:decide`, {
-    decision: body.decision === 'no_change' ? 'no_action' : 'new_version',
-    decision_note: body.decision_note,
-  } satisfies Schemas['RetroDecision']);
+  ok<RetroWire>(
+    api.POST('/v1/retro-changes/{id}:decide', {
+      params: { path: { id } },
+      body: {
+        decision: body.decision === 'no_change' ? 'no_action' : 'new_version',
+        decision_note: body.decision_note,
+      } satisfies Schemas['RetroDecision'],
+    }),
+  );
 
 /* ─── So sánh hai bản (UC-10-05) ──────────────────────────────────────── */
 
@@ -328,7 +338,9 @@ const CAUSE: Record<string, string> = {
 
 /** A retro change makes a new period_close of the same label with version + 1 (BR-43). */
 async function listCloses(): Promise<Schemas['PeriodCloseView'][]> {
-  const page = await v1Get<Page<PeriodWire>>('/periods', { page_size: 500 });
+  const page = await ok<Page<PeriodWire>>(
+    api.GET('/v1/periods', { params: { query: { page_size: 500 } } }),
+  );
   return [...page.items].sort(
     (x, y) =>
       y.business_date.localeCompare(x.business_date) ||
@@ -373,13 +385,16 @@ export async function comparePeriodVersions(
 ): Promise<PeriodComparison> {
   const closes = await listCloses().catch(() => null);
   const [a, b] = left && right ? [left, right] : defaultPair(closes ?? []);
-  const raw = await v1Get<CompareWire>('/periods/compare', { a, b });
+  const raw = await ok<CompareWire>(
+    api.GET('/v1/periods/compare', { params: { query: { a, b } } }),
+  );
   if (raw.display) return raw.display;
   const retro = new Map<string, string>();
   if (raw.rows_id) {
-    const rows = await v1Get<Page<Schemas['DiffRow']>>(
-      `/periods/compare/${pathId(raw.rows_id)}/rows`,
-      { page_size: 500 },
+    const rows = await ok<Page<Schemas['DiffRow']>>(
+      api.GET('/v1/periods/compare/{id}/rows', {
+        params: { path: { id: raw.rows_id }, query: { page_size: 500 } },
+      }),
     ).catch(() => null);
     for (const row of rows?.items ?? [])
       retro.set(rowKey(row.metric_version_id, row.dimension_key), row.retro_change_id);

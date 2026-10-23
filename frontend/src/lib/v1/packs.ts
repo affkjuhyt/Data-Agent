@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, v1Upload, type Page } from './client';
+import { pathId, v1Get, v1Upload, type Page, api, ok } from './client';
 import type { components } from './schema';
 
 /*
@@ -80,7 +80,7 @@ export function readPack(raw: PackWire): IndustryPack {
  * read about but not installed, upgraded or authored from the list.
  */
 export const listPacks = async () => {
-  const page = await v1Get<Page<PackWire>>('/packs');
+  const page = await ok<Page<PackWire>>(api.GET('/v1/packs'));
   return { items: page.items.map(readPack) };
 };
 
@@ -140,21 +140,28 @@ export const createPack = async (body: {
   includes: string[];
 }) => {
   const base = body.based_on_version_id
-    ? await v1Get<PackVersionWire>(`/pack-versions/${pathId(body.based_on_version_id)}`)
+    ? await ok<PackVersionWire>(
+        api.GET('/v1/pack-versions/{id}', { params: { path: { id: body.based_on_version_id } } }),
+      )
     : null;
-  const pack = await v1Send<Schemas['IndustryPackView']>('POST', '/packs', {
-    code: packCode(body.name),
-    name: body.name,
-  } satisfies Schemas['PackCreate']);
-  const draft = await v1Send<Schemas['PackVersionView']>(
-    'POST',
-    `/packs/${pathId(pack.id)}/versions`,
-    {
-      version: '0.1',
-      // The schema types the manifest as an empty object; the api reads entities, metrics, rules, skills.
-      manifest: draftManifest(base, body.includes) as Schemas['PackVersionCreate']['manifest'],
-      min_core_version: base?.min_core_version ?? CORE_VERSION,
-    } satisfies Schemas['PackVersionCreate'],
+  const pack = await ok<Schemas['IndustryPackView']>(
+    api.POST('/v1/packs', {
+      body: {
+        code: packCode(body.name),
+        name: body.name,
+      } satisfies Schemas['PackCreate'],
+    }),
+  );
+  const draft = await ok<Schemas['PackVersionView']>(
+    api.POST('/v1/packs/{id}/versions', {
+      params: { path: { id: pack.id } },
+      body: {
+        version: '0.1',
+        // The schema types the manifest as an empty object; the api reads entities, metrics, rules, skills.
+        manifest: draftManifest(base, body.includes) as Schemas['PackVersionCreate']['manifest'],
+        min_core_version: base?.min_core_version ?? CORE_VERSION,
+      } satisfies Schemas['PackVersionCreate'],
+    }),
   );
   return { id: pack.id, draft_version_id: draft.id };
 };
@@ -217,15 +224,21 @@ export function readPackVersion(raw: PackVersionWire, packName: string): PackVer
 }
 
 export const getPackVersion = async (id: string) => {
-  const raw = await v1Get<PackVersionWire>(`/pack-versions/${pathId(id)}`);
+  const raw = await ok<PackVersionWire>(
+    api.GET('/v1/pack-versions/{id}', { params: { path: { id } } }),
+  );
   return readPackVersion(raw, await packName(raw.pack_id));
 };
 
 /** A2: POST /v1/pack-installs — into the current Data Space (X-Data-Space). */
 export const installPack = async (packVersionId: string) =>
-  v1Send<Schemas['PackInstallView']>('POST', '/pack-installs', {
-    pack_version_id: packVersionId,
-  });
+  ok<Schemas['PackInstallView']>(
+    api.POST('/v1/pack-installs', {
+      body: {
+        pack_version_id: packVersionId,
+      },
+    }),
+  );
 
 /* ─── Đưa vào ngành ─────────────────────────────────────────────────── */
 
@@ -261,7 +274,9 @@ export function readPackInstall(raw: PackInstallWire): PackInstall {
 }
 
 export const getPackInstall = async (id: string) =>
-  readPackInstall(await v1Get<PackInstallWire>(`/pack-installs/${pathId(id)}`));
+  readPackInstall(
+    await ok<PackInstallWire>(api.GET('/v1/pack-installs/{id}', { params: { path: { id } } })),
+  );
 
 /** The installs still onboarding, from GET /v1/packs (installed); empty while it lacks them. */
 export const listPackInstalls = async () => ({
@@ -336,7 +351,9 @@ export function readEntityMappings(
 
 export const getEntityMappings = async (install: PackInstall, entity: string) => {
   const [version, items] = await Promise.all([
-    v1Get<PackVersionWire>(`/pack-versions/${pathId(install.pack_version_id)}`),
+    ok<PackVersionWire>(
+      api.GET('/v1/pack-versions/{id}', { params: { path: { id: install.pack_version_id } } }),
+    ),
     allPages<MappingWire>(`/pack-installs/${pathId(install.id)}/mappings`, { entity }),
   ]);
   return readEntityMappings(version, items, entity);
@@ -373,10 +390,8 @@ export const saveMappings = async (
       ...approved.map((m) => ({ ...m, origin: 'confirmed' as const })),
     ],
   };
-  await v1Send<Schemas['EntityMappingView'][]>(
-    'PUT',
-    `/pack-installs/${pathId(installId)}/mappings`,
-    body,
+  await ok<Schemas['EntityMappingView'][]>(
+    api.PUT('/v1/pack-installs/{id}/mappings', { params: { path: { id: installId } }, body }),
   );
   return { approved: approved.length };
 };
@@ -459,23 +474,25 @@ export const getCalibration = async (installId: string): Promise<Calibration> =>
       findings: [],
       after_text: AFTER_CALIBRATION,
     };
-  const run = await v1Get<CalibrationRunWire>(
-    `/calibration-runs/${pathId(install.latest_calibration_run_id)}`,
+  const run = await ok<CalibrationRunWire>(
+    api.GET('/v1/calibration-runs/{id}', {
+      params: { path: { id: install.latest_calibration_run_id } },
+    }),
   );
   return readCalibrationRun(run, install);
 };
 
 /** A2: :calibrate (202) — reconcile again, e.g. after the mappings changed (UC-09-02 5a). */
 export const calibratePackInstall = async (installId: string) =>
-  v1Send<{ id: string; status: string }>(
-    'POST',
-    `/pack-installs/${pathId(installId)}:calibrate`,
-    {},
+  ok<{ id: string; status: string }>(
+    api.POST('/v1/pack-installs/{id}:calibrate', { params: { path: { id: installId } }, body: {} }),
   );
 
 /** A2: :activate — 422 while a regulatory metric differs with no approved override (BR-36). */
 export const activatePackInstall = async (installId: string) =>
-  v1Send<Schemas['PackInstallView']>('POST', `/pack-installs/${pathId(installId)}:activate`);
+  ok<Schemas['PackInstallView']>(
+    api.POST('/v1/pack-installs/{id}:activate', { params: { path: { id: installId } } }),
+  );
 
 /* ─── Hiệu chỉnh chỉ số ─────────────────────────────────────────────── */
 
@@ -484,7 +501,7 @@ export const activatePackInstall = async (installId: string) =>
  * reviewer decides in Cần bạn. A gap in the calibration is accepted only this way (BR-36).
  */
 export const createMetricOverride = async (body: Schemas['MetricOverrideCreate']) =>
-  v1Send<Schemas['MetricOverrideView']>('POST', '/metric-overrides', body);
+  ok<Schemas['MetricOverrideView']>(api.POST('/v1/metric-overrides', { body }));
 
 /** GET /v1/metric-overrides/{id} */
 export interface MetricOverride {
@@ -551,9 +568,13 @@ export function readMetricOverride(
 }
 
 export const getMetricOverride = async (id: string) => {
-  const raw = await v1Get<MetricOverrideWire>(`/metric-overrides/${pathId(id)}`);
+  const raw = await ok<MetricOverrideWire>(
+    api.GET('/v1/metric-overrides/{id}', { params: { path: { id } } }),
+  );
   const run = raw.calibration_run_id
-    ? await v1Get<CalibrationRunWire>(`/calibration-runs/${pathId(raw.calibration_run_id)}`)
+    ? await ok<CalibrationRunWire>(
+        api.GET('/v1/calibration-runs/{id}', { params: { path: { id: raw.calibration_run_id } } }),
+      )
     : null;
   return readMetricOverride(raw, run);
 };
@@ -658,10 +679,12 @@ export function readPackUpgrade(
 }
 
 export const getPackUpgrade = async (id: string) => {
-  const raw = await v1Get<PackUpgradeWire>(`/pack-upgrades/${pathId(id)}`);
+  const raw = await ok<PackUpgradeWire>(
+    api.GET('/v1/pack-upgrades/{id}', { params: { path: { id } } }),
+  );
   const [from, to] = await Promise.all(
     [raw.from_version_id, raw.to_version_id].map((v) =>
-      v1Get<PackVersionWire>(`/pack-versions/${pathId(v)}`),
+      ok<PackVersionWire>(api.GET('/v1/pack-versions/{id}', { params: { path: { id: v } } })),
     ),
   );
   return readPackUpgrade(raw, {
@@ -676,15 +699,25 @@ export const decidePackUpgrade = async (
   id: string,
   decisions: { code: string; kind: 'metric' | 'mapping'; decision: UpgradeChoice }[],
 ) =>
-  v1Send<Schemas['PackUpgradeView']>('PUT', `/pack-upgrades/${pathId(id)}/decisions`, {
-    decisions,
-  } satisfies Schemas['DecisionsPut']);
+  ok<Schemas['PackUpgradeView']>(
+    api.PUT('/v1/pack-upgrades/{id}/decisions', {
+      params: { path: { id } },
+      body: {
+        decisions,
+      } satisfies Schemas['DecisionsPut'],
+    }),
+  );
 
 /** A2: :apply — after the test run passed, by someone other than who started it. */
 export const applyPackUpgrade = async (id: string) =>
-  v1Send<Schemas['PackUpgradeView']>('POST', `/pack-upgrades/${pathId(id)}:apply`, {
-    apply_from_period: null,
-  });
+  ok<Schemas['PackUpgradeView']>(
+    api.POST('/v1/pack-upgrades/{id}:apply', {
+      params: { path: { id } },
+      body: {
+        apply_from_period: null,
+      },
+    }),
+  );
 
 /* ─── Biên soạn gói ─────────────────────────────────────────────────── */
 
@@ -765,7 +798,9 @@ export function readPackDraft(raw: PackVersionWire, packName: string): PackDraft
 }
 
 export const getPackDraft = async (id: string) => {
-  const raw = await v1Get<PackVersionWire>(`/pack-versions/${pathId(id)}`);
+  const raw = await ok<PackVersionWire>(
+    api.GET('/v1/pack-versions/{id}', { params: { path: { id } } }),
+  );
   return readPackDraft(raw, await packName(raw.pack_id));
 };
 
@@ -778,8 +813,8 @@ export const listPackDrafts = async () => ({
 
 /** A2: :validate (202) */
 export const validatePackVersion = async (id: string) =>
-  v1Send<unknown>('POST', `/pack-versions/${pathId(id)}:validate`);
+  ok<unknown>(api.POST('/v1/pack-versions/{id}:validate', { params: { path: { id } } }));
 
 /** A2: :publish — 409 until checks pass, 422 when a metric lacks grounds (BR-131). */
 export const publishPackVersion = async (id: string) =>
-  v1Send<{ id: string }>('POST', `/pack-versions/${pathId(id)}:publish`);
+  ok<{ id: string }>(api.POST('/v1/pack-versions/{id}:publish', { params: { path: { id } } }));

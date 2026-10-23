@@ -1,5 +1,5 @@
 import { formatDate, formatDateTime } from '../formatVN';
-import { pathId, v1Get, v1Send, V1Error, type Page } from './client';
+import { v1Get, V1Error, type Page, api, ok } from './client';
 import type { components } from './schema';
 
 type Schemas = components['schemas'];
@@ -183,10 +183,14 @@ export function readReport(raw: ReportScheduleWire): ReportSchedule {
 }
 
 export const listReports = async () =>
-  v1Get<Page<Schemas['ReportScheduleView']>>('/reports', { page_size: 50, kind: 'report' });
+  ok<Page<Schemas['ReportScheduleView']>>(
+    api.GET('/v1/reports', { params: { query: { page_size: 50, kind: 'report' } } }),
+  );
 
 export const getReport = async (id: string) =>
-  readReport(await v1Get<ReportScheduleWire>(`/reports/${pathId(id)}`));
+  readReport(
+    await ok<ReportScheduleWire>(api.GET('/v1/reports/{id}', { params: { path: { id } } })),
+  );
 
 /** A2 PATCH takes `status`; `sections` and `require_publish_check` are PROPOSAL (see above). */
 export const updateReport = async (
@@ -194,18 +198,21 @@ export const updateReport = async (
   patch: Partial<Pick<ReportSchedule, 'require_publish_check' | 'status'>> & {
     sections?: ReportSection[];
   },
-) => v1Send<ReportScheduleWire>('PATCH', `/reports/${pathId(id)}`, patch);
+) =>
+  ok<ReportScheduleWire>(api.PATCH('/v1/reports/{id}', { params: { path: { id } }, body: patch }));
 
 export const pauseReport = async (id: string) =>
-  v1Send<ReportScheduleWire>('POST', `/reports/${pathId(id)}:pause`);
+  ok<ReportScheduleWire>(api.POST('/v1/reports/{id}:pause', { params: { path: { id } } }));
 
 /** A2 :run-now: a real run for every recipient, with today's figures. 202 names the run. */
 export const runReportNow = async (id: string) =>
-  v1Send<{ id: string }>('POST', `/reports/${pathId(id)}:run-now`, {});
+  ok<{ id: string }>(api.POST('/v1/reports/{id}:run-now', { params: { path: { id } }, body: {} }));
 
 /** PROPOSAL :run-now `only_me`: the test goes to the caller alone (the mock knows it). */
 export const sendReportTest = async (id: string) =>
-  v1Send<{ id: string }>('POST', `/reports/${pathId(id)}:run-now`, { only_me: true });
+  ok<{ id: string }>(
+    api.POST('/v1/reports/{id}:run-now', { params: { path: { id } }, body: { only_me: true } }),
+  );
 
 export interface DigestItem {
   /** The report run to read. */
@@ -226,10 +233,16 @@ export const listMyDigests = async (): Promise<Page<DigestItem>> => {
   } catch (error) {
     if (!(error instanceof V1Error) || error.status !== 404) throw error;
   }
-  const page = await v1Get<Page<Schemas['NotificationView']>>('/me/notifications', {
-    kind: 'digest',
-    page_size: 50,
-  });
+  const page = await ok<Page<Schemas['NotificationView']>>(
+    api.GET('/v1/me/notifications', {
+      params: {
+        query: {
+          kind: 'digest',
+          page_size: 50,
+        },
+      },
+    }),
+  );
   return {
     ...page,
     items: page.items
@@ -287,4 +300,6 @@ export function readReportRun(raw: ReportRunWire): ReportRun {
 }
 
 export const getReportRun = async (id: string) =>
-  readReportRun(await v1Get<ReportRunWire>(`/report-runs/${pathId(id)}`));
+  readReportRun(
+    await ok<ReportRunWire>(api.GET('/v1/report-runs/{id}', { params: { path: { id } } })),
+  );

@@ -123,7 +123,7 @@ describe('DataSpacesPage', () => {
       await screen.findByText('Đã thêm GRP_RISK_ANALYST vào Rủi ro tín dụng'),
     ).toBeInTheDocument();
     const put = sent.find((s) => s.path === '/data-spaces/ds-rui-ro-tin-dung/members');
-    expect((put?.body as { items: unknown[] }).items).toHaveLength(6);
+    expect((put?.body as { members: unknown[] }).members).toHaveLength(6);
   });
 
   it('refuses an id that is not a plain id before calling the API', async () => {

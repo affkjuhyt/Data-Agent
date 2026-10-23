@@ -1,4 +1,4 @@
-import { pathId, v1Get, type Page } from './client';
+import { type Page, api, ok } from './client';
 import { listForecastSeries } from './forecast';
 import { readDataset, type Dataset, type DatasetWire } from './types';
 
@@ -90,7 +90,9 @@ async function mapLimited<T, R>(
 export async function columnsByDataset(datasets: Dataset[]): Promise<Map<string, CatalogColumn[]>> {
   const details = await mapLimited(datasets, COLUMN_FETCHES, async (dataset) => {
     try {
-      const detail = await v1Get<{ columns?: CatalogColumn[] }>(`/datasets/${pathId(dataset.id)}`);
+      const detail = await ok<{ columns?: CatalogColumn[] }>(
+        api.GET('/v1/datasets/{id}', { params: { path: { id: dataset.id } } }),
+      );
       return [dataset.id, detail.columns ?? []] as [string, CatalogColumn[]];
     } catch {
       return [dataset.id, []] as [string, CatalogColumn[]];
@@ -169,10 +171,17 @@ export const KIND_LABEL: Record<CatalogKind, string> = {
 /** Tables, their columns, documents, forecast series and REST APIs, as one list. */
 export async function listCatalog(): Promise<Page<CatalogAsset>> {
   const [datasets, documents, series, sources] = await Promise.all([
-    v1Get<Page<DatasetWire>>('/datasets', ALL).then((page) => page.items.map(readDataset)),
-    v1Get<Page<DocumentRow>>('/documents', ALL).then((page) => page.items),
+    ok<Page<DatasetWire>>(api.GET('/v1/datasets', { params: { query: ALL } })).then((page) =>
+      page.items.map(readDataset),
+    ),
+    ok<Page<DocumentRow>>(api.GET('/v1/documents', { params: { query: ALL } })).then(
+      (page) => page.items,
+    ),
     listForecastSeries().catch(() => ({ items: [], next_page_token: '' })),
-    v1Get<Page<SourceRow>>('/sources', ALL).catch(() => ({ items: [], next_page_token: '' })),
+    ok<Page<SourceRow>>(api.GET('/v1/sources', { params: { query: ALL } })).catch(() => ({
+      items: [],
+      next_page_token: '',
+    })),
   ]);
   const columns = await columnsByDataset(datasets);
   return {

@@ -1,4 +1,4 @@
-import { pathId, v1Get, type Page } from './client';
+import { type Page, api, ok } from './client';
 import type { components } from './schema';
 
 type Schemas = components['schemas'];
@@ -41,10 +41,16 @@ const readCatalogMetric = (raw: CatalogMetricWire): CatalogMetric => ({
 
 /** `view=catalog` (PROPOSAL) asks for the catalog fields; the api ignores it and sends MetricView. */
 export const listCatalogMetrics = async () => {
-  const page = await v1Get<Page<CatalogMetricWire>>('/metrics', {
-    view: 'catalog',
-    page_size: 500,
-  });
+  const page = await ok<Page<CatalogMetricWire>>(
+    api.GET('/v1/metrics', {
+      params: {
+        query: {
+          view: 'catalog',
+          page_size: 500,
+        },
+      },
+    }),
+  );
   return { ...page, items: page.items.map(readCatalogMetric) };
 };
 
@@ -132,11 +138,19 @@ const nodeTitle = (n: LineageNode) => n.name ?? n.key;
 async function readQuality(datasetId: string | null): Promise<MetricProfile['quality']> {
   if (!datasetId) return [];
   const [rules, results] = await Promise.all([
-    v1Get<Page<Schemas['QualityRuleView']>>('/quality-rules', { dataset_id: datasetId }),
-    v1Get<Page<Schemas['QualityResultView']>>('/quality-results', {
-      dataset_id: datasetId,
-      page_size: 100,
-    }),
+    ok<Page<Schemas['QualityRuleView']>>(
+      api.GET('/v1/quality-rules', { params: { query: { dataset_id: datasetId } } }),
+    ),
+    ok<Page<Schemas['QualityResultView']>>(
+      api.GET('/v1/quality-results', {
+        params: {
+          query: {
+            dataset_id: datasetId,
+            page_size: 100,
+          },
+        },
+      }),
+    ),
   ]);
   const ruleOf = new Map(rules.items.map((r) => [r.id, r]));
   // The latest result of each rule: results come newest first.
@@ -234,15 +248,21 @@ export function readMetricProfile(
 }
 
 export async function getMetricProfile(id: string): Promise<MetricProfile> {
-  const raw = await v1Get<MetricDetailWire>(`/metrics/${pathId(id)}`);
+  const raw = await ok<MetricDetailWire>(api.GET('/v1/metrics/{id}', { params: { path: { id } } }));
   const [graph, quality] = await Promise.all([
     orEmpty(
-      v1Get<LineageGraph>('/lineage', {
-        object_kind: 'metric',
-        object_id: raw.id,
-        direction: 'both',
-        depth: 3,
-      }),
+      ok<LineageGraph>(
+        api.GET('/v1/lineage', {
+          params: {
+            query: {
+              object_kind: 'metric',
+              object_id: raw.id,
+              direction: 'both',
+              depth: 3,
+            },
+          },
+        }),
+      ),
       null,
     ),
     orEmpty(readQuality(raw.canonical_dataset_id), []),

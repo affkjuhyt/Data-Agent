@@ -1,4 +1,4 @@
-import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
+import { pathId, V1Error, v1Send, type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 import { formatReadOnlySql, type SqlBrowseTable } from '../sqlText';
 import { awaitQueryRun, getQueryRows, getQuerySql } from './explore';
@@ -38,10 +38,16 @@ const listDatasets = async (): Promise<DatasetRow[]> => {
   const items: DatasetRow[] = [];
   let token = '';
   for (let page = 0; page < 20; page += 1) {
-    const datasets = await v1Get<Page<DatasetRow>>('/datasets', {
-      page_size: 500,
-      page_token: token || undefined,
-    });
+    const datasets = await ok<Page<DatasetRow>>(
+      api.GET('/v1/datasets', {
+        params: {
+          query: {
+            page_size: 500,
+            page_token: token || undefined,
+          },
+        },
+      }),
+    );
     items.push(...datasets.items);
     if (!datasets.next_page_token || datasets.next_page_token === token) break;
     token = datasets.next_page_token;
@@ -56,8 +62,8 @@ export const getSqlCatalog = async (): Promise<{ tables: SqlBrowseTable[] }> => 
   await Promise.all(
     [...new Set(datasets.map((dataset) => dataset.source_id).filter(Boolean))].map(
       async (sourceId) => {
-        const source = await v1Get<{ id: string; name: string }>(
-          `/sources/${pathId(sourceId!)}`,
+        const source = await ok<{ id: string; name: string }>(
+          api.GET('/v1/sources/{id}', { params: { path: { id: sourceId! } } }),
         ).catch(() => null);
         if (source) sourceNames.set(source.id, source.name);
       },
@@ -78,7 +84,9 @@ export const getSqlCatalog = async (): Promise<{ tables: SqlBrowseTable[] }> => 
 
 /** Columns of one dataset, fetched when its row in the schema browser is opened. */
 export const loadSqlColumns = async (id: string): Promise<SqlColumn[]> => {
-  const detail = await v1Get<components['schemas']['DatasetDetail']>(`/datasets/${pathId(id)}`);
+  const detail = await ok<components['schemas']['DatasetDetail']>(
+    api.GET('/v1/datasets/{id}', { params: { path: { id } } }),
+  );
   return (detail.columns ?? []).map((column) => ({
     name: column.name,
     type: column.data_type,
@@ -87,10 +95,14 @@ export const loadSqlColumns = async (id: string): Promise<SqlColumn[]> => {
 
 /** Read-only SQL through the canonical query-run worker and policy path. */
 export const runSql = async (sql: string, limit = 500): Promise<SqlResult> => {
-  const run = await v1Send<components['schemas']['QueryRunView']>('POST', '/query-runs', {
-    sql,
-    limit,
-  });
+  const run = await ok<components['schemas']['QueryRunView']>(
+    api.POST('/v1/query-runs', {
+      body: {
+        sql,
+        limit,
+      },
+    }),
+  );
   const finished = await awaitQueryRun(run);
   const rows = await getQueryRows(finished.id, limit);
   const executed = await getQuerySql(finished.id).catch(() => null);
@@ -117,10 +129,16 @@ export const formatSql = async (sql: string): Promise<{ sql: string }> => {
 
 /** Certified metrics, so a statement that names one can open that definition. */
 export const listSqlMetrics = async () => {
-  const page = await v1Get<Page<components['schemas']['MetricView']>>('/metrics', {
-    certified: true,
-    page_size: 100,
-  });
+  const page = await ok<Page<components['schemas']['MetricView']>>(
+    api.GET('/v1/metrics', {
+      params: {
+        query: {
+          certified: true,
+          page_size: 100,
+        },
+      },
+    }),
+  );
   return page.items.map((metric) => ({
     id: metric.id,
     code: metric.code,
@@ -130,11 +148,16 @@ export const listSqlMetrics = async () => {
 
 /** A finished statement kept as a SQL tile of a session. */
 export const saveSqlToSession = (workspaceId: string, runId: string, title: string) =>
-  v1Send<components['schemas']['TileView']>('POST', `/workspaces/${pathId(workspaceId)}/tiles`, {
-    kind: 'sql',
-    title,
-    spec: { query_run_id: runId },
-  } as unknown as components['schemas']['TileCreate']);
+  ok<components['schemas']['TileView']>(
+    api.POST('/v1/workspaces/{id}/tiles', {
+      params: { path: { id: workspaceId } },
+      body: {
+        kind: 'sql',
+        title,
+        spec: { query_run_id: runId },
+      } as unknown as components['schemas']['TileCreate'],
+    }),
+  );
 
 /* ─── Bảng dẫn xuất (UC-06-02) ────────────────────────────────────────── */
 
@@ -164,7 +187,7 @@ export const createDerivedTable = (body: {
   write_mode?: WriteMode;
 }) =>
   // The api requires write_mode; a table saved from the editor is a new one.
-  v1Send<DerivedTable>('POST', '/derived-tables', { write_mode: 'replace', ...body });
+  ok<DerivedTable>(api.POST('/v1/derived-tables', { body: { write_mode: 'replace', ...body } }));
 
 /* ─── Pipeline (UC-06-01, UC-06-03) ───────────────────────────────────── */
 
@@ -303,8 +326,10 @@ const tableName = (d: DatasetRow) =>
 
 export const listPipelines = async (): Promise<Page<Pipeline>> => {
   const [page, datasets] = await Promise.all([
-    v1Get<Page<PipelineWire>>('/pipelines', { page_size: 500 }),
-    v1Get<Page<DatasetRow>>('/datasets', { page_size: 500 }).catch(() => null),
+    ok<Page<PipelineWire>>(api.GET('/v1/pipelines', { params: { query: { page_size: 500 } } })),
+    ok<Page<DatasetRow>>(api.GET('/v1/datasets', { params: { query: { page_size: 500 } } })).catch(
+      () => null,
+    ),
   ]);
   const tables = new Map<string, string>(datasets?.items.map((d) => [d.id, tableName(d)]) ?? []);
   return { ...page, items: page.items.map((p) => readPipeline(p, tables)) };
@@ -317,10 +342,16 @@ export const listPipelines = async (): Promise<Page<Pipeline>> => {
  */
 export const createPipeline = async (body: { name: string; input_table: string }) => {
   const wanted = body.input_table.trim();
-  const found = await v1Get<Page<DatasetRow>>('/datasets', {
-    q: wanted.split('.').pop(),
-    page_size: 50,
-  });
+  const found = await ok<Page<DatasetRow>>(
+    api.GET('/v1/datasets', {
+      params: {
+        query: {
+          q: wanted.split('.').pop(),
+          page_size: 50,
+        },
+      },
+    }),
+  );
   const dataset = found.items.find((d) => tableName(d) === wanted || d.table_name === wanted);
   if (!dataset) throw new V1Error(422, 'validation_failed', `Không tìm thấy bảng ${wanted}.`);
   const created = await v1Send<PipelineWire>('POST', '/pipelines', {
@@ -332,7 +363,7 @@ export const createPipeline = async (body: { name: string; input_table: string }
 
 /** A2: POST /v1/pipelines/{id}/runs (202); 409 while a run is going (no overlapping runs). */
 export const runPipeline = async (id: string) =>
-  v1Send<{ id: string }>('POST', `/pipelines/${pathId(id)}/runs`);
+  ok<{ id: string }>(api.POST('/v1/pipelines/{id}/runs', { params: { path: { id } } }));
 
 /* ─── Làm sạch bằng hội thoại (UC-06-01) ──────────────────────────────── */
 
@@ -379,8 +410,10 @@ export interface StepPreview {
 
 export const getPipeline = async (id: string): Promise<PipelineDetail> => {
   const [raw, datasets] = await Promise.all([
-    v1Get<PipelineDetailWire>(`/pipelines/${pathId(id)}`),
-    v1Get<Page<DatasetRow>>('/datasets', { page_size: 500 }).catch(() => null),
+    ok<PipelineDetailWire>(api.GET('/v1/pipelines/{id}', { params: { path: { id } } })),
+    ok<Page<DatasetRow>>(api.GET('/v1/datasets', { params: { query: { page_size: 500 } } })).catch(
+      () => null,
+    ),
   ]);
   const tables = new Map<string, string>(datasets?.items.map((d) => [d.id, tableName(d)]) ?? []);
   return readPipelineDetail(raw, tables);
@@ -391,8 +424,8 @@ export const getPipeline = async (id: string): Promise<PipelineDetail> => {
  * when the steps changed); its rows are read like any run's, under the caller's policy.
  */
 export const getStepPreview = async (id: string, seq: number): Promise<StepPreview> => {
-  const step = await v1Get<components['schemas']['StepPreview']>(
-    `/pipelines/${pathId(id)}/steps/${seq}/preview`,
+  const step = await ok<components['schemas']['StepPreview']>(
+    api.GET('/v1/pipelines/{id}/steps/{seq}/preview', { params: { path: { id, seq } } }),
   );
   await awaitQueryRun({ id: step.query_run_id, status: step.status } as Parameters<
     typeof awaitQueryRun
@@ -413,12 +446,16 @@ export const getStepPreview = async (id: string, seq: number): Promise<StepPrevi
  * asks back instead of guessing on ambiguous data. Returns the pipeline as it now is.
  */
 export const sendPrepMessage = async (id: string, text: string) =>
-  v1Send<PipelineDetail>('POST', `/pipelines/${pathId(id)}/messages`, { text });
+  okAs<PipelineDetail>(
+    api.POST('/v1/pipelines/{id}/messages', { params: { path: { id } }, body: { text } }),
+  );
 
 /** A2: POST /v1/pipelines/{id}:preview with no sample — every step on the full input, nothing written. */
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const testRunPipeline = async (id: string) => {
+  // Untyped: PipelinePreview.sample_rows is 1…MAX_SAMPLE_ROWS, so null (the full input) is refused
+  // until the api has a full-input run.
   const queued = await v1Send<components['schemas']['PipelineRunView']>(
     'POST',
     `/pipelines/${pathId(id)}:preview`,
@@ -431,7 +468,9 @@ export const testRunPipeline = async (id: string) => {
     if (Date.now() > deadline)
       throw new V1Error(504, 'timeout', 'Chạy thử quá lâu; xem lại sau trong danh sách pipeline.');
     await sleep(1000);
-    const raw = await v1Get<PipelineDetailWire>(`/pipelines/${pathId(id)}`);
+    const raw = await ok<PipelineDetailWire>(
+      api.GET('/v1/pipelines/{id}', { params: { path: { id } } }),
+    );
     if (raw.last_run && raw.last_run.id === queued.id) run = raw.last_run;
   }
   if (run.status !== 'succeeded')
@@ -496,7 +535,9 @@ export interface PublishPipeline {
 export const getOutputDraft = async (id: string) => {
   const deadline = Date.now() + 60_000;
   for (;;) {
-    const draft = await v1Get<OutputDraft>(`/pipelines/${pathId(id)}/output-draft`);
+    const draft = await okAs<OutputDraft>(
+      api.GET('/v1/pipelines/{id}/output-draft', { params: { path: { id } } }),
+    );
     if (draft.columns_status !== 'pending' || Date.now() > deadline) return draft;
     await sleep(1000);
   }
@@ -510,22 +551,34 @@ export const getOutputDraft = async (id: string) => {
 export const publishPipeline = async (id: string, body: PublishPipeline) => {
   // The table lands in the work schema: the api takes a plain name, not schema.table.
   const tableName = body.table_name.split('.').at(-1)?.trim() ?? '';
-  const run = await v1Send<
+  const run = await ok<
     components['schemas']['services__api__modules__pipeline__schemas__Accepted']
-  >('POST', `/pipelines/${pathId(id)}:materialize`, { table_name: tableName });
+  >(
+    api.POST('/v1/pipelines/{id}:materialize', {
+      params: { path: { id } },
+      body: { table_name: tableName },
+    }),
+  );
   const cron = body.schedule.mode === 'cron' ? body.schedule.cron : null;
-  await v1Send('PUT', `/pipelines/${pathId(id)}/schedule`, {
-    cron,
-    work_calendar_id: null,
-    trigger_on_job_id:
-      body.schedule.mode === 'after_source' ? (body.schedule.after_job_id ?? null) : null,
-    depends_on_pipeline_ids: [],
-    no_overlap: true,
-    on_failure: body.schedule.retries > 0 ? 'retry_then_notify' : 'notify',
-  });
+  await ok(
+    api.PUT('/v1/pipelines/{id}/schedule', {
+      params: { path: { id } },
+      body: {
+        cron,
+        work_calendar_id: null,
+        trigger_on_job_id:
+          body.schedule.mode === 'after_source' ? (body.schedule.after_job_id ?? null) : null,
+        depends_on_pipeline_ids: [],
+        no_overlap: true,
+        on_failure: body.schedule.retries > 0 ? 'retry_then_notify' : 'notify',
+      },
+    }),
+  );
   const deadline = Date.now() + 120_000;
   for (;;) {
-    const raw = await v1Get<PipelineDetailWire>(`/pipelines/${pathId(id)}`);
+    const raw = await ok<PipelineDetailWire>(
+      api.GET('/v1/pipelines/{id}', { params: { path: { id } } }),
+    );
     const last = raw.last_run;
     if (last && last.id === run.id && last.status !== 'running') {
       if (last.status !== 'succeeded' || !raw.target_dataset_id)
@@ -583,8 +636,8 @@ const cronForSchedule = (schedule: PipelineSchedule) =>
         : null;
 
 export const getPipelineSchedule = async (id: string) =>
-  v1Get<components['schemas']['ScheduleRequest'] & Partial<PipelineSchedule>>(
-    `/pipelines/${pathId(id)}/schedule`,
+  ok<components['schemas']['ScheduleRequest'] & Partial<PipelineSchedule>>(
+    api.GET('/v1/pipelines/{id}/schedule', { params: { path: { id } } }),
   ).then((schedule) => {
     const kind =
       schedule.kind ??
@@ -607,6 +660,7 @@ export const getPipelineSchedule = async (id: string) =>
 
 /** PROPOSAL: the coming runs in words, from the server's business calendar. */
 export const previewSchedule = async (id: string, schedule: PipelineSchedule) =>
+  // Untyped: SchedulePreview forbids extra fields and schedule_kind is one (the mock reads it).
   v1Send<{ text: string }>('POST', `/pipelines/${pathId(id)}/schedule:preview`, {
     cron: cronForSchedule(schedule),
     no_overlap: schedule.no_overlap,
@@ -615,18 +669,19 @@ export const previewSchedule = async (id: string, schedule: PipelineSchedule) =>
   });
 
 export const savePipelineSchedule = async (id: string, schedule: PipelineSchedule) =>
-  v1Send<components['schemas']['PipelineView'] & { schedule_text?: string }>(
-    'PUT',
-    `/pipelines/${pathId(id)}/schedule`,
-    {
-      cron: cronForSchedule(schedule),
-      work_calendar_id: null,
-      trigger_on_job_id:
-        schedule.kind === 'after_source' ? (schedule.after_source_job_id ?? null) : null,
-      depends_on_pipeline_ids: [],
-      no_overlap: schedule.no_overlap,
-      on_failure: schedule.retry_and_notify ? 'retry_then_notify' : 'notify',
-    },
+  ok<components['schemas']['PipelineView'] & { schedule_text?: string }>(
+    api.PUT('/v1/pipelines/{id}/schedule', {
+      params: { path: { id } },
+      body: {
+        cron: cronForSchedule(schedule),
+        work_calendar_id: null,
+        trigger_on_job_id:
+          schedule.kind === 'after_source' ? (schedule.after_source_job_id ?? null) : null,
+        depends_on_pipeline_ids: [],
+        no_overlap: schedule.no_overlap,
+        on_failure: schedule.retry_and_notify ? 'retry_then_notify' : 'notify',
+      },
+    }),
   ).then((view) => ({
     schedule_text:
       schedule.kind === 'daily'
@@ -761,15 +816,15 @@ export function readWriteback(raw: WritebackWire): Writeback {
 }
 
 export const listOpenWritebacks = () =>
-  v1Get<Page<WritebackWire>>('/writebacks', { status: 'submitted', page_size: 50 }).then(
-    (page) => ({
-      ...page,
-      items: page.items.map(readWriteback),
-    }),
-  );
+  ok<Page<WritebackWire>>(
+    api.GET('/v1/writebacks', { params: { query: { status: 'submitted', page_size: 50 } } }),
+  ).then((page) => ({
+    ...page,
+    items: page.items.map(readWriteback),
+  }));
 
 export const getWriteback = async (id: string) => {
-  const raw = await v1Get<WritebackWire>(`/writebacks/${pathId(id)}`);
+  const raw = await ok<WritebackWire>(api.GET('/v1/writebacks/{id}', { params: { path: { id } } }));
   return readWriteback(raw);
 };
 
@@ -791,7 +846,9 @@ async function decideWriteback(id: string, body: WritebackDecision): Promise<Wri
   const current = await getWriteback(id);
   if (!current.proposal_id)
     throw new Error('Lệnh ghi ngược chưa có proposal phê duyệt từ hệ thống.');
-  await v1Send('POST', `/proposals/${pathId(current.proposal_id)}:decide`, body);
+  await ok(
+    api.POST('/v1/proposals/{id}:decide', { params: { path: { id: current.proposal_id } }, body }),
+  );
   return getWriteback(id);
 }
 
@@ -904,7 +961,7 @@ function readLineage(raw: LineageWire): LineageGraph {
 
 /** The objects a lineage graph can start from (datasets of the Data Space). */
 export const listLineageTargets = async () => ({
-  items: await v1Get<{ id: string; label: string }[]>('/lineage/targets'),
+  items: await ok<{ id: string; label: string }[]>(api.GET('/v1/lineage/targets')),
 });
 
 /**
@@ -914,10 +971,16 @@ export const listLineageTargets = async () => ({
 export const getLineage = async (target?: string): Promise<LineageGraph> => {
   const id = target ?? (await listLineageTargets()).items[0]?.id;
   if (!id) return { focus_id: '', title: 'Chưa có bảng nào', nodes: [], edges: [] };
-  const raw = await v1Get<LineageWire>('/lineage', {
-    object_kind: 'dataset',
-    object_id: id,
-    direction: 'both',
-  });
+  const raw = await okAs<LineageWire>(
+    api.GET('/v1/lineage', {
+      params: {
+        query: {
+          object_kind: 'dataset',
+          object_id: id,
+          direction: 'both',
+        },
+      },
+    }),
+  );
   return readLineage(raw);
 };

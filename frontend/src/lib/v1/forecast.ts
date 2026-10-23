@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, V1Error, type Page } from './client';
+import { pathId, v1Get, v1Send, V1Error, type Page, api, ok } from './client';
 import type { components } from './schema';
 
 type Schemas = components['schemas'];
@@ -87,12 +87,16 @@ const timeVN = (iso: string) =>
 
 // Forecast jobs and issued forecasts share the screen model; the canonical detail resource
 // serves both states.
-const getDetail = (id: string) => v1Get<DetailWire>(`/forecasts/${pathId(id)}`);
+const getDetail = (id: string) =>
+  ok<DetailWire>(api.GET('/v1/forecasts/{id}', { params: { path: { id } } }));
 
-const getVersion = (id: string) => v1Get<VersionView>(`/forecast-model-versions/${pathId(id)}`);
+const getVersion = (id: string) =>
+  ok<VersionView>(api.GET('/v1/forecast-model-versions/{id}', { params: { path: { id } } }));
 
 const getBacktest = (versionId: string) =>
-  v1Get<Schemas['BacktestView']>(`/forecast-model-versions/${pathId(versionId)}/backtest`);
+  ok<Schemas['BacktestView']>(
+    api.GET('/v1/forecast-model-versions/{id}/backtest', { params: { path: { id: versionId } } }),
+  );
 
 /* ─── Việc dự báo: the in-progress answer (UC-15-01) ──────────────────── */
 
@@ -436,20 +440,22 @@ export async function getForecastWorkbench(jobId: string): Promise<ForecastWorkb
 
 /** A2: retraining makes a new version that goes through backtest again (202). */
 export const rerunBacktest = async (forecastModelId: string) =>
-  v1Send<Schemas['ForecastAccepted']>(
-    'POST',
-    `/forecast-models/${pathId(forecastModelId)}:retrain`,
-    {
-      reason: 'Chạy lại backtest từ Xưởng dự báo',
-    } satisfies Schemas['RetrainRequest'],
+  ok<Schemas['ForecastAccepted']>(
+    api.POST('/v1/forecast-models/{id}:retrain', {
+      params: { path: { id: forecastModelId } },
+      body: {
+        reason: 'Chạy lại backtest từ Xưởng dự báo',
+      } satisfies Schemas['RetrainRequest'],
+    }),
   );
 
 /** A2: the card is on the version; :submit sends it to the metric owner (kind forecast_model). */
 export const createModelCard = async (versionId: string) => {
-  const version = await v1Send<VersionView>(
-    'POST',
-    `/forecast-model-versions/${pathId(versionId)}:submit`,
-    {} satisfies Schemas['VersionNote'],
+  const version = await ok<VersionView>(
+    api.POST('/v1/forecast-model-versions/{id}:submit', {
+      params: { path: { id: versionId } },
+      body: {} satisfies Schemas['VersionNote'],
+    }),
   );
   return { model_id: version.model_id, version_id: version.id };
 };
@@ -622,9 +628,15 @@ function readForecast(
  * the job that made it; a fuel price's line (scope.product_code) belongs to its own screen.
  */
 export async function listForecasts(): Promise<Page<{ id: string }>> {
-  const ledger = await v1Get<Page<Schemas['LedgerEntryView']>>('/forecast-ledger', {
-    page_size: 50,
-  });
+  const ledger = await ok<Page<Schemas['LedgerEntryView']>>(
+    api.GET('/v1/forecast-ledger', {
+      params: {
+        query: {
+          page_size: 50,
+        },
+      },
+    }),
+  );
   const ids = new Set<string>();
   for (const line of ledger.items) if (line.job_id && !productOf(line)) ids.add(line.job_id);
   if (ids.size) return { items: [...ids].map((id) => ({ id })), next_page_token: '' };
@@ -666,9 +678,10 @@ const MAX_POLL_MS = 5_000;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function scenarioPoints(modelId: string, scenarioId: string) {
-  const page = await v1Get<Schemas['PredictionPage']>(
-    `/forecast-models/${pathId(modelId)}/predictions`,
-    { scenario_id: scenarioId, page_size: 50 },
+  const page = await ok<Schemas['PredictionPage']>(
+    api.GET('/v1/forecast-models/{id}/predictions', {
+      params: { path: { id: modelId }, query: { scenario_id: scenarioId, page_size: 50 } },
+    }),
   );
   return {
     points: page.items.map((p) => ({ period: p.period, value: Number(p.point) })),
@@ -692,20 +705,21 @@ function scenarioSummary(forecast: Forecast, points: { period: string; value: nu
  * written them. A variable the model does not use is refused with 422 (UC-15-05 E1).
  */
 export async function runScenario(forecast: Forecast, input: ScenarioInput) {
-  const accepted = await v1Send<Schemas['ScenarioAccepted']>(
-    'POST',
-    `/forecast-models/${pathId(forecast.model.id)}/scenarios`,
-    {
-      name: input.name,
-      assumptions: [
-        {
-          feature: input.feature,
-          change_kind: input.change_kind,
-          value: input.value,
-          from_period: input.from_period,
-        },
-      ],
-    } satisfies Schemas['ScenarioCreate'],
+  const accepted = await ok<Schemas['ScenarioAccepted']>(
+    api.POST('/v1/forecast-models/{id}/scenarios', {
+      params: { path: { id: forecast.model.id } },
+      body: {
+        name: input.name,
+        assumptions: [
+          {
+            feature: input.feature,
+            change_kind: input.change_kind,
+            value: input.value,
+            from_period: input.from_period,
+          },
+        ],
+      } satisfies Schemas['ScenarioCreate'],
+    }),
   );
   const scenario: ForecastScenario = {
     id: accepted.id,
@@ -876,21 +890,33 @@ function readModel(raw: ModelWire): ForecastModel {
 }
 
 export const listForecastModels = async () => {
-  const page = await v1Get<Page<ModelWire>>('/forecast-models', { page_size: 50 });
+  const page = await ok<Page<ModelWire>>(
+    api.GET('/v1/forecast-models', { params: { query: { page_size: 50 } } }),
+  );
   return { ...page, items: page.items.map(readModel) };
 };
 
 export const getForecastModel = async (id: string) =>
-  readModel(await v1Get<ModelWire>(`/forecast-models/${pathId(id)}`));
+  readModel(await ok<ModelWire>(api.GET('/v1/forecast-models/{id}', { params: { path: { id } } })));
 
 /** Publishes the candidate; the published version before it is retired. */
 export const approveModelVersion = async (versionId: string) =>
-  v1Send<VersionView>('POST', `/forecast-model-versions/${pathId(versionId)}:approve`, {});
+  ok<VersionView>(
+    api.POST('/v1/forecast-model-versions/{id}:approve', {
+      params: { path: { id: versionId } },
+      body: {},
+    }),
+  );
 
 export const rejectModelVersion = async (versionId: string, reason: string) =>
-  v1Send<VersionView>('POST', `/forecast-model-versions/${pathId(versionId)}:reject`, {
-    reason,
-  } satisfies Schemas['VersionReject']);
+  ok<VersionView>(
+    api.POST('/v1/forecast-model-versions/{id}:reject', {
+      params: { path: { id: versionId } },
+      body: {
+        reason,
+      } satisfies Schemas['VersionReject'],
+    }),
+  );
 
 /* ─── Giá xăng dầu: phân phối, phân rã và sổ dự báo (UC-15-07, UC-15-08) ─ */
 
@@ -1151,12 +1177,19 @@ async function formulaOf(job: DetailWire, product: string): Promise<FormulaModel
   const codes = record(job.scope).product_codes;
   if (Array.isArray(ids) && Array.isArray(codes)) {
     const id = ids[codes.indexOf(product)];
-    if (typeof id === 'string') return v1Get<FormulaModelWire>(`/formula-models/${pathId(id)}`);
+    if (typeof id === 'string')
+      return ok<FormulaModelWire>(api.GET('/v1/formula-models/{id}', { params: { path: { id } } }));
   }
-  const page = await v1Get<Page<FormulaModelWire>>('/formula-models', {
-    product_code: product,
-    page_size: 1,
-  });
+  const page = await ok<Page<FormulaModelWire>>(
+    api.GET('/v1/formula-models', {
+      params: {
+        query: {
+          product_code: product,
+          page_size: 1,
+        },
+      },
+    }),
+  );
   if (!page.items[0]) throw new Error(`Không có mô hình công thức cho ${productLabel(product)}.`);
   return page.items[0];
 }
@@ -1232,12 +1265,20 @@ export async function listFuelPriceForecasts(): Promise<Page<{ id: string; label
   } catch (error) {
     if (!proposalMissing(error)) throw error;
   }
-  const formulas = await v1Get<Page<FormulaModelWire>>('/formula-models', { page_size: 20 });
+  const formulas = await ok<Page<FormulaModelWire>>(
+    api.GET('/v1/formula-models', { params: { query: { page_size: 20 } } }),
+  );
   if (formulas.items.length === 0) return { items: [], next_page_token: '' };
   const products = new Set(formulas.items.map((f) => f.product_code));
-  const ledger = await v1Get<Page<Schemas['LedgerEntryView']>>('/forecast-ledger', {
-    page_size: 50,
-  });
+  const ledger = await ok<Page<Schemas['LedgerEntryView']>>(
+    api.GET('/v1/forecast-ledger', {
+      params: {
+        query: {
+          page_size: 50,
+        },
+      },
+    }),
+  );
   const seen = new Map<string, string>();
   for (const line of ledger.items) {
     const product = productOf(line);
@@ -1264,17 +1305,26 @@ export async function getFuelPriceForecast(id: string): Promise<FuelPriceForecas
   const [jobId, product] = splitFuelId(id);
   const [job, distribution] = await Promise.all([
     getDetail(jobId),
-    v1Get<Schemas['DistributionView']>(`/forecasts/${pathId(jobId)}/distribution`),
+    ok<Schemas['DistributionView']>(
+      api.GET('/v1/forecasts/{id}/distribution', { params: { path: { id: jobId } } }),
+    ),
   ]);
   const item = distribution.items.find((i) => i.product_code === product) ?? distribution.items[0];
   if (!item) throw new Error('Lượt chạy này chưa có phân phối giá.');
   const formula = await formulaOf(job, item.product_code);
   const [version, components] = await Promise.all([
     getVersion(item.model_version_id).catch(() => null),
-    v1Get<Page<Schemas['ComponentView']>>(`/formula-models/${pathId(formula.id)}/components`, {
-      at: `${item.period}T00:00:00Z`,
-      page_size: 50,
-    }),
+    ok<Page<Schemas['ComponentView']>>(
+      api.GET('/v1/formula-models/{id}/components', {
+        params: {
+          path: { id: formula.id },
+          query: {
+            at: `${item.period}T00:00:00Z`,
+            page_size: 50,
+          },
+        },
+      }),
+    ),
   ]);
   return readFuel(job, item, distribution.items, formula, version, components.items);
 }
@@ -1284,14 +1334,15 @@ export async function getFuelPriceForecast(id: string): Promise<FuelPriceForecas
  * world prices, for every fuel of this run; not issued, the bulletin issues its own.
  */
 export const rerunFuelPriceForecast = async (f: FuelPriceForecast) =>
-  v1Send<Schemas['ForecastAccepted']>(
-    'POST',
-    `/formula-models/${pathId(f.formula_model_id)}/runs`,
-    {
-      period: f.period_date,
-      issue: 'none',
-      product_codes: f.products.map((p) => splitFuelId(p.forecast_id)[1]),
-    } satisfies Schemas['FormulaRunCreate'],
+  ok<Schemas['ForecastAccepted']>(
+    api.POST('/v1/formula-models/{id}/runs', {
+      params: { path: { id: f.formula_model_id } },
+      body: {
+        period: f.period_date,
+        issue: 'none',
+        product_codes: f.products.map((p) => splitFuelId(p.forecast_id)[1]),
+      } satisfies Schemas['FormulaRunCreate'],
+    }),
   );
 
 /** The Fund as a scenario variable of the formula's model version. */
@@ -1315,27 +1366,32 @@ export async function runFundScenario(
   } catch (error) {
     if (!proposalMissing(error)) throw error;
   }
-  const accepted = await v1Send<Schemas['ScenarioAccepted']>(
-    'POST',
-    `/forecast-models/${pathId(f.model_id)}/scenarios`,
-    {
-      // A scenario's name is unique per model and author: the time keeps reruns apart.
-      name: `Quỹ ${level.label} · kỳ ${f.period_date} · ${new Date().toISOString()}`,
-      assumptions: [
-        {
-          feature: FUND_FEATURE,
-          change_kind: 'cố định',
-          value: level.value,
-          from_period: f.period_date,
-        },
-      ],
-    } satisfies Schemas['ScenarioCreate'],
+  const accepted = await ok<Schemas['ScenarioAccepted']>(
+    api.POST('/v1/forecast-models/{id}/scenarios', {
+      params: { path: { id: f.model_id } },
+      body: {
+        // A scenario's name is unique per model and author: the time keeps reruns apart.
+        name: `Quỹ ${level.label} · kỳ ${f.period_date} · ${new Date().toISOString()}`,
+        assumptions: [
+          {
+            feature: FUND_FEATURE,
+            change_kind: 'cố định',
+            value: level.value,
+            from_period: f.period_date,
+          },
+        ],
+      } satisfies Schemas['ScenarioCreate'],
+    }),
   );
   for (let i = 0; i < SCENARIO_POLLS; i++) {
     await wait(Math.min(accepted.poll_after_ms, MAX_POLL_MS));
-    const page = await v1Get<Schemas['PredictionPage']>(
-      `/forecast-models/${pathId(f.model_id)}/predictions`,
-      { scenario_id: accepted.id, from: f.period_date, to: f.period_date },
+    const page = await ok<Schemas['PredictionPage']>(
+      api.GET('/v1/forecast-models/{id}/predictions', {
+        params: {
+          path: { id: f.model_id },
+          query: { scenario_id: accepted.id, from: f.period_date, to: f.period_date },
+        },
+      }),
     );
     const p = page.items[0];
     if (p)
@@ -1448,13 +1504,15 @@ const seriesOf = (lines: LedgerLine[]) => {
 
 /** The series with issued lines; until there are any, one per formula model and product. */
 export const listForecastSeries = async (): Promise<Page<{ id: string; label: string }>> => {
-  const lines = await v1Get<LedgerPage>('/forecast-ledger', { page_size: 500 });
+  const lines = await ok<LedgerPage>(
+    api.GET('/v1/forecast-ledger', { params: { query: { page_size: 500 } } }),
+  );
   const series = seriesOf(lines.items);
   if (series.length)
     return { items: series.map(({ id, label }) => ({ id, label })), next_page_token: '' };
-  const formulas = await v1Get<Page<FormulaModelWire>>('/formula-models', { page_size: 20 }).catch(
-    () => ({ items: [], next_page_token: '' }),
-  );
+  const formulas = await ok<Page<FormulaModelWire>>(
+    api.GET('/v1/formula-models', { params: { query: { page_size: 20 } } }),
+  ).catch(() => ({ items: [], next_page_token: '' }));
   return {
     items: formulas.items.map((f) => ({
       id: ledgerSeriesId(f.model_id, f.product_code),
@@ -1519,14 +1577,22 @@ const WINDOWS = [
 async function servedLedger(seriesId: string, periods: number): Promise<ForecastLedger> {
   const { modelId, product } = splitSeriesId(seriesId);
   const [page, all, model] = await Promise.all([
-    v1Get<LedgerPage>('/forecast-ledger', {
-      forecast_model_id: modelId,
-      ...(product ? { product_code: product } : {}),
-      page_size: periods,
-    }),
+    ok<LedgerPage>(
+      api.GET('/v1/forecast-ledger', {
+        params: {
+          query: {
+            forecast_model_id: modelId,
+            ...(product ? { product_code: product } : {}),
+            page_size: periods,
+          },
+        },
+      }),
+    ),
     // The other fuels: a formula model per product may sit on its own forecast model.
-    v1Get<LedgerPage>('/forecast-ledger', { page_size: 500 }),
-    v1Get<Schemas['ForecastModelDetail']>(`/forecast-models/${pathId(modelId)}`),
+    ok<LedgerPage>(api.GET('/v1/forecast-ledger', { params: { query: { page_size: 500 } } })),
+    ok<Schemas['ForecastModelDetail']>(
+      api.GET('/v1/forecast-models/{id}', { params: { path: { id: modelId } } }),
+    ),
   ]);
   const c = page.calibration;
   const n = c?.n_scored ?? 0;
@@ -1587,10 +1653,16 @@ export interface ScheduleCalendar {
 /** The external calendar whose events the series' model forecasts, if any. */
 export async function getScheduleCalendar(seriesId: string): Promise<ScheduleCalendar | null> {
   const { modelId } = splitSeriesId(seriesId);
-  const page = await v1Get<Page<Schemas['CalendarSummary']>>('/external-calendars', {
-    status: 'active',
-    page_size: 50,
-  });
+  const page = await ok<Page<Schemas['CalendarSummary']>>(
+    api.GET('/v1/external-calendars', {
+      params: {
+        query: {
+          status: 'active',
+          page_size: 50,
+        },
+      },
+    }),
+  );
   // A ledger series names its model. A screen series id does not; one active calendar is that series'.
   const calendar = modelId
     ? page.items.find((c) => c.forecast_model_ids.includes(modelId))
@@ -1602,14 +1674,15 @@ export async function getScheduleCalendar(seriesId: string): Promise<ScheduleCal
 
 /** A2: PUT /v1/external-calendars/{id}/subscription — both bulletins in the app, or paused. */
 export async function followForecastSchedule(calendarId: string, follow: boolean) {
-  const subscription = await v1Send<Schemas['SubscriptionView']>(
-    'PUT',
-    `/external-calendars/${pathId(calendarId)}/subscription`,
-    {
-      kinds: ['pre', 'post'],
-      channels: ['in_app'],
-      status: follow ? 'active' : 'paused',
-    } satisfies Schemas['SubscriptionPut'],
+  const subscription = await ok<Schemas['SubscriptionView']>(
+    api.PUT('/v1/external-calendars/{id}/subscription', {
+      params: { path: { id: calendarId } },
+      body: {
+        kinds: ['pre', 'post'],
+        channels: ['in_app'],
+        status: follow ? 'active' : 'paused',
+      } satisfies Schemas['SubscriptionPut'],
+    }),
   );
   return { following: subscription.status === 'active' };
 }

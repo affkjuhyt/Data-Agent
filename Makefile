@@ -122,11 +122,11 @@ test-changed: dev-tools  ## only the suites the changes since CHANGED_BASE (defa
 
 # Tab 7 F3: the frontend's types come from the api's own OpenAPI (ADR-48), never written by hand.
 # The api image has the dependencies; backend/ is mounted so the dump reflects the working tree.
-api-types:  ## dump the api OpenAPI to frontend/src/lib/v1/openapi.json and generate schema.ts from it
+api-types:  ## dump the api OpenAPI to frontend/src/lib/v1/openapi.json and generate schema.ts from it (scripts/api-types.mjs)
 	docker run --rm -v "$(PWD)/backend:/app:ro" -e API_OIDC_ISSUER=http://unused $(IMAGE_REGISTRY)/dataagent/api:latest \
 	  python -c "import json, sys; from services.api.app import app; json.dump(app.openapi(), sys.stdout, ensure_ascii=False, indent=1, sort_keys=True)" \
 	  > frontend/src/lib/v1/openapi.json
-	npm --workspace frontend exec -- openapi-typescript src/lib/v1/openapi.json -o src/lib/v1/schema.ts
+	node frontend/scripts/api-types.mjs
 
 # Stdlib only and reads files, like tests/run_suites.py, so it runs on the host interpreter.
 design-checklist:  ## rewrite docs/v3/10-design-checklist.md: design coverage from code evidence + status.tsv

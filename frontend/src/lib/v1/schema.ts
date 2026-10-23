@@ -7420,17 +7420,17 @@ export interface components {
              * @default pause_and_ask
              * @enum {string}
              */
-            on_schema_change: "pause_and_ask" | "continue_and_notify";
+            on_schema_change?: "pause_and_ask" | "continue_and_notify";
             /**
              * Profiling
              * @default weekly_sun_0300
              */
-            profiling: string;
+            profiling?: string;
             /**
              * Schema Scan
              * @default daily_0200
              */
-            schema_scan: string;
+            schema_scan?: string;
             /** Tables */
             tables?: components["schemas"]["ActivateTable"][];
         };
@@ -7983,7 +7983,7 @@ export interface components {
              * @default on_behalf_of_user
              * @enum {string}
              */
-            identity_mode: "on_behalf_of_user" | "own_identity";
+            identity_mode?: "on_behalf_of_user" | "own_identity";
             /**
              * Kind
              * @enum {string}
@@ -8000,12 +8000,12 @@ export interface components {
              * Quota Per Day
              * @default 5000
              */
-            quota_per_day: number;
+            quota_per_day?: number;
             /**
              * Quota Per Minute
              * @default 60
              */
-            quota_per_minute: number;
+            quota_per_minute?: number;
             /** Tools */
             tools?: string[];
         };
@@ -8391,7 +8391,7 @@ export interface components {
              * Periods
              * @default 12
              */
-            periods: number;
+            periods?: number;
         };
         /**
          * BacktestResultView
@@ -8725,7 +8725,7 @@ export interface components {
              * Format: duration
              * @default PT2H
              */
-            forecast_lead: string;
+            forecast_lead?: string;
             /** Forecast Model Ids */
             forecast_model_ids?: string[];
             /** Legal Basis */
@@ -8736,31 +8736,31 @@ export interface components {
              * Post Bulletin
              * @default true
              */
-            post_bulletin: boolean;
+            post_bulletin?: boolean;
             /**
              * Post Wait Max
              * Format: duration
              * @default PT12H
              */
-            post_wait_max: string;
+            post_wait_max?: string;
             /**
              * Pre Bulletin Days Before
              * @default 1
              */
-            pre_bulletin_days_before: number;
+            pre_bulletin_days_before?: number;
             /**
              * Pre Bulletin Local Time
              * Format: time
              * @default 20:00:00
              */
-            pre_bulletin_local_time: string;
+            pre_bulletin_local_time?: string;
             /** Recurrence Hint */
             recurrence_hint?: string | null;
             /**
              * Timezone
              * @default Asia/Ho_Chi_Minh
              */
-            timezone: string;
+            timezone?: string;
             /** Work Calendar Id */
             work_calendar_id?: string | null;
         };
@@ -9807,7 +9807,7 @@ export interface components {
              * @default propose_approve
              * @enum {string}
              */
-            autonomy: "suggest_only" | "propose_approve" | "act_then_report";
+            autonomy?: "suggest_only" | "propose_approve" | "act_then_report";
             /** Change Note */
             change_note?: string | null;
             /** Checkpoints */
@@ -9981,7 +9981,7 @@ export interface components {
              * Remember As Rule
              * @default false
              */
-            remember_as_rule: boolean;
+            remember_as_rule?: boolean;
         };
         /** ConflictView */
         ConflictView: {
@@ -10126,7 +10126,7 @@ export interface components {
              * Allow Interpolation
              * @default false
              */
-            allow_interpolation: boolean;
+            allow_interpolation?: boolean;
             /** Entity Type */
             entity_type: string;
             /** Grain */
@@ -10519,7 +10519,7 @@ export interface components {
              * @default none
              * @enum {string}
              */
-            auth_mode: "none" | "api_key";
+            auth_mode?: "none" | "api_key";
             /** Goal */
             goal: string;
             /**
@@ -10531,7 +10531,7 @@ export interface components {
              * Max Depth
              * @default 3
              */
-            max_depth: number;
+            max_depth?: number;
             /** Name */
             name: string;
             /** Openapi Url */
@@ -10540,13 +10540,13 @@ export interface components {
              * Rate Limit Rps
              * @default 1
              */
-            rate_limit_rps: number | string;
+            rate_limit_rps?: number | string;
             /**
              * Review Gate
              * @default all
              * @enum {string}
              */
-            review_gate: "all" | "exceptions" | "auto";
+            review_gate?: "all" | "exceptions" | "auto";
             /** Schedule Cron */
             schedule_cron?: string | null;
             /** Secret Ref */
@@ -10559,7 +10559,7 @@ export interface components {
              * Trust Level
              * @default 0.5
              */
-            trust_level: number | string;
+            trust_level?: number | string;
         };
         /** CrawlSourceDetail */
         CrawlSourceDetail: {
@@ -10994,7 +10994,7 @@ export interface components {
              * @default context
              * @enum {string}
              */
-            layer: "context" | "published";
+            layer?: "context" | "published";
             /** Name */
             name: string;
             /** Out Of Scope Note */
@@ -11323,7 +11323,7 @@ export interface components {
              * Drop Duplicates
              * @default false
              */
-            drop_duplicates: boolean;
+            drop_duplicates?: boolean;
             /** Filters */
             filters?: {
                 [key: string]: unknown;
@@ -11520,7 +11520,7 @@ export interface components {
              * Traffic Pct
              * @default 10
              */
-            traffic_pct: number;
+            traffic_pct?: number;
         };
         /** DeploymentPatch */
         DeploymentPatch: {
@@ -11689,7 +11689,7 @@ export interface components {
              * Enabled
              * @default true
              */
-            enabled: boolean;
+            enabled?: boolean;
             /** Metrics */
             metrics?: string[] | null;
             /** Schedule */
@@ -12506,7 +12506,7 @@ export interface components {
              * @default confirmed
              * @enum {string}
              */
-            origin: "confirmed" | "manual";
+            origin?: "confirmed" | "manual";
         };
         /** EntityMappingView */
         EntityMappingView: {
@@ -12716,7 +12716,7 @@ export interface components {
              * @default medium
              * @enum {string}
              */
-            severity: "low" | "medium" | "high";
+            severity?: "low" | "medium" | "high";
             /**
              * Source Kind
              * @enum {string}
@@ -12952,7 +12952,7 @@ export interface components {
              * @default correct_result
              * @enum {string}
              */
-            category: "correct_result" | "ask_at_right_time" | "respect_permission" | "correct_format" | "refusal";
+            category?: "correct_result" | "ask_at_right_time" | "respect_permission" | "correct_format" | "refusal";
             /** Expected */
             expected: {
                 [key: string]: unknown;
@@ -13491,7 +13491,7 @@ export interface components {
              * @default eq
              * @enum {string}
              */
-            op: "eq" | "in";
+            op?: "eq" | "in";
             /** Values */
             values: string[];
         };
@@ -13542,7 +13542,7 @@ export interface components {
              * Include Detail Rows
              * @default false
              */
-            include_detail_rows: boolean;
+            include_detail_rows?: boolean;
         };
         /** ExportIn */
         ExportIn: {
@@ -13552,7 +13552,7 @@ export interface components {
              * @default csv
              * @enum {string}
              */
-            format: "csv" | "jsonl";
+            format?: "csv" | "jsonl";
         };
         /**
          * ExportJobView
@@ -13755,12 +13755,12 @@ export interface components {
              * Pii
              * @default false
              */
-            pii: boolean;
+            pii?: boolean;
             /**
              * Required
              * @default false
              */
-            required: boolean;
+            required?: boolean;
             /** Target Column */
             target_column?: string | null;
             /** Type */
@@ -13927,7 +13927,7 @@ export interface components {
              * @default auto
              * @enum {string}
              */
-            display_format: "auto" | "percent_2" | "amount_billion" | "count";
+            display_format?: "auto" | "percent_2" | "amount_billion" | "count";
             /** Metric Code */
             metric_code?: string | null;
             /** Params */
@@ -14363,7 +14363,7 @@ export interface components {
              * Miss Abs Threshold
              * @default 300
              */
-            miss_abs_threshold: number | string;
+            miss_abs_threshold?: number | string;
             /**
              * Model Id
              * Format: uuid
@@ -14373,13 +14373,13 @@ export interface components {
              * N Draws
              * @default 10000
              */
-            n_draws: number;
+            n_draws?: number;
             /**
              * Nowcast Method
              * @default bridge_regression
              * @enum {string}
              */
-            nowcast_method: "bridge_regression" | "published_only";
+            nowcast_method?: "bridge_regression" | "published_only";
             /** Product Code */
             product_code: string;
             /**
@@ -14387,7 +14387,7 @@ export interface components {
              * @default integer
              * @enum {string}
              */
-            rounding: "integer" | "ten";
+            rounding?: "integer" | "ten";
             /** Window Rule */
             window_rule: {
                 [key: string]: unknown;
@@ -14462,7 +14462,7 @@ export interface components {
              * @default none
              * @enum {string}
              */
-            issue: "none" | "bulletin" | "answer";
+            issue?: "none" | "bulletin" | "answer";
             /**
              * Period
              * Format: date
@@ -14558,7 +14558,7 @@ export interface components {
              * @default active
              * @enum {string}
              */
-            status: "active" | "disabled";
+            status?: "active" | "disabled";
         };
         /** GroupMappingSet */
         GroupMappingSet: {
@@ -14618,7 +14618,7 @@ export interface components {
              * Preview
              * @default false
              */
-            preview: boolean;
+            preview?: boolean;
         };
         /** GroupRef */
         GroupRef: {
@@ -14923,7 +14923,7 @@ export interface components {
              * Remember As Rule
              * @default false
              */
-            remember_as_rule: boolean;
+            remember_as_rule?: boolean;
         };
         /** HitlView */
         HitlView: {
@@ -16039,7 +16039,7 @@ export interface components {
              * @default see_also
              * @enum {string}
              */
-            link_kind: "see_also" | "defines" | "part_of" | "competitor_of" | "uses_metric" | "derived_from";
+            link_kind?: "see_also" | "defines" | "part_of" | "competitor_of" | "uses_metric" | "derived_from";
             /** To Page Id */
             to_page_id?: string | null;
             /** To Slug */
@@ -16201,12 +16201,12 @@ export interface components {
              * Amount Pct
              * @default 0.0005
              */
-            amount_pct: number | string;
+            amount_pct?: number | string;
             /**
              * Count
              * @default 0
              */
-            count: number;
+            count?: number;
         };
         /** MaterializeRequest */
         MaterializeRequest: {
@@ -16952,7 +16952,7 @@ export interface components {
              * @default openai_compatible
              * @enum {string}
              */
-            api_style: "openai_compatible" | "anthropic_messages" | "google_genai" | "other";
+            api_style?: "openai_compatible" | "anthropic_messages" | "google_genai" | "other";
             /** Code */
             code: string;
             /** Contract Ref */
@@ -16980,7 +16980,7 @@ export interface components {
              * Zero Retention
              * @default false
              */
-            zero_retention: boolean;
+            zero_retention?: boolean;
         };
         /** ModelProviderPatch */
         ModelProviderPatch: {
@@ -17217,7 +17217,7 @@ export interface components {
              * @default alert_only
              * @enum {string}
              */
-            notify_mode: "alert_only" | "with_analysis";
+            notify_mode?: "alert_only" | "with_analysis";
             /** Recipients */
             recipients?: {
                 [key: string]: unknown;
@@ -19150,7 +19150,7 @@ export interface components {
              * @default personal
              * @enum {string}
              */
-            scope: "personal" | "data_space";
+            scope?: "personal" | "data_space";
             /** Steps */
             steps?: components["schemas"]["Step"][];
         };
@@ -19395,7 +19395,7 @@ export interface components {
              * Window Days
              * @default 7
              */
-            window_days: number;
+            window_days?: number;
         };
         /** PolicyCreate */
         PolicyCreate: {
@@ -19499,7 +19499,7 @@ export interface components {
              * @default instant
              * @enum {string}
              */
-            batch_mode: "instant" | "15m" | "daily";
+            batch_mode?: "instant" | "15m" | "daily";
             /** Channels */
             channels: ("in_app" | "email" | "teams" | "zalo" | "mobile_push")[];
             /**
@@ -19537,7 +19537,7 @@ export interface components {
              * Sample Rows
              * @default 10000
              */
-            sample_rows: number;
+            sample_rows?: number;
         };
         /** PrincipalRef */
         PrincipalRef: {
@@ -19651,7 +19651,7 @@ export interface components {
              * Reviewed Regressions
              * @default false
              */
-            reviewed_regressions: boolean;
+            reviewed_regressions?: boolean;
         };
         /** ProposalDetail */
         ProposalDetail: {
@@ -20157,7 +20157,7 @@ export interface components {
              * Limit
              * @default 1000
              */
-            limit: number;
+            limit?: number;
             /** Sql */
             sql?: string | null;
         };
@@ -20296,7 +20296,7 @@ export interface components {
              * @default latest
              * @enum {string}
              */
-            knowledge_mode: "latest" | "period_close" | "at";
+            knowledge_mode?: "latest" | "period_close" | "at";
             /** Parent Question Id */
             parent_question_id?: string | null;
             /** Purpose */
@@ -20305,7 +20305,7 @@ export interface components {
              * Stream
              * @default false
              */
-            stream: boolean;
+            stream?: boolean;
             /** Text */
             text: string;
         };
@@ -20526,7 +20526,7 @@ export interface components {
              * @default user
              * @enum {string}
              */
-            principal_type: "user" | "group";
+            principal_type?: "user" | "group";
         };
         /**
          * RecipientPreview
@@ -20737,7 +20737,7 @@ export interface components {
              * @default figures
              * @enum {string}
              */
-            mode: "figures" | "figures_and_text";
+            mode?: "figures" | "figures_and_text";
             /** Reason */
             reason?: string | null;
         };
@@ -21284,7 +21284,7 @@ export interface components {
              * @default eq
              * @enum {string}
              */
-            op: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in";
+            op?: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in";
             /** Value */
             value?: string | number | boolean | (string | number)[] | null;
         };
@@ -21601,7 +21601,7 @@ export interface components {
              * @default false
              * @constant
              */
-            network: false;
+            network?: false;
             /** Timeout S */
             timeout_s?: number | null;
         };
@@ -21612,7 +21612,7 @@ export interface components {
              * @default schema
              * @enum {string}
              */
-            kind: "schema" | "profile";
+            kind?: "schema" | "profile";
             /** Tables */
             tables?: string[] | null;
         };
@@ -21698,7 +21698,7 @@ export interface components {
              * Count
              * @default 5
              */
-            count: number;
+            count?: number;
             /** Cron */
             cron: string;
             /** Timezone */
@@ -21934,7 +21934,7 @@ export interface components {
              * Top K
              * @default 12
              */
-            top_k: number;
+            top_k?: number;
         };
         /**
          * SecretRefView
@@ -22122,7 +22122,7 @@ export interface components {
              * @default manual
              * @enum {string}
              */
-            origin: "manual" | "from_session" | "agent_suggested" | "pack";
+            origin?: "manual" | "from_session" | "agent_suggested" | "pack";
             /** Origin Ref */
             origin_ref?: string | null;
             /**
@@ -22130,7 +22130,7 @@ export interface components {
              * @default personal
              * @enum {string}
              */
-            scope: "personal" | "data_space" | "org";
+            scope?: "personal" | "data_space" | "org";
         };
         /** SkillDetail */
         SkillDetail: {
@@ -22351,7 +22351,7 @@ export interface components {
              * @default internal
              * @enum {string}
              */
-            classification: "public" | "internal" | "confidential" | "restricted";
+            classification?: "public" | "internal" | "confidential" | "restricted";
             /** Content Sha256 */
             content_sha256?: string | null;
             /** Data Space Id */
@@ -22362,7 +22362,7 @@ export interface components {
              * External
              * @default false
              */
-            external: boolean;
+            external?: boolean;
             /** Pii Column Refs */
             pii_column_refs?: string[];
             /** Source Key */
@@ -22545,7 +22545,7 @@ export interface components {
              * @default sql
              * @enum {string}
              */
-            language: "sql" | "python";
+            language?: "sql" | "python";
         } & {
             [key: string]: unknown;
         };
@@ -22623,7 +22623,7 @@ export interface components {
              * @default active
              * @enum {string}
              */
-            status: "active" | "paused";
+            status?: "active" | "paused";
         };
         /** SubscriptionView */
         SubscriptionView: {
@@ -23178,7 +23178,7 @@ export interface components {
              * @default any
              * @enum {string}
              */
-            combine: "any" | "all";
+            combine?: "any" | "all";
             /** Condition */
             condition?: {
                 [key: string]: unknown;
@@ -23189,7 +23189,7 @@ export interface components {
              * Enabled
              * @default true
              */
-            enabled: boolean;
+            enabled?: boolean;
             /** Event Type */
             event_type?: string | null;
             /**
@@ -23203,7 +23203,7 @@ export interface components {
              * No Overlap
              * @default true
              */
-            no_overlap: boolean;
+            no_overlap?: boolean;
             /** Work Calendar Id */
             work_calendar_id?: string | null;
         };
@@ -23321,7 +23321,7 @@ export interface components {
              * @default metric
              * @enum {string}
              */
-            kind: "metric" | "mapping";
+            kind?: "metric" | "mapping";
         };
         /** UpgradeRequest */
         UpgradeRequest: {
@@ -23610,7 +23610,7 @@ export interface components {
              * @default seal
              * @enum {string}
              */
-            exit_policy: "seal" | "selective_handover" | "shred";
+            exit_policy?: "seal" | "selective_handover" | "shred";
             /** Key Wraps */
             key_wraps: components["schemas"]["KeyWrapCreate"][];
         };
@@ -23879,7 +23879,7 @@ export interface components {
              * @default blank
              * @enum {string}
              */
-            created_from: "blank" | "conversation" | "template" | "agent_run";
+            created_from?: "blank" | "conversation" | "template" | "agent_run";
             /** Created From Ref */
             created_from_ref?: string | null;
             /** Description */
@@ -24611,7 +24611,7 @@ export interface components {
              * Subject Version
              * @default current
              */
-            subject_version: string;
+            subject_version?: string;
         };
         /**
          * Accepted
@@ -24829,14 +24829,14 @@ export interface components {
              * @default report
              * @enum {string}
              */
-            kind: "report" | "digest";
+            kind?: "report" | "digest";
             /** Recipients */
             recipients?: components["schemas"]["RecipientIn"][];
             /**
              * Require Publish Check
              * @default true
              */
-            require_publish_check: boolean;
+            require_publish_check?: boolean;
             /** Title */
             title: string;
             /** Work Calendar Id */
@@ -25050,13 +25050,13 @@ export interface components {
              * No Overlap
              * @default true
              */
-            no_overlap: boolean;
+            no_overlap?: boolean;
             /**
              * On Failure
              * @default notify
              * @enum {string}
              */
-            on_failure: "notify" | "retry_then_notify" | "skip";
+            on_failure?: "notify" | "retry_then_notify" | "skip";
         };
         /** PlanView */
         services__api__modules__qa__schemas__PlanView: {

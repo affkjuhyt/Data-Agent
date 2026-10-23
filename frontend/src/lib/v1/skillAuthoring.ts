@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, V1Error, type Page } from './client';
+import { pathId, v1Get, v1Send, V1Error, type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 import type { SkillStatus } from './skills';
 
@@ -76,7 +76,9 @@ export const getSkillDefinition = async (id: string): Promise<SkillDefinition> =
   } catch (error) {
     if (!notProposal(error)) throw error;
   }
-  const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+  const raw = await ok<Schemas['SkillDetail']>(
+    api.GET('/v1/skills/{id}', { params: { path: { id } } }),
+  );
   const version = raw.published_version ?? raw.versions[0];
   const params = (version && 'params_schema' in version ? version.params_schema : {}) as {
     properties?: Record<string, { title?: string }>;
@@ -119,7 +121,9 @@ export const getLatestTrial = async (id: string): Promise<SkillTrial | null> => 
   } catch (error) {
     if (!notProposal(error)) throw error;
   }
-  const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+  const raw = await ok<Schemas['SkillDetail']>(
+    api.GET('/v1/skills/{id}', { params: { path: { id } } }),
+  );
   const version = raw.versions.find((candidate) => candidate.status === 'testing');
   return version
     ? {
@@ -142,37 +146,55 @@ export const saveSkillDefinition = async (
   } catch (error) {
     if (!notProposal(error)) throw error;
   }
-  const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+  const raw = await ok<Schemas['SkillDetail']>(
+    api.GET('/v1/skills/{id}', { params: { path: { id } } }),
+  );
   const draft = raw.versions.find((version) => version.status === 'draft');
   const payload = {
     steps: body.steps.map((step) => ({ seq: step.seq, text: step.text, tool: step.tool })),
     template_md: body.instructions,
   };
   if (draft) {
-    return v1Send<SkillDefinition>('PATCH', `/skill-versions/${pathId(draft.id)}`, payload);
+    return okAs<SkillDefinition>(
+      api.PATCH('/v1/skill-versions/{id}', { params: { path: { id: draft.id } }, body: payload }),
+    );
   }
-  return v1Send<SkillDefinition>('POST', `/skills/${pathId(id)}/versions`, {
-    params_schema: { type: 'object', properties: {} },
-    ...payload,
-  });
+  return okAs<SkillDefinition>(
+    api.POST('/v1/skills/{id}/versions', {
+      params: { path: { id } },
+      body: {
+        params_schema: { type: 'object', properties: {} },
+        ...payload,
+      },
+    }),
+  );
 };
 
 /** PROPOSAL: POST /v1/skills/{id}:try {params} — runs the working version once. */
 export const trySkill = async (id: string, params: Record<string, string>) =>
   v1Send<SkillTrial>('POST', `/skills/${pathId(id)}:try`, { params }).catch(async (e) => {
     if (!notProposal(e)) throw e;
-    const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+    const raw = await ok<Schemas['SkillDetail']>(
+      api.GET('/v1/skills/{id}', { params: { path: { id } } }),
+    );
     const draft = raw.versions.find((version) => version.status === 'draft');
     if (!draft) throw e;
-    const accepted = await v1Send<Schemas['services__api__modules__skill__schemas__Accepted']>(
-      'POST',
-      `/skill-versions/${pathId(draft.id)}:try`,
-      { params },
+    const accepted = await ok<Schemas['services__api__modules__skill__schemas__Accepted']>(
+      api.POST('/v1/skill-versions/{id}:try', {
+        params: { path: { id: draft.id } },
+        body: { params },
+      }),
     );
-    let run = readRun(await v1Get<RunWire>(`/skill-runs/${pathId(accepted.id)}`));
+    let run = readRun(
+      await ok<RunWire>(api.GET('/v1/skill-runs/{id}', { params: { path: { id: accepted.id } } })),
+    );
     for (let attempt = 0; attempt < 10 && run.outcome?.status === 'running'; attempt++) {
       await sleep(accepted.poll_after_ms ?? 2000);
-      run = readRun(await v1Get<RunWire>(`/skill-runs/${pathId(accepted.id)}`));
+      run = readRun(
+        await ok<RunWire>(
+          api.GET('/v1/skill-runs/{id}', { params: { path: { id: accepted.id } } }),
+        ),
+      );
     }
     return {
       version: draft.version,
@@ -216,7 +238,9 @@ export const getSessionSkillDraft = async (sessionId: string): Promise<SessionSk
     // The proposal route answers 404 when the session has no cells; a missing route does not.
     if (error instanceof V1Error && error.message.includes('ô tính')) throw error;
   }
-  const workspace = await v1Get<Schemas['WorkspaceDetail']>(`/workspaces/${pathId(sessionId)}`);
+  const workspace = await ok<Schemas['WorkspaceDetail']>(
+    api.GET('/v1/workspaces/{id}', { params: { path: { id: sessionId } } }),
+  );
   const tiles = workspace.tiles ?? [];
   return {
     session_id: workspace.id,
@@ -252,22 +276,26 @@ export const createSkillFromSession = async (body: {
     } catch (error) {
       if (!notProposal(error)) throw error;
     }
-    const workspace = await v1Get<Schemas['WorkspaceDetail']>(
-      `/workspaces/${pathId(body.session_id)}`,
+    const workspace = await ok<Schemas['WorkspaceDetail']>(
+      api.GET('/v1/workspaces/{id}', { params: { path: { id: body.session_id } } }),
     );
-    const skill = await v1Send<Schemas['SkillView']>('POST', '/skills', {
-      code:
-        body.name
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '_')
-          .replace(/^_|_$/g, '') || 'session_skill',
-      name: body.name,
-      description: body.description,
-      category: 'custom',
-      scope: 'personal',
-      origin: 'from_session',
-      origin_ref: body.session_id,
-    });
+    const skill = await ok<Schemas['SkillView']>(
+      api.POST('/v1/skills', {
+        body: {
+          code:
+            body.name
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '_')
+              .replace(/^_|_$/g, '') || 'session_skill',
+          name: body.name,
+          description: body.description,
+          category: 'custom',
+          scope: 'personal',
+          origin: 'from_session',
+          origin_ref: body.session_id,
+        },
+      }),
+    );
     const selected = new Set(body.kept_cells);
     const steps = (workspace.tiles ?? [])
       .filter((_, index) => selected.size === 0 || selected.has(index + 1))
@@ -277,10 +305,11 @@ export const createSkillFromSession = async (body: {
         tool: tile.kind === 'sql' ? 'query.run' : null,
       }));
     if (steps.length === 0) steps.push({ seq: 1, text: body.name, tool: null });
-    const version = await v1Send<Schemas['VersionView']>(
-      'POST',
-      `/skills/${pathId(skill.id)}/versions`,
-      { params_schema: { type: 'object', properties: {} }, steps },
+    const version = await ok<Schemas['VersionView']>(
+      api.POST('/v1/skills/{id}/versions', {
+        params: { path: { id: skill.id } },
+        body: { params_schema: { type: 'object', properties: {} }, steps },
+      }),
     );
     return { skill_id: skill.id, version: version.version };
   })();
@@ -308,7 +337,9 @@ export const getSessionAgentDraft = async (sessionId: string): Promise<SessionAg
   } catch (error) {
     if (!notProposal(error)) throw error;
   }
-  const workspace = await v1Get<Schemas['WorkspaceDetail']>(`/workspaces/${pathId(sessionId)}`);
+  const workspace = await ok<Schemas['WorkspaceDetail']>(
+    api.GET('/v1/workspaces/{id}', { params: { path: { id: sessionId } } }),
+  );
   return {
     session_id: workspace.id,
     session_title: workspace.title,
@@ -359,7 +390,9 @@ export const getLatestTestRun = async (id: string): Promise<SkillTestRun> => {
   } catch (error) {
     if (!notProposal(error)) throw error;
   }
-  const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+  const raw = await ok<Schemas['SkillDetail']>(
+    api.GET('/v1/skills/{id}', { params: { path: { id } } }),
+  );
   const version = raw.versions.find((candidate) => candidate.eval_run_id) ?? raw.versions[0];
   if (!version) throw new V1Error(404, 'not_found', 'Kỹ năng chưa có phiên bản.');
   return {
@@ -379,12 +412,13 @@ export const runSkillTests = async (id: string): Promise<SkillTestRun> => {
     return await v1Send<SkillTestRun>('POST', `/skills/${pathId(id)}:test`, {});
   } catch (error) {
     if (!notProposal(error)) throw error;
-    const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+    const raw = await ok<Schemas['SkillDetail']>(
+      api.GET('/v1/skills/{id}', { params: { path: { id } } }),
+    );
     const draft = raw.versions.find((version) => version.status === 'draft');
     if (!draft) throw error;
-    await v1Send<Schemas['services__api__modules__skill__schemas__Accepted']>(
-      'POST',
-      `/skill-versions/${pathId(draft.id)}:test`,
+    await ok<Schemas['services__api__modules__skill__schemas__Accepted']>(
+      api.POST('/v1/skill-versions/{id}:test', { params: { path: { id: draft.id } } }),
     );
     return {
       skill_id: raw.id,
@@ -428,12 +462,13 @@ export const submitSkill = async (id: string, notes: Record<string, string>) => 
     });
   } catch (error) {
     if (!notProposal(error)) throw error;
-    const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+    const raw = await ok<Schemas['SkillDetail']>(
+      api.GET('/v1/skills/{id}', { params: { path: { id } } }),
+    );
     const candidate = raw.versions.find((version) => version.status === 'testing');
     if (!candidate) throw error;
-    const published = await v1Send<Schemas['VersionView']>(
-      'POST',
-      `/skill-versions/${pathId(candidate.id)}:publish`,
+    const published = await ok<Schemas['VersionView']>(
+      api.POST('/v1/skill-versions/{id}:publish', { params: { path: { id: candidate.id } } }),
     );
     return { status: published.status as SkillAuthoringStatus };
   }
@@ -547,7 +582,9 @@ export const getSkillRunForm = async (id: string): Promise<SkillRunForm> => {
   } catch (error) {
     if (!notProposal(error)) throw error;
   }
-  const raw = await v1Get<Schemas['SkillDetail']>(`/skills/${pathId(id)}`);
+  const raw = await ok<Schemas['SkillDetail']>(
+    api.GET('/v1/skills/{id}', { params: { path: { id } } }),
+  );
   const version = raw.published_version ?? null;
   const schema = (version?.params_schema ?? {}) as {
     properties?: Record<string, { title?: string; enum?: unknown[]; default?: unknown }>;
@@ -645,19 +682,32 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** The Data Space's decomposition skill ("Phân rã biến động") with a version to run, or null. */
 export const findDecompositionSkill = async (): Promise<string | null> => {
-  const skills = await v1Get<Page<Schemas['SkillView']>>('/skills', {
-    category: 'decomposition',
-    page_size: 20,
-  });
+  const skills = await ok<Page<Schemas['SkillView']>>(
+    api.GET('/v1/skills', {
+      params: {
+        query: {
+          category: 'decomposition',
+          page_size: 20,
+        },
+      },
+    }),
+  );
   return skills.items.find((s) => s.current_version !== null)?.id ?? null;
 };
 
 /** GET /v1/skills/{id}/runs — the viewer's runs, newest first. */
 export const listSkillRuns = async (id: string): Promise<Page<SkillRun>> => {
   try {
-    const page = await v1Get<Page<RunWire | SkillRun>>(`/skills/${pathId(id)}/runs`, {
-      page_size: 50,
-    });
+    const page = await ok<Page<RunWire | SkillRun>>(
+      api.GET('/v1/skills/{id}/runs', {
+        params: {
+          path: { id },
+          query: {
+            page_size: 50,
+          },
+        },
+      }),
+    );
     return {
       ...page,
       items: page.items.map((run) =>
@@ -681,15 +731,17 @@ export const runSkill = async (
   kind: SkillRunKind,
 ): Promise<SkillRun> => {
   if (kind !== 'generic') return v1Send<SkillRun>('POST', `/skills/${pathId(id)}:run`, { params });
-  const accepted = await v1Send<Schemas['services__api__modules__skill__schemas__Accepted']>(
-    'POST',
-    `/skills/${pathId(id)}/runs`,
-    { params },
+  const accepted = await ok<Schemas['services__api__modules__skill__schemas__Accepted']>(
+    api.POST('/v1/skills/{id}/runs', { params: { path: { id } }, body: { params } }),
   );
-  let run = readRun(await v1Get<RunWire>(`/skill-runs/${pathId(accepted.id)}`));
+  let run = readRun(
+    await ok<RunWire>(api.GET('/v1/skill-runs/{id}', { params: { path: { id: accepted.id } } })),
+  );
   for (let attempt = 0; attempt < 10 && run.outcome?.status === 'running'; attempt++) {
     await sleep(accepted.poll_after_ms ?? 2000);
-    run = readRun(await v1Get<RunWire>(`/skill-runs/${pathId(accepted.id)}`));
+    run = readRun(
+      await ok<RunWire>(api.GET('/v1/skill-runs/{id}', { params: { path: { id: accepted.id } } })),
+    );
   }
   return run;
 };
@@ -707,18 +759,29 @@ export const addRunToSession = async (runId: string): Promise<{ session_id: stri
     );
   } catch (error) {
     if (!notProposal(error)) throw error;
-    const run = await v1Get<Schemas['RunDetail']>(`/skill-runs/${pathId(runId)}`);
-    const workspace = await v1Send<Schemas['WorkspaceView']>('POST', '/workspaces', {
-      title: `Kết quả kỹ năng · ${run.version}`,
-      created_from: 'agent_run',
-      created_from_ref: run.id,
-      params: run.params ?? {},
-    });
-    await v1Send<Schemas['TileView']>('POST', `/workspaces/${pathId(workspace.id)}/tiles`, {
-      kind: 'skill_run',
-      title: `Kết quả kỹ năng v${run.version}`,
-      spec: { skill_run_id: run.id, result: run.result ?? null },
-    });
+    const run = await ok<Schemas['RunDetail']>(
+      api.GET('/v1/skill-runs/{id}', { params: { path: { id: runId } } }),
+    );
+    const workspace = await ok<Schemas['WorkspaceView']>(
+      api.POST('/v1/workspaces', {
+        body: {
+          title: `Kết quả kỹ năng · ${run.version}`,
+          created_from: 'agent_run',
+          created_from_ref: run.id,
+          params: (run.params ?? {}) as Record<string, unknown>,
+        },
+      }),
+    );
+    await ok<Schemas['TileView']>(
+      api.POST('/v1/workspaces/{id}/tiles', {
+        params: { path: { id: workspace.id } },
+        body: {
+          kind: 'skill_run',
+          title: `Kết quả kỹ năng v${run.version}`,
+          spec: { skill_run_id: run.id, result: run.result ?? null },
+        },
+      }),
+    );
     return { session_id: workspace.id };
   }
 };

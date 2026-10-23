@@ -1,4 +1,4 @@
-import { pathId, v1Events, v1Get, v1Send, type Page } from './client';
+import { pathId, v1Events, type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 
 /*
@@ -45,28 +45,36 @@ export interface ConversationListItem {
 }
 
 export const askQuestion = (text: string, conversationId: string | null) =>
-  v1Send<QuestionAccepted>('POST', '/questions', {
-    text,
-    conversation_id: conversationId,
-    knowledge_mode: 'latest',
-    stream: true,
-  } satisfies QuestionCreate);
+  ok<QuestionAccepted>(
+    api.POST('/v1/questions', {
+      body: {
+        text,
+        conversation_id: conversationId,
+        knowledge_mode: 'latest',
+        stream: true,
+      } satisfies QuestionCreate,
+    }),
+  );
 
-export const getAnswer = async (id: string) => v1Get<Answer>(`/answers/${pathId(id)}`);
+export const getAnswer = async (id: string) =>
+  ok<Answer>(api.GET('/v1/answers/{id}', { params: { path: { id } } }));
 
 export type QuestionWire = components['schemas']['QuestionView'];
 
 /** The question with its latest plan (chips and steps), for "Hệ thống hiểu là" and the steps
  *  waiting for the person (UC-01-04, UC-03-01). */
-export const getQuestion = async (id: string) => v1Get<QuestionWire>(`/questions/${pathId(id)}`);
+export const getQuestion = async (id: string) =>
+  ok<QuestionWire>(api.GET('/v1/questions/{id}', { params: { path: { id } } }));
 
 /** Reopen an Ask thread: ordered turns with answer_id when answered (R1-13). */
 export const getConversation = async (id: string) =>
-  v1Get<ConversationDetail>(`/conversations/${pathId(id)}`);
+  okAs<ConversationDetail>(api.GET('/v1/conversations/{id}', { params: { path: { id } } }));
 
 /** Recent conversations for this viewer in the current Data Space. */
 export const listConversations = async (pageSize = 8) =>
-  v1Get<Page<ConversationListItem>>('/conversations', { page_size: pageSize });
+  ok<Page<ConversationListItem>>(
+    api.GET('/v1/conversations', { params: { query: { page_size: pageSize } } }),
+  );
 
 /** The question's events after `lastEventId`; the server closes the stream after what it has. */
 export const questionEvents = async (id: string, lastEventId?: string, signal?: AbortSignal) =>
@@ -77,8 +85,13 @@ export const saveAnswerToSession = (
   workspaceId: string,
   answer: { answerId: string; title: string },
 ) =>
-  v1Send<components['schemas']['TileView']>('POST', `/workspaces/${pathId(workspaceId)}/tiles`, {
-    kind: 'question',
-    title: answer.title,
-    spec: { question: answer.title, answer_id: answer.answerId },
-  });
+  ok<components['schemas']['TileView']>(
+    api.POST('/v1/workspaces/{id}/tiles', {
+      params: { path: { id: workspaceId } },
+      body: {
+        kind: 'question',
+        title: answer.title,
+        spec: { question: answer.title, answer_id: answer.answerId },
+      },
+    }),
+  );

@@ -1,4 +1,4 @@
-import { pathId, V1Error, v1Get, v1Send } from './client';
+import { V1Error, api, ok } from './client';
 import type { components } from './schema';
 
 /*
@@ -202,7 +202,11 @@ export const readReceipt = (raw: ReceiptWire): AnswerReceipt => ({
 });
 
 export const getAnswerReceipt = async (answerId: string) =>
-  readReceipt(await v1Get<ReceiptWire>(`/answers/${pathId(answerId)}/receipt`));
+  readReceipt(
+    await ok<ReceiptWire>(
+      api.GET('/v1/answers/{id}/receipt', { params: { path: { id: answerId } } }),
+    ),
+  );
 
 /** figure_results: {figure_key, original_value, replay_value, sql_sha256_match, result_sha256_match}. */
 interface FigureResult {
@@ -256,16 +260,19 @@ const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * answered_at; the replay is then read until it is no longer running.
  */
 export async function rerunReceipt(receiptId: string, mode: RerunMode): Promise<ReceiptRerun> {
-  const job = await v1Send<Schemas['JobAccepted']>(
-    'POST',
-    `/receipts/${pathId(receiptId)}:replay`,
-    {
-      mode,
-    } satisfies Schemas['ReplayCreate'],
+  const job = await ok<Schemas['JobAccepted']>(
+    api.POST('/v1/receipts/{id}:replay', {
+      params: { path: { id: receiptId } },
+      body: {
+        mode,
+      } satisfies Schemas['ReplayCreate'],
+    }),
   );
   const wait = Math.min(job.poll_after_ms ?? 2000, 2000);
   for (let i = 0; i < POLL_LIMIT; i += 1) {
-    const replay = await v1Get<ReplayWire>(`/receipt-replays/${pathId(job.id)}`);
+    const replay = await ok<ReplayWire>(
+      api.GET('/v1/receipt-replays/{id}', { params: { path: { id: job.id } } }),
+    );
     if (replay.status !== 'running') return readReplay(replay);
     await pause(wait);
   }

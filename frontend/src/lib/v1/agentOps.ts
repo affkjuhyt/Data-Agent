@@ -1,5 +1,5 @@
 import { controlRun, listAgents } from './api';
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { type Page, api, ok } from './client';
 import type { components } from './schema';
 import type { RunStatus } from './types';
 
@@ -141,9 +141,9 @@ const withDeployment = (r: Rollout, d: Deployment): Rollout => ({
 });
 
 async function evalOf(run: Schemas['EvalRunDetail']): Promise<NonNullable<Rollout['eval_set']>> {
-  const set = await v1Get<Schemas['EvalSetDetail']>(`/eval-sets/${pathId(run.eval_set_id)}`).catch(
-    () => null,
-  );
+  const set = await ok<Schemas['EvalSetDetail']>(
+    api.GET('/v1/eval-sets/{id}', { params: { path: { id: run.eval_set_id } } }),
+  ).catch(() => null);
   const threshold = percent(set?.pass_threshold);
   return {
     id: run.eval_set_id,
@@ -171,15 +171,26 @@ async function evalOf(run: Schemas['EvalRunDetail']): Promise<NonNullable<Rollou
 
 /** The agent's deployment in progress; null when it has none (UC-13-05 not started or done). */
 export const getRollout = async (agentId: string): Promise<Rollout | null> => {
-  const agent = await v1Get<Schemas['AgentView']>(`/agents/${pathId(agentId)}`);
+  const agent = await ok<Schemas['AgentView']>(
+    api.GET('/v1/agents/{id}', { params: { path: { id: agentId } } }),
+  );
   const deployment = agent.active_deployment;
   if (!deployment) return null;
-  const configs = await v1Get<Page<Schemas['ConfigView']>>(`/agents/${pathId(agent.id)}/configs`, {
-    page_size: 500,
-  });
+  const configs = await ok<Page<Schemas['ConfigView']>>(
+    api.GET('/v1/agents/{id}/configs', {
+      params: {
+        path: { id: agent.id },
+        query: {
+          page_size: 500,
+        },
+      },
+    }),
+  );
   const candidate = configs.items.find((c) => c.version === deployment.config_version);
   const run = candidate?.eval_run_id
-    ? await v1Get<Schemas['EvalRunDetail']>(`/eval-runs/${pathId(candidate.eval_run_id)}`)
+    ? await ok<Schemas['EvalRunDetail']>(
+        api.GET('/v1/eval-runs/{id}', { params: { path: { id: candidate.eval_run_id } } }),
+      )
     : null;
   const base: Rollout = {
     agent_id: agent.id,
@@ -202,18 +213,28 @@ export const getRollout = async (agentId: string): Promise<Rollout | null> => {
 export const setRolloutShare = async (rollout: Rollout, pct: number) =>
   withDeployment(
     rollout,
-    await v1Send<Deployment>('PATCH', `/deployments/${pathId(rollout.deployment_id)}`, {
-      traffic_pct: pct,
-    } satisfies Schemas['DeploymentPatch']),
+    await ok<Deployment>(
+      api.PATCH('/v1/deployments/{id}', {
+        params: { path: { id: rollout.deployment_id } },
+        body: {
+          traffic_pct: pct,
+        } satisfies Schemas['DeploymentPatch'],
+      }),
+    ),
   );
 
 /** Every new run goes back to the baseline; runs already started keep their version. */
 export const rollbackRollout = async (rollout: Rollout, reason: string) =>
   withDeployment(
     rollout,
-    await v1Send<Deployment>('POST', `/deployments/${pathId(rollout.deployment_id)}:rollback`, {
-      reason,
-    } satisfies Schemas['DeploymentRollback']),
+    await ok<Deployment>(
+      api.POST('/v1/deployments/{id}:rollback', {
+        params: { path: { id: rollout.deployment_id } },
+        body: {
+          reason,
+        } satisfies Schemas['DeploymentRollback'],
+      }),
+    ),
   );
 
 /** A case added to the eval set, optionally frozen from a real run (eval_item.category). */
@@ -228,11 +249,16 @@ export interface NewEvalCase {
 
 /** POST /v1/eval-sets/{id}/items: input and expected are jsonb; the run it came from rides along. */
 export const addEvalCase = async (evalSetId: string, body: NewEvalCase) =>
-  v1Send<Schemas['EvalItemView']>('POST', `/eval-sets/${pathId(evalSetId)}/items`, {
-    input: { text: body.input, ...(body.source_run_id ? { run_id: body.source_run_id } : {}) },
-    expected: { text: body.expected },
-    category: body.kind,
-  } as unknown as Schemas['EvalItemCreate']);
+  ok<Schemas['EvalItemView']>(
+    api.POST('/v1/eval-sets/{id}/items', {
+      params: { path: { id: evalSetId } },
+      body: {
+        input: { text: body.input, ...(body.source_run_id ? { run_id: body.source_run_id } : {}) },
+        expected: { text: body.expected },
+        category: body.kind,
+      } as unknown as Schemas['EvalItemCreate'],
+    }),
+  );
 
 /* ─── Điều phối nhiều agent (UC-13-08) ────────────────────────────────── */
 
@@ -269,14 +295,20 @@ type RunWire = Schemas['RunView'];
 type RunRow = Schemas['RunSummary'];
 
 const children = async (id: string) =>
-  (await v1Get<Page<RunRow>>(`/runs/${pathId(id)}/children`, { page_size: 500 })).items;
+  (
+    await ok<Page<RunRow>>(
+      api.GET('/v1/runs/{id}/children', { params: { path: { id }, query: { page_size: 500 } } }),
+    )
+  ).items;
 
 /** UC-13-08 nests at most a few levels; each level is one read per parent. */
 const MAX_DEPTH = 3;
 
 export const getOrchestration = async (id: string): Promise<Orchestration> => {
   const [lead, agents] = await Promise.all([
-    v1Get<RunWire>(`/runs/${pathId(id)}`, { view: 'technical' }),
+    ok<RunWire>(
+      api.GET('/v1/runs/{id}', { params: { path: { id }, query: { view: 'technical' } } }),
+    ),
     listAgents().catch(() => null),
   ]);
   const nameOf = (agentId: string) => agents?.items.find((a) => a.id === agentId)?.name ?? 'Agent';
@@ -340,7 +372,9 @@ export const findRollout = async (): Promise<string | null> => {
 };
 
 export const findOrchestration = async (): Promise<string | null> => {
-  const page = await v1Get<Page<RunRow>>('/runs', { page_size: 500 });
+  const page = await ok<Page<RunRow>>(
+    api.GET('/v1/runs', { params: { query: { page_size: 500 } } }),
+  );
   const leads = [
     ...new Set(
       page.items.flatMap((r) => (r.depth === 1 && r.parent_run_id ? [r.parent_run_id] : [])),

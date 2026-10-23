@@ -1,5 +1,5 @@
 import { listDatasets } from './api';
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { type Page, api, ok, okAs } from './client';
 import { getMe } from './me';
 import type { components } from './schema';
 
@@ -140,10 +140,9 @@ const tablesFor = (
 /** GET /v1/marts, adapted from the API's DataMartView. */
 export const listMarts = async (): Promise<Page<Pick<DataMart, 'id' | 'name'>>> => {
   const [page, datasets] = await Promise.all([
-    v1Get<Page<DataMartWire>>('/marts'),
-    v1Get<Page<components['schemas']['services__api__modules__catalog__schemas__DatasetView']>>(
-      '/datasets',
-      { page_size: 500 },
+    ok<Page<DataMartWire>>(api.GET('/v1/marts')),
+    ok<Page<components['schemas']['services__api__modules__catalog__schemas__DatasetView']>>(
+      api.GET('/v1/datasets', { params: { query: { page_size: 500 } } }),
     ).catch(() => null),
   ]);
   const tables = tablesFor(datasets);
@@ -153,10 +152,9 @@ export const listMarts = async (): Promise<Page<Pick<DataMart, 'id' | 'name'>>> 
 /** PROPOSAL: GET /v1/marts/{id}. */
 export async function getMart(id: string) {
   const [mart, datasets] = await Promise.all([
-    v1Get<DataMartWire>(`/marts/${pathId(id)}`),
-    v1Get<Page<components['schemas']['services__api__modules__catalog__schemas__DatasetView']>>(
-      '/datasets',
-      { page_size: 500 },
+    ok<DataMartWire>(api.GET('/v1/marts/{id}', { params: { path: { id } } })),
+    ok<Page<components['schemas']['services__api__modules__catalog__schemas__DatasetView']>>(
+      api.GET('/v1/datasets', { params: { query: { page_size: 500 } } }),
     ).catch(() => null),
   ]);
   return readDataMart(mart, tablesFor(datasets));
@@ -168,18 +166,25 @@ export async function applyMartSuggestion(
   body: { dimensions: string[]; measures: string[] },
 ) {
   const [mart, datasets] = await Promise.all([
-    v1Get<DataMartWire>(`/marts/${pathId(id)}`),
-    v1Get<Page<components['schemas']['services__api__modules__catalog__schemas__DatasetView']>>(
-      '/datasets',
-      { page_size: 500 },
+    ok<DataMartWire>(api.GET('/v1/marts/{id}', { params: { path: { id } } })),
+    ok<Page<components['schemas']['services__api__modules__catalog__schemas__DatasetView']>>(
+      api.GET('/v1/datasets', { params: { query: { page_size: 500 } } }),
     ).catch(() => null),
   ]);
   const selectedDimensions = body.dimensions.map((name) => ({ name }));
   const selectedMeasures = body.measures.map((name) => ({ name }));
-  const updated = await v1Send<DataMartWire>('PATCH', `/marts/${pathId(id)}`, {
-    dimensions: [...(Array.isArray(mart.dimensions) ? mart.dimensions : []), ...selectedDimensions],
-    measures: [...(Array.isArray(mart.measures) ? mart.measures : []), ...selectedMeasures],
-  });
+  const updated = await ok<DataMartWire>(
+    api.PATCH('/v1/marts/{id}', {
+      params: { path: { id } },
+      body: {
+        dimensions: [
+          ...(Array.isArray(mart.dimensions) ? mart.dimensions : []),
+          ...selectedDimensions,
+        ],
+        measures: [...(Array.isArray(mart.measures) ? mart.measures : []), ...selectedMeasures],
+      },
+    }),
+  );
   return readDataMart(updated, tablesFor(datasets));
 }
 
@@ -234,18 +239,20 @@ export interface DataProductDetail extends DataProduct {
  * rows are left out here and the list is empty until A2 adds one.
  */
 export const listDataProducts = async () => {
-  const page = await v1Get<Page<DataProduct & { layer?: string }>>('/data-products');
+  const page = await okAs<Page<DataProduct & { layer?: string }>>(api.GET('/v1/data-products'));
   return { ...page, items: page.items.filter((p) => p.layer !== 'context') };
 };
 
 /** PROPOSAL: GET /v1/data-products/{id}. */
 export async function getDataProduct(id: string) {
-  return v1Get<DataProductDetail>(`/data-products/${pathId(id)}`);
+  return okAs<DataProductDetail>(api.GET('/v1/data-products/{id}', { params: { path: { id } } }));
 }
 
 /** PROPOSAL: POST /v1/data-products/{id}:draft-version — the agent drafts the next version. */
 export async function draftNextVersion(id: string) {
-  return v1Send<DataProductDetail>('POST', `/data-products/${pathId(id)}:draft-version`);
+  return okAs<DataProductDetail>(
+    api.POST('/v1/data-products/{id}:draft-version', { params: { path: { id } } }),
+  );
 }
 
 /** "Biên LN theo ngành hàng" → "bien_ln_theo_nganh_hang" */
@@ -269,22 +276,25 @@ export const createDataProduct = async (body: {
   version: string;
 }) => {
   const me = await getMe();
-  return v1Send<{ id: string }>('POST', '/data-products', {
-    code: codeOf(body.name),
-    name: body.name,
-    layer: 'published',
-    data_mart_id: body.mart_id,
-    owner_id: me.id,
-  } satisfies components['schemas']['DataProductCreate']);
+  return ok<{ id: string }>(
+    api.POST('/v1/data-products', {
+      body: {
+        code: codeOf(body.name),
+        name: body.name,
+        layer: 'published',
+        data_mart_id: body.mart_id,
+        owner_id: me.id,
+      } satisfies components['schemas']['DataProductCreate'],
+    }),
+  );
 };
 
 /** A2: POST /v1/data-products/{id}:publish — the product row, its version a number there. */
 export async function publishDataProduct(
   id: string,
 ): Promise<Pick<DataProduct, 'id' | 'name' | 'status' | 'version'>> {
-  const raw = await v1Send<{ id: string; name: string; status: string; version: number | string }>(
-    'POST',
-    `/data-products/${pathId(id)}:publish`,
+  const raw = await ok<{ id: string; name: string; status: string; version: number | string }>(
+    api.POST('/v1/data-products/{id}:publish', { params: { path: { id } } }),
   );
   return {
     id: raw.id,
@@ -310,7 +320,8 @@ export interface CatalogProduct {
 }
 
 /** PROPOSAL: GET /v1/data-products/catalog — published products of the other Data Spaces. */
-export const listCatalogProducts = () => v1Get<Page<CatalogProduct>>('/data-products/catalog');
+export const listCatalogProducts = () =>
+  okAs<Page<CatalogProduct>>(api.GET('/v1/data-products/catalog'));
 
 /** PROPOSAL: one access request per product, decided by the owning Data Space. */
 export interface ProductUseRequest {
@@ -324,7 +335,7 @@ export interface ProductUseRequest {
  * products become readable in `data_space_id` once each owner approves.
  */
 export const requestProductUse = (body: { product_ids: string[]; data_space_id: string }) =>
-  v1Send<{ requests: ProductUseRequest[] }>('POST', '/data-products:request-use', body);
+  okAs<{ requests: ProductUseRequest[] }>(api.POST('/v1/data-products:request-use', { body }));
 
 /* ─── Quality rule (ingest.quality_rule / quality_result) ─────────────── */
 
@@ -422,9 +433,11 @@ function readRule(raw: RuleWire, tables: Map<string, string>, results: ResultRow
 export const listQualityRules = async (): Promise<Page<QualityRule>> => {
   const week = new Date(Date.now() - 7 * 86_400_000).toISOString();
   const [rules, datasets, results] = await Promise.all([
-    v1Get<Page<RuleWire>>('/quality-rules', { page_size: 500 }),
+    ok<Page<RuleWire>>(api.GET('/v1/quality-rules', { params: { query: { page_size: 500 } } })),
     listDatasets(),
-    v1Get<Page<ResultRow>>('/quality-results', { from: week, page_size: 500 }),
+    ok<Page<ResultRow>>(
+      api.GET('/v1/quality-results', { params: { query: { from: week, page_size: 500 } } }),
+    ),
   ]);
   const tables = new Map(datasets.items.map((d) => [d.id, d.display_name]));
   return { ...rules, items: rules.items.map((r) => readRule(r, tables, results.items)) };
@@ -439,7 +452,11 @@ export const createQualityRule = (body: {
   params?: Record<string, unknown>;
   severity: RuleSeverity;
 }) =>
-  v1Send<Schemas['QualityRuleView']>('POST', '/quality-rules', {
-    ...body,
-    severity: body.severity === 'block' ? 'high' : 'medium',
-  });
+  ok<Schemas['QualityRuleView']>(
+    api.POST('/v1/quality-rules', {
+      body: {
+        ...body,
+        severity: body.severity === 'block' ? 'high' : 'medium',
+      },
+    }),
+  );

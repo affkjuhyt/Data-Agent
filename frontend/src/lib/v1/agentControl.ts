@@ -1,4 +1,4 @@
-import { pathId, v1Send } from './client';
+import { api, ok, okAs } from './client';
 import type { AgentDef } from './types';
 
 /*
@@ -8,11 +8,16 @@ import type { AgentDef } from './types';
  * UI reason because it does not collect a separate free-text explanation.
  */
 export const lockAgent = async (id: string) =>
-  v1Send<AgentDef>('POST', `/agents/${pathId(id)}:lock`, {
-    reason: 'Khoá theo yêu cầu của người dùng.',
-  });
+  okAs<AgentDef>(
+    api.POST('/v1/agents/{id}:lock', {
+      params: { path: { id } },
+      body: {
+        reason: 'Khoá theo yêu cầu của người dùng.',
+      },
+    }),
+  );
 
 export const unlockAgent = async (id: string) =>
-  v1Send<AgentDef>('POST', `/agents/${pathId(id)}:unlock`);
+  okAs<AgentDef>(api.POST('/v1/agents/{id}:unlock', { params: { path: { id } } }));
 
 export const isLocked = (agent: AgentDef) => agent.status === 'locked';

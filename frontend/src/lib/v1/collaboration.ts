@@ -1,5 +1,5 @@
 import { listUsers } from './api';
-import { pathId, v1Get, type Page } from './client';
+import { type Page, api, ok } from './client';
 import type { components } from './schema';
 import type { AppUser } from './types';
 
@@ -61,18 +61,28 @@ const DECISION_TEXT: Record<string, string> = {
 
 /** The caller's open request for this proposal, if the inbox holds one. */
 async function myRequest(proposalId: string): Promise<HitlDetail | null> {
-  const inbox = await v1Get<Page<Schemas['HitlView']>>('/inbox', { page_size: 500 });
+  const inbox = await ok<Page<Schemas['HitlView']>>(
+    api.GET('/v1/inbox', { params: { query: { page_size: 500 } } }),
+  );
   const open = inbox.items.find((h) => h.source_ref === proposalId && h.status === 'open');
-  return open ? v1Get<HitlDetail>(`/hitl-requests/${pathId(open.id)}`) : null;
+  return open
+    ? ok<HitlDetail>(api.GET('/v1/hitl-requests/{id}', { params: { path: { id: open.id } } }))
+    : null;
 }
 
 /** The audit trail of the proposal; a viewer without audit access gets the derived log. */
 const auditOf = async (proposalId: string) =>
   (
-    await v1Get<Page<Schemas['AuditLogView']>>('/audit', {
-      object_id: proposalId,
-      page_size: 100,
-    }).catch(() => null)
+    await ok<Page<Schemas['AuditLogView']>>(
+      api.GET('/v1/audit', {
+        params: {
+          query: {
+            object_id: proposalId,
+            page_size: 100,
+          },
+        },
+      }),
+    ).catch(() => null)
   )?.items ?? [];
 
 function stepsOf(
@@ -127,7 +137,7 @@ function stepsOf(
 
 export const getCollaboration = async (proposalId: string): Promise<Collaboration> => {
   const [proposal, request, users, audit] = await Promise.all([
-    v1Get<Proposal>(`/proposals/${pathId(proposalId)}`),
+    ok<Proposal>(api.GET('/v1/proposals/{id}', { params: { path: { id: proposalId } } })),
     myRequest(proposalId),
     listUsers().catch(() => null),
     auditOf(proposalId),

@@ -1,5 +1,5 @@
 import { listDataSpaces } from './api';
-import { pathId, V1Error, v1Get, v1Send, v1Upload, type Page } from './client';
+import { pathId, V1Error, v1Send, v1Upload, type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 import { awaitQueryRun, getQueryRows } from './explore';
 import { readDataset, readSource, type DatasetWire, type Source, type SourceWire } from './types';
@@ -128,7 +128,9 @@ const spaceRefs = async (): Promise<DataSpaceRef[]> =>
 
 export const listSourceRows = async (): Promise<Page<SourceRow>> => {
   const [page, spaces] = await Promise.all([
-    v1Get<Page<SourceWire & Partial<SourceRowExtras>>>('/sources', ALL),
+    ok<Page<SourceWire & Partial<SourceRowExtras>>>(
+      api.GET('/v1/sources', { params: { query: ALL } }),
+    ),
     spaceRefs(),
   ]);
   return { ...page, items: page.items.map((raw) => readSourceRow(raw, spaces)) };
@@ -150,8 +152,12 @@ const readTable = (raw: DatasetWire & Partial<SourceTable>): SourceTable => {
 /** GET /v1/sources/{id} (A2 since 12/10/2026), with its tables: the datasets read from it. */
 export const getSource = async (id: string): Promise<SourceDetail> => {
   const [raw, tables, spaces] = await Promise.all([
-    v1Get<SourceWire & Partial<SourceRowExtras>>(`/sources/${pathId(id)}`),
-    v1Get<Page<DatasetWire>>('/datasets', { ...ALL, source_id: pathId(id) }),
+    ok<SourceWire & Partial<SourceRowExtras>>(
+      api.GET('/v1/sources/{id}', { params: { path: { id } } }),
+    ),
+    ok<Page<DatasetWire>>(
+      api.GET('/v1/datasets', { params: { query: { ...ALL, source_id: pathId(id) } } }),
+    ),
     spaceRefs(),
   ]);
   return { ...readSourceRow(raw, spaces), tables: tables.items.map(readTable) };
@@ -214,9 +220,13 @@ const histogramFrom = (topValues: unknown): number[] | null => {
 };
 
 export const getTableProfile = async (id: string): Promise<TableProfile> => {
-  const dataset = await v1Get<DatasetDetailWire>(`/datasets/${pathId(id)}`);
+  const dataset = await ok<DatasetDetailWire>(
+    api.GET('/v1/datasets/{id}', { params: { path: { id } } }),
+  );
   const source = dataset.source_id
-    ? await v1Get<SourceWire>(`/sources/${pathId(dataset.source_id)}`)
+    ? await ok<SourceWire>(
+        api.GET('/v1/sources/{id}', { params: { path: { id: dataset.source_id } } }),
+      )
     : null;
   const columns = dataset.columns ?? [];
   const refreshedAt =
@@ -276,10 +286,14 @@ const PII_LABELS: Record<string, string> = {
  * before :activate enables the table (UC-04-04 step 3).
  */
 export const listScannedTables = async (sourceId: string): Promise<ConnectionTest['tables']> => {
-  const page = await v1Get<Page<DatasetWire>>('/datasets', { ...ALL, source_id: pathId(sourceId) });
+  const page = await ok<Page<DatasetWire>>(
+    api.GET('/v1/datasets', { params: { query: { ...ALL, source_id: pathId(sourceId) } } }),
+  );
   return Promise.all(
     page.items.map(async (dataset) => {
-      const detail = await v1Get<DatasetDetailWire>(`/datasets/${pathId(dataset.id)}`);
+      const detail = await ok<DatasetDetailWire>(
+        api.GET('/v1/datasets/{id}', { params: { path: { id: dataset.id } } }),
+      );
       const personal = (detail.columns ?? [])
         .filter((column) => column.pii_label)
         .map((column) => ({
@@ -304,16 +318,22 @@ export const listScannedTables = async (sourceId: string): Promise<ConnectionTes
 
 /** PATCH /v1/datasets/{id}: the admin confirms these personal-data columns are masked. */
 export const confirmMasking = (datasetId: string, columnIds: string[]) =>
-  v1Send('PATCH', `/datasets/${pathId(datasetId)}`, {
-    columns: columnIds.map((id) => ({ id, pii_confirmed: true })),
-  });
+  ok(
+    api.PATCH('/v1/datasets/{id}', {
+      params: { path: { id: datasetId } },
+      body: {
+        columns: columnIds.map((id) => ({ id, pii_confirmed: true })),
+      },
+    }),
+  );
 
 /** A profile again now is a scan of the source: POST /v1/sources/{id}/scans {kind: profile}. */
 export const reprofileTable = async (profile: Pick<TableProfile, 'source' | 'table_ref'>) =>
-  v1Send<components['schemas']['services__api__modules__catalog__schemas__Accepted']>(
-    'POST',
-    `/sources/${pathId(profile.source.id)}/scans`,
-    { kind: 'profile', tables: [profile.table_ref] },
+  ok<components['schemas']['services__api__modules__catalog__schemas__Accepted']>(
+    api.POST('/v1/sources/{id}/scans', {
+      params: { path: { id: profile.source.id } },
+      body: { kind: 'profile', tables: [profile.table_ref] },
+    }),
   );
 
 /* ─── Kết nối nguồn: connectors and the five-step flow ────────────────── */
@@ -336,7 +356,7 @@ export interface Connector {
   sample_sql: string | null;
 }
 
-export const listConnectors = () => v1Get<Page<Connector>>('/connectors', ALL);
+export const listConnectors = () => ok<Page<Connector>>(api.GET('/v1/connectors'));
 
 /** A secret reference the connection can use (governance secrets; never the secret itself). */
 export interface SecretRef {
@@ -349,7 +369,7 @@ export interface SecretRef {
  * the Data Space's sources already use, whatever their kind (it has no `kind` filter, and a
  * SecretRefView does not say one), so the API and the database forms offer the same list.
  */
-export const listSecretRefs = () => v1Get<Page<SecretRef>>('/secret-refs', ALL);
+export const listSecretRefs = () => ok<Page<SecretRef>>(api.GET('/v1/secret-refs'));
 
 export interface NewSource {
   name: string;
@@ -394,19 +414,29 @@ const sourceBody = (body: Partial<NewSource>) => ({
 /** POST /v1/sources creates the source as draft; nothing is read before :test passes. */
 export const createSource = async (body: NewSource) =>
   readSourceRow(
-    await v1Send<SourceWire>('POST', '/sources', {
-      ...sourceBody(body),
-      kind: kindOf(body.connector),
-      mode: body.mode,
-    }),
+    await ok<SourceWire>(
+      api.POST('/v1/sources', {
+        body: {
+          ...sourceBody(body),
+          name: body.name,
+          kind: kindOf(body.connector),
+          mode: body.mode,
+        },
+      }),
+    ),
     [],
   );
 
 /** SourcePatch keeps the kind, host and database; the name and the secret can change. */
 export const updateSource = async (id: string, body: Partial<NewSource>) => {
-  const { name, credentials } = sourceBody(body) as { name?: string; credentials?: unknown };
+  const { name, credentials } = sourceBody(body) as {
+    name?: string;
+    credentials?: { username: string; password: string } | null;
+  };
   return readSourceRow(
-    await v1Send<SourceWire>('PATCH', `/sources/${pathId(id)}`, { name, credentials }),
+    await ok<SourceWire>(
+      api.PATCH('/v1/sources/{id}', { params: { path: { id } }, body: { name, credentials } }),
+    ),
     [],
   );
 };
@@ -471,9 +501,9 @@ function testFromSource(row: SourceRow): ConnectionTest {
 }
 
 export const testSource = async (id: string): Promise<ConnectionTest> => {
-  const accepted = await v1Send<
+  const accepted = await ok<
     ConnectionTest | components['schemas']['services__api__modules__catalog__schemas__Accepted']
-  >('POST', `/sources/${pathId(id)}:test`);
+  >(api.POST('/v1/sources/{id}:test', { params: { path: { id } } }));
   if ('checks' in accepted) return accepted;
   // Poll the list until the worker has written the result, for up to about half a minute.
   for (let attempt = 0; attempt < 15; attempt++) {
@@ -501,13 +531,12 @@ export type ScanRun = {
 };
 
 export const startSourceScan = (id: string) =>
-  v1Send<components['schemas']['services__api__modules__catalog__schemas__Accepted']>(
-    'POST',
-    `/sources/${pathId(id)}/scans`,
-    { kind: 'schema' },
+  ok<components['schemas']['services__api__modules__catalog__schemas__Accepted']>(
+    api.POST('/v1/sources/{id}/scans', { params: { path: { id } }, body: { kind: 'schema' } }),
   );
 
-export const getScanRun = (id: string) => v1Get<ScanRun>(`/scan-runs/${pathId(id)}`);
+export const getScanRun = (id: string) =>
+  ok<ScanRun>(api.GET('/v1/scan-runs/{id}', { params: { path: { id } } }));
 
 export interface ActivateSource {
   tables: { name: string; data_space_id: string; owner_id: string }[];
@@ -518,7 +547,7 @@ export interface ActivateSource {
 
 /** POST /v1/sources/{id}:activate — rejected (409) while the read-only check fails. */
 export const activateSource = async (id: string, body: ActivateSource) =>
-  v1Send<SourceRow>('POST', `/sources/${pathId(id)}:activate`, body);
+  okAs<SourceRow>(api.POST('/v1/sources/{id}:activate', { params: { path: { id } }, body }));
 
 /* ─── Job nạp ─────────────────────────────────────────────────────────── */
 
@@ -585,7 +614,7 @@ function readJob(row: IngestionJobWire): IngestionJob {
 }
 
 export const listJobs = async () => {
-  const page = await v1Get<Page<IngestionJobWire>>('/jobs', ALL);
+  const page = await ok<Page<IngestionJobWire>>(api.GET('/v1/jobs', { params: { query: ALL } }));
   return { ...page, items: page.items.map(readJob) };
 };
 
@@ -601,16 +630,24 @@ export const controlJob = async (
   reason?: string,
 ): Promise<void> => {
   if (verb === 'run')
-    await v1Send('POST', `/jobs/${pathId(id)}:backfill`, { from: today(), to: today() });
-  else if (verb === 'pause') await v1Send('POST', `/jobs/${pathId(id)}:pause`, { reason });
-  else await v1Send('POST', `/jobs/${pathId(id)}:resume`);
+    await ok(
+      api.POST('/v1/jobs/{id}:backfill', {
+        params: { path: { id } },
+        body: { from: today(), to: today() },
+      }),
+    );
+  else if (verb === 'pause')
+    await ok(
+      api.POST('/v1/jobs/{id}:pause', { params: { path: { id } }, body: { reason: reason ?? '' } }),
+    );
+  else await ok(api.POST('/v1/jobs/{id}:resume', { params: { path: { id } } }));
 };
 
 /* ─── Tải tệp ─────────────────────────────────────────────────────────── */
 
 export type UploadColumnType = 'string' | 'number' | 'percent' | 'date' | 'boolean';
 
-export interface UploadColumn {
+export type UploadColumn = {
   header: string;
   name: string;
   type: UploadColumnType;
@@ -619,7 +656,7 @@ export interface UploadColumn {
   personal: boolean;
   /** "3 dòng sai" — rows the agent read with a guess. */
   issue: string | null;
-}
+};
 
 /**
  * PROPOSAL: POST /v1/uploads registers a file and returns the agent's reading of it. The bytes
@@ -747,7 +784,7 @@ export const createUpload = async (file: File) => {
 
 /** GET /v1/uploads: real upload history for the active Data Space. */
 export const listUploads = async (): Promise<Page<RecentUpload>> => {
-  const page = await v1Get<Page<FileUploadWire>>('/uploads', ALL);
+  const page = await ok<Page<FileUploadWire>>(api.GET('/v1/uploads', { params: { query: ALL } }));
   return {
     ...page,
     items: page.items.map((row) => ({
@@ -763,7 +800,7 @@ export const listUploads = async (): Promise<Page<RecentUpload>> => {
 
 /** GET /v1/uploads/{id}: reopen the real upload state from the document library. */
 export const getUpload = async (id: string): Promise<UploadDetail> => {
-  const row = await v1Get<FileUploadWire>(`/uploads/${pathId(id)}`);
+  const row = await ok<FileUploadWire>(api.GET('/v1/uploads/{id}', { params: { path: { id } } }));
   return {
     id: row.id,
     file_name: row.file_name,
@@ -785,17 +822,21 @@ export const getUpload = async (id: string): Promise<UploadDetail> => {
 
 /** GET /v1/uploads/{id}/preview: a bounded real sample read from the stored CSV/XLSX. */
 export const previewUpload = (id: string, limit = 25) =>
-  v1Get<UploadPreview>(`/uploads/${pathId(id)}/preview`, { limit });
+  ok<UploadPreview>(
+    api.GET('/v1/uploads/{id}/preview', { params: { path: { id }, query: { limit } } }),
+  );
 
 /** DELETE /v1/uploads/{id}: removes the object and its upload record. */
-export const deleteUpload = (id: string) => v1Send<void>('DELETE', `/uploads/${pathId(id)}`);
+export const deleteUpload = (id: string) =>
+  ok<void>(api.DELETE('/v1/uploads/{id}', { params: { path: { id } } }));
 
 /** PROPOSAL: POST /v1/uploads/{id}:commit creates the table with the columns as edited. */
 export const commitUpload = async (id: string, columns: UploadColumn[]) => {
-  const row = await v1Send<{ table_name?: string; display_name?: string }>(
-    'POST',
-    `/uploads/${pathId(id)}:commit`,
-    { column_map: columns },
+  const row = await ok<{ table_name?: string | null; display_name?: string | null }>(
+    api.POST('/v1/uploads/{id}:commit', {
+      params: { path: { id } },
+      body: { column_map: columns },
+    }),
   );
   return { table: row.table_name ?? row.display_name ?? 'bảng mới' };
 };
@@ -905,7 +946,9 @@ function readCollection(raw: CollectionWire): Collection {
 }
 
 export const listCollections = async (): Promise<Page<Collection>> => {
-  const page = await v1Get<Page<CollectionWire>>('/collections', ALL);
+  const page = await ok<Page<CollectionWire>>(
+    api.GET('/v1/collections', { params: { query: ALL } }),
+  );
   return { ...page, items: page.items.map(readCollection) };
 };
 
@@ -918,8 +961,10 @@ const RECOGNITION = new Set(['low_ocr', 'garbled_text']);
 
 export const getCollectionsSummary = async (): Promise<CollectionsSummary> => {
   const [docs, issues] = await Promise.all([
-    v1Get<Page<DocumentRowWire>>('/documents', ALL),
-    v1Get<Page<IssueWire>>('/quality-issues', { ...ALL, status: 'open' }),
+    ok<Page<DocumentRowWire>>(api.GET('/v1/documents', { params: { query: ALL } })),
+    ok<Page<IssueWire>>(
+      api.GET('/v1/quality-issues', { params: { query: { ...ALL, status: 'open' } } }),
+    ),
   ]);
   const chunks = docs.items.reduce((n, d) => n + d.progress.chunks, 0);
   const indexed = docs.items.reduce((n, d) => n + d.progress.chunks_indexed, 0);
@@ -940,9 +985,13 @@ export const getCollectionsSummary = async (): Promise<CollectionsSummary> => {
  */
 export const getCollection = async (id: string): Promise<CollectionDetail> => {
   const [page, docs, issues, spaces] = await Promise.all([
-    v1Get<Page<CollectionWire>>('/collections', ALL),
-    v1Get<Page<DocumentRowWire>>('/documents', { ...ALL, collection_id: id }),
-    v1Get<Page<IssueWire>>('/quality-issues', { ...ALL, status: 'open' }).catch(() => null),
+    ok<Page<CollectionWire>>(api.GET('/v1/collections', { params: { query: ALL } })),
+    ok<Page<DocumentRowWire>>(
+      api.GET('/v1/documents', { params: { query: { ...ALL, collection_id: id } } }),
+    ),
+    ok<Page<IssueWire>>(
+      api.GET('/v1/quality-issues', { params: { query: { ...ALL, status: 'open' } } }),
+    ).catch(() => null),
     spaceRefs(),
   ]);
   const raw = page.items.find((c) => c.id === id);
@@ -969,10 +1018,16 @@ export const getCollection = async (id: string): Promise<CollectionDetail> => {
 
 /** GET /v1/documents?collection_id= (A2 since 12/10/2026), each row with its eight steps. */
 export const listDocuments = async (collectionId: string): Promise<Page<CollectionDocument>> => {
-  const page = await v1Get<Page<DocumentRowWire>>('/documents', {
-    ...ALL,
-    collection_id: collectionId,
-  });
+  const page = await ok<Page<DocumentRowWire>>(
+    api.GET('/v1/documents', {
+      params: {
+        query: {
+          ...ALL,
+          collection_id: collectionId,
+        },
+      },
+    }),
+  );
   return {
     ...page,
     items: page.items.map((raw) => raw.display ?? readCollectionDocument(raw)),
@@ -1051,7 +1106,7 @@ export function readCollectionDocument(raw: DocumentApi): DocumentDetail {
 type DocumentWire = DocumentApi & { display?: DocumentDetail };
 
 export const getDocument = async (id: string) => {
-  const raw = await v1Get<DocumentWire>(`/documents/${pathId(id)}`);
+  const raw = await ok<DocumentWire>(api.GET('/v1/documents/{id}', { params: { path: { id } } }));
   return raw.display ?? readCollectionDocument(raw);
 };
 
@@ -1185,15 +1240,21 @@ function readSourceDrift(raw: DriftWire, sourceName: string): SourceDrift {
  * same list also holds the crawled sources' drifts, which P14 shows).
  */
 async function connectedDrifts(open: boolean): Promise<SourceDrift[]> {
-  const sources = await v1Get<Page<SourceWire>>('/sources', ALL);
+  const sources = await ok<Page<SourceWire>>(api.GET('/v1/sources', { params: { query: ALL } }));
   const pages = await Promise.all(
     sources.items.map(async (source) => {
-      const page = await v1Get<Page<DriftWire>>('/schema-drifts', {
-        ...ALL,
-        source_id: source.id,
-        origin: 'source',
-        ...(open ? { resolution: 'open' } : {}),
-      });
+      const page = await ok<Page<DriftWire>>(
+        api.GET('/v1/schema-drifts', {
+          params: {
+            query: {
+              ...ALL,
+              source_id: source.id,
+              origin: 'source',
+              ...(open ? { resolution: 'open' } : {}),
+            },
+          },
+        }),
+      );
       return page.items
         .filter((raw) => raw.source_id === source.id)
         .map((raw) => readSourceDrift(raw, source.name));
@@ -1225,10 +1286,15 @@ export const resolveSourceDrift = async (
   body: { resolution: 'accept' | 'reject'; note?: string },
 ) =>
   readSourceDrift(
-    await v1Send<DriftWire>('POST', `/schema-drifts/${pathId(id)}:resolve`, {
-      resolution: body.resolution === 'accept' ? 'approved_new' : 'reverted',
-      note: body.note ?? null,
-    } satisfies components['schemas']['DriftResolve']),
+    await ok<DriftWire>(
+      api.POST('/v1/schema-drifts/{id}:resolve', {
+        params: { path: { id } },
+        body: {
+          resolution: body.resolution === 'accept' ? 'approved_new' : 'reverted',
+          note: body.note ?? null,
+        } satisfies components['schemas']['DriftResolve'],
+      }),
+    ),
     '',
   );
 
@@ -1266,14 +1332,18 @@ const CURSOR_TYPES = ['timestamp', 'datetime', 'date', 'integer', 'bigint', 'num
  */
 async function servedJobCandidates(): Promise<Page<JobCandidate>> {
   const [sources, jobs] = await Promise.all([
-    v1Get<Page<SourceWire>>('/sources', ALL),
-    v1Get<Page<components['schemas']['IngestionJobSummary']>>('/jobs', ALL),
+    ok<Page<SourceWire>>(api.GET('/v1/sources', { params: { query: ALL } })),
+    ok<Page<components['schemas']['IngestionJobSummary']>>(
+      api.GET('/v1/jobs', { params: { query: ALL } }),
+    ),
   ]);
   const sourceItems = sources.items ?? [];
   const ingest = new Map(sourceItems.filter((s) => s.mode === 'ingest').map((s) => [s.id, s]));
   const datasetPages = await Promise.all(
     [...ingest.keys()].map((sourceId) =>
-      v1Get<Page<DatasetWire>>('/datasets', { ...ALL, source_id: sourceId }),
+      ok<Page<DatasetWire>>(
+        api.GET('/v1/datasets', { params: { query: { ...ALL, source_id: sourceId } } }),
+      ),
     ),
   );
   const datasets = [
@@ -1287,8 +1357,8 @@ async function servedJobCandidates(): Promise<Page<JobCandidate>> {
   });
   const items = await Promise.all(
     free.map(async (d): Promise<JobCandidate> => {
-      const detail = await v1Get<components['schemas']['DatasetDetail']>(
-        `/datasets/${pathId(d.id)}`,
+      const detail = await ok<components['schemas']['DatasetDetail']>(
+        api.GET('/v1/datasets/{id}', { params: { path: { id: d.id } } }),
       );
       const cursor_columns = (detail.columns ?? [])
         .filter((c) => CURSOR_TYPES.includes((c.normalized_type ?? '').toLowerCase()))
@@ -1352,20 +1422,20 @@ export interface DryRunResult {
 export const dryRunJob = async (body: NewJob, candidate: JobCandidate): Promise<DryRunResult> => {
   if (!candidate.source_id)
     throw new V1Error(422, 'source_required', 'Cần chọn bảng thuộc một nguồn dữ liệu.');
-  const raw = await v1Send<components['schemas']['IngestionJobDryRun']>(
-    'POST',
-    `/sources/${pathId(candidate.source_id)}/jobs`,
-    {
-      name: candidate.table_name,
-      mode: JOB_MODE[body.method] ?? 'full',
-      source_object: candidate.source_object,
-      target_dataset_id: body.dataset_id,
-      cursor_column: body.method === 'incremental' ? body.cursor_column : null,
-      schedule_cron: SCHEDULE_CRON[body.schedule],
-      freshness_sla: `PT${body.freshness_sla_hours}H`,
-      ...(body.on_invalid_record === 'quarantine_30d' ? { dlq_retention_days: 30 } : {}),
-    },
-    { query: { dry_run: true } },
+  const raw = await okAs<components['schemas']['IngestionJobDryRun']>(
+    api.POST('/v1/sources/{id}/jobs', {
+      params: { path: { id: candidate.source_id }, query: { dry_run: true } },
+      body: {
+        name: candidate.table_name,
+        mode: JOB_MODE[body.method] ?? 'full',
+        source_object: candidate.source_object,
+        target_dataset_id: body.dataset_id,
+        cursor_column: body.method === 'incremental' ? body.cursor_column : null,
+        schedule_cron: SCHEDULE_CRON[body.schedule],
+        freshness_sla: `PT${body.freshness_sla_hours}H`,
+        ...(body.on_invalid_record === 'quarantine_30d' ? { dlq_retention_days: 30 } : {}),
+      },
+    }),
   );
   return {
     rows_read: raw.sample.length,
@@ -1407,18 +1477,19 @@ const JOB_MODE: Partial<Record<JobMethod, 'full' | 'incremental' | 'cdc'>> = {
 export const createJob = (body: NewJob, candidate: JobCandidate) => {
   if (!candidate.source_id)
     throw new V1Error(422, 'source_required', 'Cần chọn bảng thuộc một nguồn dữ liệu.');
-  return v1Send<components['schemas']['IngestionJobSummary']>(
-    'POST',
-    `/sources/${pathId(candidate.source_id)}/jobs`,
-    {
-      name: candidate.table_name,
-      mode: JOB_MODE[body.method] ?? 'full',
-      source_object: candidate.source_object,
-      cursor_column: body.method === 'incremental' ? body.cursor_column : null,
-      schedule_cron: SCHEDULE_CRON[body.schedule],
-      freshness_sla: `PT${body.freshness_sla_hours}H`,
-      ...(body.on_invalid_record === 'quarantine_30d' ? { dlq_retention_days: 30 } : {}),
-    },
+  return okAs<components['schemas']['IngestionJobSummary']>(
+    api.POST('/v1/sources/{id}/jobs', {
+      params: { path: { id: candidate.source_id } },
+      body: {
+        name: candidate.table_name,
+        mode: JOB_MODE[body.method] ?? 'full',
+        source_object: candidate.source_object,
+        cursor_column: body.method === 'incremental' ? body.cursor_column : null,
+        schedule_cron: SCHEDULE_CRON[body.schedule],
+        freshness_sla: `PT${body.freshness_sla_hours}H`,
+        ...(body.on_invalid_record === 'quarantine_30d' ? { dlq_retention_days: 30 } : {}),
+      },
+    }),
   );
 };
 
@@ -1462,15 +1533,22 @@ type DlqRecordWire = components['schemas']['DlqRecordView'] &
  * records, grouped by error kind.
  */
 export const listErrorGroups = async (): Promise<Page<ErrorRecordGroup>> => {
-  const jobs = await v1Get<Page<IngestionJobWire>>('/jobs', ALL);
+  const jobs = await ok<Page<IngestionJobWire>>(api.GET('/v1/jobs', { params: { query: ALL } }));
   const groups = await Promise.all(
     jobs.items
       .filter((job) => (job.dlq_pending ?? 0) > 0)
       .map(async (job) => {
-        const dlq = await v1Get<Page<DlqRecordWire>>(`/jobs/${pathId(job.id)}/dlq`, {
-          ...ALL,
-          status: 'pending',
-        });
+        const dlq = await ok<Page<DlqRecordWire>>(
+          api.GET('/v1/jobs/{id}/dlq', {
+            params: {
+              path: { id: job.id },
+              query: {
+                ...ALL,
+                status: 'pending',
+              },
+            },
+          }),
+        );
         const byKind = new Map<string, DlqRecordWire[]>();
         for (const record of dlq.items)
           byKind.set(record.error_kind, [...(byKind.get(record.error_kind) ?? []), record]);
@@ -1508,14 +1586,20 @@ export const reloadErrorGroups = async (groups: ErrorRecordGroup[]) => {
       `“${blocked.cause}” chỉ nạp lại được sau khi thay đổi cấu trúc được chấp nhận.`,
     );
   const ids = groups.flatMap((g) => g.record_ids);
-  await Promise.all(ids.map((id) => v1Send('POST', `/dlq/${pathId(id)}:replay`)));
+  await Promise.all(
+    ids.map((id) => ok(api.POST('/v1/dlq/{id}:replay', { params: { path: { id } } }))),
+  );
   return { reloaded: ids.length };
 };
 
 /** POST /v1/dlq/{id}:discard {reason} for each record; the reason goes to the audit log. */
 export const discardErrorGroups = async (groups: ErrorRecordGroup[], reason: string) => {
   const ids = groups.flatMap((g) => g.record_ids);
-  await Promise.all(ids.map((id) => v1Send('POST', `/dlq/${pathId(id)}:discard`, { reason })));
+  await Promise.all(
+    ids.map((id) =>
+      ok(api.POST('/v1/dlq/{id}:discard', { params: { path: { id } }, body: { reason } })),
+    ),
+  );
   return { discarded: ids.length };
 };
 
@@ -1523,11 +1607,11 @@ export const discardErrorGroups = async (groups: ErrorRecordGroup[], reason: str
 
 export type FilterOp = 'eq' | 'gte' | 'lte';
 
-export interface ExploreFilter {
+export type ExploreFilter = {
   column: string;
   op: FilterOp;
   value: string;
-}
+};
 
 export type CellValue = string | number | null;
 
@@ -1550,14 +1634,22 @@ export interface TablePreview {
 
 /** The table's rows under the filters, through the query-run path (the caller's policy applies). */
 export const previewTable = async (id: string, filters: ExploreFilter[]): Promise<TablePreview> => {
-  const dataset = await v1Get<DatasetDetailWire>(`/datasets/${pathId(id)}`);
+  const dataset = await ok<DatasetDetailWire>(
+    api.GET('/v1/datasets/{id}', { params: { path: { id } } }),
+  );
   const [source, run] = await Promise.all([
-    dataset.source_id ? v1Get<SourceWire>(`/sources/${pathId(dataset.source_id)}`) : null,
-    v1Send<components['schemas']['QueryRunView']>('POST', '/query-runs', {
-      dataset_id: id,
-      filters,
-      limit: 50,
-    }),
+    dataset.source_id
+      ? ok<SourceWire>(api.GET('/v1/sources/{id}', { params: { path: { id: dataset.source_id } } }))
+      : null,
+    ok<components['schemas']['QueryRunView']>(
+      api.POST('/v1/query-runs', {
+        body: {
+          dataset_id: id,
+          filters,
+          limit: 50,
+        },
+      }),
+    ),
   ]);
   const finished = await awaitQueryRun(run);
   const result = await getQueryRows(finished.id, 50);
@@ -1630,10 +1722,14 @@ export interface ColumnStats {
 
 export const getColumnStats = async (id: string, column: string): Promise<ColumnStats> => {
   try {
-    return await v1Get<ColumnStats>(`/datasets/${pathId(id)}/columns/${pathId(column)}`);
+    return await okAs<ColumnStats>(
+      api.GET('/v1/datasets/{id}/columns/{column}', { params: { path: { id, column } } }),
+    );
   } catch (error) {
     if (!(error instanceof V1Error) || error.status !== 404) throw error;
-    const dataset = await v1Get<DatasetDetailWire>(`/datasets/${pathId(id)}`);
+    const dataset = await ok<DatasetDetailWire>(
+      api.GET('/v1/datasets/{id}', { params: { path: { id } } }),
+    );
     const found = dataset.columns?.find((candidate) => candidate.name === column);
     if (!found) throw new V1Error(404, 'not_found', 'Không tìm thấy cột.');
     if (found.pii_label) {
@@ -1670,10 +1766,8 @@ export const deriveTable = async (
   id: string,
   body: { filters: ExploreFilter[]; drop_duplicates: boolean },
 ) =>
-  v1Send<{ id: Uuid; name: string; row_count: number | null }>(
-    'POST',
-    `/datasets/${pathId(id)}:derive`,
-    body,
+  okAs<{ id: Uuid; name: string; row_count: number | null }>(
+    api.POST('/v1/datasets/{id}:derive', { params: { path: { id } }, body }),
   );
 
 /* ─── Kết nối API (UC-04-01, REST connector) ──────────────────────────── */
@@ -1681,7 +1775,7 @@ export const deriveTable = async (
 export type ApiAuth = 'oauth2_client' | 'api_key' | 'bearer';
 
 /** The request a REST source makes; the secret is a reference, never the value. */
-export interface ApiRequest {
+export type ApiRequest = {
   url: string;
   query: string;
   headers: { name: string; value: string }[];
@@ -1692,15 +1786,15 @@ export interface ApiRequest {
   schedule: 'hourly' | 'every_2h' | 'daily';
   rate_limit_per_second: number;
   retries: number;
-}
+};
 
-export interface ApiFieldMapping {
+export type ApiFieldMapping = {
   /** JSONPath-like, "data[].card_id". */
   path: string;
   column: string;
   type: 'text' | 'number' | 'date' | 'boolean';
   note: string | null;
-}
+};
 
 /** GET /v1/sources/{id}/api-config — an existing REST source and its health. */
 export interface ApiSourceConfig {
@@ -1718,7 +1812,9 @@ export interface ApiSourceConfig {
 }
 
 export const getApiConfig = async (sourceId: string) =>
-  v1Get<ApiSourceConfig>(`/sources/${pathId(sourceId)}/api-config`);
+  okAs<ApiSourceConfig>(
+    api.GET('/v1/sources/{id}/api-config', { params: { path: { id: sourceId } } }),
+  );
 
 interface ApiTryResult {
   status: number;
@@ -1731,7 +1827,7 @@ interface ApiTryResult {
 
 /** Pending connector-worker action: POST /v1/connectors/rest:try — one call with the request. */
 export const tryApiRequest = (request: ApiRequest) =>
-  v1Send<ApiTryResult>('POST', '/connectors/rest:try', { request });
+  okAs<ApiTryResult>(api.POST('/v1/connectors/rest:try', { body: { request } }));
 
 /** POST /v1/sources followed by PUT /v1/sources/{id}/api-config. */
 export const createApiSource = async (body: {
@@ -1739,12 +1835,12 @@ export const createApiSource = async (body: {
   request: ApiRequest;
   mapping: ApiFieldMapping[];
 }) => {
+  // Untyped for `api`: the mock builds the REST source from it, the A3 backend ignores this extra
+  // field and the config is persisted explicitly through PUT /sources/{id}/api-config below.
   const source = await v1Send<SourceWire>('POST', '/sources', {
     name: body.name,
     kind: 'rest_api',
     mode: 'ingest',
-    // Kept for older adapters; the A3 backend ignores this extra field and the config is
-    // persisted explicitly through PUT /sources/{id}/api-config below.
     api: { request: body.request, mapping: body.mapping },
   });
   await saveApiConfig(source.id, { request: body.request, mapping: body.mapping });
@@ -1755,7 +1851,10 @@ export const createApiSource = async (body: {
 export const saveApiConfig = async (
   sourceId: string,
   body: { request: ApiRequest; mapping: ApiFieldMapping[] },
-) => v1Send<ApiSourceConfig>('PUT', `/sources/${pathId(sourceId)}/api-config`, body);
+) =>
+  okAs<ApiSourceConfig>(
+    api.PUT('/v1/sources/{id}/api-config', { params: { path: { id: sourceId } }, body }),
+  );
 
 /**
  * Backfill belongs to an ingestion job in A3, not to the source itself. Resolve the source's
@@ -1763,16 +1862,20 @@ export const saveApiConfig = async (
  * for the older adapter while it has no source_id on its job rows.
  */
 export const backfillSource = async (sourceId: string, range: { from: string; to: string }) => {
-  const jobs = await v1Get<Page<components['schemas']['IngestionJobSummary']>>('/jobs', {
-    source_id: sourceId,
-    page_size: 50,
-  }).catch(() => null);
+  const jobs = await ok<Page<components['schemas']['IngestionJobSummary']>>(
+    api.GET('/v1/jobs', {
+      params: {
+        query: {
+          source_id: sourceId,
+          page_size: 50,
+        },
+      },
+    }),
+  ).catch(() => null);
   const job = jobs?.items.find((item) => item.source_id === sourceId);
   if (job)
-    return v1Send<{ id: string; status: string; poll_after_ms: number }>(
-      'POST',
-      `/jobs/${pathId(job.id)}:backfill`,
-      range,
+    return ok<{ id: string; status: string; poll_after_ms: number }>(
+      api.POST('/v1/jobs/{id}:backfill', { params: { path: { id: job.id } }, body: range }),
     );
   // A backfill is a job's (POST /v1/jobs/{id}:backfill): a source without one has nothing to load.
   throw new V1Error(

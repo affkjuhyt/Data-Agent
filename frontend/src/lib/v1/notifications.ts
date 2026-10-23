@@ -1,4 +1,4 @@
-import { v1Get, type Page } from './client';
+import { type Page, api, ok } from './client';
 import type { components } from './schema';
 
 /*
@@ -61,6 +61,8 @@ const readNotification = (raw: NotificationWire): AppNotification => ({
 });
 
 export const listNotifications = async () => {
-  const page = await v1Get<Page<NotificationWire>>('/me/notifications', { page_size: 100 });
+  const page = await ok<Page<NotificationWire>>(
+    api.GET('/v1/me/notifications', { params: { query: { page_size: 100 } } }),
+  );
   return { ...page, items: page.items.map(readNotification) };
 };

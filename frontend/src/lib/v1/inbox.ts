@@ -1,4 +1,4 @@
-import { v1Get, type Page } from './client';
+import { type Page, api, ok, okAs } from './client';
 
 /*
  * "Cần bạn · lọc Đã xử lý tuần này" (2167:19220, UC-07-07): what was settled this week, by the
@@ -23,8 +23,14 @@ export function startOfWeek(now: Date = new Date()): Date {
 }
 
 export const listResolvedThisWeek = async () =>
-  v1Get<Page<ResolvedRequest>>('/inbox', {
-    status: 'resolved',
-    since: startOfWeek().toISOString(),
-    limit: 200,
-  });
+  okAs<Page<ResolvedRequest>>(
+    api.GET('/v1/inbox', {
+      params: {
+        query: {
+          status: 'resolved',
+          since: startOfWeek().toISOString(),
+          limit: 200,
+        },
+      },
+    }),
+  );

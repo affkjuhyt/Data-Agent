@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send } from './client';
+import { api, ok, okAs } from './client';
 import type { components } from './schema';
 
 /*
@@ -14,14 +14,20 @@ type ExportFormat = components['schemas']['ExportCreate']['format'];
 const POLL_MS = 800;
 const GIVE_UP_MS = 2 * 60_000;
 
-const getExport = async (id: string) => v1Get<ExportJob>(`/exports/${pathId(id)}`);
+const getExport = async (id: string) =>
+  ok<ExportJob>(api.GET('/v1/exports/{id}', { params: { path: { id } } }));
 
 /** Request an export and wait for its file; resolves with the job once ready. */
 export async function exportAnswer(answerId: string, format: ExportFormat): Promise<ExportJob> {
-  let job = await v1Send<ExportJob>('POST', `/answers/${pathId(answerId)}/exports`, {
-    format,
-    include_detail_rows: false,
-  });
+  let job = await okAs<ExportJob>(
+    api.POST('/v1/answers/{id}/exports', {
+      params: { path: { id: answerId } },
+      body: {
+        format,
+        include_detail_rows: false,
+      },
+    }),
+  );
   const started = Date.now();
   while (job.status === 'queued' || job.status === 'running') {
     if (Date.now() - started > GIVE_UP_MS) throw new Error('Tệp xuất chưa sẵn sàng sau 2 phút; thử lại sau.');

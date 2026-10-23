@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { pathId, v1Send, type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 import type {
   AgentDef,
@@ -139,21 +139,31 @@ function readProposal(raw: ProposalWire): Proposal {
 }
 
 export const listInbox = async (query: { kind?: string; status?: string } = {}) => {
-  const page = await v1Get<Page<HitlWire>>('/inbox', { ...ALL, ...query });
+  const page = await ok<Page<HitlWire>>(
+    api.GET('/v1/inbox', { params: { query: { ...ALL, ...query } } }),
+  );
   return { ...page, items: page.items.map(readHitl) };
 };
 
 export const getHitl = async (id: string) =>
-  readHitl(await v1Get<HitlWire>(`/hitl-requests/${pathId(id)}`));
+  readHitl(await ok<HitlWire>(api.GET('/v1/hitl-requests/{id}', { params: { path: { id } } })));
 
 export const resolveHitl = async (id: string, body: ResolveHitl) =>
-  readHitl(await v1Send<HitlWire>('POST', `/hitl-requests/${pathId(id)}:resolve`, body));
+  readHitl(
+    await ok<HitlWire>(
+      api.POST('/v1/hitl-requests/{id}:resolve', { params: { path: { id } }, body }),
+    ),
+  );
 
 export const getProposal = async (id: string) =>
-  readProposal(await v1Get<ProposalWire>(`/proposals/${pathId(id)}`));
+  readProposal(await ok<ProposalWire>(api.GET('/v1/proposals/{id}', { params: { path: { id } } })));
 
 export const decideProposal = async (id: string, body: DecideProposal) =>
-  readProposal(await v1Send<ProposalWire>('POST', `/proposals/${pathId(id)}:decide`, body));
+  readProposal(
+    await ok<ProposalWire>(
+      api.POST('/v1/proposals/{id}:decide', { params: { path: { id } }, body }),
+    ),
+  );
 
 /* Agent */
 
@@ -261,7 +271,7 @@ function named(run: AgentRun, agents: AgentDef[]): AgentRun {
 }
 
 export const listAgents = async (): Promise<Page<AgentDef>> => {
-  const page = await v1Get<Page<AgentWire>>('/agents', ALL);
+  const page = await okAs<Page<AgentWire>>(api.GET('/v1/agents', { params: { query: ALL } }));
   return { ...page, items: page.items.map(readAgent) };
 };
 
@@ -269,7 +279,7 @@ export const listRuns = async (
   query: { status?: RunStatus; agent_id?: string } = {},
 ): Promise<Page<AgentRun>> => {
   const [page, agents] = await Promise.all([
-    v1Get<Page<RunWire>>('/runs', { ...ALL, ...query }),
+    okAs<Page<RunWire>>(api.GET('/v1/runs', { params: { query: { ...ALL, ...query } } })),
     listAgents().catch(() => null),
   ]);
   return {
@@ -281,10 +291,14 @@ export const listRuns = async (
 };
 
 export const getRun = async (id: string, view: 'simple' | 'technical' = 'simple') => {
-  const raw = await v1Get<RunWire>(`/runs/${pathId(id)}`, { view });
+  const raw = await okAs<RunWire>(
+    api.GET('/v1/runs/{id}', { params: { path: { id }, query: { view } } }),
+  );
   const run = readRun(raw);
   if (raw.agent_name) return run;
-  const agent = await v1Get<AgentWire>(`/agents/${pathId(run.agent_id)}`).catch(() => null);
+  const agent = await okAs<AgentWire>(
+    api.GET('/v1/agents/{id}', { params: { path: { id: run.agent_id } } }),
+  ).catch(() => null);
   return named(run, agent ? [readAgent(agent)] : []);
 };
 
@@ -308,51 +322,73 @@ export const controlRun = async (
  * fallback source instead of the one that failed) is ignored by the api until it has that option.
  */
 export const retryRun = async (id: string, useFallback = false) =>
+  // Untyped while A2's :retry takes no body: use_fallback is sent for the api to ignore.
   v1Send<components['schemas']['RunAccepted']>('POST', `/runs/${pathId(id)}:retry`, {
     use_fallback: useFallback,
   });
 
 /* Phiên làm việc */
 export const listWorkspaces = async (): Promise<Page<Workspace>> => {
-  const page = await v1Get<Page<WorkspaceWire>>('/workspaces', { ...ALL, status: 'active' });
+  const page = await ok<Page<WorkspaceWire>>(
+    api.GET('/v1/workspaces', { params: { query: { ...ALL, status: 'active' } } }),
+  );
   return { ...page, items: page.items.map(readWorkspace) };
 };
 
 /* Nguồn, danh mục, lớp ngữ cảnh */
 export const listSources = async (): Promise<Page<Source>> => {
-  const page = await v1Get<Page<SourceWire>>('/sources', ALL);
+  const page = await ok<Page<SourceWire>>(api.GET('/v1/sources', { params: { query: ALL } }));
   return { ...page, items: page.items.map(readSource) };
 };
 export const listDatasets = async (): Promise<Page<Dataset>> => {
-  const page = await v1Get<Page<DatasetWire>>('/datasets', { ...ALL, enabled: true });
+  const page = await ok<Page<DatasetWire>>(
+    api.GET('/v1/datasets', { params: { query: { ...ALL, enabled: true } } }),
+  );
   return { ...page, items: page.items.map(readDataset) };
 };
 export const listSourceDatasets = async (sourceId: string): Promise<Page<Dataset>> => {
-  const page = await v1Get<Page<DatasetWire>>('/datasets', {
-    ...ALL,
-    source_id: sourceId,
-  });
+  const page = await ok<Page<DatasetWire>>(
+    api.GET('/v1/datasets', {
+      params: {
+        query: {
+          ...ALL,
+          source_id: sourceId,
+        },
+      },
+    }),
+  );
   return { ...page, items: page.items.map(readDataset) };
 };
-export const listMetrics = () => v1Get<Page<Metric>>('/metrics', ALL);
-export const listTerms = () => v1Get<Page<GlossaryTerm>>('/terms', ALL);
+export const listMetrics = () =>
+  ok<Page<Metric>>(api.GET('/v1/metrics', { params: { query: ALL } }));
+export const listTerms = () =>
+  ok<Page<GlossaryTerm>>(api.GET('/v1/terms', { params: { query: ALL } }));
 
 /* Chính sách: the viewer's own rules, made from earlier decisions (UC-07-08) */
 /** GET /v1/policies answers an array of the type asked for, not a page. */
 export const listMyRules = async (): Promise<Page<BehaviorPolicy>> => {
-  const rows = await v1Get<BehaviorPolicyWire[]>('/policies', {
-    type: 'behavior',
-    scope: 'user',
-    status: 'active',
-  });
+  const rows = await okAs<BehaviorPolicyWire[]>(
+    api.GET('/v1/policies', {
+      params: {
+        query: {
+          type: 'behavior',
+          scope: 'user',
+          status: 'active',
+        },
+      },
+    }),
+  );
   return { items: rows.map(readBehaviorPolicy), next_page_token: '' };
 };
 
 /* Quản trị */
-export const listDataSpaces = () => v1Get<Page<DataSpace>>('/data-spaces', ALL);
+export const listDataSpaces = () =>
+  ok<Page<DataSpace>>(api.GET('/v1/data-spaces', { params: { query: ALL } }));
 /** GET /v1/admin/users read as people and agents (lib/v1/adminAccess readAppUser). */
 export const listUsers = async (): Promise<Page<AppUser>> => {
-  const page = await v1Get<Page<components['schemas']['AdminUser']>>('/admin/users', ALL);
+  const page = await ok<Page<components['schemas']['AdminUser']>>(
+    api.GET('/v1/admin/users', { params: { query: ALL } }),
+  );
   return { ...page, items: page.items.map(readAppUser) };
 };
 /** GET /v1/admin/models answers the whole list, not a page. */

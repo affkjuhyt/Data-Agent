@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { currentDataSpace, pathId, V1Error, v1Send, type Page, api, ok, okAs } from './client';
 
 /*
  * Error Book (P07, UC-07-14, eval.error_book_entry): every confirmed wrong answer and forecast
@@ -22,7 +22,7 @@ export type SourceKind =
   | 'reviewer_reject'
   | 'replay_mismatch'
   | 'forecast_miss'
-  | 'lint_finding';
+  | 'knowledge_lint';
 
 export const ERROR_KINDS: { value: ErrorKind; label: string }[] = [
   { value: 'definition', label: 'Định nghĩa' },
@@ -40,7 +40,7 @@ export const SOURCE_LABEL: Record<SourceKind, string> = {
   reviewer_reject: 'Người duyệt bác',
   replay_mismatch: 'Chạy lại lệch',
   forecast_miss: 'Dự báo lệch',
-  lint_finding: 'Rà soát tri thức',
+  knowledge_lint: 'Rà soát tri thức',
 };
 
 /** A2: GET /v1/error-book-entries — ErrorBookEntry, newest first. */
@@ -87,17 +87,24 @@ interface EntryFilters {
 }
 
 export const listErrorBookEntries = async (filters: EntryFilters = {}) =>
-  v1Get<Page<ErrorBookSummary>>('/error-book-entries', { ...filters, limit: 200 });
+  okAs<Page<ErrorBookSummary>>(
+    api.GET('/v1/error-book-entries', { params: { query: { ...filters, limit: 200 } } }),
+  );
 
 export const getErrorBookEntry = async (id: string) =>
-  v1Get<ErrorBookEntry>(`/error-book-entries/${pathId(id)}`);
+  okAs<ErrorBookEntry>(api.GET('/v1/error-book-entries/{id}', { params: { path: { id } } }));
 
 export const updateErrorBookEntry = async (
   id: string,
   patch: Partial<{ error_kind: ErrorKind; root_cause: string; title: string }>,
-) => v1Send<ErrorBookEntry>('PATCH', `/error-book-entries/${pathId(id)}`, patch);
+) =>
+  okAs<ErrorBookEntry>(
+    api.PATCH('/v1/error-book-entries/{id}', { params: { path: { id } }, body: patch }),
+  );
 
 /** A2: :mark-fixed needs kind, root cause and an accepted fix; it also creates the regression case. */
+// Untyped: MarkFixed.fix_kind is what was fixed (metric_version, synonym, …); the screen sends
+// where the fix is (proposal or commit), so the api refuses it until the dialog asks the kind.
 export const markEntryFixed = async (
   id: string,
   body: { fix_kind: string; fix_proposal_id?: string; fix_ref?: string; note?: string },
@@ -106,19 +113,27 @@ export const markEntryFixed = async (
 export const dismissEntry = async (
   id: string,
   body: { reason?: string; duplicate_of_id?: string },
-) => v1Send<ErrorBookEntry>('POST', `/error-book-entries/${pathId(id)}:dismiss`, body);
-
-export const proposeEntryToPack = async (id: string, body: { pack_id: string; summary: string }) =>
-  v1Send<{ pack_proposal_ref: string }>(
-    'POST',
-    `/error-book-entries/${pathId(id)}:propose-to-pack`,
-    body,
+) =>
+  okAs<ErrorBookEntry>(
+    api.POST('/v1/error-book-entries/{id}:dismiss', { params: { path: { id } }, body }),
   );
 
+export const proposeEntryToPack = async (id: string, body: { pack_id: string; summary: string }) =>
+  okAs<{ pack_proposal_ref: string }>(
+    api.POST('/v1/error-book-entries/{id}:propose-to-pack', { params: { path: { id } }, body }),
+  );
+
+/** ErrorBookCreate requires the Data Space the entry belongs to: the one the user works in. */
 export const createErrorBookEntry = async (body: {
   source_kind: SourceKind;
   title: string;
-  detail?: string;
   feedback_id?: string;
   answer_id?: string;
-}) => v1Send<ErrorBookEntry>('POST', '/error-book-entries', body);
+}) => {
+  const space = currentDataSpace();
+  if (!space)
+    throw new V1Error(400, 'invalid_request', 'Chọn một Data Space trước khi ghi vào sổ lỗi.');
+  return okAs<ErrorBookEntry>(
+    api.POST('/v1/error-book-entries', { body: { ...body, data_space_id: space } }),
+  );
+};

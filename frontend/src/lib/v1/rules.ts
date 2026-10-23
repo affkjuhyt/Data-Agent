@@ -1,4 +1,4 @@
-import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
+import { V1Error, type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 import { readBehaviorPolicy, type BehaviorPolicy, type BehaviorPolicyWire } from './types';
 
@@ -100,34 +100,54 @@ const readRule = (raw: RuleWire): DecisionRule => {
 
 /** Behaviour policies made from decisions; `origin` is not a filter of A2, so it is applied here. */
 export const listDraftRules = async (): Promise<Page<DecisionRule>> => {
-  const rows = await v1Get<RuleWire[]>('/policies', {
-    type: 'behavior',
-    scope: 'data_space',
-    status: 'draft',
-  });
+  const rows = await okAs<RuleWire[]>(
+    api.GET('/v1/policies', {
+      params: {
+        query: {
+          type: 'behavior',
+          scope: 'data_space',
+          status: 'draft',
+        },
+      },
+    }),
+  );
   return { items: rows.map(readRule).filter((r) => r.origin === 'hitl'), next_page_token: '' };
 };
 
 /** GET /v1/policies/{id} answers either kind; an access policy is not a rule from a decision. */
 export const getDecisionRule = async (id: string) => {
-  const raw = await v1Get<RuleWire | Schemas['AccessPolicyDetail']>(`/policies/${pathId(id)}`);
+  const raw = await ok<RuleWire | Schemas['AccessPolicyDetail']>(
+    api.GET('/v1/policies/{id}', { params: { path: { id } } }),
+  );
   if (raw.type !== 'behavior') throw new V1Error(404, 'not_found', 'Không tìm thấy quy tắc.');
   return readRule(raw as RuleWire);
 };
 
 export const backtestDecisionRule = async (id: string, windowDays = 30) =>
-  v1Send<Schemas['BacktestAccepted']>('POST', `/policies/${pathId(id)}:backtest`, {
-    window_days: windowDays,
-  });
+  ok<Schemas['BacktestAccepted']>(
+    api.POST('/v1/policies/{id}:backtest', {
+      params: { path: { id } },
+      body: {
+        window_days: windowDays,
+      },
+    }),
+  );
 
 /** :activate — the owner switches the rule on and becomes its approver. */
 export const activateDecisionRule = async (id: string) =>
-  readRule(await v1Send<RuleWire>('POST', `/policies/${pathId(id)}:activate`));
+  readRule(
+    await okAs<RuleWire>(api.POST('/v1/policies/{id}:activate', { params: { path: { id } } })),
+  );
 
 /** :disable {reason} drops a draft or switches an active rule off; the reason is required. */
 export const discardDecisionRule = async (id: string, reason: string) =>
   readRule(
-    await v1Send<RuleWire>('POST', `/policies/${pathId(id)}:disable`, {
-      reason,
-    } satisfies Schemas['PolicyDisable']),
+    await okAs<RuleWire>(
+      api.POST('/v1/policies/{id}:disable', {
+        params: { path: { id } },
+        body: {
+          reason,
+        } satisfies Schemas['PolicyDisable'],
+      }),
+    ),
   );

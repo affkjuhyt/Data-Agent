@@ -1,4 +1,4 @@
-import { pathId, v1Events, v1Get, v1Send, type Page } from './client';
+import { pathId, v1Events, type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 
 type Schemas = components['schemas'];
@@ -54,7 +54,7 @@ const readWrap = (raw: Schemas['KeyWrapView']): VaultKeyWrap => ({
 
 /** A revoked wrap stays as a row (its history) but no longer opens the vault. */
 export const getVault = async (): Promise<Vault> => {
-  const raw = await v1Get<Schemas['VaultDetail']>('/exec/vault');
+  const raw = await ok<Schemas['VaultDetail']>(api.GET('/v1/exec/vault'));
   return {
     id: raw.id,
     owner_id: raw.owner_id,
@@ -73,14 +73,14 @@ export const createVault = async (body: {
   box_private_key_ct: string;
   key_wraps: Omit<VaultKeyWrap, 'id' | 'last_used_at' | 'created_at'>[];
   exit_policy?: Vault['exit_policy'];
-}) => v1Send<Schemas['VaultDetail']>('POST', '/exec/vault', body);
+}) => ok<Schemas['VaultDetail']>(api.POST('/v1/exec/vault', { body }));
 
 export const addKeyWrap = async (body: Omit<VaultKeyWrap, 'id' | 'last_used_at' | 'created_at'>) =>
-  v1Send<Schemas['KeyWrapView']>('POST', '/exec/vault/key-wraps', body);
+  ok<Schemas['KeyWrapView']>(api.POST('/v1/exec/vault/key-wraps', { body }));
 
 export const getTransitKey = async () =>
-  v1Get<{ public_key_pem: string; key_version: number; algorithm: 'RSA-OAEP-SHA256' }>(
-    '/exec/transit-key',
+  ok<{ public_key_pem: string; key_version: number; algorithm: 'RSA-OAEP-SHA256' }>(
+    api.GET('/v1/exec/transit-key'),
   );
 
 /* ─── Theses ────────────────────────────────────────────────────────── */
@@ -131,7 +131,9 @@ const readThesis = (raw: ThesisWire): Thesis => ({
 });
 
 export const listTheses = async (): Promise<Page<Thesis>> => {
-  const page = await v1Get<Page<ThesisWire>>('/exec/theses', { page_size: 500 });
+  const page = await ok<Page<ThesisWire>>(
+    api.GET('/v1/exec/theses', { params: { query: { page_size: 500 } } }),
+  );
   return { ...page, items: page.items.map(readThesis) };
 };
 
@@ -148,10 +150,12 @@ export const createThesis = async (body: {
   cond_key_version: number;
   due_at: string;
   supersedes_id?: string;
-}) => v1Send<Schemas['ThesisView']>('POST', '/exec/theses', body);
+}) => ok<Schemas['ThesisView']>(api.POST('/v1/exec/theses', { body }));
 
 export const withdrawThesis = async (id: string) =>
-  v1Send<Schemas['ThesisView']>('POST', `/exec/theses/${pathId(id)}:withdraw`);
+  ok<Schemas['ThesisView']>(
+    api.POST('/v1/exec/theses/{id}:withdraw', { params: { path: { id } } }),
+  );
 
 /* ─── Evidence, scores, access log ──────────────────────────────────── */
 
@@ -178,9 +182,10 @@ export interface EvidenceBatches {
 type EvidenceWire = Schemas['EvidenceView'] & { display?: never };
 
 export const getEvidence = async (thesisId: string): Promise<EvidenceBatches> => {
-  const page = await v1Get<Page<EvidenceWire> & { batches?: EvidenceBatches['batches'] }>(
-    `/exec/theses/${pathId(thesisId)}/evidence`,
-    { page_size: 500 },
+  const page = await ok<Page<EvidenceWire> & { batches?: EvidenceBatches['batches'] }>(
+    api.GET('/v1/exec/theses/{id}/evidence', {
+      params: { path: { id: thesisId }, query: { page_size: 500 } },
+    }),
   );
   const ranAt = new Map<number, string>();
   for (const e of page.items) {
@@ -207,9 +212,8 @@ export const getEvidence = async (thesisId: string): Promise<EvidenceBatches> =>
 
 /** A2: 202 — the agent run that gathers the next batch. */
 export const refreshEvidence = async (thesisId: string) =>
-  v1Send<Schemas['services__api__modules__exec__schemas__Accepted']>(
-    'POST',
-    `/exec/theses/${pathId(thesisId)}/evidence:refresh`,
+  ok<Schemas['services__api__modules__exec__schemas__Accepted']>(
+    api.POST('/v1/exec/theses/{id}/evidence:refresh', { params: { path: { id: thesisId } } }),
   );
 
 export interface ThesisScore {
@@ -223,7 +227,8 @@ export interface ThesisScore {
   sealed_ct: string;
 }
 
-export const listScores = async () => v1Get<Page<ThesisScore>>('/exec/scores', { page_size: 500 });
+export const listScores = async () =>
+  okAs<Page<ThesisScore>>(api.GET('/v1/exec/scores', { params: { query: { page_size: 500 } } }));
 
 export interface KeyAccessEntry {
   id: string;
@@ -249,9 +254,8 @@ const ACTOR: Record<string, string> = {
 };
 
 export const listKeyAccess = async (): Promise<Page<KeyAccessEntry>> => {
-  const page = await v1Get<Page<Schemas['KeyAccessView'] & { actor_text?: string }>>(
-    '/exec/key-access-log',
-    { page_size: 500 },
+  const page = await ok<Page<Schemas['KeyAccessView'] & { actor_text?: string }>>(
+    api.GET('/v1/exec/key-access-log', { params: { query: { page_size: 500 } } }),
   );
   return {
     ...page,
@@ -284,7 +288,9 @@ export interface MemoryItem {
 }
 
 export const listMemoryItems = async () =>
-  v1Get<Page<MemoryItem>>('/exec/memory-items', { page_size: 500 });
+  okAs<Page<MemoryItem>>(
+    api.GET('/v1/exec/memory-items', { params: { query: { page_size: 500 } } }),
+  );
 
 /** The same AAD as a thesis: the device's `id` (UUIDv7) in the body, as A3's MemoryItemCreate takes it. */
 export const createMemoryItem = async (body: {
@@ -294,7 +300,7 @@ export const createMemoryItem = async (body: {
   wrapped_dek: string;
   content_version: number;
   related_thesis_id?: string;
-}) => v1Send<MemoryItem>('POST', '/exec/memory-items', body);
+}) => okAs<MemoryItem>(api.POST('/v1/exec/memory-items', { body }));
 
 /**
  * A2: 202 with the stream; the local model only, nothing logged (BR-193). The model cannot open
@@ -307,10 +313,8 @@ export const askPrivately = async (body: {
   context_items: { memory_item_id: string; text: string }[];
   as_of?: string;
 }) =>
-  v1Send<Schemas['services__api__modules__exec__schemas__Accepted']>(
-    'POST',
-    '/exec/private-questions',
-    body,
+  ok<Schemas['services__api__modules__exec__schemas__Accepted']>(
+    api.POST('/v1/exec/private-questions', { body }),
   );
 
 export interface PrivateAnswer {
@@ -345,7 +349,7 @@ interface PublicationRequest {
   metric_ref: string;
   scope?: Record<string, string>;
   period_label: string;
-  comparator: string;
+  comparator: Schemas['PublicationCreate']['comparator'];
   threshold: number;
   threshold_hi?: number;
   unit: string;
@@ -353,10 +357,8 @@ interface PublicationRequest {
 
 /** A2: 202 — the publication waits for the reviewer of the target Data Space. */
 export const publishThesis = async (thesisId: string, body: PublicationRequest) =>
-  v1Send<Schemas['services__api__modules__exec__schemas__Accepted']>(
-    'POST',
-    `/exec/theses/${pathId(thesisId)}/publications`,
-    body,
+  ok<Schemas['services__api__modules__exec__schemas__Accepted']>(
+    api.POST('/v1/exec/theses/{id}/publications', { params: { path: { id: thesisId } }, body }),
   );
 
 export type HandoverReason = Exclude<Schemas['HandoverCreate']['reason'], 'sealed_expired'>;
@@ -366,7 +368,7 @@ export const requestHandover = async (body: {
   kind: 'seal' | 'selective_handover' | 'shred';
   reason: HandoverReason;
   successor_id?: string;
-}) => v1Send<Schemas['HandoverView']>('POST', '/exec/handovers', body);
+}) => ok<Schemas['HandoverView']>(api.POST('/v1/exec/handovers', { body }));
 
 /**
  * Data Spaces a hypothesis can be published to: the viewer's own (GET /v1/data-spaces). The
@@ -380,7 +382,9 @@ export interface PublishTarget {
 }
 
 export const listPublishTargets = async (): Promise<PublishTarget[]> => {
-  const page = await v1Get<Page<Schemas['DataSpaceSummary']>>('/data-spaces', { page_size: 500 });
+  const page = await ok<Page<Schemas['DataSpaceSummary']>>(
+    api.GET('/v1/data-spaces', { params: { query: { page_size: 500 } } }),
+  );
   return page.items
     .filter((s) => s.status === 'active')
     .map((s) => ({ id: s.id, name: s.name, steward_id: s.steward_id }));

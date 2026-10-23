@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send, V1Error, type Page } from './client';
+import { pathId, v1Send, V1Error, type Page, api, ok } from './client';
 import type { components } from './schema';
 import { readWorkspace, type Workspace } from './types';
 
@@ -227,7 +227,9 @@ export type SessionReportDocument = components['schemas']['ReportDocumentView'];
 
 /* Phiên */
 export const getWorkspace = async (id: string) =>
-  readWorkspaceDetail(await v1Get<WorkspaceDetailWire>(`/workspaces/${pathId(id)}`));
+  readWorkspaceDetail(
+    await ok<WorkspaceDetailWire>(api.GET('/v1/workspaces/{id}', { params: { path: { id } } })),
+  );
 
 /**
  * Re-run the stale tiles in dependency order; the old results stay in the session history
@@ -235,7 +237,7 @@ export const getWorkspace = async (id: string) =>
  * again for what is already done.
  */
 export const refreshWorkspace = async (id: string) => {
-  await v1Send('POST', `/workspaces/${pathId(id)}:refresh`, {});
+  await ok(api.POST('/v1/workspaces/{id}:refresh', { params: { path: { id } }, body: {} }));
   return getWorkspace(id);
 };
 
@@ -245,9 +247,14 @@ export const decideTile = async (
   tileId: string,
   verb: 'accept' | 'dismiss',
 ) => {
-  await v1Send('PATCH', `/tiles/${pathId(tileId)}`, {
-    agent_suggestion_state: verb === 'accept' ? 'accepted' : 'dismissed',
-  });
+  await ok(
+    api.PATCH('/v1/tiles/{id}', {
+      params: { path: { id: tileId } },
+      body: {
+        agent_suggestion_state: verb === 'accept' ? 'accepted' : 'dismissed',
+      },
+    }),
+  );
   return getWorkspace(workspaceId);
 };
 
@@ -283,15 +290,27 @@ function readTileThread(raw: unknown): TileThread {
 
 export const getTileThread = async (_workspaceId: string, tileId: string) =>
   readTileThread(
-    await v1Get<Page<components['schemas']['CommentView']>>(`/tiles/${pathId(tileId)}/comments`, {
-      page_size: 100,
-    }),
+    await ok<Page<components['schemas']['CommentView']>>(
+      api.GET('/v1/tiles/{id}/comments', {
+        params: {
+          path: { id: tileId },
+          query: {
+            page_size: 100,
+          },
+        },
+      }),
+    ),
   );
 
 export const addTileComment = async (tileId: string, body: string) =>
-  v1Send<components['schemas']['CommentView']>('POST', `/tiles/${pathId(tileId)}/comments`, {
-    body,
-  });
+  ok<components['schemas']['CommentView']>(
+    api.POST('/v1/tiles/{id}/comments', {
+      params: { path: { id: tileId } },
+      body: {
+        body,
+      },
+    }),
+  );
 
 /* Chia sẻ */
 function readSharing(raw: unknown, workspaceId: string): WorkspaceSharing {
@@ -310,7 +329,9 @@ function readSharing(raw: unknown, workspaceId: string): WorkspaceSharing {
 
 export const getSharing = async (id: string) =>
   readSharing(
-    await v1Get<Page<components['schemas']['ShareView']>>(`/workspaces/${pathId(id)}/shares`),
+    await ok<Page<components['schemas']['ShareView']>>(
+      api.GET('/v1/workspaces/{id}/shares', { params: { path: { id } } }),
+    ),
     id,
   );
 
@@ -321,28 +342,34 @@ export type SharingInput = { principal_id: string; kind: 'user' | 'group'; role:
  * out; editor and viewer are the "edit" and "view" permissions.
  */
 export const saveSharing = async (id: string, members: SharingInput) =>
-  v1Send<Page<components['schemas']['ShareView']>>('PUT', `/workspaces/${pathId(id)}/shares`, {
-    shares: members
-      .filter((m) => m.role !== 'owner')
-      .map((m) => ({
-        principal_type: m.kind,
-        principal_id: m.principal_id,
-        permission: m.role === 'editor' ? ('edit' as const) : ('view' as const),
-      })),
-  } satisfies components['schemas']['SharesPut']);
+  ok<Page<components['schemas']['ShareView']>>(
+    api.PUT('/v1/workspaces/{id}/shares', {
+      params: { path: { id } },
+      body: {
+        shares: members
+          .filter((m) => m.role !== 'owner')
+          .map((m) => ({
+            principal_type: m.kind,
+            principal_id: m.principal_id,
+            permission: m.role === 'editor' ? ('edit' as const) : ('view' as const),
+          })),
+      } satisfies components['schemas']['SharesPut'],
+    }),
+  );
 
 /** "Người nhận thấy gì" is computed by the API before the share is saved. */
 export const previewSharing = async (id: string, members: SharingInput) => {
-  const raw = await v1Send<Page<components['schemas']['RecipientPreview']> | { preview: string }>(
-    'POST',
-    `/workspaces/${pathId(id)}/shares:preview`,
-    {
-      shares: members.map((member) => ({
-        principal_type: member.kind,
-        principal_id: member.principal_id,
-        permission: member.role === 'editor' ? 'edit' : 'view',
-      })),
-    },
+  const raw = await ok<Page<components['schemas']['RecipientPreview']> | { preview: string }>(
+    api.POST('/v1/workspaces/{id}/shares:preview', {
+      params: { path: { id } },
+      body: {
+        shares: members.map((member) => ({
+          principal_type: member.kind,
+          principal_id: member.principal_id,
+          permission: member.role === 'editor' ? ('edit' as const) : ('view' as const),
+        })),
+      },
+    }),
   );
   if ('preview' in raw) return raw;
   const blocked = raw.items.filter((item) => !item.can_open).length;
@@ -356,9 +383,8 @@ export const previewSharing = async (id: string, members: SharingInput) => {
 
 /** The directory exposes only the fields needed by the share picker. */
 export const searchPrincipals = async (q: string) => {
-  const page = await v1Get<Page<components['schemas']['PrincipalRef']> | Page<Principal>>(
-    '/principals',
-    { q, page_size: 20 },
+  const page = await ok<Page<components['schemas']['PrincipalRef']> | Page<Principal>>(
+    api.GET('/v1/principals', { params: { query: { q, page_size: 20 } } }),
   );
   return {
     ...page,
@@ -500,30 +526,39 @@ export function readReportDocument(markdown: string): SessionReport['document'] 
 
 /** The API filters the report list by workspace_id; there is no nested collection route. */
 export const listSessionReports = async (workspaceId: string) => {
-  const page = await v1Get<Page<components['schemas']['ReportView']>>('/session-reports', {
-    workspace_id: pathId(workspaceId),
-    page_size: 20,
-  });
+  const page = await ok<Page<components['schemas']['ReportView']>>(
+    api.GET('/v1/session-reports', {
+      params: {
+        query: {
+          workspace_id: pathId(workspaceId),
+          page_size: 20,
+        },
+      },
+    }),
+  );
   return { ...page, items: page.items.map(readSessionReport) };
 };
 
 /** Asks Agent Báo cáo to draft a report from every tile of the session. */
 export const createSessionReport = async (workspaceId: string, title: string) =>
-  v1Send<components['schemas']['ReportView']>(
-    'POST',
-    `/workspaces/${pathId(workspaceId)}/reports`,
-    {
-      title,
-    },
+  ok<components['schemas']['ReportView']>(
+    api.POST('/v1/workspaces/{id}/reports', {
+      params: { path: { id: workspaceId } },
+      body: {
+        title,
+      },
+    }),
   );
 
 export const getSessionReport = async (id: string) => {
   const report = readSessionReport(
-    await v1Get<components['schemas']['ReportView']>(`/session-reports/${pathId(id)}`),
+    await ok<components['schemas']['ReportView']>(
+      api.GET('/v1/session-reports/{id}', { params: { path: { id } } }),
+    ),
   );
   try {
-    const document = await v1Get<SessionReportDocument>(
-      `/session-reports/${pathId(id)}/document`,
+    const document = await ok<SessionReportDocument>(
+      api.GET('/v1/session-reports/{id}/document', { params: { path: { id } } }),
     );
     return { ...report, document: readReportDocument(document.markdown) };
   } catch (error) {
@@ -538,13 +573,18 @@ export const getSessionReport = async (id: string) => {
  * api answers with the bare report row, so the review shape is read again.
  */
 export const publishSessionReport = async (id: string) => {
-  await v1Send('POST', `/session-reports/${pathId(id)}:publish`, { recipients: [] });
+  await ok(
+    api.POST('/v1/session-reports/{id}:publish', {
+      params: { path: { id } },
+      body: { recipients: [] },
+    }),
+  );
   return getSessionReport(id);
 };
 
 /** Re-runs the pre-publish checks (202), e.g. after a number was tied to a tile. */
 export const checkSessionReport = async (id: string) => {
-  await v1Send('POST', `/session-reports/${pathId(id)}:check`);
+  await ok(api.POST('/v1/session-reports/{id}:check', { params: { path: { id } } }));
   return getSessionReport(id);
 };
 

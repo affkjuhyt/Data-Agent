@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1GetBlob, v1Send, v1Upload, type Page } from './client';
+import { pathId, v1GetBlob, v1Send, v1Upload, type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 import { listCollections, readCollectionDocument, type DocumentDetail, type Tone } from './sources';
 
@@ -137,11 +137,17 @@ export function readLibraryRow(raw: LibraryWire): DocumentRow {
  * are PROPOSAL and are filtered here on the rows that carry them.
  */
 export const listLibrary = async (query: LibraryQuery = {}): Promise<Page<DocumentRow>> => {
-  const page = await v1Get<Page<LibraryWire>>('/documents', {
-    ...ALL,
-    ...(query.collection_id ? { collection_id: query.collection_id } : {}),
-    ...(query.state === 'processing' ? { status: 'processing' } : {}),
-  });
+  const page = await ok<Page<LibraryWire>>(
+    api.GET('/v1/documents', {
+      params: {
+        query: {
+          ...ALL,
+          ...(query.collection_id ? { collection_id: query.collection_id } : {}),
+          ...(query.state === 'processing' ? { status: 'processing' } : {}),
+        },
+      },
+    }),
+  );
   let items = page.items.map(readLibraryRow);
   if (query.category) items = items.filter((r) => r.category === query.category);
   if (query.validity_review) items = items.filter((r) => r.validity_pending);
@@ -320,7 +326,7 @@ function readDocumentView(raw: DocumentWire, collections: Map<string, string>): 
 
 export const getDocumentView = async (id: string) => {
   const [raw, collections] = await Promise.all([
-    v1Get<DocumentWire>(`/documents/${pathId(id)}`),
+    ok<DocumentWire>(api.GET('/v1/documents/{id}', { params: { path: { id } } })),
     listCollections().catch(() => null),
   ]);
   return readDocumentView(
@@ -337,9 +343,13 @@ export const getDocumentOriginal = (id: string) =>
  * cause, as a background task; 202 names the task.
  */
 export const investigateDocument = async (doc: { id: Uuid; title: string }) =>
-  v1Send<Schemas['TaskAccepted']>('POST', '/tasks', {
-    description: `Tìm nguyên nhân hệ thống của “${doc.title}” và các thư tương tự (tài liệu ${doc.id}).`,
-  } satisfies Schemas['TaskCreate']);
+  ok<Schemas['TaskAccepted']>(
+    api.POST('/v1/tasks', {
+      body: {
+        description: `Tìm nguyên nhân hệ thống của “${doc.title}” và các thư tương tự (tài liệu ${doc.id}).`,
+      } satisfies Schemas['TaskCreate'],
+    }),
+  );
 
 /** A box on the page, in the page's own units (width × height of DocumentPage). */
 export interface PageBox {
@@ -378,7 +388,9 @@ type PageWire = Schemas['DocumentPageView'] & {
 
 /** Without the PROPOSAL layout the page is its image and text on an A4 sheet (595 × 842 pt). */
 export const getDocumentPage = async (id: string, n: number): Promise<DocumentPage> => {
-  const raw = await v1Get<PageWire>(`/documents/${pathId(id)}/pages/${pathId(String(n))}`);
+  const raw = await ok<PageWire>(
+    api.GET('/v1/documents/{id}/pages/{n}', { params: { path: { id, n } } }),
+  );
   return (
     raw.display ?? {
       number: raw.page_no,
@@ -416,9 +428,10 @@ export const listChunks = async (doc: {
   id: Uuid;
   page_count: number;
 }): Promise<Page<DocumentChunk>> => {
-  const page = await v1Get<Page<Schemas['ChunkView']>>(
-    `/documents/${pathId(doc.id)}/chunks`,
-    { page_size: 500 },
+  const page = await ok<Page<Schemas['ChunkView']>>(
+    api.GET('/v1/documents/{id}/chunks', {
+      params: { path: { id: doc.id }, query: { page_size: 500 } },
+    }),
   );
   return {
     next_page_token: '',
@@ -454,12 +467,20 @@ const AUDIT_ACTION: Record<string, string> = {
  */
 export const listActivity = async (id: string): Promise<Page<DocumentActivity>> => {
   const [versions, audit] = await Promise.all([
-    v1Get<Page<Schemas['DocumentView']>>(`/documents/${pathId(id)}/versions`, ALL),
-    v1Get<Page<Schemas['AuditLogView']>>('/audit', {
-      ...ALL,
-      object_kind: 'document',
-      object_id: id,
-    }).catch(() => null),
+    ok<Page<Schemas['DocumentView']>>(
+      api.GET('/v1/documents/{id}/versions', { params: { path: { id } } }),
+    ),
+    ok<Page<Schemas['AuditLogView']>>(
+      api.GET('/v1/audit', {
+        params: {
+          query: {
+            ...ALL,
+            object_kind: 'document',
+            object_id: id,
+          },
+        },
+      }),
+    ).catch(() => null),
   ]);
   const rows = [
     ...versions.items.map((v) => ({
@@ -552,10 +573,16 @@ function readIssue(raw: IssueWire, titles: Map<string, string>): QualityIssue {
 
 /** The open issues, each named by its document (A2 has no list of documents to join with). */
 export const listQualityIssues = async (): Promise<Page<QualityIssue>> => {
-  const page = await v1Get<Page<IssueWire>>('/quality-issues', { ...ALL, status: 'open' });
+  const page = await ok<Page<IssueWire>>(
+    api.GET('/v1/quality-issues', { params: { query: { ...ALL, status: 'open' } } }),
+  );
   const ids = [...new Set(page.items.filter((i) => !i.display).map((i) => i.document_id))];
   const docs = await Promise.all(
-    ids.map((id) => v1Get<DocumentWire>(`/documents/${pathId(id)}`).catch(() => null)),
+    ids.map((id) =>
+      ok<DocumentWire>(api.GET('/v1/documents/{id}', { params: { path: { id } } })).catch(
+        () => null,
+      ),
+    ),
   );
   const titles = new Map<string, string>(
     docs.flatMap((d) => (d ? [[d.id, d.title ?? d.file_name] as [string, string]] : [])),
@@ -586,8 +613,12 @@ function resolutionOf(body: ResolveIssue): Schemas['ResolveIssue'] | null {
 /** POST /v1/quality-issues/{id}:resolve. */
 export const resolveQualityIssue = async (id: string, body: ResolveIssue) => {
   const resolution = resolutionOf(body);
-  // PROPOSAL: keep_and_conflict travels as the screen wrote it; the mock knows it.
-  await v1Send('POST', `/quality-issues/${pathId(id)}:resolve`, resolution ?? body);
+  if (resolution)
+    await ok(
+      api.POST('/v1/quality-issues/{id}:resolve', { params: { path: { id } }, body: resolution }),
+    );
+  // PROPOSAL: keep_and_conflict travels as the screen wrote it; the mock knows it, the api refuses it.
+  else await v1Send('POST', `/quality-issues/${pathId(id)}:resolve`, body);
   return { status: 'resolved' as const };
 };
 
@@ -651,7 +682,9 @@ function readValidity(id: string, versions: Schemas['DocumentView'][]): Document
 }
 
 export const getValidity = async (id: string): Promise<DocumentValidity> => {
-  const raw = await v1Get<VersionsWire>(`/documents/${pathId(id)}/versions`, ALL);
+  const raw = await ok<VersionsWire>(
+    api.GET('/v1/documents/{id}/versions', { params: { path: { id } } }),
+  );
   return raw.display ?? readValidity(id, raw.items);
 };
 
@@ -663,12 +696,22 @@ export const setSupersession = async (
   id: string,
   body: { superseded_by: string; valid_to: string },
 ) => {
-  await v1Send('PATCH', `/documents/${pathId(body.superseded_by)}`, {
-    supersedes_id: id,
-  } satisfies Schemas['DocumentPatch']);
-  await v1Send('PATCH', `/documents/${pathId(id)}`, {
-    effective_to: body.valid_to,
-  } satisfies Schemas['DocumentPatch']);
+  await ok(
+    api.PATCH('/v1/documents/{id}', {
+      params: { path: { id: body.superseded_by } },
+      body: {
+        supersedes_id: id,
+      } satisfies Schemas['DocumentPatch'],
+    }),
+  );
+  await ok(
+    api.PATCH('/v1/documents/{id}', {
+      params: { path: { id } },
+      body: {
+        effective_to: body.valid_to,
+      } satisfies Schemas['DocumentPatch'],
+    }),
+  );
 };
 
 /* ─── Trả lời từ tài liệu (UC-05-04) ──────────────────────────────────── */
@@ -706,8 +749,13 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Waits for the question's answer: GET /v1/questions/{id} names it once worker-agent is done. */
 async function answerOf(questionId: string, pollMs: number): Promise<Schemas['AnswerView']> {
   for (let attempt = 0; attempt < 150; attempt++) {
-    const q = await v1Get<Schemas['QuestionView']>(`/questions/${pathId(questionId)}`);
-    if (q.answer_id) return v1Get<Schemas['AnswerView']>(`/answers/${pathId(q.answer_id)}`);
+    const q = await ok<Schemas['QuestionView']>(
+      api.GET('/v1/questions/{id}', { params: { path: { id: questionId } } }),
+    );
+    if (q.answer_id)
+      return ok<Schemas['AnswerView']>(
+        api.GET('/v1/answers/{id}', { params: { path: { id: q.answer_id } } }),
+      );
     if (q.status === 'failed' || q.status === 'cancelled')
       throw new Error('Câu hỏi không được trả lời.');
     await sleep(pollMs);
@@ -759,11 +807,15 @@ function citationOf(c: AnswerCitationWire, today: string): Citation {
  */
 export const askDocuments = async (body: { question: string }): Promise<DocumentAnswer> => {
   const started = Date.now();
-  const accepted = await v1Send<Schemas['QuestionAccepted']>('POST', '/questions', {
-    text: body.question,
-    knowledge_mode: 'latest',
-    stream: false,
-  } satisfies Schemas['QuestionCreate']);
+  const accepted = await ok<Schemas['QuestionAccepted']>(
+    api.POST('/v1/questions', {
+      body: {
+        text: body.question,
+        knowledge_mode: 'latest',
+        stream: false,
+      } satisfies Schemas['QuestionCreate'],
+    }),
+  );
   const answer = await answerOf(accepted.question_id, accepted.poll_after_ms ?? 1000);
   const today = new Date().toISOString().slice(0, 10);
   const wire = (answer.kind === 'document' ? answer.citations : []) as AnswerCitationWire[] | null;
@@ -816,17 +868,22 @@ export interface ExtractionSchema {
   test_size: number;
 }
 
-export const listSchemas = () => v1Get<Page<ExtractionSchema>>('/extraction-schemas', ALL);
+export const listSchemas = () =>
+  okAs<Page<ExtractionSchema>>(api.GET('/v1/extraction-schemas', { params: { query: ALL } }));
 export const getSchema = async (id: string) =>
-  v1Get<ExtractionSchema>(`/extraction-schemas/${pathId(id)}`);
+  okAs<ExtractionSchema>(api.GET('/v1/extraction-schemas/{id}', { params: { path: { id } } }));
 
 /** POST /v1/extraction-schemas/{id}:test — 202, the sample run goes on in the background. */
 export const testSchema = async (id: string) =>
-  v1Send<ExtractionSchema>('POST', `/extraction-schemas/${pathId(id)}:test`);
+  okAs<ExtractionSchema>(
+    api.POST('/v1/extraction-schemas/{id}:test', { params: { path: { id } }, body: {} }),
+  );
 
 /** POST /v1/extraction-schemas/{id}:activate — publish this version. */
 export const activateSchema = async (id: string) =>
-  v1Send<ExtractionSchema>('POST', `/extraction-schemas/${pathId(id)}:activate`);
+  okAs<ExtractionSchema>(
+    api.POST('/v1/extraction-schemas/{id}:activate', { params: { path: { id } } }),
+  );
 
 /* ─── Hộp thoại: upload, createCollection, suggestCollection ─────────── */
 
@@ -873,14 +930,18 @@ const mediaOf = (fileTypes: string): MediaKind[] => {
  */
 export const createCollection = async (body: NewCollection) => {
   const media = mediaOf(body.file_types);
-  const created = await v1Send<Schemas['CollectionView']>('POST', '/collections', {
-    code: codeOf(body.name),
-    name: body.name,
-    purpose: body.purpose,
-    ...(media.length ? { media_kinds: media } : {}),
-    ...(body.pii_policy ? { pii_policy: body.pii_policy } : {}),
-    ...(body.retention_days ? { retention_days: body.retention_days } : {}),
-  } satisfies Schemas['CollectionCreate']);
+  const created = await ok<Schemas['CollectionView']>(
+    api.POST('/v1/collections', {
+      body: {
+        code: codeOf(body.name),
+        name: body.name,
+        purpose: body.purpose,
+        ...(media.length ? { media_kinds: media } : {}),
+        ...(body.pii_policy ? { pii_policy: body.pii_policy } : {}),
+        ...(body.retention_days ? { retention_days: body.retention_days } : {}),
+      } satisfies Schemas['CollectionCreate'],
+    }),
+  );
   return { id: created.id, name: created.name };
 };
 

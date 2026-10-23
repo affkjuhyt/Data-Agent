@@ -1,4 +1,4 @@
-import { currentDataSpace, pathId, V1Error, v1Get, v1Send, type Page } from './client';
+import { currentDataSpace, V1Error, type Page, api, ok } from './client';
 import type { components } from './schema';
 
 /*
@@ -73,9 +73,15 @@ const readSummary = (raw: Schemas['KnowledgePageView']): KnowledgePageSummary =>
 });
 
 export const listKnowledgePages = async () => {
-  const page = await v1Get<Page<Schemas['KnowledgePageView']>>('/knowledge-pages', {
-    page_size: 500,
-  });
+  const page = await ok<Page<Schemas['KnowledgePageView']>>(
+    api.GET('/v1/knowledge-pages', {
+      params: {
+        query: {
+          page_size: 500,
+        },
+      },
+    }),
+  );
   return { ...page, items: page.items.map(readSummary) };
 };
 
@@ -139,15 +145,15 @@ function readRendered(raw: RenderedWire, titles: Map<string, string>): Knowledge
 
 export const getKnowledgePage = async (id: string) => {
   const [raw, pages] = await Promise.all([
-    v1Get<RenderedWire>(`/knowledge-pages/${pathId(id)}`),
+    ok<RenderedWire>(api.GET('/v1/knowledge-pages/{id}', { params: { path: { id } } })),
     listKnowledgePages().catch(() => null),
   ]);
   return readRendered(raw, new Map<string, string>(pages?.items.map((p) => [p.id, p.title]) ?? []));
 };
 
 export const listKnowledgePageVersions = async (id: string) => {
-  const page = await v1Get<Page<Schemas['KnowledgeVersionView']>>(
-    `/knowledge-pages/${pathId(id)}/versions`,
+  const page = await ok<Page<Schemas['KnowledgeVersionView']>>(
+    api.GET('/v1/knowledge-pages/{id}/versions', { params: { path: { id } } }),
   );
   return {
     ...page,
@@ -172,12 +178,16 @@ const spaceForRun = () => {
 
 /** A2: POST /v1/knowledge-runs (202) — compile one page again now (an ingest run on it). */
 export const recompileKnowledgePage = (pageId: string) =>
-  v1Send<Schemas['services__api__modules__context__schemas__Accepted']>('POST', '/knowledge-runs', {
-    kind: 'ingest',
-    data_space_id: spaceForRun(),
-    source_kind: 'knowledge_page',
-    source_ref: pageId,
-  } satisfies Schemas['KnowledgeRunCreate']);
+  ok<Schemas['services__api__modules__context__schemas__Accepted']>(
+    api.POST('/v1/knowledge-runs', {
+      body: {
+        kind: 'ingest',
+        data_space_id: spaceForRun(),
+        source_kind: 'knowledge_page',
+        source_ref: pageId,
+      } satisfies Schemas['KnowledgeRunCreate'],
+    }),
+  );
 
 /* ─── Rà soát tri thức (UC-07-11) ─────────────────────────────────────── */
 
@@ -262,10 +272,16 @@ function readLintRun(raw: LintRunWire): KnowledgeLintRun {
 
 /** A2: GET /v1/knowledge-runs ?kind ?status — the newest finished lint run first. */
 export const getLatestLintRun = async () => {
-  const page = await v1Get<Page<LintRunWire>>('/knowledge-runs', {
-    kind: 'lint',
-    status: 'succeeded',
-  });
+  const page = await ok<Page<LintRunWire>>(
+    api.GET('/v1/knowledge-runs', {
+      params: {
+        query: {
+          kind: 'lint',
+          status: 'succeeded',
+        },
+      },
+    }),
+  );
   return { ...page, items: page.items.map(readLintRun) };
 };
 
@@ -302,7 +318,9 @@ const readFinding = (raw: FindingWire, titles: Map<string, string>): KnowledgeFi
 /** The pages' titles name what each finding is about. */
 export const listOpenFindings = async () => {
   const [page, pages] = await Promise.all([
-    v1Get<Page<FindingWire>>('/knowledge-findings', { status: 'open', page_size: 500 }),
+    ok<Page<FindingWire>>(
+      api.GET('/v1/knowledge-findings', { params: { query: { status: 'open', page_size: 500 } } }),
+    ),
     listKnowledgePages().catch(() => null),
   ]);
   const titles = new Map<string, string>(pages?.items.map((p) => [p.id, p.title]) ?? []);
@@ -315,16 +333,22 @@ export const resolveFinding = async (
   body: { action: FindingAction; reason?: string; assignee_id?: string },
 ) =>
   readFinding(
-    await v1Send<FindingWire>('POST', `/knowledge-findings/${pathId(id)}:resolve`, body),
+    await ok<FindingWire>(
+      api.POST('/v1/knowledge-findings/{id}:resolve', { params: { path: { id } }, body }),
+    ),
     new Map<string, string>(),
   );
 
 /** A2: POST /v1/knowledge-runs (202) — a lint run now. */
 export const runKnowledgeLint = () =>
-  v1Send<Schemas['services__api__modules__context__schemas__Accepted']>('POST', '/knowledge-runs', {
-    kind: 'lint',
-    data_space_id: spaceForRun(),
-  } satisfies Schemas['KnowledgeRunCreate']);
+  ok<Schemas['services__api__modules__context__schemas__Accepted']>(
+    api.POST('/v1/knowledge-runs', {
+      body: {
+        kind: 'lint',
+        data_space_id: spaceForRun(),
+      } satisfies Schemas['KnowledgeRunCreate'],
+    }),
+  );
 
 /* ─── Lưu câu trả lời thành tri thức (UC-07-12) ───────────────────────── */
 
@@ -340,12 +364,20 @@ export interface KnowledgeDraft {
 }
 
 export async function getKnowledgeDraft(answerId: string): Promise<KnowledgeDraft> {
-  const answer = await v1Get<Schemas['AnswerView']>(`/answers/${pathId(answerId)}`);
+  const answer = await ok<Schemas['AnswerView']>(
+    api.GET('/v1/answers/{id}', { params: { path: { id: answerId } } }),
+  );
   // The index is only a suggestion: without it the user picks the page.
-  const index = await v1Get<Page<Schemas['KnowledgeIndexEntry']>>('/knowledge/index', {
-    q: answer.text.slice(0, 200),
-    limit: 1,
-  }).catch(() => null);
+  const index = await ok<Page<Schemas['KnowledgeIndexEntry']>>(
+    api.GET('/v1/knowledge/index', {
+      params: {
+        query: {
+          q: answer.text.slice(0, 200),
+          limit: 1,
+        },
+      },
+    }),
+  ).catch(() => null);
   const top = index?.items[0];
   return { answer_text: answer.text, target_page: top ? { id: top.id, title: top.title } : null };
 }
@@ -363,11 +395,11 @@ export const saveAnswerToKnowledge = (body: {
   title?: string;
   note?: string;
 }) =>
-  v1Send<Schemas['services__api__modules__context__schemas__Accepted']>(
-    'POST',
-    '/knowledge-pages:from-answer',
-    {
-      ...body,
-      mode: body.mode === 'paragraph' ? 'append' : 'new_page',
-    } satisfies Schemas['FromAnswer'],
+  ok<Schemas['services__api__modules__context__schemas__Accepted']>(
+    api.POST('/v1/knowledge-pages:from-answer', {
+      body: {
+        ...body,
+        mode: body.mode === 'paragraph' ? 'append' : 'new_page',
+      } satisfies Schemas['FromAnswer'],
+    }),
   );

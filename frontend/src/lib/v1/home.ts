@@ -1,4 +1,4 @@
-import { v1Get, type Page } from './client';
+import { type Page, api, ok } from './client';
 import type { components } from './schema';
 
 /*
@@ -39,10 +39,16 @@ const hhmm = (iso: string) => {
 
 /** The newest digest: its title, and its body one line per point. */
 export const getMyHome = async (): Promise<MyHome> => {
-  const page = await v1Get<Page<NotificationView>>('/me/notifications', {
-    kind: 'digest',
-    page_size: 1,
-  });
+  const page = await ok<Page<NotificationView>>(
+    api.GET('/v1/me/notifications', {
+      params: {
+        query: {
+          kind: 'digest',
+          page_size: 1,
+        },
+      },
+    }),
+  );
   const digest = page.items[0];
   const lines = (digest?.body ?? '')
     .split('\n')

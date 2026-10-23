@@ -1,4 +1,4 @@
-import { pathId, v1Get, v1Send } from './client';
+import { api, ok } from './client';
 import type { components } from './schema';
 
 /*
@@ -101,26 +101,32 @@ const readMetric = (raw: MetricWire): MetricDetail => ({
 });
 
 export const getMetric = async (id: string) =>
-  readMetric(await v1Get<MetricWire>(`/metrics/${pathId(id)}`));
+  readMetric(await ok<MetricWire>(api.GET('/v1/metrics/{id}', { params: { path: { id } } })));
 
 /** A new draft starts as a copy of the version in use; the change note says why. */
 export const createMetricDraft = async (id: string, from: MetricVersion, changeNote: string) =>
   readVersion(
-    await v1Send<VersionWire>('POST', `/metrics/${pathId(id)}/versions`, {
-      display_name: from.display_name,
-      expression: from.expression,
-      unit: from.unit,
-      decimals: from.decimals,
-      direction: from.direction,
-      period_semantics: from.period_semantics,
-      time_grain: from.time_grain,
-      change_note: changeNote,
-    } satisfies Schemas['MetricVersionCreate']),
+    await ok<VersionWire>(
+      api.POST('/v1/metrics/{id}/versions', {
+        params: { path: { id } },
+        body: {
+          display_name: from.display_name,
+          expression: from.expression,
+          unit: from.unit,
+          decimals: from.decimals,
+          direction: from.direction,
+          period_semantics: from.period_semantics,
+          time_grain: from.time_grain,
+          change_note: changeNote,
+        } satisfies Schemas['MetricVersionCreate'],
+      }),
+    ),
   );
 
 export const previewMetricVersion = async (versionId: string) =>
-  v1Send<Schemas['services__api__modules__context__schemas__Accepted']>(
-    'POST',
-    `/metric-versions/${pathId(versionId)}:preview`,
-    { periods: 6 } satisfies Schemas['MetricPreview'],
+  ok<Schemas['services__api__modules__context__schemas__Accepted']>(
+    api.POST('/v1/metric-versions/{id}:preview', {
+      params: { path: { id: versionId } },
+      body: { periods: 6 } satisfies Schemas['MetricPreview'],
+    }),
   );

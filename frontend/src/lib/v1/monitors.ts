@@ -1,5 +1,5 @@
 import { listAlerts } from './alerts';
-import { pathId, v1Get, v1Send, type Page } from './client';
+import { type Page, api, ok, okAs } from './client';
 import { getMe } from './me';
 import type { components } from './schema';
 
@@ -123,7 +123,9 @@ function readMonitor(
 }
 
 const metricNames = async (): Promise<MetricNames> => {
-  const page = await v1Get<Page<Schemas['MetricView']>>('/metrics', { page_size: 500 });
+  const page = await ok<Page<Schemas['MetricView']>>(
+    api.GET('/v1/metrics', { params: { query: { page_size: 500 } } }),
+  );
   return new Map(
     page.items.map((m) => [
       m.id,
@@ -140,7 +142,7 @@ const myId = async () => (await getMe().catch(() => null))?.id ?? null;
  */
 export const listMonitors = async (): Promise<Page<Monitor>> => {
   const [page, metrics, me, alerts] = await Promise.all([
-    v1Get<Page<MonitorWire>>('/monitors', { page_size: 200 }),
+    okAs<Page<MonitorWire>>(api.GET('/v1/monitors', { params: { query: { page_size: 200 } } })),
     metricNames().catch((): MetricNames => new Map()),
     myId(),
     listAlerts().catch(() => null),
@@ -158,9 +160,14 @@ export const listMonitors = async (): Promise<Page<Monitor>> => {
 
 /** A2 pauses a monitor (PATCH status paused) and resumes it (active); there is no end date. */
 export const muteMonitor = async (id: string, on: boolean) =>
-  v1Send<MonitorWire>('PATCH', `/monitors/${pathId(id)}`, {
-    status: on ? 'paused' : 'active',
-  } satisfies Schemas['MonitorPatch']);
+  okAs<MonitorWire>(
+    api.PATCH('/v1/monitors/{id}', {
+      params: { path: { id } },
+      body: {
+        status: on ? 'paused' : 'active',
+      } satisfies Schemas['MonitorPatch'],
+    }),
+  );
 
 /** What "Tạo theo dõi" may choose from. */
 export interface MonitorOptions {
@@ -185,7 +192,9 @@ const CHANNELS = [
 /** The published metrics of the Data Space (UC-08-01 precondition) and the viewer to notify. */
 export const getMonitorOptions = async (): Promise<MonitorOptions> => {
   const [page, me] = await Promise.all([
-    v1Get<Page<Schemas['MetricView']>>('/metrics', { status: 'active', page_size: 500 }),
+    ok<Page<Schemas['MetricView']>>(
+      api.GET('/v1/metrics', { params: { query: { status: 'active', page_size: 500 } } }),
+    ),
     myId(),
   ]);
   return {
@@ -204,7 +213,9 @@ export const getMonitorOptions = async (): Promise<MonitorOptions> => {
 };
 
 export const getMetricShape = async (metricId: string): Promise<MetricShape> => {
-  const detail = await v1Get<Schemas['MetricDetail']>(`/metrics/${pathId(metricId)}`);
+  const detail = await ok<Schemas['MetricDetail']>(
+    api.GET('/v1/metrics/{id}', { params: { path: { id: metricId } } }),
+  );
   const current =
     detail.versions?.find((v) => v.version === detail.current_version) ?? detail.versions?.[0];
   return {
@@ -233,16 +244,20 @@ export interface MonitorDraft {
  * scope_filter, recipients) as Record<string, never>.
  */
 export const createMonitor = async (draft: MonitorDraft) =>
-  v1Send<MonitorWire>('POST', '/monitors', {
-    metric_id: draft.metric_id,
-    scope_filter: draft.split === 'none' ? {} : { split: draft.split },
-    rule_kind: draft.rule_kind,
-    rule: draft.rule,
-    schedule_cron: draft.schedule_cron,
-    notify_mode: draft.notify_mode,
-    recipients: draft.recipients.who.map((id) => ({
-      principal_type: 'user',
-      principal_id: id,
-      channels: draft.recipients.channels.split(','),
-    })),
-  });
+  okAs<MonitorWire>(
+    api.POST('/v1/monitors', {
+      body: {
+        metric_id: draft.metric_id,
+        scope_filter: draft.split === 'none' ? {} : { split: draft.split },
+        rule_kind: draft.rule_kind,
+        rule: draft.rule,
+        schedule_cron: draft.schedule_cron,
+        notify_mode: draft.notify_mode,
+        recipients: draft.recipients.who.map((id) => ({
+          principal_type: 'user',
+          principal_id: id,
+          channels: draft.recipients.channels.split(','),
+        })),
+      },
+    }),
+  );

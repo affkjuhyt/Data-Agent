@@ -1,10 +1,11 @@
 import { listAdminUsers } from './adminAccess';
 import { listAgents, listRuns } from './api';
-import { pathId, V1Error, v1Get, v1Send, type Page } from './client';
-import type { components } from './schema';
+import { V1Error, v1Send, type Page, api, ok, okAs } from './client';
+import type { components, paths } from './schema';
 import type { AgentDef, AgentRun, ModelConfig } from './types';
 
 type Schemas = components['schemas'];
+type ModelTask = paths['/v1/admin/models/{task}']['put']['parameters']['path']['task'];
 
 /*
  * Platform side of Quản trị and the personal settings (UC-11-04 giám sát, UC-11-05 mô hình AI,
@@ -165,7 +166,7 @@ function readHealth(raw: HealthWire): SystemHealth {
 }
 
 export const getSystemHealth = async () =>
-  readHealth(await v1Get<HealthWire>('/admin/system/health'));
+  readHealth(await ok<HealthWire>(api.GET('/v1/admin/system/health')));
 
 /* ─── Vận hành agent (UC-13-06, UC-11-04) ──────────────────────────────── */
 
@@ -298,11 +299,17 @@ function readUsage(
 }
 
 const usage = (from: Date, to: Date) =>
-  v1Get<UsageReport>('/admin/agent-usage', {
-    from: from.toISOString(),
-    to: to.toISOString(),
-    granularity: 'day',
-  });
+  ok<UsageReport>(
+    api.GET('/v1/admin/agent-usage', {
+      params: {
+        query: {
+          from: from.toISOString(),
+          to: to.toISOString(),
+          granularity: 'day',
+        },
+      },
+    }),
+  );
 
 const needsPerson = (run: AgentRun) => run.status === 'waiting_human' || (run.hitl_count ?? 0) > 0;
 
@@ -500,7 +507,7 @@ const readModelRoute = (raw: ModelWire): ModelRoute => ({
 
 /** GET /v1/admin/models answers the whole list, not a page. */
 export const listModelRoutes = async (): Promise<Page<ModelRoute>> => {
-  const items = await v1Get<ModelWire[]>('/admin/models');
+  const items = await ok<ModelWire[]>(api.GET('/v1/admin/models'));
   return { items: items.map(readModelRoute), next_page_token: '' };
 };
 
@@ -531,7 +538,7 @@ const TASK_LABEL = new Map(MODEL_TASKS.map((t) => [t.value, t.label]));
 
 /** A key never set has no row; the gateway applies its built-in default for it. */
 export const getAiPolicy = async (): Promise<AiPolicy> => {
-  const rows = await v1Get<Schemas['AiSettingView'][]>('/admin/ai-settings');
+  const rows = await ok<Schemas['AiSettingView'][]>(api.GET('/v1/admin/ai-settings'));
   const value = new Map(rows.map((r) => [r.key, r.value as unknown]));
   const frontier = (value.get('frontier_routing') ?? {}) as {
     enabled?: boolean;
@@ -558,7 +565,7 @@ export const getAiPolicy = async (): Promise<AiPolicy> => {
 };
 
 export const getGpuLoad = async (): Promise<GpuLoad> => {
-  const raw = await v1Get<HealthWire>('/admin/system/health');
+  const raw = await ok<HealthWire>(api.GET('/v1/admin/system/health'));
   const cards = seriesOf(raw, 'gpu')
     .filter((s) => !isNaN(valueOf(s)))
     .map((s, i) => ({
@@ -597,10 +604,8 @@ const changeModel = async (
   task: string,
   body: { model_name: string; endpoint: string; limits?: Record<string, number> },
 ) => {
-  const accepted = await v1Send<Schemas['ModelChangeAccepted']>(
-    'PUT',
-    `/admin/models/${pathId(task)}`,
-    body,
+  const accepted = await ok<Schemas['ModelChangeAccepted']>(
+    api.PUT('/v1/admin/models/{task}', { params: { path: { task: task as ModelTask } }, body }),
   );
   return { task, model_name: body.model_name, version: accepted.version };
 };
@@ -621,11 +626,21 @@ export const addModel = (body: NewModel) =>
  * model runs them already; this is for checking the routed models again.
  */
 export const runModelEvals = async () => {
-  const sets = await v1Get<Page<Schemas['EvalSetView']>>('/eval-sets', {
-    subject_type: 'context',
-    page_size: 100,
-  });
-  await Promise.all(sets.items.map((s) => v1Send('POST', `/eval-sets/${pathId(s.id)}/runs`, {})));
+  const sets = await ok<Page<Schemas['EvalSetView']>>(
+    api.GET('/v1/eval-sets', {
+      params: {
+        query: {
+          subject_type: 'context',
+          page_size: 100,
+        },
+      },
+    }),
+  );
+  await Promise.all(
+    sets.items.map((s) =>
+      ok(api.POST('/v1/eval-sets/{id}/runs', { params: { path: { id: s.id } }, body: {} })),
+    ),
+  );
   return { started: sets.items.length };
 };
 
@@ -749,7 +764,9 @@ function readProvider(raw: ProviderWire): AiProvider {
 }
 
 export const listProviders = async () => {
-  const page = await v1Get<Page<ProviderWire>>('/admin/model-providers', { page_size: 500 });
+  const page = await ok<Page<ProviderWire>>(
+    api.GET('/v1/admin/model-providers', { params: { query: { page_size: 500 } } }),
+  );
   return { ...page, items: page.items.map(readProvider) };
 };
 
@@ -770,25 +787,30 @@ const codeOf = (name: string) =>
  */
 export const addProvider = async (body: NewProvider) =>
   readProvider(
-    await v1Send<ProviderWire>('POST', '/admin/model-providers', {
-      code: codeOf(body.name),
-      display_name: body.name,
-      kind: body.kind === 'local' ? 'on_prem' : 'frontier',
-      endpoint: body.endpoint,
-      data_region: body.region || null,
-      monthly_budget_vnd: body.month_budget_vnd,
-      price: body.model_name ? { [body.model_name]: {} } : {},
-    }),
+    await ok<ProviderWire>(
+      api.POST('/v1/admin/model-providers', {
+        body: {
+          code: codeOf(body.name),
+          display_name: body.name,
+          kind: body.kind === 'local' ? 'on_prem' : 'frontier',
+          endpoint: body.endpoint,
+          data_region: body.region || null,
+          monthly_budget_vnd: body.month_budget_vnd,
+          price: body.model_name ? { [body.model_name]: {} } : {},
+        },
+      }),
+    ),
   );
 
 /** One trial call through the provider with its model (POST :test needs the model's name). */
 export const testProvider = async (id: string, modelName: string): Promise<ProviderTest> => {
   if (!modelName)
     throw new V1Error(422, 'validation_failed', 'Nhà cung cấp chưa có mô hình để thử.');
-  const result = await v1Send<Schemas['ModelProviderTestResult']>(
-    'POST',
-    `/admin/model-providers/${pathId(id)}:test`,
-    { model_name: modelName } satisfies Schemas['ModelProviderTest'],
+  const result = await ok<Schemas['ModelProviderTestResult']>(
+    api.POST('/v1/admin/model-providers/{id}:test', {
+      params: { path: { id } },
+      body: { model_name: modelName } satisfies Schemas['ModelProviderTest'],
+    }),
   );
   return {
     ok: result.outcome === 'ok',
@@ -840,12 +862,18 @@ export const getRoutingLog = async (opts: {
   const from = weekStart(week);
   const to = new Date(from.getTime() + 604_800_000);
   const [page, providers] = await Promise.all([
-    v1Get<RoutingWire>('/admin/model-route-decisions', {
-      from: from.toISOString(),
-      to: to.toISOString(),
-      page_size: opts.page_size,
-      page_token: opts.page_token,
-    }),
+    ok<RoutingWire>(
+      api.GET('/v1/admin/model-route-decisions', {
+        params: {
+          query: {
+            from: from.toISOString(),
+            to: to.toISOString(),
+            page_size: opts.page_size,
+            page_token: opts.page_token,
+          },
+        },
+      }),
+    ),
     listProviders().catch(() => null),
   ]);
   const names = new Map<string, string>(providers?.items.map((p) => [p.id, p.name]) ?? []);
@@ -952,7 +980,7 @@ const userNames = async () => {
 /** GET /v1/admin/clients. The 7-day figures come from the usage panel, not the list. */
 export const listIntegrations = async (): Promise<Page<Integration>> => {
   const [page, names] = await Promise.all([
-    v1Get<Page<ClientWire>>('/admin/clients', { page_size: 500 }),
+    ok<Page<ClientWire>>(api.GET('/v1/admin/clients', { params: { query: { page_size: 500 } } })),
     userNames(),
   ]);
   return { ...page, items: page.items.map((c) => readClient(c, names)) };
@@ -972,11 +1000,18 @@ export const getIntegrationUsage = async (client: Integration): Promise<Integrat
     return localDay(d);
   });
   const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6);
-  const page = await v1Get<Page<Schemas['UsageRow']>>(`/admin/clients/${pathId(client.id)}/usage`, {
-    from: from.toISOString(),
-    to: today.toISOString(),
-    granularity: 'hour',
-  });
+  const page = await ok<Page<Schemas['UsageRow']>>(
+    api.GET('/v1/admin/clients/{id}/usage', {
+      params: {
+        path: { id: client.id },
+        query: {
+          from: from.toISOString(),
+          to: today.toISOString(),
+          granularity: 'hour',
+        },
+      },
+    }),
+  );
   const daily = days.map(() => 0);
   const byTool = new Map<string, number>();
   let blocked = 0;
@@ -1016,19 +1051,23 @@ export interface NewClient {
  */
 export const addClient = async (body: NewClient) => {
   const [y, m, d] = body.expires_on.split('-').map(Number);
-  const issued = await v1Send<Schemas['ApiClientIssued']>('POST', '/admin/clients', {
-    name: body.name,
-    kind: body.kind === 'mcp' ? 'mcp' : 'rest',
-    owner_user_id: body.owner_user_id,
-    tools: body.tools,
-    data_space_ids: body.data_space_ids,
-    // End of the chosen local day.
-    expires_at: new Date(y, m - 1, d, 23, 59, 59).toISOString(),
-    // The api's defaults, sent because the generated type makes defaulted fields required.
-    identity_mode: 'on_behalf_of_user',
-    quota_per_minute: 60,
-    quota_per_day: 5000,
-  } satisfies Schemas['ApiClientCreate']);
+  const issued = await ok<Schemas['ApiClientIssued']>(
+    api.POST('/v1/admin/clients', {
+      body: {
+        name: body.name,
+        kind: body.kind === 'mcp' ? 'mcp' : 'rest',
+        owner_user_id: body.owner_user_id,
+        tools: body.tools,
+        data_space_ids: body.data_space_ids,
+        // End of the chosen local day.
+        expires_at: new Date(y, m - 1, d, 23, 59, 59).toISOString(),
+        // The api's defaults, sent because the generated type makes defaulted fields required.
+        identity_mode: 'on_behalf_of_user',
+        quota_per_minute: 60,
+        quota_per_day: 5000,
+      } satisfies Schemas['ApiClientCreate'],
+    }),
+  );
   // A new client has made no call yet.
   const client = readClient({ ...issued, calls_24h: 0, errors_24h: 0 }, await userNames());
   return { client, secret: issued.client_secret };
@@ -1036,33 +1075,45 @@ export const addClient = async (body: NewClient) => {
 
 /** The new secret is in this answer only. */
 export const rotateClientSecret = async (id: string) =>
-  (await v1Send<Schemas['ApiClientIssued']>('POST', `/admin/clients/${pathId(id)}:rotate-secret`))
-    .client_secret;
+  (
+    await ok<Schemas['ApiClientIssued']>(
+      api.POST('/v1/admin/clients/{id}:rotate-secret', { params: { path: { id } } }),
+    )
+  ).client_secret;
 
 /** Emergency revoke: the client's webhooks pause with it. */
 export const revokeClient = (id: string, reason: string) =>
-  v1Send<Schemas['ApiClientView']>('POST', `/admin/clients/${pathId(id)}:revoke`, {
-    reason,
-  } satisfies Schemas['Revoke']);
+  ok<Schemas['ApiClientView']>(
+    api.POST('/v1/admin/clients/{id}:revoke', {
+      params: { path: { id } },
+      body: {
+        reason,
+      } satisfies Schemas['Revoke'],
+    }),
+  );
 
 /** POST /v1/webhooks for an active client; the signing key is in this answer only. */
 export const addWebhook = (body: Schemas['WebhookCreate']) =>
-  v1Send<Schemas['WebhookIssued']>('POST', '/webhooks', body);
+  ok<Schemas['WebhookIssued']>(api.POST('/v1/webhooks', { body }));
 
 /* The owner's side (UC-12-01, BR-48) */
 
 export type MyClient = Schemas['ApiClientView'];
 
-export const listMyClients = () => v1Get<Page<MyClient>>('/me/clients', { page_size: 500 });
+export const listMyClients = () =>
+  ok<Page<MyClient>>(api.GET('/v1/me/clients', { params: { query: { page_size: 500 } } }));
 
 /**
  * Consent is to the client as listed: If-Match carries its updated_at, so a client an admin
  * widened after the list was read answers 412 instead of being confirmed.
  */
 export const confirmMyClient = (client: MyClient) =>
-  v1Send<MyClient>('POST', `/me/clients/${pathId(client.id)}:confirm`, undefined, {
-    ifMatch: `"${client.updated_at}"`,
-  });
+  ok<MyClient>(
+    api.POST('/v1/me/clients/{id}:confirm', {
+      params: { path: { id: client.id } },
+      headers: { 'If-Match': `"${client.updated_at}"` },
+    }),
+  );
 
 /* ─── Cài đặt cá nhân (UC-11-01, UC-08-07) ─────────────────────────────── */
 
@@ -1144,23 +1195,27 @@ function readPrefs(page: PrefsWire): NotificationPreferences {
 }
 
 export const getNotificationPreferences = async () =>
-  readPrefs(await v1Get<PrefsWire>('/me/notification-prefs'));
+  readPrefs(await ok<PrefsWire>(api.GET('/v1/me/notification-prefs')));
 
 /** PUT replaces the set; "Bản tin" on a row is its daily batch mode. */
 export const saveNotificationPreferences = async (body: NotificationPreferences) =>
   readPrefs(
-    await v1Send<PrefsWire>('PUT', '/me/notification-prefs', {
-      prefs: body.events.map((e) => ({
-        kind: e.key as Schemas['PrefIn']['kind'],
-        channels: CHANNELS.filter((c) => c !== 'digest' && e.channels[c]) as PrefChannel[],
-        batch_mode: e.channels.digest ? 'daily' : 'instant',
-      })),
-    } satisfies Schemas['PrefsPut']),
+    await ok<PrefsWire>(
+      api.PUT('/v1/me/notification-prefs', {
+        body: {
+          prefs: body.events.map((e) => ({
+            kind: e.key as Schemas['PrefIn']['kind'],
+            channels: CHANNELS.filter((c) => c !== 'digest' && e.channels[c]) as PrefChannel[],
+            batch_mode: e.channels.digest ? 'daily' : 'instant',
+          })),
+        } satisfies Schemas['PrefsPut'],
+      }),
+    ),
   );
 
 /** PROPOSAL: sends one sample notification to every channel the user has turned on. */
 export const sendTestNotification = () =>
-  v1Send<{ channels: NotificationChannel[] }>('POST', '/me/notification-preferences:test');
+  okAs<{ channels: NotificationChannel[] }>(api.POST('/v1/me/notification-preferences:test'));
 
 /** PROPOSAL: GET /v1/channel-rules, what each outside channel may do per kind of request. */
 export interface ChannelRules {
@@ -1174,4 +1229,4 @@ export interface ChannelRules {
   principles: { title: string; body: string }[];
 }
 
-export const getChannelRules = () => v1Get<ChannelRules>('/channel-rules');
+export const getChannelRules = () => okAs<ChannelRules>(api.GET('/v1/channel-rules'));

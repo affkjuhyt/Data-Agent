@@ -1,6 +1,6 @@
 import type { Page } from './client';
 import { findDecompositionSkill } from './skillAuthoring';
-import { pathId, V1Error, v1Get, v1Send } from './client';
+import { V1Error, api, ok, okAs } from './client';
 import type { components } from './schema';
 import type { DataSpace } from './types';
 import { getMe } from './me';
@@ -43,7 +43,9 @@ export async function awaitQueryRun(
     if (Date.now() > deadline)
       throw new V1Error(504, 'timeout', 'Truy vấn chạy quá lâu, thử lại sau.');
     await sleep(intervalMs);
-    current = await v1Get<QueryRunWire>(`/query-runs/${pathId(current.id)}`);
+    current = await ok<QueryRunWire>(
+      api.GET('/v1/query-runs/{id}', { params: { path: { id: current.id } } }),
+    );
   }
   if (current.status !== 'succeeded')
     throw new V1Error(
@@ -92,14 +94,23 @@ export function readQueryRows(raw: QueryRowsWire): QueryRows {
 
 export const getQueryRows = async (queryRunId: string, pageSize = 500) =>
   readQueryRows(
-    await v1Get<QueryRowsWire>(`/query-runs/${pathId(queryRunId)}/rows`, {
-      page_size: pageSize,
-    }),
+    await ok<QueryRowsWire>(
+      api.GET('/v1/query-runs/{id}/rows', {
+        params: {
+          path: { id: queryRunId },
+          query: {
+            page_size: pageSize,
+          },
+        },
+      }),
+    ),
   );
 
 /** The SQL as written and as run after the policy rewrite (audited by the api). */
 export const getQuerySql = async (queryRunId: string) =>
-  v1Get<Schemas['QuerySqlView']>(`/query-runs/${pathId(queryRunId)}/sql`);
+  ok<Schemas['QuerySqlView']>(
+    api.GET('/v1/query-runs/{id}/sql', { params: { path: { id: queryRunId } } }),
+  );
 
 /* ─── Khám phá: chỉ số và chiều ─────────────────────────────────────────── */
 
@@ -142,11 +153,11 @@ export interface ExploreModel {
   dimensions: ExploreDimension[];
 }
 
-export interface ExploreFilter {
+export type ExploreFilter = {
   dimension_id: string;
   op: 'eq' | 'in';
   values: string[];
-}
+};
 
 export interface ExploreQueryInput {
   metric_ids: string[];
@@ -182,18 +193,26 @@ function readMetric(row: Schemas['MetricView'], detail: Schemas['MetricDetail'] 
  */
 export async function getExploreModel(): Promise<ExploreModel> {
   const [metricPage, entityPage] = await Promise.all([
-    v1Get<Page<Schemas['MetricView']>>('/metrics', { certified: true, page_size: 100 }),
-    v1Get<Page<Schemas['EntityView']>>('/entities', { status: 'active', page_size: 100 }),
+    ok<Page<Schemas['MetricView']>>(
+      api.GET('/v1/metrics', { params: { query: { certified: true, page_size: 100 } } }),
+    ),
+    ok<Page<Schemas['EntityView']>>(
+      api.GET('/v1/entities', { params: { query: { status: 'active', page_size: 100 } } }),
+    ),
   ]);
   const [details, entities] = await Promise.all([
     Promise.all(
       metricPage.items.map((m) =>
-        v1Get<Schemas['MetricDetail']>(`/metrics/${pathId(m.id)}`).catch(() => null),
+        ok<Schemas['MetricDetail']>(
+          api.GET('/v1/metrics/{id}', { params: { path: { id: m.id } } }),
+        ).catch(() => null),
       ),
     ),
     Promise.all(
       entityPage.items.map((e) =>
-        v1Get<Schemas['EntityDetail']>(`/entities/${pathId(e.key)}`).catch(() => null),
+        ok<Schemas['EntityDetail']>(
+          api.GET('/v1/entities/{key}', { params: { path: { key: e.key } } }),
+        ).catch(() => null),
       ),
     ),
   ]);
@@ -368,11 +387,15 @@ export async function runExploreQuery(
   input: ExploreQueryInput,
   model: ExploreModel,
 ): Promise<ExploreResult> {
-  const accepted = await v1Send<QueryRunWire>('POST', '/explore/queries', {
-    metric_ids: input.metric_ids,
-    dimensions: input.dimension_ids,
-    filters: input.filters,
-  } satisfies Schemas['ExploreQueryCreate']);
+  const accepted = await ok<QueryRunWire>(
+    api.POST('/v1/explore/queries', {
+      body: {
+        metric_ids: input.metric_ids,
+        dimensions: input.dimension_ids,
+        filters: input.filters,
+      } satisfies Schemas['ExploreQueryCreate'],
+    }),
+  );
   const run = await awaitQueryRun(accepted);
   return readExploreResult(run, await getQueryRows(run.id), input, model);
 }
@@ -471,17 +494,22 @@ export async function getExploreExplanation(
   if (!params) return null;
   const skill = await findDecompositionSkill();
   if (!skill) return null;
-  const accepted = await v1Send<Schemas['services__api__modules__skill__schemas__Accepted']>(
-    'POST',
-    `/skills/${pathId(skill)}/runs`,
-    { params } as unknown as Schemas['RunCreate'],
+  const accepted = await ok<Schemas['services__api__modules__skill__schemas__Accepted']>(
+    api.POST('/v1/skills/{id}/runs', {
+      params: { path: { id: skill } },
+      body: { params } as unknown as Schemas['RunCreate'],
+    }),
   );
   const deadline = Date.now() + timeoutMs;
-  let run = await v1Get<Schemas['RunDetail']>(`/skill-runs/${pathId(accepted.id)}`);
+  let run = await ok<Schemas['RunDetail']>(
+    api.GET('/v1/skill-runs/{id}', { params: { path: { id: accepted.id } } }),
+  );
   while (!['succeeded', 'failed', 'cancelled', 'partial'].includes(run.status)) {
     if (Date.now() > deadline) throw new V1Error(504, 'timeout', 'Kỹ năng chạy quá lâu.');
     await sleep(Math.max(intervalMs, accepted.poll_after_ms ?? 0));
-    run = await v1Get<Schemas['RunDetail']>(`/skill-runs/${pathId(accepted.id)}`);
+    run = await ok<Schemas['RunDetail']>(
+      api.GET('/v1/skill-runs/{id}', { params: { path: { id: accepted.id } } }),
+    );
   }
   if (run.status === 'failed' || run.status === 'cancelled')
     throw new V1Error(422, 'skill_failed', run.error ?? 'Kỹ năng không chạy được.');
@@ -514,18 +542,26 @@ export async function interpretQuestion(
   model: ExploreModel,
   { intervalMs = 500, timeoutMs = 30_000 } = {},
 ): Promise<ExploreQueryInput> {
-  const accepted = await v1Send<Schemas['QuestionAccepted']>('POST', '/questions', {
-    text: question,
-    purpose: 'explore',
-    knowledge_mode: 'latest',
-    stream: false,
-  } satisfies Schemas['QuestionCreate']);
+  const accepted = await ok<Schemas['QuestionAccepted']>(
+    api.POST('/v1/questions', {
+      body: {
+        text: question,
+        purpose: 'explore',
+        knowledge_mode: 'latest',
+        stream: false,
+      } satisfies Schemas['QuestionCreate'],
+    }),
+  );
   const deadline = Date.now() + timeoutMs;
-  let view = await v1Get<QuestionView>(`/questions/${pathId(accepted.question_id)}`);
+  let view = await ok<QuestionView>(
+    api.GET('/v1/questions/{id}', { params: { path: { id: accepted.question_id } } }),
+  );
   while (!view.plan && !UNDERSTOOD_END.has(view.status)) {
     if (Date.now() > deadline) throw new V1Error(504, 'timeout', 'Agent đọc câu hỏi quá lâu.');
     await sleep(Math.max(intervalMs, accepted.poll_after_ms ?? 0));
-    view = await v1Get<QuestionView>(`/questions/${pathId(accepted.question_id)}`);
+    view = await ok<QuestionView>(
+      api.GET('/v1/questions/{id}', { params: { path: { id: accepted.question_id } } }),
+    );
   }
   const chips = (Array.isArray(view.plan?.chips) ? view.plan.chips : []) as {
     kind?: unknown;
@@ -572,16 +608,21 @@ export const saveExploreToSession = (
   result: ExploreResult,
   input: ExploreQueryInput,
 ) =>
-  v1Send<Schemas['TileView']>('POST', `/workspaces/${pathId(workspaceId)}/tiles`, {
-    kind: 'chart',
-    title: result.title,
-    spec: {
-      query_run_id: result.id,
-      metric_ids: input.metric_ids,
-      dimensions: input.dimension_ids,
-      filters: input.filters,
-    },
-  } as unknown as Schemas['TileCreate']);
+  ok<Schemas['TileView']>(
+    api.POST('/v1/workspaces/{id}/tiles', {
+      params: { path: { id: workspaceId } },
+      body: {
+        kind: 'chart',
+        title: result.title,
+        spec: {
+          query_run_id: result.id,
+          metric_ids: input.metric_ids,
+          dimensions: input.dimension_ids,
+          filters: input.filters,
+        },
+      } as unknown as Schemas['TileCreate'],
+    }),
+  );
 
 /* ─── Artifact toàn màn (UC-01-01): một câu trả lời ─────────────────────── */
 
@@ -682,20 +723,27 @@ export function readArtifact(answer: Schemas['AnswerView'], question: string | n
 }
 
 export const getArtifact = async (id: string): Promise<Artifact> => {
-  const answer = await v1Get<Schemas['AnswerView']>(`/answers/${pathId(id)}`);
-  const question = await v1Get<QuestionView>(`/questions/${pathId(answer.question_id)}`).catch(
-    () => null,
+  const answer = await ok<Schemas['AnswerView']>(
+    api.GET('/v1/answers/{id}', { params: { path: { id } } }),
   );
+  const question = await ok<QuestionView>(
+    api.GET('/v1/questions/{id}', { params: { path: { id: answer.question_id } } }),
+  ).catch(() => null);
   return readArtifact(answer, question?.text ?? null);
 };
 
 /** "Lưu": the answer becomes a question tile of a session (POST /v1/workspaces/{id}/tiles). */
 export const saveArtifactToSession = (workspaceId: string, artifact: Artifact) =>
-  v1Send<Schemas['TileView']>('POST', `/workspaces/${pathId(workspaceId)}/tiles`, {
-    kind: 'question',
-    title: artifact.title,
-    spec: { question: artifact.title, answer_id: artifact.id },
-  } as unknown as Schemas['TileCreate']);
+  ok<Schemas['TileView']>(
+    api.POST('/v1/workspaces/{id}/tiles', {
+      params: { path: { id: workspaceId } },
+      body: {
+        kind: 'question',
+        title: artifact.title,
+        spec: { question: artifact.title, answer_id: artifact.id },
+      } as unknown as Schemas['TileCreate'],
+    }),
+  );
 
 /* ─── Lần đầu vào: Chọn Data Space (UC-11-08) ─────────────────────────── */
 
@@ -727,7 +775,7 @@ export interface MyDataSpaces {
 
 export const getMyDataSpaces = async (): Promise<MyDataSpaces> => {
   const [page, me] = await Promise.all([
-    v1Get<Page<DataSpace>>('/data-spaces', { page_size: 500 }),
+    ok<Page<DataSpace>>(api.GET('/v1/data-spaces', { params: { query: { page_size: 500 } } })),
     getMe(),
   ]);
   const defaultId = me.default_data_space_id;
@@ -752,10 +800,14 @@ export const getMyDataSpaces = async (): Promise<MyDataSpaces> => {
 
 /** PUT /v1/me/data-space-preference */
 export const setOpenLastUsed = (openLastUsed: boolean, dataSpaceId?: string) =>
-  v1Send<{ open_last_used: boolean }>('PUT', '/me/data-space-preference', {
-    open_last_used: openLastUsed,
-    ...(dataSpaceId ? { data_space_id: dataSpaceId } : {}),
-  });
+  ok<{ open_last_used: boolean }>(
+    api.PUT('/v1/me/data-space-preference', {
+      body: {
+        open_last_used: openLastUsed,
+        ...(dataSpaceId ? { data_space_id: dataSpaceId } : {}),
+      },
+    }),
+  );
 
 /* ─── Onboarding lần đầu ─────────────────────────────────────────────── */
 
@@ -781,15 +833,19 @@ export interface Onboarding {
   templates: AgentTemplateChoice[];
 }
 
-export const getOnboarding = () => v1Get<Onboarding>('/me/onboarding');
+export const getOnboarding = () => okAs<Onboarding>(api.GET('/v1/me/onboarding'));
 
-export const skipOnboarding = () => v1Send<Onboarding>('POST', '/me/onboarding:skip');
+export const skipOnboarding = () => okAs<Onboarding>(api.POST('/v1/me/onboarding:skip'));
 
 /** PROPOSAL: the viewer went through every step; the server stops showing onboarding. */
-export const completeOnboarding = () => v1Send<Onboarding>('POST', '/me/onboarding:complete');
+export const completeOnboarding = () => okAs<Onboarding>(api.POST('/v1/me/onboarding:complete'));
 
 /** PROPOSAL: creates the agent from the template and starts a test run on the viewer's data (202). */
 export const tryOnboardingAgent = (templateRef: string) =>
-  v1Send<{ agent_id: string; run_id: string }>('POST', '/me/onboarding:try-agent', {
-    template_ref: templateRef,
-  });
+  ok<{ agent_id: string; run_id: string }>(
+    api.POST('/v1/me/onboarding:try-agent', {
+      body: {
+        template_ref: templateRef,
+      },
+    }),
+  );
