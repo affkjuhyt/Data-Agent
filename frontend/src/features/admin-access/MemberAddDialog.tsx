@@ -32,8 +32,8 @@ export function MemberAddDialog({
   onClose: () => void;
   onAdded: (who: string) => void;
 }) {
-  const groups = useV1(open ? listGroups : null, [open]);
-  const users = useV1(open ? listAdminUsers : null, [open]);
+  const groups = useV1(['listGroups', open], open ? listGroups : null);
+  const users = useV1(['listAdminUsers', open], open ? listAdminUsers : null);
   const [principal, setPrincipal] = useState<string | null>(null);
   const [roleId, setRoleId] = useState<string | null>(null);
   const [scope, setScope] = useState('Theo vùng phụ trách');

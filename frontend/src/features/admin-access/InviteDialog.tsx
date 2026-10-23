@@ -19,7 +19,7 @@ export function InviteDialog({
   onClose: () => void;
   onInvited: (email: string) => void;
 }) {
-  const spaces = useV1(open ? listDataSpaceSummaries : null, [open]);
+  const spaces = useV1(['listDataSpaceSummaries', open], open ? listDataSpaceSummaries : null);
   const [email, setEmail] = useState('');
   const [roleId, setRoleId] = useState<string | null>(null);
   const [spaceId, setSpaceId] = useState<string | null>(null);

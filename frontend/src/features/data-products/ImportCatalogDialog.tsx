@@ -24,8 +24,8 @@ export function ImportCatalogDialog({
   onClose: () => void;
   onRequested: (count: number) => void;
 }) {
-  const catalog = useV1(open ? listCatalogProducts : null, [open]);
-  const spaces = useV1(open ? listDataSpaces : null, [open]);
+  const catalog = useV1(['listCatalogProducts', open], open ? listCatalogProducts : null);
+  const spaces = useV1(['listDataSpaces', open], open ? listDataSpaces : null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [space, setSpace] = useState<string | null>(null);
   const [sending, setSending] = useState(false);

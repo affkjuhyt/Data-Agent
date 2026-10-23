@@ -55,7 +55,7 @@ function takeHandover(): string {
 export default function CreateAgentPage() {
   const { navigate } = useAppState();
   const toast = useToast();
-  const templates = useV1(listTemplates, []);
+  const templates = useV1(['listTemplates'], listTemplates);
   const [description, setDescription] = useState(takeHandover);
   const [templateRef, setTemplateRef] = useState<string>();
   const [settled, setSettled] = useState(() => description.trim());
@@ -68,10 +68,7 @@ export default function CreateAgentPage() {
   }, [description]);
 
   const ready = settled.length >= MIN_DESCRIPTION;
-  const draft = useV1(
-    ready ? () => draftAgent({ description: settled, template_ref: templateRef, corrections }) : null,
-    [settled, templateRef, corrections],
-  );
+  const draft = useV1(['draftAgent', settled, templateRef, corrections], ready ? () => draftAgent({ description: settled, template_ref: templateRef, corrections }) : null);
 
   // The agent made for a test run, and the proposal it was made from.
   const created = useRef<{ agent: AgentDetail; from: AgentDraft } | null>(null);

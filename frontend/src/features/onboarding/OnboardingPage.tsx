@@ -53,7 +53,7 @@ const ELSEWHERE: Partial<
 };
 
 export function OnboardingPage({ onFinish }: { onFinish: (exit?: OnboardingExit) => void }) {
-  const onboarding = useV1(getOnboarding, []);
+  const onboarding = useV1(['getOnboarding'], getOnboarding);
   const toast = useToast();
   const [skipping, setSkipping] = useState(false);
 

@@ -40,7 +40,7 @@ const ACCURACY_TONE: Record<SchemaField['accuracy_state'], 'success' | 'warning'
 
 export default function ExtractionSchemaPage() {
   const { routeId } = useAppState();
-  const schemas = useV1(routeId ? null : listSchemas, [routeId]);
+  const schemas = useV1(['listSchemas', routeId], routeId ? null : listSchemas);
   if (!routeId)
     return (
       <AsyncRegion
@@ -63,7 +63,7 @@ export default function ExtractionSchemaPage() {
 }
 
 function SchemaLoader({ id }: { id: string }) {
-  const schema = useV1(() => getSchema(id), [id]);
+  const schema = useV1(['getSchema', id], () => getSchema(id));
   return (
     <AsyncRegion state={schema} what="lược đồ trích xuất" skeletonRows={8}>
       {(s) => <SchemaView key={s.id} schema={s} onChanged={schema.reload} />}

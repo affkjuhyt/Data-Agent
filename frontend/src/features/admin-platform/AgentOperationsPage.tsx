@@ -58,7 +58,7 @@ const costNumber = (value: string): number | null => {
 export default function AgentOperationsPage() {
   const { navigate } = useAppState();
   const [period, setPeriod] = useState<OpsPeriod>('7d');
-  const summary = useV1(() => getAgentOpsSummary(period), [period]);
+  const summary = useV1(['getAgentOpsSummary', period], () => getAgentOpsSummary(period));
 
   const openIssue = (issue: OpsIssue) => {
     const { kind, target_id } = issue.action;

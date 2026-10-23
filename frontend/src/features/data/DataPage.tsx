@@ -18,10 +18,10 @@ import { useV1 } from '../../lib/v1/useV1';
  */
 export default function DataPage() {
   const { navigate } = useAppState();
-  const sources = useV1(listSources, []);
-  const datasets = useV1(listDatasets, []);
-  const metrics = useV1(listMetrics, []);
-  const terms = useV1(listTerms, []);
+  const sources = useV1(['listSources'], listSources);
+  const datasets = useV1(['listDatasets'], listDatasets);
+  const metrics = useV1(['listMetrics'], listMetrics);
+  const terms = useV1(['listTerms'], listTerms);
   const openSources = () => navigate('data', 'SOURCES');
   const openPipelines = () => navigate('data', 'PIPELINES');
   const openDefinitions = () => navigate('data', 'METRIC_CATALOG');

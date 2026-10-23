@@ -65,7 +65,7 @@ export function lastUsedText(iso: string | null, now = new Date()): string {
 
 export function MemoryTab({ agentId, adding, onAddingDone }: { agentId: string; adding: boolean; onAddingDone: () => void }) {
   const toast = useToast();
-  const memories = useV1(() => listMemories(agentId), [agentId]);
+  const memories = useV1(['listMemories', agentId], () => listMemories(agentId));
   const view = useTableView(memories.data?.items ?? [], {
     search: (m) => `${m.content} ${m.source_text} ${m.scope_text}`,
     filters: [{ id: 'scope', label: 'Phạm vi', value: (m) => m.scope_text }],

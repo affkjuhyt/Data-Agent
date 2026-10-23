@@ -29,8 +29,8 @@ const PENDING_EVIDENCE = 'Màn truy vấn bằng chứng đang được làm.';
 
 export default function ConflictPage() {
   const { routeId, navigate } = useAppState();
-  const request = useV1(routeId ? () => getHitl(routeId) : null, [routeId]);
-  const inbox = useV1(() => listInbox({ status: 'open' }), []);
+  const request = useV1(['getHitl', routeId], routeId ? () => getHitl(routeId) : null);
+  const inbox = useV1(['listInbox', { status: 'open' }], () => listInbox({ status: 'open' }));
 
   const openRequest = (r: HitlRequest) => {
     const detail = detailRouteOf(r);

@@ -63,9 +63,9 @@ const monthYear = (iso: string) => formatDate(iso).slice(3);
 export default function MetricPage() {
   const { routeId } = useAppState();
   // Opened from the rail without an id, the page shows the first metric of the list.
-  const list = useV1(routeId ? null : listMetrics, [routeId]);
+  const list = useV1(['listMetrics', routeId], routeId ? null : listMetrics);
   const id = routeId || list.data?.items[0]?.id;
-  const metric = useV1(id ? () => getMetric(id) : null, [id]);
+  const metric = useV1(['getMetric', id], id ? () => getMetric(id) : null);
   const forbidden = forbiddenOf(metric.error);
   if (forbidden) return <AccessDenied access={forbidden} />;
   return (

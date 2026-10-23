@@ -32,7 +32,7 @@ type Mode = 'chart' | 'table' | 'sql';
 
 export default function ArtifactPage() {
   const { routeId } = useAppState();
-  const artifact = useV1(routeId ? () => getArtifact(routeId) : null, [routeId]);
+  const artifact = useV1(['getArtifact', routeId], routeId ? () => getArtifact(routeId) : null);
 
   // A artifact in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
   const forbidden = forbiddenOf(artifact.error);
@@ -61,7 +61,10 @@ function ArtifactView({ artifact }: { artifact: Artifact }) {
   const [mode, setMode] = useState<Mode>(artifact.chart ? 'chart' : 'table');
   const [saving, setSaving] = useState(false);
   const runId = artifact.query_run_id;
-  const sql = useV1(mode === 'sql' && runId ? () => getQuerySql(runId) : null, [mode, runId]);
+  const sql = useV1(
+    ['getQuerySql', mode, runId],
+    mode === 'sql' && runId ? () => getQuerySql(runId) : null,
+  );
 
   const exportCsv = () => {
     const lines = [

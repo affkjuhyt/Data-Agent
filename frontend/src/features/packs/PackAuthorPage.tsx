@@ -32,9 +32,9 @@ const TONE = { success: 'text-success', warning: 'text-warning', neutral: 'text-
 
 export default function PackAuthorPage() {
   const { routeId } = useAppState();
-  const list = useV1(routeId ? null : listPackDrafts, [routeId]);
+  const list = useV1(['listPackDrafts', routeId], routeId ? null : listPackDrafts);
   const id = routeId || list.data?.items[0]?.id;
-  const draft = useV1(id ? () => getPackDraft(id) : null, [id]);
+  const draft = useV1(['getPackDraft', id], id ? () => getPackDraft(id) : null);
   if (!routeId && list.data && list.data.items.length === 0)
     return (
       <div className="px-da-3xl pt-da-2xl">

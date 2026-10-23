@@ -31,7 +31,10 @@ const STEP_TONE = { done: 'success', waiting: 'warning', pending: 'neutral' } as
 
 export default function CrawlConsolidationPage() {
   const { routeId } = useAppState();
-  const run = useV1(routeId ? () => getConsolidationRun(routeId) : null, [routeId]);
+  const run = useV1(
+    ['getConsolidationRun', routeId],
+    routeId ? () => getConsolidationRun(routeId) : null,
+  );
   return (
     <AsyncRegion state={run} what="lượt hợp nhất">
       {(r) => <ConsolidationBody run={r} onChanged={run.reload} />}

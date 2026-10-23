@@ -36,10 +36,10 @@ function givenName(fullName: string): string {
 
 export default function HomePage() {
   const { user, dataSpace, navigate } = useAppState();
-  const inbox = useV1(() => listInbox({ status: 'open' }), []);
-  const runs = useV1(() => listRuns(), []);
-  const sources = useV1(listSources, []);
-  const home = useV1(getMyHome, []);
+  const inbox = useV1(['listInbox', { status: 'open' }], () => listInbox({ status: 'open' }));
+  const runs = useV1(['listRuns'], () => listRuns());
+  const sources = useV1(['listSources'], listSources);
+  const home = useV1(['getMyHome'], getMyHome);
   const [suggestions, setSuggestions] = useState<string[]>([]);
 
   useEffect(() => {

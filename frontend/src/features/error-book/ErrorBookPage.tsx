@@ -61,7 +61,7 @@ const ageDays = (iso: string) =>
 export default function ErrorBookPage() {
   const { routeId } = useAppState();
   const toast = useToast();
-  const entries = useV1(() => listErrorBookEntries(), []);
+  const entries = useV1(['listErrorBookEntries'], () => listErrorBookEntries());
   const [picked, setPicked] = useState<string | undefined>(routeId || undefined);
   const [status, setStatus] = useState<EntryStatus | 'all'>('all');
   const [kind, setKind] = useState<string>('all');
@@ -268,7 +268,7 @@ function EntryCard({
 }
 
 function EntryView({ id, onChanged }: { id: string; onChanged: () => void }) {
-  const entry = useV1(() => getErrorBookEntry(id), [id]);
+  const entry = useV1(['getErrorBookEntry', id], () => getErrorBookEntry(id));
   return (
     <AsyncRegion state={entry} what="mục Error Book">
       {(e) => (

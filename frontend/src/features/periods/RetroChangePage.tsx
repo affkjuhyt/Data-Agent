@@ -38,9 +38,9 @@ type Decision = 'new_version' | 'no_change';
 export default function RetroChangePage() {
   const { routeId } = useAppState();
   // From the rail without an id: the first change still waiting for a decision.
-  const open = useV1(routeId ? null : listOpenRetroChanges, [routeId]);
+  const open = useV1(['listOpenRetroChanges', routeId], routeId ? null : listOpenRetroChanges);
   const id = routeId || open.data?.items[0]?.id;
-  const change = useV1(id ? () => getRetroChange(id) : null, [id]);
+  const change = useV1(['getRetroChange', id], id ? () => getRetroChange(id) : null);
   if (!routeId && open.data && open.data.items.length === 0) {
     return (
       <div className="px-da-3xl pt-da-xl">

@@ -63,11 +63,11 @@ const TAB_LABELS: Record<ModelsTab, string> = {
 export default function ModelsPage() {
   const toast = useToast();
   const [tab, setTab] = useState<ModelsTab>('tasks');
-  const routes = useV1(listModelRoutes, []);
-  const policy = useV1(getAiPolicy, []);
-  const gpu = useV1(getGpuLoad, []);
+  const routes = useV1(['listModelRoutes'], listModelRoutes);
+  const policy = useV1(['getAiPolicy'], getAiPolicy);
+  const gpu = useV1(['getGpuLoad'], getGpuLoad);
   // The week's counts name the log tab and fill the Provider tab's card; three rows are enough.
-  const routing = useV1(() => getRoutingLog({ page_size: 3 }), []);
+  const routing = useV1(['getRoutingLog', { page_size: 3 }], () => getRoutingLog({ page_size: 3 }));
   const [providersVersion, setProvidersVersion] = useState(0);
   const [adding, setAdding] = useState(false);
   const [addingProvider, setAddingProvider] = useState(false);

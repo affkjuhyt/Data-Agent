@@ -55,9 +55,9 @@ export const FUND_DISCLAIMER =
 export default function FuelForecastPage() {
   const { routeId } = useAppState();
   // From the rail without an id: the first fuel of the latest run.
-  const list = useV1(routeId ? null : listFuelPriceForecasts, [routeId]);
+  const list = useV1(['listFuelPriceForecasts', routeId], routeId ? null : listFuelPriceForecasts);
   const id = routeId || list.data?.items[0]?.id;
-  const forecast = useV1(id ? () => getFuelPriceForecast(id) : null, [id]);
+  const forecast = useV1(['getFuelPriceForecast', id], id ? () => getFuelPriceForecast(id) : null);
   const forbidden = forbiddenOf(forecast.error);
   if (forbidden) return <AccessDenied access={forbidden} />;
   if (!routeId && list.error) {
@@ -406,7 +406,9 @@ const RECENT = 5;
 
 function RecentLedgerCard({ forecast: f }: { forecast: FuelPriceForecast }) {
   const { navigate } = useAppState();
-  const ledger = useV1(() => getForecastLedger(f.series_id, RECENT), [f.series_id]);
+  const ledger = useV1(['getForecastLedger', f.series_id, RECENT], () =>
+    getForecastLedger(f.series_id, RECENT),
+  );
   return (
     <Card
       size="sm"

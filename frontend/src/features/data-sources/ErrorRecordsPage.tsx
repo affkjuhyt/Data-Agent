@@ -28,7 +28,7 @@ import { useV1 } from '../../lib/v1/useV1';
  * retention removes them (BR-57).
  */
 export default function ErrorRecordsPage() {
-  const groups = useV1(listErrorGroups, []);
+  const groups = useV1(['listErrorGroups'], listErrorGroups);
   return (
     <AsyncRegion
       state={groups}

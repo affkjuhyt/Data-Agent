@@ -56,7 +56,7 @@ const ownerOf = (m: Monitor): Owner => (m.owner_is_me ? 'me' : m.owner_name);
 
 export default function WatchListPage() {
   const { navigate, dataSpace } = useAppState();
-  const monitors = useV1(listMonitors, []);
+  const monitors = useV1(['listMonitors'], listMonitors);
   const items = monitors.data?.items ?? [];
   const alerting = items.filter((m) => m.state === 'alerting').length;
   const lastCheck = items.reduce<string | null>(

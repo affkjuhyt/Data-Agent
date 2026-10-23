@@ -27,8 +27,8 @@ export function SaveToKnowledgeDialog({
   onClose: () => void;
 }) {
   const toast = useToast();
-  const draft = useV1(() => getKnowledgeDraft(answerId), [answerId]);
-  const pages = useV1(listKnowledgePages, []);
+  const draft = useV1(['getKnowledgeDraft', answerId], () => getKnowledgeDraft(answerId));
+  const pages = useV1(['listKnowledgePages'], listKnowledgePages);
   const [target, setTarget] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();

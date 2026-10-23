@@ -31,7 +31,7 @@ const inFilter = (p: DataProduct, filter: Filter) =>
 
 export default function DataProductsPage() {
   const { navigate, routeId } = useAppState();
-  const products = useV1(listDataProducts, []);
+  const products = useV1(['listDataProducts'], listDataProducts);
   const [filter, setFilter] = useState<Filter>('mine');
   const [query, setQuery] = useState('');
   const [importing, setImporting] = useState(false);

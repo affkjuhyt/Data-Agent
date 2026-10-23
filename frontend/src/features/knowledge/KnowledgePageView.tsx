@@ -54,12 +54,12 @@ const STATUS: Record<KnowledgePageStatus, { label: string; tone: Tone }> = {
 
 export default function KnowledgePageView() {
   const { routeId, navigate } = useAppState();
-  const pages = useV1(listKnowledgePages, []);
+  const pages = useV1(['listKnowledgePages'], listKnowledgePages);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const items = pages.data?.items ?? [];
   const id = routeId || items[0]?.id;
-  const page = useV1(id ? () => getKnowledgePage(id) : null, [id]);
+  const page = useV1(['getKnowledgePage', id], id ? () => getKnowledgePage(id) : null);
 
   const shown = items.filter(
     (p) =>
@@ -349,7 +349,7 @@ function ClaimsTable({ claims }: { claims: KnowledgeClaim[] }) {
 }
 
 function Versions({ pageId }: { pageId: string }) {
-  const versions = useV1(() => listKnowledgePageVersions(pageId), [pageId]);
+  const versions = useV1(['listKnowledgePageVersions', pageId], () => listKnowledgePageVersions(pageId));
   return (
     <Card title="Phiên bản">
       <AsyncRegion state={versions} what="phiên bản">

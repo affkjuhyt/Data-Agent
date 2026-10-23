@@ -21,7 +21,7 @@ import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
  */
 export default function LineagePage() {
   const { navigate, routeId } = useAppState();
-  const graph = useV1(() => getLineage(routeId), [routeId]);
+  const graph = useV1(['getLineage', routeId], () => getLineage(routeId));
   const [picking, setPicking] = useState(false);
 
   // A graph in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
@@ -176,7 +176,7 @@ function TargetDialog({
   onClose: () => void;
   onPick: (id: string) => void;
 }) {
-  const targets = useV1(open ? listLineageTargets : null, [open]);
+  const targets = useV1(['listLineageTargets', open], open ? listLineageTargets : null);
   const [value, setValue] = useState<string | null>(null);
   const chosen = value ?? current ?? null;
 

@@ -60,7 +60,7 @@ export function FollowScheduleButton({
   primary?: boolean;
 }) {
   const toast = useToast();
-  const calendar = useV1(() => getScheduleCalendar(seriesId), [seriesId]);
+  const calendar = useV1(['getScheduleCalendar', seriesId], () => getScheduleCalendar(seriesId));
   const [on, setOn] = useState(false);
   const [busy, setBusy] = useState(false);
   useEffect(() => setOn(calendar.data?.following ?? false), [calendar.data]);

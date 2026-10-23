@@ -44,7 +44,10 @@ const hhmm = (iso: string) =>
 
 export default function ReportReviewPage() {
   const { routeId } = useAppState();
-  const report = useV1(routeId ? () => getSessionReport(routeId) : null, [routeId]);
+  const report = useV1(
+    ['getSessionReport', routeId],
+    routeId ? () => getSessionReport(routeId) : null,
+  );
   // A report in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
   const forbidden = forbiddenOf(report.error);
   if (forbidden) return <AccessDenied access={forbidden} />;
@@ -58,7 +61,9 @@ export default function ReportReviewPage() {
 function Review({ report: loaded }: { report: SessionReport }) {
   const toast = useToast();
   const { navigate } = useAppState();
-  const workspace = useV1(() => getWorkspace(loaded.workspace_id), [loaded.workspace_id]);
+  const workspace = useV1(['getWorkspace', loaded.workspace_id], () =>
+    getWorkspace(loaded.workspace_id),
+  );
   const [report, setReport] = useState(loaded);
   const [dialog, setDialog] = useState(false);
   const [note, setNote] = useState('');

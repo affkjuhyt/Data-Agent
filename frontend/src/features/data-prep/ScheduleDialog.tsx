@@ -33,7 +33,10 @@ export function ScheduleDialog({
   onClose: () => void;
   onSaved: (scheduleText: string) => void;
 }) {
-  const loaded = useV1(pipelineId ? () => getPipelineSchedule(pipelineId) : null, [pipelineId]);
+  const loaded = useV1(
+    ['getPipelineSchedule', pipelineId],
+    pipelineId ? () => getPipelineSchedule(pipelineId) : null,
+  );
   const [draft, setDraft] = useState<PipelineSchedule>();
   const [preview, setPreview] = useState<string>();
   const [busy, setBusy] = useState(false);

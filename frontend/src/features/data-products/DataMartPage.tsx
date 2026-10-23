@@ -27,7 +27,7 @@ import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
  */
 export default function DataMartPage() {
   const { routeId } = useAppState();
-  const marts = useV1(routeId ? null : listMarts, [routeId]);
+  const marts = useV1(['listMarts', routeId], routeId ? null : listMarts);
   const id = routeId ?? marts.data?.items[0]?.id;
 
   if (!id) {
@@ -55,7 +55,7 @@ export default function DataMartPage() {
 
 function MartView({ id }: { id: string }) {
   const { navigate } = useAppState();
-  const mart = useV1(() => getMart(id), [id]);
+  const mart = useV1(['getMart', id], () => getMart(id));
   const toast = useToast();
   const [suggesting, setSuggesting] = useState(false);
   const [publishing, setPublishing] = useState(false);

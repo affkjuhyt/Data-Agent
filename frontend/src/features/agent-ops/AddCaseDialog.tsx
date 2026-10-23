@@ -35,7 +35,10 @@ export function AddCaseDialog({
   onClose: () => void;
   onAdded: () => void;
 }) {
-  const runs = useV1(open ? () => listRuns({ agent_id: agentId }) : null, [open, agentId]);
+  const runs = useV1(
+    ['listRuns', open, agentId],
+    open ? () => listRuns({ agent_id: agentId }) : null,
+  );
   const [source, setSource] = useState<string>(MANUAL);
   const [input, setInput] = useState('');
   const [expected, setExpected] = useState('');

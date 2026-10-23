@@ -18,7 +18,7 @@ import { useV1 } from '../../lib/v1/useV1';
  */
 export default function CatalogPage() {
   const { navigate } = useAppState();
-  const catalog = useV1(listCatalog, []);
+  const catalog = useV1(['listCatalog'], listCatalog);
   const items = catalog.data?.items ?? [];
   const view = useTableView(items, {
     search: (asset) => `${asset.name} ${asset.source} ${KIND_LABEL[asset.kind]}`,

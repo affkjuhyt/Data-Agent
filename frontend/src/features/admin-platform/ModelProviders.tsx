@@ -106,7 +106,7 @@ export function ProvidersTab({
   routing: V1State<RoutingLog>;
 }) {
   const toast = useToast();
-  const providers = useV1(listProviders, []);
+  const providers = useV1(['listProviders'], listProviders);
   const [testing, setTesting] = useState<string>();
 
   const callOnce = async (provider: AiProvider) => {
@@ -501,7 +501,9 @@ function RoutingTable({ entries, full = false }: { entries: RoutingLogEntry[]; f
 const LOG_PAGE = 50;
 
 export function RoutingLogTab() {
-  const first = useV1(() => getRoutingLog({ page_size: LOG_PAGE }), []);
+  const first = useV1(['getRoutingLog', { page_size: LOG_PAGE }], () =>
+    getRoutingLog({ page_size: LOG_PAGE }),
+  );
   const [more, setMore] = useState<RoutingLogEntry[]>([]);
   const [token, setToken] = useState<string>();
   const [loadingMore, setLoadingMore] = useState(false);

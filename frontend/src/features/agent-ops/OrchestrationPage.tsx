@@ -31,12 +31,10 @@ const ACTIVE = new Set(['queued', 'planning', 'running', 'waiting_human']);
 export default function OrchestrationPage() {
   const { routeId, navigate } = useAppState();
   const toast = useToast();
-  const loaded = useV1<Orchestration | null>(
-    () =>
-      routeId
-        ? getOrchestration(routeId)
-        : findOrchestration().then((id) => (id ? getOrchestration(id) : null)),
-    [routeId],
+  const loaded = useV1<Orchestration | null>(['OrchestrationPage.orchestration', routeId], () =>
+    routeId
+      ? getOrchestration(routeId)
+      : findOrchestration().then((id) => (id ? getOrchestration(id) : null)),
   );
   const [current, setCurrent] = useState<Orchestration | null>();
   const [sending, setSending] = useState(false);

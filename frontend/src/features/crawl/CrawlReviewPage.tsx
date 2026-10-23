@@ -60,8 +60,8 @@ const fmt = (n: number) => n.toFixed(2).replace('.', ',');
 
 export default function CrawlReviewPage() {
   const { routeId } = useAppState();
-  const run = useV1(routeId ? () => getCrawlRun(routeId) : null, [routeId]);
-  const records = useV1(routeId ? () => listRunRecords(routeId) : null, [routeId]);
+  const run = useV1(['getCrawlRun', routeId], routeId ? () => getCrawlRun(routeId) : null);
+  const records = useV1(['listRunRecords', routeId], routeId ? () => listRunRecords(routeId) : null);
   const reload = () => {
     run.reload();
     records.reload();

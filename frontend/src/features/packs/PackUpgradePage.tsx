@@ -40,7 +40,10 @@ const STATUS: Record<string, string> = {
 
 export default function PackUpgradePage() {
   const { routeId } = useAppState();
-  const upgrade = useV1(routeId ? () => getPackUpgrade(routeId) : null, [routeId]);
+  const upgrade = useV1(
+    ['getPackUpgrade', routeId],
+    routeId ? () => getPackUpgrade(routeId) : null,
+  );
   if (!routeId)
     return (
       <p className="px-da-3xl pt-da-xl text-muted-foreground da-body-small">

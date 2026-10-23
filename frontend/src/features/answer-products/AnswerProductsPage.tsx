@@ -66,7 +66,7 @@ const dueText = (iso: string) => {
 
 export default function AnswerProductsPage() {
   const { routeId } = useAppState();
-  const list = useV1(() => listAnswerProducts(), []);
+  const list = useV1(['listAnswerProducts'], () => listAnswerProducts());
   const [picked, setPicked] = useState<string | undefined>(routeId || undefined);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -174,7 +174,7 @@ function ProductCard({
 }
 
 function ProductView({ id, onChanged }: { id: string; onChanged: () => void }) {
-  const product = useV1(() => getAnswerProduct(id), [id]);
+  const product = useV1(['getAnswerProduct', id], () => getAnswerProduct(id));
   return (
     <AsyncRegion state={product} what="data product">
       {(p) => (
@@ -653,7 +653,7 @@ const PERIOD = {
 } as const;
 
 function FreshnessTab({ id }: { id: string }) {
-  const freshness = useV1(() => getProductFreshness(id), [id]);
+  const freshness = useV1(['getProductFreshness', id], () => getProductFreshness(id));
   return (
     <AsyncRegion state={freshness} what="độ tươi">
       {(f) => (

@@ -74,7 +74,7 @@ function PublishForm({
   const { theses, select } = useVault();
   const { user } = useAppState();
   const toast = useToast();
-  const targets = useV1(() => listPublishTargets(), []);
+  const targets = useV1(['listPublishTargets'], () => listPublishTargets());
   const c = thesis?.content?.condition;
 
   const defaults = (t: OpenThesis | undefined) => ({

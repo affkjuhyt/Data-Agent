@@ -24,7 +24,7 @@ import { useV1 } from '../../lib/v1/useV1';
 type Edit = { ranking: string[]; materiality: string };
 
 export default function SourceAuthorityPage() {
-  const authorities = useV1(listSourceAuthorities, []);
+  const authorities = useV1(['listSourceAuthorities'], listSourceAuthorities);
   const toast = useToast();
   const [open, setOpen] = useState<string>();
   const [edits, setEdits] = useState<Record<string, Edit>>({});

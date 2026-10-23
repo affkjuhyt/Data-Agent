@@ -20,7 +20,7 @@ import { useV1 } from '../../lib/v1/useV1';
  * 90 days. Sharing a certified skill is a row action of the library; the section below says how.
  */
 export default function SkillSuggestionsPage() {
-  const suggestions = useV1(listSkillSuggestions, []);
+  const suggestions = useV1(['listSkillSuggestions'], listSkillSuggestions);
   return (
     <div className="flex flex-col">
       <PageHeader

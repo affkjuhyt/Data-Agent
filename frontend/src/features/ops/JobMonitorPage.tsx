@@ -31,7 +31,7 @@ function sortJobs(items: IngestionJob[]) {
 
 export default function JobMonitorPage() {
   const { navigate } = useAppState();
-  const jobs = useV1(listJobs, []);
+  const jobs = useV1(['listJobs'], listJobs);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

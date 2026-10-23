@@ -130,7 +130,7 @@ function EventsTable({
 export default function NotificationsPage() {
   const toast = useToast();
   const { navigate } = useAppState();
-  const saved = useV1(getNotificationPreferences, []);
+  const saved = useV1(['getNotificationPreferences'], getNotificationPreferences);
   const [draft, setDraft] = useState<NotificationPreferences>();
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);

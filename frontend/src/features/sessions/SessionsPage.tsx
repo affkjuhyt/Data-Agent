@@ -31,7 +31,7 @@ export default function SessionsPage() {
 
 function SessionList() {
   const { navigate } = useAppState();
-  const workspaces = useV1(listWorkspaces, []);
+  const workspaces = useV1(['listWorkspaces'], listWorkspaces);
 
   return (
     <div className="flex flex-col gap-da-xl px-da-3xl py-da-xl">

@@ -71,7 +71,7 @@ const tileList = (tiles: WorkspaceTile[]) => {
 };
 
 export function NotebookPage({ workspaceId }: { workspaceId: string }) {
-  const workspace = useV1(() => getWorkspace(workspaceId), [workspaceId]);
+  const workspace = useV1(['getWorkspace', workspaceId], () => getWorkspace(workspaceId));
   // A workspace in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
   const forbidden = forbiddenOf(workspace.error);
   if (forbidden) return <AccessDenied access={forbidden} />;
@@ -338,7 +338,7 @@ function TileRow({
 
 /** Holistics-shaped side context: interpretation chips + Cách tính for an Ask answer tile. */
 function TileAnswerContext({ answerId }: { answerId: string }) {
-  const answer = useV1(() => loadAnswerMessage(answerId), [answerId]);
+  const answer = useV1(['loadAnswerMessage', answerId], () => loadAnswerMessage(answerId));
   return (
     <AsyncRegion state={answer} what="cách tính" skeletonRows={4}>
       {(msg: AskMessage) => (
@@ -381,7 +381,7 @@ function CommentPanel({
   /** Nested under Cách tính — no outer aside chrome. */
   embedded?: boolean;
 }) {
-  const thread = useV1(() => getTileThread(workspaceId, tile.id), [workspaceId, tile.id]);
+  const thread = useV1(['getTileThread', workspaceId, tile.id], () => getTileThread(workspaceId, tile.id));
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();

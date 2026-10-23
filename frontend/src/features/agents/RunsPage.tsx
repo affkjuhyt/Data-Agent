@@ -21,7 +21,7 @@ import { matchesFilter, runDuration, runStatus, shortCost, type RunFilter } from
  */
 export default function RunsPage() {
   const { navigate } = useAppState();
-  const runs = useV1(() => listRuns(), []);
+  const runs = useV1(['listRuns'], () => listRuns());
   const [filter, setFilter] = useState<RunFilter>('all');
 
   const items = runs.data?.items ?? [];

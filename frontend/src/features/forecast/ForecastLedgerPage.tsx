@@ -128,9 +128,12 @@ export default function ForecastLedgerPage() {
   const { routeId } = useAppState();
   const [periods, setPeriods] = useState<number>();
   // From the rail without an id: the first fuel's ledger.
-  const series = useV1(routeId ? null : listForecastSeries, [routeId]);
+  const series = useV1(['listForecastSeries', routeId], routeId ? null : listForecastSeries);
   const id = routeId || series.data?.items[0]?.id;
-  const ledger = useV1(id ? () => getForecastLedger(id, periods) : null, [id, periods]);
+  const ledger = useV1(
+    ['getForecastLedger', id, periods],
+    id ? () => getForecastLedger(id, periods) : null,
+  );
   const forbidden = forbiddenOf(ledger.error);
   if (forbidden) return <AccessDenied access={forbidden} />;
   if (!routeId && series.error) {

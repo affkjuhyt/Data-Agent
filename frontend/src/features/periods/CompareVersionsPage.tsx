@@ -38,10 +38,7 @@ function download(name: string, text: string) {
 export default function CompareVersionsPage() {
   const { navigate } = useAppState();
   const [pair, setPair] = useState<{ left: string; right: string } | null>(null);
-  const result = useV1(() => comparePeriodVersions(pair?.left, pair?.right), [
-    pair?.left,
-    pair?.right,
-  ]);
+  const result = useV1(['comparePeriodVersions', pair?.left, pair?.right], () => comparePeriodVersions(pair?.left, pair?.right));
 
   return (
     <AsyncRegion state={result} what="so sánh">

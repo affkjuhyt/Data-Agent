@@ -174,7 +174,7 @@ export default function AuditPage() {
 }
 
 function AuditLog({ query, deps }: { query: AuditQuery; deps: unknown[] }) {
-  const log = useV1(() => searchAudit(query), deps);
+  const log = useV1(['searchAudit', query, ...deps], () => searchAudit(query));
   const items = log.data?.items ?? [];
   const view = useTableView(items, {
     search: (e) =>
@@ -385,7 +385,7 @@ function detailText(event: SecurityEvent): string {
 }
 
 function SecurityEvents() {
-  const events = useV1(() => listSecurityEvents({}), []);
+  const events = useV1(['listSecurityEvents', {}], () => listSecurityEvents({}));
   const items = events.data?.items ?? [];
   const view = useTableView(items, {
     search: (e) =>

@@ -37,7 +37,7 @@ export function DataSpacePicker({
   onOpen: (space: { id: string; name: string }) => void;
   onLogout: () => void;
 }) {
-  const spaces = useV1(getMyDataSpaces, []);
+  const spaces = useV1(['getMyDataSpaces'], getMyDataSpaces);
   const name = givenName(userName);
 
   return (

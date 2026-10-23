@@ -83,8 +83,10 @@ export function EmailViewer({
 
 function ThreadList({ collectionId, selectedId }: { collectionId: string; selectedId: string }) {
   const { navigate } = useAppState();
-  const collection = useV1(() => getCollection(collectionId), [collectionId]);
-  const threads = useV1(() => listLibrary({ collection_id: collectionId }), [collectionId]);
+  const collection = useV1(['getCollection', collectionId], () => getCollection(collectionId));
+  const threads = useV1(['listLibrary', { collection_id: collectionId }, collectionId], () =>
+    listLibrary({ collection_id: collectionId }),
+  );
   return (
     <nav
       aria-label="Các thư"

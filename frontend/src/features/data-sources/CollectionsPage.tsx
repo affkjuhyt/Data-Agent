@@ -25,8 +25,8 @@ import { CreateCollectionDialog } from '../documents/CollectionDialogs';
  */
 export default function CollectionsPage() {
   const { navigate } = useAppState();
-  const collections = useV1(listCollections, []);
-  const summary = useV1(getCollectionsSummary, []);
+  const collections = useV1(['listCollections'], listCollections);
+  const summary = useV1(['getCollectionsSummary'], getCollectionsSummary);
   const [dialog, setDialog] = useState<'create' | null>(null);
 
   return (

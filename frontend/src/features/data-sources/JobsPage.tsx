@@ -41,7 +41,7 @@ const CELL: Record<IngestionJob['hours'][number], string> = {
 export default function JobsPage() {
   const { navigate } = useAppState();
   const toast = useToast();
-  const jobs = useV1(listJobs, []);
+  const jobs = useV1(['listJobs'], listJobs);
   const [filter, setFilter] = useState<JobFilter>('all');
   const items = jobs.data?.items ?? [];
   const count = (f: JobFilter) => items.filter((j) => matchesJobFilter(j, f)).length;

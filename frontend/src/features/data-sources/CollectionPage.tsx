@@ -56,7 +56,7 @@ const STATE_WORD: Record<StepState, string> = {
 
 export default function CollectionPage() {
   const { routeId } = useAppState();
-  const collection = useV1(routeId ? () => getCollection(routeId) : null, [routeId]);
+  const collection = useV1(['getCollection', routeId], routeId ? () => getCollection(routeId) : null);
   // A collection in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
   const forbidden = forbiddenOf(collection.error);
   if (forbidden) return <AccessDenied access={forbidden} />;
@@ -71,7 +71,7 @@ function CollectionView({ collection }: { collection: CollectionDetail }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
-  const documents = useV1(() => listDocuments(collection.id), [collection.id]);
+  const documents = useV1(['listDocuments', collection.id], () => listDocuments(collection.id));
   const [selected, setSelected] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const view = useTableView(documents.data?.items ?? [], {
@@ -253,7 +253,7 @@ function CollectionView({ collection }: { collection: CollectionDetail }) {
 }
 
 function DocumentPanel({ id, onClose }: { id: string; onClose: () => void }) {
-  const doc = useV1(() => getDocument(id), [id]);
+  const doc = useV1(['getDocument', id], () => getDocument(id));
   return (
     <aside
       aria-label="Chi tiết tài liệu"

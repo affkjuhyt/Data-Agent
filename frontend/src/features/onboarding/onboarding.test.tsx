@@ -30,7 +30,7 @@ describe('DataSpacePicker', () => {
     expect(
       await screen.findByRole('heading', { name: 'Chào Hải Yến, chọn Data Space để bắt đầu' }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText('Người phụ trách dữ liệu')).not.toHaveLength(0);
+    expect(await screen.findAllByText('Người phụ trách dữ liệu')).not.toHaveLength(0);
     expect(screen.getAllByText(/0 nguồn · 0 chỉ số · 0 agent.*Chưa dùng/)).not.toHaveLength(0);
 
     fireEvent.click(screen.getByRole('button', { name: 'Mở Rủi ro tín dụng' }));

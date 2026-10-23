@@ -82,7 +82,7 @@ const EMPTY: ApiRequest = {
 
 export default function ApiConnectPage() {
   const { routeId } = useAppState();
-  const config = useV1(routeId ? () => getApiConfig(routeId) : null, [routeId]);
+  const config = useV1(['getApiConfig', routeId], routeId ? () => getApiConfig(routeId) : null);
   if (!routeId) return <ApiForm key="new" config={null} />;
   return (
     <AsyncRegion state={config} what="cấu hình API" skeletonRows={8}>
@@ -118,7 +118,7 @@ function parseHeaders(text: string): ApiRequest['headers'] {
 function ApiForm({ config }: { config: ApiSourceConfig | null }) {
   const { navigate } = useAppState();
   const toast = useToast();
-  const secrets = useV1(() => listSecretRefs(), []);
+  const secrets = useV1(['listSecretRefs'], () => listSecretRefs());
   const [name, setName] = useState(config?.name ?? '');
   const [request, setRequest] = useState<ApiRequest>(config?.request ?? EMPTY);
   const [headers, setHeaders] = useState(headersText(config?.request ?? EMPTY));

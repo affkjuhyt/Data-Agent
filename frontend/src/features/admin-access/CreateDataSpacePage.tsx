@@ -51,9 +51,9 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 export default function CreateDataSpacePage() {
   const { navigate } = useAppState();
   const toast = useToast();
-  const users = useV1(listAdminUsers, []);
-  const sources = useV1(listSources, []);
-  const groups = useV1(listGroups, []);
+  const users = useV1(['listAdminUsers'], listAdminUsers);
+  const sources = useV1(['listSources'], listSources);
+  const groups = useV1(['listGroups'], listGroups);
 
   const [name, setName] = useState('');
   const [stewardId, setStewardId] = useState<string | null>(null);

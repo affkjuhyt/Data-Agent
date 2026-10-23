@@ -76,8 +76,8 @@ const DONE: Record<FindingAction, string> = {
 type Filter = 'all' | FindingKind;
 
 export default function KnowledgeReviewPage() {
-  const run = useV1(getLatestLintRun, []);
-  const findings = useV1(listOpenFindings, []);
+  const run = useV1(['getLatestLintRun'], getLatestLintRun);
+  const findings = useV1(['listOpenFindings'], listOpenFindings);
   const toast = useToast();
   const [filter, setFilter] = useState<Filter>('all');
   const [selectedId, setSelectedId] = useState<string>();
@@ -328,7 +328,7 @@ function FindingCard({
   const [assignee, setAssignee] = useState<string | null>(null);
   const [busy, setBusy] = useState<FindingAction | null>(null);
   const [error, setError] = useState<string>();
-  const users = useV1(dialog === 'reassign' ? listUsers : null, [dialog]);
+  const users = useV1(['listUsers', dialog], dialog === 'reassign' ? listUsers : null);
 
   const act = async (action: FindingAction) => {
     if (action === 'dismiss' && !reason.trim()) {

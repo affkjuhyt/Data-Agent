@@ -31,8 +31,8 @@ import { InviteDialog } from './InviteDialog';
  */
 export default function UsersPage() {
   const toast = useToast();
-  const users = useV1(listAdminUsers, []);
-  const roles = useV1(listRoles, []);
+  const users = useV1(['listAdminUsers'], listAdminUsers);
+  const roles = useV1(['listRoles'], listRoles);
   const [inviting, setInviting] = useState(false);
   const [syncing, setSyncing] = useState(false);
 

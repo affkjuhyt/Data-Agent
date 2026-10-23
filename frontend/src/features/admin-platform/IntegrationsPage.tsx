@@ -76,7 +76,7 @@ interface Issued {
 
 export default function IntegrationsPage() {
   const toast = useToast();
-  const clients = useV1(listIntegrations, []);
+  const clients = useV1(['listIntegrations'], listIntegrations);
   const [selected, setSelected] = useState<string>();
   const [dialog, setDialog] = useState<DialogKind | null>(null);
   const [issued, setIssued] = useState<Issued | null>(null);
@@ -296,7 +296,9 @@ function UsagePanel({
   onRevoked: () => void;
 }) {
   const toast = useToast();
-  const usage = useV1(() => getIntegrationUsage(client), [client.id]);
+  const usage = useV1(['getIntegrationUsage', client, client.id], () =>
+    getIntegrationUsage(client),
+  );
   const [busy, setBusy] = useState(false);
   const [revoking, setRevoking] = useState(false);
   const live = client.status !== 'revoked' && client.status !== 'expired';
@@ -450,8 +452,8 @@ function AddDialog({
   onIssued: (issued: Issued, clientId?: string) => void;
 }) {
   const toast = useToast();
-  const spaces = useV1(listDataSpaces, []);
-  const users = useV1(listAdminUsers, []);
+  const spaces = useV1(['listDataSpaces'], listDataSpaces);
+  const users = useV1(['listAdminUsers'], listAdminUsers);
   const [kind, setKind] = useState<DialogKind>(initialKind);
   const [name, setName] = useState('');
   const [owner, setOwner] = useState<string | null>(null);

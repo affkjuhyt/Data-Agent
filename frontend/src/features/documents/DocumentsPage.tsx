@@ -61,9 +61,9 @@ export default function DocumentsPage() {
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
-  const counts = useV1(getDocumentCounts, []);
-  const rows = useV1(tab === 'data_uploads' ? null : () => listLibrary(QUERY[tab]), [tab]);
-  const uploads = useV1(listUploads, []);
+  const counts = useV1(['getDocumentCounts'], getDocumentCounts);
+  const rows = useV1(['listLibrary', tab], tab === 'data_uploads' ? null : () => listLibrary(QUERY[tab]));
+  const uploads = useV1(['listUploads'], listUploads);
   // The panel opens on the first document until the reader picks one, as the frame draws it.
   const shown =
     selected ??
@@ -274,7 +274,7 @@ function UploadsTable({
 }
 
 function UploadPanel({ id, onDelete }: { id: string; onDelete: () => void }) {
-  const upload = useV1(() => getUpload(id), [id]);
+  const upload = useV1(['getUpload', id], () => getUpload(id));
   return (
     <aside
       aria-label="Chi tiết tệp dữ liệu"
@@ -289,7 +289,7 @@ function UploadPanel({ id, onDelete }: { id: string; onDelete: () => void }) {
 
 function UploadPanelBody({ upload, onDelete }: { upload: UploadDetail; onDelete: () => void }) {
   const columns = Array.isArray(upload.column_map) ? upload.column_map : [];
-  const preview = useV1(() => previewUpload(upload.id), [upload.id]);
+  const preview = useV1(['previewUpload', upload.id], () => previewUpload(upload.id));
   return (
     <>
       <div className="flex items-start justify-between gap-da-md">
@@ -586,7 +586,7 @@ function ProcessingTable({
 
 /* What the Document agent did, as the panel of 2065:2161 draws it (same as the collection panel). */
 function DocumentPanel({ id }: { id: string }) {
-  const doc = useV1(() => getDocumentView(id), [id]);
+  const doc = useV1(['getDocumentView', id], () => getDocumentView(id));
   return (
     <aside
       aria-label="Chi tiết tài liệu"

@@ -33,8 +33,8 @@ type Tab = 'skills' | 'tools';
 
 export default function SkillsToolsPage() {
   const { navigate } = useAppState();
-  const skills = useV1(() => listSkills(), []);
-  const tools = useV1(listTools, []);
+  const skills = useV1(['listSkills'], () => listSkills());
+  const tools = useV1(['listTools'], listTools);
   const [tab, setTab] = useState<Tab>('tools');
 
   return (
@@ -151,7 +151,7 @@ function SkillCard({ skill, onOpen }: { skill: Skill; onOpen: () => void }) {
 /* "Agent đề xuất kỹ năng mới": the first suggestions, the full list is "Đề xuất từ agent". */
 function SuggestionsCard() {
   const { navigate } = useAppState();
-  const suggestions = useV1(listSkillSuggestions, []);
+  const suggestions = useV1(['listSkillSuggestions'], listSkillSuggestions);
   const items = suggestions.data?.items.slice(0, 2) ?? [];
   if (suggestions.data && items.length === 0) return null;
   return (

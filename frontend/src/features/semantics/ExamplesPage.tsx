@@ -33,8 +33,8 @@ const fieldClass =
 
 export default function ExamplesPage() {
   const { dataSpace } = useAppState();
-  const examples = useV1(listExamples, []);
-  const synonyms = useV1(listSynonyms, []);
+  const examples = useV1(['listExamples'], listExamples);
+  const synonyms = useV1(['listSynonyms'], listSynonyms);
   const [selectedId, setSelectedId] = useState<string>();
   const [adding, setAdding] = useState(false);
 

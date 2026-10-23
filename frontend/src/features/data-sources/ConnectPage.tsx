@@ -50,7 +50,7 @@ const STEPS = ['Chọn nguồn', 'Kết nối', 'Kiểm tra', 'Chọn dữ liệ
 
 export default function ConnectPage() {
   const { routeId } = useAppState();
-  const connectors = useV1(routeId ? listConnectors : null, [routeId]);
+  const connectors = useV1(['listConnectors', routeId], routeId ? listConnectors : null);
   if (!routeId) return <ConnectorPicker />;
   return (
     <AsyncRegion state={connectors} what="connector">
@@ -683,8 +683,8 @@ function Assign({
   maskConfirmed: boolean;
   setMaskConfirmed: (on: boolean) => void;
 }) {
-  const spaces = useV1(listDataSpaces, []);
-  const users = useV1(listUsers, []);
+  const spaces = useV1(['listDataSpaces'], listDataSpaces);
+  const users = useV1(['listUsers'], listUsers);
   const people = useMemo(
     () =>
       (users.data?.items ?? [])

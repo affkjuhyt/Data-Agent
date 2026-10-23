@@ -20,7 +20,10 @@ import { useV1 } from '../../lib/v1/useV1';
 
 export default function PackInstallPage() {
   const { routeId } = useAppState();
-  const version = useV1(routeId ? () => getPackVersion(routeId) : null, [routeId]);
+  const version = useV1(
+    ['getPackVersion', routeId],
+    routeId ? () => getPackVersion(routeId) : null,
+  );
   if (!routeId)
     return (
       <p className="px-da-3xl pt-da-xl text-muted-foreground da-body-small">

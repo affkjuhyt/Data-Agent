@@ -68,13 +68,11 @@ export default function SkillVersionsPage() {
   const { routeId } = useAppState();
   // Opened from the rail, the skill found first stays on screen after it is published.
   const shown = useRef<string | undefined>(undefined);
-  const state = useV1(
-    () =>
-      load(routeId || shown.current).then((data) => {
-        shown.current = data?.skill.id;
-        return data;
-      }),
-    [routeId],
+  const state = useV1(['SkillVersionsPage.load', routeId], () =>
+    load(routeId || shown.current).then((data) => {
+      shown.current = data?.skill.id;
+      return data;
+    }),
   );
   return (
     <AsyncRegion

@@ -55,9 +55,9 @@ const runLook = (r: ReportSchedule['recent_runs'][number]) =>
 
 export default function ReportSetupPage() {
   const { routeId } = useAppState();
-  const list = useV1(routeId ? null : listReports, [routeId]);
+  const list = useV1(['listReports', routeId], routeId ? null : listReports);
   const id = routeId || list.data?.items[0]?.id;
-  const report = useV1(id ? () => getReport(id) : null, [id]);
+  const report = useV1(['getReport', id], id ? () => getReport(id) : null);
   return (
     <AsyncRegion state={report} what="báo cáo định kỳ">
       {(r) => <ReportBody key={r.id} report={r} onChanged={report.reload} />}

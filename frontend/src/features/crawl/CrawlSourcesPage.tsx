@@ -46,8 +46,8 @@ const pct = (n: number) => (n === 100 ? '100%' : `${n.toFixed(1).replace('.', ',
 
 export default function CrawlSourcesPage() {
   const { navigate } = useAppState();
-  const sources = useV1(listCrawlSources, []);
-  const summary = useV1(getAcquireSummary, []);
+  const sources = useV1(['listCrawlSources'], listCrawlSources);
+  const summary = useV1(['getAcquireSummary'], getAcquireSummary);
   const latest = summary.data?.latest_dataset ?? null;
   const mergeRunId = latest?.consolidation_run_id ?? null;
   const toast = useToast();

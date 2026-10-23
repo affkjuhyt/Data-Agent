@@ -37,7 +37,7 @@ const STEP = {
 
 export default function ApprovalChainPage() {
   const { routeId } = useAppState();
-  const collaboration = useV1(routeId ? () => getCollaboration(routeId) : null, [routeId]);
+  const collaboration = useV1(['getCollaboration', routeId], routeId ? () => getCollaboration(routeId) : null);
   if (!routeId)
     return (
       <p className="px-da-3xl pt-da-xl text-muted-foreground da-body-small">
@@ -72,7 +72,7 @@ function ChainBody({
   const [assignee, setAssignee] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string>();
-  const users = useV1(dialog === 'reassign' ? listUsers : null, [dialog === 'reassign']);
+  const users = useV1(['listUsers', dialog === 'reassign'], dialog === 'reassign' ? listUsers : null);
 
   const act = async (key: string, call: () => Promise<unknown>, message: string) => {
     setBusy(key);

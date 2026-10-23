@@ -1,14 +1,24 @@
+import createClient, { type Middleware } from 'openapi-fetch';
 import keycloak from '../keycloak';
+import type { paths } from './schema';
 
 /*
  * Client of the v1 API of the system design ("Đặc tả API", A1): https://{host}/v1, JSON in
  * snake_case, bearer token from Keycloak, X-Data-Space for resources that belong to a Data
  * Space, cursor lists {items, next_page_token}, errors as application/problem+json (RFC 9457).
  *
+ * Every request goes through one openapi-fetch client typed by schema.ts (`make api-types`):
+ * `api.GET('/v1/…/{id}', …)` checks the path, its parameters and the body against the api's
+ * OpenAPI, and the middleware below adds the headers and turns a failure into a V1Error, so a
+ * call either resolves with the body or rejects. v1Get/v1Send are the same client for the
+ * modules not yet written against the typed paths.
+ *
  * In development `VITE_MOCK_V1=1` answers these calls from src/mocks (MSW) until the backend
  * serves them; nothing here knows about the mock.
  */
-const BASE = `${(import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:30100'}/v1`;
+const ORIGIN = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:30100';
+/** The path every v1 request starts with, behind a gateway that may mount the api under a prefix. */
+const ROOT = `${new URL(ORIGIN).pathname.replace(/\/$/, '')}/v1`;
 
 /** A1.4: one page of a list. An empty next_page_token means the last page. */
 export interface Page<T> {
@@ -102,13 +112,13 @@ export const currentDataSpace = () => dataSpace;
 
 type Query = Record<string, string | number | boolean | undefined | null>;
 
-function headers(extra?: Record<string, string>): Record<string, string> {
-  return {
-    Accept: 'application/json',
-    ...(keycloak.token ? { Authorization: `Bearer ${keycloak.token}` } : {}),
-    ...(dataSpace ? { 'X-Data-Space': dataSpace } : {}),
-    ...extra,
-  };
+/** An empty value means "not filtered", so it is left out rather than sent as `key=`. */
+function serializeQuery(query: Record<string, unknown>): string {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
+  });
+  return params.toString();
 }
 
 async function failure(res: Response): Promise<V1Error> {
@@ -126,24 +136,88 @@ async function failure(res: Response): Promise<V1Error> {
   }
 }
 
-export async function v1Get<T>(path: string, query?: Query): Promise<T> {
-  const url = new URL(`${BASE}${safePath(path)}`);
-  Object.entries(query ?? {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '')
-      url.searchParams.set(key, String(value));
+const v1Middleware: Middleware = {
+  onRequest({ request }) {
+    const { pathname } = new URL(request.url);
+    if (!pathname.startsWith(`${ROOT}/`))
+      throw new V1Error(400, 'invalid_request', 'Đường dẫn API không hợp lệ.');
+    safePath(pathname.slice(ROOT.length));
+    const headers = request.headers;
+    if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+    if (keycloak.token) headers.set('Authorization', `Bearer ${keycloak.token}`);
+    if (dataSpace && !headers.has('X-Data-Space')) headers.set('X-Data-Space', dataSpace);
+    if (request.method === 'POST' && !headers.has('Idempotency-Key'))
+      headers.set('Idempotency-Key', crypto.randomUUID());
+    return request;
+  },
+  async onResponse({ request, response }) {
+    if (response.ok) return undefined;
+    const error = await failure(response);
+    // A refused write is told once, app-wide (useForbiddenToast); a refused read is drawn by its screen.
+    if (response.status === 403 && request.method !== 'GET')
+      window.dispatchEvent(new CustomEvent('app:forbidden', { detail: error.message }));
+    throw error;
+  },
+};
+
+/*
+ * A typed path's {id} is filled here, through pathId(): openapi-fetch would only percent-encode
+ * it, which leaves "..", and new Request() resolves dot segments before the middleware sees the
+ * URL — so the check has to happen while the value is still a value.
+ */
+function fillPath(pathname: string, params: Record<string, unknown>): string {
+  return pathname.replace(/\{([^}]+)\}/g, (_, name: string) => pathId(String(params[name] ?? '')));
+}
+
+export const api = createClient<paths>({
+  baseUrl: ORIGIN,
+  querySerializer: serializeQuery,
+  pathSerializer: fillPath,
+  // Looked up per request, not captured once: MSW replaces globalThis.fetch after this module loads.
+  fetch: (request) => globalThis.fetch(request),
+});
+api.use(v1Middleware);
+
+type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+
+/*
+ * The untyped door into the same client, for paths built as strings. The casts are the price of
+ * taking any path: openapi-fetch only accepts the literal paths of schema.ts.
+ */
+async function untyped<T>(
+  method: Method,
+  path: string,
+  init: {
+    query?: Query;
+    body?: unknown;
+    headers?: Record<string, string>;
+    parseAs?: 'json' | 'text' | 'blob';
+    signal: AbortSignal;
+  },
+): Promise<T> {
+  const { query, ...rest } = init;
+  const request = api.request as unknown as (
+    method: Method,
+    url: string,
+    init: Record<string, unknown>,
+  ) => Promise<{ data?: unknown }>;
+  const { data } = await request(method, `/v1${safePath(path)}`, {
+    ...rest,
+    params: { query: query ?? {} },
   });
-  const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(15_000) });
-  if (!res.ok) throw await failure(res);
-  return (await res.json()) as T;
+  return data as T;
+}
+
+export async function v1Get<T>(path: string, query?: Query): Promise<T> {
+  return untyped<T>('GET', path, { query, signal: AbortSignal.timeout(15_000) });
 }
 
 export async function v1GetBlob(path: string): Promise<string> {
-  const res = await fetch(`${BASE}${safePath(path)}`, {
-    headers: headers(),
+  const blob = await untyped<Blob>('GET', path, {
+    parseAs: 'blob',
     signal: AbortSignal.timeout(60_000),
   });
-  if (!res.ok) throw await failure(res);
-  return URL.createObjectURL(await res.blob());
+  return URL.createObjectURL(blob);
 }
 
 /** POST/PATCH/PUT/DELETE. `ifMatch` carries the ETag read before (A1.5); POST gets an idempotency key. */
@@ -153,30 +227,12 @@ export async function v1Send<T = unknown>(
   body?: unknown,
   options: { ifMatch?: string; query?: Query } = {},
 ): Promise<T> {
-  const target = new URL(`${BASE}${safePath(path)}`);
-  Object.entries(options.query ?? {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '')
-      target.searchParams.set(key, String(value));
-  });
-  const extra: Record<string, string> = {};
-  if (body !== undefined) extra['Content-Type'] = 'application/json';
-  if (options.ifMatch) extra['If-Match'] = options.ifMatch;
-  if (method === 'POST') extra['Idempotency-Key'] = crypto.randomUUID();
-  const res = await fetch(target, {
-    method,
-    headers: headers(extra),
-    body: body === undefined ? undefined : JSON.stringify(body),
+  return untyped<T>(method, path, {
+    body,
+    query: options.query,
+    headers: options.ifMatch ? { 'If-Match': options.ifMatch } : undefined,
     signal: AbortSignal.timeout(15_000),
   });
-  if (!res.ok) {
-    const error = await failure(res);
-    if (res.status === 403)
-      window.dispatchEvent(new CustomEvent('app:forbidden', { detail: error.message }));
-    throw error;
-  }
-  if (res.status === 202 || res.status === 204)
-    return (res.status === 204 ? undefined : await res.json()) as T;
-  return (await res.json()) as T;
 }
 
 /** POST multipart/form-data (a file upload); the browser sets the boundary, so no Content-Type here. */
@@ -185,17 +241,11 @@ export async function v1Upload<T = unknown>(
   form: FormData,
   options: { fileName?: string } = {},
 ): Promise<T> {
-  const res = await fetch(`${BASE}${safePath(path)}`, {
-    method: 'POST',
-    headers: headers({
-      'Idempotency-Key': crypto.randomUUID(),
-      ...(options.fileName ? { 'X-Upload-Filename': options.fileName } : {}),
-    }),
+  return untyped<T>('POST', path, {
     body: form,
+    headers: options.fileName ? { 'X-Upload-Filename': options.fileName } : undefined,
     signal: AbortSignal.timeout(60_000),
   });
-  if (!res.ok) throw await failure(res);
-  return (await res.json()) as T;
 }
 
 /** One Server-Sent Event; `id` is what Last-Event-ID resumes after (A1.6). */
@@ -214,14 +264,14 @@ export async function v1Events(
   path: string,
   options: { lastEventId?: string; signal?: AbortSignal } = {},
 ): Promise<V1Event[]> {
-  const extra: Record<string, string> = { Accept: 'text/event-stream' };
-  if (options.lastEventId) extra['Last-Event-ID'] = options.lastEventId;
-  const res = await fetch(`${BASE}${safePath(path)}`, {
-    headers: headers(extra),
+  const headers: Record<string, string> = { Accept: 'text/event-stream' };
+  if (options.lastEventId) headers['Last-Event-ID'] = options.lastEventId;
+  const text = await untyped<string>('GET', path, {
+    headers,
+    parseAs: 'text',
     signal: options.signal ?? AbortSignal.timeout(60_000),
   });
-  if (!res.ok) throw await failure(res);
-  return (await res.text())
+  return (text ?? '')
     .split(/\r?\n\r?\n/)
     .filter((block) => block.trim())
     .map((block) => {

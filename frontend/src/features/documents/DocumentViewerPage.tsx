@@ -40,7 +40,7 @@ import { takePage } from './focusPage';
  */
 export default function DocumentViewerPage() {
   const { routeId } = useAppState();
-  const doc = useV1(routeId ? () => getDocumentView(routeId) : null, [routeId]);
+  const doc = useV1(['getDocumentView', routeId], routeId ? () => getDocumentView(routeId) : null);
   // A doc in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
   const forbidden = forbiddenOf(doc.error);
   if (forbidden) return <AccessDenied access={forbidden} />;
@@ -102,12 +102,12 @@ function FileViewer({ doc, onChanged }: { doc: DocumentView; onChanged: () => vo
   // Newly uploaded documents have no pages until the ingest worker finishes. Do not send page 0
   // to the API: its schema correctly rejects it, but the viewer should show the designed waiting
   // state instead of leaking a 422 to the user.
-  const page = useV1(hasPages ? () => getDocumentPage(doc.id, pageNo) : null, [doc.id, pageNo]);
+  const page = useV1(['getDocumentPage', doc.id, pageNo], hasPages ? () => getDocumentPage(doc.id, pageNo) : null);
   // Only a PDF is embedded as itself. Any other original (an uploaded HTML page above all) would
   // run in the app's origin from a blob: URL and lose the styles it links to; it is shown as the
   // text the worker extracted, in the document's own structure.
   const pdf = doc.media === 'pdf';
-  const original = useV1(pdf ? () => getDocumentOriginal(doc.id) : null, [doc.id, pdf]);
+  const original = useV1(['getDocumentOriginal', doc.id, pdf], pdf ? () => getDocumentOriginal(doc.id) : null);
   const paged = pdf || doc.media === 'image';
   const collection = doc.collection;
 
@@ -494,7 +494,7 @@ function IssueBox({ issue, onChanged }: { issue: FieldIssue; onChanged: () => vo
 }
 
 function ChunksTab({ doc, onJump }: { doc: DocumentView; onJump: (page: number) => void }) {
-  const chunks = useV1(() => listChunks(doc), [doc.id, doc.page_count]);
+  const chunks = useV1(['listChunks', doc, doc.id, doc.page_count], () => listChunks(doc));
   return (
     <AsyncRegion
       state={chunks}
@@ -529,7 +529,7 @@ function ChunksTab({ doc, onJump }: { doc: DocumentView; onJump: (page: number) 
 }
 
 function HistoryTab({ id }: { id: string }) {
-  const activity = useV1(() => listActivity(id), [id]);
+  const activity = useV1(['listActivity', id], () => listActivity(id));
   return (
     <AsyncRegion
       state={activity}

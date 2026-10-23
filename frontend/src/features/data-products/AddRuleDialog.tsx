@@ -30,7 +30,7 @@ export function AddRuleDialog({
   onClose: () => void;
   onAdded: (name: string) => void;
 }) {
-  const datasets = useV1(open ? listDatasets : null, [open]);
+  const datasets = useV1(['listDatasets', open], open ? listDatasets : null);
   const [datasetId, setDatasetId] = useState<string | null>(null);
   const [column, setColumn] = useState('');
   const [kind, setKind] = useState<RuleKind>('not_null');

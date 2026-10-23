@@ -31,8 +31,8 @@ const THRESHOLD = 95;
 
 export default function CrawlSchemaPage() {
   const { routeId } = useAppState();
-  const source = useV1(routeId ? () => getCrawlSource(routeId) : null, [routeId]);
-  const schemas = useV1(routeId ? () => listCrawlSchemas(routeId) : null, [routeId]);
+  const source = useV1(['getCrawlSource', routeId], routeId ? () => getCrawlSource(routeId) : null);
+  const schemas = useV1(['listCrawlSchemas', routeId], routeId ? () => listCrawlSchemas(routeId) : null);
   return (
     <AsyncRegion state={schemas} what="schema">
       {(page) =>

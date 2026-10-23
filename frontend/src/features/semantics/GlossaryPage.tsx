@@ -34,8 +34,8 @@ const STATUS = {
 
 export default function GlossaryPage() {
   const toast = useToast();
-  const terms = useV1(listGlossary, []);
-  const unknown = useV1(listUnknownPhrases, []);
+  const terms = useV1(['listGlossary'], listGlossary);
+  const unknown = useV1(['listUnknownPhrases'], listUnknownPhrases);
   const [picked, setPicked] = useState<string>();
   const [adding, setAdding] = useState(false);
   const [term, setTerm] = useState('');

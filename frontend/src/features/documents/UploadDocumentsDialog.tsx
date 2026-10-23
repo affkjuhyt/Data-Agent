@@ -39,8 +39,8 @@ export function UploadDocumentsDialog({
   onUploaded: (result: { accepted: number; skipped: number }) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const collections = useV1(open ? listCollections : null, [open]);
-  const schemas = useV1(open ? listSchemas : null, [open]);
+  const collections = useV1(['listCollections', open], open ? listCollections : null);
+  const schemas = useV1(['listSchemas', open], open ? listSchemas : null);
   const [files, setFiles] = useState<File[]>([]);
   const [collection, setCollection] = useState<string | null>(collectionId ?? null);
   const [schema, setSchema] = useState<string>(NO_SCHEMA);

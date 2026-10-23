@@ -32,7 +32,7 @@ const HISTORY_PENDING = 'Lịch sử phiên bản chưa có API.';
 
 export default function PolicyDetail({ id }: { id: string }) {
   const toast = useToast();
-  const policy = useV1(() => getAccessPolicy(id), [id]);
+  const policy = useV1(['getAccessPolicy', id], () => getAccessPolicy(id));
   // null = unedited: the textarea shows the saved rule.
   const [rule, setRule] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -170,16 +170,13 @@ export default function PolicyDetail({ id }: { id: string }) {
 }
 
 function Simulation({ policy }: { policy: AccessPolicy }) {
-  const users = useV1(listAdminUsers, []);
+  const users = useV1(['listAdminUsers'], listAdminUsers);
   const people = (users.data?.items ?? []).filter((u) => u.kind === 'person');
   // Start with someone the policy narrows, since that is the case worth checking.
   const [userId, setUserId] = useState<string | null>(null);
   const chosen = userId ?? people.find((u) => u.row_scope_limited)?.id ?? people[0]?.id ?? null;
   const question = policy.sample_question || 'dư nợ theo chi nhánh tháng này';
-  const result = useV1(
-    chosen ? () => simulatePolicy(policy.id, { user_id: chosen, question }) : null,
-    [policy.id, chosen, question],
-  );
+  const result = useV1(['simulatePolicy', policy.id, chosen, question], chosen ? () => simulatePolicy(policy.id, { user_id: chosen, question }) : null);
 
   return (
     <>

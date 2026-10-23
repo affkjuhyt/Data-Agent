@@ -39,7 +39,7 @@ export default function DataSpacesPage() {
 
 function DataSpaceList() {
   const { navigate } = useAppState();
-  const spaces = useV1(listDataSpaceSummaries, []);
+  const spaces = useV1(['listDataSpaceSummaries'], listDataSpaceSummaries);
   const items = spaces.data?.items ?? [];
   const view = useTableView(items, {
     search: (s) =>

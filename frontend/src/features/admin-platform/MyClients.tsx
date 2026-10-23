@@ -25,7 +25,7 @@ const STATUS: Record<string, { label: string; tone: 'success' | 'warning' | 'idl
 
 export function MyClients() {
   const toast = useToast();
-  const clients = useV1(listMyClients, []);
+  const clients = useV1(['listMyClients'], listMyClients);
   const [busy, setBusy] = useState<string | null>(null);
 
   const confirm = async (client: MyClient) => {

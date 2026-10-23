@@ -71,7 +71,7 @@ const ON_INVALID: { value: NewJob['on_invalid_record']; label: string }[] = [
 
 export default function JobSetupPage() {
   const { routeId } = useAppState();
-  const candidates = useV1(listJobCandidates, []);
+  const candidates = useV1(['listJobCandidates'], listJobCandidates);
   return (
     <AsyncRegion
       state={candidates}

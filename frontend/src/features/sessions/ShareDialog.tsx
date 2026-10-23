@@ -43,7 +43,10 @@ export function ShareDialog({
   onClose: () => void;
   onShared: () => void;
 }) {
-  const sharing = useV1(open ? () => getSharing(workspace.id) : null, [open, workspace.id]);
+  const sharing = useV1(
+    ['getSharing', open, workspace.id],
+    open ? () => getSharing(workspace.id) : null,
+  );
   const toast = useToast();
   const [members, setMembers] = useState<WorkspaceMember[] | null>(null);
   const [preview, setPreview] = useState('');

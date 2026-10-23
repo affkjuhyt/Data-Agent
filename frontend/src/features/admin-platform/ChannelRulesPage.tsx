@@ -17,7 +17,7 @@ import { useV1 } from '../../lib/v1/useV1';
  * red = link only. Read only: the rules are the organisation's, opened from "Thông báo".
  */
 export default function ChannelRulesPage() {
-  const rules = useV1(getChannelRules, []);
+  const rules = useV1(['getChannelRules'], getChannelRules);
   return (
     <div className="flex flex-col gap-da-xl px-da-2xl py-da-xl">
       <header className="flex flex-col gap-da-xl">

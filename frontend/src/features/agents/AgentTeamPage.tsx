@@ -56,7 +56,7 @@ async function runningRunOf(agentId: string): Promise<AgentRun | undefined> {
 export default function AgentTeamPage() {
   const { dataSpace, navigate } = useAppState();
   const toast = useToast();
-  const agents = useV1(listAgents, []);
+  const agents = useV1(['listAgents'], listAgents);
   const items = agents.data?.items ?? [];
   const view = useTableView(items, {
     search: (a) =>

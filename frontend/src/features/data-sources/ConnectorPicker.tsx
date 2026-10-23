@@ -101,8 +101,8 @@ function targetOf(connector: Connector): { page: string; id?: string } | null {
 
 export function ConnectorPicker() {
   const { navigate } = useAppState();
-  const connectors = useV1(listConnectors, []);
-  const sources = useV1(listSourceRows, []);
+  const connectors = useV1(['listConnectors'], listConnectors);
+  const sources = useV1(['listSourceRows'], listSourceRows);
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
 

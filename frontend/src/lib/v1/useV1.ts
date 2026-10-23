@@ -1,10 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { V1Error } from './client';
+import { keepPreviousData, skipToken, useQuery, type QueryKey } from '@tanstack/react-query';
+import { useCallback } from 'react';
+import { currentDataSpace, V1Error } from './client';
+import { queryClient } from './queryClient';
 
 /*
- * Load one v1 resource for a screen. `data` stays from the last success while reloading,
- * so a refresh does not blank the region; `error` is the problem+json of the last failure.
- * Pass null as the loader to wait (e.g. until an id is known).
+ * Load one v1 resource for a screen, through TanStack Query. `key` names what is loaded — the
+ * loader's function, then every value it reads — so two screens asking for the same thing share
+ * one request and one cache entry, and a screen opened again draws the last answer while it
+ * refetches. `data` stays from the last success while reloading, so a refresh does not blank the
+ * region; `error` is the problem+json of the last failure. Pass null as the loader to wait (e.g.
+ * until an id is known).
+ *
+ * The Data Space goes into every key: X-Data-Space is sent from module state (client.ts), so an
+ * answer read in one space must never be drawn in another.
  */
 export interface V1State<T> {
   data: T | undefined;
@@ -13,33 +21,34 @@ export interface V1State<T> {
   reload: () => void;
 }
 
-export function useV1<T>(load: (() => Promise<T>) | null, deps: unknown[]): V1State<T> {
-  const [data, setData] = useState<T | undefined>(undefined);
-  const [error, setError] = useState<V1Error | Error | undefined>(undefined);
-  const [loading, setLoading] = useState(load !== null);
-  const [tick, setTick] = useState(0);
-  const loadRef = useRef(load);
-  loadRef.current = load;
+interface V1Options {
+  /** false drops the answer as soon as no screen shows it — for what is decrypted on this device. */
+  cache?: boolean;
+}
 
-  useEffect(() => {
-    const run = loadRef.current;
-    if (!run) return;
-    let alive = true;
-    setLoading(true);
-    run()
-      .then((result) => {
-        if (!alive) return;
-        setData(result);
-        setError(undefined);
-      })
-      .catch((e: unknown) => alive && setError(e instanceof Error ? e : new Error(String(e))))
-      .finally(() => alive && setLoading(false));
-    return () => {
-      alive = false;
-    };
-    // deps are the caller's: the loader closes over them.
-  }, [...deps, tick]);
-
-  const reload = useCallback(() => setTick((t) => t + 1), []);
-  return { data, error, loading, reload };
+export function useV1<T>(
+  key: QueryKey,
+  load: (() => Promise<T>) | null,
+  options: V1Options = {},
+): V1State<T> {
+  const query = useQuery(
+    {
+      queryKey: ['v1', currentDataSpace(), ...key],
+      queryFn: load ?? skipToken,
+      placeholderData: keepPreviousData,
+      ...(options.cache === false ? { gcTime: 0 } : {}),
+    },
+    queryClient,
+  );
+  const { refetch } = query;
+  const waiting = load === null;
+  const reload = useCallback(() => {
+    if (!waiting) void refetch();
+  }, [refetch, waiting]);
+  return {
+    data: query.data,
+    error: query.error ?? undefined,
+    loading: query.isFetching,
+    reload,
+  };
 }

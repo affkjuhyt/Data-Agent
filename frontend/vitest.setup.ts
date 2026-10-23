@@ -1,13 +1,21 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, configure } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
+import { queryClient } from './src/lib/v1/queryClient';
 
 // findBy*/waitFor wait 1 s by default. The whole suite runs in parallel workers, and a page with a
 // few mocked requests can take longer than that to draw there while it passes alone in ~100 ms.
 configure({ asyncUtilTimeout: 5000 });
 
+// One cache serves the whole app, so a test starts from an empty one; a mocked 500 is the answer
+// under test, not a reason to wait a second and ask again.
+queryClient.setDefaultOptions({
+  queries: { ...queryClient.getDefaultOptions().queries, retry: false },
+});
+
 afterEach(() => {
   cleanup();
+  queryClient.clear();
 });
 
 // Polyfill matchMedia for components that read it on mount (recharts, motion).

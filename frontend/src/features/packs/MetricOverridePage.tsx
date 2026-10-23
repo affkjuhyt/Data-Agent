@@ -22,7 +22,7 @@ const STATUS = {
 
 export default function MetricOverridePage() {
   const { routeId } = useAppState();
-  const override = useV1(routeId ? () => getMetricOverride(routeId) : null, [routeId]);
+  const override = useV1(['getMetricOverride', routeId], routeId ? () => getMetricOverride(routeId) : null);
   if (!routeId)
     return (
       <p className="px-da-3xl pt-da-xl text-muted-foreground da-body-small">

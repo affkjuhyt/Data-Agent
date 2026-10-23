@@ -57,9 +57,9 @@ const signed = (n: number) => `+${fmt(n, 2)}`;
 
 export default function AlertPage() {
   const { routeId } = useAppState();
-  const open = useV1(routeId ? null : () => listAlerts('open'), [routeId]);
+  const open = useV1(['listAlerts', 'open', routeId], routeId ? null : () => listAlerts('open'));
   const id = routeId || open.data?.items[0]?.id;
-  const alert = useV1(id ? () => getAlert(id) : null, [id]);
+  const alert = useV1(['getAlert', id], id ? () => getAlert(id) : null);
   if (!routeId && open.data && open.data.items.length === 0)
     return (
       <div className="px-da-3xl pt-da-2xl">
@@ -85,7 +85,7 @@ function AlertBody({ alert, onChanged }: { alert: Alert; onChanged: () => void }
   const [showSql, setShowSql] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string>();
-  const users = useV1(dialog === 'assign' ? listUsers : null, [dialog === 'assign']);
+  const users = useV1(['listUsers', dialog === 'assign'], dialog === 'assign' ? listUsers : null);
   const closed = alert.status === 'closed';
   const status =
     closed && alert.close_kind === 'false_positive'

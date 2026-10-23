@@ -41,10 +41,10 @@ type Dialog = 'reject' | 'narrow' | null;
 
 export default function AccessRequestsPage() {
   const { routeId, navigate } = useAppState();
-  const queue = useV1(() => listAccessRequests({ status: 'pending' }), []);
+  const queue = useV1(['listAccessRequests', { status: 'pending' }], () => listAccessRequests({ status: 'pending' }));
   const queueItems = queue.data?.items ?? [];
   const currentId = routeId ?? queueItems[0]?.id;
-  const request = useV1(currentId ? () => getAccessRequest(currentId) : null, [currentId]);
+  const request = useV1(['getAccessRequest', currentId], currentId ? () => getAccessRequest(currentId) : null);
 
   if (!routeId && queue.data && queueItems.length === 0) {
     return (

@@ -32,7 +32,7 @@ import { useV1 } from '../../lib/v1/useV1';
  */
 export default function PackCalibrationPage() {
   const { routeId } = useAppState();
-  const calibration = useV1(routeId ? () => getCalibration(routeId) : null, [routeId]);
+  const calibration = useV1(['getCalibration', routeId], routeId ? () => getCalibration(routeId) : null);
   if (!routeId)
     return (
       <p className="px-da-3xl pt-da-xl text-muted-foreground da-body-small">

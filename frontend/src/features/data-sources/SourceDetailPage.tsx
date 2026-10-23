@@ -21,7 +21,7 @@ import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
  */
 export default function SourceDetailPage() {
   const { routeId } = useAppState();
-  const source = useV1(routeId ? () => getSource(routeId) : null, [routeId]);
+  const source = useV1(['getSource', routeId], routeId ? () => getSource(routeId) : null);
   // A source in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
   const forbidden = forbiddenOf(source.error);
   if (forbidden) return <AccessDenied access={forbidden} />;

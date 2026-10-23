@@ -55,8 +55,8 @@ function DrawerBody({
   onClose: () => void;
   onOpenTarget: (route: NotificationRoute) => void;
 }) {
-  const feed = useV1(listNotifications, []);
-  const preferences = useV1(getNotificationPreferences, []);
+  const feed = useV1(['listNotifications'], listNotifications);
+  const preferences = useV1(['getNotificationPreferences'], getNotificationPreferences);
   const [filter, setFilter] = useState<Filter>('all');
   // Rows opened in this sitting lose their unread outline. A2 has no call that sets read_at,
   // so the server still counts them unread.

@@ -32,9 +32,10 @@ import { addDays, isoDay } from './format';
  */
 export default function PermissionComparePage() {
   const { routeId } = useAppState();
-  const sim = useV1(routeId ? () => simulatePermissions({ data_space_id: routeId }) : null, [
-    routeId,
-  ]);
+  const sim = useV1(
+    ['simulatePermissions', routeId],
+    routeId ? () => simulatePermissions({ data_space_id: routeId }) : null,
+  );
 
   return (
     <div className="flex flex-col gap-da-md px-da-2xl py-da-xl">

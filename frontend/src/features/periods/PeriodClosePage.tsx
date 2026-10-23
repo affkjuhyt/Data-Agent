@@ -52,11 +52,11 @@ function periodLabel(p: PeriodSummary): string {
 
 export default function PeriodClosePage() {
   const { routeId, navigate } = useAppState();
-  const periods = useV1(listPeriods, []);
+  const periods = useV1(['listPeriods'], listPeriods);
   // Without an id the page opens on the period being closed, else the newest.
   const items = periods.data?.items ?? [];
   const current = routeId || (items.find((p) => p.status === 'closing') ?? items[0])?.id;
-  const period = useV1(current ? () => getPeriod(current) : null, [current]);
+  const period = useV1(['getPeriod', current], current ? () => getPeriod(current) : null);
 
   const reload = () => {
     period.reload();

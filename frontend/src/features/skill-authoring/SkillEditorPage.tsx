@@ -38,7 +38,10 @@ type Tab = 'definition' | 'tests' | 'versions';
 
 export default function SkillEditorPage() {
   const { routeId } = useAppState();
-  const definition = useV1(routeId ? () => getSkillDefinition(routeId) : null, [routeId]);
+  const definition = useV1(
+    ['getSkillDefinition', routeId],
+    routeId ? () => getSkillDefinition(routeId) : null,
+  );
   return (
     <AsyncRegion state={definition} what="kỹ năng">
       {(d) => <Editor key={`${d.skill_id}-${d.version}`} initial={d} onSaved={definition.reload} />}
@@ -50,7 +53,7 @@ function Editor({ initial, onSaved }: { initial: SkillDefinition; onSaved: () =>
   const { navigate } = useAppState();
   const toast = useToast();
   const id = initial.skill_id;
-  const trialState = useV1(() => getLatestTrial(id), [id]);
+  const trialState = useV1(['getLatestTrial', id], () => getLatestTrial(id));
   const [trial, setTrial] = useState<SkillTrial | null>();
   const [steps, setSteps] = useState(initial.steps);
   const [instructions, setInstructions] = useState(initial.instructions);

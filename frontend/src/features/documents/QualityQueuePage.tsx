@@ -23,7 +23,7 @@ import { Dialog } from '../../design-system/Dialog';
  * A page not confirmed is never used to answer; dropping it asks for the reason.
  */
 export default function QualityQueuePage() {
-  const issues = useV1(listQualityIssues, []);
+  const issues = useV1(['listQualityIssues'], listQualityIssues);
   return (
     <AsyncRegion
       state={issues}

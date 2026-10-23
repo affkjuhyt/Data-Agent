@@ -41,7 +41,7 @@ const VERSION = {
 
 export default function MetricCatalogPage() {
   const { routeId } = useAppState();
-  const metrics = useV1(listCatalogMetrics, []);
+  const metrics = useV1(['listCatalogMetrics'], listCatalogMetrics);
   const [picked, setPicked] = useState<string | undefined>(routeId || undefined);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -141,7 +141,7 @@ function MetricCard({
 
 function ProfileView({ id }: { id: string }) {
   const { navigate } = useAppState();
-  const profile = useV1(() => getMetricProfile(id), [id]);
+  const profile = useV1(['getMetricProfile', id], () => getMetricProfile(id));
   const [tab, setTab] = useState<Tab>('definition');
 
   const ask = (p: MetricProfile) => {

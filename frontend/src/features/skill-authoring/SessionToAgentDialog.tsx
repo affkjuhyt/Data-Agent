@@ -26,7 +26,10 @@ export function SessionToAgentDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  const draft = useV1(open ? () => getSessionAgentDraft(sessionId) : null, [open, sessionId]);
+  const draft = useV1(
+    ['getSessionAgentDraft', open, sessionId],
+    open ? () => getSessionAgentDraft(sessionId) : null,
+  );
   return (
     <Dialog
       open={open}

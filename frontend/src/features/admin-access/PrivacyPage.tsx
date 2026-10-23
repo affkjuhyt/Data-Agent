@@ -57,7 +57,7 @@ export default function PrivacyPage() {
 function DsrList() {
   const { navigate } = useAppState();
   const toast = useToast();
-  const list = useV1(listDsr, []);
+  const list = useV1(['listDsr'], listDsr);
   const [creating, setCreating] = useState(false);
   const items = list.data?.items ?? [];
   const open = items.filter((d) => d.status !== 'done' && d.status !== 'rejected').length;
@@ -207,7 +207,7 @@ type Dialog = 'execute' | 'reject' | null;
 
 function DsrDetail({ id }: { id: string }) {
   const toast = useToast();
-  const dsr = useV1(() => getDsr(id), [id]);
+  const dsr = useV1(['getDsr', id], () => getDsr(id));
   const [selected, setSelected] = useState<string[]>([]);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [reason, setReason] = useState('');

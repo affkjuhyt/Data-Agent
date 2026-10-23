@@ -37,7 +37,7 @@ const scoreOutcome = (outcome: ThesisScore['outcome']) =>
 
 export function ScoresTab({ frame }: { frame: Frame }) {
   const { session, theses } = useVault();
-  const scores = useV1(async () => (await listScores()).items, []);
+  const scores = useV1(['listScores.items'], async () => (await listScores()).items);
 
   const rows = useMemo(() => {
     // The latest score of each thesis wins: a restatement re-scores after the data was corrected.
@@ -371,7 +371,7 @@ const PURPOSE: Record<
 
 /** The key's access log (A2 GET /exec/key-access-log), optionally for one thesis. */
 export function KeyAccessLog({ thesisId }: { thesisId?: string }) {
-  const log = useV1(async () => (await listKeyAccess()).items, []);
+  const log = useV1(['listKeyAccess.items'], async () => (await listKeyAccess()).items);
   return (
     <AsyncRegion state={log} what="sổ truy cập khoá">
       {(items) => {

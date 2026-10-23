@@ -35,9 +35,9 @@ const fmt = (n: number) => n.toFixed(2).replace('.', ',');
 
 export default function PackOnboardPage() {
   const { routeId } = useAppState();
-  const list = useV1(routeId ? null : listPackInstalls, [routeId]);
+  const list = useV1(['listPackInstalls', routeId], routeId ? null : listPackInstalls);
   const id = routeId || list.data?.items[0]?.id;
-  const install = useV1(id ? () => getPackInstall(id) : null, [id]);
+  const install = useV1(['getPackInstall', id], id ? () => getPackInstall(id) : null);
   if (!routeId && list.data && list.data.items.length === 0)
     return (
       <div className="px-da-3xl pt-da-2xl">
@@ -57,10 +57,7 @@ export default function PackOnboardPage() {
 function OnboardBody({ install, onChanged }: { install: PackInstall; onChanged: () => void }) {
   const first = install.entities.find((e) => e.mapped < e.total) ?? install.entities[0];
   const [entity, setEntity] = useState(first?.key ?? '');
-  const mappings = useV1(entity ? () => getEntityMappings(install, entity) : null, [
-    install.id,
-    entity,
-  ]);
+  const mappings = useV1(['getEntityMappings', install.id, entity], entity ? () => getEntityMappings(install, entity) : null);
   return (
     <AsyncRegion state={mappings} what="ánh xạ">
       {(m) => (

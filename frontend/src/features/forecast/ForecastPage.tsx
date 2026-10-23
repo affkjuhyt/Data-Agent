@@ -71,9 +71,9 @@ function csvOf(f: Forecast): string {
 export default function ForecastPage() {
   const { routeId } = useAppState();
   // From the rail without an id: the first forecast of the Data Space.
-  const list = useV1(routeId ? null : listForecasts, [routeId]);
+  const list = useV1(['listForecasts', routeId], routeId ? null : listForecasts);
   const id = routeId || list.data?.items[0]?.id;
-  const forecast = useV1(id ? () => getForecast(id) : null, [id]);
+  const forecast = useV1(['getForecast', id], id ? () => getForecast(id) : null);
   // A forecast in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
   const forbidden = forbiddenOf(forecast.error);
   if (forbidden) return <AccessDenied access={forbidden} />;

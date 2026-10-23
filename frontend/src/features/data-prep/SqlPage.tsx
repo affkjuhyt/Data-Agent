@@ -93,8 +93,8 @@ type ResultTab = 'table' | 'chart' | 'sql';
 
 export default function SqlPage() {
   const { navigate } = useAppState();
-  const catalog = useV1(getSqlCatalog, []);
-  const metrics = useV1(listSqlMetrics, []);
+  const catalog = useV1(['getSqlCatalog'], getSqlCatalog);
+  const metrics = useV1(['listSqlMetrics'], listSqlMetrics);
   const toast = useToast();
   const [sql, setSql] = useState('');
   const [columns, setColumns] = useState<Record<string, SqlColumn[]>>({});

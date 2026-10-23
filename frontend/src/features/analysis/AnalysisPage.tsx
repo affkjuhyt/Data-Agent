@@ -32,8 +32,8 @@ const FROM_LABEL: Record<Workspace['created_from'], string> = {
 
 export default function AnalysisPage() {
   const { navigate } = useAppState();
-  const workspaces = useV1(listWorkspaces, []);
-  const datasets = useV1(listDatasets, []);
+  const workspaces = useV1(['listWorkspaces'], listWorkspaces);
+  const datasets = useV1(['listDatasets'], listDatasets);
 
   const ask = (question: string) => {
     window.history.replaceState(null, '', `/analysis/ask?q=${encodeURIComponent(question)}`);

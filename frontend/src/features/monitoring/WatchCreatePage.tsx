@@ -63,7 +63,7 @@ const parse = (s: string) => Number(s.replace(',', '.'));
 const valid = (s: string) => s.trim() !== '' && Number.isFinite(parse(s));
 
 export default function WatchCreatePage() {
-  const options = useV1(getMonitorOptions, []);
+  const options = useV1(['getMonitorOptions'], getMonitorOptions);
   return (
     <AsyncRegion state={options} what="lựa chọn theo dõi">
       {(o) => <WatchForm options={o} />}
@@ -75,7 +75,7 @@ function WatchForm({ options }: { options: MonitorOptions }) {
   const { navigate } = useAppState();
   const toast = useToast();
   const [metricId, setMetricId] = useState(options.metrics[0]?.id ?? '');
-  const shape = useV1(metricId ? () => getMetricShape(metricId) : null, [metricId]);
+  const shape = useV1(['getMetricShape', metricId], metricId ? () => getMetricShape(metricId) : null);
   const [split, setSplit] = useState('none');
   const [kind, setKind] = useState<RuleKind>('threshold');
   const [direction, setDirection] = useState('above');

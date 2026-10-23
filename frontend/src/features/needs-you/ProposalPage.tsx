@@ -38,8 +38,8 @@ const dueText = (iso: string) => {
 export default function ProposalPage() {
   const { routeId, navigate } = useAppState();
   const toast = useToast();
-  const proposal = useV1(routeId ? () => getProposal(routeId) : null, [routeId]);
-  const inbox = useV1(() => listInbox({ status: 'open' }), []);
+  const proposal = useV1(['getProposal', routeId], routeId ? () => getProposal(routeId) : null);
+  const inbox = useV1(['listInbox', { status: 'open' }], () => listInbox({ status: 'open' }));
   const [dialog, setDialog] = useState<Dialog>(null);
   const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);

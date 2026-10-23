@@ -62,7 +62,7 @@ export default function TableExplorePage() {
 
 function Explorer({ id }: { id: string }) {
   const [filters, setFilters] = useState<ExploreFilter[]>([]);
-  const preview = useV1(() => previewTable(id, filters), [id, filters]);
+  const preview = useV1(['previewTable', id, filters], () => previewTable(id, filters));
   // A preview in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
   const forbidden = forbiddenOf(preview.error);
   if (forbidden) return <AccessDenied access={forbidden} />;
@@ -287,7 +287,7 @@ function cellText(cell: CellValue): string {
 }
 
 function ColumnPanel({ id, column }: { id: string; column: string }) {
-  const stats = useV1(() => getColumnStats(id, column), [id, column]);
+  const stats = useV1(['getColumnStats', id, column], () => getColumnStats(id, column));
   return (
     <AsyncRegion state={stats} what={`thống kê cột ${column}`} skeletonRows={5}>
       {(s) => (

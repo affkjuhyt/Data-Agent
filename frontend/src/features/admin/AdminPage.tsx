@@ -13,8 +13,8 @@ import { useV1 } from '../../lib/v1/useV1';
  */
 export default function AdminPage() {
   const { navigate } = useAppState();
-  const users = useV1(listUsers, []);
-  const models = useV1(listModels, []);
+  const users = useV1(['listUsers'], listUsers);
+  const models = useV1(['listModels'], listModels);
 
   const people = users.data?.items.filter((u) => u.kind === 'person').length;
   const agents = users.data?.items.filter((u) => u.kind === 'agent').length;

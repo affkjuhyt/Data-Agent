@@ -96,7 +96,7 @@ const mmss = (ms: number) => {
 };
 
 export default function VaultPage() {
-  const vault = useV1(() => getVault(), []);
+  const vault = useV1(['getVault'], () => getVault());
   const [session, setSession] = useState<VaultSession | null>(null);
   const [tab, setTab] = useState<VaultTab>('theses');
   const [selectedId, setSelectedId] = useState<string>();
@@ -112,8 +112,9 @@ export default function VaultPage() {
   const left = useIdleLock(session !== null, lock);
 
   const theses = useV1(
+    ['VaultPage.openTheses', session !== null],
     session ? async () => openTheses(session, (await listTheses()).items) : null,
-    [session],
+    { cache: false },
   );
   const items = theses.data ?? [];
   const selected =

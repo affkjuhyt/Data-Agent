@@ -19,11 +19,11 @@ const SAMPLE_QUESTION = 'Nợ xấu bán lẻ quý 3 là bao nhiêu?';
 
 export default function HowItWorksPage() {
   const { navigate } = useAppState();
-  const sources = useV1(listSources, []);
-  const metrics = useV1(listMetrics, []);
-  const terms = useV1(listTerms, []);
-  const agents = useV1(listAgents, []);
-  const inbox = useV1(() => listInbox({ status: 'open' }), []);
+  const sources = useV1(['listSources'], listSources);
+  const metrics = useV1(['listMetrics'], listMetrics);
+  const terms = useV1(['listTerms'], listTerms);
+  const agents = useV1(['listAgents'], listAgents);
+  const inbox = useV1(['listInbox', { status: 'open' }], () => listInbox({ status: 'open' }));
 
   const count = (n: number | undefined, text: string) =>
     n === undefined ? undefined : `${n.toLocaleString('vi-VN')} ${text}`;

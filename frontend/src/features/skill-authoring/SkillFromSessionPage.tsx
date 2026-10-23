@@ -27,7 +27,7 @@ import { useV1 } from '../../lib/v1/useV1';
  */
 export default function SkillFromSessionPage() {
   const { routeId } = useAppState();
-  const draft = useV1(routeId ? () => getSessionSkillDraft(routeId) : null, [routeId]);
+  const draft = useV1(['getSessionSkillDraft', routeId], routeId ? () => getSessionSkillDraft(routeId) : null);
   return (
     <AsyncRegion state={draft} what="bản nháp kỹ năng">
       {(d) => <FromSession key={d.session_id} draft={d} />}

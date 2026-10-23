@@ -71,7 +71,7 @@ const HISTORY_PENDING = 'Màn lịch sử phiên bản đang được làm.';
 
 export default function AgentConfigPage() {
   const { routeId } = useAppState();
-  const agent = useV1(routeId ? () => getAgent(routeId) : null, [routeId]);
+  const agent = useV1(['getAgent', routeId], routeId ? () => getAgent(routeId) : null);
   // A agent in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
   const forbidden = forbiddenOf(agent.error);
   if (forbidden) return <AccessDenied access={forbidden} />;
@@ -461,7 +461,7 @@ function TriggerTable({ triggers, onChange }: { triggers: AgentTrigger[]; onChan
 }
 
 function AgentRuns({ agentId, onOpen }: { agentId: string; onOpen: (id: string) => void }) {
-  const runs = useV1(() => listRuns({ agent_id: agentId }), [agentId]);
+  const runs = useV1(['listRuns', { agent_id: agentId }, agentId], () => listRuns({ agent_id: agentId }));
   return (
     <div className="px-da-3xl pt-da-xl">
       <AsyncRegion

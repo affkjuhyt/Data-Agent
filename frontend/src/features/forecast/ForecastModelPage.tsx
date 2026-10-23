@@ -43,9 +43,9 @@ const MONITORING_STATUS: Record<NonNullable<ForecastModel['monitoring']>['status
 export default function ForecastModelPage() {
   const { routeId } = useAppState();
   // From the rail without an id: the first model of the Data Space.
-  const list = useV1(routeId ? null : listForecastModels, [routeId]);
+  const list = useV1(['listForecastModels', routeId], routeId ? null : listForecastModels);
   const id = routeId || list.data?.items[0]?.id;
-  const model = useV1(id ? () => getForecastModel(id) : null, [id]);
+  const model = useV1(['getForecastModel', id], id ? () => getForecastModel(id) : null);
   // A model in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
   const forbidden = forbiddenOf(model.error);
   if (forbidden) return <AccessDenied access={forbidden} />;

@@ -45,7 +45,10 @@ const hhmm = (iso: string) =>
 export default function RunDetailPage() {
   const { routeId, navigate } = useAppState();
   const [view, setView] = useState<View>('simple');
-  const run = useV1(routeId ? () => getRun(routeId, 'technical') : null, [routeId]);
+  const run = useV1(
+    ['getRun', 'technical', routeId],
+    routeId ? () => getRun(routeId, 'technical') : null,
+  );
 
   const live = run.data ? LIVE.includes(run.data.status) : false;
   useEffect(() => {

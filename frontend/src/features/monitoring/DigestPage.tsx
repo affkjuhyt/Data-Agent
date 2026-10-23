@@ -17,9 +17,9 @@ const DELTA = { up_bad: 'text-error', up_good: 'text-success', neutral: 'text-mu
 
 export default function DigestPage() {
   const { routeId, navigate } = useAppState();
-  const list = useV1(listMyDigests, []);
+  const list = useV1(['listMyDigests'], listMyDigests);
   const id = routeId || list.data?.items[0]?.id;
-  const run = useV1(id ? () => getReportRun(id) : null, [id]);
+  const run = useV1(['getReportRun', id], id ? () => getReportRun(id) : null);
   return (
     <div className="flex min-h-full max-[1023px]:flex-col">
       <nav

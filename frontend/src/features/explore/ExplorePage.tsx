@@ -50,7 +50,7 @@ type Mode = 'drag' | 'ask';
 const EMPTY: ShelfState = { metric_ids: [], dimension_ids: [], filters: [] };
 
 export default function ExplorePage() {
-  const model = useV1(getExploreModel, []);
+  const model = useV1(['getExploreModel'], getExploreModel);
 
   return (
     <div className="flex h-full min-h-0">
@@ -137,8 +137,8 @@ function Explorer({ model: base }: { model: ExploreModel }) {
   }, [queryKey, base, ready, tick]);
 
   const explanation = useV1(
+    ['getExploreExplanation', result?.id, running],
     result && !running && base ? () => getExploreExplanation(result, shelves, base) : null,
-    [result?.id, running],
   );
 
   const selected = useMemo(

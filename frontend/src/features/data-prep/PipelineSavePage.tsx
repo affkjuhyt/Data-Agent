@@ -54,9 +54,9 @@ const RETRIES = [
 
 export default function PipelineSavePage() {
   const { navigate, routeId } = useAppState();
-  const pipeline = useV1(routeId ? () => getPipeline(routeId) : null, [routeId]);
-  const draft = useV1(routeId ? () => getOutputDraft(routeId) : null, [routeId]);
-  const spaces = useV1(listDataSpaces, []);
+  const pipeline = useV1(['getPipeline', routeId], routeId ? () => getPipeline(routeId) : null);
+  const draft = useV1(['getOutputDraft', routeId], routeId ? () => getOutputDraft(routeId) : null);
+  const spaces = useV1(['listDataSpaces'], listDataSpaces);
   const toast = useToast();
 
   const [table, setTable] = useState('');

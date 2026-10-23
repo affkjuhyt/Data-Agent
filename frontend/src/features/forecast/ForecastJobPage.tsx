@@ -40,7 +40,7 @@ const STEP_STATE: Record<
 
 export default function ForecastJobPage() {
   const { routeId } = useAppState();
-  const job = useV1(routeId ? () => getForecastJob(routeId) : null, [routeId]);
+  const job = useV1(['getForecastJob', routeId], routeId ? () => getForecastJob(routeId) : null);
   const running = job.data?.status === 'running';
   const { reload } = job;
 

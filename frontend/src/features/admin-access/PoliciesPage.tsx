@@ -33,7 +33,7 @@ export default function PoliciesPage() {
 function PolicyList() {
   const { navigate } = useAppState();
   const toast = useToast();
-  const policies = useV1(listAccessPolicies, []);
+  const policies = useV1(['listAccessPolicies'], listAccessPolicies);
   const [turningOff, setTurningOff] = useState<AccessPolicy | null>(null);
   const [sending, setSending] = useState(false);
   const [reason, setReason] = useState('');

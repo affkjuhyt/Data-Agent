@@ -74,8 +74,12 @@ export function ThesesTab({ frame }: { frame: Frame }) {
   const [composerKey, setComposerKey] = useState(0);
   const [noting, setNoting] = useState(false);
   const statementRef = useRef<HTMLInputElement>(null);
-  const memory = useV1(async () => openMemory(session, (await listMemoryItems()).items), [session]);
-  const scores = useV1(async () => (await listScores()).items, []);
+  const memory = useV1(
+    ['ThesesTab.openMemory', session !== null],
+    async () => openMemory(session, (await listMemoryItems()).items),
+    { cache: false },
+  );
+  const scores = useV1(['listScores.items'], async () => (await listScores()).items);
   const observed = useMemo(() => {
     const out = new Map<string, { outcome: string; score: SealedScore | null }>();
     for (const s of scores.data ?? [])
@@ -300,7 +304,7 @@ function Composer({
 }) {
   const { session, theses } = useVault();
   const toast = useToast();
-  const targets = useV1(async () => {
+  const targets = useV1(['ThesesTab.targets'], async () => {
     const [metrics, products] = await Promise.all([
       listCatalogMetrics(),
       listAnswerProducts('active'),
@@ -319,7 +323,7 @@ function Composer({
         certified: m.status === 'certified',
       })),
     ];
-  }, []);
+  });
   const [statement, setStatement] = useState('');
   const [rationale, setRationale] = useState('');
   const [confidence, setConfidence] = useState(70);

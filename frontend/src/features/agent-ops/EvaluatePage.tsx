@@ -40,10 +40,8 @@ type Dialog = 'widen' | 'rollback' | null;
 export default function EvaluatePage() {
   const { routeId } = useAppState();
   const toast = useToast();
-  const loaded = useV1<Rollout | null>(
-    () =>
-      routeId ? getRollout(routeId) : findRollout().then((id) => (id ? getRollout(id) : null)),
-    [routeId],
+  const loaded = useV1<Rollout | null>(['EvaluatePage.rollout', routeId], () =>
+    routeId ? getRollout(routeId) : findRollout().then((id) => (id ? getRollout(id) : null)),
   );
   // Actions answer with the new deployment; keep it rather than refetch, because the agent
   // drops its active deployment once it completes or is rolled back.

@@ -47,7 +47,7 @@ export default function UploadPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const uploads = useV1(listUploads, []);
+  const uploads = useV1(['listUploads'], listUploads);
   const recentView = useTableView(uploads.data?.items ?? [], {
     search: (upload) =>
       `${upload.file_name} ${uploadStatusLabel(upload.status)} ${new Date(upload.created_at).toLocaleString('vi-VN')}`,

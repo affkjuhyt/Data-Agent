@@ -19,7 +19,7 @@ export function SaveToSessionDialog({
   onSave: (workspaceId: string) => Promise<unknown>;
   onSaved: (workspaceId: string, title: string) => void;
 }) {
-  const sessions = useV1(listWorkspaces, []);
+  const sessions = useV1(['listWorkspaces'], listWorkspaces);
   const [target, setTarget] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string>();

@@ -33,7 +33,7 @@ const FILTERS: { value: Filter; label: string }[] = [
 export default function SkillLibraryPage() {
   const { navigate } = useAppState();
   const toast = useToast();
-  const skills = useV1(() => listSkills(), []);
+  const skills = useV1(['listSkills'], () => listSkills());
   const [filter, setFilter] = useState<Filter>('all');
   const [creating, setCreating] = useState(false);
   const [sharing, setSharing] = useState<Skill | null>(null);

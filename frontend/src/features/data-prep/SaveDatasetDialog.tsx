@@ -43,7 +43,7 @@ export function SaveDatasetDialog({
   onClose: () => void;
   onSaved: (table: DerivedTable) => void;
 }) {
-  const spaces = useV1(open ? listDataSpaces : null, [open]);
+  const spaces = useV1(['listDataSpaces', open], open ? listDataSpaces : null);
   const [name, setName] = useState(suggestedName);
   const [space, setSpace] = useState<string | null>(null);
   const [refresh, setRefresh] = useState<DatasetRefresh>('after_etl');

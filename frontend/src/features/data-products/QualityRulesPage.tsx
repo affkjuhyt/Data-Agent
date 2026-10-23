@@ -30,7 +30,7 @@ const DAY: Record<CheckState, string> = {
 };
 
 export default function QualityRulesPage() {
-  const rules = useV1(listQualityRules, []);
+  const rules = useV1(['listQualityRules'], listQualityRules);
   const toast = useToast();
   const [adding, setAdding] = useState(false);
   const items = rules.data?.items ?? [];

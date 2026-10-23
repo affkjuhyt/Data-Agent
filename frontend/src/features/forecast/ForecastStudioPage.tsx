@@ -39,7 +39,7 @@ const TABS: { value: Tab; label: string }[] = [
 
 export default function ForecastStudioPage() {
   const { routeId } = useAppState();
-  const bench = useV1(routeId ? () => getForecastWorkbench(routeId) : null, [routeId]);
+  const bench = useV1(['getForecastWorkbench', routeId], routeId ? () => getForecastWorkbench(routeId) : null);
   if (!routeId) {
     return (
       <div className="px-da-3xl pt-da-xl">

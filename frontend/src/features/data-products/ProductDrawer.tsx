@@ -34,7 +34,7 @@ const CHECK: Record<CheckState, { tone: 'success' | 'warning' | 'error'; label: 
 };
 
 export function ProductDrawer({ id, onClose }: { id: string; onClose: () => void }) {
-  const detail = useV1(() => getDataProduct(id), [id]);
+  const detail = useV1(['getDataProduct', id], () => getDataProduct(id));
   const [tab, setTab] = useState<Tab>('contract');
   const p = detail.data;
 

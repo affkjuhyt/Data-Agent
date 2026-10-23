@@ -32,7 +32,7 @@ const CHANGE = {
 
 export default function CrawlDriftPage() {
   const { routeId } = useAppState();
-  const drift = useV1(routeId ? () => getSchemaDrift(routeId) : null, [routeId]);
+  const drift = useV1(['getSchemaDrift', routeId], routeId ? () => getSchemaDrift(routeId) : null);
   return (
     <AsyncRegion state={drift} what="sự cố đổi cấu trúc">
       {(d) => <DriftBody drift={d} onChanged={drift.reload} />}

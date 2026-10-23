@@ -42,9 +42,9 @@ const STATUS: Record<
 export default function DecisionRulePage() {
   const { routeId } = useAppState();
   // From the rail without an id: the first draft waiting to be sent to its owner.
-  const drafts = useV1(routeId ? null : listDraftRules, [routeId]);
+  const drafts = useV1(['listDraftRules', routeId], routeId ? null : listDraftRules);
   const id = routeId || drafts.data?.items[0]?.id;
-  const rule = useV1(id ? () => getDecisionRule(id) : null, [id]);
+  const rule = useV1(['getDecisionRule', id], id ? () => getDecisionRule(id) : null);
   if (!routeId && drafts.data && drafts.data.items.length === 0) {
     return (
       <div className="px-da-3xl pt-da-xl">

@@ -37,7 +37,7 @@ const ALERT_TONE = { warning: 'warning', info: 'info', error: 'error' } as const
 
 export default function MonitoringPage() {
   const { navigate } = useAppState();
-  const health = useV1(getSystemHealth, []);
+  const health = useV1(['getSystemHealth'], getSystemHealth);
 
   return (
     <div className="flex min-h-full">

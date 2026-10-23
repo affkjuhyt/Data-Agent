@@ -16,7 +16,7 @@ const ORGANIZATION = 'organization';
 
 export function ShareSkillDialog({ skill, onClose }: { skill: Skill | null; onClose: () => void }) {
   const toast = useToast();
-  const spaces = useV1(skill ? listDataSpaces : null, [skill?.id]);
+  const spaces = useV1(['listDataSpaces', skill?.id], skill ? listDataSpaces : null);
   const [target, setTarget] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();

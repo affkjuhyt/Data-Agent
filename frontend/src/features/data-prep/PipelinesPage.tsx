@@ -54,7 +54,7 @@ function lastRunText(p: Pipeline): string {
 
 export default function PipelinesPage() {
   const { navigate } = useAppState();
-  const pipelines = useV1(listPipelines, []);
+  const pipelines = useV1(['listPipelines'], listPipelines);
   const toast = useToast();
   const [scheduling, setScheduling] = useState<Pipeline | null>(null);
   const [creating, setCreating] = useState(false);

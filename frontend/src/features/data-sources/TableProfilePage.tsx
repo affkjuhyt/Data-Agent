@@ -29,7 +29,7 @@ type Tab = 'profile' | 'sample' | 'schema' | 'lineage' | 'access';
 
 export default function TableProfilePage() {
   const { routeId } = useAppState();
-  const profile = useV1(routeId ? () => getTableProfile(routeId) : null, [routeId]);
+  const profile = useV1(['getTableProfile', routeId], routeId ? () => getTableProfile(routeId) : null);
   // A profile in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
   const forbidden = forbiddenOf(profile.error);
   if (forbidden) return <AccessDenied access={forbidden} />;

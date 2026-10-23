@@ -23,7 +23,7 @@ const NODE_W = 28; // % of the canvas width
 const NODE_H = 18; // % of the canvas height, for the line anchors only
 
 export default function EntityModelPage() {
-  const model = useV1(getEntityModel, []);
+  const model = useV1(['getEntityModel'], getEntityModel);
   return (
     <AsyncRegion state={model} what="mô hình thực thể">
       {(m) => <ModelBody model={m} />}
@@ -33,7 +33,7 @@ export default function EntityModelPage() {
 
 function ModelBody({ model }: { model: EntityModel }) {
   const [focus, setFocus] = useState(model.focus);
-  const detail = useV1(() => getEntity(focus), [focus]);
+  const detail = useV1(['getEntity', focus], () => getEntity(focus));
   const node = (key: string) => model.entities.find((e) => e.key === key);
 
   return (

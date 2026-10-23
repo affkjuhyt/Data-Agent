@@ -20,8 +20,8 @@ const LOCALES: Record<string, { label: string; format: string }> = {
 };
 
 export default function ProfilePage() {
-  const me = useV1(getMe, []);
-  const spaces = useV1(listDataSpaces, []);
+  const me = useV1(['getMe'], getMe);
+  const spaces = useV1(['listDataSpaces'], listDataSpaces);
   return (
     <div className="flex flex-col">
       <PageHeader

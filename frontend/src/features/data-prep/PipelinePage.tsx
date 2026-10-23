@@ -41,7 +41,7 @@ function changeText(step: PipelineStep): { text: string; tone: 'new' | 'muted' }
 
 export default function PipelinePage() {
   const { navigate, routeId } = useAppState();
-  const loaded = useV1(routeId ? () => getPipeline(routeId) : null, [routeId]);
+  const loaded = useV1(['getPipeline', routeId], routeId ? () => getPipeline(routeId) : null);
   const toast = useToast();
   const [pipeline, setPipeline] = useState<PipelineDetail>();
   const [selected, setSelected] = useState<number>();
@@ -79,8 +79,8 @@ export default function PipelinePage() {
   // Preview the first step the agent just added, so the change is the first thing checked.
   const previewSeq = selected ?? steps.find((s) => s.is_new)?.seq ?? steps.at(-1)?.seq;
   const preview = useV1(
+    ['getStepPreview', pipeline?.id, previewSeq],
     pipeline && previewSeq !== undefined ? () => getStepPreview(pipeline.id, previewSeq) : null,
-    [pipeline?.id, previewSeq],
   );
 
   const send = async (text: string) => {

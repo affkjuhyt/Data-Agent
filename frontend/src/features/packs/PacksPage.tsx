@@ -19,7 +19,7 @@ import { CreatePackDialog } from './CreatePackDialog';
  */
 export default function PacksPage() {
   const { navigate } = useAppState();
-  const packs = useV1(listPacks, []);
+  const packs = useV1(['listPacks'], listPacks);
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();

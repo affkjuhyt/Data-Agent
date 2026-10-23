@@ -27,7 +27,7 @@ import {
 export default function SourcesPage() {
   const { navigate } = useAppState();
   const toast = useToast();
-  const sources = useV1(listSourceRows, []);
+  const sources = useV1(['listSourceRows'], listSourceRows);
 
   const items = useMemo(
     () => (sources.data?.items ?? []).filter((s) => s.status !== 'archived'),

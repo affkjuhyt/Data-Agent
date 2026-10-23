@@ -35,7 +35,7 @@ const time = (iso: string) =>
 
 export default function SkillTestsPage() {
   const { routeId } = useAppState();
-  const run = useV1(routeId ? () => getLatestTestRun(routeId) : null, [routeId]);
+  const run = useV1(['getLatestTestRun', routeId], routeId ? () => getLatestTestRun(routeId) : null);
   return (
     <AsyncRegion state={run} what="kết quả kiểm định">
       {(r) => <Tests key={r.skill_id} initial={r} />}

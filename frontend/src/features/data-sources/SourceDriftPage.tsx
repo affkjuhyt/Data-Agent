@@ -32,7 +32,7 @@ export default function SourceDriftPage() {
 }
 
 function DriftById({ id }: { id: string }) {
-  const drift = useV1(() => getSourceDrift(id), [id]);
+  const drift = useV1(['getSourceDrift', id], () => getSourceDrift(id));
   return (
     <AsyncRegion state={drift} what="thay đổi cấu trúc" skeletonRows={8}>
       {(data) => <DriftView drift={data} onChanged={drift.reload} />}
@@ -41,7 +41,7 @@ function DriftById({ id }: { id: string }) {
 }
 
 function FirstOpenDrift() {
-  const drifts = useV1(listSourceDrifts, []);
+  const drifts = useV1(['listSourceDrifts'], listSourceDrifts);
   return (
     <AsyncRegion
       state={drifts}

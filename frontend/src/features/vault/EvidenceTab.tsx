@@ -64,7 +64,10 @@ export function EvidenceTab({ frame }: { frame: Frame }) {
   const toast = useToast();
   const [log, setLog] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const evidence = useV1(selected ? () => getEvidence(selected.id) : null, [selected?.id]);
+  const evidence = useV1(
+    ['getEvidence', selected?.id],
+    selected ? () => getEvidence(selected.id) : null,
+  );
   const batches = evidence.data?.batches ?? [];
   const latest = batches[0];
 

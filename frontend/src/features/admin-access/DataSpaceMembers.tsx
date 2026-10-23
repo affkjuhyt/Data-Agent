@@ -39,10 +39,12 @@ import { MemberAddDialog } from './MemberAddDialog';
 export default function DataSpaceMembers({ id }: { id: string }) {
   const { navigate } = useAppState();
   const toast = useToast();
-  const space = useV1(() => getDataSpace(id), [id]);
-  const matrix = useV1(() => getPermissions(id), [id]);
-  const members = useV1(() => listMembers(id), [id]);
-  const pending = useV1(() => listAccessRequests({ status: 'pending', data_space_id: id }), [id]);
+  const space = useV1(['getDataSpace', id], () => getDataSpace(id));
+  const matrix = useV1(['getPermissions', id], () => getPermissions(id));
+  const members = useV1(['listMembers', id], () => listMembers(id));
+  const pending = useV1(['listAccessRequests', { status: 'pending', data_space_id: id }, id], () =>
+    listAccessRequests({ status: 'pending', data_space_id: id }),
+  );
   const [adding, setAdding] = useState(false);
 
   const name = space.data?.name;

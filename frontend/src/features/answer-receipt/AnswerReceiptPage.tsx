@@ -53,7 +53,10 @@ const RERUN_NOTE: Record<RerunMode, string> = {
 
 /** The receipt of one answer: empty when the server never stored it, Thiếu quyền when refused. */
 function ReceiptView({ answerId }: { answerId: string | undefined }) {
-  const receipt = useV1(answerId ? () => getAnswerReceipt(answerId) : null, [answerId]);
+  const receipt = useV1(
+    ['getAnswerReceipt', answerId],
+    answerId ? () => getAnswerReceipt(answerId) : null,
+  );
 
   const forbidden = forbiddenOf(receipt.error);
   if (forbidden) return <AccessDenied access={forbidden} />;

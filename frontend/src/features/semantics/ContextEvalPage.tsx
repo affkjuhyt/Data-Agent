@@ -33,9 +33,9 @@ const KPI_TONE = { success: 'text-success', error: 'text-error', neutral: 'text-
 
 export default function ContextEvalPage() {
   const { routeId } = useAppState();
-  const sets = useV1(routeId ? null : listEvalSets, [routeId]);
+  const sets = useV1(['listEvalSets', routeId], routeId ? null : listEvalSets);
   const id = routeId || sets.data?.items[0]?.id;
-  const evaluation = useV1(id ? () => getContextEval(id) : null, [id]);
+  const evaluation = useV1(['getContextEval', id], id ? () => getContextEval(id) : null);
   return (
     <AsyncRegion state={evaluation} what="đánh giá lớp ngữ cảnh">
       {(e) => <EvalBody evaluation={e} />}

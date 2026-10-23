@@ -30,7 +30,7 @@ import { HEAD_ROW, ROW, SidePanel } from './parts';
  */
 export default function ValidityPage() {
   const { routeId } = useAppState();
-  const pending = useV1(routeId ? null : () => listLibrary({ validity_review: true }), [routeId]);
+  const pending = useV1(['listLibrary', { validity_review: true }], routeId ? null : () => listLibrary({ validity_review: true }));
   if (!routeId)
     return (
       <AsyncRegion
@@ -53,7 +53,7 @@ export default function ValidityPage() {
 }
 
 function ValidityLoader({ id }: { id: string }) {
-  const validity = useV1(() => getValidity(id), [id]);
+  const validity = useV1(['getValidity', id], () => getValidity(id));
   return (
     <AsyncRegion state={validity} what="hiệu lực văn bản" skeletonRows={6}>
       {(v) => <ValidityView key={v.document_id} v={v} onChanged={validity.reload} />}
@@ -196,7 +196,7 @@ function RelationDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const docs = useV1(() => listLibrary({}), []);
+  const docs = useV1(['listLibrary', {}], () => listLibrary({}));
   const [by, setBy] = useState<string | null>(v.pending?.superseded_by ?? null);
   const [date, setDate] = useState(v.pending?.valid_to ?? '');
   const [busy, setBusy] = useState(false);

@@ -49,7 +49,7 @@ export function AppShell({
   // The Data Space switcher ("v3.1 · Chọn Data Space"): the spaces the viewer belongs to
   // (GET /v1/data-spaces). "Toàn tổ chức" sends no X-Data-Space; choosing a space sets the
   // header for every v1 call and remounts the page so it reloads for that space.
-  const spaces = useV1(listDataSpaces, []);
+  const spaces = useV1(['listDataSpaces'], listDataSpaces);
   const chosen = spaces.data?.items.find((ds) => ds.id === dataSpace?.id);
   const rail = isRailPage(area, page)
     ? railFor(AREA_RAILS[area], [...(me?.capabilities ?? []), ...(chosen?.my_capabilities ?? [])])

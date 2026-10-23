@@ -60,7 +60,7 @@ async function loadWriteback(id: string | undefined): Promise<Writeback | null> 
 
 export default function WritebackPage() {
   const { routeId } = useAppState();
-  const loaded = useV1(() => loadWriteback(routeId), [routeId]);
+  const loaded = useV1(['WritebackPage.loadWriteback', routeId], () => loadWriteback(routeId));
   const toast = useToast();
   const [wb, setWb] = useState<Writeback | null>();
   const [asking, setAsking] = useState<'reject' | 'changes' | null>(null);

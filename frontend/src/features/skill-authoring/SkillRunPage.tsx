@@ -33,8 +33,8 @@ import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
  */
 export default function SkillRunPage() {
   const { routeId } = useAppState();
-  const form = useV1(routeId ? () => getSkillRunForm(routeId) : null, [routeId]);
-  const latest = useV1(routeId ? () => listSkillRuns(routeId) : null, [routeId]);
+  const form = useV1(['getSkillRunForm', routeId], routeId ? () => getSkillRunForm(routeId) : null);
+  const latest = useV1(['listSkillRuns', routeId], routeId ? () => listSkillRuns(routeId) : null);
   // A form in a Data Space the viewer may not read: the designed "Thiếu quyền" state.
   const forbidden = forbiddenOf(form.error);
   if (forbidden) return <AccessDenied access={forbidden} />;
