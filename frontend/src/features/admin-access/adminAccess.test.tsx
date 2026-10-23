@@ -3,7 +3,7 @@
  * matrix and members, deciding access requests, policies, the audit log and DSRs.
  */
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { http } from 'msw';
+import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../design-system/Toast';
@@ -98,6 +98,34 @@ describe('DataSpacesPage', () => {
 
   it('shows the permission matrix, members and pending requests, and adds a member', async () => {
     routeId = 'ds-rui-ro-tin-dung';
+    const profiled = (value: string, count: number) => ({ value, count });
+    server.use(
+      http.get('*/v1/datasets', () =>
+        HttpResponse.json({
+          items: [{ id: 'ds-du-no', display_name: 'Dư nợ theo chi nhánh', table_name: 'du_no' }],
+          next_page_token: '',
+        }),
+      ),
+      http.get('*/v1/datasets/ds-du-no', () =>
+        HttpResponse.json({
+          id: 'ds-du-no',
+          columns: [
+            {
+              name: 'region',
+              display_name: 'Vùng',
+              pii_label: null,
+              profile: { top_values: [profiled('Bắc', 412), profiled('Trung', 203)] },
+            },
+            {
+              name: 'so_cccd',
+              display_name: null,
+              pii_label: 'national_id',
+              profile: { top_values: [profiled('***', 1)] },
+            },
+          ],
+        }),
+      ),
+    );
     wrap(<DataSpacesPage />);
     expect(
       await screen.findByRole('heading', { name: 'Rủi ro tín dụng · thành viên và quyền' }),
@@ -117,13 +145,34 @@ describe('DataSpacesPage', () => {
     fireEvent.click(await screen.findByRole('option', { name: 'GRP_RISK_ANALYST · 24 người' }));
     fireEvent.click(within(dialog).getByRole('combobox', { name: 'Vai trò' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Phân tích viên' }));
+    // The scope comes from the space's own table: a column and the values its profile found.
+    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Phạm vi dòng' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Chỉ các dòng có giá trị đã chọn' }));
+    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Lấy giá trị từ bảng' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Dư nợ theo chi nhánh' }));
+    fireEvent.click(await within(dialog).findByRole('combobox', { name: 'Cột' }));
+    // The personal-data column is not offered.
+    expect(screen.queryByRole('option', { name: /so_cccd/ })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('option', { name: 'Vùng (region)' }));
+    fireEvent.click(await within(dialog).findByRole('checkbox', { name: 'Bắc' }));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Trung' }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Thêm' }));
 
     expect(
       await screen.findByText('Đã thêm GRP_RISK_ANALYST vào Rủi ro tín dụng'),
     ).toBeInTheDocument();
     const put = sent.find((s) => s.path === '/data-spaces/ds-rui-ro-tin-dung/members');
-    expect((put?.body as { members: unknown[] }).members).toHaveLength(6);
+    const members = (put?.body as { members: { row_scope: unknown }[] }).members;
+    expect(members).toHaveLength(6);
+    // The members already there keep their own scope; the new one carries the chosen values.
+    expect(members.map((m) => m.row_scope)).toEqual([
+      null,
+      null,
+      { region: ['Bắc'] },
+      null,
+      null,
+      { region: ['Bắc', 'Trung'] },
+    ]);
   });
 
   it('refuses an id that is not a plain id before calling the API', async () => {
@@ -171,23 +220,41 @@ describe('CreateDataSpacePage', () => {
 });
 
 describe('PermissionComparePage', () => {
-  it('shows one table under two roles and asks for access from a refused action', async () => {
+  it('reads one table of the Data Space under a role and a person, column by column', async () => {
     routeId = 'ds-rui-ro-tin-dung';
     wrap(<PermissionComparePage />);
-    expect(await screen.findByText('Cùng bảng ld_loans · hai vai trò')).toBeInTheDocument();
-    expect(screen.getByText('Chỉ thấy vùng Bắc · PII bị che')).toBeInTheDocument();
-    expect(screen.getAllByText('Tổng hợp')).toHaveLength(3);
-    const viewer = screen.getByRole('article', { name: /Người xem · Lê Minh Tâm/ });
-    fireEvent.click(within(viewer).getByRole('button', { name: 'Chạy agent' }));
-    await waitFor(() =>
-      expect(sent).toContainEqual({
-        path: '/access-requests',
-        body: expect.objectContaining({
-          capability: 'run_agent',
-          data_space_id: 'ds-rui-ro-tin-dung',
-        }),
-      }),
-    );
+    expect(
+      await screen.findByText('Chọn một bảng và tối đa hai vai trò hoặc người'),
+    ).toBeInTheDocument();
+    const pick = async (label: string, option?: RegExp) => {
+      fireEvent.click(screen.getByRole('combobox', { name: label }));
+      const options = await screen.findAllByRole('option');
+      fireEvent.click(option ? options.find((o) => option.test(o.textContent ?? ''))! : options[0]);
+    };
+    await pick('Bảng');
+    await pick('Bên trái', /^Vai trò · /);
+    await pick('Bên phải', /^Người · /);
+
+    await waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(2));
+    const [role, person] = screen.getAllByRole('article');
+    expect(
+      within(role).getByText("Chỉ các dòng thoả region = 'Bắc' · 1 chính sách áp dụng"),
+    ).toBeInTheDocument();
+    expect(within(role).getByRole('row', { name: 'national_id Ẩn' })).toBeInTheDocument();
+    expect(
+      within(role).getByRole('row', { name: 'customer_name Che · che một phần' }),
+    ).toBeInTheDocument();
+    expect(within(person).getByText(/^Mọi dòng/)).toBeInTheDocument();
+    expect(
+      within(person).getByRole('row', { name: 'national_id Che · chỉ 4 số cuối' }),
+    ).toBeInTheDocument();
+    const body = sent.filter((x) => x.path === '/permissions:simulate').at(-1)?.body as Record<
+      string,
+      unknown
+    >;
+    expect(body.role_ids).toHaveLength(1);
+    expect(body.user_ids).toHaveLength(1);
+    expect(body).toHaveProperty('dataset_id');
   });
 });
 
@@ -330,39 +397,70 @@ describe('AuditPage', () => {
 });
 
 describe('PrivacyPage', () => {
-  it('deletes what may be deleted and keeps what the law requires', async () => {
-    routeId = 'dsr-014';
+  const DSR = '0192f1a2-7c3d-7e4f-8a9b-000000000014';
+  const item = (n: number) => `0192f1a2-7c3d-7e4f-8a9b-00000000010${n}`;
+
+  it('decides every found item: deletes the ticked ones, keeps the rest with a legal basis', async () => {
+    routeId = DSR;
     wrap(<PrivacyPage />);
-    expect(await screen.findByText('Khách hàng yêu cầu xoá dữ liệu cá nhân')).toBeInTheDocument();
+    expect(await screen.findByText('Yêu cầu xoá dữ liệu')).toBeInTheDocument();
+    expect(screen.getByText(/người xử lý Nguyễn Khánh Linh/)).toBeInTheDocument();
     expect(screen.getByText('Không · nghĩa vụ lưu trữ báo cáo')).toHaveClass('text-warning');
-    expect(screen.getByRole('checkbox', { name: 'Nhật ký kiểm toán' })).toBeDisabled();
+    // E1: what lives in a source system is reported there, never deleted here.
+    expect(screen.getByText('Không · báo cho hệ thống nguồn')).toBeInTheDocument();
+    expect(
+      screen.getByRole('checkbox', { name: 'Hệ thống nguồn · core_banking.customers:CIF 0041872' }),
+    ).toBeDisabled();
+    const memory = 'Bộ nhớ agent · agent.memory:Agent Phân tích';
     // The deletable items are selected in an effect after the request renders.
-    await waitFor(() =>
-      expect(
-        screen.getByRole('checkbox', { name: 'Câu hỏi và trả lời trong phiên' }),
-      ).toBeChecked(),
-    );
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: memory })).toBeChecked());
+    fireEvent.click(screen.getByRole('checkbox', { name: memory }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Xoá đã chọn' }));
-    const dialog = screen.getByRole('alertdialog', { name: 'Duyệt kế hoạch xoá DSR-014?' });
-    expect(within(dialog).getByText(/Xoá 18 mục ở 3 nơi/)).toBeInTheDocument();
+    const dialog = screen.getByRole('alertdialog', { name: 'Duyệt kế hoạch xoá DSR-000014?' });
+    expect(within(dialog).getByText(/Xoá dữ liệu ở 2 nơi/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Duyệt và thực hiện' }));
+    expect(
+      await within(dialog).findByText('Ghi căn cứ pháp lý cho mọi nơi được giữ lại.'),
+    ).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText(`Căn cứ pháp lý giữ ${memory}`), {
+      target: { value: 'đang có tranh chấp' },
+    });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Duyệt và thực hiện' }));
     await waitFor(() => expect(screen.getByText('Đã xong')).toBeInTheDocument());
     expect(sent).toContainEqual({
-      path: '/dsr/dsr-014:execute',
-      body: { item_ids: ['it-1', 'it-2', 'it-3'] },
+      path: `/dsr/${DSR}:execute`,
+      body: {
+        items: [
+          { id: item(1), action: 'delete' },
+          { id: item(2), action: 'delete' },
+          { id: item(3), action: 'retain', legal_basis: 'đang có tranh chấp' },
+          { id: item(4), action: 'retain', legal_basis: 'nghĩa vụ lưu trữ báo cáo' },
+          { id: item(5), action: 'provide' },
+        ],
+      },
     });
   });
 
-  it('creates a request from the list', async () => {
+  it('creates a request with the day it was received', async () => {
     wrap(<PrivacyPage />);
-    await screen.findByText('DSR-014');
+    await screen.findByText('DSR-000014');
     fireEvent.click(screen.getByRole('button', { name: 'Tạo yêu cầu' }));
     const dialog = screen.getByRole('dialog', { name: 'Tạo yêu cầu của chủ thể dữ liệu' });
     fireEvent.change(within(dialog).getByPlaceholderText(/Số CCCD/), {
       target: { value: '001088012345' },
     });
+    fireEvent.change(within(dialog).getByLabelText('Ngày nhận'), {
+      target: { value: '2026-10-20' },
+    });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Tạo yêu cầu' }));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith('admin', 'PRIVACY', 'dsr-016'));
+    const created = '0192f1a2-7c3d-7e4f-8a9b-000000000018';
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('admin', 'PRIVACY', created));
+    const body = sent.find((x) => x.path === '/dsr')?.body as Record<string, string>;
+    expect(body.request_kind).toBe('access');
+    expect(new Date(body.received_at).getDate()).toBe(20);
+    // 30 days from the day it was received, the dialog's default.
+    expect((Date.parse(body.due_at) - Date.parse(body.received_at)) / 86_400_000).toBe(30);
+    expect(body).not.toHaveProperty('channel');
   });
 });

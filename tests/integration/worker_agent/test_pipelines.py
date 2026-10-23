@@ -106,6 +106,29 @@ async def test_a_run_counts_rows_and_records_what_a_filter_drops(
     assert totals["matched"] is True
 
 
+async def test_a_preview_reads_a_sample_and_a_test_run_the_whole_input(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    pid = pipeline(bank, [SELECT, DROP_INTERNAL])
+    sampled = request(bank, pid, pipelines.RUN, mode="preview")
+    whole = request(bank, pid, pipelines.RUN, mode="preview")
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE pipeline.pipeline_run SET sample_rows = 3 WHERE id = %s", (str(sampled),)
+        )
+        cur.execute(
+            "UPDATE pipeline.pipeline_run SET sample_rows = NULL WHERE id = %s", (str(whole),)
+        )
+    await drain()
+    read = "SELECT status, rows_in FROM pipeline.pipeline_run WHERE id = %s"
+    assert seed.one(read, sampled) == ("succeeded", 3)
+    # null is the whole input (7 rows), not a default sample.
+    assert seed.one(read, whole) == ("succeeded", 7)
+
+
 @pytest.mark.req("AC-06-01-04")
 async def test_a_step_that_moves_a_money_total_is_caught(
     seed: Seed,

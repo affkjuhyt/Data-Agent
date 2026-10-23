@@ -43,3 +43,18 @@ async def jobs_feeding(
             )
         ).all()
     return [(r.id, r.name) for r in rows]
+
+
+async def job_name(principal: Principal, data_space_id: uuid.UUID, job_id: uuid.UUID) -> str | None:
+    """The name of a live ingestion job of the Data Space, or None (a pipeline scheduled after it)."""
+    job = ingest.IngestionJob
+    async with transaction(ROLE, principal) as session:
+        name: str | None = await session.scalar(
+            select(job.name).where(
+                job.id == job_id,
+                job.org_id == principal.org_id,
+                job.data_space_id == data_space_id,
+                job.deleted_at.is_(None),
+            )
+        )
+    return name

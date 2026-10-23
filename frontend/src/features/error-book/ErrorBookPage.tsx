@@ -5,6 +5,7 @@ import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Badge } from '../../design-system/Badge';
 import { Button } from '../../design-system/Button';
 import { Dialog } from '../../design-system/Dialog';
+import { Field } from '../../design-system/Field';
 import { FilterChips } from '../../design-system/FilterChips';
 import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
@@ -18,6 +19,7 @@ import {
   createErrorBookEntry,
   dismissEntry,
   ERROR_KINDS,
+  FIX_KINDS,
   getErrorBookEntry,
   listErrorBookEntries,
   markEntryFixed,
@@ -28,6 +30,7 @@ import {
   type ErrorBookEntry,
   type ErrorBookSummary,
   type ErrorKind,
+  type FixKind,
   type SourceKind,
 } from '../../lib/v1/errorBook';
 import { useV1 } from '../../lib/v1/useV1';
@@ -292,6 +295,7 @@ function EntryBody({ entry, onChanged }: { entry: ErrorBookEntry; onChanged: () 
   const [cause, setCause] = useState(entry.root_cause ?? '');
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [fixRef, setFixRef] = useState('');
+  const [fixKind, setFixKind] = useState<FixKind | ''>('');
   const [reason, setReason] = useState('');
   const [summary, setSummary] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
@@ -509,26 +513,33 @@ function EntryBody({ entry, onChanged }: { entry: ErrorBookEntry; onChanged: () 
         description="Cần loại lỗi, nguyên nhân gốc và một cách sửa: đề xuất đã chấp nhận hoặc tham chiếu commit, model_config, dataset. Ca hồi quy được tạo ngay sau đó."
         submitLabel="Đánh dấu đã sửa"
         submitting={busy === 'fix'}
-        canSubmit={fixRef.trim() !== ''}
+        canSubmit={fixKind !== '' && fixRef.trim() !== ''}
         error={dialog === 'fix' ? error : undefined}
         onClose={() => setDialog(null)}
         onSubmit={() => {
-          const ref = fixRef.trim();
-          const isProposal = /^PR-\d+$/i.test(ref);
+          if (fixKind === '') return;
           act(
             'fix',
-            () =>
-              markEntryFixed(entry.id, {
-                fix_kind: isProposal ? 'proposal' : 'commit',
-                ...(isProposal ? { fix_proposal_id: ref.toUpperCase() } : { fix_ref: ref }),
-              }),
+            () => markEntryFixed(entry.id, fixKind, fixRef.trim()),
             `${entry.code} đã sửa; ca hồi quy chờ lượt CI kế tiếp`,
           );
         }}
       >
+        <Field label="Đã sửa gì">
+          <Select<FixKind | ''>
+            label="Đã sửa gì"
+            options={[{ value: '', label: 'Chọn loại sửa' }, ...FIX_KINDS]}
+            value={fixKind}
+            onChange={setFixKind}
+          />
+        </Field>
         <label className="flex flex-col gap-da-xs">
-          <span className="text-foreground da-label">Đề xuất (PR-…) hoặc tham chiếu</span>
-          <Input value={fixRef} onChange={(e) => setFixRef(e.target.value)} placeholder="PR-0318" />
+          <span className="text-foreground da-label">Đề xuất đã chấp nhận hoặc tham chiếu</span>
+          <Input
+            value={fixRef}
+            onChange={(e) => setFixRef(e.target.value)}
+            placeholder="Link hoặc mã của đề xuất, hay commit, model_config…"
+          />
         </label>
       </Dialog>
       <Dialog

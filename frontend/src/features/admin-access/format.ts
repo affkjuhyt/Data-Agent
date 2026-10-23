@@ -31,16 +31,6 @@ export function addDays(days: number, from: Date = new Date()): Date {
 
 export const count = (n: number) => formatNumber(n);
 
-/** Row scopes the dialogs offer; null = the whole bank. PROPOSAL: from the identity attributes. */
-export const ROW_SCOPES: { value: string; label: string }[] = [
-  { value: 'all', label: 'Toàn hàng' },
-  { value: 'Theo vùng phụ trách', label: 'Theo vùng phụ trách' },
-  { value: 'Vùng: Bắc', label: 'Vùng: Bắc' },
-  { value: 'Vùng: Nam', label: 'Vùng: Nam' },
-  { value: 'Chi nhánh của mình', label: 'Chi nhánh của mình' },
-];
-export const scopeValue = (value: string) => (value === 'all' ? null : value);
-
 export const EXPIRIES: { value: string; label: string }[] = [
   { value: 'none', label: 'Không' },
   { value: '30', label: '30 ngày' },

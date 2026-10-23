@@ -14,6 +14,7 @@ import json
 import uuid
 from dataclasses import dataclass
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -514,6 +515,11 @@ async def test_preview_runs_on_a_sample(pp: Space) -> None:
         assert smaller.status_code == 202 and smaller.json()["sample_rows"] == 500
         too_many = await api.post(url, json={"sample_rows": 10_001}, headers=pp.headers("eng"))
         assert too_many.status_code == 422
+        # The screen's test run: every step on the whole input, nothing written.
+        whole = await api.post(url, json={"sample_rows": None}, headers=pp.headers("eng"))
+        assert whole.status_code == 202 and whole.json()["sample_rows"] is None
+        [(_, payload)] = pp.events(whole.json()["id"])
+        assert payload["sample_rows"] is None
         no_prepare = await api.post(url, headers=pp.headers("analyst"))
         assert no_prepare.status_code == 403
 
@@ -745,6 +751,76 @@ async def test_an_active_pipeline_is_scheduled(pp: Space) -> None:
 
 
 @pytest.mark.req("AC-06-05-00")
+@pytest.mark.req("AC-06-03-01")
+async def test_the_schedule_preview_names_the_coming_working_day_runs(pp: Space) -> None:
+    calendar = pp.seed.row(
+        "org.work_calendar",
+        org_id=pp.org,
+        code="VN-PREVIEW",
+        name="Lịch ngân hàng",
+        time_zone="Asia/Ho_Chi_Minh",
+        weekend_days=[6, 7],
+    )
+    today = datetime.datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).date()
+    holiday = today + datetime.timedelta(days=1)
+    while holiday.isoweekday() in (6, 7):
+        holiday += datetime.timedelta(days=1)
+    pp.seed.row(
+        "org.work_calendar_day",
+        org_id=pp.org,
+        calendar_id=calendar,
+        day=holiday,
+        kind="holiday",
+        name="Nghỉ bù",
+    )
+    job = pp.seed.row(
+        "ingest.ingestion_job",
+        org_id=pp.org,
+        data_space_id=pp.space,
+        source_id=pp.source,
+        name="Nạp dư nợ",
+        mode="full",
+        source_object="du_no",
+        status="active",
+    )
+    async with client(pp) as api:
+        made = await _create(api, pp)
+        url = f"/v1/pipelines/{made['id']}/schedule:preview"
+        preview = await api.post(
+            url,
+            json={
+                "cron": "0 7 * * *",
+                "work_calendar_id": str(calendar),
+                "trigger_on_job_id": str(job),
+                "on_failure": "retry_then_notify",
+            },
+            headers=pp.headers("eng"),
+        )
+        assert preview.status_code == 200, preview.text
+        text = preview.json()["text"]
+        assert text.startswith(
+            "Chạy sau mỗi lần job “Nạp dư nợ” nạp xong; Theo lịch cron 0 7 * * *"
+        )
+        runs = text.split("lần tới: ")[1].split(";")[0].split(", ")
+        # Every day at 07:00, read on the calendar: no weekend, no holiday.
+        assert len(runs) == 3 and all(run.endswith(" 07:00") for run in runs)
+        assert not any(run.startswith(("Thứ Bảy", "Chủ nhật")) for run in runs)
+        assert f"{holiday:%d/%m}" not in text
+        assert text.endswith("không chạy chồng; lỗi thì thử lại rồi báo người phụ trách")
+
+        manual = await api.post(url, json={"no_overlap": False}, headers=pp.headers("eng"))
+        assert manual.json()["text"] == "Chạy thủ công; lỗi thì báo người phụ trách"
+        unknown = await api.post(
+            url, json={"trigger_on_job_id": str(uuid.uuid4())}, headers=pp.headers("eng")
+        )
+        assert unknown.status_code == 422
+        bad_cron = await api.post(url, json={"cron": "0 25 * * *"}, headers=pp.headers("eng"))
+        assert bad_cron.status_code == 422
+        # schedule_kind was the screen's own field; the preview takes ScheduleRequest's.
+        extra = await api.post(url, json={"schedule_kind": "daily"}, headers=pp.headers("eng"))
+        assert extra.status_code == 422
+
+
 async def test_lineage_targets_lists_visible_datasets(pp: Space) -> None:
     async with client(pp) as api:
         response = await api.get("/v1/lineage/targets", headers=pp.headers("analyst"))

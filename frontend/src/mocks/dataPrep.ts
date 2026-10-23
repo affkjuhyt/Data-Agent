@@ -237,9 +237,11 @@ function outputDraftFixture(): OutputDraft {
   };
 }
 
-function scheduleFixture(): PipelineSchedule {
+function scheduleFixture(): PipelineSchedule & { trigger_on_job_id: string } {
   return {
     kind: 'after_source',
+    // The api says "after a job" with the job's id; the dialog reads it back from here.
+    trigger_on_job_id: 'job-core-banking',
     cron: null,
     skip_holidays: true,
     no_overlap: true,
@@ -248,6 +250,16 @@ function scheduleFixture(): PipelineSchedule {
     notify_label: 'Kỹ sư dữ liệu',
   };
 }
+
+/** The dialog's choice read back from what the api takes, as the real preview reads it. */
+const kindOfSchedule = (body: { cron: string | null; trigger_on_job_id: string | null }) =>
+  body.trigger_on_job_id
+    ? 'after_source'
+    : body.cron === '30 6 * * *'
+      ? 'daily'
+      : body.cron === '0 8-17 * * 1-5'
+        ? 'business_hours'
+        : 'cron';
 
 const SCHEDULE_PREVIEW: Record<ScheduleKind, string> = {
   after_source:
@@ -675,10 +687,9 @@ export function createDataPrepHandlers() {
       const p = pipelines.find((x) => x.id === id);
       if (!p) return notFound();
       const body = (await request.json()) as PipelineSchedule & {
-        schedule_kind?: ScheduleKind;
+        trigger_on_job_id: string | null;
       };
-      const kind: ScheduleKind =
-        body.schedule_kind ?? body.kind ?? (body.cron ? 'cron' : 'after_source');
+      const kind = kindOfSchedule(body);
       if (kind === 'cron' && !body.cron?.trim())
         return problem(422, 'validation_failed', 'Nhập biểu thức cron.');
       schedules.set(id, {
@@ -699,12 +710,11 @@ export function createDataPrepHandlers() {
     http.post('*/v1/pipelines/:id/:action', async ({ params, request }) => {
       const action = String(params.action);
       if (action === 'schedule:preview') {
-        const body = (await request.json()) as PipelineSchedule & { schedule_kind?: ScheduleKind };
-        const holidays = body.skip_holidays
-          ? ' Ngày làm việc tới: Thứ Sáu 09/10, Thứ Hai 12/10 (bỏ 10–11/10).'
-          : '';
-        const kind = body.schedule_kind ?? body.kind ?? (body.cron ? 'cron' : 'after_source');
-        return HttpResponse.json({ text: SCHEDULE_PREVIEW[kind] + holidays });
+        const body = (await request.json()) as {
+          cron: string | null;
+          trigger_on_job_id: string | null;
+        };
+        return HttpResponse.json({ text: SCHEDULE_PREVIEW[kindOfSchedule(body)] });
       }
       return undefined;
     }),

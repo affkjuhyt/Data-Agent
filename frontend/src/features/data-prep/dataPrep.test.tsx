@@ -180,7 +180,7 @@ describe('PipelinesPage', () => {
     fireEvent.click(within(dialog).getByRole('radio', { name: 'Hằng ngày lúc 06:30' }));
     expect(await within(dialog).findByText(/Chạy lúc 06:30/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Lưu lịch' }));
-    expect(await screen.findByText('Đã lên lịch · chạy hằng ngày lúc 06:30')).toBeInTheDocument();
+    expect(await screen.findByText('Đã lên lịch · Chạy lúc 06:30.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Gộp khách hàng trùng' }));
     expect(navigate).toHaveBeenCalledWith('data', 'PIPELINE', 'pl-customers');

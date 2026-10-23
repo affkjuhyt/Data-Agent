@@ -1,4 +1,4 @@
-import { pathId, V1Error, v1Send, type Page, api, ok, okAs } from './client';
+import { V1Error, v1Send, type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 import { formatReadOnlySql, type SqlBrowseTable } from '../sqlText';
 import { awaitQueryRun, getQueryRows, getQuerySql } from './explore';
@@ -454,12 +454,12 @@ export const sendPrepMessage = async (id: string, text: string) =>
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const testRunPipeline = async (id: string) => {
-  // Untyped: PipelinePreview.sample_rows is 1…MAX_SAMPLE_ROWS, so null (the full input) is refused
-  // until the api has a full-input run.
-  const queued = await v1Send<components['schemas']['PipelineRunView']>(
-    'POST',
-    `/pipelines/${pathId(id)}:preview`,
-    { sample_rows: null },
+  // sample_rows null: every step on the whole input, nothing written.
+  const queued = await ok(
+    api.POST('/v1/pipelines/{id}:preview', {
+      params: { path: { id } },
+      body: { sample_rows: null },
+    }),
   );
   // The worker runs it: follow the pipeline's last run until this one has finished.
   let run = queued;
@@ -658,40 +658,35 @@ export const getPipelineSchedule = async (id: string) =>
     };
   });
 
-/** PROPOSAL: the coming runs in words, from the server's business calendar. */
-export const previewSchedule = async (id: string, schedule: PipelineSchedule) =>
-  // Untyped: SchedulePreview forbids extra fields and schedule_kind is one (the mock reads it).
-  v1Send<{ text: string }>('POST', `/pipelines/${pathId(id)}/schedule:preview`, {
-    cron: cronForSchedule(schedule),
-    no_overlap: schedule.no_overlap,
-    on_failure: schedule.retry_and_notify ? 'retry_then_notify' : 'notify',
-    schedule_kind: schedule.kind,
-  });
+/** The body of PUT /schedule and of :preview: what decides when the pipeline runs. */
+const scheduleBody = (schedule: PipelineSchedule) => ({
+  cron: cronForSchedule(schedule),
+  trigger_on_job_id:
+    schedule.kind === 'after_source' ? (schedule.after_source_job_id ?? null) : null,
+  no_overlap: schedule.no_overlap,
+  on_failure: schedule.retry_and_notify ? ('retry_then_notify' as const) : ('notify' as const),
+});
 
-export const savePipelineSchedule = async (id: string, schedule: PipelineSchedule) =>
-  ok<components['schemas']['PipelineView'] & { schedule_text?: string }>(
+/** The schedule in words, by the api: the next runs of the cron, the job it follows. */
+export const previewSchedule = async (id: string, schedule: PipelineSchedule) =>
+  ok(
+    api.POST('/v1/pipelines/{id}/schedule:preview', {
+      params: { path: { id } },
+      body: scheduleBody(schedule),
+    }),
+  );
+
+/** Saves the schedule and says it back as the preview does, so the list shows what was saved. */
+export const savePipelineSchedule = async (id: string, schedule: PipelineSchedule) => {
+  await ok(
     api.PUT('/v1/pipelines/{id}/schedule', {
       params: { path: { id } },
-      body: {
-        cron: cronForSchedule(schedule),
-        work_calendar_id: null,
-        trigger_on_job_id:
-          schedule.kind === 'after_source' ? (schedule.after_source_job_id ?? null) : null,
-        depends_on_pipeline_ids: [],
-        no_overlap: schedule.no_overlap,
-        on_failure: schedule.retry_and_notify ? 'retry_then_notify' : 'notify',
-      },
+      body: { ...scheduleBody(schedule), work_calendar_id: null, depends_on_pipeline_ids: [] },
     }),
-  ).then((view) => ({
-    schedule_text:
-      schedule.kind === 'daily'
-        ? 'chạy hằng ngày lúc 06:30'
-        : schedule.kind === 'business_hours'
-          ? 'chạy mỗi giờ trong giờ làm việc'
-          : schedule.kind === 'after_source'
-            ? 'chạy sau job nạp Core banking'
-            : (view.schedule_text ?? (view.cron ? `Theo lịch cron ${view.cron}` : 'Chạy thủ công')),
-  }));
+  );
+  const { text } = await previewSchedule(id, schedule);
+  return { schedule_text: text };
+};
 
 /* ─── Ghi ngược có duyệt (UC-06-04) ───────────────────────────────────── */
 

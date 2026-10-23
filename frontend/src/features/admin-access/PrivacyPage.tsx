@@ -6,6 +6,7 @@ import { Button } from '../../design-system/Button';
 import { Checkbox } from '../../design-system/Checkbox';
 import { ConfirmDialog } from '../../design-system/ConfirmDialog';
 import { EmptyState } from '../../design-system/EmptyState';
+import { Input } from '../../design-system/Input';
 import { Notice } from '../../design-system/Notice';
 import { StatusDot } from '../../design-system/StatusDot';
 import {
@@ -23,6 +24,7 @@ import {
   getDsr,
   listDsr,
   rejectDsr,
+  type DsrDecision,
   type DsrItem,
   type DsrRequest,
 } from '../../lib/v1/adminAccess';
@@ -209,6 +211,8 @@ function DsrDetail({ id }: { id: string }) {
   const toast = useToast();
   const dsr = useV1(['getDsr', id], () => getDsr(id));
   const [selected, setSelected] = useState<string[]>([]);
+  // The legal basis of each item kept, by id: the search's own, or what the handler writes.
+  const [bases, setBases] = useState<Record<string, string>>({});
   const [dialog, setDialog] = useState<Dialog>(null);
   const [reason, setReason] = useState('');
   const [missing, setMissing] = useState(false);
@@ -217,12 +221,10 @@ function DsrDetail({ id }: { id: string }) {
 
   // Everything that may be deleted starts selected; what must be kept cannot be.
   useEffect(() => {
-    if (dsr.data)
-      setSelected(
-        dsr.data.items
-          .filter((i) => i.proposed_action === 'delete' && i.decision === 'pending')
-          .map((i) => i.id),
-      );
+    if (!dsr.data) return;
+    const request = dsr.data;
+    setSelected(request.items.filter((i) => deletable(request, i)).map((i) => i.id));
+    setBases(Object.fromEntries(request.items.map((i) => [i.id, i.legal_basis ?? ''])));
   }, [dsr.data]);
 
   const act = async (d: DsrRequest) => {
@@ -233,10 +235,10 @@ function DsrDetail({ id }: { id: string }) {
         await rejectDsr(d.id, reason.trim());
         toast({ tone: 'success', message: `Đã từ chối ${d.code}` });
       } else {
-        await executeDsr(d.id, selected);
+        await executeDsr(d.id, decisionsOf(d, selected, bases));
         toast({
           tone: 'success',
-          message: `Đã xoá dữ liệu của ${d.code}. Thư trả lời chờ Pháp chế duyệt.`,
+          message: `Đã gửi ${d.code} để thực hiện. Thư trả lời chờ Pháp chế duyệt.`,
         });
       }
       setDialog(null);
@@ -250,13 +252,8 @@ function DsrDetail({ id }: { id: string }) {
 
   const exportList = (d: DsrRequest) => {
     const rows = [
-      ['Nơi', 'Loại', 'Số mục', 'Xoá được?'],
-      ...d.items.map((i) => [
-        i.location_label,
-        i.kind_label,
-        String(i.entry_count),
-        deletableText(i),
-      ]),
+      ['Nơi', 'Loại', 'Xoá được?'],
+      ...d.items.map((i) => [i.location_label, i.kind_label, deletableText(i)]),
     ];
     const csv = rows.map((r) => r.map(csvCell).join(',')).join('\n');
     const url = URL.createObjectURL(new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8' }));
@@ -273,7 +270,13 @@ function DsrDetail({ id }: { id: string }) {
         {(d) => {
           const openReq = d.status !== 'done' && d.status !== 'rejected';
           const chosen = d.items.filter((i) => selected.includes(i.id));
-          const kept = d.items.filter((i) => i.proposed_action === 'retain');
+          const pending = d.items.filter((i) => i.decision === 'pending');
+          const decisions = decisionsOf(d, selected, bases);
+          const kept = pending.filter((i) =>
+            decisions.some((x) => x.id === i.id && x.action === 'retain'),
+          );
+          const unexplained = kept.filter((i) => !bases[i.id]?.trim());
+          const deletes = d.request_kind === 'delete' || d.request_kind === 'correct';
           return (
             <>
               <PageHeader
@@ -285,7 +288,7 @@ function DsrDetail({ id }: { id: string }) {
                     <StatusDot tone={STATUS[d.status].tone}>{STATUS[d.status].label}</StatusDot>
                   </span>
                 }
-                description={`Nhận ${dayMonth(d.received_at)} qua ${d.channel_label} · hạn xử lý ${dayMonth(d.due_at)} theo ${d.legal_ref} · người xử lý ${d.handler_name}`}
+                description={`Nhận ${dayMonth(d.received_at)} · hạn xử lý ${dayMonth(d.due_at)} · người xử lý ${d.handler_name}`}
                 actions={
                   openReq && (
                     <>
@@ -304,10 +307,17 @@ function DsrDetail({ id }: { id: string }) {
                       </Button>
                       <Button
                         kind="primary"
-                        disabled={chosen.length === 0}
-                        onClick={() => setDialog('execute')}
+                        disabled={
+                          d.status !== 'review' ||
+                          pending.length === 0 ||
+                          (deletes && chosen.length === 0)
+                        }
+                        onClick={() => {
+                          setMissing(false);
+                          setDialog('execute');
+                        }}
                       >
-                        Xoá đã chọn
+                        {deletes ? 'Xoá đã chọn' : 'Cung cấp dữ liệu'}
                       </Button>
                     </>
                   )
@@ -331,7 +341,7 @@ function DsrDetail({ id }: { id: string }) {
                     />
                   ) : (
                     <FoundItemsTable
-                      items={d.items}
+                      request={d}
                       openReq={openReq}
                       selected={selected}
                       setSelected={setSelected}
@@ -351,13 +361,25 @@ function DsrDetail({ id }: { id: string }) {
               </div>
               <ConfirmDialog
                 open={dialog !== null}
-                title={dialog === 'reject' ? `Từ chối ${d.code}?` : `Duyệt kế hoạch xoá ${d.code}?`}
+                title={
+                  dialog === 'reject'
+                    ? `Từ chối ${d.code}?`
+                    : deletes
+                      ? `Duyệt kế hoạch xoá ${d.code}?`
+                      : `Cung cấp dữ liệu cho ${d.code}?`
+                }
                 confirmLabel={dialog === 'reject' ? 'Từ chối' : 'Duyệt và thực hiện'}
                 loading={sending}
-                error={missing ? 'Ghi lý do từ chối; khách hàng nhận lý do này.' : undefined}
+                error={
+                  missing
+                    ? dialog === 'reject'
+                      ? 'Ghi lý do từ chối; khách hàng nhận lý do này.'
+                      : 'Ghi căn cứ pháp lý cho mọi nơi được giữ lại.'
+                    : undefined
+                }
                 onCancel={() => setDialog(null)}
                 onConfirm={() => {
-                  if (dialog === 'reject' && !reason.trim()) {
+                  if (dialog === 'reject' ? !reason.trim() : unexplained.length > 0) {
                     setMissing(true);
                     return;
                   }
@@ -377,13 +399,27 @@ function DsrDetail({ id }: { id: string }) {
                     />
                   </div>
                 ) : (
-                  <>
-                    Xoá {chosen.reduce((sum, i) => sum + i.entry_count, 0)} mục ở {chosen.length}{' '}
-                    nơi ({chosen.map((i) => i.kind_label.toLowerCase()).join(', ')}). Không hoàn tác
-                    được.
-                    {kept.length > 0 &&
-                      ` ${kept.map((i) => i.location_label).join(', ')} được giữ theo nghĩa vụ pháp lý.`}
-                  </>
+                  <div className="flex flex-col gap-da-sm">
+                    <span>
+                      {deletes
+                        ? `Xoá dữ liệu ở ${chosen.length} nơi (${chosen.map((i) => i.kind_label.toLowerCase()).join(', ')}). Không hoàn tác được.`
+                        : `Cung cấp dữ liệu ở ${pending.length - kept.length} nơi cho chủ thể.`}
+                    </span>
+                    {kept.map((i) => (
+                      <label key={i.id} className="flex flex-col gap-da-xs">
+                        <span className="text-foreground da-label">
+                          Giữ lại: {i.location_label}
+                        </span>
+                        <Input
+                          value={bases[i.id] ?? ''}
+                          onChange={(e) => setBases((b) => ({ ...b, [i.id]: e.target.value }))}
+                          aria-label={`Căn cứ pháp lý giữ ${i.location_label}`}
+                          placeholder="Căn cứ pháp lý (bắt buộc)"
+                          className="w-full"
+                        />
+                      </label>
+                    ))}
+                  </div>
                 )}
               </ConfirmDialog>
             </>
@@ -395,23 +431,22 @@ function DsrDetail({ id }: { id: string }) {
 }
 
 function FoundItemsTable({
-  items,
+  request,
   openReq,
   selected,
   setSelected,
 }: {
-  items: DsrItem[];
+  request: DsrRequest;
   openReq: boolean;
   selected: string[];
   setSelected: (update: (list: string[]) => string[]) => void;
 }) {
-  const view = useTableView(items, {
-    search: (i) => `${i.location_label} ${i.kind_label} ${i.entry_count} ${deletableText(i)}`,
+  const view = useTableView(request.items, {
+    search: (i) => `${i.location_label} ${i.kind_label} ${deletableText(i)}`,
     filters: [{ id: 'kind', label: 'Loại', value: (i) => i.kind_label }],
     sorts: [
       { id: 'where', value: (i) => i.location_label },
       { id: 'kind', value: (i) => i.kind_label },
-      { id: 'count', value: (i) => i.entry_count },
       { id: 'deletable', value: (i) => deletableText(i) },
     ],
     pageSize: 50,
@@ -437,13 +472,6 @@ function FoundItemsTable({
             </SortableTh>
             <SortableTh
               view={view}
-              column="count"
-              className="w-[92px] px-da-lg py-da-md font-normal"
-            >
-              Số mục
-            </SortableTh>
-            <SortableTh
-              view={view}
               column="deletable"
               className="w-[242px] px-da-lg py-da-md font-normal"
             >
@@ -453,7 +481,7 @@ function FoundItemsTable({
         </thead>
         <tbody>
           {view.rows.map((i) => {
-            const can = i.proposed_action === 'delete' && i.decision === 'pending' && openReq;
+            const can = openReq && deletable(request, i);
             return (
               <tr key={i.id} className="border-b border-border align-middle">
                 <td className="px-da-lg py-da-md">
@@ -473,7 +501,6 @@ function FoundItemsTable({
                 <td className="px-da-lg py-da-md text-muted-foreground da-body-small">
                   {i.kind_label}
                 </td>
-                <td className="px-da-lg py-da-md text-foreground da-mono">{i.entry_count}</td>
                 <td
                   className={cn(
                     'px-da-lg py-da-md da-body-small',
@@ -485,7 +512,7 @@ function FoundItemsTable({
               </tr>
             );
           })}
-          {view.total === 0 && tableEmptyRow(5)}
+          {view.total === 0 && tableEmptyRow(4)}
         </tbody>
       </table>
       <TablePager view={view} />
@@ -493,9 +520,45 @@ function FoundItemsTable({
   );
 }
 
-function deletableText(i: DsrRequest['items'][number]): string {
-  if (i.decision === 'done') return 'Đã xoá';
-  if (i.proposed_action === 'retain') return `Không · ${i.legal_basis ?? 'phải giữ'}`;
+function deletableText(i: DsrItem): string {
+  if (i.decision === 'done') return i.proposed_action === 'delete' ? 'Đã xoá' : 'Đã cung cấp';
+  if (i.decision === 'retained' || i.proposed_action === 'retain')
+    return `Không · ${i.legal_basis ?? 'phải giữ'}`;
+  if (i.location_kind === 'source_system') return 'Không · báo cho hệ thống nguồn';
   if (i.proposed_action === 'provide') return 'Cung cấp bản sao';
   return 'Được';
+}
+
+/** A pending item the request may delete: never one in a source system (E1, reported there). */
+function deletable(request: DsrRequest, i: DsrItem): boolean {
+  return (
+    (request.request_kind === 'delete' || request.request_kind === 'correct') &&
+    i.decision === 'pending' &&
+    i.proposed_action === 'delete' &&
+    i.location_kind !== 'source_system'
+  );
+}
+
+/**
+ * The api wants a decision for every pending item (governance/dsr.py): the ticked ones are
+ * deleted, an unticked one the search proposed to delete is kept, and the rest follow the
+ * search's proposal; a kept item carries its legal basis.
+ */
+function decisionsOf(
+  request: DsrRequest,
+  selected: string[],
+  bases: Record<string, string>,
+): DsrDecision[] {
+  return request.items
+    .filter((i) => i.decision === 'pending')
+    .map((i): DsrDecision => {
+      const action = selected.includes(i.id)
+        ? 'delete'
+        : i.proposed_action === 'delete'
+          ? 'retain'
+          : i.proposed_action;
+      return action === 'retain'
+        ? { id: i.id, action, legal_basis: bases[i.id]?.trim() || undefined }
+        : { id: i.id, action };
+    });
 }

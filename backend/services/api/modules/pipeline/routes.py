@@ -38,7 +38,9 @@ from services.api.kernel.pagination import (
     page_request,
 )
 from services.api.kernel.problems import Problem
-from services.api.modules.ingest.public import jobs_feeding
+from services.api.modules.catalog.public import upcoming_runs
+from services.api.modules.catalog.rules import CronError
+from services.api.modules.ingest.public import job_name, jobs_feeding
 from services.api.modules.pipeline import rules
 from services.api.modules.pipeline.schemas import (
     Accepted,
@@ -77,6 +79,8 @@ router = APIRouter()
 
 PathId = Annotated[uuid.UUID, Path(alias="id")]
 POLL_AFTER_MS = 2_000
+# The schedule preview names this many coming runs.
+PREVIEW_RUNS = 3
 # UC-06-04 5a: an executed write can be undone from its snapshot for 30 days.
 UNDO_WINDOW = datetime.timedelta(days=30)
 # BR-60: a breaking contract change is announced 30 days before it is published.
@@ -830,14 +834,7 @@ async def schedule_pipeline(
             # UC-06-03 precondition: only an active (materialized) pipeline is scheduled.
             raise Problem(409, "invalid_state", "Only an active pipeline can be scheduled.")
         if body.work_calendar_id is not None:
-            found = await session.scalar(
-                select(org.WorkCalendar.id).where(
-                    org.WorkCalendar.id == body.work_calendar_id,
-                    org.WorkCalendar.org_id == principal.org_id,
-                )
-            )
-            if found is None:
-                raise invalid("work_calendar_id", "Unknown work calendar.")
+            await _check_calendar(session, principal, body.work_calendar_id)
         deps = list(dict.fromkeys(body.depends_on_pipeline_ids))
         await _check_dependencies(session, principal, data_space, row.id, deps)
         row.cron = body.cron
@@ -866,6 +863,18 @@ async def schedule_pipeline(
         )
         await session.flush()
         return PipelineView.model_validate(row)
+
+
+async def _check_calendar(
+    session: AsyncSession, principal: Principal, calendar_id: uuid.UUID
+) -> None:
+    found = await session.scalar(
+        select(org.WorkCalendar.id).where(
+            org.WorkCalendar.id == calendar_id, org.WorkCalendar.org_id == principal.org_id
+        )
+    )
+    if found is None:
+        raise invalid("work_calendar_id", "Unknown work calendar.")
 
 
 @router.get(
@@ -907,10 +916,25 @@ async def preview_pipeline_schedule(
         raise invalid("cron", "cron takes five fields: minute hour day month weekday.")
     async with transaction(ROLE, principal) as session:
         await _pipeline(session, principal, data_space, pipeline_id)
-    text = f"Theo lịch cron {body.cron}" if body.cron else "Chạy thủ công"
+        if body.work_calendar_id is not None:
+            await _check_calendar(session, principal, body.work_calendar_id)
+    parts: list[str] = []
+    if body.trigger_on_job_id is not None:
+        name = await job_name(principal, data_space, body.trigger_on_job_id)
+        if name is None:
+            raise invalid("trigger_on_job_id", "Unknown ingestion job in this Data Space.")
+        parts.append(f"Chạy sau mỗi lần job “{name}” nạp xong")
+    if body.cron:
+        try:
+            runs = await upcoming_runs(principal, body.cron, body.work_calendar_id, PREVIEW_RUNS)
+        except CronError as exc:
+            raise invalid("cron", str(exc)) from exc
+        when = ", ".join(rules.run_text(at) for at in runs) or "không còn lần nào"
+        parts.append(f"Theo lịch cron {body.cron}, lần tới: {when}")
+    text = "; ".join(parts) or "Chạy thủ công"
     if body.no_overlap:
         text += "; không chạy chồng"
-    return {"text": text}
+    return {"text": text + "; " + rules.FAILURE_TEXT[body.on_failure]}
 
 
 # --- lineage -------------------------------------------------------------------------------------

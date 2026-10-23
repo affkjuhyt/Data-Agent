@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import datetime
 import uuid
-import zoneinfo
 from typing import Annotated, Any
 from urllib.parse import urlparse
 
@@ -39,6 +38,7 @@ from services.api.kernel.pagination import (
 )
 from services.api.kernel.problems import FieldError, Problem
 from services.api.modules.catalog import rules
+from services.api.modules.catalog.public import working_days
 from services.api.modules.catalog.schemas import (
     Accepted,
     ActivateRequest,
@@ -80,8 +80,6 @@ ROLE = "svc_catalog"
 PathId = Annotated[uuid.UUID, Path(alias="id")]
 POLL_AFTER_MS = 2_000
 NEXT_RUNS = 5
-# The organisation's default zone (org.organization.time_zone default) when no calendar is set.
-DEFAULT_ZONE = "Asia/Ho_Chi_Minh"
 # A source is scanned while it can be read (UC-04-02 precondition: the source is active).
 SCANNABLE = ("active", "needs_fix")
 
@@ -801,46 +799,6 @@ async def activate_source(
         return SourceView.of(source)
 
 
-async def _skip_days(
-    session: AsyncSession, principal: Principal, calendar_id: uuid.UUID | None
-) -> tuple[datetime.tzinfo, Any]:
-    """The calendar's zone and a predicate for its non-working days (UC-04-05 step 2)."""
-    if calendar_id is None:
-        return zoneinfo.ZoneInfo(DEFAULT_ZONE), lambda _: False
-    calendar = await session.scalar(
-        select(org.WorkCalendar).where(org.WorkCalendar.id == calendar_id)
-    )
-    if calendar is None:
-        return zoneinfo.ZoneInfo(DEFAULT_ZONE), lambda _: False
-    try:
-        zone: datetime.tzinfo = zoneinfo.ZoneInfo(calendar.time_zone)
-    except (zoneinfo.ZoneInfoNotFoundError, ValueError):
-        zone = zoneinfo.ZoneInfo(DEFAULT_ZONE)
-    weekend = set(calendar.weekend_days or [])
-    today = _now().date()
-    overrides = {
-        d.day: d.kind
-        for d in (
-            await session.scalars(
-                select(org.WorkCalendarDay).where(
-                    org.WorkCalendarDay.calendar_id == calendar.id,
-                    org.WorkCalendarDay.day >= today - datetime.timedelta(days=1),
-                )
-            )
-        ).all()
-    }
-
-    def skip(day: datetime.date) -> bool:
-        kind = overrides.get(day)
-        if kind == "holiday":
-            return True
-        if kind == "working_override":
-            return False
-        return day.isoweekday() in weekend
-
-    return zone, skip
-
-
 def _cron(expression: str | None, field: str) -> rules.Cron | None:
     if not expression:
         return None
@@ -890,7 +848,7 @@ async def set_scan_schedule(
                 work_calendar_id=row.work_calendar_id,
             )
         )
-        zone, skip = await _skip_days(session, principal, row.work_calendar_id)
+        zone, skip = await working_days(session, row.work_calendar_id)
         await session.flush()
         await session.refresh(row)
         now = _now()

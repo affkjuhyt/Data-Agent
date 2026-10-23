@@ -7,10 +7,11 @@ import {
   putMembers,
   type DataSpaceMember,
   type MemberInput,
+  type RowScope,
   type PermissionMatrix,
 } from '../../lib/v1/adminAccess';
 import { useV1 } from '../../lib/v1/useV1';
-import { ROW_SCOPES, scopeValue } from './format';
+import { completeScope, RowScopePicker } from './RowScopePicker';
 import { Dialog } from '../../design-system/Dialog';
 
 /*
@@ -36,7 +37,7 @@ export function MemberAddDialog({
   const users = useV1(['listAdminUsers', open], open ? listAdminUsers : null);
   const [principal, setPrincipal] = useState<string | null>(null);
   const [roleId, setRoleId] = useState<string | null>(null);
-  const [scope, setScope] = useState('Theo vùng phụ trách');
+  const [scope, setScope] = useState<RowScope | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -44,7 +45,7 @@ export function MemberAddDialog({
     if (!open) return;
     setPrincipal(null);
     setRoleId(null);
-    setScope('Theo vùng phụ trách');
+    setScope(null);
     setError(undefined);
   }, [open]);
 
@@ -64,12 +65,16 @@ export function MemberAddDialog({
       setError('Chọn người hoặc nhóm và vai trò.');
       return;
     }
+    if (!completeScope(scope)) {
+      setError('Chọn ít nhất một giá trị cho phạm vi dòng, hoặc để toàn bộ dòng.');
+      return;
+    }
     const [type, principalId] = principal.split(':') as ['user' | 'group', string];
     const current: MemberInput[] = members.map((m) => ({
       principal_type: m.principal_type,
       principal_id: m.principal_id,
       role_id: m.role_id,
-      row_scope: m.row_scope_text,
+      row_scope: m.row_scope,
       valid_until: m.valid_until,
     }));
     setSending(true);
@@ -81,7 +86,7 @@ export function MemberAddDialog({
           principal_type: type,
           principal_id: principalId,
           role_id: roleId,
-          row_scope: scopeValue(scope),
+          row_scope: scope,
           valid_until: null,
         },
       ]);
@@ -105,7 +110,12 @@ export function MemberAddDialog({
       onClose={onClose}
     >
       <Field label="Người hoặc nhóm">
-        <Select label="Người hoặc nhóm" options={options} value={principal} onChange={setPrincipal} />
+        <Select
+          label="Người hoặc nhóm"
+          options={options}
+          value={principal}
+          onChange={setPrincipal}
+        />
       </Field>
       <Field label="Vai trò">
         <Select
@@ -117,9 +127,7 @@ export function MemberAddDialog({
           onChange={setRoleId}
         />
       </Field>
-      <Field label="Phạm vi dòng">
-        <Select label="Phạm vi dòng" options={ROW_SCOPES} value={scope} onChange={setScope} />
-      </Field>
+      <RowScopePicker spaceId={dataSpaceId} value={scope} onChange={setScope} />
     </Dialog>
   );
 }

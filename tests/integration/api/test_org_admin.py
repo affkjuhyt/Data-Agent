@@ -117,6 +117,30 @@ async def test_directory_sync_and_invitation_are_queued(world: World) -> None:
     assert world.event_types(invitation_id) == ["directory.invitation_requested"]
 
 
+async def test_an_invitation_carries_its_row_scope_as_a_membership_does(world: World) -> None:
+    body = {
+        "email": "scoped.user@example.test",
+        "role_id": str(world.roles["analyst"]),
+        "data_space_id": str(world.space),
+    }
+    async with client(world) as api:
+        scoped = await api.post(
+            "/v1/admin/invitations",
+            headers=world.headers("admin"),
+            json={**body, "row_scope": {"region": ["Bắc", "Trung"]}},
+        )
+        # A named scope ("Vùng: Bắc") is no boundary the query engine can apply.
+        named = await api.post(
+            "/v1/admin/invitations",
+            headers=world.headers("admin"),
+            json={**body, "row_scope": "Vùng: Bắc"},
+        )
+    assert scoped.status_code == 202, scoped.text
+    payload = dict(world.events(scoped.json()["id"]))["directory.invitation_requested"]
+    assert payload["row_scope"] == {"region": ["Bắc", "Trung"]}
+    assert named.status_code == 422
+
+
 @pytest.fixture
 def world(seed: Seed) -> World:
     org = seed.org()

@@ -2,9 +2,15 @@ import { useEffect, useState } from 'react';
 import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
-import { inviteUser, listDataSpaceSummaries, type Role } from '../../lib/v1/adminAccess';
+import {
+  inviteUser,
+  listDataSpaceSummaries,
+  type Role,
+  type RowScope,
+} from '../../lib/v1/adminAccess';
 import { useV1 } from '../../lib/v1/useV1';
-import { EXPIRIES, ROW_SCOPES, expiryValue, scopeValue } from './format';
+import { EXPIRIES, expiryValue } from './format';
+import { completeScope, RowScopePicker } from './RowScopePicker';
 import { Dialog } from '../../design-system/Dialog';
 
 /** "Hộp thoại · invite" (2095:8252): email, role, Data Space, row scope, expiry. */
@@ -23,7 +29,7 @@ export function InviteDialog({
   const [email, setEmail] = useState('');
   const [roleId, setRoleId] = useState<string | null>(null);
   const [spaceId, setSpaceId] = useState<string | null>(null);
-  const [scope, setScope] = useState('all');
+  const [scope, setScope] = useState<RowScope | null>(null);
   const [expiry, setExpiry] = useState('none');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
@@ -33,7 +39,7 @@ export function InviteDialog({
     setEmail('');
     setRoleId(null);
     setSpaceId(null);
-    setScope('all');
+    setScope(null);
     setExpiry('none');
     setError(undefined);
   }, [open]);
@@ -43,6 +49,10 @@ export function InviteDialog({
       setError('Nhập email, chọn vai trò và Data Space.');
       return;
     }
+    if (!completeScope(scope)) {
+      setError('Chọn ít nhất một giá trị cho phạm vi dòng, hoặc để toàn bộ dòng.');
+      return;
+    }
     setSending(true);
     setError(undefined);
     try {
@@ -50,7 +60,7 @@ export function InviteDialog({
         email: email.trim(),
         role_id: roleId,
         data_space_id: spaceId,
-        row_scope: scopeValue(scope),
+        row_scope: scope,
         valid_until: expiryValue(expiry),
       });
       onInvited(email.trim());
@@ -94,12 +104,20 @@ export function InviteDialog({
           label="Data Space"
           options={(spaces.data?.items ?? []).map((s) => ({ value: s.id, label: s.name }))}
           value={spaceId}
-          onChange={setSpaceId}
+          onChange={(id) => {
+            setSpaceId(id);
+            setScope(null);
+          }}
         />
       </Field>
-      <Field label="Phạm vi dòng">
-        <Select label="Phạm vi dòng" options={ROW_SCOPES} value={scope} onChange={setScope} />
-      </Field>
+      {spaceId ? (
+        // A scope names values of this Data Space's tables, so it is chosen with the space.
+        <RowScopePicker key={spaceId} spaceId={spaceId} value={scope} onChange={setScope} />
+      ) : (
+        <p className="text-muted-foreground da-caption">
+          Chọn Data Space để đặt phạm vi dòng theo dữ liệu của nó.
+        </p>
+      )}
       <Field label="Hết hạn">
         <Select label="Hết hạn" options={EXPIRIES} value={expiry} onChange={setExpiry} />
       </Field>

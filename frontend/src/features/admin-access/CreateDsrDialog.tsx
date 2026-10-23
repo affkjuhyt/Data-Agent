@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react';
 import { Field } from '../../design-system/Field';
 import { Input } from '../../design-system/Input';
 import { Select } from '../../design-system/Select';
-import { createDsr, type DsrKind, type DsrRequest } from '../../lib/v1/adminAccess';
-import { addDays, dayMonth } from './format';
+import { createDsr, type DsrKind } from '../../lib/v1/adminAccess';
+import { addDays, dayMonth, isoDay } from './format';
 import { Dialog } from '../../design-system/Dialog';
 
 /*
- * "Hộp thoại · createDSR" (2095:8857): kind, subject, receiving channel, deadline. The subject
- * identifier is sent once and hashed by the server (dsr_request.subject_hash); it is not kept here.
+ * "Hộp thoại · createDSR" (2095:8857): kind, subject, the day the request was received and the
+ * deadline counted from it (DsrCreate). The subject identifier is sent once and hashed by the
+ * server (dsr_request.subject_hash); it is not kept here. The frame's receiving channel is not
+ * kept by the api, so it is not asked.
  */
 export const DSR_KINDS: { value: DsrKind; label: string }[] = [
   { value: 'access', label: 'Truy cập dữ liệu' },
@@ -17,18 +19,12 @@ export const DSR_KINDS: { value: DsrKind; label: string }[] = [
   { value: 'correct', label: 'Sửa dữ liệu' },
 ];
 
-const CHANNELS = [
-  { value: 'Quầy giao dịch Hà Nội', label: 'Quầy giao dịch Hà Nội' },
-  { value: 'Quầy giao dịch TP.HCM', label: 'Quầy giao dịch TP.HCM' },
-  { value: 'kênh pháp chế', label: 'Kênh pháp chế' },
-  { value: 'email', label: 'Email' },
-  { value: 'tổng đài', label: 'Tổng đài' },
-];
-
-const DEADLINES = [15, 30, 72].map((days) => ({
-  value: String(days),
-  label: `${days} ngày · ${dayMonth(addDays(days).toISOString())}`,
-}));
+/** Deadlines counted from the day the request was received. */
+const deadlines = (received: Date) =>
+  [15, 30, 72].map((days) => ({
+    value: String(days),
+    label: `${days} ngày · ${dayMonth(addDays(days, received).toISOString())}`,
+  }));
 
 export function CreateDsrDialog({
   open,
@@ -37,11 +33,11 @@ export function CreateDsrDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  onCreated: (dsr: DsrRequest) => void;
+  onCreated: (dsr: { id: string; code: string }) => void;
 }) {
   const [kind, setKind] = useState<DsrKind>('access');
   const [subject, setSubject] = useState('');
-  const [channel, setChannel] = useState(CHANNELS[0].value);
+  const [received, setReceived] = useState(isoDay(new Date()));
   const [deadline, setDeadline] = useState('30');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
@@ -50,7 +46,7 @@ export function CreateDsrDialog({
     if (!open) return;
     setKind('access');
     setSubject('');
-    setChannel(CHANNELS[0].value);
+    setReceived(isoDay(new Date()));
     setDeadline('30');
     setError(undefined);
   }, [open]);
@@ -63,11 +59,12 @@ export function CreateDsrDialog({
     setSending(true);
     setError(undefined);
     try {
+      const receivedAt = new Date(`${received}T00:00:00`);
       const created = await createDsr({
         request_kind: kind,
         subject_identifier: subject.trim(),
-        channel,
-        due_at: addDays(Number(deadline)).toISOString(),
+        received_at: receivedAt.toISOString(),
+        due_at: addDays(Number(deadline), receivedAt).toISOString(),
       });
       onCreated(created);
     } catch (e) {
@@ -100,11 +97,23 @@ export function CreateDsrDialog({
           onChange={(e) => setSubject(e.target.value)}
         />
       </Field>
-      <Field label="Kênh nhận">
-        <Select label="Kênh nhận" options={CHANNELS} value={channel} onChange={setChannel} />
+      <Field label="Ngày nhận">
+        <Input
+          type="date"
+          aria-label="Ngày nhận"
+          className="w-full"
+          value={received}
+          max={isoDay(new Date())}
+          onChange={(e) => setReceived(e.target.value)}
+        />
       </Field>
       <Field label="Hạn">
-        <Select label="Hạn" options={DEADLINES} value={deadline} onChange={setDeadline} />
+        <Select
+          label="Hạn"
+          options={deadlines(new Date(`${received}T00:00:00`))}
+          value={deadline}
+          onChange={setDeadline}
+        />
       </Field>
     </Dialog>
   );

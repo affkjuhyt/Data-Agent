@@ -67,7 +67,9 @@ class PipelinePatch(_Body):
 
 
 class PreviewRequest(_Body):
-    sample_rows: int = Field(default=MAX_SAMPLE_ROWS, ge=1, le=MAX_SAMPLE_ROWS)
+    # null runs every step on the whole input, writing nothing (the screen's test run); a body
+    # without it previews a sample.
+    sample_rows: int | None = Field(default=MAX_SAMPLE_ROWS, ge=1, le=MAX_SAMPLE_ROWS)
 
 
 class PipelineMessage(_Body):
@@ -92,7 +94,12 @@ class ScheduleRequest(_Body):
 
 
 class SchedulePreview(_Body):
+    """The schedule as the dialog holds it, before it is saved: the same fields as ScheduleRequest
+    that decide when the pipeline runs."""
+
     cron: str | None = Field(default=None, max_length=200)
+    work_calendar_id: uuid.UUID | None = None
+    trigger_on_job_id: uuid.UUID | None = None
     no_overlap: bool = True
     on_failure: OnFailure = "notify"
 

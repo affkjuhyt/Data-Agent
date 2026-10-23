@@ -1,4 +1,5 @@
-import { currentDataSpace, pathId, V1Error, v1Send, type Page, api, ok, okAs } from './client';
+import { currentDataSpace, V1Error, type Page, api, ok, okAs } from './client';
+import type { components } from './schema';
 
 /*
  * Error Book (P07, UC-07-14, eval.error_book_entry): every confirmed wrong answer and forecast
@@ -102,13 +103,51 @@ export const updateErrorBookEntry = async (
     api.PATCH('/v1/error-book-entries/{id}', { params: { path: { id } }, body: patch }),
   );
 
-/** A2: :mark-fixed needs kind, root cause and an accepted fix; it also creates the regression case. */
-// Untyped: MarkFixed.fix_kind is what was fixed (metric_version, synonym, …); the screen sends
-// where the fix is (proposal or commit), so the api refuses it until the dialog asks the kind.
-export const markEntryFixed = async (
-  id: string,
-  body: { fix_kind: string; fix_proposal_id?: string; fix_ref?: string; note?: string },
-) => v1Send<ErrorBookEntry>('POST', `/error-book-entries/${pathId(id)}:mark-fixed`, body);
+/** What the fix changed (MarkFixed.fix_kind), as the dialog offers it. */
+export type FixKind = components['schemas']['MarkFixed']['fix_kind'];
+
+export const FIX_KINDS: { value: FixKind; label: string }[] = [
+  { value: 'metric_version', label: 'Phiên bản chỉ số' },
+  { value: 'synonym', label: 'Từ đồng nghĩa' },
+  { value: 'example', label: 'Câu hỏi mẫu' },
+  { value: 'knowledge_page', label: 'Trang tri thức' },
+  { value: 'pack_version', label: 'Phiên bản gói ngành' },
+  { value: 'source_data', label: 'Dữ liệu nguồn' },
+  { value: 'model_config', label: 'Cấu hình model' },
+  { value: 'prompt', label: 'Prompt' },
+  { value: 'code', label: 'Mã nguồn' },
+  { value: 'none', label: 'Không cần sửa' },
+];
+
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/**
+ * A2: :mark-fixed needs what was fixed and how (BR-179); it also creates the regression case.
+ * A reference that holds a proposal's id — the id or its link — is that proposal, which must have
+ * been accepted; any other reference (a commit, a model_config…) is kept as it is written.
+ */
+export const markEntryFixed = async (id: string, fixKind: FixKind, reference: string) => {
+  const proposalId = reference.match(UUID)?.[0];
+  if (proposalId) {
+    const proposal = await ok(
+      api.GET('/v1/proposals/{id}', { params: { path: { id: proposalId } } }),
+    );
+    if (proposal.status !== 'accepted' && proposal.status !== 'applied')
+      throw new V1Error(
+        422,
+        'validation_failed',
+        `Đề xuất “${proposal.title}” chưa được chấp nhận; chỉ đề xuất đã chấp nhận mới là cách sửa.`,
+      );
+  }
+  return okAs<ErrorBookEntry>(
+    api.POST('/v1/error-book-entries/{id}:mark-fixed', {
+      params: { path: { id } },
+      body: proposalId
+        ? { fix_kind: fixKind, fix_proposal_id: proposalId }
+        : { fix_kind: fixKind, fix_ref: reference },
+    }),
+  );
+};
 
 export const dismissEntry = async (
   id: string,

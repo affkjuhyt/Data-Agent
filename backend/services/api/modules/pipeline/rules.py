@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import re
 import uuid
 from collections.abc import Iterable, Mapping
@@ -104,3 +105,18 @@ def totals_mismatch(totals_check: Any) -> list[str]:
     if not bad and totals_check.get("matched") is False:
         bad = ["?"]
     return bad
+
+
+_WEEKDAY = ("Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ nhật")
+
+# What a failed run does (pipeline.on_failure), in the schedule preview.
+FAILURE_TEXT = {
+    "notify": "lỗi thì báo người phụ trách",
+    "retry_then_notify": "lỗi thì thử lại rồi báo người phụ trách",
+    "skip": "lỗi thì bỏ qua lượt đó",
+}
+
+
+def run_text(at: datetime.datetime) -> str:
+    """One coming run as the preview says it, in the zone it was computed in: Thứ Hai 27/10 07:00."""
+    return f"{_WEEKDAY[at.weekday()]} {at:%d/%m %H:%M}"

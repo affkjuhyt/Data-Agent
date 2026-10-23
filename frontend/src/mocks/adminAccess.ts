@@ -13,7 +13,6 @@ import type {
   DataSpaceMember,
   DataSpaceSummary,
   DecideAccess,
-  DsrRequest,
   Invitation,
   MemberInput,
   PermissionCell,
@@ -23,6 +22,10 @@ import type {
   SecurityEvent,
   UserGroup,
 } from '../lib/v1/adminAccess';
+import { rowScopeText } from '../lib/v1/adminAccess';
+import type { components } from '../lib/v1/schema';
+
+type Schemas = components['schemas'];
 
 const STEWARD_ROLE = { id: 'role-ac03', code: 'AC03', name: 'Người phụ trách dữ liệu' };
 /*
@@ -242,41 +245,54 @@ export function dataSpaceSummariesFixture(): DataSpaceSummary[] {
   ];
 }
 
-export function membersFixture(): DataSpaceMember[] {
+type MemberWire = Schemas['MemberDetail'];
+
+/** GET /v1/data-spaces/{id}/members as the api answers it (MemberDetail). */
+export function membersFixture(spaceId: string = DS_RISK): MemberWire[] {
+  const stamp = new Date(new Date().getFullYear(), 0, 5).toISOString();
   const m = (
     id: string,
     name: string,
     roleId: string,
     roleName: string,
-    scope: string | null,
-    extra: Partial<DataSpaceMember> = {},
-  ): DataSpaceMember => ({
-    id,
+    scope: Record<string, string[]> | null,
+    extra: Partial<MemberWire> = {},
+  ): MemberWire => ({
+    id: `m-${id}`,
+    data_space_id: spaceId,
     principal_type: 'user',
     principal_id: id,
+    principal_name: name,
     role_id: roleId,
-    source: 'manual',
-    valid_until: null,
-    display_name: name,
+    role_code: roleId.toUpperCase(),
     role_name: roleName,
-    row_scope_text: scope,
+    row_scope: scope,
+    source: 'manual',
+    source_ref: null,
+    valid_until: null,
+    created_at: stamp,
+    updated_at: stamp,
     ...extra,
   });
   return [
     m('u-quoc-an', 'Trần Quốc An', 'role-owner', 'Chủ sở hữu dữ liệu', null),
-    m('u-hai-yen', 'Đỗ Hải Yến', 'role-control', 'Kiểm soát, tuân thủ', null, {
-      access_note: 'đọc',
-    }),
-    m('u-thu-ha', 'Nguyễn Thu Hà', 'role-ds-analyst', 'Phân tích viên', 'Vùng: Bắc', {
-      source: 'group_mapping',
-    }),
+    m('u-hai-yen', 'Đỗ Hải Yến', 'role-control', 'Kiểm soát, tuân thủ', null),
+    m(
+      'u-thu-ha',
+      'Nguyễn Thu Hà',
+      'role-ds-analyst',
+      'Phân tích viên',
+      { region: ['Bắc'] },
+      {
+        source: 'group_mapping',
+      },
+    ),
     m('u-minh-tam', 'Lê Minh Tâm', 'role-viewer', 'Người xem', null, {
       source: 'access_request',
       valid_until: new Date(new Date().getFullYear(), 9, 30, 23, 59).toISOString(),
     }),
     m('agent-doi-soat', 'Agent Đối soát', 'role-agent', 'Agent (theo chủ sở hữu)', null, {
       principal_type: 'agent',
-      agent_status: 'running',
     }),
   ];
 }
@@ -332,54 +348,35 @@ export function permissionMatrixFixture(): PermissionMatrix {
   };
 }
 
-export function permissionSimulationFixture(): PermissionSimulation {
-  const columns = ['loan_id', 'customer', 'region', 'balance'];
+/** POST /v1/permissions:simulate as the api answers it: one TableView per role or person asked. */
+export function permissionSimulationFixture(
+  datasetId: string,
+  subjects: { kind: 'role' | 'user'; id: string }[],
+): PermissionSimulation {
+  const columns = ['loan_id', 'customer_name', 'national_id', 'region', 'balance'];
   return {
-    table: 'ld_loans',
-    views: [
-      {
-        principal_name: 'Nguyễn Thu Hà',
-        role_name: 'Phân tích viên',
-        scope_text: 'Chỉ thấy vùng Bắc · PII bị che',
-        columns,
-        rows: [
-          ['LD2409-0187', '••••4821', 'DH Bắc Bộ', '1.250.000.000'],
-          ['LD2409-0190', '••••7712', 'DH Bắc Bộ', '480.000.000'],
-          ['LD2311-0456', '••••3390', 'DH Bắc Bộ', '620.000.000'],
-        ],
-        muted: Array.from({ length: 3 }, () => [false, true, false, false]),
-        actions: [
-          { label: 'Tạo bảng dẫn xuất', allowed: true },
-          { label: 'Chạy agent', allowed: true },
-        ],
-      },
-      {
-        principal_name: 'Lê Minh Tâm',
-        role_name: 'Người xem',
-        scope_text: 'Chỉ thấy số tổng hợp theo vùng',
-        columns,
-        rows: [
-          ['Tổng hợp', '—', 'DH Bắc Bộ', '2.350.000.000'],
-          ['Tổng hợp', '—', 'ĐB sông Hồng', '4.120.000.000'],
-          ['Tổng hợp', '—', 'Đông Nam Bộ', '3.880.000.000'],
-        ],
-        muted: Array.from({ length: 3 }, () => [false, true, false, false]),
-        actions: [
-          {
-            label: 'Tạo bảng dẫn xuất',
-            allowed: false,
-            reason: 'Cần vai trò Phân tích viên · bấm để yêu cầu quyền',
-            request_capability: 'view_detail',
+    dataset_id: datasetId,
+    views: subjects.map(({ kind, id }, i) =>
+      i === 0
+        ? {
+            subject_kind: kind,
+            subject_id: id,
+            visible_columns: columns.filter((c) => c !== 'national_id'),
+            hidden_columns: ['national_id'],
+            masked_columns: { customer_name: 'partial' } as Record<string, string>,
+            row_conditions: ["region = 'Bắc'"],
+            policy_ids: ['0192f1a2-7c3d-7e4f-8a9b-000000000201'],
+          }
+        : {
+            subject_kind: kind,
+            subject_id: id,
+            visible_columns: columns,
+            hidden_columns: [],
+            masked_columns: { national_id: 'last4' } as Record<string, string>,
+            row_conditions: [],
+            policy_ids: ['0192f1a2-7c3d-7e4f-8a9b-000000000202'],
           },
-          {
-            label: 'Chạy agent',
-            allowed: false,
-            reason: 'Cần vai trò Phân tích viên · bấm để yêu cầu quyền',
-            request_capability: 'run_agent',
-          },
-        ],
-      },
-    ],
+    ),
   };
 }
 
@@ -710,92 +707,60 @@ export function securityEventsFixture(): SecurityEvent[] {
   ];
 }
 
-export function dsrFixture(): DsrRequest[] {
+/** GET /v1/dsr/{id} as the api answers it (DsrRequestView), with the list's subject_hash. */
+type DsrWire = Schemas['DsrRequestView'] & { subject_hash: string };
+
+const dsrItem = (
+  n: number,
+  location_kind: string,
+  location_ref: string,
+  proposed_action: 'delete' | 'provide' | 'retain',
+  legal_basis: string | null = null,
+): NonNullable<DsrWire['items']>[number] => ({
+  id: `0192f1a2-7c3d-7e4f-8a9b-00000000010${n}`,
+  location_kind,
+  location_ref,
+  proposed_action,
+  legal_basis,
+  decision: 'pending',
+  executed_at: null,
+});
+
+export function dsrFixture(): DsrWire[] {
+  const stamp = daysFromNow(-4);
   return [
     {
-      id: 'dsr-014',
-      code: 'DSR-014',
+      id: '0192f1a2-7c3d-7e4f-8a9b-000000000014',
+      subject_hash: '9f2c41d0a7',
       request_kind: 'delete',
-      title: 'Khách hàng yêu cầu xoá dữ liệu cá nhân',
-      received_at: daysFromNow(-4),
+      received_at: stamp,
       due_at: daysFromNow(10),
       status: 'review',
       handler_id: 'u-khanh-linh',
-      handler_name: 'Nguyễn Khánh Linh',
-      channel_label: 'kênh pháp chế',
-      legal_ref: 'Nghị định 13',
+      response_ref: null,
       closed_at: null,
+      created_at: stamp,
+      updated_at: stamp,
       items: [
-        {
-          id: 'it-1',
-          location_kind: 'conversation',
-          location_ref: 'qa.question',
-          proposed_action: 'delete',
-          legal_basis: null,
-          decision: 'pending',
-          location_label: 'Câu hỏi và trả lời trong phiên',
-          kind_label: 'Nhật ký hỏi đáp',
-          entry_count: 14,
-        },
-        {
-          id: 'it-2',
-          location_kind: 'chunk',
-          location_ref: 'kb.document',
-          proposed_action: 'delete',
-          legal_basis: null,
-          decision: 'pending',
-          location_label: 'Tài liệu tải lên: hồ sơ vay',
-          kind_label: 'Tài liệu',
-          entry_count: 3,
-        },
-        {
-          id: 'it-3',
-          location_kind: 'agent_memory',
-          location_ref: 'agent.memory',
-          proposed_action: 'delete',
-          legal_basis: null,
-          decision: 'pending',
-          location_label: 'Ghi nhớ của Agent Phân tích',
-          kind_label: 'Bộ nhớ agent',
-          entry_count: 1,
-        },
-        {
-          id: 'it-4',
-          location_kind: 'tile_snapshot',
-          location_ref: 'period.snapshot',
-          proposed_action: 'retain',
-          legal_basis: 'nghĩa vụ lưu trữ báo cáo',
-          decision: 'pending',
-          location_label: 'Bản kỳ chốt T6–T9 đã đóng băng',
-          kind_label: 'Kỳ chốt',
-          entry_count: 4,
-        },
-        {
-          id: 'it-5',
-          location_kind: 'audit',
-          location_ref: 'audit.audit_log',
-          proposed_action: 'retain',
-          legal_basis: 'đã che, chỉ giữ mã',
-          decision: 'pending',
-          location_label: 'Nhật ký kiểm toán',
-          kind_label: 'Kiểm toán',
-          entry_count: 22,
-        },
+        dsrItem(1, 'conversation', 'qa.question:0192f1a2-7c3d-7e4f-8a9b-0c1d2e3f4a5b', 'delete'),
+        dsrItem(2, 'chunk', 'document.chunk:hồ sơ vay 2024.pdf#p3', 'delete'),
+        dsrItem(3, 'agent_memory', 'agent.memory:Agent Phân tích', 'delete'),
+        dsrItem(4, 'tile_snapshot', 'period.snapshot:T6–T9', 'retain', 'nghĩa vụ lưu trữ báo cáo'),
+        dsrItem(5, 'source_system', 'core_banking.customers:CIF 0041872', 'provide'),
       ],
     },
     {
-      id: 'dsr-015',
-      code: 'DSR-015',
+      id: '0192f1a2-7c3d-7e4f-8a9b-000000000015',
+      subject_hash: '51ab07e3c9',
       request_kind: 'copy',
-      title: 'Khách hàng yêu cầu nhận bản sao dữ liệu',
       received_at: daysFromNow(-1),
       due_at: daysFromNow(14),
       status: 'searching',
       handler_id: 'u-khanh-linh',
-      handler_name: 'Nguyễn Khánh Linh',
-      channel_label: 'quầy giao dịch Hà Nội',
-      legal_ref: 'Nghị định 13',
+      response_ref: null,
       closed_at: null,
+      created_at: daysFromNow(-1),
+      updated_at: daysFromNow(-1),
       items: [],
     },
   ];
@@ -803,17 +768,10 @@ export function dsrFixture(): DsrRequest[] {
 
 /* ─── Handlers ─────────────────────────────────────────────────────────── */
 
-const KIND_TITLE: Record<CreateDsr['request_kind'], string> = {
-  access: 'Khách hàng yêu cầu biết dữ liệu được xử lý',
-  copy: 'Khách hàng yêu cầu nhận bản sao dữ liệu',
-  delete: 'Khách hàng yêu cầu xoá dữ liệu cá nhân',
-  correct: 'Khách hàng yêu cầu sửa dữ liệu cá nhân',
-};
-
 export function createAdminAccessHandlers() {
   let users = adminUsersFixture();
   let spaces = dataSpaceSummariesFixture();
-  const members: Record<string, DataSpaceMember[]> = { [DS_RISK]: membersFixture() };
+  const members: Record<string, MemberWire[]> = { [DS_RISK]: membersFixture() };
   let requests = accessRequestsFixture();
   let policies = accessPoliciesFixture();
   const accessView = <T extends object>(p: T) => ({
@@ -868,7 +826,7 @@ export function createAdminAccessHandlers() {
         group_label: 'Mời trực tiếp',
         role_name: roleName(body.role_id),
         data_space_text: space?.name ?? '—',
-        row_scope_text: body.row_scope ?? 'Toàn hàng',
+        row_scope_text: rowScopeText(body.row_scope) ?? 'Toàn hàng',
         row_scope_limited: Boolean(body.row_scope),
         valid_until: body.valid_until,
         last_synced_at: null,
@@ -937,16 +895,22 @@ export function createAdminAccessHandlers() {
           users.find((u) => u.id === input.principal_id)?.display_name ??
           groups.find((g) => g.id === input.principal_id)?.name ??
           input.principal_id;
+        const now = new Date().toISOString();
         return {
           id: `m-${input.principal_id}-${input.role_id}`,
+          data_space_id: id,
           principal_type: input.principal_type,
           principal_id: input.principal_id,
+          principal_name: name,
           role_id: input.role_id,
-          source: 'manual',
-          valid_until: input.valid_until,
-          display_name: name,
+          role_code: input.role_id.toUpperCase(),
           role_name: roleName(input.role_id),
-          row_scope_text: input.row_scope,
+          row_scope: input.row_scope,
+          source: 'manual',
+          source_ref: null,
+          valid_until: input.valid_until,
+          created_at: now,
+          updated_at: now,
         };
       });
       return page(members[id]);
@@ -956,9 +920,16 @@ export function createAdminAccessHandlers() {
         return problem(404, 'not_found', 'Không tìm thấy Data Space.');
       return HttpResponse.json(permissionMatrixFixture());
     }),
-    http.post(/\/v1\/permissions:simulate$/, () =>
-      HttpResponse.json(permissionSimulationFixture()),
-    ),
+    http.post(/\/v1\/permissions:simulate$/, async ({ request }) => {
+      const body = (await request.json()) as Schemas['PermissionSimulate'];
+      const subjects = [
+        ...(body.role_ids ?? []).map((id) => ({ kind: 'role' as const, id })),
+        ...(body.user_ids ?? []).map((id) => ({ kind: 'user' as const, id })),
+      ];
+      if (subjects.length === 0 || subjects.length > 2)
+        return problem(422, 'validation_failed', 'Chọn một hoặc hai vai trò hoặc người.');
+      return HttpResponse.json(permissionSimulationFixture(body.dataset_id, subjects));
+    }),
 
     /* Yêu cầu quyền */
     http.get('*/v1/access-requests', ({ request }) => {
@@ -1170,24 +1141,26 @@ export function createAdminAccessHandlers() {
       const body = (await request.json()) as CreateDsr;
       if (!body.subject_identifier?.trim())
         return problem(422, 'validation_failed', 'Nhập định danh của chủ thể dữ liệu.');
-      const n = 14 + dsrs.length;
-      const created: DsrRequest = {
-        id: `dsr-${String(n).padStart(3, '0')}`,
-        code: `DSR-${String(n).padStart(3, '0')}`,
+      const now = new Date().toISOString();
+      const created: DsrWire = {
+        id: `0192f1a2-7c3d-7e4f-8a9b-${String(16 + dsrs.length).padStart(12, '0')}`,
+        subject_hash: 'c0ffee1234',
         request_kind: body.request_kind,
-        title: KIND_TITLE[body.request_kind],
-        received_at: new Date().toISOString(),
+        received_at: body.received_at,
         due_at: body.due_at,
         status: 'searching',
-        handler_id: 'me',
-        handler_name: 'Bạn',
-        channel_label: body.channel,
-        legal_ref: 'Nghị định 13',
+        handler_id: 'u-khanh-linh',
+        response_ref: null,
         closed_at: null,
+        created_at: now,
+        updated_at: now,
         items: [],
       };
       dsrs = [...dsrs, created];
-      return HttpResponse.json(created, { status: 201 });
+      return HttpResponse.json(
+        { id: created.id, status: created.status, poll_after_ms: 2000 },
+        { status: 202 },
+      );
     }),
     http.get('*/v1/dsr/:id', ({ params }) => {
       const item = dsrs.find((d) => d.id === params.id);
@@ -1200,30 +1173,49 @@ export function createAdminAccessHandlers() {
       if (item.status === 'done' || item.status === 'rejected')
         return problem(409, 'invalid_state', 'Yêu cầu đã đóng.');
       if (verb === 'execute') {
-        const body = (await request.json()) as { item_ids: string[] };
-        if (!body.item_ids?.length)
-          return problem(422, 'validation_failed', 'Chọn ít nhất một nơi để xoá.');
-        if (item.items.some((i) => body.item_ids.includes(i.id) && i.proposed_action === 'retain'))
-          return problem(422, 'business_rule_violated', 'Có mục phải giữ theo nghĩa vụ pháp lý.');
-        const done: DsrRequest = {
+        // The api's rules (governance/dsr.py): every pending item decided, a retained one with
+        // its legal basis, nothing in a source system deleted.
+        const body = (await request.json()) as { items: Schemas['DsrDecision'][] };
+        const decided = new Map(body.items.map((d) => [d.id, d]));
+        if ((item.items ?? []).some((i) => i.decision === 'pending' && !decided.has(i.id)))
+          return problem(422, 'business_rule_violated', 'Mọi mục đang chờ cần một quyết định.');
+        for (const i of item.items ?? []) {
+          const d = decided.get(i.id);
+          if (d?.action === 'retain' && !d.legal_basis)
+            return problem(422, 'business_rule_violated', 'Giữ lại cần căn cứ pháp lý.');
+          if (d?.action === 'delete' && i.location_kind === 'source_system')
+            return problem(422, 'business_rule_violated', 'Dữ liệu ở nguồn chỉ được báo cáo.');
+        }
+        // What the worker does next: the request done, the decisions carried out.
+        const done: DsrWire = {
           ...item,
           status: 'done',
           closed_at: new Date().toISOString(),
-          items: item.items.map((i) =>
-            body.item_ids.includes(i.id)
-              ? { ...i, decision: 'done' }
-              : i.proposed_action === 'retain'
-                ? { ...i, decision: 'retained' }
-                : i,
-          ),
+          items: (item.items ?? []).map((i) => {
+            const d = decided.get(i.id);
+            if (!d) return i;
+            return d.action === 'retain'
+              ? {
+                  ...i,
+                  proposed_action: 'retain',
+                  legal_basis: d.legal_basis ?? null,
+                  decision: 'retained',
+                }
+              : {
+                  ...i,
+                  proposed_action: d.action,
+                  decision: 'done',
+                  executed_at: new Date().toISOString(),
+                };
+          }),
         };
         dsrs = dsrs.map((d) => (d.id === id ? done : d));
-        return HttpResponse.json(done);
+        return HttpResponse.json({ id, status: 'executing', poll_after_ms: 2000 }, { status: 202 });
       }
       if (verb === 'reject') {
         const body = (await request.json()) as { reason: string };
         if (!body.reason?.trim()) return problem(422, 'validation_failed', 'Ghi lý do từ chối.');
-        const rejected: DsrRequest = {
+        const rejected: DsrWire = {
           ...item,
           status: 'rejected',
           closed_at: new Date().toISOString(),

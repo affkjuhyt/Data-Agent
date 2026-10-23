@@ -66,7 +66,9 @@ describe('ErrorBookPage', () => {
       ),
     );
     const dialog = screen.getByRole('dialog', { name: 'Đánh dấu EB-0045 đã sửa' });
-    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'PR-0330' } });
+    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Đã sửa gì' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Cấu hình model' }));
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'commit 3c3a1ae3' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Đánh dấu đã sửa' }));
     expect(
       await screen.findByText(/EB-0045 đã sửa; ca hồi quy chờ lượt CI kế tiếp/),

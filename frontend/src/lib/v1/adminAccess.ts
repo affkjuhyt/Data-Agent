@@ -66,9 +66,24 @@ export interface Invitation {
   email: string;
   role_id: Uuid;
   data_space_id: Uuid;
-  row_scope: string | null;
+  row_scope: RowScope | null;
   valid_until: string | null;
 }
+
+/**
+ * A row boundary of a membership (org.data_space_member.row_scope): the values a column may take,
+ * {"region": ["Bắc", "Trung"]}. The query engine adds it as `column IN (values)` on every table
+ * of the Data Space that has the column; null is every row.
+ */
+export type RowScope = Record<string, string[]>;
+
+/** "region: Bắc, Trung · branch: HN01"; null for every row. */
+export const rowScopeText = (scope: RowScope | null): string | null =>
+  scope && Object.keys(scope).length
+    ? Object.entries(scope)
+        .map(([column, values]) => `${column}: ${values.join(', ')}`)
+        .join(' · ')
+    : null;
 
 /** GET /v1/admin/users as the api sends it, with the PROPOSAL display fields when present. */
 type AdminUserWire = Schemas['AdminUser'] &
@@ -161,7 +176,7 @@ export interface CreateDataSpace {
   status: 'draft' | 'onboarding';
 }
 
-/** org.data_space_member, with display fields. GET is a PROPOSAL (A2 has PUT only). */
+/** org.data_space_member as GET /v1/data-spaces/{id}/members reads it (MemberDetail). */
 export interface DataSpaceMember {
   id: Uuid;
   principal_type: 'user' | 'group' | 'agent';
@@ -169,11 +184,11 @@ export interface DataSpaceMember {
   role_id: Uuid;
   source: 'group_mapping' | 'manual' | 'access_request';
   valid_until: Timestamp | null;
-  /** PROPOSAL */
+  /** The person's, group's or agent's name (principal_name). */
   display_name: string;
-  /** PROPOSAL */
   role_name: string;
-  /** PROPOSAL: row scope in words; null = toàn bộ. */
+  row_scope: RowScope | null;
+  /** The row scope in words; null = toàn bộ. */
   row_scope_text: string | null;
   /** PROPOSAL: only for agents, e.g. "running". */
   agent_status?: 'running' | 'waiting' | 'idle' | 'paused' | 'error';
@@ -186,8 +201,7 @@ export interface MemberInput {
   principal_type: 'user' | 'group' | 'agent';
   principal_id: Uuid;
   role_id: Uuid;
-  /** PROPOSAL: row_scope is jsonb in D4; the screen offers named scopes. */
-  row_scope: string | null;
+  row_scope: RowScope | null;
   valid_until: string | null;
 }
 
@@ -219,23 +233,9 @@ export interface PermissionMatrix {
   rules: { row: string; column: string; agent: string };
 }
 
-/** POST /v1/permissions:simulate — one table seen under two roles. */
-export interface PermissionView {
-  principal_name: string;
-  role_name: string;
-  /** e.g. "Chỉ thấy vùng Bắc · PII bị che" */
-  scope_text: string;
-  columns: string[];
-  rows: string[][];
-  /** Which cells are masked or aggregated (muted). Same shape as rows. */
-  muted: boolean[][];
-  actions: { label: string; allowed: boolean; reason?: string; request_capability?: string }[];
-}
-
-export interface PermissionSimulation {
-  table: string;
-  views: PermissionView[];
-}
+/** One table as one role or one person reads it (TableView of POST /v1/permissions:simulate). */
+export type PermissionView = Schemas['TableView'];
+export type PermissionSimulation = Schemas['PermissionSimulation'];
 
 type DataSpaceWire = DataSpace & Partial<Pick<DataSpaceSummary, 'steward_name' | 'member_count'>>;
 
@@ -292,21 +292,87 @@ export const createDataSpace = async (body: CreateDataSpace) => {
     );
   return created;
 };
-export const listMembers = async (id: string) =>
-  okAs<Page<DataSpaceMember>>(
+/** A stored scope as the screen holds it: each column's values as text, a lone value as a list. */
+const readRowScope = (raw: unknown): RowScope | null =>
+  raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? Object.fromEntries(
+        Object.entries(raw as Record<string, unknown>).map(([column, values]) => [
+          column,
+          (Array.isArray(values) ? values : [values]).map(String),
+        ]),
+      )
+    : null;
+
+const readMember = (raw: Schemas['MemberDetail']): DataSpaceMember => {
+  const scope = readRowScope(raw.row_scope);
+  return {
+    id: raw.id,
+    principal_type: raw.principal_type as DataSpaceMember['principal_type'],
+    principal_id: raw.principal_id,
+    role_id: raw.role_id,
+    source: raw.source as DataSpaceMember['source'],
+    valid_until: raw.valid_until,
+    display_name: raw.principal_name,
+    role_name: raw.role_name,
+    row_scope: scope,
+    row_scope_text: rowScopeText(scope),
+  };
+};
+
+export const listMembers = async (id: string): Promise<Page<DataSpaceMember>> => {
+  const page = await ok(
     api.GET('/v1/data-spaces/{id}/members', { params: { path: { id }, query: ALL } }),
   );
-/** A2: PUT replaces the whole member list. */
+  return { ...page, items: page.items.map(readMember) };
+};
+/** A2: PUT replaces the whole member list; the screen reads the list again for the names. */
 export const putMembers = async (id: string, members: MemberInput[]) =>
-  // Untyped: MembersPut.row_scope is jsonb, the screen sends a named scope (PROPOSAL), so the api
-  // refuses a member with a scope; members without one go through.
-  v1Send<Page<DataSpaceMember>>('PUT', `/data-spaces/${pathId(id)}/members`, { members });
+  ok(api.PUT('/v1/data-spaces/{id}/members', { params: { path: { id } }, body: { members } }));
 export const getPermissions = async (id: string) =>
   okAs<PermissionMatrix>(api.GET('/v1/data-spaces/{id}/permissions', { params: { path: { id } } }));
-export const simulatePermissions = (body: { data_space_id: Uuid; table?: string }) =>
-  // Untyped: PermissionSimulate takes dataset_id and role/user ids, not this PROPOSAL body; the api
-  // refuses it until the screen asks for a dataset.
-  v1Send<PermissionSimulation>('POST', '/permissions:simulate', body);
+/**
+ * The table as one or two roles or people read it: the visible, masked and hidden columns and the
+ * row conditions of the active access policies (BR-137: they only ever narrow).
+ */
+export const simulatePermissions = (body: Schemas['PermissionSimulate']) =>
+  ok(api.POST('/v1/permissions:simulate', { body }));
+
+/**
+ * The columns a row scope can name, from one table of a Data Space, read in that Data Space: each
+ * with the most frequent values the latest profile found. Personal-data columns are left out —
+ * their profiled values are masked, and a boundary is not drawn on them.
+ */
+export const listScopeColumns = async (spaceId: string, datasetId: string) => {
+  const detail = await ok(
+    api.GET('/v1/datasets/{id}', {
+      params: { path: { id: datasetId } },
+      headers: { 'X-Data-Space': spaceId },
+    }),
+  );
+  return (detail.columns ?? [])
+    .filter((c) => !c.pii_label)
+    .map((c) => ({
+      name: c.name,
+      label: c.display_name ? `${c.display_name} (${c.name})` : c.name,
+      values: (Array.isArray(c.profile?.top_values) ? c.profile.top_values : [])
+        .map((t) => (t && typeof t === 'object' ? (t as { value?: unknown }).value : undefined))
+        .filter((v): v is string | number => typeof v === 'string' || typeof v === 'number')
+        .map(String),
+    }))
+    .filter((c) => c.values.length > 0);
+};
+
+/**
+ * The tables of a Data Space, read in that Data Space: the compare page is opened for a space
+ * that need not be the one the user works in.
+ */
+export const listSpaceDatasets = (spaceId: string) =>
+  ok(
+    api.GET('/v1/datasets', {
+      params: { query: ALL },
+      headers: { 'X-Data-Space': spaceId },
+    }),
+  );
 
 /* ─── Yêu cầu quyền (UC-11-07) ──────────────────────────────────────── */
 
@@ -729,12 +795,10 @@ export interface DsrItem {
   proposed_action: 'delete' | 'provide' | 'retain';
   legal_basis: string | null;
   decision: 'pending' | 'done' | 'retained';
-  /** PROPOSAL: where, in words. */
+  /** Where, in words: the kind of place and its reference. */
   location_label: string;
-  /** PROPOSAL: kind, in words. */
+  /** The kind of place, in words. */
   kind_label: string;
-  /** PROPOSAL: number of entries found there. */
-  entry_count: number;
 }
 
 export interface DsrRequest {
@@ -745,36 +809,103 @@ export interface DsrRequest {
   status: DsrStatus;
   handler_id: Uuid;
   closed_at: Timestamp | null;
-  /** PROPOSAL: DSR-014 */
+  /** The request's short reference, from its id (the table has no code). */
   code: string;
-  /** PROPOSAL */
+  /** The kind of request, in words. */
   title: string;
-  /** PROPOSAL: "kênh pháp chế" */
-  channel_label: string;
-  /** PROPOSAL: "Nghị định 13" */
-  legal_ref: string;
-  /** PROPOSAL */
+  /** The handler's name from the organisation's users; their id when they are gone. */
   handler_name: string;
   items: DsrItem[];
 }
 
-export interface CreateDsr {
-  request_kind: DsrKind;
-  /** Normalised and hashed by the server (subject_hash); never stored as is. */
-  subject_identifier: string;
-  /** PROPOSAL */
-  channel: string;
-  due_at: string;
-}
+export type CreateDsr = Schemas['DsrCreate'];
+
+/** What happens to one found item when the request is executed (DsrDecision). */
+export type DsrDecision = Schemas['DsrDecision'];
 
 /** PROPOSAL: GET /v1/dsr (A2 has create, get and :execute). */
-export const listDsr = () => okAs<Page<DsrRequest>>(api.GET('/v1/dsr', { params: { query: ALL } }));
-export const getDsr = async (id: string) => okAs<DsrRequest>(api.GET('/v1/dsr/{id}', { params: { path: { id } } }));
-// Untyped: DsrCreate also requires received_at, which the form does not ask for.
-export const createDsr = (body: CreateDsr) => v1Send<DsrRequest>('POST', '/dsr', body);
-// Untyped: DsrExecute takes items [{id, action, legal_basis}], the screen sends the ids it ticked.
-export const executeDsr = async (id: string, itemIds: string[]) =>
-  v1Send<DsrRequest>('POST', `/dsr/${pathId(id)}:execute`, { item_ids: itemIds });
+const DSR_TITLE: Record<DsrKind, string> = {
+  access: 'Yêu cầu truy cập dữ liệu',
+  copy: 'Yêu cầu nhận bản sao dữ liệu',
+  delete: 'Yêu cầu xoá dữ liệu',
+  correct: 'Yêu cầu sửa dữ liệu',
+};
+
+const LOCATION_KIND: Record<DsrItem['location_kind'], string> = {
+  chunk: 'Đoạn tài liệu',
+  tile_snapshot: 'Kết quả trong phiên',
+  derived_table: 'Bảng dẫn xuất',
+  conversation: 'Hội thoại',
+  agent_memory: 'Bộ nhớ agent',
+  source_system: 'Hệ thống nguồn',
+  audit: 'Nhật ký kiểm toán',
+};
+
+/** DSR-1A2B3C: the last characters of the id, which the list, the toast and the export share. */
+const dsrCode = (id: string) => `DSR-${id.replace(/-/g, '').slice(-6).toUpperCase()}`;
+
+const readDsrItem = (raw: Schemas['DsrItemView']): DsrItem => {
+  const kind = raw.location_kind as DsrItem['location_kind'];
+  const label = LOCATION_KIND[kind] ?? raw.location_kind;
+  return {
+    ...raw,
+    location_kind: kind,
+    proposed_action: raw.proposed_action as DsrItem['proposed_action'],
+    decision: raw.decision as DsrItem['decision'],
+    location_label: `${label} · ${raw.location_ref}`,
+    kind_label: label,
+  };
+};
+
+const readDsr = (
+  raw: Schemas['DsrSummary'] | Schemas['DsrRequestView'],
+  names: Map<string, string>,
+): DsrRequest => ({
+  id: raw.id,
+  request_kind: raw.request_kind as DsrKind,
+  received_at: raw.received_at,
+  due_at: raw.due_at,
+  status: raw.status as DsrStatus,
+  handler_id: raw.handler_id,
+  closed_at: raw.closed_at,
+  code: dsrCode(raw.id),
+  title: DSR_TITLE[raw.request_kind as DsrKind] ?? raw.request_kind,
+  handler_name: names.get(raw.handler_id) ?? raw.handler_id,
+  items: 'items' in raw ? (raw.items ?? []).map(readDsrItem) : [],
+});
+
+/** The organisation's people by id, for the handler's name. */
+const userNames = async () => {
+  const users = await ok(api.GET('/v1/admin/users', { params: { query: ALL } }));
+  return new Map(users.items.map((u) => [u.id, u.display_name]));
+};
+
+export const listDsr = async (): Promise<Page<DsrRequest>> => {
+  const [page, names] = await Promise.all([
+    ok(api.GET('/v1/dsr', { params: { query: ALL } })),
+    userNames(),
+  ]);
+  return { ...page, items: page.items.map((d) => readDsr(d, names)) };
+};
+
+export const getDsr = async (id: string): Promise<DsrRequest> => {
+  const [raw, names] = await Promise.all([
+    ok(api.GET('/v1/dsr/{id}', { params: { path: { id } } })),
+    userNames(),
+  ]);
+  return readDsr(raw, names);
+};
+
+/** 202: the search for the subject's data starts; the request is read again by its id. */
+export const createDsr = async (body: CreateDsr) => {
+  const accepted = await ok(api.POST('/v1/dsr', { body }));
+  return { id: accepted.id, code: dsrCode(accepted.id) };
+};
+
+/** Every pending item needs its decision; retaining one needs its legal basis (UC-11-06 3a). */
+export const executeDsr = async (id: string, items: DsrDecision[]) =>
+  ok(api.POST('/v1/dsr/{id}:execute', { params: { path: { id } }, body: { items } }));
+
 /** PROPOSAL: :reject with a reason (status rejected). */
 export const rejectDsr = async (id: string, reason: string) =>
   v1Send<DsrRequest>('POST', `/dsr/${pathId(id)}:reject`, { reason });

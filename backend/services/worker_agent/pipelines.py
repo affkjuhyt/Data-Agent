@@ -10,7 +10,8 @@ pipeline_run.requested (preview or full): for each step the row count, and for e
 column, a numeric column of the output that the first step already has, its total. A filter or dedupe step may
 lower a total (its drop goes to rows_dropped with the condition it names, BR-23); any other step
 must keep every total (UC-06-01 E2), else totals_check says which column moved and the api will
-not save the result. A preview runs on the first `sample_rows` rows of the first input.
+not save the result. A preview runs on the first `sample_rows` rows of the first input, or on
+the whole input when sample_rows is null (a test run: measured like a save, nothing written).
 
 pipeline.materialize_requested: the full result (up to MATERIALIZE_ROWS) is written to
 workspace.{table_name} through public.da_materialize_upload (svc_ingest), registered as a derived
@@ -285,9 +286,9 @@ async def run_requested(event: Event) -> None:
         await _fail(event, run.id, "Python steps are not run yet; only SQL steps are.")
         return
     sample = None
-    if run.mode == "preview" and ctx["datasets"]:
+    if run.mode == "preview" and ctx["datasets"] and run.sample_rows is not None:
         first = ctx["datasets"][0]
-        limit = int(run.sample_rows or 1000)
+        limit = int(run.sample_rows)
         sample = f'{first.table_name}|SELECT * FROM "{first.schema_name}"."{first.table_name}" LIMIT {limit}'
     result = await _measure(ctx, event, sample)
     if isinstance(result, str):

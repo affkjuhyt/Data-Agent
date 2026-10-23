@@ -254,6 +254,8 @@ export function createErrorBookHandlers() {
             'business_rule_violated',
             'Cần loại lỗi và nguyên nhân gốc trước khi đánh dấu đã sửa (BR-179).',
           );
+        if (!body.fix_kind)
+          return problem(422, 'validation_failed', 'fix_kind: cho biết đã sửa gì.');
         if (!body.fix_proposal_id && !body.fix_ref)
           return problem(
             422,
@@ -264,7 +266,7 @@ export function createErrorBookHandlers() {
           update(id, {
             status: 'fixed',
             fix: {
-              kind: body.fix_proposal_id ? 'proposal' : (body.fix_kind as 'commit'),
+              kind: body.fix_proposal_id ? 'proposal' : 'commit',
               label: body.fix_proposal_id ?? body.fix_ref,
               ref: body.fix_proposal_id ?? body.fix_ref,
               proposal_status: body.fix_proposal_id ? 'accepted' : null,

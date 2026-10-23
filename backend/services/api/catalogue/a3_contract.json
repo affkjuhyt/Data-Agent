@@ -2637,13 +2637,15 @@
    ],
    "body": {
     "cron": false,
+    "work_calendar_id": false,
+    "trigger_on_job_id": false,
     "no_overlap": false,
     "on_failure": false
    },
    "query": [],
    "returns": "—",
    "errors": [],
-   "request_text": "cron, no_overlap, on_failure"
+   "request_text": "cron, work_calendar_id, trigger_on_job_id, no_overlap, on_failure"
   },
   "GET /v1/pipelines/{id}/output-draft": {
    "group": "Biến đổi dữ liệu",

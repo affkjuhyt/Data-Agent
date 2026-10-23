@@ -907,7 +907,7 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/pipelines/{id}/steps/{seq}/preview | — | StepPreview | — |
 | POST /v1/pipelines/{id}/messages | text\* | PipelineDetail | — |
 | GET /v1/pipelines/{id}/schedule | — | ScheduleRequest | — |
-| POST /v1/pipelines/{id}/schedule:preview | cron, no\_overlap, on\_failure | — | — |
+| POST /v1/pipelines/{id}/schedule:preview | cron, work\_calendar\_id, trigger\_on\_job\_id, no\_overlap, on\_failure | — | — |
 | GET /v1/pipelines/{id}/output-draft | — | OutputDraft | — |
 | GET /v1/writebacks | ?status | Page<WritebackView> | — |
 

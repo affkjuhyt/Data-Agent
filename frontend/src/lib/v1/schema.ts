@@ -6707,6 +6707,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tile-snapshots/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Một lần chạy ô (artifact version)
+         * @description One tile run by id; 404 if the caller cannot see the tile (A1.7).
+         */
+        get: operations["getTileSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tiles/{id}": {
         parameters: {
             query?: never;
@@ -6736,6 +6756,26 @@ export interface paths {
         put?: never;
         /** Bình luận, @nhắc, giao việc */
         post: operations["createTileComment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tiles/{id}/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lịch sử lần chạy ô, có số version (R1-13)
+         * @description R1-13: every run of the tile as a versioned artifact (oldest = version 1).
+         */
+        get: operations["listTileSnapshots"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -15238,7 +15278,9 @@ export interface components {
              */
             role_id: string;
             /** Row Scope */
-            row_scope?: string | null;
+            row_scope?: {
+                [key: string]: unknown;
+            } | null;
             /** Valid Until */
             valid_until?: string | null;
         };
@@ -18818,6 +18860,16 @@ export interface components {
              */
             next_page_token: string;
         };
+        /** Page[TileSnapshotView] */
+        Page_TileSnapshotView_: {
+            /** Items */
+            items: components["schemas"]["TileSnapshotView"][];
+            /**
+             * Next Page Token
+             * @default
+             */
+            next_page_token: string;
+        };
         /** Page[ToolView] */
         Page_ToolView_: {
             /** Items */
@@ -19537,7 +19589,7 @@ export interface components {
              * Sample Rows
              * @default 10000
              */
-            sample_rows?: number;
+            sample_rows?: number | null;
         };
         /** PrincipalRef */
         PrincipalRef: {
@@ -23093,6 +23145,47 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /**
+         * TileSnapshotView
+         * @description One immutable run of a tile (R1-13 artifact version). `version` is 1-based, oldest first.
+         */
+        TileSnapshotView: {
+            /** As Of */
+            as_of: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Data Time */
+            data_time: unknown;
+            /** Error */
+            error: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Latest */
+            is_latest: boolean;
+            /** Period Close Id */
+            period_close_id: string | null;
+            /** Query Run Ids */
+            query_run_ids: string[];
+            /** Result Ref */
+            result_ref: string | null;
+            /** Status */
+            status: string;
+            /** Summary */
+            summary: unknown | null;
+            /**
+             * Tile Id
+             * Format: uuid
+             */
+            tile_id: string;
+            /** Version */
+            version: number;
+        };
         /** TileView */
         TileView: {
             /** Agent Suggestion State */
@@ -25042,7 +25135,11 @@ export interface components {
             /** Version */
             version: number;
         };
-        /** SchedulePreview */
+        /**
+         * SchedulePreview
+         * @description The schedule as the dialog holds it, before it is saved: the same fields as ScheduleRequest
+         *     that decide when the pipeline runs.
+         */
         services__api__modules__pipeline__schemas__SchedulePreview: {
             /** Cron */
             cron?: string | null;
@@ -25057,6 +25154,10 @@ export interface components {
              * @enum {string}
              */
             on_failure?: "notify" | "retry_then_notify" | "skip";
+            /** Trigger On Job Id */
+            trigger_on_job_id?: string | null;
+            /** Work Calendar Id */
+            work_calendar_id?: string | null;
         };
         /** PlanView */
         services__api__modules__qa__schemas__PlanView: {
@@ -76095,6 +76196,118 @@ export interface operations {
             };
         };
     };
+    getTileSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TileSnapshotView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
     patchTile: {
         parameters: {
             query?: never;
@@ -76351,6 +76564,123 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommentView"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Unauthenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Gone */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemBody"];
+                    "application/problem+json": unknown;
+                };
+            };
+        };
+    };
+    listTileSnapshots: {
+        parameters: {
+            query?: {
+                page_size?: number;
+                page_token?: string;
+                /** @description A3's name for page_token */
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_TileSnapshotView_"];
                 };
             };
             /** @description Invalid request */

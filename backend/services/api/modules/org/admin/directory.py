@@ -9,7 +9,7 @@ email, a username, a department or an attribute (A3: "không có thuộc tính c
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Path, Query
 from pydantic import BaseModel, Field
@@ -80,7 +80,9 @@ class InvitationCreate(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     role_id: uuid.UUID
     data_space_id: uuid.UUID
-    row_scope: str | None = Field(default=None, max_length=2_000)
+    # The same boundary as a membership's ({"column": [values]}, MemberIn): the invitation
+    # becomes one when it is accepted.
+    row_scope: dict[str, Any] | None = None
     valid_until: str | None = None
 
 
@@ -218,9 +220,7 @@ async def sync_directory(principal: CurrentPrincipal) -> DirectorySyncAccepted:
     status_code=202,
     **endpoint("POST", "/v1/admin/invitations", operation_id="inviteUser"),
 )
-async def invite_user(
-    body: InvitationCreate, principal: CurrentPrincipal
-) -> InvitationAccepted:
+async def invite_user(body: InvitationCreate, principal: CurrentPrincipal) -> InvitationAccepted:
     invitation_id = uuid7()
     async with transaction(ROLE, principal) as session:
         await live_data_space(session, body.data_space_id)
