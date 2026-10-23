@@ -16,6 +16,9 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
+    // Above vitest.setup.ts's 5 s for findBy/waitFor, so a test with two slow waits on a loaded
+    // machine fails on what it found, not on the clock.
+    testTimeout: 20_000,
     css: true,
     include: ["src/**/*.{test,spec}.{ts,tsx}", "tests/frontend/**/*.{test,spec}.{ts,tsx}"],
     exclude: ["node_modules", "dist", "archive", ".git"],
