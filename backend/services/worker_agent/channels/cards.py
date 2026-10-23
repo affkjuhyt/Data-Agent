@@ -50,3 +50,15 @@ def probe_card(*, app_url: str) -> Message:
     link = app_url.rstrip("/")
     text = "Đây là thông báo thử từ Data Agent: kênh này nhận được thông báo của bạn."
     return Message("Thông báo thử", "Thông báo thử", text, link)
+
+
+def report_card(*, title: str, as_of: str, link: str) -> Message:
+    """A scheduled report is ready (report_runs.py): its title, its date and the way in. No figure
+    and no file goes out by mail: each reader opens their own rendering in the app (BR-34, BR-35)."""
+    text = (
+        f"{title}\n"
+        f"Báo cáo số liệu đến ngày {as_of} đã sẵn sàng.\n"
+        "Mở ứng dụng để xem bản của bạn.\n"
+        f"{link}"
+    )
+    return Message(f"[Báo cáo] {title}", title, text, link)

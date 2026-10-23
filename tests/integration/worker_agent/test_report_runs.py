@@ -12,12 +12,13 @@ from typing import Any
 import pytest
 
 from services.worker_agent import report_runs, scheduler, storage
+from services.worker_agent.channels import gateway
 from services.worker_agent.events import OutboxTableSource
 from services.worker_agent.main import run_once
 
 from . import test_answers
 from .conftest import Seed
-from .test_answers import Bank, build
+from .test_answers import Bank, activate, build
 from .test_column_masking import catalogue_columns
 
 warehouse = test_answers.warehouse
@@ -226,14 +227,33 @@ async def test_a_report_reading_personal_data_is_not_sent(
     assert store.files == {}
 
 
-async def test_a_channel_not_wired_and_a_digest_say_so(
+class Mailbox:
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, Any]] = []
+
+    async def send(self, address: str, m: Any) -> None:
+        self.sent.append((address, m))
+
+
+async def test_a_bound_email_gets_the_card_and_an_unbound_one_makes_it_partial(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch, store: Store
 ) -> None:
     bank = build(seed, warehouse, monkeypatch)
     catalogue_columns(seed, bank)
+    mailbox = Mailbox()
+    monkeypatch.setattr(gateway, "senders", lambda: {"email": mailbox})
+    seed.row(
+        "notify.channel_binding",
+        org_id=bank.org,
+        user_id=bank.user,
+        channel="email",
+        external_address="a@bank.example",
+        verified_at="2026-10-17T00:00:00Z",
+        status="active",
+    )
     report = schedule(bank, formats=("html", "pdf"))
     recipient(bank, report, bank.user, channels=("in_app", "email"))
-    recipient(bank, report, other_user(seed, bank), channels=("email",))
+    recipient(bank, report, other_user(seed, bank), channels=("email",))  # bound to nothing
     run = request(bank, report)
     await drain()
     status, _, outputs = run_of(seed, run)
@@ -242,12 +262,109 @@ async def test_a_channel_not_wired_and_a_digest_say_so(
         "html": "stored",
         "pdf": "not_supported",
     }
+    ((address, card),) = mailbox.sent
+    assert address == "a@bank.example" and card.subject == "[Báo cáo] Báo cáo dư nợ"
+    # A title, a date and the way in: no figure goes out by mail (BR-35).
+    assert f"/reports/runs/{run}" in card.link and "HN1" not in card.text
+    assert seed.one(
+        "SELECT channel, status FROM notify.channel_delivery WHERE user_id = %s", bank.user
+    ) == ("email", "sent")
 
-    digest = schedule(bank, kind="digest")
+
+async def test_a_digest_tells_its_owner_the_key_metrics_the_alerts_and_what_waits(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch, store: Store
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank, metrics=("DU_NO",))
+    du_no = seed.one(
+        "SELECT id FROM context.metric WHERE data_space_id = %s AND code = 'DU_NO'", bank.space
+    )
+    digest = schedule(bank, kind="digest", formats=("html",))
+    recipient(bank, digest, bank.user)
+    # The metric list travels only in the schedule's event (no column holds it).
+    seed.row(
+        "monitor.outbox",
+        org_id=bank.org,
+        aggregate_type="report_schedule",
+        aggregate_id=digest,
+        event_type="report_schedule.created",
+        payload=json.dumps({"metric_ids": [str(du_no)]}),
+        published_at="2026-10-01T00:00:00Z",
+    )
+    watch = seed.row(
+        "monitor.monitor",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        owner_id=bank.user,
+        metric_id=du_no,
+        rule_kind="threshold",
+        rule=json.dumps({"op": ">", "value": 1}),
+        schedule_cron="0 8 * * *",
+    )
+    seed.row(
+        "monitor.alert",
+        org_id=bank.org,
+        monitor_id=watch,
+        fired_at="2026-09-29T02:00:00Z",
+        summary="Dư nợ vượt ngưỡng",
+        dedup_key="du-no-2026-09",
+    )
+    seed.row(
+        "inbox.hitl_request",
+        org_id=bank.org,
+        kind="approve_proposal",
+        title="Duyệt chỉ số",
+        source_service="context",
+        assignee_id=bank.user,
+    )
+    run = bank.seed.row(
+        "monitor.report_run",
+        org_id=bank.org,
+        report_schedule_id=digest,
+        kind="digest",
+        as_of="2026-09-30",
+        trigger="schedule",
+        status="running",
+    )
+    seed.row(
+        "monitor.outbox",
+        org_id=bank.org,
+        aggregate_type="report_run",
+        aggregate_id=run,
+        event_type=report_runs.EVENT_TYPE,
+        payload=json.dumps({"report_run_id": str(run)}),
+    )
+    await drain()
+    status, checks, outputs = run_of(seed, run)
+    assert status == "sent", (checks, outputs)
+    page = store.files[f"report-runs/{run}/g1.html"].decode()
+    assert "Số liệu đến ngày 30/09/2026, 1 chỉ số chính." in page
+    assert "Có 1 cảnh báo trong 7 ngày qua." in page and "Dư nợ vượt ngưỡng" in page
+    assert "1 việc đang chờ bạn ở Cần bạn." in page
+    # Every figure links to the run it was computed by.
+    query_run = seed.one(
+        "SELECT id FROM query.query_run WHERE caller_id = (SELECT v.id FROM context.metric_version v"
+        " WHERE v.metric_id = %s ORDER BY v.version DESC LIMIT 1) ORDER BY started_at DESC LIMIT 1",
+        du_no,
+    )
+    assert f"/query-runs/{query_run}" in page
+    assert [(k, b) for _, k, b in told(seed, run)] == [("digest", None)]
+
+
+async def test_a_quiet_week_still_makes_a_short_digest(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch, store: Store
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    digest = schedule(bank, kind="digest", formats=("html",))
+    recipient(bank, digest, bank.user)
     run = request(bank, digest, kind="digest")
     await drain()
-    status, checks, _ = run_of(seed, run)
-    assert status == "failed" and "digest" in checks["error"]
+    status, _, _ = run_of(seed, run)
+    assert status == "sent"
+    assert (
+        "Không có thay đổi vượt ngưỡng trong kỳ."
+        in store.files[f"report-runs/{run}/g1.html"].decode()
+    )
 
 
 async def test_the_scheduler_requests_a_run_once_when_the_cron_fires(

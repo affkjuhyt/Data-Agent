@@ -88,14 +88,41 @@ Người nghiệm thu chạy cột "Bước kiểm trên cụm", ghi Đạt/Khô
 | # | Mức | Story | Lỗi |
 | --- | --- | --- | --- |
 | 1 | ~~Cao~~ Đã sửa | R0-8, R0-11 | Làm lại trong V3 (nhánh `r0-8-11`): kết quả kiểm đi cùng câu trả lời vì A1.6 không có sự kiện verification; lớp lỗi áp cho lượt chạy agent, vì đường hỏi nhanh V3 không có vòng judge. `EVIDENCE_INSUFFICIENT` và `MATERIALIZATION` có đường đi nhưng chưa có điểm nào phát ra |
-| 2 | Trung bình | R0-7 | `qa.answer` không lưu mã từ chối; FE gán cứng `code: 'REFUSED'`, nên hành vi theo mã (thử lại, hỏi lại) không tới được người dùng. `AGENT_CONFIG_ERROR`, `PLANNER_ERROR` không còn được phát; không test nào cho đường lỗi CSDL |
+| 2 | ~~Trung bình~~ Đã sửa | R0-7 | Mã từ chối và hành động tiếp theo được lưu cùng câu trả lời (`number_check.refusal`, vì `qa.answer` không có cột cho mã), `answerMessage.readRefusal` đưa vào `RefusalCard`, nên nút thử lại / diễn đạt lại theo mã có cả khi tải lại trang. Còn: `AGENT_CONFIG_ERROR`, `PLANNER_ERROR` không được V3 phát ra, và chưa có test cho đường lỗi CSDL |
 | 3 | Trung bình | R0-2 | Adapter MCP không nối vào đường câu hỏi hay lượt chạy; chưa có test khoá cache theo tenant |
 | 4 | Trung bình | R0-10 | Bộ kiểm tĩnh kế hoạch (chu trình, kiểu cổng, quyền, ngân sách) đã xoá; kế hoạch V3 là mẫu kiểm tại chỗ |
 | 5 | Trung bình | R0-1 | Luồng V3 không gửi result set; bảng dựng từ `answer.figures` |
 | 6 | Thấp | R0-6 | Không có kiểm tra CI grep `WAREHOUSE_PASSWORD__` như "Xong khi" yêu cầu (grep tay hiện rỗng) |
 | 7 | Thấp | R0-3, R0-12 | RUNBOOK §10a còn tả `runtime.pending_review`; migration `v3_0003` vẫn tạo bảng không ai đọc |
 | 8 | Thấp | — | Suite `contracts` chạy trong image `kb-backend`, đang bị gỡ: cần chuyển image trước khi xoá |
-| 9 | Thấp | — | `test_bench_harness` (prompt `llm_reader.py`) và `tests/integration/api/test_org_identity.py::test_list_needs_ask` (`GET /v1/data-spaces` trả 200 cho người không có `ask`) đỏ trên `main` |
+| 9 | ~~Thấp~~ Đã sửa | — | `test_bench_harness` và `test_org_identity::test_list_needs_ask` xanh lại trên `main` (`6eaba3fe`, `84beabbd`; test danh sách Data Space theo A2 mới) |
+
+## Chạy kịch bản trên cụm, 23/10/2026
+
+Cụm OrbStack chạy `a5d2b51f` (`main` `491e50ae` cộng email báo cáo, bản tin, mã từ chối). Các bước gọi qua Kong
+(30100) bằng tài khoản `helios-engineer`, Data Space `DS-DEMO`; người kiểm: Claude (agent), chưa phải người nghiệm thu.
+
+| Story | Đã làm | Kết quả | Đạt? |
+| --- | --- | --- | --- |
+| R0-1 | Hỏi "Doanh thu thuần theo Khu vực tháng này" | `answered`, 6 số, mỗi số có lần chạy truy vấn; "theo vùng" được hỏi lại "Khu vực" (BR-80) | Đạt |
+| R0-2 | — | Adapter MCP chưa nối, không kiểm được trên cụm | Không áp dụng |
+| R0-3 | — | Lượt chạy thử không ghi nên không dừng ở checkpoint; cần một agent chạy thật có bước ghi. Chưa kiểm tay (integration `test_runs.py` xanh) | Chưa kiểm |
+| R0-5 | `POST /v1/questions` kèm `memory_context` | 422 `validation_failed` nêu tên trường | Đạt |
+| R0-6 | `env` của pod `api`, `worker-agent`; `git grep WAREHOUSE_PASSWORD__ -- deploy backend` | 0 biến, 0 tệp | Đạt |
+| R0-7 | Hỏi "Doanh thu thuần" theo số đã nộp mà không nêu kỳ | `refused`, `number_check.refusal` = `NO_DATA_FOR_PERIOD` / `rephrase` | Đạt |
+| R0-8 | Câu trả lời R0-1 | `verification.verdict` = PASS, ba mục ✓ | Đạt, xem lỗi 10 |
+| R0-9 | — | Cần GPU (`make bench`), không chạy | Chưa kiểm |
+| R0-10 | `GET /v1/questions/{id}` của câu R0-1 | Có kế hoạch (`chips`, bước semantic) | Đạt |
+| R0-11 | Chạy thử agent "Báo cáo định kỳ" với mục tiêu không nêu chỉ số | `failed`, `stop_detail` = `INTENT_MISMATCH` / `clarify` / `UNRESOLVED_ENTITY` | Đạt |
+| R0-12 | Đọc RUNBOOK §8, §10a, MCP | §10a còn tả `runtime.pending_review` (lỗi 7) | Đạt có điều kiện |
+
+Lỗi phát hiện khi chạy (đề xuất mức):
+
+| # | Mức | Story | Lỗi |
+| --- | --- | --- | --- |
+| 10 | Cao | R0-7, R0-8 | "Doanh thu phí bảo hiểm nhân thọ tháng này" (Data Space không có chỉ số này) được hiểu là `NET_REVENUE` và trả lời "Doanh thu phí bảo hiểm nhân thọ tháng này là 262.000.000 VND": sai chỉ số, nhắc lại cụm từ của người hỏi như tên chỉ số, và kết quả kiểm vẫn PASS vì không mục nào so chỉ số đã hiểu với câu hỏi |
+| 11 | Trung bình | R0-7 | Hỏi kỳ không có dữ liệu ("Doanh thu thuần tháng 1/2015") trả lời "… là CHƯA CÓ" với kiểm PASS, thay vì từ chối `NO_DATA_FOR_PERIOD` |
+| 12 | Trung bình | R0-7 | "Tỷ lệ nợ xấu tháng này" được hỏi lại với hai chỉ số không liên quan (Doanh thu thuần, Số khiếu nại) thay vì báo không có chỉ số này |
 
 ## Ký nghiệm thu
 

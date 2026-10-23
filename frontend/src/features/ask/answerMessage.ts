@@ -12,7 +12,7 @@ import {
   readFigures,
 } from './dataAnswer';
 import { interpretationChips } from './interpretation';
-import type { AskMessage, Citation, VerificationFrame } from './types';
+import type { AskMessage, Citation, Refusal, VerificationFrame } from './types';
 
 /** One entry of qa.answer.citations as worker-agent writes it. */
 interface AnswerCitationWire {
@@ -68,13 +68,26 @@ export function readVerification(numberCheck: unknown): VerificationFrame | unde
   };
 }
 
+const NEXT_ACTIONS = new Set(['retry', 'rephrase', 'contact_steward']);
+
+/** The code and what the person can do about it, as the worker keeps them with a refusal
+ *  (number_check.refusal, R0-7), so the card offers retry or rephrase on reload too. An answer
+ *  from before that, or anything not of that shape, is the server's message alone. */
+export function readRefusal(answer: Pick<Answer, 'text' | 'number_check'>): Refusal {
+  const check = answer.number_check;
+  const kept = check && typeof check === 'object' ? (check as { refusal?: unknown }).refusal : undefined;
+  const { code, next_action } = (kept && typeof kept === 'object' ? kept : {}) as Record<string, unknown>;
+  return {
+    code: typeof code === 'string' && code ? code : 'REFUSED',
+    message: answer.text,
+    next_action: typeof next_action === 'string' && NEXT_ACTIONS.has(next_action) ? next_action : '',
+  };
+}
+
 /** The answer as the Ask screen draws it. */
 export function fromAnswer(answer: Answer): Partial<AskMessage> {
   if (answer.kind === 'refusal') {
-    return {
-      content: '',
-      refusal: { code: 'REFUSED', message: answer.text, next_action: '' },
-    };
+    return { content: '', refusal: readRefusal(answer) };
   }
   const citations = citationsOf(answer);
   const verification = readVerification(answer.number_check);

@@ -46,3 +46,19 @@ async def test_a_refusal_carries_no_verification(
     status, kind, _, _, _, answer_id = answer_of(seed, q)
     assert kind in ("refusal", "clarification"), (status, kind)
     assert "verification" not in (checks_of(seed, answer_id) or {})
+
+
+async def test_a_refusal_keeps_its_code_and_what_to_do_about_it(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # R0-7: the code reaches the Ask screen from the stored answer, not only from the live stream.
+    bank = build(seed, warehouse, monkeypatch)
+    q = bank.ask("Doanh thu phí bảo hiểm tháng này")
+    await drain()
+    status, kind, _, _, _, answer_id = answer_of(seed, q)
+    assert (status, kind) == ("refused", "refusal")
+    refusal = checks_of(seed, answer_id)["refusal"]
+    assert refusal["code"] == "UNRESOLVED_ENTITY" and refusal["next_action"] in (
+        "rephrase",
+        "contact_steward",
+    )
