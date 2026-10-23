@@ -869,12 +869,6 @@ export function createAdminAccessHandlers() {
         ? HttpResponse.json(space)
         : problem(404, 'not_found', 'Không tìm thấy Data Space.');
     }),
-    http.get('*/v1/data-spaces/:id', ({ params }) => {
-      const space = spaces.find((s) => s.id === params.id);
-      return space
-        ? HttpResponse.json(space)
-        : problem(404, 'not_found', 'Không tìm thấy Data Space.');
-    }),
     http.get('*/v1/data-spaces/:id/members', ({ params }) => {
       if (!spaces.some((s) => s.id === params.id))
         return problem(404, 'not_found', 'Không tìm thấy Data Space.');

@@ -804,6 +804,66 @@ async def test_resources_stay_in_their_data_space_and_org(world: AgentWorld, see
         assert (await api.post(f"/v1/runs/{run_id}:cancel", headers=h)).status_code == 404
 
 
+async def test_an_agent_is_seen_from_its_own_data_space_only(world: AgentWorld, seed: Seed) -> None:
+    # R1-11: the same person, a member of two Data Spaces of one org, reaches an agent and its
+    # runs only under the agent's space.
+    second = seed.row(
+        "org.data_space",
+        org_id=world.org,
+        code=f"DS-B{world.suffix}",
+        name="Second space",
+        steward_id=world.owner,
+    )
+    role = seed.row(
+        "org.role",
+        org_id=world.org,
+        code=f"AGB{world.suffix}",
+        name="Agent B",
+        capabilities=["ask", "create_agent", "run_agent"],
+    )
+    seed.row(
+        "org.data_space_member",
+        org_id=world.org,
+        data_space_id=second,
+        principal_type="user",
+        principal_id=world.owner,
+        role_id=role,
+    )
+    async with client(world) as api:
+        item = await new_agent(api, world, config={"goal": "g"})
+        run_id = await started_run(api, world, item["id"])
+        # A child run written in the other space is not listed under the parent's.
+        seed.row(
+            "agent.agent_run",
+            org_id=world.org,
+            agent_id=item["id"],
+            config_version=1,
+            data_space_id=second,
+            trigger_kind="agent_call",
+            parent_run_id=run_id,
+            depth=1,
+            status="queued",
+        )
+        children = await api.get(f"/v1/runs/{run_id}/children", headers=owner_headers(world))
+        assert children.status_code == 200, children.text
+        assert children.json()["items"] == []
+
+        h = {**owner_headers(world), "X-Data-Space": str(second)}
+        for path in (
+            f"/v1/agents/{item['id']}",
+            f"/v1/agents/{item['id']}/configs",
+            f"/v1/agents/{item['id']}/memories",
+            f"/v1/runs/{run_id}",
+            f"/v1/runs/{run_id}/children",
+        ):
+            assert (await api.get(path, headers=h)).status_code == 404, path
+        assert (await api.post(f"/v1/agents/{item['id']}/test-runs", headers=h)).status_code == 404
+        listed = await api.get("/v1/agents", headers=h)
+        assert [a["id"] for a in listed.json()["items"]] == []
+        runs = await api.get("/v1/runs", headers=h)
+        assert run_id not in [r["id"] for r in runs.json()["items"]]
+
+
 # Proves AC-13-07-02, AC-13-07-03, AC-13-07-06.
 async def test_memories(world: AgentWorld, seed: Seed) -> None:
     async with client(world) as api:

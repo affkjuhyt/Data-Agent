@@ -49,6 +49,7 @@ from services.worker_agent.audit.run import AuditFailed, Target, gather, load_ta
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.query.guard import SqlRejected
+from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.questions import (
     QUERYABLE,
     _internal_workspace_source,
@@ -841,6 +842,17 @@ async def _execute(work: Run, run: agent.AgentRun) -> None:
             raise RunFailed("Không tìm thấy phiên bản cấu hình của lượt chạy.")
         owner = await session.get(agent.AgentDef, run.agent_id)
         assert owner is not None
+        # An agent sees its own Data Space only (R1-11): the api writes a run with the agent's
+        # space, so a row naming another one is refused before anything of that space is read,
+        # as is a run whose principal holds no ask grant there (the Q&A path's check).
+        if run.data_space_id != owner.data_space_id:
+            raise RunFailed("Lượt chạy ghi một Data Space khác với Data Space của agent.")
+        if not await can_ask_data_space(
+            session, data_space_id=run.data_space_id, principal_id=work.principal
+        ):
+            raise RunFailed(
+                "Người chạy agent không thuộc Data Space hoặc chưa được cấp quyền hỏi dữ liệu."
+            )
         tools = (
             await session.scalars(
                 select(agent.AgentTool).where(agent.AgentTool.agent_config_id == config.id)

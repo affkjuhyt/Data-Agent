@@ -726,6 +726,113 @@ async def test_a_question_the_space_cannot_read_stops_the_plan_and_names_it(
     assert "Lợi nhuận theo quý" in error and steps(seed, run) == []
 
 
+def acting_as_its_account(bank: Bank, run: uuid.UUID, *, member: bool) -> None:
+    """The run of a schedule: no person started it, the agent's own account acts. Another person
+    is a member, so the space is no longer in the open pilot state."""
+    seed = bank.seed
+    account = seed.row(
+        "org.app_user",
+        org_id=bank.org,
+        external_id=f"agent-{uuid.uuid4().hex[:6]}",
+        username=f"agent-{uuid.uuid4().hex[:6]}",
+        display_name="Agent nợ xấu",
+        kind="agent",
+        owner_user_id=bank.user,
+    )
+    ask = seed.row(
+        "org.role",
+        org_id=bank.org,
+        code=f"ASK-{uuid.uuid4().hex[:6]}",
+        name="Hỏi",
+        capabilities=["ask"],
+    )
+    for principal_type, principal in (("user", bank.user),) + (
+        (("agent", account),) if member else ()
+    ):
+        seed.row(
+            "org.data_space_member",
+            org_id=bank.org,
+            data_space_id=bank.space,
+            principal_type=principal_type,
+            principal_id=principal,
+            role_id=ask,
+        )
+    with seed.conn.cursor() as cur:
+        cur.execute("UPDATE agent.agent_run SET initiated_by = NULL WHERE id = %s", (str(run),))
+        cur.execute(
+            "UPDATE agent.agent_def SET account_user_id = %s"
+            " WHERE id = (SELECT agent_id FROM agent.agent_run WHERE id = %s)",
+            (str(account), str(run)),
+        )
+        # The steward is the space's owner and passes any check; hand the space to another.
+        cur.execute(
+            "UPDATE org.data_space SET steward_id = %s WHERE id = %s",
+            (
+                str(
+                    seed.row(
+                        "org.app_user",
+                        org_id=bank.org,
+                        external_id="kc-st",
+                        username="st",
+                        display_name="Steward",
+                    )
+                ),
+                str(bank.space),
+            ),
+        )
+
+
+async def test_a_run_naming_another_data_space_is_refused_before_it_reads_it(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # R1-11: an agent sees its own Data Space only, whatever the run row says.
+    bank = build(seed, credit, monkeypatch)
+    other = seed.row(
+        "org.data_space", org_id=bank.org, code="DS-KHAC", name="Khác", steward_id=bank.user
+    )
+    run = agent_run(bank)
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "UPDATE agent.agent_run SET data_space_id = %s WHERE id = %s", (str(other), str(run))
+        )
+    await drain()
+    status, stop, _, _, error, *_ = run_row(seed, run)
+    assert (status, stop) == ("failed", "error")
+    # Refused for the space, not planned against the other space's (empty) catalogue.
+    assert "khác với Data Space của agent" in error and steps(seed, run) == []
+    assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", run) == 0
+
+
+async def test_a_scheduled_run_acts_as_its_account_granted_in_the_space(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    run = agent_run(bank)
+    acting_as_its_account(bank, run, member=True)
+    await drain()
+    status, stop, *_ = run_row(seed, run)
+    assert (status, stop) == ("succeeded", "completed")
+
+
+async def test_a_scheduled_run_whose_account_is_not_a_member_is_refused(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    run = agent_run(bank)
+    acting_as_its_account(bank, run, member=False)
+    await drain()
+    status, stop, _, _, error, *_ = run_row(seed, run)
+    assert (status, stop) == ("failed", "error")
+    assert "quyền" in error and steps(seed, run) == []
+    assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", run) == 0
+
+
 async def test_a_paused_report_carries_on_with_its_next_question(
     seed: Seed,
     credit: dict[str, Any],

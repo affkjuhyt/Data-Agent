@@ -64,7 +64,11 @@ async def can_ask_data_space(
             .where(
                 member.data_space_id == data_space_id,
                 or_(
-                    and_(member.principal_type == "user", member.principal_id == principal_id),
+                    # An agent's own account is granted as principal_type agent.
+                    and_(
+                        member.principal_type.in_(("user", "agent")),
+                        member.principal_id == principal_id,
+                    ),
                     and_(member.principal_type == "group", member.principal_id.in_(groups)),
                 ),
                 or_(member.valid_until.is_(None), member.valid_until > func.now()),
@@ -196,7 +200,11 @@ async def active_row_scopes(
             .where(
                 member.data_space_id == data_space_id,
                 or_(
-                    and_(member.principal_type == "user", member.principal_id == principal_id),
+                    # An agent's own account is granted as principal_type agent.
+                    and_(
+                        member.principal_type.in_(("user", "agent")),
+                        member.principal_id == principal_id,
+                    ),
                     and_(member.principal_type == "group", member.principal_id.in_(groups)),
                 ),
                 or_(member.valid_until.is_(None), member.valid_until > func.now()),

@@ -1224,7 +1224,9 @@ async def list_children(
 ) -> Page[RunSummary]:
     query = _run_keyset(
         select(agent.AgentRun).where(
-            agent.AgentRun.parent_run_id == run_id, agent.AgentRun.org_id == principal.org_id
+            agent.AgentRun.parent_run_id == run_id,
+            agent.AgentRun.org_id == principal.org_id,
+            agent.AgentRun.data_space_id == data_space,
         ),
         order,
         page,

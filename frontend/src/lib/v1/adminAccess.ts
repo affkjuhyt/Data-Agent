@@ -1,4 +1,4 @@
-import { pathId, V1Error, v1Get, v1Send, type Page, api, ok, okAs } from './client';
+import { pathId, V1Error, v1Send, type Page, api, ok, okAs } from './client';
 import type { components } from './schema';
 import type { AppUser, DataSpace } from './types';
 
@@ -269,8 +269,12 @@ const codeOf = (name: string) =>
     .replace(/[^A-Z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 60) || 'DATA_SPACE';
-export const getDataSpace = async (id: string) =>
-  v1Get<DataSpaceSummary>(`/data-spaces/${pathId(id)}`);
+/** A2 has no GET /v1/data-spaces/{id}: one space is read from the spaces I am a member of. */
+export const getDataSpace = async (id: string) => {
+  const space = (await listDataSpaceSummaries()).items.find((s) => s.id === id);
+  if (!space) throw new V1Error(404, 'not_found', 'Không tìm thấy Data Space.');
+  return space;
+};
 /**
  * DataSpaceCreate carries the name, steward and default policy; the sources follow in
  * PUT /v1/data-spaces/{id}/sources. Group mappings and the draft/onboarding choice are PROPOSAL:
