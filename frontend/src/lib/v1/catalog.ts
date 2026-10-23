@@ -3,10 +3,11 @@ import { listForecastSeries } from './forecast';
 import { readDataset, type Dataset, type DatasetWire } from './types';
 
 /**
- * One row of the catalog. A table, a column, a document and an API use the same id as
- * `catalog.asset`. A series on this screen is a forecast-ledger series
- * (`ledger~model~product`), the series list GET /v1/forecast-ledger returns.
- * The view's series rows are `skill.external_series`.
+ * One row of the catalog (R1-04). The V3 design has no `catalog.asset` table: the catalog is a
+ * view over what A2 serves, each row keeping its own object's id (dataset, column, document,
+ * REST source). A series is a forecast-ledger series (`ledger~model~product`), the list
+ * GET /v1/forecast-ledger returns: A2 serves no other series list (`skill.external_series` has no
+ * read endpoint), so a Data Space with no forecast shows no series.
  */
 export type CatalogKind = 'table' | 'column' | 'document' | 'series' | 'api';
 
