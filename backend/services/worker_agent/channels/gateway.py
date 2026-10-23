@@ -73,7 +73,7 @@ def verification_code(
     return f"{int.from_bytes(digest[:4], 'big') % 1_000_000:06d}"
 
 
-async def _bindings(org_id: uuid.UUID, user_id: uuid.UUID) -> dict[str, str]:
+async def bindings(org_id: uuid.UUID, user_id: uuid.UUID) -> dict[str, str]:
     async with scoped_session(ROLE, org_id, user_id) as session:
         rows = (
             await session.scalars(
@@ -86,7 +86,7 @@ async def _bindings(org_id: uuid.UUID, user_id: uuid.UUID) -> dict[str, str]:
     return {b.channel: b.external_address for b in rows}
 
 
-async def _deliver(
+async def deliver(
     org_id: uuid.UUID,
     user_id: uuid.UUID,
     wanted: list[str],
@@ -178,11 +178,11 @@ async def on_hitl_opened(event: Event) -> None:
         )
         title, kind = request.title, request.kind
     card = hitl_card(title=title, kind=kind, risk=risk, app_url=app_url())
-    sent = await _deliver(
+    sent = await deliver(
         event.org_id,
         user,
         wanted,
-        await _bindings(event.org_id, user),
+        await bindings(event.org_id, user),
         card,
         notification_id=notification_id,
         hitl_request_id=request_id,
@@ -216,11 +216,11 @@ async def on_test(event: Event) -> None:
                 source_ref=event.aggregate_id,
             )
         )
-    bound = await _bindings(event.org_id, user)
+    bound = await bindings(event.org_id, user)
     for channel in wanted:
         if channel in bound and channel in EXTERNAL:
             # A test goes on the channel asked, with no hand-over: it is that channel being tried.
-            await _deliver(
+            await deliver(
                 event.org_id,
                 user,
                 [channel],

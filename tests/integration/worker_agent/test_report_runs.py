@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from services.worker_agent import report_runs, scheduler, storage
+from services.worker_agent.channels import gateway
 from services.worker_agent.events import OutboxTableSource
 from services.worker_agent.main import run_once
 
@@ -226,14 +227,33 @@ async def test_a_report_reading_personal_data_is_not_sent(
     assert store.files == {}
 
 
-async def test_a_channel_not_wired_and_a_digest_say_so(
+class Mailbox:
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, Any]] = []
+
+    async def send(self, address: str, m: Any) -> None:
+        self.sent.append((address, m))
+
+
+async def test_a_bound_email_gets_the_card_and_an_unbound_one_makes_it_partial(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch, store: Store
 ) -> None:
     bank = build(seed, warehouse, monkeypatch)
     catalogue_columns(seed, bank)
+    mailbox = Mailbox()
+    monkeypatch.setattr(gateway, "senders", lambda: {"email": mailbox})
+    seed.row(
+        "notify.channel_binding",
+        org_id=bank.org,
+        user_id=bank.user,
+        channel="email",
+        external_address="a@bank.example",
+        verified_at="2026-10-17T00:00:00Z",
+        status="active",
+    )
     report = schedule(bank, formats=("html", "pdf"))
     recipient(bank, report, bank.user, channels=("in_app", "email"))
-    recipient(bank, report, other_user(seed, bank), channels=("email",))
+    recipient(bank, report, other_user(seed, bank), channels=("email",))  # bound to nothing
     run = request(bank, report)
     await drain()
     status, _, outputs = run_of(seed, run)
@@ -242,7 +262,19 @@ async def test_a_channel_not_wired_and_a_digest_say_so(
         "html": "stored",
         "pdf": "not_supported",
     }
+    ((address, card),) = mailbox.sent
+    assert address == "a@bank.example" and card.subject == "[Báo cáo] Báo cáo dư nợ"
+    # A title, a date and the way in: no figure goes out by mail (BR-35).
+    assert f"/reports/runs/{run}" in card.link and "HN1" not in card.text
+    assert seed.one(
+        "SELECT channel, status FROM notify.channel_delivery WHERE user_id = %s", bank.user
+    ) == ("email", "sent")
 
+
+async def test_a_digest_is_not_built_yet_and_says_so(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch, store: Store
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
     digest = schedule(bank, kind="digest")
     run = request(bank, digest, kind="digest")
     await drain()

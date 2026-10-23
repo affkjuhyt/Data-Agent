@@ -17,9 +17,10 @@ What is not done yet, and fails or is reported rather than pretended:
 - the queries run on the source as it is now: a tile reads live data, so `as_of` (from the
   schedule's as_of_rule) dates the report, it does not move the data back (tiles.HISTORY);
 - question tiles are listed, not answered; text tiles carry their text;
-- a pdf rendering and the email, Teams and Zalo channels are not wired (the channel gateway
-  sends no notification out yet): the output says `not_supported` / `not_delivered`, and the run
-  is `partially_sent` unless every recipient was told in the app.
+- a pdf rendering is not made (the output says `not_supported`); the email and Teams copies are
+  a card with the report's title, date and link, never a figure or a file, sent on the channels
+  the recipient has bound and verified (channels/gateway.py); Zalo is not wired. A recipient not
+  reached on what they asked for makes the run `partially_sent`.
 """
 
 from __future__ import annotations
@@ -39,6 +40,8 @@ from libs.dataagent_db.models import catalog, monitor, notify
 from libs.dataagent_db.models import org as org_models
 from libs.dataagent_db.models import workspace as w
 from services.worker_agent import storage
+from services.worker_agent.channels import gateway
+from services.worker_agent.channels.cards import report_card
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.exports import Sheet, write_xlsx
 from services.worker_agent.query.executor import ROLE as QUERY_ROLE
@@ -322,6 +325,58 @@ async def _tell(
             )
 
 
+async def _deliver(
+    org: uuid.UUID,
+    user: uuid.UUID,
+    channels: list[str],
+    space: uuid.UUID,
+    run_id: uuid.UUID,
+    title: str,
+    as_of: datetime.date,
+) -> bool:
+    """Tell one recipient on the channels their recipient row names: in the app, and on email or
+    Teams when they have bound and verified one (the channel gateway's delivery, with its
+    hand-over to another bound channel and a channel_delivery row per attempt). False when an
+    outside channel was asked for and none took the card: the run is then partially_sent."""
+    notification_id = uuid7()
+    async with scoped_session(NOTIFY_ROLE, org) as session:
+        session.add(
+            notify.Notification(
+                id=notification_id,
+                org_id=org,
+                user_id=user,
+                data_space_id=space,
+                kind="report",
+                title=f"{title}: báo cáo ngày {as_of:%d/%m/%Y}",
+                # The body holds no figures (notify.notification.body): the report is read
+                # through GET /v1/report-runs/{id}, which shows each reader their rendering.
+                body=None,
+                link=f"/reports/runs/{run_id}",
+                source_ref=run_id,
+            )
+        )
+    external = [c for c in channels if c != "in_app"]
+    if not external:
+        return True
+    card = report_card(
+        title=title,
+        as_of=f"{as_of:%d/%m/%Y}",
+        link=f"{gateway.app_url().rstrip('/')}/reports/runs/{run_id}",
+    )
+    sent = await gateway.deliver(
+        org,
+        user,
+        external,
+        await gateway.bindings(org, user),
+        card,
+        notification_id=notification_id,
+        hitl_request_id=None,
+    )
+    # The gateway sends the card once, handing over to another bound channel when one fails:
+    # reached when one of them took it. None bound, or Zalo only, sends nothing.
+    return any(status == "sent" for _, status in sent)
+
+
 async def _finish(
     org: uuid.UUID,
     run_id: uuid.UUID,
@@ -445,15 +500,12 @@ async def run_requested(event: Event) -> None:
                 missed = True
                 continue
             outputs.append({**item, "object_key": key, "delivery": "stored"})
-        for user, channels in readers.get(group, []):
-            if "in_app" in channels:
-                sent_to.append(user)
-            else:
-                missed = True  # email, Teams and Zalo are not wired yet
-    if sent_to:
-        await _tell(
-            org, sent_to, space, run_id, f"{schedule.title}: báo cáo ngày {as_of:%d/%m/%Y}", None
-        )
+        if any(o.get("delivery") == "stored" for o in outputs if o["permission_group"] == group):
+            for user, channels in readers.get(group, []):
+                if await _deliver(org, user, channels, space, run_id, schedule.title, as_of):
+                    sent_to.append(user)
+                else:
+                    missed = True
     if left_out:
         await _tell(
             org,
