@@ -117,6 +117,7 @@ def _figure(db, org, receipt, key, masked=False):
     )
 
 
+@pytest.mark.req("AC-01-01-09")
 def test_answer_with_an_untraceable_number_is_refused(db):
     org = new_org(db)
     _answer(db, org, number_check=Json({"numbers_total": 3, "traced": 3, "untraceable_final": 0}))
@@ -976,6 +977,7 @@ def _run(db, org, agent, **kw):
     )
 
 
+@pytest.mark.req("AC-13-08-04")
 def test_agent_run_depth_is_derived_and_capped(db):
     org, other = new_org(db), new_org(db)
     agent = _agent(db, org)
@@ -1498,6 +1500,7 @@ def test_cross_schema_reads_of_svc_qa(db):
     fails(db, "SELECT count(*) FROM context.outbox", code=DENIED)
 
 
+@pytest.mark.req("AC-11-02-09", "AC-13-01-06")
 def test_business_rules_identity_and_policy(db):
     org = new_org(db)
     # BR-147: an agent without a human owner.

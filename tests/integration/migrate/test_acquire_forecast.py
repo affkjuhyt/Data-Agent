@@ -316,6 +316,7 @@ def test_publish_needs_an_approved_schema_and_no_open_records(db):
     run(db, "UPDATE acquire.crawl_run SET status = 'published' WHERE id = %s", (r2,))
 
 
+@pytest.mark.req("AC-14-03-10")
 def test_open_semantic_drift_blocks_every_run_until_resolved(db):
     org = new_org(db)
     src, sv = active_source(db, org)
@@ -350,6 +351,7 @@ def test_open_semantic_drift_blocks_every_run_until_resolved(db):
     run(db, "UPDATE acquire.crawl_run SET status = 'published' WHERE id = %s", (r2,))
 
 
+@pytest.mark.req("AC-14-03-10")
 def test_semantic_drift_shape(db):
     org = new_org(db)
     src, sv = active_source(db, org)
@@ -688,6 +690,7 @@ def test_version_life_cycle(db):
     )
 
 
+@pytest.mark.req("AC-15-04-05")
 def test_publish_gate(db):
     org = new_org(db)
     m = model(db, org)
@@ -736,6 +739,7 @@ def test_small_data_rules(db):
     run(db, sql, (org, m, 4, "lightgbm", 40, 0, 5))
 
 
+@pytest.mark.req("AC-15-04-05")
 def test_current_version_must_be_released(db):
     org = new_org(db)
     m = model(db, org)
@@ -804,6 +808,7 @@ PRED = (
 )
 
 
+@pytest.mark.req("AC-15-05-08")
 def test_prediction_labels(db):
     org = new_org(db)
     m = model(db, org)
@@ -873,6 +878,7 @@ def _formula_model(conn, org, v):
     )
 
 
+@pytest.mark.req("AC-15-07-09")
 def test_formula_model_belongs_to_a_formula_version_and_freezes(db):
     org = new_org(db)
     m = model(db, org, frequency="week")
@@ -978,6 +984,7 @@ SCORE = (
 )
 
 
+@pytest.mark.req("AC-15-08-05")
 def test_ledger_entry_is_frozen_and_scored_once(db):
     org = new_org(db)
     entry, m, v, pred = _ledger(db, org)

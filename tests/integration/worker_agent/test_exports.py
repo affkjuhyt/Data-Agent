@@ -195,6 +195,7 @@ async def test_a_pdf_export_fails_instead_of_writing_a_wrong_file(
     assert _job(seed, job)[0] == "failed" and store.files == {}
 
 
+@pytest.mark.req("AC-01-06-04")
 def test_ac_01_06_04_a_text_cell_never_starts_a_formula() -> None:
     assert [exports.safe(v) for v in ("=SUM(A1:A9)", "+84", "-5", "@x", "\t=1", "\r=1", "ok")] == [
         "'=SUM(A1:A9)",

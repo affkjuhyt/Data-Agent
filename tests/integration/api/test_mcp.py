@@ -145,6 +145,7 @@ async def test_unknown_revoked_or_unconfirmed_client_is_401(seed: Seed) -> None:
     assert r.status_code == 401  # AC-12-01-03: a token still in its lifetime is refused at once
 
 
+@pytest.mark.req("AC-12-02-02")
 async def test_ac_12_02_02_tools_list_has_only_the_granted_tools(seed: Seed) -> None:
     w = build(seed)
     async with mcp_client(w) as c:
@@ -160,6 +161,7 @@ async def test_ac_12_02_02_tools_list_has_only_the_granted_tools(seed: Seed) -> 
     assert r.json()["result"]["tools"][0]["inputSchema"]["required"] == ["data_space", "question"]
 
 
+@pytest.mark.req("AC-12-02-05")
 async def test_ac_12_02_05_tool_or_space_not_granted_is_403_and_audited(
     seed: Seed, audit_rows: Any
 ) -> None:
@@ -181,6 +183,7 @@ async def test_ac_12_02_05_tool_or_space_not_granted_is_403_and_audited(
     assert audit_rows(w.org).count(("mcp.tools_call", "denied")) == 3
 
 
+@pytest.mark.req("AC-12-02-04")
 async def test_ac_12_02_04_over_quota_is_429_and_audited(seed: Seed, audit_rows: Any) -> None:
     w = build(seed, quota_per_minute=1)
     async with mcp_client(w) as c:

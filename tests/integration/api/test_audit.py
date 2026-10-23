@@ -184,6 +184,7 @@ async def test_br_138_export_is_queued_with_its_count_and_is_logged(
     assert requested == 1
 
 
+@pytest.mark.req("AC-11-03-07")
 async def test_br_138_a_large_export_waits_for_a_second_person(
     seed: Seed, audit_db: AuditDb, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -81,6 +81,7 @@ def _latest(bank: Bank, tile: uuid.UUID) -> tuple[Any, ...] | None:
     )
 
 
+@pytest.mark.req("AC-02-01-06")
 async def test_uc_02_02_a_refresh_runs_each_tile_in_order_and_skips_after_a_failure(
     seed: Any, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:

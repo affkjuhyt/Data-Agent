@@ -141,6 +141,7 @@ def _opened(w: World, target: uuid.UUID) -> tuple[Any, ...]:
     )
 
 
+@pytest.mark.req("AC-03-05-01")
 async def test_uc_03_05_accepting_the_proposal_publishes_the_version(world: World) -> None:
     w = world
     skill_id, version, old = _skill(w, published=True)

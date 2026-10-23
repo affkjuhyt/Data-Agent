@@ -134,6 +134,7 @@ async def test_ac_12_01_01_grant_returns_the_secret_once(seed: Seed) -> None:
     assert stored.fetchone()[0].startswith(f"tenants/{org.id}/")
 
 
+@pytest.mark.req("AC-12-01-05")
 async def test_ac_12_01_05_own_identity_gets_no_detail_tools(seed: Seed) -> None:
     org, kc = build(seed), FakeKeycloak()
     async with client(org, kc) as c:

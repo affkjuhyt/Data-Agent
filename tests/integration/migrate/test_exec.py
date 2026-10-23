@@ -261,6 +261,7 @@ def test_thesis_cannot_be_withdrawn_once_due(db):
     )
 
 
+@pytest.mark.req("AC-16-01-10")
 def test_private_content_is_invisible_to_everyone_but_the_owner(db):
     org, owner, _, _ = _setup(db)
     with db.cursor() as cur:
@@ -309,6 +310,7 @@ def test_worker_reads_the_condition_but_never_the_content(db):
 # ─── exec.thesis_evidence ───
 
 
+@pytest.mark.req("AC-16-03-08")
 def test_evidence_batches_are_two_sided_and_numbered_in_order(db):
     org, owner, _, thesis = _setup(db)
     with db.cursor() as cur:
@@ -385,6 +387,7 @@ SCORE_SQL = (
 )
 
 
+@pytest.mark.req("AC-16-04-07")
 def test_final_score_needs_scoring_and_closes_the_thesis_once(db):
     org, owner, _, _ = _setup(db)
     as_role(db, "svc_exec_worker", org, exec_workflow="on")

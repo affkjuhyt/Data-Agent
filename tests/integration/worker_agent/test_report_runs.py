@@ -351,6 +351,7 @@ async def test_a_digest_tells_its_owner_the_key_metrics_the_alerts_and_what_wait
     assert [(k, b) for _, k, b in told(seed, run)] == [("digest", None)]
 
 
+@pytest.mark.req("AC-08-04-05")
 async def test_a_quiet_week_still_makes_a_short_digest(
     seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch, store: Store
 ) -> None:

@@ -2,3 +2,105 @@ id	status	owner	note
 ADR-28	partial	data-agent-80	Khối api (backend/services/api) phục vụ /v1; worker-ingest, worker-agent, crawler, ml-forecast chưa có
 ADR-31	done	data-agent-80	libs/dataagent_db.scoped_session đặt app.org_id bằng set_config(..., true) mỗi giao dịch, tắt statement cache; test tích hợp tests/integration/api
 ADR-48	partial	data-agent-80	OpenAPI sinh từ FastAPI, cổng so với A2 (catalogue/check.py); Schemathesis chưa chạy
+UC-01-01	partial	claude	4/9 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-01-02	partial	claude	4/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-01-03	partial	claude	1/4 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-01-04	done	claude	Đủ 5 tiêu chí bắt buộc có test; endpoint 2/2, bảng 2/2
+UC-01-05	partial	claude	3/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-01-06	partial	claude	3/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-01-07	partial	claude	3/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-02-01	partial	claude	4/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-02-02	partial	claude	1/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-02-03	partial	claude	3/4 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-02-04	partial	claude	1/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-02-05	partial	claude	2/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-02-06	partial	claude	1/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-02-07	partial	claude	2/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-03-01	partial	claude	4/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-03-05	partial	claude	2/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-03-06	partial	claude	1/3 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-03-07	partial	claude	2/4 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-04-01	partial	claude	3/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-04-02	partial	claude	2/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-04-04	partial	claude	1/3 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-04-05	partial	claude	2/3 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-04-07	partial	claude	2/4 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-04-08	partial	claude	4/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-04-09	partial	claude	2/3 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-05-01	done	claude	Đủ 5 tiêu chí bắt buộc có test; endpoint 2/2, bảng 1/1
+UC-05-02	partial	claude	6/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-05-03	done	claude	Đủ 3 tiêu chí bắt buộc có test; endpoint 1/1, bảng 2/2
+UC-05-04	done	claude	Đủ 5 tiêu chí bắt buộc có test; endpoint 2/2, bảng 1/1
+UC-05-05	partial	claude	2/3 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-05-06	partial	claude	3/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-06-01	partial	claude	4/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-06-02	partial	claude	2/3 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-06-03	partial	claude	1/3 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-06-04	partial	claude	3/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-06-05	partial	claude	2/3 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-06-06	partial	claude	3/4 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-06-07	done	claude	Đủ 3 tiêu chí bắt buộc có test; endpoint 2/2, bảng 2/2
+UC-07-01	partial	claude	3/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-07-02	partial	claude	2/4 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-07-03	partial	claude	3/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-07-04	partial	claude	4/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-07-05	partial	claude	2/3 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-07-06	done	claude	Đủ 5 tiêu chí bắt buộc có test; endpoint 2/2, bảng 2/2
+UC-07-07	partial	claude	3/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-07-09	partial	claude	1/3 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-07-10	partial	claude	1/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-07-13	partial	claude	3/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-07-14	partial	claude	4/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-08-01	partial	claude	2/4 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-08-02	partial	claude	2/4 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-08-03	partial	claude	1/4 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-08-04	partial	claude	1/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-08-05	partial	claude	1/4 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-08-06	partial	claude	2/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-08-07	partial	claude	2/3 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-09-01	partial	claude	4/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-09-02	partial	claude	3/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-09-03	partial	claude	2/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-09-04	partial	claude	3/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-09-05	partial	claude	4/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-10-01	partial	claude	4/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-10-02	partial	claude	4/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-10-03	done	claude	Đủ 5 tiêu chí bắt buộc có test; endpoint 1/1, bảng 1/1
+UC-10-04	partial	claude	2/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-10-05	partial	claude	2/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-11-01	partial	claude	2/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-11-02	partial	claude	5/8 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-11-03	partial	claude	1/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-11-05	partial	claude	1/8 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-11-07	partial	claude	5/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-11-08	partial	claude	4/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-12-01	partial	claude	2/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-12-02	partial	claude	3/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-12-03	partial	claude	1/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-13-01	partial	claude	2/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-13-02	partial	claude	8/9 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-13-03	partial	claude	3/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-13-04	partial	claude	1/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-13-05	partial	claude	1/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-13-06	partial	claude	4/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-13-07	partial	claude	3/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-13-08	partial	claude	2/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-14-01	partial	claude	4/8 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-14-02	partial	claude	4/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-14-03	partial	claude	3/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-14-04	partial	claude	6/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-14-05	partial	claude	3/8 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-14-06	partial	claude	4/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-15-01	partial	claude	2/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-15-03	partial	claude	2/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-15-04	done	claude	Đủ 5 tiêu chí bắt buộc có test; endpoint 3/3, bảng 4/4
+UC-15-05	partial	claude	3/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-15-06	partial	claude	1/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-15-07	partial	claude	2/8 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-15-08	partial	claude	3/8 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-16-01	partial	claude	5/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-16-02	partial	claude	4/8 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-16-03	partial	claude	2/7 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-16-04	partial	claude	1/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-16-05	partial	claude	4/6 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md
+UC-16-06	partial	claude	3/5 tiêu chí bắt buộc có test (đếm 23/10/2026); còn thiếu xem mục UC trong 10-design-checklist.md

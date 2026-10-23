@@ -75,6 +75,7 @@ async def test_a_stray_number_gets_one_more_try() -> None:
     assert out.untraceable_draft == 1
 
 
+@pytest.mark.req("AC-01-01-09")
 async def test_a_sentence_still_untraceable_is_dropped_and_said() -> None:
     out = await run(
         "Chênh lệch là 7 điểm. Miền Bắc {{F1}}.",
