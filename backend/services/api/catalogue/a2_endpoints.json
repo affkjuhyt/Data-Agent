@@ -654,6 +654,32 @@
    ]
   },
   {
+   "group": "Phiên làm việc",
+   "method": "GET",
+   "path": "/v1/tiles/{id}/snapshots",
+   "summary": "Lịch sử lần chạy ô, có số version (R1-13)",
+   "use_cases": [
+    "02-01",
+    "02-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
+   "group": "Phiên làm việc",
+   "method": "GET",
+   "path": "/v1/tile-snapshots/{id}",
+   "summary": "Một lần chạy ô (artifact version)",
+   "use_cases": [
+    "02-01",
+    "02-02"
+   ],
+   "capability": [
+    "ask"
+   ]
+  },
+  {
    "group": "Kỹ năng",
    "method": "GET",
    "path": "/v1/skills",

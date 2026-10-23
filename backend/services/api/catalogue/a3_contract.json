@@ -802,6 +802,41 @@
    ],
    "request_text": "?cursor"
   },
+  "GET /v1/tiles/{id}/snapshots": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {},
+   "query": [
+    "cursor",
+    "page_size"
+   ],
+   "returns": "Danh sách TileSnapshot (version 1 = cũ nhất)",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "?cursor, ?page_size"
+  },
+  "GET /v1/tile-snapshots/{id}": {
+   "group": "Phiên làm việc",
+   "groups": [
+    "Phiên làm việc"
+   ],
+   "body": {},
+   "query": [],
+   "returns": "TileSnapshot",
+   "errors": [
+    [
+     404,
+     "not_found"
+    ]
+   ],
+   "request_text": "—"
+  },
   "GET /v1/skills": {
    "group": "Kỹ năng",
    "groups": [

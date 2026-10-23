@@ -681,3 +681,51 @@ async def test_workspace_isolation_between_orgs(team: Team, seed: Seed) -> None:
             f"/v1/workspaces/{workspace_id}", headers=_as(other, "owner")
         )
     assert response.status_code == 404, response.text
+
+
+async def test_tile_snapshot_versions_are_readable(team: Team, seed: Seed) -> None:
+    """R1-13: each tile run is a versioned artifact; list and get keep version numbers."""
+    owner = _as(team, "owner")
+    async with _api(team) as api:
+        workspace_id = await _workspace(api, team)
+        tile = await _tile(api, team, workspace_id, kind="sql", spec={"sql": "select 1"})
+        tile_id = tile["id"]
+        first, second = str(uuid.uuid4()), str(uuid.uuid4())
+        with seed.conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO workspace.tile_snapshot"
+                " (id, org_id, tile_id, query_run_ids, status, summary, created_at)"
+                " VALUES (%s, %s, %s, '{}', 'ok', %s::jsonb, now() - interval '2 minutes')",
+                (first, str(team.org), tile_id, json.dumps({"row_count": 1})),
+            )
+            cur.execute(
+                "INSERT INTO workspace.tile_snapshot"
+                " (id, org_id, tile_id, query_run_ids, status, summary, created_at)"
+                " VALUES (%s, %s, %s, '{}', 'failed', %s::jsonb, now() - interval '1 minute')",
+                (second, str(team.org), tile_id, json.dumps({"row_count": 0})),
+            )
+            cur.execute(
+                "UPDATE workspace.tile SET latest_snapshot_id = %s WHERE id = %s",
+                (second, tile_id),
+            )
+
+        listed = await api.get(f"/v1/tiles/{tile_id}/snapshots", headers=owner)
+        assert listed.status_code == 200, listed.text
+        items = listed.json()["items"]
+        assert [(i["id"], i["version"], i["status"], i["is_latest"]) for i in items] == [
+            (first, 1, "ok", False),
+            (second, 2, "failed", True),
+        ]
+
+        got = await api.get(f"/v1/tile-snapshots/{first}", headers=owner)
+        assert got.status_code == 200, got.text
+        assert got.json()["version"] == 1 and got.json()["is_latest"] is False
+
+        peer = await api.get(f"/v1/tiles/{tile_id}/snapshots", headers=_as(team, "peer"))
+        assert peer.status_code == 404
+        other_org = _team(seed)
+        async with _api(other_org) as other_api:
+            hidden = await other_api.get(
+                f"/v1/tile-snapshots/{second}", headers=_as(other_org, "owner")
+            )
+        assert hidden.status_code == 404

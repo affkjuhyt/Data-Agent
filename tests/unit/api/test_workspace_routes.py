@@ -46,6 +46,12 @@ def test_create_workspace_requires_title_and_refuses_unknown_fields(client: Test
     assert "owner_id" in _fields(unknown)
 
 
+def test_tile_snapshot_routes_are_registered(client: TestClient) -> None:
+    paths = client.app.openapi()["paths"]
+    assert "get" in paths["/v1/tiles/{id}/snapshots"]
+    assert "get" in paths["/v1/tile-snapshots/{id}"]
+
+
 def test_create_tile_requires_kind_and_spec(client: TestClient) -> None:
     response = client.post(
         f"/v1/workspaces/{SOME_ID}/tiles", headers=SPACE_HEADERS, json={"title": "x"}

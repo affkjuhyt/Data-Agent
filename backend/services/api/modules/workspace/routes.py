@@ -58,6 +58,7 @@ from services.api.modules.workspace.schemas import (
     ShareView,
     TileCreate,
     TilePatch,
+    TileSnapshotView,
     TileView,
     WorkspaceCreate,
     WorkspaceDetail,
@@ -1193,6 +1194,114 @@ async def create_comment(
         await session.flush()
         await session.refresh(comment)
         return (await _comment_views(session, principal, [comment]))[0]
+
+
+def _snapshot_view(
+    snap: ws.TileSnapshot, *, version: int, latest_id: uuid.UUID | None
+) -> TileSnapshotView:
+    return TileSnapshotView(
+        id=snap.id,
+        tile_id=snap.tile_id,
+        version=version,
+        status=snap.status,
+        query_run_ids=list(snap.query_run_ids or []),
+        as_of=snap.as_of,
+        period_close_id=snap.period_close_id,
+        data_time=snap.data_time,
+        result_ref=snap.result_ref,
+        summary=snap.summary,
+        error=snap.error,
+        created_at=snap.created_at,
+        is_latest=snap.id == latest_id,
+    )
+
+
+@router.get(
+    "/v1/tiles/{id}/snapshots",
+    response_model=Page[TileSnapshotView],
+    **endpoint("GET", "/v1/tiles/{id}/snapshots", operation_id="listTileSnapshots"),
+)
+async def list_tile_snapshots(
+    tile_id: PathId,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+    page: Annotated[PageRequest, Depends(page_request)],
+) -> Page[TileSnapshotView]:
+    """R1-13: every run of the tile as a versioned artifact (oldest = version 1)."""
+    from services.api.kernel.pagination import encode_page_token
+
+    s = ws.TileSnapshot
+    async with transaction(ROLE, principal) as session:
+        tile, _ = await _tile(session, principal, space, tile_id, "view")
+        rows = list(
+            (
+                await session.scalars(
+                    select(s)
+                    .where(s.tile_id == tile.id, s.org_id == principal.org_id)
+                    .order_by(s.created_at.asc(), s.id.asc())
+                )
+            ).all()
+        )
+        # Histories stay small; page in memory so version stays 1 = oldest across pages.
+        start = 0
+        if page.cursor:
+            try:
+                after_id = uuid.UUID(str(page.cursor.get("id")))
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise Problem(400, "invalid_request", "cursor is not a snapshot id.") from exc
+            for i, row in enumerate(rows):
+                if row.id == after_id:
+                    start = i + 1
+                    break
+            else:
+                raise Problem(400, "invalid_request", "cursor is not in this tile's history.")
+        window = rows[start : start + page.page_size]
+        items = [
+            _snapshot_view(row, version=start + i + 1, latest_id=tile.latest_snapshot_id)
+            for i, row in enumerate(window)
+        ]
+        next_token = (
+            encode_page_token({"id": str(window[-1].id)})
+            if start + page.page_size < len(rows) and window
+            else ""
+        )
+        return Page(items=items, next_page_token=next_token)
+
+
+@router.get(
+    "/v1/tile-snapshots/{id}",
+    response_model=TileSnapshotView,
+    **endpoint("GET", "/v1/tile-snapshots/{id}", operation_id="getTileSnapshot"),
+)
+async def get_tile_snapshot(
+    snapshot_id: PathId,
+    principal: CurrentPrincipal,
+    space: CurrentDataSpace,
+) -> TileSnapshotView:
+    """One tile run by id; 404 if the caller cannot see the tile (A1.7)."""
+    s = ws.TileSnapshot
+    async with transaction(ROLE, principal) as session:
+        snap = await session.scalar(
+            select(s).where(s.id == snapshot_id, s.org_id == principal.org_id)
+        )
+        if snap is None:
+            raise Problem(404, "not_found", "Tile snapshot not found.")
+        tile, _ = await _tile(session, principal, space, snap.tile_id, "view")
+        older = await session.scalar(
+            select(func.count())
+            .select_from(s)
+            .where(
+                s.tile_id == tile.id,
+                s.org_id == principal.org_id,
+                or_(
+                    s.created_at < snap.created_at,
+                    and_(s.created_at == snap.created_at, s.id < snap.id),
+                ),
+            )
+        )
+        return _snapshot_view(
+            snap, version=int(older or 0) + 1, latest_id=tile.latest_snapshot_id
+        )
 
 
 @router.get(

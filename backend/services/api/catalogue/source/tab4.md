@@ -142,6 +142,8 @@ Dịch vụ: Workspace service (workspace). 22 endpoint.
 | GET | /v1/workspaces/{id}/shares | Danh sách chia sẻ hiện có của phiên (thêm 12/10/2026) | 02-03 | ask |
 | POST | /v1/workspaces/{id}/shares:preview | Xem trước mỗi người nhận thấy gì theo quyền của họ, chưa lưu (thêm 12/10/2026) | 02-03 | ask |
 | GET | /v1/tiles/{id}/comments | Bình luận và việc được giao của một ô (thêm 12/10/2026) | 02-05 | ask |
+| GET | /v1/tiles/{id}/snapshots | Lịch sử lần chạy ô, có số version (R1-13) | 02-01, 02-02 | ask |
+| GET | /v1/tile-snapshots/{id} | Một lần chạy ô (artifact version) | 02-01, 02-02 | ask |
 
 ### Kỹ năng
 
@@ -772,6 +774,8 @@ Cách đọc: cột “Gửi lên” liệt kê trường thân request (dấu \
 | GET /v1/workspaces/{id}/shares | — | Danh sách WorkspaceShare | 404 not\_found |
 | POST /v1/workspaces/{id}/shares:preview | shares\* | Mỗi người nhận: ô thấy được, ô bị che và lý do (BR-89); không ghi gì | 404 not\_found |
 | GET /v1/tiles/{id}/comments | ?cursor | Danh sách Comment | 404 not\_found |
+| GET /v1/tiles/{id}/snapshots | ?cursor, ?page\_size | Danh sách TileSnapshot (version 1 = cũ nhất) | 404 not\_found |
+| GET /v1/tile-snapshots/{id} | — | TileSnapshot | 404 not\_found |
 
 ### A3 · Kỹ năng
 

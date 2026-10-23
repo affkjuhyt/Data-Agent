@@ -84,6 +84,24 @@ class TileView(_View):
     updated_at: datetime.datetime
 
 
+class TileSnapshotView(_View):
+    """One immutable run of a tile (R1-13 artifact version). `version` is 1-based, oldest first."""
+
+    id: uuid.UUID
+    tile_id: uuid.UUID
+    version: int
+    status: str
+    query_run_ids: list[uuid.UUID]
+    as_of: datetime.date | None
+    period_close_id: uuid.UUID | None
+    data_time: Any
+    result_ref: str | None
+    summary: Any | None
+    error: str | None
+    created_at: datetime.datetime
+    is_latest: bool
+
+
 class WorkspaceView(_View):
     id: uuid.UUID
     data_space_id: uuid.UUID
