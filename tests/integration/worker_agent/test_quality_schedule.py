@@ -149,7 +149,10 @@ async def test_a_due_job_is_loaded_once_per_minute(
 ) -> None:
     bank = build(seed, warehouse, monkeypatch)
     due, later = job(bank, "* * * * *"), job(bank, "0 3 * * *")
-    at = datetime.datetime.now(datetime.UTC).replace(hour=12, minute=1)
+    # A minute already past: the run's started_at is the database clock, and the scheduler
+    # dedupes on started_at >= the served minute, so a minute later today never matches.
+    yesterday = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1)
+    at = yesterday.replace(hour=12, minute=1)
     await scheduler.tick(at)
     await scheduler.tick(at)
     assert seed.one("SELECT count(*) FROM ingest.job_run WHERE job_id = %s", due) == 1

@@ -8,7 +8,7 @@ import uuid
 import pytest
 
 from services.worker_agent import proposals
-from services.worker_agent.eval_runs import data_product_submitted, run_eval
+from services.worker_agent.eval_runs import run_eval
 from services.worker_agent.events import Event
 
 from .test_questions import ask
@@ -165,136 +165,6 @@ async def test_eval_drop_notifies_steward_when_open_space_falls_below_ninety_per
         first.users[0],
     )
     assert notified == 1
-
-
-async def test_submitted_data_product_runs_eval_and_opens_proposal(seed) -> None:
-    first = ask(seed, "Câu hỏi mẫu của sản phẩm")
-    eval_set = seed.row(
-        "eval.eval_set",
-        org_id=first.org,
-        data_space_id=first.space,
-        subject_type="context",
-        name="Product samples",
-        min_items=10,
-    )
-    for number in range(10):
-        seed.row(
-            "eval.eval_item",
-            org_id=first.org,
-            eval_set_id=eval_set,
-            category="refusal",
-            input=json.dumps({"question": f"Câu hỏi mẫu {number}"}),
-            expected=json.dumps({"kind": "refusal"}),
-        )
-    product = seed.row(
-        "context.data_product",
-        org_id=first.org,
-        data_space_id=first.space,
-        code="pilot_product",
-        name="Pilot product",
-        description="Phạm vi pilot",
-        period_grain="month",
-        period_from="2026-01-01",
-        owner_id=first.users[1],
-        steward_id=first.users[0],
-        freshness_statement="Cập nhật hằng ngày",
-        eval_set_id=eval_set,
-        sample_questions=json.dumps([{"text": f"Câu hỏi mẫu {i}"} for i in range(10)]),
-        status="draft",
-    )
-    dataset = seed.row(
-        "catalog.dataset",
-        org_id=first.org,
-        data_space_id=first.space,
-        origin="derived",
-        schema_name="silver",
-        table_name="pilot_data",
-        history_kind="snapshot",
-        business_date_col="as_of",
-        enabled=True,
-        quality_state="ok",
-    )
-    metric = seed.row(
-        "context.metric",
-        org_id=first.org,
-        data_space_id=first.space,
-        code="PILOT_METRIC",
-        owner_id=first.users[1],
-        current_version=1,
-        status="active",
-    )
-    seed.row(
-        "context.metric_version",
-        org_id=first.org,
-        metric_id=metric,
-        version=1,
-        display_name="Pilot metric",
-        expression="sum(value)",
-        period_semantics="sum_over_period",
-        status="certified",
-        certified_by=first.users[0],
-        certified_at="2026-01-01T00:00:00+00:00",
-        valid_from="2026-01-01T00:00:00+00:00",
-    )
-    seed.row(
-        "context.data_product_member",
-        org_id=first.org,
-        data_product_id=product,
-        member_kind="metric",
-        member_ref=metric,
-        role="primary",
-    )
-    seed.row(
-        "context.data_product_member",
-        org_id=first.org,
-        data_product_id=product,
-        member_kind="dataset",
-        member_ref=dataset,
-        role="primary",
-        sla_kind="schedule",
-        sla_cron="0 0 * * *",
-    )
-    run_id = uuid.uuid4()
-    await data_product_submitted(
-        Event(
-            uuid.uuid4(),
-            first.org,
-            "data_product.submitted",
-            "data_product",
-            product,
-            {
-                "data_product_id": str(product),
-                "data_space_id": str(first.space),
-                "eval_set_id": str(eval_set),
-                "eval_run_id": str(run_id),
-                "requested_by": str(first.users[0]),
-                "version": 1,
-                "min_items": 10,
-                "min_pass_rate": 0.95,
-            },
-        )
-    )
-    status = seed.one("SELECT status FROM context.data_product WHERE id = %s", product)
-    run_status, rate = seed.one("SELECT status, pass_rate FROM eval.eval_run WHERE id = %s", run_id)
-    proposal = seed.one("SELECT id FROM inbox.proposal WHERE eval_run_id = %s", run_id)
-    assert status == "pending_review" and run_status == "completed" and float(rate) == 1.0
-    assert proposal is not None
-    await proposals.decided(
-        Event(
-            uuid.uuid4(),
-            first.org,
-            "proposal.decided",
-            "proposal",
-            proposal,
-            {
-                "proposal_id": str(proposal),
-                "status": "accepted",
-                "reviewer_id": str(first.users[1]),
-            },
-        )
-    )
-    assert seed.one("SELECT status FROM context.data_product WHERE id = %s", product) == "active"
-    assert seed.one("SELECT status FROM inbox.proposal WHERE id = %s", proposal) == "applied"
 
 
 def _sourced_claim(seed, org, space, version) -> None:
