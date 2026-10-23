@@ -320,7 +320,9 @@ async def _refuse(
     *,
     status: str = "refused",
 ) -> None:
-    # qa.answer has no refusal-code column: the code goes to the log and the stream's payload.
+    # qa.answer has no refusal-code column, and a refusal states no number, so its number_check
+    # (the answer's check state, served as AnswerView.number_check) holds the code and what the
+    # person can do about it: the Ask screen offers retry or rephrase from it (R0-7), on reload too.
     answer_id = await _finish(
         question_id,
         event.org_id,
@@ -329,6 +331,11 @@ async def _refuse(
         kind="refusal",
         text=refusal.message,
         status=status,
+        extra={
+            "number_check": {
+                "refusal": {"code": str(refusal.code), "next_action": str(refusal.next_action)}
+            }
+        },
     )
     logger.info("question %s %s with %s", question_id, status, refusal.code)
     payload = {"question_id": str(question_id), "answer_id": str(answer_id), "kind": "refusal"}

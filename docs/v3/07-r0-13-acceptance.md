@@ -88,7 +88,7 @@ Người nghiệm thu chạy cột "Bước kiểm trên cụm", ghi Đạt/Khô
 | # | Mức | Story | Lỗi |
 | --- | --- | --- | --- |
 | 1 | ~~Cao~~ Đã sửa | R0-8, R0-11 | Làm lại trong V3 (nhánh `r0-8-11`): kết quả kiểm đi cùng câu trả lời vì A1.6 không có sự kiện verification; lớp lỗi áp cho lượt chạy agent, vì đường hỏi nhanh V3 không có vòng judge. `EVIDENCE_INSUFFICIENT` và `MATERIALIZATION` có đường đi nhưng chưa có điểm nào phát ra |
-| 2 | Trung bình | R0-7 | `qa.answer` không lưu mã từ chối; FE gán cứng `code: 'REFUSED'`, nên hành vi theo mã (thử lại, hỏi lại) không tới được người dùng. `AGENT_CONFIG_ERROR`, `PLANNER_ERROR` không còn được phát; không test nào cho đường lỗi CSDL |
+| 2 | ~~Trung bình~~ Đã sửa | R0-7 | Mã từ chối và hành động tiếp theo được lưu cùng câu trả lời (`number_check.refusal`, vì `qa.answer` không có cột cho mã), `answerMessage.readRefusal` đưa vào `RefusalCard`, nên nút thử lại / diễn đạt lại theo mã có cả khi tải lại trang. Còn: `AGENT_CONFIG_ERROR`, `PLANNER_ERROR` không được V3 phát ra, và chưa có test cho đường lỗi CSDL |
 | 3 | Trung bình | R0-2 | Adapter MCP không nối vào đường câu hỏi hay lượt chạy; chưa có test khoá cache theo tenant |
 | 4 | Trung bình | R0-10 | Bộ kiểm tĩnh kế hoạch (chu trình, kiểu cổng, quyền, ngân sách) đã xoá; kế hoạch V3 là mẫu kiểm tại chỗ |
 | 5 | Trung bình | R0-1 | Luồng V3 không gửi result set; bảng dựng từ `answer.figures` |
