@@ -13,7 +13,7 @@ out of that rendering, named in the run's checks, and the owner is told. Nobody 
 computed with someone else's rights.
 
 What is not done yet, and fails or is reported rather than pretended:
-- `kind=digest` (UC-08-04: key metrics, alerts, the "Cần bạn" items) ends `failed`, saying so;
+- `kind=digest` is digests.py's: built for its owner alone, stored and told the same way;
 - the queries run on the source as it is now: a tile reads live data, so `as_of` (from the
   schedule's as_of_rule) dates the report, it does not move the data back (tiles.HISTORY);
 - question tiles are listed, not answered; text tiles carry their text;
@@ -39,7 +39,7 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, monitor, notify
 from libs.dataagent_db.models import org as org_models
 from libs.dataagent_db.models import workspace as w
-from services.worker_agent import storage
+from services.worker_agent import digests, storage
 from services.worker_agent.channels import gateway
 from services.worker_agent.channels.cards import report_card
 from services.worker_agent.events import Event, Handler
@@ -333,6 +333,7 @@ async def _deliver(
     run_id: uuid.UUID,
     title: str,
     as_of: datetime.date,
+    kind: str = "report",
 ) -> bool:
     """Tell one recipient on the channels their recipient row names: in the app, and on email or
     Teams when they have bound and verified one (the channel gateway's delivery, with its
@@ -346,8 +347,8 @@ async def _deliver(
                 org_id=org,
                 user_id=user,
                 data_space_id=space,
-                kind="report",
-                title=f"{title}: báo cáo ngày {as_of:%d/%m/%Y}",
+                kind=kind,
+                title=f"{title}: {'bản tin' if kind == 'digest' else 'báo cáo'} ngày {as_of:%d/%m/%Y}",
                 # The body holds no figures (notify.notification.body): the report is read
                 # through GET /v1/report-runs/{id}, which shows each reader their rendering.
                 body=None,
@@ -413,14 +414,11 @@ async def run_requested(event: Event) -> None:
     if schedule is None:
         await _finish(org, run_id, "failed", {"error": "Không còn lịch báo cáo."}, [])
         return
-    if run.kind != "report" or schedule.workspace_id is None:
-        await _finish(
-            org,
-            run_id,
-            "failed",
-            {"error": "Bản tin lãnh đạo (digest) chưa được dựng; báo cáo này chưa gửi."},
-            [],
-        )
+    if run.kind == "digest":
+        await _digest(org, run_id, schedule, run.as_of)
+        return
+    if schedule.workspace_id is None:
+        await _finish(org, run_id, "failed", {"error": "Báo cáo chưa gắn phiên nào."}, [])
         return
     owner, space, as_of = schedule.owner_id, schedule.data_space_id, run.as_of
     async with scoped_session("svc_workspace", org, owner) as session:
@@ -516,6 +514,64 @@ async def run_requested(event: Event) -> None:
             checks["rights"]["detail"],
             "alert",
         )
+    stored = any(o.get("delivery") == "stored" for o in outputs)
+    status = "failed" if not stored or not sent_to else "partially_sent" if missed else "sent"
+    await _finish(org, run_id, status, checks, outputs)
+
+
+async def _digest(
+    org: uuid.UUID, run_id: uuid.UUID, schedule: monitor.ReportSchedule, as_of: datetime.date
+) -> None:
+    """A digest run (digests.py): built once with its owner's rights, for the recipients the api
+    gave it (the owner), stored and told like a report."""
+    owner, space = schedule.owner_id, schedule.data_space_id
+    found = await digests.kpis(org, space, owner, await digests.metric_ids(org, schedule), as_of)
+    shown = [k for k in found if k.missing is None]
+    dropped = [k for k in found if k.missing is not None]
+    fired = await digests.alerts(org, space, owner, as_of)
+    sentences = digests.summary(shown, fired, await digests.waiting(org, owner), as_of)
+    checks: dict[str, Any] = {
+        "grounded": {
+            "status": "pass",
+            "title": "Số có nguồn",
+            "detail": "Mỗi số trong bản tin có lần chạy truy vấn"
+            + (f"; bỏ {len(dropped)} chỉ số không truy được" if dropped else ""),
+        },
+        "aggregates_only": {
+            "status": "pass",
+            "title": "Chỉ số tổng hợp",
+            "detail": "Bản tin chỉ có số tổng theo tháng, không có dòng chi tiết (BR-125)",
+        },
+    }
+    body = digests.render(
+        schedule.title, as_of, sentences, shown, dropped, fired, gateway.app_url().rstrip("/")
+    )
+    groups = await _recipients(org, schedule.id)
+    outputs: list[dict[str, Any]] = []
+    sent_to: list[uuid.UUID] = []
+    missed = False
+    for group, members in groups.items():
+        # Read by its owner alone: a member other than the owner gets no copy of their figures.
+        members = [(u, ch) for u, ch in members if u == owner]
+        if not members:
+            continue
+        key = f"report-runs/{run_id}/{group}.html"
+        try:
+            await storage.store().put(BUCKET, key, body, CONTENT_TYPES["html"])
+        except storage.StoreUnavailable as exc:
+            logger.warning("worker-agent | digest run %s: %s", run_id, exc)
+            outputs.append(
+                {"permission_group": group, "format": "html", "delivery": "store_unavailable"}
+            )
+            continue
+        outputs.append(
+            {"permission_group": group, "format": "html", "object_key": key, "delivery": "stored"}
+        )
+        for user, channels in members:
+            if await _deliver(org, user, channels, space, run_id, schedule.title, as_of, "digest"):
+                sent_to.append(user)
+            else:
+                missed = True
     stored = any(o.get("delivery") == "stored" for o in outputs)
     status = "failed" if not stored or not sent_to else "partially_sent" if missed else "sent"
     await _finish(org, run_id, status, checks, outputs)
