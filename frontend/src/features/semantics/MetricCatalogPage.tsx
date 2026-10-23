@@ -18,6 +18,7 @@ import {
   type MetricProfile,
 } from '../../lib/v1/metricCatalog';
 import { useV1 } from '../../lib/v1/useV1';
+import { CreateMetricDialog } from './CreateMetricDialog';
 
 /*
  * "v3.1 · Dữ liệu & tri thức" (2056:1150, UC-07-01): the metric catalog. Left, every metric with
@@ -40,7 +41,8 @@ const VERSION = {
 };
 
 export default function MetricCatalogPage() {
-  const { routeId } = useAppState();
+  const { navigate, routeId } = useAppState();
+  const [creating, setCreating] = useState(false);
   const metrics = useV1(['listCatalogMetrics'], listCatalogMetrics);
   const [picked, setPicked] = useState<string | undefined>(routeId || undefined);
   const [query, setQuery] = useState('');
@@ -58,6 +60,17 @@ export default function MetricCatalogPage() {
   return (
     <div className="flex min-h-full max-[1023px]:flex-col">
       <div className="flex w-[360px] shrink-0 flex-col gap-da-sm border-r border-border px-da-md pt-da-md max-[1023px]:w-full">
+        <Button kind="primary" icon="plus" onClick={() => setCreating(true)}>
+          Tạo chỉ số
+        </Button>
+        <CreateMetricDialog
+          open={creating}
+          onClose={() => setCreating(false)}
+          onCreated={(created) => {
+            setCreating(false);
+            navigate('data', 'METRIC', created);
+          }}
+        />
         <Input
           icon="search"
           aria-label="Tìm chỉ số"

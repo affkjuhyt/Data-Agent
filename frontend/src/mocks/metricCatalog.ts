@@ -167,6 +167,19 @@ function lineageFixture(id: string, code: string): Schemas['LineageGraph'] {
 
 export function createMetricCatalogHandlers() {
   return [
+    // POST /v1/metrics (steward): the metric and its first draft version; the code is unique.
+    http.post('*/v1/metrics', async ({ request }) => {
+      const body = (await request.json()) as { code: string; owner_id: string; definition?: object };
+      if (catalogFixture().some((m) => m.code === body.code))
+        return HttpResponse.json(
+          { status: 409, code: 'conflict', title: 'Mã chỉ số đã có.', detail: 'Mã chỉ số đã có.' },
+          { status: 409 },
+        );
+      return HttpResponse.json(
+        { id: `metric-${body.code.toLowerCase()}`, code: body.code, owner_id: body.owner_id },
+        { status: 201 },
+      );
+    }),
     http.get('*/v1/metrics', ({ request }) => {
       if (new URL(request.url).searchParams.get('view') !== 'catalog') return undefined;
       // MetricView as the api sends it, with the PROPOSAL catalog fields.

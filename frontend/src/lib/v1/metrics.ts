@@ -1,4 +1,5 @@
 import { api, ok } from './client';
+import { getMe } from './me';
 import type { components } from './schema';
 
 /*
@@ -122,6 +123,41 @@ export const createMetricDraft = async (id: string, from: MetricVersion, changeN
       }),
     ),
   );
+
+export interface NewMetric {
+  code: string;
+  display_name: string;
+  expression: string;
+  unit: string | null;
+  period_semantics: MetricVersion['period_semantics'];
+  canonical_dataset_id: string | null;
+}
+
+/**
+ * POST /v1/metrics (steward, UC-07-01 step 1): the metric with its first version as a draft,
+ * owned by whoever creates it; the draft is then previewed and proposed like any other version.
+ * Returns the new metric's id.
+ */
+export const createMetric = async (metric: NewMetric): Promise<string> => {
+  const me = await getMe();
+  const created = await ok<{ id: string }>(
+    api.POST('/v1/metrics', {
+      body: {
+        code: metric.code,
+        owner_id: me.id,
+        canonical_dataset_id: metric.canonical_dataset_id,
+        definition: {
+          display_name: metric.display_name,
+          expression: metric.expression,
+          unit: metric.unit,
+          period_semantics: metric.period_semantics,
+          change_note: 'Tạo chỉ số',
+        },
+      } satisfies Schemas['MetricCreate'],
+    }),
+  );
+  return created.id;
+};
 
 export const previewMetricVersion = async (versionId: string) =>
   ok<Schemas['services__api__modules__context__schemas__Accepted']>(

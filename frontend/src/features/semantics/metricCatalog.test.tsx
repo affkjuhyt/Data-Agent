@@ -3,7 +3,7 @@
  * definition, lineage, versions, usage and quality read from GET /v1/metrics/{id} and GET
  * /v1/lineage; editing leads to the definition page.
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHandlers } from '../../mocks/handlers';
@@ -69,5 +69,28 @@ describe('MetricCatalogPage', () => {
       await screen.findByRole('heading', { level: 1, name: /Biên lợi nhuận gộp/ }),
     ).toBeInTheDocument();
     expect(screen.getByText('GROSS_MARGIN = …')).toBeInTheDocument();
+  });
+
+  it('R1-07 creates a metric as a draft and opens its page', async () => {
+    render(<MetricCatalogPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Tạo chỉ số' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Tạo chỉ số' });
+    fireEvent.change(within(dialog).getByPlaceholderText('NET_REVENUE'), { target: { value: 'loi_gop' } });
+    fireEvent.change(within(dialog).getByPlaceholderText('Doanh thu thuần'), { target: { value: 'Lãi gộp' } });
+    fireEvent.change(within(dialog).getByPlaceholderText('doanh_thu - chiet_khau'), {
+      target: { value: 'doanh_thu - gia_von' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tạo bản nháp' }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('data', 'METRIC', 'metric-loi_gop'));
+  });
+
+  it('says what a code must look like before sending it', async () => {
+    render(<MetricCatalogPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Tạo chỉ số' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Tạo chỉ số' });
+    fireEvent.change(within(dialog).getByPlaceholderText('NET_REVENUE'), { target: { value: '1 sai' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Tạo bản nháp' }));
+    expect(await within(dialog).findByText(/Mã chỉ số bắt đầu bằng chữ/)).toBeInTheDocument();
+    expect(navigate).not.toHaveBeenCalled();
   });
 });
