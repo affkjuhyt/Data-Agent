@@ -120,9 +120,9 @@ Lỗi phát hiện khi chạy (đề xuất mức):
 
 | # | Mức | Story | Lỗi |
 | --- | --- | --- | --- |
-| 10 | Cao | R0-7, R0-8 | "Doanh thu phí bảo hiểm nhân thọ tháng này" (Data Space không có chỉ số này) được hiểu là `NET_REVENUE` và trả lời "Doanh thu phí bảo hiểm nhân thọ tháng này là 262.000.000 VND": sai chỉ số, nhắc lại cụm từ của người hỏi như tên chỉ số, và kết quả kiểm vẫn PASS vì không mục nào so chỉ số đã hiểu với câu hỏi |
-| 11 | Trung bình | R0-7 | Hỏi kỳ không có dữ liệu ("Doanh thu thuần tháng 1/2015") trả lời "… là CHƯA CÓ" với kiểm PASS, thay vì từ chối `NO_DATA_FOR_PERIOD` |
-| 12 | Trung bình | R0-7 | "Tỷ lệ nợ xấu tháng này" được hỏi lại với hai chỉ số không liên quan (Doanh thu thuần, Số khiếu nại) thay vì báo không có chỉ số này |
+| 10 | ~~Cao~~ Đã sửa | R0-7, R0-8 | Một cách đọc của mô hình chỉ khớp một phần tên chỉ số, còn từ chỉ đại lượng mà tên không giải thích ("Doanh thu" + "phí bảo hiểm nhân thọ"), nay được hỏi lại "Bạn muốn hỏi: Doanh thu thuần?" thay vì trả lời (`resolver.grounding`, bất biến 3); câu diễn đạt khác hẳn vẫn do mô hình đọc (G5.1) |
+| 11 | ~~Trung bình~~ Đã sửa | R0-7 | Phép tổng trên kỳ không có dòng nào trả một dòng `NULL`: nay là từ chối `NO_DATA_FOR_PERIOD` (`questions._no_value`), không còn "… là CHƯA CÓ" |
+| 12 | Trung bình, giảm nhẹ | R0-7 | Prompt của bước đọc (và bản sao của bench) nay bảo mô hình để trống `alternatives` khi đại lượng hỏi không có trong danh mục. Không chặn được bằng luật: một câu mơ hồ ("Tình hình tín dụng ra sao?") hỏi lại hai chỉ số không chung từ nào là đúng thiết kế; cần kiểm lại trên cụm |
 
 ## Ký nghiệm thu
 

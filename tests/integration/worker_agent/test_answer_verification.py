@@ -62,3 +62,18 @@ async def test_a_refusal_keeps_its_code_and_what_to_do_about_it(
         "rephrase",
         "contact_steward",
     )
+
+
+async def test_a_period_with_no_data_is_refused_not_answered_as_missing(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # R0-13 defect 11: SUM over no row still returns one row, its value NULL; that is no data for
+    # the period, refused with its code, not an answer saying "CHƯA CÓ".
+    bank = build(seed, warehouse, monkeypatch)
+    activate(bank, metrics=("DU_NO",))
+    q = bank.ask("Dư nợ tháng 1/2015")
+    await drain()
+    status, kind, text, _, _, answer_id = answer_of(seed, q)
+    assert (status, kind) == ("refused", "refusal"), text
+    assert "CHƯA CÓ" not in text
+    assert checks_of(seed, answer_id)["refusal"]["code"] == "NO_DATA_FOR_PERIOD"

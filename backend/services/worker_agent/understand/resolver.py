@@ -194,6 +194,57 @@ def understand(question: str, vocab: Vocabulary, *, today: datetime.date) -> Und
     return out
 
 
+# Words that ask, point at time or join (normalised): they name no quantity, so they neither tie a
+# question to a metric nor leave it unexplained.
+_FILLER = frozenset(
+    "la cua cho toi ban biet xem hay va voi o tai trong nay do kia the nao bao nhieu hien "
+    "hom qua tuan thang nam quy ky ngay gan nhat moi tong cong toan bo cac nhung mot hoac "
+    "duoc da dang se theo tung chia so sanh truoc sau con thi sao nhu vay roi a nhe nhi".split()
+)
+
+
+def grounding(
+    question: str, u: Understanding, vocab: Vocabulary, *, today: datetime.date
+) -> Literal["full", "partial", "none"]:
+    """How far the question's own words name the metric of `u` (a model's reading): every word
+    that names a quantity is in the metric's name, code or an approved synonym of it ("full"),
+    some are ("partial": "doanh thu phí bảo hiểm" read as "Doanh thu thuần"), or none ("none").
+    Words of the period and of the cuts and filters the reading chose are set aside first. The
+    model proposes; this decides whether its reading may be answered without asking (invariant 3)."""
+    assert u.metric is not None
+    text = norm(question)
+    period = find_period(question, today)
+    if period:
+        text = text.replace(period.span, " ")
+    named = set(norm(u.metric.name).split()) | set(norm(u.metric.code.replace("_", " ")).split())
+    for phrase, target in vocab.synonyms.items():
+        if target[:2] == ("metric", str(u.metric.metric_id)):
+            named |= set(norm(phrase).split())
+    chosen: set[str] = set()
+    by_code = {d.code: d for d in vocab.dimensions}
+    for code in u.group_by:
+        if code in by_code:
+            chosen |= set(norm(by_code[code].name).split())
+    for dim_code, members in u.filters.items():
+        if dim_code in by_code:
+            chosen |= set(norm(by_code[dim_code].name).split())
+        for v in vocab.values:
+            if v.dimension_code == dim_code and v.value_code in members:
+                chosen |= set(norm(v.label).split()) | set(norm(v.value_code).split())
+    words = [
+        w
+        for w in text.split()
+        if len(w) > 1 and w not in _FILLER and not w.isdigit() and w not in chosen
+    ]
+    # Only a period, cuts or filters left: a follow-up ("còn theo vùng thì sao?") that takes the
+    # metric of the conversation, which names no quantity of its own to be at odds with.
+    if not words:
+        return "full"
+    if not any(w in named for w in words):
+        return "none"
+    return "full" if all(w in named for w in words) else "partial"
+
+
 # A quantity asked for in words ("số khoản vay", "bao nhiêu khách hàng"); "so với" and "so sánh"
 # compare, they ask for no quantity of their own.
 _QUANTITY = re.compile(r"\b(?:so luong|bao nhieu|so(?! voi\b| sanh\b))\s+\w")

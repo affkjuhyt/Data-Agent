@@ -30,6 +30,7 @@ import logging
 import os
 import re
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -659,7 +660,7 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
             status="failed",
         )
         return
-    if not outcome.rows:
+    if not outcome.rows or _no_value(prepared.compiled.columns, outcome.rows):
         await _refuse(
             event,
             question_id,
@@ -669,6 +670,15 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
         )
         return
     await _answer(event, question_id, prepared, outcome)
+
+
+def _no_value(columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> bool:
+    """An aggregate over a period with no data still returns a row, its value NULL (SUM over no
+    rows): that is no data for the period, refused as such, not an answer saying "CHƯA CÓ"."""
+    if "value" not in columns:
+        return False
+    at = list(columns).index("value")
+    return all(len(row) > at and row[at] is None for row in rows)
 
 
 async def _record_unmapped(
@@ -1204,7 +1214,11 @@ async def _understand_and_plan(
             text, choices = _cut_clarification(question.text, u, layer)
         else:
             listed = "; ".join(f"{i + 1}. {m.name}" for i, m in enumerate(u.options))
-            text = f"Câu hỏi khớp với nhiều chỉ số. Bạn muốn hỏi chỉ số nào: {listed}?"
+            text = (
+                f"Data Space không có chỉ số nào khớp đúng câu hỏi. Bạn muốn hỏi: {listed}?"
+                if len(u.options) == 1
+                else f"Câu hỏi khớp với nhiều chỉ số. Bạn muốn hỏi chỉ số nào: {listed}?"
+            )
             choices = [{"value": m.code, "label": m.name} for m in u.options]
         answer_id = await _finish(
             question_id,

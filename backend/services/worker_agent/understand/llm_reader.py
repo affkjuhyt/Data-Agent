@@ -27,6 +27,7 @@ from services.worker_agent.understand.resolver import (
     Understanding,
     Vocabulary,
     from_chips,
+    grounding,
 )
 from services.worker_agent.understand.text import find_period
 
@@ -42,6 +43,8 @@ Chỉ dùng mã có trong danh mục; không đoán mã mới. Trả về JSON �
 {"metric": "<mã chỉ số hoặc null>", "alternatives": ["<mã chỉ số khác nếu câu hỏi mơ hồ>"],
  "group_by": ["<mã chiều>"], "filters": {"<mã chiều>": ["<mã giá trị>"]}, "period": "<cụm từ chỉ kỳ hoặc null>"}
 Nếu câu hỏi khớp nhiều chỉ số như nhau, đặt metric = null và liệt kê chúng trong alternatives.
+Chỉ đưa vào alternatives chỉ số đo đúng đại lượng câu hỏi hỏi; câu hỏi một đại lượng không có trong
+danh mục (ví dụ một tỷ lệ khi danh mục không có tỷ lệ nào) thì alternatives để trống.
 Câu hỏi hỏi một đại lượng không có trong danh mục chỉ số (ví dụ số khoản vay, số khách hàng, số
 giao dịch) thì metric = null, kể cả khi hội thoại trước có chỉ số.
 Câu hỏi có thể nối tiếp hội thoại trước: chỉ khi nó không nêu đại lượng nào (chỉ đổi chiều, bộ lọc
@@ -150,8 +153,15 @@ async def read(
             {"kind": "period", "value": f"{period.start}/{period.end}", "label": period.label}
         )
     u = from_chips(chips, vocab)
-    if u.decision != "proceed":
+    if u.decision != "proceed" or u.metric is None:
         return None
+    # The model proposes, the question's own words decide (invariant 3). A reading that names the
+    # metric only in part, with quantity words its name does not explain ("doanh thu phí bảo hiểm
+    # nhân thọ" read as "Doanh thu thuần"), is another, narrower quantity: asked back, never
+    # answered as is. A paraphrase sharing no word ("khoản vay khó đòi" for "Tỷ lệ nợ xấu") is the
+    # model's reading to make (G5.1), at the proceed threshold.
+    if grounding(question, u, vocab, today=today) == "partial":
+        return Understanding(decision="clarify", options=[u.metric]), reply
     # A model reading is trusted to the proceed threshold, not as a name or a synonym is.
     u.chips = [
         Chip(c.kind, c.value, c.label, "default", min(c.confidence, MODEL_CONFIDENCE))
