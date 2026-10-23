@@ -13,6 +13,7 @@ import { Checkbox } from './Checkbox';
 import { Composer } from './Composer';
 import { ConfirmDialog } from './ConfirmDialog';
 import { DataFreshness } from './DataFreshness';
+import { Dialog } from './Dialog';
 import { EmptyState } from './EmptyState';
 import { Field } from './Field';
 import { Icon } from './Icon';
@@ -154,6 +155,19 @@ describe('Select', () => {
     );
     expect(screen.getByText('Chọn một định nghĩa trước khi chạy')).toBeInTheDocument();
     expect(screen.getByRole('combobox')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('closes on a click elsewhere in a dialog, whose panel stops mousedown from bubbling', () => {
+    render(
+      <Dialog open title="Thêm thành viên" onClose={() => {}}>
+        <Select label="Vai trò" options={options} value={null} onChange={() => {}} />
+        <p>Chỗ khác trong hộp thoại</p>
+      </Dialog>,
+    );
+    fireEvent.click(screen.getByRole('combobox', { name: 'Vai trò' }));
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByText('Chỗ khác trong hộp thoại'));
+    expect(screen.queryByRole('listbox')).toBeNull();
   });
 });
 

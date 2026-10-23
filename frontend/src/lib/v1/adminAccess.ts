@@ -176,6 +176,13 @@ export interface CreateDataSpace {
   status: 'draft' | 'onboarding';
 }
 
+/*
+ * The members, sources and permission matrix of a Data Space act on the space named by
+ * X-Data-Space and answer 404 for any other (org/admin/common.py same_space): the admin pages
+ * open a space that need not be the one picked in the top bar, or one just created.
+ */
+const inSpace = (id: string) => ({ 'X-Data-Space': id });
+
 /** org.data_space_member as GET /v1/data-spaces/{id}/members reads it (MemberDetail). */
 export interface DataSpaceMember {
   id: Uuid;
@@ -285,6 +292,7 @@ export const createDataSpace = async (body: CreateDataSpace) => {
     await ok(
       api.PUT('/v1/data-spaces/{id}/sources', {
         params: { path: { id: created.id } },
+        headers: inSpace(created.id),
         body: {
           source_ids: body.source_ids,
         },
@@ -321,15 +329,26 @@ const readMember = (raw: Schemas['MemberDetail']): DataSpaceMember => {
 
 export const listMembers = async (id: string): Promise<Page<DataSpaceMember>> => {
   const page = await ok(
-    api.GET('/v1/data-spaces/{id}/members', { params: { path: { id }, query: ALL } }),
+    api.GET('/v1/data-spaces/{id}/members', {
+      params: { path: { id }, query: ALL },
+      headers: inSpace(id),
+    }),
   );
   return { ...page, items: page.items.map(readMember) };
 };
 /** A2: PUT replaces the whole member list; the screen reads the list again for the names. */
 export const putMembers = async (id: string, members: MemberInput[]) =>
-  ok(api.PUT('/v1/data-spaces/{id}/members', { params: { path: { id } }, body: { members } }));
+  ok(
+    api.PUT('/v1/data-spaces/{id}/members', {
+      params: { path: { id } },
+      body: { members },
+      headers: inSpace(id),
+    }),
+  );
 export const getPermissions = async (id: string) =>
-  okAs<PermissionMatrix>(api.GET('/v1/data-spaces/{id}/permissions', { params: { path: { id } } }));
+  okAs<PermissionMatrix>(
+    api.GET('/v1/data-spaces/{id}/permissions', { params: { path: { id } }, headers: inSpace(id) }),
+  );
 /**
  * The table as one or two roles or people read it: the visible, masked and hidden columns and the
  * row conditions of the active access policies (BR-137: they only ever narrow).

@@ -38,8 +38,9 @@ export function Menu({
     const close = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    // Capture phase, as in Select: a Dialog panel stops mousedown from bubbling.
+    document.addEventListener('mousedown', close, true);
+    return () => document.removeEventListener('mousedown', close, true);
   }, [open]);
 
   return (

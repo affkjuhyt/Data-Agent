@@ -56,8 +56,10 @@ export function Select<V extends string>({
     const close = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    // Capture phase: a Dialog panel stops mousedown from bubbling (so a click inside does not close
+    // the dialog), which kept a list inside a dialog open after a click elsewhere in it.
+    document.addEventListener('mousedown', close, true);
+    return () => document.removeEventListener('mousedown', close, true);
   }, [open]);
 
   const openList = () => {

@@ -24,14 +24,21 @@ vi.mock('../../AppStateContext', () => ({
 }));
 
 const sent: { path: string; body: unknown }[] = [];
+/** The X-Data-Space each path was last called with. */
+const spaces = new Map<string, string | null>();
 const server = setupServer();
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
 beforeEach(() => {
   routeId = undefined;
   sent.length = 0;
+  spaces.clear();
   server.resetHandlers(
     // Record every write, then fall through to the stateful mock.
     http.all('*/v1/*', async ({ request }) => {
+      spaces.set(
+        new URL(request.url).pathname.replace(/^\/v1/, ''),
+        request.headers.get('X-Data-Space'),
+      );
       if (request.method !== 'GET')
         sent.push({
           path: new URL(request.url).pathname.replace(/^\/v1/, ''),
@@ -162,6 +169,9 @@ describe('DataSpacesPage', () => {
       await screen.findByText('Đã thêm GRP_RISK_ANALYST vào Rủi ro tín dụng'),
     ).toBeInTheDocument();
     const put = sent.find((s) => s.path === '/data-spaces/ds-rui-ro-tin-dung/members');
+    // The space's own calls name it in X-Data-Space, whatever the top bar holds (same_space).
+    expect(spaces.get('/data-spaces/ds-rui-ro-tin-dung/members')).toBe('ds-rui-ro-tin-dung');
+    expect(spaces.get('/data-spaces/ds-rui-ro-tin-dung/permissions')).toBe('ds-rui-ro-tin-dung');
     const members = (put?.body as { members: { row_scope: unknown }[] }).members;
     expect(members).toHaveLength(6);
     // The members already there keep their own scope; the new one carries the chosen values.
