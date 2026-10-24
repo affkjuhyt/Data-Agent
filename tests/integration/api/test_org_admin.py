@@ -117,6 +117,20 @@ async def test_directory_sync_and_invitation_are_queued(world: World) -> None:
     assert world.event_types(invitation_id) == ["directory.invitation_requested"]
 
 
+async def test_the_permission_matrix_counts_the_members_of_each_role(world: World) -> None:
+    url = f"/v1/data-spaces/{world.space}/permissions"
+    async with client(world) as api:
+        matrix = await api.get(url, headers=world.headers("steward", world.space))
+        # Another Data Space in the path than in X-Data-Space answers as if it did not exist.
+        elsewhere = await api.get(url, headers=world.headers("steward", world.other_space))
+    assert matrix.status_code == 200, matrix.text
+    counts = {r["name"]: r["member_count"] for r in matrix.json()["roles"]}
+    assert counts["AC03"] == 1 and counts["AC01"] == 1 and counts["AC05"] == 0
+    steward = next(r for r in matrix.json()["roles"] if r["name"] == "AC03")
+    assert steward["cells"]["approve"] == "yes" and steward["cells"]["view_pii"] == "no"
+    assert elsewhere.status_code == 404
+
+
 async def test_an_invitation_carries_its_row_scope_as_a_membership_does(world: World) -> None:
     body = {
         "email": "scoped.user@example.test",

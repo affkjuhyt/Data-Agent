@@ -89,6 +89,10 @@ spec:
           mc admin user add local crawler "$CRAWLER_MINIO_PASSWORD"
           mc admin policy attach local crawler-raw --user crawler || mc admin user info local crawler
           mc retention set --default "$RAW_RETENTION_MODE" "${RAW_RETENTION_DAYS}d" local/raw
+          # The pilot's policy documents: 05-v3-pilot-seed.sql registers them in da-raw-docs, and
+          # opening one reads this file (GET /v1/documents/{id}/file).
+          set -- /seed/pilot-documents/*.html
+          if [ -e "$1" ]; then mc cp "$@" local/da-raw-docs/pilot/sales-policy/; fi
         resources:
           requests:
             cpu: 100m
@@ -99,6 +103,9 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
+        - name: pilot-documents
+          mountPath: /seed/pilot-documents
+          readOnly: true
         envFrom:
         - configMapRef:
             name: minio-init-env
@@ -107,4 +114,8 @@ spec:
       volumes:
       - name: tmp
         emptyDir: {}
+      - name: pilot-documents
+        configMap:
+          name: pilot-documents
+          optional: true
       serviceAccountName: minio-init

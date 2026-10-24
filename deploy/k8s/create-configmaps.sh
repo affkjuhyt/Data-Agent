@@ -39,6 +39,9 @@ cm "$SVC" db-init-sql \
   --from-file=06-v3-banking-demo.sql=$K/sql/v3-banking-demo.sql \
   --from-file=07-v3-agent-seed.sql=$K/sql/v3-agent-seed.sql
 
+# The pilot's policy documents (05-v3-pilot-seed.sql), put in da-raw-docs by minio-init.
+cm "$SVC" pilot-documents --from-file=$K/pilot-docs/
+
 cm "$SVC" keycloak-realm   --from-file=$K/keycloak/realm-export.json
 cm "$SVC" keycloak-scripts --from-file=$K/keycloak/setup-audience-mappers.sh
 cm "$SVC" kong-scripts     --from-file=$K/kong/kong-setup.sh

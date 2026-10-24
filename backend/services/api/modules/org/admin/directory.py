@@ -264,12 +264,18 @@ async def get_data_space_permissions(
                 select(org.Role).where(org.Role.org_id == principal.org_id).order_by(org.Role.code)
             )
         ).all()
-        member_counts = dict(
-            await session.execute(
-                select(org.DataSpaceMember.role_id, func.count(org.DataSpaceMember.id))
-                .where(org.DataSpaceMember.data_space_id == space_id)
-                .group_by(org.DataSpaceMember.role_id)
+        # A Result has keys(), so dict(result) read it as a mapping and failed on every call;
+        # the rows are the (role_id, count) pairs.
+        member_counts: dict[uuid.UUID, int] = dict(
+            (
+                await session.execute(
+                    select(org.DataSpaceMember.role_id, func.count(org.DataSpaceMember.id))
+                    .where(org.DataSpaceMember.data_space_id == space_id)
+                    .group_by(org.DataSpaceMember.role_id)
+                )
             )
+            .tuples()
+            .all()
         )
     cells = (
         "view_aggregate",

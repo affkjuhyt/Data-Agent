@@ -411,6 +411,8 @@ VALUES (
 ON CONFLICT (id) DO NOTHING;
 
 -- Policy documents. The December 2025 promotion is expired. The July 2026 decision replaces January.
+-- The originals are deploy/docker/pilot-docs/*.html, which minio-init puts in da-raw-docs; sha256
+-- and size_bytes are theirs, so the file a reader opens is the one the pages were read from.
 INSERT INTO document.collection (
     id, org_id, data_space_id, code, name, media_kinds, purpose, pii_policy,
     qdrant_collection, embed_model, status, created_by, updated_by
@@ -444,14 +446,14 @@ INSERT INTO document.document (
 VALUES
     ('a0000000-0000-0000-0000-000000000c11', :org::uuid, 'a0000000-0000-0000-0000-000000000c01',
      'a0000000-0000-0000-0000-000000000c02',
-     '1111111111111111111111111111111111111111111111111111111111111111',
-     'html', 'QD-GV-2026-01.html', 'pilot/sales-policy/QD-GV-2026-01.html', 220,
+     '0808647e3df0bec3dfa5b3f9db02475a7bad7e30294c612b6252902b4924cc49',
+     'html', 'QD-GV-2026-01.html', 'pilot/sales-policy/QD-GV-2026-01.html', 328,
      'Quy định giá vốn tháng 01/2026', 'QD-GV-2026/01', date '2026-01-02',
      date '2026-01-01', date '2026-06-30', NULL, 1, 'ready', :engineer::uuid, :engineer::uuid),
     ('a0000000-0000-0000-0000-000000000c13', :org::uuid, 'a0000000-0000-0000-0000-000000000c01',
      'a0000000-0000-0000-0000-000000000c02',
-     '3333333333333333333333333333333333333333333333333333333333333333',
-     'html', 'QD-KM-2025-12.html', 'pilot/sales-policy/QD-KM-2025-12.html', 180,
+     '1fdccb7eaf347b0645d64911cffc9be8d62adf40568c8c0294529eb215fa35ec',
+     'html', 'QD-KM-2025-12.html', 'pilot/sales-policy/QD-KM-2025-12.html', 333,
      'Khuyến mại thời trang tháng 12/2025', 'QD-KM-2025/12', date '2025-11-20',
      date '2025-12-01', date '2025-12-31', NULL, 1, 'ready', :engineer::uuid, :engineer::uuid);
 
@@ -463,8 +465,8 @@ INSERT INTO document.document (
 VALUES (
     'a0000000-0000-0000-0000-000000000c12', :org::uuid, 'a0000000-0000-0000-0000-000000000c01',
     'a0000000-0000-0000-0000-000000000c02',
-    '2222222222222222222222222222222222222222222222222222222222222222',
-    'html', 'QD-GV-2026-02.html', 'pilot/sales-policy/QD-GV-2026-02.html', 480,
+    'a1f06ab7586060d83b9836c7e75edcf9594788482f137213f02fd537b532563c',
+    'html', 'QD-GV-2026-02.html', 'pilot/sales-policy/QD-GV-2026-02.html', 669,
     'Quy định giá vốn và tồn kho', 'QD-GV-2026/02', date '2026-06-25',
     date '2026-07-01', NULL, 'a0000000-0000-0000-0000-000000000c11', 1, 'ready',
     :engineer::uuid, :engineer::uuid

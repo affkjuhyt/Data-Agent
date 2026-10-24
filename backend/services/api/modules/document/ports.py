@@ -147,7 +147,12 @@ class MinioObjectStore:
             async with self._client() as client:
                 response = await client.get_object(Bucket=bucket, Key=key)
                 return await response["Body"].read()
-        except (BotoCoreError, ClientError) as exc:
+        except ClientError as exc:
+            # A missing original is the document's fault, not the store's: 404, not 503.
+            if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
+                raise Problem(404, "not_found", "The document's original file is missing.") from exc
+            raise Problem(503, "source_unavailable", "File storage is unavailable.") from exc
+        except BotoCoreError as exc:
             raise Problem(503, "source_unavailable", "File storage is unavailable.") from exc
 
 
