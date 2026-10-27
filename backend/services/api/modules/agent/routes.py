@@ -232,12 +232,12 @@ async def _check_scope(session: AsyncSession, owner: agent.AgentDef, body: Confi
         )
     targets = {
         "metrics": (
-            context.Metric,
+            context.Metric.data_space_id,
             (context.Metric.code, cast(context.Metric.id, String)),
             context.Metric.status != "retired",
         ),
         "tables": (
-            catalog.Dataset,
+            catalog.Dataset.data_space_id,
             (
                 catalog.Dataset.schema_name + "." + catalog.Dataset.table_name,
                 cast(catalog.Dataset.id, String),
@@ -245,12 +245,12 @@ async def _check_scope(session: AsyncSession, owner: agent.AgentDef, body: Confi
             catalog.Dataset.deleted_at.is_(None),
         ),
         "sources": (
-            catalog.Source,
+            catalog.Source.data_space_id,
             (catalog.Source.name, cast(catalog.Source.id, String)),
             catalog.Source.deleted_at.is_(None),
         ),
     }
-    for key, (model, names, live) in targets.items():
+    for key, (in_space, names, live) in targets.items():
         wanted = body.data_scope.get(key) or []
         if not isinstance(wanted, list) or not all(isinstance(v, str) for v in wanted):
             raise Problem(422, "validation_failed", f"data_scope.{key} is a list of names.")
@@ -261,7 +261,7 @@ async def _check_scope(session: AsyncSession, owner: agent.AgentDef, body: Confi
             found |= set(
                 (
                     await session.scalars(
-                        select(name).where(model.data_space_id == space, live, name.in_(wanted))
+                        select(name).where(in_space == space, live, name.in_(wanted))
                     )
                 ).all()
             )

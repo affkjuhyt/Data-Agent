@@ -728,9 +728,17 @@ async def test_a_question_the_space_cannot_read_stops_the_plan_and_names_it(
     assert "Lợi nhuận theo quý" in error and steps(seed, run) == []
 
 
-def acting_as_its_account(bank: Bank, run: uuid.UUID, *, member: bool) -> None:
-    """The run of a schedule: no person started it, the agent's own account acts. Another person
-    is a member, so the space is no longer in the open pilot state."""
+def acting_as_its_account(
+    bank: Bank,
+    run: uuid.UUID,
+    *,
+    member: bool,
+    owner_scope: dict[str, Any] | None = None,
+    owner_member: bool = True,
+) -> None:
+    """The run of a schedule: no person started it, the agent's own account acts. A member
+    exists, so the space is no longer in the open pilot state; the agent's owner (bank.user)
+    asks with `owner_scope`, or has left the space."""
     seed = bank.seed
     account = seed.row(
         "org.app_user",
@@ -748,9 +756,12 @@ def acting_as_its_account(bank: Bank, run: uuid.UUID, *, member: bool) -> None:
         name="Hỏi",
         capabilities=["ask"],
     )
-    for principal_type, principal in (("user", bank.user),) + (
-        (("agent", account),) if member else ()
-    ):
+    seats: list[tuple[str, uuid.UUID, dict[str, Any] | None]] = []
+    if owner_member:
+        seats.append(("user", bank.user, owner_scope))
+    if member:
+        seats.append(("agent", account, None))
+    for principal_type, principal, scope in seats:
         seed.row(
             "org.data_space_member",
             org_id=bank.org,
@@ -758,6 +769,7 @@ def acting_as_its_account(bank: Bank, run: uuid.UUID, *, member: bool) -> None:
             principal_type=principal_type,
             principal_id=principal,
             role_id=ask,
+            row_scope=json.dumps(scope) if scope is not None else None,
         )
     with seed.conn.cursor() as cur:
         cur.execute("UPDATE agent.agent_run SET initiated_by = NULL WHERE id = %s", (str(run),))
@@ -782,6 +794,36 @@ def acting_as_its_account(bank: Bank, run: uuid.UUID, *, member: bool) -> None:
                 str(bank.space),
             ),
         )
+
+
+async def test_a_scheduled_run_stops_once_its_owner_has_left_the_space(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The agent's seat came from its owner's grant; without that grant the agent cannot ask.
+    bank = build(seed, credit, monkeypatch)
+    run = agent_run(bank)
+    acting_as_its_account(bank, run, member=True, owner_member=False)
+    await drain()
+    status, stop, _, _, error, *_ = run_row(seed, run)
+    assert (status, stop) == ("failed", "error")
+    assert "quyền" in error
+    assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", run) == 0
+
+
+async def test_a_scheduled_run_reads_no_wider_rows_than_its_owner(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    run = agent_run(bank)
+    acting_as_its_account(bank, run, member=True, owner_scope={"branch_code": ["HN1"]})
+    await drain()
+    assert run_row(seed, run)[:2] == ("succeeded", "completed")
+    executed = seed.one("SELECT sql_executed FROM query.query_run WHERE caller_id = %s", run)
+    assert "branch_code" in executed and "HN1" in executed
 
 
 async def test_a_run_naming_another_data_space_is_refused_before_it_reads_it(

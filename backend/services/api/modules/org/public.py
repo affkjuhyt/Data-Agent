@@ -46,9 +46,10 @@ async def capabilities_of(
     return identity.capabilities if identity else None
 
 
-async def _ask_role(session: AsyncSession) -> org.Role | None:
-    """AC01 when the organisation has it, else the smallest role carrying `ask` and nothing
-    organisation-wide: the agent asks, it does not steward or administer."""
+async def _ask_role(session: AsyncSession, held: frozenset[str]) -> org.Role | None:
+    """AC01 when it fits, else the smallest role carrying `ask`: one whose capabilities the
+    owner holds in the space (`held`) and nothing organisation-wide, so the agent asks and
+    never does more than its owner may."""
     roles = [
         r
         for r in (
@@ -58,21 +59,20 @@ async def _ask_role(session: AsyncSession) -> org.Role | None:
                 )
             )
         ).all()
-        if not org_only(r)
+        if not org_only(r) and set(r.capabilities) <= held
     ]
     if not roles:
         return None
     return min(roles, key=lambda r: (r.code != "AC01", len(r.capabilities), r.code))
 
 
-async def _owner_scope(
+async def _owner_grant(
     session: AsyncSession, space: org.DataSpace, owner_id: uuid.UUID
-) -> tuple[bool, dict[str, Any] | None]:
-    """(may the agent be seated, its row scope): never more than its owner reads in the space.
-    Several different scoped grants are a union one membership row cannot hold, so the agent
-    is left for the steward to grant."""
-    if space.steward_id == owner_id:
-        return True, None
+) -> tuple[bool, dict[str, Any] | None, frozenset[str]]:
+    """(may the agent be seated, its row scope, the capabilities its owner holds in the space):
+    never more than its owner reads. Several different scoped grants are a union one membership
+    row cannot hold, so the agent is left for the steward to grant. At run time the worker also
+    holds the agent to its owner's current grant (query/scope.agent_owner)."""
     member = org.DataSpaceMember
     rows = (
         await session.execute(
@@ -91,13 +91,16 @@ async def _owner_scope(
             )
         )
     ).all()
+    held = frozenset(c for _, capabilities in rows for c in (capabilities or []))
+    if space.steward_id == owner_id:
+        return True, None, held | {"ask"}
     scopes = [scope for scope, capabilities in rows if "ask" in (capabilities or [])]
     if not scopes:
-        return False, None
+        return False, None, held
     if any(scope is None for scope in scopes):
-        return True, None
+        return True, None, held
     distinct = {repr(sorted(scope.items())) for scope in scopes}
-    return (True, scopes[0]) if len(distinct) == 1 else (False, None)
+    return (True, scopes[0], held) if len(distinct) == 1 else (False, None, held)
 
 
 async def open_agent_account(
@@ -139,8 +142,8 @@ async def open_agent_account(
         )
         if space is None or not members:
             return
-        role = await _ask_role(session)
-        seated, scope = await _owner_scope(session, space, principal.user_id)
+        seated, scope, held = await _owner_grant(session, space, principal.user_id)
+        role = await _ask_role(session, held)
         if role is None or not seated:
             logger.info("agent %s not seated in Data Space %s", agent_id, data_space_id)
             return

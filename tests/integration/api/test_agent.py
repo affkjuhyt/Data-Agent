@@ -861,6 +861,23 @@ async def test_a_new_agent_gets_its_account_seated_to_ask_in_its_data_space(
     ) == [(2,)]
 
 
+async def test_an_agents_role_holds_nothing_its_owner_does_not(
+    world: AgentWorld, seed: Seed
+) -> None:
+    # AC01 here also administers data, which the owner may not: the agent takes the owner's
+    # own asking role instead.
+    seed.row(
+        "org.role",
+        org_id=world.org,
+        code="AC01",
+        name="Nghiệp vụ",
+        capabilities=["ask", "admin_data"],
+    )
+    async with client(world) as api:
+        item = await new_agent(api, world)
+    assert seats(seed, item["account_user_id"]) == [(f"AG{world.suffix}", None)]
+
+
 async def test_a_config_reads_only_what_its_agents_data_space_has(
     world: AgentWorld, seed: Seed
 ) -> None:

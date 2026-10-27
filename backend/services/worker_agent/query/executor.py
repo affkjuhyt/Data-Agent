@@ -60,6 +60,7 @@ from libs.sql_guard import (
 from services.worker_agent.query.scope import (
     active_policies,
     active_row_scopes,
+    agent_owner,
     apply_output_policies,
     covered_columns,
     datasets_read,
@@ -431,15 +432,19 @@ async def bound_sql(
         datasets=readable_datasets,
         source=source,
     )
-    executed = rewrite_row_scopes(
-        executed,
-        dialect=dialect,
-        scopes=await active_row_scopes(
-            session,
-            data_space_id=data_space_id,
-            principal_id=principal_id,
-        ),
-    )
+    # An agent account reads within its own scope and its owner's (agent_owner): both rewrites
+    # apply, so the rows are their intersection, and an owner without ask refuses the query.
+    owner = await agent_owner(session, principal_id)
+    for reader in (principal_id, *([owner] if owner else [])):
+        executed = rewrite_row_scopes(
+            executed,
+            dialect=dialect,
+            scopes=await active_row_scopes(
+                session,
+                data_space_id=data_space_id,
+                principal_id=reader,
+            ),
+        )
     return Bound(executed, list(policies))
 
 

@@ -75,7 +75,24 @@ async def can_ask_data_space(
             )
         )
     ).all()
-    return any("ask" in (capabilities or []) for _, capabilities in rows)
+    if not any("ask" in (capabilities or []) for _, capabilities in rows):
+        return False
+    owner = await agent_owner(session, principal_id)
+    return owner is None or await can_ask_data_space(
+        session, data_space_id=data_space_id, principal_id=owner
+    )
+
+
+async def agent_owner(session: AsyncSession, principal_id: uuid.UUID) -> uuid.UUID | None:
+    """The owner of an agent account (app_user kind agent, BR-147), None for anyone else. An
+    agent never reads more than its owner does now: its seat was derived from the owner's grant
+    when the agent was made, and the owner may since have lost or narrowed it."""
+    owner: uuid.UUID | None = await session.scalar(
+        select(org_models.AppUser.owner_user_id).where(
+            org_models.AppUser.id == principal_id, org_models.AppUser.kind == "agent"
+        )
+    )
+    return owner
 
 
 # Who runs a query (applies_to.actors, the Holistics review's "the AI sees less than the

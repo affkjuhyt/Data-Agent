@@ -285,10 +285,12 @@ class RunFailed(Exception):
 @dataclass(frozen=True)
 class DataScope:
     """agent_config.data_scope as an allow-list (BR: never more than the owner may read): the
-    metrics (code or id) and tables (schema.table or id) a run may use; None is no narrowing."""
+    metrics (code or id), tables (schema.table or id) and sources (name or id) a run may use;
+    None is no narrowing."""
 
     metrics: frozenset[str] | None = None
     tables: frozenset[str] | None = None
+    sources: frozenset[str] | None = None
 
     @classmethod
     def of(cls, raw: Mapping[str, Any] | None) -> DataScope:
@@ -296,7 +298,7 @@ class DataScope:
             values = (raw or {}).get(key)
             return frozenset(str(v) for v in values) if values else None
 
-        return cls(metrics=names("metrics"), tables=names("tables"))
+        return cls(metrics=names("metrics"), tables=names("tables"), sources=names("sources"))
 
     def narrow(self, vocab: Vocabulary) -> Vocabulary:
         if self.metrics is None:
@@ -315,10 +317,14 @@ class DataScope:
             },
         )
 
-    def allows(self, dataset: catalog.Dataset) -> bool:
-        return self.tables is None or bool(
+    def allows(self, dataset: catalog.Dataset, source: catalog.Source | None) -> bool:
+        table = self.tables is None or bool(
             {f"{dataset.schema_name}.{dataset.table_name}", str(dataset.id)} & self.tables
         )
+        origin = self.sources is None or (
+            source is not None and bool({source.name, str(source.id)} & self.sources)
+        )
+        return table and origin
 
 
 @dataclass
@@ -407,12 +413,18 @@ async def _plan_step(
         )
         try:
             compiled = c.compile_metric(request, layer.layer, dialect="postgres")
-            dataset = layer.datasets[compiled.dataset_ids[0]]
-            if not scope.allows(dataset):
-                raise RunFailed(
-                    f"Chỉ số {u.metric.name} đọc bảng {dataset.schema_name}.{dataset.table_name}, "
-                    "nằm ngoài phạm vi dữ liệu của agent."
+            # Every table the metric reads, and its source, is inside the config's scope.
+            for table_id in compiled.dataset_ids:
+                table = layer.datasets[table_id]
+                origin = (
+                    await session.get(catalog.Source, table.source_id) if table.source_id else None
                 )
+                if not scope.allows(table, origin):
+                    raise RunFailed(
+                        f"Chỉ số {u.metric.name} đọc bảng {table.schema_name}.{table.table_name}, "
+                        "nằm ngoài phạm vi dữ liệu của agent."
+                    )
+            dataset = layer.datasets[compiled.dataset_ids[0]]
             source = (
                 _internal_workspace_source(run.data_space_id, run.org_id)
                 if dataset.schema_name == "workspace" and dataset.source_id is None
