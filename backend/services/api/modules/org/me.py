@@ -14,6 +14,7 @@ from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal
 from services.api.kernel.db import transaction
 from services.api.kernel.problems import Problem
 from services.api.modules.org.identity import ROLE, memberships, my_groups, user_role_in_force
+from services.api.modules.org.public import open_agent_account
 from services.api.modules.org.schemas import (
     AgentTemplateChoice,
     DataSpacePreferencePut,
@@ -194,6 +195,14 @@ async def try_onboarding_agent(
         )
         await session.flush()
         started = (owner.id, run.id)
+    await open_agent_account(
+        principal,
+        account_id=owner.account_user_id,
+        agent_id=owner.id,
+        data_space_id=data_space,
+        code=owner.code,
+        name=owner.name,
+    )
     response.headers["Location"] = f"/v1/runs/{started[1]}"
     return OnboardingAgentAccepted(agent_id=started[0], run_id=started[1])
 

@@ -42,6 +42,7 @@ def agent_run(
     checkpoints: tuple[str, ...] = (),
     is_test: bool = True,
     kind: str = "analysis",
+    data_scope: dict[str, Any] | None = None,
 ) -> uuid.UUID:
     seed = bank.seed
     agent_id = seed.row(
@@ -64,6 +65,7 @@ def agent_run(
         autonomy=autonomy,
         checkpoints=json.dumps(list(checkpoints)),
         limits=json.dumps(limits or {}),
+        data_scope=json.dumps(data_scope or {}),
     )
     for tool, level in tools:
         seed.row(
@@ -831,6 +833,23 @@ async def test_a_scheduled_run_whose_account_is_not_a_member_is_refused(
     assert (status, stop) == ("failed", "error")
     assert "quyền" in error and steps(seed, run) == []
     assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", run) == 0
+
+
+async def test_a_run_plans_only_with_the_metrics_its_config_names(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # R1-11: data_scope narrows what the planner sees; the goal's metric outside it is unnamed.
+    bank = build(seed, credit, monkeypatch)
+    allowed = agent_run(bank, data_scope={"metrics": [str(bank.npl)]})
+    narrowed = agent_run(bank, data_scope={"metrics": ["SOMETHING_ELSE"]})
+    await drain()
+    assert run_row(seed, allowed)[:2] == ("succeeded", "completed")
+    status, stop, _, _, error, *_ = run_row(seed, narrowed)
+    assert (status, stop) == ("failed", "error")
+    assert "chưa gọi tên chỉ số" in error
+    assert seed.one("SELECT count(*) FROM query.query_run WHERE caller_id = %s", narrowed) == 0
 
 
 async def test_a_paused_report_carries_on_with_its_next_question(

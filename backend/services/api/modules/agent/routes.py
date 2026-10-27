@@ -17,11 +17,11 @@ from collections.abc import AsyncIterator, Iterable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, Path, Query, Response
-from sqlalchemy import Select, delete, func, select
+from sqlalchemy import Select, String, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import uuid7
-from libs.dataagent_db.models import agent, org, qa
+from libs.dataagent_db.models import agent, catalog, context, org, qa, skill
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
@@ -74,6 +74,7 @@ from services.api.modules.agent.schemas import (
     TriggersPut,
     TriggerView,
 )
+from services.api.modules.org.public import open_agent_account
 
 router = APIRouter()
 ROLE = "svc_agent"
@@ -214,6 +215,91 @@ async def _config_view(session: AsyncSession, row: agent.AgentConfig) -> ConfigV
     return view
 
 
+_SCOPE_KEYS = ("metrics", "tables", "sources")
+
+
+async def _check_scope(session: AsyncSession, owner: agent.AgentDef, body: ConfigCreate) -> None:
+    """What the config lets the agent read lives in the agent's own Data Space (R1-11): its
+    metrics (code or id), tables (schema.table or id), sources (name or id) and skills (the
+    space's, the organisation's, or the owner's own). The worker narrows a run to them."""
+    space = owner.data_space_id
+    unknown_keys = set(body.data_scope) - set(_SCOPE_KEYS)
+    if unknown_keys:
+        raise Problem(
+            422,
+            "validation_failed",
+            f"data_scope takes {', '.join(_SCOPE_KEYS)}; not {', '.join(sorted(unknown_keys))}.",
+        )
+    targets = {
+        "metrics": (
+            context.Metric,
+            (context.Metric.code, cast(context.Metric.id, String)),
+            context.Metric.status != "retired",
+        ),
+        "tables": (
+            catalog.Dataset,
+            (
+                catalog.Dataset.schema_name + "." + catalog.Dataset.table_name,
+                cast(catalog.Dataset.id, String),
+            ),
+            catalog.Dataset.deleted_at.is_(None),
+        ),
+        "sources": (
+            catalog.Source,
+            (catalog.Source.name, cast(catalog.Source.id, String)),
+            catalog.Source.deleted_at.is_(None),
+        ),
+    }
+    for key, (model, names, live) in targets.items():
+        wanted = body.data_scope.get(key) or []
+        if not isinstance(wanted, list) or not all(isinstance(v, str) for v in wanted):
+            raise Problem(422, "validation_failed", f"data_scope.{key} is a list of names.")
+        if not wanted:
+            continue
+        found: set[str] = set()
+        for name in names:
+            found |= set(
+                (
+                    await session.scalars(
+                        select(name).where(model.data_space_id == space, live, name.in_(wanted))
+                    )
+                ).all()
+            )
+        missing = sorted(set(wanted) - found)
+        if missing:
+            raise Problem(
+                422,
+                "validation_failed",
+                f"data_scope.{key} names what the agent's Data Space does not have: "
+                f"{', '.join(missing)}.",
+            )
+    if body.skill_ids:
+        found_skills = set(
+            (
+                await session.scalars(
+                    select(skill.Skill.id).where(
+                        skill.Skill.id.in_(body.skill_ids),
+                        skill.Skill.deleted_at.is_(None),
+                        or_(
+                            skill.Skill.scope == "org",
+                            (skill.Skill.scope == "data_space")
+                            & (skill.Skill.data_space_id == space),
+                            (skill.Skill.scope == "personal")
+                            & (skill.Skill.data_space_id == space)
+                            & (skill.Skill.owner_id == owner.owner_user_id),
+                        ),
+                    )
+                )
+            ).all()
+        )
+        if set(body.skill_ids) - found_skills:
+            raise Problem(
+                422,
+                "validation_failed",
+                "skill_ids names a skill outside the agent's Data Space.",
+            )
+
+
 async def _add_config(
     session: AsyncSession,
     principal: Principal,
@@ -224,6 +310,7 @@ async def _add_config(
     cannot take the same number."""
     rules.check_limits(body.limits)
     rules.check_tools(body.autonomy, [t.model_dump() for t in body.tools])
+    await _check_scope(session, owner, body)
     version = (
         int(
             await session.scalar(
@@ -568,7 +655,7 @@ async def create_agent(
             # BR-147: the owner is always the real person who creates the agent.
             owner_user_id=principal.user_id,
             # The agent's own account (org.app_user kind = agent) is org's to create: the id is
-            # reserved here and org creates the user from the agent.created event.
+            # reserved here and org.public.open_agent_account creates it once the agent is.
             account_user_id=uuid7(),
             template_ref=body.template_ref,
             monthly_budget=body.monthly_budget,
@@ -596,7 +683,17 @@ async def create_agent(
             status=row.status,
         )
         await session.flush()
-        return await _agent_view(session, row)
+        view = await _agent_view(session, row)
+    # After the commit: a refused agent (a code already taken) leaves no account behind.
+    await open_agent_account(
+        principal,
+        account_id=row.account_user_id,
+        agent_id=row.id,
+        data_space_id=data_space,
+        code=row.code,
+        name=row.name,
+    )
+    return view
 
 
 @router.get(

@@ -7,6 +7,7 @@ The acceptance criteria a test proves are named in a comment above it: tests/con
 from __future__ import annotations
 
 import datetime
+import json
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -223,6 +224,17 @@ async def test_list_agents_filters_and_pages(world: AgentWorld) -> None:
 async def test_config_versions_keep_running_runs_on_their_version(
     world: AgentWorld, seed: Seed
 ) -> None:
+    # A skill of the agent's Data Space: a config names only those (R1-11).
+    skill_id = seed.row(
+        "skill.skill",
+        org_id=world.org,
+        data_space_id=world.space,
+        code="s-v2",
+        name="S",
+        category="custom",
+        scope="data_space",
+        owner_id=world.owner,
+    )
     async with client(world) as api:
         item = await new_agent(api, world, config={"goal": "v1"})
         run_id = await started_run(api, world, item["id"])
@@ -233,7 +245,7 @@ async def test_config_versions_keep_running_runs_on_their_version(
             headers=owner_headers(world),
             json={
                 "goal": "v2",
-                "skill_ids": [str(uuid.uuid4())],
+                "skill_ids": [str(skill_id)],
                 "tools": [
                     {"tool": "query", "permission_level": "read"},
                     {
@@ -802,6 +814,113 @@ async def test_resources_stay_in_their_data_space_and_org(world: AgentWorld, see
         assert (await api.get(f"/v1/agents/{item['id']}", headers=h)).status_code == 404
         assert (await api.get(f"/v1/runs/{run_id}", headers=h)).status_code == 404
         assert (await api.post(f"/v1/runs/{run_id}:cancel", headers=h)).status_code == 404
+
+
+def seats(seed: Seed, account: str) -> list[tuple[Any, ...]]:
+    return execute(
+        seed,
+        "SELECT r.code, m.row_scope FROM org.data_space_member m"
+        " JOIN org.role r ON r.id = m.role_id"
+        " WHERE m.principal_type = 'agent' AND m.principal_id = %s",
+        account,
+    )
+
+
+async def test_a_new_agent_gets_its_account_seated_to_ask_in_its_data_space(
+    world: AgentWorld, seed: Seed
+) -> None:
+    # R1-11: the account a scheduled run acts as exists and may ask in the agent's space, with
+    # the narrowest role that asks (AC01) and no wider rows than its owner reads.
+    seed.row("org.role", org_id=world.org, code="AC01", name="Nghiệp vụ", capabilities=["ask"])
+    execute(
+        seed,
+        "UPDATE org.data_space_member SET row_scope = %s WHERE principal_id = %s",
+        json.dumps({"region": ["HN"]}),
+        world.other,
+    )
+    async with client(world) as api:
+        mine = await new_agent(api, world)
+        body = {"code": f"r-{uuid.uuid4().hex[:6]}", "name": "Agent cua other", "kind": "report"}
+        theirs = await api.post("/v1/agents", headers=other_headers(world), json=body)
+        assert theirs.status_code == 201, theirs.text
+        again = await api.post("/v1/agents", headers=other_headers(world), json=body)
+        assert again.status_code == 409, again.text
+
+    account = mine["account_user_id"]
+    assert execute(
+        seed, "SELECT kind, owner_user_id, status FROM org.app_user WHERE id = %s", account
+    ) == [("agent", world.owner, "active")]
+    # The steward reads the whole space, so does their agent.
+    assert seats(seed, account) == [("AC01", None)]
+    assert seats(seed, theirs.json()["account_user_id"]) == [("AC01", {"region": ["HN"]})]
+    # The refused duplicate left no account behind.
+    assert execute(
+        seed,
+        "SELECT count(*) FROM org.app_user WHERE org_id = %s AND kind = 'agent'",
+        world.org,
+    ) == [(2,)]
+
+
+async def test_a_config_reads_only_what_its_agents_data_space_has(
+    world: AgentWorld, seed: Seed
+) -> None:
+    # R1-11: a config cannot point the agent at another space's metrics or skills.
+    elsewhere = seed.row(
+        "org.data_space",
+        org_id=world.org,
+        code=f"DS-X{world.suffix}",
+        name="X",
+        steward_id=world.owner,
+    )
+    seed.row(
+        "context.metric",
+        org_id=world.org,
+        data_space_id=world.space,
+        code="NPL_RATIO",
+        owner_id=world.owner,
+    )
+    seed.row(
+        "context.metric",
+        org_id=world.org,
+        data_space_id=elsewhere,
+        code="FX_GAIN",
+        owner_id=world.owner,
+    )
+    own_skill = seed.row(
+        "skill.skill",
+        org_id=world.org,
+        data_space_id=world.space,
+        code="s1",
+        name="S1",
+        category="custom",
+        scope="data_space",
+        owner_id=world.owner,
+    )
+    other_skill = seed.row(
+        "skill.skill",
+        org_id=world.org,
+        data_space_id=elsewhere,
+        code="s2",
+        name="S2",
+        category="custom",
+        scope="data_space",
+        owner_id=world.owner,
+    )
+    async with client(world) as api:
+        item = await new_agent(api, world)
+        url = f"/v1/agents/{item['id']}/configs"
+        h = owner_headers(world)
+
+        async def save(**config: Any) -> httpx.Response:
+            return await api.post(url, headers=h, json={"goal": "g", **config})
+
+        ok = await save(data_scope={"metrics": ["NPL_RATIO"]}, skill_ids=[str(own_skill)])
+        assert ok.status_code == 201, ok.text
+        foreign = await save(data_scope={"metrics": ["NPL_RATIO", "FX_GAIN"]})
+        assert foreign.status_code == 422 and "FX_GAIN" in foreign.text, foreign.text
+        assert (await save(data_scope={"tables": ["mart.nowhere"]})).status_code == 422
+        assert (await save(data_scope={"anything": ["x"]})).status_code == 422
+        assert (await save(skill_ids=[str(other_skill)])).status_code == 422
 
 
 async def test_an_agent_is_seen_from_its_own_data_space_only(world: AgentWorld, seed: Seed) -> None:

@@ -31,7 +31,7 @@ import unicodedata
 import uuid
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from sqlalchemy import func, select
@@ -61,7 +61,12 @@ from services.worker_agent.questions import (
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import load
 from services.worker_agent.understand import llm_reader
-from services.worker_agent.understand.resolver import Understanding, from_chips, understand
+from services.worker_agent.understand.resolver import (
+    Understanding,
+    Vocabulary,
+    from_chips,
+    understand,
+)
 from services.worker_agent.understand.text import norm, words_of
 
 logger = logging.getLogger(__name__)
@@ -277,6 +282,45 @@ class RunFailed(Exception):
         }
 
 
+@dataclass(frozen=True)
+class DataScope:
+    """agent_config.data_scope as an allow-list (BR: never more than the owner may read): the
+    metrics (code or id) and tables (schema.table or id) a run may use; None is no narrowing."""
+
+    metrics: frozenset[str] | None = None
+    tables: frozenset[str] | None = None
+
+    @classmethod
+    def of(cls, raw: Mapping[str, Any] | None) -> DataScope:
+        def names(key: str) -> frozenset[str] | None:
+            values = (raw or {}).get(key)
+            return frozenset(str(v) for v in values) if values else None
+
+        return cls(metrics=names("metrics"), tables=names("tables"))
+
+    def narrow(self, vocab: Vocabulary) -> Vocabulary:
+        if self.metrics is None:
+            return vocab
+        kept = [
+            m for m in vocab.metrics if m.code in self.metrics or str(m.metric_id) in self.metrics
+        ]
+        ids = {m.metric_id for m in kept}
+        return replace(
+            vocab,
+            metrics=kept,
+            synonyms={
+                phrase: target
+                for phrase, target in vocab.synonyms.items()
+                if target[0] != "metric" or target[1] in ids
+            },
+        )
+
+    def allows(self, dataset: catalog.Dataset) -> bool:
+        return self.tables is None or bool(
+            {f"{dataset.schema_name}.{dataset.table_name}", str(dataset.id)} & self.tables
+        )
+
+
 @dataclass
 class Planned:
     """The goal read and compiled, ready to run; nothing is written while it is made."""
@@ -315,21 +359,20 @@ async def _plan_step(
     goal: str,
     chips: list[dict[str, Any]] | None,
     principal: uuid.UUID,
+    scope: DataScope,
 ) -> Planned:
     """The goal read against the Data Space's semantic layer, as Hỏi đáp reads a question. A run
     that resumes reads the chips it planned with, so it carries on with the same plan."""
     today = run.as_of or datetime.date.today()
     async with scoped_session(QA_ROLE, run.org_id, principal) as session:
         layer = await load(session, run.data_space_id)
-        u = (
-            from_chips(chips, layer.vocabulary)
-            if chips is not None
-            else understand(goal, layer.vocabulary, today=today)
-        )
+        # The planner and the model are shown only the metrics the config lets the agent read.
+        vocab = scope.narrow(layer.vocabulary)
+        u = from_chips(chips, vocab) if chips is not None else understand(goal, vocab, today=today)
         tokens, models = 0, []
         model = gateway()
         if chips is None and u.decision == "unknown" and model is not None:
-            read = await llm_reader.read(goal, layer.vocabulary, model, today=today)
+            read = await llm_reader.read(goal, vocab, model, today=today)
             if read is not None:
                 u, reply = read
                 tokens += reply.tokens
@@ -365,6 +408,11 @@ async def _plan_step(
         try:
             compiled = c.compile_metric(request, layer.layer, dialect="postgres")
             dataset = layer.datasets[compiled.dataset_ids[0]]
+            if not scope.allows(dataset):
+                raise RunFailed(
+                    f"Chỉ số {u.metric.name} đọc bảng {dataset.schema_name}.{dataset.table_name}, "
+                    "nằm ngoài phạm vi dữ liệu của agent."
+                )
             source = (
                 _internal_workspace_source(run.data_space_id, run.org_id)
                 if dataset.schema_name == "workspace" and dataset.source_id is None
@@ -410,6 +458,7 @@ async def _plan_all(
     saved: list[dict[str, Any]] | None,
     principal: uuid.UUID,
     max_tokens: int,
+    scope: DataScope,
 ) -> list[Planned]:
     """Each question of the goal planned on its own; one the Data Space cannot read stops the plan
     and is named. A resumed run plans from the chips it saved, question by question."""
@@ -428,7 +477,7 @@ async def _plan_all(
     spent = int(run.tokens or 0)
     for n, (text, chips) in enumerate(asked, start=1):
         try:
-            planned.append(await _plan_step(run, text, chips, principal))
+            planned.append(await _plan_step(run, text, chips, principal, scope))
         except RunFailed as exc:
             if len(asked) == 1:
                 raise
@@ -878,6 +927,7 @@ async def _execute(work: Run, run: agent.AgentRun) -> None:
         or ([{"text": config.goal, "chips": saved["chips"]}] if "chips" in saved else None),
         work.principal,
         limits.max_tokens,
+        DataScope.of(config.data_scope),
     )
     tokens = sum(p.tokens for p in planned)
     if plan_row is None:

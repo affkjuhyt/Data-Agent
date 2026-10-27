@@ -36,6 +36,8 @@ import { LinkButton } from '../../components/shell/AppLink';
 const DRAFT_DELAY_MS = 800;
 const MIN_DESCRIPTION = 20;
 const NEED_DESCRIPTION = 'Mô tả việc bạn muốn giao trước.';
+// An agent belongs to one Data Space (R1-11): the one in the top bar, sent as X-Data-Space.
+const NEED_SPACE = 'Chọn một Data Space ở thanh trên: agent làm việc trong một Data Space.';
 
 /*
  * "Biến phiên thành agent" (UC-03-03 → UC-13-01) hands the description over as
@@ -54,7 +56,7 @@ function takeHandover(): string {
 }
 
 export default function CreateAgentPage() {
-  const { navigate } = useAppState();
+  const { navigate, dataSpace } = useAppState();
   const toast = useToast();
   const templates = useV1(['listTemplates'], listTemplates);
   const [description, setDescription] = useState(takeHandover);
@@ -142,7 +144,8 @@ export default function CreateAgentPage() {
   const correct = (field: DraftField, text: string) =>
     setCorrections((current) => ({ ...current, [field]: text }));
 
-  const blocked = !draft.data;
+  const blocked = !draft.data || !dataSpace;
+  const blockedWhy = dataSpace ? NEED_DESCRIPTION : NEED_SPACE;
   const actionError = error ?? test.error;
 
   return (
@@ -151,6 +154,11 @@ export default function CreateAgentPage() {
         bordered
         breadcrumb={['Agents', 'Tạo agent']}
         title="Tạo agent"
+        description={
+          dataSpace
+            ? `Agent thuộc Data Space ${dataSpace.name} và chỉ đọc dữ liệu của Data Space này.`
+            : NEED_SPACE
+        }
         actions={
           <>
             <LinkButton area="agents" page="TEAM" kind="ghost">
@@ -158,7 +166,7 @@ export default function CreateAgentPage() {
             </LinkButton>
             <Tooltip
               content={
-                blocked ? NEED_DESCRIPTION : 'Chạy trên dữ liệu tuần trước, không gửi gì ra ngoài.'
+                blocked ? blockedWhy : 'Chạy trên dữ liệu tuần trước, không gửi gì ra ngoài.'
               }
             >
               <Button
@@ -172,7 +180,7 @@ export default function CreateAgentPage() {
             <Tooltip
               content={
                 blocked
-                  ? NEED_DESCRIPTION
+                  ? blockedWhy
                   : 'Agent mới ở mức “đề xuất” cho tới khi qua bộ đánh giá.'
               }
             >

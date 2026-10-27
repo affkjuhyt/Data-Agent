@@ -13,7 +13,8 @@ import { lastUsedText } from './MemoryTab';
 
 const navigate = vi.fn();
 let routeId = '';
-vi.mock('../../AppStateContext', () => ({ useAppState: () => ({ navigate, routeId }) }));
+let dataSpace: { id: string; name: string } | null = { id: 'ds-1', name: 'Tín dụng' };
+vi.mock('../../AppStateContext', () => ({ useAppState: () => ({ navigate, routeId, dataSpace }) }));
 
 const server = setupServer();
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -63,6 +64,22 @@ describe('CreateAgentPage', () => {
     expect(screen.getByLabelText('Bạn muốn agent làm gì?')).toHaveValue('Mỗi sáng xem nợ quá hạn theo chi nhánh');
     expect(window.location.search).toBe('');
     expect(await screen.findByText('Agent Theo dõi quá hạn chi nhánh', {}, SLOW)).toBeInTheDocument();
+  });
+
+  it('names the Data Space the agent will belong to, and needs one', async () => {
+    const { unmount } = wrap(<CreateAgentPage />);
+    expect(screen.getByText(/Agent thuộc Data Space Tín dụng/)).toBeInTheDocument();
+    unmount();
+    dataSpace = null;
+    try {
+      wrap(<CreateAgentPage />);
+      fireEvent.click(await screen.findByRole('button', { name: /Agent Báo cáo định kỳ/ }));
+      expect(await screen.findByText('Phải hỏi bạn khi')).toBeInTheDocument();
+      expect(screen.getAllByText(/Chọn một Data Space ở thanh trên/).length).toBeGreaterThan(0);
+      expect(screen.getByRole('button', { name: 'Tạo agent' })).toHaveAttribute('aria-disabled', 'true');
+    } finally {
+      dataSpace = { id: 'ds-1', name: 'Tín dụng' };
+    }
   });
 
   it('starts from a template and cancels back to the team', async () => {
