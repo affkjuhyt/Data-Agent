@@ -18,5 +18,8 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  // Without it tsc read everything under frontend/, the vite build in dist/ too (allowJs): after a
+  // build, its 400 bundled files changed the types the sources got.
+  "include": ["src", "vite.config.ts", "vitest.config.ts", "vitest.setup.ts"]
 }

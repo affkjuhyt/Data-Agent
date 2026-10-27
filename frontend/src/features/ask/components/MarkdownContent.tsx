@@ -1,114 +1,160 @@
 /**
- * Minimal markdown renderer for answer text: headings, lists, fenced code,
- * bold, inline code, links and `[n]` citation markers. Deliberately small —
- * the answer is prose plus numbers, not a document. Prose is DA/Reading, as in
- * "P01 · Hỏi đáp" (2296:18565).
+ * Answer text as markdown (react-markdown + GFM: headings, lists, tables, fenced code, bold, links)
+ * with the `[n]` citation markers of the answer. The text comes from a model, so nothing in it is
+ * trusted: raw HTML is not rendered, rehype-sanitize keeps only the elements and link protocols of
+ * its default schema plus the citation marker, and a link opens in a new tab without an opener.
+ * Prose is DA/Reading, as in "P01 · Hỏi đáp" (2296:18565).
  */
-import React from 'react';
+import type { Root, Text } from 'mdast';
+import type { ReactNode } from 'react';
+import ReactMarkdown, { type Components } from 'react-markdown';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
+import remarkGfm from 'remark-gfm';
+import { SKIP, visit } from 'unist-util-visit';
 import type { Citation } from '../types';
-
-const INLINE_RE = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\[\d+\])/g;
 
 type OpenCitation = (citation: Citation) => void;
 
-function InlineText({ text, citations, onOpenCitation }: { text: string; citations?: Citation[]; onOpenCitation?: OpenCitation }) {
+const CITATION = /\[(\d+)\]/g;
+
+/** `[n]` in plain text (not in code, not a link's own text) becomes a citation marker element. */
+function remarkCitations() {
+  return (tree: Root) => {
+    visit(tree, 'text', (node: Text, index, parent) => {
+      if (!parent || index === undefined || parent.type === 'link') return;
+      const parts = node.value.split(CITATION);
+      if (parts.length === 1) return;
+      // split() with a group alternates text and the captured number.
+      const nodes = parts.flatMap((part, i): Root['children'][number][] => {
+        if (i % 2 === 0) return part ? [{ type: 'text', value: part }] : [];
+        return [
+          {
+            type: 'text',
+            value: part,
+            data: { hName: 'cite-ref', hProperties: { dataIndex: part }, hChildren: [] },
+          },
+        ];
+      }) as Text[];
+      parent.children.splice(index, 1, ...nodes);
+      return [SKIP, index + nodes.length];
+    });
+  };
+}
+
+const SCHEMA = {
+  ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames ?? []), 'cite-ref'],
+  attributes: { ...defaultSchema.attributes, 'cite-ref': ['dataIndex'] },
+};
+
+function CitationMarker({
+  index,
+  citations,
+  onOpenCitation,
+}: {
+  index: string;
+  citations?: Citation[];
+  onOpenCitation?: OpenCitation;
+}) {
+  const c = citations?.find((x) => x.index === Number(index));
+  // A number in brackets that names no citation is just text.
+  if (!c) return <>[{index}]</>;
+  const scoreStr = typeof c.score === 'number' ? ` · điểm ${c.score.toFixed(2)}` : '';
+  const title = `${c.source}${scoreStr}\n${c.snippet}`;
+  if (onOpenCitation && c.type === 'document' && c.doc_id)
+    return (
+      <sup className="ml-px align-[2px]">
+        <button
+          type="button"
+          title={title}
+          aria-label={`Mở nguồn ${index}: ${c.source}`}
+          onClick={() => onOpenCitation(c)}
+          className="inline-flex h-4 min-w-4 cursor-pointer items-center justify-center rounded-sm bg-accent px-da-xs text-primary da-label hover:underline"
+        >
+          {index}
+        </button>
+      </sup>
+    );
   return (
-    <>
-      {text.split(INLINE_RE).map((part, i) => {
-        if (part.startsWith('**') && part.endsWith('**'))
-          return <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>;
-        if (part.startsWith('`') && part.endsWith('`'))
-          return <code key={i} className="rounded-sm bg-subtle px-da-xs da-mono">{part.slice(1, -1)}</code>;
-        const cite = part.match(/^\[(\d+)\]$/);
-        if (cite && citations) {
-          const c = citations.find(x => x.index === Number(cite[1]));
-          if (c) {
-            const scoreStr = typeof c.score === 'number' ? ` · điểm ${c.score.toFixed(2)}` : '';
-            if (onOpenCitation && c.type === 'document' && c.doc_id)
-              return (
-                <sup key={i} className="ml-px align-[2px]">
-                  <button
-                    type="button"
-                    title={`${c.source}${scoreStr}\n${c.snippet}`}
-                    aria-label={`Mở nguồn ${cite[1]}: ${c.source}`}
-                    onClick={() => onOpenCitation(c)}
-                    className="inline-flex h-4 min-w-4 cursor-pointer items-center justify-center rounded-sm bg-accent px-da-xs text-primary da-label hover:underline"
-                  >
-                    {cite[1]}
-                  </button>
-                </sup>
-              );
-            return (
-              <sup
-                key={i}
-                title={`${c.source}${scoreStr}\n${c.snippet}`}
-                className="ml-px inline-flex h-4 min-w-4 items-center justify-center rounded-sm bg-accent px-da-xs align-[2px] text-primary da-label"
-              >
-                {cite[1]}
-              </sup>
-            );
-          }
-        }
-        const link = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-        if (link)
-          return <a key={i} href={link[2]} target="_blank" rel="noopener noreferrer" className="text-primary underline">{link[1]}</a>;
-        return <span key={i}>{part}</span>;
-      })}
-    </>
+    <sup
+      title={title}
+      className="ml-px inline-flex h-4 min-w-4 items-center justify-center rounded-sm bg-accent px-da-xs align-[2px] text-primary da-label"
+    >
+      {index}
+    </sup>
   );
 }
 
-export function MarkdownContent({ text, citations, onOpenCitation }: { text: string; citations?: Citation[]; onOpenCitation?: OpenCitation }) {
-  const lines = text.split('\n');
-  const nodes: React.ReactNode[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    if (line.startsWith('```')) {
-      const codeLines: string[] = [];
-      i++;
-      while (i < lines.length && !lines[i].startsWith('```')) { codeLines.push(lines[i]); i++; }
-      i++;
-      nodes.push(
-        <pre key={`cb${i}`} className="m-0 overflow-x-auto whitespace-pre rounded-md border border-border bg-subtle px-da-lg py-da-md text-foreground da-mono">
-          {codeLines.join('\n')}
-        </pre>,
-      );
-      continue;
-    }
-    const hm = line.match(/^(#{1,4})\s+(.+)/);
-    if (hm) {
-      const lvl = hm[1].length;
-      nodes.push(
-        <p key={`h${i}`} className={lvl <= 2 ? 'mt-da-md da-heading-2' : 'da-heading-3'}>
-          <InlineText text={hm[2]} citations={citations} onOpenCitation={onOpenCitation} />
-        </p>,
-      );
-      i++; continue;
-    }
-    if (/^[-*]\s/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^[-*]\s/.test(lines[i])) { items.push(lines[i].replace(/^[-*]\s/, '')); i++; }
-      nodes.push(
-        <ul key={`ul${i}`} className="m-0 list-disc pl-da-2xl da-reading">
-          {items.map((item, j) => <li key={j}><InlineText text={item} citations={citations} onOpenCitation={onOpenCitation} /></li>)}
-        </ul>,
-      );
-      continue;
-    }
-    if (/^\d+\.\s/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\d+\.\s/.test(lines[i])) { items.push(lines[i].replace(/^\d+\.\s/, '')); i++; }
-      nodes.push(
-        <ol key={`ol${i}`} className="m-0 list-decimal pl-da-2xl da-reading">
-          {items.map((item, j) => <li key={j}><InlineText text={item} citations={citations} onOpenCitation={onOpenCitation} /></li>)}
-        </ol>,
-      );
-      continue;
-    }
-    if (!line.trim()) { i++; continue; }
-    nodes.push(<p key={`p${i}`} className="m-0 da-reading"><InlineText text={line} citations={citations} onOpenCitation={onOpenCitation} /></p>);
-    i++;
-  }
-  return <div className="flex flex-col gap-da-sm text-foreground">{nodes}</div>;
+const heading2 = ({ children }: { children?: ReactNode }) => (
+  <p className="mt-da-md da-heading-2">{children}</p>
+);
+const heading3 = ({ children }: { children?: ReactNode }) => (
+  <p className="da-heading-3">{children}</p>
+);
+
+export function MarkdownContent({
+  text,
+  citations,
+  onOpenCitation,
+}: {
+  text: string;
+  citations?: Citation[];
+  onOpenCitation?: OpenCitation;
+}) {
+  const components = {
+    h1: heading2,
+    h2: heading2,
+    h3: heading3,
+    h4: heading3,
+    h5: heading3,
+    h6: heading3,
+    // A single newline in an answer is a new line, as the model writes it.
+    p: ({ children }) => <p className="m-0 whitespace-pre-line da-reading">{children}</p>,
+    ul: ({ children }) => <ul className="m-0 list-disc pl-da-2xl da-reading">{children}</ul>,
+    ol: ({ children }) => <ol className="m-0 list-decimal pl-da-2xl da-reading">{children}</ol>,
+    strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+    code: ({ children }) => (
+      <code className="rounded-sm bg-subtle px-da-xs da-mono">{children}</code>
+    ),
+    pre: ({ children }) => (
+      <pre className="m-0 overflow-x-auto whitespace-pre rounded-md border border-border bg-subtle px-da-lg py-da-md text-foreground da-mono [&>code]:bg-transparent [&>code]:p-0">
+        {children}
+      </pre>
+    ),
+    a: ({ href, children }) => (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+        {children}
+      </a>
+    ),
+    table: ({ children }) => (
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse da-body-small">{children}</table>
+      </div>
+    ),
+    th: ({ children }) => (
+      <th className="border-b border-border px-da-md py-da-sm text-left font-semibold">
+        {children}
+      </th>
+    ),
+    td: ({ children }) => <td className="border-b border-border px-da-md py-da-sm">{children}</td>,
+    'cite-ref': ({ node }: { node?: { properties?: Record<string, unknown> } }) => (
+      <CitationMarker
+        index={String(node?.properties?.dataIndex ?? '')}
+        citations={citations}
+        onOpenCitation={onOpenCitation}
+      />
+    ),
+  } as Components;
+
+  return (
+    <div className="flex flex-col gap-da-sm text-foreground">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkCitations]}
+        rehypePlugins={[[rehypeSanitize, SCHEMA]]}
+        components={components}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 }
