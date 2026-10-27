@@ -33,6 +33,7 @@ import { runStatus } from '../agents/runStatus';
 import { MemoryTab } from './MemoryTab';
 import { TestRunDrawer, useTestRun } from './TestRunDrawer';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * One agent, addressed /agents/agent/<id>, with the tabs of the P13 agent frames: "Cấu hình"
@@ -206,7 +207,13 @@ function AgentBody({
         }
         actions={actions}
       />
-      <Tabs<Tab> label="Phần của agent" items={TABS} value={tab} onChange={changeTab} className="pl-da-2xl" />
+      <Tabs<Tab>
+        label="Phần của agent"
+        items={TABS}
+        value={tab}
+        onChange={changeTab}
+        className="pl-da-2xl"
+      />
       {(error ?? test.error) && !test.run && (
         <div className="px-da-3xl pt-da-lg">
           <Notice tone="error">Không thực hiện được: {error ?? test.error}</Notice>
@@ -220,7 +227,13 @@ function AgentBody({
               <TriggerTable triggers={triggers} onChange={setTriggers} />
             </Section>
             <Section title="Mức tự chủ">
-              <Segmented<Autonomy> variant="outline" label="Mức tự chủ" items={AUTONOMY} value={autonomy} onChange={setAutonomy} />
+              <Segmented<Autonomy>
+                variant="outline"
+                label="Mức tự chủ"
+                items={AUTONOMY}
+                value={autonomy}
+                onChange={setAutonomy}
+              />
               <p className="text-muted-foreground da-caption">
                 Lên “Tự làm, báo sau” cần bộ đánh giá đạt từ 95% và chủ sở hữu Data Space duyệt.
               </p>
@@ -231,7 +244,9 @@ function AgentBody({
                   key={checkpoint.id}
                   checked={checkpoint.enabled}
                   onChange={(enabled) =>
-                    setCheckpoints((list) => list.map((c) => (c.id === checkpoint.id ? { ...c, enabled } : c)))
+                    setCheckpoints((list) =>
+                      list.map((c) => (c.id === checkpoint.id ? { ...c, enabled } : c)),
+                    )
                   }
                 >
                   {checkpoint.text}
@@ -248,29 +263,44 @@ function AgentBody({
               <Fact label="Không được" value={agent.config.denied_actions.join(', ')} />
             )}
             <p className="text-foreground da-body-small">
-              Lưu thay đổi tạo phiên bản mới; phiên bản mới phải qua bộ đánh giá trước khi chạy thật.
+              Lưu thay đổi tạo phiên bản mới; phiên bản mới phải qua bộ đánh giá trước khi chạy
+              thật.
             </p>
           </aside>
         </div>
       )}
 
       {tab === 'memory' && (
-        <MemoryTab agentId={agent.id} adding={addingMemory} onAddingDone={() => setAddingMemory(false)} />
+        <MemoryTab
+          agentId={agent.id}
+          adding={addingMemory}
+          onAddingDone={() => setAddingMemory(false)}
+        />
       )}
 
-      {tab === 'runs' && <AgentRuns agentId={agent.id} onOpen={(id) => navigate('agents', 'RUN', id)} />}
+      {tab === 'runs' && (
+        <AgentRuns agentId={agent.id} onOpen={(id) => navigate('agents', 'RUN', id)} />
+      )}
 
       {(tab === 'overview' || tab === 'eval') && (
         <div className="px-da-3xl pt-da-xl">
           <EmptyState
             icon="layers"
-            title={tab === 'overview' ? 'Tổng quan agent đang được làm' : 'Đánh giá agent đang được làm'}
+            title={
+              tab === 'overview' ? 'Tổng quan agent đang được làm' : 'Đánh giá agent đang được làm'
+            }
             description={
               tab === 'overview'
                 ? 'Trong lúc chờ, xem cấu hình, lượt chạy và bộ nhớ ở các tab bên cạnh.'
                 : 'Bộ thử và triển khai theo tỷ lệ lượt nằm ở Đánh giá & triển khai.'
             }
-            action={tab === 'eval' ? <Button onClick={() => navigate('agents', 'EVALUATE')}>Mở Đánh giá & triển khai</Button> : undefined}
+            action={
+              tab === 'eval' ? (
+                <LinkButton area="agents" page="EVALUATE">
+                  Mở Đánh giá & triển khai
+                </LinkButton>
+              ) : undefined
+            }
           />
         </div>
       )}

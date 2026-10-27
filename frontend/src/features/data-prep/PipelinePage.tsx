@@ -21,6 +21,7 @@ import {
 } from '../../lib/v1/dataPrep';
 import { useV1 } from '../../lib/v1/useV1';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P06 · Làm sạch bằng hội thoại" (2288:17795, UC-06-01): the user describes the cleaning in
@@ -124,7 +125,9 @@ export default function PipelinePage() {
         title="Chưa chọn pipeline"
         description="Mở một pipeline từ danh sách để làm sạch dữ liệu bằng hội thoại."
         action={
-          <Button onClick={() => navigate('data', 'PIPELINES')}>Về danh sách pipeline</Button>
+          <LinkButton area="data" page="PIPELINES">
+            Về danh sách pipeline
+          </LinkButton>
         }
       />
     );

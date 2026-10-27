@@ -38,6 +38,7 @@ import {
 import { useV1 } from '../../lib/v1/useV1';
 import { HEAD_ROW, KeyValue, ROW } from './parts';
 import { UploadDocumentsDialog } from './UploadDocumentsDialog';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "v3.1 · Phi cấu trúc · Tệp & tài liệu" (2065:2161) with its tabs Quy định (2102:13656), Nội bộ
@@ -626,13 +627,9 @@ function PanelBody({ doc }: { doc: DocumentView }) {
       {doc.effective_text && <KeyValue label="Hiệu lực">{doc.effective_text}</KeyValue>}
       {doc.impact_text && <KeyValue label="Ảnh hưởng">{doc.impact_text}</KeyValue>}
       <div>
-        <Button
-          kind="ghost"
-          icon="external-link"
-          onClick={() => navigate('data', 'DOCUMENT', doc.id)}
-        >
+        <LinkButton area="data" page="DOCUMENT" id={doc.id} kind="ghost" icon="external-link">
           Mở tài liệu
-        </Button>
+        </LinkButton>
       </div>
     </>
   );

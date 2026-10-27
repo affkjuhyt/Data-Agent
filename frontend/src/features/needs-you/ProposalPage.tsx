@@ -14,6 +14,7 @@ import { decideProposal, getProposal, listInbox } from '../../lib/v1/api';
 import type { DecideProposal, Proposal, ProposalImpact } from '../../lib/v1/types';
 import { useV1 } from '../../lib/v1/useV1';
 import { decisionKindOf } from './decision';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P07 · Duyệt đề xuất" (2301:19369, UC-07-03): one proposed change, decided by a person.
@@ -126,12 +127,9 @@ export default function ProposalPage() {
                     open && (
                       <>
                         {p.approval && p.approval.steps.length > 1 && (
-                          <Button
-                            kind="ghost"
-                            onClick={() => navigate('needs-you', 'APPROVAL', p.id)}
-                          >
+                          <LinkButton area="needs-you" page="APPROVAL" id={p.id} kind="ghost">
                             Người duyệt & thảo luận
-                          </Button>
+                          </LinkButton>
                         )}
                         <Button kind="ghost" onClick={() => setDialog({ decision: 'reject' })}>
                           Từ chối

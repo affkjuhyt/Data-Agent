@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
-import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Segmented } from '../../design-system/Segmented';
 import { useToast } from '../../design-system/Toast';
@@ -13,6 +12,7 @@ import { DecisionCard } from './DecisionCard';
 import { detailRouteOf, isExpiringSoon } from './decision';
 import { ResolvedList } from './ResolvedList';
 import { RulesPanel } from './RulesPanel';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "v3.1 · Cần bạn" (2149:15763, UC-07-07, UC-07-03): what agents wait on the viewer for.
@@ -148,7 +148,9 @@ export default function NeedsYouPage() {
                     : 'Các agent đang tự làm việc. Khi agent cần bạn quyết định, việc sẽ hiện ở đây và trên Teams.'
                 }
                 action={
-                  <Button onClick={() => navigate('agents', 'TEAM')}>Xem agent đang làm gì</Button>
+                  <LinkButton area="agents" page="TEAM">
+                    Xem agent đang làm gì
+                  </LinkButton>
                 }
               />
             }

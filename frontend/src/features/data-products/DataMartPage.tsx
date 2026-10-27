@@ -17,6 +17,7 @@ import {
 import { useV1 } from '../../lib/v1/useV1';
 import { SuggestMartDialog } from './SuggestMartDialog';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P06 · Data mart & sản phẩm dữ liệu" (2290:18136, UC-06-06 step 1): a mart as its star model
@@ -101,7 +102,9 @@ function MartView({ id }: { id: string }) {
         description={m?.summary_text}
         actions={
           <>
-            <Button onClick={() => navigate('data', 'QUALITY')}>Kiểm tra</Button>
+            <LinkButton area="data" page="QUALITY">
+              Kiểm tra
+            </LinkButton>
             <Button kind="primary" loading={publishing} disabled={!m} onClick={publish}>
               Phát hành sản phẩm dữ liệu
             </Button>

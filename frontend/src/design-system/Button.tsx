@@ -10,7 +10,7 @@ import { Icon, type IconName } from './Icon';
  * Every kind carries a 1px border (transparent for Primary/Ghost) so all kinds are the 36px
  * of the spec — in the Figma variants only bordered kinds reach 36, the others are 34.
  */
-type ButtonKind = 'primary' | 'secondary' | 'ghost' | 'danger';
+export type ButtonKind = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 const KIND: Record<ButtonKind, string> = {
   primary: 'bg-primary border-transparent text-primary-foreground hover:bg-primary-hover',
@@ -25,6 +25,30 @@ const DISABLED: Record<ButtonKind, string> = {
   danger: 'bg-subtle border-border text-muted-foreground',
   ghost: 'bg-transparent border-transparent text-muted-foreground',
 };
+
+/** The look of a Button, for an element that must be something else (a link: LinkButton). */
+export const buttonClass = ({
+  kind = 'secondary',
+  size = 'md',
+  disabled = false,
+  loading = false,
+  className,
+}: {
+  kind?: ButtonKind;
+  size?: 'md' | 'sm';
+  disabled?: boolean;
+  loading?: boolean;
+  className?: string;
+}) =>
+  cn(
+    'inline-flex shrink-0 items-center justify-center gap-da-sm whitespace-nowrap rounded-md border px-da-lg da-body-strong',
+    'transition-colors duration-[120ms] ease-out',
+    size === 'md' ? 'h-9' : 'h-8',
+    disabled ? DISABLED[kind] : KIND[kind],
+    loading && 'opacity-85 pointer-events-none',
+    (disabled || loading) && 'cursor-not-allowed',
+    className,
+  );
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   kind?: ButtonKind;
@@ -58,15 +82,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         aria-disabled={inactive || undefined}
         aria-busy={loading || undefined}
         onClick={inactive ? (event) => event.preventDefault() : onClick}
-        className={cn(
-          'inline-flex shrink-0 items-center justify-center gap-da-sm whitespace-nowrap rounded-md border px-da-lg da-body-strong',
-          'transition-colors duration-[120ms] ease-out',
-          size === 'md' ? 'h-9' : 'h-8',
-          disabled ? DISABLED[kind] : KIND[kind],
-          loading && 'opacity-85 pointer-events-none',
-          inactive && 'cursor-not-allowed',
-          className,
-        )}
+        className={buttonClass({ kind, size, disabled, loading, className })}
         {...rest}
       >
         {loading ? <Icon name="refresh" className="animate-spin" /> : icon && <Icon name={icon} />}

@@ -17,6 +17,7 @@ import { controlRun, listAgents, listRuns } from '../../lib/v1/api';
 import type { AgentDef, AgentRun, RunStatus } from '../../lib/v1/types';
 import { useV1 } from '../../lib/v1/useV1';
 import { agentStatus, nowOf, sevenDaysText } from './agentStatus';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P13 · Đội agent" (2309:19811, UC-13-01): every agent of the Data Space in one dense table.
@@ -131,9 +132,9 @@ export default function AgentTeamPage() {
             <Tooltip content={TEMPLATE_PENDING}>
               <Button disabled>Từ mẫu</Button>
             </Tooltip>
-            <Button kind="primary" onClick={() => navigate('agents', 'BUILDER')}>
+            <LinkButton area="agents" page="BUILDER" kind="primary">
               Tạo agent
-            </Button>
+            </LinkButton>
           </>
         }
       />
@@ -152,10 +153,12 @@ export default function AgentTeamPage() {
               description="Giao việc đầu tiên bằng lời, hoặc bắt đầu từ agent mẫu của gói domain."
               action={
                 <div className="flex gap-da-sm">
-                  <Button kind="primary" onClick={() => navigate('agents', 'BUILDER')}>
+                  <LinkButton area="agents" page="BUILDER" kind="primary">
                     Tạo agent
-                  </Button>
-                  <Button onClick={() => navigate('data', 'PACKS')}>Dùng agent mẫu</Button>
+                  </LinkButton>
+                  <LinkButton area="data" page="PACKS">
+                    Dùng agent mẫu
+                  </LinkButton>
                 </div>
               }
             />
@@ -168,7 +171,11 @@ export default function AgentTeamPage() {
                   <SortableTh view={view} column="name" className="px-da-lg py-da-md font-normal">
                     Agent
                   </SortableTh>
-                  <SortableTh view={view} column="now" className="w-[280px] px-da-lg py-da-md font-normal">
+                  <SortableTh
+                    view={view}
+                    column="now"
+                    className="w-[280px] px-da-lg py-da-md font-normal"
+                  >
                     Đang làm gì
                   </SortableTh>
                   <SortableTh
@@ -185,10 +192,18 @@ export default function AgentTeamPage() {
                   >
                     Được phép
                   </SortableTh>
-                  <SortableTh view={view} column="week" className="w-[110px] px-da-lg py-da-md font-normal">
+                  <SortableTh
+                    view={view}
+                    column="week"
+                    className="w-[110px] px-da-lg py-da-md font-normal"
+                  >
                     7 ngày
                   </SortableTh>
-                  <SortableTh view={view} column="status" className="w-[120px] px-da-lg py-da-md font-normal">
+                  <SortableTh
+                    view={view}
+                    column="status"
+                    className="w-[120px] px-da-lg py-da-md font-normal"
+                  >
                     Trạng thái
                   </SortableTh>
                   <SortableTh view={view} className="w-[40px] px-da-lg py-da-md">

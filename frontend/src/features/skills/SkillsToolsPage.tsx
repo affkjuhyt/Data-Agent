@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
-import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { Icon } from '../../design-system/Icon';
 import { Notice } from '../../design-system/Notice';
@@ -20,6 +19,7 @@ import {
 } from '../../lib/v1/skills';
 import { useV1 } from '../../lib/v1/useV1';
 import { SKILL_TONE, TOOL_LEVELS, levelOf } from './labels';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "v3.1 · Kỹ năng & công cụ" (2057:1270, UC-03-01, UC-13-02) with its tab "Công cụ"
@@ -44,7 +44,9 @@ export default function SkillsToolsPage() {
         title="Kỹ năng & công cụ"
         description="Kỹ năng là cách làm có thể tái sử dụng; công cụ là hành động agent được phép gọi. Agent chỉ dùng được những gì được gán và trong mức quyền của công cụ."
         actions={
-          <Button onClick={() => navigate('analysis', 'SESSIONS')}>Tạo kỹ năng từ phiên</Button>
+          <LinkButton area="analysis" page="SESSIONS">
+            Tạo kỹ năng từ phiên
+          </LinkButton>
         }
       />
       <Notice tone="info">
@@ -176,12 +178,14 @@ function SuggestionsCard() {
                   <span className="text-muted-foreground da-caption">{s.steps.join(' → ')}</span>
                 </span>
                 <span className="shrink-0 text-primary da-caption">{s.count_text}</span>
-                <Button
+                <LinkButton
+                  area="agents"
+                  page="SKILL_FROM_SESSION"
+                  id={s.session_ids[0]}
                   disabled={s.session_ids.length === 0}
-                  onClick={() => navigate('agents', 'SKILL_FROM_SESSION', s.session_ids[0])}
                 >
                   Tạo kỹ năng
-                </Button>
+                </LinkButton>
               </li>
             ))}
           </ul>

@@ -16,6 +16,7 @@ import {
   type ReviewGate,
   type SourceSuggestion,
 } from '../../lib/v1/crawl';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P14 · Nguồn thu thập · Đăng ký" (2389:14708, UC-14-01): describe the data to collect; the
@@ -134,7 +135,9 @@ export default function CrawlRegisterPage() {
         description="Mô tả dữ liệu cần thu; Agent Thu thập đề xuất nguồn, kiểm robots.txt và điều khoản trước khi lưu"
         actions={
           <>
-            <Button onClick={() => navigate('data', 'CRAWL')}>Huỷ</Button>
+            <LinkButton area="data" page="CRAWL">
+              Huỷ
+            </LinkButton>
             <Button
               kind="primary"
               loading={busy === 'save'}

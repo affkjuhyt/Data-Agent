@@ -33,7 +33,7 @@ describe('AnalysisPage', () => {
     );
     render(<AnalysisPage />);
     expect(await screen.findByText('Chưa có dashboard hay phiên nào')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Mở Khám phá' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Mở Khám phá' }));
     expect(navigate).toHaveBeenCalledWith('analysis', 'EXPLORE');
   });
 });

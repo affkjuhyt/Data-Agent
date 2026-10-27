@@ -118,7 +118,7 @@ describe('DataMartPage', () => {
       await screen.findByText('Đã gửi chứng nhận credit_risk_retail v2.0 · chờ chủ sở hữu'),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Kiểm tra' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Kiểm tra' }));
     expect(navigate).toHaveBeenCalledWith('data', 'QUALITY');
   });
 

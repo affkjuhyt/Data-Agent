@@ -21,6 +21,7 @@ import {
 } from '../../lib/v1/monitors';
 import { useV1 } from '../../lib/v1/useV1';
 import { whenText } from './whenText';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P08 · Theo dõi · Danh sách" (2270:15950, UC-08-01): every monitor of the Data Space, newest
@@ -87,9 +88,9 @@ export default function WatchListPage() {
             <Tooltip content="Thư viện mẫu theo dõi đang được làm.">
               <Button disabled>Nhập từ mẫu</Button>
             </Tooltip>
-            <Button kind="primary" onClick={() => navigate('analysis', 'WATCH_NEW')}>
+            <LinkButton area="analysis" page="WATCH_NEW" kind="primary">
               Tạo theo dõi
-            </Button>
+            </LinkButton>
           </>
         }
       />

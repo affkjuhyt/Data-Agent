@@ -6,12 +6,12 @@
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
-import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { StatusDot } from '../../design-system/StatusDot';
 import { listJobs, type IngestionJob } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
 import { formatLag, jobStatus } from '../data-sources/sourceFormat';
+import { LinkButton } from '../../components/shell/AppLink';
 
 const STATUS_ORDER: Record<string, number> = {
   running: 0,
@@ -41,7 +41,9 @@ export default function JobMonitorPage() {
         title="Công việc"
         description="Trạng thái job nạp gần đây (chỉ xem). Tạm dừng hoặc chạy lại ở Job nạp."
         actions={
-          <Button onClick={() => navigate('data', 'JOBS')}>Mở Job nạp</Button>
+          <LinkButton area="data" page="JOBS">
+            Mở Job nạp
+          </LinkButton>
         }
       />
       <div className="px-da-3xl py-da-xl">

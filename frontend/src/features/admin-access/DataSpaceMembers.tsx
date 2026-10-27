@@ -29,6 +29,7 @@ import {
 import { useV1 } from '../../lib/v1/useV1';
 import { count, dayMonth } from './format';
 import { MemberAddDialog } from './MemberAddDialog';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "v3.1 · Cộng tác · Thành viên & quyền Data Space" (2084:6445, UC-11-08): the role × capability
@@ -57,9 +58,9 @@ export default function DataSpaceMembers({ id }: { id: string }) {
         title={name ? `${name} · thành viên và quyền` : 'Thành viên và quyền'}
         actions={
           <>
-            <Button icon="eye" onClick={() => navigate('admin', 'PERMISSION_COMPARE', id)}>
+            <LinkButton area="admin" page="PERMISSION_COMPARE" id={id} icon="eye">
               Mô phỏng quyền
-            </Button>
+            </LinkButton>
             <Button kind="primary" onClick={() => setAdding(true)}>
               Thêm thành viên
             </Button>

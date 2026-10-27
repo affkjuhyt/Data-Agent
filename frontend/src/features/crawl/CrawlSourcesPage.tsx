@@ -18,6 +18,7 @@ import {
   type ReviewGate,
 } from '../../lib/v1/crawl';
 import { useV1 } from '../../lib/v1/useV1';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P14 · Nguồn thu thập · Danh sách" (2389:14334, UC-14-01, UC-14-06): every external source the
@@ -114,9 +115,9 @@ export default function CrawlSourcesPage() {
                 <Button disabled>Chạy ngay</Button>
               </Tooltip>
             )}
-            <Button kind="primary" onClick={() => navigate('data', 'CRAWL_NEW')}>
+            <LinkButton area="data" page="CRAWL_NEW" kind="primary">
               Thêm nguồn thu thập
-            </Button>
+            </LinkButton>
           </>
         }
       />
@@ -168,51 +169,83 @@ export default function CrawlSourcesPage() {
         <AsyncRegion state={sources} what="nguồn thu thập" skeletonRows={6}>
           {() => (
             <>
-            <TableToolbar view={view} placeholder="Tìm nguồn thu thập…" searchLabel="Tìm nguồn thu thập" />
-            <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border">
-              <thead>
-                <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                  <SortableTh view={view} column="name" className="w-[260px] px-da-lg py-da-md font-normal">
-                    Nguồn
-                  </SortableTh>
-                  <SortableTh view={view} column="format" className="px-da-lg py-da-md font-normal">
-                    Định dạng
-                  </SortableTh>
-                  <SortableTh view={view} column="schedule" className="px-da-lg py-da-md font-normal">
-                    Lịch
-                  </SortableTh>
-                  <SortableTh view={view} column="health" className="w-[190px] px-da-lg py-da-md font-normal">
-                    Trạng thái
-                  </SortableTh>
-                  <SortableTh view={view} column="last" className="px-da-lg py-da-md font-normal">
-                    Lần thu cuối
-                  </SortableTh>
-                  <SortableTh view={view} column="accuracy" className="w-[80px] px-da-lg py-da-md font-normal">
-                    Chính xác
-                  </SortableTh>
-                  <SortableTh view={view} column="pending" className="w-[56px] px-da-lg py-da-md font-normal">
-                    Chờ
-                  </SortableTh>
-                  <SortableTh view={view} column="gate" className="w-[120px] px-da-lg py-da-md font-normal">
-                    Cổng duyệt
-                  </SortableTh>
-                </tr>
-              </thead>
-              <tbody>
-                {view.rows.map((s) => (
-                  <SourceRow
-                    key={s.id}
-                    source={s}
-                    selected={s.id === selected}
-                    onSelect={() => setSelected(s.id === selected ? undefined : s.id)}
-                    onOpen={() => navigate('data', 'CRAWL_SOURCE', s.id)}
-                    onOpenDrift={(driftId) => navigate('data', 'CRAWL_DRIFT', driftId)}
-                    onOpenReview={(runId) => navigate('data', 'CRAWL_RUN', runId)}
-                  />
-                ))}
-              </tbody>
-            </table>
-            <TablePager view={view} />
+              <TableToolbar
+                view={view}
+                placeholder="Tìm nguồn thu thập…"
+                searchLabel="Tìm nguồn thu thập"
+              />
+              <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border">
+                <thead>
+                  <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
+                    <SortableTh
+                      view={view}
+                      column="name"
+                      className="w-[260px] px-da-lg py-da-md font-normal"
+                    >
+                      Nguồn
+                    </SortableTh>
+                    <SortableTh
+                      view={view}
+                      column="format"
+                      className="px-da-lg py-da-md font-normal"
+                    >
+                      Định dạng
+                    </SortableTh>
+                    <SortableTh
+                      view={view}
+                      column="schedule"
+                      className="px-da-lg py-da-md font-normal"
+                    >
+                      Lịch
+                    </SortableTh>
+                    <SortableTh
+                      view={view}
+                      column="health"
+                      className="w-[190px] px-da-lg py-da-md font-normal"
+                    >
+                      Trạng thái
+                    </SortableTh>
+                    <SortableTh view={view} column="last" className="px-da-lg py-da-md font-normal">
+                      Lần thu cuối
+                    </SortableTh>
+                    <SortableTh
+                      view={view}
+                      column="accuracy"
+                      className="w-[80px] px-da-lg py-da-md font-normal"
+                    >
+                      Chính xác
+                    </SortableTh>
+                    <SortableTh
+                      view={view}
+                      column="pending"
+                      className="w-[56px] px-da-lg py-da-md font-normal"
+                    >
+                      Chờ
+                    </SortableTh>
+                    <SortableTh
+                      view={view}
+                      column="gate"
+                      className="w-[120px] px-da-lg py-da-md font-normal"
+                    >
+                      Cổng duyệt
+                    </SortableTh>
+                  </tr>
+                </thead>
+                <tbody>
+                  {view.rows.map((s) => (
+                    <SourceRow
+                      key={s.id}
+                      source={s}
+                      selected={s.id === selected}
+                      onSelect={() => setSelected(s.id === selected ? undefined : s.id)}
+                      onOpen={() => navigate('data', 'CRAWL_SOURCE', s.id)}
+                      onOpenDrift={(driftId) => navigate('data', 'CRAWL_DRIFT', driftId)}
+                      onOpenReview={(runId) => navigate('data', 'CRAWL_RUN', runId)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+              <TablePager view={view} />
             </>
           )}
         </AsyncRegion>

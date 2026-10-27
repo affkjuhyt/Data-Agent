@@ -21,6 +21,7 @@ import {
   type PackInstall,
 } from '../../lib/v1/packs';
 import { useV1 } from '../../lib/v1/useV1';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P09 · Đưa vào ngành · Ánh xạ" (2284:17560, UC-09-02): an installed pack's canonical entities
@@ -147,9 +148,9 @@ function MappingBody({
         description={install.summary_text}
         actions={
           <>
-            <Button onClick={() => navigate('data', 'PACK_CALIBRATE', install.id)}>
+            <LinkButton area="data" page="PACK_CALIBRATE" id={install.id}>
               Đối chiếu số
-            </Button>
+            </LinkButton>
             <Button kind="primary" loading={busy} disabled={busy} onClick={() => save()}>
               Duyệt ánh xạ đã chọn
             </Button>

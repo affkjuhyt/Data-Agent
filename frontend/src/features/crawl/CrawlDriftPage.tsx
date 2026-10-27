@@ -13,6 +13,7 @@ import { Tooltip } from '../../design-system/Tooltip';
 import { cn } from '../../lib/utils';
 import { getSchemaDrift, resolveSchemaDrift, type SchemaDrift } from '../../lib/v1/crawl';
 import { useV1 } from '../../lib/v1/useV1';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P14 · Thay đổi cấu trúc · Hoàn tác" (2389:15400, UC-14-03): a heavy structure drift stopped a
@@ -132,9 +133,9 @@ function DriftBody({ drift, onChanged }: { drift: SchemaDrift; onChanged: () => 
               )}
             </>
           ) : (
-            <Button onClick={() => navigate('data', 'CRAWL_SOURCE', drift.source_id)}>
+            <LinkButton area="data" page="CRAWL_SOURCE" id={drift.source_id}>
               Mở nguồn
-            </Button>
+            </LinkButton>
           )
         }
       />
@@ -158,16 +159,32 @@ function DriftBody({ drift, onChanged }: { drift: SchemaDrift; onChanged: () => 
             <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border da-body-small">
               <thead>
                 <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                  <SortableTh view={signals} column="name" className="w-[130px] px-da-lg py-da-md font-normal">
+                  <SortableTh
+                    view={signals}
+                    column="name"
+                    className="w-[130px] px-da-lg py-da-md font-normal"
+                  >
                     Tín hiệu
                   </SortableTh>
-                  <SortableTh view={signals} column="measure" className="px-da-lg py-da-md font-normal">
+                  <SortableTh
+                    view={signals}
+                    column="measure"
+                    className="px-da-lg py-da-md font-normal"
+                  >
                     Đo
                   </SortableTh>
-                  <SortableTh view={signals} column="value" className="w-[80px] px-da-lg py-da-md font-normal">
+                  <SortableTh
+                    view={signals}
+                    column="value"
+                    className="w-[80px] px-da-lg py-da-md font-normal"
+                  >
                     Giá trị
                   </SortableTh>
-                  <SortableTh view={signals} column="weight" className="w-[80px] px-da-lg py-da-md font-normal">
+                  <SortableTh
+                    view={signals}
+                    column="weight"
+                    className="w-[80px] px-da-lg py-da-md font-normal"
+                  >
                     Trọng số
                   </SortableTh>
                 </tr>
@@ -237,23 +254,47 @@ function DriftBody({ drift, onChanged }: { drift: SchemaDrift; onChanged: () => 
           <Card
             title={`So sánh schema v${drift.active_version.version} (đang dùng) và v${proposed.version} (agent đề xuất)`}
           >
-            <TableToolbar view={changes} placeholder="Tìm trường…" searchLabel="Tìm thay đổi schema" />
+            <TableToolbar
+              view={changes}
+              placeholder="Tìm trường…"
+              searchLabel="Tìm thay đổi schema"
+            />
             <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border da-body-small">
               <thead>
                 <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-                  <SortableTh view={changes} column="change" className="w-[100px] px-da-lg py-da-md font-normal">
+                  <SortableTh
+                    view={changes}
+                    column="change"
+                    className="w-[100px] px-da-lg py-da-md font-normal"
+                  >
                     Thay đổi
                   </SortableTh>
-                  <SortableTh view={changes} column="field" className="w-[160px] px-da-lg py-da-md font-normal">
+                  <SortableTh
+                    view={changes}
+                    column="field"
+                    className="w-[160px] px-da-lg py-da-md font-normal"
+                  >
                     Trường
                   </SortableTh>
-                  <SortableTh view={changes} column="before" className="px-da-lg py-da-md font-normal">
+                  <SortableTh
+                    view={changes}
+                    column="before"
+                    className="px-da-lg py-da-md font-normal"
+                  >
                     v{drift.active_version.version}
                   </SortableTh>
-                  <SortableTh view={changes} column="after" className="px-da-lg py-da-md font-normal">
+                  <SortableTh
+                    view={changes}
+                    column="after"
+                    className="px-da-lg py-da-md font-normal"
+                  >
                     v{proposed.version} đề xuất
                   </SortableTh>
-                  <SortableTh view={changes} column="test" className="w-[160px] px-da-lg py-da-md font-normal">
+                  <SortableTh
+                    view={changes}
+                    column="test"
+                    className="w-[160px] px-da-lg py-da-md font-normal"
+                  >
                     Chạy thử v{proposed.version}
                   </SortableTh>
                 </tr>

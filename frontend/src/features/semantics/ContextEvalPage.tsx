@@ -16,6 +16,7 @@ import {
   type ContextEval,
 } from '../../lib/v1/semanticLayer';
 import { useV1 } from '../../lib/v1/useV1';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "v3.1 · Semantic · Đánh giá lớp ngữ cảnh" (2232:15323, UC-07-06): the benchmark questions of a
@@ -119,19 +120,35 @@ function EvalBody({ evaluation }: { evaluation: ContextEval }) {
       <table className="w-full table-fixed border-collapse overflow-hidden rounded-md border border-border da-body-small">
         <thead>
           <tr className="border-b border-border bg-subtle text-left text-muted-foreground da-caption">
-            <SortableTh view={runs} column="label" className="w-[104px] px-da-md py-da-sm font-normal">
+            <SortableTh
+              view={runs}
+              column="label"
+              className="w-[104px] px-da-md py-da-sm font-normal"
+            >
               Lượt
             </SortableTh>
             <SortableTh view={runs} column="change" className="px-da-md py-da-sm font-normal">
               Thay đổi được thử
             </SortableTh>
-            <SortableTh view={runs} column="correct" className="w-[90px] px-da-md py-da-sm font-normal">
+            <SortableTh
+              view={runs}
+              column="correct"
+              className="w-[90px] px-da-md py-da-sm font-normal"
+            >
               Đúng
             </SortableTh>
-            <SortableTh view={runs} column="delta" className="w-[120px] px-da-md py-da-sm font-normal">
+            <SortableTh
+              view={runs}
+              column="delta"
+              className="w-[120px] px-da-md py-da-sm font-normal"
+            >
               So với trước
             </SortableTh>
-            <SortableTh view={runs} column="result" className="w-[220px] px-da-md py-da-sm font-normal">
+            <SortableTh
+              view={runs}
+              column="result"
+              className="w-[220px] px-da-md py-da-sm font-normal"
+            >
               Kết quả
             </SortableTh>
           </tr>
@@ -169,7 +186,11 @@ function EvalBody({ evaluation }: { evaluation: ContextEval }) {
             <SortableTh view={misses} column="understood" className="px-da-md py-da-sm font-normal">
               Agent hiểu là
             </SortableTh>
-            <SortableTh view={misses} column="cause" className="w-[200px] px-da-md py-da-sm font-normal">
+            <SortableTh
+              view={misses}
+              column="cause"
+              className="w-[200px] px-da-md py-da-sm font-normal"
+            >
               Nguyên nhân
             </SortableTh>
           </tr>
@@ -187,9 +208,9 @@ function EvalBody({ evaluation }: { evaluation: ContextEval }) {
       </table>
       <TablePager view={misses} />
       <div className="flex flex-wrap gap-da-md">
-        <Button kind="primary" onClick={() => navigate('data', 'GLOSSARY')}>
+        <LinkButton area="data" page="GLOSSARY" kind="primary">
           Sửa từ điển nghiệp vụ
-        </Button>
+        </LinkButton>
         <Tooltip content="Thêm câu hỏi từ phản hồi 👎 đang được làm.">
           <Button kind="ghost" disabled>
             Thêm câu hỏi từ phản hồi 👎

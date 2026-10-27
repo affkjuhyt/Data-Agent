@@ -221,7 +221,7 @@ describe('ArtifactPage', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'SQL' }));
     expect(await screen.findByText(/FROM semantic\.credit_risk_retail/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Theo dõi' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Theo dõi' }));
     expect(navigate).toHaveBeenCalledWith('analysis', 'WATCH_NEW');
 
     fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));

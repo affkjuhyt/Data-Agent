@@ -65,7 +65,7 @@ describe('ApprovalChainPage', () => {
 
   it('is opened from a proposal with more than one reviewer', async () => {
     wrap(<ProposalPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Người duyệt & thảo luận' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Người duyệt & thảo luận' }));
     expect(navigate).toHaveBeenCalledWith('needs-you', 'APPROVAL', 'proposal-214');
   });
 });

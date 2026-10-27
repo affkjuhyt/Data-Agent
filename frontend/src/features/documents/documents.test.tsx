@@ -140,7 +140,7 @@ describe('DocumentsPage', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Nội bộ · 5' }));
     fireEvent.click(await screen.findByRole('row', { name: /Quy chế trích lập dự phòng nội bộ/ }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Mở tài liệu' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Mở tài liệu' }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('data', 'DOCUMENT', 'doc-provision'));
 
     fireEvent.click(screen.getByRole('tab', { name: 'Đang xử lý · 3' }));

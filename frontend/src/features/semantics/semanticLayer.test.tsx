@@ -67,7 +67,7 @@ describe('ContextEvalPage', () => {
     expect(screen.getByText('Câu trả lời sai ở lượt #58')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Chạy lại toàn bộ' }));
     expect(await screen.findByText('Đang chạy lại toàn bộ bộ câu hỏi chuẩn')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Sửa từ điển nghiệp vụ' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Sửa từ điển nghiệp vụ' }));
     expect(navigate).toHaveBeenCalledWith('data', 'GLOSSARY');
   });
 });

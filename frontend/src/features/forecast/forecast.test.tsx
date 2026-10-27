@@ -46,7 +46,7 @@ describe('ForecastJobPage', () => {
     expect(within(steps).getAllByRole('listitem')).toHaveLength(5);
     expect(screen.getByRole('radio', { name: 'Giữ nguyên 4,50% (mặc định)' })).toBeChecked();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Xem dự báo cũ' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Xem dự báo cũ' }));
     expect(navigate).toHaveBeenCalledWith('analysis', 'FORECAST', 'fc-deposit-2026-09-v6');
     fireEvent.click(screen.getByRole('button', { name: 'Sửa bộ biến' }));
     expect(navigate).toHaveBeenCalledWith('analysis', 'FORECAST_STUDIO', 'fj-2026-1010-03');
@@ -68,7 +68,7 @@ describe('ForecastJobPage', () => {
     await resolveHitl('hitl-forecast-policy-rate', { decision: 'answer', option: 'hold' });
     await getForecastJob('fj-2026-1010-03');
     show(<ForecastJobPage />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Xem kết quả dự báo' }));
+    fireEvent.click(await screen.findByRole('link', { name: 'Xem kết quả dự báo' }));
     expect(navigate).toHaveBeenCalledWith('analysis', 'FORECAST', 'fc-deposit-2026-11');
   });
 });

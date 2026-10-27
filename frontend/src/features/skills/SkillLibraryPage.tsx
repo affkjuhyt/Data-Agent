@@ -13,6 +13,7 @@ import { useV1 } from '../../lib/v1/useV1';
 import { SKILL_TONE, runsText } from './labels';
 import { ShareSkillDialog } from './ShareSkillDialog';
 import { Segmented } from '../../design-system/Segmented';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P03 · Kỹ năng · Thư viện" (2293:17995, UC-03-01, UC-03-07): every skill the viewer can use,
@@ -72,7 +73,9 @@ export default function SkillLibraryPage() {
         description="Kỹ năng là cách làm phân tích có tham số, dùng lại được bởi người và agent · chỉ gọi chỉ số qua lớp ngữ cảnh nên không phụ thuộc cấu trúc bảng"
         actions={
           <>
-            <Button onClick={() => navigate('analysis', 'SESSIONS')}>Tạo từ phiên</Button>
+            <LinkButton area="analysis" page="SESSIONS">
+              Tạo từ phiên
+            </LinkButton>
             <Button kind="primary" loading={creating} onClick={create}>
               Kỹ năng mới
             </Button>
@@ -112,16 +115,32 @@ export default function SkillLibraryPage() {
                   <SortableTh view={view} column="name" className="py-da-md pl-da-lg font-normal">
                     Kỹ năng
                   </SortableTh>
-                  <SortableTh view={view} column="version" className="w-[102px] py-da-md pl-da-lg font-normal">
+                  <SortableTh
+                    view={view}
+                    column="version"
+                    className="w-[102px] py-da-md pl-da-lg font-normal"
+                  >
                     Phiên bản
                   </SortableTh>
-                  <SortableTh view={view} column="scope" className="w-[162px] py-da-md pl-da-lg font-normal">
+                  <SortableTh
+                    view={view}
+                    column="scope"
+                    className="w-[162px] py-da-md pl-da-lg font-normal"
+                  >
                     Phạm vi
                   </SortableTh>
-                  <SortableTh view={view} column="status" className="w-[182px] py-da-md pl-da-lg font-normal">
+                  <SortableTh
+                    view={view}
+                    column="status"
+                    className="w-[182px] py-da-md pl-da-lg font-normal"
+                  >
                     Trạng thái
                   </SortableTh>
-                  <SortableTh view={view} column="runs" className="w-[102px] py-da-md pl-da-lg font-normal">
+                  <SortableTh
+                    view={view}
+                    column="runs"
+                    className="w-[102px] py-da-md pl-da-lg font-normal"
+                  >
                     30 ngày
                   </SortableTh>
                   <SortableTh
@@ -138,14 +157,14 @@ export default function SkillLibraryPage() {
               </thead>
               <tbody>
                 {view.rows.map((skill) => (
-                    <SkillRow
-                      key={skill.id}
-                      skill={skill}
-                      onRun={() => navigate('agents', 'SKILL_RUN', skill.id)}
-                      onEdit={() => navigate('agents', 'SKILL_EDITOR', skill.id)}
-                      onVersions={() => navigate('agents', 'SKILL_VERSIONS', skill.id)}
-                      onShare={() => setSharing(skill)}
-                    />
+                  <SkillRow
+                    key={skill.id}
+                    skill={skill}
+                    onRun={() => navigate('agents', 'SKILL_RUN', skill.id)}
+                    onEdit={() => navigate('agents', 'SKILL_EDITOR', skill.id)}
+                    onVersions={() => navigate('agents', 'SKILL_VERSIONS', skill.id)}
+                    onShare={() => setSharing(skill)}
+                  />
                 ))}
               </tbody>
             </table>

@@ -29,6 +29,7 @@ import { SessionToAgentDialog } from '../skill-authoring/SessionToAgentDialog';
 import { ShareDialog } from './ShareDialog';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 import type { AskMessage } from '../ask/types';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P02 · Phiên · Notebook" (2297:18612, UC-02-01, 02, 04, 05, 06): a bordered header with who is
@@ -195,7 +196,11 @@ function Notebook({ ws: loaded, onChanged }: { ws: WorkspaceDetail; onChanged: (
               icon="layers"
               title="Phiên chưa có ô nào"
               description="Hỏi một câu ở Hỏi đáp, agent sẽ thêm ô đầu tiên vào phiên này."
-              action={<Button onClick={() => navigate('analysis', 'ASK')}>Hỏi đáp</Button>}
+              action={
+                <LinkButton area="analysis" page="ASK">
+                  Hỏi đáp
+                </LinkButton>
+              }
             />
           ) : (
             ws.tiles.map((tile) => (

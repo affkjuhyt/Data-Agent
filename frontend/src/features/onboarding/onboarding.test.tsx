@@ -100,7 +100,7 @@ describe('HowItWorksPage', () => {
     const steps = screen.getAllByRole('listitem').filter((li) => li.querySelector('button'));
     fireEvent.click(within(steps[2]).getByRole('button'));
     expect(navigate).toHaveBeenCalledWith('analysis', 'EXPLORE');
-    fireEvent.click(screen.getByRole('button', { name: 'Bắt đầu: kết nối nguồn đầu tiên' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Bắt đầu: kết nối nguồn đầu tiên' }));
     expect(navigate).toHaveBeenLastCalledWith('data', 'CONNECT');
   });
 });

@@ -47,7 +47,7 @@ describe('MonitoringPage', () => {
     expect(screen.getByText('18,2 triệu')).toBeInTheDocument();
     expect(screen.getByText('12 trang')).toBeInTheDocument();
     expect(screen.getByText('Dung lượng MinIO')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Xem nhật ký' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Xem nhật ký' }));
     expect(navigate).toHaveBeenCalledWith('admin', 'AUDIT');
   });
 });

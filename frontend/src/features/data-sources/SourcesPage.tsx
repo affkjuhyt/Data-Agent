@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
-import { Button } from '../../design-system/Button';
 import { Menu } from '../../design-system/Menu';
 import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design-system/tableView';
 import { StatusDot } from '../../design-system/StatusDot';
@@ -17,6 +16,7 @@ import {
   sourceTone,
   sourcesSummary,
 } from './sourceFormat';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P04 · Nguồn · Danh sách" (2279:16522, UC-04-01, UC-04-09): every connected source with its
@@ -94,10 +94,12 @@ export default function SourcesPage() {
         }
         actions={
           <>
-            <Button onClick={() => navigate('data', 'UPLOAD')}>Tải tệp</Button>
-            <Button kind="primary" onClick={() => navigate('data', 'CONNECT')}>
+            <LinkButton area="data" page="UPLOAD">
+              Tải tệp
+            </LinkButton>
+            <LinkButton area="data" page="CONNECT" kind="primary">
               Kết nối nguồn
-            </Button>
+            </LinkButton>
           </>
         }
       />
@@ -108,24 +110,48 @@ export default function SourcesPage() {
             <table className="w-full table-fixed border-collapse">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                  <SortableTh view={view} column="name" className="px-da-lg py-da-md font-normal max-[639px]:px-da-sm">
+                  <SortableTh
+                    view={view}
+                    column="name"
+                    className="px-da-lg py-da-md font-normal max-[639px]:px-da-sm"
+                  >
                     Nguồn
                   </SortableTh>
-                  <SortableTh view={view} column="kind" className="w-[120px] px-da-md py-da-md font-normal max-[1279px]:hidden">
+                  <SortableTh
+                    view={view}
+                    column="kind"
+                    className="w-[120px] px-da-md py-da-md font-normal max-[1279px]:hidden"
+                  >
                     Loại
                   </SortableTh>
                   {/* Narrower screens drop columns from the right; what a dropped column said
                       moves under the source's name, so the name column never collapses. */}
-                  <SortableTh view={view} column="mode" className="w-[150px] px-da-md py-da-md font-normal max-[1023px]:hidden">
+                  <SortableTh
+                    view={view}
+                    column="mode"
+                    className="w-[150px] px-da-md py-da-md font-normal max-[1023px]:hidden"
+                  >
                     Chế độ
                   </SortableTh>
-                  <SortableTh view={view} column="status" className="w-[190px] px-da-md py-da-md font-normal max-[639px]:w-[132px]">
+                  <SortableTh
+                    view={view}
+                    column="status"
+                    className="w-[190px] px-da-md py-da-md font-normal max-[639px]:w-[132px]"
+                  >
                     Trạng thái
                   </SortableTh>
-                  <SortableTh view={view} column="freshness" className="w-[140px] px-da-md py-da-md font-normal max-[767px]:hidden">
+                  <SortableTh
+                    view={view}
+                    column="freshness"
+                    className="w-[140px] px-da-md py-da-md font-normal max-[767px]:hidden"
+                  >
                     Dữ liệu mới nhất
                   </SortableTh>
-                  <SortableTh view={view} column="spaces" className="w-[150px] px-da-md py-da-md font-normal max-[1279px]:hidden">
+                  <SortableTh
+                    view={view}
+                    column="spaces"
+                    className="w-[150px] px-da-md py-da-md font-normal max-[1279px]:hidden"
+                  >
                     Data Space
                   </SortableTh>
                   <SortableTh view={view} className="w-[44px] px-da-md py-da-md">
@@ -156,7 +182,10 @@ export default function SourcesPage() {
                         </span>
                         <span className="hidden truncate text-muted-foreground da-caption max-[1023px]:block">
                           {modeLabel(source)}
-                          <span className="hidden max-[767px]:inline"> · {freshnessText(source)}</span>
+                          <span className="hidden max-[767px]:inline">
+                            {' '}
+                            · {freshnessText(source)}
+                          </span>
                         </span>
                       </div>
                     </td>

@@ -18,6 +18,7 @@ import { useV1 } from '../../lib/v1/useV1';
 import { cn } from '../../lib/utils';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
 import { SaveToSessionDialog } from './SaveToSessionDialog';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "v3.1 · Chi tiết · Artifact toàn màn" (2074:4442, UC-01-01): one answer opened full screen at
@@ -117,9 +118,9 @@ function ArtifactView({ artifact }: { artifact: Artifact }) {
           <Button kind="ghost" icon="bookmark" onClick={() => setSaving(true)}>
             Lưu
           </Button>
-          <Button kind="ghost" icon="bell" onClick={() => navigate('analysis', 'WATCH_NEW')}>
+          <LinkButton area="analysis" page="WATCH_NEW" kind="ghost" icon="bell">
             Theo dõi
-          </Button>
+          </LinkButton>
           <Button onClick={exportCsv}>Xuất</Button>
           <Button onClick={() => void share()}>Chia sẻ</Button>
         </header>

@@ -19,6 +19,7 @@ import {
   type RuleKind,
 } from '../../lib/v1/monitors';
 import { useV1 } from '../../lib/v1/useV1';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P08 · Theo dõi · Tạo theo dõi" (2270:16233, UC-08-01): metric and how to split it, the rule, who
@@ -164,9 +165,9 @@ function WatchForm({ options }: { options: MonitorOptions }) {
         title="Tạo theo dõi"
         actions={
           <>
-            <Button kind="ghost" onClick={() => navigate('analysis', 'WATCH')}>
+            <LinkButton area="analysis" page="WATCH" kind="ghost">
               Huỷ
-            </Button>
+            </LinkButton>
             {blocker ? <Tooltip content={blocker}>{createButton}</Tooltip> : createButton}
           </>
         }

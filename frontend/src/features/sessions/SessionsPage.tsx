@@ -2,7 +2,6 @@ import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
 import { Badge } from '../../design-system/Badge';
-import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { StatusDot } from '../../design-system/StatusDot';
 import { formatElapsed } from '../../lib/formatVN';
@@ -10,6 +9,7 @@ import { listWorkspaces } from '../../lib/v1/api';
 import type { Workspace } from '../../lib/v1/types';
 import { useV1 } from '../../lib/v1/useV1';
 import { NotebookPage } from './NotebookPage';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * Phân tích › Phiên làm việc (P02). /analysis/sessions lists the viewer's sessions, the way
@@ -39,9 +39,9 @@ function SessionList() {
         title="Phiên làm việc"
         description="Notebook của bạn và đồng nghiệp, cùng các agent đang làm trong đó."
         actions={
-          <Button kind="primary" onClick={() => navigate('analysis', 'ASK')}>
+          <LinkButton area="analysis" page="ASK" kind="primary">
             Phiên mới
-          </Button>
+          </LinkButton>
         }
       />
       <AsyncRegion
@@ -53,9 +53,9 @@ function SessionList() {
             title="Chưa có phiên nào"
             description="Một phiên bắt đầu từ câu hỏi, từ mẫu hoặc từ lượt chạy của agent."
             action={
-              <Button kind="primary" onClick={() => navigate('analysis', 'ASK')}>
+              <LinkButton area="analysis" page="ASK" kind="primary">
                 Phiên mới
-              </Button>
+              </LinkButton>
             }
           />
         }

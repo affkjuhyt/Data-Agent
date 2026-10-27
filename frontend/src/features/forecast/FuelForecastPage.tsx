@@ -38,6 +38,7 @@ import {
   hasInterval,
 } from './fuelParts';
 import { DataTable, Stat } from './parts';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P15 · Dự báo giá xăng · phân phối và phân rã" (2422:15221, UC-15-07, SCR-70): the pre-period
@@ -143,9 +144,9 @@ function FuelForecastBody({ forecast }: { forecast: FuelPriceForecast }) {
               <Button onClick={() => setScenarioOpen(true)}>Kịch bản Quỹ</Button>
             )}
             <FollowScheduleButton seriesId={f.series_id} />
-            <Button kind="primary" onClick={() => navigate('analysis', 'ASK')}>
+            <LinkButton area="analysis" page="ASK" kind="primary">
               Hỏi tiếp
-            </Button>
+            </LinkButton>
           </>
         }
       />

@@ -10,6 +10,7 @@ import {
 } from 'react';
 import type { DataSpaceRef, User } from './types';
 import { useAuth } from './lib/AuthProvider';
+import { routePath } from './routePath';
 import { setDataSpace as setV1DataSpace } from './lib/v1/client';
 
 interface AppStateContextType {
@@ -118,12 +119,6 @@ export const resolveRoute = (module: string, sub?: string): { module: string; su
   if (mapped) return { module: mapped.module, sub: mapped.sub || undefined };
   return { module: r.module, sub: r.sub || undefined };
 };
-
-// Sub-tab keys are uppercase internally (ROUTE_MAP, REDIRECT_MAP, ...) but the
-// URL renders them lowercase — /build/workflows reads better than
-// /build/WORKFLOWS. The router (router.tsx) redirects an upper-case page to this form.
-export const routePath = (module: string, sub?: string, id?: string) =>
-  `/${module}${sub ? `/${sub.toLowerCase()}` : ''}${sub && id ? `/${encodeURIComponent(id)}` : ''}`;
 
 /** The route a pathname names, after the router has made it canonical. */
 const routeOf = (pathname: string): { module: string; sub?: string; id?: string } => {

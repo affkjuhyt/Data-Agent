@@ -25,6 +25,7 @@ import {
   methodLabel,
   type JobFilter,
 } from './sourceFormat';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P04 · Job nạp · Giám sát" (2281:16917, UC-04-09): every ingestion job with a 24-hour strip
@@ -96,9 +97,9 @@ export default function JobsPage() {
             <Tooltip content="Chạy bù theo khoảng thời gian đang được làm.">
               <Button disabled>Chạy bù</Button>
             </Tooltip>
-            <Button kind="primary" onClick={() => navigate('data', 'JOB_NEW')}>
+            <LinkButton area="data" page="JOB_NEW" kind="primary">
               Tạo job
-            </Button>
+            </LinkButton>
           </>
         }
       />
@@ -141,22 +142,42 @@ export default function JobsPage() {
                 <tr className="border-b border-border text-left text-muted-foreground da-caption">
                   {/* Narrower screens drop columns from the right; what a dropped column said
                       moves under the job's name, so the name column never collapses. */}
-                  <SortableTh view={view} column="name" className="px-da-lg py-da-md font-normal max-[639px]:px-da-sm">
+                  <SortableTh
+                    view={view}
+                    column="name"
+                    className="px-da-lg py-da-md font-normal max-[639px]:px-da-sm"
+                  >
                     Job
                   </SortableTh>
-                  <SortableTh view={view} column="method" className="w-[120px] px-da-md py-da-md font-normal max-[1023px]:hidden">
+                  <SortableTh
+                    view={view}
+                    column="method"
+                    className="w-[120px] px-da-md py-da-md font-normal max-[1023px]:hidden"
+                  >
                     Cách nạp
                   </SortableTh>
                   <th className="w-[316px] px-da-md py-da-md font-normal max-[1279px]:hidden">
                     24 giờ qua
                   </th>
-                  <SortableTh view={view} column="lag" className="w-[110px] px-da-md py-da-md font-normal max-[639px]:hidden">
+                  <SortableTh
+                    view={view}
+                    column="lag"
+                    className="w-[110px] px-da-md py-da-md font-normal max-[639px]:hidden"
+                  >
                     Độ trễ
                   </SortableTh>
-                  <SortableTh view={view} column="rows" className="w-[110px] px-da-md py-da-md font-normal max-[767px]:hidden">
+                  <SortableTh
+                    view={view}
+                    column="rows"
+                    className="w-[110px] px-da-md py-da-md font-normal max-[767px]:hidden"
+                  >
                     Dòng hôm nay
                   </SortableTh>
-                  <SortableTh view={view} column="status" className="w-[200px] px-da-md py-da-md font-normal max-[639px]:w-[132px]">
+                  <SortableTh
+                    view={view}
+                    column="status"
+                    className="w-[200px] px-da-md py-da-md font-normal max-[639px]:w-[132px]"
+                  >
                     Trạng thái
                   </SortableTh>
                   <SortableTh view={view} className="w-[44px] px-da-md py-da-md">

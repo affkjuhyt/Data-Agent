@@ -18,6 +18,7 @@ import {
   type UpgradeChoice,
 } from '../../lib/v1/packs';
 import { useV1 } from '../../lib/v1/useV1';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P09 · Nâng cấp gói · Gộp ba chiều" (2286:17750, UC-09-04): upgrading a pack. Each element both
@@ -132,9 +133,9 @@ function UpgradeBody({ upgrade, onChanged }: { upgrade: PackUpgrade; onChanged: 
           description={upgrade.summary_text}
           actions={
             <>
-              <Button kind="ghost" onClick={() => navigate('data', 'PACKS')}>
+              <LinkButton area="data" page="PACKS" kind="ghost">
                 Huỷ
-              </Button>
+              </LinkButton>
               {deciding && (
                 <Button
                   loading={busy === 'decide'}

@@ -34,6 +34,7 @@ import {
   type SourceKind,
 } from '../../lib/v1/errorBook';
 import { useV1 } from '../../lib/v1/useV1';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P07 · Error Book" (2419:15027, SCR-69, UC-07-14): every confirmed wrong answer and forecast miss
@@ -488,9 +489,9 @@ function EntryBody({ entry, onChanged }: { entry: ErrorBookEntry; onChanged: () 
         {!open && entry.status !== 'dismissed' && (
           <>
             {entry.receipt && (
-              <Button onClick={() => navigate('analysis', 'RECEIPT', entry.receipt!.answer_id)}>
+              <LinkButton area="analysis" page="RECEIPT" id={entry.receipt!.answer_id}>
                 Mở biên nhận
-              </Button>
+              </LinkButton>
             )}
             {entry.pack_candidate && (
               <Button kind="primary" disabled={busy !== null} onClick={() => setDialog('pack')}>

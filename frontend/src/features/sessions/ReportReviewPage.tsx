@@ -19,6 +19,7 @@ import {
 } from '../../lib/v1/sessions';
 import { useV1 } from '../../lib/v1/useV1';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P02 · Phiên · Duyệt & phát hành báo cáo" (2297:18812, UC-02-07), at /analysis/report/<id>:
@@ -108,12 +109,9 @@ function Review({ report: loaded }: { report: SessionReport }) {
         description={`${report.drafted_by} soạn từ ${report.tile_count} ô của phiên lúc ${hhmm(report.drafted_at)} · người duyệt ${report.reviewer_name}`}
         actions={
           <>
-            <Button
-              kind="ghost"
-              onClick={() => navigate('analysis', 'SESSIONS', report.workspace_id)}
-            >
+            <LinkButton area="analysis" page="SESSIONS" id={report.workspace_id} kind="ghost">
               Mở phiên
-            </Button>
+            </LinkButton>
             {open && (
               <>
                 <Tooltip content={PENDING}>

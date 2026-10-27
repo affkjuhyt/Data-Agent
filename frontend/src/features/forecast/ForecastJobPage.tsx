@@ -18,6 +18,7 @@ import {
 } from '../../lib/v1/forecast';
 import { useV1 } from '../../lib/v1/useV1';
 import { DataTable } from './parts';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P15 · Hỏi đáp · Dự báo đang tổng hợp" (2391:14495, UC-15-01): a forecast question with no
@@ -125,12 +126,14 @@ function JobBody({ job, onChanged }: { job: ForecastJob; onChanged: () => void }
               <Notice
                 tone="success"
                 action={
-                  <Button
+                  <LinkButton
+                    area="analysis"
+                    page="FORECAST"
+                    id={job.forecast_id ?? undefined}
                     kind="primary"
-                    onClick={() => navigate('analysis', 'FORECAST', job.forecast_id ?? undefined)}
                   >
                     Xem kết quả dự báo
-                  </Button>
+                  </LinkButton>
                 }
               >
                 Dự báo đã có khoảng 80% và 95%, kèm mô hình và thời điểm cắt dữ liệu.
@@ -142,9 +145,9 @@ function JobBody({ job, onChanged }: { job: ForecastJob; onChanged: () => void }
                   Cần xu hướng ngay? Dự báo cũ từ {job.stale_forecast.version_label} có sẵn, gắn
                   nhãn “{job.stale_forecast.note}”.
                 </p>
-                <Button onClick={() => navigate('analysis', 'FORECAST', job.stale_forecast?.id)}>
+                <LinkButton area="analysis" page="FORECAST" id={job.stale_forecast?.id}>
                   Xem dự báo cũ
-                </Button>
+                </LinkButton>
               </div>
             )}
           </Card>
@@ -158,10 +161,7 @@ function JobBody({ job, onChanged }: { job: ForecastJob; onChanged: () => void }
             />
           )}
           {job.status === 'waiting_human' && !job.assumption_request && (
-            <Notice
-              tone="warning"
-              action={<Button onClick={() => navigate('needs-you')}>Mở Cần bạn</Button>}
-            >
+            <Notice tone="warning" action={<LinkButton area="needs-you">Mở Cần bạn</LinkButton>}>
               Agent Dự báo đang chờ bạn xác nhận giả định trong Cần bạn.
             </Notice>
           )}

@@ -233,7 +233,7 @@ describe('AgentTeamPage', () => {
     );
     wrap(<AgentTeamPage />);
     expect(await screen.findByText('Chưa có agent nào')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Dùng agent mẫu' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Dùng agent mẫu' }));
     expect(navigate).toHaveBeenCalledWith('data', 'PACKS');
   });
 });

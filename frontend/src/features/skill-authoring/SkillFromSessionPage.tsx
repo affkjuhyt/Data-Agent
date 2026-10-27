@@ -17,6 +17,7 @@ import {
   type SessionSkillDraft,
 } from '../../lib/v1/skillAuthoring';
 import { useV1 } from '../../lib/v1/useV1';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P03 · Tạo kỹ năng từ phiên" (2294:18171, UC-03-03), opened from "Biến phiên thành agent" →
@@ -82,9 +83,9 @@ function FromSession({ draft }: { draft: SessionSkillDraft }) {
         title="Tạo kỹ năng từ phiên"
         actions={
           <>
-            <Button kind="ghost" onClick={() => navigate('analysis', 'SESSIONS', draft.session_id)}>
+            <LinkButton area="analysis" page="SESSIONS" id={draft.session_id} kind="ghost">
               Huỷ
-            </Button>
+            </LinkButton>
             <Button kind="primary" loading={busy} onClick={save}>
               Lưu bản nháp và kiểm định
             </Button>

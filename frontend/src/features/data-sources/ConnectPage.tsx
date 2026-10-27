@@ -32,6 +32,7 @@ import {
 } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
 import { ConnectorPicker } from './ConnectorPicker';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "Kết nối nguồn" (UC-04-01, UC-04-04, UC-04-05). /data/connect is step 1, the connector
@@ -192,9 +193,9 @@ function ConnectFlow({ connector }: { connector: Connector }) {
   const actions: Record<Step, ReactNode> = {
     2: (
       <>
-        <Button kind="ghost" onClick={() => navigate('data', 'SOURCES')}>
+        <LinkButton area="data" page="SOURCES" kind="ghost">
           Huỷ
-        </Button>
+        </LinkButton>
         <Button kind="primary" loading={busy} disabled={!formReady} onClick={() => void toTest()}>
           Tiếp: kiểm tra
         </Button>

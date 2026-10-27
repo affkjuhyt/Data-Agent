@@ -176,7 +176,7 @@ describe('SkillRunPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Mở phiên' }));
     expect(navigate).toHaveBeenCalledWith('analysis', 'SESSIONS', 'ws-npl-sept');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Xem cách làm' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Xem cách làm' }));
     expect(navigate).toHaveBeenCalledWith('agents', 'SKILL_EDITOR', 'sk-variance');
   });
 

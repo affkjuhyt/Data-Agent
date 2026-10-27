@@ -22,6 +22,7 @@ import { useV1, type V1State } from '../../lib/v1/useV1';
 import { ExternalFactorsView } from './ExternalFactorsView';
 import { Waterfall } from './Waterfall';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * Running a skill directly (UC-03-01, UC-03-02). The skill's run form decides the screen:
@@ -133,9 +134,9 @@ function Runner({ form, latest }: { form: SkillRunForm; latest: V1State<Page<Ski
         description="Chạy trực tiếp hoặc để agent gọi khi điều tra · kết quả có thể thêm vào phiên"
         actions={
           <>
-            <Button kind="ghost" onClick={() => navigate('agents', 'SKILL_EDITOR', form.skill_id)}>
+            <LinkButton area="agents" page="SKILL_EDITOR" id={form.skill_id} kind="ghost">
               Xem cách làm
-            </Button>
+            </LinkButton>
             {addButton('secondary')}
             <Button
               kind="primary"

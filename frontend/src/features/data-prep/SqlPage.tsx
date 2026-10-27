@@ -36,6 +36,7 @@ import { SaveDatasetDialog } from './SaveDatasetDialog';
 import { SaveToSessionDialog } from '../explore/SaveToSessionDialog';
 import { SqlCatalog } from './SqlCatalog';
 import { SqlEditor, type SqlEditorHandle } from './SqlEditor';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "v3.1 · Dữ liệu · SQL" (2082:6880, UC-06-01 SQL branch, UC-06-02): an analyst workbench.
@@ -257,9 +258,9 @@ export default function SqlPage() {
           <Button onClick={() => setSession(true)} disabled={!result}>
             Lưu vào phiên
           </Button>
-          <Button kind="ghost" onClick={() => navigate('analysis', 'EXPLORE')} disabled={!result}>
+          <LinkButton area="analysis" page="EXPLORE" kind="ghost" disabled={!result}>
             Mở trong Khám phá
-          </Button>
+          </LinkButton>
           <Button kind="primary" icon="play" loading={running} onClick={() => void run()}>
             {selection ? 'Chạy vùng chọn' : 'Chạy ⌘↵'}
           </Button>

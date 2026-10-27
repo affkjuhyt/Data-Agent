@@ -16,6 +16,7 @@ import { useV1 } from '../../lib/v1/useV1';
 import { versionLabel } from './format';
 import { ImportCatalogDialog } from './ImportCatalogDialog';
 import { ProductDrawer } from './ProductDrawer';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "v3.1 · Dữ liệu · Sản phẩm dữ liệu" (2062:2601, UC-06-06): the products this Data Space offers
@@ -61,9 +62,9 @@ export default function DataProductsPage() {
           actions={
             <>
               <Button onClick={() => setImporting(true)}>Nhập từ catalog</Button>
-              <Button kind="primary" icon="agent" onClick={() => navigate('data', 'DATA_MARTS')}>
+              <LinkButton area="data" page="DATA_MARTS" kind="primary" icon="agent">
                 Nhờ agent tạo sản phẩm
-              </Button>
+              </LinkButton>
             </>
           }
         />

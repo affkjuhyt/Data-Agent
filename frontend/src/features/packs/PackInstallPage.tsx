@@ -9,6 +9,7 @@ import { SortableTh, TablePager, TableToolbar, useTableView } from '../../design
 import { useToast } from '../../design-system/Toast';
 import { getPackVersion, installPack, type PackVersion } from '../../lib/v1/packs';
 import { useV1 } from '../../lib/v1/useV1';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P09 · Cài gói · Xem trước" (2284:17334, UC-09-01): what a pack version adds and the checks on it
@@ -84,9 +85,9 @@ function InstallBody({ version }: { version: PackVersion }) {
         description="Kiểm tra trước khi cài: gói chỉ thêm định nghĩa, không đọc hay sửa dữ liệu của bạn"
         actions={
           <>
-            <Button kind="ghost" onClick={() => navigate('data', 'PACKS')}>
+            <LinkButton area="data" page="PACKS" kind="ghost">
               Huỷ
-            </Button>
+            </LinkButton>
             {installButton}
           </>
         }

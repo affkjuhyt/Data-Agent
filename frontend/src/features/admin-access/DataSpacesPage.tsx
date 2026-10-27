@@ -1,7 +1,6 @@
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
-import { Button } from '../../design-system/Button';
 import { EmptyState } from '../../design-system/EmptyState';
 import { StatusDot } from '../../design-system/StatusDot';
 import {
@@ -15,6 +14,7 @@ import { listDataSpaceSummaries, type DataSpaceSummary } from '../../lib/v1/admi
 import { useV1 } from '../../lib/v1/useV1';
 import { count } from './format';
 import DataSpaceMembers from './DataSpaceMembers';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * Rail item "Data Space". With an id (/admin/data_spaces/<id>) it is "v3.1 · Cộng tác · Thành
@@ -66,9 +66,9 @@ function DataSpaceList() {
             : undefined
         }
         actions={
-          <Button kind="primary" onClick={() => navigate('admin', 'DATA_SPACE_NEW')}>
+          <LinkButton area="admin" page="DATA_SPACE_NEW" kind="primary">
             Tạo Data Space
-          </Button>
+          </LinkButton>
         }
       />
       <div className="px-da-3xl pt-da-xl">
@@ -82,9 +82,9 @@ function DataSpaceList() {
               title="Chưa có Data Space nào"
               description="Data Space là vùng dữ liệu riêng của một nhóm nghiệp vụ: nguồn, chỉ số, agent và quyền."
               action={
-                <Button kind="primary" onClick={() => navigate('admin', 'DATA_SPACE_NEW')}>
+                <LinkButton area="admin" page="DATA_SPACE_NEW" kind="primary">
                   Tạo Data Space
-                </Button>
+                </LinkButton>
               }
             />
           }

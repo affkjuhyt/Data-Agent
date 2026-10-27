@@ -21,6 +21,7 @@ import {
   type Calibration,
 } from '../../lib/v1/packs';
 import { useV1 } from '../../lib/v1/useV1';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P09 · Đưa vào ngành · Đối chiếu số" (2286:17389, UC-09-02): metrics computed from the mapped
@@ -128,9 +129,9 @@ function CalibrationBody({
           .join(' · ')}
         actions={
           <>
-            <Button kind="ghost" onClick={() => navigate('data', 'PACK_ONBOARD', installId)}>
+            <LinkButton area="data" page="PACK_ONBOARD" id={installId} kind="ghost">
               Quay lại ánh xạ
-            </Button>
+            </LinkButton>
             <Button
               loading={busy === 'calibrate'}
               disabled={busy !== null || calibration.run_status === 'running'}
@@ -169,12 +170,9 @@ function CalibrationBody({
               <h2 className="text-foreground da-heading-3">{f.title}</h2>
               <p className="text-foreground da-body-small">{f.text}</p>
               <div className="flex flex-wrap gap-da-sm">
-                <Button
-                  disabled={busy !== null}
-                  onClick={() => navigate('data', 'PACK_ONBOARD', installId)}
-                >
+                <LinkButton area="data" page="PACK_ONBOARD" id={installId} disabled={busy !== null}>
                   Sửa ánh xạ
-                </Button>
+                </LinkButton>
                 <Button
                   kind="ghost"
                   disabled={busy !== null}

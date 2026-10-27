@@ -8,7 +8,8 @@ import {
 } from '@tanstack/react-router';
 import type { ReactElement } from 'react';
 import App from './App';
-import { landingFor, resolveRoute, routePath } from './AppStateContext';
+import { landingFor, resolveRoute } from './AppStateContext';
+import { routePath } from './routePath';
 
 /*
  * The app's URLs: /<area>[/<page>[/<id>]], the page lowercased (/admin/data_spaces/<id>). The

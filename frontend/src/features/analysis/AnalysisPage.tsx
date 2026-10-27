@@ -14,6 +14,7 @@ import { listDatasets, listWorkspaces } from '../../lib/v1/api';
 import type { Workspace } from '../../lib/v1/types';
 import { useV1 } from '../../lib/v1/useV1';
 import { AskBar } from '../home/AskBar';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "v3.1 · Phân tích" (2155:16027, UC-01-01, UC-02-01): where analysis starts. 16×32 padding,
@@ -50,9 +51,9 @@ export default function AnalysisPage() {
             <Tooltip content={PENDING}>
               <Button disabled>Dashboard mới</Button>
             </Tooltip>
-            <Button kind="primary" onClick={() => navigate('analysis', 'ASK')}>
+            <LinkButton area="analysis" page="ASK" kind="primary">
               Phiên mới
-            </Button>
+            </LinkButton>
           </>
         }
       />
@@ -114,10 +115,12 @@ export default function AnalysisPage() {
           className="rounded-lg border border-border bg-card"
           action={
             <div className="flex gap-da-sm">
-              <Button kind="primary" onClick={() => navigate('analysis', 'EXPLORE')}>
+              <LinkButton area="analysis" page="EXPLORE" kind="primary">
                 Mở Khám phá
-              </Button>
-              <Button onClick={() => navigate('home', 'HOW_IT_WORKS')}>Xem ví dụ</Button>
+              </LinkButton>
+              <LinkButton area="home" page="HOW_IT_WORKS">
+                Xem ví dụ
+              </LinkButton>
             </div>
           }
         />

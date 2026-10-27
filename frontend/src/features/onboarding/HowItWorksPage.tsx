@@ -7,6 +7,7 @@ import { LinkCard } from '../../design-system/LinkCard';
 import { StatusDot } from '../../design-system/StatusDot';
 import { listAgents, listInbox, listMetrics, listSources, listTerms } from '../../lib/v1/api';
 import { useV1 } from '../../lib/v1/useV1';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "v3.1 · Data Agent hoạt động thế nào [toàn cục]" (2132:15151): the two-minute guide shown
@@ -143,9 +144,9 @@ export default function HowItWorksPage() {
       </p>
 
       <div className="flex gap-da-md">
-        <Button kind="primary" onClick={() => navigate('data', 'CONNECT')}>
+        <LinkButton area="data" page="CONNECT" kind="primary">
           Bắt đầu: kết nối nguồn đầu tiên
-        </Button>
+        </LinkButton>
         <Button onClick={askSample}>Thử hỏi với dữ liệu mẫu</Button>
       </div>
     </div>

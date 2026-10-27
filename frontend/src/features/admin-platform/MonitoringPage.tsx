@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { useAppState } from '../../AppStateContext';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { AsyncRegion } from '../../design-system/AsyncRegion';
-import { Button } from '../../design-system/Button';
 import { Notice } from '../../design-system/Notice';
 import {
   SortableTh,
@@ -17,6 +16,7 @@ import { getSystemHealth, type ServiceHealth, type SystemHealth } from '../../li
 import { useV1 } from '../../lib/v1/useV1';
 import { formatLatency, formatTokens, pct } from './format';
 import { MiniKpi, SectionTitle } from './parts';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "v3.1 · Quản trị · Giám sát hệ thống" (2237:15149, UC-11-04): four small KPIs, the service
@@ -46,7 +46,11 @@ export default function MonitoringPage() {
           breadcrumb={['Quản trị', 'Giám sát hệ thống']}
           title="Giám sát hệ thống"
           description="Tình trạng các dịch vụ, mô hình AI và hạ tầng chạy tại trung tâm dữ liệu của ngân hàng. Cảnh báo gửi cho Quản trị hệ thống qua Teams và email."
-          actions={<Button onClick={() => navigate('admin', 'AUDIT')}>Xem nhật ký</Button>}
+          actions={
+            <LinkButton area="admin" page="AUDIT">
+              Xem nhật ký
+            </LinkButton>
+          }
         />
         <AsyncRegion state={health} what="tình trạng hệ thống" skeletonRows={6}>
           {(data) => <HealthBody data={data} />}

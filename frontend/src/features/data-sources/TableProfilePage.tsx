@@ -17,6 +17,7 @@ import {
 } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P04 · Nguồn · Hồ sơ bảng" (2280:16974, UC-04-02): the profile of one table — per column its
@@ -75,10 +76,12 @@ function ProfileView({ profile }: { profile: TableProfile }) {
             <Button kind="ghost" onClick={() => void reprofile()} disabled={queued}>
               Lập hồ sơ lại
             </Button>
-            <Button onClick={() => navigate('analysis', 'ASK')}>Hỏi về bảng này</Button>
-            <Button kind="primary" onClick={() => navigate('data', 'EXPLORE', profile.id)}>
+            <LinkButton area="analysis" page="ASK">
+              Hỏi về bảng này
+            </LinkButton>
+            <LinkButton area="data" page="EXPLORE" id={profile.id} kind="primary">
               Dùng trong Khám phá
-            </Button>
+            </LinkButton>
           </>
         }
       />

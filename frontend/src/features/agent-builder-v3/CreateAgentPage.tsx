@@ -22,6 +22,7 @@ import {
 } from '../../lib/v1/agentBuilder';
 import { useV1 } from '../../lib/v1/useV1';
 import { TestRunDrawer, useTestRun } from './TestRunDrawer';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P13 · Tạo agent từ mô tả" (2309:19992, UC-13-01/02): describe the job in words, or start
@@ -152,16 +153,35 @@ export default function CreateAgentPage() {
         title="Tạo agent"
         actions={
           <>
-            <Button kind="ghost" onClick={() => navigate('agents', 'TEAM')}>
+            <LinkButton area="agents" page="TEAM" kind="ghost">
               Huỷ
-            </Button>
-            <Tooltip content={blocked ? NEED_DESCRIPTION : 'Chạy trên dữ liệu tuần trước, không gửi gì ra ngoài.'}>
-              <Button disabled={blocked} loading={busy === 'test' || test.starting} onClick={() => run('test')}>
+            </LinkButton>
+            <Tooltip
+              content={
+                blocked ? NEED_DESCRIPTION : 'Chạy trên dữ liệu tuần trước, không gửi gì ra ngoài.'
+              }
+            >
+              <Button
+                disabled={blocked}
+                loading={busy === 'test' || test.starting}
+                onClick={() => run('test')}
+              >
                 Chạy thử một lần
               </Button>
             </Tooltip>
-            <Tooltip content={blocked ? NEED_DESCRIPTION : 'Agent mới ở mức “đề xuất” cho tới khi qua bộ đánh giá.'}>
-              <Button kind="primary" disabled={blocked} loading={busy === 'create'} onClick={() => run('create')}>
+            <Tooltip
+              content={
+                blocked
+                  ? NEED_DESCRIPTION
+                  : 'Agent mới ở mức “đề xuất” cho tới khi qua bộ đánh giá.'
+              }
+            >
+              <Button
+                kind="primary"
+                disabled={blocked}
+                loading={busy === 'create'}
+                onClick={() => run('create')}
+              >
                 Tạo agent
               </Button>
             </Tooltip>
@@ -201,11 +221,17 @@ export default function CreateAgentPage() {
                       aria-pressed={templateRef === template.ref}
                       className={cn(
                         'flex w-full items-center gap-da-md rounded-sm border px-da-lg py-da-md text-left hover:bg-subtle',
-                        templateRef === template.ref ? 'border-border-strong bg-subtle' : 'border-border',
+                        templateRef === template.ref
+                          ? 'border-border-strong bg-subtle'
+                          : 'border-border',
                       )}
                     >
-                      <span className="min-w-0 flex-1 text-foreground da-body-small">{template.title}</span>
-                      <span className="shrink-0 text-muted-foreground da-caption">{template.pack}</span>
+                      <span className="min-w-0 flex-1 text-foreground da-body-small">
+                        {template.title}
+                      </span>
+                      <span className="shrink-0 text-muted-foreground da-caption">
+                        {template.pack}
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -224,8 +250,8 @@ export default function CreateAgentPage() {
             </AsyncRegion>
           ) : (
             <p className="py-da-md text-muted-foreground da-body-small">
-              Mô tả việc bạn muốn giao bằng lời; agent cấu hình sẽ đề xuất mục tiêu, dữ liệu, kỹ năng,
-              trigger và mức tự chủ ở đây.
+              Mô tả việc bạn muốn giao bằng lời; agent cấu hình sẽ đề xuất mục tiêu, dữ liệu, kỹ
+              năng, trigger và mức tự chủ ở đây.
             </p>
           )}
         </section>

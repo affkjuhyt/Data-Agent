@@ -21,6 +21,7 @@ import {
   type NewJob,
 } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P04 · Job nạp · Thiết lập" (2280:17217, UC-04-06), opened by "Tạo job" on Job nạp:
@@ -181,9 +182,9 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
         title={`Job nạp · ${candidate.table_name}`}
         actions={
           <>
-            <Button kind="ghost" onClick={() => navigate('data', 'JOBS')}>
+            <LinkButton area="data" page="JOBS" kind="ghost">
               Huỷ
-            </Button>
+            </LinkButton>
             {canDryRun && (
               <Button
                 loading={busy === 'dry'}
@@ -355,45 +356,49 @@ function JobForm({ candidates, initial }: { candidates: JobCandidate[]; initial:
               <h2 className="text-foreground da-heading-3">Chạy thử 1.000 dòng</h2>
               {dryRun ? (
                 <>
-                <TableToolbar
-                  view={checksView}
-                  placeholder="Tìm kiểm tra…"
-                  searchLabel="Tìm kiểm tra"
-                />
-                <table className="w-full table-fixed border-collapse">
-                  <thead>
-                    <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                      <SortableTh view={checksView} column="title" className="px-da-lg py-da-md font-normal">
-                        Kiểm tra
-                      </SortableTh>
-                      <SortableTh
-                        view={checksView}
-                        column="result"
-                        className="w-[216px] px-da-md py-da-md font-normal"
-                      >
-                        Kết quả
-                      </SortableTh>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {checksView.rows.map((check) => (
-                      <tr key={check.title} className="border-b border-border">
-                        <td className="px-da-lg py-[9px] text-foreground da-body-small">
-                          {check.title}
-                        </td>
-                        <td
-                          className={cn(
-                            'px-da-md py-[9px] da-body-small',
-                            check.ok ? 'text-foreground' : 'text-warning',
-                          )}
+                  <TableToolbar
+                    view={checksView}
+                    placeholder="Tìm kiểm tra…"
+                    searchLabel="Tìm kiểm tra"
+                  />
+                  <table className="w-full table-fixed border-collapse">
+                    <thead>
+                      <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                        <SortableTh
+                          view={checksView}
+                          column="title"
+                          className="px-da-lg py-da-md font-normal"
                         >
-                          {check.result}
-                        </td>
+                          Kiểm tra
+                        </SortableTh>
+                        <SortableTh
+                          view={checksView}
+                          column="result"
+                          className="w-[216px] px-da-md py-da-md font-normal"
+                        >
+                          Kết quả
+                        </SortableTh>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <TablePager view={checksView} />
+                    </thead>
+                    <tbody>
+                      {checksView.rows.map((check) => (
+                        <tr key={check.title} className="border-b border-border">
+                          <td className="px-da-lg py-[9px] text-foreground da-body-small">
+                            {check.title}
+                          </td>
+                          <td
+                            className={cn(
+                              'px-da-md py-[9px] da-body-small',
+                              check.ok ? 'text-foreground' : 'text-warning',
+                            )}
+                          >
+                            {check.result}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <TablePager view={checksView} />
                 </>
               ) : (
                 <p className="text-muted-foreground da-body-small">

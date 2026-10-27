@@ -22,6 +22,7 @@ import {
 } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "P05 · Bộ sưu tập · Tài liệu & tiền xử lý" (2300:18794, UC-05-01, UC-05-02): the documents of
@@ -133,9 +134,9 @@ function CollectionView({ collection }: { collection: CollectionDetail }) {
               <Button loading={uploading} onClick={() => fileRef.current?.click()}>
                 Tải lên
               </Button>
-              <Button kind="primary" onClick={() => navigate('analysis', 'ASK')}>
+              <LinkButton area="analysis" page="ASK" kind="primary">
                 Hỏi bộ sưu tập này
-              </Button>
+              </LinkButton>
             </>
           }
         />
@@ -163,81 +164,97 @@ function CollectionView({ collection }: { collection: CollectionDetail }) {
           >
             {() => (
               <>
-              <TableToolbar view={view} placeholder="Tìm tài liệu…" searchLabel="Tìm tài liệu" />
-              <table className="w-full table-fixed border-collapse">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground da-caption">
-                    <SortableTh view={view} column="title" className="px-da-lg py-da-md font-normal">
-                      Tài liệu
-                    </SortableTh>
-                    <SortableTh view={view} column="kind" className="w-[110px] px-da-md py-da-md font-normal">
-                      Loại
-                    </SortableTh>
-                    <SortableTh
-                      view={view}
-                      column="steps"
-                      className="w-[220px] px-da-md py-da-md font-normal max-[1279px]:hidden"
-                    >
-                      Tiền xử lý
-                    </SortableTh>
-                    <SortableTh view={view} column="validity" className="w-[150px] px-da-md py-da-md font-normal">
-                      Hiệu lực
-                    </SortableTh>
-                    <SortableTh view={view} column="status" className="w-[230px] px-da-md py-da-md font-normal">
-                      Trạng thái
-                    </SortableTh>
-                  </tr>
-                </thead>
-                <tbody>
-                  {view.rows.map((doc) => (
-                    <tr
-                      key={doc.id}
-                      tabIndex={0}
-                      aria-selected={selected === doc.id}
-                      onClick={() => setSelected(doc.id)}
-                      onKeyDown={(e) => e.key === 'Enter' && setSelected(doc.id)}
-                      className={cn(
-                        'cursor-pointer border-b border-border hover:bg-subtle focus-visible:bg-subtle',
-                        selected === doc.id && 'bg-subtle',
-                      )}
-                    >
-                      <td className="truncate px-da-lg py-da-md text-foreground da-body-strong">
-                        {doc.title}
-                      </td>
-                      <td className="px-da-md py-da-md text-muted-foreground da-caption">
-                        {doc.type_text}
-                      </td>
-                      <td className="px-da-md py-da-md max-[1279px]:hidden">
-                        <span
-                          className="flex h-3 items-center gap-[3px]"
-                          role="img"
-                          aria-label={doc.steps
-                            .map((s, i) => `${STEPS[i]}: ${STATE_WORD[s]}`)
-                            .join(', ')}
-                        >
-                          {doc.steps.map((s, i) => (
-                            <span key={i} className={cn('h-2 w-[22px] rounded-[2px]', CELL[s])} />
-                          ))}
-                        </span>
-                      </td>
-                      <td
+                <TableToolbar view={view} placeholder="Tìm tài liệu…" searchLabel="Tìm tài liệu" />
+                <table className="w-full table-fixed border-collapse">
+                  <thead>
+                    <tr className="border-b border-border text-left text-muted-foreground da-caption">
+                      <SortableTh
+                        view={view}
+                        column="title"
+                        className="px-da-lg py-da-md font-normal"
+                      >
+                        Tài liệu
+                      </SortableTh>
+                      <SortableTh
+                        view={view}
+                        column="kind"
+                        className="w-[110px] px-da-md py-da-md font-normal"
+                      >
+                        Loại
+                      </SortableTh>
+                      <SortableTh
+                        view={view}
+                        column="steps"
+                        className="w-[220px] px-da-md py-da-md font-normal max-[1279px]:hidden"
+                      >
+                        Tiền xử lý
+                      </SortableTh>
+                      <SortableTh
+                        view={view}
+                        column="validity"
+                        className="w-[150px] px-da-md py-da-md font-normal"
+                      >
+                        Hiệu lực
+                      </SortableTh>
+                      <SortableTh
+                        view={view}
+                        column="status"
+                        className="w-[230px] px-da-md py-da-md font-normal"
+                      >
+                        Trạng thái
+                      </SortableTh>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {view.rows.map((doc) => (
+                      <tr
+                        key={doc.id}
+                        tabIndex={0}
+                        aria-selected={selected === doc.id}
+                        onClick={() => setSelected(doc.id)}
+                        onKeyDown={(e) => e.key === 'Enter' && setSelected(doc.id)}
                         className={cn(
-                          'px-da-md py-da-md da-body-small',
-                          doc.validity?.warn ? 'text-warning' : 'text-foreground',
+                          'cursor-pointer border-b border-border hover:bg-subtle focus-visible:bg-subtle',
+                          selected === doc.id && 'bg-subtle',
                         )}
                       >
-                        {doc.validity?.text ?? '—'}
-                      </td>
-                      <td className="px-da-md py-da-md">
-                        <StatusDot tone={doc.status.tone} className="max-w-full truncate">
-                          {doc.status.text}
-                        </StatusDot>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <TablePager view={view} />
+                        <td className="truncate px-da-lg py-da-md text-foreground da-body-strong">
+                          {doc.title}
+                        </td>
+                        <td className="px-da-md py-da-md text-muted-foreground da-caption">
+                          {doc.type_text}
+                        </td>
+                        <td className="px-da-md py-da-md max-[1279px]:hidden">
+                          <span
+                            className="flex h-3 items-center gap-[3px]"
+                            role="img"
+                            aria-label={doc.steps
+                              .map((s, i) => `${STEPS[i]}: ${STATE_WORD[s]}`)
+                              .join(', ')}
+                          >
+                            {doc.steps.map((s, i) => (
+                              <span key={i} className={cn('h-2 w-[22px] rounded-[2px]', CELL[s])} />
+                            ))}
+                          </span>
+                        </td>
+                        <td
+                          className={cn(
+                            'px-da-md py-da-md da-body-small',
+                            doc.validity?.warn ? 'text-warning' : 'text-foreground',
+                          )}
+                        >
+                          {doc.validity?.text ?? '—'}
+                        </td>
+                        <td className="px-da-md py-da-md">
+                          <StatusDot tone={doc.status.tone} className="max-w-full truncate">
+                            {doc.status.text}
+                          </StatusDot>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <TablePager view={view} />
               </>
             )}
           </AsyncRegion>
@@ -282,7 +299,9 @@ function DocumentBody({ doc, onClose }: { doc: DocumentDetail; onClose: () => vo
         </button>
       </div>
       <p className="text-muted-foreground da-caption">{doc.origin_text}</p>
-      <Button onClick={() => navigate('data', 'DOCUMENT', doc.id)}>Mở tài liệu</Button>
+      <LinkButton area="data" page="DOCUMENT" id={doc.id}>
+        Mở tài liệu
+      </LinkButton>
       <section className="flex flex-col gap-da-xs">
         <h3 className="text-muted-foreground da-overline">Agent Tài liệu đã xử lý</h3>
         {doc.processing.map((step) => (

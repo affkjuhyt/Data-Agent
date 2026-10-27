@@ -26,6 +26,7 @@ import {
 import { useV1 } from '../../lib/v1/useV1';
 import { Dialog } from '../../design-system/Dialog';
 import { AccessDenied, forbiddenOf } from '../access/AccessDenied';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "v3.1 · Dữ liệu · Khám phá bảng" (2082:6566, UC-04-02, UC-06-02): rows of one table under
@@ -135,10 +136,12 @@ function ExploreView({
           title={`${preview.name} · ${formatNumber(preview.row_count)} dòng`}
           actions={
             <>
-              <Button kind="ghost" icon="agent" onClick={() => navigate('analysis', 'ASK')}>
+              <LinkButton area="analysis" page="ASK" kind="ghost" icon="agent">
                 Hỏi agent về bảng này
-              </Button>
-              <Button onClick={() => navigate('data', 'SQL')}>Mở trong SQL</Button>
+              </LinkButton>
+              <LinkButton area="data" page="SQL">
+                Mở trong SQL
+              </LinkButton>
               <Button
                 kind="primary"
                 loading={deriving === 'filtered'}

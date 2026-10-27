@@ -15,6 +15,7 @@ import {
 } from '../../lib/v1/sources';
 import { useV1 } from '../../lib/v1/useV1';
 import { CreateCollectionDialog } from '../documents/CollectionDialogs';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "v3.1 · Phi cấu trúc · Bộ sưu tập" (2068:3067, UC-05-06): files, mail, recordings and images
@@ -56,7 +57,11 @@ export default function CollectionsPage() {
               icon="folder"
               title="Chưa có bộ sưu tập nào"
               description="Kết nối SharePoint, hộp thư hoặc thư mục quét để tài liệu được nạp vào một bộ sưu tập."
-              action={<Button onClick={() => navigate('data', 'CONNECT')}>Kết nối nguồn</Button>}
+              action={
+                <LinkButton area="data" page="CONNECT">
+                  Kết nối nguồn
+                </LinkButton>
+              }
             />
           }
         >

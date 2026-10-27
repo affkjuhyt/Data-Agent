@@ -19,6 +19,7 @@ import {
 } from '../../lib/v1/metricCatalog';
 import { useV1 } from '../../lib/v1/useV1';
 import { CreateMetricDialog } from './CreateMetricDialog';
+import { LinkButton } from '../../components/shell/AppLink';
 
 /*
  * "v3.1 · Dữ liệu & tri thức" (2056:1150, UC-07-01): the metric catalog. Left, every metric with
@@ -206,9 +207,9 @@ function ProfileView({ id }: { id: string }) {
               <VersionTable versions={p.versions} />
               {p.versions.length > 1 && (
                 <div>
-                  <Button onClick={() => navigate('data', 'METRIC', p.id)}>
+                  <LinkButton area="data" page="METRIC" id={p.id}>
                     So sánh v{p.versions[1].version} ↔ v{p.versions[0].version}
-                  </Button>
+                  </LinkButton>
                 </div>
               )}
             </>

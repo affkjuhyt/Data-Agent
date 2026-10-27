@@ -73,7 +73,7 @@ describe('CreateAgentPage', () => {
     );
     expect(await screen.findByText('Phải hỏi bạn khi')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Huỷ' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Huỷ' }));
     expect(navigate).toHaveBeenCalledWith('agents', 'TEAM');
   });
 });
