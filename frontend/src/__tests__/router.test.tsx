@@ -89,6 +89,13 @@ describe('router', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/agents/orchestration'));
   });
 
+  it('leaves the fragment Keycloak comes back with for keycloak-js to read', () => {
+    window.history.replaceState(null, '', '/#state=s-1&session_state=x&code=c-1');
+    createAppRouter({ history: createMemoryHistory({ initialEntries: ['/'] }), layout: Layout });
+    expect(window.location.hash).toBe('#state=s-1&session_state=x&code=c-1');
+    expect(window.location.pathname).toBe('/');
+  });
+
   it("makes the area rail real links: a click stays in the app, Ctrl-click is the browser's", async () => {
     const Rail = () => (
       <AppStateProvider>

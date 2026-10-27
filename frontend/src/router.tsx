@@ -60,11 +60,16 @@ function routeTreeOf(layout: () => ReactElement) {
   return rootRoute.addChildren([indexRoute, areaRoute, pageRoute, recordRoute]);
 }
 
-/** Links of the hash era (#/build/workflows) open as the path they name. */
+/**
+ * Links of the hash era (#/build/workflows) open as the path they name. Only a hash that is a
+ * path: Keycloak comes back from its check-sso round trip with #state=…&code=…, which keycloak-js
+ * reads after this runs; rewriting that hash lost the code and sent the page back to Keycloak in
+ * a loop.
+ */
 function fromLegacyHash(): void {
-  const hash = window.location.hash.replace(/^#\/?/, '');
-  if (!hash) return;
-  window.history.replaceState(null, '', `/${hash}${window.location.search}`);
+  if (!window.location.hash.startsWith('#/')) return;
+  const path = window.location.hash.slice(1);
+  window.history.replaceState(null, '', `${path}${window.location.search}`);
 }
 
 /** The app's router; tests pass a memory history and a small layout in place of App. */
