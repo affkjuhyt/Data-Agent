@@ -363,7 +363,7 @@ function understand(text: string) {
     source: 'default',
     confidence: 0.9,
   });
-  const chips = [];
+  const chips: ReturnType<typeof chip>[] = [];
   const metric = t.includes('dư nợ')
     ? METS[1]
     : t.includes('số khoản')
@@ -609,7 +609,12 @@ export function createExploreHandlers() {
       const latest = [...queryRuns.keys()].pop();
       if (!body.params.metric || !body.params.period || !latest)
         return HttpResponse.json(
-          { type: 'about:blank', title: 'validation_failed', status: 422, code: 'validation_failed' },
+          {
+            type: 'about:blank',
+            title: 'validation_failed',
+            status: 422,
+            code: 'validation_failed',
+          },
           { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
         );
       skillRuns.set(id, latest);

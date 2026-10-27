@@ -1438,18 +1438,18 @@ export const dryRunJob = async (body: NewJob, candidate: JobCandidate): Promise<
     }),
   );
   return {
-    rows_read: raw.sample.length,
+    rows_read: (raw.sample ?? []).length,
     checks: [
       {
         title: body.method === 'incremental' ? 'Đọc được theo con trỏ' : 'Đọc được từ nguồn',
         result: raw.note,
         ok: true,
       },
-      ...(raw.errors.length
+      ...(raw.errors?.length
         ? [
             {
               title: 'Dòng thiếu trường bắt buộc',
-              result: `${raw.errors.length} · sẽ vào hàng bản ghi lỗi`,
+              result: `${raw.errors?.length} · sẽ vào hàng bản ghi lỗi`,
               ok: false,
             },
           ]
@@ -1585,7 +1585,7 @@ export const reloadErrorGroups = async (groups: ErrorRecordGroup[]) => {
       'blocked_by_schema_drift',
       `“${blocked.cause}” chỉ nạp lại được sau khi thay đổi cấu trúc được chấp nhận.`,
     );
-  const ids = groups.flatMap((g) => g.record_ids);
+  const ids = groups.flatMap((g) => g.record_ids ?? []);
   await Promise.all(
     ids.map((id) => ok(api.POST('/v1/dlq/{id}:replay', { params: { path: { id } } }))),
   );
@@ -1594,7 +1594,7 @@ export const reloadErrorGroups = async (groups: ErrorRecordGroup[]) => {
 
 /** POST /v1/dlq/{id}:discard {reason} for each record; the reason goes to the audit log. */
 export const discardErrorGroups = async (groups: ErrorRecordGroup[], reason: string) => {
-  const ids = groups.flatMap((g) => g.record_ids);
+  const ids = groups.flatMap((g) => g.record_ids ?? []);
   await Promise.all(
     ids.map((id) =>
       ok(api.POST('/v1/dlq/{id}:discard', { params: { path: { id } }, body: { reason } })),

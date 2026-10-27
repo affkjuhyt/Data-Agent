@@ -57,7 +57,10 @@ export default function PackOnboardPage() {
 function OnboardBody({ install, onChanged }: { install: PackInstall; onChanged: () => void }) {
   const first = install.entities.find((e) => e.mapped < e.total) ?? install.entities[0];
   const [entity, setEntity] = useState(first?.key ?? '');
-  const mappings = useV1(['getEntityMappings', install.id, entity], entity ? () => getEntityMappings(install, entity) : null);
+  const mappings = useV1(
+    ['getEntityMappings', install.id, entity],
+    entity ? () => getEntityMappings(install, entity) : null,
+  );
   return (
     <AsyncRegion state={mappings} what="ánh xạ">
       {(m) => (
@@ -228,7 +231,7 @@ function MappingTable({
   onColumn,
 }: {
   rows: EntityMappings['rows'];
-  columns: Record<string, string>;
+  columns: Record<string, string | null>;
   picked: Set<string>;
   onPicked: (next: Set<string>) => void;
   onColumn: (attr: string, value: string) => void;
@@ -261,7 +264,11 @@ function MappingTable({
             <SortableTh view={view} column="column" className="w-[182px] py-da-sm font-normal">
               Cột của tổ chức
             </SortableTh>
-            <SortableTh view={view} column="confidence" className="w-[62px] px-da-md py-da-sm font-normal">
+            <SortableTh
+              view={view}
+              column="confidence"
+              className="w-[62px] px-da-md py-da-sm font-normal"
+            >
               Độ tin
             </SortableTh>
             <SortableTh view={view} column="note" className="w-[170px] py-da-sm font-normal">

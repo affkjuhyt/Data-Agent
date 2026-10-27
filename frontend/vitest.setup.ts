@@ -18,6 +18,9 @@ afterEach(() => {
   queryClient.clear();
 });
 
+// jsdom has no scrolling; the router restores the scroll position on every navigation.
+window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+
 // Polyfill matchMedia for components that read it on mount (recharts, motion).
 Object.defineProperty(window, 'matchMedia', {
   writable: true,

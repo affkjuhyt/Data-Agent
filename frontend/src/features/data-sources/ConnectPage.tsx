@@ -116,10 +116,7 @@ function ConnectFlow({ connector }: { connector: Connector }) {
     },
   });
   const formReady =
-    form.name.trim() &&
-    form.host.trim() &&
-    form.username.trim() &&
-    Number(form.port) > 0;
+    form.name.trim() && form.host.trim() && form.username.trim() && Number(form.port) > 0;
 
   const run = async (work: () => Promise<void>) => {
     setBusy(true);
@@ -606,7 +603,11 @@ function ChooseTables({
                 <SortableTh view={view} column="name" className="px-da-lg py-da-md font-normal">
                   Bảng
                 </SortableTh>
-                <SortableTh view={view} column="rows" className="w-[160px] px-da-md py-da-md font-normal">
+                <SortableTh
+                  view={view}
+                  column="rows"
+                  className="w-[160px] px-da-md py-da-md font-normal"
+                >
                   Dòng
                 </SortableTh>
               </tr>
@@ -622,7 +623,9 @@ function ChooseTables({
                       <span className="flex flex-col gap-[2px]">
                         <span className="text-foreground da-mono">{table.name}</span>
                         {table.description && (
-                          <span className="text-muted-foreground da-caption">{table.description}</span>
+                          <span className="text-muted-foreground da-caption">
+                            {table.description}
+                          </span>
                         )}
                       </span>
                     </Checkbox>
@@ -711,7 +714,7 @@ function Assign({
   const pick = (table: string, key: 'data_space_id' | 'owner_id') => (value: string) =>
     setAssign((a) => ({
       ...a,
-      [table]: { data_space_id: '', owner_id: '', ...a[table], [key]: value },
+      [table]: { ...(a[table] ?? { data_space_id: '', owner_id: '' }), [key]: value },
     }));
 
   return (
@@ -724,7 +727,11 @@ function Assign({
               {tables.length} bảng đã chọn ở bước 4
             </span>
           </div>
-          <TableToolbar view={view} placeholder="Tìm bảng đã chọn…" searchLabel="Tìm bảng đã chọn" />
+          <TableToolbar
+            view={view}
+            placeholder="Tìm bảng đã chọn…"
+            searchLabel="Tìm bảng đã chọn"
+          />
           <table className="w-full table-fixed border-collapse">
             <thead>
               <tr className="border-b border-border text-left text-muted-foreground da-caption">

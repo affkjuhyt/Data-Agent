@@ -1,6 +1,7 @@
+import { RouterProvider } from '@tanstack/react-router';
 import { createRoot } from 'react-dom/client';
-import App from './App.tsx';
 import { AuthProvider } from './lib/AuthProvider.tsx';
+import { createAppRouter } from './router.tsx';
 import './index.css';
 
 /*
@@ -19,7 +20,7 @@ async function startMocks() {
 startMocks().then(() =>
   createRoot(document.getElementById('root')!).render(
     <AuthProvider>
-      <App />
+      <RouterProvider router={createAppRouter()} />
     </AuthProvider>,
   ),
 );

@@ -6,15 +6,17 @@
     "module": "ESNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
+    // TanStack Router's types need it (its createRouter refuses a config without it).
+    "strictNullChecks": true,
     "moduleResolution": "bundler",
     "isolatedModules": true,
     "moduleDetection": "force",
     "allowJs": true,
     "jsx": "react-jsx",
     "paths": {
-      "@/*": ["./*"],
+      "@/*": ["./*"]
     },
     "allowImportingTsExtensions": true,
-    "noEmit": true,
-  },
+    "noEmit": true
+  }
 }

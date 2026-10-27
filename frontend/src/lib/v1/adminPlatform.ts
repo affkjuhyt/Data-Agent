@@ -390,7 +390,11 @@ export function summaryFromRuns(
     }),
   };
   const before = previous.length === 0 ? null : { ...report, totals: figuresOf(previous) };
-  return readUsage(period, report as UsageReport, before as UsageReport | null);
+  return readUsage(
+    period,
+    report as unknown as UsageReport,
+    before as unknown as UsageReport | null,
+  );
 }
 
 export const getAgentOpsSummary = async (period: OpsPeriod): Promise<AgentOpsSummary> => {

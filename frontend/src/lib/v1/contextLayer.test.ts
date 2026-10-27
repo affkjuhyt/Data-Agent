@@ -251,7 +251,7 @@ describe('the context layer from the api', () => {
           version(5, 'pending_review', 'Cơ cấu lần 2'),
           version(4, 'certified', 'Loại vay nội bộ'),
         ],
-      } as S['MetricDetail'],
+      } as unknown as S['MetricDetail'],
       {
         root: node('m-1', 'metric', 'NPL'),
         nodes: [

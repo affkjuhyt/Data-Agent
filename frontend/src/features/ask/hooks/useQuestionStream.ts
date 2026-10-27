@@ -69,7 +69,7 @@ async function messagesFromConversation(detail: ConversationDetail): Promise<Ask
           const q = await getQuestion(turn.question_id);
           const plan = readPlan(q.plan);
           reading = plan.reading.length ? plan.reading : undefined;
-          proposal = plan.proposal;
+          proposal = plan.proposal ?? undefined;
           newQuestion = q.seq > 1 && !!reading?.length && !reading.some((c) => c.inherited);
         } catch {
           /* plan optional on reopen */
@@ -196,7 +196,9 @@ export function useQuestionStream() {
                     ...m,
                     evidence: m.evidence && {
                       ...m.evidence,
-                      runs: m.evidence.runs.map((r) => (r.id === run.id ? { ...r, sql: q.sql_executed } : r)),
+                      runs: m.evidence.runs.map((r) =>
+                        r.id === run.id ? { ...r, sql: q.sql_executed } : r,
+                      ),
                     },
                   })),
                 )
@@ -240,7 +242,13 @@ export function useQuestionStream() {
       setMessages((prev) => [
         ...prev,
         { id: nextId(), role: 'user', content: q, timestamp: nowIso(), status: 'done' },
-        { id: assistantId, role: 'assistant', content: '', timestamp: nowIso(), status: 'streaming' },
+        {
+          id: assistantId,
+          role: 'assistant',
+          content: '',
+          timestamp: nowIso(),
+          status: 'streaming',
+        },
       ]);
       setSending(true);
       const controller = new AbortController();
@@ -290,7 +298,11 @@ export function useQuestionStream() {
   const confirmUnderstanding = useCallback(
     // Same signature as the screen calls it with; the choice has nowhere to go on v1 yet.
     async (id: string, _choice?: { meaning?: string; remember: boolean }) => {
-      patch(id, (m) => (m.understanding ? { ...m, understanding: { ...m.understanding, check_required: false } } : m));
+      patch(id, (m) =>
+        m.understanding
+          ? { ...m, understanding: { ...m.understanding, check_required: false } }
+          : m,
+      );
     },
     [patch],
   );

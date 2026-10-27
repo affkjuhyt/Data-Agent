@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { readPipelineDetail, readWriteback, type PipelineDetailWire, type WritebackWire } from './dataPrep';
+import {
+  readPipelineDetail,
+  readWriteback,
+  type PipelineDetailWire,
+  type WritebackWire,
+} from './dataPrep';
 
 describe('readPipelineDetail', () => {
   it('adapts the API pipeline and latest run into the pipeline screen shape', () => {
@@ -16,7 +21,7 @@ describe('readPipelineDetail', () => {
             kind: 'filter',
             description: 'Bỏ khoản vay đã tất toán',
             language: 'sql',
-            code: 'WHERE status <> \'closed\'',
+            code: "WHERE status <> 'closed'",
           },
         ],
         scope: 'data_space',
@@ -84,7 +89,7 @@ describe('readPipelineDetail', () => {
             kind: 'filter',
             description: 'Bỏ giao dịch thử',
             language: 'sql',
-            code: "WHERE is_test = false",
+            code: 'WHERE is_test = false',
             rows_in: 200,
             rows_out: 180,
             is_new: true,
@@ -103,7 +108,7 @@ describe('readPipelineDetail', () => {
         created_at: '2026-10-13T00:00:00Z',
         updated_at: '2026-10-13T00:00:00Z',
         last_run: null,
-      } as PipelineDetailWire & { messages: unknown[] },
+      } as unknown as PipelineDetailWire & { messages: unknown[] },
       new Map([['dataset-1', 'raw.transactions']]),
     );
 

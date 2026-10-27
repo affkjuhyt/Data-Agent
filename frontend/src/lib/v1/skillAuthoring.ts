@@ -79,7 +79,7 @@ export const getSkillDefinition = async (id: string): Promise<SkillDefinition> =
   const raw = await ok<Schemas['SkillDetail']>(
     api.GET('/v1/skills/{id}', { params: { path: { id } } }),
   );
-  const version = raw.published_version ?? raw.versions[0];
+  const version = raw.published_version ?? (raw.versions ?? [])[0];
   const params = (version && 'params_schema' in version ? version.params_schema : {}) as {
     properties?: Record<string, { title?: string }>;
   };
@@ -109,7 +109,7 @@ export const getSkillDefinition = async (id: string): Promise<SkillDefinition> =
     used_by_text: `${raw.run_count_30d} lượt/30 ngày`,
     quality_text: version?.status === 'published' ? 'Đã xuất bản' : 'Chưa kiểm định',
     test_count: 0,
-    version_count: raw.versions.length,
+    version_count: (raw.versions ?? []).length,
     quick_test: { params: {}, lines: [] },
   } as SkillDefinition;
 };
@@ -124,7 +124,7 @@ export const getLatestTrial = async (id: string): Promise<SkillTrial | null> => 
   const raw = await ok<Schemas['SkillDetail']>(
     api.GET('/v1/skills/{id}', { params: { path: { id } } }),
   );
-  const version = raw.versions.find((candidate) => candidate.status === 'testing');
+  const version = (raw.versions ?? []).find((candidate) => candidate.status === 'testing');
   return version
     ? {
         version: version.version,
@@ -149,7 +149,7 @@ export const saveSkillDefinition = async (
   const raw = await ok<Schemas['SkillDetail']>(
     api.GET('/v1/skills/{id}', { params: { path: { id } } }),
   );
-  const draft = raw.versions.find((version) => version.status === 'draft');
+  const draft = (raw.versions ?? []).find((version) => version.status === 'draft');
   const payload = {
     steps: body.steps.map((step) => ({ seq: step.seq, text: step.text, tool: step.tool })),
     template_md: body.instructions,
@@ -177,7 +177,7 @@ export const trySkill = async (id: string, params: Record<string, string>) =>
     const raw = await ok<Schemas['SkillDetail']>(
       api.GET('/v1/skills/{id}', { params: { path: { id } } }),
     );
-    const draft = raw.versions.find((version) => version.status === 'draft');
+    const draft = (raw.versions ?? []).find((version) => version.status === 'draft');
     if (!draft) throw e;
     const accepted = await ok<Schemas['services__api__modules__skill__schemas__Accepted']>(
       api.POST('/v1/skill-versions/{id}:try', {
@@ -393,7 +393,8 @@ export const getLatestTestRun = async (id: string): Promise<SkillTestRun> => {
   const raw = await ok<Schemas['SkillDetail']>(
     api.GET('/v1/skills/{id}', { params: { path: { id } } }),
   );
-  const version = raw.versions.find((candidate) => candidate.eval_run_id) ?? raw.versions[0];
+  const version =
+    (raw.versions ?? []).find((candidate) => candidate.eval_run_id) ?? (raw.versions ?? [])[0];
   if (!version) throw new V1Error(404, 'not_found', 'Kỹ năng chưa có phiên bản.');
   return {
     skill_id: raw.id,
@@ -415,7 +416,7 @@ export const runSkillTests = async (id: string): Promise<SkillTestRun> => {
     const raw = await ok<Schemas['SkillDetail']>(
       api.GET('/v1/skills/{id}', { params: { path: { id } } }),
     );
-    const draft = raw.versions.find((version) => version.status === 'draft');
+    const draft = (raw.versions ?? []).find((version) => version.status === 'draft');
     if (!draft) throw error;
     await ok<Schemas['services__api__modules__skill__schemas__Accepted']>(
       api.POST('/v1/skill-versions/{id}:test', { params: { path: { id: draft.id } } }),
@@ -465,7 +466,7 @@ export const submitSkill = async (id: string, notes: Record<string, string>) => 
     const raw = await ok<Schemas['SkillDetail']>(
       api.GET('/v1/skills/{id}', { params: { path: { id } } }),
     );
-    const candidate = raw.versions.find((version) => version.status === 'testing');
+    const candidate = (raw.versions ?? []).find((version) => version.status === 'testing');
     if (!candidate) throw error;
     const published = await ok<Schemas['VersionView']>(
       api.POST('/v1/skill-versions/{id}:publish', { params: { path: { id: candidate.id } } }),
@@ -710,9 +711,7 @@ export const listSkillRuns = async (id: string): Promise<Page<SkillRun>> => {
     );
     return {
       ...page,
-      items: page.items.map((run) =>
-        'kind' in run && run.kind ? run : readRun(run as RunWire),
-      ),
+      items: page.items.map((run) => ('kind' in run && run.kind ? run : readRun(run as RunWire))),
     };
   } catch (error) {
     if (!notProposal(error)) throw error;

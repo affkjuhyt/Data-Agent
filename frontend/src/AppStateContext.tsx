@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import type { DataSpaceRef, User } from './types';
 import { useAuth } from './lib/AuthProvider';
 import { setDataSpace as setV1DataSpace } from './lib/v1/client';
@@ -30,62 +31,70 @@ export const ORGANISATION_SCOPE = '__organisation__';
 
 /* ─── URL route helpers ────────────────────────────────────────────── */
 /* Module ids of earlier IAs → the six v3.1 areas (Trang chủ · Cần bạn · Agents · Phân tích ·
- * Dữ liệu · Quản trị). Applied in parseRoute + navigate so existing links and bookmarks keep
+ * Dữ liệu · Quản trị). Applied by the routes (router.tsx) and navigate so existing links and bookmarks keep
  * working and the URL stays canonical. `subs` maps an old page to its new one; a missing
  * entry lands on `sub`, or on the area's first page when `sub` is empty. */
-type Redirect = { module: string; sub: string; subs?: Record<string, { module: string; sub: string }> };
+type Redirect = {
+  module: string;
+  sub: string;
+  subs?: Record<string, { module: string; sub: string }>;
+};
 
 const REDIRECT_MAP: Record<string, Redirect> = {
   // V3.0 IA (ask / knowledge / build / ops / settings)
-  ask:       { module: 'analysis', sub: 'ASK' },
+  ask: { module: 'analysis', sub: 'ASK' },
   knowledge: { module: 'data', sub: 'SOURCES' },
   build: {
-    module: 'agents', sub: 'TEAM',
+    module: 'agents',
+    sub: 'TEAM',
     subs: {
-      AGENTS:     { module: 'agents', sub: 'TEAM' },
-      WORKFLOWS:  { module: 'agents', sub: 'ORCHESTRATION' },
+      AGENTS: { module: 'agents', sub: 'TEAM' },
+      WORKFLOWS: { module: 'agents', sub: 'ORCHESTRATION' },
       PLAYGROUND: { module: 'agents', sub: 'EVALUATE' },
-      KNOWLEDGE:  { module: 'data', sub: 'SOURCES' },
-      VERSIONS:   { module: 'agents', sub: 'TEAM' },
+      KNOWLEDGE: { module: 'data', sub: 'SOURCES' },
+      VERSIONS: { module: 'agents', sub: 'TEAM' },
     },
   },
   ops: {
-    module: 'analysis', sub: 'SESSIONS',
+    module: 'analysis',
+    sub: 'SESSIONS',
     subs: {
       CONVERSATIONS: { module: 'analysis', sub: 'SESSIONS' },
-      TRACES:        { module: 'agents', sub: 'RUNS' },
-      REVIEWS:       { module: 'needs-you', sub: '' },
-      ANALYTICS:     { module: 'analysis', sub: 'SESSIONS' },
+      TRACES: { module: 'agents', sub: 'RUNS' },
+      REVIEWS: { module: 'needs-you', sub: '' },
+      ANALYTICS: { module: 'analysis', sub: 'SESSIONS' },
     },
   },
   settings: {
-    module: 'admin', sub: '',
+    module: 'admin',
+    sub: '',
     subs: {
-      TEAM:           { module: 'admin', sub: 'USERS' },
-      IAM:            { module: 'admin', sub: 'USERS' },
-      PROVIDERS:      { module: 'admin', sub: 'MODELS' },
-      AI_PROVIDERS:   { module: 'admin', sub: 'MODELS' },
-      API:            { module: 'admin', sub: 'INTEGRATIONS' },
+      TEAM: { module: 'admin', sub: 'USERS' },
+      IAM: { module: 'admin', sub: 'USERS' },
+      PROVIDERS: { module: 'admin', sub: 'MODELS' },
+      AI_PROVIDERS: { module: 'admin', sub: 'MODELS' },
+      API: { module: 'admin', sub: 'INTEGRATIONS' },
       INFRASTRUCTURE: { module: 'admin', sub: 'MONITORING' },
-      AUDIT:          { module: 'admin', sub: 'AUDIT' },
-      SECURITY:       { module: 'admin', sub: 'AUDIT' },
-      BILLING:        { module: 'agents', sub: 'OPERATIONS' },
+      AUDIT: { module: 'admin', sub: 'AUDIT' },
+      SECURITY: { module: 'admin', sub: 'AUDIT' },
+      BILLING: { module: 'agents', sub: 'OPERATIONS' },
     },
   },
   // Older IAs
-  'dashboard':          { module: 'analysis', sub: 'SESSIONS' },
-  'national-ops':       { module: 'analysis', sub: 'SESSIONS' },
-  'knowledge-ops':      { module: 'data', sub: 'SOURCES' },
-  'ai-runtime':         { module: 'agents', sub: 'TEAM' },
+  dashboard: { module: 'analysis', sub: 'SESSIONS' },
+  'national-ops': { module: 'analysis', sub: 'SESSIONS' },
+  'knowledge-ops': { module: 'data', sub: 'SOURCES' },
+  'ai-runtime': { module: 'agents', sub: 'TEAM' },
   'release-management': { module: 'agents', sub: 'TEAM' },
-  'release':            { module: 'agents', sub: 'TEAM' },
-  'operations-center':  { module: 'agents', sub: 'RUNS' },
-  'governance':         { module: 'admin', sub: 'AUDIT' },
-  'test':               { module: 'agents', sub: 'EVALUATE' },
-  'monitor': {
-    module: 'analysis', sub: 'SESSIONS',
+  release: { module: 'agents', sub: 'TEAM' },
+  'operations-center': { module: 'agents', sub: 'RUNS' },
+  governance: { module: 'admin', sub: 'AUDIT' },
+  test: { module: 'agents', sub: 'EVALUATE' },
+  monitor: {
+    module: 'analysis',
+    sub: 'SESSIONS',
     subs: {
-      TRACES:    { module: 'agents', sub: 'RUNS' },
+      TRACES: { module: 'agents', sub: 'RUNS' },
       ANALYTICS: { module: 'analysis', sub: 'SESSIONS' },
     },
   },
@@ -104,32 +113,18 @@ export const resolveRoute = (module: string, sub?: string): { module: string; su
 
 // Sub-tab keys are uppercase internally (ROUTE_MAP, REDIRECT_MAP, ...) but the
 // URL renders them lowercase — /build/workflows reads better than
-// /build/WORKFLOWS. parseRoute upper-cases whatever it reads back so both
-// case forms of a link (including ones bookmarked before this change) resolve.
-const routePath = (module: string, sub?: string, id?: string) =>
+// /build/WORKFLOWS. The router (router.tsx) redirects an upper-case page to this form.
+export const routePath = (module: string, sub?: string, id?: string) =>
   `/${module}${sub ? `/${sub.toLowerCase()}` : ''}${sub && id ? `/${encodeURIComponent(id)}` : ''}`;
 
-const parseRoute = (fallback: { module: string; sub?: string }): { module: string; sub?: string; id?: string } => {
-  if (typeof window === 'undefined') return fallback;
-  const legacyHash = window.location.hash.replace(/^#\/?/, '');
-  const raw = legacyHash || window.location.pathname.replace(/^\/+/, '');
-  if (!raw) return fallback;
-  const [module, sub, id] = raw.split('/');
-  const resolved = resolveRoute(module || fallback.module, sub ? sub.toUpperCase() : undefined);
-  // Ids keep their case; they only survive when the page is not redirected elsewhere.
-  return id && resolved.sub === sub?.toUpperCase() ? { ...resolved, id: decodeURIComponent(id) } : resolved;
-};
-
-const writeRoute = (module: string, sub?: string, id?: string) => {
-  if (typeof window === 'undefined') return;
-  const next = routePath(module, sub, id);
-  if (window.location.pathname !== next || window.location.hash) {
-    // Preserve query params so Keycloak can read ?code=&state= on auth redirect.
-    // A new page is a history entry, so Back returns from a detail page to its list;
-    // rewriting a legacy hash (or the first URL) replaces instead.
-    const replace = window.location.hash !== '' || !window.history.state?.app;
-    window.history[replace ? 'replaceState' : 'pushState']({ app: true }, '', `${next}${window.location.search}`);
-  }
+/** The route a pathname names, after the router has made it canonical. */
+const routeOf = (pathname: string): { module: string; sub?: string; id?: string } => {
+  const [module, sub, id] = pathname.replace(/^\/+/, '').split('/');
+  return {
+    module: module || landingFor().module,
+    sub: sub ? sub.toUpperCase() : undefined,
+    id: sub && id ? decodeURIComponent(id) : undefined,
+  };
 };
 
 export const AppStateProvider = ({ children }: { children: ReactNode }) => {
@@ -145,75 +140,59 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
 
   const { user: authUser, me } = useAuth();
   const user: User = {
-    id:    me?.id ?? authUser?.id ?? 'u_anon',
-    name:  me?.display_name ?? authUser?.name ?? authUser?.email ?? 'User',
+    id: me?.id ?? authUser?.id ?? 'u_anon',
+    name: me?.display_name ?? authUser?.name ?? authUser?.email ?? 'User',
     email: me?.email ?? authUser?.email ?? '',
   };
 
-  /* Routing state — initialized from URL hash, else by role */
-  const initial = parseRoute(landingFor());
-  const [activeModule, _setActiveModule] = useState<string>(initial.module);
-  const [subTab, _setSubTabState] = useState<Record<string, string>>(
-    initial.sub ? { [initial.module]: initial.sub } : {},
+  /* Routing state: the router's location is the single source of truth (router.tsx). */
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const routerNavigate = useNavigate();
+  const current = useMemo(() => routeOf(pathname), [pathname]);
+  const activeModule = current.module;
+  const routeId = current.id;
+  // The page last open in each area, so returning to an area can reopen it (getSubTab).
+  const [remembered, setRemembered] = useState<Record<string, string>>({});
+  const subTab = useMemo(() => {
+    const next = { ...remembered };
+    if (current.sub) next[current.module] = current.sub;
+    else delete next[current.module];
+    return next;
+  }, [remembered, current.module, current.sub]);
+
+  const navigate = useCallback(
+    (moduleId: string, subId?: string, id?: string) => {
+      /* Honor redirect map if a caller still uses an old module id */
+      const resolved = resolveRoute(moduleId, subId);
+      setRemembered((prev) => {
+        const next = { ...prev };
+        if (resolved.sub) next[resolved.module] = resolved.sub;
+        else delete next[resolved.module];
+        return next;
+      });
+      // A new page is a history entry, so Back returns from a detail page to its list. The query
+      // string stays: Keycloak reads ?code=&state= from it on its redirect back.
+      void routerNavigate({
+        href: `${routePath(resolved.module, resolved.sub, resolved.sub ? id : undefined)}${window.location.search}`,
+      });
+    },
+    [routerNavigate],
   );
-  const [routeId, setRouteId] = useState<string | undefined>(initial.id);
 
-  const setActiveModule = useCallback((id: string) => {
-    _setActiveModule(id);
-  }, []);
+  const setActiveModule = useCallback((id: string) => navigate(id, subTab[id]), [navigate, subTab]);
 
-  const setSubTab = useCallback((moduleId: string, subId: string) => {
-    setRouteId(undefined);
-    _setSubTabState(prev => ({ ...prev, [moduleId]: subId }));
-  }, []);
+  const setSubTab = useCallback(
+    (moduleId: string, subId: string) => {
+      if (moduleId === activeModule) navigate(moduleId, subId);
+      else setRemembered((prev) => ({ ...prev, [moduleId]: subId }));
+    },
+    [activeModule, navigate],
+  );
 
   const getSubTab = useCallback(
     (moduleId: string, fallback?: string) => subTab[moduleId] ?? fallback,
     [subTab],
   );
-
-  const navigate = useCallback((moduleId: string, subId?: string, id?: string) => {
-    /* Honor redirect map if a caller still uses an old module id */
-    const resolved = resolveRoute(moduleId, subId);
-    moduleId = resolved.module;
-    subId = resolved.sub;
-    _setActiveModule(moduleId);
-    setRouteId(subId ? id : undefined);
-    // No page means the area's own start (its landing, or its first rail page).
-    const page = subId;
-    _setSubTabState(prev => {
-      const next = { ...prev };
-      if (page) next[moduleId] = page;
-      else delete next[moduleId];
-      return next;
-    });
-  }, []);
-
-  /* Keep URL path in sync with state */
-  useEffect(() => {
-    writeRoute(activeModule, subTab[activeModule], routeId);
-  }, [activeModule, subTab, routeId]);
-
-  /* Listen for back/forward navigation */
-  useEffect(() => {
-    const onRouteChange = () => {
-      const { module, sub, id } = parseRoute(landingFor());
-      _setActiveModule(module);
-      setRouteId(id);
-      _setSubTabState(prev => {
-        const next = { ...prev };
-        if (sub) next[module] = sub;
-        else delete next[module];
-        return next;
-      });
-    };
-    window.addEventListener('popstate', onRouteChange);
-    window.addEventListener('hashchange', onRouteChange);
-    return () => {
-      window.removeEventListener('popstate', onRouteChange);
-      window.removeEventListener('hashchange', onRouteChange);
-    };
-  }, []);
 
   return (
     <AppStateContext.Provider
