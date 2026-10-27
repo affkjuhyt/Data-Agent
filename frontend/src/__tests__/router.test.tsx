@@ -7,6 +7,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createBrowserHistory, createMemoryHistory, RouterProvider } from '@tanstack/react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppStateProvider, useAppState } from '../AppStateContext';
+import { SideRail } from '../components/shell/SideRail';
 import { createAppRouter } from '../router';
 
 vi.mock('../lib/AuthProvider', () => ({ useAuth: () => ({ user: null, me: null }) }));
@@ -86,5 +87,42 @@ describe('router', () => {
     const router = createAppRouter({ history: createBrowserHistory(), layout: Layout });
     render(<RouterProvider router={router} />);
     await waitFor(() => expect(router.state.location.pathname).toBe('/agents/orchestration'));
+  });
+
+  it("makes the area rail real links: a click stays in the app, Ctrl-click is the browser's", async () => {
+    const Rail = () => (
+      <AppStateProvider>
+        <Where />
+        <SideRail
+          label="Quản trị"
+          area="admin"
+          active="USERS"
+          groups={[
+            {
+              label: 'Người & quyền',
+              items: [
+                { id: 'USERS', label: 'Người dùng' },
+                { id: 'DATA_SPACES', label: 'Data Space' },
+              ],
+            },
+          ]}
+        />
+      </AppStateProvider>
+    );
+    const router = createAppRouter({
+      history: createMemoryHistory({ initialEntries: ['/admin/users'] }),
+      layout: Rail,
+    });
+    render(<RouterProvider router={router} />);
+    const link = await screen.findByRole('link', { name: 'Data Space' });
+    expect(link).toHaveAttribute('href', '/admin/data_spaces');
+    expect(screen.getByRole('link', { name: 'Người dùng' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    fireEvent.click(link, { ctrlKey: true });
+    expect(router.state.location.pathname).toBe('/admin/users');
+    fireEvent.click(link);
+    await waitFor(() => expect(where()).toBe('admin|DATA_SPACES|'));
   });
 });

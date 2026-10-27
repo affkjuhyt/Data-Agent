@@ -1,5 +1,13 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { DataSpaceRef, User } from './types';
 import { useAuth } from './lib/AuthProvider';
 import { setDataSpace as setV1DataSpace } from './lib/v1/client';
@@ -153,6 +161,11 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   const routeId = current.id;
   // The page last open in each area, so returning to an area can reopen it (getSubTab).
   const [remembered, setRemembered] = useState<Record<string, string>>({});
+  // A page opened by a link (AppLink) is remembered too, not only one opened by navigate().
+  useEffect(() => {
+    const { module, sub } = current;
+    if (sub) setRemembered((prev) => (prev[module] === sub ? prev : { ...prev, [module]: sub }));
+  }, [current]);
   const subTab = useMemo(() => {
     const next = { ...remembered };
     if (current.sub) next[current.module] = current.sub;

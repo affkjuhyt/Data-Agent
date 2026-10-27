@@ -42,7 +42,7 @@ export function AppShell({
   /** The space picked on "v3.1 · Chọn Data Space" before the shell opened; '' = Toàn tổ chức. */
   initialSpaceId?: string;
 }) {
-  const { activeModule, subTab, navigate, setSubTab, user, dataSpace, setDataSpace } = useAppState();
+  const { activeModule, subTab, navigate, user, dataSpace, setDataSpace } = useAppState();
   const { logout, me } = useAuth();
   const area = activeModule as AreaId;
   const page = subTab[area] ?? firstPageOf(area);
@@ -133,7 +133,7 @@ export function AppShell({
             groups={rail}
             active={railItemOf(area, page) ?? ''}
             counts={area === 'agents' ? { ...railCounts, TEAM: counts.agents } : railCounts}
-            onSelect={(page) => setSubTab(area, page)}
+            area={area}
           />
         )}
         {/* Under 768px the bottom tab bar covers 57px plus the device inset; the page scrolls above it. */}
@@ -141,7 +141,9 @@ export function AppShell({
           key={dataSpace?.id ?? ''}
           className="min-w-0 flex-1 overflow-y-auto max-[767px]:pb-[calc(57px+env(safe-area-inset-bottom))]"
         >
-          {spaceReady ? children : (
+          {spaceReady ? (
+            children
+          ) : (
             <div className="flex min-h-full items-center justify-center p-da-xl">
               <p className="text-muted-foreground da-body">Đang mở Data Space…</p>
             </div>
@@ -151,7 +153,9 @@ export function AppShell({
       <MobileTabBar
         active={mobileTabOf(area, page)}
         needsYouCount={counts.needsYou}
-        onSelect={(tab) => (tab === 'ask' ? navigate('analysis', 'ASK') : navigate(tab, firstPageOf(tab)))}
+        onSelect={(tab) =>
+          tab === 'ask' ? navigate('analysis', 'ASK') : navigate(tab, firstPageOf(tab))
+        }
       />
       <NotificationDrawer
         open={notificationsOpen}
