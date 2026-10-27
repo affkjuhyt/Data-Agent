@@ -402,7 +402,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-144 | UC-12-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-145 | UC-12-03 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/integration.py`, `backend/schema/csdl/definitions.json` +1 |
 | BR-146 | UC-12-04 | todo |  |
-| BR-147 | UC-13-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/libs/dataagent_db/models/org.py` +10 |
+| BR-147 | UC-13-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/libs/dataagent_db/models/org.py` +11 |
 | BR-148 | UC-13-05 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/agent.py`, `backend/schema/csdl/definitions.json` +4 |
 | BR-149 | UC-14-01, UC-14-06 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +13 |
 | BR-150 | UC-14-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/acquire.py`, `backend/schema/csdl/definitions.json` +15 |
