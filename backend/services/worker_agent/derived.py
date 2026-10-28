@@ -32,11 +32,11 @@ from sqlglot import exp
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog
 from libs.dataagent_db.models import pipeline as pl
+from libs.sql_guard import SqlRejected, check_read_only, dialect_of, tables_of
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.pipelines import _TYPES, MATERIALIZE_ROWS, physical_name
 from services.worker_agent.query.executor import ROLE as QUERY_ROLE
 from services.worker_agent.query.executor import run_query
-from services.worker_agent.query.guard import SqlRejected, check_read_only, dialect_of, tables_of
 from services.worker_agent.query.scope import default_schema
 
 logger = logging.getLogger(__name__)

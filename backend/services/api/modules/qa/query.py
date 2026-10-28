@@ -9,7 +9,6 @@ and its rows stays here; opening the SQL or the rows is audited (UC-01-02).
 from __future__ import annotations
 
 import datetime
-import re
 import uuid
 from typing import Annotated, Any
 
@@ -19,6 +18,7 @@ from sqlalchemy import or_, select
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog, context
 from libs.dataagent_db.models import query as query_models
+from libs.sql_guard import read_only_problem
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
@@ -161,39 +161,9 @@ async def explore_query(
     return QueryRunView.model_validate(run)
 
 
-# BR-22: what the caller sends is one read-only statement. The query worker runs it on a
-# read-only connection after the policy rewrite (BR-45); refusing here tells the author at once.
-# Same lexical approach as the pipeline module's step check (pipeline/rules.py), stricter: a
-# statement starts with SELECT or WITH and SELECT ... INTO (a table write) is refused too.
-_WRITE_WORDS = re.compile(
-    r"\b(insert|update|delete|merge|upsert|truncate|drop|alter|create|grant|revoke|copy|call"
-    r"|execute|into|lock|vacuum|refresh|listen|notify|prepare|reindex)\b",
-    re.IGNORECASE,
-)
-_LEXEMES = re.compile(r"--[^\n]*|/\*.*?\*/|'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"", re.DOTALL)
-
-
-def read_only_problem(sql: str) -> str | None:
-    """Why `sql` is not a single read-only statement, None when it is."""
-    # Dollar quoting ($tag$...$tag$) and backslash escapes (E'\'') make Postgres end a literal
-    # somewhere other than this lexer does, which could hide a second statement: refuse both.
-    if "$" in sql or "\\" in sql:
-        return "Dollar quoting and backslash escapes are not supported here (BR-22)."
-    # Comments and literals cannot hide a second statement or a write; what is left after
-    # removing them must not open another quote or comment (fail closed).
-    bare = _LEXEMES.sub(lambda m: " " if m.group().startswith(("--", "/*")) else " '' ", sql)
-    if re.search(r"/\*|\*/|'|\"", _LEXEMES.sub(" ", sql)):
-        return "The SQL has an unterminated quote or comment."
-    statements = [s for s in bare.split(";") if s.strip()]
-    if len(statements) != 1:
-        return "Send exactly one statement (BR-22)."
-    first = re.match(r"[\s(]*(\w*)", statements[0])
-    if first is None or first.group(1).lower() not in ("select", "with"):
-        return "Only a SELECT or WITH query runs here (BR-22)."
-    writes = sorted({m.group(1).lower() for m in _WRITE_WORDS.finditer(statements[0])})
-    if writes:
-        return f"A read-only query does not use {', '.join(writes)} (BR-22)."
-    return None
+# BR-22: what the caller sends is one read-only query. The worker checks it again against the
+# source's own dialect and runs it on a read-only connection after the policy rewrite (BR-45);
+# refusing here tells the author at once (libs.sql_guard.read_only_problem).
 
 
 @router.post(

@@ -69,7 +69,7 @@ fmt-files: dev-tools  ## ruff format + check on FILES only (fast, for the files 
 type-v3: dev-tools  ## strict mypy on the V3 blocks (api, worker_agent), as CI's blocking step
 	$(DOCKER_RUN_DEV) mypy --disallow-untyped-defs --disallow-any-generics \
 	  --ignore-missing-imports --follow-imports=silent backend/services/api backend/services/worker_agent \
-	  backend/services/crawler
+	  backend/services/crawler backend/libs/sql_guard
 
 lint-imports: dev-tools  ## import-linter contracts (.importlinter), as CI
 	docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend $(DEV_TOOLS_IMAGE) lint-imports

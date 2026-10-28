@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog, org
 from libs.dataagent_db.models import pipeline as pl
+from libs.sql_guard import read_only_problem
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
@@ -106,12 +107,12 @@ def _check_steps(steps: list[Step]) -> None:
     for i, step in enumerate(steps):
         if step.language != "sql":
             continue
-        writes = rules.writes_in_sql(step.code)
-        if writes:
+        problem = read_only_problem(step.code)
+        if problem:
             raise Problem(
                 422,
                 "business_rule_violated",
-                f"Step {i + 1} uses {', '.join(writes)}; a step never writes to a source (BR-22).",
+                f"Step {i + 1}: {problem}; a step is one read-only query and never writes (BR-22).",
             )
 
 

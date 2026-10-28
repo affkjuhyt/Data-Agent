@@ -50,7 +50,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, governance, org
 from libs.dataagent_db.models import query as q
-from services.worker_agent.query.guard import (
+from libs.sql_guard import (
     SqlRejected,
     capped,
     check_read_only,

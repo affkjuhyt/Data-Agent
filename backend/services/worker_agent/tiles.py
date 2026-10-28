@@ -38,11 +38,11 @@ from sqlalchemy import select
 
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import workspace as w
+from libs.sql_guard import SqlRejected
 from services.worker_agent import private
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import ROLE as QUERY_ROLE
 from services.worker_agent.query.executor import QueryOutcome, run_query
-from services.worker_agent.query.guard import SqlRejected
 from services.worker_agent.query_runs import HISTORY, Unbuildable, dataset_sql, sql_source
 from services.worker_agent.questions import secrets
 

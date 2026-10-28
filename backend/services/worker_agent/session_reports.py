@@ -46,11 +46,11 @@ from libs.dataagent_db.models import catalog, period, pipeline
 from libs.dataagent_db.models import org as org_models
 from libs.dataagent_db.models import query as q
 from libs.dataagent_db.models import workspace as w
+from libs.sql_guard import SqlRejected, check_read_only, dialect_of, tables_of
 from services.worker_agent import storage
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import ROLE as QUERY_ROLE
 from services.worker_agent.query.executor import bound_sql
-from services.worker_agent.query.guard import SqlRejected, check_read_only, dialect_of, tables_of
 from services.worker_agent.query.scope import datasets_read
 
 logger = logging.getLogger(__name__)

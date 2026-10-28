@@ -8,22 +8,6 @@ import uuid
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-# BR-22: a step runs in the sandbox or the work schema and never writes to a source. The worker
-# enforces it with a read-only connection; refusing write statements here tells the author early.
-_WRITE = re.compile(
-    r"\b(insert|update|delete|merge|upsert|truncate|drop|alter|create|grant|revoke|copy|call|execute)\b",
-    re.IGNORECASE,
-)
-_COMMENT = re.compile(r"--[^\n]*|/\*.*?\*/", re.DOTALL)
-_STRING = re.compile(r"'(?:[^']|'')*'")
-
-
-def writes_in_sql(code: str) -> list[str]:
-    """The write keywords a SQL step uses outside comments and string literals."""
-    bare = _STRING.sub("''", _COMMENT.sub(" ", code))
-    return sorted({m.group(1).lower() for m in _WRITE.finditer(bare)})
-
-
 _CRON_FIELD = re.compile(r"^[\d*/,\-A-Za-z?LW#]+$")
 
 

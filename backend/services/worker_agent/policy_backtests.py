@@ -12,6 +12,7 @@ from sqlalchemy import select, text, update
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog, governance, notify, org
 from libs.dataagent_db.models import query as q
+from libs.sql_guard import SqlRejected, check_read_only, dialect_of, tables_of
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import (
     INTERNAL_WORKSPACE,
@@ -21,7 +22,6 @@ from services.worker_agent.query.executor import (
 from services.worker_agent.query.executor import (
     ROLE as QUERY_ROLE,
 )
-from services.worker_agent.query.guard import SqlRejected, check_read_only, dialect_of, tables_of
 from services.worker_agent.query.scope import apply_output_policies, rewrite_access_policies
 from services.worker_agent.questions import secrets
 

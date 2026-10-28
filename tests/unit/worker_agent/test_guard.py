@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.worker_agent.query.guard import SqlRejected, capped, check_read_only, tables_of
+from libs.sql_guard import SqlRejected, capped, check_read_only, read_only_problem, tables_of
 
 pytestmark = [pytest.mark.unit]
 
@@ -118,3 +118,45 @@ def test_a_table_the_scope_walk_misses_still_counts() -> None:
     sql = "SELECT * FROM bank.loan WHERE d = ((SELECT max(d) FROM bank.history))"
     tree = check_read_only(sql, "postgres")
     assert tables_of(tree, "postgres") == {("bank", "loan"), ("bank", "history")}
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT branch, SUM(balance) FROM loans GROUP BY branch",
+        "SELECT ';DROP TABLE x' AS s",
+        # SQL Server's TOP is not PostgreSQL: the api, which does not know the source yet, must not
+        # refuse what the worker will accept in the source's own dialect.
+        "SELECT TOP 5 branch FROM loans",
+    ],
+)
+def test_the_api_check_admits_a_read_only_query_of_any_dialect(sql: str) -> None:
+    assert read_only_problem(sql) is None
+
+
+@pytest.mark.parametrize(
+    ("sql", "reason"),
+    [
+        ("SELECT 1; DROP TABLE loans", "exactly one statement"),
+        ("WITH gone AS (DELETE FROM loans RETURNING *) SELECT * FROM gone", "not allowed"),
+        ("SELECT 1 -- ; DROP TABLE loans", "comments"),
+        ("SELECT * INTO copy FROM loans", "not allowed"),
+        ("UPDATE loans SET balance = 0", "only a query"),
+    ],
+)
+def test_the_api_check_refuses_what_no_dialect_reads_as_one_query(sql: str, reason: str) -> None:
+    problem = read_only_problem(sql)
+    assert problem is not None and reason in problem
+
+
+def test_a_pure_function_sqlglot_does_not_model_is_still_a_query() -> None:
+    sql = "SELECT replace(replace(du_no, '.', ''), ',', '.')::numeric AS du_no FROM t"
+    assert check_read_only(sql, "postgres") is not None
+    assert read_only_problem(sql) is None
+
+
+def test_an_unknown_function_is_still_refused_and_a_pure_one_does_not_shield_it() -> None:
+    with pytest.raises(SqlRejected, match="dblink"):
+        check_read_only("SELECT dblink('host=x', 'SELECT 1')", "postgres")
+    with pytest.raises(SqlRejected, match="dblink"):
+        check_read_only("SELECT replace(dblink('host=x', 'SELECT 1'), 'a', 'b')", "postgres")

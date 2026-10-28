@@ -39,6 +39,7 @@ from sqlalchemy.exc import DBAPIError
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import agent, catalog, notify, qa
+from libs.sql_guard import SqlRejected
 from services.worker_agent import failures
 from services.worker_agent.answer.insights import written
 from services.worker_agent.answer.narrate import chart_spec_of, figures_of, text_of
@@ -48,7 +49,6 @@ from services.worker_agent.audit.findings import audit
 from services.worker_agent.audit.run import AuditFailed, Target, gather, load_target
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import QueryOutcome, run_query
-from services.worker_agent.query.guard import SqlRejected
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.questions import (
     QUERYABLE,

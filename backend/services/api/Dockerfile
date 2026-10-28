@@ -9,6 +9,7 @@ RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 # Only the V3 ORM from libs/: the legacy libs carry dependencies the api never uses.
 COPY backend/libs/__init__.py ./libs/__init__.py
 COPY backend/libs/dataagent_db/ ./libs/dataagent_db/
+COPY backend/libs/sql_guard/ ./libs/sql_guard/
 COPY backend/services/__init__.py ./services/__init__.py
 COPY backend/services/api/ ./services/api/
 RUN addgroup --system app && adduser --system --ingroup app app

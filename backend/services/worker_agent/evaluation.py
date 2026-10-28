@@ -35,8 +35,8 @@ from sqlalchemy import func, select, update
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog
 from libs.dataagent_db.models import eval as ev
+from libs.sql_guard import SqlRejected
 from services.worker_agent.query.executor import run_query
-from services.worker_agent.query.guard import SqlRejected
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import Overlay, load
 from services.worker_agent.understand.resolver import understand

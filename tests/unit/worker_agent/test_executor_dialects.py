@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from libs.sql_guard import SqlRejected, check_read_only, dialect_of
 from services.worker_agent.query.executor import driver_for
-from services.worker_agent.query.guard import SqlRejected, check_read_only, dialect_of
 from services.worker_agent.questions import dialect_for_source
 
 pytestmark = [pytest.mark.unit]

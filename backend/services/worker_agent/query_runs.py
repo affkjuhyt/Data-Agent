@@ -31,9 +31,9 @@ from sqlglot import exp
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog
 from libs.dataagent_db.models import query as q
+from libs.sql_guard import SqlRejected, check_read_only, dialect_of, tables_of
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import ROLE, run_query
-from services.worker_agent.query.guard import SqlRejected, check_read_only, dialect_of, tables_of
 from services.worker_agent.query.scope import default_schema
 from services.worker_agent.questions import QUERYABLE, secrets
 from services.worker_agent.semantic import compiler as c

@@ -12,7 +12,7 @@ from sqlglot import exp
 from sqlglot.errors import OptimizeError, ParseError
 from sqlglot.optimizer.qualify import qualify
 
-from services.worker_agent.query.guard import SqlRejected, check_read_only
+from libs.sql_guard import SqlRejected, check_read_only
 from services.worker_agent.sqlgen.schema import Linked
 
 _TYPES = {

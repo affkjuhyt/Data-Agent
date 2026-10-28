@@ -21,13 +21,13 @@ from sqlalchemy import func
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, qa
+from libs.sql_guard import dialect_of
 from services.worker_agent.answer.narrate import Figure, shown_value
 from services.worker_agent.answer.verification import verify
 from services.worker_agent.events import Event
 from services.worker_agent.llm import Gateway
 from services.worker_agent.progress import publish
 from services.worker_agent.query.executor import QueryOutcome, run_query
-from services.worker_agent.query.guard import dialect_of
 from services.worker_agent.query.secrets import SecretReader
 from services.worker_agent.sqlgen.run import Exploration, explore
 from services.worker_agent.sqlgen.schema import Linked, link

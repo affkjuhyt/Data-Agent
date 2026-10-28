@@ -1,4 +1,4 @@
-"""The read-only guard for SQL the worker runs against a source (BR-22).
+"""The read-only guard for SQL run against a source (BR-22), shared by the api and worker-agent.
 
 Parsed, not pattern-matched: sqlglot reads the text the way the target engine does, so a literal
 or a comment cannot hide a second statement. The guard admits exactly one statement whose root is
@@ -7,7 +7,8 @@ in the tree (a write inside a CTE included), no SELECT … INTO, no locking clau
 function that reaches outside the query (files, sleeps, other connections, session settings).
 
 It is the first of two locks: the executor also runs every statement in a READ ONLY transaction
-with a statement timeout, so a construct the guard does not know still cannot write.
+with a statement timeout, so a construct the guard does not know still cannot write. The api runs
+it too, before anything is queued, to tell the author at once (read_only_problem).
 """
 
 from __future__ import annotations
@@ -86,6 +87,24 @@ _DENIED_FUNCTIONS = frozenset(
 )
 
 
+# Pure functions sqlglot 25 does not model, so they parse as Anonymous: each computes a value from
+# its arguments and nothing else. Without them a pipeline step that cleans a number written
+# "1.234,5" (replace) could not run. Their arguments are still walked like any other node.
+_PURE_UNMODELLED = frozenset(
+    {
+        "replace",
+        "split_part",
+        "translate",
+        "btrim",
+        "strpos",
+        "reverse",
+        "trunc",
+        "make_date",
+        "age",
+    }
+)
+
+
 class SqlRejected(ValueError):
     """The SQL is not a single read-only query; the message names why, never the data."""
 
@@ -117,7 +136,7 @@ def check_read_only(sql: str, dialect: str) -> exp.Expression:
     for node in tree.walk():
         if isinstance(node, _WRITES):
             raise SqlRejected(f"{node.key.upper()} is not allowed in a read-only query")
-        if isinstance(node, exp.Anonymous):
+        if isinstance(node, exp.Anonymous) and node.name.lower() not in _PURE_UNMODELLED:
             # A function sqlglot does not model (pg_*, dblink, an extension's, a user-defined
             # one) is refused whatever its name: a list of bad names is never complete.
             raise SqlRejected(f"function {node.name.lower()} is not allowed")
@@ -193,3 +212,20 @@ def tables_of(tree: exp.Expression, dialect: str) -> set[tuple[str | None, str]]
         if isinstance(table.this, exp.Identifier) and id(table) not in seen:
             add(table)
     return found
+
+
+def read_only_problem(sql: str) -> str | None:
+    """Why `sql` is not one read-only query, None when it is — for the api, which takes the SQL
+    before it knows the source. It passes when it is read-only in any supported dialect: the worker
+    checks it again in the source's own (check_read_only), so a dialect's syntax is not refused
+    here, while a write, a second statement or a comment is refused in all of them."""
+    reasons: list[str] = []
+    for dialect in dict.fromkeys(DIALECTS.values()):
+        try:
+            check_read_only(sql, dialect)
+        except SqlRejected as exc:
+            reasons.append(str(exc))
+            continue
+        return None
+    # The engine most sources speak first: its reason is the one an author can act on.
+    return reasons[0]

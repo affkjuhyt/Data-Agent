@@ -30,9 +30,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, notify, skill
+from libs.sql_guard import SqlRejected
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
-from services.worker_agent.query.guard import SqlRejected
 from services.worker_agent.questions import (
     QUERYABLE,
     _internal_workspace_source,

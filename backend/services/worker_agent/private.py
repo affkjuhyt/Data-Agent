@@ -31,10 +31,10 @@ from typing import Any
 
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog
+from libs.sql_guard import SqlRejected, dialect_of
 from services.worker_agent.answer.narrate import figures_of, text_of
 from services.worker_agent.llm import ModelUnavailable
 from services.worker_agent.query.executor import CallerKind, run_query
-from services.worker_agent.query.guard import SqlRejected, dialect_of
 from services.worker_agent.questions import QUERYABLE, gateway, secrets
 from services.worker_agent.semantic import compiler as c
 from services.worker_agent.semantic.loader import load

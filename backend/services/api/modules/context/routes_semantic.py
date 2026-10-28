@@ -8,7 +8,6 @@ records the request and answers 202.
 
 from __future__ import annotations
 
-import re
 import uuid
 from typing import Annotated, Any
 
@@ -20,6 +19,7 @@ from sqlalchemy.orm import aliased
 
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog, context
+from libs.sql_guard import read_only_problem
 from services.api.catalogue import endpoint
 from services.api.kernel.auth import CurrentDataSpace, CurrentPrincipal, Principal
 from services.api.kernel.db import transaction
@@ -942,21 +942,16 @@ async def create_synonym(
 
 # ---------------------------------------------------------------- examples (UC-07-02)
 
-# A sample query is read-only: one SELECT (or WITH … SELECT) statement. Whether it runs and
-# matches its metrics is the checker's job before review (UC-07-02 step 2).
-_READ_ONLY = re.compile(r"^\s*(select|with)\b", re.IGNORECASE)
-_WRITES = re.compile(
-    r"\b(insert|update|delete|merge|drop|alter|create|truncate|grant|revoke|copy|call)\b",
-    re.IGNORECASE,
-)
 
-
+# A sample query is read-only: one query (libs.sql_guard). Whether it runs and matches its metrics
+# is the checker's job before review (UC-07-02 step 2).
 def _read_only_sql(sql: str) -> str:
-    """The statement without its trailing semicolon; 422 unless it is one read-only SELECT
+    """The statement without its trailing semicolon; 422 unless it is one read-only query
     (BR-22)."""
     sql = sql.strip().rstrip(";").strip()
-    if not _READ_ONLY.match(sql) or ";" in sql or _WRITES.search(sql):
-        raise field_error("sql", "sql must be one read-only SELECT statement.")
+    problem = read_only_problem(sql)
+    if problem:
+        raise field_error("sql", f"sql must be one read-only query: {problem}.")
     return sql
 
 

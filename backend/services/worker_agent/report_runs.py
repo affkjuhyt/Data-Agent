@@ -39,6 +39,7 @@ from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, monitor, notify
 from libs.dataagent_db.models import org as org_models
 from libs.dataagent_db.models import workspace as w
+from libs.sql_guard import SqlRejected
 from services.worker_agent import digests, storage
 from services.worker_agent.channels import gateway
 from services.worker_agent.channels.cards import report_card
@@ -46,7 +47,6 @@ from services.worker_agent.events import Event, Handler
 from services.worker_agent.exports import Sheet, write_xlsx
 from services.worker_agent.query.executor import ROLE as QUERY_ROLE
 from services.worker_agent.query.executor import QueryOutcome, bound_sql, run_query
-from services.worker_agent.query.guard import SqlRejected
 from services.worker_agent.query_runs import Unbuildable, dataset_sql, sql_source
 from services.worker_agent.questions import secrets
 from services.worker_agent.session_reports import personal_columns

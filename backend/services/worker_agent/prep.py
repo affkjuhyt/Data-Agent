@@ -29,11 +29,11 @@ from sqlalchemy import select
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog
 from libs.dataagent_db.models import pipeline as pl
+from libs.sql_guard import SqlRejected, check_read_only, dialect_of, tables_of
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.llm import ModelUnavailable
 from services.worker_agent.pipelines import _PREVIOUS, chain
 from services.worker_agent.query.executor import run_query
-from services.worker_agent.query.guard import SqlRejected, check_read_only, dialect_of, tables_of
 
 logger = logging.getLogger(__name__)
 

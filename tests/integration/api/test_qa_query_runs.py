@@ -291,13 +291,20 @@ async def test_sql_tricks_inside_literals_and_comments_are_not_statements(world:
     async with api_for(world) as api:
         for sql in (
             "select 'a; drop table t' as note",
-            "/* header */ select 1 -- ; delete",
             'select "update" from dw.audit_words',
         ):
             created = await api.post(
                 "/v1/query-runs", headers=as_(world, "analyst"), json={"sql": sql}
             )
             assert created.status_code == 202, (sql, created.text)
+        # The worker's guard refuses any comment (where text smuggled into SQL hides); the api
+        # says so before queueing a run that could only fail.
+        commented = await api.post(
+            "/v1/query-runs",
+            headers=as_(world, "analyst"),
+            json={"sql": "/* header */ select 1 -- ; delete"},
+        )
+        assert commented.status_code == 422 and "comments" in commented.text
 
 
 async def test_body_takes_a_dataset_or_sql(world: World) -> None:

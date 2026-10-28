@@ -23,7 +23,7 @@ from sqlglot import exp, parse_one
 
 from libs.dataagent_db.models import catalog, governance
 from libs.dataagent_db.models import org as org_models
-from services.worker_agent.query.guard import SqlRejected
+from libs.sql_guard import SqlRejected
 
 
 class OutOfScope(SqlRejected):

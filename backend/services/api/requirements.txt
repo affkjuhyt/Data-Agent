@@ -17,3 +17,5 @@ xlrd==2.0.1
 httpx==0.27.2
 # The semantic model as YAML (modules/context/semantic_yaml.py); the version uvicorn[standard] installs.
 pyyaml==6.0.3
+# The read-only SQL guard (libs/sql_guard), shared with worker-agent: the same pin.
+sqlglot==25.24.5

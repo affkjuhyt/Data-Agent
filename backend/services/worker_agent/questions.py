@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from libs.contracts.v1.errors import ErrorCode, NextAction, Refusal
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, document, period, qa
+from libs.sql_guard import SqlRejected, dialect_of
 from services.worker_agent.answer import narrator
 from services.worker_agent.answer.comparison import (
     PERIOD_CODE,
@@ -60,7 +61,6 @@ from services.worker_agent.events import Event, Handler
 from services.worker_agent.llm import Gateway, gateway_from_env
 from services.worker_agent.progress import publish
 from services.worker_agent.query.executor import record_period_snapshot, run_query
-from services.worker_agent.query.guard import SqlRejected, dialect_of
 from services.worker_agent.query.scope import (
     OutOfScope,
     active_policies,
@@ -615,29 +615,33 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
     await publish(
         str(question_id), "progress", {"question_id": str(question_id), "status": "running"}
     )
-    outcome = await run_query(
-        org_id=prepared.org_id,
-        data_space_id=prepared.space_id,
-        principal_id=prepared.user_id,
-        caller_kind="question",
-        caller_id=question_id,
-        source=prepared.source,
-        sql=prepared.compiled.sql,
-        secrets=secrets(),
-        metric_version_ids=[prepared.compiled.metric_version_id],
-        as_of=prepared.as_of,
-    ) if prepared.period_close_id is None else await record_period_snapshot(
-        org_id=prepared.org_id,
-        data_space_id=prepared.space_id,
-        principal_id=prepared.user_id,
-        caller_id=question_id,
-        period_close_id=prepared.period_close_id,
-        metric_version_ids=[prepared.compiled.metric_version_id],
-        columns=[
-            {"name": name, "type": "numeric" if name == "value" else "text"}
-            for name in prepared.compiled.columns
-        ],
-        rows=prepared.period_rows or [],
+    outcome = (
+        await run_query(
+            org_id=prepared.org_id,
+            data_space_id=prepared.space_id,
+            principal_id=prepared.user_id,
+            caller_kind="question",
+            caller_id=question_id,
+            source=prepared.source,
+            sql=prepared.compiled.sql,
+            secrets=secrets(),
+            metric_version_ids=[prepared.compiled.metric_version_id],
+            as_of=prepared.as_of,
+        )
+        if prepared.period_close_id is None
+        else await record_period_snapshot(
+            org_id=prepared.org_id,
+            data_space_id=prepared.space_id,
+            principal_id=prepared.user_id,
+            caller_id=question_id,
+            period_close_id=prepared.period_close_id,
+            metric_version_ids=[prepared.compiled.metric_version_id],
+            columns=[
+                {"name": name, "type": "numeric" if name == "value" else "text"}
+                for name in prepared.compiled.columns
+            ],
+            rows=prepared.period_rows or [],
+        )
     )
     if not outcome.ok:
         name = prepared.source.name
@@ -750,9 +754,7 @@ async def _understand_and_plan(
         today = question.as_of or datetime.date.today()
         layer = await load(session, space_id)
         space_access_problem = None
-        if not await can_ask_data_space(
-            session, data_space_id=space_id, principal_id=user_id
-        ):
+        if not await can_ask_data_space(session, data_space_id=space_id, principal_id=user_id):
             space_access_problem = Refusal.of(
                 ErrorCode.ACCESS_DENIED,
                 message="Bạn không thuộc Data Space hoặc chưa được cấp quyền hỏi dữ liệu.",
@@ -763,9 +765,7 @@ async def _understand_and_plan(
         found = find_comparison(question.text) if edited is None else None
         asked = found.rest if found is not None else question.text
         if knowledge_hint is not None:
-            asked = re.sub(
-                rf"\b{re.escape(knowledge_hint.span)}\b", " ", norm(asked), count=1
-            )
+            asked = re.sub(rf"\b{re.escape(knowledge_hint.span)}\b", " ", norm(asked), count=1)
         compare_to = (
             found.compare_to
             if found is not None
@@ -838,7 +838,12 @@ async def _understand_and_plan(
             )
         models: list[dict[str, Any]] = []
         model = gateway()
-        if access_problem is None and edited is None and u.decision == "unknown" and model is not None:
+        if (
+            access_problem is None
+            and edited is None
+            and u.decision == "unknown"
+            and model is not None
+        ):
             # The rule pass placed no metric: the fast model reads it against this catalogue.
             read = await llm_reader.read(
                 asked,
@@ -900,7 +905,10 @@ async def _understand_and_plan(
                     # "chiếm bao nhiêu %" of a ratio is the ratio itself, answered as asked.
                     analysis_kind = None
             elif any(code in times for code in u.group_by):
-                shown = (analysis.RUNNING_TOTAL, analysis_unit if analysis_kind == TO_DATE else None)
+                shown = (
+                    analysis.RUNNING_TOTAL,
+                    analysis_unit if analysis_kind == TO_DATE else None,
+                )
             else:
                 unit = analysis_unit or "year"
                 asked_period = u.period or FoundPeriod(
@@ -921,7 +929,9 @@ async def _understand_and_plan(
                     u.period = replace(
                         asked_period,
                         start=whole.start,
-                        label=f"{since} đến hết {asked_period.label}" if u.period else f"{since} đến nay",
+                        label=f"{since} đến hết {asked_period.label}"
+                        if u.period
+                        else f"{since} đến nay",
                     )
         not_cut = (
             _cut_not_allowed(u, layer) if u.decision == "proceed" and problem is None else None
@@ -941,9 +951,7 @@ async def _understand_and_plan(
                 grain=grain,
                 top_n=u.top_n,
                 top_desc=u.top_desc,
-                knowledge_at=question.knowledge_at
-                if question.knowledge_mode == "at"
-                else None,
+                knowledge_at=question.knowledge_at if question.knowledge_mode == "at" else None,
             )
             try:
                 # Compile once to discover the dataset/source, then regenerate in that source's
@@ -1054,8 +1062,7 @@ async def _understand_and_plan(
                         .where(
                             period.PublishedResult.org_id == event.org_id,
                             period.PublishedResult.period_close_id == closed.id,
-                            period.PublishedResult.metric_version_id
-                            == compiled.metric_version_id,
+                            period.PublishedResult.metric_version_id == compiled.metric_version_id,
                         )
                         .order_by(period.PublishedResult.id)
                     )
@@ -1666,9 +1673,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
             {
                 "table": f"{dataset.schema_name}.{dataset.table_name}",
                 "classification": "internal",
-                "last_crawled_at": dataset.updated_at.isoformat()
-                if dataset.updated_at
-                else None,
+                "last_crawled_at": dataset.updated_at.isoformat() if dataset.updated_at else None,
             }
             for dataset_id, dataset in p.datasets.items()
             if dataset_id in p.compiled.dataset_ids
@@ -1705,14 +1710,10 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                 text=text,
                 figures=stored_figures,
                 filed_vs_current=(
-                    {"period": p.filed_period_label, "items": filed_items}
-                    if filed_items
-                    else None
+                    {"period": p.filed_period_label, "items": filed_items} if filed_items else None
                 ),
                 reconcile_badge=badge,
-                number_check=verify(
-                    "data", check, figures=stored_figures, reconcile_badge=badge
-                ),
+                number_check=verify("data", check, figures=stored_figures, reconcile_badge=badge),
                 chart_spec=chart_spec_of(
                     figures,
                     group_by=shown_by,
@@ -1850,7 +1851,9 @@ async def _seal_receipt(
                     if published_result_id is not None
                     else "query_run"
                 ),
-                query_run_id=None if f.expr or published_result_id is not None else outcome.query_run_id,
+                query_run_id=None
+                if f.expr or published_result_id is not None
+                else outcome.query_run_id,
                 compute_run_id=compute_run_id if f.expr else None,
                 published_result_id=published_result_id,
                 expr_sha256=hashlib.sha256(f.expr.encode()).hexdigest() if f.expr else None,
