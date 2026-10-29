@@ -368,17 +368,16 @@ DELETE FROM "OutboxEvents" WHERE published_at < now() - interval '7 days';
 
 ## 10c. Nightly eval runs
 
-The `eval-nightly` CronJob (beside worker-agent, `deploy/k8s/*/service/worker-agent.yaml`) runs
-`python -m services.worker_agent.nightly_evals` at 02:00 Hà Nội time. It requests one run
-(`trigger = nightly`, `subject_version = context@nightly-<day>`) for every active context eval set
-of an `active` Data Space with an active steward, requested for that steward; worker-agent answers
-it from `eval.outbox`, each item as the user who last wrote it (an item whose author left fails). Its only credential is the `svc_eval` URL (`eval-nightly-secrets`), and the one
-cross-organisation read is the SECURITY DEFINER `eval.nightly_eval_sets()`. A set that already had
-a nightly run in the last 20 hours is skipped, so re-running the Job by hand is safe:
+The Temporal schedule `nightly-evals` (§10e) fires at 02:00 Hà Nội time and worker-agent runs
+`nightly_evals.request_all`. It requests one run (`trigger = nightly`, `subject_version =
+context@nightly-<day>`) for every active context eval set of an `active` Data Space with an active
+steward, requested for that steward; worker-agent answers it from `eval.outbox`, each item as the
+user who last wrote it (an item whose author left fails). The one cross-organisation read is the
+SECURITY DEFINER `eval.nightly_eval_sets()`. A set that already had a nightly run in the last 20
+hours is skipped, so running it again by hand is safe: trigger the schedule from the Temporal UI, or
 
 ```bash
-kubectl -n dataagent-service create job --from=cronjob/eval-nightly eval-nightly-manual
-kubectl -n dataagent-service logs job/eval-nightly-manual    # "nightly-evals | N runs requested"
+kubectl -n dataagent-service exec deploy/worker-agent -- python -m services.worker_agent.nightly_evals
 ```
 
 ## 10d. Crawler (crawl sources, UC-14)
@@ -417,9 +416,21 @@ The run stops at `in_review`; publishing is a person's action. Its event is `acq
 
 ## 10e. Temporal (schedules, ADR-33)
 
-ADR-33 puts every schedule (ingestion jobs, pipelines, report schedules, the daily quality pass,
-crawl sources, agent triggers) on Temporal Schedules; Kafka stays the path of events. The move is
-backlog TM-01…TM-03: until a kind has moved, worker-agent's minute pass still fires it. The pieces:
+Every schedule is a Temporal Schedule (ADR-33); Kafka stays the path of events. worker-agent
+(`schedules/`) keeps them in step with the data every 30 s and runs their firings:
+
+| Schedule id | Fires | Zone |
+| --- | --- | --- |
+| `job:<org>:<job>` | an active ingestion job's `schedule_cron` | UTC |
+| `pipeline:<org>:<pipeline>` | an active pipeline's `cron`, skipped on its work calendar's days off | the calendar's, else UTC |
+| `report:<org>:<schedule>` | an active report schedule's `cron` | Asia/Ho_Chi_Minh |
+| `quality:<org>` | hourly: every active quality rule not checked in 24 h | UTC |
+| `nightly-evals` | 02:00: the nightly eval runs (§10c) | Asia/Ho_Chi_Minh |
+
+A firing re-reads its row, so a schedule paused, deleted or re-timed since the last sync fires into
+nothing; a minute already served is recognised by the run it made. A firing missed while Temporal or
+worker-agent was down is made within 15 minutes, never later. Crawl sources and agent triggers
+follow in TM-03. The pieces:
 
 - **Server** `temporal` (`temporalio/server`, one pod running the frontend, history, matching and
   worker roles), its frontend at `temporal:8380`. Its state is in two databases of the shared

@@ -1,5 +1,7 @@
 """Quality rules checked on the data (UC-06-07) and the clock of the data side (UC-04-05/06,
-UC-06-03): due loads and pipelines fire once per minute, a running pipeline is not overlapped."""
+UC-06-03): what is scheduled (schedules.targets.wanted) and what one firing does
+(schedules.targets.fire, which a Temporal Schedule runs): a due load or pipeline fires once per
+minute, a running pipeline is not overlapped, a pipeline does not run on its calendar's day off."""
 
 from __future__ import annotations
 
@@ -10,9 +12,10 @@ from typing import Any
 
 import pytest
 
-from services.worker_agent import quality, scheduler
+from services.worker_agent import quality
 from services.worker_agent.events import OutboxTableSource
 from services.worker_agent.main import run_once
+from services.worker_agent.schedules import targets
 
 from .conftest import Seed
 from .test_answers import Bank, build, warehouse  # noqa: F401  (fixture)
@@ -149,12 +152,18 @@ async def test_a_due_job_is_loaded_once_per_minute(
 ) -> None:
     bank = build(seed, warehouse, monkeypatch)
     due, later = job(bank, "* * * * *"), job(bank, "0 3 * * *")
-    # A minute already past: the run's started_at is the database clock, and the scheduler
-    # dedupes on started_at >= the served minute, so a minute later today never matches.
+    wanted = {t.schedule_id: t for t in await targets.wanted(bank.org)}
+    assert wanted[f"job:{bank.org}:{due}"].cron == "* * * * *"
+    assert wanted[f"job:{bank.org}:{later}"].zone == "UTC"
+    # A minute already past: the run's started_at is the database clock, and a firing dedupes on
+    # started_at >= the served minute, so a minute later today never matches.
     yesterday = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1)
     at = yesterday.replace(hour=12, minute=1)
-    await scheduler.tick(at)
-    await scheduler.tick(at)
+    assert (await targets.fire("job", bank.org, due, at)).startswith("job_run ")
+    # A retried activity, or a second replica: the minute is already served.
+    assert await targets.fire("job", bank.org, due, at) == "already served"
+    # A Schedule not yet synced to a changed cron fires into nothing.
+    assert await targets.fire("job", bank.org, later, at) == "not due"
     assert seed.one("SELECT count(*) FROM ingest.job_run WHERE job_id = %s", due) == 1
     assert seed.one("SELECT count(*) FROM ingest.job_run WHERE job_id = %s", later) == 0
     payload = seed.one(
@@ -190,7 +199,7 @@ async def test_a_due_pipeline_runs_and_a_running_one_is_not_overlapped(
         published_at="2026-10-01T00:00:00Z",
     )
     now = datetime.datetime.now(datetime.UTC)
-    await scheduler.tick(now)
+    await targets.fire("pipeline", bank.org, pid, now)
     assert (
         seed.one(
             "SELECT count(*) FROM pipeline.pipeline_run WHERE pipeline_id = %s AND status = 'running'",
@@ -199,7 +208,7 @@ async def test_a_due_pipeline_runs_and_a_running_one_is_not_overlapped(
         == 1
     )
     # Next minute, the first run still going: the scheduled one is skipped, not stacked.
-    await scheduler.tick(now + datetime.timedelta(minutes=1))
+    await targets.fire("pipeline", bank.org, pid, now + datetime.timedelta(minutes=1))
     assert (
         seed.one(
             "SELECT count(*) FROM pipeline.pipeline_run WHERE pipeline_id = %s"
@@ -208,6 +217,52 @@ async def test_a_due_pipeline_runs_and_a_running_one_is_not_overlapped(
         )
         == 1
     )
+
+
+@pytest.mark.req("AC-06-03-01")
+async def test_a_pipeline_on_a_work_calendar_reads_its_zone_and_skips_its_days_off(
+    seed: Seed,
+    warehouse: dict[str, Any],  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, warehouse, monkeypatch)
+    # Saturday and Sunday off, in Hà Nội time: what the schedule preview shows for this pipeline.
+    calendar = seed.row(
+        "org.work_calendar",
+        org_id=bank.org,
+        code="VN",
+        name="Lịch VN",
+        time_zone="Asia/Ho_Chi_Minh",
+        weekend_days=[6, 7],
+    )
+    pid = uuid.uuid4()
+    with seed.conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO pipeline.pipeline (id, org_id, data_space_id, name, owner_id,"
+            " input_dataset_ids, steps, status, cron, work_calendar_id) VALUES"
+            " (%s,%s,%s,'p',%s,%s::uuid[],'[]','active','0 7 * * *',%s)",
+            (
+                str(pid),
+                str(bank.org),
+                str(bank.space),
+                str(bank.user),
+                [str(bank.loans)],
+                str(calendar),
+            ),
+        )
+    wanted = {t.schedule_id: t for t in await targets.wanted(bank.org)}
+    assert wanted[f"pipeline:{bank.org}:{pid}"].zone == "Asia/Ho_Chi_Minh"
+    # 07:00 in Hà Nội is 00:00 UTC. Saturday 24/10/2026 is a day off; Monday 26/10 is not.
+    saturday = datetime.datetime(2026, 10, 24, 0, 0, tzinfo=datetime.UTC)
+    assert await targets.fire("pipeline", bank.org, pid, saturday) == "not a working day"
+    monday = datetime.datetime(2026, 10, 26, 0, 0, tzinfo=datetime.UTC)
+    assert (await targets.fire("pipeline", bank.org, pid, monday)).endswith(" running")
+    # 07:00 UTC is 14:00 in Hà Nội: not when this pipeline runs.
+    assert (
+        await targets.fire("pipeline", bank.org, pid, monday + datetime.timedelta(hours=7))
+        == "not due"
+    )
+    assert seed.one("SELECT count(*) FROM pipeline.pipeline_run WHERE pipeline_id = %s", pid) == 1
 
 
 async def test_a_rule_touched_by_someone_else_runs_under_both(

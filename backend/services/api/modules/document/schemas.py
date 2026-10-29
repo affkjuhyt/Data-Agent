@@ -8,20 +8,18 @@ from __future__ import annotations
 
 import datetime
 import decimal
-import re
 import uuid
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from libs import cron
 
 Media = Literal["pdf", "image", "docx", "email", "audio", "html"]
 SourceKind = Literal[
     "smb_folder", "sharepoint", "imap_mailbox", "call_recording_api", "object_store"
 ]
 Resolution = Literal["corrected", "confirmed_mask", "page_dropped", "value_fixed"]
-
-# Five cron fields; the scheduler checks the values themselves.
-_CRON = re.compile(r"^\S+( \S+){4}$")
 
 
 class Accepted(BaseModel):
@@ -95,9 +93,10 @@ class DocumentSourceCreate(BaseModel):
     @field_validator("sync_cron")
     @classmethod
     def _cron(cls, value: str) -> str:
-        if not _CRON.match(value.strip()):
-            raise ValueError("sync_cron is a five-field cron expression")
-        return value.strip()
+        try:
+            return cron.check(value)
+        except cron.CronError as exc:
+            raise ValueError(f"sync_cron is a five-field cron expression: {exc}") from exc
 
 
 # --- documents ----------------------------------------------------------------------------------

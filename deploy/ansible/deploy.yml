@@ -476,6 +476,17 @@
         - apply_services | bool
         - "'workflow-runtime' not in service_manifests"
 
+    # Temporal fires the nightly eval run now (TM-02, schedules/targets.py); left in place the
+    # CronJob would request the same runs a second time, which nightly_evals.MIN_GAP only absorbs.
+    - name: Remove the retired eval-nightly CronJob
+      ansible.builtin.command: >-
+        {{ kubectl }} -n {{ ns_service }} delete
+        cronjob/eval-nightly serviceaccount/eval-nightly secret/eval-nightly-secrets
+        --ignore-not-found=true
+      register: eval_nightly_delete
+      changed_when: "'deleted' in eval_nightly_delete.stdout"
+      when: apply_services | bool
+
     - name: Remove the retired legacy seed Job
       ansible.builtin.command: >-
         {{ kubectl }} -n {{ ns_service }} delete

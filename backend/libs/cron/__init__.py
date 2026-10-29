@@ -10,12 +10,17 @@ from __future__ import annotations
 
 import datetime
 import itertools
+import re
 from collections.abc import Callable, Iterator
 
 from croniter import CroniterBadDateError, croniter
 
 # A day-of-month that exists only on 29 February finds its run within this many days.
 _HORIZON = datetime.timedelta(days=366 * 5)
+
+
+_LAST_OR_WEEKDAY_DAY = re.compile(r"[LW]", re.IGNORECASE)
+_LAST_WEEKDAY = re.compile(r"(^|,)\d*L($|,)", re.IGNORECASE)
 
 
 class CronError(ValueError):
@@ -32,6 +37,12 @@ def check(expr: str) -> str:
         croniter(text)
     except ValueError as exc:  # every croniter error is one
         raise CronError(str(exc)) from exc
+    if not text.startswith("@"):
+        _, _, day, _, weekday = text.split()
+        # croniter reads L (last) and W (nearest weekday), Temporal refuses them ("DayOfMonth is not
+        # in range"): a schedule the api accepted would never fire. Names (jul, wed) are not these.
+        if _LAST_OR_WEEKDAY_DAY.search(day) or _LAST_WEEKDAY.search(weekday):
+            raise CronError("L and W (last day, nearest weekday) are not supported")
     return " ".join(text.split())
 
 

@@ -52,6 +52,10 @@ def test_sunday_is_0_and_7() -> None:
         # croniter reads a sixth field as seconds; nothing here fires on seconds.
         "0 0 * * * 30",
         "H * * * *",
+        # Temporal, which fires every schedule, refuses last-day and nearest-weekday.
+        "0 0 L * *",
+        "0 0 15W * *",
+        "0 0 * * 5L",
     ],
 )
 def test_a_malformed_expression_is_refused(expr: str) -> None:
@@ -59,6 +63,12 @@ def test_a_malformed_expression_is_refused(expr: str) -> None:
         cron.check(expr)
     with pytest.raises(ValueError):
         cron.matches(expr, AT)
+
+
+def test_names_and_nth_weekday_are_kept() -> None:
+    # jul and wed carry an l and a w; the second Monday (1#2) Temporal reads.
+    assert cron.check("0 9 1 jul wed") == "0 9 1 jul wed"
+    assert cron.check("0 9 * * 1#2") == "0 9 * * 1#2"
 
 
 def test_check_collapses_whitespace_and_reads_macros() -> None:

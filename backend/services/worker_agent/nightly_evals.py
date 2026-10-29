@@ -1,13 +1,14 @@
-"""Request the nightly eval run of every active context eval set (UC-07-06, the eval-nightly CronJob).
+"""Request the nightly eval run of every active context eval set (UC-07-06).
 
-`python -m services.worker_agent.nightly_evals` runs once and exits. It only requests: each run is
+Its Temporal schedule fires it at 02:00 Hà Nội time (schedules/targets.py);
+`python -m services.worker_agent.nightly_evals` runs it once by hand. It only requests: each run is
 an eval.eval_run in status running plus its eval_run.requested event, written in one transaction,
 and the worker's eval_runs.run_eval answers it. The run is requested for the Data Space's steward,
 the person accountable for its context, but each item is answered as its own author: no one's
 question is answered with the steward's rights.
 
-A set that already had a nightly run started within MIN_GAP is skipped, so a CronJob retried or
-started by hand the same night does not run the set twice.
+A set that already had a nightly run started within MIN_GAP is skipped, so a firing retried or a
+run started by hand the same night does not run the set twice.
 """
 
 from __future__ import annotations

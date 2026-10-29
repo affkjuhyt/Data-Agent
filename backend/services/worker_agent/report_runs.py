@@ -1,7 +1,7 @@
 """Scheduled reports (UC-08-03, UC-02-04): the `report_run.requested` handler.
 
-A run comes from POST /v1/reports/{id}:run-now or from the scheduler (scheduler.py) when the
-schedule's cron fires. It renders the workspace's tiles once per permission group (BR-34: the
+A run comes from POST /v1/reports/{id}:run-now or from its Temporal schedule
+(schedules/targets.py) when the schedule's cron fires. It renders the workspace's tiles once per permission group (BR-34: the
 North group's file holds no South rows), runs the pre-send checks when the schedule asks for
 them, stores each rendering in MinIO and tells every recipient in the app.
 

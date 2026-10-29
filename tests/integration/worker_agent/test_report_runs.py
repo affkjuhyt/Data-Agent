@@ -1,6 +1,6 @@
 """UC-08-03: worker-agent renders a scheduled report once per permission group, checks it before
 sending, stores it and tells its recipients in the app (services/worker_agent/report_runs.py),
-and the scheduler requests a run when the schedule's cron fires (scheduler._reports)."""
+and its Temporal schedule requests a run when the cron fires (schedules.targets.fire)."""
 
 from __future__ import annotations
 
@@ -11,10 +11,11 @@ from typing import Any
 
 import pytest
 
-from services.worker_agent import report_runs, scheduler, storage
+from services.worker_agent import report_runs, storage
 from services.worker_agent.channels import gateway
 from services.worker_agent.events import OutboxTableSource
 from services.worker_agent.main import run_once
+from services.worker_agent.schedules import targets
 
 from . import test_answers
 from .conftest import Seed
@@ -375,9 +376,12 @@ async def test_the_scheduler_requests_a_run_once_when_the_cron_fires(
     report = schedule(bank)
     # 08:00 in Hà Nội on 22/10 is 01:00 UTC; the report is dated the day before.
     at = datetime.datetime(2026, 10, 22, 1, 0, tzinfo=datetime.UTC)
-    assert await scheduler._reports(bank.org, at) == 1
-    assert await scheduler._reports(bank.org, at) == 0
-    assert await scheduler._reports(bank.org, at + datetime.timedelta(hours=1)) == 0
+    assert (await targets.fire("report", bank.org, report, at)).endswith(" running")
+    assert await targets.fire("report", bank.org, report, at) == "already served"
+    assert (
+        await targets.fire("report", bank.org, report, at + datetime.timedelta(hours=1))
+        == "not due"
+    )
     as_of, trigger, status = seed.one(
         "SELECT as_of, trigger, status FROM monitor.report_run WHERE report_schedule_id = %s",
         report,

@@ -122,8 +122,8 @@ trigger agent) chạy bằng Temporal Schedules thay vòng quét mỗi phút c�
 
 | ID | Việc | Phụ thuộc | Vai | Cỡ | Tiêu chí | TT |
 | --- | --- | --- | --- | --- | --- | --- |
-| TM-01 | Temporal server trên Postgres chung (database `temporal`, `temporal_visibility`, login riêng từ vault), Job `temporal-schema`, Temporal UI; manifest dev và production, NetworkPolicy, Ansible, `make deploy-local` | | Ops | M | `operator cluster health` = SERVING trên cụm dev; nâng phiên bản server và admin-tools cùng một commit | doing |
-| TM-02 | Đồng bộ lịch sang Temporal Schedule (tạo, sửa, xoá theo sự kiện outbox; đối chiếu toàn bộ khi worker khởi động) và workflow chạy một lượt; chuyển job, pipeline, báo cáo, chất lượng; bỏ vòng quét mỗi phút | TM-01 | BE | L | Test tích hợp: lịch đổi thì Schedule đổi; một lượt tới giờ tạo đúng một run; ngày nghỉ của lịch làm việc bị bỏ qua | todo |
+| TM-01 | Temporal server trên Postgres chung (database `temporal`, `temporal_visibility`, login riêng từ vault), Job `temporal-schema`, Temporal UI; manifest dev và production, NetworkPolicy, Ansible, `make deploy-local` | | Ops | M | `operator cluster health` = SERVING trên cụm dev; nâng phiên bản server và admin-tools cùng một commit | done 667def3e |
+| TM-02 | Đồng bộ lịch sang Temporal Schedule (tạo, sửa, xoá theo sự kiện outbox; đối chiếu toàn bộ khi worker khởi động) và workflow chạy một lượt; chuyển job, pipeline, báo cáo, chất lượng; bỏ vòng quét mỗi phút | TM-01 | BE | L | Test tích hợp: lịch đổi thì Schedule đổi; một lượt tới giờ tạo đúng một run; ngày nghỉ của lịch làm việc bị bỏ qua | doing |
 | TM-03 | Lượt thu theo `schedule_cron` của nguồn thu thập và trigger agent theo lịch (`temporal_schedule_id`) | TM-02 | BE | M | Nguồn có lịch tạo `crawl_run` đúng giờ; KB-02 bỏ ghi chú "chờ Temporal" | todo |
 
 ## 4. Quy tắc theo dõi
