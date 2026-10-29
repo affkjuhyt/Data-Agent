@@ -114,8 +114,10 @@ describe('RunDetailPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Huỷ lượt chạy' }));
     const dialog = screen.getByRole('alertdialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Huỷ lượt chạy' }));
+    // The page behind an open dialog is hidden from the role queries: wait for it to close first.
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Chạy tiếp' })).toBeNull());
-    expect(screen.getByText('Đã huỷ')).toBeInTheDocument();
+    expect(await screen.findByText('Đã huỷ')).toBeInTheDocument();
   });
 });
 

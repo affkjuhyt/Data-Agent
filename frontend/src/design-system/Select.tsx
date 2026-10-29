@@ -89,7 +89,9 @@ export function Select<V extends string>({
       return;
     }
     if (event.key === 'Escape') {
+      // Esc closes the list only; a Dialog around it (React Aria) would otherwise close too.
       event.preventDefault();
+      event.stopPropagation();
       setOpen(false);
     } else if (event.key === 'ArrowDown') {
       event.preventDefault();

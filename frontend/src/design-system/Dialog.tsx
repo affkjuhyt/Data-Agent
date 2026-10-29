@@ -1,8 +1,9 @@
 import { useId, useRef, type FormEvent, type ReactNode } from 'react';
+import { Dialog as AriaDialog, Heading, Modal, ModalOverlay } from 'react-aria-components';
 import { cn } from '../lib/utils';
 import { Button } from './Button';
 import { Icon } from './Icon';
-import { useModalFocus } from './useModalFocus';
+import { useInitialFocus } from './useInitialFocus';
 
 /*
  * Figma "Lớp phủ dùng chung · Hộp thoại" (2095:*, e.g. invite 2095:8252, addModel 2095:8757):
@@ -13,6 +14,9 @@ import { useModalFocus } from './useModalFocus';
  *
  * Two ways to fill the footer: pass `onSubmit` + `submitLabel` and the dialog is a form with
  * "Huỷ" and a primary submit (Enter submits); or pass `footer` for anything else.
+ *
+ * React Aria owns the modal behaviour: a portal over the page, Tab trapped, Esc and a click on the
+ * scrim close, the page behind hidden from assistive tech, focus back to the opener on close.
  */
 const WIDTH = { sm: 'w-[440px]', md: 'w-[560px]', lg: 'w-[760px]' } as const;
 
@@ -45,12 +49,58 @@ export function Dialog({
   /** The last failure, shown above the actions; the dialog stays open. */
   error?: string;
 }) {
-  const ref = useRef<HTMLFormElement>(null);
-  const titleId = useId();
-  const descriptionId = useId();
-  const onKeyDown = useModalFocus(open, ref, onClose);
+  return (
+    <ModalOverlay
+      isOpen={open}
+      onOpenChange={(next) => !next && onClose()}
+      isDismissable
+      className="fixed inset-0 z-[var(--z-dialog)] flex items-center justify-center bg-scrim p-da-xl"
+    >
+      <Modal className={cn('flex max-h-[calc(100vh-32px)] max-w-full outline-none', WIDTH[size])}>
+        <DialogPanel
+          title={title}
+          description={description}
+          onClose={onClose}
+          footer={footer}
+          onSubmit={onSubmit}
+          submitLabel={submitLabel}
+          submitting={submitting}
+          canSubmit={canSubmit}
+          error={error}
+        >
+          {children}
+        </DialogPanel>
+      </Modal>
+    </ModalOverlay>
+  );
+}
 
-  if (!open) return null;
+function DialogPanel({
+  title,
+  description,
+  onClose,
+  children,
+  footer,
+  onSubmit,
+  submitLabel,
+  submitting,
+  canSubmit,
+  error,
+}: {
+  title: string;
+  description?: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+  footer?: ReactNode;
+  onSubmit?: () => void;
+  submitLabel?: string;
+  submitting: boolean;
+  canSubmit: boolean;
+  error?: string;
+}) {
+  const ref = useRef<HTMLFormElement>(null);
+  const descriptionId = useId();
+  useInitialFocus(ref);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -64,42 +114,28 @@ export function Dialog({
         <Button kind="ghost" onClick={onClose}>
           Huỷ
         </Button>
-        <Button
-          kind="primary"
-          type="submit"
-          loading={submitting}
-          disabled={!canSubmit}
-        >
+        <Button kind="primary" type="submit" loading={submitting} disabled={!canSubmit}>
           {submitLabel ?? 'Lưu'}
         </Button>
       </>
     ) : null);
 
   return (
-    <div
-      className="fixed inset-0 z-[var(--z-dialog)] flex items-center justify-center bg-scrim p-da-xl"
-      onMouseDown={onClose}
+    <AriaDialog
+      aria-describedby={description ? descriptionId : undefined}
+      className="flex min-h-0 w-full rounded-xl bg-card shadow-lg outline-none"
     >
       <form
         ref={ref}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={description ? descriptionId : undefined}
         noValidate
-        onKeyDown={onKeyDown}
         onSubmit={submit}
-        onMouseDown={(event) => event.stopPropagation()}
-        className={cn(
-          'flex max-h-[calc(100vh-32px)] max-w-full flex-col gap-da-xl overflow-y-auto rounded-xl bg-card p-da-xl shadow-lg',
-          WIDTH[size],
-        )}
+        className="flex min-h-0 w-full flex-col gap-da-xl overflow-y-auto p-da-xl"
       >
         <div className="flex items-start gap-da-md">
           <div className="flex min-w-0 flex-1 flex-col gap-da-xs">
-            <h2 id={titleId} className="text-foreground da-heading-2">
+            <Heading slot="title" className="text-foreground da-heading-2">
               {title}
-            </h2>
+            </Heading>
             {description && (
               <p id={descriptionId} className="text-muted-foreground da-caption">
                 {description}
@@ -123,6 +159,6 @@ export function Dialog({
         )}
         {actions && <div className="flex justify-end gap-da-md">{actions}</div>}
       </form>
-    </div>
+    </AriaDialog>
   );
 }

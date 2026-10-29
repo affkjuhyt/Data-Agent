@@ -169,6 +169,22 @@ describe('Select', () => {
     fireEvent.mouseDown(screen.getByText('Chỗ khác trong hộp thoại'));
     expect(screen.queryByRole('listbox')).toBeNull();
   });
+
+  it('closes on Esc without closing the dialog around it', () => {
+    const onClose = vi.fn();
+    render(
+      <Dialog open title="Thêm thành viên" onClose={onClose}>
+        <Select label="Vai trò" options={options} value={null} onChange={() => {}} />
+      </Dialog>,
+    );
+    const combo = screen.getByRole('combobox', { name: 'Vai trò' });
+    fireEvent.click(combo);
+    fireEvent.keyDown(combo, { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.keyDown(combo, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 });
 
 describe('Checkbox, Radio, Toggle', () => {
@@ -404,7 +420,7 @@ describe('Dialog', () => {
     );
     expect(screen.getByRole('dialog', { name: 'Mời người' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Email' })).toHaveFocus();
-    fireEvent.submit(screen.getByRole('dialog'));
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form') as HTMLFormElement);
     expect(onSubmit).toHaveBeenCalledOnce();
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     expect(onClose).toHaveBeenCalledOnce();
@@ -424,7 +440,7 @@ describe('Dialog', () => {
         <span />
       </Dialog>,
     );
-    fireEvent.submit(screen.getByRole('dialog'));
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form') as HTMLFormElement);
     expect(onSubmit).not.toHaveBeenCalled();
   });
 });
