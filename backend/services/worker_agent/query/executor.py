@@ -397,22 +397,32 @@ async def bound_sql(
     tree = check_read_only(sql, dialect)
     tables = tables_of(tree, dialect)
     executed = capped(tree, dialect, min(limit, MAX_ROWS) + 1)
-    readable_datasets = await datasets_read(
-        session,
-        data_space_id=data_space_id,
-        principal_id=principal_id,
-        source=source,
-        tables=tables,
-    )
-    policies = await active_policies(
-        session,
-        principal_id=principal_id,
-        datasets=readable_datasets,
-        caller_kind=caller_kind,
-    )
-    user = await session.scalar(select(org.AppUser).where(org.AppUser.id == principal_id))
-    if user is None:
-        raise SqlRejected("query principal is not an organisation user")
+    # An agent account is held to its owner too (agent_owner): the tables both may read, every
+    # column, mask and row policy of either, and the intersection of their row scopes. An owner
+    # who may no longer ask, or read a table, refuses the query.
+    owner = await agent_owner(session, principal_id)
+    readers = [principal_id, *([owner] if owner else [])]
+    readable_datasets: list[catalog.Dataset] = []
+    held: list[tuple[org.AppUser, list[governance.AccessPolicy]]] = []
+    for reader in readers:
+        readable_datasets = await datasets_read(
+            session,
+            data_space_id=data_space_id,
+            principal_id=reader,
+            source=source,
+            tables=tables,
+        )
+        user = await session.scalar(select(org.AppUser).where(org.AppUser.id == reader))
+        if user is None:
+            raise SqlRejected("query principal is not an organisation user")
+        found = await active_policies(
+            session,
+            principal_id=reader,
+            datasets=readable_datasets,
+            caller_kind=caller_kind,
+        )
+        held.append((user, list(found)))
+    policies = list({p.id: p for _, found in held for p in found}.values())
     output_policies = [policy for policy in policies if policy.kind in {"column", "mask"}]
     # Columns first: the row policies then filter the inner reads of the table,
     # where a hidden column is still there to filter on.
@@ -424,18 +434,17 @@ async def bound_sql(
         source=source,
         columns=await covered_columns(session, output_policies),
     )
-    executed = rewrite_access_policies(
-        executed,
-        dialect=dialect,
-        policies=[policy for policy in policies if policy.kind == "row"],
-        user=user,
-        datasets=readable_datasets,
-        source=source,
-    )
-    # An agent account reads within its own scope and its owner's (agent_owner): both rewrites
-    # apply, so the rows are their intersection, and an owner without ask refuses the query.
-    owner = await agent_owner(session, principal_id)
-    for reader in (principal_id, *([owner] if owner else [])):
+    # Each reader's row policies bind that reader's attributes (:user.department, …).
+    for user, found in held:
+        executed = rewrite_access_policies(
+            executed,
+            dialect=dialect,
+            policies=[policy for policy in found if policy.kind == "row"],
+            user=user,
+            datasets=readable_datasets,
+            source=source,
+        )
+    for reader in readers:
         executed = rewrite_row_scopes(
             executed,
             dialect=dialect,

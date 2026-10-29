@@ -826,6 +826,35 @@ async def test_a_scheduled_run_reads_no_wider_rows_than_its_owner(
     assert "branch_code" in executed and "HN1" in executed
 
 
+async def test_a_scheduled_run_is_held_to_its_owners_access_policies(
+    seed: Seed,
+    credit: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A row policy on the owner alone still shapes what the agent's account reads.
+    bank = build(seed, credit, monkeypatch)
+    seed.row(
+        "governance.access_policy",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        dataset_id=bank.loans,
+        name="Chủ agent chỉ thấy khoản vay bán lẻ",
+        kind="row",
+        applies_to=json.dumps({"user_ids": [str(bank.user)]}),
+        condition_expr="group_code = 1",
+        status="active",
+        simulated_at="2026-10-17T08:00:00Z",
+        activated_at="2026-10-17T09:00:00Z",
+        activated_by=bank.user,
+    )
+    run = agent_run(bank)
+    acting_as_its_account(bank, run, member=True)
+    await drain()
+    assert run_row(seed, run)[:2] == ("succeeded", "completed")
+    executed = seed.one("SELECT sql_executed FROM query.query_run WHERE caller_id = %s", run)
+    assert "group_code = 1" in executed, executed
+
+
 async def test_a_run_naming_another_data_space_is_refused_before_it_reads_it(
     seed: Seed,
     credit: dict[str, Any],
