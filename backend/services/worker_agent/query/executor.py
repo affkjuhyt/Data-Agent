@@ -58,6 +58,7 @@ from libs.sql_guard import (
     tables_of,
 )
 from services.worker_agent.query.scope import (
+    OutOfScope,
     active_policies,
     active_row_scopes,
     agent_owner,
@@ -405,13 +406,19 @@ async def bound_sql(
     readable_datasets: list[catalog.Dataset] = []
     held: list[tuple[org.AppUser, list[governance.AccessPolicy]]] = []
     for reader in readers:
-        readable_datasets = await datasets_read(
+        resolved = await datasets_read(
             session,
             data_space_id=data_space_id,
             principal_id=reader,
             source=source,
             tables=tables,
         )
+        # The policies are keyed by dataset: if the agent and its owner resolve a name to
+        # different datasets (a personal one of either), one's policies would miss the tables
+        # the SQL names, so such a query is refused rather than half-bound.
+        if held and {d.id for d in resolved} != {d.id for d in readable_datasets}:
+            raise OutOfScope("the agent and its owner read different datasets under these names")
+        readable_datasets = resolved
         user = await session.scalar(select(org.AppUser).where(org.AppUser.id == reader))
         if user is None:
             raise SqlRejected("query principal is not an organisation user")
