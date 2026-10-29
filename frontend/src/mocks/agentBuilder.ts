@@ -301,6 +301,7 @@ export function createAgentBuilderHandlers() {
   const wire = (agent: AgentDetail) => ({ ...agent, current_config: agent.config });
   const testRuns = new Map<string, TestRun>();
   let seq = 0;
+  const evalRuns = new Set<string>();
 
   return [
     http.get('*/v1/agent-templates', () => page(templatesFixture())),
@@ -443,6 +444,50 @@ export function createAgentBuilderHandlers() {
       testRuns.set(run.id, done);
       return HttpResponse.json(done);
     }),
+
+    // UC-13-04: the eval worker scores the version against the Data Space's set and passes it.
+    http.get('*/v1/agents/:id/configs', ({ params }) => {
+      const agent = agents.get(String(params.id));
+      return agent?.config ? page([agent.config]) : undefined;
+    }),
+    http.post('*/v1/agents/:id/eval-runs', async ({ params }) => {
+      const agent = agents.get(String(params.id));
+      if (!agent?.config) return problem(404, 'not_found', 'Không tìm thấy agent.');
+      const runId = `er-builder-${++seq}`;
+      agents.set(agent.id, {
+        ...agent,
+        config: { ...agent.config, status: 'passed' },
+      });
+      evalRuns.add(runId);
+      return HttpResponse.json(
+        { id: runId, status: 'queued', poll_after_ms: 10 },
+        { status: 202, headers: { Location: `/v1/eval-runs/${runId}` } },
+      );
+    }),
+    http.get('*/v1/eval-runs/:id', ({ params }) =>
+      evalRuns.has(String(params.id))
+        ? HttpResponse.json({
+            id: params.id,
+            eval_set_id: 'eval-credit-risk',
+            subject_version: 'v1',
+            trigger: 'deploy',
+            trigger_ref: null,
+            item_count: 120,
+            passed: 118,
+            failed: 2,
+            correct_refusals: 0,
+            pass_rate: 0.9833,
+            baseline_run_id: null,
+            baseline: null,
+            regressions: 0,
+            status: 'completed',
+            started_at: new Date().toISOString(),
+            finished_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+            results: [],
+          })
+        : undefined,
+    ),
 
     http.post('*/v1/agents/:id/deployments', async ({ params, request }) => {
       const agent = agents.get(String(params.id));

@@ -940,6 +940,8 @@ async def create_eval_run(
             agent_id=owner.id,
             config_version=config.version,
             eval_run_id=eval_run_id,
+            # The eval worker answers the set's items as the one who asked for the run.
+            requested_by=principal.user_id,
             previous_status=previous,
             status=config.status,
         )

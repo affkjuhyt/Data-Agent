@@ -1,5 +1,5 @@
 import { readAgent } from './api';
-import { type Page, api, ok, okAs } from './client';
+import { type Page, V1Error, api, ok, okAs } from './client';
 import type { components } from './schema';
 import type { AgentDef, AgentRun, AgentWire } from './types';
 import { getOnboarding } from './explore';
@@ -554,9 +554,79 @@ export const startTestRun = async (id: string, configVersion: number) => {
 export const getTestRun = async (runId: string) =>
   readTestRun(await ok<TestRunWire>(api.GET('/v1/runs/{id}', { params: { path: { id: runId } } })));
 
-/** "Kích hoạt": full traffic, which waits for the data owner's approval. */
-export const activateAgent = async (id: string, configVersion: number) =>
-  okAs<AgentDeployment>(
+const EVAL_WAIT_MS = 10 * 60_000;
+const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const configStatus = async (id: string, version: number) =>
+  (await listConfigs(id)).items.find((c) => c.version === version)?.status;
+
+/**
+ * UC-13-04 before UC-13-05: only a version that passed its eval set is deployed (the api answers
+ * 409 otherwise). The eval worker makes the run under the id the api reserved, so the run answers
+ * 404 until it starts, and it moves the config to `passed` once the run is at the set's bar.
+ * A Data Space without an eval set would never get a run: that is said before asking for one.
+ */
+export const evaluateVersion = async (
+  id: string,
+  configVersion: number,
+  wait: (ms: number) => Promise<void> = pause,
+) => {
+  const status = await configStatus(id, configVersion);
+  if (status === 'passed' || status === 'deployed') return;
+  const sets = await ok<Page<Schemas['EvalSetView']>>(
+    api.GET('/v1/eval-sets', { params: { query: { status: 'active', page_size: 500 } } }),
+  );
+  const usable = sets.items.some(
+    (s) =>
+      s.data_space_id !== null &&
+      (s.subject_type === 'context' || (s.subject_type === 'agent' && s.subject_id === id)),
+  );
+  if (!usable)
+    throw new V1Error(
+      409,
+      'invalid_state',
+      'Data Space chưa có bộ đánh giá; người phụ trách cần tạo bộ đánh giá trước khi kích hoạt agent.',
+    );
+  const accepted = await ok<Schemas['RunAccepted']>(
+    api.POST('/v1/agents/{id}/eval-runs', {
+      params: { path: { id } },
+      body: { config_version: configVersion },
+    }),
+  );
+  const every = accepted.poll_after_ms ?? 1500;
+  let scored: Schemas['EvalRunDetail'] | null = null;
+  for (let waited = 0; waited <= EVAL_WAIT_MS; waited += every) {
+    const run = await ok<Schemas['EvalRunDetail']>(
+      api.GET('/v1/eval-runs/{id}', { params: { path: { id: accepted.id } } }),
+    ).catch((e: unknown) => {
+      if (e instanceof V1Error && e.status === 404) return null;
+      throw e;
+    });
+    if (run && run.status !== 'running') {
+      // The config moves in its own transaction just after the run ends: look once more.
+      if ((await configStatus(id, configVersion)) === 'passed') return;
+      if (scored) break;
+      scored = run;
+    }
+    await wait(every);
+  }
+  if (!scored) throw new V1Error(504, 'timeout', 'Bộ đánh giá chưa chạy xong; thử kích hoạt lại sau.');
+  throw new V1Error(
+    409,
+    'invalid_state',
+    `Phiên bản ${configVersion} chưa đạt bộ đánh giá: ${scored.passed}/${scored.item_count} tình huống đạt.`,
+  );
+};
+
+/** "Kích hoạt": evaluated first if it has not passed, then full traffic, which waits for the
+ * data owner's approval. */
+export const activateAgent = async (
+  id: string,
+  configVersion: number,
+  wait?: (ms: number) => Promise<void>,
+) => {
+  await evaluateVersion(id, configVersion, wait);
+  return okAs<AgentDeployment>(
     api.POST('/v1/agents/{id}/deployments', {
       params: { path: { id } },
       body: {
@@ -565,6 +635,7 @@ export const activateAgent = async (id: string, configVersion: number) =>
       },
     }),
   );
+};
 
 export const listMemories = async (id: string) => {
   const page = await ok<Page<MemoryWire>>(

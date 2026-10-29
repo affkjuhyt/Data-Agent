@@ -26,6 +26,7 @@ from sqlalchemy import text
 
 from libs.dataagent_db import unscoped_session
 from services.worker_agent import (
+    agent_evals,
     derived,
     eval_runs,
     exports,
@@ -91,6 +92,7 @@ HANDLERS: dict[str, Handler] = {
     **proposals.HANDLERS,
     **exports.HANDLERS,
     **runs.HANDLERS,
+    **agent_evals.HANDLERS,
     **skill_runs.HANDLERS,
     **policy_backtests.HANDLERS,
     **eval_runs.HANDLERS,
@@ -165,6 +167,8 @@ async def sources() -> list[EventSource]:
         if schema == "agent":
             # The one consumer of run.status_changed: the run executor (runs.py, ADR-37 stand-in).
             types |= set(runs.HANDLERS)
+            # An agent version's eval run, the gate before it is deployed (agent_evals.py).
+            types |= set(agent_evals.HANDLERS)
             types |= set(uploads.HANDLERS) | set(quality.HANDLERS)
         if schema == "monitor":
             # Run now and the scheduler both request a report run here (report_runs.py).
