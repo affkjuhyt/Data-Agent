@@ -37,6 +37,14 @@ data:
   # ports stay on their defaults and are reached only inside the pod.
   FRONTEND_GRPC_PORT: '8380'
   LOG_LEVEL: warn
+  # Each of the four roles opens its own pools, 20 connections per store by default: about 120
+  # against the shared Postgres's max_connections of 100, which starved every other service on the
+  # first start (29/10/2026). These caps hold Temporal to about 24; a few schedules a minute need
+  # far fewer.
+  SQL_MAX_CONNS: '4'
+  SQL_MAX_IDLE_CONNS: '2'
+  SQL_VIS_MAX_CONNS: '2'
+  SQL_VIS_MAX_IDLE_CONNS: '1'
   DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/dynamicconfig/dynamicconfig.yaml
 ---
 apiVersion: v1
