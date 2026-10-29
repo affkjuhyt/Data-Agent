@@ -288,6 +288,38 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: allow-temporal
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: temporal
+  policyTypes:
+  - Ingress
+  ingress:
+  # The workers that hold schedules and run their workflows, and the UI, reach the frontend.
+  - from:
+    - podSelector:
+        matchLabels:
+          app: worker-agent
+    - podSelector:
+        matchLabels:
+          app: temporal-ui
+    ports:
+    - protocol: TCP
+      port: 8380
+  # The server's roles call each other on the pod's own address (membership and gRPC ports).
+  - from:
+    - podSelector:
+        matchLabels:
+          app: temporal
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: allow-jaeger
   namespace: dataagent-service
   labels:

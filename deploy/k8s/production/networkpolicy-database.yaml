@@ -215,6 +215,19 @@ spec:
       podSelector:
         matchLabels:
           app: grafana
+    # Temporal's own databases (ADR-33): the server and the Job that upgrades their schema.
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: temporal
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: temporal-schema
     ports:
     - protocol: TCP
       port: 8300

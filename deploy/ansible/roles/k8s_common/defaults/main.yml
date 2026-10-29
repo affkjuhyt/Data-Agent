@@ -130,6 +130,8 @@ service_workloads:
   - worker-ingest
   - worker-document
   - crawler
+  - temporal
+  - temporal-ui
   - litellm
   - auth-api
   - model-service
@@ -151,7 +153,7 @@ service_workloads:
 service_manifests: []
 
 migration_jobs: [kong-migration, migrate]
-job_workloads: [db-init, minio-init, kafka-topics]
+job_workloads: [db-init, minio-init, kafka-topics, temporal-schema]
 # With apply_jobs, a Job reruns only when its own manifest
 # (deploy/k8s/<env>/job/<name>.yaml) or one of these changed: a path prefix,
 # `image:<name>` (that image is being rebuilt) or `job:<name>` (that Job
@@ -165,6 +167,8 @@ job_inputs:
   db-init: [deploy/docker/sql/grant-roles.sql, deploy/docker/sql/platform-seed.sql, "job:migrate"]
   minio-init: []
   kafka-topics: []
+  # Its manifest pins the admin-tools version; the schema is upgraded when that moves.
+  temporal-schema: []
 jobs_force: false
 seed_demo: false
 seed_demo_tenant: a0000000-0000-0000-0000-000000000001

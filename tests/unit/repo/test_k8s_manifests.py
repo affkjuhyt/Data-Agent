@@ -1005,6 +1005,10 @@ class TestImageReferencesAreIntact:
         "prom/prometheus:v2.54.1",
         "grafana/grafana:11.2.0",
         "python:3.12-alpine",
+        # Temporal (ADR-33): server and admin-tools move together (job/temporal-schema.yaml).
+        "docker.io/temporalio/server:1.32.1",
+        "docker.io/temporalio/admin-tools:1.32.1",
+        "docker.io/temporalio/ui:2.56.0",
     }
 
     @staticmethod

@@ -1,0 +1,217 @@
+---
+# Temporal (ADR-33): the clock of every schedule. One pod runs the four server roles (frontend,
+# history, matching, worker) on the temporal and temporal_visibility databases (temporal-schema
+# Job); workers reach the frontend at temporal:8380. The image version moves together with
+# admin-tools in job/temporal-schema.yaml.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: temporal
+  namespace: dataagent-service
+  labels:
+    app: temporal
+    app.kubernetes.io/part-of: dataagent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-env
+  namespace: dataagent-service
+  labels:
+    app: temporal
+    app.kubernetes.io/part-of: dataagent
+data:
+  DB: postgres12
+  POSTGRES_SEEDS: postgres.dataagent-database.svc.cluster.local
+  DB_PORT: '8300'
+  POSTGRES_USER: temporal
+  DBNAME: temporal
+  VISIBILITY_DBNAME: temporal_visibility
+  # Fixed for the life of the cluster: the history shards cannot be resized after first start.
+  NUM_HISTORY_SHARDS: '4'
+  # Listen on every interface so the Service reaches the frontend; the entrypoint then
+  # broadcasts the pod's own address to the other roles.
+  BIND_ON_IP: 0.0.0.0
+  # The frontend's gRPC port, in the database band (deploy/k8s/README.md#ports); the other roles'
+  # ports stay on their defaults and are reached only inside the pod.
+  FRONTEND_GRPC_PORT: '8380'
+  LOG_LEVEL: warn
+  DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/dynamicconfig/dynamicconfig.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-dynamicconfig
+  namespace: dataagent-service
+  labels:
+    app: temporal
+    app.kubernetes.io/part-of: dataagent
+data:
+  # The server refuses to start without this file; the defaults are what we want.
+  dynamicconfig.yaml: |
+    {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal
+  namespace: dataagent-service
+  labels:
+    app: temporal
+    app.kubernetes.io/part-of: dataagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: temporal
+  template:
+    metadata:
+      labels:
+        app: temporal
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: temporal
+        image: docker.io/temporalio/server:1.32.1
+        ports:
+        - containerPort: 8380
+          name: grpc
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+        # The frontend answers only once history and matching have joined the ring.
+        readinessProbe:
+          tcpSocket:
+            port: 8380
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          tcpSocket:
+            port: 8380
+          initialDelaySeconds: 60
+          periodSeconds: 20
+        envFrom:
+        - configMapRef:
+            name: temporal-env
+        - secretRef:
+            name: temporal-secrets
+        volumeMounts:
+        - name: dynamicconfig
+          mountPath: /etc/temporal/dynamicconfig
+          readOnly: true
+      volumes:
+      - name: dynamicconfig
+        configMap:
+          name: temporal-dynamicconfig
+      serviceAccountName: temporal
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal
+  namespace: dataagent-service
+  labels:
+    app: temporal
+    app.kubernetes.io/part-of: dataagent
+spec:
+  selector:
+    app: temporal
+  ports:
+  - name: grpc
+    port: 8380
+    targetPort: 8380
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: temporal-ui
+  namespace: dataagent-service
+  labels:
+    app: temporal-ui
+    app.kubernetes.io/part-of: dataagent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-ui-env
+  namespace: dataagent-service
+  labels:
+    app: temporal-ui
+    app.kubernetes.io/part-of: dataagent
+data:
+  TEMPORAL_UI_PORT: '8381'
+  TEMPORAL_ADDRESS: temporal:8380
+  TEMPORAL_DEFAULT_NAMESPACE: dataagent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-ui
+  namespace: dataagent-service
+  labels:
+    app: temporal-ui
+    app.kubernetes.io/part-of: dataagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: temporal-ui
+  template:
+    metadata:
+      labels:
+        app: temporal-ui
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      enableServiceLinks: false
+      containers:
+      - name: temporal-ui
+        image: docker.io/temporalio/ui:2.56.0
+        ports:
+        - containerPort: 8381
+          name: http
+        envFrom:
+        - configMapRef:
+            name: temporal-ui-env
+        resources:
+          requests:
+            cpu: 20m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8381
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8381
+          initialDelaySeconds: 30
+          periodSeconds: 30
+      serviceAccountName: temporal-ui
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-ui
+  namespace: dataagent-service
+  labels:
+    app: temporal-ui
+    app.kubernetes.io/part-of: dataagent
+spec:
+  type: NodePort
+  selector:
+    app: temporal-ui
+  ports:
+  - name: http
+    port: 8381
+    targetPort: 8381
+    nodePort: 30381

@@ -343,6 +343,8 @@ band. Nothing in `deploy/k8s/` may use it.
 | minio (console) | database | 9001 | **8361** | `--console-address` |
 | clickhouse (http) | database | 8123 | **8370** | `--http_port` |
 | clickhouse (native) | database | 9000 | **8371** | `--tcp_port` |
+| temporal (frontend gRPC) | service | 7233 | **8380** | `FRONTEND_GRPC_PORT`; the other server roles keep their defaults, reached only inside the pod |
+| temporal-ui | service | 8080 | **8381** | `TEMPORAL_UI_PORT` |
 | pgbouncer | database | 6432 | **8390** | `LISTEN_PORT` |
 | prometheus | service | 9090 | **8400** | `--web.listen-address` |
 | grafana | service | 3000 | **8410** | `GF_SERVER_HTTP_PORT` |

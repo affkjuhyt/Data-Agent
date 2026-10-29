@@ -282,8 +282,8 @@ deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 LOCAL_DATABASES = ["postgres","pgbouncer","redis","mongo","minio","kafka","openbao","qdrant","clickhouse"]
 LOCAL_DATABASE_WORKLOADS = ["redis","mongo","minio","kafka","openbao","qdrant","clickhouse"]
 
-deploy-local:  ## deploy the V3 local slice (api, worker-agent, worker-ingest, worker-document, crawler, web, migrate, gateway, litellm, mailpit; no Neo4j)
+deploy-local:  ## deploy the V3 local slice (api, worker-agent, worker-ingest, worker-document, crawler, temporal, web, migrate, gateway, litellm, mailpit; no Neo4j)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml \
 		-e apply_jobs=true -e image_registry=$(IMAGE_REGISTRY) -e image_push=true \
 		-e '{"database_manifests":$(LOCAL_DATABASES),"database_workloads":$(LOCAL_DATABASE_WORKLOADS)}' \
-		-e '{"deploy_image_allowlist":["api","worker-agent","worker-ingest","worker-document","crawler","migrate","frontend","kong","keycloak"],"service_manifests":["api","worker-agent","worker-ingest","worker-document","crawler","frontend","kong","keycloak","prometheus","litellm","mailpit"],"service_workloads":["api","worker-agent","worker-ingest","worker-document","crawler","frontend","kong","keycloak","prometheus","litellm","mailpit"]}'
+		-e '{"deploy_image_allowlist":["api","worker-agent","worker-ingest","worker-document","crawler","migrate","frontend","kong","keycloak"],"service_manifests":["api","worker-agent","worker-ingest","worker-document","crawler","temporal","frontend","kong","keycloak","prometheus","litellm","mailpit"],"service_workloads":["api","worker-agent","worker-ingest","worker-document","crawler","temporal","temporal-ui","frontend","kong","keycloak","prometheus","litellm","mailpit"]}'

@@ -32,6 +32,8 @@ vault_pgbouncer_auth_password: ""
 # svc_outbox_relay: the outbox relay worker-agent claims events with).
 # A role left out stays NOLOGIN.
 vault_db_role_passwords: {}
+# Temporal's own login (ADR-33): owns the temporal and temporal_visibility databases.
+vault_temporal_db_password: ""
 
 # ── other stores ──────────────────────────────────────────────────────
 vault_neo4j_password: ""

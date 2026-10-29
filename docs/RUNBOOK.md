@@ -36,6 +36,7 @@ any machine on the `10.10.55.x` network; no port-forwarding is needed.
 | Langfuse | http://10.10.55.101:30420 |
 | Grafana / Prometheus | http://10.10.55.101:30410 / :30400 |
 | Jaeger | http://10.10.55.101:30430 |
+| Temporal UI: schedules and their workflows (namespace `dataagent`; dev only, production is port-forward) | http://10.10.55.101:30381 |
 | LiteLLM | http://10.10.55.101:30500 |
 | MinIO console | http://10.10.55.101:30361 |
 | Mailpit: the mail the channel gateway sends (kept, never delivered; cluster-only) | `kubectl -n dataagent-service port-forward svc/mailpit 8025:8025`, then http://localhost:8025 |
@@ -413,6 +414,30 @@ The run stops at `in_review`; publishing is a person's action. Its event is `acq
   claimed again (reason "abandoned"), which frees the source for a new run.
 - **Scheduled runs** (`schedule_cron`) are not created yet: nothing in V3 schedules across
   organisations before Temporal Schedules (ADR-33). Start runs from the source screen.
+
+## 10e. Temporal (schedules, ADR-33)
+
+ADR-33 puts every schedule (ingestion jobs, pipelines, report schedules, the daily quality pass,
+crawl sources, agent triggers) on Temporal Schedules; Kafka stays the path of events. The move is
+backlog TM-01…TM-03: until a kind has moved, worker-agent's minute pass still fires it. The pieces:
+
+- **Server** `temporal` (`temporalio/server`, one pod running the frontend, history, matching and
+  worker roles), its frontend at `temporal:8380`. Its state is in two databases of the shared
+  Postgres, `temporal` and `temporal_visibility`, owned by the `temporal` login; `db-init` creates
+  them and sets that login's password from `vault_temporal_db_password`.
+- **Schema** Job `temporal-schema` (`temporalio/admin-tools`) creates and upgrades their tables; it
+  is idempotent and reruns when its manifest changes. **Upgrade the server and admin-tools images
+  together, in one commit**: the server refuses a schema older than it expects.
+- **UI** `temporal-ui`: http://10.10.55.101:30381 on dev. Production has no NodePort (the UI can
+  cancel and reset workflows and has no login of its own):
+  `kubectl -n dataagent-service port-forward svc/temporal-ui 8381`.
+- **`NUM_HISTORY_SHARDS`** (4 on dev, 512 in production) is fixed when the cluster first starts.
+  Changing it later means a new pair of databases; do not edit it on a running cluster.
+
+Check it (the server image has no CLI; admin-tools does):
+`kubectl -n dataagent-service run temporal-cli --rm -i --restart=Never
+--image=temporalio/admin-tools:1.32.1 -- temporal operator cluster health --address temporal:8380`
+answers `SERVING`.
 
 ## 11. LLM and model backend
 

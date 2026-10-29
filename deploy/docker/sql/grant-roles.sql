@@ -66,3 +66,20 @@ REVOKE ALL ON FUNCTION public.pgbouncer_get_auth(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.pgbouncer_get_auth(TEXT) TO pgbouncer_auth;
 GRANT CONNECT ON DATABASE :"audit_db" TO svc_audit, svc_audit_worker, svc_outbox_relay;
 \endif
+
+-- Temporal (ADR-33) keeps its state in two databases of its own, owned by its own login; the
+-- temporal-schema Job creates and upgrades the tables in them as that login. Cluster-level, so it
+-- does not matter which database this file is connected to here. No password here: the db-init
+-- Job sets it from TEMPORAL_DB_PASSWORD, as it does for the svc_ roles.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'temporal') THEN
+    CREATE ROLE temporal WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
+END
+$$;
+-- CREATE DATABASE cannot run inside a DO block, so the missing ones are generated and executed.
+SELECT format('CREATE DATABASE %I OWNER temporal', db)
+FROM unnest(ARRAY['temporal', 'temporal_visibility']) AS db
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = db)
+\gexec

@@ -265,6 +265,17 @@ kubectl -n dataagent-service create secret generic db-init-secrets \
   --from-literal=PGBOUNCER_AUTH_PASSWORD="${PGBOUNCER_AUTH_PASSWORD}" \
   --from-literal=APP_USER_PASSWORD="${APP_USER_PASSWORD}" \
   --from-literal=DB_ROLE_PASSWORDS="${DB_ROLE_PASSWORDS:-{\}}" \
+  --from-literal=TEMPORAL_DB_PASSWORD="${TEMPORAL_DB_PASSWORD}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# Temporal (ADR-33): the server and the temporal-schema Job log in as the temporal role db-init
+# sets this password on; the server reads it as POSTGRES_PWD, temporal-sql-tool as SQL_PASSWORD.
+kubectl -n dataagent-service create secret generic temporal-secrets \
+  --from-literal=POSTGRES_PWD="${TEMPORAL_DB_PASSWORD}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n dataagent-service create secret generic temporal-schema-secrets \
+  --from-literal=SQL_PASSWORD="${TEMPORAL_DB_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic seed-secrets \

@@ -1,0 +1,77 @@
+---
+# Temporal (ADR-33): creates and upgrades the tables of the temporal and temporal_visibility
+# databases db-init made, as the temporal login. temporal-sql-tool's setup and update are both
+# idempotent, so the Job reruns safely; it runs again when the admin-tools version changes, and the
+# server image must move to the same version in the same commit.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: temporal-schema
+  namespace: dataagent-service
+  labels:
+    app: temporal-schema
+    app.kubernetes.io/part-of: dataagent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-schema-env
+  namespace: dataagent-service
+  labels:
+    app: temporal-schema
+    app.kubernetes.io/part-of: dataagent
+data:
+  SQL_PLUGIN: postgres12
+  SQL_HOST: postgres.dataagent-database.svc.cluster.local
+  SQL_PORT: '8300'
+  SQL_USER: temporal
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: temporal-schema
+  namespace: dataagent-service
+  labels:
+    app: temporal-schema
+    app.kubernetes.io/part-of: dataagent
+spec:
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: temporal-schema
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      containers:
+      - name: temporal-schema
+        image: docker.io/temporalio/admin-tools:1.32.1
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          # db-init creates the role and sets its password; until then the login fails.
+          until temporal-sql-tool --db temporal setup-schema -v 0.0; do
+            echo waiting for the temporal login; sleep 5
+          done
+          temporal-sql-tool --db temporal update-schema \
+            -d /etc/temporal/schema/postgresql/v12/temporal/versioned
+          temporal-sql-tool --db temporal_visibility setup-schema -v 0.0
+          temporal-sql-tool --db temporal_visibility update-schema \
+            -d /etc/temporal/schema/postgresql/v12/visibility/versioned
+        envFrom:
+        - configMapRef:
+            name: temporal-schema-env
+        - secretRef:
+            name: temporal-schema-secrets
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+      serviceAccountName: temporal-schema
