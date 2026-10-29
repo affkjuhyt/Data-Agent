@@ -30,7 +30,7 @@ class _Refused(Exception):
 
 
 def _sql_guard(case: dict[str, Any]) -> None:
-    from services.worker_agent.query.guard import SqlRejected, check_read_only
+    from libs.sql_guard import SqlRejected, check_read_only
 
     try:
         check_read_only(case["input"], case.get("dialect", "postgres"))
