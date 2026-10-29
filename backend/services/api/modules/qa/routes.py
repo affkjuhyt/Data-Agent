@@ -712,6 +712,27 @@ async def create_feedback(
             # Exactly at the threshold, and only from a new voter: one review, not one per vote.
             if voters == DOWN_VOTES_FOR_REVIEW and not already:
                 trigger = "down_votes"
+        if body.rating == "up" and answer.kind == "data" and answer.plan_id is not None:
+            plan = await session.get(qa.Plan, answer.plan_id)
+            steps = plan.steps if plan is not None and isinstance(plan.steps, dict) else {}
+            # R1-08: a liked answer from SQL the model wrote is proposed as a verified query;
+            # worker-agent drafts the example, its checker runs it, the steward approves it.
+            if steps.get("path") == "exploratory_sql":
+                scope.emit(
+                    session,
+                    qa.Outbox,
+                    principal,
+                    aggregate_type="feedback",
+                    aggregate_id=feedback.id,
+                    event_type="feedback.liked",
+                    payload={
+                        "feedback_id": feedback.id,
+                        "answer_id": answer.id,
+                        "question_id": answer.question_id,
+                        "data_space_id": data_space,
+                        "user_id": principal.user_id,
+                    },
+                )
         if trigger is not None:
             # §9.3: Inbox opens the review request for the Data Space's steward.
             scope.emit(

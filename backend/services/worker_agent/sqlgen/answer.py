@@ -29,6 +29,7 @@ from services.worker_agent.llm import Gateway
 from services.worker_agent.progress import publish
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.query.secrets import SecretReader
+from services.worker_agent.sqlgen import verified
 from services.worker_agent.sqlgen.run import Exploration, explore
 from services.worker_agent.sqlgen.schema import Linked, link
 from services.worker_agent.sqlgen.space import load_space
@@ -149,9 +150,22 @@ async def answer_by_sql(
     secrets: SecretReader,
     workspace_source: Callable[[uuid.UUID, uuid.UUID], catalog.Source],
 ) -> bool:
-    if gateway is None or user_id is None:
+    if user_id is None:
         return False
     started = datetime.datetime.now(datetime.UTC)
+    # An approved query for this question answers it before any SQL is written (R1-08).
+    if await _answer_verified(
+        event,
+        question_id,
+        user_id,
+        plan_id,
+        started,
+        secrets=secrets,
+        workspace_source=workspace_source,
+    ):
+        return True
+    if gateway is None:
+        return False
     async with scoped_session(ROLE, event.org_id, user_id) as session:
         question = await session.get(qa.Question, question_id)
         if question is None or question.status != "received":
@@ -206,26 +220,172 @@ async def answer_by_sql(
         )
     else:
         kind, status, body = "data", "answered", text_of(e, figures)
-    chart = None
-    dims = [c for c in e.columns if figures and c in figures[0].dimensions]
+    chart = _bar(figures, e.columns)
+    await _store_answer(
+        event,
+        question_id,
+        plan_id,
+        user_id,
+        started,
+        kind=kind,
+        status=status,
+        body=body,
+        figures=figures,
+        chart=chart,
+        steps=_plan(e),
+        query_run_id=e.query_run_id,
+        trust=TRUST,
+        consensus=(e.agreeing, len(e.tried)),
+    )
+    return True
+
+
+async def _answer_verified(
+    event: Event,
+    question_id: uuid.UUID,
+    user_id: uuid.UUID,
+    plan_id: uuid.UUID,
+    started: datetime.datetime,
+    *,
+    secrets: SecretReader,
+    workspace_source: Callable[[uuid.UUID, uuid.UUID], catalog.Source],
+) -> bool:
+    """The question answered by the approved query it matches (sqlgen/verified.py); False when it
+    matches none, or that query does not run for this person, and the model writes one instead."""
+    async with scoped_session(ROLE, event.org_id, user_id) as session:
+        question = await session.get(qa.Question, question_id)
+        if question is None or question.status != "received":
+            return False
+        conversation = await session.get(qa.Conversation, question.conversation_id)
+        assert conversation is not None
+        space_id = conversation.data_space_id
+        today = question.as_of or datetime.date.today()
+        found = verified.match(
+            question.text, await verified.active_examples(session, space_id), today
+        )
+        if found is None:
+            return False
+        origin = await verified.origin_of(session, space_id, found.sql)
+        if not origin.ok:
+            return False
+        source = (
+            workspace_source(space_id, event.org_id)
+            if origin.source_id is None
+            else await session.get(catalog.Source, origin.source_id)
+        )
+        if source is None or source.mode != "federated" or source.status not in QUERYABLE:
+            return False
+        if origin.source_id is not None:
+            session.expunge(source)
+    outcome = await run_query(
+        org_id=event.org_id,
+        data_space_id=space_id,
+        principal_id=user_id,
+        caller_kind="question",
+        caller_id=question_id,
+        source=source,
+        sql=found.sql,
+        secrets=secrets,
+    )
+    if not outcome.ok:
+        return False
+    columns = [str(c.get("name")) for c in outcome.columns]
+    figures = figures_of(columns, outcome.rows)
+    if len(figures) == 1 and not figures[0].dimensions:
+        head = f"Kết quả: {shown_value(figures[0])}."
+    elif figures:
+        shown = "; ".join(
+            f"{f.label}: {shown_value(f)}" for f in figures[:SHOWN_ROWS] if f.value is not None
+        )
+        more = (
+            f" (và {len(outcome.rows) - SHOWN_ROWS} dòng nữa)"
+            if len(outcome.rows) > SHOWN_ROWS
+            else ""
+        )
+        head = f"Kết quả {len(outcome.rows)} dòng: {shown}{more}."
+    else:
+        head = f"Kết quả {len(outcome.rows)} dòng, không có cột số."
+    period = f" ({found.period.label})" if found.period else ""
+    body = f"{head} Đã kiểm: theo truy vấn đã duyệt cho câu “{found.question}”{period}."
+    steps = {
+        "goal": "answer",
+        "path": "verified_query",
+        "steps": [
+            {
+                "id": "s1",
+                "kind": "sql_query",
+                "tool": "query.sql",
+                "args": {"sql": found.sql, "example_query_id": str(found.example_id)},
+                "depends_on": [],
+                "checkpoint": "none",
+                "on_error": "fail",
+                "explain": f"Truy vấn đã duyệt cho “{found.question}”",
+            }
+        ],
+    }
+    await publish(
+        str(question_id), "progress", {"question_id": str(question_id), "status": "running"}
+    )
+    await _store_answer(
+        event,
+        question_id,
+        plan_id,
+        user_id,
+        started,
+        kind="data",
+        status="answered",
+        body=body,
+        figures=figures,
+        chart=_bar(figures, columns),
+        steps=steps,
+        query_run_id=outcome.query_run_id,
+        trust=verified.TRUST_VERIFIED,
+        consensus=None,
+    )
+    return True
+
+
+def _bar(figures: list[Figure], columns: list[str]) -> dict[str, Any] | None:
+    dims = [c for c in columns if figures and c in figures[0].dimensions]
     if len(figures) >= 2 and len(dims) == 1:
-        chart = {
+        return {
             "type": "bar",
             "x": dims[0],
             "x_label": dims[0],
             "y": "value",
             "y_label": figures[0].column,
         }
+    return None
+
+
+async def _store_answer(
+    event: Event,
+    question_id: uuid.UUID,
+    plan_id: uuid.UUID,
+    user_id: uuid.UUID,
+    started: datetime.datetime,
+    *,
+    kind: str,
+    status: str,
+    body: str,
+    figures: list[Figure],
+    chart: dict[str, Any] | None,
+    steps: dict[str, Any],
+    query_run_id: uuid.UUID | None,
+    trust: str,
+    consensus: tuple[int, int] | None,
+) -> None:
+    """The answer, its plan and the question's status, then the events the stream waits for."""
     answer_id = uuid7()
     async with scoped_session(ROLE, event.org_id, user_id) as session:
         question = await session.get(qa.Question, question_id, with_for_update=True)
         if question is None or question.status != "received":
-            return True
+            return
         stored = await session.get(qa.Plan, plan_id)
         if stored is not None:
-            stored.steps = _plan(e)
+            stored.steps = steps
         shown = [f for f in figures if f.value is not None]
-        stored_figures = [f.as_json(str(e.query_run_id), "", TRUST) for f in figures]
+        stored_figures = [f.as_json(str(query_run_id), "", trust) for f in figures]
         session.add(
             qa.Answer(
                 id=answer_id,
@@ -246,7 +406,7 @@ async def answer_by_sql(
                         "untraceable_final": 0,
                     },
                     figures=stored_figures,
-                    consensus=(e.agreeing, len(e.tried)),
+                    consensus=consensus,
                 ),
                 agent_name=AGENT_NAME,
                 latency_ms=int(
@@ -263,4 +423,3 @@ async def answer_by_sql(
         str(question_id), "clarification" if kind == "clarification" else "answer", payload
     )
     await publish(str(question_id), "done", {**payload, "status": status})
-    return True

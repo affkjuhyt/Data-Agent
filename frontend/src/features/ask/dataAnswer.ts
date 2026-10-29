@@ -46,7 +46,17 @@ export interface ChartSpecWire {
 }
 
 /** The labels the worker writes (questions.py STANDARD, NOT_STANDARD, OUT_OF_SCOPE; sqlgen/answer.py TRUST). */
+/** worker-agent sqlgen/verified.py TRUST_VERIFIED: a figure of a query a steward approved. */
+const VERIFIED = 'Đã kiểm (truy vấn đã duyệt)';
+const EXPLORED = 'Khám phá (truy vấn do mô hình viết)';
+
 const TRUST: Record<string, Omit<AnswerTrust, 'label'>> = {
+  [VERIFIED]: {
+    level: 'VERIFIED',
+    tone: 'success',
+    meaning:
+      'Số từ một truy vấn người phụ trách Data Space đã kiểm và duyệt cho đúng câu hỏi này.',
+  },
   'Theo chỉ số chuẩn': {
     level: 'GOVERNED',
     tone: 'success',
@@ -58,7 +68,7 @@ const TRUST: Record<string, Omit<AnswerTrust, 'label'>> = {
     tone: 'warning',
     meaning: 'Chỉ số chưa được duyệt là định nghĩa chuẩn. Kiểm lại trước khi dùng để quyết định.',
   },
-  'Khám phá (truy vấn do mô hình viết)': {
+  [EXPLORED]: {
     level: 'EXPLORATORY',
     tone: 'warning',
     meaning:
@@ -137,7 +147,9 @@ export function figureRun(figures: FigureWire[], spec: ChartSpecWire | null): Ev
     id: figures[0].query_run_id ?? undefined,
     kind: 'sql',
     sql: '',
-    generated_by: 'semantic_layer',
+    // Which path computed the numbers, from the label the worker gave them.
+    generated_by:
+      figures[0].trust === VERIFIED ? 'verified_query' : figures[0].trust === EXPLORED ? 'llm' : 'semantic_layer',
     columns,
     column_units: unit ? { [metric]: unit } : {},
     rows,

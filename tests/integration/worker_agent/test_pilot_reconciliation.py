@@ -22,10 +22,13 @@ import pytest
 import yaml
 
 from services.worker_agent.semantic import compiler as c
+from services.worker_agent.sqlgen.verified import bind, match
+from services.worker_agent.understand.text import find_period
 
 pytestmark = [pytest.mark.integration]
 
 MODEL = pathlib.Path(__file__).parents[3] / "deploy" / "docker" / "semantic" / "ds-bh.yaml"
+SEED = pathlib.Path(__file__).parents[3] / "deploy" / "docker" / "sql" / "v3-pilot-seed.sql"
 SCHEMA = "pilot_r106"
 _AGGS = {"sum": "SUM", "count": "COUNT", "avg": "AVG", "min": "MIN", "max": "MAX"}
 
@@ -380,3 +383,44 @@ def test_the_traps_give_what_the_policy_says(pilot: Any) -> None:
     final = value("DOANH_THU_CHOT", ["nhom_hang_chot"], SEPTEMBER)
     sales = value("DOANH_THU", ["nhom_hang"], SEPTEMBER)
     assert {k: float(v) for k, v in final.items()} == {k: float(v) for k, v in sales.items()}
+
+
+def _verified() -> list[tuple[uuid.UUID, str, str]]:
+    """The pilot's verified queries as the seed writes them (R1-08)."""
+    found = re.findall(
+        r"\('(a0000000-0000-0000-0000-000000000c\d\d)', :org::uuid, :space::uuid,\s*'([^']+)',"
+        r"\s*\$vq\$(.*?)\$vq\$",
+        SEED.read_text(encoding="utf-8"),
+        flags=re.S,
+    )
+    return [(uuid.UUID(i), q, sql) for i, q, sql in found]
+
+
+def test_the_pilot_has_thirty_verified_queries_each_running_clear_of_the_traps(pilot: Any) -> None:
+    examples = _verified()
+    assert len(examples) >= 30
+    today = D(2026, 10, 30)
+    for example_id, question, sql in examples:
+        # Each answers its own question, and only it.
+        found = match(question, examples, today)
+        assert found is not None and found.example_id == example_id, question
+        assert "pilot_order_header" not in sql, question  # trap 1: the header join
+        bound = bind(sql, find_period(question, today), today).replace("workspace.", f"{SCHEMA}.")
+        assert _rows(pilot, bound), question
+    stock = next(sql for _, q, sql in examples if q == "Tồn kho cuối kỳ theo chi nhánh")
+    # Trap 3: one month end, without the retired "Kho Hà Nội".
+    assert _rows(pilot, stock.replace("workspace.", f"{SCHEMA}.")) == {
+        ("Hà Nội",): 300,
+        ("TP. Hồ Chí Minh",): 300,
+        ("Đà Nẵng",): 300,
+    }
+    # Trap 5: the final edition of September is the sales lines'.
+    final = next(sql for _, q, sql in examples if q.startswith("Doanh thu bản chốt chính thức"))
+    lines = next(sql for _, q, sql in examples if q == "Doanh thu theo ngành hàng tháng 9/2026")
+    sep = find_period("tháng 9/2026", today)
+
+    def run(sql: str) -> dict[Any, float]:
+        bound = bind(sql, sep, today).replace("workspace.", f"{SCHEMA}.")
+        return {k: float(v) for k, v in _rows(pilot, bound).items()}
+
+    assert run(final) == run(lines)

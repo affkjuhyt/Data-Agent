@@ -9,6 +9,7 @@ have to guess its columns.
 
 from __future__ import annotations
 
+import datetime
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -18,6 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db.models import catalog, context, governance
 from services.worker_agent.sqlgen.schema import Col, Fk, Schema, Tbl, readable
+from services.worker_agent.sqlgen.verified import bind
+from services.worker_agent.understand.text import find_period
 
 MAX_SAMPLES = 20
 
@@ -34,6 +37,7 @@ async def load_space(session: AsyncSession, space_id: uuid.UUID, principal_id: u
     applies when a query runs (no one else's personal table, BR-111; none an active access policy
     covers, BR-45) hold for the prompt too, so a table's names and values never reach the model
     when its rows could not."""
+    today = datetime.date.today()
     covered = select(governance.AccessPolicy.dataset_id).where(
         governance.AccessPolicy.status == "active"
     )
@@ -162,7 +166,9 @@ async def load_space(session: AsyncSession, space_id: uuid.UUID, principal_id: u
                     )
                     for j in joins
                 ],
-                [(str(q), str(s)) for q, s in examples],
+                # A verified query's period placeholders bound to its own question's period, so
+                # the model is shown SQL that runs (sqlgen/verified.py).
+                [(str(q), bind(str(s), find_period(str(q), today), today)) for q, s in examples],
             )
         ),
         {d.id: d.source_id for d in datasets},

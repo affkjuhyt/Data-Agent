@@ -8,6 +8,7 @@ records the request and answers 202.
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Annotated, Any
 
@@ -945,11 +946,15 @@ async def create_synonym(
 
 # A sample query is read-only: one query (libs.sql_guard). Whether it runs and matches its metrics
 # is the checker's job before review (UC-07-02 step 2).
+# A verified query names its period with these (worker sqlgen/verified.py binds them to dates).
+_PERIOD_PLACEHOLDER = re.compile(r":(?:period_start|period_end)\b")
+
+
 def _read_only_sql(sql: str) -> str:
     """The statement without its trailing semicolon; 422 unless it is one read-only query
-    (BR-22)."""
+    (BR-22), its period placeholders read as the date literals they become."""
     sql = sql.strip().rstrip(";").strip()
-    problem = read_only_problem(sql)
+    problem = read_only_problem(_PERIOD_PLACEHOLDER.sub("'2026-01-01'", sql))
     if problem:
         raise field_error("sql", f"sql must be one read-only query: {problem}.")
     return sql

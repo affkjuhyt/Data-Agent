@@ -26,11 +26,13 @@ from typing import Any
 from sqlalchemy import update
 
 from libs.dataagent_db import scoped_session
-from libs.dataagent_db.models import context
+from libs.dataagent_db.models import catalog, context
 from services.worker_agent import evaluation
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
 from services.worker_agent.semantic.loader import Overlay
+from services.worker_agent.sqlgen import verified
+from services.worker_agent.understand.text import find_period
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +199,20 @@ async def example_changed(event: Event) -> None:
         if row is None or row.status != "draft":
             return
         actor = row.created_by or row.updated_by
-        space_id, question, sql = row.data_space_id, row.question, row.sql
+        space_id, question, stored_sql = row.data_space_id, row.question, row.sql
+        # Run as it will answer (sqlgen/verified.py): its period placeholders bound to its own
+        # question's period, on the source its tables are datasets of.
+        sql = verified.bind(
+            stored_sql, find_period(question, datetime.date.today()), datetime.date.today()
+        )
+        origin = await verified.origin_of(session, space_id, sql)
+        source = (
+            await session.get(catalog.Source, origin.source_id)
+            if origin.ok and origin.source_id is not None
+            else None
+        )
+        if source is not None:
+            session.expunge(source)
     if actor is None:
         return
     outcome = await run_query(
@@ -206,7 +221,7 @@ async def example_changed(event: Event) -> None:
         principal_id=actor,
         caller_kind="eval",
         caller_id=example_id,
-        source=_internal_workspace_source(space_id, event.org_id),
+        source=source or _internal_workspace_source(space_id, event.org_id),
         sql=sql,
         secrets=secrets(),
         limit=100,
@@ -228,7 +243,7 @@ async def example_changed(event: Event) -> None:
         title=f"Câu hỏi mẫu “{question[:80]}”",
         diff={
             "question": question,
-            "sql": sql,
+            "sql": stored_sql,
             "rows": len(outcome.rows),
             "query_run_id": str(outcome.query_run_id),
         },

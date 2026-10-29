@@ -346,7 +346,11 @@ function AddExampleDialog({ onClose, onAdded }: { onClose: () => void; onAdded: 
             className={cn(fieldClass, 'da-mono')}
           />
         </label>
-        <p className="text-muted-foreground da-caption">SQL được chạy thử trước khi lưu.</p>
+        <p className="text-muted-foreground da-caption">
+          SQL được chạy thử trước khi lưu. Viết <code>:period_start</code> và{' '}
+          <code>:period_end</code> (ngày cuối không tính) thay cho ngày cố định để câu này trả lời
+          mọi kỳ; khi đã duyệt, câu hỏi trùng nó được trả lời bằng chính SQL này, nhãn “Đã kiểm”.
+        </p>
       </div>
     </ConfirmDialog>
   );

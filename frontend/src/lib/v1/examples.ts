@@ -45,7 +45,7 @@ export type SynonymWire = Schemas['SynonymView'] & { display?: Partial<Synonym> 
 const ORIGIN: Record<string, string> = {
   manual: 'Thêm thủ công',
   agent_suggested: 'Agent gợi ý',
-  feedback: 'Từ câu bị báo sai',
+  feedback: 'Từ phản hồi người hỏi',
   pack: 'Gói ngành',
 };
 

@@ -117,6 +117,36 @@ async def test_answer_and_lineage_of_a_figure(world: World, seed: Seed) -> None:
 
 
 @pytest.mark.req("AC-01-05-01", "AC-01-05-02")
+async def test_a_liked_answer_from_model_written_sql_is_proposed_as_a_verified_query(
+    world: World, seed: Seed
+) -> None:
+    # R1-08: only an up-vote on an exploratory answer asks for a verified query; the worker
+    # drafts it (worker_agent/liked.py). A governed answer already has its metric.
+    async with api_for(world) as api:
+        explored, explored_plan = await answered(api, seed, world)
+        sql(
+            seed,
+            "UPDATE qa.plan SET steps = %s WHERE id = %s",
+            jsonb({"path": "exploratory_sql", "steps": []}),
+            explored_plan,
+        )
+        governed, _ = await answered(api, seed, world)
+        liked = []
+        for answer in (explored, governed):
+            up = await api.post(
+                f"/v1/answers/{answer}/feedback",
+                headers=as_(world, "asker"),
+                json={"rating": "up"},
+            )
+            assert up.status_code == 201, up.text
+            liked.append(up.json()["id"])
+    [(event, aggregate, payload)] = events(seed, "qa", liked[0])
+    assert (event, aggregate) == ("feedback.liked", "feedback")
+    assert payload["answer_id"] == str(explored)
+    assert payload["user_id"] == str(world.users["asker"])
+    assert events(seed, "qa", liked[1]) == []
+
+
 async def test_a_wrong_report_is_reviewed_and_confirmed(world: World, seed: Seed) -> None:
     async with api_for(world) as api:
         answer, _ = await answered(api, seed, world)

@@ -31,6 +31,7 @@ from services.worker_agent import (
     eval_runs,
     exports,
     hitl,
+    liked,
     metric_changes,
     periods,
     pipelines,
@@ -91,6 +92,7 @@ HANDLERS: dict[str, Handler] = {
     **uploads.HANDLERS,
     **proposals.HANDLERS,
     **exports.HANDLERS,
+    **liked.HANDLERS,
     **runs.HANDLERS,
     **agent_evals.HANDLERS,
     **skill_runs.HANDLERS,
@@ -127,6 +129,8 @@ async def sources() -> list[EventSource]:
         types = {hitl.EVENT_TYPE}
         if schema == "qa":
             types |= set(questions.HANDLERS) | set(replay.HANDLERS) | set(exports.HANDLERS)
+            # A liked exploratory answer proposed as a verified query (liked.py, R1-08).
+            types |= set(liked.HANDLERS)
         if schema == "inbox":
             # Claiming stamps published_at, so this worker is the one consumer of hitl.resolved
             # until Debezium gives each consumer its own group (ADR-06).

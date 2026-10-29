@@ -500,6 +500,28 @@ async def test_a_changed_sql_goes_back_to_the_checker(ctx: Ctx) -> None:
     assert payload["changed"] == ["question", "sql"]
 
 
+async def test_a_verified_query_may_name_its_period(ctx: Ctx) -> None:
+    # R1-08: :period_start / :period_end are bound by the worker to the question's period.
+    example = _example(ctx, "Khách hàng mới tháng 9/2026", "pending_review")
+    templated = (
+        "SELECT count(*) FROM silver.khach_hang"
+        " WHERE ngay_mo >= :period_start AND ngay_mo < :period_end"
+    )
+    async with client(ctx) as api:
+        changed = await api.patch(
+            f"/v1/examples/{example}", json={"sql": templated}, headers=ctx.headers("steward")
+        )
+        assert changed.status_code == 200, changed.text
+        assert changed.json()["sql"] == templated and changed.json()["status"] == "draft"
+        # A placeholder does not let a write through.
+        refused = await api.patch(
+            f"/v1/examples/{example}",
+            json={"sql": "DELETE FROM silver.khach_hang WHERE ngay_mo < :period_end"},
+            headers=ctx.headers("steward"),
+        )
+        assert refused.status_code == 422
+
+
 async def test_only_one_read_only_statement_is_stored(ctx: Ctx) -> None:
     example = _example(ctx, "Có bao nhiêu khách hàng?", "pending_review")
     async with client(ctx) as api:
