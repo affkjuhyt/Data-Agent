@@ -41,6 +41,7 @@
     "recharts": "^3.8.1",
     "rehype-sanitize": "6.0.0",
     "remark-gfm": "4.0.1",
+    "sonner": "2.0.8",
     "tailwind-merge": "^3.6.0",
     "unist-util-visit": "5.1.0",
     "vite": "^6.2.3"

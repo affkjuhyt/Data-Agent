@@ -266,8 +266,10 @@ describe('timed components', () => {
     );
     fireEvent.click(screen.getByText('plain'));
     fireEvent.click(screen.getByText('undo'));
+    // Sonner draws a new toast on the next tick and removes a closed one after its 200 ms fade.
+    act(() => vi.advanceTimersByTime(0));
     expect(screen.getAllByRole('status')).toHaveLength(2);
-    act(() => vi.advanceTimersByTime(2500));
+    act(() => vi.advanceTimersByTime(2500 + 200));
     expect(screen.queryByText('Đã lưu')).toBeNull();
     expect(screen.getByText('Đã duyệt')).toBeInTheDocument();
     act(() => vi.advanceTimersByTime(2500));

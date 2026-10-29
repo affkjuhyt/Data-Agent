@@ -65,7 +65,8 @@ describe('NeedsYouPage', () => {
     expect(
       screen.queryByRole('heading', { name: '“Nợ xấu” nên tính theo định nghĩa nào?' }),
     ).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Hoàn tác' }));
+    // The undo lives in a toast, drawn on the next tick.
+    fireEvent.click(await screen.findByRole('button', { name: 'Hoàn tác' }));
     expect(
       screen.getByRole('heading', { name: '“Nợ xấu” nên tính theo định nghĩa nào?' }),
     ).toBeInTheDocument();
