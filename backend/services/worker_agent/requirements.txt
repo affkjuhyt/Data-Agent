@@ -8,6 +8,8 @@ pymssql==2.3.7
 redis>=5.0
 # The read-only guard parses SQL per source dialect; OpenBao is read over HTTP (query/).
 sqlglot==25.24.5
+# The scheduler fires on libs/cron, the reading the api validated: the same pin.
+croniter==2.0.5
 httpx==0.27.2
 # The model gateway (llm.py, ADR-37): typed answers over LiteLLM's OpenAI-compatible API.
 pydantic-ai-slim[openai]==2.54.0

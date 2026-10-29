@@ -12,6 +12,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from libs import cron
 from services.api.modules.monitor import rules
 
 RuleKind = Literal["threshold", "change_vs_previous", "seasonal_anomaly"]
@@ -33,8 +34,13 @@ class Accepted(BaseModel):
 
 
 def _cron(value: str | None) -> str | None:
-    if value is not None and not rules.valid_cron(value):
-        raise ValueError("expected a five-field cron expression, e.g. '30 7 * * 1'")
+    if value is not None:
+        try:
+            cron.check(value)
+        except cron.CronError as exc:
+            raise ValueError(
+                f"expected a five-field cron expression, e.g. '30 7 * * 1': {exc}"
+            ) from exc
     return value
 
 

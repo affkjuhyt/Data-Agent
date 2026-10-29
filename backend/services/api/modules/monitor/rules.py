@@ -6,7 +6,6 @@ import datetime
 import decimal
 import hashlib
 import json
-import re
 import uuid
 import zoneinfo
 from collections.abc import Iterable
@@ -15,14 +14,6 @@ from typing import Any
 BACKTEST_PERIODS = 12  # UC-08-01 step 3: the last 12 periods.
 MAX_BACKTEST_PERIODS = 36
 NOISE_SHARE = decimal.Decimal("0.3")  # BR-32
-
-_CRON_FIELD = re.compile(r"^[\d*/,\-A-Za-z?LW#]+$")
-
-
-def valid_cron(expression: str) -> bool:
-    """Five fields of the usual cron alphabet; the scheduler (Temporal) parses it for real."""
-    fields = expression.split()
-    return len(fields) == 5 and all(_CRON_FIELD.match(f) for f in fields)
 
 
 def valid_timezone(name: str) -> bool:

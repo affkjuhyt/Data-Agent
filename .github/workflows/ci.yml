@@ -65,7 +65,7 @@ jobs:
         run: |
           for target in \
             backend/libs/basemodel backend/libs/database_connector backend/libs/shared \
-            backend/libs/contracts backend/libs/sql_guard \
+            backend/libs/contracts backend/libs/sql_guard backend/libs/cron \
             backend/services/auth_api backend/services/model_service \
             backend/services/sandbox_executor \
             backend/services/platform_workers; do

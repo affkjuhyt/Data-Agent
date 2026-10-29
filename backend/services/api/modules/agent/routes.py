@@ -20,6 +20,7 @@ from fastapi import APIRouter, Body, Depends, Path, Query, Response
 from sqlalchemy import Select, String, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs import cron
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import agent, catalog, context, org, qa, skill
 from services.api.catalogue import endpoint
@@ -434,7 +435,7 @@ async def _screen_agents(session: AsyncSession, items: list[AgentSummary]) -> No
         ).all():
             levels.setdefault(config_id, []).append(level)
     triggers: dict[uuid.UUID, list[tuple[str, str | None, str | None]]] = {}
-    for agent_id, kind, cron, event_type in (
+    for agent_id, kind, schedule, event_type in (
         await session.execute(
             select(
                 agent.AgentTrigger.agent_id,
@@ -447,7 +448,7 @@ async def _screen_agents(session: AsyncSession, items: list[AgentSummary]) -> No
             )
         )
     ).all():
-        triggers.setdefault(agent_id, []).append((kind, cron, event_type))
+        triggers.setdefault(agent_id, []).append((kind, schedule, event_type))
     since = _now() - datetime.timedelta(days=7)
     recent = (
         await session.execute(
@@ -767,8 +768,9 @@ async def create_config(
 def _trigger_view(row: agent.AgentTrigger, now: datetime.datetime) -> TriggerView:
     view = TriggerView.model_validate(row)
     if row.kind == "schedule" and row.cron:
-        view.next_runs = rules.next_runs(row.cron, now)
-        fires = rules.daily_fires(row.cron)
+        # UC-13-03 step 3: the next five fire times, in UTC.
+        view.next_runs = cron.next_runs(row.cron, now, 5)
+        fires = cron.fires_per_day(row.cron)
         if fires > rules.DAILY_FIRE_WARNING:
             view.warning = (
                 f"Fires up to {fires} times a day; check the monthly budget (UC-13-03 E1)."
@@ -788,8 +790,8 @@ async def set_triggers(
         if trigger.cron is None:
             continue
         try:
-            rules.parse_cron(trigger.cron)
-        except ValueError as exc:
+            cron.check(trigger.cron)
+        except cron.CronError as exc:
             raise Problem(
                 422,
                 "validation_failed",

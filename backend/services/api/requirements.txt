@@ -19,3 +19,5 @@ httpx==0.27.2
 pyyaml==6.0.3
 # The read-only SQL guard (libs/sql_guard), shared with worker-agent: the same pin.
 sqlglot==25.24.5
+# Schedules (libs/cron), shared with worker-agent, which fires them: the same pin.
+croniter==2.0.5

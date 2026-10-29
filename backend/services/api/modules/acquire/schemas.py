@@ -14,6 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from libs import cron
 from services.api.modules.acquire import rules
 
 SourceKind = Literal["web_page", "web_listing", "public_api", "feed", "file_drop"]
@@ -101,7 +102,7 @@ class CrawlSourceCreate(_Body):
     @field_validator("schedule_cron")
     @classmethod
     def _cron(cls, value: str | None) -> str | None:
-        return rules.check_cron(value) if value is not None else None
+        return cron.check(value) if value is not None else None
 
     @field_validator("openapi_url", "terms_url")
     @classmethod
@@ -136,7 +137,7 @@ class CrawlSourcePatch(_Body):
     @field_validator("schedule_cron")
     @classmethod
     def _cron(cls, value: str | None) -> str | None:
-        return rules.check_cron(value) if value is not None else None
+        return cron.check(value) if value is not None else None
 
 
 class ChecklistItem(_Body):

@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, Path, Query, Response
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs import cron
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog, org
 from services.api.catalogue import endpoint
@@ -799,12 +800,12 @@ async def activate_source(
         return SourceView.of(source)
 
 
-def _cron(expression: str | None, field: str) -> rules.Cron | None:
+def _cron(expression: str | None, field: str) -> str | None:
     if not expression:
         return None
     try:
-        return rules.parse_cron(expression)
-    except rules.CronError as exc:
+        return cron.check(expression)
+    except cron.CronError as exc:
         raise Problem(
             422,
             "validation_failed",
@@ -854,10 +855,8 @@ async def set_scan_schedule(
         now = _now()
         return SourceSchedule(
             **SourceView.of(row).model_dump(),
-            next_scans=rules.next_runs(scan, now, NEXT_RUNS, zone=zone, skip_day=skip)
-            if scan
-            else [],
-            next_profiles=rules.next_runs(profile, now, NEXT_RUNS, zone=zone, skip_day=skip)
+            next_scans=cron.next_runs(scan, now, NEXT_RUNS, zone, skip_day=skip) if scan else [],
+            next_profiles=cron.next_runs(profile, now, NEXT_RUNS, zone, skip_day=skip)
             if profile
             else [],
         )

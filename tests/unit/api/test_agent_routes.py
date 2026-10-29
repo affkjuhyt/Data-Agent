@@ -12,6 +12,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
+from libs import cron
 from services.api.app import create_app
 from services.api.config import Settings
 from services.api.kernel.problems import Problem
@@ -124,7 +125,7 @@ def test_br76_ordinary_memories_pass(content: str) -> None:
 # Proves AC-13-03-01.
 def test_schedule_preview_lists_the_next_five_runs() -> None:
     friday_noon = datetime.datetime(2026, 10, 9, 12, 0, tzinfo=datetime.UTC)
-    runs = rules.next_runs("0 7 * * 1-5", friday_noon)
+    runs = cron.next_runs("0 7 * * 1-5", friday_noon, 5)
     assert [r.date().isoformat() for r in runs] == [
         "2026-10-12",
         "2026-10-13",
@@ -133,19 +134,19 @@ def test_schedule_preview_lists_the_next_five_runs() -> None:
         "2026-10-16",
     ]
     assert all((r.hour, r.minute) == (7, 0) for r in runs)
-    assert rules.next_runs("*/15 * * * *", friday_noon, 2) == [
+    assert cron.next_runs("*/15 * * * *", friday_noon, 2) == [
         datetime.datetime(2026, 10, 9, 12, 15, tzinfo=datetime.UTC),
         datetime.datetime(2026, 10, 9, 12, 30, tzinfo=datetime.UTC),
     ]
     # Day 31 skips the months without one; Sunday may be written 7.
-    assert rules.next_runs("0 0 31 * *", friday_noon, 1)[0].date().isoformat() == "2026-10-31"
-    assert rules.next_runs("0 0 * * 7", friday_noon, 1)[0].date().isoformat() == "2026-10-11"
+    assert cron.next_runs("0 0 31 * *", friday_noon, 1)[0].date().isoformat() == "2026-10-31"
+    assert cron.next_runs("0 0 * * 7", friday_noon, 1)[0].date().isoformat() == "2026-10-11"
 
 
 # Proves AC-13-03-04.
 def test_a_trigger_firing_more_than_fifty_times_a_day_warns() -> None:
-    assert rules.daily_fires("0 7 * * 1-5") == 1
-    assert rules.daily_fires("*/15 * * * *") == 96 > rules.DAILY_FIRE_WARNING
+    assert cron.fires_per_day("0 7 * * 1-5") == 1
+    assert cron.fires_per_day("*/15 * * * *") == 96 > rules.DAILY_FIRE_WARNING
 
 
 @pytest.mark.parametrize(
@@ -153,7 +154,7 @@ def test_a_trigger_firing_more_than_fifty_times_a_day_warns() -> None:
 )
 def test_bad_cron_is_refused(expr: str) -> None:
     with pytest.raises(ValueError):
-        rules.parse_cron(expr)
+        cron.check(expr)
 
 
 # ---------------------------------------------------------------- requests answered before the database

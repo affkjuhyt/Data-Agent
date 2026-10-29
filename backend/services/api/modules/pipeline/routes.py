@@ -22,6 +22,7 @@ from sqlalchemy import and_, func, literal, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs import cron
 from libs.dataagent_db import uuid7
 from libs.dataagent_db.models import catalog, org
 from libs.dataagent_db.models import pipeline as pl
@@ -40,7 +41,6 @@ from services.api.kernel.pagination import (
 )
 from services.api.kernel.problems import Problem
 from services.api.modules.catalog.public import upcoming_runs
-from services.api.modules.catalog.rules import CronError
 from services.api.modules.ingest.public import job_name, jobs_feeding
 from services.api.modules.pipeline import rules
 from services.api.modules.pipeline.schemas import (
@@ -816,6 +816,15 @@ async def materialize_pipeline(
     )
 
 
+def _check_cron(expr: str) -> None:
+    try:
+        cron.check(expr)
+    except cron.CronError as exc:
+        raise invalid(
+            "cron", f"cron takes five fields: minute hour day month weekday ({exc})."
+        ) from exc
+
+
 @router.put(
     "/v1/pipelines/{id}/schedule",
     response_model=PipelineView,
@@ -827,8 +836,8 @@ async def schedule_pipeline(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
 ) -> PipelineView:
-    if body.cron is not None and not rules.valid_cron(body.cron):
-        raise invalid("cron", "cron takes five fields: minute hour day month weekday.")
+    if body.cron is not None:
+        _check_cron(body.cron)
     async with transaction(ROLE, principal) as session:
         row = await _pipeline(session, principal, data_space, pipeline_id, lock=True)
         if row.status == "draft":
@@ -913,8 +922,8 @@ async def preview_pipeline_schedule(
     principal: CurrentPrincipal,
     data_space: CurrentDataSpace,
 ) -> dict[str, str]:
-    if body.cron is not None and not rules.valid_cron(body.cron):
-        raise invalid("cron", "cron takes five fields: minute hour day month weekday.")
+    if body.cron is not None:
+        _check_cron(body.cron)
     async with transaction(ROLE, principal) as session:
         await _pipeline(session, principal, data_space, pipeline_id)
         if body.work_calendar_id is not None:
@@ -928,7 +937,7 @@ async def preview_pipeline_schedule(
     if body.cron:
         try:
             runs = await upcoming_runs(principal, body.cron, body.work_calendar_id, PREVIEW_RUNS)
-        except CronError as exc:
+        except cron.CronError as exc:
             raise invalid("cron", str(exc)) from exc
         when = ", ".join(rules.run_text(at) for at in runs) or "không còn lần nào"
         parts.append(f"Theo lịch cron {body.cron}, lần tới: {when}")

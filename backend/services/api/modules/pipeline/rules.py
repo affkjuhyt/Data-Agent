@@ -3,18 +3,9 @@
 from __future__ import annotations
 
 import datetime
-import re
 import uuid
 from collections.abc import Iterable, Mapping
 from typing import Any
-
-_CRON_FIELD = re.compile(r"^[\d*/,\-A-Za-z?LW#]+$")
-
-
-def valid_cron(expr: str) -> bool:
-    """Five fields (minute hour day month weekday), the form Temporal schedules take."""
-    fields = expr.split()
-    return len(fields) == 5 and all(_CRON_FIELD.match(f) for f in fields)
 
 
 def creates_cycle(

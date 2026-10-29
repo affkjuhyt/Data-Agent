@@ -23,10 +23,11 @@ import uuid
 
 from sqlalchemy import select, text
 
+from libs import cron
 from libs.dataagent_db import scoped_session, unscoped_session, uuid7
 from libs.dataagent_db.models import ingest, monitor
 from libs.dataagent_db.models import pipeline as pl
-from services.worker_agent import cron, quality, report_runs
+from services.worker_agent import quality, report_runs
 
 logger = logging.getLogger(__name__)
 

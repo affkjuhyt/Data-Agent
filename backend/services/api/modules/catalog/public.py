@@ -16,10 +16,10 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from libs import cron
 from libs.dataagent_db.models import catalog, org
 from services.api.kernel.auth import Principal
 from services.api.kernel.db import transaction
-from services.api.modules.catalog import rules
 
 # The organisation's default zone (org.organization.time_zone default) when no calendar is set.
 DEFAULT_ZONE = "Asia/Ho_Chi_Minh"
@@ -106,13 +106,11 @@ async def working_days(
 
 
 async def upcoming_runs(
-    principal: Principal, cron: str, calendar_id: uuid.UUID | None, count: int
+    principal: Principal, expr: str, calendar_id: uuid.UUID | None, count: int
 ) -> list[datetime.datetime]:
-    """The next `count` fire times of `cron` on the working days of the calendar, in its zone —
-    the same reading the scan schedule shows (UC-06-03 preview). Raises rules.CronError."""
-    parsed = rules.parse_cron(cron)
+    """The next `count` fire times of `expr` on the working days of the calendar, in its zone —
+    the same reading the scan schedule shows (UC-06-03 preview). Raises cron.CronError."""
+    expr = cron.check(expr)
     async with transaction("svc_catalog", principal) as session:
         zone, skip = await working_days(session, calendar_id)
-    return rules.next_runs(
-        parsed, datetime.datetime.now(datetime.UTC), count, zone=zone, skip_day=skip
-    )
+    return cron.next_runs(expr, datetime.datetime.now(datetime.UTC), count, zone, skip_day=skip)

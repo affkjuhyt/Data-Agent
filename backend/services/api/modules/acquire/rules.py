@@ -38,7 +38,6 @@ _DOMAIN = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z
 # The KV v2 layout every service already reads (auth_api's Secrets Vault, warehouse_secrets.py):
 # tenants/<org id>/<key>. The org segment is what keeps one organisation off another's secrets.
 _SECRET_KEY = re.compile(r"^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$")
-_CRON_FIELD = re.compile(r"^[0-9A-Za-z*/,?LW#-]+$")
 
 
 def invalid(field: str, message: str, code: str = "invalid") -> Problem:
@@ -89,13 +88,6 @@ def check_urls_in_scope(field: str, urls: Iterable[str], domains: Iterable[str])
             f"{len(outside)} URL(s) are outside allowed_domains (BR-149): {', '.join(outside[:3])}",
             "out_of_scope",
         )
-
-
-def check_cron(expression: str) -> str:
-    fields = expression.split()
-    if len(fields) not in (5, 6) or not all(_CRON_FIELD.match(f) for f in fields):
-        raise ValueError("schedule_cron is a cron expression of 5 or 6 fields")
-    return " ".join(fields)
 
 
 def check_secret_ref(secret_ref: str, org_id: uuid.UUID) -> str:

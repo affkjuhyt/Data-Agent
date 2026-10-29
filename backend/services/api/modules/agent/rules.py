@@ -3,7 +3,6 @@ the trigger preview of UC-13-03. Pure functions, so they are tested without a da
 
 from __future__ import annotations
 
-import datetime
 import re
 from collections.abc import Iterable, Mapping
 from typing import Any
@@ -103,77 +102,3 @@ def check_memory_content(content: str) -> None:
             "business_rule_violated",
             "A memory may not hold personal identifiers, account numbers or balances (BR-76).",
         )
-
-
-# A five-field cron (minute hour day-of-month month day-of-week), evaluated in UTC.
-_CRON_RANGES = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 6))
-
-
-def _cron_field(text: str, low: int, high: int) -> frozenset[int]:
-    values: set[int] = set()
-    for part in text.split(","):
-        body, _, step_text = part.partition("/")
-        step = int(step_text) if step_text else 1
-        if body == "*":
-            start, end = low, high
-        elif "-" in body:
-            a, b = body.split("-", 1)
-            start, end = int(a), int(b)
-        else:
-            start = int(body)
-            end = high if step_text else start
-        if step < 1 or start < low or end > high + (1 if high == 6 else 0) or start > end:
-            raise ValueError(part)
-        values.update(range(start, end + 1, step))
-    # Day-of-week 7 is Sunday, as in most crons.
-    return frozenset(0 if (high == 6 and v == 7) else v for v in values)
-
-
-def parse_cron(expr: str) -> tuple[frozenset[int], ...]:
-    fields = expr.split()
-    if len(fields) != 5:
-        raise ValueError(expr)
-    return tuple(
-        _cron_field(f, low, high) for f, (low, high) in zip(fields, _CRON_RANGES, strict=True)
-    )
-
-
-def _day_matches(fields: tuple[frozenset[int], ...], expr: str, day: datetime.date) -> bool:
-    _, _, dom, month, dow = fields
-    if day.month not in month:
-        return False
-    dom_star, dow_star = expr.split()[2] == "*", expr.split()[4] == "*"
-    in_dom, in_dow = day.day in dom, (day.isoweekday() % 7) in dow
-    # Classic cron: when both day fields are restricted, either one matching is enough.
-    if not dom_star and not dow_star:
-        return in_dom or in_dow
-    return in_dom and in_dow
-
-
-def next_runs(expr: str, after: datetime.datetime, count: int = 5) -> list[datetime.datetime]:
-    """UC-13-03 step 3: the next `count` fire times of a schedule trigger."""
-    fields = parse_cron(expr)
-    minutes, hours = sorted(fields[0]), sorted(fields[1])
-    start = after.astimezone(datetime.UTC).replace(second=0, microsecond=0) + datetime.timedelta(
-        minutes=1
-    )
-    out: list[datetime.datetime] = []
-    day = start.date()
-    for _ in range(366 * 5):
-        if _day_matches(fields, expr, day):
-            for hour in hours:
-                for minute in minutes:
-                    at = datetime.datetime(
-                        day.year, day.month, day.day, hour, minute, tzinfo=datetime.UTC
-                    )
-                    if at >= start:
-                        out.append(at)
-                        if len(out) == count:
-                            return out
-        day += datetime.timedelta(days=1)
-    return out
-
-
-def daily_fires(expr: str) -> int:
-    fields = parse_cron(expr)
-    return len(fields[0]) * len(fields[1])
