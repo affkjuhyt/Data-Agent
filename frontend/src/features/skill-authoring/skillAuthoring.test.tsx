@@ -192,8 +192,8 @@ describe('SkillRunPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Đổi chỉ số' }));
     const dialog = await screen.findByRole('dialog', { name: 'Đổi chỉ số' });
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Chỉ số' }));
-    fireEvent.click(within(dialog).getByRole('option', { name: 'Dư nợ thẻ v2' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Chỉ số' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Dư nợ thẻ v2' }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Tìm lại' }));
     expect(await screen.findByText('Không tìm thấy yếu tố bên ngoài')).toBeInTheDocument();
   });

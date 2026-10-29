@@ -25,14 +25,14 @@ describe('JobSetupPage', () => {
         <JobSetupPage />
       </ToastProvider>,
     );
-    expect(await screen.findByRole('combobox', { name: 'Bảng nguồn' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('combobox', { name: 'Bảng nguồn' }));
+    expect(await screen.findByRole('button', { name: 'Bảng nguồn' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Bảng nguồn' }));
     fireEvent.click(screen.getByRole('option', { name: 'card_transactions · Thẻ tín dụng' }));
     expect(
       await screen.findByRole('heading', { name: 'Job nạp · card_transactions' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Tăng dần' })).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getByRole('combobox', { name: 'Cột con trỏ' })).toHaveTextContent(
+    expect(screen.getByRole('button', { name: 'Cột con trỏ' })).toHaveTextContent(
       'updated_at · TIMESTAMP',
     );
     expect(screen.getByText(/Chưa chạy thử/)).toBeInTheDocument();
@@ -44,7 +44,7 @@ describe('JobSetupPage', () => {
     // A change makes the dry run stale.
     fireEvent.click(screen.getByRole('radio', { name: 'Theo lịch' }));
     expect(screen.queryByText('Đọc được theo con trỏ')).toBeNull();
-    expect(screen.queryByRole('combobox', { name: 'Cột con trỏ' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Cột con trỏ' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Lưu job' }));
     await waitFor(() => expect(app.navigate).toHaveBeenCalledWith('data', 'JOBS'));

@@ -139,7 +139,7 @@ describe('AskDataPage', () => {
     messages = conversation;
     wrap(<AskDataPage />);
     fireEvent.click(screen.getByRole('button', { name: 'Thêm vào phiên' }));
-    fireEvent.click(await screen.findByRole('combobox', { name: 'Phiên đích' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Phiên đích' }));
     fireEvent.click(screen.getByRole('option', { name: 'Điều tra nợ xấu bán lẻ T9' }));
     fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
     await waitFor(() =>

@@ -1,10 +1,11 @@
-import { useRef, type KeyboardEvent } from 'react';
+import { Tab, TabList, Tabs as AriaTabs } from 'react-aria-components';
 import { cn } from '../lib/utils';
 
 /*
  * Figma "Tab" (2015:123) and "Spec · Component · Tab": a 40px bar with a bottom border,
  * the active tab underlined 2px in primary. role=tablist; ←/→ move, Home/End jump.
- * The caller keeps the value in the URL (?tab=…) so a reload lands on the same tab.
+ * The caller keeps the value in the URL (?tab=…) so a reload lands on the same tab, and draws the
+ * panel itself: this is the tab list only (React Aria's Tabs, selection following focus).
  */
 interface TabItem<V extends string> {
   value: V;
@@ -25,61 +26,36 @@ export function Tabs<V extends string>({
   label: string;
   className?: string;
 }) {
-  const refs = useRef<(HTMLButtonElement | null)[]>([]);
-
-  const focusAt = (index: number) => {
-    const next = (index + items.length) % items.length;
-    refs.current[next]?.focus();
-    onChange(items[next].value);
-  };
-
-  const onKeyDown = (event: KeyboardEvent, index: number) => {
-    const moves: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: items.length - 1,
-    };
-    if (event.key in moves) {
-      event.preventDefault();
-      focusAt(moves[event.key]);
-    }
-  };
-
   return (
-    <div
-      role="tablist"
-      aria-label={label}
-      className={cn('flex h-10 items-end border-b border-border', className)}
+    <AriaTabs
+      selectedKey={value}
+      onSelectionChange={(key) => key !== value && onChange(key as V)}
+      className="contents"
     >
-      {items.map((item, index) => {
-        const active = item.value === value;
-        return (
-          <button
+      <TabList
+        aria-label={label}
+        className={cn('flex h-10 items-end border-b border-border', className)}
+      >
+        {items.map((item) => (
+          <Tab
             key={item.value}
-            ref={(node) => {
-              refs.current[index] = node;
-            }}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            tabIndex={active ? 0 : -1}
-            onClick={() => onChange(item.value)}
-            onKeyDown={(event) => onKeyDown(event, index)}
-            className={cn(
-              '-mb-px flex items-center gap-da-xs whitespace-nowrap border-b-2 px-da-lg py-da-md transition-colors duration-[120ms] ease-out',
-              active
-                ? 'border-primary text-foreground da-body-strong'
-                : 'border-transparent text-muted-foreground da-body-small hover:text-foreground',
-            )}
+            id={item.value}
+            className={({ isSelected }) =>
+              cn(
+                '-mb-px flex cursor-pointer items-center gap-da-xs whitespace-nowrap border-b-2 px-da-lg py-da-md transition-colors duration-[120ms] ease-out',
+                isSelected
+                  ? 'border-primary text-foreground da-body-strong'
+                  : 'border-transparent text-muted-foreground da-body-small hover:text-foreground',
+              )
+            }
           >
             {item.label}
             {item.count !== undefined && (
               <span className="text-muted-foreground da-caption">{item.count}</span>
             )}
-          </button>
-        );
-      })}
-    </div>
+          </Tab>
+        ))}
+      </TabList>
+    </AriaTabs>
   );
 }

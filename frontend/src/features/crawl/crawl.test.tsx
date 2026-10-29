@@ -104,7 +104,7 @@ describe('CrawlSchemaPage', () => {
       'true',
     );
 
-    fireEvent.click(screen.getByRole('combobox', { name: 'Thuộc tính chuẩn của channel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Thuộc tính chuẩn của channel' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Kênh giao dịch' }));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Duyệt schema' })).not.toHaveAttribute(
@@ -117,7 +117,7 @@ describe('CrawlSchemaPage', () => {
     ).toBeInTheDocument();
     // A3 approves with a note only: the choice is recorded there, the field stays as inferred.
     expect(
-      screen.queryByRole('combobox', { name: 'Thuộc tính chuẩn của channel' }),
+      screen.queryByRole('button', { name: 'Thuộc tính chuẩn của channel' }),
     ).not.toBeInTheDocument();
   });
 });

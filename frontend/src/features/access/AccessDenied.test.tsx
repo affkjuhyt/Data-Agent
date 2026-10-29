@@ -31,10 +31,10 @@ describe('AccessDenied', () => {
       }),
     ).toBeInTheDocument();
     expect(screen.getByText(/Chủ sở hữu: Trần Quốc An/)).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Mức quyền' })).toHaveTextContent(
+    expect(screen.getByRole('button', { name: 'Mức quyền' })).toHaveTextContent(
       'Xem tổng hợp theo vùng (không chi tiết khoản vay)',
     );
-    expect(screen.getByRole('combobox', { name: 'Thời hạn' })).toHaveTextContent('30 ngày');
+    expect(screen.getByRole('button', { name: 'Thời hạn' })).toHaveTextContent('30 ngày');
     const reason = screen.getByRole('textbox', { name: 'Lý do' });
     expect(reason).toHaveValue('Điều tra nợ xấu bán lẻ T9 · phiên của Đỗ Hải Yến');
 

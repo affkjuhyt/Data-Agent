@@ -98,7 +98,7 @@ describe('ForecastPage', () => {
     expect(await screen.findByText('Đã lưu với tên này, mở lại được sau.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Bỏ kịch bản' }));
     expect(await screen.findByRole('button', { name: 'Chạy kịch bản' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('combobox', { name: 'Biến của kịch bản' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Biến của kịch bản' }));
     expect(screen.getByRole('option', { name: 'lãi suất điều hành' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: /Tỷ giá/ })).toBeNull();
   });

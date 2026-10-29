@@ -2,9 +2,9 @@ import { useEffect, type RefObject } from 'react';
 
 // The first field gets focus, not the × of the header; a surface without fields focuses its first button.
 const FIELDS =
-  'input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [role="combobox"]';
+  'input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [aria-haspopup="listbox"]';
 const FOCUSABLE =
-  'input:not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([aria-disabled="true"]):not([disabled]), [role="combobox"], a[href]';
+  'input:not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([aria-disabled="true"]):not([disabled]), [aria-haspopup="listbox"], a[href]';
 
 /*
  * Shared by Dialog and Drawer. React Aria traps Tab, closes on Esc and gives focus back to the

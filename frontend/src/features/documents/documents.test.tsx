@@ -161,7 +161,7 @@ describe('DocumentsPage', () => {
         ],
       },
     });
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Bộ sưu tập' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Bộ sưu tập' }));
     fireEvent.click((await screen.findAllByRole('option'))[0]);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Nạp' }));
     expect(

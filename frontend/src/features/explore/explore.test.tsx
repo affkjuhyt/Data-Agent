@@ -195,7 +195,7 @@ describe('ExplorePage', () => {
   it('saves the result as a tile of a session', async () => {
     await nplByRegion();
     fireEvent.click(screen.getByRole('button', { name: 'Lưu vào phiên' }));
-    fireEvent.click(await screen.findByRole('combobox', { name: 'Phiên đích' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Phiên đích' }));
     fireEvent.click(screen.getByRole('option', { name: 'Điều tra nợ xấu bán lẻ T9' }));
     fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
     expect(await screen.findByText('Đã lưu vào Điều tra nợ xấu bán lẻ T9')).toBeInTheDocument();
@@ -225,7 +225,7 @@ describe('ArtifactPage', () => {
     expect(navigate).toHaveBeenCalledWith('analysis', 'WATCH_NEW');
 
     fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
-    fireEvent.click(await screen.findByRole('combobox', { name: 'Phiên đích' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Phiên đích' }));
     fireEvent.click(screen.getByRole('option', { name: 'Điều tra nợ xấu bán lẻ T9' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Lưu' }));
     expect(await screen.findByText('Đã lưu vào Điều tra nợ xấu bán lẻ T9')).toBeInTheDocument();

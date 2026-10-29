@@ -1,11 +1,25 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useId } from 'react';
+import {
+  Select as AriaSelect,
+  Autocomplete,
+  Button,
+  Input,
+  ListBox,
+  ListBoxItem,
+  Popover,
+  SearchField,
+  SelectValue,
+  useFilter,
+} from 'react-aria-components';
 import { cn } from '../lib/utils';
 import { Icon } from './Icon';
 
 /*
  * Figma "Select" (2080:616): State = Closed | Open | Error, and "Spec · Component · Select":
  * 36px field, list radius-md + shadow-md, options 32px; more than 8 options adds a search box.
- * ARIA combobox: ↑/↓ move, Enter picks, Esc closes and keeps the old value.
+ * React Aria's Select: a button that opens a listbox in a popover (portalled, so a scrolling
+ * Drawer or Dialog never clips it); ↑/↓ and typeahead move, Enter picks, Esc closes and keeps the
+ * old value without closing a dialog around it.
  */
 interface SelectOption<V extends string> {
   value: V;
@@ -37,159 +51,122 @@ export function Select<V extends string>({
   size?: 'md' | 'sm';
   className?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [active, setActive] = useState(0);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const listId = useId();
-
+  // React Aria names the button "<value> <label>"; the field is named by its label alone, as the
+  // Field around it shows, and the value is the button's text.
+  const nameId = useId();
+  const errorId = useId();
+  const { contains } = useFilter({ sensitivity: 'base' });
   const searchable = options.length > SEARCH_THRESHOLD;
-  const visible = useMemo(
-    () =>
-      query ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase())) : options,
-    [options, query],
+
+  const list = (
+    <ListBox
+      items={options.map((o) => ({ id: o.value, label: o.label }))}
+      aria-label={label}
+      // React Aria wraps this in role=option, so it is only for a search that matched nothing; an
+      // empty list (options still loading) says so outside the listbox instead.
+      renderEmptyState={searchable ? () => <Empty /> : undefined}
+      className="max-h-64 overflow-y-auto outline-none"
+    >
+      {(item) => (
+        <ListBoxItem
+          id={item.id}
+          textValue={item.label}
+          className={({ isSelected, isFocused }) =>
+            cn(
+              'flex h-8 cursor-pointer items-center rounded-sm px-da-md da-body-small outline-none',
+              isSelected
+                ? 'bg-accent text-primary'
+                : isFocused
+                  ? 'bg-subtle text-foreground'
+                  : 'text-foreground',
+            )
+          }
+        >
+          {({ isSelected }) => (
+            <>
+              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              {isSelected && <Icon name="check" />}
+            </>
+          )}
+        </ListBoxItem>
+      )}
+    </ListBox>
   );
-  const selected = options.find((o) => o.value === value);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    // Capture phase: a Dialog panel stops mousedown from bubbling (so a click inside does not close
-    // the dialog), which kept a list inside a dialog open after a click elsewhere in it.
-    document.addEventListener('mousedown', close, true);
-    return () => document.removeEventListener('mousedown', close, true);
-  }, [open]);
-
-  const openList = () => {
-    if (disabled) return;
-    setQuery('');
-    setActive(
-      Math.max(
-        0,
-        options.findIndex((o) => o.value === value),
-      ),
-    );
-    setOpen(true);
-  };
-
-  const pick = (option: SelectOption<V> | undefined) => {
-    if (!option) return;
-    onChange(option.value);
-    setOpen(false);
-  };
-
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (!open) {
-      if (['ArrowDown', 'Enter', ' '].includes(event.key)) {
-        event.preventDefault();
-        openList();
-      }
-      return;
-    }
-    if (event.key === 'Escape') {
-      // Esc closes the list only; a Dialog around it (React Aria) would otherwise close too.
-      event.preventDefault();
-      event.stopPropagation();
-      setOpen(false);
-    } else if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      setActive((i) => Math.min(i + 1, visible.length - 1));
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      setActive((i) => Math.max(i - 1, 0));
-    } else if (event.key === 'Enter') {
-      event.preventDefault();
-      pick(visible[active]);
-    }
-  };
 
   return (
-    <div
-      ref={rootRef}
+    <AriaSelect
+      selectedKey={value}
+      onSelectionChange={(key) => key !== null && onChange(key as V)}
+      isDisabled={disabled}
+      isInvalid={Boolean(error)}
+      // Options often arrive after the page draws; the list opens anyway and shows them when they do.
+      allowsEmptyCollection
+      aria-label={label}
+      placeholder={placeholder}
       className={cn('relative flex flex-col gap-da-xs', className)}
-      onKeyDown={onKeyDown}
     >
-      <button
-        type="button"
-        role="combobox"
-        aria-label={label}
-        aria-expanded={open}
-        aria-controls={listId}
-        aria-invalid={error ? true : undefined}
-        disabled={disabled}
-        onClick={() => (open ? setOpen(false) : openList())}
-        className={cn(
-          'flex w-full items-center rounded-md border bg-card px-da-md text-left da-body-small',
-          size === 'sm' ? 'h-7' : 'h-9',
-          open
-            ? 'border-ring shadow-[inset_0_0_0_1px_var(--ring)]'
-            : error
-              ? 'border-error'
-              : 'border-border-strong',
-          disabled && 'cursor-not-allowed bg-subtle text-muted-foreground',
-        )}
+      <span id={nameId} hidden>
+        {label}
+      </span>
+      <Button
+        aria-labelledby={nameId}
+        aria-describedby={error ? errorId : undefined}
+        // React Aria holds the button pressed while the list is open.
+        className={({ isPressed }) =>
+          cn(
+            'flex w-full items-center rounded-md border bg-card px-da-md text-left da-body-small',
+            size === 'sm' ? 'h-7' : 'h-9',
+            isPressed
+              ? 'border-ring shadow-[inset_0_0_0_1px_var(--ring)]'
+              : error
+                ? 'border-error'
+                : 'border-border-strong',
+            disabled && 'cursor-not-allowed bg-subtle text-muted-foreground',
+          )
+        }
       >
-        <span
-          className={cn(
-            'min-w-0 flex-1 truncate',
-            selected ? 'text-foreground' : 'text-muted-foreground',
-          )}
-        >
-          {selected?.label ?? placeholder}
-        </span>
+        <SelectValue
+          className={({ isPlaceholder }) =>
+            cn(
+              'min-w-0 flex-1 truncate',
+              isPlaceholder ? 'text-muted-foreground' : 'text-foreground',
+            )
+          }
+        />
         <Icon name="chevron-down" className="text-foreground" />
-      </button>
-      {error && <span className="text-error da-caption">{error}</span>}
-      {open && (
-        <div className="absolute top-full z-[var(--z-popover)] mt-da-xs flex w-full flex-col rounded-md border border-border bg-card p-da-xs shadow-md">
-          {searchable && (
-            <input
-              autoFocus
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setActive(0);
-              }}
-              placeholder="Tìm…"
-              aria-label={`Tìm trong ${label}`}
-              className="mb-da-xs h-8 rounded-sm border border-border px-da-md da-body-small outline-none focus-visible:border-ring focus-visible:shadow-none"
-            />
-          )}
-          <ul id={listId} role="listbox" aria-label={label} className="max-h-64 overflow-y-auto">
-            {visible.map((option, index) => {
-              const isSelected = option.value === value;
-              return (
-                <li
-                  key={option.value}
-                  role="option"
-                  aria-selected={isSelected}
-                  onMouseEnter={() => setActive(index)}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => pick(option)}
-                  className={cn(
-                    'flex h-8 cursor-pointer items-center rounded-sm px-da-md da-body-small',
-                    isSelected
-                      ? 'bg-accent text-primary'
-                      : index === active
-                        ? 'bg-subtle text-foreground'
-                        : 'text-foreground',
-                  )}
-                >
-                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                  {isSelected && <Icon name="check" />}
-                </li>
-              );
-            })}
-            {visible.length === 0 && (
-              <li className="px-da-md py-da-sm text-muted-foreground da-caption">
-                Không có mục khớp
-              </li>
-            )}
-          </ul>
-        </div>
+      </Button>
+      {error && (
+        <span id={errorId} className="text-error da-caption">
+          {error}
+        </span>
       )}
-    </div>
+      <Popover
+        offset={4}
+        className="z-[var(--z-popover)] flex w-[var(--trigger-width)] flex-col rounded-md border border-border bg-card p-da-xs shadow-md outline-none"
+      >
+        {options.length === 0 && <Empty />}
+        {searchable ? (
+          <Autocomplete filter={contains}>
+            <SearchField aria-label={`Tìm trong ${label}`} autoFocus className="mb-da-xs">
+              <Input
+                placeholder="Tìm…"
+                className="h-8 w-full rounded-sm border border-border px-da-md da-body-small outline-none focus-visible:border-ring"
+              />
+            </SearchField>
+            {list}
+          </Autocomplete>
+        ) : (
+          list
+        )}
+      </Popover>
+    </AriaSelect>
+  );
+}
+
+function Empty() {
+  return (
+    <span className="block px-da-md py-da-sm text-muted-foreground da-caption">
+      Không có mục khớp
+    </span>
   );
 }

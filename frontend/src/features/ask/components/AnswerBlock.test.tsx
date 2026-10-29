@@ -248,7 +248,7 @@ describe('DataGrid', () => {
     wrap(<DataGrid columns={['id', 'amount']} rows={rows} pageSize={10} />);
     expect(screen.getAllByRole('row')).toHaveLength(11); // header + 10
     expect(screen.getByLabelText('Tìm trong bảng')).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Lọc theo id' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Lọc theo id' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Trang sau' }));
     expect(screen.getAllByRole('row')).toHaveLength(11);
 

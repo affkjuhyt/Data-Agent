@@ -116,34 +116,48 @@ describe('Select', () => {
     { value: 'v5', label: 'NPL_RATIO v5 · nháp' },
   ];
 
+  // The open list takes the keys (React Aria), not the button: focus moves into it a frame later,
+  // so a key goes to the focused option when there is one and to the listbox otherwise.
+  const press = (key: string) => {
+    const focused = document.activeElement?.closest('[role="option"]');
+    fireEvent.keyDown(focused ?? screen.getByRole('listbox'), { key });
+  };
+
   it('opens, picks with Enter, and keeps the old value on Esc', () => {
     const onChange = vi.fn();
     render(<Select label="Định nghĩa" options={options} value="v4" onChange={onChange} />);
-    const combo = screen.getByRole('combobox', { name: 'Định nghĩa' });
+    const combo = screen.getByRole('button', { name: 'Định nghĩa' });
 
     fireEvent.click(combo);
     expect(screen.getByRole('listbox')).toBeInTheDocument();
-    fireEvent.keyDown(combo, { key: 'Escape' });
+    press('Escape');
     expect(screen.queryByRole('listbox')).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
 
     fireEvent.click(combo);
-    fireEvent.keyDown(combo, { key: 'ArrowDown' });
-    fireEvent.keyDown(combo, { key: 'Enter' });
+    press('ArrowDown');
+    press('Enter');
     expect(onChange).toHaveBeenCalledWith('v5');
   });
 
   it('adds a search box past eight options', () => {
     const many = Array.from({ length: 9 }, (_, i) => ({ value: `m${i}`, label: `Chỉ số ${i}` }));
     render(<Select label="Chỉ số" options={many} value={null} onChange={() => {}} />);
-    fireEvent.click(screen.getByRole('combobox', { name: 'Chỉ số' }));
-    fireEvent.change(screen.getByRole('textbox', { name: 'Tìm trong Chỉ số' }), {
+    fireEvent.click(screen.getByRole('button', { name: 'Chỉ số' }));
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Tìm trong Chỉ số' }), {
       target: { value: '8' },
     });
     expect(screen.getAllByRole('option')).toHaveLength(1);
   });
 
-  it('shows the error under the field', () => {
+  it('opens while its options are still loading, with no option in the list', () => {
+    render(<Select label="Người nhận" options={[]} value={null} onChange={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Người nhận' }));
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    expect(screen.queryAllByRole('option')).toHaveLength(0);
+  });
+
+  it('shows the error under the field and describes the field with it', () => {
     render(
       <Select
         label="Định nghĩa"
@@ -153,21 +167,27 @@ describe('Select', () => {
         error="Chọn một định nghĩa trước khi chạy"
       />,
     );
-    expect(screen.getByText('Chọn một định nghĩa trước khi chạy')).toBeInTheDocument();
-    expect(screen.getByRole('combobox')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('button', { name: 'Định nghĩa' })).toHaveAccessibleDescription(
+      'Chọn một định nghĩa trước khi chạy',
+    );
   });
 
-  it('closes on a click elsewhere in a dialog, whose panel stops mousedown from bubbling', () => {
+  it('closes on a click elsewhere in a dialog, and the dialog stays open', () => {
+    const onClose = vi.fn();
     render(
-      <Dialog open title="Thêm thành viên" onClose={() => {}}>
+      <Dialog open title="Thêm thành viên" onClose={onClose}>
         <Select label="Vai trò" options={options} value={null} onChange={() => {}} />
         <p>Chỗ khác trong hộp thoại</p>
       </Dialog>,
     );
-    fireEvent.click(screen.getByRole('combobox', { name: 'Vai trò' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Vai trò' }));
     expect(screen.getByRole('listbox')).toBeInTheDocument();
-    fireEvent.mouseDown(screen.getByText('Chỗ khác trong hộp thoại'));
+    // jsdom has no PointerEvent, so React Aria reads an outside press from mousedown + mouseup.
+    const elsewhere = screen.getByText('Chỗ khác trong hộp thoại');
+    fireEvent.mouseDown(elsewhere);
+    fireEvent.mouseUp(elsewhere);
     expect(screen.queryByRole('listbox')).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('closes on Esc without closing the dialog around it', () => {
@@ -177,12 +197,11 @@ describe('Select', () => {
         <Select label="Vai trò" options={options} value={null} onChange={() => {}} />
       </Dialog>,
     );
-    const combo = screen.getByRole('combobox', { name: 'Vai trò' });
-    fireEvent.click(combo);
-    fireEvent.keyDown(combo, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Vai trò' }));
+    press('Escape');
     expect(screen.queryByRole('listbox')).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
-    fireEvent.keyDown(combo, { key: 'Escape' });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Vai trò' }), { key: 'Escape' });
     expect(onClose).toHaveBeenCalledOnce();
   });
 });
@@ -245,7 +264,10 @@ describe('timed components', () => {
         <button type="button">Độ mới</button>
       </Tooltip>,
     );
-    fireEvent.mouseEnter(screen.getByRole('button').parentElement as HTMLElement);
+    const trigger = screen.getByRole('button').parentElement as HTMLElement;
+    // React Aria counts a hover only once the mouse has moved, as a real pointer does first.
+    fireEvent.mouseMove(trigger);
+    fireEvent.mouseEnter(trigger);
     act(() => vi.advanceTimersByTime(299));
     expect(screen.queryByRole('tooltip')).toBeNull();
     act(() => vi.advanceTimersByTime(1));

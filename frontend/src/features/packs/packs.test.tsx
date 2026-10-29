@@ -38,7 +38,7 @@ describe('PacksPage', () => {
     expect(within(retail).getByText('Có bản 2026.4')).toBeInTheDocument();
     expect(within(retail).getByText('92% · 46/50 thực thể')).toBeInTheDocument();
     fireEvent.click(within(retail).getByRole('button', { name: /Thao tác với/ }));
-    fireEvent.click(within(retail).getByRole('menuitem', { name: 'Nâng cấp lên 2026.4' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Nâng cấp lên 2026.4' }));
     expect(navigate).toHaveBeenCalledWith('data', 'PACK_UPGRADE', 'upg-retail-2026-4');
 
     fireEvent.click(screen.getByRole('button', { name: 'Bảo hiểm nhân thọ' }));
@@ -104,7 +104,7 @@ describe('PackOnboardPage', () => {
       await screen.findByText(/Chọn cột hoặc “Không áp dụng” cho kyc_level/),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('combobox', { name: 'Cột cho kyc_level' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cột cho kyc_level' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Không áp dụng' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Chọn income_band' }));
     fireEvent.click(screen.getByRole('button', { name: 'Duyệt ánh xạ đã chọn' }));
@@ -186,10 +186,10 @@ describe('PackUpgradePage', () => {
     expect(screen.getByText('Chỉ số CARD_ACTIVE')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: /Cần chọn/ }));
 
-    fireEvent.click(screen.getByRole('combobox', { name: 'Chọn cho Chỉ số NPL_RATIO' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chọn cho Chỉ số NPL_RATIO' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Giữ của tổ chức' }));
     fireEvent.click(
-      screen.getByRole('combobox', { name: 'Chọn cho Ánh xạ card.supplementary_flag' }),
+      screen.getByRole('button', { name: 'Chọn cho Ánh xạ card.supplementary_flag' }),
     );
     fireEvent.click(await screen.findByRole('option', { name: 'Dùng bản mới' }));
     fireEvent.click(screen.getByRole('button', { name: 'Lưu lựa chọn và chạy thử' }));

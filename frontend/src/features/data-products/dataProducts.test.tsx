@@ -95,10 +95,10 @@ describe('ImportCatalogDialog', () => {
     ).toBeInTheDocument();
 
     // The target defaults to the first Data Space; pick it explicitly by role, whatever its name.
-    const target = within(dialog).getByRole('combobox', { name: 'Dùng cho' });
+    const target = within(dialog).getByRole('button', { name: 'Dùng cho' });
     await waitFor(() => expect(target).not.toBeDisabled());
     fireEvent.click(target);
-    fireEvent.click(within(dialog).getAllByRole('option')[0]);
+    fireEvent.click(screen.getAllByRole('option')[0]);
 
     fireEvent.click(submit);
     expect(await screen.findByText('Đã gửi 2 yêu cầu dùng cho chủ sở hữu')).toBeInTheDocument();
@@ -149,10 +149,10 @@ describe('QualityRulesPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Thêm quy tắc' }));
     const dialog = screen.getByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Bảng' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Bảng' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Thu hồi nợ' }));
     fireEvent.change(within(dialog).getByLabelText('Cột'), { target: { value: 'rate' } });
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Kiểm tra' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Kiểm tra' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Trong khoảng' }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Thêm quy tắc' }));
     expect(

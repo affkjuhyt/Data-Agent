@@ -138,7 +138,7 @@ describe('PlanEditDrawer', () => {
 
     const step3 = within(drawer).getByRole('listitem', { name: 'Bước Phân rã vùng × sản phẩm' });
     fireEvent.click(within(step3).getByRole('button', { name: /Thao tác với bước/ }));
-    fireEvent.click(within(step3).getByRole('menuitem', { name: 'Sửa bước' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Sửa bước' }));
     fireEvent.change(within(step3).getByLabelText('Tên bước'), {
       target: { value: 'Phân rã vùng × sản phẩm · dùng NPL_RATIO v4' },
     });
@@ -147,7 +147,7 @@ describe('PlanEditDrawer', () => {
 
     const step6 = within(drawer).getByRole('listitem', { name: 'Bước Đưa vào bản tin tuần' });
     fireEvent.click(within(step6).getByRole('button', { name: /Thao tác với bước/ }));
-    fireEvent.click(within(step6).getByRole('menuitem', { name: 'Bỏ bước' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Bỏ bước' }));
     expect(within(step6).getByText('Bỏ')).toBeInTheDocument();
 
     fireEvent.click(within(drawer).getByRole('button', { name: 'Thêm bước' }));

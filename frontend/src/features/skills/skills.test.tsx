@@ -58,11 +58,13 @@ describe('SkillLibraryPage', () => {
     wrap(<SkillLibraryPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Thao tác với Dự báo thử 13 tuần' }));
     expect(screen.queryByRole('menuitem', { name: 'Chia sẻ' })).not.toBeInTheDocument();
+    // An open menu is modal: it closes before another one opens.
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Thao tác với Phân rã biến động' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Chia sẻ' }));
     const dialog = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Chia sẻ cho' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Chia sẻ cho' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Toàn tổ chức' }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Chia sẻ' }));
     expect(

@@ -79,7 +79,7 @@ describe('SqlPage', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Lưu thành dataset' });
     // The Data Space defaults to the first one the caller has, once the list loads.
     await waitFor(() =>
-      expect(within(dialog).getByRole('combobox', { name: 'Data Space' })).not.toHaveTextContent(
+      expect(within(dialog).getByRole('button', { name: 'Data Space' })).not.toHaveTextContent(
         'Đang tải',
       ),
     );

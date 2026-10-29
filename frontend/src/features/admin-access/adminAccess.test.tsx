@@ -78,9 +78,9 @@ describe('UsersPage', () => {
     fireEvent.change(within(dialog).getByPlaceholderText('ten@congty.vn'), {
       target: { value: 'minh.pd@congty.vn' },
     });
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Vai trò' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Vai trò' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Chuyên viên phân tích' }));
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Data Space' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Data Space' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Rủi ro tín dụng' }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Gửi lời mời' }));
 
@@ -148,16 +148,16 @@ describe('DataSpacesPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Thêm thành viên' }));
     const dialog = screen.getByRole('dialog', { name: 'Thêm thành viên Data Space' });
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Người hoặc nhóm' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Người hoặc nhóm' }));
     fireEvent.click(await screen.findByRole('option', { name: 'GRP_RISK_ANALYST · 24 người' }));
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Vai trò' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Vai trò' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Phân tích viên' }));
     // The scope comes from the space's own table: a column and the values its profile found.
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Phạm vi dòng' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Phạm vi dòng' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Chỉ các dòng có giá trị đã chọn' }));
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Lấy giá trị từ bảng' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Lấy giá trị từ bảng' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Dư nợ theo chi nhánh' }));
-    fireEvent.click(await within(dialog).findByRole('combobox', { name: 'Cột' }));
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Cột' }));
     // The personal-data column is not offered.
     expect(screen.queryByRole('option', { name: /so_cccd/ })).not.toBeInTheDocument();
     fireEvent.click(await screen.findByRole('option', { name: 'Vùng (region)' }));
@@ -201,8 +201,8 @@ describe('CreateDataSpacePage', () => {
     fireEvent.change(screen.getByPlaceholderText('Ví dụ: Rủi ro tín dụng'), {
       target: { value: 'Thẻ tín dụng' },
     });
-    fireEvent.click(screen.getByRole('combobox', { name: 'Người phụ trách dữ liệu' }));
-    fireEvent.change(await screen.findByRole('textbox', { name: /Tìm trong Người phụ trách/ }), {
+    fireEvent.click(screen.getByRole('button', { name: 'Người phụ trách dữ liệu' }));
+    fireEvent.change(await screen.findByRole('searchbox', { name: /Tìm trong Người phụ trách/ }), {
       target: { value: 'Phạm Đức' },
     });
     fireEvent.click(await screen.findByRole('option', { name: 'Phạm Đức Long' }));
@@ -237,7 +237,7 @@ describe('PermissionComparePage', () => {
       await screen.findByText('Chọn một bảng và tối đa hai vai trò hoặc người'),
     ).toBeInTheDocument();
     const pick = async (label: string, option?: RegExp) => {
-      fireEvent.click(screen.getByRole('combobox', { name: label }));
+      fireEvent.click(screen.getByRole('button', { name: label }));
       const options = await screen.findAllByRole('option');
       fireEvent.click(option ? options.find((o) => option.test(o.textContent ?? ''))! : options[0]);
     };
@@ -365,7 +365,7 @@ describe('AuditPage', () => {
     wrap(<AuditPage />);
     expect(await screen.findByText('Bị chặn: xem cột id_number')).toHaveClass('text-warning');
     expect(screen.getAllByRole('row')).toHaveLength(7);
-    fireEvent.click(screen.getByRole('combobox', { name: 'Kết quả' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Kết quả' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Kết quả: bị chặn' }));
     await waitFor(() => expect(screen.getAllByRole('row')).toHaveLength(2));
     expect(screen.getByText('Bị chặn: xem cột id_number')).toBeInTheDocument();

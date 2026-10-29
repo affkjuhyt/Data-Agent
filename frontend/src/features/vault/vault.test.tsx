@@ -110,7 +110,7 @@ describe('VaultPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Rời vị trí…' }));
     fireEvent.click(screen.getByRole('button', { name: 'Niêm phong' }));
     expect(screen.queryByText('Đã niêm phong kho')).toBeNull();
-    fireEvent.click(screen.getByRole('combobox', { name: 'Lý do' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lý do' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Hết hợp đồng' }));
     fireEvent.click(screen.getByRole('button', { name: 'Niêm phong' }));
     expect(await screen.findByText('Đã niêm phong kho')).toBeInTheDocument();

@@ -22,7 +22,7 @@ afterEach(() => {
 afterAll(() => server.close());
 
 const pick = (combobox: string, option: string) => {
-  fireEvent.click(screen.getByRole('combobox', { name: combobox }));
+  fireEvent.click(screen.getByRole('button', { name: combobox }));
   fireEvent.click(screen.getByRole('option', { name: option }));
 };
 
@@ -84,13 +84,13 @@ describe('ConnectPage', () => {
     expect(within(row).getByText('Số tài khoản · che')).toBeInTheDocument();
     await waitFor(() =>
       expect(
-        screen.getByRole('combobox', { name: 'Data Space của dbo.card_accounts' }),
+        screen.getByRole('button', { name: 'Data Space của dbo.card_accounts' }),
       ).toBeInTheDocument(),
     );
     await screen.findAllByText('Chọn người');
     pick('Data Space của dbo.card_accounts', 'Rủi ro tín dụng');
     // Any person from the user list will do; the fixture's names are not what this test checks.
-    fireEvent.click(screen.getByRole('combobox', { name: 'Người phụ trách dbo.card_accounts' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Người phụ trách dbo.card_accounts' }));
     fireEvent.click((await screen.findAllByRole('option'))[0]);
     expect(screen.getByText('Nạp lần đầu khoảng 2 triệu dòng')).toBeInTheDocument();
     // A personal table is enabled only once its masking is confirmed (UC-04-04 step 3).

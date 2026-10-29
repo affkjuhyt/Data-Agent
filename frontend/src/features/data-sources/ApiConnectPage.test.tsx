@@ -39,12 +39,12 @@ describe('ApiConnectPage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /Xác thực/ }));
     await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: 'Thông tin xác thực' })).not.toHaveAttribute(
+      expect(screen.getByRole('button', { name: 'Thông tin xác thực' })).not.toHaveAttribute(
         'aria-disabled',
         'true',
       ),
     );
-    fireEvent.click(screen.getByRole('combobox', { name: 'Thông tin xác thực' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Thông tin xác thực' }));
     fireEvent.click(screen.getAllByRole('option')[0]);
 
     fireEvent.click(tryCall);

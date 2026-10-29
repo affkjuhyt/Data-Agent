@@ -22,7 +22,7 @@ afterEach(() => {
 afterAll(() => server.close());
 
 const pick = (combobox: string, option: string) => {
-  fireEvent.click(screen.getByRole('combobox', { name: combobox }));
+  fireEvent.click(screen.getByRole('button', { name: combobox }));
   fireEvent.click(screen.getByRole('option', { name: option }));
 };
 

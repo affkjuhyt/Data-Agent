@@ -50,7 +50,7 @@ describe('WatchListPage', () => {
     });
     const row = screen.getByRole('row', { name: /Tỷ lệ thu hồi nợ/ });
     fireEvent.click(within(row).getByRole('button', { name: /Thao tác với/ }));
-    fireEvent.click(within(row).getByRole('menuitem', { name: 'Tạm dừng' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Tạm dừng' }));
     expect(await screen.findByText('Đã tạm dừng Tỷ lệ thu hồi nợ')).toBeInTheDocument();
     expect(
       await within(screen.getByRole('row', { name: /Tỷ lệ thu hồi nợ/ })).findByText('Tạm dừng'),
@@ -61,7 +61,7 @@ describe('WatchListPage', () => {
     wrap(<WatchListPage />);
     const row = await screen.findByRole('row', { name: /Nợ xấu bán lẻ · DH Bắc Bộ/ });
     fireEvent.click(within(row).getByRole('button', { name: /Thao tác với/ }));
-    fireEvent.click(within(row).getByRole('menuitem', { name: 'Mở cảnh báo gần nhất' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Mở cảnh báo gần nhất' }));
     expect(navigate).toHaveBeenCalledWith('analysis', 'ALERTS', 'alert-npl-north');
   });
 });
@@ -76,9 +76,9 @@ describe('WatchCreatePage', () => {
       }),
     );
     wrap(<WatchCreatePage />);
-    expect(await screen.findByRole('combobox', { name: 'Chỉ số' })).toHaveTextContent('NPL_RATIO');
+    expect(await screen.findByRole('button', { name: 'Chỉ số' })).toHaveTextContent('NPL_RATIO');
     // The splits are the dimensions of the metric's current version.
-    fireEvent.click(await screen.findByRole('combobox', { name: 'Tách theo' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Tách theo' }));
     fireEvent.click(await screen.findByRole('option', { name: 'region' }));
     expect(screen.queryByRole('radio', { name: 'Dự báo' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Tạo theo dõi' }));
@@ -148,8 +148,8 @@ describe('AlertPage', () => {
     wrap(<AlertPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Giao cho người khác' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Giao #A-2291 cho người khác' });
-    fireEvent.click(within(dialog).getByRole('combobox', { name: 'Người nhận' }));
-    const option = (await within(dialog).findAllByRole('option'))[0];
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Người nhận' }));
+    const option = (await screen.findAllByRole('option'))[0];
     const name = option.textContent ?? '';
     fireEvent.click(option);
     fireEvent.click(within(dialog).getByRole('button', { name: 'Giao' }));

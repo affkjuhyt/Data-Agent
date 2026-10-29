@@ -141,8 +141,8 @@ describe('AgentConfigPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Thêm ghi nhớ' }));
     const add = screen.getByRole('dialog', { name: 'Thêm ghi nhớ' });
-    expect(within(add).getByRole('combobox', { name: 'Loại' })).toHaveTextContent('Sở thích người dùng');
-    expect(within(add).getByRole('combobox', { name: 'Hạn' })).toHaveTextContent('90 ngày');
+    expect(within(add).getByRole('button', { name: 'Loại' })).toHaveTextContent('Sở thích người dùng');
+    expect(within(add).getByRole('button', { name: 'Hạn' })).toHaveTextContent('90 ngày');
     const field = within(add).getByRole('textbox', { name: 'Nội dung' });
     fireEvent.change(field, { target: { value: 'Khách hàng 0123456789 là khách VIP' } });
     fireEvent.click(within(add).getByRole('button', { name: 'Lưu ghi nhớ' }));
@@ -161,11 +161,11 @@ describe('AgentConfigPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^Sửa: Khi giải thích nợ xấu/ }));
     const dialog = screen.getByRole('dialog', { name: 'Sửa ghi nhớ' });
     expect(within(dialog).getByText('Thay đổi áp dụng cho lượt chạy tiếp theo.')).toBeInTheDocument();
-    expect(within(dialog).queryByRole('combobox', { name: 'Loại' })).not.toBeInTheDocument();
-    expect(within(dialog).getByRole('combobox', { name: 'Hạn' })).toHaveTextContent('Tới khi sai 2 lần');
+    expect(within(dialog).queryByRole('button', { name: 'Loại' })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Hạn' })).toHaveTextContent('Tới khi sai 2 lần');
 
     // The api keeps a memory's scope; the dialog shows it without a picker.
-    expect(within(dialog).queryByRole('combobox', { name: 'Phạm vi' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Phạm vi' })).not.toBeInTheDocument();
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Nội dung' }), {
       target: { value: 'Khi giải thích nợ xấu, tách riêng khoản tái cơ cấu' },
     });

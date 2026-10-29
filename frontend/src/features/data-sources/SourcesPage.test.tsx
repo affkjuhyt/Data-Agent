@@ -57,7 +57,7 @@ describe('SourcesPage', () => {
     expect(screen.getByText('Kho dữ liệu doanh nghiệp')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Tìm nguồn'), { target: { value: '' } });
-    fireEvent.click(screen.getByRole('combobox', { name: 'Lọc theo chế độ' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Lọc theo chế độ' }));
     fireEvent.click(screen.getByRole('option', { name: 'Chế độ: truy vấn tại chỗ' }));
     expect(screen.queryByText('Core banking')).toBeNull();
     expect(screen.getByText('DWH bán lẻ')).toBeInTheDocument();
@@ -127,7 +127,7 @@ describe('JobsPage', () => {
     renderPage(<JobsPage />);
     const row = (await screen.findByText('card_transactions')).closest('tr')!;
     fireEvent.click(within(row).getByRole('button', { name: 'Thao tác với card_transactions' }));
-    fireEvent.click(within(row).getByRole('menuitem', { name: 'Tiếp tục' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Tiếp tục' }));
     await waitFor(() => expect(within(row).getByText('Đang chạy')).toBeInTheDocument());
   });
 });

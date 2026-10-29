@@ -121,8 +121,8 @@ describe('ModelsPage', () => {
     });
     fireEvent.click(submit);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(await screen.findByText(/LLM-M 24B/)).toBeInTheDocument();
-    expect(screen.getByText(/đang đánh giá/)).toBeInTheDocument();
+    // The routing table's row; a Select's hidden native <select> holds the model's name too.
+    expect(await screen.findByRole('row', { name: /LLM-M 24B.*đang đánh giá/ })).toBeInTheDocument();
   });
 });
 
@@ -240,7 +240,7 @@ describe('IntegrationsPage', () => {
     const dialog = screen.getByRole('dialog', { name: 'Thêm tích hợp' });
     fireEvent.change(within(dialog).getByLabelText('Tên'), { target: { value: 'Ticket MCP' } });
     for (const field of ['Người phụ trách', 'Data Space']) {
-      fireEvent.click(await within(dialog).findByRole('combobox', { name: field }));
+      fireEvent.click(await within(dialog).findByRole('button', { name: field }));
       fireEvent.click((await screen.findAllByRole('option'))[0]);
     }
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'ask_question' }));

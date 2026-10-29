@@ -28,7 +28,7 @@ describe('SaveToKnowledgeDialog', () => {
     const onClose = dialog('answer-npl-t9');
     const box = screen.getByRole('alertdialog', { name: 'Lưu thành tri thức' });
     expect(await within(box).findByText(/tăng 0,12 điểm so với T8/)).toBeInTheDocument();
-    expect(within(box).getByRole('combobox', { name: 'Trang đích' })).toHaveTextContent(
+    expect(within(box).getByRole('button', { name: 'Trang đích' })).toHaveTextContent(
       'Nợ xấu bán lẻ (chỉ số NPL_RATIO)',
     );
     fireEvent.click(within(box).getByRole('button', { name: 'Gửi đề xuất' }));
@@ -39,7 +39,7 @@ describe('SaveToKnowledgeDialog', () => {
   it('shows BR-167 when the answer holds a figure with no query run', async () => {
     dialog('answer-typed-number');
     const box = screen.getByRole('alertdialog', { name: 'Lưu thành tri thức' });
-    fireEvent.click(await within(box).findByRole('combobox', { name: 'Trang đích' }));
+    fireEvent.click(await within(box).findByRole('button', { name: 'Trang đích' }));
     fireEvent.click(await screen.findByRole('option', { name: 'Ngân hàng B' }));
     fireEvent.click(within(box).getByRole('button', { name: 'Gửi đề xuất' }));
     expect(await within(box).findByText(/BR-167/)).toBeInTheDocument();
