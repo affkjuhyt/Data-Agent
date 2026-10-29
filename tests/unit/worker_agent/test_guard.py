@@ -160,3 +160,16 @@ def test_an_unknown_function_is_still_refused_and_a_pure_one_does_not_shield_it(
         check_read_only("SELECT dblink('host=x', 'SELECT 1')", "postgres")
     with pytest.raises(SqlRejected, match="dblink"):
         check_read_only("SELECT replace(dblink('host=x', 'SELECT 1'), 'a', 'b')", "postgres")
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT evil.replace(a, 'x', 'y') FROM t",
+        "SELECT db.evil.split_part(a, ',', 1) FROM t",
+    ],
+)
+def test_a_pure_name_in_some_schema_is_that_schemas_function_and_is_refused(sql: str) -> None:
+    with pytest.raises(SqlRejected):
+        check_read_only(sql, "postgres")
+    assert read_only_problem(sql) is not None

@@ -136,9 +136,13 @@ def check_read_only(sql: str, dialect: str) -> exp.Expression:
     for node in tree.walk():
         if isinstance(node, _WRITES):
             raise SqlRejected(f"{node.key.upper()} is not allowed in a read-only query")
-        if isinstance(node, exp.Anonymous) and node.name.lower() not in _PURE_UNMODELLED:
+        if isinstance(node, exp.Anonymous) and (
+            node.name.lower() not in _PURE_UNMODELLED or isinstance(node.parent, exp.Dot)
+        ):
             # A function sqlglot does not model (pg_*, dblink, an extension's, a user-defined
-            # one) is refused whatever its name: a list of bad names is never complete.
+            # one) is refused whatever its name: a list of bad names is never complete. An
+            # allowlisted name counts only unqualified, where the built-in wins the lookup:
+            # some_schema.replace(...) is whatever that schema's owner wrote.
             raise SqlRejected(f"function {node.name.lower()} is not allowed")
         if isinstance(node, exp.Func) and node.sql_name().lower() in _DENIED_FUNCTIONS:
             raise SqlRejected(f"function {node.sql_name().lower()} is not allowed")
