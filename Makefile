@@ -10,7 +10,7 @@ DOCKER_RUN_PY = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=
 DEV_TOOLS_IMAGE ?= dataagent/dev-tools:local
 DOCKER_RUN_DEV = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(DEV_TOOLS_IMAGE)
 
-.PHONY: help lint type test test-unit test-integration test-changed deadcode frontend-lint frontend-test ci e2e \
+.PHONY: help lint type test test-unit test-integration test-changed test-related deadcode frontend-lint frontend-test ci e2e \
         deploy deploy-local fmt bench bench-gate bench-e2e mock-api contract-compat design-checklist design-audit api-types dev-tools fmt-files \
         type-v3 lint-imports banking-data-plan banking-data-download banking-data-verify banking-data-inventory banking-data-prepare banking-data-bulk-ingest
 
@@ -119,6 +119,9 @@ test: dev-tools  ## unit + integration suites, all at once (same suites as CI py
 
 test-changed: dev-tools  ## only the suites the changes since CHANGED_BASE (default main) can affect
 	@$(RUN_SUITES) changed --base $(CHANGED_BASE)
+
+test-related: dev-tools  ## only the test files the changes since CHANGED_BASE touch (tests/README.md)
+	@$(RUN_SUITES) related --base $(CHANGED_BASE)
 
 # Tab 7 F3: the frontend's types come from the api's own OpenAPI (ADR-48), never written by hand.
 # The api image has the dependencies; backend/ is mounted so the dump reflects the working tree.

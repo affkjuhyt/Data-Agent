@@ -9,7 +9,13 @@ every service), but:
 - the suites run at the same time — they share nothing but the Docker daemon
   (every integration suite starts its own Postgres container on a random port);
 - `changed` runs only the suites that the files changed since a base ref can
-  affect.
+  affect;
+- `related` runs, in each of those suites, only the test files the changes touch:
+  the test files changed, the ones that import a changed module or name a changed
+  file, and for an api module the files named after it. A change that maps to no
+  test file (a conftest, the DDL, a service's Dockerfile) still runs its suites whole;
+- test paths in PYTEST_ARGS replace the suite's directory: each suite runs the paths
+  under its own tests/<kind>/<suite>/, and a suite none of them is under is skipped.
 
 Host Python only orchestrates `docker`; no test runs on the host interpreter
 (3.10, the code targets 3.11+). Standard library only, for the same reason.
@@ -19,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -142,6 +149,81 @@ def changed_paths(base: str) -> list[str]:
     return sorted(paths)
 
 
+def split_targets(pytest_args: str) -> tuple[list[str], list[str]]:
+    """(the test paths, the other pytest arguments) of PYTEST_ARGS."""
+    words = shlex.split(pytest_args)
+    paths = [w for w in words if w.startswith("tests/")]
+    return paths, [w for w in words if not w.startswith("tests/")]
+
+
+def own_targets(suite: Suite, paths: list[str]) -> list[str]:
+    root = f"tests/{suite.kind}/{suite.name}"
+    return [p for p in paths if p == root or p.startswith(root + "/")]
+
+
+def _module_of(path: str) -> str | None:
+    """backend/services/worker_agent/sqlgen/answer.py -> services.worker_agent.sqlgen.answer."""
+    if not path.startswith("backend/") or not path.endswith(".py"):
+        return None
+    dotted = path[len("backend/") : -len(".py")].replace("/", ".")
+    return dotted.removesuffix(".__init__")
+
+
+def _refers(text: str, module: str) -> bool:
+    """`text` imports `module` (by its dotted name, or `from <package> import <leaf>`)."""
+    if re.search(rf"\b{re.escape(module)}\b", text):
+        return True
+    package, _, leaf = module.rpartition(".")
+    return bool(
+        package
+        and re.search(
+            rf"from {re.escape(package)} import\s*\(?[^)]*?\b{re.escape(leaf)}\b", text, re.S
+        )
+    )
+
+
+def related_tests(paths: list[str], suite: Suite, files: dict[str, str]) -> tuple[list[str], bool]:
+    """(the test files of `suite` the changed `paths` touch, whether a change maps to no test
+    file of it and so needs the suite whole). `files` is test path -> its text."""
+    root = f"tests/{suite.kind}/{suite.name}/"
+    mine = {p: t for p, t in files.items() if p.startswith(root)}
+    picked: set[str] = set()
+    whole = False
+    for path in paths:
+        if path.startswith(root):
+            if Path(path).name.startswith("test_") and path in mine:
+                stem = Path(path).stem
+                # It, and the test files that borrow its fixtures or helpers.
+                picked.add(path)
+                picked |= {
+                    p
+                    for p, t in mine.items()
+                    if re.search(rf"from \.{stem} import|from \. import[^\n]*\b{stem}\b", t)
+                }
+            elif path.endswith(".py"):
+                whole = True  # a conftest or a helper every test may lean on
+            continue
+        if path.startswith("tests/"):
+            # Another suite's test runs in that suite; shared tooling (tests/integration/_db.py,
+            # tests/conftest.py) runs the suites `changed` picks for it whole.
+            if len(path.split("/")) <= 3:
+                whole = whole or bool(suites_for_paths([path], [suite]))
+            continue
+        if path.startswith("backend/services/api/modules/") and suite.name == "api":
+            name = path.split("/")[4]
+            named = {p for p in mine if Path(p).name.startswith(f"test_{name}")}
+            picked |= named
+        module = _module_of(path)
+        if module is not None:
+            picked |= {p for p, t in mine.items() if _refers(t, module)}
+            continue
+        # No import to follow (the DDL, a Dockerfile, a manifest, test tooling): the suites
+        # `changed` picks for it run whole, and a test naming the file (a seed it reads) runs.
+        whole = whole or bool(suites_for_paths([path], [suite]))
+        picked |= {p for p, t in mine.items() if Path(path).name in t}
+    return sorted(picked), whole
+
+
 def base_image(suite: Suite, registry: str) -> str:
     """A bare name is a service image in the registry; a reference with a `/` (the repo
     suite's local dataagent/dev-tools:local) is used as it is."""
@@ -162,7 +244,9 @@ def build_test_image(suite: Suite, registry: str) -> str:
     return tag
 
 
-def run_suite(suite: Suite, registry: str, pytest_args: str, log_dir: Path) -> tuple[Suite, int, float, Path]:
+def run_suite(
+    suite: Suite, registry: str, pytest_args: str, log_dir: Path, targets: list[str] | None = None
+) -> tuple[Suite, int, float, Path]:
     log = log_dir / f"{suite.kind}-{suite.name}.log"
     start = time.monotonic()
     with log.open("w") as out:
@@ -195,7 +279,7 @@ def run_suite(suite: Suite, registry: str, pytest_args: str, log_dir: Path) -> t
         cmd += [
             tag, "python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "-m", suite.kind,
             *SUITE_PYTEST_ARGS.get((suite.kind, suite.name), []), *shlex.split(pytest_args),
-            f"tests/{suite.kind}/{suite.name}",
+            *(targets or [f"tests/{suite.kind}/{suite.name}"]),
         ]
         rc = subprocess.run(cmd, cwd=REPO_ROOT, stdout=out, stderr=subprocess.STDOUT).returncode
     return suite, rc, time.monotonic() - start, log
@@ -203,12 +287,14 @@ def run_suite(suite: Suite, registry: str, pytest_args: str, log_dir: Path) -> t
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("mode", choices=["unit", "integration", "all", "changed"])
+    parser.add_argument("mode", choices=["unit", "integration", "all", "changed", "related"])
     parser.add_argument("--unit-suites", default=os.environ.get("UNIT_SUITES") or DEFAULT_UNIT)
     parser.add_argument(
         "--integration-suites", default=os.environ.get("INTEGRATION_SUITES") or DEFAULT_INTEGRATION
     )
-    parser.add_argument("--base", default="main", help="for `changed`: compare against this ref")
+    parser.add_argument(
+        "--base", default="main", help="for `changed` and `related`: compare against this ref"
+    )
     parser.add_argument("--jobs", type=int, default=0, help="suites at once; 0 = all of them")
     parser.add_argument("--registry", default=os.environ.get("IMAGE_REGISTRY") or "localhost:5000")
     parser.add_argument("--pytest-args", default=os.environ.get("PYTEST_ARGS", ""))
@@ -217,13 +303,43 @@ def main() -> int:
     unit = parse_suites("unit", args.unit_suites)
     integration = parse_suites("integration", args.integration_suites)
     suites = {"unit": unit, "integration": integration}.get(args.mode, unit + integration)
-    if args.mode == "changed":
+    targets: dict[Suite, list[str] | None] = {}
+    paths_given, flags = split_targets(args.pytest_args)
+    if paths_given:
+        suites = [s for s in suites if own_targets(s, paths_given)]
+        targets = {s: own_targets(s, paths_given) for s in suites}
+        args.pytest_args = shlex.join(flags)
+    if args.mode in ("changed", "related"):
         paths = changed_paths(args.base)
         suites = suites_for_paths(paths, unit + integration)
-        print(f"{len(paths)} path(s) changed since {args.base}; running: "
-              f"{', '.join(s.label for s in suites) or 'nothing'}")
+        if args.mode == "related":
+            # Any suite may hold a test that imports or reads a changed file (a worker test
+            # reading a deploy/ seed), so every suite is looked into, not only those above.
+            suites = unit + integration
+            files = {
+                str(p.relative_to(REPO_ROOT)): p.read_text(encoding="utf-8", errors="replace")
+                for p in (REPO_ROOT / "tests").glob("*/*/**/test_*.py")
+            }
+            narrowed = []
+            for s in suites:
+                picked, whole = related_tests(paths, s, files)
+                if whole or picked:
+                    narrowed.append(s)
+                    targets[s] = None if whole else picked
+            suites = narrowed
+        print(
+            f"{len(paths)} path(s) changed since {args.base}; running: "
+            + (
+                ", ".join(
+                    f"{s.label} ({'all' if targets.get(s) is None else len(targets[s] or [])})"
+                    for s in suites
+                )
+                or "nothing"
+            )
+        )
     if not suites:
         return 0
+
 
     started = time.monotonic()
     failed: list[Suite] = []
@@ -231,7 +347,10 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="dataagent-tests-") as tmp, ThreadPoolExecutor(
         max_workers=args.jobs or len(suites)
     ) as pool:
-        futures = [pool.submit(run_suite, s, args.registry, args.pytest_args, Path(tmp)) for s in suites]
+        futures = [
+            pool.submit(run_suite, s, args.registry, args.pytest_args, Path(tmp), targets.get(s))
+            for s in suites
+        ]
         # Each suite's output is printed whole when it finishes, never interleaved.
         for future in as_completed(futures):
             suite, rc, seconds, log = future.result()

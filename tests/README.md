@@ -71,7 +71,9 @@ requirement. Which issue needs which level, and the V2 rules behind the tags:
 ### Python — unit (no Docker inside the tests)
 
 ```bash
+make test-related                                # only the test files your changes since main touch
 make test-changed                                # only the suites your changes since main can affect
+make test-integration PYTEST_ARGS="tests/integration/api/test_qa_answers.py"   # one file
 make test-unit                                   # every suite, each in its service image, in parallel
 make test-unit UNIT_SUITES=crawler:crawler       # one suite
 make test-unit PYTEST_ARGS="-k lock -x"          # extra pytest args
@@ -97,6 +99,18 @@ reads every service's Dockerfile and sources; `deploy/`, `frontend/` and `model/
 `repo` too. Anything under
 `backend/libs`, `backend/alembic` or the shared test fixtures runs everything.
 Before a merge, run `make test` anyway.
+
+`make test-related` goes one step finer, for iterating: within every suite it runs only
+the test files a change touches — the test files changed (and those importing them with
+`from .test_x import`), the ones whose text imports a changed module (its dotted name, or
+`from <package> import <leaf>`), for `backend/services/api/modules/<m>/` the api files
+named `test_<m>*.py`, and any test naming a changed file (a seed under `deploy/` read by a
+worker test). What no import reaches — a conftest, shared test tooling, the DDL, a
+Dockerfile, requirements — still runs the suites `test-changed` would pick, whole. Test paths
+in `PYTEST_ARGS` work the same way: they replace the suite's directory, each suite gets
+the paths under its own `tests/<kind>/<suite>/`, and a suite none of them is under is
+skipped. It reads imports, not behaviour: an api route hit only over HTTP from a file not
+named after its module is not found, which `make test` before a merge covers.
 
 Outside Docker, the equivalent is a virtualenv holding that
 service's `requirements.txt` plus `requirements-test.txt` — which is what CI's
