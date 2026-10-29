@@ -277,7 +277,7 @@ tính là có khi một test nhắc mã AC hoặc AC được khai `done`/`na`.
 | BR-19 | UC-05-02 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/document.py`, `backend/schema/csdl/definitions.json` +8 |
 | BR-20 | UC-05-04 | todo | `backend/services/worker_agent/documents/answer.py`, `backend/services/worker_agent/documents/retrieve.py` |
 | BR-21 | UC-05-04 | todo |  |
-| BR-22 | UC-06-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +9 |
+| BR-22 | UC-06-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/libs/sql_guard/__init__.py` +8 |
 | BR-23 | UC-06-01 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +5 |
 | BR-24 | UC-06-04 | todo | `backend/alembic/sql/dataagent.sql`, `backend/libs/dataagent_db/models/pipeline.py`, `backend/schema/csdl/definitions.json` +7 |
 | BR-25 | UC-06-04 | todo | `backend/services/api/modules/pipeline/routes.py` |
