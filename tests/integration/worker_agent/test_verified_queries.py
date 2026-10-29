@@ -150,3 +150,37 @@ async def test_a_liked_exploratory_answer_is_proposed_and_checked_before_review(
         seed.one("SELECT count(*) FROM context.example_query WHERE data_space_id = %s", bank.space)
         == 1
     )
+
+
+async def test_only_the_asker_proposes_their_question(
+    seed: Seed,
+    credit: dict[str, Any],  # noqa: F811  (the fixture)
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bank = build(seed, credit, monkeypatch)
+    q = asked(bank, Script([GOOD[0], GOOD[1]] * 3), monkeypatch)
+    await drain()
+    answer = answer_of(seed, q)[5]
+    reader = seed.row(
+        "org.app_user", org_id=bank.org, external_id="kc-r", username="r", display_name="R"
+    )
+    seed.row(
+        "qa.outbox",
+        org_id=bank.org,
+        aggregate_type="feedback",
+        aggregate_id=uuid.uuid4(),
+        event_type=liked.HANDLER,
+        payload=json.dumps(
+            {
+                "answer_id": str(answer),
+                "question_id": str(q),
+                # Whatever the payload says, the Data Space is the conversation's.
+                "data_space_id": str(uuid.uuid4()),
+                "user_id": str(reader),
+            }
+        ),
+    )
+    qa_source = OutboxTableSource(schema="qa", event_types=frozenset(liked.HANDLERS))
+    while await run_once(qa_source, liked.HANDLERS, batch=10):
+        pass
+    assert seed.one("SELECT count(*) FROM context.example_query WHERE org_id = %s", bank.org) == 0

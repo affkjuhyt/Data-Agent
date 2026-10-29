@@ -32,6 +32,7 @@ from services.worker_agent.events import Event, Handler
 from services.worker_agent.query.executor import run_query
 from services.worker_agent.semantic.loader import Overlay
 from services.worker_agent.sqlgen import verified
+from services.worker_agent.sqlgen.answer import QUERYABLE
 from services.worker_agent.understand.text import find_period
 
 logger = logging.getLogger(__name__)
@@ -205,16 +206,25 @@ async def example_changed(event: Event) -> None:
         sql = verified.bind(
             stored_sql, find_period(question, datetime.date.today()), datetime.date.today()
         )
-        origin = await verified.origin_of(session, space_id, sql)
+        if actor is None:
+            return
+        origin = await verified.origin_of(session, space_id, sql, actor)
+        if not origin.ok:
+            logger.info("worker-agent | example %s reads no one source of its space", example_id)
+            return
         source = (
             await session.get(catalog.Source, origin.source_id)
-            if origin.ok and origin.source_id is not None
+            if origin.source_id is not None
             else None
         )
+        # Run only where an answer would (sqlgen/answer.py): a source queried in place, live.
+        if origin.source_id is not None and (
+            source is None or source.mode != "federated" or source.status not in QUERYABLE
+        ):
+            logger.info("worker-agent | example %s source is not queryable", example_id)
+            return
         if source is not None:
             session.expunge(source)
-    if actor is None:
-        return
     outcome = await run_query(
         org_id=event.org_id,
         data_space_id=space_id,

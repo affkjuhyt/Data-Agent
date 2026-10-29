@@ -18,7 +18,7 @@ import re
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs.dataagent_db.models import catalog, context
@@ -103,7 +103,11 @@ class Origin:
     source_id: uuid.UUID | None = None
 
 
-async def origin_of(session: AsyncSession, space_id: uuid.UUID, sql: str) -> Origin:
+async def origin_of(
+    session: AsyncSession, space_id: uuid.UUID, sql: str, principal_id: uuid.UUID
+) -> Origin:
+    """The datasets are those `principal_id` may read as query/scope.datasets_read sees them:
+    enabled, and no one else's personal table (BR-111); run_query checks it again."""
     try:
         tables = tables_of(check_read_only(sql, "postgres"), "postgres")
     except SqlRejected:
@@ -113,7 +117,13 @@ async def origin_of(session: AsyncSession, space_id: uuid.UUID, sql: str) -> Ori
     datasets = (
         await session.scalars(
             select(catalog.Dataset).where(
-                catalog.Dataset.data_space_id == space_id, catalog.Dataset.deleted_at.is_(None)
+                catalog.Dataset.data_space_id == space_id,
+                catalog.Dataset.deleted_at.is_(None),
+                catalog.Dataset.enabled.is_(True),
+                or_(
+                    catalog.Dataset.scope != "personal",
+                    catalog.Dataset.created_by == principal_id,
+                ),
             )
         )
     ).all()

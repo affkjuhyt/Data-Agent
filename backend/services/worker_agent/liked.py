@@ -5,6 +5,10 @@ feedback.liked. Here the question and the winning SQL become a draft context.exa
 feedback), and example_query.created hands it to the checker (semantic_review.example_changed):
 the SQL is run, and only one that runs goes to the steward to approve. A question the Data Space
 already has an example for, active or on its way, is not proposed twice.
+
+Only the person who asked proposes their question: a reader who may see the answer does not
+publish someone else's question and SQL to the Data Space. The Data Space is the
+conversation's, and an SQL reading a personal table is never proposed (BR-111).
 """
 
 from __future__ import annotations
@@ -14,7 +18,8 @@ import uuid
 from sqlalchemy import func, select
 
 from libs.dataagent_db import scoped_session, uuid7
-from libs.dataagent_db.models import context, qa
+from libs.dataagent_db.models import catalog, context, qa
+from libs.sql_guard import SqlRejected, check_read_only, tables_of
 from services.worker_agent.events import Event, Handler
 
 HANDLER = "feedback.liked"
@@ -24,7 +29,6 @@ _OPEN = ("draft", "pending_review", "active")
 
 async def propose_example(event: Event) -> None:
     answer_id = uuid.UUID(str(event.payload["answer_id"]))
-    space_id = uuid.UUID(str(event.payload["data_space_id"]))
     user_id = uuid.UUID(str(event.payload["user_id"]))
     async with scoped_session(ROLE, event.org_id, user_id) as session:
         answer = await session.get(qa.Answer, answer_id)
@@ -32,6 +36,12 @@ async def propose_example(event: Event) -> None:
             return
         plan = await session.get(qa.Plan, answer.plan_id)
         question = await session.get(qa.Question, answer.question_id)
+        conversation = (
+            await session.get(qa.Conversation, question.conversation_id) if question else None
+        )
+        if conversation is None or conversation.user_id != user_id:
+            return
+        space_id = conversation.data_space_id
         steps = plan.steps if plan is not None and isinstance(plan.steps, dict) else {}
         sql = next(
             (
@@ -42,6 +52,20 @@ async def propose_example(event: Event) -> None:
             None,
         )
         if question is None or steps.get("path") != "exploratory_sql" or not sql:
+            return
+        tables = _tables(sql)
+        if tables is None:
+            return
+        personal = await session.scalar(
+            select(func.count())
+            .select_from(catalog.Dataset)
+            .where(
+                catalog.Dataset.data_space_id == space_id,
+                catalog.Dataset.scope == "personal",
+                func.lower(catalog.Dataset.table_name).in_([t for _, t in tables]),
+            )
+        )
+        if personal:
             return
         text = question.text.strip()
         taken = await session.scalar(
@@ -82,6 +106,13 @@ async def propose_example(event: Event) -> None:
                 },
             )
         )
+
+
+def _tables(sql: str) -> set[tuple[str | None, str]] | None:
+    try:
+        return {(s, t.lower()) for s, t in tables_of(check_read_only(sql, "postgres"), "postgres")}
+    except SqlRejected:
+        return None
 
 
 HANDLERS: dict[str, Handler] = {HANDLER: propose_example}
