@@ -4,7 +4,9 @@ POST /v1/agents/{id}/eval-runs reserves an eval run id on the config and emits
 agent_config.eval_requested. Here the eval set is chosen, the run made under that id and scored
 through the production QA path (eval_runs.run_eval), and a run at the bar (BR-175, as for a data
 product: at least the set's `min_items` items, a pass rate of at least its `pass_threshold`) moves
-the config to `passed`, the one status POST /v1/agents/{id}/deployments accepts. Below the bar the
+the config to `passed`, the one status POST /v1/agents/{id}/deployments accepts. The items are
+answered as the agent's own account and within the version's data_scope, so the version passes on
+what it would itself be shown, not on what the person who asked for the run may read. Below the bar the
 config stays `testing` and the run says which items missed.
 
 The set is the agent's own (subject_type agent) when it has one, else its Data Space's (subject
@@ -74,6 +76,7 @@ async def evaluate_agent(event: Event) -> None:
             )
         )
         config_id, space_id = config.id, owner.data_space_id
+        account, data_scope = owner.account_user_id, dict(config.data_scope or {})
         requested_by = uuid.UUID(str(event.payload.get("requested_by") or owner.owner_user_id))
         tell = [owner.owner_user_id]
     link = f"/agents/agent/{agent_id}"
@@ -135,6 +138,8 @@ async def evaluate_agent(event: Event) -> None:
             {
                 "eval_run_id": str(run_id),
                 "requested_by": str(requested_by),
+                "answer_as": str(account),
+                "data_scope": data_scope,
                 "data_space_id": str(space_id),
                 "trigger": "deploy",
             },

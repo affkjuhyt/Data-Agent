@@ -54,6 +54,7 @@ from services.worker_agent.answer.narrate import Figure, chart_spec_of, figures_
 from services.worker_agent.answer.thresholds import judged
 from services.worker_agent.answer.thresholds import load as load_threshold
 from services.worker_agent.answer.verification import verify
+from services.worker_agent.data_scope import DataScope
 from services.worker_agent.documents import answer as document_answer
 from services.worker_agent.documents.retrieve import retrieve
 from services.worker_agent.documents.search import SearchServices, services_from_env
@@ -676,6 +677,20 @@ async def _run(event: Event, question_id: uuid.UUID, *, edited_plan_id: uuid.UUI
     await _answer(event, question_id, prepared, outcome)
 
 
+async def _within(
+    scope: DataScope, layer: SpaceLayer, dataset_ids: Sequence[uuid.UUID], session: AsyncSession
+) -> bool:
+    """Every table the metric reads, and its source, is inside an agent version's data_scope."""
+    if scope.tables is None and scope.sources is None:
+        return True
+    for dataset_id in dataset_ids:
+        dataset = layer.datasets[dataset_id]
+        source = await session.get(catalog.Source, dataset.source_id) if dataset.source_id else None
+        if not scope.allows(dataset, source):
+            return False
+    return True
+
+
 def _no_value(columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> bool:
     """An aggregate over a period with no data still returns a row, its value NULL (SUM over no
     rows): that is no data for the period, refused as such, not an answer saying "CHƯA CÓ"."""
@@ -753,6 +768,10 @@ async def _understand_and_plan(
             question.knowledge_mode = knowledge_hint.mode
         today = question.as_of or datetime.date.today()
         layer = await load(session, space_id)
+        # Answering for an agent version's eval run (agent_evals.py): what its config lets it
+        # read, as its runs would (runs.py); a person's question carries no scope.
+        scope = DataScope.of(event.payload.get("data_scope"))
+        layer.vocabulary = scope.narrow(layer.vocabulary)
         space_access_problem = None
         if not await can_ask_data_space(session, data_space_id=space_id, principal_id=user_id):
             space_access_problem = Refusal.of(
@@ -1152,6 +1171,12 @@ async def _understand_and_plan(
                 problem = Refusal.of(
                     ErrorCode.TOOL_UNAVAILABLE,
                     message="Bảng của chỉ số này nằm trên một nguồn chưa được phép truy vấn tại chỗ.",
+                    detail_id=str(question.id),
+                )
+            elif not await _within(scope, layer, compiled.dataset_ids, session):
+                problem = Refusal.of(
+                    ErrorCode.ACCESS_DENIED,
+                    message="Chỉ số này đọc một bảng nằm ngoài phạm vi dữ liệu của agent.",
                     detail_id=str(question.id),
                 )
             elif compile_request is not None:

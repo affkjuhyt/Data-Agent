@@ -14,10 +14,14 @@ from services.worker_agent import agent_evals
 from services.worker_agent.events import OutboxTableSource
 from services.worker_agent.main import run_once
 
+from . import test_answers
 from .conftest import Seed
+from .test_answers import build
 from .test_questions import Asked, ask
 
 pytestmark = [pytest.mark.integration]
+
+warehouse = test_answers.warehouse
 
 
 def eval_set(
@@ -48,34 +52,51 @@ def eval_set(
     return found
 
 
-def agent_asking_for_eval(seed: Seed, asked: Asked) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
+def agent_asking_for_eval(
+    seed: Seed,
+    org: uuid.UUID,
+    space: uuid.UUID,
+    owner: uuid.UUID,
+    *,
+    data_scope: dict[str, Any] | None = None,
+) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
     """An agent whose version 1 asks for its eval run, as POST /v1/agents/{id}/eval-runs leaves
-    it: the run id reserved on the config, the config testing, the event in agent.outbox."""
-    owner = asked.users[0]
+    it: the run id reserved on the config, the config testing, the event in agent.outbox. Its
+    own account (app_user kind agent) is the one the items are answered as."""
+    account = seed.row(
+        "org.app_user",
+        org_id=org,
+        external_id=f"agent-{uuid.uuid4().hex[:6]}",
+        username=f"agent-{uuid.uuid4().hex[:6]}",
+        display_name="Agent thử",
+        kind="agent",
+        owner_user_id=owner,
+    )
     agent_id = seed.row(
         "agent.agent_def",
-        org_id=asked.org,
-        data_space_id=asked.space,
+        org_id=org,
+        data_space_id=space,
         code=f"a-{uuid.uuid4().hex[:6]}",
         name="Agent thử",
         kind="analysis",
         owner_user_id=owner,
-        account_user_id=uuid.uuid4(),
+        account_user_id=account,
         current_config_version=1,
     )
     run_id = uuid.uuid4()
     config = seed.row(
         "agent.agent_config",
-        org_id=asked.org,
+        org_id=org,
         agent_id=agent_id,
         version=1,
         goal="g",
         status="testing",
         eval_run_id=run_id,
+        data_scope=json.dumps(data_scope or {}),
     )
     seed.row(
         "agent.outbox",
-        org_id=asked.org,
+        org_id=org,
         aggregate_type="agent_config",
         aggregate_id=config,
         event_type=agent_evals.HANDLER,
@@ -108,7 +129,7 @@ def told(seed: Seed, asked: Asked, run_id: uuid.UUID) -> list[tuple[Any, ...]]:
 async def test_a_version_at_the_bar_passes_and_may_be_deployed(seed: Seed) -> None:
     asked = ask(seed, "Câu hỏi đánh giá không có chỉ số đã biết")
     used = eval_set(seed, asked, space=asked.space, expected="refusal")
-    _, config, run_id = agent_asking_for_eval(seed, asked)
+    _, config, run_id = agent_asking_for_eval(seed, asked.org, asked.space, asked.users[0])
     await drain()
     assert seed.one(
         "SELECT eval_set_id, trigger, trigger_ref, status, item_count, passed"
@@ -124,7 +145,7 @@ async def test_a_version_at_the_bar_passes_and_may_be_deployed(seed: Seed) -> No
 async def test_a_version_below_the_bar_stays_testing_and_says_why(seed: Seed) -> None:
     asked = ask(seed, "Câu hỏi đánh giá không có chỉ số đã biết")
     eval_set(seed, asked, space=asked.space, expected="data")
-    _, config, run_id = agent_asking_for_eval(seed, asked)
+    _, config, run_id = agent_asking_for_eval(seed, asked.org, asked.space, asked.users[0])
     await drain()
     assert seed.one("SELECT status, passed FROM eval.eval_run WHERE id = %s", run_id) == (
         "completed",
@@ -140,7 +161,7 @@ async def test_too_few_items_is_below_the_bar_whatever_they_score(seed: Seed) ->
     small = eval_set(seed, asked, space=asked.space, expected="refusal")
     with seed.conn.cursor() as cur:
         cur.execute("UPDATE eval.eval_set SET min_items = 100 WHERE id = %s", (str(small),))
-    _, config, _ = agent_asking_for_eval(seed, asked)
+    _, config, _ = agent_asking_for_eval(seed, asked.org, asked.space, asked.users[0])
     await drain()
     assert seed.one("SELECT status FROM agent.agent_config WHERE id = %s", config) == "testing"
 
@@ -154,7 +175,7 @@ async def test_the_agents_own_set_wins_and_another_spaces_set_is_never_used(
     )
     eval_set(seed, asked, space=elsewhere, expected="refusal")
     eval_set(seed, asked, space=asked.space, expected="data")
-    agent_id, _, run_id = agent_asking_for_eval(seed, asked)
+    agent_id, _, run_id = agent_asking_for_eval(seed, asked.org, asked.space, asked.users[0])
     own = eval_set(
         seed,
         asked,
@@ -173,9 +194,50 @@ async def test_a_space_without_a_set_tells_the_owner_and_makes_no_run(seed: Seed
         "org.data_space", org_id=asked.org, code="DS-KHAC", name="Khác", steward_id=asked.users[0]
     )
     eval_set(seed, asked, space=elsewhere, expected="refusal")
-    _, config, run_id = agent_asking_for_eval(seed, asked)
+    _, config, run_id = agent_asking_for_eval(seed, asked.org, asked.space, asked.users[0])
     await drain()
     assert seed.one("SELECT count(*) FROM eval.eval_run WHERE id = %s", run_id) == 0
     assert seed.one("SELECT status FROM agent.agent_config WHERE id = %s", config) == "testing"
     [(_, kind, title)] = told(seed, asked, run_id)
     assert kind == "alert" and "Chưa đánh giá được" in title
+
+
+@pytest.mark.parametrize("allowed", [True, False])
+async def test_a_version_is_scored_as_its_agent_within_its_data_scope(
+    seed: Seed, warehouse: dict[str, Any], monkeypatch: pytest.MonkeyPatch, allowed: bool
+) -> None:
+    # The same question passes for a version whose data_scope holds the metric and fails for
+    # one that does not: the run measures the version, not the person who asked for it.
+    bank = build(seed, warehouse, monkeypatch)
+    used = seed.row(
+        "eval.eval_set",
+        org_id=bank.org,
+        data_space_id=bank.space,
+        subject_type="context",
+        name="Bộ thử tín dụng",
+        pass_threshold=1,
+        min_items=1,
+        created_by=bank.user,
+    )
+    seed.row(
+        "eval.eval_item",
+        org_id=bank.org,
+        eval_set_id=used,
+        category="correct_result",
+        input=json.dumps({"question": "Tỷ lệ nợ xấu tháng 9/2026"}),
+        expected=json.dumps({"kind": "data"}),
+        created_by=bank.user,
+    )
+    scope = {"metrics": [str(bank.npl) if allowed else "SOMETHING_ELSE"]}
+    agent_id, config, run_id = agent_asking_for_eval(
+        seed, bank.org, bank.space, bank.user, data_scope=scope
+    )
+    await drain()
+    account = seed.one("SELECT account_user_id FROM agent.agent_def WHERE id = %s", agent_id)
+    passed, answered_as = seed.one(
+        "SELECT passed, actual->>'answered_as' FROM eval.eval_result WHERE eval_run_id = %s",
+        run_id,
+    )
+    assert passed is allowed and answered_as == str(account)
+    status = seed.one("SELECT status FROM agent.agent_config WHERE id = %s", config)
+    assert status == ("passed" if allowed else "testing")

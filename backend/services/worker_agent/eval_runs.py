@@ -106,6 +106,8 @@ async def run_eval(event: Event) -> None:
     run_id = uuid.UUID(str(event.payload["eval_run_id"]))
     user_id = uuid.UUID(str(event.payload["requested_by"]))
     space_id = uuid.UUID(str(event.payload["data_space_id"]))
+    answer_as = uuid.UUID(str(event.payload.get("answer_as") or user_id))
+    data_scope = event.payload.get("data_scope")
     async with scoped_session(ROLE, event.org_id, user_id) as session:
         run = await session.scalar(select(evaluation.EvalRun).where(evaluation.EvalRun.id == run_id, evaluation.EvalRun.org_id == event.org_id).with_for_update())
         if run is None or run.status != "running":
@@ -130,7 +132,9 @@ async def run_eval(event: Event) -> None:
             active_authors = set((await session.scalars(select(org.AppUser.id).where(org.AppUser.id.in_(authors), org.AppUser.status == "active"))).all()) if authors else set()
         passed = failed = refusals = regressions = 0
         for item in items:
-            asker = (item.updated_by or item.created_by) if nightly else user_id
+            # An agent version's run (agent_evals.py) answers as the agent's account, within its
+            # config's data_scope, so the version passes on what it would itself be shown.
+            asker = (item.updated_by or item.created_by) if nightly else answer_as
             understanding_ok: bool | None
             value_ok: bool | None
             behavior_ok: bool | None
@@ -144,7 +148,7 @@ async def run_eval(event: Event) -> None:
                 async with scoped_session("svc_qa", event.org_id, asker) as qa_session:
                     qa_session.add(qa.Conversation(id=conversation_id, org_id=event.org_id, data_space_id=space_id, user_id=asker, channel="api", created_by=asker, updated_by=asker))
                     qa_session.add(qa.Question(id=question_id, org_id=event.org_id, conversation_id=conversation_id, seq=1, text=_question_text(item), as_of=item.as_of, received_at=func.now()))
-                await answer_question(Event(uuid7(), event.org_id, "question.received", "question", question_id, {"question_id": str(question_id), "user_id": str(asker), "eval_run_id": str(run_id)}))
+                await answer_question(Event(uuid7(), event.org_id, "question.received", "question", question_id, {"question_id": str(question_id), "user_id": str(asker), "eval_run_id": str(run_id), **({"data_scope": data_scope} if data_scope else {})}))
                 async with scoped_session("svc_qa", event.org_id, asker) as qa_session:
                     question = await qa_session.get(qa.Question, question_id)
                     answer = await qa_session.scalar(select(qa.Answer).where(qa.Answer.question_id == question_id))
