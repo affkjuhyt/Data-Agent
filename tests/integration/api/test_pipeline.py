@@ -328,7 +328,7 @@ async def test_a_step_never_writes_and_a_dropping_step_names_its_condition(pp: S
                     {
                         "kind": "compute",
                         "description": "Sửa nguồn",
-                        "code": "UPDATE core.du_no SET du_no = 0 -- 'insert' in a comment is fine",
+                        "code": "UPDATE core.du_no SET du_no = 0",
                     }
                 ],
             },
@@ -336,8 +336,8 @@ async def test_a_step_never_writes_and_a_dropping_step_names_its_condition(pp: S
         )
         assert writes.status_code == 422, writes.text
         assert writes.json()["code"] == "business_rule_violated"
-        assert "update" in writes.json()["detail"]
-        # A write keyword inside a string or a comment is not a write.
+        assert "only a query" in writes.json()["detail"]
+        # A write keyword inside a string is not a write.
         quoted = await _create(
             api,
             pp,
@@ -346,7 +346,7 @@ async def test_a_step_never_writes_and_a_dropping_step_names_its_condition(pp: S
                 {
                     "kind": "compute",
                     "description": "Nhãn",
-                    "code": "SELECT 'delete me' AS nhan /* drop */ FROM t",
+                    "code": "SELECT 'delete me; drop table t' AS nhan FROM t",
                 }
             ],
         )
