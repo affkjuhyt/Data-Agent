@@ -411,8 +411,9 @@ The run stops at `in_review`; publishing is a person's action. Its event is `acq
   (`acquire.source.status_changed`, reason `blocked`); resume it from the source screen.
 - **A run stuck in `fetching`/`extracting`** after a crawler restart is failed when its event is
   claimed again (reason "abandoned"), which frees the source for a new run.
-- **Scheduled runs** (`schedule_cron`) are not created yet: nothing in V3 schedules across
-  organisations before Temporal Schedules (ADR-33). Start runs from the source screen.
+- **Scheduled runs**: an active source's `schedule_cron` is a Temporal schedule `crawl:<org>:<source>`
+  (§10e), read in Hà Nội time; a firing queues a run with trigger `schedule`, skipped while a run
+  is still going or once the legal review has lapsed.
 
 ## 10e. Temporal (schedules, ADR-33)
 
@@ -425,12 +426,15 @@ Every schedule is a Temporal Schedule (ADR-33); Kafka stays the path of events. 
 | `pipeline:<org>:<pipeline>` | an active pipeline's `cron`, skipped on its work calendar's days off | the calendar's, else UTC |
 | `report:<org>:<schedule>` | an active report schedule's `cron` | Asia/Ho_Chi_Minh |
 | `quality:<org>` | hourly: every active quality rule not checked in 24 h | UTC |
+| `crawl:<org>:<source>` | an active crawl source's `schedule_cron`: a run (trigger `schedule`) unless one is still going or its legal review lapsed | Asia/Ho_Chi_Minh |
+| `agent:<org>:<trigger>` | an enabled schedule trigger of a `running` agent: a run as the agent's account, held by `no_overlap`, `min_interval` and its work calendar | UTC |
 | `nightly-evals` | 02:00: the nightly eval runs (§10c) | Asia/Ho_Chi_Minh |
 
 A firing re-reads its row, so a schedule paused, deleted or re-timed since the last sync fires into
 nothing; a minute already served is recognised by the run it made. A firing missed while Temporal or
-worker-agent was down is made within 15 minutes, never later. Crawl sources and agent triggers
-follow in TM-03. The pieces:
+worker-agent was down is made within 15 minutes, never later. Temporal refuses `L` and `W` in a
+cron, so the api does too; a cron restricting both day fields fires on either, as cron always has.
+The pieces:
 
 - **Server** `temporal` (`temporalio/server`, one pod running the frontend, history, matching and
   worker roles), its frontend at `temporal:8380`. Its state is in two databases of the shared

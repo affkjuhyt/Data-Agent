@@ -96,7 +96,7 @@ Ba kết luận dùng cho quyết định:
 
 | Khối | Hiện thực | Nơi |
 | --- | --- | --- |
-| Nguồn web | Nguồn thu thập (`acquire`), tải trong miền khai báo, 1 yêu cầu/giây/miền, robots, bản gốc bất biến MinIO `da-raw-crawl` theo SHA-256, trích bản ghi theo schema đã duyệt vào hàng duyệt; lượt theo lịch chờ Temporal (ADR-33) | `crawler/` (KB-02, KB-03) |
+| Nguồn web | Nguồn thu thập (`acquire`), tải trong miền khai báo, 1 yêu cầu/giây/miền, robots, bản gốc bất biến MinIO `da-raw-crawl` theo SHA-256, trích bản ghi theo schema đã duyệt vào hàng duyệt; lượt theo lịch chạy bằng Temporal Schedules (ADR-33) | `crawler/` (KB-02, KB-03) |
 | Pipeline tài liệu | Trang (PyMuPDF + OCR vie/eng), chunk theo cấu trúc văn bản Việt, PII theo bộ sưu tập, embedding bge-m3 vào Qdrant; claim và trường trích bằng LLM có kiểm trích dẫn (KB-05, KB-07) | `worker_document/`, `worker_agent/documents/` |
 | Truy hồi tài liệu | Vector + FTS Postgres, RRF, cross-encoder TEI; không mở rộng đồ thị (Neo4j hoãn, ADR-04) | `worker_agent/documents/retrieve.py` |
 | Text-to-SQL trên CSDL khách | Postgres, ClickHouse, Snowflake; xếp hạng bảng/cột, catalog, tự sửa 3 lần, `sql_guard` chỉ SELECT, sandbox read-only, audit | `workflow_runtime/.../tool_executor/handlers/data.py`, `sandbox_executor/` |

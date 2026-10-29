@@ -85,6 +85,7 @@ kubectl -n dataagent-service create secret generic worker-agent-secrets \
   --from-literal=DATAAGENT_DB_URL__SVC_SKILL="${DATAAGENT_DB_URL__SVC_SKILL}" \
   --from-literal=DATAAGENT_DB_URL__SVC_PACK="${DATAAGENT_DB_URL__SVC_PACK}" \
   --from-literal=DATAAGENT_DB_URL__SVC_AGENT="${DATAAGENT_DB_URL__SVC_AGENT}" \
+  --from-literal=DATAAGENT_DB_URL__SVC_ACQUIRE="${DATAAGENT_DB_URL__SVC_ACQUIRE}" \
   --from-literal=DATAAGENT_DB_URL__SVC_NOTIFY="${DATAAGENT_DB_URL__SVC_NOTIFY}" \
   --from-literal=DATAAGENT_DB_URL__SVC_MONITOR="${DATAAGENT_DB_URL__SVC_MONITOR}" \
   --from-literal=DATAAGENT_DB_URL__SVC_GOVERNANCE="${DATAAGENT_DB_URL__SVC_GOVERNANCE}" \

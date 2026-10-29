@@ -1,8 +1,8 @@
 """crawler entrypoint: claim acquire.run.queued events and work each run (KB-02, 09 §1).
 
-Runs created by a schedule (crawl_source.schedule_cron) are not made here yet: no V3 component
-schedules across organisations, and that is the Temporal Schedules work of ADR-33. Manual runs
-(POST /v1/crawl-sources/{id}/runs) and re-extractions after a revert arrive as events.
+Every run arrives as an event: manual ones (POST /v1/crawl-sources/{id}/runs), scheduled ones
+(worker-agent's Temporal schedule for crawl_source.schedule_cron, schedules/targets.py) and
+re-extractions after a revert.
 """
 
 from __future__ import annotations

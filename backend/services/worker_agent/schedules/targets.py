@@ -10,6 +10,11 @@ Temporal Schedule per item. `fire` is what a Schedule runs when it comes due:
 - an active report schedule: a report_run dated by its as_of_rule and the report_run.requested
   event (report_runs.py);
 - an organisation's quality pass, hourly: every active rule not checked in the last 24 hours;
+- an active crawl source: a crawl_run (trigger schedule) and the acquire.run.queued event the
+  crawler claims, as the source screen's "Thu ngay" makes, read in Hà Nội time;
+- an enabled schedule trigger of a running agent: an agent run of its current configuration as
+  the agent's own account (runs.py), not on its work calendar's days off, not on top of a run
+  still going when no_overlap is set, nor sooner than min_interval after the last scheduled one;
 - the nightly eval run of every active context eval set (nightly_evals.py), once for all
   organisations.
 
@@ -32,7 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs import cron
 from libs.dataagent_db import scoped_session, unscoped_session, uuid7
-from libs.dataagent_db.models import ingest, monitor, org
+from libs.dataagent_db.models import acquire, agent, ingest, monitor, org
 from libs.dataagent_db.models import pipeline as pl
 from services.worker_agent import nightly_evals, quality, report_runs
 
@@ -42,6 +47,11 @@ QUALITY_EVERY = datetime.timedelta(hours=24)
 QUALITY_CRON = "0 * * * *"
 NIGHTLY_EVALS_CRON = "0 2 * * *"
 UTC = "UTC"
+CRAWL_ROLE = "svc_acquire"
+AGENT_ROLE = "svc_agent"
+# acquire/rules.RUNNING_RUN in the api: a run still going blocks another.
+CRAWL_RUNNING = ("queued", "fetching", "extracting")
+AGENT_DONE = ("succeeded", "failed", "cancelled")
 
 
 @dataclass(frozen=True)
@@ -62,7 +72,7 @@ class Target:
         return hashlib.sha256(f"{self.cron}|{self.zone}".encode()).hexdigest()[:16]
 
 
-KINDS = frozenset({"job", "pipeline", "report", "quality", "nightly-evals"})
+KINDS = frozenset({"job", "pipeline", "report", "quality", "crawl", "agent", "nightly-evals"})
 
 
 def _now() -> datetime.datetime:
@@ -80,13 +90,15 @@ def _valid(expr: str | None) -> str | None:
 
 async def organisations() -> list[uuid.UUID]:
     """Row-level security scopes every session to one organisation and no role may list them all,
-    so the organisations are those the outbox relay has seen emit on ingest.outbox, pipeline.outbox
-    or monitor.outbox (every job, pipeline and report schedule was created through one)."""
+    so the organisations are those the outbox relay has seen emit on the outbox of a module that
+    schedules (every job, pipeline, report schedule, crawl source and agent was created through
+    one)."""
     async with unscoped_session("svc_outbox_relay") as session:
         rows = await session.execute(
             text(
                 "SELECT org_id FROM ingest.outbox UNION SELECT org_id FROM pipeline.outbox"
-                " UNION SELECT org_id FROM monitor.outbox"
+                " UNION SELECT org_id FROM monitor.outbox UNION SELECT org_id FROM acquire.outbox"
+                " UNION SELECT org_id FROM agent.outbox"
             )
         )
         return [r[0] for r in rows]
@@ -130,6 +142,29 @@ async def wanted(org_id: uuid.UUID) -> list[Target]:
         ):
             if (checked := _valid(expr)) is not None:
                 out.append(Target("report", checked, report_runs.ZONE.key, org_id, schedule_id))
+    async with scoped_session(CRAWL_ROLE, org_id) as session:
+        for source_id, expr in await session.execute(
+            select(acquire.CrawlSource.id, acquire.CrawlSource.schedule_cron).where(
+                acquire.CrawlSource.status == "active",
+                acquire.CrawlSource.schedule_cron.is_not(None),
+            )
+        ):
+            if (checked := _valid(expr)) is not None:
+                out.append(Target("crawl", checked, report_runs.ZONE.key, org_id, source_id))
+    async with scoped_session(AGENT_ROLE, org_id) as session:
+        for trigger_id, expr in await session.execute(
+            select(agent.AgentTrigger.id, agent.AgentTrigger.cron)
+            .join(agent.AgentDef, agent.AgentDef.id == agent.AgentTrigger.agent_id)
+            .where(
+                agent.AgentTrigger.kind == "schedule",
+                agent.AgentTrigger.enabled.is_(True),
+                agent.AgentTrigger.cron.is_not(None),
+                agent.AgentDef.status == "running",
+            )
+        ):
+            # In UTC, as the trigger's preview reads it (api agent/routes.py, UC-13-03).
+            if (checked := _valid(expr)) is not None:
+                out.append(Target("agent", checked, UTC, org_id, trigger_id))
     return out
 
 
@@ -188,6 +223,10 @@ async def fire(
         return await _pipeline(org_id, entity_id, minute)
     if kind == "report":
         return await _report(org_id, entity_id, minute)
+    if kind == "crawl":
+        return await _crawl(org_id, entity_id, minute)
+    if kind == "agent":
+        return await _agent(org_id, entity_id, minute)
     raise ValueError(f"unknown schedule kind {kind}")
 
 
@@ -363,6 +402,137 @@ async def _report(org_id: uuid.UUID, schedule_id: uuid.UUID, minute: datetime.da
                 )
             )
         return f"report_run {run.id} {run.status}"
+
+
+async def _crawl(org_id: uuid.UUID, source_id: uuid.UUID, minute: datetime.datetime) -> str:
+    local = minute.astimezone(report_runs.ZONE)
+    async with scoped_session(CRAWL_ROLE, org_id) as session:
+        # The source row first, as the api's run-now locks it: two firings never both start one.
+        source = await session.scalar(
+            select(acquire.CrawlSource)
+            .where(acquire.CrawlSource.id == source_id, acquire.CrawlSource.status == "active")
+            .with_for_update()
+        )
+        if source is None or not _due(source.schedule_cron, local.replace(tzinfo=None)):
+            return "not due"
+        # BR-174, as the api checks it before a run and the crawler again when it claims one.
+        due_at = source.legal_review_due_at
+        if source.legal_status != "approved" or due_at is None or due_at <= minute:
+            return "legal review not in force"
+        running = await session.scalar(
+            select(acquire.CrawlRun.id).where(
+                acquire.CrawlRun.source_id == source.id,
+                acquire.CrawlRun.status.in_(CRAWL_RUNNING),
+            )
+        )
+        if running is not None:
+            return "a run is still going"
+        run = acquire.CrawlRun(
+            id=uuid7(),
+            org_id=org_id,
+            source_id=source.id,
+            schema_version_id=source.active_schema_version_id,
+            trigger="schedule",
+        )
+        session.add(run)
+        await session.flush()
+        await session.refresh(run)
+        session.add(
+            acquire.Outbox(
+                id=uuid7(),
+                org_id=org_id,
+                aggregate_type="crawl_run",
+                aggregate_id=run.id,
+                event_type="acquire.run.queued",
+                payload={
+                    "run_id": str(run.id),
+                    "source_id": str(source.id),
+                    "data_space_id": str(source.data_space_id),
+                    "trigger": run.trigger,
+                    "schema_version_id": str(run.schema_version_id)
+                    if run.schema_version_id
+                    else None,
+                    "status": run.status,
+                },
+            )
+        )
+        return f"crawl_run {run.id}"
+
+
+async def _agent(org_id: uuid.UUID, trigger_id: uuid.UUID, minute: datetime.datetime) -> str:
+    async with scoped_session(AGENT_ROLE, org_id) as session:
+        trigger = await session.scalar(
+            select(agent.AgentTrigger).where(
+                agent.AgentTrigger.id == trigger_id,
+                agent.AgentTrigger.kind == "schedule",
+                agent.AgentTrigger.enabled.is_(True),
+            )
+        )
+        if trigger is None or not _due(trigger.cron, minute):
+            return "not due"
+        # The agent row locked: its runs are counted and one added under that lock.
+        owner = await session.scalar(
+            select(agent.AgentDef)
+            .where(agent.AgentDef.id == trigger.agent_id, agent.AgentDef.status == "running")
+            .with_for_update()
+        )
+        if owner is None or owner.current_config_version is None:
+            return "agent not running"
+        if trigger.work_calendar_id is not None and not await _working(
+            session, trigger.work_calendar_id, minute.date()
+        ):
+            return "not a working day"
+        scheduled = select(agent.AgentRun.id).where(
+            agent.AgentRun.agent_id == owner.id,
+            agent.AgentRun.trigger_kind == "schedule",
+            agent.AgentRun.trigger_ref == str(trigger.id),
+        )
+        if await session.scalar(scheduled.where(agent.AgentRun.created_at >= minute)):
+            return "already served"
+        if trigger.min_interval is not None and await session.scalar(
+            scheduled.where(agent.AgentRun.created_at > minute - trigger.min_interval)
+        ):
+            return "within min_interval"
+        if trigger.no_overlap and await session.scalar(
+            select(agent.AgentRun.id).where(
+                agent.AgentRun.agent_id == owner.id,
+                agent.AgentRun.is_test.is_(False),
+                agent.AgentRun.status.not_in(AGENT_DONE),
+            )
+        ):
+            return "a run is still going"
+        # No initiator: runs.py runs it as the agent's own account (owner.account_user_id).
+        run = agent.AgentRun(
+            id=uuid7(),
+            org_id=org_id,
+            agent_id=owner.id,
+            config_version=owner.current_config_version,
+            data_space_id=owner.data_space_id,
+            trigger_kind="schedule",
+            trigger_ref=str(trigger.id),
+            is_test=False,
+        )
+        session.add(run)
+        await session.flush()
+        await session.refresh(run)
+        session.add(
+            agent.Outbox(
+                id=uuid7(),
+                org_id=org_id,
+                aggregate_type="agent_run",
+                aggregate_id=run.id,
+                event_type="run.status_changed",
+                payload={
+                    "run_id": str(run.id),
+                    "agent_id": str(owner.id),
+                    "config_version": run.config_version,
+                    "is_test": False,
+                    "previous_status": None,
+                    "status": run.status,
+                },
+            )
+        )
+        return f"agent run {run.id}"
 
 
 async def _quality(org_id: uuid.UUID) -> int:
