@@ -56,3 +56,18 @@ def test_a_document_answer_needs_a_citation() -> None:
 def test_a_refusal_states_no_number_and_carries_no_checks() -> None:
     assert "verification" not in verify("refusal", {})
     assert "verification" not in verify("clarification", {})
+
+
+def test_a_query_the_model_wrote_carries_its_consensus_as_the_confidence() -> None:
+    # R1-14: the confidence meter of an exploratory answer is how many of the ways the query was
+    # written gave the same result.
+    out = verify("data", COUNTED, figures=[figure(query_run_id="q-1")], consensus=(4, 6))
+    frame = VerificationFrame.model_validate(out["verification"])
+    assert frame.confidence == pytest.approx(0.6667, abs=1e-4)
+    assert frame.consensus is not None
+    assert (frame.consensus.agreeing, frame.consensus.written) == (4, 6)
+    # A governed answer has no such vote, and says nothing of a confidence.
+    governed = VerificationFrame.model_validate(
+        verify("data", COUNTED, figures=[figure(query_run_id="q-1")])["verification"]
+    )
+    assert governed.confidence is None and governed.consensus is None

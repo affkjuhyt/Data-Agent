@@ -26,6 +26,7 @@ import { useToast } from '../../design-system/Toast';
 import { cn } from '../../lib/utils';
 import type { Feedback } from '../../lib/v1/answerReports';
 import { listConversations, saveAnswerToSession } from '../../lib/v1/questions';
+import { hasReceipt } from './answerMessage';
 import { useQuestionStream } from './hooks/useQuestionStream';
 import { AnswerBlock } from './components/AnswerBlock';
 import { AnswerTheme } from './components/AnswerTheme';
@@ -346,7 +347,7 @@ export default function AskDataPage() {
                     savedToSession={!!(msg.answerId && savedToSession[msg.answerId])}
                     /* The stream gives no server answer id yet (docs/v3/05-ui-v3.md §4), so this is the
                        client message id: the receipt page shows "chưa có biên nhận" until it does. */
-                    onOpenReceipt={msg.answerId && msg.content ? () => setReceiptFor(msg.answerId!) : undefined}
+                    onOpenReceipt={hasReceipt(msg) ? () => setReceiptFor(msg.answerId!) : undefined}
                     onOpenCitation={openCitation}
                     reported={!!(msg.answerId && reported[msg.answerId])}
                     onStop={msg.status === 'streaming' ? stop : undefined}

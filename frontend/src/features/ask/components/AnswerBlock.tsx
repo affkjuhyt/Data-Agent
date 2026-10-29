@@ -19,6 +19,7 @@ import { csvFileName, downloadCsv, toCsv } from '../exportCsv';
 import { interpretationChips } from '../interpretation';
 import { resultSetToEvidenceRun } from '../resultSets';
 import { answerTrust } from '../trust';
+import { ConfidenceMeter } from './ConfidenceMeter';
 import type { AskMessage, Citation, ClarificationReply, EvidenceRun } from '../types';
 import { CitationPanel } from './CitationPanel';
 import { ClarificationCard } from './ClarificationCard';
@@ -251,6 +252,7 @@ export function AnswerBlock({
             <StatusDot tone={TRUST_DOT[trust.tone]}>{trust.label}</StatusDot>
             {trust.breakdown && <span className="text-muted-foreground da-caption">({trust.breakdown})</span>}
           </span>
+          {msg.verification && <ConfidenceMeter verification={msg.verification} />}
           {reported && <Badge tone="warning">Đang kiểm tra</Badge>}
           {(msg.latencyMs || showTimestamp) && (
             <span className="text-muted-foreground da-caption">

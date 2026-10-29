@@ -246,6 +246,7 @@ async def answer_by_sql(
                         "untraceable_final": 0,
                     },
                     figures=stored_figures,
+                    consensus=(e.agreeing, len(e.tried)),
                 ),
                 agent_name=AGENT_NAME,
                 latency_ms=int(

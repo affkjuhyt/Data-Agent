@@ -53,12 +53,18 @@ export function readVerification(numberCheck: unknown): VerificationFrame | unde
   if (!numberCheck || typeof numberCheck !== 'object') return undefined;
   const raw = (numberCheck as { verification?: unknown }).verification;
   if (!raw || typeof raw !== 'object') return undefined;
-  const { checks, verdict, iteration } = raw as Record<string, unknown>;
+  const { checks, verdict, iteration, confidence, consensus } = raw as Record<string, unknown>;
   if ((verdict !== 'PASS' && verdict !== 'FAIL') || !Array.isArray(checks)) return undefined;
+  const vote = consensus && typeof consensus === 'object' ? (consensus as Record<string, unknown>) : {};
   return {
     verdict,
     iteration: typeof iteration === 'number' ? iteration : 1,
-    confidence: null,
+    // Only a query the model wrote has one: how many of its ways of writing agree (R1-14).
+    confidence: typeof confidence === 'number' ? confidence : null,
+    ...(typeof vote.agreeing === 'number' &&
+      typeof vote.written === 'number' && {
+        consensus: { agreeing: vote.agreeing, written: vote.written },
+      }),
     checks: checks.flatMap((check) => {
       if (!check || typeof check !== 'object') return [];
       const { name, passed, detail } = check as Record<string, unknown>;
@@ -93,6 +99,7 @@ export function fromAnswer(answer: Answer): Partial<AskMessage> {
   const verification = readVerification(answer.number_check);
   const drawn: Partial<AskMessage> = {
     content: answer.text,
+    productScope: answer.product_scope,
     ...(citations.length > 0 && { citations }),
     ...(verification && { verification }),
   };
@@ -111,6 +118,11 @@ export function fromAnswer(answer: Answer): Partial<AskMessage> {
     ...(trust && { trust }),
   };
 }
+
+/** "Biên nhận" (UC-01-07): an answer with a server id and words, unless it is outside every data
+ *  product, which has no commitment behind it and so no receipt (AC-01-07-03). */
+export const hasReceipt = (msg: Pick<AskMessage, 'answerId' | 'content' | 'productScope'>) =>
+  !!(msg.answerId && msg.content) && msg.productScope !== 'out_of_scope';
 
 /** Load one answer for Notebook "Cách tính" / interpretation chips. */
 export async function loadAnswerMessage(answerId: string): Promise<AskMessage> {

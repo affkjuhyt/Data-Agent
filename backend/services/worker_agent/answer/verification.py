@@ -64,8 +64,11 @@ def verify(
     figures: list[dict[str, Any]] | None = None,
     citations: list[dict[str, Any]] | None = None,
     reconcile_badge: str | None = None,
+    consensus: tuple[int, int] | None = None,
 ) -> dict[str, Any]:
-    """`number_check` with its `verification` added, for an answer of `kind`."""
+    """`number_check` with its `verification` added, for an answer of `kind`. `consensus`, for a
+    query the model wrote (sqlgen): how many of the ways it was written gave the same result, out
+    of how many; the answer's confidence meter (R1-14) reads it."""
     if kind in ("refusal", "clarification"):
         return number_check
     checks = [_numbers(number_check)]
@@ -79,7 +82,9 @@ def verify(
     else:
         checks += [_figures(figures or []), _filed(reconcile_badge)]
     verdict = "PASS" if all(c["passed"] for c in checks) else "FAIL"
-    return {
-        **number_check,
-        "verification": {"checks": checks, "verdict": verdict, "iteration": ITERATION},
-    }
+    verification: dict[str, Any] = {"checks": checks, "verdict": verdict, "iteration": ITERATION}
+    if consensus is not None:
+        agreeing, written = consensus
+        verification["consensus"] = {"agreeing": agreeing, "written": written}
+        verification["confidence"] = round(agreeing / written, 4) if written else 0.0
+    return {**number_check, "verification": verification}

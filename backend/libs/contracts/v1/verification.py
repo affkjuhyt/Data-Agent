@@ -13,8 +13,16 @@ class VerificationCheck(ContractModel):
     detail: str = ""
 
 
+class VerificationConsensus(ContractModel):
+    """For a query the model wrote: how many of the ways it was written gave the same result."""
+
+    agreeing: int
+    written: int
+
+
 class VerificationFrame(ContractModel):
     checks: list[VerificationCheck]
     verdict: Literal["PASS", "FAIL"]
     iteration: int
     confidence: float | None = None
+    consensus: VerificationConsensus | None = None

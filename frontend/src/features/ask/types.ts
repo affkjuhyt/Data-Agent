@@ -202,6 +202,8 @@ export interface VerificationFrame {
   verdict: 'PASS' | 'FAIL';
   iteration: number;
   confidence: number | null;
+  /** For a query the model wrote: how many of the ways it was written gave the same result. */
+  consensus?: { agreeing: number; written: number };
 }
 
 /**
@@ -290,6 +292,8 @@ export interface AskMessage {
   questionId?: string;
   /** the server's answer: what Báo sai, Lưu tri thức and Biên nhận act on */
   answerId?: string;
+  /** qa.answer.product_scope: an answer outside any data product has no receipt (AC-01-07-03) */
+  productScope?: string;
   role: 'user' | 'assistant';
   content: string;
   /** ISO timestamp */
