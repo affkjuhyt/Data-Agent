@@ -16,6 +16,7 @@ const AskDataPage = React.lazy(() => import('./features/ask/AskDataPage'));
 const UsersPage = React.lazy(() => import('./features/admin-access/UsersPage'));
 const DataSpacesPage = React.lazy(() => import('./features/admin-access/DataSpacesPage'));
 const CreateDataSpacePage = React.lazy(() => import('./features/admin-access/CreateDataSpacePage'));
+const DataSpaceSetupPage = React.lazy(() => import('./features/admin-access/DataSpaceSetupPage'));
 const PermissionComparePage = React.lazy(() => import('./features/admin-access/PermissionComparePage'));
 const PoliciesPage = React.lazy(() => import('./features/admin-access/PoliciesPage'));
 const AccessRequestsPage = React.lazy(() => import('./features/admin-access/AccessRequestsPage'));
@@ -276,6 +277,7 @@ export const ROUTE_MAP: Record<AreaId, Record<string, RouteEntry>> = {
     USERS:              { render: () => <UsersPage /> },
     DATA_SPACES:        { render: () => <DataSpacesPage /> },
     DATA_SPACE_NEW:     { render: () => <CreateDataSpacePage /> },
+    DATA_SPACE_SETUP:   { render: () => <DataSpaceSetupPage /> },
     PERMISSION_COMPARE: { render: () => <PermissionComparePage /> },
     POLICIES:           { render: () => <PoliciesPage /> },
     ACCESS_REQUESTS:    { render: () => <AccessRequestsPage /> },

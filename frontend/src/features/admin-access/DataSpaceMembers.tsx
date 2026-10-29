@@ -58,6 +58,9 @@ export default function DataSpaceMembers({ id }: { id: string }) {
         title={name ? `${name} · thành viên và quyền` : 'Thành viên và quyền'}
         actions={
           <>
+            <LinkButton area="admin" page="DATA_SPACE_SETUP" id={id}>
+              Thiết lập
+            </LinkButton>
             <LinkButton area="admin" page="PERMISSION_COMPARE" id={id} icon="eye">
               Mô phỏng quyền
             </LinkButton>

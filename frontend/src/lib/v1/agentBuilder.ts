@@ -566,7 +566,7 @@ const configStatus = async (id: string, version: number) =>
  * 404 until it starts, and it moves the config to `passed` once the run is at the set's bar.
  * A Data Space without an eval set would never get a run: that is said before asking for one.
  */
-export const evaluateVersion = async (
+const evaluateVersion = async (
   id: string,
   configVersion: number,
   wait: (ms: number) => Promise<void> = pause,
