@@ -24,17 +24,27 @@ metadata:
 data:
   squid.conf: |
     http_port 8130
-    # Destinations no request may reach, by the address the proxy itself resolved.
+    # Destinations no request may reach, by the address the proxy itself resolved: private, loopback,
+    # link-local, CGNAT, benchmark, multicast and reserved IPv4, and the IPv6 forms that carry an IPv4
+    # address inside them (NAT64, 6to4, Teredo), which would otherwise reach the same hosts. Squid
+    # keeps IPv4 as IPv4-mapped IPv6, so a mapped address is checked against the IPv4 ranges; listing
+    # ::ffff:0:0/96 would mean all of IPv4 (Squid drops it with a warning).
     acl internal dst 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12
-    acl internal dst 192.0.0.0/24 192.168.0.0/16 198.18.0.0/15 224.0.0.0/4 240.0.0.0/4
-    acl internal dst ::/128 ::1/128 fc00::/7 fe80::/10 ff00::/8
+    acl internal dst 192.0.0.0/24 192.88.99.0/24 192.168.0.0/16 198.18.0.0/15 224.0.0.0/4
+    acl internal dst 240.0.0.0/4
+    acl internal dst ::/128 ::1/128 64:ff9b::/96 100::/64 2001::/32 2002::/16
+    acl internal dst fc00::/7 fe80::/10 ff00::/8
+    # Any address at all: it matches only once the destination has resolved, so a name that does
+    # not resolve, or a lookup that fails, falls through to the final deny instead of out.
+    acl resolved dst all
     acl web_ports port 80 443
     acl tls_port port 443
     acl CONNECT method CONNECT
     http_access deny internal
     http_access deny !web_ports
     http_access deny CONNECT !tls_port
-    http_access allow all
+    http_access allow resolved
+    http_access deny all
     # A forwarder, not a cache: nothing kept, no client address passed on.
     cache deny all
     cache_mem 0 MB

@@ -43,7 +43,13 @@ metadata:
   labels:
     app.kubernetes.io/part-of: dataagent
 spec:
-  podSelector: {}
+  # Every pod but the egress proxy: NetworkPolicies only add, so this would hand the proxy the
+  # whole cluster and its own policy's "internal ranges excepted" would hold nothing back.
+  podSelector:
+    matchExpressions:
+    - key: app
+      operator: NotIn
+      values: [egress-proxy]
   policyTypes:
   - Egress
   egress:
@@ -308,8 +314,9 @@ spec:
     ports:
     - protocol: TCP
       port: 8130
-  # The one pod allowed to the internet, on 80 and 443, never to an internal range: Squid refuses
-  # those destinations itself, and this holds if its config is ever wrong.
+  # The one pod allowed to the internet, on 80 and 443, never to an internal range, and (left out of
+  # allow-egress-to-platform) to nothing in the cluster but DNS: Squid refuses those destinations
+  # itself, and this holds if its config is ever wrong.
   egress:
   - to:
     - ipBlock:
