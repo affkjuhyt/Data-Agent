@@ -89,6 +89,27 @@ async def test_a_writable_account_is_refused(monkeypatch: pytest.MonkeyPatch) ->
     assert version == "26.9"
 
 
-def test_a_host_with_a_path_is_refused() -> None:
+@pytest.mark.parametrize(
+    "host", ["play.clickhouse.com/evil", "user:pw@evil.example", "evil.example?x=1", "a b", ""]
+)
+def test_a_host_that_would_retarget_the_request_is_refused(host: str) -> None:
+    source = _source()
+    source.host = host
     with pytest.raises(ValueError):
-        source_tests._clickhouse_url("play.clickhouse.com/evil", 443)
+        source_tests._clickhouse_url(source)
+
+
+@pytest.mark.parametrize(
+    ("options", "url"),
+    [
+        (None, "https://play.clickhouse.com/"),
+        ({"sslmode": "verify-full"}, "https://play.clickhouse.com/"),
+        ({"sslmode": "disable"}, "http://play.clickhouse.com:443/"),
+    ],
+)
+def test_clickhouse_is_https_unless_the_source_says_disable(
+    options: dict[str, str] | None, url: str
+) -> None:
+    source = _source()
+    source.conn_options = options
+    assert source_tests._clickhouse_url(source) == url

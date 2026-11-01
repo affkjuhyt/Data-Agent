@@ -5,6 +5,11 @@ same connection rules: TLS from conn_options, the source's timeout, a read-only 
 the engine has one. They were in the executor only, so worker-ingest (another service, which
 must not import worker-agent) could load nothing but PostgreSQL.
 
+TLS fails closed, as the PostgreSQL path does (`ssl_mode`): a source without `sslmode` is
+`verify-full`, and only an explicit `disable` (or the in-cluster demo service) sends anything in
+clear. A ClickHouse host is a host only: one that carries a path, userinfo or a query is refused
+before a URL is built from it.
+
 A driver returns (columns, rows): each column's name and the engine's type as text, each row's
 values as the driver gives them (Decimal, date, bytes…); the caller turns them into what it
 stores. A failure is a DriverError that names the engine and the error class, never the
@@ -15,6 +20,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
+import ssl
 from collections.abc import Mapping
 from typing import Any, Protocol
 
@@ -36,8 +43,23 @@ class Source(Protocol):
 
 
 def _options(source: Source) -> Mapping[str, Any]:
-    options = source.conn_options or {}
+    options = getattr(source, "conn_options", None) or {}
     return options if isinstance(options, Mapping) else {}
+
+
+SSL_MODES = ("disable", "require", "verify-ca", "verify-full")
+_NOT_A_HOST = re.compile(r"[/?#@\\\s]")
+
+
+def ssl_mode(source: Source) -> str:
+    """The source's sslmode: as conn_options says, else verify-full. The local demo service
+    (*.svc.cluster.local) has no CA bundle, so it is the one default that is `disable`."""
+    host = getattr(source, "host", None) or ""
+    default = "disable" if host.endswith(".svc.cluster.local") else "verify-full"
+    mode = str(_options(source).get("sslmode") or default)
+    if mode not in SSL_MODES:
+        raise DriverError(f"sslmode {mode} is not one of {', '.join(SSL_MODES)}")
+    return mode
 
 
 def _rows(cursor: Any) -> Rows:
@@ -63,11 +85,15 @@ def mysql(source: Source, user: str, password: str, sql: str, timeout_s: int) ->
             "write_timeout": timeout_s,
             "charset": str(options.get("charset") or "utf8mb4"),
         }
-        if options.get("sslmode") not in (None, "disable"):
-            ca = options.get("ssl_ca")
-            if not ca:
-                raise DriverError("mysql TLS requires conn_options.ssl_ca")
-            connect["ssl"] = {"ca": str(ca), "check_hostname": options["sslmode"] == "verify-full"}
+        mode = ssl_mode(source)
+        if mode != "disable":
+            # The system's CAs unless conn_options names one; `require` encrypts without checking.
+            tls: dict[str, Any] = {"check_hostname": mode == "verify-full"}
+            if options.get("ssl_ca"):
+                tls["ca"] = str(options["ssl_ca"])
+            if mode == "require":
+                tls["verify_mode"] = ssl.CERT_NONE
+            connect["ssl"] = tls
         conn = pymysql.connect(**connect)
         try:
             with conn.cursor() as cursor:
@@ -106,6 +132,8 @@ def sqlserver(
             timeout=timeout_s,
             appname=appname,
             tds_version=str(options.get("tds_version") or "7.4"),
+            # FreeTDS encrypts the login and the session unless the source says disable.
+            encryption="off" if ssl_mode(source) == "disable" else "require",
         )
         try:
             with conn.cursor() as cursor:
@@ -123,9 +151,15 @@ def sqlserver(
 
 
 def clickhouse_url(source: Source) -> str:
-    options = _options(source)
-    scheme = "https" if options.get("sslmode") not in (None, "disable") else "http"
-    return f"{scheme}://{source.host}:{source.port or 8123}/"
+    """The source's HTTP endpoint: https unless its sslmode is disable; a host that would retarget
+    the request (a slash, userinfo, a query, a space) is refused."""
+    import httpx
+
+    host = source.host or ""
+    if not host or _NOT_A_HOST.search(host):
+        raise DriverError("the source host is not a host name")
+    scheme = "http" if ssl_mode(source) == "disable" else "https"
+    return str(httpx.URL(scheme=scheme, host=host, port=int(source.port or 8123), path="/"))
 
 
 async def clickhouse(

@@ -16,6 +16,7 @@ import asyncpg
 import httpx
 from sqlalchemy import select
 
+from libs import source_drivers
 from libs.dataagent_db import scoped_session
 from libs.dataagent_db.models import catalog
 from services.worker_agent.events import Event, Handler
@@ -30,23 +31,19 @@ TIMEOUT_SECONDS = 30
 
 
 def _ssl_mode(source: catalog.Source) -> str:
-    options = source.conn_options or {}
-    # The local demo PostgreSQL service has no CA bundle. Production sources keep the secure
-    # default; an explicit sslmode in conn_options always wins.
-    default = "disable" if (source.host or "").endswith(".svc.cluster.local") else "verify-full"
-    mode = str(options.get("sslmode") or default)
-    if mode not in {"disable", "require", "verify-ca", "verify-full"}:
-        raise SecretUnavailable(f"sslmode {mode} is not supported")
-    return mode
+    """The source's sslmode, one rule for every driver (libs/source_drivers.ssl_mode)."""
+    try:
+        return source_drivers.ssl_mode(source)
+    except source_drivers.DriverError as exc:
+        raise SecretUnavailable(str(exc)) from exc
 
 
-def _clickhouse_url(host: str, port: int) -> str:
-    # The playground is HTTPS on 443/8443. A slash or userinfo in the host would retarget the
-    # request, so those are refused before the URL is built.
-    if not host or any(char in host for char in "/?#@"):
-        raise ValueError("host")
-    scheme = "https" if port in (443, 8443) else "http"
-    return f"{scheme}://{host}:{port}/"
+def _clickhouse_url(source: catalog.Source) -> str:
+    """https unless the source says disable; a host with a path or userinfo is refused."""
+    try:
+        return source_drivers.clickhouse_url(source)
+    except source_drivers.DriverError as exc:
+        raise ValueError("host") from exc
 
 
 async def _clickhouse_sql(
@@ -62,7 +59,7 @@ async def _check_clickhouse(
     """HTTP ping, a read, and a refused write. The reason never includes the driver text."""
     try:
         credentials = await secrets().read(org_id, source.secret_ref)
-        url = _clickhouse_url(source.host or "", source.port or 8123)
+        url = _clickhouse_url(source)
     except (SecretUnavailable, ValueError) as exc:
         return False, f"connection failed ({type(exc).__name__})", None
     auth = (credentials.user, credentials.password)

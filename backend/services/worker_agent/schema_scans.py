@@ -340,7 +340,7 @@ async def _scan_clickhouse(
 ) -> list[dict[str, object]]:
     credentials = await secrets().read(source.org_id, source.secret_ref)
     schemas = _clickhouse_schemas(source)
-    url = _clickhouse_url(source.host or "", source.port or 8123)
+    url = _clickhouse_url(source)
     schema_sql = ", ".join(f"'{name}'" for name in schemas)
     requested = ""
     if tables:
@@ -544,7 +544,7 @@ async def _profile_source(
         ) as client:
             run = source_meta.clickhouse_run(
                 client,
-                _clickhouse_url(source.host or "", source.port or 8123),
+                _clickhouse_url(source),
                 _clickhouse_schemas(source)[0],
                 (credentials.user, credentials.password),
             )

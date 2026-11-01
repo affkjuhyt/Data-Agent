@@ -53,7 +53,7 @@ async def test_an_empty_schema_list_scans_the_named_database(
         client: httpx.AsyncClient, url: str, database: str | None, sql: str, auth: tuple[str, str]
     ) -> httpx.Response:
         assert client is not None
-        assert url == "https://play.clickhouse.com:443/"
+        assert url == "https://play.clickhouse.com/"
         assert database == "blogs"
         assert auth == ("explorer", "")
         seen.append(sql)
