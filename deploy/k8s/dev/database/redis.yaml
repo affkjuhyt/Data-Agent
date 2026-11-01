@@ -19,7 +19,9 @@ data:
     save 60 10000
     dir /data
     loglevel notice
-    timeout 300
+    # 0 = never close idle clients. Api/worker keep long-lived pools; a 300s kill
+    # turned successful POSTs into internal_error when Idempotency-Key storage failed.
+    timeout 0
 ---
 apiVersion: v1
 kind: ServiceAccount

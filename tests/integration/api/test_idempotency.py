@@ -29,6 +29,16 @@ class MemoryStore:
         return self.values.get(ref)
 
 
+class FailingStore:
+    """Redis-shaped store that drops the body after a successful handler (idle kill)."""
+
+    async def put(self, ref: str, value: str, ttl: datetime.timedelta) -> None:
+        raise ConnectionError("Connection closed by server.")
+
+    async def get(self, ref: str) -> str | None:
+        raise ConnectionError("Connection closed by server.")
+
+
 class _Tokens:
     def __init__(self, org_id: uuid.UUID) -> None:
         self.org_id = org_id
@@ -53,6 +63,24 @@ def client(org: uuid.UUID, store: MemoryStore, who: str = "kc-ac06") -> httpx.As
         base_url="http://api",
         headers={"Authorization": f"Bearer {who}"},
     )
+
+
+async def test_a_store_outage_after_success_still_returns_the_handler_body(seed: Seed) -> None:
+    """Ask always sends Idempotency-Key; a Redis blip must not become internal_error."""
+    org = build(seed)
+    key = {"Idempotency-Key": "store-down-after-ok"}
+    async with client(org, FailingStore()) as c:  # type: ignore[arg-type]
+        first = await c.post("/v1/audit:export", json={"filters": {}}, headers=key)
+        again = await c.post("/v1/audit:export", json={"filters": {}}, headers=key)
+    assert first.status_code == 202, first.text
+    assert again.status_code == 202, again.text
+    assert first.json()["id"] != again.json()["id"]  # claim released; retry runs again
+    cur = seed.conn.cursor()
+    cur.execute(
+        "SELECT count(*) FROM integration.idempotency_key WHERE org_id = %s AND key = %s",
+        (str(org), "store-down-after-ok"),
+    )
+    assert cur.fetchone()[0] == 0
 
 
 async def test_a1_5_the_same_post_runs_once(seed: Seed) -> None:

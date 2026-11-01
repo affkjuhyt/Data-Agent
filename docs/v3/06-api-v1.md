@@ -200,10 +200,15 @@ của ADR-28) trả lời. Bước G1 của [09](09-target-deploy-and-cleanup.md
   mô hình nội bộ viết (`sqlgen/`, alias `text_to_sql`, không bao giờ frontier): câu hỏi gắn với bảng, cột và giá trị
   của Data Space (đóng bao theo quan hệ đã duyệt), sáu ứng viên (ba cách viết × hai mẫu), kiểm tra tất định rồi gửi
   lại sửa một lần, chạy chỉ đọc tại chỗ, bỏ phiếu theo kết quả: ≥ 4/6 trả lời nhãn "Khám phá", 3/6 trả lời kèm "nên
-  kiểm lại", ≤ 2/6 không đưa số mà hỏi lại. Không gắn được bảng nào hoặc không có mô hình thì tìm trong tài liệu như
-  trước. Chưa hiệu chỉnh ngưỡng trên Eval Set và chưa có bước LLM so cặp ở 3/6.
+  kiểm lại", ≤ 2/6 không đưa số mà hỏi lại. Khi SQL không trả lời được, hệ thống tìm tài liệu; nếu tài liệu cũng không đủ,
+  model trả lời phần khái niệm/hướng dẫn không có số liệu nội bộ, với nhãn "Chưa đủ bằng chứng". Chưa hiệu chỉnh
+  ngưỡng trên Eval Set và chưa có bước LLM so cặp ở 3/6. Đường chạy này chọn provider `relational` qua registry
+  của `worker-agent`; provider chỉ là lớp thích nghi, còn kiểm quyền, SQL guard, query-run và `run_query` vẫn là
+  nguồn sự thật. Kết quả nội bộ dùng envelope v1 có provenance, trust, cảnh báo và cờ truncation để thêm provider
+  mới mà không đổi API/SSE.
 - **Giới hạn hiện tại.** Hỏi đáp trả lời một chỉ số qua lớp ngữ nghĩa (bộ biên dịch `semantic/compiler.py`, truy vấn
-  tại chỗ); câu hỏi ngoài lớp đó kết thúc bằng lời từ chối có mã, không bao giờ bằng con số không truy được
-  (BR-171). Text-to-SQL, so sánh kỳ và kế hoạch nhiều bước là việc R1.
+  tại chỗ); câu hỏi ngoài lớp đó không được trả số liệu nội bộ nếu không có truy vấn hoặc tài liệu chứng minh
+  (BR-171), nhưng vẫn có thể nhận phần trả lời khái niệm với nhãn "Chưa đủ bằng chứng". Text-to-SQL, so sánh kỳ
+  và kế hoạch nhiều bước là việc R1.
 
 Chạy: `python -m services.worker_agent.main`; suite `worker_agent` (unit + tích hợp trên DDL thật).

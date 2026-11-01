@@ -37,6 +37,7 @@ import { SaveToSessionDialog } from '../explore/SaveToSessionDialog';
 import { ReceiptDrawer } from '../answer-receipt/AnswerReceiptPage';
 import { requestPage } from '../documents/focusPage';
 import type { AskMessage, Citation } from './types';
+import { CHAT_COMMANDS, commandHelp, commandPrompt, parseChatInput } from './chatCommands';
 
 /* ─── per-viewer bookmarks (not the conversation thread) ─────────── */
 
@@ -104,13 +105,16 @@ export default function AskDataPage() {
   const {
     messages,
     sending,
+    queued = [],
     hydrating,
     conversationId,
     send,
     answerClarification,
     confirmUnderstanding,
     stop,
+    addNotice,
     hydrate,
+    resetConversation,
   } = useQuestionStream();
 
   useEffect(() => { bottomRef.current?.scrollIntoView?.({ behavior: 'smooth' }); }, [messages]);
@@ -171,8 +175,29 @@ export default function AskDataPage() {
   };
 
   const ask = (text?: string) => {
-    const q = (text ?? input).trim();
-    if (!q || sending || hydrating) return;
+    const raw = (text ?? input).trim();
+    if (!raw || hydrating) return;
+    const parsed = parseChatInput(raw);
+    if (parsed.command?.name === 'new') {
+      resetConversation();
+      setInput('');
+      return;
+    }
+    if (parsed.command?.name === 'help') {
+      addNotice(commandHelp());
+      setInput('');
+      return;
+    }
+    if (parsed.command?.name === 'status') {
+      addNotice(`Đang xử lý: ${sending ? 'có' : 'không'} · Đang chờ: ${queued.length}`);
+      setInput('');
+      return;
+    }
+    if (parsed.command && !parsed.argument) {
+      addNotice(`Dùng ${parsed.command.label} kèm nội dung cần phân tích.`);
+      return;
+    }
+    const q = parsed.command ? commandPrompt(parsed.command.name, parsed.argument) : parsed.argument;
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setSelectedId(null);
@@ -220,6 +245,9 @@ export default function AskDataPage() {
   };
 
   const questions = messages.filter(m => m.role === 'user');
+  const commandSuggestions = input.trimStart().startsWith('/') && !input.trim().includes(' ')
+    ? CHAT_COMMANDS.filter((command) => command.label.startsWith(input.trimStart().toLowerCase()))
+    : [];
   const title = questions[0]?.content ?? 'Hỏi đáp';
   const description = [
     `Phiên của ${user.name}`,
@@ -364,6 +392,31 @@ export default function AskDataPage() {
           </div>
 
           <div className="px-da-4xl pb-da-xl pt-da-md max-[767px]:border-t max-[767px]:border-border max-[767px]:p-[10px]">
+            {commandSuggestions.length > 0 && (
+              <div className="mx-auto mb-da-sm max-w-[1136px] rounded-md border border-border bg-card p-da-sm shadow-sm" role="listbox" aria-label="Lệnh chat">
+                {commandSuggestions.map((command) => (
+                  <button
+                    key={command.name}
+                    type="button"
+                    className="flex w-full items-center gap-da-md rounded-sm px-da-md py-da-sm text-left hover:bg-subtle"
+                    onClick={() => { setInput(`${command.label} `); textareaRef.current?.focus(); }}
+                  >
+                    <span className="font-medium text-foreground da-body-small">{command.label}</span>
+                    <span className="text-muted-foreground da-caption">{command.description}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {queued.length > 0 && (
+              <div className="mx-auto mb-da-sm flex max-w-[1136px] items-center gap-da-sm overflow-x-auto text-muted-foreground da-body-small">
+                <span className="shrink-0">Đang chờ {queued.length} câu:</span>
+                {queued.map((q, index) => (
+                  <span key={`${q}-${index}`} className="max-w-[280px] shrink-0 truncate rounded-full bg-subtle px-da-md py-da-xs">
+                    {q}
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="mx-auto flex max-w-[1136px] items-end gap-da-md rounded-md border border-border-strong bg-card py-[6px] pl-[14px] pr-da-sm focus-within:border-ring max-[767px]:items-center max-[767px]:border-0 max-[767px]:p-0">
               <textarea
                 ref={textareaRef}
@@ -373,7 +426,7 @@ export default function AskDataPage() {
                 onKeyDown={e => {
                   if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); ask(); }
                 }}
-                placeholder={sending ? 'Đang trả lời… bạn vẫn gõ được câu tiếp theo' : messages.length ? 'Hỏi tiếp…' : 'Hỏi về dữ liệu của bạn…'}
+                placeholder={sending ? 'Đang trả lời… nhập tiếp để xếp câu hỏi' : messages.length ? 'Hỏi tiếp…' : 'Hỏi về dữ liệu của bạn…'}
                 aria-label="Câu hỏi"
                 className="max-h-[200px] min-h-8 flex-1 resize-none bg-transparent py-1.5 text-foreground outline-none da-body placeholder:text-muted-foreground focus-visible:shadow-none max-[767px]:rounded-lg max-[767px]:bg-subtle max-[767px]:p-[10px] max-[767px]:text-[13px] max-[767px]:leading-[18px]"
               />
@@ -395,7 +448,7 @@ export default function AskDataPage() {
               <button
                 type="button"
                 onClick={() => ask()}
-                disabled={!input.trim() || sending}
+                disabled={!input.trim()}
                 aria-label="Gửi câu hỏi"
                 className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-subtle disabled:text-muted-foreground max-[767px]:h-9 max-[767px]:w-auto max-[767px]:px-da-lg max-[767px]:text-[13px] max-[767px]:font-medium"
               >

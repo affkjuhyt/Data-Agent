@@ -19,9 +19,22 @@ interface StepChartSpec {
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+const CHART_TYPES = new Set([
+  'bar',
+  'line',
+  'area',
+  'pie',
+  'scatter',
+  'radar',
+  'radialBar',
+  'composed',
+]);
+
 function specOf(raw: unknown): StepChartSpec | null {
   if (!isRecord(raw)) return null;
-  return (raw.type === 'bar' || raw.type === 'line') && typeof raw.x === 'string'
+  return typeof raw.type === 'string' &&
+    CHART_TYPES.has(raw.type) &&
+    typeof raw.x === 'string'
     ? (raw as unknown as StepChartSpec)
     : null;
 }
@@ -60,7 +73,9 @@ export function stepChart(output: unknown): ChartSpec | null {
   const data = [...byX.values()];
   if (data.length < 2) return null;
   // Period codes sort as text (2026-04-30 < 2026-09-30).
-  if (spec.type === 'line') data.sort((a, b) => String(a[xKey]).localeCompare(String(b[xKey])));
+  if (spec.type === 'line' || spec.type === 'area') {
+    data.sort((a, b) => String(a[xKey]).localeCompare(String(b[xKey])));
+  }
   const unit = spec.unit ? ` (${spec.unit})` : '';
   return {
     chart_type: spec.type as ChartSpec['chart_type'],

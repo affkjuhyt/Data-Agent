@@ -65,6 +65,25 @@ describe('useQuestionStream', () => {
     });
   });
 
+  it('queues a follow-up while the current answer is streaming', async () => {
+    setDataSpace('ds-rr');
+    const { result } = renderHook(() => useQuestionStream());
+
+    let first: Promise<void> | undefined;
+    await act(async () => {
+      first = result.current.send('Doanh thu tháng này');
+      await result.current.send('Doanh thu tháng trước');
+    });
+
+    expect(result.current.queued).toEqual(['Doanh thu tháng trước']);
+    await act(async () => {
+      await first;
+    });
+    await waitFor(() => expect(result.current.queued).toEqual([]));
+    await waitFor(() => expect(result.current.messages).toHaveLength(4));
+    expect(result.current.messages[2].content).toContain('Doanh thu tháng trước');
+  });
+
   it('asks for a Data Space when none is chosen (A1.2 data_space_required)', async () => {
     const { result } = renderHook(() => useQuestionStream());
     await act(async () => {

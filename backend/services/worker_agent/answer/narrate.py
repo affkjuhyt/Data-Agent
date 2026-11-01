@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from libs import language
+from services.worker_agent.answer.chart_intent import classify, recommend_type
 
 MAX_LISTED = 12  # beyond this the text names the top values and the table holds the rest
 
@@ -141,28 +142,39 @@ def chart_spec_of(
     metric_name: str,
     unit: str | None,
     drill: list[tuple[str, str]] | None = None,
+    value_column: str = "value",
 ) -> dict[str, Any] | None:
-    """How the figures are drawn (AC-01-01-01): a line along a time dimension, bars otherwise.
+    """How the figures are drawn (AC-01-01-01): intent → chart type (chart_intent.py).
 
     The spec holds no values: the client draws the figures themselves, so a figure masked by
     BR-178 is never drawn either. A second cut becomes the series. One figure or no cut has
     nothing to compare, so no chart. `drill` lists the other cuts the metric allows: a bar picked
-    on the chart is asked again filtered to its member and cut by one of them (UC-01-04).
+    on the chart is asked again filtered to its member and cut by one of them (UC-01-04). Drill
+    stays on bars only — pie/area are not drill targets.
     """
     if not group_by or len(figures) < 2:
         return None
     x = group_by[0]
+    has_series = len(group_by) > 1
+    intent = classify(group_by=group_by, time_dimensions=time_dimensions, value_column=value_column)
+    chart_type = recommend_type(
+        intent,
+        n_members=len(figures),
+        has_series=has_series,
+        value_column=value_column,
+    )
     spec: dict[str, Any] = {
-        "type": "line" if x in time_dimensions else "bar",
+        "type": chart_type,
+        "intent": intent.value,
         "x": x,
         "x_label": dimension_names.get(x, x),
-        "y": "value",
+        "y": value_column,
         "y_label": metric_name,
         "unit": unit,
     }
-    if drill and x not in time_dimensions:
+    if drill and chart_type == "bar" and x not in time_dimensions:
         spec["drill"] = [{"code": code, "name": name} for code, name in drill]
-    if len(group_by) > 1:
+    if has_series:
         spec["series"] = group_by[1]
         spec["series_label"] = dimension_names.get(group_by[1], group_by[1])
     return spec

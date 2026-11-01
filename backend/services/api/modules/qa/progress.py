@@ -17,13 +17,11 @@ def _client() -> Any:
     if not url:
         return None
     try:
-        import redis.asyncio as redis
+        from services.api.kernel.redis_client import redis_from_url
     except ImportError:
         logger.warning("api | Redis client is not installed; using database question stream")
         return None
-    # Redis closes a client idle for 300 s (redis.conf `timeout`); the check pings a pooled
-    # connection idle that long before using it, instead of failing the request on it.
-    return redis.from_url(url, decode_responses=True, health_check_interval=30)
+    return redis_from_url(url)
 
 
 def _text(value: Any) -> str:
@@ -35,9 +33,7 @@ async def read(question_id: str, last_id: str | None = None) -> list[Event]:
     if client is None:
         return []
     try:
-        rows = await client.xread(
-            {f"sse:{question_id}": last_id or "0-0"}, count=100, block=1_500
-        )
+        rows = await client.xread({f"sse:{question_id}": last_id or "0-0"}, count=100, block=1_500)
         events: list[Event] = []
         for _stream, entries in rows:
             for entry_id, fields in entries:
@@ -51,7 +47,7 @@ async def read(question_id: str, last_id: str | None = None) -> list[Event]:
                 if isinstance(data, dict):
                     events.append(Event(_text(entry_id), event_name, data))
         return events
-    except Exception:
+    except Exception:  # noqa: BLE001 - Redis outage falls back to the database stream
         logger.warning("api | progress read failed question=%s", question_id, exc_info=True)
         return []
     finally:

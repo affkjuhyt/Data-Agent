@@ -23,6 +23,7 @@ from collections.abc import Sequence
 from pydantic import BaseModel
 
 from services.worker_agent.llm import Gateway, ModelUnavailable, Reply
+from services.worker_agent.understand.compaction import summarize_older
 from services.worker_agent.understand.packs.base import iso_answer
 from services.worker_agent.understand.resolver import (
     Chip,
@@ -69,16 +70,18 @@ def _labels(chips: Sequence[dict[str, object]], kind: str) -> list[str]:
 
 
 def history_of(turns: Sequence[Turn]) -> str:
-    """The conversation as the model sees it: older turns summarised, the last ten verbatim."""
+    """The conversation as the model sees it: older turns summarised, the last ten verbatim.
+
+    The older-turn line comes from understand/compaction.py so metrics, cuts, filters,
+    periods and numbers the person wrote survive when the verbatim window slides.
+    """
     if not turns:
         return ""
     older, recent = turns[:-VERBATIM_TURNS], turns[-VERBATIM_TURNS:]
     lines: list[str] = []
-    if older:
-        metrics = dict.fromkeys(m for _, chips in older for m in _labels(chips, "metric"))
-        cuts = dict.fromkeys(d for _, chips in older for d in _labels(chips, "dimension"))
-        summary = f"{len(older)} câu trước đó hỏi về: {', '.join(metrics) or 'không rõ chỉ số'}"
-        lines.append(summary + (f"; theo {', '.join(cuts)}" if cuts else "") + ".")
+    summary = summarize_older(older)
+    if summary is not None:
+        lines.append(summary.as_line())
     for text, chips in recent:
         read = ", ".join(
             f"{kind}={label}"

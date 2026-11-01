@@ -18,6 +18,13 @@ from libs.contracts.v1.errors import (
     NextAction,
     Refusal,
 )
+from libs.contracts.v1.provider import ProviderRequest
+from libs.contracts.v1.result import (
+    ResultColumn,
+    ResultEnvelope,
+    ResultProvenance,
+    ResultWarning,
+)
 from libs.contracts.v1.verification import (
     VerificationCheck,
     VerificationConsensus,
@@ -33,7 +40,12 @@ __all__ = [
     "ErrorCode",
     "ErrorDetail",
     "NextAction",
+    "ProviderRequest",
     "Refusal",
+    "ResultColumn",
+    "ResultEnvelope",
+    "ResultProvenance",
+    "ResultWarning",
     "VerificationCheck",
     "VerificationConsensus",
     "VerificationFrame",

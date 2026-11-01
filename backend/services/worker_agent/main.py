@@ -57,6 +57,7 @@ from services.worker_agent import (
 from services.worker_agent.channels import gateway as channels
 from services.worker_agent.documents import indexed
 from services.worker_agent.events import EventSource, Handler, OutboxTableSource
+from services.worker_agent.providers.registry import ProviderRegistry
 from services.worker_agent.schedules import clock
 
 logger = logging.getLogger(__name__)
@@ -217,6 +218,11 @@ async def run(stop: asyncio.Event) -> None:
 
 def main() -> None:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
+    questions.set_provider_registry(
+        ProviderRegistry.build_default(
+            secrets=questions.secrets(), source_loader=questions.source_for_provider
+        )
+    )
     stop = asyncio.Event()
     loop = asyncio.new_event_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):

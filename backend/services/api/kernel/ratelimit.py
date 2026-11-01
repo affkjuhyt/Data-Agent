@@ -37,11 +37,9 @@ class CounterStore(Protocol):
 
 class RedisCounterStore:
     def __init__(self, url: str) -> None:
-        import redis.asyncio as redis
+        from services.api.kernel.redis_client import redis_from_url
 
-        # Redis closes a client idle for 300 s (redis.conf `timeout`); the check pings a pooled
-        # connection idle that long before using it, instead of failing the request on it.
-        self._redis = redis.from_url(url, decode_responses=True, health_check_interval=30)
+        self._redis = redis_from_url(url)
 
     async def hit(self, key: str, ttl_seconds: int) -> int:
         async with self._redis.pipeline(transaction=True) as pipe:

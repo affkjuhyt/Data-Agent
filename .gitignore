@@ -113,3 +113,7 @@ deploy/k8s/dev/.openbao-env.yml
 bench-report.json
 bench-baseline*.json
 e2e-report.json
+
+# Graphify knowledge graph (local AST index; graph.json is tens of MB)
+graphify-out/
+.worktrees/

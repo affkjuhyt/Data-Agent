@@ -7,18 +7,18 @@ never holds a lock on the question:
 
 1. understand and plan, as svc_qa: the Data Space's semantic layer (semantic/loader.py), the rule
    Understander (understand/), the metric version in force, the compiled SQL. A question that names
-   no metric is refused with UNRESOLVED_ENTITY; two equally likely metrics ask which, before any
-   query (AC-01-01-02); a cut the compiler cannot make is refused with its code.
+   no metric is first tried through exploratory SQL; two equally likely metrics ask which, before
+   any query (AC-01-01-02); a cut the compiler cannot make is refused with its code.
 2. run the SQL in place on the source, as svc_query (query/executor.py).
 3. answer, as svc_qa: figures F1…Fn from the rows, each tied to its query_run row, the text written
    from them (answer/narrate.py), the trust label, and, when the metric is in an active data
    product, the freshness gate and a receipt sealed in the same transaction (ADR-43, BR-175..178).
 
 Only single-metric questions take this path; planning several steps with a model and
-comparisons are R1 S5. A question that names no metric is looked up in the Data Space's documents
-before it is refused (UC-05-04, documents/): an answer whose every claim carries a checked
-citation, or "không tìm thấy trong tài liệu được phép". The handler is idempotent: a question past
-`received` is left alone.
+comparisons are R1 S5. A question that names no metric is tried in exploratory SQL, then looked up
+in the Data Space's documents (UC-05-04, documents/), then answered generally when neither source
+can support it. The general answer has no figures or citations and is labeled insufficient evidence.
+The handler is idempotent: a question past `received` is left alone.
 """
 
 from __future__ import annotations
@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from libs import clock
 from libs.contracts.v1.errors import ErrorCode, NextAction, Refusal
+from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, context, document, period, qa
 from libs.sql_guard import SqlRejected, dialect_of
@@ -63,6 +64,7 @@ from services.worker_agent.documents.search import SearchServices, services_from
 from services.worker_agent.events import Event, Handler
 from services.worker_agent.llm import Gateway, gateway_from_env
 from services.worker_agent.progress import publish
+from services.worker_agent.providers.registry import ProviderRegistry
 from services.worker_agent.query.executor import record_period_snapshot, run_query
 from services.worker_agent.query.scope import (
     OutOfScope,
@@ -104,11 +106,13 @@ NOT_STANDARD = "chưa có định nghĩa chuẩn"
 OUT_OF_SCOPE = "Ngoài phạm vi data product, không có biên nhận"
 
 DOCUMENT_AGENT_NAME = "Agent Tài liệu"
+GENERAL_AGENT_NAME = "Agent Hỏi đáp"
 
 _secrets: SecretReader | None = None
 _gateway: Gateway | None = None
 _gateway_read = False
 _search: SearchServices | None = None
+_provider_registry: ProviderRegistry | None = None
 
 
 def dialect_for_source(source_kind: str) -> str:
@@ -122,6 +126,35 @@ def secrets() -> SecretReader:
         # Without OpenBao no source can be opened; the run then fails with that said, not a guess.
         _secrets = reader_from_env() or StaticReader({})
     return _secrets
+
+
+async def source_for_provider(request: ProviderRequest) -> catalog.Source | None:
+    """Load a source under the same org, Data Space, and principal as the request."""
+    if request.source_id == uuid.UUID("00000000-0000-0000-0000-000000000001"):
+        return _internal_workspace_source(request.data_space_id, request.org_id)
+    if request.principal_id is None:
+        return None
+    async with scoped_session(ROLE, request.org_id, request.principal_id) as session:
+        source = await session.get(catalog.Source, request.source_id)
+        if source is not None:
+            session.expunge(source)
+        return source
+
+
+def provider_registry() -> ProviderRegistry:
+    global _provider_registry
+    if _provider_registry is None:
+        from services.worker_agent.providers.registry import ProviderRegistry
+
+        _provider_registry = ProviderRegistry.build_default(
+            secrets=secrets(), source_loader=source_for_provider
+        )
+    return _provider_registry
+
+
+def set_provider_registry(registry: ProviderRegistry) -> None:
+    global _provider_registry
+    _provider_registry = registry
 
 
 def gateway() -> Gateway | None:
@@ -1351,6 +1384,7 @@ async def _understand_and_plan(
             gateway=gateway(),
             secrets=secrets(),
             workspace_source=_internal_workspace_source,
+            providers=provider_registry(),
         )
     ):
         return None
@@ -1405,6 +1439,23 @@ def _document_plan(question: qa.Question, as_of: datetime.date) -> dict[str, Any
     }
 
 
+def _general_plan(question: qa.Question, as_of: datetime.date) -> dict[str, Any]:
+    """Plan IR for a general answer that carries no Data Space evidence."""
+    return {
+        "version": 2,
+        "goal": "answer",
+        "path": "general_answer",
+        "as_of": as_of.isoformat(),
+        "knowledge_mode": question.knowledge_mode,
+        "chips": [],
+        "steps": [],
+        "outputs": [{"as": "text"}],
+        "budget": {"max_steps": 1, "max_tokens": 700, "max_duration": 30},
+        "phase": 1,
+        "max_phases": 1,
+    }
+
+
 async def _answer_from_documents(
     event: Event,
     question_id: uuid.UUID,
@@ -1412,8 +1463,7 @@ async def _answer_from_documents(
     plan_id: uuid.UUID,
     models: list[dict[str, Any]],
 ) -> bool:
-    """UC-05-04 for a question that names no metric. False when the Data Space has no document
-    the question could be answered from, so the caller refuses as before."""
+    """Answer a no-metric question from documents, or fall back to a general answer."""
     started = datetime.datetime.now(datetime.UTC)
     async with scoped_session(ROLE, event.org_id, user_id) as session:
         question = await session.get(qa.Question, question_id)
@@ -1452,21 +1502,37 @@ async def _answer_from_documents(
             is not None
         )
         text, plan = question.text, _document_plan(question, as_of)
-    if not has_documents:
-        return False
+        if not has_documents:
+            told = await document_answer.compose_general(gateway(), text)
+            if told is None:
+                return False
+            plan = _general_plan(question, as_of)
+        else:
+            told = await document_answer.compose(gateway(), text, passages, as_of)
+            if not told.found:
+                general = await document_answer.compose_general(gateway(), text)
+                if general is None:
+                    return False
+                told = general
+                plan = _general_plan(question, as_of)
     await publish(
         str(question_id), "progress", {"question_id": str(question_id), "status": "running"}
     )
-    told = await document_answer.compose(gateway(), text, passages, as_of)
     if told.model:
-        models.append({"task": "document_answer", "model_name": told.model, "tokens": told.tokens})
+        models.append(
+            {
+                "task": "general_answer" if told.general else "document_answer",
+                "model_name": told.model,
+                "tokens": told.tokens,
+            }
+        )
     if told.dropped:
         logger.info(
             "question %s: %d document claims failed their citation check",
             question_id,
             len(told.dropped),
         )
-    if not told.found:
+    if not told.found and not told.general:
         # E1: "not found in the documents you may read" is an answer, not a failure: it is
         # written as one (no citations, so the trust label says there is no evidence) and drawn
         # as plain text, not as a refusal card. The hint covers a question meant for a metric.
@@ -1495,7 +1561,7 @@ async def _answer_from_documents(
                     told.number_check,
                     citations=[c.as_json() for c in told.citations],
                 ),
-                agent_name=DOCUMENT_AGENT_NAME,
+                agent_name=GENERAL_AGENT_NAME if told.general else DOCUMENT_AGENT_NAME,
                 latency_ms=int(
                     (datetime.datetime.now(datetime.UTC) - started).total_seconds() * 1000
                 ),
@@ -1805,6 +1871,7 @@ async def _answer(event: Event, question_id: uuid.UUID, p: Prepared, outcome: An
                     metric_name=metric_name,
                     unit=unit,
                     drill=[cut for cut in p.cuts if cut[0] not in u.group_by],
+                    value_column=value_column,
                 ),
                 agent_name=AGENT_NAME,
                 latency_ms=int(

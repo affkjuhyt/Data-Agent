@@ -117,3 +117,20 @@ def test_database_refusals_become_a17_problems(error, status, code, detail) -> N
     assert body["code"] == code
     # A constraint's message names a table (A1.7 keeps it private); a trigger's message is meant to be read.
     assert body.get("detail") == detail
+
+
+def test_a_redis_connection_error_is_source_unavailable_not_internal() -> None:
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    app = FastAPI()
+    install_problem_handlers(app)
+
+    @app.get("/boom")
+    async def boom() -> None:
+        raise RedisConnectionError("Connection closed by server.")
+
+    response = TestClient(app, raise_server_exceptions=False).get("/boom")
+    assert response.status_code == 503
+    body = response.json()
+    assert body["code"] == "source_unavailable"
+    assert "Connection closed" not in response.text

@@ -187,6 +187,13 @@ SELECT count(*) FILTER (WHERE result_ref LIKE 'query_run:%') AS reused, count(*)
 FROM query.query_run WHERE started_at > now() - interval '1 day';
 ```
 
+**Provider boundary.** Data access behind a question is selected through the worker-agent provider
+registry (`services/worker_agent/providers/`). The built-in `relational` provider is the only
+provider currently enabled for AdventureWorks and delegates to the existing scoped
+`query/executor.py` path. Provider results use the shared v1 envelope so future sources can be
+added without changing question/SSE response shapes; the envelope keeps query-run provenance,
+trust, warnings, truncation, and JSON-safe values.
+
 ## 5. Demo data
 
 With `seed_demo: true` (the dev inventory's setting) the `db-init` Job loads:

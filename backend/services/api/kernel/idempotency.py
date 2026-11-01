@@ -55,11 +55,9 @@ class ResponseStore(Protocol):
 
 class RedisResponseStore:
     def __init__(self, url: str) -> None:
-        import redis.asyncio as redis
+        from services.api.kernel.redis_client import redis_from_url
 
-        # Redis closes a client idle for 300 s (redis.conf `timeout`); the check pings a pooled
-        # connection idle that long before using it, instead of failing the request on it.
-        self._redis = redis.from_url(url, decode_responses=True, health_check_interval=30)
+        self._redis = redis_from_url(url)
 
     async def put(self, ref: str, value: str, ttl: datetime.timedelta) -> None:
         await self._redis.set(ref, value, ex=int(ttl.total_seconds()))
@@ -224,7 +222,13 @@ async def idempotency_middleware(
         # or 403, never the stored response.
         answer = claim.answer
         if claim.replay_ref is not None:
-            stored = await store.get(claim.replay_ref)
+            try:
+                stored = await store.get(claim.replay_ref)
+            except Exception:  # noqa: BLE001 - Redis outage: treat as missing body
+                logger.warning(
+                    "api | idempotency response store unavailable on replay", exc_info=True
+                )
+                stored = None
             answer = (
                 _replay(stored)
                 if stored is not None
@@ -257,9 +261,11 @@ async def _finish(
         # A failure is not an answer: release the key so a retry runs again.
         await _release(org_id, row_id)
     else:
-        ik = ig.IdempotencyKey
-        async with scoped_session(ROLE, org_id) as session:
-            ref = f"idempotency:{row_id}"
+        # The handler already succeeded. A Redis blip must not turn that into
+        # ``internal_error`` for the client (Ask always sends Idempotency-Key): keep the
+        # 2xx body and release the claim so a retry is not stuck on ``conflict``.
+        ref = f"idempotency:{row_id}"
+        try:
             await store.put(
                 ref,
                 json.dumps(
@@ -271,9 +277,18 @@ async def _finish(
                 ),
                 TTL,
             )
-            row = await session.get(ik, row_id)
-            if row is not None:
-                row.response_status, row.response_ref = response.status_code, ref
+        except Exception:  # noqa: BLE001 - store outage after success
+            logger.warning(
+                "api | idempotency response store unavailable after success; releasing claim",
+                exc_info=True,
+            )
+            await _release(org_id, row_id)
+        else:
+            ik = ig.IdempotencyKey
+            async with scoped_session(ROLE, org_id) as session:
+                row = await session.get(ik, row_id)
+                if row is not None:
+                    row.response_status, row.response_ref = response.status_code, ref
     return Response(
         content=content,
         status_code=response.status_code,

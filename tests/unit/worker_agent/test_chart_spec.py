@@ -34,12 +34,27 @@ def _spec(group_by: list[str], n: int = 3) -> dict | None:
 def test_a_category_cut_is_bars_labelled_from_the_semantic_layer() -> None:
     assert _spec(["vung"]) == {
         "type": "bar",
+        "intent": "comparing",
         "x": "vung",
         "x_label": "Vùng",
         "y": "value",
         "y_label": "Tỷ lệ nợ xấu",
         "unit": "%",
     }
+
+
+def test_a_share_cut_with_few_members_is_a_pie() -> None:
+    spec = chart_spec_of(
+        _figs(4),
+        group_by=["vung"],
+        dimension_names=NAMES,
+        time_dimensions={"thang"},
+        metric_name="Tỷ trọng",
+        unit="%",
+        value_column="share",
+    )
+    assert spec is not None
+    assert (spec["type"], spec["intent"], spec["y"]) == ("pie", "part_to_whole", "share")
 
 
 def test_a_time_cut_is_a_line() -> None:

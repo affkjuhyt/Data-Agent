@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from services.worker_agent.documents.answer import compose, quote_match
+from services.worker_agent.documents.answer import compose, compose_general, quote_match
 from services.worker_agent.documents.retrieve import Passage, overlap
 from services.worker_agent.llm import ModelUnavailable, Reply
 
@@ -61,6 +61,21 @@ class Scripted:
 class Down:
     async def json_chat(self, *a: Any, **k: Any) -> Any:
         raise ModelUnavailable("down")
+
+
+class GeneralScripted:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    async def json_chat(
+        self, role: str, system: str, user: str, output: type[Any], *, max_tokens: int = 800
+    ) -> Any:
+        return Reply(
+            output.model_validate({"text": self.text}),
+            model="responder",
+            tokens=32,
+            latency_ms=2,
+        )
 
 
 def test_quote_match_is_exact_or_close() -> None:
@@ -126,6 +141,17 @@ async def test_no_claim_left_means_not_found() -> None:
     told = await compose(Scripted([]), QUESTION, [RATE], AS_OF)
     assert not told.found and told.text.startswith("Không tìm thấy trong tài liệu được phép")
     assert not (await compose(Scripted([]), QUESTION, [], AS_OF)).found
+
+
+async def test_general_fallback_answers_without_claiming_document_evidence() -> None:
+    told = await compose_general(
+        GeneralScripted("Lãi suất thường phụ thuộc vào kỳ hạn và chính sách từng ngân hàng."),
+        QUESTION,
+    )
+
+    assert told.text == "Lãi suất thường phụ thuộc vào kỳ hạn và chính sách từng ngân hàng."
+    assert not told.found
+    assert told.number_check["untraceable_final"] == 0
 
 
 async def test_citing_a_passage_not_shown_or_out_of_force_fails() -> None:

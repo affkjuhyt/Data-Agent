@@ -32,8 +32,12 @@ export interface FigureWire {
 }
 
 /** qa.answer.chart_spec (answer/narrate.py chart_spec_of): the cut to draw, never the values. */
+type ChartWireType = ChartSpec['chart_type'];
+
 interface ChartSpecWire {
-  type: 'bar' | 'line';
+  type: ChartWireType;
+  /** answer/chart_intent.py Intent value; optional on older answers */
+  intent?: string;
   x: string;
   x_label?: string;
   series?: string;
@@ -44,6 +48,17 @@ interface ChartSpecWire {
   /** the metric's other allowed cuts: where a picked bar can be drilled (UC-01-04) */
   drill?: { code: string; name: string }[];
 }
+
+const CHART_WIRE_TYPES: ReadonlySet<string> = new Set([
+  'bar',
+  'line',
+  'area',
+  'pie',
+  'scatter',
+  'radar',
+  'radialBar',
+  'composed',
+]);
 
 /** The labels the worker writes (questions.py STANDARD, NOT_STANDARD, OUT_OF_SCOPE; sqlgen/answer.py TRUST). */
 /** worker-agent sqlgen/verified.py TRUST_VERIFIED: a figure of a query a steward approved. */
@@ -105,7 +120,9 @@ export function readFigures(raw: unknown): FigureWire[] {
 export function readChartSpec(raw: unknown): ChartSpecWire | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const spec = raw as Partial<ChartSpecWire>;
-  return (spec.type === 'bar' || spec.type === 'line') && typeof spec.x === 'string'
+  return typeof spec.type === 'string' &&
+    CHART_WIRE_TYPES.has(spec.type) &&
+    typeof spec.x === 'string'
     ? (spec as ChartSpecWire)
     : null;
 }
@@ -182,7 +199,9 @@ export function figureChart(figures: FigureWire[], spec: ChartSpecWire | null): 
   }
   const data = [...byX.values()];
   if (data.length < 2) return null;
-  if (spec.type === 'line') data.sort((a, b) => String(a[xKey]).localeCompare(String(b[xKey])));
+  if (spec.type === 'line' || spec.type === 'area') {
+    data.sort((a, b) => String(a[xKey]).localeCompare(String(b[xKey])));
+  }
   const unit = spec.unit ? ` (${spec.unit})` : '';
   return {
     chart_type: spec.type,

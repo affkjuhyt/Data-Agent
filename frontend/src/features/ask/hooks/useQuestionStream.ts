@@ -40,11 +40,19 @@ const sleep = (ms: number, signal: AbortSignal) =>
     });
   });
 
-const STATUS_STEP: Record<string, string> = {
-  received: 'Đã nhận câu hỏi',
-  planning: 'Đang hiểu câu hỏi và lập kế hoạch',
-  running: 'Đang chạy kế hoạch',
-};
+function stepsFor(status: string) {
+  const stages = [
+    'Đọc câu hỏi và Data Space',
+    'Lập kế hoạch phân tích',
+    'Chạy truy vấn dữ liệu',
+    'Tạo biểu đồ và insight',
+  ];
+  const active = status === 'running' ? 2 : status === 'planning' ? 1 : 0;
+  return stages.map((title, index) => ({
+    title,
+    state: index < active ? ('done' as const) : index === active ? ('running' as const) : ('waiting' as const),
+  }));
+}
 
 async function messagesFromConversation(detail: ConversationDetail): Promise<AskMessage[]> {
   const out: AskMessage[] = [];
@@ -133,10 +141,13 @@ async function messagesFromConversation(detail: ConversationDetail): Promise<Ask
 
 export function useQuestionStream() {
   const [messages, setMessages] = useState<AskMessage[]>([]);
+  const [queued, setQueued] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [hydrating, setHydrating] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const runningRef = useRef(false);
+  const queueRef = useRef<string[]>([]);
   const conversationRef = useRef<string | null>(null);
   const mounted = useRef(true);
 
@@ -167,7 +178,7 @@ export function useQuestionStream() {
               ...m,
               progress: {
                 agent: 'Agent Hỏi đáp',
-                steps: [{ title: STATUS_STEP[status] ?? 'Đang xử lý', state: 'running' }],
+                steps: stepsFor(status),
               },
             }));
           } else if (e.event === 'answer' && typeof data.answer_id === 'string') {
@@ -239,10 +250,10 @@ export function useQuestionStream() {
     [patch],
   );
 
-  const send = useCallback(
+  const runTurn = useCallback(
     async (text: string) => {
       const q = text.trim();
-      if (!q || sending) return;
+      if (!q) return;
       const assistantId = nextId();
       setMessages((prev) => [
         ...prev,
@@ -281,11 +292,42 @@ export function useQuestionStream() {
                   : 'Không kết nối được máy chủ.'),
         }));
       } finally {
-        if (mounted.current) setSending(false);
         abortRef.current = null;
       }
     },
-    [follow, patch, sending],
+    [follow, patch],
+  );
+
+  const drain = useCallback(
+    async (first: string) => {
+      runningRef.current = true;
+      try {
+        await runTurn(first);
+        while (queueRef.current.length > 0 && mounted.current) {
+          const next = queueRef.current.shift();
+          setQueued([...queueRef.current]);
+          if (next) await runTurn(next);
+        }
+      } finally {
+        runningRef.current = false;
+        if (mounted.current) setSending(false);
+      }
+    },
+    [runTurn],
+  );
+
+  const send = useCallback(
+    async (text: string) => {
+      const q = text.trim();
+      if (!q) return;
+      if (runningRef.current) {
+        queueRef.current.push(q);
+        setQueued([...queueRef.current]);
+        return;
+      }
+      await drain(q);
+    },
+    [drain],
   );
 
   /** A clarification is answered by asking again in the same conversation (UC-01-04). */
@@ -312,7 +354,11 @@ export function useQuestionStream() {
     [patch],
   );
 
-  const stop = useCallback(() => abortRef.current?.abort(), []);
+  const stop = useCallback(() => {
+    queueRef.current = [];
+    setQueued([]);
+    abortRef.current?.abort();
+  }, []);
 
   /** Load a server conversation into the screen (R1-13 URL reopen). */
   const hydrate = useCallback(async (id: string) => {
@@ -351,20 +397,32 @@ export function useQuestionStream() {
 
   const resetConversation = useCallback(() => {
     abortRef.current?.abort();
+    queueRef.current = [];
+    runningRef.current = false;
+    setQueued([]);
     conversationRef.current = null;
     setConversationId(null);
     setMessages([]);
+  }, []);
+
+  const addNotice = useCallback((content: string) => {
+    setMessages((prev) => [
+      ...prev,
+      { id: nextId(), role: 'assistant', content, timestamp: nowIso(), status: 'done' },
+    ]);
   }, []);
 
   return {
     messages,
     sending,
     hydrating,
+    queued,
     conversationId,
     send,
     answerClarification,
     confirmUnderstanding,
     stop,
+    addNotice,
     hydrate,
     resetConversation,
   };

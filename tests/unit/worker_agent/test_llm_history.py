@@ -51,6 +51,34 @@ def test_twelve_turns_keep_the_last_ten_verbatim_and_summarise_the_rest() -> Non
     assert "câu số 1 " not in text and "câu số 2 " not in text
 
 
+@pytest.mark.req("AC-01-04-05")
+def test_older_summary_keeps_filters_periods_and_numbers_from_the_question() -> None:
+    from services.worker_agent.understand.compaction import summarize_older
+
+    older = [
+        (
+            "NPL miền Nam tháng 3 còn 2,5% không?",
+            [
+                {"kind": "metric", "value": "NPL", "label": "Tỷ lệ nợ xấu"},
+                {"kind": "filter", "value": "vung=MN", "label": "Miền Nam"},
+                {"kind": "period", "value": "2026-03", "label": "03/2026"},
+            ],
+        ),
+        (
+            "so với mục tiêu 2%",
+            [{"kind": "metric", "value": "NPL", "label": "Tỷ lệ nợ xấu"}],
+        ),
+    ]
+    summary = summarize_older(older)
+    assert summary is not None
+    line = summary.as_line()
+    assert "Tỷ lệ nợ xấu" in line
+    assert "lọc Miền Nam" in line
+    assert "kỳ 03/2026" in line
+    assert "2,5%" in line and "2%" in line
+    assert "2026" not in summary.numbers  # bare years are periods, not figures
+
+
 async def test_the_model_is_given_the_conversation_and_none_without_one() -> None:
     gateway = Recording()
     today = datetime.date(2026, 10, 17)

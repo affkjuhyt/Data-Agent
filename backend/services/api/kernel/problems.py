@@ -216,9 +216,25 @@ async def _on_unexpected(_: Request, exc: Exception) -> JSONResponse:
     )
 
 
+async def _on_redis(_: Request, exc: Exception) -> JSONResponse:
+    # Idle Redis kills and brief outages must not look like an application bug (A1.7).
+    logger.warning("api | redis unavailable", exc_info=exc)
+    return problem_response(
+        Problem(503, "source_unavailable", "Temporary store unavailable; retry shortly.")
+    )
+
+
 def install_problem_handlers(app: FastAPI) -> None:
     app.add_exception_handler(Problem, _on_problem)
     app.add_exception_handler(RequestValidationError, _on_validation)
     app.add_exception_handler(StarletteHTTPException, _on_http)
     app.add_exception_handler(DBAPIError, _on_database)
+    try:
+        from redis.exceptions import ConnectionError as RedisConnectionError
+        from redis.exceptions import TimeoutError as RedisTimeoutError
+
+        app.add_exception_handler(RedisConnectionError, _on_redis)
+        app.add_exception_handler(RedisTimeoutError, _on_redis)
+    except ImportError:
+        pass
     app.add_exception_handler(Exception, _on_unexpected)

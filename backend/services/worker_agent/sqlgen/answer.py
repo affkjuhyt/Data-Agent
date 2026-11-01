@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy import func, select
 
 from libs import clock
+from libs.contracts.v1.provider import ProviderRequest
 from libs.dataagent_db import scoped_session, uuid7
 from libs.dataagent_db.models import catalog, qa
 from libs.sql_guard import dialect_of
@@ -28,6 +29,7 @@ from services.worker_agent.answer.verification import verify
 from services.worker_agent.events import Event
 from services.worker_agent.llm import Gateway
 from services.worker_agent.progress import publish
+from services.worker_agent.providers.registry import ProviderRegistry
 from services.worker_agent.query.executor import QueryOutcome, run_query
 from services.worker_agent.query.scope import can_ask_data_space
 from services.worker_agent.query.secrets import SecretReader
@@ -151,6 +153,7 @@ async def answer_by_sql(
     gateway: Gateway | None,
     secrets: SecretReader,
     workspace_source: Callable[[uuid.UUID, uuid.UUID], catalog.Source],
+    providers: ProviderRegistry,
 ) -> bool:
     if gateway is None or user_id is None:
         return False
@@ -181,15 +184,27 @@ async def answer_by_sql(
     )
 
     async def run_sql(sql: str) -> QueryOutcome:
-        return await run_query(
+        request = ProviderRequest(
+            provider="relational",
             org_id=event.org_id,
             data_space_id=space_id,
             principal_id=user_id,
+            source_id=source.id,
+            sql=sql,
             caller_kind="question",
             caller_id=question_id,
-            source=source,
+        )
+        envelope = await providers.get(request.provider).execute(request)
+        return QueryOutcome(
+            query_run_id=envelope.provenance.query_run_id
+            if envelope.provenance is not None
+            else uuid.uuid4(),
+            status="succeeded" if envelope.error is None else "failed",
+            columns=[column.model_dump() for column in envelope.columns],
+            rows=[list(row.values()) for row in envelope.rows],
+            truncated=envelope.truncated,
             sql=sql,
-            secrets=secrets,
+            error=envelope.error,
         )
 
     e = await explore(

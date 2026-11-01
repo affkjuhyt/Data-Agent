@@ -38,8 +38,10 @@ describe('dataAnswer', () => {
     expect(
       readFigures([{ key: 'F1' }, { key: 'F2', source: { compute_run_id: 'c', expr: 'F1 - F1' } }]),
     ).toHaveLength(1);
-    expect(readChartSpec({ type: 'pie', x: 'vung' })).toBeNull();
+    expect(readChartSpec({ type: 'pie', x: 'vung' })).not.toBeNull();
+    expect(readChartSpec({ type: 'area', x: 'thang' })).not.toBeNull();
     expect(readChartSpec({ type: 'bar', x: 'vung', y: 'value' })).not.toBeNull();
+    expect(readChartSpec({ type: 'unknown', x: 'vung' })).toBeNull();
   });
 
   it('builds the table from the figures, naming columns from the spec', () => {
