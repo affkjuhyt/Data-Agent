@@ -7,7 +7,9 @@ must not import worker-agent) could load nothing but PostgreSQL.
 
 TLS fails closed, as the PostgreSQL path does (`ssl_mode`): a source without `sslmode` is
 `verify-full`, and only an explicit `disable` (or the in-cluster demo service) sends anything in
-clear. A ClickHouse host is a host only: one that carries a path, userinfo or a query is refused
+clear. SQL Server's driver (FreeTDS) cannot check certificates, so a SQL Server source must say
+`require` or `disable`; a verify mode is refused rather than silently downgraded. A ClickHouse
+host is a host only: one that carries a path, userinfo or a query is refused
 before a URL is built from it.
 
 A driver returns (columns, rows): each column's name and the engine's type as text, each row's
@@ -118,6 +120,15 @@ def sqlserver(
 ) -> Rows:
     """`sql` in a transaction that is rolled back: T-SQL has no READ ONLY transaction, so the
     rollback undoes a write a guard missed, and the login is expected to be db_datareader."""
+    mode = ssl_mode(source)
+    if mode in ("verify-ca", "verify-full"):
+        # FreeTDS encrypts but cannot be made to check the server's certificate from here: a
+        # verify mode would be a silent downgrade, so it is refused and the source must say
+        # `require` (encrypted, unverified) or `disable` in conn_options.
+        raise DriverError(
+            "sqlserver cannot verify the server certificate; set conn_options.sslmode to"
+            " require or disable"
+        )
     try:
         import pymssql
 
@@ -133,7 +144,7 @@ def sqlserver(
             appname=appname,
             tds_version=str(options.get("tds_version") or "7.4"),
             # FreeTDS encrypts the login and the session unless the source says disable.
-            encryption="off" if ssl_mode(source) == "disable" else "require",
+            encryption="off" if mode == "disable" else "require",
         )
         try:
             with conn.cursor() as cursor:
